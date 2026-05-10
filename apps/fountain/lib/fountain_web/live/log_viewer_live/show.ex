@@ -54,25 +54,21 @@ defmodule FountainWeb.LogViewerLive.Show do
     <div class="space-y-4">
       <div class="flex items-center justify-between">
         <div class="flex items-center gap-3">
-          <.link navigate={~p"/conversations/#{@conversation.id}"} class="text-zinc-500 hover:text-zinc-900 text-sm">
+          <.link navigate={~p"/conversations/#{@conversation.id}"} class="text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] text-sm">
             ← Conversation
           </.link>
           <h1 class="text-lg font-semibold font-mono">
             logs / {String.slice(@conversation.id, 0, 8)}
           </h1>
         </div>
-        <span class={[
-          "inline-flex items-center rounded px-2 py-0.5 text-xs font-medium border",
-          status_color(@conversation.status)
-        ]}>
-          {@conversation.status}
-        </span>
+        <.badge status={@conversation.status} />
       </div>
 
-      <div
+      <.code_block
         id="log-container"
         phx-hook="LogScroll"
-        class="bg-zinc-950 text-zinc-100 rounded-lg border border-zinc-800 font-mono text-xs p-4 h-[70vh] overflow-y-auto">
+        class="h-[70vh] overflow-y-auto p-4"
+      >
         <div :if={@logs == []} class="text-zinc-500 italic">No log output yet.</div>
         <div :for={event <- @logs} class={["leading-5", log_line_class(event)]}>
           <span class="text-zinc-500 select-none mr-3">{format_ts(event.inserted_at)}</span>
@@ -80,20 +76,14 @@ defmodule FountainWeb.LogViewerLive.Show do
           <span :if={event.kind != "stage"} class={log_stream_class(event.stream)}>[{event.stream}]</span>
           <span class="ml-2 whitespace-pre-wrap">{event.data}</span>
         </div>
-      </div>
+      </.code_block>
 
-      <p class="text-xs text-zinc-500">
+      <p class="text-xs text-[var(--color-text-muted)]">
         {length(@logs)} events · auto-scrolls to bottom · updates via PubSub
       </p>
     </div>
     """
   end
-
-  defp status_color("ready"), do: "bg-green-100 text-green-800 border-green-200"
-  defp status_color("running"), do: "bg-blue-100 text-blue-800 border-blue-200"
-  defp status_color("failed"), do: "bg-red-100 text-red-700 border-red-200"
-  defp status_color("terminated"), do: "bg-zinc-100 text-zinc-500 border-zinc-200"
-  defp status_color(_), do: "bg-zinc-100 text-zinc-500 border-zinc-200"
 
   defp log_line_class(%{stream: "stderr"}), do: "text-red-400"
   defp log_line_class(_), do: ""

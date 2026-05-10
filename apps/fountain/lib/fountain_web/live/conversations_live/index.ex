@@ -95,72 +95,63 @@ defmodule FountainWeb.ConversationsLive.Index do
       <div class="flex items-center justify-between">
         <h1 class="text-2xl font-semibold">Conversations</h1>
         <.link navigate={~p"/conversations/new"}>
-          <.btn>+ New conversation</.btn>
+          <.button>+ New conversation</.button>
         </.link>
       </div>
 
-      <div :if={@conversations == []} class="rounded border border-dashed border-zinc-300 p-8 text-center text-zinc-500">
-        No conversations yet. Start one to see it here.
-      </div>
-
-      <table :if={@conversations != []} class="w-full text-sm bg-white rounded shadow border border-zinc-200 table-fixed">
-        <thead class="text-left text-xs uppercase tracking-wide text-zinc-500 border-b border-zinc-200">
-          <tr>
-            <th class="w-20 px-3 py-1.5 font-medium">Status</th>
-            <th class="px-3 py-1.5 font-medium">Task</th>
-            <th class="w-40 px-3 py-1.5 font-medium">Agent</th>
-            <th class="w-20 px-3 py-1.5 font-medium">Runtime</th>
-            <th class="w-16 px-3 py-1.5 font-medium">Source</th>
-            <th
-              class={["w-24 px-3 py-1.5 font-medium cursor-pointer select-none whitespace-nowrap", @sort_by == :inserted_at && "text-zinc-900"]}
-              phx-click="sort"
-              phx-value-by="inserted_at"
-            >Started {sort_arrow(@sort_by, @sort_dir, :inserted_at)}</th>
-            <th
-              class={["w-28 px-3 py-1.5 font-medium cursor-pointer select-none whitespace-nowrap", @sort_by == :updated_at && "text-zinc-900"]}
-              phx-click="sort"
-              phx-value-by="updated_at"
-            >Last active {sort_arrow(@sort_by, @sort_dir, :updated_at)}</th>
-            <th class="w-44 px-3 py-1.5"></th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr :for={c <- @conversations} class="border-b border-zinc-100 last:border-0 hover:bg-zinc-50 align-top">
-            <td class="px-3 py-2"><.status_badge status={c.status} /></td>
-            <td class="px-3 py-2 text-zinc-700 leading-snug">
-              <%= case first_prompt(c) do %>
-                <% nil -> %><span class="text-zinc-400">—</span>
-                <% prompt -> %><div class="line-clamp-3" title={prompt}>{prompt}</div>
-              <% end %>
-            </td>
-            <td class="px-3 py-2 truncate">
-              <.link navigate={~p"/conversations/#{c.id}"} class="block truncate text-zinc-900 hover:underline font-medium">
-                {agent_name(@agents_by_id, c.agent_id)}
-              </.link>
-              <div class="text-xs text-zinc-400 font-mono">{short(c.id)}</div>
-            </td>
-            <td class="px-3 py-2 text-zinc-600 truncate">{c.runtime}</td>
-            <td class="px-3 py-2"><.source_badge source={c.source} /></td>
-            <td class="px-3 py-2 text-zinc-500 whitespace-nowrap">{relative_time(c.inserted_at)}</td>
-            <td class="px-3 py-2 text-zinc-500 whitespace-nowrap">{relative_time(c.updated_at)}</td>
-            <td class="px-3 py-2 text-right whitespace-nowrap">
-              <div class="inline-flex gap-1">
-                <.btn_danger :if={c.status not in ["terminated", "completed", "failed"]}
-                  class="!px-2 !py-1 !text-xs"
-                  phx-click="terminate" phx-value-id={c.id}
-                  data-confirm="Terminate this conversation?">
-                  Terminate
-                </.btn_danger>
-                <.btn_secondary class="!px-2 !py-1 !text-xs"
-                  phx-click="delete" phx-value-id={c.id}
-                  data-confirm="Delete this conversation and all its turns? This cannot be undone.">
-                  Delete
-                </.btn_secondary>
-              </div>
-            </td>
-          </tr>
-        </tbody>
-      </table>
+      <.table
+        id="conversations-table"
+        rows={@conversations}
+        sort_event="sort"
+        sorted_by={Atom.to_string(@sort_by)}
+        sorted_dir={@sort_dir}
+      >
+        <:empty>
+          No conversations yet. Start one to see it here.
+        </:empty>
+        <:col :let={c} label="Status"><.badge status={c.status} /></:col>
+        <:col :let={c} label="Task">
+          <%= case first_prompt(c) do %>
+            <% nil -> %><span class="text-[var(--color-text-muted)]">—</span>
+            <% prompt -> %><div class="line-clamp-3" title={prompt}>{prompt}</div>
+          <% end %>
+        </:col>
+        <:col :let={c} label="Agent">
+          <.link navigate={~p"/conversations/#{c.id}"} class="block truncate text-[var(--color-text-primary)] hover:underline font-medium">
+            {agent_name(@agents_by_id, c.agent_id)}
+          </.link>
+          <div class="text-xs text-[var(--color-text-muted)] font-mono">{short(c.id)}</div>
+        </:col>
+        <:col :let={c} label="Runtime">
+          <span class="text-[var(--color-text-secondary)]">{c.runtime}</span>
+        </:col>
+        <:col :let={c} label="Source"><.source_badge source={c.source} /></:col>
+        <:col :let={c} label="Started" sort_key="inserted_at">
+          <span class="whitespace-nowrap">{relative_time(c.inserted_at)}</span>
+        </:col>
+        <:col :let={c} label="Last active" sort_key="updated_at">
+          <span class="whitespace-nowrap">{relative_time(c.updated_at)}</span>
+        </:col>
+        <:col :let={c} label="">
+          <div class="inline-flex gap-1 justify-end w-full">
+            <.button
+              :if={c.status not in ["terminated", "completed", "failed"]}
+              variant="danger"
+              phx-click="terminate"
+              phx-value-id={c.id}
+              data-confirm="Terminate this conversation?">
+              Terminate
+            </.button>
+            <.button
+              variant="secondary"
+              phx-click="delete"
+              phx-value-id={c.id}
+              data-confirm="Delete this conversation and all its turns? This cannot be undone.">
+              Delete
+            </.button>
+          </div>
+        </:col>
+      </.table>
     </div>
     """
   end
@@ -198,17 +189,11 @@ defmodule FountainWeb.ConversationsLive.Index do
     end
   end
 
-  defp sort_arrow(current, dir, field) when current == field do
-    if dir == :asc, do: "↑", else: "↓"
-  end
-
-  defp sort_arrow(_current, _dir, _field), do: "↕"
-
   attr :source, :string, default: "api"
 
   defp source_badge(%{source: "ui"} = assigns) do
     ~H"""
-    <span class="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium bg-blue-50 text-blue-700 border border-blue-200">
+    <span class="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium bg-[var(--color-info-bg)] text-[var(--color-info-text)] border border-[var(--color-info)]">
       UI
     </span>
     """
@@ -216,7 +201,7 @@ defmodule FountainWeb.ConversationsLive.Index do
 
   defp source_badge(%{source: "agent"} = assigns) do
     ~H"""
-    <span class="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium bg-amber-50 text-amber-700 border border-amber-200">
+    <span class="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium bg-[var(--color-warning-bg)] text-[var(--color-warning-text)] border border-[var(--color-warning)]">
       Agent
     </span>
     """
@@ -224,7 +209,7 @@ defmodule FountainWeb.ConversationsLive.Index do
 
   defp source_badge(assigns) do
     ~H"""
-    <span class="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium bg-zinc-100 text-zinc-500 border border-zinc-200">
+    <span class="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium bg-[var(--color-bg-2)] text-[var(--color-text-muted)] border border-[var(--color-border)]">
       API
     </span>
     """

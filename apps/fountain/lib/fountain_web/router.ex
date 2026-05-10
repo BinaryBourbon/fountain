@@ -152,6 +152,9 @@ defmodule FountainWeb.Router do
   scope "/", FountainWeb do
     pipe_through [:browser, :browser_authenticated]
 
+    # ── Theme preference — CSRF-protected, session-authenticated ────────────────
+    patch "/api/settings/theme", SettingsController, :update_theme
+
     # ── Phase-3-billing: conversation routes require an active subscription ─────────
     # :require_active_subscription runs after :require_authenticated_user and
     # redirects to /account/billing on SubscriptionRequiredError.
@@ -166,7 +169,7 @@ defmodule FountainWeb.Router do
       live "/conversations/:id", ConversationsLive.Show, :show
     end
 
-    # ── Read-only and settings routes — no subscription gate ────────────────────
+    # ── Read-only and settings routes — no subscription gate ────────────────
     # Users can reach these routes even when past_due / canceled so they can
     # view past logs, manage resources, complete onboarding, and update payment
     # details. See decisions/0006-hard-stripe-billing-gate-at-launch.md.

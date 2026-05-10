@@ -23,8 +23,7 @@ defmodule FountainWeb.ApiKeysLive.Index do
         {:noreply,
          socket
          |> assign(:keys, Accounts.list_api_keys(socket.assigns.user_id))
-         |> assign(:new_key, %{key: key, raw_token: raw_token})
-         |> put_flash(:info, "API key created — copy it now, it won't be shown again")}
+         |> assign(:new_key, %{key: key, raw_token: raw_token})}
 
       {:error, _cs} ->
         {:noreply, put_flash(socket, :error, "Failed to create API key")}
@@ -52,77 +51,87 @@ defmodule FountainWeb.ApiKeysLive.Index do
   def render(assigns) do
     ~H"""
     <div class="space-y-6 max-w-2xl">
-      <div class="flex items-center justify-between">
-        <div>
-          <h1 class="text-2xl font-semibold">API keys</h1>
-          <p class="text-sm text-zinc-500 mt-1">
-            Use these to authenticate requests to the Fountain API.
-            Keys are shown once — copy them immediately.
-          </p>
-        </div>
+      <div>
+        <h1 class="text-2xl font-semibold">API keys</h1>
+        <p class="text-sm text-[var(--color-text-secondary)] mt-1">
+          Use these to authenticate requests to the Fountain API.
+          Keys are shown once — copy them immediately.
+        </p>
       </div>
 
-      <div :if={@new_key} class="rounded-lg bg-green-50 border border-green-200 p-4 space-y-3">
-        <p class="text-sm font-medium text-green-800">
-          New API key created. Copy it now — it won't be shown again.
+      <%!-- New key reveal modal — shown immediately after creation --%>
+      <.modal id="new-key-modal" show={@new_key != nil}>
+        <:title>New API key created</:title>
+        <p class="text-sm text-[var(--color-text-secondary)] mb-4">
+          Copy this key now — it won't be shown again.
         </p>
         <div class="flex items-center gap-2">
           <code
             id="new-api-key"
-            class="flex-1 bg-white rounded border border-green-300 px-3 py-2 text-sm font-mono text-zinc-900 break-all">
-            {@new_key.raw_token}
+            class="flex-1 bg-[var(--color-bg-2)] rounded border border-[var(--color-border)] px-3 py-2 text-sm font-mono break-all">
+            {@new_key && @new_key.raw_token}
           </code>
-          <button
+          <.button
             phx-hook="CopyToClipboard"
             id="copy-api-key"
             data-target="new-api-key"
-            class="shrink-0 rounded border border-green-300 bg-white px-3 py-2 text-xs text-green-700 hover:bg-green-50">
+            variant="secondary">
             Copy
-          </button>
+          </.button>
         </div>
-        <button phx-click="dismiss_new_key" class="text-xs text-green-600 hover:text-green-800 underline">
-          I've copied it, dismiss
-        </button>
-      </div>
+        <:footer>
+          <.button phx-click="dismiss_new_key" variant="secondary">
+            I've copied it, dismiss
+          </.button>
+        </:footer>
+      </.modal>
 
-      <form phx-submit="create_key" class="flex gap-2">
-        <input type="text" name="label" placeholder="Key label (e.g. ci-deploy)"
-          required minlength="1"
-          class="flex-1 rounded-md border border-zinc-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900"/>
-        <button type="submit"
-          class="rounded-md bg-zinc-900 text-white px-4 py-2 text-sm font-medium hover:bg-zinc-700">
-          Create key
-        </button>
+      <%!-- Create new key form --%>
+      <form phx-submit="create_key" class="flex gap-2 items-end">
+        <div class="flex-1">
+          <.form_field
+            label="Key label"
+            name="label"
+            type="text"
+            placeholder="e.g. ci-deploy"
+            errors={[]}
+            required
+          />
+        </div>
+        <.button type="submit">Create key</.button>
       </form>
 
-      <div :if={@keys == []} class="rounded border border-dashed border-zinc-300 p-8 text-center text-zinc-500">
+      <div :if={@keys == []} class="rounded border border-dashed border-[var(--color-border)] p-8 text-center text-[var(--color-text-muted)]">
         No API keys yet.
       </div>
 
-      <table :if={@keys != []} class="w-full text-sm bg-white rounded shadow border border-zinc-200">
-        <thead class="text-left text-zinc-500 border-b border-zinc-200">
+      <table :if={@keys != []} class="w-full text-sm bg-[var(--color-bg-1)] rounded shadow border border-[var(--color-border)]">
+        <thead class="text-left text-[var(--color-text-muted)] border-b border-[var(--color-border)]">
           <tr>
-            <th class="px-4 py-2">Label</th>
-            <th class="px-4 py-2">Prefix</th>
-            <th class="px-4 py-2">Created</th>
-            <th class="px-4 py-2">Last used</th>
+            <th class="px-4 py-2 font-medium">Label</th>
+            <th class="px-4 py-2 font-medium">Prefix</th>
+            <th class="px-4 py-2 font-medium">Created</th>
+            <th class="px-4 py-2 font-medium">Last used</th>
             <th class="px-4 py-2"></th>
           </tr>
         </thead>
         <tbody>
-          <tr :for={k <- @keys} class="border-b border-zinc-100 last:border-0 hover:bg-zinc-50">
+          <tr :for={k <- @keys} class="border-b border-[var(--color-border)] last:border-0 hover:bg-[var(--color-bg-2)]">
             <td class="px-4 py-2 font-medium">{k.name}</td>
-            <td class="px-4 py-2 font-mono text-zinc-500 text-xs">{k.key_prefix}···</td>
-            <td class="px-4 py-2 text-zinc-500 text-xs">{format_date(k.inserted_at)}</td>
-            <td class="px-4 py-2 text-zinc-500 text-xs">
+            <td class="px-4 py-2 font-mono text-[var(--color-text-muted)] text-xs">{k.key_prefix}···</td>
+            <td class="px-4 py-2 text-[var(--color-text-muted)] text-xs">{format_date(k.inserted_at)}</td>
+            <td class="px-4 py-2 text-[var(--color-text-muted)] text-xs">
               {if k.last_used_at, do: format_date(k.last_used_at), else: "—"}
             </td>
             <td class="px-4 py-2 text-right">
-              <button phx-click="revoke" phx-value-id={k.id}
+              <.button
+                variant="ghost"
+                phx-click="revoke"
+                phx-value-id={k.id}
                 data-confirm="Revoke this key? Any integrations using it will stop working."
-                class="text-xs text-red-600 hover:text-red-800 underline">
+                class="text-[var(--color-error)] hover:text-[var(--color-error-text)]">
                 Revoke
-              </button>
+              </.button>
             </td>
           </tr>
         </tbody>
