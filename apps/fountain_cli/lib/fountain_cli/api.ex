@@ -2,31 +2,26 @@ defmodule FountainCli.Api do
   @moduledoc """
   Thin HTTP wrapper over `:httpc`. Returns parsed JSON bodies for ok
   responses and explicit errors otherwise.
+
+  Credential resolution delegates to `FountainCli.Config`, which reads
+  `FOUNTAIN_API_KEY` / `FOUNTAIN_BASE_URL` env vars first, then falls
+  through to `~/.fountain/credentials`.
   """
 
-  def base_url do
-    raw = System.get_env("AOD_BASE_URL") || "http://localhost:4000"
-    String.trim_trailing(raw, "/")
-  end
+  def base_url(opts \\ []), do: FountainCli.Config.base_url(opts)
 
   defp api_path(path), do: "/api" <> path
 
-  def token do
-    case System.get_env("AOD_TOKEN") do
-      nil -> FountainCli.die("AOD_TOKEN is not set")
-      "" -> FountainCli.die("AOD_TOKEN is empty")
-      tok -> tok
-    end
-  end
+  def token(opts \\ []), do: FountainCli.Config.api_key(opts)
 
-  def get(path), do: request(:get, api_path(path), nil)
-  def post(path, body), do: request(:post, api_path(path), body)
-  def put(path, body), do: request(:put, api_path(path), body)
-  def delete(path), do: request(:delete, api_path(path), nil)
+  def get(path, opts \\ []), do: request(:get, api_path(path), nil, opts)
+  def post(path, body, opts \\ []), do: request(:post, api_path(path), body, opts)
+  def put(path, body, opts \\ []), do: request(:put, api_path(path), body, opts)
+  def delete(path, opts \\ []), do: request(:delete, api_path(path), nil, opts)
 
-  defp request(method, path, body) do
-    url = (base_url() <> path) |> String.to_charlist()
-    headers = [{~c"authorization", ~c"Bearer " ++ String.to_charlist(token())}]
+  defp request(method, path, body, opts) do
+    url = (base_url(opts) <> path) |> String.to_charlist()
+    headers = [{~c"authorization", ~c"Bearer " ++ String.to_charlist(token(opts))}]
 
     request_tuple =
       case body do
@@ -60,8 +55,7 @@ defmodule FountainCli.Api do
   `%{id, event, data}` map and the running state. Blocks until the server
   closes or `on_event` returns `{:halt, state}`.
 
-  Implementation: shells out to `curl -N` via a Port. Lots simpler and
-  more portable than coaxing `:httpc` into chunked-stream-self mode.
+  Implementation: shells out to `curl -N` via a Port.
   """
   def stream(path, on_event, init_state, opts \\ []) do
     url = base_url() <> api_path(path)
