@@ -13,8 +13,7 @@ defmodule Fountain.Conversations.ConversationServer do
   require Logger
   require OpenTelemetry.Tracer
 
-  alias Fountain.{Agents, Conversations, Crypto, Environments, InferenceCredentials, SpritesClient, Vaults}
-  alias FountainCli.Substitution
+  alias Fountain.{Agents, Conversations, Crypto, Environments, InferenceCredentials, SpritesClient, Substitution, Vaults}
 
   # ── public api ────────────────────────────────────────────────────────────
 

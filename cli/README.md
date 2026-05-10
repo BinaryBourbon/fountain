@@ -64,19 +64,29 @@ Coverage focuses on the pure logic — credentials parser, substitution,
 SSE framing, manifest loading. Command handlers (which only assemble
 HTTP requests) are validated by smoke runs against a real server.
 
-## Parity with the Elixir CLI
+## History
 
-Every command and flag from `apps/fountain_cli/` is supported, with one
-explicit omission: the `up` / `down` self-deploy commands were removed
-from the Elixir CLI in [phase-3-cli](../plan/phase-3-cli/engineer-brief.md)
-and are not reintroduced here.
+This binary replaced the Elixir/Burrito CLI that previously lived at
+`apps/fountain_cli/`. The `${VAR}` substitution module the server still
+needs at provision time was moved into the server app as
+`Fountain.Substitution`; everything else was deleted.
 
-## Migration plan
+The `up` / `down` self-deploy commands were removed before the Go port
+(see [phase-3-cli](../plan/phase-3-cli/engineer-brief.md)) and are not
+reintroduced.
 
-1. **This PR** — Go CLI lives in `cli/`, Elixir CLI continues to ship
-   alongside it. Both release workflows run on tag push.
-2. **Validation** — Cut a tag, smoke-test the Go binary against the
-   production API for a few days.
-3. **Follow-up PR** — Delete `apps/fountain_cli/`, drop Burrito and
-   `release.yml`, rename `cli-release-go.yml` → `release.yml`, update
-   docs that point at the Burrito artifacts.
+## Install
+
+Pre-built binaries are attached to each GitHub release:
+
+```sh
+# macOS arm64
+curl -L -o fountain https://github.com/BinaryBourbon/fountain/releases/latest/download/fountain-darwin-arm64
+chmod +x fountain && sudo mv fountain /usr/local/bin/
+
+# Linux amd64
+curl -L -o fountain https://github.com/BinaryBourbon/fountain/releases/latest/download/fountain-linux-amd64
+chmod +x fountain && sudo mv fountain /usr/local/bin/
+```
+
+Pinned versions are at `https://github.com/BinaryBourbon/fountain/releases/download/<tag>/fountain-<os>-<arch>`.

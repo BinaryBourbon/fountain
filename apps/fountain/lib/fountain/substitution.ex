@@ -1,4 +1,4 @@
-defmodule FountainCli.Substitution do
+defmodule Fountain.Substitution do
   @moduledoc """
   `${VAR}` substitution for agent config (`mcp_servers`) at sprite
   provision time.
@@ -21,6 +21,10 @@ defmodule FountainCli.Substitution do
   rewritten. Missing keys are accumulated into a single error so the
   user sees every typo in one provisioning attempt instead of finding
   them one at a time.
+
+  Apply-time substitution (the same syntax, against a different vars
+  source) lives in the Go CLI under `cli/internal/substitution`. Keep
+  the two implementations behaviorally aligned.
   """
 
   @ref ~r/\$\$|\$\{([A-Z_][A-Z0-9_]*)\}/

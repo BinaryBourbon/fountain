@@ -30,7 +30,6 @@ defmodule Fountain.MixProject do
 
   defp deps do
     [
-      {:fountain_cli, in_umbrella: true},
       {:phoenix, "~> 1.8.5"},
       {:phoenix_ecto, "~> 4.5"},
       {:ecto_sql, "~> 3.13"},
@@ -58,7 +57,6 @@ defmodule Fountain.MixProject do
       {:opentelemetry_ecto, "~> 1.2", only: :prod},
       {:opentelemetry_telemetry, "~> 1.1", only: :prod},
       {:req, "~> 0.5"},
-      {:burrito, "~> 1.5", runtime: false},
       # New Fountain deps
       {:bcrypt_elixir, "~> 3.0"},
       {:uniq, "~> 0.6"},

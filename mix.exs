@@ -17,7 +17,6 @@ defmodule Fountain.Umbrella.MixProject do
 
   defp deps do
     [
-      {:burrito, "~> 1.5", runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false}
     ]
@@ -25,49 +24,10 @@ defmodule Fountain.Umbrella.MixProject do
 
   defp releases do
     [
-      fountain: [
-        applications: [fountain_cli: :permanent, runtime_tools: :permanent],
-        steps: [:assemble, &Burrito.wrap/1],
-        burrito: burrito_targets(skip_nifs: true)
-      ],
       fountain_server: [
-        applications: [fountain_cli: :permanent, fountain: :permanent]
+        applications: [fountain: :permanent]
       ]
     ]
-  end
-
-  defp burrito_targets(opts) do
-    skip_nifs = Keyword.get(opts, :skip_nifs, false)
-
-    all_targets = [
-      linux: [os: :linux, cpu: :x86_64, skip_nifs: skip_nifs],
-      macos: [
-        os: :darwin,
-        cpu: :aarch64,
-        custom_erts:
-          "https://github.com/jhgaylor/aod-ex/releases/download/vendor-erts-otp-28.4/otp_28.4_macos_universal.tar.gz",
-        skip_nifs: skip_nifs
-      ]
-    ]
-
-    selected =
-      case System.get_env("BURRITO_TARGETS") do
-        nil ->
-          all_targets
-
-        "" ->
-          all_targets
-
-        list ->
-          keys =
-            list
-            |> String.split(",", trim: true)
-            |> Enum.map(&(String.trim(&1) |> String.to_atom()))
-
-          Keyword.take(all_targets, keys)
-      end
-
-    [targets: selected, debug: Mix.env() != :prod]
   end
 
   defp aliases do
