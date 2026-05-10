@@ -4,14 +4,13 @@ The captain-picard orchestrator reads this every cycle and writes the conversati
 
 ## Now
 
-- phase-0-framing — customer-researcher (conv b6d10f62-e6c7-458d-a948-71eea2bd2fd7)
+- phase-1-press-release — growth-marketer (conv 1a9de3f5-2f7d-41fa-8cd1-5e4a3db2d309)
 
 ## Next
 
-- **G0** — Human picks product direction from the framing PR.
+- **G1** — Human approves press-release narrative to lock direction before engineering.
 
 ## Gated
 
-- **G1** — Press-release narrative locked.
 - **G2** — Architecture and engineering plan locked.
 - **G3** — Ready to ship — go/no-go for public launch.
