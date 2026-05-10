@@ -2,12 +2,17 @@ defmodule Fountain.Audit.Event do
   @moduledoc """
   An audit log entry. Append-only — there is no update / delete path.
 
-  Single-tenant, so `actor` is just a label (`"api"`, `"ui"`,
-  `"cli"`, `"system"`) rather than a user reference. `metadata` is a
-  free-form bag.
+  `user_id` attributes the event to a tenant; nullable for system events
+  and pre-tenancy backfill rows. `actor` is a coarse surface label
+  (`"api"`, `"ui"`, `"cli"`, `"system"`) kept for grouping. `metadata`
+  is a free-form bag.
   """
   use Ecto.Schema
   import Ecto.Changeset
+
+  alias Fountain.Accounts.User
+
+  @foreign_key_type :binary_id
 
   schema "audit_events" do
     field :action, :string
@@ -17,6 +22,7 @@ defmodule Fountain.Audit.Event do
     field :request_ip, :string
     field :metadata, :map, default: %{}
     field :inserted_at, :utc_datetime
+    belongs_to :user, User
   end
 
   def changeset(event, attrs) do
@@ -28,7 +34,8 @@ defmodule Fountain.Audit.Event do
       :actor,
       :request_ip,
       :metadata,
-      :inserted_at
+      :inserted_at,
+      :user_id
     ])
     |> validate_required([:action, :resource_type, :inserted_at])
   end

@@ -46,10 +46,18 @@ defmodule FountainWeb.Plugs.Audit do
       resource_id: resource_id,
       actor: "api",
       request_ip: format_ip(conn.remote_ip),
-      metadata: %{"status" => conn.status}
+      metadata: %{"status" => conn.status},
+      user_id: current_user_id(conn)
     })
 
     conn
+  end
+
+  defp current_user_id(conn) do
+    case conn.assigns[:current_user] do
+      %{id: id} -> id
+      _ -> nil
+    end
   end
 
   defp derive_resource(conn) do
