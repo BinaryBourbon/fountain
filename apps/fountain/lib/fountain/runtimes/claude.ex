@@ -53,15 +53,15 @@ defmodule Fountain.Runtimes.Claude do
   end
 
   @impl true
-  def default_env(_agent) do
+  def default_env(_agent, inference_credentials) do
     # OAuth token takes precedence — it bills against a Claude.ai
     # subscription (Pro/Team) instead of metered API usage. When set, we
     # do NOT also export ANTHROPIC_API_KEY: claude prefers the oauth
     # path, but mixing the two has caused observable surprises (auth
     # picked from the wrong env var, depending on CLI version), so we
     # pick exactly one here.
-    oauth = Application.get_env(:fountain, :claude_code_oauth_token)
-    api_key = Application.get_env(:fountain, :anthropic_api_key)
+    oauth = Map.get(inference_credentials, :claude_code_oauth_token)
+    api_key = Map.get(inference_credentials, :anthropic_api_key)
 
     cond do
       is_binary(oauth) and oauth != "" -> [{"CLAUDE_CODE_OAUTH_TOKEN", oauth}]

@@ -71,9 +71,9 @@ defmodule Fountain.Runtimes.Gemini do
   defp mcp_server_names(_), do: []
 
   @impl true
-  def default_env(_agent) do
+  def default_env(_agent, inference_credentials) do
     base =
-      case Application.get_env(:fountain, :gemini_api_key) do
+      case Map.get(inference_credentials, :gemini_api_key) do
         nil -> []
         "" -> []
         key -> [{"GEMINI_API_KEY", key}]

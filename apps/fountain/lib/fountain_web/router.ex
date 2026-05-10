@@ -198,6 +198,8 @@ defmodule FountainWeb.Router do
       live "/help/:topic", HelpLive.Show, :show
       # ── Phase-3-billing: account/billing ───────────────────────────────────
       live "/account/billing", Live.BillingLive, :index
+      # ── BYO inference credentials (ADR 0008) ───────────────────────────────
+      live "/account/inference-credentials", InferenceCredentialsLive.Index, :index
     end
 
     live_session :admin,

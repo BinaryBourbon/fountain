@@ -24,8 +24,19 @@ defmodule Fountain.Runtimes do
               opts :: keyword()
             ) :: cmd()
 
-  @doc "Default env vars for the runtime (e.g. ANTHROPIC_API_KEY)."
-  @callback default_env(agent :: %Agent{}) :: [{String.t(), String.t()}]
+  @doc """
+  Default env vars for the runtime — typically the inference credential
+  for the chosen provider (e.g. `ANTHROPIC_API_KEY`).
+
+  `inference_credentials` is a map of `%{provider_atom => plaintext_string}`
+  decrypted from the user's `inference_credentials` row at conversation
+  start (see `Fountain.InferenceCredentials.decrypted_for_user/2`).
+  Providers the user hasn't set are simply absent from the map.
+  """
+  @callback default_env(
+              agent :: %Agent{},
+              inference_credentials :: %{atom() => String.t()}
+            ) :: [{String.t(), String.t()}]
 
   @doc """
   Optionally write runtime-specific config files into the sprite at
@@ -64,7 +75,7 @@ defmodule Fountain.Runtimes do
   """
   @callback skills_sh_agent() :: String.t()
 
-  @optional_callbacks default_env: 1, write_config: 2, prepare_sprite: 3
+  @optional_callbacks default_env: 2, write_config: 2, prepare_sprite: 3
 
   @runtime_modules %{
     "claude" => Fountain.Runtimes.Claude,

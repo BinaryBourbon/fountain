@@ -13,7 +13,7 @@ defmodule Fountain.Conversations.ConversationServer do
   require Logger
   require OpenTelemetry.Tracer
 
-  alias Fountain.{Agents, Conversations, Environments, SpritesClient, Vaults}
+  alias Fountain.{Agents, Conversations, Crypto, Environments, InferenceCredentials, SpritesClient, Vaults}
   alias FountainCli.Substitution
 
   # ── public api ────────────────────────────────────────────────────────────
@@ -112,7 +112,13 @@ defmodule Fountain.Conversations.ConversationServer do
       current_turn_span: nil,
       # Bytes of replayed output to drop on reattach, keyed by stream.
       # Empty map outside a reattach window. See attempt_session_attach.
-      replay_skip: %{}
+      replay_skip: %{},
+      # Per-tenant DEK + decrypted inference credentials. Loaded in
+      # handle_continue(:provision) once the conversation row tells us the
+      # owning user_id; held for the conversation lifetime; dropped on
+      # terminate. See ADR 0008 (BYO inference credentials).
+      tenant_key: nil,
+      inference_credentials: %{}
     }
 
     {:ok, state, {:continue, :provision}}
@@ -126,8 +132,41 @@ defmodule Fountain.Conversations.ConversationServer do
     env = if agent && agent.environment_id, do: Environments.get_environment(agent.environment_id)
     vault = if conv.vault_id, do: Vaults.get_vault(conv.vault_id)
     secrets = merge_secrets(env, vault)
-    state = %{state | runtime_session_id: conv.runtime_session_id}
 
+    case load_tenant_state(conv.user_id) do
+      {:ok, dek, inference_creds} ->
+        state =
+          %{state | runtime_session_id: conv.runtime_session_id, tenant_key: dek, inference_credentials: inference_creds}
+
+        dispatch_provision(state, conv, sandbox, agent, env, vault, secrets)
+
+      {:error, reason} ->
+        Logger.error(
+          "ConversationServer could not load tenant credentials for conv #{conv.id} (user #{conv.user_id}): #{inspect(reason)}"
+        )
+
+        publish_stage(state.conversation_id, "provision", "failed", %{
+          reason: "tenant_credential_load_failed: #{inspect(reason)}"
+        })
+
+        {:ok, _} = Conversations.update_sandbox(sandbox, %{status: "failed"})
+        Conversations.update_conversation(conv, %{status: "failed"})
+        {:stop, :normal, state}
+    end
+  end
+
+  # Load the per-tenant DEK and decrypted inference credentials. Both are
+  # held in GenServer state for the conversation lifetime; the DEK is used
+  # for ad-hoc decryption (vaults, environments) and the credentials map
+  # is passed to runtime modules via build_sprite_env.
+  defp load_tenant_state(user_id) when is_binary(user_id) do
+    with {:ok, dek} <- Crypto.load_tenant_key(user_id),
+         {:ok, creds} <- InferenceCredentials.decrypted_for_user(user_id, dek) do
+      {:ok, dek, creds}
+    end
+  end
+
+  defp dispatch_provision(state, conv, sandbox, agent, env, _vault, secrets) do
     case substitute_agent_mcp(agent, env, secrets) do
       {:ok, agent} ->
         case sandbox.status do
@@ -222,7 +261,7 @@ defmodule Fountain.Conversations.ConversationServer do
         runtime = (agent && agent.runtime) || "claude"
         Fountain.SpriteSkills.mount(sprite, runtime, skills)
 
-        sprite_env = build_sprite_env(state.runtime_module, agent, env, secrets, state.conversation_id)
+        sprite_env = build_sprite_env(state.runtime_module, agent, env, secrets, state.conversation_id, state.inference_credentials)
 
         write_runtime_config(sprite, state.runtime_module, agent)
         Fountain.Conversations.Provisioning.write_env_file(sprite, sprite_env)
@@ -374,7 +413,7 @@ defmodule Fountain.Conversations.ConversationServer do
     case Sprites.get_sprite(client, sandbox.sprite_name) do
       {:ok, _info} ->
         sprite = Sprites.sprite(client, sandbox.sprite_name)
-        sprite_env = build_sprite_env(state.runtime_module, agent, env, secrets, state.conversation_id)
+        sprite_env = build_sprite_env(state.runtime_module, agent, env, secrets, state.conversation_id, state.inference_credentials)
 
         # Refresh the .env file in case secrets/env_vars were edited
         # between the original provision and this reattach.
@@ -508,8 +547,8 @@ defmodule Fountain.Conversations.ConversationServer do
     )
   end
 
-  defp build_sprite_env(runtime_module, agent, env, secrets, conversation_id) do
-    (runtime_module.default_env(agent) || []) ++
+  defp build_sprite_env(runtime_module, agent, env, secrets, conversation_id, inference_credentials) do
+    (runtime_module.default_env(agent, inference_credentials) || []) ++
       aod_callback_env() ++
       conversation_env(conversation_id) ++
       otel_propagation_env() ++
