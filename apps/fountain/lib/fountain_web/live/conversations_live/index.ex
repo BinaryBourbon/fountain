@@ -25,14 +25,24 @@ defmodule FountainWeb.ConversationsLive.Index do
 
   @impl true
   def handle_event("terminate", %{"id" => id}, socket) do
-    case Fountain.Conversations.ConversationServer.terminate(id) do
-      :ok -> {:noreply, socket |> put_flash(:info, "Terminated") |> load_data()}
-      _ -> {:noreply, put_flash(socket, :error, "Not running")}
+    user = socket.assigns.current_user
+
+    case Conversations.get_conversation(id, user.id) do
+      nil ->
+        {:noreply, put_flash(socket, :error, "Not found")}
+
+      _ ->
+        case Fountain.Conversations.ConversationServer.terminate(id) do
+          :ok -> {:noreply, socket |> put_flash(:info, "Terminated") |> load_data()}
+          _ -> {:noreply, put_flash(socket, :error, "Not running")}
+        end
     end
   end
 
   def handle_event("delete", %{"id" => id}, socket) do
-    case Conversations.get_conversation(id) do
+    user = socket.assigns.current_user
+
+    case Conversations.get_conversation(id, user.id) do
       nil ->
         {:noreply, put_flash(socket, :error, "Not found")}
 

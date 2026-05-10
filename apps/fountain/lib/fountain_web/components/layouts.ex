@@ -7,10 +7,16 @@ defmodule FountainWeb.Layouts do
 
   def app(assigns) do
     convs =
-      try do
-        Conversations.list_conversations_by_activity()
-      rescue
-        _ -> []
+      case assigns[:current_user] do
+        %{id: user_id} ->
+          try do
+            Conversations.list_conversations_by_activity(user_id)
+          rescue
+            _ -> []
+          end
+
+        _ ->
+          []
       end
 
     assigns = assign(assigns, :nav_conversations, convs)
