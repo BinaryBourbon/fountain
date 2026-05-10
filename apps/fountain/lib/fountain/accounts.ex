@@ -120,10 +120,37 @@ defmodule Fountain.Accounts do
   """
   @spec complete_onboarding(User.t()) :: {:ok, User.t()} | {:error, Ecto.Changeset.t()}
   def complete_onboarding(%User{} = user) do
+    now = DateTime.utc_now() |> DateTime.truncate(:second)
+
     user
     |> Ecto.Changeset.change(
-      onboarding_completed_at: DateTime.utc_now() |> DateTime.truncate(:second)
+      onboarding_completed_at: now,
+      onboarding_state: "completed"
     )
+    |> Repo.update()
+  end
+
+  @doc """
+  Advance the onboarding wizard to the given state.
+  Valid states: "step_1", "step_2", "step_3", "completed"
+
+  When state is "completed", also sets `onboarding_completed_at`.
+  """
+  @spec advance_onboarding(User.t(), String.t()) ::
+          {:ok, User.t()} | {:error, Ecto.Changeset.t()}
+  def advance_onboarding(%User{} = user, state)
+      when state in ~w(step_1 step_2 step_3 completed) do
+    now = DateTime.utc_now() |> DateTime.truncate(:second)
+
+    changes =
+      if state == "completed" do
+        %{onboarding_state: state, onboarding_completed_at: now}
+      else
+        %{onboarding_state: state}
+      end
+
+    user
+    |> Ecto.Changeset.change(changes)
     |> Repo.update()
   end
 
@@ -314,6 +341,25 @@ defmodule Fountain.Accounts do
     %OauthIdentity{}
     |> OauthIdentity.changeset(%{user_id: user_id, provider: provider, provider_uid: provider_uid})
     |> Repo.insert(on_conflict: :nothing, conflict_target: [:provider, :provider_uid])
+  end
+
+  @doc "List all active (non-revoked) API keys for a user, newest first."
+  def list_api_keys(user_id) when is_binary(user_id) do
+    from(k in ApiKey,
+      where: k.user_id == ^user_id and is_nil(k.revoked_at),
+      order_by: [desc: k.inserted_at]
+    )
+    |> Repo.all()
+  end
+
+  @doc "List all users, ordered by insertion date."
+  def list_users do
+    from(u in User, order_by: [asc: u.inserted_at]) |> Repo.all()
+  end
+
+  @doc "Update a user's role. Role must be 'admin' or 'user'."
+  def update_user_role(%User{} = user, role) when role in ~w(admin user) do
+    user |> Ecto.Changeset.change(role: role) |> Repo.update()
   end
 
   @doc false

@@ -17,6 +17,20 @@ defmodule Fountain.Conversations do
     Repo.all(from s in Sandbox, order_by: [desc: s.inserted_at])
   end
 
+  @doc "List active sandboxes across all tenants (admin use only)."
+  def list_sandboxes_admin do
+    alias Fountain.Accounts.User
+
+    Repo.all(
+      from s in Sandbox,
+        where: s.status not in ["terminated", "failed"],
+        order_by: [desc: s.inserted_at],
+        left_join: u in User,
+        on: u.id == s.user_id,
+        preload: [user: u]
+    )
+  end
+
   def get_sandbox(id), do: Repo.get(Sandbox, id)
   def get_sandbox!(id), do: Repo.get!(Sandbox, id)
 
@@ -140,6 +154,23 @@ defmodule Fountain.Conversations do
     Conversation
     |> Repo.get!(id)
     |> Repo.preload([:sandbox, :agent, :vault])
+  end
+
+  @doc "Get conversation scoped to user. Raises Ecto.NoResultsError on wrong owner."
+  def get_conversation!(id, user_id) when is_binary(user_id) do
+    Conversation
+    |> Repo.get_by!(id: id, user_id: user_id)
+    |> Repo.preload([:sandbox, :agent, :vault])
+  end
+
+  @doc "List conversations for user, ordered by most recently active."
+  def list_conversations(user_id) when is_binary(user_id) do
+    Repo.all(
+      from c in Conversation,
+        where: c.user_id == ^user_id,
+        order_by: [desc: c.updated_at, desc: c.id],
+        preload: [:agent, turns: ^first_turn_query()]
+    )
   end
 
   def create_conversation(attrs) do

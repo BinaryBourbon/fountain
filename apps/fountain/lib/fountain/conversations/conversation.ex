@@ -2,6 +2,7 @@ defmodule Fountain.Conversations.Conversation do
   use Ecto.Schema
   import Ecto.Changeset
 
+  alias Fountain.Accounts.User
   alias Fountain.Agents.Agent
   alias Fountain.Conversations.{Sandbox, Turn}
   alias Fountain.Vaults.Vault
@@ -18,6 +19,7 @@ defmodule Fountain.Conversations.Conversation do
     field :runtime_session_id, :string
     field :source, :string, default: "api"
     field :parent_conversation_id, :binary_id
+    belongs_to :user, User
     belongs_to :sandbox, Sandbox
     belongs_to :agent, Agent
     belongs_to :vault, Vault
@@ -44,6 +46,7 @@ defmodule Fountain.Conversations.Conversation do
       :runtime_session_id,
       :source,
       :parent_conversation_id,
+      :user_id,
       :sandbox_id,
       :agent_id,
       :vault_id

@@ -15,6 +15,20 @@ defmodule Fountain.Environments do
   def get_environment(id), do: Repo.get(Environment, id)
   def get_environment!(id), do: Repo.get!(Environment, id)
 
+  @doc "List environments scoped to user."
+  def list_environments(user_id) when is_binary(user_id) do
+    Repo.all(
+      from e in Environment,
+        where: e.user_id == ^user_id,
+        order_by: [desc: e.inserted_at, desc: e.id]
+    )
+  end
+
+  @doc "Get environment scoped to user. Raises Ecto.NoResultsError on wrong owner."
+  def get_environment!(id, user_id) when is_binary(user_id) do
+    Repo.get_by!(Environment, id: id, user_id: user_id)
+  end
+
   def create_environment(attrs) do
     %Environment{}
     |> Environment.changeset(attrs)

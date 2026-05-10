@@ -2,6 +2,7 @@ defmodule Fountain.Agents.Agent do
   use Ecto.Schema
   import Ecto.Changeset
 
+  alias Fountain.Accounts.User
   alias Fountain.Environments.Environment
 
   @primary_key {:id, :binary_id, autogenerate: true}
@@ -21,6 +22,7 @@ defmodule Fountain.Agents.Agent do
     field :skills, {:array, :map}, default: []
     field :mcp_servers, :map, default: %{}
     field :metadata, :map, default: %{}
+    belongs_to :user, User
     belongs_to :environment, Environment
     timestamps(type: :utc_datetime)
   end
@@ -38,6 +40,7 @@ defmodule Fountain.Agents.Agent do
       :skills,
       :mcp_servers,
       :metadata,
+      :user_id,
       :environment_id
     ])
     |> validate_required([:name, :model, :runtime])

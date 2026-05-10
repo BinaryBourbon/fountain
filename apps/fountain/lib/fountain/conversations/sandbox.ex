@@ -2,6 +2,7 @@ defmodule Fountain.Conversations.Sandbox do
   use Ecto.Schema
   import Ecto.Changeset
 
+  alias Fountain.Accounts.User
   alias Fountain.Conversations.Conversation
   alias Fountain.Environments.Environment
 
@@ -16,6 +17,7 @@ defmodule Fountain.Conversations.Sandbox do
     field :exit_code, :integer
     field :terminated_at, :utc_datetime
     belongs_to :environment, Environment
+    belongs_to :user, User
     has_many :conversations, Conversation
     timestamps(type: :utc_datetime)
   end
@@ -24,7 +26,7 @@ defmodule Fountain.Conversations.Sandbox do
 
   def changeset(sandbox, attrs) do
     sandbox
-    |> cast(attrs, [:sprite_name, :status, :exit_code, :terminated_at, :environment_id])
+    |> cast(attrs, [:sprite_name, :status, :exit_code, :terminated_at, :environment_id, :user_id])
     |> validate_required([:sprite_name, :status])
     |> validate_inclusion(:status, @statuses)
   end
