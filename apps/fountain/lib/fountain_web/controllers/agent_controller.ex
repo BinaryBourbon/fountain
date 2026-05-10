@@ -20,7 +20,8 @@ defmodule FountainWeb.AgentController do
   )
 
   def index(conn, _params) do
-    render(conn, :index, agents: Agents.list_agents())
+    user = conn.assigns.current_user
+    render(conn, :index, agents: Agents.list_agents(user.id, []))
   end
 
   operation(:show,
@@ -33,7 +34,9 @@ defmodule FountainWeb.AgentController do
   )
 
   def show(conn, %{"id" => id}) do
-    case Agents.get_agent(id) do
+    user = conn.assigns.current_user
+
+    case Agents.get_agent(id, user.id) do
       nil -> {:error, :not_found}
       agent -> render(conn, :show, agent: agent)
     end
@@ -49,10 +52,15 @@ defmodule FountainWeb.AgentController do
   )
 
   def create(conn, params) do
-    with {:ok, %Agent{} = agent} <- Agents.create_agent(params) do
+    user = conn.assigns.current_user
+    # Force the new agent's user_id to the authenticated user; ignore any
+    # client-supplied user_id to prevent owner spoofing.
+    attrs = Map.put(params, "user_id", user.id)
+
+    with {:ok, %Agent{} = agent} <- Agents.create_agent(attrs) do
       conn
       |> put_status(:created)
-      |> render(:show, agent: Agents.get_agent!(agent.id))
+      |> render(:show, agent: Agents.get_agent!(agent.id, user.id))
     end
   end
 
@@ -69,13 +77,17 @@ defmodule FountainWeb.AgentController do
   )
 
   def update(conn, %{"id" => id} = params) do
-    case Agents.get_agent(id) do
+    user = conn.assigns.current_user
+    # Strip user_id from update attrs so the owner can't be reassigned.
+    attrs = params |> Map.delete("id") |> Map.delete("user_id")
+
+    case Agents.get_agent(id, user.id) do
       nil ->
         {:error, :not_found}
 
       agent ->
-        with {:ok, agent} <- Agents.update_agent(agent, Map.delete(params, "id")) do
-          render(conn, :show, agent: Agents.get_agent!(agent.id))
+        with {:ok, agent} <- Agents.update_agent(agent, attrs) do
+          render(conn, :show, agent: Agents.get_agent!(agent.id, user.id))
         end
     end
   end
@@ -90,7 +102,9 @@ defmodule FountainWeb.AgentController do
   )
 
   def delete(conn, %{"id" => id}) do
-    case Agents.get_agent(id) do
+    user = conn.assigns.current_user
+
+    case Agents.get_agent(id, user.id) do
       nil ->
         {:error, :not_found}
 
