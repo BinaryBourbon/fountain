@@ -10,10 +10,9 @@ _(empty — orchestrator fills this on dispatch, with `<slice> — <role> (conv 
 
 - **phase-0-framing** — produce a side-by-side framing of candidates and decide direction at G0. Dispatch as `customer-researcher`.
 
-<TODO: replace or extend after /bootstrap. Keep entries one-line; if a slice needs more than a sentence to describe, it's too big — split it.>
-
 ## Gated
 
 - **G0** — Pick a product direction from the framing PR.
-
-<TODO: list the rest of the gates from OPERATING_MODEL.md here as they become reachable.>
+- **G1** — Press-release narrative locked.
+- **G2** — Architecture and engineering plan locked.
+- **G3** — Ready to ship — go/no-go for public launch.
