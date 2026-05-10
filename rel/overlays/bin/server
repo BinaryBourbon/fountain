@@ -2,4 +2,4 @@
 set -eu
 
 cd -P -- "$(dirname -- "$0")"
-PHX_SERVER=true exec ./agent_on_demand start
+PHX_SERVER=true exec ./fountain_server start
