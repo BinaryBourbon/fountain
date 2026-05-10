@@ -57,7 +57,7 @@ defmodule FountainWeb.UeberauthController do
           |> configure_session(renew: true)
           |> put_session(:user_id, user.id)
           |> put_session(:session_version, user.session_version)
-          |> redirect(to: "/onboarding/step/1")
+          |> redirect(to: ~p"/onboarding/step_1")
 
         {:ok, user, :existing} ->
           conn
