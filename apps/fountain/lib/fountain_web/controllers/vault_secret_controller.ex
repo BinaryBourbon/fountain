@@ -21,7 +21,9 @@ defmodule FountainWeb.VaultSecretController do
   )
 
   def index(conn, %{"vault_id" => vault_id}) do
-    case Vaults.get_vault(vault_id) do
+    user = conn.assigns.current_user
+
+    case Vaults.get_vault(vault_id, user.id) do
       nil -> {:error, :not_found}
       vault -> render(conn, :index, secrets: Vaults.list_secrets(vault))
     end
@@ -42,13 +44,15 @@ defmodule FountainWeb.VaultSecretController do
   )
 
   def create(conn, %{"vault_id" => vault_id} = params) do
-    case Vaults.get_vault(vault_id) do
+    user = conn.assigns.current_user
+
+    case Vaults.get_vault(vault_id, user.id) do
       nil ->
         {:error, :not_found}
 
       vault ->
         attrs = Map.take(params, ["key", "value"])
-        {:ok, dek} = Crypto.load_tenant_key(conn.assigns.current_user.id)
+        {:ok, dek} = Crypto.load_tenant_key(user.id)
 
         with {:ok, secret} <- Vaults.upsert_secret(vault, attrs, dek) do
           conn
@@ -71,13 +75,14 @@ defmodule FountainWeb.VaultSecretController do
   )
 
   def delete(conn, %{"vault_id" => vault_id, "id" => key}) do
-    case Vaults.get_secret(vault_id, key) do
-      nil ->
-        {:error, :not_found}
+    user = conn.assigns.current_user
 
-      secret ->
-        {:ok, _} = Vaults.delete_secret(secret)
-        send_resp(conn, :no_content, "")
+    with %_{} <- Vaults.get_vault(vault_id, user.id),
+         %_{} = secret <- Vaults.get_secret(vault_id, key) do
+      {:ok, _} = Vaults.delete_secret(secret)
+      send_resp(conn, :no_content, "")
+    else
+      _ -> {:error, :not_found}
     end
   end
 end

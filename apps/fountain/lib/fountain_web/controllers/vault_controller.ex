@@ -20,7 +20,8 @@ defmodule FountainWeb.VaultController do
   )
 
   def index(conn, _params) do
-    render(conn, :index, vaults: Vaults.list_vaults())
+    user = conn.assigns.current_user
+    render(conn, :index, vaults: Vaults.list_vaults(user.id))
   end
 
   operation(:show,
@@ -33,7 +34,9 @@ defmodule FountainWeb.VaultController do
   )
 
   def show(conn, %{"id" => id}) do
-    case Vaults.get_vault(id) do
+    user = conn.assigns.current_user
+
+    case Vaults.get_vault(id, user.id) do
       nil -> {:error, :not_found}
       vault -> render(conn, :show, vault: vault)
     end
@@ -49,7 +52,10 @@ defmodule FountainWeb.VaultController do
   )
 
   def create(conn, params) do
-    with {:ok, %Vault{} = vault} <- Vaults.create_vault(params) do
+    user = conn.assigns.current_user
+    attrs = Map.put(params, "user_id", user.id)
+
+    with {:ok, %Vault{} = vault} <- Vaults.create_vault(attrs) do
       conn
       |> put_status(:created)
       |> render(:show, vault: vault)
@@ -69,12 +75,15 @@ defmodule FountainWeb.VaultController do
   )
 
   def update(conn, %{"id" => id} = params) do
-    case Vaults.get_vault(id) do
+    user = conn.assigns.current_user
+    attrs = params |> Map.delete("id") |> Map.delete("user_id")
+
+    case Vaults.get_vault(id, user.id) do
       nil ->
         {:error, :not_found}
 
       vault ->
-        with {:ok, vault} <- Vaults.update_vault(vault, Map.delete(params, "id")) do
+        with {:ok, vault} <- Vaults.update_vault(vault, attrs) do
           render(conn, :show, vault: vault)
         end
     end
@@ -90,7 +99,9 @@ defmodule FountainWeb.VaultController do
   )
 
   def delete(conn, %{"id" => id}) do
-    case Vaults.get_vault(id) do
+    user = conn.assigns.current_user
+
+    case Vaults.get_vault(id, user.id) do
       nil ->
         {:error, :not_found}
 
