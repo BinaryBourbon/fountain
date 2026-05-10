@@ -11,9 +11,11 @@ defmodule Fountain.Application do
     Fountain.Telemetry.attach_default_logger()
 
     # OpenTelemetry instrumentation (prod only — deps not compiled in dev/test).
+    # apply/3 defers symbol resolution past compile time so dev/test compiles
+    # don't warn about modules that aren't in their build.
     if Application.spec(:opentelemetry_phoenix) do
-      OpentelemetryPhoenix.setup(adapter: :bandit)
-      OpentelemetryEcto.setup([:fountain, :repo])
+      apply(OpentelemetryPhoenix, :setup, [[adapter: :bandit]])
+      apply(OpentelemetryEcto, :setup, [[:fountain, :repo]])
       Fountain.Telemetry.attach_otel_bridge()
     end
 
