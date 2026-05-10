@@ -4,12 +4,15 @@ The captain-picard orchestrator reads this every cycle and writes the conversati
 
 ## Now
 
-- phase-2-build-plan — designer (conv 0338b29a-7245-45bf-bcf7-8e975c0eb808)
-- phase-2-build-plan — general-purpose-engineer (conv 5f0458a8-e427-4944-816c-deec8dca2795)
+- phase-3-foundation — general-purpose-engineer (conv 866bd410-239e-49be-b12d-2c6db6560410)
+- phase-3-tenant-contexts — general-purpose-engineer (conv 375654ae-31f7-4a94-a205-95b9eae0e2ba)
 
 ## Next
 
-- **G2** — Human approves architecture and engineering plan to lock build scope.
+- phase-3-auth — auth plugs, registration, email verification, GitHub OAuth, password reset, API key issuance (depends on foundation)
+- phase-3-onboarding-liveview — designer + engineer for onboarding wizard, log viewer, billing UI, API keys UI
+- phase-3-billing — Stripe integration, hard gate, usage event wiring
+- phase-3-cli — rename aod→fountain binary, new subcommands, multi-profile credentials, remove aod-up/down
 
 ## Gated
 
