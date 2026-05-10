@@ -45,10 +45,21 @@ jobs:
           elixir-version: ${{ env.ELIXIR_VERSION }}
           otp-version: ${{ env.OTP_VERSION }}
 
+      # mlugg/setup-zig@v1's index doesn't have 0.15.2; install
+      # straight from ziglang.org. macos-latest runners are aarch64.
       - name: Install Zig
-        uses: mlugg/setup-zig@v1
-        with:
-          version: ${{ env.ZIG_VERSION }}
+        shell: bash
+        run: |
+          set -euxo pipefail
+          case "${{ runner.os }}" in
+            Linux) tarball="zig-x86_64-linux-${ZIG_VERSION}.tar.xz" ;;
+            macOS) tarball="zig-aarch64-macos-${ZIG_VERSION}.tar.xz" ;;
+            *) echo "unsupported runner.os: ${{ runner.os }}"; exit 1 ;;
+          esac
+          dir="${tarball%.tar.xz}"
+          curl -fsSL "https://ziglang.org/download/${ZIG_VERSION}/${tarball}" | tar -xJ
+          echo "$PWD/${dir}" >> "$GITHUB_PATH"
+          "$PWD/${dir}/zig" version
 
       - name: Cache deps
         uses: actions/cache@v4
