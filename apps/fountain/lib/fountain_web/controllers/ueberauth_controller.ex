@@ -11,10 +11,15 @@ defmodule FountainWeb.UeberauthController do
 
   use FountainWeb, :controller
 
-  # Ueberauth calls `request/2` via its plug before this action runs; by the
-  # time Phoenix dispatches here the plug has already redirected to the
-  # provider. This action only fires if Ueberauth passes through (e.g. unknown
-  # provider), so we just redirect home.
+  # Ueberauth's plug handles the request phase (redirect to the provider)
+  # and the callback phase (parse the response into assigns). It MUST be
+  # in the controller's plug pipeline — otherwise `request/2` is hit
+  # directly and falls through to the "Unknown OAuth provider" branch.
+  # The `base_path` in config/config.exs must match the route prefix
+  # (`/auth/oauth`) for the plug to recognize the path.
+  plug Ueberauth
+
+  # Only fires if Ueberauth passes through (unknown / unconfigured provider).
   def request(conn, _params) do
     conn
     |> put_flash(:error, "Unknown OAuth provider.")

@@ -23,8 +23,12 @@ config :phoenix, :json_library, Jason
 # Swoosh mailer
 config :fountain, Fountain.Mailer, adapter: Swoosh.Adapters.Local
 
-# Ueberauth — GitHub OAuth strategy
+# Ueberauth — GitHub OAuth strategy.
+# `base_path` matches the router prefix in router.ex (`/auth/oauth/:provider`);
+# without it the plug ignores the requests and the controller's :request
+# action runs directly, redirecting users back to /auth/login.
 config :ueberauth, Ueberauth,
+  base_path: "/auth/oauth",
   providers: [
     github: {Ueberauth.Strategy.Github, [default_scope: "user:email"]}
   ]

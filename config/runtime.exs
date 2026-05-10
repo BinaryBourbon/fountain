@@ -89,7 +89,9 @@ cluster_topologies =
 config :libcluster, topologies: cluster_topologies
 
 # GitHub OAuth (§2.4)
+# base_path must match the router prefix in router.ex (/auth/oauth/:provider).
 config :ueberauth, Ueberauth,
+  base_path: "/auth/oauth",
   providers: [
     github: {Ueberauth.Strategy.Github, [default_scope: "user:email"]}
   ]
