@@ -385,10 +385,17 @@ func applyAgent(c *api.Client, d *manifest.Doc, envIDByName map[string]string) b
 
 // buildBody returns the request body for a resource (spec minus
 // `secrets`, with `name` set) and a separate map of secrets to upsert.
+//
+// Strips ownership fields (user_id, created_by) so a malicious or
+// careless manifest can't try to attribute resources to another tenant.
+// The server enforces this on its own, but defense-in-depth: don't
+// transmit fields the server is just going to drop.
 func buildBody(d *manifest.Doc, name string) (map[string]any, map[string]any) {
 	body := cloneMap(d.Spec)
 	secretsMap, _ := body["secrets"].(map[string]any)
 	delete(body, "secrets")
+	delete(body, "user_id")
+	delete(body, "created_by")
 	body["name"] = name
 	return body, secretsMap
 }
