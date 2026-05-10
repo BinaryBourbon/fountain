@@ -53,16 +53,21 @@ defmodule Fountain.Environments do
     Repo.get_by(Secret, environment_id: env_id, key: key)
   end
 
-  def upsert_secret(%Environment{id: env_id}, %{"key" => key} = attrs) do
+  @doc """
+  Insert or update an environment secret. The plaintext `attrs["value"]` is
+  encrypted with the supplied per-tenant `dek` before persisting.
+  """
+  def upsert_secret(%Environment{id: env_id}, %{"key" => key} = attrs, dek)
+      when is_binary(dek) do
     case get_secret(env_id, key) do
       nil ->
         %Secret{}
-        |> Secret.changeset(Map.put(attrs, "environment_id", env_id))
+        |> Secret.changeset(Map.put(attrs, "environment_id", env_id), dek)
         |> Repo.insert()
 
       existing ->
         existing
-        |> Secret.changeset(attrs)
+        |> Secret.changeset(attrs, dek)
         |> Repo.update()
     end
   end
@@ -71,14 +76,14 @@ defmodule Fountain.Environments do
 
   @doc """
   Returns a flat map `%{"KEY" => "plaintext"}` of all decrypted secrets
-  attached to the given environment. Used when materializing env vars
-  into a Sprite.
+  attached to the given environment. Caller must supply the per-tenant `dek`
+  (load via `Fountain.Crypto.load_tenant_key/1`).
   """
-  def decrypted_env(%Environment{} = env) do
+  def decrypted_env(%Environment{} = env, dek) when is_binary(dek) do
     env
     |> list_secrets()
     |> Enum.reduce(%{}, fn secret, acc ->
-      case Secret.decrypt(secret) do
+      case Secret.decrypt(secret, dek) do
         {:ok, plain} -> Map.put(acc, secret.key, plain)
         :error -> acc
       end

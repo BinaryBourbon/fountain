@@ -1,18 +1,20 @@
 defmodule FountainWeb.VaultsLive.Form do
   use FountainWeb, :live_view
 
-  alias Fountain.Vaults
+  alias Fountain.{Crypto, Vaults}
   alias Fountain.Vaults.Vault
 
   @impl true
   def mount(params, _session, socket) do
     user_id = socket.assigns.current_user.id
     {vault, action} = load(params, user_id)
+    {:ok, dek} = Crypto.load_tenant_key(user_id)
 
     {:ok,
      socket
      |> assign(:page_title, page_title(action))
      |> assign(:user_id, user_id)
+     |> assign(:tenant_key, dek)
      |> assign(:action, action)
      |> assign(:vault, vault)
      |> assign(:form, vault_to_form(vault))
@@ -52,7 +54,7 @@ defmodule FountainWeb.VaultsLive.Form do
 
   def handle_event("add_secret", %{"secret" => %{"key" => k, "value" => v}}, socket)
       when k != "" and v != "" do
-    case Vaults.upsert_secret(socket.assigns.vault, %{"key" => k, "value" => v}) do
+    case Vaults.upsert_secret(socket.assigns.vault, %{"key" => k, "value" => v}, socket.assigns.tenant_key) do
       {:ok, _} ->
         {:noreply,
          socket

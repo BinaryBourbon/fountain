@@ -66,7 +66,8 @@ defmodule Fountain.Factory do
       %{"key" => "TEST_KEY_#{uniq()}", "value" => "test-value-#{uniq()}"}
       |> Map.merge(to_string_map(overrides))
 
-    {:ok, secret} = Fountain.Environments.upsert_secret(env, attrs)
+    {:ok, dek} = Fountain.Crypto.load_tenant_key(env.user_id)
+    {:ok, secret} = Fountain.Environments.upsert_secret(env, attrs, dek)
     secret
   end
 
@@ -89,7 +90,8 @@ defmodule Fountain.Factory do
       %{"key" => "TEST_KEY_#{uniq()}", "value" => "test-value-#{uniq()}"}
       |> Map.merge(to_string_map(overrides))
 
-    {:ok, secret} = Fountain.Vaults.upsert_secret(vault, attrs)
+    {:ok, dek} = Fountain.Crypto.load_tenant_key(vault.user_id)
+    {:ok, secret} = Fountain.Vaults.upsert_secret(vault, attrs, dek)
     secret
   end
 
