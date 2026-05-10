@@ -51,16 +51,12 @@ projects:
                 sync: false
               - key: STRIPE_WEBHOOK_SECRET
                 sync: false
-              - key: SMTP_HOST
+
+              # Resend transactional email
+              - key: RESEND_API_KEY
                 sync: false
-              - key: SMTP_PORT
-                sync: false
-              - key: SMTP_USERNAME
-                sync: false
-              - key: SMTP_PASSWORD
-                sync: false
-              - key: SMTP_FROM
-                sync: false
+              - key: EMAIL_FROM
+                value: noreply@fountain.dev
 
               - key: ELIXIR_VERSION
                 value: "1.18.4"

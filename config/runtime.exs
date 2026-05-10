@@ -105,21 +105,16 @@ config :stripity_stripe,
   api_key: System.get_env("STRIPE_SECRET_KEY"),
   webhook_secret: System.get_env("STRIPE_WEBHOOK_SECRET")
 
-# Swoosh SMTP adapter for prod; overridden to Local/Test in dev/test via env configs
+# Swoosh Resend adapter for prod; overridden to Local/Test in dev/test via env configs.
+# Domain (fountain.dev) must be verified in Resend with SPF/DKIM/DMARC DNS records
+# before the configured EMAIL_FROM address can deliver.
 if config_env() == :prod do
-  smtp_from = System.get_env("SMTP_FROM", "noreply@fountain.dev")
+  config :fountain, :email_from, System.get_env("EMAIL_FROM", "noreply@fountain.dev")
 
-  config :fountain, :smtp_from, smtp_from
-
-  if System.get_env("SMTP_HOST") do
+  if api_key = System.get_env("RESEND_API_KEY") do
     config :fountain, Fountain.Mailer,
-      adapter: Swoosh.Adapters.SMTP,
-      relay: System.get_env("SMTP_HOST"),
-      port: String.to_integer(System.get_env("SMTP_PORT", "587")),
-      username: System.get_env("SMTP_USERNAME"),
-      password: System.get_env("SMTP_PASSWORD"),
-      tls: :if_available,
-      auth: :if_available
+      adapter: Swoosh.Adapters.Resend,
+      api_key: api_key
   end
 end
 
