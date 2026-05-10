@@ -16,7 +16,10 @@ env:
   # (vendor-erts-otp-28.4). Bytecode built here runs against that ERTS,
   # so the major version MUST match.
   OTP_VERSION: "28.4"
-  ZIG_VERSION: "0.13.0"
+  # Burrito 1.5.0 requires zig 0.15.2 (checked at build time in
+  # `Burrito.check_zig_version/0`). Bumping below that range will
+  # fail with "Your Zig version does not match the one Burrito requires".
+  ZIG_VERSION: "0.15.2"
 
 jobs:
   build:
