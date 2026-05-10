@@ -1,72 +1,76 @@
-services:
-  - type: web
-    name: fountain
-    runtime: elixir
-    plan: starter
-    region: oregon
-    buildCommand: |
-      mix local.hex --force
-      mix local.rebar --force
-      mix deps.get --only prod
-      MIX_ENV=prod mix compile
-      MIX_ENV=prod mix release
-    startCommand: _build/prod/rel/fountain_server/bin/server
-    preDeployCommand: _build/prod/rel/fountain_server/bin/migrate
-    healthCheckPath: /health
+projects:
+  - name: fountain
+    environments:
+      - name: prod
+        services:
+          - type: web
+            name: fountain
+            runtime: elixir
+            plan: starter
+            region: oregon
+            buildCommand: |
+              mix local.hex --force
+              mix local.rebar --force
+              mix deps.get --only prod
+              MIX_ENV=prod mix compile
+              MIX_ENV=prod mix release
+            startCommand: _build/prod/rel/fountain_server/bin/server
+            preDeployCommand: _build/prod/rel/fountain_server/bin/migrate
+            healthCheckPath: /health
 
-    envVars:
-      - key: PHX_SERVER
-        value: "true"
-      - key: FOUNTAIN_DOMAIN
-        value: fountain.onrender.com
-      - key: PORT
-        value: "10000"
+            envVars:
+              - key: PHX_SERVER
+                value: "true"
+              - key: FOUNTAIN_DOMAIN
+                value: fountain.onrender.com
+              - key: PORT
+                value: "10000"
 
-      # Auto-generated secrets
-      - key: SECRET_KEY_BASE
-        generateValue: true
+              # Auto-generated secrets
+              - key: SECRET_KEY_BASE
+                generateValue: true
 
-      # Set via dashboard (sync: false hides from yaml)
-      - key: MASTER_SECRETS_KEY
-        sync: false
-      - key: SPRITES_TOKEN
-        sync: false
-      - key: ANTHROPIC_API_KEY
-        sync: false
-      - key: GITHUB_OAUTH_CLIENT_ID
-        sync: false
-      - key: GITHUB_OAUTH_CLIENT_SECRET
-        sync: false
-      - key: STRIPE_SECRET_KEY
-        sync: false
-      - key: STRIPE_PUBLISHABLE_KEY
-        sync: false
-      - key: STRIPE_WEBHOOK_SECRET
-        sync: false
-      - key: SMTP_HOST
-        sync: false
-      - key: SMTP_PORT
-        sync: false
-      - key: SMTP_USERNAME
-        sync: false
-      - key: SMTP_PASSWORD
-        sync: false
-      - key: SMTP_FROM
-        sync: false
+              # Set via dashboard (sync: false hides from yaml)
+              - key: MASTER_SECRETS_KEY
+                sync: false
+              - key: SPRITES_TOKEN
+                sync: false
+              - key: ANTHROPIC_API_KEY
+                sync: false
+              - key: GITHUB_OAUTH_CLIENT_ID
+                sync: false
+              - key: GITHUB_OAUTH_CLIENT_SECRET
+                sync: false
+              - key: STRIPE_SECRET_KEY
+                sync: false
+              - key: STRIPE_PUBLISHABLE_KEY
+                sync: false
+              - key: STRIPE_WEBHOOK_SECRET
+                sync: false
+              - key: SMTP_HOST
+                sync: false
+              - key: SMTP_PORT
+                sync: false
+              - key: SMTP_USERNAME
+                sync: false
+              - key: SMTP_PASSWORD
+                sync: false
+              - key: SMTP_FROM
+                sync: false
 
-      - key: ELIXIR_VERSION
-        value: "1.18.4"
-      - key: ERLANG_VERSION
-        value: "27.0"
+              - key: ELIXIR_VERSION
+                value: "1.18.4"
+              - key: ERLANG_VERSION
+                value: "27.0"
 
-      - key: DATABASE_URL
-        fromDatabase:
-          name: fountain-db
-          property: connectionString
+              - key: DATABASE_URL
+                fromDatabase:
+                  name: fountain-db
+                  property: connectionString
 
-databases:
-  - name: fountain-db
-    plan: basic-256mb
-    region: oregon
-    databaseName: fountain
-    user: fountain
+        databases:
+          - name: fountain-db
+            plan: basic-256mb
+            region: oregon
+            databaseName: fountain
+            user: fountain
