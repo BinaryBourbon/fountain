@@ -131,10 +131,11 @@ defmodule Fountain.Conversations.ConversationServer do
     agent = if conv.agent_id, do: Agents.get_agent!(conv.agent_id), else: nil
     env = if agent && agent.environment_id, do: Environments.get_environment(agent.environment_id)
     vault = if conv.vault_id, do: Vaults.get_vault(conv.vault_id)
-    secrets = merge_secrets(env, vault)
 
     case load_tenant_state(conv.user_id) do
       {:ok, dek, inference_creds} ->
+        secrets = merge_secrets(env, vault, dek)
+
         state =
           %{state | runtime_session_id: conv.runtime_session_id, tenant_key: dek, inference_credentials: inference_creds}
 
@@ -577,9 +578,9 @@ defmodule Fountain.Conversations.ConversationServer do
 
   # Env secrets first, vault overrides last — vault wins on key collision.
   # Same merged map feeds repositories[].secret_key resolution.
-  defp merge_secrets(env, vault) do
-    env_secrets = if env, do: Environments.decrypted_env(env), else: %{}
-    vault_secrets = if vault, do: Vaults.decrypted_env(vault), else: %{}
+  defp merge_secrets(env, vault, dek) do
+    env_secrets = if env, do: Environments.decrypted_env(env, dek), else: %{}
+    vault_secrets = if vault, do: Vaults.decrypted_env(vault, dek), else: %{}
     Map.merge(env_secrets, vault_secrets)
   end
 

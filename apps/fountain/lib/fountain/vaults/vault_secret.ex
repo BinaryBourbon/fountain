@@ -16,24 +16,33 @@ defmodule Fountain.Vaults.VaultSecret do
     timestamps(type: :utc_datetime)
   end
 
-  def changeset(secret, attrs) do
+  @doc """
+  Build a changeset that encrypts `attrs["value"]` with the supplied
+  per-tenant `dek` before persisting. The plaintext is never stored.
+  """
+  def changeset(secret, attrs, dek) when is_binary(dek) do
     secret
     |> cast(attrs, [:key, :value, :vault_id])
     |> validate_required([:key, :value, :vault_id])
     |> validate_format(:key, ~r/^[A-Z][A-Z0-9_]*$/, message: "must be UPPER_SNAKE_CASE")
     |> validate_length(:key, min: 1, max: 200)
-    |> put_ciphertext()
+    |> put_ciphertext(dek)
     |> unique_constraint([:vault_id, :key])
   end
 
-  defp put_ciphertext(changeset) do
+  defp put_ciphertext(changeset, dek) do
     case get_change(changeset, :value) do
       nil -> changeset
-      value -> put_change(changeset, :value_ciphertext, Crypto.encrypt(value))
+      value -> put_change(changeset, :value_ciphertext, Crypto.encrypt(value, dek))
     end
   end
 
-  @doc "Decrypt the value. Returns `{:ok, plaintext}` or `:error`."
-  def decrypt(%__MODULE__{value_ciphertext: ct}) when is_binary(ct), do: Crypto.decrypt(ct)
-  def decrypt(_), do: :error
+  @doc """
+  Decrypt the value with the supplied per-tenant `dek`.
+  Returns `{:ok, plaintext}` or `:error`.
+  """
+  def decrypt(%__MODULE__{value_ciphertext: ct}, dek) when is_binary(ct) and is_binary(dek),
+    do: Crypto.decrypt(ct, dek)
+
+  def decrypt(_, _), do: :error
 end

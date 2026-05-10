@@ -2,7 +2,7 @@ defmodule FountainWeb.VaultSecretController do
   use FountainWeb, :controller
   use OpenApiSpex.ControllerSpecs
 
-  alias Fountain.Vaults
+  alias Fountain.{Crypto, Vaults}
   alias FountainWeb.Schemas
 
   action_fallback FountainWeb.FallbackController
@@ -48,8 +48,9 @@ defmodule FountainWeb.VaultSecretController do
 
       vault ->
         attrs = Map.take(params, ["key", "value"])
+        {:ok, dek} = Crypto.load_tenant_key(conn.assigns.current_user.id)
 
-        with {:ok, secret} <- Vaults.upsert_secret(vault, attrs) do
+        with {:ok, secret} <- Vaults.upsert_secret(vault, attrs, dek) do
           conn
           |> put_status(:created)
           |> render(:show, secret: secret)

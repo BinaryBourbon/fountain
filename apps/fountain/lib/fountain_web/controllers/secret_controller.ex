@@ -2,7 +2,7 @@ defmodule FountainWeb.SecretController do
   use FountainWeb, :controller
   use OpenApiSpex.ControllerSpecs
 
-  alias Fountain.Environments
+  alias Fountain.{Crypto, Environments}
   alias FountainWeb.Schemas
 
   action_fallback FountainWeb.FallbackController
@@ -48,8 +48,9 @@ defmodule FountainWeb.SecretController do
 
       env ->
         attrs = Map.take(params, ["key", "value"])
+        {:ok, dek} = Crypto.load_tenant_key(conn.assigns.current_user.id)
 
-        with {:ok, secret} <- Environments.upsert_secret(env, attrs) do
+        with {:ok, secret} <- Environments.upsert_secret(env, attrs, dek) do
           conn
           |> put_status(:created)
           |> render(:show, secret: secret)
