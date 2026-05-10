@@ -64,7 +64,6 @@ defmodule Fountain.MixProject do
       {:uniq, "~> 0.6"},
       {:stripity_stripe, "~> 3.0"},
       {:swoosh, "~> 1.17"},
-      {:gen_smtp, "~> 1.2"},
       {:ueberauth, "~> 0.10"},
       {:ueberauth_github, "~> 0.8"},
       # Test / dev
