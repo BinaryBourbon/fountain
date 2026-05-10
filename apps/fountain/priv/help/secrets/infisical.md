@@ -1,6 +1,6 @@
 # Infisical (`infisical://`)
 
-Use the Infisical CLI to resolve `infisical://` references at `aod apply` time. AoD calls `infisical secrets get` on your machine — it never sees your Infisical credentials.
+Use the Infisical CLI to resolve `infisical://` references at `fountain apply` time. Fountain calls `infisical secrets get` on your machine — it never sees your Infisical credentials.
 
 ## Prerequisites
 
@@ -29,15 +29,15 @@ infisical login                        # opens browser or prompts credentials
 infisical init                         # creates .infisical.json with your project ID
 ```
 
-After `infisical init`, references using the empty-project form (`infisical:///<env>/<name>`) pick up the project automatically from `.infisical.json`. Run `aod apply` from the same directory.
+After `infisical init`, references using the empty-project form (`infisical:///<env>/<name>`) pick up the project automatically from `.infisical.json`. Run `fountain apply` from the same directory.
 
 ### Token-based (CI / headless)
 
-Generate a service token or machine identity token in the Infisical dashboard, then set it before running `aod apply`:
+Generate a service token or machine identity token in the Infisical dashboard, then set it before running `fountain apply`:
 
 ```bash
 export INFISICAL_TOKEN=st.your-token-here...
-./aod apply -f aod.yml
+fountain apply -f fountain.yml
 ```
 
 Service tokens are scoped to a project + environment, so the project can be omitted from the URI. Machine identity tokens are project-agnostic — include the project ID in the URI.
@@ -74,7 +74,7 @@ infisical projects list
 
 ```yaml
 ---
-apiVersion: aod/v1
+apiVersion: fountain/v1
 kind: Environment
 metadata:
   name: ravi-hq
@@ -91,7 +91,7 @@ spec:
     NPM_TOKEN: infisical:///prod/npm/NPM_TOKEN
 
 ---
-apiVersion: aod/v1
+apiVersion: fountain/v1
 kind: Vault
 metadata:
   name: alice
@@ -104,14 +104,14 @@ spec:
 
 ```bash
 infisical login
-infisical init    # run once in the directory where you'll run aod apply
-./aod apply -f aod.yml
+infisical init    # run once in the directory where you'll run fountain apply
+fountain apply -f fountain.yml
 ```
 
 ### CI (token auth)
 
 ```bash
-INFISICAL_TOKEN=st.your-token... ./aod apply -f aod.yml
+INFISICAL_TOKEN=st.your-token... fountain apply -f fountain.yml
 ```
 
 Output:

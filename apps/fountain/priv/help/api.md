@@ -5,7 +5,7 @@ The full API spec lives at:
 - **[/api/openapi.json](/api/openapi.json)** — OpenAPI 3 spec, generated from controller decls
 - **[/api/docs](/api/docs)** — Swagger UI; click "Authorize" to set your bearer token and try calls inline
 
-Everything under `/api/*` requires `Authorization: Bearer <ADMIN_TOKEN>`.
+Everything under `/api/*` requires `Authorization: Bearer <FOUNTAIN_API_KEY>`. Mint one with `fountain auth login` (writes to `~/.fountain/credentials`) or `fountain keys create` (prints a raw key for scripting).
 
 ## Endpoint summary
 

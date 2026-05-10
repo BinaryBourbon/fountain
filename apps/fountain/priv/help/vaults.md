@@ -13,15 +13,15 @@ Vaults are not bound to a user, team, or environment — they're loose bags. v1 
 ## Create one
 
 ```bash
-curl -s -X POST "$AOD_BASE_URL/api/vaults" \
-  -H "Authorization: Bearer $AOD_TOKEN" -H "Content-Type: application/json" \
+curl -s -X POST "$FOUNTAIN_BASE_URL/api/vaults" \
+  -H "Authorization: Bearer $FOUNTAIN_API_KEY" -H "Content-Type: application/json" \
   -d '{"name":"alice","description":"Alice'"'"'s GitHub + npm credentials"}'
 ```
 
 Or via CLI:
 
 ```bash
-aod vault create alice --description "Alice's GitHub + npm credentials"
+fountain vault create alice --description "Alice's GitHub + npm credentials"
 ```
 
 ## Add secrets
@@ -29,29 +29,29 @@ aod vault create alice --description "Alice's GitHub + npm credentials"
 Vault secrets are AES-256-GCM encrypted at rest. Values are write-only — the API never returns them.
 
 ```bash
-aod vault set-secret alice GITHUB_TOKEN ghp_alice_...
-aod vault set-secret alice NPM_TOKEN    npm_alice_...
+fountain vault set-secret alice GITHUB_TOKEN ghp_alice_...
+fountain vault set-secret alice NPM_TOKEN    npm_alice_...
 ```
 
 Equivalently:
 
 ```bash
-curl -s -X POST "$AOD_BASE_URL/api/vaults/<vault_id>/secrets" \
-  -H "Authorization: Bearer $AOD_TOKEN" -H "Content-Type: application/json" \
+curl -s -X POST "$FOUNTAIN_BASE_URL/api/vaults/<vault_id>/secrets" \
+  -H "Authorization: Bearer $FOUNTAIN_API_KEY" -H "Content-Type: application/json" \
   -d '{"key":"GITHUB_TOKEN","value":"ghp_alice_..."}'
 ```
 
 ## Use one when starting a conversation
 
 ```bash
-aod run AODDocsWriter -p "Open a docs PR." --vault alice
+fountain run docs-writer -p "Open a docs PR." --vault alice
 ```
 
 Or via the API:
 
 ```bash
-curl -s -X POST "$AOD_BASE_URL/api/conversations" \
-  -H "Authorization: Bearer $AOD_TOKEN" -H "Content-Type: application/json" \
+curl -s -X POST "$FOUNTAIN_BASE_URL/api/conversations" \
+  -H "Authorization: Bearer $FOUNTAIN_API_KEY" -H "Content-Type: application/json" \
   -d '{"agent_id":"<id>","vault_id":"<vault_id>","prompt":"..."}'
 ```
 
@@ -74,11 +74,11 @@ Repository clones that reference `secret_key: GITHUB_TOKEN` see the vault's valu
 
 ## Manifest
 
-Vaults are first-class in `aod apply`:
+Vaults are first-class in `fountain apply`:
 
 ```yaml
 ---
-apiVersion: aod/v1
+apiVersion: fountain/v1
 kind: Vault
 metadata:
   name: alice
@@ -89,4 +89,4 @@ spec:
     NPM_TOKEN: npm_alice_...
 ```
 
-Inline secrets here are convenient for boostrapping but mean the manifest holds plaintext — keep `aod.yml` out of version control or use a per-environment overlay.
+Inline secrets here are convenient for bootstrapping but mean the manifest holds plaintext — keep `fountain.yml` out of version control or use a per-environment overlay.

@@ -9,13 +9,13 @@ An **Agent** is a named configuration for a single coding-agent CLI. It bundles 
 - optional **skills** — names of bundled skills to mount into the sprite
 - optional **mcp_servers** — MCP servers the agent should connect to
 
-When you start a conversation against an agent, AoD provisions a fresh sprite based on the environment, mounts the agent's skills, writes runtime-specific config (e.g. claude's `~/.claude.json`), and runs the runtime CLI inside.
+When you start a conversation against an agent, Fountain provisions a fresh sprite based on the environment, mounts the agent's skills, writes runtime-specific config (e.g. claude's `~/.claude.json`), and runs the runtime CLI inside.
 
 ## Create one via the API
 
 ```bash
-curl -s -X POST "$AOD_BASE_URL/api/agents" \
-  -H "Authorization: Bearer $AOD_TOKEN" -H "Content-Type: application/json" \
+curl -s -X POST "$FOUNTAIN_BASE_URL/api/agents" \
+  -H "Authorization: Bearer $FOUNTAIN_API_KEY" -H "Content-Type: application/json" \
   -d '{
     "name": "researcher",
     "runtime": "claude",
@@ -39,11 +39,11 @@ The `model` field always uses the `provider/model` shape — even though codex/g
 
 ## Bulk-managing via manifest
 
-If you've got more than two or three agents, use **`aod apply -f aod.yml`**. See **Manifest** for the YAML format.
+If you've got more than two or three agents, use **`fountain apply -f fountain.yml`**. See **Manifest** for the YAML format.
 
 ## `${VAR}` substitution in `mcp_servers`
 
-Most MCP clients don't expand env vars in their config — they read literal strings. So when AoD writes the runtime's MCP config (claude's `~/.claude.json`, codex's `~/.codex/config.toml`, etc.), it substitutes `${VAR}` references **eagerly**, at provision time, against the merged `env_vars` + environment secrets + vault secrets map. Vault wins on key collision.
+Most MCP clients don't expand env vars in their config — they read literal strings. So when Fountain writes the runtime's MCP config (claude's `~/.claude.json`, codex's `~/.codex/config.toml`, etc.), it substitutes `${VAR}` references **eagerly**, at provision time, against the merged `env_vars` + environment secrets + vault secrets map. Vault wins on key collision.
 
 ```yaml
 mcp_servers:
@@ -77,7 +77,7 @@ Use `$${VAR}` only when the MCP server (or some downstream process the runtime s
 | gemini | `gemini` | `google/gemini-2.5-pro` | `GEMINI_API_KEY` |
 | opencode | `opencode` | `provider/model` (anthropic / openai / google) | per provider |
 
-Each has its own quirks — codex needs a one-shot login, opencode auto-installs from `bun install -g`, gemini needs `--allowed-mcp-server-names` for MCP, etc. The runtime modules in `lib/agent_on_demand/runtimes/*.ex` handle these transparently.
+Each has its own quirks — codex needs a one-shot login, opencode auto-installs from `bun install -g`, gemini needs `--allowed-mcp-server-names` for MCP, etc. The runtime modules in `apps/fountain/lib/fountain/runtimes/*.ex` handle these transparently.
 
 ## Skills
 
@@ -87,4 +87,4 @@ Skills are reusable instructional/context files that get mounted into a sprite a
 - For **codex**: concatenated into `~/.codex/AGENTS.md`.
 - For **gemini**: concatenated into `~/.gemini/GEMINI.md`.
 
-Bundled skills live under `priv/sprite_skills/`. Reference them by directory name in the agent's `skills` array. The bundled `aod` skill is **always** mounted regardless — it's how a sprite-internal agent calls back to spawn more conversations.
+Bundled skills live under `apps/fountain/priv/sprite_skills/`. Reference them by directory name in the agent's `skills` array. The bundled `aod` skill is **always** mounted regardless — it's how a sprite-internal agent calls back to spawn more conversations.

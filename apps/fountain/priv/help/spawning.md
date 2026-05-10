@@ -2,10 +2,12 @@
 
 Every conversation gets two env vars in its sprite:
 
-- `AOD_BASE_URL` — your AoD's public URL (e.g. `https://aod.example.com`)
-- `AOD_TOKEN` — the same admin token you'd use as an operator
+- `AOD_BASE_URL` — your Fountain server's public URL (e.g. `https://fountain.inevitable.fyi`)
+- `AOD_TOKEN` — an API key the conversation can use to call back
 
 Plus the bundled **`aod` skill** mounted under `~/.claude/skills/aod/` (or the runtime equivalent). With those three pieces, any agent inside a sprite can call back to the API and spawn more conversations.
+
+> The env-var names (`AOD_*`) and the bundled skill name are leftovers from the project's previous name. They're stable contracts the bundled skill keys off of — renaming them would break every sprite-internal script. Treat them as opaque identifiers that mean "the Fountain callback URL/key".
 
 ## Patterns the agent will use
 
@@ -74,7 +76,7 @@ The SSE endpoint normally holds open for ~60s waiting for new events. When the c
 
 ## Security model — what to know
 
-The sprite-side `AOD_TOKEN` is the **same** admin token operators use. Anything inside a sprite can do anything an operator can — create/delete other agents, list other conversations, etc. There's no scoping today. Treat prompt-injection on a sprite-bound agent as a full privilege escalation. Per-conversation scoped tokens are on the roadmap.
+The sprite-side `AOD_TOKEN` is a regular Fountain API key — it carries the same blast radius the owning user has. Anything inside a sprite can create/delete agents, list conversations, etc. on behalf of that user. There's no per-conversation scoping today. Treat prompt-injection on a sprite-bound agent as a full account takeover for that user. Per-conversation scoped tokens are on the roadmap.
 
 ## Tunneling
 

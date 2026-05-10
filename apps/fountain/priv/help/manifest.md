@@ -1,13 +1,13 @@
-# Declarative manifest (`aod apply`)
+# Declarative manifest (`fountain apply`)
 
 For more than a handful of agents/environments, manage them as YAML and reconcile via the CLI.
 
 ## Format
 
-A `aod.yml` is a multi-document YAML file. Each doc is one resource with three top-level fields:
+A `fountain.yml` is a multi-document YAML file. Each doc is one resource with three top-level fields:
 
 ```yaml
-apiVersion: aod/v1
+apiVersion: fountain/v1
 kind: Environment | Vault | Agent
 metadata:
   name: <unique-on-operator-side>
@@ -19,13 +19,13 @@ The `metadata.name` is the upsert key. If a resource with that name exists, it's
 
 ## Order is irrelevant inside the file
 
-`aod apply` reconciles **environments first, vaults second, agents last** — so an agent doc can reference an environment by name (`spec.environment: my-env`) even if that environment is defined later in the file. Vaults aren't referenced from agents (they're picked per-conversation), so the order between envs and vaults doesn't matter functionally; the predictable ordering just makes the apply output easier to skim.
+`fountain apply` reconciles **environments first, vaults second, agents last** — so an agent doc can reference an environment by name (`spec.environment: my-env`) even if that environment is defined later in the file. Vaults aren't referenced from agents (they're picked per-conversation), so the order between envs and vaults doesn't matter functionally; the predictable ordering just makes the apply output easier to skim.
 
 ## Example
 
 ```yaml
 ---
-apiVersion: aod/v1
+apiVersion: fountain/v1
 kind: Environment
 metadata:
   name: my-project
@@ -35,7 +35,7 @@ spec:
   setup_script: cd /workspace && uv sync
 
 ---
-apiVersion: aod/v1
+apiVersion: fountain/v1
 kind: Vault
 metadata:
   name: alice
@@ -46,7 +46,7 @@ spec:
     NPM_TOKEN: npm_alice_...
 
 ---
-apiVersion: aod/v1
+apiVersion: fountain/v1
 kind: Agent
 metadata:
   name: researcher
@@ -65,12 +65,11 @@ spec:
 ## Apply
 
 ```bash
-./aod apply -f aod.yml          # single file
-./aod apply -f ./aod-specs/     # directory: walks **/*.{yml,yaml}
-./aod apply ./aod-specs/        # positional form, equivalent
+fountain apply -f fountain.yml          # single file
+fountain apply -f ./fountain-specs/     # directory: walks **/*.{yml,yaml}
 ```
 
-Directory mode walks recursively. Any YAML document carrying both `apiVersion` and `kind` is treated as a resource; anything else (a doc without front-matter, an unrelated `.yaml` config) is silently ignored. So `aod-specs/agents/*.yml`, `aod-specs/environments/*.yml`, plus an unrelated `.github/workflows/ci.yml` in the same tree all coexist cleanly. Files are processed in alphabetical order; if you want strict ordering for any reason, prefix names like `10-envs.yml` / `20-agents.yml` (though reconciliation order is fixed internally — envs first, then vaults, then agents — regardless).
+Directory mode walks recursively. Any YAML document carrying both `apiVersion` and `kind` is treated as a resource; anything else (a doc without front-matter, an unrelated `.yaml` config) is silently ignored. So `fountain-specs/agents/*.yml`, `fountain-specs/environments/*.yml`, plus an unrelated `.github/workflows/ci.yml` in the same tree all coexist cleanly. Files are processed in alphabetical order; if you want strict ordering for any reason, prefix names like `10-envs.yml` / `20-agents.yml` (though reconciliation order is fixed internally — envs first, then vaults, then agents — regardless).
 
 Output uses `+` for create, `~` for update, one line per resource:
 
@@ -86,22 +85,20 @@ Errors per-resource go to stderr but don't stop the run; other resources still a
 
 ## Idempotency
 
-Re-applying the same file is a no-op (every resource shows `~` because we always PUT, but the spec doesn't change). Useful for CI: keep `aod.yml` in source control, run `aod apply -f aod.yml` from your deploy pipeline.
+Re-applying the same file is a no-op (every resource shows `~` because we always PUT, but the spec doesn't change). Useful for CI: keep `fountain.yml` in source control, run `fountain apply -f fountain.yml` from your deploy pipeline.
 
-## Apply-time secret resolution (so you can commit `aod.yml`)
+## Apply-time secret resolution (so you can commit `fountain.yml`)
 
-Secret values in `spec.secrets` accept two kinds of references that get resolved at **apply time** before any DB write:
+Secret values in `spec.secrets` accept references that get resolved at **apply time** before any DB write:
 
 - `${VAR}` — substituted from your local environment, or from `--var KEY=VAL` flags.
 - `op://<vault>/<item>/<field>` — resolved via the [1Password CLI](https://developer.1password.com/docs/cli/get-started). Auth (biometric unlock, session) handled by `op`.
 - `bws://<secret-uuid>` — resolved via the [Bitwarden Secrets Manager CLI](https://bitwarden.com/help/secrets-manager-cli/). Auth via `BWS_ACCESS_TOKEN` (consumed by `bws`).
 - `infisical://<project?>/<env>/<path?>/<name>` — resolved via the [Infisical CLI](https://infisical.com/docs/cli/overview). Empty project segment (`infisical:///<env>/<name>`) falls through to `.infisical.json` / `INFISICAL_PROJECT_ID`. Last URI segment is always the secret name; segments between env and name form the folder path.
 
-Add another provider (Vault, AWS Secrets Manager, Doppler, ...) by implementing `AodCli.SecretResolver` and registering the module — ~30 lines per provider.
-
 ```yaml
 ---
-apiVersion: aod/v1
+apiVersion: fountain/v1
 kind: Environment
 metadata:
   name: my-project
@@ -114,7 +111,7 @@ spec:
     REDIS_URL: infisical:///prod/REDIS_URL                   # ← Infisical (workspace project)
     ANTHROPIC_API_KEY: op://${OP_VAULT}/Anthropic/key        # ← composes: ${VAR} first, then op
 ---
-apiVersion: aod/v1
+apiVersion: fountain/v1
 kind: Vault
 metadata:
   name: alice
@@ -127,10 +124,10 @@ Run with:
 
 ```bash
 GH_PAT=ghp_... POSTHOG=phc_... ALICE_GH_PAT=ghp_alice... \
-  ./aod apply -f aod.yml
+  fountain apply -f fountain.yml
 
 # or pass values inline:
-./aod apply -f aod.yml --var GH_PAT=ghp_... --var POSTHOG=phc_...
+fountain apply -f fountain.yml --var GH_PAT=ghp_... --var POSTHOG=phc_...
 ```
 
 Flags win over env vars when both are set. Use `$${VAR}` to write through a literal `${VAR}` (rare).

@@ -1,81 +1,84 @@
 # Operator runbook
 
-What to do when something's wrong with a running AoD instance. Single-tenant assumption throughout — if you're the operator, you're also the only user.
+What to do when something's wrong with a running Fountain instance.
 
 ## Emergency switches
 
-### Rotate the admin token
+### Revoke or rotate a user's API keys
+
+API keys are minted per-user and SHA-256-hashed at rest. Either revoke a single leaked key, or revoke them all and have the user re-issue.
 
 ```bash
-# Render dashboard → service env vars → ADMIN_TOKEN → set to new value → save
-# Render redeploys automatically. While the deploy is in flight, both
-# old and new instances are live; in-flight CLI/API sessions on the old
-# token will 401 on next request.
+# Single key
+fountain keys list                  # find the id
+fountain keys revoke <id>
+
+# Or via the API as the affected user
+curl -s -X DELETE "$FOUNTAIN_BASE_URL/api/auth/api-keys/<id>" \
+  -H "Authorization: Bearer $FOUNTAIN_API_KEY"
 ```
 
-The CLI picks up the new token on next run via `AOD_TOKEN`. UI sessions use a cookie keyed off the old token — you'll need to log in again.
+CLI sessions pick up the change on next request (401 on the revoked key). UI sessions are cookie-backed and continue until logout/timeout.
 
-### Rotate `SECRETS_KEY`
+### Rotate `MASTER_SECRETS_KEY`
 
-`SECRETS_KEY` is the AES-256 key encrypting `secrets.value_ciphertext` at rest. **Rotating it without re-encrypting** breaks every existing secret (decryption fails silently — `decrypted_env/1` skips them).
+`MASTER_SECRETS_KEY` wraps each tenant's data encryption key (DEK), stored in `user_data_keys.wrapped_key`. The DEKs themselves never change on rotation — only the wrap does. **Updating the env var without re-wrapping** breaks every login (`load_tenant_key/1` returns `{:error, :unwrap_failed}` on every conversation start).
 
-Re-encryption procedure (manual, no Mix task yet):
+Re-wrapping procedure (manual — bin/server remote on the running node):
 
 ```elixir
-# iex -S mix phx.server (or `bin/agent_on_demand remote`)
-old_key = "<old SECRETS_KEY base64>" |> Base.url_decode64!(padding: false)
-new_key = "<new SECRETS_KEY base64>" |> Base.url_decode64!(padding: false)
+old_master = "<old MASTER_SECRETS_KEY base64>" |> Base.url_decode64!(padding: false)
+new_master = "<new MASTER_SECRETS_KEY base64>" |> Base.url_decode64!(padding: false)
 
-# Restore the old key, decrypt all secrets, hold them in memory
-Application.put_env(:agent_on_demand, :secrets_key, old_key)
+# Restore the old master, unwrap every tenant DEK in memory
+Application.put_env(:fountain, :master_secrets_key, old_master)
 
-plain =
-  AgentOnDemand.Repo.all(AgentOnDemand.Environments.Secret)
-  |> Enum.map(fn s ->
-    {:ok, v} = AgentOnDemand.Environments.Secret.decrypt(s)
-    {s.id, v}
+deks =
+  Fountain.Repo.all(Fountain.Accounts.UserDataKey)
+  |> Enum.map(fn udk ->
+    {:ok, dek} = Fountain.Crypto.load_tenant_key(udk.user_id)
+    {udk.id, dek}
   end)
 
-# Switch to the new key, re-encrypt + update
-Application.put_env(:agent_on_demand, :secrets_key, new_key)
+# Switch to the new master, re-wrap and persist
+Application.put_env(:fountain, :master_secrets_key, new_master)
 
-for {id, v} <- plain do
-  s = AgentOnDemand.Repo.get!(AgentOnDemand.Environments.Secret, id)
-  {:ok, _} = AgentOnDemand.Environments.upsert_secret(
-    %AgentOnDemand.Environments.Environment{id: s.environment_id},
-    %{"key" => s.key, "value" => v}
-  )
+for {id, dek} <- deks do
+  udk = Fountain.Repo.get!(Fountain.Accounts.UserDataKey, id)
+  udk
+  |> Ecto.Changeset.change(wrapped_key: Fountain.Crypto.wrap_dek(dek))
+  |> Fountain.Repo.update!()
 end
 ```
 
-Then update the `SECRETS_KEY` env var in your deploy and restart. Existing decrypted-in-memory secrets in running ConversationServers stay valid for the rest of those conversations.
+Then update the `MASTER_SECRETS_KEY` env var in your deploy and restart. DEKs already loaded into running ConversationServers stay valid for the rest of those conversations — they're held in GenServer state, not re-fetched per request.
 
 ## Stuck conversation
 
 Symptoms: conversation status shows `running` but no SSE events arrive.
 
 ```bash
-# 1. From the CLI:
-./aod conv show <conv-id>          # see turn status, sandbox name
-./aod conv interrupt <conv-id>     # stop the in-flight turn (sandbox lives)
-./aod conv terminate <conv-id>     # destroy the sprite + mark conv terminated
+fountain conv show <conv-id>          # see turn status, sandbox name
+fountain conv interrupt <conv-id>     # stop the in-flight turn (sandbox lives)
+fountain conv terminate <conv-id>     # destroy the sprite + mark conv terminated
 ```
 
-If `interrupt` returns `no_turn_running`, the GenServer thinks no turn is in flight — most likely the sprite-side process exited and we missed the `:exit` message. Send a fresh prompt; `auto-wake` will spin up a new sandbox keeping the conversation history (claude `--resume` via persisted `runtime_session_id`).
+If `interrupt` returns `no_turn_running`, the GenServer thinks no turn is in flight — most likely the sprite-side process exited and we missed the `:exit` message. Send a fresh prompt; `wake_conversation` will spin up a new sandbox, keeping the conversation history (claude `--resume` via persisted `runtime_session_id`).
 
 ## Orphaned sprites
 
-Symptoms: sprites.dev billing shows sprites we don't recognize. AoD's `sandboxes` table doesn't have a row for them.
+Symptoms: sprites.dev billing shows sprites we don't recognize. Fountain's `sandboxes` table doesn't have a row for them.
 
-This shouldn't happen after a clean stop — `Rehydrator` reattaches on boot. It can happen after a hard kill (BEAM crash) on a sandbox that hadn't reached `ready` yet (those don't get rehydrated):
+This shouldn't happen after a clean stop — `Fountain.Conversations.Rehydrator` reattaches on boot. It can happen after a hard kill (BEAM crash) on a sandbox that hadn't reached `ready` yet (those don't get rehydrated):
 
 ```bash
 # List all sprites in your account
 curl -sS https://api.sprites.dev/v1/sprites \
   -H "Authorization: Bearer $SPRITES_TOKEN" | jq -r '.[].name'
 
-# Cross-reference with your AoD sandbox table
-sqlite3 /data/agent_on_demand.db \
+# Cross-reference with your Fountain sandbox table (run on Render via the
+# Postgres dashboard, or psql against DATABASE_URL)
+psql "$DATABASE_URL" -c \
   "SELECT sprite_name FROM sandboxes WHERE status NOT IN ('terminated','failed')"
 
 # Anything in the first list not in the second is an orphan. Destroy:
@@ -91,50 +94,49 @@ The default bucket is 600 req/min per IP. If a script is hot-looping, the respon
 
 ```elixir
 # router.ex
-plug AgentOnDemandWeb.Plugs.RateLimit, bucket: "api", max: 1200
+plug FountainWeb.Plugs.RateLimit, bucket: "api", max: 1200
 ```
 
 To clear the counter manually (e.g., in dev):
 
 ```elixir
-# iex
-:ets.delete_all_objects(AgentOnDemandWeb.Plugs.RateLimit.table())
+# bin/server remote
+:ets.delete_all_objects(FountainWeb.Plugs.RateLimit.table())
 ```
 
 ## Audit log overgrows
 
-The `audit_events` table is append-only. SQLite won't compact on its own.
+The `audit_events` table is append-only.
 
 ```bash
 # How big?
-sqlite3 /data/agent_on_demand.db "SELECT count(*) FROM audit_events"
+psql "$DATABASE_URL" -c "SELECT count(*) FROM audit_events"
 
 # Trim to last 30 days
-sqlite3 /data/agent_on_demand.db \
-  "DELETE FROM audit_events WHERE inserted_at < datetime('now', '-30 days')"
+psql "$DATABASE_URL" -c \
+  "DELETE FROM audit_events WHERE inserted_at < NOW() - INTERVAL '30 days'"
 
-# Reclaim space
-sqlite3 /data/agent_on_demand.db "VACUUM"
+# Reclaim space (Postgres handles this with autovacuum normally; force if needed)
+psql "$DATABASE_URL" -c "VACUUM ANALYZE audit_events"
 ```
 
-## SQLite backup + restore
+## Postgres backup + restore
+
+On Render, daily backups are managed by the Postgres add-on dashboard — there's nothing to wire up. Manual snapshots:
 
 ```bash
-# Backup (consistent — uses SQLite's backup API)
-sqlite3 /data/agent_on_demand.db ".backup /data/agent_on_demand.bak"
+# Backup
+pg_dump "$DATABASE_URL" > fountain.sql
 
-# Restore (with the app stopped)
-cp /data/agent_on_demand.bak /data/agent_on_demand.db
-# Restart the service
+# Restore (with the app stopped, against a fresh database)
+psql "$NEW_DATABASE_URL" < fountain.sql
 ```
-
-For Render specifically: the disk at `/data` survives redeploys, so daily backups via a cron job is the simplest durability story.
 
 ## BEAM crash recovery
 
 Symptoms: server is up but conversations show as `running`/`idle` from before the crash.
 
-`Rehydrator` runs on every successful boot (see `application.ex` after `Supervisor.start_link`). It scans conversations whose status is non-terminal AND whose sandbox status was `ready` at the time of the stop, and starts a `ConversationServer` for each. The server enters reattach mode:
+`Fountain.Conversations.Rehydrator` runs on every successful boot (see `apps/fountain/lib/fountain/application.ex` after `Supervisor.start_link`). It scans conversations whose status is non-terminal AND whose sandbox status was `ready` at the time of the stop, and starts a `ConversationServer` for each. The server enters reattach mode:
 
 - If the sprite is still alive at sprites.dev → attach via `Sprites.list_sessions` + `attach_session`. Any in-flight detachable runtime command keeps streaming where it left off.
 - If the sprite is gone → mark sandbox `failed`. The user's next prompt triggers `wake_conversation` to spin a fresh sandbox.
@@ -145,7 +147,7 @@ Conversations whose sandbox was `pending` or `starting` at the crash (mid-provis
 
 Symptoms: API call returns `422` with `{"errors":[{"message":"Missing field: <name>"}]}` for what looks like a valid payload.
 
-Our request schemas are reused for POST and PUT today, so PUT requires the full Create shape. This is tracked under task #45. Workaround: include all the required fields on PUT, or use the LiveView UI which talks to the context functions directly (no OpenAPI gate).
+Our request schemas are reused for POST and PUT today, so PUT requires the full Create shape. Workaround: include all the required fields on PUT, or use the LiveView UI which talks to the context functions directly (no OpenAPI gate).
 
 ## "I just deployed and the rate limiter keeps blocking me"
 
@@ -153,4 +155,4 @@ ETS table state survives redeploys-without-restart on Render's infrastructure bu
 
 ## Adding a new node (clustering)
 
-Not yet supported. `Registry`, `DynamicSupervisor`, and `Phoenix.PubSub` are local. Tracking under task #37 (libcluster + Horde).
+`libcluster` with the `Cluster.Strategy.DNSPoll` topology is wired up via `CLUSTER_DNS_QUERY` (see `config/runtime.exs`). On Render, set it to the internal DNS name of the service for multi-instance deployments. `Registry`, `DynamicSupervisor`, and `Phoenix.PubSub` are still local — cross-node ConversationServer routing isn't implemented yet.
