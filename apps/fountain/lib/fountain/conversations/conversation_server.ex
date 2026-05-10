@@ -13,7 +13,8 @@ defmodule Fountain.Conversations.ConversationServer do
   require Logger
   require OpenTelemetry.Tracer
 
-  alias Fountain.{Agents, Conversations, Crypto, Environments, InferenceCredentials, SpritesClient, Substitution, Vaults}
+  alias Fountain.{Accounts, Agents, Conversations, Crypto, Environments, InferenceCredentials, SpritesClient, Substitution, Vaults}
+  alias Fountain.Conversations.Conversation
 
   # ── public api ────────────────────────────────────────────────────────────
 
@@ -117,7 +118,13 @@ defmodule Fountain.Conversations.ConversationServer do
       # owning user_id; held for the conversation lifetime; dropped on
       # terminate. See ADR 0008 (BYO inference credentials).
       tenant_key: nil,
-      inference_credentials: %{}
+      inference_credentials: %{},
+      # Plaintext of the per-conversation API key that's injected into the
+      # sprite as FOUNTAIN_TOKEN. The hash and a row in `api_keys` is the
+      # durable record; we keep the raw value in memory only while this
+      # GenServer is alive. Rotated on every fresh provision/reattach;
+      # revoked in terminate/2.
+      callback_token: nil
     }
 
     {:ok, state, {:continue, :provision}}
@@ -261,7 +268,9 @@ defmodule Fountain.Conversations.ConversationServer do
         runtime = (agent && agent.runtime) || "claude"
         Fountain.SpriteSkills.mount(sprite, runtime, skills)
 
-        sprite_env = build_sprite_env(state.runtime_module, agent, env, secrets, state.conversation_id, state.inference_credentials)
+        {state, conv} = rotate_callback_api_key(state, conv)
+
+        sprite_env = build_sprite_env(state, agent, env, secrets)
 
         write_runtime_config(sprite, state.runtime_module, agent)
         Fountain.Conversations.Provisioning.write_env_file(sprite, sprite_env)
@@ -403,7 +412,7 @@ defmodule Fountain.Conversations.ConversationServer do
     )
   end
 
-  defp do_reattach(state, _conv, sandbox, agent, env, secrets) do
+  defp do_reattach(state, conv, sandbox, agent, env, secrets) do
     publish_stage(state.conversation_id, "reattach", "started", %{
       sprite_name: sandbox.sprite_name
     })
@@ -413,7 +422,8 @@ defmodule Fountain.Conversations.ConversationServer do
     case Sprites.get_sprite(client, sandbox.sprite_name) do
       {:ok, _info} ->
         sprite = Sprites.sprite(client, sandbox.sprite_name)
-        sprite_env = build_sprite_env(state.runtime_module, agent, env, secrets, state.conversation_id, state.inference_credentials)
+        {state, _conv} = rotate_callback_api_key(state, conv)
+        sprite_env = build_sprite_env(state, agent, env, secrets)
 
         # Refresh the .env file in case secrets/env_vars were edited
         # between the original provision and this reattach.
@@ -547,10 +557,10 @@ defmodule Fountain.Conversations.ConversationServer do
     )
   end
 
-  defp build_sprite_env(runtime_module, agent, env, secrets, conversation_id, inference_credentials) do
-    (runtime_module.default_env(agent, inference_credentials) || []) ++
-      fountain_callback_env() ++
-      conversation_env(conversation_id) ++
+  defp build_sprite_env(state, agent, env, secrets) do
+    (state.runtime_module.default_env(agent, state.inference_credentials) || []) ++
+      fountain_callback_env(state.callback_token) ++
+      conversation_env(state.conversation_id) ++
       otel_propagation_env() ++
       git_author_env() ++
       if(env,
@@ -775,6 +785,27 @@ defmodule Fountain.Conversations.ConversationServer do
 
   def handle_info(_msg, state), do: {:noreply, state}
 
+  # Best-effort revoke of the per-conversation API key when this server
+  # exits — covers both clean termination (`:terminate_conv`) and crash
+  # paths that hit `{:stop, :normal, state}` after a provision failure.
+  # If the BEAM crashes hard, the row in `api_keys` is orphaned and lives
+  # until an admin/janitor sweeps it; that's a known gap, not a regression.
+  @impl true
+  def terminate(_reason, state) do
+    if state.conversation_id do
+      case Conversations._unsafe_get_conversation(state.conversation_id) do
+        %Conversation{user_id: user_id, callback_api_key_id: id}
+        when is_binary(user_id) and is_binary(id) ->
+          _ = Accounts.revoke_api_key(user_id, id)
+
+        _ ->
+          :ok
+      end
+    end
+
+    :ok
+  end
+
   # ── helpers ───────────────────────────────────────────────────────────────
 
   defp create_sprite(name) do
@@ -782,14 +813,37 @@ defmodule Fountain.Conversations.ConversationServer do
     Sprites.create(client, name)
   end
 
-  defp fountain_callback_env do
+  defp fountain_callback_env(token) do
     base = Application.get_env(:fountain, :public_url)
-    token = Application.get_env(:fountain, :admin_token)
 
-    if is_binary(base) and base != "" and is_binary(token) do
+    if is_binary(base) and base != "" and is_binary(token) and token != "" do
       [{"FOUNTAIN_BASE_URL", base}, {"FOUNTAIN_TOKEN", token}]
     else
       []
+    end
+  end
+
+  # Issue a fresh per-conversation API key scoped to the conversation
+  # owner, revoking any prior one. The plaintext is only kept in
+  # `state.callback_token` — the durable record is a hash in `api_keys`,
+  # which we can't reverse, so we rotate on every fresh provision /
+  # reattach instead of trying to recover the old plaintext.
+  defp rotate_callback_api_key(state, %Conversation{} = conv) do
+    if id = conv.callback_api_key_id do
+      _ = Accounts.revoke_api_key(conv.user_id, id)
+    end
+
+    case Accounts.create_api_key(conv.user_id, "sprite:#{String.slice(conv.id, 0, 8)}") do
+      {:ok, {%Accounts.ApiKey{id: key_id}, raw}} ->
+        {:ok, conv} = Conversations.update_conversation(conv, %{callback_api_key_id: key_id})
+        {%{state | callback_token: raw}, conv}
+
+      {:error, cs} ->
+        Logger.warning(
+          "could not issue callback api key for conv #{conv.id}: #{inspect(cs.errors)}"
+        )
+
+        {%{state | callback_token: nil}, conv}
     end
   end
 

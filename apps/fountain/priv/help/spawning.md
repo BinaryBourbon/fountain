@@ -77,7 +77,9 @@ The SSE endpoint normally holds open for ~60s waiting for new events. When the c
 
 ## Security model — what to know
 
-The sprite-side `FOUNTAIN_TOKEN` is a regular Fountain API key — it carries the same blast radius the owning user has. Anything inside a sprite can create/delete agents, list conversations, etc. on behalf of that user. There's no per-conversation scoping today. Treat prompt-injection on a sprite-bound agent as a full account takeover for that user. Per-conversation scoped tokens are on the roadmap.
+`FOUNTAIN_TOKEN` is a Fountain API key issued **per conversation**, scoped to the conversation's owning user. Fountain mints it at provision time, names the `api_keys` row `sprite:<short-conv-id>`, and stores its ID on the `conversations` row. The token rotates on every fresh provision or reattach (plaintext can't be recovered after a BEAM restart) and is revoked when the conversation terminates — kill the conversation, kill the key.
+
+The token still carries the **same Fountain blast radius the owning user has** — anything inside the sprite can create/delete agents, list conversations, list keys, etc. on behalf of that user. Treat prompt injection on a sprite-bound agent as a full account takeover for that user; the per-conversation scoping bounds *how long* a leaked token stays live, not *what it can do* while it's live.
 
 ## Tunneling
 
