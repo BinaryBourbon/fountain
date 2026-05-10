@@ -28,7 +28,7 @@ defmodule FountainWeb.Live.Hooks do
   """
 
   import Phoenix.LiveView
-  import Phoenix.Component, only: [assign: 2, assign_new: 3]
+  import Phoenix.Component, only: [assign_new: 3]
 
   use FountainWeb, :verified_routes
 

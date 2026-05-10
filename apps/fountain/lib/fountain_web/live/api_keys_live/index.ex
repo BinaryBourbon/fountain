@@ -90,6 +90,7 @@ defmodule FountainWeb.ApiKeysLive.Index do
       <form phx-submit="create_key" class="flex gap-2 items-end">
         <div class="flex-1">
           <.form_field
+            id="label"
             label="Key label"
             name="label"
             type="text"

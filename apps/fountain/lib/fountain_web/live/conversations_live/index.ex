@@ -106,9 +106,9 @@ defmodule FountainWeb.ConversationsLive.Index do
         sorted_by={Atom.to_string(@sort_by)}
         sorted_dir={@sort_dir}
       >
-        <:empty>
+        <:empty_state>
           No conversations yet. Start one to see it here.
-        </:empty>
+        </:empty_state>
         <:col :let={c} label="Status"><.badge status={c.status} /></:col>
         <:col :let={c} label="Task">
           <%= case first_prompt(c) do %>
