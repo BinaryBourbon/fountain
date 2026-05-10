@@ -12,13 +12,22 @@ defmodule Fountain.Vaults do
 
   # ── vaults ────────────────────────────────────────────────────────────────
 
-  def list_vaults do
+  @doc """
+  WARNING: returns vaults across all tenants. Admin/internal use only.
+  User-facing code must use the arity-1 variant that takes user_id.
+  """
+  def _unsafe_list_vaults do
     Repo.all(from v in Vault, order_by: [desc: v.inserted_at, desc: v.id])
   end
 
-  def get_vault(id), do: Repo.get(Vault, id)
-  def get_vault!(id), do: Repo.get!(Vault, id)
-  def get_vault_by_name(name), do: Repo.get_by(Vault, name: name)
+  @doc "WARNING: lookup by id without owner check. Admin/internal use only."
+  def _unsafe_get_vault(id), do: Repo.get(Vault, id)
+
+  @doc "WARNING: lookup by id without owner check. Admin/internal use only."
+  def _unsafe_get_vault!(id), do: Repo.get!(Vault, id)
+
+  @doc "WARNING: lookup by name without owner check. Admin/internal use only."
+  def _unsafe_get_vault_by_name(name), do: Repo.get_by(Vault, name: name)
 
   @doc "List vaults scoped to user."
   def list_vaults(user_id) when is_binary(user_id) do

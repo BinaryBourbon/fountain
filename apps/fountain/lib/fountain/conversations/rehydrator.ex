@@ -37,7 +37,7 @@ defmodule Fountain.Conversations.Rehydrator do
 
   defp spawn_server(conv) do
     with %Agents.Agent{} = _agent <-
-           (conv.agent_id && Agents.get_agent(conv.agent_id)) || {:skip, :no_agent},
+           (conv.agent_id && Agents._unsafe_get_agent(conv.agent_id)) || {:skip, :no_agent},
          {:ok, runtime_module} <- Runtimes.for_runtime(conv.runtime) do
       Horde.DynamicSupervisor.start_child(
         Fountain.ConversationSupervisor,

@@ -48,7 +48,12 @@ defmodule Fountain.Conversations do
 
   # ── conversations ─────────────────────────────────────────────────────────
 
-  def list_conversations do
+  @doc """
+  WARNING: returns conversations across all tenants. Only call from
+  admin-restricted paths or internal state lookups where ownership has
+  already been verified upstream.
+  """
+  def _unsafe_list_conversations do
     Repo.all(
       from c in Conversation,
         order_by: [desc: c.inserted_at, desc: c.id],
@@ -80,10 +85,11 @@ defmodule Fountain.Conversations do
   end
 
   @doc """
-  All conversations ordered by most recently active first (`updated_at desc`).
-  Used for the left-nav conversations list.
+  WARNING: returns conversations across all tenants ordered by activity.
+  Admin/internal use only. User-facing code must use the arity-1 variant
+  that takes user_id.
   """
-  def list_conversations_by_activity do
+  def _unsafe_list_conversations_by_activity do
     Repo.all(
       from c in Conversation,
         order_by: [desc: c.updated_at, desc: c.id],
@@ -154,13 +160,20 @@ defmodule Fountain.Conversations do
     )
   end
 
-  def get_conversation(id) do
+  @doc """
+  WARNING: lookup by id without owner check. Admin/internal use only —
+  user-facing endpoints must use the arity-2 variant that takes user_id.
+  """
+  def _unsafe_get_conversation(id) do
     Conversation
     |> Repo.get(id)
     |> Repo.preload([:sandbox, :agent, :vault])
   end
 
-  def get_conversation!(id) do
+  @doc """
+  WARNING: lookup by id without owner check. Admin/internal use only.
+  """
+  def _unsafe_get_conversation!(id) do
     Conversation
     |> Repo.get!(id)
     |> Repo.preload([:sandbox, :agent, :vault])
@@ -447,7 +460,7 @@ defmodule Fountain.Conversations do
            ]}
         )
 
-      result = get_conversation!(conv.id)
+      result = _unsafe_get_conversation!(conv.id)
 
       if result.parent_conversation_id do
         root_id = get_root_conversation_id(result.id)
@@ -518,10 +531,10 @@ defmodule Fountain.Conversations do
   (`terminated`, `failed`, `completed`) — those don't auto-resume.
   """
   def wake_conversation(conv_id, initial_prompt \\ nil) do
-    with %Conversation{} = conv <- get_conversation(conv_id) || {:error, :not_found},
+    with %Conversation{} = conv <- _unsafe_get_conversation(conv_id) || {:error, :not_found},
          :ok <- assert_resumable(conv),
          %Agents.Agent{} = agent <-
-           (conv.agent_id && Agents.get_agent(conv.agent_id)) || {:error, :no_agent},
+           (conv.agent_id && Agents._unsafe_get_agent(conv.agent_id)) || {:error, :no_agent},
          {:ok, runtime_module} <- Fountain.Runtimes.for_runtime(conv.runtime) do
       case maybe_reuse_sandbox(conv) do
         {:reuse, sandbox_id} ->
@@ -568,7 +581,7 @@ defmodule Fountain.Conversations do
                 initial_prompt: initial_prompt
               ]}
            ) do
-      {:ok, get_conversation!(conv.id)}
+      {:ok, _unsafe_get_conversation!(conv.id)}
     end
   end
 
