@@ -62,7 +62,7 @@ defmodule FountainWeb.SessionController do
       conn
       |> configure_session(renew: true)
       |> put_session(:admin, true)
-      |> redirect(to: ~p"/")
+      |> redirect(to: ~p"/conversations")
     else
       conn
       |> put_status(:unauthorized)

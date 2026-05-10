@@ -53,6 +53,12 @@ defmodule FountainWeb.Router do
 
   ## ─── Public browser routes ──────────────────────────────────────────────────
 
+  # Marketing landing page — public, no auth required
+  scope "/", FountainWeb do
+    pipe_through :browser
+    get "/", MarketingController, :home
+  end
+
   # Legacy single-tenant admin login (kept for ops runbook compat)
   scope "/", FountainWeb do
     pipe_through :browser
@@ -159,7 +165,7 @@ defmodule FountainWeb.Router do
         {FountainWeb.Live.Hooks, :require_authenticated_user},
         {FountainWeb.Live.Hooks, :require_active_subscription}
       ] do
-      live "/", ConversationsLive.Index, :index
+      live "/conversations", ConversationsLive.Index, :index
       live "/conversations/new", ConversationsLive.New, :new
       live "/conversations/:id", ConversationsLive.Show, :show
     end

@@ -33,7 +33,7 @@ defmodule FountainWeb.LogViewerLive.Show do
       {:ok,
        socket
        |> put_flash(:error, "Conversation not found")
-       |> push_navigate(to: ~p"/")}
+       |> push_navigate(to: ~p"/conversations")}
     end
   end
 
