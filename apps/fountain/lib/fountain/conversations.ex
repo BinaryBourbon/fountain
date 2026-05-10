@@ -119,7 +119,7 @@ defmodule Fountain.Conversations do
     sql = """
     WITH RECURSIVE
     ancestors(id, parent_conversation_id) AS (
-      SELECT id, parent_conversation_id FROM conversations WHERE id = ?
+      SELECT id, parent_conversation_id FROM conversations WHERE id = $1
       UNION ALL
       SELECT c.id, c.parent_conversation_id FROM conversations c
       INNER JOIN ancestors a ON c.id = a.parent_conversation_id
@@ -138,12 +138,26 @@ defmodule Fountain.Conversations do
     SELECT id, source, status, parent_id FROM tree
     """
 
-    %{rows: rows} = Repo.query!(sql, [conversation_id])
+    {:ok, uuid} = Ecto.UUID.dump(conversation_id)
+    %{rows: rows} = Repo.query!(sql, [uuid])
 
     Enum.map(rows, fn [id, source, status, parent_id] ->
-      %{id: id, source: source, status: status, parent_id: parent_id}
+      %{
+        id: load_uuid!(id),
+        source: source,
+        status: status,
+        parent_id: load_uuid(parent_id)
+      }
     end)
   end
+
+  defp load_uuid!(bin) when is_binary(bin) do
+    {:ok, str} = Ecto.UUID.load(bin)
+    str
+  end
+
+  defp load_uuid(nil), do: nil
+  defp load_uuid(bin), do: load_uuid!(bin)
 
   @doc """
   Conversations whose `ConversationServer` would have been running at the
@@ -477,7 +491,7 @@ defmodule Fountain.Conversations do
   defp get_root_conversation_id(conversation_id) do
     sql = """
     WITH RECURSIVE ancestors(id, parent_conversation_id) AS (
-      SELECT id, parent_conversation_id FROM conversations WHERE id = ?
+      SELECT id, parent_conversation_id FROM conversations WHERE id = $1
       UNION ALL
       SELECT c.id, c.parent_conversation_id FROM conversations c
       INNER JOIN ancestors a ON c.id = a.parent_conversation_id
@@ -485,9 +499,15 @@ defmodule Fountain.Conversations do
     SELECT id FROM ancestors WHERE parent_conversation_id IS NULL LIMIT 1
     """
 
-    case Repo.query!(sql, [conversation_id]) do
-      %{rows: [[root_id]]} -> root_id
-      _ -> conversation_id
+    {:ok, uuid} = Ecto.UUID.dump(conversation_id)
+
+    case Repo.query!(sql, [uuid]) do
+      %{rows: [[root_id]]} ->
+        {:ok, str_id} = Ecto.UUID.load(root_id)
+        str_id
+
+      _ ->
+        conversation_id
     end
   end
 
