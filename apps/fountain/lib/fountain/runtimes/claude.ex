@@ -70,14 +70,41 @@ defmodule Fountain.Runtimes.Claude do
     end
   end
 
+  # Claude Code 2.x dropped support for top-level `mcpServers` in
+  # `~/.claude.json` and rewrites that file aggressively on first
+  # launch, clobbering anything we drop in there. Use the supported
+  # `claude mcp add-json --scope user` path instead — it goes through
+  # Claude's own state machine and survives further schema changes.
   @impl true
-  def write_config(_sprite, nil), do: :ok
-  def write_config(_sprite, %{mcp_servers: m}) when m == %{} or is_nil(m), do: :ok
+  def prepare_sprite(_sprite, nil, _sprite_env), do: :ok
 
-  def write_config(sprite, %{mcp_servers: mcp_servers}) do
-    fs = Sprites.filesystem(sprite, "/")
-    payload = Jason.encode!(%{"mcpServers" => mcp_servers}, pretty: true)
-    Sprites.Filesystem.write(fs, "/home/sprite/.claude.json", payload)
-    :ok
+  def prepare_sprite(_sprite, %{mcp_servers: m}, _sprite_env)
+      when m == %{} or is_nil(m),
+      do: :ok
+
+  def prepare_sprite(sprite, %{mcp_servers: mcp_servers}, sprite_env)
+      when is_map(mcp_servers) do
+    Enum.reduce_while(mcp_servers, :ok, fn {name, entry}, :ok ->
+      args = [
+        "mcp",
+        "add-json",
+        "--scope",
+        "user",
+        to_string(name),
+        Jason.encode!(entry)
+      ]
+
+      case Sprites.cmd(sprite, "claude", args,
+             env: sprite_env,
+             stderr_to_stdout: true,
+             timeout: 30_000
+           ) do
+        {_out, 0} ->
+          {:cont, :ok}
+
+        {out, code} ->
+          {:halt, {:error, {:claude_mcp_add_failed, name, code, out}}}
+      end
+    end)
   end
 end
