@@ -14,7 +14,7 @@ Fountain holds a single **platform-level `SPRITES_TOKEN`** that is used to provi
 
 - `SPRITES_TOKEN` is an env-var-only secret on Render. It is never stored in the DB, never surfaced in the admin UI, and never visible to tenants.
 - Each `ConversationServer` reads it from `Application.fetch_env!(:fountain, :sprites_token)` at provisioning time.
-- Sprites sandbox naming: `fountain-conv-<short-id>` (replacing `aod-conv-<short-id>` from aod-ex).
+- Sprites sandbox naming: `fountain-<tenant-prefix>-<short-id>` (replacing `aod-conv-<short-id>` from aod-ex). `<tenant-prefix>` is the first 8 chars of the owning user's UUID; `<short-id>` is the first 8 chars of a fresh UUID.
 - **Per-tenant concurrency cap** (`users.max_concurrent_sandboxes`, default `5`) is the primary noisy-neighbor mitigation. The cap is enforced in `Fountain.Quotas.check_sandbox_quota!/1` before `Sprites.create/2` is called.
 - The cap is admin-adjustable per user (raise for trusted tenants, lower during abuse).
 - Fountain pays the Sprites bill and prices its own tiers to recover the cost.

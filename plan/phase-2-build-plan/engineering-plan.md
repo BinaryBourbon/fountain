@@ -365,7 +365,7 @@ The cap is the primary defense against a single tenant exhausting Sprites accoun
 - Document a token rotation runbook; rotation is a Render env-var update + restart.
 - Engage Sprites to raise account-level rate limits proactively as WAU grows.
 
-The `aod-conv-<short-id>` sprite naming prefix from aod-ex becomes `fountain-conv-<short-id>` to distinguish from any legacy aod-ex sprites on the same Sprites account.
+The `aod-conv-<short-id>` sprite naming prefix from aod-ex becomes `fountain-<tenant-prefix>-<short-id>` (8-char user UUID prefix + 8-char short id) to distinguish from any legacy aod-ex sprites on the same Sprites account and to make tenant ownership greppable in Sprites listings.
 
 ### 4.3 Inference credentials — BYO per tenant (ADR 0008, post-G2)
 
@@ -650,7 +650,7 @@ The `aod` skill in `priv/sprite_skills/aod/SKILL.md` must be updated to use `FOU
 
 `aod up` / `aod down` (deploying aod-ex itself to a Sprite as the host) are removed from Fountain's CLI. Fountain is deployed to Render (or a comparable platform), not Sprites. The `aod-host-<unix-ts>` sprite naming convention is retired.
 
-Per-conversation sprites continue with the prefix pattern, changed from `aod-conv-<id>` to `fountain-conv-<id>` to distinguish from any legacy aod-ex sprites on the same Sprites account.
+Per-conversation sprites continue with the prefix pattern, changed from `aod-conv-<id>` to `fountain-<tenant-prefix>-<short-id>` (8-char user UUID prefix + 8-char short id) to distinguish from any legacy aod-ex sprites on the same Sprites account and to make tenant ownership greppable in Sprites listings.
 
 `render.yaml` `preDeployCommand` remains `_build/prod/rel/fountain/bin/migrate` — Ecto migrations run before each deploy.
 

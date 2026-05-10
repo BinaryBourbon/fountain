@@ -434,7 +434,7 @@ defmodule Fountain.Conversations do
   ## Required attrs
     - `agent_id`              — agent to run
     - `prompt`                — optional first prompt (sends turn 1 immediately)
-    - `sprite_name`           — optional override; defaults to "aod-conv-<short-id>"
+    - `sprite_name`           — optional override; defaults to "fountain-<short-user-id>-<short-id>"
     - `vault_id`              — optional vault whose secrets override the env's
     - `source`                — optional; one of "ui", "api", "agent" (default "api")
     - `parent_conversation_id` — optional; UUID of the conversation that spawned this one
@@ -447,7 +447,7 @@ defmodule Fountain.Conversations do
          {:ok, sandbox} <-
            create_sandbox(%{
              environment_id: agent.environment_id,
-             sprite_name: attrs["sprite_name"] || "aod-conv-#{short_id()}",
+             sprite_name: attrs["sprite_name"] || "fountain-#{tenant_prefix(user_id)}-#{short_id()}",
              status: "pending",
              user_id: user_id
            }),
@@ -522,6 +522,8 @@ defmodule Fountain.Conversations do
   defp first_turn_query, do: from(t in Turn, where: t.turn_number == 1)
 
   defp short_id, do: Ecto.UUID.generate() |> binary_part(0, 8)
+
+  defp tenant_prefix(user_id) when is_binary(user_id), do: binary_part(user_id, 0, 8)
 
   defp resolve_vault_id(nil, _user_id), do: {:ok, nil}
   defp resolve_vault_id("", _user_id), do: {:ok, nil}
@@ -609,7 +611,7 @@ defmodule Fountain.Conversations do
     with {:ok, new_sandbox} <-
            create_sandbox(%{
              environment_id: agent.environment_id,
-             sprite_name: "aod-conv-#{short_id()}",
+             sprite_name: "fountain-#{tenant_prefix(conv.user_id)}-#{short_id()}",
              status: "pending",
              user_id: conv.user_id
            }),
