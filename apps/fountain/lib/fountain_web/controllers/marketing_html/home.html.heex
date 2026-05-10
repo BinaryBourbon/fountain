@@ -4,14 +4,14 @@
     Stop wiring up Claude instances by hand.
   </h1>
   <p class="text-lg sm:text-xl text-[var(--color-text-secondary)] max-w-2xl mx-auto mb-10">
-    Fountain gives teams a single place to define agent environments, swap credentials, and run sandboxed conversations — with real-time log visibility and nothing to configure locally.
+    Fountain gives your whole team preconfigured, sandboxed AI agents — zero local setup, real-time logs, and credentials that never drift.
   </p>
-  <div class="flex flex-col sm:flex-row gap-3 justify-center">
+  <div class="flex flex-col sm:flex-row gap-3 justify-center mb-4">
     <a
       href={~p"/auth/register"}
       class="inline-flex items-center justify-center px-6 py-3 rounded-lg bg-[var(--color-brand)] text-white font-medium hover:bg-[var(--color-brand-hover)] transition-colors text-sm"
     >
-      Get started free
+      Start free — no credit card
     </a>
     <a
       href={~p"/auth/login"}
@@ -20,6 +20,7 @@
       Sign in
     </a>
   </div>
+  <p class="text-xs text-[var(--color-text-muted)]">Free 14-day trial — then $29/mo per team. Cancel anytime.</p>
 </section>
 
 <%!-- Problem --%>
@@ -28,9 +29,20 @@
     <h2 class="text-2xl font-semibold text-[var(--color-text-primary)] mb-6 text-center">
       Manual configuration doesn't scale.
     </h2>
-    <p class="text-[var(--color-text-secondary)] max-w-2xl mx-auto text-center leading-relaxed">
-      A developer using Claude Code solo can manage configuration by hand — environment variables in <code class="text-[var(--color-code-text)] bg-[var(--color-code-bg)] rounded px-1 py-0.5 text-sm">.env</code>, credentials in shell profiles, skills copy-pasted from shared docs. At team scale, it breaks: new teammates spend afternoons reverse-engineering setup, API keys expire mid-sprint with no single source of truth, and parallel tasks with different credentials require maintaining separate local checkouts. Every new agent multiplies the configuration surface, and every parallel conversation multiplies the credential management problem — the productivity promise of AI-assisted coding erodes under the weight of keeping the plumbing consistent.
-    </p>
+    <ul class="max-w-xl mx-auto space-y-4 text-[var(--color-text-secondary)]">
+      <li class="flex items-start gap-3">
+        <span class="mt-2 size-1.5 rounded-full bg-[var(--color-brand)] flex-shrink-0"></span>
+        <span>New teammates spend afternoons reverse-engineering setup instead of writing code.</span>
+      </li>
+      <li class="flex items-start gap-3">
+        <span class="mt-2 size-1.5 rounded-full bg-[var(--color-brand)] flex-shrink-0"></span>
+        <span>API keys expire mid-sprint with no single source of truth — the wrong <code class="text-[var(--color-code-text)] bg-[var(--color-code-bg)] rounded px-1 py-0.5 text-sm">.env</code> silently breaks the agent.</span>
+      </li>
+      <li class="flex items-start gap-3">
+        <span class="mt-2 size-1.5 rounded-full bg-[var(--color-brand)] flex-shrink-0"></span>
+        <span>Parallel tasks with different credentials mean maintaining separate local checkouts.</span>
+      </li>
+    </ul>
   </div>
 </section>
 
@@ -47,9 +59,9 @@
           <path fill-rule="evenodd" d="M10 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm-7 9a7 7 0 1 1 14 0H3Z" clip-rule="evenodd" />
         </svg>
       </div>
-      <h3 class="font-semibold text-[var(--color-text-primary)] mb-2">Self-serve onboarding</h3>
+      <h3 class="font-semibold text-[var(--color-text-primary)] mb-2">Teammates onboard themselves</h3>
       <p class="text-sm text-[var(--color-text-secondary)] leading-relaxed">
-        A new user arrives at a URL, registers, configures a first agent, and starts a conversation without reading documentation or filing a ticket. The onboarding wizard steps through environment setup, agent configuration, and first run in a single guided flow.
+        A new engineer gets a URL, registers, and is running their first agent conversation before they've read a README. No documentation handoff, no ticket to the platform team.
       </p>
     </div>
 
@@ -60,9 +72,9 @@
           <path fill-rule="evenodd" d="M10 1a4.5 4.5 0 0 0-4.5 4.5V9H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6a2 2 0 0 0-2-2h-.5V5.5A4.5 4.5 0 0 0 10 1Zm3 8V5.5a3 3 0 1 0-6 0V9h6Z" clip-rule="evenodd" />
         </svg>
       </div>
-      <h3 class="font-semibold text-[var(--color-text-primary)] mb-2">Vaults for credential swapping</h3>
+      <h3 class="font-semibold text-[var(--color-text-primary)] mb-2">Switch credentials without touching config</h3>
       <p class="text-sm text-[var(--color-text-secondary)] leading-relaxed">
-        A Vault is a scoped set of encrypted env-var overrides applied per conversation. Teams use Vaults to run the same agent under different GitHub identities or API keys without redefining the underlying environment. Vault values win over Environment secrets on collision.
+        Vaults are encrypted per-conversation overrides layered on top of your baseline environment. Test against staging, scope a contractor's access, or rotate a single key — without duplicating your setup.
       </p>
     </div>
 
@@ -73,9 +85,9 @@
           <path fill-rule="evenodd" d="M2 4.25A2.25 2.25 0 0 1 4.25 2h11.5A2.25 2.25 0 0 1 18 4.25v8.5A2.25 2.25 0 0 1 15.75 15h-3.105a3.501 3.501 0 0 0 1.1 1.677A.75.75 0 0 1 13.26 18H6.74a.75.75 0 0 1-.484-1.323A3.501 3.501 0 0 0 7.355 15H4.25A2.25 2.25 0 0 1 2 12.75v-8.5Zm1.5 0a.75.75 0 0 1 .75-.75h11.5a.75.75 0 0 1 .75.75v7.5a.75.75 0 0 1-.75.75H4.25a.75.75 0 0 1-.75-.75v-7.5Z" clip-rule="evenodd" />
         </svg>
       </div>
-      <h3 class="font-semibold text-[var(--color-text-primary)] mb-2">In-browser log viewer</h3>
+      <h3 class="font-semibold text-[var(--color-text-primary)] mb-2">Debug in seconds, not sessions</h3>
       <p class="text-sm text-[var(--color-text-secondary)] leading-relaxed">
-        Every conversation's stdout, stderr, and lifecycle events stream in real time directly in the dashboard. No <code class="text-[var(--color-code-text)] bg-[var(--color-code-bg)] rounded px-1 py-0.5 text-xs">curl -N</code> to a raw SSE endpoint, no log aggregation setup. Debugging a stuck sandbox takes seconds.
+        Every conversation's stdout, stderr, and lifecycle events stream live in the dashboard. No <code class="text-[var(--color-code-text)] bg-[var(--color-code-bg)] rounded px-1 py-0.5 text-xs">curl -N</code> to a raw SSE endpoint, no log pipeline to stand up. Click a conversation and see exactly what happened.
       </p>
     </div>
 
@@ -86,22 +98,37 @@
           <path d="M3.25 4A2.25 2.25 0 0 0 1 6.25v7.5A2.25 2.25 0 0 0 3.25 16h7.5A2.25 2.25 0 0 0 13 13.75v-7.5A2.25 2.25 0 0 0 10.75 4h-7.5ZM19 4.75a.75.75 0 0 0-1.28-.53l-3 3a.75.75 0 0 0-.22.53v4.5c0 .199.079.39.22.53l3 3a.75.75 0 0 0 1.28-.53V4.75Z" />
         </svg>
       </div>
-      <h3 class="font-semibold text-[var(--color-text-primary)] mb-2">Three surfaces, one data model</h3>
+      <h3 class="font-semibold text-[var(--color-text-primary)] mb-2">Script it, click it, or pipe it to CI</h3>
       <p class="text-sm text-[var(--color-text-secondary)] leading-relaxed">
-        Fountain exposes a REST API for automation, a Phoenix LiveView dashboard for interactive use, and an <code class="text-[var(--color-code-text)] bg-[var(--color-code-bg)] rounded px-1 py-0.5 text-xs">aod</code> CLI preconfigured to point at the hosted service. Developers script against the API; teammates use the dashboard; CI pipelines call the CLI.
+        REST API for automation, a LiveView dashboard for hands-on work, and an <code class="text-[var(--color-code-text)] bg-[var(--color-code-bg)] rounded px-1 py-0.5 text-xs">aod</code> CLI for pipelines — all reading and writing the same Environments, Agents, and Conversations. Pick the interface that fits the job.
       </p>
     </div>
   </div>
 </section>
 
-<%!-- Customer quote --%>
+<%!-- Customer quotes --%>
 <section class="bg-[var(--color-bg-1)] border-y border-[var(--color-border)]">
-  <div class="max-w-3xl mx-auto px-6 py-16 text-center">
-    <blockquote class="text-lg text-[var(--color-text-primary)] leading-relaxed mb-6">
-      "We were maintaining three separate <code class="text-[var(--color-code-text)] bg-[var(--color-code-bg)] rounded px-1 py-0.5 text-sm">.env</code> files and a shared Notion doc to keep our agent configs in sync. Every time someone's API key rotated, we'd spend an hour tracking down which conversation had stale credentials. Fountain replaced all of it. We define the environment once, swap credentials with a Vault when we need to, and every team member starts from the same baseline. Onboarding the last two engineers took ten minutes each."
-    </blockquote>
-    <p class="text-sm text-[var(--color-text-muted)] font-medium">
-      — Engineering lead, early access customer
+  <div class="max-w-4xl mx-auto px-6 py-16">
+    <div class="grid sm:grid-cols-2 gap-10">
+      <figure>
+        <blockquote class="text-[var(--color-text-primary)] leading-relaxed mb-4">
+          "We were maintaining three separate <code class="text-[var(--color-code-text)] bg-[var(--color-code-bg)] rounded px-1 py-0.5 text-sm">.env</code> files and a shared Notion doc to keep our agent configs in sync. Fountain replaced all of it. Onboarding the last two engineers took ten minutes each."
+        </blockquote>
+        <figcaption class="text-sm text-[var(--color-text-muted)] font-medium">
+          — Engineering lead, early access customer
+        </figcaption>
+      </figure>
+      <figure>
+        <blockquote class="text-[var(--color-text-primary)] leading-relaxed mb-4">
+          "I evaluated Fountain on a Friday afternoon and had a shared environment running for the whole team before dinner. The Vaults alone killed our 'which <code class="text-[var(--color-code-text)] bg-[var(--color-code-bg)] rounded px-1 py-0.5 text-sm">.env</code> is current?' Slack thread."
+        </blockquote>
+        <figcaption class="text-sm text-[var(--color-text-muted)] font-medium">
+          — Developer, early access customer
+        </figcaption>
+      </figure>
+    </div>
+    <p class="text-center text-sm text-[var(--color-text-muted)] mt-10">
+      Teams reach their first conversation in under 5 minutes on average.
     </p>
   </div>
 </section>
@@ -120,4 +147,5 @@
   >
     Get started free
   </a>
+  <p class="mt-4 text-sm text-[var(--color-text-muted)]">$29/mo per team after trial. Cancel anytime. No lock-in.</p>
 </section>
