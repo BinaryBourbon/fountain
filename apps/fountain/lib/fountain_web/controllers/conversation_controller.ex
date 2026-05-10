@@ -88,6 +88,7 @@ defmodule FountainWeb.ConversationController do
   )
 
   def create(conn, params) do
+    user = conn.assigns.current_user
     images = decode_images(params["images"])
 
     parent_header =
@@ -102,8 +103,9 @@ defmodule FountainWeb.ConversationController do
       |> Map.put("images", images)
       |> Map.put("source", source)
       |> Map.put("parent_conversation_id", parent_id)
+      |> Map.put("user_id", user.id)
 
-    with :ok <- gate_subscription(conn.assigns.current_user),
+    with :ok <- gate_subscription(user),
          {:ok, conv} <- Conversations.start_conversation(params) do
       conn
       |> put_status(:created)
