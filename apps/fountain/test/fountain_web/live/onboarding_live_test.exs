@@ -13,13 +13,13 @@ defmodule FountainWeb.OnboardingLiveTest do
                live(conn, ~p"/onboarding/step_1")
     end
 
-    test "user with no onboarding_state mounts step_1", %{conn: conn} do
+    test "user with no onboarding_state mounts step_1 (inference)", %{conn: conn} do
       user = insert_verified_user()
       conn = login_user(conn, user)
 
-      {:ok, lv, html} = live(conn, ~p"/onboarding/step_1")
+      {:ok, _lv, html} = live(conn, ~p"/onboarding/step_1")
       assert html =~ "Step 1"
-      assert html =~ "Create an environment"
+      assert html =~ "Connect a provider"
     end
 
     test "unauthenticated user is redirected to login", %{conn: conn} do
@@ -28,7 +28,7 @@ defmodule FountainWeb.OnboardingLiveTest do
     end
   end
 
-  describe "OnboardingLive.Wizard — step 1 (environment)" do
+  describe "OnboardingLive.Wizard — step 1 (inference)" do
     setup %{conn: conn} do
       user = insert_verified_user()
       conn = login_user(conn, user)
@@ -36,49 +36,75 @@ defmodule FountainWeb.OnboardingLiveTest do
       %{lv: lv, user: user}
     end
 
-    test "skip_env advances to step_2", %{lv: lv} do
-      assert {:error, {:live_redirect, %{to: "/onboarding/step_2"}}} =
+    test "renders all four provider forms", %{lv: lv} do
+      html = render(lv)
+      assert html =~ "Anthropic"
+      assert html =~ "Claude OAuth"
+      assert html =~ "OpenAI"
+      assert html =~ "Gemini"
+    end
+
+    test "Continue is disabled until at least one provider is set", %{lv: lv} do
+      # Try to continue without setting any credential
+      result = lv |> element("button", "Continue") |> render_click()
+
+      # Either the click is silently dropped (disabled button) or a flash appears.
+      # Either way, no redirect to step_2.
+      refute match?({:error, {:live_redirect, %{to: "/onboarding/step_2"}}}, result)
+    end
+
+    test "skip_wizard from step_1 redirects to /dashboard", %{lv: lv} do
+      assert {:error, {:live_redirect, %{to: "/dashboard"}}} =
+               lv |> element("button", "Skip setup") |> render_click()
+    end
+  end
+
+  describe "OnboardingLive.Wizard — step 2 (environment)" do
+    setup %{conn: conn} do
+      user = insert_verified_user()
+      {:ok, user} = Fountain.Accounts.advance_onboarding(user, "step_2")
+      conn = login_user(conn, user)
+      {:ok, lv, _html} = live(conn, ~p"/onboarding/step_2")
+      %{lv: lv, user: user}
+    end
+
+    test "renders the environment step", %{lv: lv} do
+      html = render(lv)
+      assert html =~ "Step 2"
+      assert html =~ "Create an environment"
+    end
+
+    test "skip_env advances to step_3", %{lv: lv} do
+      assert {:error, {:live_redirect, %{to: "/onboarding/step_3"}}} =
                lv |> element("button", "Skip") |> render_click()
     end
 
-    test "submitting a valid env advances to step_2", %{lv: lv} do
-      assert {:error, {:live_redirect, %{to: "/onboarding/step_2"}}} =
+    test "submitting a valid env advances to step_3", %{lv: lv} do
+      assert {:error, {:live_redirect, %{to: "/onboarding/step_3"}}} =
                lv
                |> form("form[phx-submit='create_env']", env: %{name: "my-env"})
                |> render_submit()
     end
 
     test "submitting an empty name shows an error", %{lv: lv} do
-      # Name is required on the DB level; an empty string will produce a changeset error
       html =
         lv
         |> form("form[phx-submit='create_env']", env: %{name: ""})
         |> render_submit()
 
-      # Either stays on step_1 (redirect not triggered) or shows error
       assert html =~ "Create an environment" or html =~ "can&#39;t be blank"
     end
   end
 
-  describe "OnboardingLive.Wizard — step 3 (finish)" do
+  describe "OnboardingLive.Wizard — step 4 (finish)" do
     test "start_conversation redirects to /conversations/new", %{conn: conn} do
       user = insert_verified_user()
-      # Manually advance to step_3
-      {:ok, user} = Fountain.Accounts.advance_onboarding(user, "step_3")
+      {:ok, user} = Fountain.Accounts.advance_onboarding(user, "step_4")
       conn = login_user(conn, user)
-      {:ok, lv, _html} = live(conn, ~p"/onboarding/step_3")
+      {:ok, lv, _html} = live(conn, ~p"/onboarding/step_4")
 
       assert {:error, {:live_redirect, %{to: "/conversations/new"}}} =
                lv |> element("button", "Start first conversation") |> render_click()
-    end
-
-    test "skip_wizard redirects to /dashboard", %{conn: conn} do
-      user = insert_verified_user()
-      conn = login_user(conn, user)
-      {:ok, lv, _html} = live(conn, ~p"/onboarding/step_1")
-
-      assert {:error, {:live_redirect, %{to: "/dashboard"}}} =
-               lv |> element("button", "Skip setup") |> render_click()
     end
   end
 end
