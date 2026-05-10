@@ -132,7 +132,7 @@ if config_env() == :prod and server? do
     System.get_env("SECRET_KEY_BASE") ||
       raise "environment variable SECRET_KEY_BASE is missing."
 
-  host = System.get_env("FOUNTAIN_DOMAIN") || "fountain.dev"
+  host = System.get_env("FOUNTAIN_DOMAIN") || "localhost"
 
   config :fountain, :dns_cluster_query, System.get_env("DNS_CLUSTER_QUERY")
 
