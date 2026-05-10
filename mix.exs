@@ -34,9 +34,7 @@ defmodule Fountain.Umbrella.MixProject do
           )
       ],
       fountain_server: [
-        applications: [fountain_cli: :permanent, fountain: :permanent],
-        steps: [:assemble, &Burrito.wrap/1],
-        burrito: burrito_targets_with_musl_fix()
+        applications: [fountain_cli: :permanent, fountain: :permanent]
       ]
     ]
   end
@@ -73,12 +71,6 @@ defmodule Fountain.Umbrella.MixProject do
       end
 
     [targets: selected, debug: Mix.env() != :prod]
-  end
-
-  defp burrito_targets_with_musl_fix do
-    Keyword.merge(burrito_targets(),
-      extra_steps: [fetch: [pre: [Fountain.Burrito.InjectMuslPath]]]
-    )
   end
 
   defp aliases do
