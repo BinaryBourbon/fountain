@@ -1,19 +1,24 @@
 defmodule FountainWeb.Router do
   use FountainWeb, :router
 
-  pipeline :api do
+  ## ─── Pipelines ─────────────────────────────────────────────────────────────
+
+  # Public JSON — spec rendering, health, public auth endpoints
+  pipeline :api_public do
     plug :accepts, ["json"]
     plug FountainWeb.Plugs.PutApiSpec, module: FountainWeb.ApiSpec
   end
 
-  pipeline :authed_api do
+  # Authenticated JSON — TenantAPIAuth gate for all resource endpoints
+  pipeline :api do
     plug :accepts, ["json"]
     plug FountainWeb.Plugs.PutApiSpec, module: FountainWeb.ApiSpec
-    plug FountainWeb.Plugs.AdminAuth
+    plug FountainWeb.Plugs.TenantAPIAuth
     plug FountainWeb.Plugs.RateLimit, bucket: "api", max: 600
     plug FountainWeb.Plugs.Audit
   end
 
+  # Base browser pipeline — session, flash, CSRF, secure headers
   pipeline :browser do
     plug :accepts, ["html"]
     plug :fetch_session
@@ -23,44 +28,124 @@ defmodule FountainWeb.Router do
     plug :put_secure_browser_headers
   end
 
-  pipeline :authed_browser do
+  # Public browser routes (login, register, verify) — no auth check
+  pipeline :browser_public do
+    # intentionally empty; inherits :browser
+  end
+
+  # Authenticated browser routes — loads current_user from session
+  pipeline :browser_authenticated do
+    plug FountainWeb.Plugs.TenantSessionAuth
+  end
+
+  # Legacy single-tenant admin pipeline (kept for ops/upgrade endpoints)
+  pipeline :authed_admin do
     plug FountainWeb.Plugs.SessionAuth
   end
 
-  scope "/", FountainWeb do
-    pipe_through :api
+  ## ─── Public routes ──────────────────────────────────────────────────────────
 
+  scope "/", FountainWeb do
+    pipe_through :api_public
     get "/health", HealthController, :show
   end
 
-  # OpenAPI spec + Swagger UI. Public so that doc tooling (and the
-  # CLI's potential `aod openapi` subcommand) can fetch them without a
-  # token. Swagger UI itself doesn't expose data — it only renders the
-  # spec and lets you "Authorize" with a bearer token to try calls.
   scope "/api" do
-    pipe_through :api
-
+    pipe_through :api_public
     get "/openapi.json", OpenApiSpex.Plug.RenderSpec, []
     get "/docs", OpenApiSpex.Plug.SwaggerUI, path: "/api/openapi.json"
   end
 
-  # Public browser routes (login)
+  ## ─── Public browser routes ──────────────────────────────────────────────────
+
+  # Legacy single-tenant admin login (kept for ops runbook compat)
   scope "/", FountainWeb do
+    pipe_through :browser
+
+    get "/login", SessionController, :legacy_new
+    post "/login", SessionController, :legacy_create
+    post "/logout", SessionController, :legacy_delete
+    get "/logout", SessionController, :legacy_delete
+  end
+
+  # Multi-tenant auth routes (no session auth required)
+  scope "/auth", FountainWeb do
     pipe_through :browser
 
     get "/login", SessionController, :new
     post "/login", SessionController, :create
-    post "/logout", SessionController, :delete
     get "/logout", SessionController, :delete
+
+    get "/register", RegistrationController, :new
+    post "/register", RegistrationController, :create
+    get "/check-email", RegistrationController, :check_email
+
+    get "/forgot-password", PasswordResetController, :forgot_form
+    get "/reset/:token", PasswordResetController, :reset_form
+    post "/reset", PasswordResetController, :reset
+
+    # Ueberauth OAuth routes
+    get "/oauth/:provider", UeberauthController, :request
+    get "/oauth/:provider/callback", UeberauthController, :callback
   end
 
-  # Authenticated UI
-  scope "/", FountainWeb do
-    pipe_through [:browser, :authed_browser]
+  # Email verification (token in path)
+  scope "/users", FountainWeb do
+    pipe_through :browser
+    get "/confirm/:token", EmailVerificationController, :confirm
+  end
 
-    live_session :ui,
+  ## ─── Public JSON auth endpoints ─────────────────────────────────────────────
+
+  scope "/api/auth", FountainWeb do
+    pipe_through :api_public
+
+    post "/register", RegistrationController, :api_create
+    post "/forgot", PasswordResetController, :api_forgot
+  end
+
+  ## ─── Authenticated JSON resource endpoints ──────────────────────────────────
+
+  scope "/api/auth", FountainWeb do
+    pipe_through :api
+
+    get "/me", AuthMeController, :show
+    post "/api-keys", ApiKeyController, :create
+    delete "/api-keys/:id", ApiKeyController, :delete
+  end
+
+  scope "/api", FountainWeb do
+    pipe_through :api
+
+    resources "/environments", EnvironmentController, except: [:new, :edit] do
+      resources "/secrets", SecretController, only: [:index, :create, :delete]
+    end
+
+    resources "/vaults", VaultController, except: [:new, :edit] do
+      resources "/secrets", VaultSecretController, only: [:index, :create, :delete]
+    end
+
+    resources "/agents", AgentController, except: [:new, :edit]
+
+    resources "/conversations", ConversationController,
+      only: [:index, :show, :create, :delete] do
+      post "/prompts", ConversationController, :prompt, as: :prompt
+      post "/interrupt", ConversationController, :interrupt, as: :interrupt
+      post "/terminate", ConversationController, :terminate, as: :terminate
+      get "/stream", ConversationController, :stream, as: :stream
+      get "/turns", ConversationController, :turns, as: :turns
+      get "/turns/:turn_id/images/:position", TurnImageController, :show, as: :turn_image
+    end
+  end
+
+  ## ─── Authenticated browser / LiveView routes ────────────────────────────────
+
+  scope "/", FountainWeb do
+    pipe_through [:browser, :browser_authenticated]
+
+    live_session :authenticated,
       on_mount: [
-        {FountainWeb.Plugs.SessionAuth, :require_admin},
+        {FountainWeb.Live.Hooks, :require_authenticated_user},
         {FountainWeb.Hooks.UpdateCheckerHook, :default}
       ] do
       live "/", ConversationsLive.Index, :index
@@ -81,35 +166,14 @@ defmodule FountainWeb.Router do
     end
   end
 
-  # Admin actions (session-authenticated)
-  scope "/admin", FountainWeb do
-    pipe_through [:browser, :authed_browser]
+  ## ─── Legacy admin-only routes ────────────────────────────────────────────────
 
+  scope "/admin", FountainWeb do
+    pipe_through [:browser, :authed_admin]
     post "/upgrade", AdminController, :upgrade
   end
 
-  scope "/api", FountainWeb do
-    pipe_through :authed_api
-
-    resources "/environments", EnvironmentController, except: [:new, :edit] do
-      resources "/secrets", SecretController, only: [:index, :create, :delete]
-    end
-
-    resources "/vaults", VaultController, except: [:new, :edit] do
-      resources "/secrets", VaultSecretController, only: [:index, :create, :delete]
-    end
-
-    resources "/agents", AgentController, except: [:new, :edit]
-
-    resources "/conversations", ConversationController, only: [:index, :show, :create, :delete] do
-      post "/prompts", ConversationController, :prompt, as: :prompt
-      post "/interrupt", ConversationController, :interrupt, as: :interrupt
-      post "/terminate", ConversationController, :terminate, as: :terminate
-      get "/stream", ConversationController, :stream, as: :stream
-      get "/turns", ConversationController, :turns, as: :turns
-      get "/turns/:turn_id/images/:position", TurnImageController, :show, as: :turn_image
-    end
-  end
+  ## ─── Dev dashboard ───────────────────────────────────────────────────────────
 
   if Application.compile_env(:fountain, :dev_routes) do
     import Phoenix.LiveDashboard.Router

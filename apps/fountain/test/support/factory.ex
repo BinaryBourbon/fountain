@@ -13,6 +13,32 @@ defmodule Fountain.Factory do
 
   defp uniq, do: System.unique_integer([:positive, :monotonic]) |> Integer.to_string()
 
+  # ── users ─────────────────────────────────────────────────────────────────
+
+  def user_attrs(overrides \\ %{}) do
+    Map.merge(
+      %{"email" => "user#{uniq()}@example.com", "password" => "password123"},
+      to_string_map(overrides)
+    )
+  end
+
+  def insert_user(overrides \\ %{}) do
+    {:ok, user} = Fountain.Accounts.register_user(user_attrs(overrides))
+    user
+  end
+
+  def insert_verified_user(overrides \\ %{}) do
+    user = insert_user(overrides)
+    {:ok, verified} = Fountain.Accounts.verify_email(user)
+    verified
+  end
+
+  def insert_api_key(user, name \\ nil) do
+    name = name || "key-#{uniq()}"
+    {:ok, {key_record, raw_key}} = Fountain.Accounts.create_api_key(user.id, name)
+    {key_record, raw_key}
+  end
+
   # ── environments ──────────────────────────────────────────────────────────
 
   def env_attrs(overrides \\ %{}) do

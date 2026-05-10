@@ -46,11 +46,24 @@ defmodule FountainWeb.ConnCase do
     Plug.Conn.put_req_header(conn, "authorization", "Bearer " <> token)
   end
 
-  @doc "Sets the session :admin flag for browser/LiveView tests."
+  @doc "Sets the session :admin flag for browser/LiveView tests (legacy single-tenant)."
   def login(conn) do
     conn
     |> Phoenix.ConnTest.init_test_session(%{})
     |> Plug.Conn.put_session(:admin, true)
+  end
+
+  @doc "Sets a multi-tenant session for the given user (browser tests)."
+  def login_user(conn, user) do
+    conn
+    |> Phoenix.ConnTest.init_test_session(%{})
+    |> Plug.Conn.put_session(:user_id, user.id)
+    |> Plug.Conn.put_session(:session_version, user.session_version)
+  end
+
+  @doc "Sets Bearer API key header for the given raw key (API tests)."
+  def authed_with_key(conn, raw_key) do
+    Plug.Conn.put_req_header(conn, "authorization", "Bearer " <> raw_key)
   end
 
   @doc """

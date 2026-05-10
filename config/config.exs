@@ -20,4 +20,17 @@ config :logger, :default_formatter,
 
 config :phoenix, :json_library, Jason
 
+# Swoosh mailer
+config :fountain, Fountain.Mailer, adapter: Swoosh.Adapters.Local
+
+# Ueberauth — GitHub OAuth strategy
+config :ueberauth, Ueberauth,
+  providers: [
+    github: {Ueberauth.Strategy.Github, [default_scope: "user:email"]}
+  ]
+
+config :ueberauth, Ueberauth.Strategy.Github.OAuth,
+  client_id: System.get_env("GITHUB_OAUTH_CLIENT_ID"),
+  client_secret: System.get_env("GITHUB_OAUTH_CLIENT_SECRET")
+
 import_config "#{config_env()}.exs"

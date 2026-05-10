@@ -1,0 +1,56 @@
+defmodule FountainWeb.Plugs.TenantSessionAuthTest do
+  use FountainWeb.ConnCase, async: true
+
+  alias FountainWeb.Plugs.TenantSessionAuth
+
+  describe "call/2" do
+    test "sets current_user when session is valid", %{conn: conn} do
+      user = insert_verified_user()
+
+      conn =
+        conn
+        |> login_user(user)
+        |> TenantSessionAuth.call([])
+
+      refute conn.halted
+      assert conn.assigns.current_user.id == user.id
+    end
+
+    test "redirects to /auth/login when session is absent", %{conn: conn} do
+      conn =
+        conn
+        |> Phoenix.ConnTest.init_test_session(%{})
+        |> TenantSessionAuth.call([])
+
+      assert conn.halted
+      assert Phoenix.ConnTest.redirected_to(conn) == "/auth/login"
+    end
+
+    test "redirects when session_version is stale (after password reset)", %{conn: conn} do
+      user = insert_verified_user()
+
+      # Simulate session stored with old version
+      conn =
+        conn
+        |> Phoenix.ConnTest.init_test_session(%{})
+        |> Plug.Conn.put_session(:user_id, user.id)
+        |> Plug.Conn.put_session(:session_version, user.session_version - 1)
+        |> TenantSessionAuth.call([])
+
+      assert conn.halted
+      assert Phoenix.ConnTest.redirected_to(conn) == "/auth/login"
+    end
+
+    test "redirects when user_id doesn't exist", %{conn: conn} do
+      conn =
+        conn
+        |> Phoenix.ConnTest.init_test_session(%{})
+        |> Plug.Conn.put_session(:user_id, Ecto.UUID.generate())
+        |> Plug.Conn.put_session(:session_version, 0)
+        |> TenantSessionAuth.call([])
+
+      assert conn.halted
+      assert Phoenix.ConnTest.redirected_to(conn) == "/auth/login"
+    end
+  end
+end
