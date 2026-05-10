@@ -57,6 +57,8 @@ defmodule Fountain.Factory do
   end
 
   def insert_env(overrides \\ %{}) do
+    overrides = to_string_map(overrides)
+    overrides = Map.put_new_lazy(overrides, "user_id", fn -> insert_verified_user().id end)
     {:ok, env} = Fountain.Environments.create_environment(env_attrs(overrides))
     env
   end
@@ -81,6 +83,8 @@ defmodule Fountain.Factory do
   end
 
   def insert_vault(overrides \\ %{}) do
+    overrides = to_string_map(overrides)
+    overrides = Map.put_new_lazy(overrides, "user_id", fn -> insert_verified_user().id end)
     {:ok, vault} = Fountain.Vaults.create_vault(vault_attrs(overrides))
     vault
   end
@@ -112,6 +116,8 @@ defmodule Fountain.Factory do
   end
 
   def insert_agent(overrides \\ %{}) do
+    overrides = to_string_map(overrides)
+    overrides = Map.put_new_lazy(overrides, "user_id", fn -> insert_verified_user().id end)
     {:ok, agent} = Fountain.Agents.create_agent(agent_attrs(overrides))
     agent
   end
@@ -119,9 +125,12 @@ defmodule Fountain.Factory do
   # ── conversations / sandboxes / turns ─────────────────────────────────────
 
   def insert_sandbox(overrides \\ %{}) do
+    overrides_map = to_atom_map(overrides)
+    user_id = Map.get(overrides_map, :user_id) || insert_verified_user().id
+
     attrs =
-      %{sprite_name: "test-sprite-#{uniq()}", status: "pending"}
-      |> Map.merge(to_atom_map(overrides))
+      %{sprite_name: "test-sprite-#{uniq()}", status: "pending", user_id: user_id}
+      |> Map.merge(overrides_map)
 
     %Sandbox{}
     |> Sandbox.changeset(attrs)
@@ -130,12 +139,19 @@ defmodule Fountain.Factory do
 
   def insert_conversation(overrides \\ %{}) do
     overrides_map = to_atom_map(overrides)
-    sandbox = Map.get(overrides_map, :sandbox) || insert_sandbox()
     agent = Map.get(overrides_map, :agent)
+
+    user_id =
+      Map.get(overrides_map, :user_id) ||
+        (agent && agent.user_id) ||
+        insert_verified_user().id
+
+    sandbox = Map.get(overrides_map, :sandbox) || insert_sandbox(user_id: user_id)
 
     base = %{
       sandbox_id: sandbox.id,
       agent_id: agent && agent.id,
+      user_id: user_id,
       runtime: "claude",
       status: "pending"
     }
