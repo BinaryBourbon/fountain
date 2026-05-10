@@ -72,8 +72,8 @@ defmodule Fountain.Runtimes.Codex do
   end
 
   @impl true
-  def default_env(_agent) do
-    case Application.get_env(:fountain, :openai_api_key) do
+  def default_env(_agent, inference_credentials) do
+    case Map.get(inference_credentials, :openai_api_key) do
       nil -> []
       "" -> []
       key -> [{"OPENAI_API_KEY", key}]

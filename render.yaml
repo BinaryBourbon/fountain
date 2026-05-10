@@ -39,8 +39,10 @@ projects:
                 sync: false
               - key: SPRITES_TOKEN
                 sync: false
-              - key: ANTHROPIC_API_KEY
-                sync: false
+              # Inference credentials (ANTHROPIC_API_KEY, OPENAI_API_KEY,
+              # GEMINI_API_KEY, CLAUDE_CODE_OAUTH_TOKEN) are per-user (BYO,
+              # ADR 0008) — stored encrypted in the inference_credentials
+              # table, not as platform-level env vars.
               - key: GITHUB_OAUTH_CLIENT_ID
                 sync: false
               - key: GITHUB_OAUTH_CLIENT_SECRET

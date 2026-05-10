@@ -1,11 +1,22 @@
 defmodule FountainWeb.OnboardingLive.Wizard do
   use FountainWeb, :live_view
 
-  alias Fountain.{Accounts, Environments, Agents, Conversations}
+  alias Fountain.{Accounts, Agents, Conversations, Crypto, Environments, InferenceCredentials}
   alias Fountain.Environments.Environment
   alias Fountain.Agents.Agent
+  alias Fountain.InferenceCredentials.Validator
 
-  @steps ~w(step_1 step_2 step_3)
+  # ADR 0008 inserted "inference" as the new first step. Old step_1/2/3
+  # shifted to step_2/3/4. Migration 20260510210001 bumps existing user
+  # onboarding_state values.
+  @steps ~w(step_1 step_2 step_3 step_4)
+
+  @inference_providers [
+    {:anthropic_api_key, "Anthropic", "console.anthropic.com"},
+    {:claude_code_oauth_token, "Claude OAuth", "via 'claude setup-token'"},
+    {:openai_api_key, "OpenAI", "platform.openai.com/api-keys"},
+    {:gemini_api_key, "Gemini", "aistudio.google.com/apikey"}
+  ]
 
   @impl true
   def mount(%{"step" => step}, _session, socket) when step in @steps do
@@ -41,9 +52,73 @@ defmodule FountainWeb.OnboardingLive.Wizard do
     |> assign(:agent_errors, %{})
     |> assign(:environments, Environments.list_environments(user.id))
     |> assign(:agents, Agents.list_agents(user.id, []))
+    |> assign(:inference_providers, @inference_providers)
+    |> assign(:inference_status, InferenceCredentials.status_for_user(user.id))
+    |> assign(:inference_messages, %{})
   end
 
+  ## ── Inference (step_1) ──────────────────────────────────────────────────
+
   @impl true
+  def handle_event("save_credential", %{"provider" => provider_str, "value" => value}, socket) do
+    provider = String.to_existing_atom(provider_str)
+    value = String.trim(value || "")
+
+    if value == "" do
+      {:noreply, put_inference_message(socket, provider, :error, "Paste a value before saving.")}
+    else
+      case Validator.validate(provider, value) do
+        :ok ->
+          case persist_credential(socket.assigns.user_id, provider, value) do
+            {:ok, _} ->
+              {:noreply,
+               socket
+               |> assign(
+                 :inference_status,
+                 InferenceCredentials.status_for_user(socket.assigns.user_id)
+               )
+               |> put_inference_message(provider, :info, "Saved and validated.")}
+
+            {:error, reason} ->
+              {:noreply,
+               put_inference_message(socket, provider, :error, "Could not save: #{inspect(reason)}")}
+          end
+
+        {:error, :invalid, %{status: status}} ->
+          {:noreply,
+           put_inference_message(
+             socket,
+             provider,
+             :error,
+             "Provider rejected the credential (HTTP #{status}). Check that you copied the full token."
+           )}
+
+        {:error, :timeout} ->
+          {:noreply,
+           put_inference_message(socket, provider, :error, "Validation timed out. Try again.")}
+
+        {:error, reason} ->
+          {:noreply,
+           put_inference_message(
+             socket,
+             provider,
+             :error,
+             "Could not reach provider (#{inspect(reason)})."
+           )}
+      end
+    end
+  end
+
+  def handle_event("continue_from_inference", _params, socket) do
+    if InferenceCredentials.has_any_credential?(socket.assigns.user_id) do
+      advance(socket, "step_2")
+    else
+      {:noreply, put_flash(socket, :error, "Set at least one provider to continue.")}
+    end
+  end
+
+  ## ── Environment (step_2) ────────────────────────────────────────────────
+
   def handle_event("validate_env", %{"env" => params}, socket) do
     {:noreply, assign(socket, :env_form, params)}
   end
@@ -52,17 +127,14 @@ defmodule FountainWeb.OnboardingLive.Wizard do
     attrs = Map.put(params, "user_id", socket.assigns.user_id)
 
     case Environments.create_environment(attrs) do
-      {:ok, _env} ->
-        advance(socket, "step_2")
-
-      {:error, cs} ->
-        {:noreply, assign(socket, :env_errors, changeset_errors(cs))}
+      {:ok, _env} -> advance(socket, "step_3")
+      {:error, cs} -> {:noreply, assign(socket, :env_errors, changeset_errors(cs))}
     end
   end
 
-  def handle_event("skip_env", _params, socket) do
-    advance(socket, "step_2")
-  end
+  def handle_event("skip_env", _params, socket), do: advance(socket, "step_3")
+
+  ## ── Agent (step_3) ──────────────────────────────────────────────────────
 
   def handle_event("validate_agent", %{"agent" => params}, socket) do
     {:noreply, assign(socket, :agent_form, params)}
@@ -72,17 +144,14 @@ defmodule FountainWeb.OnboardingLive.Wizard do
     attrs = Map.put(params, "user_id", socket.assigns.user_id)
 
     case Agents.create_agent(attrs) do
-      {:ok, _agent} ->
-        advance(socket, "step_3")
-
-      {:error, cs} ->
-        {:noreply, assign(socket, :agent_errors, changeset_errors(cs))}
+      {:ok, _agent} -> advance(socket, "step_4")
+      {:error, cs} -> {:noreply, assign(socket, :agent_errors, changeset_errors(cs))}
     end
   end
 
-  def handle_event("skip_agent", _params, socket) do
-    advance(socket, "step_3")
-  end
+  def handle_event("skip_agent", _params, socket), do: advance(socket, "step_4")
+
+  ## ── Start (step_4) ──────────────────────────────────────────────────────
 
   def handle_event("start_conversation", _params, socket) do
     {:ok, user} = Accounts.complete_onboarding(socket.assigns.user)
@@ -95,9 +164,21 @@ defmodule FountainWeb.OnboardingLive.Wizard do
     {:noreply, push_navigate(socket, to: ~p"/dashboard")}
   end
 
+  ## ── Helpers ─────────────────────────────────────────────────────────────
+
   defp advance(socket, next_step) do
     {:ok, user} = Accounts.advance_onboarding(socket.assigns.user, next_step)
     {:noreply, socket |> assign(:user, user) |> push_navigate(to: ~p"/onboarding/#{next_step}")}
+  end
+
+  defp persist_credential(user_id, provider, value) do
+    with {:ok, dek} <- Crypto.load_tenant_key(user_id) do
+      InferenceCredentials.put_credential(user_id, dek, provider, value)
+    end
+  end
+
+  defp put_inference_message(socket, provider, kind, msg) do
+    update(socket, :inference_messages, fn map -> Map.put(map, provider, {kind, msg}) end)
   end
 
   defp changeset_errors(cs) do
@@ -107,6 +188,8 @@ defmodule FountainWeb.OnboardingLive.Wizard do
     end)
     |> Map.new(fn {k, [first | _]} -> {to_string(k), first} end)
   end
+
+  ## ── Render ──────────────────────────────────────────────────────────────
 
   @impl true
   def render(assigns) do
@@ -123,11 +206,17 @@ defmodule FountainWeb.OnboardingLive.Wizard do
         <div class="bg-white rounded-xl shadow border border-zinc-200 p-8">
           <%= case @step do %>
             <% "step_1" -> %>
-              <.step_1 env_form={@env_form} env_errors={@env_errors} />
+              <.step_inference
+                providers={@inference_providers}
+                status={@inference_status}
+                messages={@inference_messages}
+                any_set?={Enum.any?(@inference_status, fn {_, set?} -> set? end)} />
             <% "step_2" -> %>
-              <.step_2 agent_form={@agent_form} agent_errors={@agent_errors} environments={@environments} />
+              <.step_env env_form={@env_form} env_errors={@env_errors} />
             <% "step_3" -> %>
-              <.step_3 agents={@agents} />
+              <.step_agent agent_form={@agent_form} agent_errors={@agent_errors} environments={@environments} />
+            <% "step_4" -> %>
+              <.step_start agents={@agents} />
           <% end %>
         </div>
 
@@ -146,9 +235,10 @@ defmodule FountainWeb.OnboardingLive.Wizard do
 
   defp progress_bar(assigns) do
     steps = [
-      {"step_1", "1", "Environment"},
-      {"step_2", "2", "Agent"},
-      {"step_3", "3", "Start"}
+      {"step_1", "1", "Inference"},
+      {"step_2", "2", "Environment"},
+      {"step_3", "3", "Agent"},
+      {"step_4", "4", "Start"}
     ]
 
     step_index = fn s -> Enum.find_index(steps, fn {id, _, _} -> id == s end) end
@@ -160,7 +250,7 @@ defmodule FountainWeb.OnboardingLive.Wizard do
 
     ~H"""
     <div class="flex items-center justify-center gap-2">
-      <%= for {{id, num, label}, i} <- Enum.with_index(@steps) do %>
+      <%= for {{_id, num, label}, i} <- Enum.with_index(@steps) do %>
         <div class="flex items-center gap-2">
           <div class={[
             "w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium border-2",
@@ -181,14 +271,82 @@ defmodule FountainWeb.OnboardingLive.Wizard do
     """
   end
 
-  attr :env_form, :map, required: true
-  attr :env_errors, :map, required: true
+  attr :providers, :list, required: true
+  attr :status, :map, required: true
+  attr :messages, :map, required: true
+  attr :any_set?, :boolean, required: true
 
-  defp step_1(assigns) do
+  defp step_inference(assigns) do
     ~H"""
     <div class="space-y-5">
       <div>
-        <h2 class="text-lg font-semibold">Step 1: Create an environment</h2>
+        <h2 class="text-lg font-semibold">Step 1: Connect a provider</h2>
+        <p class="mt-1 text-sm text-zinc-500">
+          Bring your own inference token. Sandboxes call providers directly with these — Fountain never sees your traffic and you pay providers directly. Set at least one to continue. You can add or change these anytime from Settings.
+        </p>
+      </div>
+
+      <div class="space-y-3">
+        <div :for={{provider, label, source} <- @providers}
+             class="rounded-md border border-zinc-200 p-3 space-y-2">
+          <div class="flex items-center justify-between">
+            <div>
+              <span class="text-sm font-medium">{label}</span>
+              <span class="text-xs text-zinc-500 ml-2">Get from {source}</span>
+            </div>
+            <%= if Map.get(@status, provider, false) do %>
+              <span class="inline-flex items-center rounded-full bg-emerald-100 text-emerald-800 px-2 py-0.5 text-xs font-medium">Set</span>
+            <% else %>
+              <span class="inline-flex items-center rounded-full bg-zinc-100 text-zinc-600 px-2 py-0.5 text-xs">Not set</span>
+            <% end %>
+          </div>
+
+          <form phx-submit="save_credential" class="flex gap-2">
+            <input type="hidden" name="provider" value={Atom.to_string(provider)} />
+            <input type="password"
+                   name="value"
+                   placeholder={if Map.get(@status, provider, false), do: "Replace…", else: "Paste token"}
+                   autocomplete="off"
+                   class="flex-1 rounded-md border border-zinc-300 px-2 py-1.5 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-zinc-900" />
+            <button type="submit"
+                    class="rounded-md bg-zinc-900 text-white px-3 py-1.5 text-xs font-medium hover:bg-zinc-700">
+              Save
+            </button>
+          </form>
+
+          <%= case Map.get(@messages, provider) do %>
+            <% nil -> %>
+            <% {:info, msg} -> %>
+              <p class="text-xs text-emerald-700">{msg}</p>
+            <% {:error, msg} -> %>
+              <p class="text-xs text-rose-700">{msg}</p>
+          <% end %>
+        </div>
+      </div>
+
+      <button phx-click="continue_from_inference"
+              disabled={!@any_set?}
+              class={[
+                "w-full rounded-md px-4 py-2 text-sm font-medium",
+                if(@any_set?,
+                  do: "bg-zinc-900 text-white hover:bg-zinc-700",
+                  else: "bg-zinc-200 text-zinc-400 cursor-not-allowed"
+                )
+              ]}>
+        Continue →
+      </button>
+    </div>
+    """
+  end
+
+  attr :env_form, :map, required: true
+  attr :env_errors, :map, required: true
+
+  defp step_env(assigns) do
+    ~H"""
+    <div class="space-y-5">
+      <div>
+        <h2 class="text-lg font-semibold">Step 2: Create an environment</h2>
         <p class="mt-1 text-sm text-zinc-500">
           Environments define the compute context for your agents — packages, env vars, repos.
           You can skip this and set one up later.
@@ -232,11 +390,11 @@ defmodule FountainWeb.OnboardingLive.Wizard do
   attr :agent_errors, :map, required: true
   attr :environments, :list, required: true
 
-  defp step_2(assigns) do
+  defp step_agent(assigns) do
     ~H"""
     <div class="space-y-5">
       <div>
-        <h2 class="text-lg font-semibold">Step 2: Create an agent</h2>
+        <h2 class="text-lg font-semibold">Step 3: Create an agent</h2>
         <p class="mt-1 text-sm text-zinc-500">
           An agent bundles a model, system prompt, and environment into a reusable persona.
         </p>
@@ -286,7 +444,7 @@ defmodule FountainWeb.OnboardingLive.Wizard do
 
   attr :agents, :list, required: true
 
-  defp step_3(assigns) do
+  defp step_start(assigns) do
     ~H"""
     <div class="space-y-5 text-center">
       <div>

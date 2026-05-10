@@ -367,13 +367,22 @@ The cap is the primary defense against a single tenant exhausting Sprites accoun
 
 The `aod-conv-<short-id>` sprite naming prefix from aod-ex becomes `fountain-conv-<short-id>` to distinguish from any legacy aod-ex sprites on the same Sprites account.
 
-### 4.3 G2 Decisions — Quotas
+### 4.3 Inference credentials — BYO per tenant (ADR 0008, post-G2)
+
+In contrast to the platform-shared Sprites model (§4.2), inference provider tokens are **per-tenant**. Each user supplies their own `ANTHROPIC_API_KEY`, `CLAUDE_CODE_OAUTH_TOKEN`, `OPENAI_API_KEY`, and/or `GEMINI_API_KEY` via the settings page (`/account/inference-credentials`) or the first onboarding step. Tokens live in the `inference_credentials` table, encrypted with the per-tenant DEK.
+
+`ConversationServer.handle_continue(:provision, ...)` loads the DEK and decrypts the user's credentials at conversation start, passes the decrypted map to `runtime_module.default_env(agent, credentials)`. Plaintext credentials live only in GenServer state for the conversation lifetime.
+
+This is a deliberate departure from §4.2's Sprites model. Reasons captured in ADR 0008: cost concentration (inference is the dominant cost line and varies wildly per turn), `CLAUDE_CODE_OAUTH_TOKEN` requires per-user provider auth by design, and there's no isolation primitive to wrap (unlike Sprites' per-sandbox isolation).
+
+### 4.4 G2 Decisions — Quotas
 
 | ID | Question | Decision (2026-05-09) |
 |---|---|---|
 | **OQ-4a** | Per-tenant Sprites credential model | **Platform-shared `SPRITES_TOKEN`.** Hidden from users (matches the Option B onboarding goal). Standard multi-tenant SaaS pattern. Per-tenant concurrency cap is the noisy-neighbor mitigation. BYO-token can return as an optional power-user feature post-launch if requested. |
 | **OQ-4b** | Additional rate limits at launch | **Concurrent sandboxes only.** `usage_events` keeps recording everything; turns/hour and event-volume caps are deferred until evidence justifies them. |
 | **OQ-4c** | Default concurrency cap | **5 concurrent sandboxes per tenant**, admin-adjustable per user. Now load-bearing because all tenants share one Sprites account. |
+| **(post-G2)** | Inference credentials | **BYO per tenant** — see §4.3 and ADR 0008. New decision after G2 closed; supersedes any earlier implication that platform-level inference keys would be carried forward from aod-ex. |
 
 ---
 

@@ -61,8 +61,9 @@ master_secrets_key =
 
 config :fountain, :master_secrets_key, master_secrets_key
 config :fountain, :sprites_token, System.get_env("SPRITES_TOKEN")
-config :fountain, :anthropic_api_key, System.get_env("ANTHROPIC_API_KEY")
 config :fountain, :public_url, System.get_env("FOUNTAIN_DOMAIN", "http://localhost:4000")
+# Inference credentials are per-user (BYO, ADR 0008) and live in the
+# inference_credentials table — no platform-level env vars for them.
 
 cluster_topologies =
   case System.get_env("CLUSTER_DNS_QUERY") do
@@ -86,9 +87,6 @@ cluster_topologies =
   end
 
 config :libcluster, topologies: cluster_topologies
-config :fountain, :claude_code_oauth_token, System.get_env("CLAUDE_CODE_OAUTH_TOKEN")
-config :fountain, :openai_api_key, System.get_env("OPENAI_API_KEY")
-config :fountain, :gemini_api_key, System.get_env("GEMINI_API_KEY")
 
 # GitHub OAuth (§2.4)
 config :ueberauth, Ueberauth,
