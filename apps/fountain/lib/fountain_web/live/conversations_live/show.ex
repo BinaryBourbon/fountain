@@ -129,7 +129,7 @@ defmodule FountainWeb.ConversationsLive.Show do
     case ConversationServer.send_prompt(socket.assigns.conv.id, p, decoded_images) do
       :ok ->
         # Refetch the conversation — wake-from-cold flips sandbox + status.
-        conv = Conversations.get_conversation!(socket.assigns.conv.id)
+        conv = Conversations.get_conversation!(socket.assigns.conv.id, socket.assigns.current_user.id)
 
         {:noreply,
          socket
@@ -160,7 +160,7 @@ defmodule FountainWeb.ConversationsLive.Show do
   def handle_event("terminate", _, socket) do
     case ConversationServer.terminate(socket.assigns.conv.id) do
       :ok ->
-        conv = Conversations.get_conversation!(socket.assigns.conv.id)
+        conv = Conversations.get_conversation!(socket.assigns.conv.id, socket.assigns.current_user.id)
         {:noreply, socket |> assign(:conv, conv) |> put_flash(:info, "Terminated")}
 
       _ ->
@@ -171,7 +171,7 @@ defmodule FountainWeb.ConversationsLive.Show do
   def handle_event("interrupt", _, socket) do
     case ConversationServer.interrupt(socket.assigns.conv.id) do
       :ok ->
-        conv = Conversations.get_conversation!(socket.assigns.conv.id)
+        conv = Conversations.get_conversation!(socket.assigns.conv.id, socket.assigns.current_user.id)
         {:noreply, socket |> assign(:conv, conv) |> put_flash(:info, "Interrupted")}
 
       {:error, :idle} ->

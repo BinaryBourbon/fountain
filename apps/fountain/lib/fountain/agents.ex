@@ -6,7 +6,11 @@ defmodule Fountain.Agents do
   alias Fountain.Agents.Agent
   alias Fountain.Repo
 
-  def list_agents(filters \\ []) do
+  @doc """
+  WARNING: returns agents across all tenants. Admin/internal use only.
+  User-facing code must use the arity-2 variant that takes user_id.
+  """
+  def _unsafe_list_agents(filters \\ []) do
     from(a in Agent, order_by: [desc: a.inserted_at, desc: a.id], preload: [:environment])
     |> apply_search(Keyword.get(filters, :search, ""))
     |> apply_runtimes(Keyword.get(filters, :runtimes, []))
@@ -16,8 +20,11 @@ defmodule Fountain.Agents do
     |> Repo.all()
   end
 
-  def get_agent(id), do: Repo.get(Agent, id) |> Repo.preload(:environment)
-  def get_agent!(id), do: Repo.get!(Agent, id) |> Repo.preload(:environment)
+  @doc "WARNING: lookup by id without owner check. Admin/internal use only."
+  def _unsafe_get_agent(id), do: Repo.get(Agent, id) |> Repo.preload(:environment)
+
+  @doc "WARNING: lookup by id without owner check. Admin/internal use only."
+  def _unsafe_get_agent!(id), do: Repo.get!(Agent, id) |> Repo.preload(:environment)
 
   @doc "Get agent scoped to user. Returns nil on wrong owner or missing id."
   def get_agent(id, user_id) when is_binary(user_id) do

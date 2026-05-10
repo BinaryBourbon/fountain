@@ -68,7 +68,7 @@ defmodule Fountain.Conversations.ConversationServer do
   def terminate(conv_id) do
     case whereis(conv_id) do
       nil ->
-        case Conversations.get_conversation(conv_id) do
+        case Conversations._unsafe_get_conversation(conv_id) do
           nil ->
             {:error, :not_running}
 
@@ -126,11 +126,11 @@ defmodule Fountain.Conversations.ConversationServer do
 
   @impl true
   def handle_continue(:provision, state) do
-    conv = Conversations.get_conversation!(state.conversation_id)
+    conv = Conversations._unsafe_get_conversation!(state.conversation_id)
     sandbox = Conversations.get_sandbox!(state.sandbox_id)
-    agent = if conv.agent_id, do: Agents.get_agent!(conv.agent_id), else: nil
-    env = if agent && agent.environment_id, do: Environments.get_environment(agent.environment_id)
-    vault = if conv.vault_id, do: Vaults.get_vault(conv.vault_id)
+    agent = if conv.agent_id, do: Agents._unsafe_get_agent!(conv.agent_id), else: nil
+    env = if agent && agent.environment_id, do: Environments._unsafe_get_environment(agent.environment_id)
+    vault = if conv.vault_id, do: Vaults._unsafe_get_vault(conv.vault_id)
 
     case load_tenant_state(conv.user_id) do
       {:ok, dek, inference_creds} ->
@@ -498,7 +498,7 @@ defmodule Fountain.Conversations.ConversationServer do
           replay_skip_bytes: replay_skip
         })
 
-        conv = Conversations.get_conversation!(state.conversation_id)
+        conv = Conversations._unsafe_get_conversation!(state.conversation_id)
         {:ok, _} = Conversations.update_conversation(conv, %{status: "running"})
 
         %{
@@ -526,7 +526,7 @@ defmodule Fountain.Conversations.ConversationServer do
     # The orphaned turn was the only thing keeping the conversation in
     # `running`. Flip it back to `idle` so the UI accurately reflects
     # state and the user can prompt without going through wake.
-    conv = Conversations.get_conversation!(state.conversation_id)
+    conv = Conversations._unsafe_get_conversation!(state.conversation_id)
     {:ok, _} = Conversations.update_conversation(conv, %{status: "idle"})
 
     publish_stage(state.conversation_id, "reattach", "interrupted", %{
@@ -654,8 +654,8 @@ defmodule Fountain.Conversations.ConversationServer do
     if state.current_command do
       {:reply, {:error, :busy}, state}
     else
-      conv = Conversations.get_conversation!(state.conversation_id)
-      agent = if conv.agent_id, do: Agents.get_agent!(conv.agent_id)
+      conv = Conversations._unsafe_get_conversation!(state.conversation_id)
+      agent = if conv.agent_id, do: Agents._unsafe_get_agent!(conv.agent_id)
       {:reply, :ok, kick_turn(state, prompt, agent, images)}
     end
   end
@@ -664,8 +664,8 @@ defmodule Fountain.Conversations.ConversationServer do
     if state.current_command do
       {:reply, {:error, :busy}, state}
     else
-      conv = Conversations.get_conversation!(state.conversation_id)
-      agent = if conv.agent_id, do: Agents.get_agent!(conv.agent_id)
+      conv = Conversations._unsafe_get_conversation!(state.conversation_id)
+      agent = if conv.agent_id, do: Agents._unsafe_get_agent!(conv.agent_id)
       {:reply, :ok, kick_turn(state, prompt, agent, [])}
     end
   end
@@ -698,7 +698,7 @@ defmodule Fountain.Conversations.ConversationServer do
 
     end_turn_span(state.current_turn_span, :error, %{"outcome" => "interrupted"})
 
-    conv = Conversations.get_conversation!(state.conversation_id)
+    conv = Conversations._unsafe_get_conversation!(state.conversation_id)
     {:ok, _} = Conversations.update_conversation(conv, %{status: "idle"})
 
     {:reply, :ok,
@@ -718,7 +718,7 @@ defmodule Fountain.Conversations.ConversationServer do
     {:ok, _} =
       Conversations.update_sandbox(sandbox, %{status: "terminated", terminated_at: now()})
 
-    conv = Conversations.get_conversation!(state.conversation_id)
+    conv = Conversations._unsafe_get_conversation!(state.conversation_id)
     {:ok, _} = Conversations.update_conversation(conv, %{status: "terminated"})
     publish_stage(state.conversation_id, "terminate", "done")
     {:stop, :normal, :ok, state}
@@ -756,7 +756,7 @@ defmodule Fountain.Conversations.ConversationServer do
       %{"exit_code" => code}
     )
 
-    conv = Conversations.get_conversation!(state.conversation_id)
+    conv = Conversations._unsafe_get_conversation!(state.conversation_id)
     {:ok, _} = Conversations.update_conversation(conv, %{status: "idle"})
 
     {:noreply,
@@ -795,7 +795,7 @@ defmodule Fountain.Conversations.ConversationServer do
   end
 
   defp kick_turn(state, prompt, agent, images) do
-    conv = Conversations.get_conversation!(state.conversation_id)
+    conv = Conversations._unsafe_get_conversation!(state.conversation_id)
     turn_number = Conversations.next_turn_number(state.conversation_id)
 
     {:ok, turn} =
