@@ -51,7 +51,7 @@ defmodule Fountain.Conversations.Conversation do
       :agent_id,
       :vault_id
     ])
-    |> validate_required([:runtime, :status, :sandbox_id])
+    |> validate_required([:runtime, :status, :sandbox_id, :user_id])
     |> validate_inclusion(:status, @statuses)
     |> validate_inclusion(:source, @sources)
     |> foreign_key_constraint(:sandbox_id)

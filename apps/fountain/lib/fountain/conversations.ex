@@ -412,21 +412,24 @@ defmodule Fountain.Conversations do
     - `source`                — optional; one of "ui", "api", "agent" (default "api")
     - `parent_conversation_id` — optional; UUID of the conversation that spawned this one
   """
-  def start_conversation(%{"agent_id" => agent_id} = attrs) do
-    with %Agents.Agent{} = agent <- Agents.get_agent(agent_id) || {:error, :not_found},
+  def start_conversation(%{"agent_id" => agent_id, "user_id" => user_id} = attrs)
+      when is_binary(user_id) do
+    with %Agents.Agent{} = agent <- Agents.get_agent(agent_id, user_id) || {:error, :not_found},
          {:ok, runtime_module} <- Fountain.Runtimes.for_runtime(agent.runtime),
-         {:ok, vault_id} <- resolve_vault_id(attrs["vault_id"]),
+         {:ok, vault_id} <- resolve_vault_id(attrs["vault_id"], user_id),
          {:ok, sandbox} <-
            create_sandbox(%{
              environment_id: agent.environment_id,
              sprite_name: attrs["sprite_name"] || "aod-conv-#{short_id()}",
-             status: "pending"
+             status: "pending",
+             user_id: user_id
            }),
          {:ok, conv} <-
            create_conversation(%{
              sandbox_id: sandbox.id,
              agent_id: agent.id,
              vault_id: vault_id,
+             user_id: user_id,
              runtime: agent.runtime,
              status: "pending",
              source: attrs["source"] || "api",
@@ -487,11 +490,11 @@ defmodule Fountain.Conversations do
 
   defp short_id, do: Ecto.UUID.generate() |> binary_part(0, 8)
 
-  defp resolve_vault_id(nil), do: {:ok, nil}
-  defp resolve_vault_id(""), do: {:ok, nil}
+  defp resolve_vault_id(nil, _user_id), do: {:ok, nil}
+  defp resolve_vault_id("", _user_id), do: {:ok, nil}
 
-  defp resolve_vault_id(id) when is_binary(id) do
-    case Fountain.Vaults.get_vault(id) do
+  defp resolve_vault_id(id, user_id) when is_binary(id) and is_binary(user_id) do
+    case Fountain.Vaults.get_vault(id, user_id) do
       nil -> {:error, :vault_not_found}
       vault -> {:ok, vault.id}
     end
@@ -574,7 +577,8 @@ defmodule Fountain.Conversations do
            create_sandbox(%{
              environment_id: agent.environment_id,
              sprite_name: "aod-conv-#{short_id()}",
-             status: "pending"
+             status: "pending",
+             user_id: conv.user_id
            }),
          _ <- mark_old_sandbox_terminated(conv.sandbox_id),
          {:ok, conv} <-

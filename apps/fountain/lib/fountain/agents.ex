@@ -19,6 +19,14 @@ defmodule Fountain.Agents do
   def get_agent(id), do: Repo.get(Agent, id) |> Repo.preload(:environment)
   def get_agent!(id), do: Repo.get!(Agent, id) |> Repo.preload(:environment)
 
+  @doc "Get agent scoped to user. Returns nil on wrong owner or missing id."
+  def get_agent(id, user_id) when is_binary(user_id) do
+    case Repo.get_by(Agent, id: id, user_id: user_id) do
+      nil -> nil
+      agent -> Repo.preload(agent, :environment)
+    end
+  end
+
   @doc "Get agent scoped to user. Raises Ecto.NoResultsError if wrong owner."
   def get_agent!(id, user_id) when is_binary(user_id) do
     Repo.get_by!(Agent, id: id, user_id: user_id) |> Repo.preload(:environment)
