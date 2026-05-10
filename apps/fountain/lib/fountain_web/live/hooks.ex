@@ -1,6 +1,6 @@
 defmodule FountainWeb.Live.Hooks do
   @moduledoc """
-  LiveView `on_mount` hooks for multi-tenant authentication.
+  LiveView `on_mount` hooks for multi-tenant authentication and billing.
 
   ## Usage in router live_session
 
@@ -9,10 +9,21 @@ defmodule FountainWeb.Live.Hooks do
         live "/dashboard", DashboardLive, :index
       end
 
+      live_session :active_subscription,
+        on_mount: [
+          {FountainWeb.Live.Hooks, :require_authenticated_user},
+          {FountainWeb.Live.Hooks, :require_active_subscription}
+        ] do
+        live "/", ConversationsLive.Index, :index
+      end
+
   ## Hooks
 
   - `:require_authenticated_user` — halts and redirects to login if no
     current_user is set, or if the user's email is unverified.
+  - `:require_active_subscription` — halts and redirects to `/account/billing`
+    if the user's subscription is `past_due` or `canceled`. Must run after
+    `:require_authenticated_user` (current_user must already be assigned).
   - `:require_admin` — halts if current_user is absent or not an admin.
   """
 
@@ -22,6 +33,7 @@ defmodule FountainWeb.Live.Hooks do
   use FountainWeb, :verified_routes
 
   alias Fountain.Accounts
+  alias Fountain.Billing
 
   def on_mount(:require_authenticated_user, _params, session, socket) do
     socket = mount_current_user(session, socket)
@@ -39,6 +51,24 @@ defmodule FountainWeb.Live.Hooks do
 
       true ->
         {:cont, socket}
+    end
+  end
+
+  def on_mount(:require_active_subscription, _params, _session, socket) do
+    user = socket.assigns[:current_user]
+
+    try do
+      Billing.assert_active!(user)
+      {:cont, socket}
+    rescue
+      Billing.SubscriptionRequiredError ->
+        {:halt,
+         socket
+         |> put_flash(
+           :error,
+           "Your subscription requires attention. Please update your payment method."
+         )
+         |> redirect(to: ~p"/account/billing")}
     end
   end
 
