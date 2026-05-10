@@ -51,6 +51,8 @@ projects:
                 sync: false
               - key: STRIPE_WEBHOOK_SECRET
                 sync: false
+              - key: STRIPE_PRICE_ID
+                sync: false
 
               # Resend transactional email
               - key: RESEND_API_KEY

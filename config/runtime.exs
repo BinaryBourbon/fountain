@@ -105,6 +105,10 @@ config :stripity_stripe,
   api_key: System.get_env("STRIPE_SECRET_KEY"),
   webhook_secret: System.get_env("STRIPE_WEBHOOK_SECRET")
 
+# Stripe Price ID for the subscription tier surfaced by Checkout.
+# Set per environment (test-mode price in dev, live-mode price in prod).
+config :fountain, :stripe_price_id, System.get_env("STRIPE_PRICE_ID")
+
 # Swoosh Resend adapter for prod; overridden to Local/Test in dev/test via env configs.
 # Domain (updates.inevitable.fyi) must be verified in Resend with SPF/DKIM/DMARC DNS
 # records before the configured EMAIL_FROM address can deliver.
