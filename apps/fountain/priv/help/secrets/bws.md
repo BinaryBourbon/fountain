@@ -1,6 +1,6 @@
 # Bitwarden Secrets Manager (`bws://`)
 
-Use the Bitwarden Secrets Manager CLI to resolve `bws://<uuid>` references at `aod apply` time. AoD calls `bws secret get` on your machine — it never sees your Bitwarden master password.
+Use the Bitwarden Secrets Manager CLI to resolve `bws://<uuid>` references at `fountain apply` time. Fountain calls `bws secret get` on your machine — it never sees your Bitwarden master password.
 
 > **Note:** This is the **Secrets Manager** CLI (`bws`), not the personal vault CLI (`bw`). Secrets Manager is designed for IaC / CI flows and uses access tokens + UUID addressing.
 
@@ -20,7 +20,7 @@ brew install bitwarden/brew/bws
 
 ## Auth
 
-`bws` authenticates with a machine access token. AoD reads `BWS_ACCESS_TOKEN` from your environment and passes it to `bws` — it's never written to the database.
+`bws` authenticates with a machine access token. Fountain reads `BWS_ACCESS_TOKEN` from your environment and passes it to `bws` — it's never written to the database.
 
 **Generate a token in the Bitwarden dashboard:**
 
@@ -29,17 +29,17 @@ brew install bitwarden/brew/bws
 3. Grant it read access to the secrets you need.
 4. Copy the access token — it's only shown once.
 
-**Set it before running `aod apply`:**
+**Set it before running `fountain apply`:**
 
 ```bash
 export BWS_ACCESS_TOKEN=0.your-token-here...
-./aod apply -f aod.yml
+fountain apply -f fountain.yml
 ```
 
 Or inline:
 
 ```bash
-BWS_ACCESS_TOKEN=0.your-token-here... ./aod apply -f aod.yml
+BWS_ACCESS_TOKEN=0.your-token-here... fountain apply -f fountain.yml
 ```
 
 ## URI format
@@ -75,7 +75,7 @@ Use the `id` field as the UUID in your manifest.
 
 ```yaml
 ---
-apiVersion: aod/v1
+apiVersion: fountain/v1
 kind: Environment
 metadata:
   name: ravi-hq
@@ -88,7 +88,7 @@ spec:
     NPM_TOKEN: bws://33333333-3333-3333-3333-333333333333
 
 ---
-apiVersion: aod/v1
+apiVersion: fountain/v1
 kind: Vault
 metadata:
   name: alice
@@ -101,7 +101,7 @@ spec:
 Apply:
 
 ```bash
-BWS_ACCESS_TOKEN=0.your-token... ./aod apply -f aod.yml
+BWS_ACCESS_TOKEN=0.your-token... fountain apply -f fountain.yml
 ```
 
 Output:

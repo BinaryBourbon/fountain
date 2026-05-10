@@ -1,8 +1,8 @@
 # Secrets managers
 
-`aod apply` resolves secret values at apply time — before writing anything to the database — so you can commit `aod.yml` without embedding credentials.
+`fountain apply` resolves secret values at apply time — before writing anything to the database — so you can commit `fountain.yml` without embedding credentials.
 
-Any value under `spec.secrets` can be a URI reference. The resolver for each scheme runs on the operator's machine using its own CLI and credentials. AoD never sees your vault password or access token.
+Any value under `spec.secrets` can be a URI reference. The resolver for each scheme runs on the operator's machine using its own CLI and credentials. Fountain never sees your vault password or access token.
 
 ## URI schemes
 
@@ -28,7 +28,7 @@ Use `$${VAR}` to write a literal `${VAR}` (escapes the substitution).
 
 ```yaml
 ---
-apiVersion: aod/v1
+apiVersion: fountain/v1
 kind: Environment
 metadata:
   name: my-project
@@ -40,7 +40,7 @@ spec:
     DATABASE_URL: infisical://abc123/prod/api/DATABASE_URL  # Infisical (explicit project)
     REDIS_URL: infisical:///prod/REDIS_URL                  # Infisical (workspace project)
 ---
-apiVersion: aod/v1
+apiVersion: fountain/v1
 kind: Vault
 metadata:
   name: alice
@@ -52,8 +52,8 @@ spec:
 Run:
 
 ```bash
-GH_PAT=ghp_... ./aod apply -f aod.yml
-# or: ./aod apply -f aod.yml --var GH_PAT=ghp_...
+GH_PAT=ghp_... ./fountain apply -f fountain.yml
+# or: ./fountain apply -f fountain.yml --var GH_PAT=ghp_...
 ```
 
 ## Failure output

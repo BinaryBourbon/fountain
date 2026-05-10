@@ -1,6 +1,6 @@
 # 1Password (`op://`)
 
-Use the 1Password CLI to resolve secret references at `aod apply` time. AoD calls `op read` on your machine — it never sees your 1Password credentials or master password.
+Use the 1Password CLI to resolve secret references at `fountain apply` time. Fountain calls `op read` on your machine — it never sees your 1Password credentials or master password.
 
 ## Prerequisites
 
@@ -18,9 +18,9 @@ unzip -o op.zip && sudo mv op /usr/local/bin/
 
 ## Auth
 
-`op` manages its own authentication. AoD doesn't see your password, session token, or service account key.
+`op` manages its own authentication. Fountain doesn't see your password, session token, or service account key.
 
-**Interactive (local dev):** Sign in with biometric or password once before running `aod apply`:
+**Interactive (local dev):** Sign in with biometric or password once before running `fountain apply`:
 
 ```bash
 op signin
@@ -38,7 +38,7 @@ Run `op signin` again and re-apply.
 
 ```bash
 export OP_SERVICE_ACCOUNT_TOKEN=ops_...
-./aod apply -f aod.yml
+fountain apply -f fountain.yml
 ```
 
 ## URI format
@@ -65,7 +65,7 @@ op item get PostHog --vault Work      # show item fields
 
 ```yaml
 ---
-apiVersion: aod/v1
+apiVersion: fountain/v1
 kind: Environment
 metadata:
   name: ravi-hq
@@ -78,7 +78,7 @@ spec:
     GITHUB_TOKEN: op://Work/GitHub/token
 
 ---
-apiVersion: aod/v1
+apiVersion: fountain/v1
 kind: Vault
 metadata:
   name: alice
@@ -93,7 +93,7 @@ Apply:
 
 ```bash
 op signin    # once per session
-./aod apply -f aod.yml
+fountain apply -f fountain.yml
 ```
 
 Output:
@@ -118,7 +118,7 @@ secrets:
 ```
 
 ```bash
-OP_VAULT=Work ./aod apply -f aod.yml
+OP_VAULT=Work fountain apply -f fountain.yml
 ```
 
 ## Troubleshooting

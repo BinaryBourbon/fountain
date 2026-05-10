@@ -10,13 +10,13 @@ Fields:
 - **`networking_config`** — for `limited`, an `allowed_hosts` list
 - **`repositories`** — git repos to clone into the sprite at provision time, optionally authenticated via a secret
 - **`setup_script`** — shell run after packages/clones, before the runtime CLI
-- **`checkpoint_id`** — last successful provision's sprite checkpoint (managed by AoD; lets new conversations on the same env warm-start)
+- **`checkpoint_id`** — last successful provision's sprite checkpoint (managed by Fountain; lets new conversations on the same env warm-start)
 
 ## Create one
 
 ```bash
-curl -s -X POST "$AOD_BASE_URL/api/environments" \
-  -H "Authorization: Bearer $AOD_TOKEN" -H "Content-Type: application/json" \
+curl -s -X POST "$FOUNTAIN_BASE_URL/api/environments" \
+  -H "Authorization: Bearer $FOUNTAIN_API_KEY" -H "Content-Type: application/json" \
   -d '{
     "name": "my-project",
     "packages": {"apt": ["jq", "ripgrep"]},
@@ -38,12 +38,12 @@ curl -s -X POST "$AOD_BASE_URL/api/environments" \
 
 ## Secrets
 
-`repositories[].secret_key` references a **Secret** stored under the environment. Secrets are AES-256-GCM encrypted at rest with the key from `SECRETS_KEY`. Add one:
+`repositories[].secret_key` references a **Secret** stored under the environment. Secrets are AES-256-GCM encrypted at rest with a per-tenant data encryption key derived from the server's `MASTER_SECRETS_KEY`. Add one:
 
 ```bash
 ENV_ID=...
-curl -s -X POST "$AOD_BASE_URL/api/environments/$ENV_ID/secrets" \
-  -H "Authorization: Bearer $AOD_TOKEN" -H "Content-Type: application/json" \
+curl -s -X POST "$FOUNTAIN_BASE_URL/api/environments/$ENV_ID/secrets" \
+  -H "Authorization: Bearer $FOUNTAIN_API_KEY" -H "Content-Type: application/json" \
   -d '{"key":"GITHUB_TOKEN","value":"ghp_..."}'
 ```
 
