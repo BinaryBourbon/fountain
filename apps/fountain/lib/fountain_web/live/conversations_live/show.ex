@@ -6,7 +6,16 @@ defmodule FountainWeb.ConversationsLive.Show do
 
   @impl true
   def mount(%{"id" => id}, _session, socket) do
-    case Conversations.get_conversation(id) do
+    user_id = socket.assigns.current_user.id
+
+    conv =
+      try do
+        Conversations.get_conversation!(id, user_id)
+      rescue
+        Ecto.NoResultsError -> nil
+      end
+
+    case conv do
       nil ->
         {:ok, socket |> put_flash(:error, "Conversation not found") |> push_navigate(to: ~p"/")}
 
@@ -628,7 +637,7 @@ defmodule FountainWeb.ConversationsLive.Show do
     """
   end
 
-  # ── grouping events into stage sections ────────────────────────────────────
+  # ── grouping events into stage sections ─────────────────────────────────────────────
 
   # Walk the events list and produce a flat list of "tree nodes" where
   # each `started`-stage event opens a `:section` node that contains all
@@ -739,7 +748,7 @@ defmodule FountainWeb.ConversationsLive.Show do
     }
   end
 
-  # ── tree node renderer ────────────────────────────────────────────
+  # ── tree node renderer ───────────────────────────────────────────────
 
   attr :node, :map, required: true
   attr :runtime, :string, required: true
@@ -930,7 +939,7 @@ defmodule FountainWeb.ConversationsLive.Show do
   attr :block, :map, required: true
   attr :stream, :string, default: nil
 
-  # ── per-block renderers ────────────────────────────────────────────
+  # ── per-block renderers ────────────────────────────────────────────────
 
   defp block_row(%{block: %{kind: :init}} = assigns) do
     ~H"""
@@ -1022,7 +1031,7 @@ defmodule FountainWeb.ConversationsLive.Show do
     """
   end
 
-  # ── event → blocks ──────────────────────────────────────────────
+  # ── event → blocks ────────────────────────────────────────────────
 
   # Splits an event's `data` (which may be a stream-json chunk with N
   # lines) into a flat list of structured blocks. Each block is a map
@@ -1095,7 +1104,7 @@ defmodule FountainWeb.ConversationsLive.Show do
   defp short_kind(%{"type" => t}), do: to_string(t)
   defp short_kind(_), do: "raw"
 
-  # ── claude (stream-json) ───────────────────────────────────────────
+  # ── claude (stream-json) ───────────────────────────────────────────────
   defp event_blocks("claude", %{"type" => "system", "subtype" => "init"} = ev) do
     model = ev["model"]
 
@@ -1175,7 +1184,7 @@ defmodule FountainWeb.ConversationsLive.Show do
 
   defp event_blocks("claude", %{"type" => "rate_limit_event"}), do: []
 
-  # ── codex (`codex exec --json`) ───────────────────────────────────────
+  # ── codex (`codex exec --json`) ───────────────────────────────────────────────
   defp event_blocks("codex", %{"type" => "thread.started", "thread_id" => id}),
     do: [%{kind: :init, summary: "thread: #{id}"}]
 
@@ -1259,7 +1268,7 @@ defmodule FountainWeb.ConversationsLive.Show do
     [%{kind: :result, body: bits, raw: Jason.encode!(ev, pretty: true)}]
   end
 
-  # ── opencode (`opencode run --format json`) ──────────────────────────
+  # ── opencode (`opencode run --format json`) ───────────────────────────
   defp event_blocks("opencode", %{"type" => "step_start"}), do: []
 
   defp event_blocks("opencode", %{"type" => "text", "part" => %{"text" => t}})
@@ -1309,7 +1318,7 @@ defmodule FountainWeb.ConversationsLive.Show do
 
   defp truncate(s, _), do: s
 
-  # ── stage row helpers ──────────────────────────────────────────────
+  # ── stage row helpers ──────────────────────────────────────────────────
 
   defp stage_icon("provision"), do: "&#10024;"
   defp stage_icon("checkpoint_restore"), do: "&#128230;"

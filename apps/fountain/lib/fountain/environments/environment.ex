@@ -2,6 +2,7 @@ defmodule Fountain.Environments.Environment do
   use Ecto.Schema
   import Ecto.Changeset
 
+  alias Fountain.Accounts.User
   alias Fountain.Environments.Secret
 
   @primary_key {:id, :binary_id, autogenerate: true}
@@ -29,6 +30,7 @@ defmodule Fountain.Environments.Environment do
     field :networking_config, :map, default: %{}
     field :repositories, {:array, :map}, default: []
     field :checkpoint_id, :string
+    belongs_to :user, User
     has_many :secrets, Secret
     timestamps(type: :utc_datetime)
   end
@@ -45,7 +47,8 @@ defmodule Fountain.Environments.Environment do
       :networking_type,
       :networking_config,
       :repositories,
-      :checkpoint_id
+      :checkpoint_id,
+      :user_id
     ])
     |> validate_required([:name])
     |> validate_inclusion(:networking_type, @networking)

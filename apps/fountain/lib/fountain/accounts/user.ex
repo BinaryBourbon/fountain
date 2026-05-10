@@ -14,6 +14,7 @@ defmodule Fountain.Accounts.User do
     field :password, :string, virtual: true, redact: true
     field :email_verified_at, :utc_datetime
     field :onboarding_completed_at, :utc_datetime
+    field :onboarding_state, :string, default: "step_1"
     field :max_concurrent_sandboxes, :integer, default: 5
     field :role, :string, default: "user"
     field :stripe_customer_id, :string

@@ -5,25 +5,27 @@ defmodule FountainWeb.EnvironmentsLive.Index do
 
   @impl true
   def mount(_params, _session, socket) do
+    user_id = socket.assigns.current_user.id
     {:ok,
      socket
      |> assign(:page_title, "Environments")
-     |> assign(:envs, list_envs())}
+     |> assign(:user_id, user_id)
+     |> assign(:envs, list_envs(user_id))}
   end
 
   @impl true
   def handle_event("delete", %{"id" => id}, socket) do
-    env = Environments.get_environment!(id)
+    env = Environments.get_environment!(id, socket.assigns.user_id)
     {:ok, _} = Environments.delete_environment(env)
 
     {:noreply,
      socket
-     |> assign(:envs, list_envs())
+     |> assign(:envs, list_envs(socket.assigns.user_id))
      |> put_flash(:info, "Deleted #{env.name}")}
   end
 
-  defp list_envs do
-    Environments.list_environments()
+  defp list_envs(user_id) do
+    Environments.list_environments(user_id)
     |> Enum.map(fn env ->
       Map.put(env, :secret_count, length(Environments.list_secrets(env)))
     end)

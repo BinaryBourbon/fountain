@@ -20,6 +20,16 @@ defmodule Fountain.Vaults do
   def get_vault!(id), do: Repo.get!(Vault, id)
   def get_vault_by_name(name), do: Repo.get_by(Vault, name: name)
 
+  @doc "List vaults scoped to user."
+  def list_vaults(user_id) when is_binary(user_id) do
+    Repo.all(from v in Vault, where: v.user_id == ^user_id, order_by: [desc: v.inserted_at, desc: v.id])
+  end
+
+  @doc "Get vault scoped to user. Raises Ecto.NoResultsError on wrong owner."
+  def get_vault!(id, user_id) when is_binary(user_id) do
+    Repo.get_by!(Vault, id: id, user_id: user_id)
+  end
+
   def create_vault(attrs) do
     %Vault{}
     |> Vault.changeset(attrs)

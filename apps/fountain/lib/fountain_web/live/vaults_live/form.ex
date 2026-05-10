@@ -6,11 +6,13 @@ defmodule FountainWeb.VaultsLive.Form do
 
   @impl true
   def mount(params, _session, socket) do
-    {vault, action} = load(params)
+    user_id = socket.assigns.current_user.id
+    {vault, action} = load(params, user_id)
 
     {:ok,
      socket
      |> assign(:page_title, page_title(action))
+     |> assign(:user_id, user_id)
      |> assign(:action, action)
      |> assign(:vault, vault)
      |> assign(:form, vault_to_form(vault))
@@ -19,8 +21,8 @@ defmodule FountainWeb.VaultsLive.Form do
      |> assign(:new_secret, %{"key" => "", "value" => ""})}
   end
 
-  defp load(%{"id" => id}), do: {Vaults.get_vault!(id), :edit}
-  defp load(_), do: {%Vault{}, :new}
+  defp load(%{"id" => id}, user_id), do: {Vaults.get_vault!(id, user_id), :edit}
+  defp load(_, _user_id), do: {%Vault{}, :new}
 
   defp page_title(:new), do: "New vault"
   defp page_title(:edit), do: "Edit vault"
@@ -81,6 +83,7 @@ defmodule FountainWeb.VaultsLive.Form do
   end
 
   defp save(%{assigns: %{action: :new}} = socket, attrs) do
+    attrs = Map.put(attrs, "user_id", socket.assigns.user_id)
     case Vaults.create_vault(attrs) do
       {:ok, vault} ->
         {:noreply,

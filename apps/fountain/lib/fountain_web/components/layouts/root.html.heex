@@ -127,6 +127,28 @@
               });
             }
           },
+          LogScroll: {
+            mounted() { this.scrollToBottom(); },
+            updated() { this.scrollToBottom(); },
+            scrollToBottom() {
+              this.el.scrollTop = this.el.scrollHeight;
+            }
+          },
+          CopyToClipboard: {
+            mounted() {
+              this.el.addEventListener("click", () => {
+                const targetId = this.el.dataset.target;
+                const target = document.getElementById(targetId);
+                if (!target) return;
+                const text = target.innerText || target.textContent;
+                navigator.clipboard.writeText(text.trim()).then(() => {
+                  const orig = this.el.innerText;
+                  this.el.innerText = "Copied!";
+                  setTimeout(() => { this.el.innerText = orig; }, 1500);
+                });
+              });
+            }
+          },
           ConversationGraph: {
             mounted() { this.renderGraph(); },
             updated() { this.renderGraph(); },

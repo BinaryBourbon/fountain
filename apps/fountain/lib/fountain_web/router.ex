@@ -168,12 +168,17 @@ defmodule FountainWeb.Router do
 
     # ── Read-only and settings routes — no subscription gate ────────────────────
     # Users can reach these routes even when past_due / canceled so they can
-    # view past logs, manage resources, and update payment details.
+    # view past logs, manage resources, complete onboarding, and update payment
+    # details. See decisions/0006-hard-stripe-billing-gate-at-launch.md.
     live_session :authenticated,
       on_mount: [
         {FountainWeb.Live.Hooks, :require_authenticated_user},
         {FountainWeb.Hooks.UpdateCheckerHook, :default}
       ] do
+      live "/dashboard", DashboardLive.Index, :index
+      live "/onboarding", OnboardingLive.Wizard, :index
+      live "/onboarding/:step", OnboardingLive.Wizard, :show
+      live "/conversations/:id/logs", LogViewerLive.Show, :show
       live "/agents", AgentsLive.Index, :index
       live "/agents/new", AgentsLive.Form, :new
       live "/agents/:id/edit", AgentsLive.Form, :edit
@@ -184,10 +189,20 @@ defmodule FountainWeb.Router do
       live "/vaults/new", VaultsLive.Form, :new
       live "/vaults/:id/edit", VaultsLive.Form, :edit
       live "/audit", AuditLive.Index, :index
+      live "/api-keys", ApiKeysLive.Index, :index
       live "/help", HelpLive.Show, :index
       live "/help/:topic", HelpLive.Show, :show
       # ── Phase-3-billing: account/billing ───────────────────────────────────
       live "/account/billing", Live.BillingLive, :index
+    end
+
+    live_session :admin,
+      on_mount: [
+        {FountainWeb.Live.Hooks, :require_authenticated_user},
+        {FountainWeb.Live.Hooks, :require_admin},
+        {FountainWeb.Hooks.UpdateCheckerHook, :default}
+      ] do
+      live "/admin", AdminLive.Index, :index
     end
   end
 

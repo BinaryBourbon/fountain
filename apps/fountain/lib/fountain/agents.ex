@@ -19,6 +19,26 @@ defmodule Fountain.Agents do
   def get_agent(id), do: Repo.get(Agent, id) |> Repo.preload(:environment)
   def get_agent!(id), do: Repo.get!(Agent, id) |> Repo.preload(:environment)
 
+  @doc "Get agent scoped to user. Raises Ecto.NoResultsError if wrong owner."
+  def get_agent!(id, user_id) when is_binary(user_id) do
+    Repo.get_by!(Agent, id: id, user_id: user_id) |> Repo.preload(:environment)
+  end
+
+  @doc "List agents for user_id with optional keyword filters."
+  def list_agents(user_id, filters) when is_binary(user_id) and is_list(filters) do
+    from(a in Agent,
+      where: a.user_id == ^user_id,
+      order_by: [desc: a.inserted_at, desc: a.id],
+      preload: [:environment]
+    )
+    |> apply_search(Keyword.get(filters, :search, ""))
+    |> apply_runtimes(Keyword.get(filters, :runtimes, []))
+    |> apply_env_ids(Keyword.get(filters, :env_ids, []))
+    |> apply_has_skills(Keyword.get(filters, :has_skills, false))
+    |> apply_has_mcp(Keyword.get(filters, :has_mcp, false))
+    |> Repo.all()
+  end
+
   def create_agent(attrs) do
     %Agent{}
     |> Agent.changeset(attrs)

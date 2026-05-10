@@ -6,12 +6,14 @@ defmodule FountainWeb.AgentsLive.Form do
 
   @impl true
   def mount(params, _session, socket) do
-    envs = Environments.list_environments()
-    {agent, action} = load(params)
+    user_id = socket.assigns.current_user.id
+    envs = Environments.list_environments(user_id)
+    {agent, action} = load(params, user_id)
 
     {:ok,
      socket
      |> assign(:page_title, page_title(action))
+     |> assign(:user_id, user_id)
      |> assign(:envs, envs)
      |> assign(:action, action)
      |> assign(:agent, agent)
@@ -19,8 +21,8 @@ defmodule FountainWeb.AgentsLive.Form do
      |> assign(:errors, %{})}
   end
 
-  defp load(%{"id" => id}), do: {Agents.get_agent!(id), :edit}
-  defp load(_), do: {%Agent{}, :new}
+  defp load(%{"id" => id}, user_id), do: {Agents.get_agent!(id, user_id), :edit}
+  defp load(_, _user_id), do: {%Agent{}, :new}
 
   defp page_title(:new), do: "New agent"
   defp page_title(:edit), do: "Edit agent"
@@ -50,6 +52,7 @@ defmodule FountainWeb.AgentsLive.Form do
         params
         |> Map.put("skills", skills)
         |> Map.put("mcp_servers", mcp)
+        |> Map.put("user_id", socket.assigns.user_id)
         |> Map.drop(["skills_json", "mcp_servers_json"])
         |> nil_if_blank("environment_id")
 

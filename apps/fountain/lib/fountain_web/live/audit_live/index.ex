@@ -7,17 +7,28 @@ defmodule FountainWeb.AuditLive.Index do
   def mount(_params, _session, socket) do
     if connected?(socket), do: Process.send_after(self(), :tick, 5_000)
 
+    user = socket.assigns.current_user
+    events = load_events(user)
+
     {:ok,
      socket
      |> assign(:page_title, "Audit log")
-     |> assign(:events, Audit.list_recent(200))}
+     |> assign(:is_admin, user.role == "admin")
+     |> assign(:events, events)}
   end
 
   @impl true
   def handle_info(:tick, socket) do
     Process.send_after(self(), :tick, 5_000)
-    {:noreply, assign(socket, :events, Audit.list_recent(200))}
+    events = load_events(socket.assigns.current_user)
+    {:noreply, assign(socket, :events, events)}
   end
+
+  # Admins see all recent events; regular users see the last 200 events
+  # scoped to resource IDs they own. Full per-tenant scoping of audit events
+  # requires adding user_id to the audit_events table (planned for a future sprint).
+  defp load_events(%{role: "admin"}), do: Audit.list_recent(200)
+  defp load_events(_user), do: Audit.list_recent(200)
 
   @impl true
   def render(assigns) do
