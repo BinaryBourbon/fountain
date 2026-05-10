@@ -19,6 +19,10 @@ projects:
             healthCheckPath: /health
 
             envVars:
+              # Shared secrets + config from the dashboard-managed env group.
+              # Service-local envVars below override any same-named keys in the group.
+              - fromGroup: fountain-prod-core
+
               - key: PHX_SERVER
                 value: "true"
               - key: FOUNTAIN_DOMAIN
