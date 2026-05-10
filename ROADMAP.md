@@ -8,7 +8,7 @@ _(empty — orchestrator fills this on dispatch, with `<slice> — <role> (conv 
 
 ## Next
 
-- **phase-0-framing** — produce a side-by-side framing of candidates and decide direction at G0. Dispatch as `customer-researcher`.
+- **phase-0-framing** — start from [`jhgaylor/aod-ex`](https://github.com/jhgaylor/aod-ex) (the single-tenant predecessor) and frame what has to change for the multi-tenant target user. Produce a side-by-side comparison of candidate scopes and decide direction at G0. Dispatch as `customer-researcher`. See [`decisions/0002-aod-ex-as-reference.md`](decisions/0002-aod-ex-as-reference.md).
 
 ## Gated
 
