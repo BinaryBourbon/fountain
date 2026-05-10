@@ -30,11 +30,12 @@ projects:
               - key: PORT
                 value: "10000"
 
-              # Auto-generated secrets
+              # Set via dashboard (sync: false hides from yaml).
+              # SECRET_KEY_BASE must be ≥64 bytes for Phoenix's cookie session
+              # store; Render's `generateValue: true` produces a value that's
+              # too short. Generate locally with `mix phx.gen.secret` and paste.
               - key: SECRET_KEY_BASE
-                generateValue: true
-
-              # Set via dashboard (sync: false hides from yaml)
+                sync: false
               - key: MASTER_SECRETS_KEY
                 sync: false
               - key: SPRITES_TOKEN
