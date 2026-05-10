@@ -1,0 +1,108 @@
+name: CLI Release (Go)
+
+# Builds the Go-port CLI under cli/. Runs alongside the Burrito-based
+# Elixir release workflow during the migration; once the Elixir CLI is
+# removed, the existing release.yml goes away and this becomes the
+# canonical CLI release pipeline.
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to release as (must already exist on a commit)."
+        required: true
+
+env:
+  GO_VERSION: "1.25.0"
+
+jobs:
+  build:
+    name: Build ${{ matrix.artifact }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+            artifact: fountain-linux-amd64
+          - goos: linux
+            goarch: arm64
+            artifact: fountain-linux-arm64
+          - goos: darwin
+            goarch: amd64
+            artifact: fountain-darwin-amd64
+          - goos: darwin
+            goarch: arm64
+            artifact: fountain-darwin-arm64
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: cli/go.sum
+
+      - name: Build
+        env:
+          CGO_ENABLED: "0"
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        working-directory: cli
+        run: |
+          set -euxo pipefail
+          mkdir -p ../dist
+          go build -trimpath -ldflags "-s -w" -o "../dist/${{ matrix.artifact }}" ./cmd/fountain
+          file "../dist/${{ matrix.artifact }}"
+          du -h "../dist/${{ matrix.artifact }}"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: dist/${{ matrix.artifact }}
+
+  release:
+    name: Attach Go CLI to GitHub Release
+    runs-on: ubuntu-latest
+    needs: build
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve tag
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "tag=${{ github.event.inputs.tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      # The release.yml workflow (Burrito) creates the GitHub Release; we
+      # only attach additional files. softprops/action-gh-release with
+      # `append_body: false` and the same tag will upsert assets without
+      # clobbering the body.
+      - name: Attach Go binaries
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: ${{ steps.tag.outputs.tag }}
+          files: |
+            artifacts/fountain-linux-amd64/fountain-linux-amd64
+            artifacts/fountain-linux-arm64/fountain-linux-arm64
+            artifacts/fountain-darwin-amd64/fountain-darwin-amd64
+            artifacts/fountain-darwin-arm64/fountain-darwin-arm64
+          fail_on_unmatched_files: true
