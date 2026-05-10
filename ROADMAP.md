@@ -4,13 +4,13 @@ The captain-picard orchestrator reads this every cycle and writes the conversati
 
 ## Now
 
-- phase-1-press-release — growth-marketer (conv 1a9de3f5-2f7d-41fa-8cd1-5e4a3db2d309)
+- phase-2-build-plan — designer (conv 0338b29a-7245-45bf-bcf7-8e975c0eb808)
+- phase-2-build-plan — general-purpose-engineer (conv 5f0458a8-e427-4944-816c-deec8dca2795)
 
 ## Next
 
-- **G1** — Human approves press-release narrative to lock direction before engineering.
+- **G2** — Human approves architecture and engineering plan to lock build scope.
 
 ## Gated
 
-- **G2** — Architecture and engineering plan locked.
 - **G3** — Ready to ship — go/no-go for public launch.
