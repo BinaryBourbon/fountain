@@ -1,0 +1,183 @@
+---
+name: aod
+description: Spawn and stream Agent on Demand (AoD) conversations — for when this agent needs to fan out work to other coding agents. Use when the user asks you to "delegate to another agent", "spawn an agent", "fan out", or when a task is large enough to warrant parallel agents working in parallel sandboxes. AoD provisions an isolated Sprite, runs a configured agent in it, and streams output back over SSE. Reads `AOD_BASE_URL` and `AOD_TOKEN` from the environment.
+---
+
+# Agent on Demand (AoD) — From Inside a Sprite
+
+You are running inside a Sprite that AoD provisioned. AoD itself is reachable
+at `$AOD_BASE_URL` (the API lives under **`/api`**) with bearer `$AOD_TOKEN`.
+From here you can spawn *more* AoD conversations — each one runs in its own
+fresh Sprite.
+
+> **Common mistake**: hitting `$AOD_BASE_URL/conversations` returns 302 (the
+> bare path is the LiveView UI). The right URL is `$AOD_BASE_URL/api/conversations`.
+
+## The two patterns you'll use
+
+### A. Fan out N agents and collect their answers
+
+```bash
+# 1. Pick the agent (by name).
+AGENT_ID=$(curl -s "$AOD_BASE_URL/api/agents" \
+  -H "Authorization: Bearer $AOD_TOKEN" \
+  | jq -r '.data[] | select(.name == "echo-bot") | .id')
+
+# 2. Spawn N conversations IN PARALLEL with xargs. Output is conv ids on stdout.
+prompts=("First task" "Second task" "Third task")
+ids=$(printf '%s\n' "${prompts[@]}" | xargs -n1 -P8 -I{} sh -c '
+  curl -s -X POST "$1/api/conversations" \
+    -H "Authorization: Bearer $2" \
+    -H "Content-Type: application/json" \
+    -H "X-AoD-Parent-Conversation-Id: $AOD_CONVERSATION_ID" \
+    -d "$(jq -n --arg a "$3" --arg p "$4" "{agent_id:\$a, prompt:\$p}")" \
+  | jq -r .data.id
+' _ "$AOD_BASE_URL" "$AOD_TOKEN" "$AGENT_ID" {})
+
+echo "$ids"   # one conv id per line
+
+# 3. Wait for all of them in parallel.
+echo "$ids" | xargs -n1 -P10 -I{} sh -c '
+  while :; do
+    s=$(curl -s "$1/api/conversations/$3" -H "Authorization: Bearer $2" | jq -r .data.status)
+    case "$s" in running|pending) sleep 2 ;; *) break ;; esac
+  done
+' _ "$AOD_BASE_URL" "$AOD_TOKEN" {}
+
+# 4. Gather the final text from each (claude runtime).
+while IFS= read -r conv; do
+  echo "=== $conv ==="
+  curl -sN --max-time 5 \
+    "$AOD_BASE_URL/api/conversations/$conv/stream?streams=stdout&wait=false" \
+    -H "Authorization: Bearer $AOD_TOKEN" \
+  | awk '/^data: /{sub(/^data: /,""); print}' \
+  | jq -r '.data | fromjson? | select(.type=="result") | .result' \
+  | tail -n1
+done <<<"$ids"
+```
+
+### B. Spawn one and block until it answers
+
+```bash
+AGENT_ID=...
+PROMPT=...
+
+CONV=$(curl -s -X POST "$AOD_BASE_URL/api/conversations" \
+  -H "Authorization: Bearer $AOD_TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "X-AoD-Parent-Conversation-Id: $AOD_CONVERSATION_ID" \
+  -d "$(jq -n --arg a "$AGENT_ID" --arg p "$PROMPT" '{agent_id:$a, prompt:$p}')" \
+  | jq -r .data.id)
+
+while :; do
+  s=$(curl -s "$AOD_BASE_URL/api/conversations/$CONV" \
+    -H "Authorization: Bearer $AOD_TOKEN" | jq -r .data.status)
+  case "$s" in running|pending) sleep 2 ;; *) break ;; esac
+done
+
+curl -sN --max-time 5 \
+  "$AOD_BASE_URL/api/conversations/$CONV/stream?streams=stdout&wait=false" \
+  -H "Authorization: Bearer $AOD_TOKEN" \
+| awk '/^data: /{sub(/^data: /,""); print}' \
+| jq -r '.data | fromjson? | select(.type=="result") | .result' \
+| tail -n1
+```
+
+## SSE wire format (so you don't have to discover it)
+
+A `curl -N` against `/api/conversations/:id/stream` produces lines like:
+
+```
+id: 2694
+event: output
+data: {"data":"{\"type\":\"result\",...}","stream":"stdout","stage":"turn",...}
+
+id: 2695
+event: output
+data: {"data":"{\"type\":\"assistant\",...}","stream":"stdout",...}
+```
+
+Two layers of JSON. The `awk` strips the `data: ` prefix; jq's default parses
+the **outer** object; **only the inner `.data` field is a JSON-encoded
+string** that needs `fromjson` to peel. Do NOT call `fromjson` on the awk
+output itself — jq already parsed it.
+
+## The `wait=false` flag matters
+
+The stream endpoint normally holds open for up to 60s waiting for new
+events. **When the conversation is already done and you only want the
+replay, pass `wait=false`.** Without it, your `curl --max-time 5` will sit
+idle for the full 5 seconds. With it, the stream closes the moment the
+replay drains — milliseconds.
+
+Drop `wait=false` only when you actually want to live-tail.
+
+## Per-runtime: where the final text lives
+
+The conversation's `runtime` (`claude` / `codex` / `gemini` / `opencode`)
+controls the shape of the inner JSON. Pull the runtime once, then pick the
+right filter:
+
+```bash
+RT=$(curl -s "$AOD_BASE_URL/api/conversations/$CONV" \
+  -H "Authorization: Bearer $AOD_TOKEN" | jq -r .data.runtime)
+```
+
+| runtime  | filter (the part **after** `.data \| fromjson?`)                       | text path        |
+| -------- | ---------------------------------------------------------------------- | ---------------- |
+| claude   | `select(.type=="result")`                                              | `.result`        |
+| codex    | `select(.type=="item.completed" and .item.type=="agent_message")`      | `.item.text`     |
+| gemini   | `select(.type=="message" and .role=="assistant")`                      | `.content` *(use the last one)*  |
+| opencode | `select(.type=="text")`                                                | `.part.text` *(concatenate all)* |
+
+## Vaults — running as a different identity
+
+If you need a spawned conversation to run with credentials other than what the
+agent's environment provides (e.g. contribute to GitHub as a specific user), pass
+an optional `vault_id` when creating it. List vaults to find the one you want:
+
+```bash
+curl -s "$AOD_BASE_URL/api/vaults" -H "Authorization: Bearer $AOD_TOKEN" \
+  | jq -r '.data[] | "\(.name)\t\(.id)"'
+
+# Spawn with a specific vault layered on top of the env's secrets:
+curl -s -X POST "$AOD_BASE_URL/api/conversations" \
+  -H "Authorization: Bearer $AOD_TOKEN" -H "Content-Type: application/json" \
+  -H "X-AoD-Parent-Conversation-Id: $AOD_CONVERSATION_ID" \
+  -d "$(jq -n --arg a "$AGENT_ID" --arg v "$VAULT_ID" --arg p "$PROMPT" \
+        '{agent_id:$a, vault_id:$v, prompt:$p}')"
+```
+
+Vault values override the environment's baseline on key collision. Most fan-outs
+don't need this — only reach for it when you specifically want different
+credentials per spawned conversation.
+
+## Multi-turn
+
+Send a follow-up prompt to an existing conversation:
+
+```bash
+curl -s -X POST "$AOD_BASE_URL/api/conversations/$CONV/prompts" \
+  -H "Authorization: Bearer $AOD_TOKEN" -H "Content-Type: application/json" \
+  -d '{"prompt":"Now compare that to the worker service."}'
+```
+
+Then poll status / read the stream the same way. The runtime session
+resumes — the agent remembers turn 1.
+
+## Tear down when you're done
+
+```bash
+curl -s -X POST "$AOD_BASE_URL/api/conversations/$CONV/terminate" \
+  -H "Authorization: Bearer $AOD_TOKEN"
+```
+
+## Important
+
+- **Always `wait=false` for gather.** Otherwise you'll burn N × `--max-time` seconds for no reason.
+- **Parallelize spawn / poll / gather** with `xargs -P` — one provisioning takes ~5–15s, and there's no reason to do them sequentially.
+- **Don't recurse forever.** Spawned agents have the same skill. Cap depth with a `MAX_DEPTH` you check before spawning.
+- **Costs add up.** Every conversation provisions a real sandbox.
+- **Same `$AOD_TOKEN`.** All spawned agents share the single-tenant admin token. Don't leak it outside the sprite.
+- **API path is `/api/...`.** The bare `/conversations` redirects (302 → /login) for non-browser requests.
+- **Provenance is automatic.** `AOD_CONVERSATION_ID` is always present in your sprite's environment. Every `POST /api/conversations` call that includes `X-AoD-Parent-Conversation-Id: $AOD_CONVERSATION_ID` records this conversation as the parent, letting the operator reconstruct the full spawn chain.

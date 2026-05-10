@@ -1,0 +1,77 @@
+defmodule Fountain.Vaults do
+  @moduledoc """
+  Context for vaults — free-floating bags of env-var overrides selected
+  at conversation creation. Layered on top of an environment's baseline
+  secrets at sprite spawn time; vault values win on key collision.
+  """
+
+  import Ecto.Query, only: [from: 2]
+
+  alias Fountain.Repo
+  alias Fountain.Vaults.{Vault, VaultSecret}
+
+  # ── vaults ────────────────────────────────────────────────────────────────
+
+  def list_vaults do
+    Repo.all(from v in Vault, order_by: [desc: v.inserted_at, desc: v.id])
+  end
+
+  def get_vault(id), do: Repo.get(Vault, id)
+  def get_vault!(id), do: Repo.get!(Vault, id)
+  def get_vault_by_name(name), do: Repo.get_by(Vault, name: name)
+
+  def create_vault(attrs) do
+    %Vault{}
+    |> Vault.changeset(attrs)
+    |> Repo.insert()
+  end
+
+  def update_vault(%Vault{} = vault, attrs) do
+    vault
+    |> Vault.changeset(attrs)
+    |> Repo.update()
+  end
+
+  def delete_vault(%Vault{} = vault), do: Repo.delete(vault)
+
+  # ── secrets ───────────────────────────────────────────────────────────────
+
+  def list_secrets(%Vault{id: vault_id}) do
+    Repo.all(from s in VaultSecret, where: s.vault_id == ^vault_id, order_by: [asc: s.key])
+  end
+
+  def get_secret(vault_id, key) do
+    Repo.get_by(VaultSecret, vault_id: vault_id, key: key)
+  end
+
+  def upsert_secret(%Vault{id: vault_id}, %{"key" => key} = attrs) do
+    case get_secret(vault_id, key) do
+      nil ->
+        %VaultSecret{}
+        |> VaultSecret.changeset(Map.put(attrs, "vault_id", vault_id))
+        |> Repo.insert()
+
+      existing ->
+        existing
+        |> VaultSecret.changeset(attrs)
+        |> Repo.update()
+    end
+  end
+
+  def delete_secret(%VaultSecret{} = secret), do: Repo.delete(secret)
+
+  @doc """
+  Returns a flat map `%{"KEY" => "plaintext"}` of all decrypted secrets
+  in the given vault. Used when materializing env vars into a Sprite.
+  """
+  def decrypted_env(%Vault{} = vault) do
+    vault
+    |> list_secrets()
+    |> Enum.reduce(%{}, fn secret, acc ->
+      case VaultSecret.decrypt(secret) do
+        {:ok, plain} -> Map.put(acc, secret.key, plain)
+        :error -> acc
+      end
+    end)
+  end
+end
