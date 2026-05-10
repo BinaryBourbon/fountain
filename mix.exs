@@ -39,7 +39,7 @@ defmodule Fountain.Umbrella.MixProject do
     ]
   end
 
-  defp burrito_targets(opts \\ []) do
+  defp burrito_targets(opts) do
     skip_nifs = Keyword.get(opts, :skip_nifs, false)
 
     all_targets = [

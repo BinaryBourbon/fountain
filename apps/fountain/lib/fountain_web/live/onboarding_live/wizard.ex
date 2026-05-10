@@ -1,9 +1,7 @@
 defmodule FountainWeb.OnboardingLive.Wizard do
   use FountainWeb, :live_view
 
-  alias Fountain.{Accounts, Agents, Conversations, Crypto, Environments, InferenceCredentials}
-  alias Fountain.Environments.Environment
-  alias Fountain.Agents.Agent
+  alias Fountain.{Accounts, Agents, Crypto, Environments, InferenceCredentials}
   alias Fountain.InferenceCredentials.Validator
 
   # ADR 0008 inserted "inference" as the new first step. Old step_1/2/3
