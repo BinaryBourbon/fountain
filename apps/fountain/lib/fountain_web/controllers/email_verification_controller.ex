@@ -4,11 +4,17 @@ defmodule FountainWeb.EmailVerificationController do
 
   Validates a Phoenix.Token (24 h TTL), marks the user verified, sets
   the session cookie, and redirects to onboarding or dashboard.
+
+  After a successful verification, a Stripe Customer record is created
+  asynchronously via `Fountain.Billing.create_stripe_customer/1` so that
+  the Stripe Customer exists before the trial ends, avoiding a race at
+  upgrade time.
   """
 
   use FountainWeb, :controller
 
   alias Fountain.Accounts
+  alias Fountain.Billing
 
   # 24 hours in seconds
   @token_max_age 86_400
@@ -32,6 +38,11 @@ defmodule FountainWeb.EmailVerificationController do
           user ->
             case Accounts.verify_email(user) do
               {:ok, verified_user} ->
+                # Create Stripe Customer asynchronously so we don't block the
+                # redirect. The user is already trialing; this ensures a Customer
+                # record exists in Stripe before the trial ends.
+                Task.async(fn -> Billing.create_stripe_customer(verified_user) end)
+
                 conn
                 |> log_in_user(verified_user)
                 |> redirect(to: "/onboarding/step/1")

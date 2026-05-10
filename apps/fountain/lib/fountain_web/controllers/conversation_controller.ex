@@ -2,6 +2,7 @@ defmodule FountainWeb.ConversationController do
   use FountainWeb, :controller
   use OpenApiSpex.ControllerSpecs
 
+  alias Fountain.Billing
   alias Fountain.Conversations
   alias Fountain.Conversations.{ConversationServer, LogEvent}
   alias FountainWeb.Schemas
@@ -68,7 +69,16 @@ defmodule FountainWeb.ConversationController do
     responses: [
       created: {"Conversation", "application/json", Schemas.ConversationResponse},
       not_found: {"Agent not found", "application/json", Schemas.Error},
-      unprocessable_entity: {"Validation error", "application/json", Schemas.ChangesetError}
+      unprocessable_entity: {"Validation error", "application/json", Schemas.ChangesetError},
+      payment_required:
+        {"Subscription required", "application/json",
+         %OpenApiSpex.Schema{
+           type: :object,
+           properties: %{
+             error: %OpenApiSpex.Schema{type: :string},
+             upgrade_url: %OpenApiSpex.Schema{type: :string}
+           }
+         }}
     ]
   )
 
@@ -88,10 +98,19 @@ defmodule FountainWeb.ConversationController do
       |> Map.put("source", source)
       |> Map.put("parent_conversation_id", parent_id)
 
-    with {:ok, conv} <- Conversations.start_conversation(params) do
+    with :ok <- gate_subscription(conn.assigns.current_user),
+         {:ok, conv} <- Conversations.start_conversation(params) do
       conn
       |> put_status(:created)
       |> render(:show, conversation: conv)
+    else
+      {:error, :subscription_required} ->
+        conn
+        |> put_status(402)
+        |> json(%{error: "subscription_required", upgrade_url: "/account/billing"})
+
+      {:error, _} = err ->
+        err
     end
   end
 
@@ -381,5 +400,17 @@ defmodule FountainWeb.ConversationController do
 
     chunk = "id: #{ev.id}\nevent: #{ev.kind}\ndata: #{payload}\n\n"
     Plug.Conn.chunk(conn, chunk)
+  end
+
+  # ── Phase-3-billing helpers ────────────────────────────────────────────────
+
+  # Wraps assert_active! so it fits into the `with` pipeline without propagating
+  # the raw exception. Returns {:error, :subscription_required} for the else
+  # clause to render a structured 402 response.
+  defp gate_subscription(user) do
+    Billing.assert_active!(user)
+    :ok
+  rescue
+    Billing.SubscriptionRequiredError -> {:error, :subscription_required}
   end
 end
