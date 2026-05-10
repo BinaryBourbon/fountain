@@ -43,7 +43,7 @@ defmodule FountainWeb.DashboardLive.Index do
       </div>
 
       <div class="grid grid-cols-3 gap-4">
-        <.link navigate={~p"/conversations"}
+        <.link navigate={~p"/"}
           class="rounded border border-zinc-200 bg-white shadow p-4 hover:bg-zinc-50 block">
           <p class="text-xs text-zinc-500 uppercase tracking-wide">Recent conversations</p>
           <p class="text-2xl font-semibold mt-1">{length(@recent_conversations)}</p>
