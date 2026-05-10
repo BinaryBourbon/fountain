@@ -1,0 +1,39 @@
+name: Deploy
+
+# Triggers a Render deploy on every push to main.
+#
+# Render's GitHub auto-deploy isn't available here: jhgaylor owns the
+# Render workspace, but the repo lives under the BinaryBourbon org and
+# the Render GitHub app isn't installed there. The standard workaround
+# is a per-service deploy hook (https://render.com/docs/deploy-hooks):
+# Render gives us a unique URL, we POST to it, Render fetches the
+# latest commit from the (public) repo and redeploys.
+#
+# Secret: RENDER_DEPLOY_HOOK_URL (repo secret, set via gh or the UI).
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: render-deploy
+  cancel-in-progress: false
+
+jobs:
+  trigger:
+    name: Trigger Render deploy
+    runs-on: ubuntu-latest
+    steps:
+      - name: POST to Render deploy hook
+        env:
+          DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+        run: |
+          set -euo pipefail
+          if [ -z "${DEPLOY_HOOK_URL}" ]; then
+            echo "RENDER_DEPLOY_HOOK_URL secret is not set" >&2
+            exit 1
+          fi
+          curl --fail-with-body --show-error --silent \
+            -X POST "${DEPLOY_HOOK_URL}"
+          echo
