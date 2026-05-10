@@ -4,14 +4,13 @@ The captain-picard orchestrator reads this every cycle and writes the conversati
 
 ## Now
 
-- phase-3-billing — general-purpose-engineer (conv f5cafe99-ca82-4f36-ac48-9d19095255c3)
-- phase-3-onboarding-liveview — general-purpose-engineer (conv 60471914-2df2-47cc-9cfa-689366fb6d51)
+- phase-3-design-pass — designer (conv 3d57d38d-6c08-4c82-8eb7-91ba4c249981)
+- phase-3-release-validation — release-validator (conv 127ee5f3-f2a4-47de-98a8-cf7e7c29330e)
 
 ## Next
 
-- phase-3-design-pass — designer applies dark mode tokens, component library, and polish across all LiveViews
-- phase-3-release-validation — release-validator runs smoke tests end-to-end before G3
+- **G3** — Human reviews validation report and gives go/no-go for public launch.
 
 ## Gated
 
-- **G3** — Ready to ship — go/no-go for public launch.
+_(nothing — G3 is the final gate)_
