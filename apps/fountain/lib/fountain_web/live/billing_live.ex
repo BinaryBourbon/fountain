@@ -165,7 +165,11 @@ defmodule FountainWeb.Live.BillingLive do
         mode: "subscription",
         line_items: [%{price: price_id, quantity: 1}],
         success_url: return_url <> "?checkout=success",
-        cancel_url: return_url
+        cancel_url: return_url,
+        # Show "Add promotion code" link on the Checkout page. Promotion codes
+        # are user-facing redeemable strings tied to coupons created in the
+        # Stripe dashboard. Without this flag, the field is hidden by default.
+        allow_promotion_codes: true
       }
 
       params =
