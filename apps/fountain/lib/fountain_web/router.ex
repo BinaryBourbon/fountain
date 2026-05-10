@@ -149,8 +149,12 @@ defmodule FountainWeb.Router do
         {FountainWeb.Hooks.UpdateCheckerHook, :default}
       ] do
       live "/", ConversationsLive.Index, :index
+      live "/dashboard", DashboardLive.Index, :index
+      live "/onboarding", OnboardingLive.Wizard, :index
+      live "/onboarding/:step", OnboardingLive.Wizard, :show
       live "/conversations/new", ConversationsLive.New, :new
       live "/conversations/:id", ConversationsLive.Show, :show
+      live "/conversations/:id/logs", LogViewerLive.Show, :show
       live "/agents", AgentsLive.Index, :index
       live "/agents/new", AgentsLive.Form, :new
       live "/agents/:id/edit", AgentsLive.Form, :edit
@@ -161,8 +165,18 @@ defmodule FountainWeb.Router do
       live "/vaults/new", VaultsLive.Form, :new
       live "/vaults/:id/edit", VaultsLive.Form, :edit
       live "/audit", AuditLive.Index, :index
+      live "/api-keys", ApiKeysLive.Index, :index
       live "/help", HelpLive.Show, :index
       live "/help/:topic", HelpLive.Show, :show
+    end
+
+    live_session :admin,
+      on_mount: [
+        {FountainWeb.Live.Hooks, :require_authenticated_user},
+        {FountainWeb.Live.Hooks, :require_admin},
+        {FountainWeb.Hooks.UpdateCheckerHook, :default}
+      ] do
+      live "/admin", AdminLive.Index, :index
     end
   end
 
