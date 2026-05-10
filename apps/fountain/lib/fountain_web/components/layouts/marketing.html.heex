@@ -1,0 +1,52 @@
+<div class="min-h-screen flex flex-col bg-[var(--color-bg-0)] text-[var(--color-text-primary)]">
+  <%!-- Top nav --%>
+  <header class="border-b border-[var(--color-border)] bg-[var(--color-bg-0)]">
+    <div class="max-w-5xl mx-auto px-6 py-4 flex items-center justify-between">
+      <a href="/" class="flex items-center gap-2">
+        <div class="size-7 rounded-md bg-[var(--color-brand)] flex items-center justify-center">
+          <svg
+            class="size-4 text-white"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2.5"
+            aria-hidden="true"
+          >
+            <path d="M3 12h18M3 6l9-3 9 3M3 18l9 3 9-3" />
+          </svg>
+        </div>
+        <span class="font-semibold text-sm text-[var(--color-text-primary)]">Fountain</span>
+      </a>
+      <nav class="flex items-center gap-3">
+        <a
+          href={~p"/auth/login"}
+          class="text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] transition-colors px-3 py-1.5 rounded-md hover:bg-[var(--color-bg-2)]"
+        >
+          Sign in
+        </a>
+        <a
+          href={~p"/auth/register"}
+          class="text-sm font-medium bg-[var(--color-brand)] text-white px-4 py-1.5 rounded-md hover:bg-[var(--color-brand-hover)] transition-colors"
+        >
+          Get started
+        </a>
+      </nav>
+    </div>
+  </header>
+
+  <%!-- Page content --%>
+  <main class="flex-1">
+    {@inner_content}
+  </main>
+
+  <%!-- Footer --%>
+  <footer class="border-t border-[var(--color-border)] bg-[var(--color-bg-1)]">
+    <div class="max-w-5xl mx-auto px-6 py-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-[var(--color-text-muted)]">
+      <span>© 2026 Fountain. Managed agent infrastructure for teams who'd rather build than configure.</span>
+      <div class="flex items-center gap-4">
+        <a href={~p"/auth/login"} class="hover:text-[var(--color-text-secondary)] transition-colors">Sign in</a>
+        <a href={~p"/auth/register"} class="hover:text-[var(--color-text-secondary)] transition-colors">Register</a>
+      </div>
+    </div>
+  </footer>
+</div>

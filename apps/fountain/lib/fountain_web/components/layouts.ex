@@ -52,7 +52,7 @@ defmodule FountainWeb.Layouts do
         >
           <%!-- Sidebar header --%>
           <div class="flex items-center justify-between p-4 border-b border-[var(--color-border)] shrink-0">
-            <.link navigate={~p"/"} class="flex items-center gap-2">
+            <.link navigate={~p"/conversations"} class="flex items-center gap-2">
               <div class="size-7 rounded-md bg-[var(--color-brand)] flex items-center justify-center">
                 <svg
                   class="size-4 text-white"
@@ -84,7 +84,7 @@ defmodule FountainWeb.Layouts do
             class="px-2 pt-3 pb-1 text-sm space-y-0.5 shrink-0"
             aria-label="Primary navigation"
           >
-            <.nav_link href={~p"/"} label="Conversations" current={@current_path} />
+            <.nav_link href={~p"/conversations"} label="Conversations" current={@current_path} />
             <.nav_link href={~p"/agents"} label="Agents" current={@current_path} />
             <.nav_link href={~p"/environments"} label="Environments" current={@current_path} />
             <.nav_link href={~p"/vaults"} label="Vaults" current={@current_path} />

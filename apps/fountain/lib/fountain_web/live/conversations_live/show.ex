@@ -17,7 +17,7 @@ defmodule FountainWeb.ConversationsLive.Show do
 
     case conv do
       nil ->
-        {:ok, socket |> put_flash(:error, "Conversation not found") |> push_navigate(to: ~p"/")}
+        {:ok, socket |> put_flash(:error, "Conversation not found") |> push_navigate(to: ~p"/conversations")}
 
       conv ->
         graph = Conversations.get_conversation_tree(id)
@@ -188,7 +188,7 @@ defmodule FountainWeb.ConversationsLive.Show do
     {:noreply,
      socket
      |> put_flash(:info, "Conversation deleted")
-     |> push_navigate(to: ~p"/")}
+     |> push_navigate(to: ~p"/conversations")}
   end
 
   def handle_event("update_prompt", %{"prompt" => p}, socket) do

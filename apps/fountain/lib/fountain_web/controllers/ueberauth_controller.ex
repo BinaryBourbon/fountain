@@ -69,7 +69,7 @@ defmodule FountainWeb.UeberauthController do
           |> configure_session(renew: true)
           |> put_session(:user_id, user.id)
           |> put_session(:session_version, user.session_version)
-          |> redirect(to: ~p"/")
+          |> redirect(to: ~p"/conversations")
 
         {:error, _changeset} ->
           conn
