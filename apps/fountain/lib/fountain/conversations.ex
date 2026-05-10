@@ -91,6 +91,16 @@ defmodule Fountain.Conversations do
     )
   end
 
+  @doc "List conversations for `user_id`, ordered by most recently active."
+  def list_conversations_by_activity(user_id) when is_binary(user_id) do
+    Repo.all(
+      from c in Conversation,
+        where: c.user_id == ^user_id,
+        order_by: [desc: c.updated_at, desc: c.id],
+        preload: [:agent, turns: ^first_turn_query()]
+    )
+  end
+
   @doc """
   Returns all conversations in the same spawn tree as `conversation_id`,
   including ancestors up to the root and all their descendants.
@@ -154,6 +164,14 @@ defmodule Fountain.Conversations do
     Conversation
     |> Repo.get!(id)
     |> Repo.preload([:sandbox, :agent, :vault])
+  end
+
+  @doc "Get conversation scoped to user. Returns nil on wrong owner or missing id."
+  def get_conversation(id, user_id) when is_binary(user_id) do
+    case Repo.get_by(Conversation, id: id, user_id: user_id) do
+      nil -> nil
+      conv -> Repo.preload(conv, [:sandbox, :agent, :vault])
+    end
   end
 
   @doc "Get conversation scoped to user. Raises Ecto.NoResultsError on wrong owner."

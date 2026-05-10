@@ -21,7 +21,8 @@ defmodule FountainWeb.ConversationController do
   )
 
   def index(conn, _params) do
-    render(conn, :index, conversations: Conversations.list_conversations())
+    user = conn.assigns.current_user
+    render(conn, :index, conversations: Conversations.list_conversations(user.id))
   end
 
   operation(:show,
@@ -34,7 +35,9 @@ defmodule FountainWeb.ConversationController do
   )
 
   def show(conn, %{"id" => id}) do
-    case Conversations.get_conversation(id) do
+    user = conn.assigns.current_user
+
+    case Conversations.get_conversation(id, user.id) do
       nil -> {:error, :not_found}
       conv -> render(conn, :show, conversation: conv)
     end
@@ -50,7 +53,9 @@ defmodule FountainWeb.ConversationController do
   )
 
   def turns(conn, %{"conversation_id" => id}) do
-    case Conversations.get_conversation(id) do
+    user = conn.assigns.current_user
+
+    case Conversations.get_conversation(id, user.id) do
       nil ->
         {:error, :not_found}
 
@@ -146,12 +151,19 @@ defmodule FountainWeb.ConversationController do
   )
 
   def prompt(conn, %{"conversation_id" => id, "prompt" => prompt} = params) do
+    user = conn.assigns.current_user
     images = decode_images(params["images"])
 
-    case ConversationServer.send_prompt(id, prompt, images) do
-      :ok -> json(conn, %{status: "queued"})
-      {:error, :not_running} -> {:error, :not_found}
-      {:error, :busy} -> {:error, "conversation_busy"}
+    case Conversations.get_conversation(id, user.id) do
+      nil ->
+        {:error, :not_found}
+
+      _ ->
+        case ConversationServer.send_prompt(id, prompt, images) do
+          :ok -> json(conn, %{status: "queued"})
+          {:error, :not_running} -> {:error, :not_found}
+          {:error, :busy} -> {:error, "conversation_busy"}
+        end
     end
   end
 
@@ -168,9 +180,17 @@ defmodule FountainWeb.ConversationController do
   )
 
   def terminate(conn, %{"conversation_id" => id}) do
-    case ConversationServer.terminate(id) do
-      :ok -> send_resp(conn, :no_content, "")
-      {:error, :not_running} -> {:error, :not_found}
+    user = conn.assigns.current_user
+
+    case Conversations.get_conversation(id, user.id) do
+      nil ->
+        {:error, :not_found}
+
+      _ ->
+        case ConversationServer.terminate(id) do
+          :ok -> send_resp(conn, :no_content, "")
+          {:error, :not_running} -> {:error, :not_found}
+        end
     end
   end
 
@@ -185,15 +205,23 @@ defmodule FountainWeb.ConversationController do
   )
 
   def interrupt(conn, %{"conversation_id" => id}) do
-    case ConversationServer.interrupt(id) do
-      :ok ->
-        send_resp(conn, :no_content, "")
+    user = conn.assigns.current_user
 
-      {:error, :not_running} ->
+    case Conversations.get_conversation(id, user.id) do
+      nil ->
         {:error, :not_found}
 
-      {:error, :idle} ->
-        conn |> put_status(:conflict) |> json(%{error: "no_turn_running"})
+      _ ->
+        case ConversationServer.interrupt(id) do
+          :ok ->
+            send_resp(conn, :no_content, "")
+
+          {:error, :not_running} ->
+            {:error, :not_found}
+
+          {:error, :idle} ->
+            conn |> put_status(:conflict) |> json(%{error: "no_turn_running"})
+        end
     end
   end
 
@@ -210,7 +238,9 @@ defmodule FountainWeb.ConversationController do
   )
 
   def delete(conn, %{"id" => id}) do
-    case Conversations.get_conversation(id) do
+    user = conn.assigns.current_user
+
+    case Conversations.get_conversation(id, user.id) do
       nil ->
         {:error, :not_found}
 
@@ -246,7 +276,9 @@ defmodule FountainWeb.ConversationController do
   @heartbeat_ms 15_000
 
   def stream(conn, %{"conversation_id" => id} = params) do
-    case Conversations.get_conversation(id) do
+    user = conn.assigns.current_user
+
+    case Conversations.get_conversation(id, user.id) do
       nil ->
         {:error, :not_found}
 
