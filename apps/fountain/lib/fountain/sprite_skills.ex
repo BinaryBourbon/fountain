@@ -51,13 +51,10 @@ defmodule Fountain.SpriteSkills do
     {inline, github} =
       Enum.split_with(all, fn s -> is_binary(s["content"]) end)
 
-    # Run github installs first. `Sprites.cmd` opens a WebSocket session
-    # that blocks until the sprite is fully running, so by the time it
-    # returns the sprite's HTTP `/fs/*` endpoints are also up. The inline
-    # write previously ran immediately after `Sprites.create` and lost a
-    # race with the filesystem service coming online — `Sprites.Filesystem.write/4`
-    # returned `{:error, _}` and `Enum.each` swallowed it, so the bundled
-    # `fountain` SKILL.md silently never landed.
+    # Github installs first, inline writes second: `Sprites.cmd` waits for
+    # the sprite to be running, so by the time we touch the HTTP `/fs/*`
+    # endpoints they're definitely up. (Not strictly required after the
+    # SDK URL fix, but cheap defense against future readiness regressions.)
     install_github_skills(sprite, sh_agent, github)
     fs = Sprites.filesystem(sprite, "/")
     write_inline_skills(fs, skills_root, inline)
