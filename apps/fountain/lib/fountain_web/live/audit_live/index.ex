@@ -24,11 +24,8 @@ defmodule FountainWeb.AuditLive.Index do
     {:noreply, assign(socket, :events, events)}
   end
 
-  # Admins see all recent events; regular users see the last 200 events
-  # scoped to resource IDs they own. Full per-tenant scoping of audit events
-  # requires adding user_id to the audit_events table (planned for a future sprint).
-  defp load_events(%{role: "admin"}), do: Audit.list_recent(200)
-  defp load_events(_user), do: Audit.list_recent(200)
+  defp load_events(%{role: "admin"}), do: Audit._unsafe_list_recent(200)
+  defp load_events(%{id: id}), do: Audit.list_recent_for_user(id, 200)
 
   @impl true
   def render(assigns) do
