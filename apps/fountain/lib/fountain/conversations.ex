@@ -27,7 +27,7 @@ defmodule Fountain.Conversations do
         order_by: [desc: s.inserted_at],
         left_join: u in User,
         on: u.id == s.user_id,
-        preload: [user: u]
+        preload: [user: u, conversations: []]
     )
   end
 

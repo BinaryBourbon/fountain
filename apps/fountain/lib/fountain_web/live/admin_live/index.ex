@@ -105,7 +105,7 @@ defmodule FountainWeb.AdminLive.Index do
             <tr>
               <th class="px-4 py-2">ID</th>
               <th class="px-4 py-2">Status</th>
-              <th class="px-4 py-2">Conversation</th>
+              <th class="px-4 py-2">Conversations</th>
               <th class="px-4 py-2">Started</th>
             </tr>
           </thead>
@@ -121,9 +121,14 @@ defmodule FountainWeb.AdminLive.Index do
                 </span>
               </td>
               <td class="px-4 py-2 text-xs text-zinc-500">
-                <.link navigate={~p"/conversations/#{s.conversation_id}"} class="hover:underline">
-                  {String.slice(s.conversation_id, 0, 8)}
-                </.link>
+                <span :if={s.conversations == []}>—</span>
+                <span :if={s.conversations != []} class="space-x-2">
+                  <.link
+                    :for={c <- s.conversations}
+                    navigate={~p"/conversations/#{c.id}"}
+                    class="hover:underline"
+                  >{String.slice(c.id, 0, 8)}</.link>
+                </span>
               </td>
               <td class="px-4 py-2 text-xs text-zinc-500">{format_ts(s.inserted_at)}</td>
             </tr>
