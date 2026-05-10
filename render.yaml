@@ -63,7 +63,7 @@ projects:
                 value: noreply@updates.inevitable.fyi
 
               - key: ELIXIR_VERSION
-                value: "1.18.4"
+                value: "1.19.2"
               - key: ERLANG_VERSION
                 value: "28.0.2"
 
