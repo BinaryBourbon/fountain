@@ -28,7 +28,7 @@ defmodule FountainWeb.Live.Hooks do
   """
 
   import Phoenix.LiveView
-  import Phoenix.Component, only: [assign_new: 3]
+  import Phoenix.Component, only: [assign: 3, assign_new: 3]
 
   use FountainWeb, :verified_routes
 
@@ -50,7 +50,7 @@ defmodule FountainWeb.Live.Hooks do
          |> redirect(to: ~p"/auth/login")}
 
       true ->
-        {:cont, socket}
+        {:cont, track_current_path(socket)}
     end
   end
 
@@ -98,6 +98,17 @@ defmodule FountainWeb.Live.Hooks do
       else
         _ -> nil
       end
+    end)
+  end
+
+  # The shared layout reads @current_path to highlight the active nav item.
+  # Seed it with "/" for the initial render and update it from the URI on
+  # every handle_params (LiveView navigation).
+  defp track_current_path(socket) do
+    socket
+    |> assign_new(:current_path, fn -> "/" end)
+    |> Phoenix.LiveView.attach_hook(:current_path, :handle_params, fn _params, uri, socket ->
+      {:cont, assign(socket, :current_path, URI.parse(uri).path)}
     end)
   end
 end
