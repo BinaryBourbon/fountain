@@ -1,0 +1,73 @@
+defmodule Fountain.Environments do
+  @moduledoc "Context for environments and their secrets."
+
+  import Ecto.Query, only: [from: 2]
+
+  alias Fountain.Environments.{Environment, Secret}
+  alias Fountain.Repo
+
+  # ── environments ──────────────────────────────────────────────────────────
+
+  def list_environments do
+    Repo.all(from e in Environment, order_by: [desc: e.inserted_at, desc: e.id])
+  end
+
+  def get_environment(id), do: Repo.get(Environment, id)
+  def get_environment!(id), do: Repo.get!(Environment, id)
+
+  def create_environment(attrs) do
+    %Environment{}
+    |> Environment.changeset(attrs)
+    |> Repo.insert()
+  end
+
+  def update_environment(%Environment{} = env, attrs) do
+    env
+    |> Environment.changeset(attrs)
+    |> Repo.update()
+  end
+
+  def delete_environment(%Environment{} = env), do: Repo.delete(env)
+
+  # ── secrets ───────────────────────────────────────────────────────────────
+
+  def list_secrets(%Environment{id: env_id}) do
+    Repo.all(from s in Secret, where: s.environment_id == ^env_id, order_by: [asc: s.key])
+  end
+
+  def get_secret(env_id, key) do
+    Repo.get_by(Secret, environment_id: env_id, key: key)
+  end
+
+  def upsert_secret(%Environment{id: env_id}, %{"key" => key} = attrs) do
+    case get_secret(env_id, key) do
+      nil ->
+        %Secret{}
+        |> Secret.changeset(Map.put(attrs, "environment_id", env_id))
+        |> Repo.insert()
+
+      existing ->
+        existing
+        |> Secret.changeset(attrs)
+        |> Repo.update()
+    end
+  end
+
+  def delete_secret(%Secret{} = secret), do: Repo.delete(secret)
+
+  @doc """
+  Returns a flat map `%{"KEY" => "plaintext"}` of all decrypted secrets
+  attached to the given environment. Used when materializing env vars
+  into a Sprite.
+  """
+  def decrypted_env(%Environment{} = env) do
+    env
+    |> list_secrets()
+    |> Enum.reduce(%{}, fn secret, acc ->
+      case Secret.decrypt(secret) do
+        {:ok, plain} -> Map.put(acc, secret.key, plain)
+        :error -> acc
+      end
+    end)
+  end
+end

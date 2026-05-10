@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en" class="bg-zinc-50">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="csrf-token" content={get_csrf_token()} />
+    <title>{assigns[:page_title] || "Agent on Demand"}</title>
+    <script src="https://cdn.tailwindcss.com?plugins=typography"></script>
+    <script>
+      window.addEventListener("phx:reload", () => location.reload());
+    </script>
+    <script defer src="https://cdn.jsdelivr.net/npm/phoenix@1.7.20/priv/static/phoenix.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/phoenix_live_view@1.1.28/priv/static/phoenix_live_view.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
+    <script defer>
+      document.addEventListener("DOMContentLoaded", () => {
+        const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content");
+
+        // ── Cheatsheet modal ────────────────────────────────────────
+        const cheatsheet = document.getElementById("kbd-cheatsheet");
+        function toggleCheatsheet() {
+          cheatsheet.classList.toggle("hidden");
+        }
+        cheatsheet.addEventListener("click", (e) => {
+          if (e.target === cheatsheet) toggleCheatsheet();
+        });
+        window.toggleCheatsheet = toggleCheatsheet;
+
+        // ── Global keyboard shortcuts ───────────────────────────────
+        let gPending = false;
+        let gTimer = null;
+
+        document.addEventListener("keydown", (e) => {
+          const tag = document.activeElement && document.activeElement.tagName.toLowerCase();
+          const isEditing = tag === "input" || tag === "textarea" || tag === "select"
+            || (document.activeElement && document.activeElement.isContentEditable);
+
+          // Escape closes cheatsheet
+          if (e.key === "Escape") {
+            if (!cheatsheet.classList.contains("hidden")) {
+              toggleCheatsheet();
+              e.preventDefault();
+            }
+            return;
+          }
+
+          // ? toggles cheatsheet (skip only when editing AND cheatsheet is already closed)
+          if (e.key === "?" && !e.ctrlKey && !e.metaKey && !e.altKey) {
+            if (!isEditing || !cheatsheet.classList.contains("hidden")) {
+              toggleCheatsheet();
+              e.preventDefault();
+            }
+            return;
+          }
+
+          // Skip navigation shortcuts when typing in a form field
+          if (isEditing) return;
+
+          // g-chord navigation
+          if (e.key === "g" && !e.ctrlKey && !e.metaKey && !e.altKey) {
+            gPending = true;
+            clearTimeout(gTimer);
+            gTimer = setTimeout(() => { gPending = false; }, 1500);
+            e.preventDefault();
+            return;
+          }
+
+          if (gPending) {
+            gPending = false;
+            clearTimeout(gTimer);
+            const nav = {
+              c: "/conversations/new",
+              h: "/help",
+              a: "/agents",
+              e: "/environments",
+              v: "/vaults"
+            };
+            if (nav[e.key]) {
+              window.location.href = nav[e.key];
+              e.preventDefault();
+            }
+          }
+        });
+
+        // ── LiveView hooks ──────────────────────────────────────────
+        const Hooks = {
+          ScrollBottom: {
+            mounted() { this.el.scrollTop = this.el.scrollHeight; },
+            updated() { this.el.scrollTop = this.el.scrollHeight; }
+          },
+          SubmitOnCmdEnter: {
+            mounted() {
+              this.handler = (e) => {
+                if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+                  e.preventDefault();
+                  const form = this.el.closest("form");
+                  if (form) form.requestSubmit();
+                }
+              };
+              this.el.addEventListener("keydown", this.handler);
+            },
+            destroyed() {
+              this.el.removeEventListener("keydown", this.handler);
+            }
+          },
+          ImagePicker: {
+            mounted() {
+              this.el.addEventListener("change", (e) => {
+                const files = Array.from(e.target.files || []);
+                if (files.length === 0) return;
+
+                const readers = files.map(file => new Promise((resolve) => {
+                  const reader = new FileReader();
+                  reader.onload = (ev) => {
+                    const dataUrl = ev.target.result;
+                    // Strip the data URL prefix to get base64 only
+                    const base64 = dataUrl.split(",")[1];
+                    resolve({ data: base64, media_type: file.type, name: file.name, url: dataUrl });
+                  };
+                  reader.readAsDataURL(file);
+                }));
+
+                Promise.all(readers).then(images => {
+                  this.pushEvent("images_selected", { images: images });
+                });
+              });
+            }
+          },
+          ConversationGraph: {
+            mounted() { this.renderGraph(); },
+            updated() { this.renderGraph(); },
+            renderGraph() {
+              const nodes = JSON.parse(this.el.dataset.graph || "[]");
+              const currentId = this.el.dataset.currentId;
+              if (!nodes || nodes.length === 0) return;
+
+              // Build id → node map with children arrays
+              const byId = {};
+              nodes.forEach(n => { byId[n.id] = { ...n, children: [] }; });
+              let root = null;
+              nodes.forEach(n => {
+                if (n.parent_id && byId[n.parent_id]) {
+                  byId[n.parent_id].children.push(byId[n.id]);
+                } else if (!n.parent_id) {
+                  root = byId[n.id];
+                }
+              });
+              if (!root) return;
+
+              const W = this.el.offsetWidth || 600;
+              const H = this.el.offsetHeight || 150;
+              const padding = { top: 20, right: 50, bottom: 10, left: 50 };
+              const innerW = W - padding.left - padding.right;
+              const innerH = H - padding.top - padding.bottom;
+
+              const hier = d3.hierarchy(root);
+              const treeLayout = d3.tree().size([innerW, innerH]);
+              treeLayout(hier);
+              // Ensure nodes aren't clipped at top edge
+              hier.descendants().forEach(d => { if (d.y < 13) d.y = 13; });
+
+              this.el.innerHTML = "";
+              const svg = d3.select(this.el)
+                .append("svg")
+                .attr("width", "100%")
+                .attr("height", H)
+                .attr("viewBox", `0 0 ${W} ${H}`)
+                .attr("preserveAspectRatio", "xMidYMid meet");
+
+              // Glow filter for the current node
+              const defs = svg.append("defs");
+              const filt = defs.append("filter").attr("id", "cg-glow");
+              filt.append("feGaussianBlur").attr("in", "SourceGraphic").attr("stdDeviation", "3").attr("result", "blur");
+              const merge = filt.append("feMerge");
+              merge.append("feMergeNode").attr("in", "blur");
+              merge.append("feMergeNode").attr("in", "SourceGraphic");
+
+              const g = svg.append("g")
+                .attr("transform", `translate(${padding.left},${padding.top})`);
+
+              // Draw edges
+              g.selectAll(".cg-link")
+                .data(hier.links())
+                .join("path")
+                .attr("fill", "none")
+                .attr("stroke", "#334155")
+                .attr("stroke-width", 1.5)
+                .attr("d", d3.linkVertical().x(d => d.x).y(d => d.y));
+
+              // Draw nodes
+              const NW = 90, NH = 26;
+              const node = g.selectAll(".cg-node")
+                .data(hier.descendants())
+                .join("g")
+                .attr("transform", d => `translate(${d.x},${d.y})`)
+                .style("cursor", "pointer")
+                .on("click", (_e, d) => { window.location.href = `/conversations/${d.data.id}`; });
+
+              node.append("rect")
+                .attr("x", -NW / 2).attr("y", -NH / 2)
+                .attr("width", NW).attr("height", NH)
+                .attr("rx", 4)
+                .attr("fill", d => {
+                  if (d.data.source === "ui")    return "#172554";
+                  if (d.data.source === "agent") return "#451a03";
+                  return "#1c1917";
+                })
+                .attr("stroke", d => {
+                  if (d.data.id === currentId)   return "#38bdf8";
+                  if (d.data.source === "ui")    return "#3b82f6";
+                  if (d.data.source === "agent") return "#d97706";
+                  return "#52525b";
+                })
+                .attr("stroke-width", d => d.data.id === currentId ? 2 : 1)
+                .attr("filter", d => d.data.id === currentId ? "url(#cg-glow)" : null);
+
+              node.append("text")
+                .attr("text-anchor", "middle")
+                .attr("dy", "0.35em")
+                .attr("fill", d => d.data.id === currentId ? "#e2e8f0" : "#94a3b8")
+                .attr("font-size", "10px")
+                .attr("font-family", "ui-monospace, monospace")
+                .text(d => d.data.id.substring(0, 8));
+            }
+          }
+        };
+        const liveSocket = new window.LiveView.LiveSocket("/live", window.Phoenix.Socket, {
+          params: { _csrf_token: csrfToken },
+          hooks: Hooks
+        });
+        liveSocket.connect();
+        window.liveSocket = liveSocket;
+      });
+    </script>
+  </head>
+  <body class="bg-zinc-50 text-zinc-900 font-sans antialiased">
+    <%!-- Keyboard shortcut cheatsheet modal --%>
+    <div id="kbd-cheatsheet" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+      <div class="bg-white rounded-xl shadow-2xl border border-zinc-200 w-full max-w-md mx-4">
+        <div class="flex items-center justify-between px-6 py-4 border-b border-zinc-200">
+          <h2 class="font-semibold text-zinc-900">Keyboard shortcuts</h2>
+          <button onclick="document.getElementById('kbd-cheatsheet').classList.add('hidden')" class="text-zinc-400 hover:text-zinc-600 text-xl leading-none">&times;</button>
+        </div>
+        <div class="px-6 py-4 space-y-5 text-sm">
+          <div>
+            <div class="text-xs font-medium text-zinc-500 uppercase tracking-wide mb-2">Global</div>
+            <div class="space-y-2">
+              <div class="flex items-center justify-between">
+                <span class="text-zinc-600">Toggle this cheatsheet</span>
+                <kbd class="px-2 py-0.5 bg-zinc-100 border border-zinc-300 rounded text-xs font-mono">?</kbd>
+              </div>
+              <div class="flex items-center justify-between">
+                <span class="text-zinc-600">Close cheatsheet</span>
+                <kbd class="px-2 py-0.5 bg-zinc-100 border border-zinc-300 rounded text-xs font-mono">Esc</kbd>
+              </div>
+            </div>
+          </div>
+          <div>
+            <div class="text-xs font-medium text-zinc-500 uppercase tracking-wide mb-2">Navigate (press g then&hellip;)</div>
+            <div class="space-y-2">
+              <div class="flex items-center justify-between">
+                <span class="text-zinc-600">New conversation</span>
+                <span class="flex gap-1">
+                  <kbd class="px-2 py-0.5 bg-zinc-100 border border-zinc-300 rounded text-xs font-mono">g</kbd>
+                  <kbd class="px-2 py-0.5 bg-zinc-100 border border-zinc-300 rounded text-xs font-mono">c</kbd>
+                </span>
+              </div>
+              <div class="flex items-center justify-between">
+                <span class="text-zinc-600">Help</span>
+                <span class="flex gap-1">
+                  <kbd class="px-2 py-0.5 bg-zinc-100 border border-zinc-300 rounded text-xs font-mono">g</kbd>
+                  <kbd class="px-2 py-0.5 bg-zinc-100 border border-zinc-300 rounded text-xs font-mono">h</kbd>
+                </span>
+              </div>
+              <div class="flex items-center justify-between">
+                <span class="text-zinc-600">Agents</span>
+                <span class="flex gap-1">
+                  <kbd class="px-2 py-0.5 bg-zinc-100 border border-zinc-300 rounded text-xs font-mono">g</kbd>
+                  <kbd class="px-2 py-0.5 bg-zinc-100 border border-zinc-300 rounded text-xs font-mono">a</kbd>
+                </span>
+              </div>
+              <div class="flex items-center justify-between">
+                <span class="text-zinc-600">Environments</span>
+                <span class="flex gap-1">
+                  <kbd class="px-2 py-0.5 bg-zinc-100 border border-zinc-300 rounded text-xs font-mono">g</kbd>
+                  <kbd class="px-2 py-0.5 bg-zinc-100 border border-zinc-300 rounded text-xs font-mono">e</kbd>
+                </span>
+              </div>
+              <div class="flex items-center justify-between">
+                <span class="text-zinc-600">Vaults</span>
+                <span class="flex gap-1">
+                  <kbd class="px-2 py-0.5 bg-zinc-100 border border-zinc-300 rounded text-xs font-mono">g</kbd>
+                  <kbd class="px-2 py-0.5 bg-zinc-100 border border-zinc-300 rounded text-xs font-mono">v</kbd>
+                </span>
+              </div>
+            </div>
+          </div>
+          <div>
+            <div class="text-xs font-medium text-zinc-500 uppercase tracking-wide mb-2">Forms</div>
+            <div class="space-y-2">
+              <div class="flex items-center justify-between">
+                <span class="text-zinc-600">Submit form (from textarea)</span>
+                <span class="flex gap-1 items-center">
+                  <kbd class="px-2 py-0.5 bg-zinc-100 border border-zinc-300 rounded text-xs font-mono">&#8984;</kbd>
+                  <kbd class="px-2 py-0.5 bg-zinc-100 border border-zinc-300 rounded text-xs font-mono">Enter</kbd>
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    {@inner_content}
+  </body>
+</html>

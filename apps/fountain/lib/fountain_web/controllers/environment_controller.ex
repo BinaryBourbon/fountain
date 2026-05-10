@@ -1,0 +1,103 @@
+defmodule FountainWeb.EnvironmentController do
+  use FountainWeb, :controller
+  use OpenApiSpex.ControllerSpecs
+
+  alias Fountain.Environments
+  alias Fountain.Environments.Environment
+  alias FountainWeb.Schemas
+
+  action_fallback FountainWeb.FallbackController
+
+  plug OpenApiSpex.Plug.CastAndValidate, replace_params: false
+
+  tags(["Environments"])
+
+  operation(:index,
+    summary: "List environments",
+    responses: [
+      ok: {"Environments", "application/json", Schemas.EnvironmentListResponse}
+    ]
+  )
+
+  def index(conn, _params) do
+    render(conn, :index, environments: Environments.list_environments())
+  end
+
+  operation(:show,
+    summary: "Get an environment",
+    parameters: [id: [in: :path, type: :string, required: true]],
+    responses: [
+      ok: {"Environment", "application/json", Schemas.EnvironmentResponse},
+      not_found: {"Not found", "application/json", Schemas.Error}
+    ]
+  )
+
+  def show(conn, %{"id" => id}) do
+    case Environments.get_environment(id) do
+      nil -> {:error, :not_found}
+      env -> render(conn, :show, environment: env)
+    end
+  end
+
+  operation(:create,
+    summary: "Create an environment",
+    request_body: {"Environment attributes", "application/json", Schemas.EnvironmentRequest},
+    responses: [
+      created: {"Environment", "application/json", Schemas.EnvironmentResponse},
+      unprocessable_entity: {"Validation error", "application/json", Schemas.ChangesetError}
+    ]
+  )
+
+  def create(conn, params) do
+    with {:ok, %Environment{} = env} <- Environments.create_environment(params) do
+      conn
+      |> put_status(:created)
+      |> render(:show, environment: env)
+    end
+  end
+
+  operation(:update,
+    summary: "Update an environment (partial)",
+    description: "Every field is optional; the server merges into the existing record.",
+    parameters: [id: [in: :path, type: :string, required: true]],
+    request_body:
+      {"Partial environment attributes", "application/json", Schemas.EnvironmentUpdate},
+    responses: [
+      ok: {"Environment", "application/json", Schemas.EnvironmentResponse},
+      not_found: {"Not found", "application/json", Schemas.Error},
+      unprocessable_entity: {"Validation error", "application/json", Schemas.ChangesetError}
+    ]
+  )
+
+  def update(conn, %{"id" => id} = params) do
+    case Environments.get_environment(id) do
+      nil ->
+        {:error, :not_found}
+
+      env ->
+        with {:ok, env} <- Environments.update_environment(env, Map.delete(params, "id")) do
+          render(conn, :show, environment: env)
+        end
+    end
+  end
+
+  operation(:delete,
+    summary: "Delete an environment",
+    parameters: [id: [in: :path, type: :string, required: true]],
+    responses: [
+      no_content: "Deleted",
+      not_found: {"Not found", "application/json", Schemas.Error}
+    ]
+  )
+
+  def delete(conn, %{"id" => id}) do
+    case Environments.get_environment(id) do
+      nil ->
+        {:error, :not_found}
+
+      env ->
+        {:ok, _} = Environments.delete_environment(env)
+        send_resp(conn, :no_content, "")
+    end
+  end
+end
