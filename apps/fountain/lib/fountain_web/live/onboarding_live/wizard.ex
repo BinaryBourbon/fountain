@@ -139,7 +139,15 @@ defmodule FountainWeb.OnboardingLive.Wizard do
   end
 
   def handle_event("create_agent", %{"agent" => params}, socket) do
-    attrs = Map.put(params, "user_id", socket.assigns.user_id)
+    # The wizard form only collects name + system prompt; supply runtime/model
+    # defaults and map system_prompt -> system so the changeset can pass.
+    attrs =
+      params
+      |> Map.put("user_id", socket.assigns.user_id)
+      |> Map.put_new("runtime", "claude")
+      |> Map.put_new("model", "anthropic/claude-sonnet-4-6")
+      |> Map.put("system", Map.get(params, "system_prompt", ""))
+      |> Map.delete("system_prompt")
 
     case Agents.create_agent(attrs) do
       {:ok, _agent} -> advance(socket, "step_4")
@@ -192,7 +200,7 @@ defmodule FountainWeb.OnboardingLive.Wizard do
   @impl true
   def render(assigns) do
     ~H"""
-    <div class="min-h-screen bg-zinc-50 flex flex-col items-center justify-center py-12 px-4">
+    <div class="min-h-screen bg-zinc-50 text-zinc-900 flex flex-col items-center justify-center py-12 px-4">
       <div class="w-full max-w-lg space-y-8">
         <div class="text-center">
           <h1 class="text-2xl font-bold text-zinc-900">Welcome to Fountain</h1>
