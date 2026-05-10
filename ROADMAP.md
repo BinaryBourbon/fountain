@@ -4,11 +4,11 @@ The captain-picard orchestrator reads this every cycle and writes the conversati
 
 ## Now
 
-- fix/bug-1-cli-token-endpoint — general-purpose-engineer (conv 9c4a2a41-9f73-4e4e-b621-8993aa837f77)
+_(empty — awaiting G3 go/no-go from human operator)_
 
 ## Next
 
-- **G3** — Human reviews validation report + fixes and gives go/no-go for public launch.
+- **G3** — Human gives go/no-go for public launch.
 
 ## Gated
 
