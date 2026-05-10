@@ -66,7 +66,7 @@ services:
 
 databases:
   - name: fountain-db
-    plan: starter
+    plan: basic-256mb
     region: oregon
     databaseName: fountain
     user: fountain
