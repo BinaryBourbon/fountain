@@ -17,7 +17,10 @@ defmodule Fountain.SpriteSkills do
   API gets discovered inside the sprite.
 
   This must run before the network policy locks the sprite down: github
-  installs hit npm + GitHub.
+  installs hit npm + GitHub. Inside `mount/3` the github installs run
+  before the inline writes — `Sprites.cmd` blocks until the sprite is
+  fully ready, which is the readiness gate the HTTP `/fs/*` endpoints
+  silently need too.
   """
 
   require Logger
@@ -48,9 +51,16 @@ defmodule Fountain.SpriteSkills do
     {inline, github} =
       Enum.split_with(all, fn s -> is_binary(s["content"]) end)
 
+    # Run github installs first. `Sprites.cmd` opens a WebSocket session
+    # that blocks until the sprite is fully running, so by the time it
+    # returns the sprite's HTTP `/fs/*` endpoints are also up. The inline
+    # write previously ran immediately after `Sprites.create` and lost a
+    # race with the filesystem service coming online — `Sprites.Filesystem.write/4`
+    # returned `{:error, _}` and `Enum.each` swallowed it, so the bundled
+    # `fountain` SKILL.md silently never landed.
+    install_github_skills(sprite, sh_agent, github)
     fs = Sprites.filesystem(sprite, "/")
     write_inline_skills(fs, skills_root, inline)
-    install_github_skills(sprite, sh_agent, github)
     :ok
   end
 
@@ -74,12 +84,20 @@ defmodule Fountain.SpriteSkills do
   defp write_inline_skills(_fs, _root, []), do: :ok
 
   defp write_inline_skills(fs, root, inline) do
-    Filesystem.mkdir_p(fs, root)
-
     Enum.each(inline, fn %{"name" => name, "content" => content} ->
-      dir = Path.join(root, name)
-      Filesystem.mkdir_p(fs, dir)
-      Filesystem.write(fs, Path.join(dir, "SKILL.md"), content)
+      # `mkdirParents: true` inside `Filesystem.write/4` creates the
+      # `<root>/<name>` directory atomically with the file write, so we
+      # don't need a separate `mkdir_p` round-trip (each one was another
+      # opportunity for the same readiness race).
+      path = Path.join([root, name, "SKILL.md"])
+
+      case Filesystem.write(fs, path, content) do
+        :ok ->
+          :ok
+
+        {:error, reason} ->
+          Logger.warning("inline skill write failed for #{name} at #{path}: #{inspect(reason)}")
+      end
     end)
   end
 
