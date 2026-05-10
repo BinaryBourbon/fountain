@@ -159,9 +159,7 @@ defmodule FountainWeb.Live.BillingLive do
         error -> error
       end
     else
-      price_id =
-        Application.get_env(:fountain, :stripe_price_id) ||
-          System.get_env("STRIPE_PRICE_ID", "")
+      price_id = Application.get_env(:fountain, :stripe_price_id, "")
 
       base_params = %{
         mode: "subscription",
