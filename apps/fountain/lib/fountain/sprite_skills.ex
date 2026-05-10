@@ -12,8 +12,8 @@ defmodule Fountain.SpriteSkills do
       --yes [--skill <name>]`. Each runtime declares its own
       `skills_sh_agent` so the CLI writes to the right on-disk layout.
 
-  The bundled `aod` skill at `priv/sprite_skills/aod/SKILL.md` is always
-  prepended as an inline skill — it's how the per-conversation callback
+  The bundled `fountain` skill at `priv/sprite_skills/fountain/SKILL.md` is
+  always prepended as an inline skill — it's how the per-conversation callback
   API gets discovered inside the sprite.
 
   This must run before the network policy locks the sprite down: github
@@ -26,11 +26,11 @@ defmodule Fountain.SpriteSkills do
   alias Sprites.Filesystem
 
   @bundle_root "sprite_skills"
-  @aod_skill_name "aod"
+  @fountain_skill_name "fountain"
 
   @doc """
   Mount `skills` (a list of inline/github maps) on `sprite` for the
-  named runtime. The bundled `aod` skill is always prepended.
+  named runtime. The bundled `fountain` skill is always prepended.
   """
   def mount(sprite, runtime, skills) when is_binary(runtime) do
     case Runtimes.for_runtime(runtime) do
@@ -43,7 +43,7 @@ defmodule Fountain.SpriteSkills do
     skills_root = runtime_module.skills_root()
     sh_agent = runtime_module.skills_sh_agent()
 
-    all = [aod_inline_skill() | normalize(skills || [])]
+    all = [fountain_inline_skill() | normalize(skills || [])]
 
     {inline, github} =
       Enum.split_with(all, fn s -> is_binary(s["content"]) end)
@@ -64,10 +64,10 @@ defmodule Fountain.SpriteSkills do
     end)
   end
 
-  defp aod_inline_skill do
+  defp fountain_inline_skill do
     %{
-      "name" => @aod_skill_name,
-      "content" => File.read!(Path.join([priv_dir(), @aod_skill_name, "SKILL.md"]))
+      "name" => @fountain_skill_name,
+      "content" => File.read!(Path.join([priv_dir(), @fountain_skill_name, "SKILL.md"]))
     }
   end
 

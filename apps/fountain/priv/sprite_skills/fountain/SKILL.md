@@ -1,17 +1,18 @@
 ---
-name: aod
-description: Spawn and stream Agent on Demand (AoD) conversations — for when this agent needs to fan out work to other coding agents. Use when the user asks you to "delegate to another agent", "spawn an agent", "fan out", or when a task is large enough to warrant parallel agents working in parallel sandboxes. AoD provisions an isolated Sprite, runs a configured agent in it, and streams output back over SSE. Reads `AOD_BASE_URL` and `AOD_TOKEN` from the environment.
+name: fountain
+description: Spawn and stream Fountain conversations from inside a sprite — use whenever the user asks you to "spin up an agent on Fountain", "delegate to another agent", "fan out", or any task large enough to parallelise across coding agents. Fountain provisions an isolated Sprite per conversation, runs the configured runtime in it, and streams output back over SSE. Reads `FOUNTAIN_BASE_URL`, `FOUNTAIN_TOKEN`, and `FOUNTAIN_CONVERSATION_ID` from the environment.
 ---
 
-# Agent on Demand (AoD) — From Inside a Sprite
+# Fountain — spawning conversations from inside a sprite
 
-You are running inside a Sprite that AoD provisioned. AoD itself is reachable
-at `$AOD_BASE_URL` (the API lives under **`/api`**) with bearer `$AOD_TOKEN`.
-From here you can spawn *more* AoD conversations — each one runs in its own
-fresh Sprite.
+You are running inside a Sprite that Fountain provisioned. The Fountain API is
+reachable at `$FOUNTAIN_BASE_URL` (under **`/api`**) with bearer
+`$FOUNTAIN_TOKEN`. From here you can spawn *more* Fountain conversations —
+each runs in its own fresh Sprite.
 
-> **Common mistake**: hitting `$AOD_BASE_URL/conversations` returns 302 (the
-> bare path is the LiveView UI). The right URL is `$AOD_BASE_URL/api/conversations`.
+> **Common mistake**: hitting `$FOUNTAIN_BASE_URL/conversations` returns 302
+> (the bare path is the LiveView UI). The right URL is
+> `$FOUNTAIN_BASE_URL/api/conversations`.
 
 ## The two patterns you'll use
 
@@ -19,8 +20,8 @@ fresh Sprite.
 
 ```bash
 # 1. Pick the agent (by name).
-AGENT_ID=$(curl -s "$AOD_BASE_URL/api/agents" \
-  -H "Authorization: Bearer $AOD_TOKEN" \
+AGENT_ID=$(curl -s "$FOUNTAIN_BASE_URL/api/agents" \
+  -H "Authorization: Bearer $FOUNTAIN_TOKEN" \
   | jq -r '.data[] | select(.name == "echo-bot") | .id')
 
 # 2. Spawn N conversations IN PARALLEL with xargs. Output is conv ids on stdout.
@@ -29,10 +30,10 @@ ids=$(printf '%s\n' "${prompts[@]}" | xargs -n1 -P8 -I{} sh -c '
   curl -s -X POST "$1/api/conversations" \
     -H "Authorization: Bearer $2" \
     -H "Content-Type: application/json" \
-    -H "X-AoD-Parent-Conversation-Id: $AOD_CONVERSATION_ID" \
+    -H "X-Fountain-Parent-Conversation-Id: $FOUNTAIN_CONVERSATION_ID" \
     -d "$(jq -n --arg a "$3" --arg p "$4" "{agent_id:\$a, prompt:\$p}")" \
   | jq -r .data.id
-' _ "$AOD_BASE_URL" "$AOD_TOKEN" "$AGENT_ID" {})
+' _ "$FOUNTAIN_BASE_URL" "$FOUNTAIN_TOKEN" "$AGENT_ID" {})
 
 echo "$ids"   # one conv id per line
 
@@ -42,14 +43,14 @@ echo "$ids" | xargs -n1 -P10 -I{} sh -c '
     s=$(curl -s "$1/api/conversations/$3" -H "Authorization: Bearer $2" | jq -r .data.status)
     case "$s" in running|pending) sleep 2 ;; *) break ;; esac
   done
-' _ "$AOD_BASE_URL" "$AOD_TOKEN" {}
+' _ "$FOUNTAIN_BASE_URL" "$FOUNTAIN_TOKEN" {}
 
 # 4. Gather the final text from each (claude runtime).
 while IFS= read -r conv; do
   echo "=== $conv ==="
   curl -sN --max-time 5 \
-    "$AOD_BASE_URL/api/conversations/$conv/stream?streams=stdout&wait=false" \
-    -H "Authorization: Bearer $AOD_TOKEN" \
+    "$FOUNTAIN_BASE_URL/api/conversations/$conv/stream?streams=stdout&wait=false" \
+    -H "Authorization: Bearer $FOUNTAIN_TOKEN" \
   | awk '/^data: /{sub(/^data: /,""); print}' \
   | jq -r '.data | fromjson? | select(.type=="result") | .result' \
   | tail -n1
@@ -62,22 +63,22 @@ done <<<"$ids"
 AGENT_ID=...
 PROMPT=...
 
-CONV=$(curl -s -X POST "$AOD_BASE_URL/api/conversations" \
-  -H "Authorization: Bearer $AOD_TOKEN" \
+CONV=$(curl -s -X POST "$FOUNTAIN_BASE_URL/api/conversations" \
+  -H "Authorization: Bearer $FOUNTAIN_TOKEN" \
   -H "Content-Type: application/json" \
-  -H "X-AoD-Parent-Conversation-Id: $AOD_CONVERSATION_ID" \
+  -H "X-Fountain-Parent-Conversation-Id: $FOUNTAIN_CONVERSATION_ID" \
   -d "$(jq -n --arg a "$AGENT_ID" --arg p "$PROMPT" '{agent_id:$a, prompt:$p}')" \
   | jq -r .data.id)
 
 while :; do
-  s=$(curl -s "$AOD_BASE_URL/api/conversations/$CONV" \
-    -H "Authorization: Bearer $AOD_TOKEN" | jq -r .data.status)
+  s=$(curl -s "$FOUNTAIN_BASE_URL/api/conversations/$CONV" \
+    -H "Authorization: Bearer $FOUNTAIN_TOKEN" | jq -r .data.status)
   case "$s" in running|pending) sleep 2 ;; *) break ;; esac
 done
 
 curl -sN --max-time 5 \
-  "$AOD_BASE_URL/api/conversations/$CONV/stream?streams=stdout&wait=false" \
-  -H "Authorization: Bearer $AOD_TOKEN" \
+  "$FOUNTAIN_BASE_URL/api/conversations/$CONV/stream?streams=stdout&wait=false" \
+  -H "Authorization: Bearer $FOUNTAIN_TOKEN" \
 | awk '/^data: /{sub(/^data: /,""); print}' \
 | jq -r '.data | fromjson? | select(.type=="result") | .result' \
 | tail -n1
@@ -119,8 +120,8 @@ controls the shape of the inner JSON. Pull the runtime once, then pick the
 right filter:
 
 ```bash
-RT=$(curl -s "$AOD_BASE_URL/api/conversations/$CONV" \
-  -H "Authorization: Bearer $AOD_TOKEN" | jq -r .data.runtime)
+RT=$(curl -s "$FOUNTAIN_BASE_URL/api/conversations/$CONV" \
+  -H "Authorization: Bearer $FOUNTAIN_TOKEN" | jq -r .data.runtime)
 ```
 
 | runtime  | filter (the part **after** `.data \| fromjson?`)                       | text path        |
@@ -137,13 +138,13 @@ agent's environment provides (e.g. contribute to GitHub as a specific user), pas
 an optional `vault_id` when creating it. List vaults to find the one you want:
 
 ```bash
-curl -s "$AOD_BASE_URL/api/vaults" -H "Authorization: Bearer $AOD_TOKEN" \
+curl -s "$FOUNTAIN_BASE_URL/api/vaults" -H "Authorization: Bearer $FOUNTAIN_TOKEN" \
   | jq -r '.data[] | "\(.name)\t\(.id)"'
 
 # Spawn with a specific vault layered on top of the env's secrets:
-curl -s -X POST "$AOD_BASE_URL/api/conversations" \
-  -H "Authorization: Bearer $AOD_TOKEN" -H "Content-Type: application/json" \
-  -H "X-AoD-Parent-Conversation-Id: $AOD_CONVERSATION_ID" \
+curl -s -X POST "$FOUNTAIN_BASE_URL/api/conversations" \
+  -H "Authorization: Bearer $FOUNTAIN_TOKEN" -H "Content-Type: application/json" \
+  -H "X-Fountain-Parent-Conversation-Id: $FOUNTAIN_CONVERSATION_ID" \
   -d "$(jq -n --arg a "$AGENT_ID" --arg v "$VAULT_ID" --arg p "$PROMPT" \
         '{agent_id:$a, vault_id:$v, prompt:$p}')"
 ```
@@ -157,8 +158,8 @@ credentials per spawned conversation.
 Send a follow-up prompt to an existing conversation:
 
 ```bash
-curl -s -X POST "$AOD_BASE_URL/api/conversations/$CONV/prompts" \
-  -H "Authorization: Bearer $AOD_TOKEN" -H "Content-Type: application/json" \
+curl -s -X POST "$FOUNTAIN_BASE_URL/api/conversations/$CONV/prompts" \
+  -H "Authorization: Bearer $FOUNTAIN_TOKEN" -H "Content-Type: application/json" \
   -d '{"prompt":"Now compare that to the worker service."}'
 ```
 
@@ -168,8 +169,8 @@ resumes — the agent remembers turn 1.
 ## Tear down when you're done
 
 ```bash
-curl -s -X POST "$AOD_BASE_URL/api/conversations/$CONV/terminate" \
-  -H "Authorization: Bearer $AOD_TOKEN"
+curl -s -X POST "$FOUNTAIN_BASE_URL/api/conversations/$CONV/terminate" \
+  -H "Authorization: Bearer $FOUNTAIN_TOKEN"
 ```
 
 ## Important
@@ -178,6 +179,6 @@ curl -s -X POST "$AOD_BASE_URL/api/conversations/$CONV/terminate" \
 - **Parallelize spawn / poll / gather** with `xargs -P` — one provisioning takes ~5–15s, and there's no reason to do them sequentially.
 - **Don't recurse forever.** Spawned agents have the same skill. Cap depth with a `MAX_DEPTH` you check before spawning.
 - **Costs add up.** Every conversation provisions a real sandbox.
-- **Same `$AOD_TOKEN`.** All spawned agents share the single-tenant admin token. Don't leak it outside the sprite.
+- **Same `$FOUNTAIN_TOKEN`.** All spawned agents share the single-tenant admin token. Don't leak it outside the sprite.
 - **API path is `/api/...`.** The bare `/conversations` redirects (302 → /login) for non-browser requests.
-- **Provenance is automatic.** `AOD_CONVERSATION_ID` is always present in your sprite's environment. Every `POST /api/conversations` call that includes `X-AoD-Parent-Conversation-Id: $AOD_CONVERSATION_ID` records this conversation as the parent, letting the operator reconstruct the full spawn chain.
+- **Provenance is automatic.** `FOUNTAIN_CONVERSATION_ID` is always present in your sprite's environment. Every `POST /api/conversations` call that includes `X-Fountain-Parent-Conversation-Id: $FOUNTAIN_CONVERSATION_ID` records this conversation as the parent, letting the operator reconstruct the full spawn chain.

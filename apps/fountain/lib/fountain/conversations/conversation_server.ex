@@ -549,7 +549,7 @@ defmodule Fountain.Conversations.ConversationServer do
 
   defp build_sprite_env(runtime_module, agent, env, secrets, conversation_id, inference_credentials) do
     (runtime_module.default_env(agent, inference_credentials) || []) ++
-      aod_callback_env() ++
+      fountain_callback_env() ++
       conversation_env(conversation_id) ++
       otel_propagation_env() ++
       git_author_env() ++
@@ -560,10 +560,10 @@ defmodule Fountain.Conversations.ConversationServer do
       Enum.map(secrets, fn {k, v} -> {k, v} end)
   end
 
-  # Inject the current conversation ID so the bundled aod skill can
-  # propagate it as X-AoD-Parent-Conversation-Id when spawning children.
+  # Inject the current conversation ID so the bundled fountain skill can
+  # propagate it as X-Fountain-Parent-Conversation-Id when spawning children.
   defp conversation_env(nil), do: []
-  defp conversation_env(conv_id) when is_binary(conv_id), do: [{"AOD_CONVERSATION_ID", conv_id}]
+  defp conversation_env(conv_id) when is_binary(conv_id), do: [{"FOUNTAIN_CONVERSATION_ID", conv_id}]
 
   @doc false
   def git_author_env do
@@ -782,12 +782,12 @@ defmodule Fountain.Conversations.ConversationServer do
     Sprites.create(client, name)
   end
 
-  defp aod_callback_env do
+  defp fountain_callback_env do
     base = Application.get_env(:fountain, :public_url)
     token = Application.get_env(:fountain, :admin_token)
 
     if is_binary(base) and base != "" and is_binary(token) do
-      [{"AOD_BASE_URL", base}, {"AOD_TOKEN", token}]
+      [{"FOUNTAIN_BASE_URL", base}, {"FOUNTAIN_TOKEN", token}]
     else
       []
     end

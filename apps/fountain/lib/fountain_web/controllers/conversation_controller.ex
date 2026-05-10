@@ -69,7 +69,8 @@ defmodule FountainWeb.ConversationController do
     description:
       "Creates a sandbox + conversation pair, starts the runtime in a fresh sprite, " <>
         "and (if `prompt` is supplied) sends it as turn 1. " <>
-        "Pass `X-AoD-Parent-Conversation-Id` header to record which conversation spawned this one.",
+        "Pass `X-Fountain-Parent-Conversation-Id` header to record which conversation spawned this one. " <>
+          "Legacy `X-AoD-Parent-Conversation-Id` is still accepted for sprites provisioned before the rename.",
     request_body: {"Conversation attrs", "application/json", Schemas.ConversationCreateRequest},
     responses: [
       created: {"Conversation", "application/json", Schemas.ConversationResponse},
@@ -92,9 +93,8 @@ defmodule FountainWeb.ConversationController do
     images = decode_images(params["images"])
 
     parent_header =
-      conn
-      |> get_req_header("x-aod-parent-conversation-id")
-      |> List.first()
+      List.first(get_req_header(conn, "x-fountain-parent-conversation-id")) ||
+        List.first(get_req_header(conn, "x-aod-parent-conversation-id"))
 
     {source, parent_id} = infer_provenance(parent_header)
 
@@ -123,7 +123,8 @@ defmodule FountainWeb.ConversationController do
 
   @doc """
   Infer the conversation's `source` and `parent_conversation_id` from
-  the `X-AoD-Parent-Conversation-Id` header value (or `nil` if absent).
+  the `X-Fountain-Parent-Conversation-Id` (or legacy `X-AoD-Parent-Conversation-Id`)
+  header value (or `nil` if absent).
 
   Pure function so the inference logic can be unit-tested without
   going through the full `Conversations.start_conversation/1` pipeline
