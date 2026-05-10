@@ -105,6 +105,24 @@ config :stripity_stripe,
   api_key: System.get_env("STRIPE_SECRET_KEY"),
   webhook_secret: System.get_env("STRIPE_WEBHOOK_SECRET")
 
+# Swoosh SMTP adapter for prod; overridden to Local/Test in dev/test via env configs
+if config_env() == :prod do
+  smtp_from = System.get_env("SMTP_FROM", "noreply@fountain.dev")
+
+  config :fountain, :smtp_from, smtp_from
+
+  if System.get_env("SMTP_HOST") do
+    config :fountain, Fountain.Mailer,
+      adapter: Swoosh.Adapters.SMTP,
+      relay: System.get_env("SMTP_HOST"),
+      port: String.to_integer(System.get_env("SMTP_PORT", "587")),
+      username: System.get_env("SMTP_USERNAME"),
+      password: System.get_env("SMTP_PASSWORD"),
+      tls: :if_available,
+      auth: :if_available
+  end
+end
+
 if config_env() == :prod and server? do
   database_url =
     System.get_env("DATABASE_URL") ||

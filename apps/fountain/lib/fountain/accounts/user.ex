@@ -63,8 +63,21 @@ defmodule Fountain.Accounts.User do
     |> validate_inclusion(:subscription_status, @subscription_statuses)
   end
 
-  @doc "Changeset for bumping session_version (e.g. on password reset)."
-  def invalidate_sessions_changeset(user) do
+  @doc "Changeset for resetting a password (validates + hashes new password)."
+  def password_reset_changeset(user, attrs) do
+    user
+    |> cast(attrs, [:password])
+    |> validate_required([:password])
+    |> validate_length(:password, min: 8, message: "must be at least 8 characters")
+    |> hash_password()
+  end
+
+  @doc "Changeset for bumping session_version (e.g. on password reset). Accepts a User struct or an existing changeset."
+  def invalidate_sessions_changeset(%Ecto.Changeset{data: %__MODULE__{} = user} = changeset) do
+    put_change(changeset, :session_version, (user.session_version || 0) + 1)
+  end
+
+  def invalidate_sessions_changeset(%__MODULE__{} = user) do
     user
     |> change()
     |> put_change(:session_version, (user.session_version || 0) + 1)

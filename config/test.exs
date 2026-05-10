@@ -17,3 +17,7 @@ config :fountain, :checkpoint_creation_enabled, false
 config :logger, level: :warning
 config :phoenix, :plug_init_mode, :runtime
 config :phoenix, sort_verified_routes_query_params: true
+
+# Swoosh test adapter — use Swoosh.TestAssertions in tests
+config :fountain, Fountain.Mailer, adapter: Swoosh.Adapters.Test
+config :swoosh, :api_client, false
