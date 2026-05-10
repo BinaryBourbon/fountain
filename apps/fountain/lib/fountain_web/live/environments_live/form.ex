@@ -6,11 +6,13 @@ defmodule FountainWeb.EnvironmentsLive.Form do
 
   @impl true
   def mount(params, _session, socket) do
-    {env, action} = load(params)
+    user_id = socket.assigns.current_user.id
+    {env, action} = load(params, user_id)
 
     {:ok,
      socket
      |> assign(:page_title, page_title(action))
+     |> assign(:user_id, user_id)
      |> assign(:action, action)
      |> assign(:env, env)
      |> assign(:form, env_to_form(env))
@@ -19,8 +21,8 @@ defmodule FountainWeb.EnvironmentsLive.Form do
      |> assign(:new_secret, %{"key" => "", "value" => ""})}
   end
 
-  defp load(%{"id" => id}), do: {Environments.get_environment!(id), :edit}
-  defp load(_), do: {%Environment{}, :new}
+  defp load(%{"id" => id}, user_id), do: {Environments.get_environment!(id, user_id), :edit}
+  defp load(_, _user_id), do: {%Environment{}, :new}
 
   defp page_title(:new), do: "New environment"
   defp page_title(:edit), do: "Edit environment"
@@ -108,6 +110,7 @@ defmodule FountainWeb.EnvironmentsLive.Form do
   end
 
   defp save(%{assigns: %{action: :new}} = socket, attrs) do
+    attrs = Map.put(attrs, "user_id", socket.assigns.user_id)
     case Environments.create_environment(attrs) do
       {:ok, env} ->
         {:noreply,

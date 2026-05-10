@@ -5,25 +5,27 @@ defmodule FountainWeb.VaultsLive.Index do
 
   @impl true
   def mount(_params, _session, socket) do
+    user_id = socket.assigns.current_user.id
     {:ok,
      socket
      |> assign(:page_title, "Vaults")
-     |> assign(:vaults, list_vaults())}
+     |> assign(:user_id, user_id)
+     |> assign(:vaults, list_vaults(user_id))}
   end
 
   @impl true
   def handle_event("delete", %{"id" => id}, socket) do
-    vault = Vaults.get_vault!(id)
+    vault = Vaults.get_vault!(id, socket.assigns.user_id)
     {:ok, _} = Vaults.delete_vault(vault)
 
     {:noreply,
      socket
-     |> assign(:vaults, list_vaults())
+     |> assign(:vaults, list_vaults(socket.assigns.user_id))
      |> put_flash(:info, "Deleted #{vault.name}")}
   end
 
-  defp list_vaults do
-    Vaults.list_vaults()
+  defp list_vaults(user_id) do
+    Vaults.list_vaults(user_id)
     |> Enum.map(fn vault ->
       Map.put(vault, :secret_count, length(Vaults.list_secrets(vault)))
     end)
