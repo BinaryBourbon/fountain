@@ -24,6 +24,11 @@ defmodule Fountain.Environments do
     )
   end
 
+  @doc "Get environment scoped to user. Returns nil on wrong owner or missing id."
+  def get_environment(id, user_id) when is_binary(user_id) do
+    Repo.get_by(Environment, id: id, user_id: user_id)
+  end
+
   @doc "Get environment scoped to user. Raises Ecto.NoResultsError on wrong owner."
   def get_environment!(id, user_id) when is_binary(user_id) do
     Repo.get_by!(Environment, id: id, user_id: user_id)

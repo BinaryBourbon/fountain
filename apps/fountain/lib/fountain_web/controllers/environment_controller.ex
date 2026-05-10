@@ -20,7 +20,8 @@ defmodule FountainWeb.EnvironmentController do
   )
 
   def index(conn, _params) do
-    render(conn, :index, environments: Environments.list_environments())
+    user = conn.assigns.current_user
+    render(conn, :index, environments: Environments.list_environments(user.id))
   end
 
   operation(:show,
@@ -33,7 +34,9 @@ defmodule FountainWeb.EnvironmentController do
   )
 
   def show(conn, %{"id" => id}) do
-    case Environments.get_environment(id) do
+    user = conn.assigns.current_user
+
+    case Environments.get_environment(id, user.id) do
       nil -> {:error, :not_found}
       env -> render(conn, :show, environment: env)
     end
@@ -49,7 +52,10 @@ defmodule FountainWeb.EnvironmentController do
   )
 
   def create(conn, params) do
-    with {:ok, %Environment{} = env} <- Environments.create_environment(params) do
+    user = conn.assigns.current_user
+    attrs = Map.put(params, "user_id", user.id)
+
+    with {:ok, %Environment{} = env} <- Environments.create_environment(attrs) do
       conn
       |> put_status(:created)
       |> render(:show, environment: env)
@@ -70,12 +76,15 @@ defmodule FountainWeb.EnvironmentController do
   )
 
   def update(conn, %{"id" => id} = params) do
-    case Environments.get_environment(id) do
+    user = conn.assigns.current_user
+    attrs = params |> Map.delete("id") |> Map.delete("user_id")
+
+    case Environments.get_environment(id, user.id) do
       nil ->
         {:error, :not_found}
 
       env ->
-        with {:ok, env} <- Environments.update_environment(env, Map.delete(params, "id")) do
+        with {:ok, env} <- Environments.update_environment(env, attrs) do
           render(conn, :show, environment: env)
         end
     end
@@ -91,7 +100,9 @@ defmodule FountainWeb.EnvironmentController do
   )
 
   def delete(conn, %{"id" => id}) do
-    case Environments.get_environment(id) do
+    user = conn.assigns.current_user
+
+    case Environments.get_environment(id, user.id) do
       nil ->
         {:error, :not_found}
 
