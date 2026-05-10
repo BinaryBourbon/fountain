@@ -7,7 +7,7 @@
 // Base URL precedence:
 //  1. FOUNTAIN_BASE_URL env var
 //  2. base_url from ~/.fountain/credentials (active profile)
-//  3. compile-time default (https://fountain.dev)
+//  3. compile-time default (https://fountain.inevitable.fyi)
 package config
 
 import (
@@ -18,7 +18,7 @@ import (
 	"github.com/BinaryBourbon/fountain/cli/internal/credentials"
 )
 
-const DefaultBaseURL = "https://fountain.dev"
+const DefaultBaseURL = "https://fountain.inevitable.fyi"
 
 // ErrNoAPIKey signals that no API key is configured.
 var ErrNoAPIKey = errors.New("FOUNTAIN_API_KEY is not set. Run `fountain auth login` or export the FOUNTAIN_API_KEY environment variable.")
