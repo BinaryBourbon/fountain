@@ -4,13 +4,13 @@ The captain-picard orchestrator reads this every cycle and writes the conversati
 
 ## Now
 
-- phase-3-auth — general-purpose-engineer (conv 08cfee62-ed0e-4299-850f-e1b6a537e2e3)
-- phase-3-cli — general-purpose-engineer (conv 1792b2f1-2dae-4e5f-89e0-3b78c497f5c0)
+- phase-3-billing — general-purpose-engineer (conv f5cafe99-ca82-4f36-ac48-9d19095255c3)
+- phase-3-onboarding-liveview — general-purpose-engineer (conv 60471914-2df2-47cc-9cfa-689366fb6d51)
 
 ## Next
 
-- phase-3-billing — Stripe integration, hard gate, BillingLive (depends on auth)
-- phase-3-onboarding-liveview — onboarding wizard, log viewer, API keys UI (depends on auth)
+- phase-3-design-pass — designer applies dark mode tokens, component library, and polish across all LiveViews
+- phase-3-release-validation — release-validator runs smoke tests end-to-end before G3
 
 ## Gated
 
