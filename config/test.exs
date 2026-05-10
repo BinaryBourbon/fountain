@@ -11,7 +11,6 @@ config :fountain, FountainWeb.Endpoint,
   server: false
 
 config :fountain, :skip_rehydrate, true
-config :fountain, :start_update_checker, false
 config :fountain, :checkpoint_creation_enabled, false
 
 config :logger, level: :warning
