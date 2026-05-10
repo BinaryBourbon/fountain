@@ -56,7 +56,7 @@ defmodule Fountain.Emails.UserEmails do
   ## Private helpers
 
   defp from_address do
-    addr = Application.get_env(:fountain, :email_from, "noreply@fountain.dev")
+    addr = Application.get_env(:fountain, :email_from, "noreply@updates.inevitable.fyi")
     {addr, addr}
   end
 
