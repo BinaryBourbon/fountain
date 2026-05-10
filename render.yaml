@@ -75,7 +75,7 @@ projects:
 
         databases:
           - name: fountain-db
-            plan: basic-256mb
+            plan: basic-1gb
             region: oregon
             databaseName: fountain
             user: fountain
