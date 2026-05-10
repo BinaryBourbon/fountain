@@ -30,6 +30,14 @@ projects:
               - key: PORT
                 value: "10000"
 
+              # Disable OTLP trace export — no collector is wired up yet.
+              # Without this, opentelemetry_exporter retries localhost:4318
+              # for every span and floods the logs with :econnrefused.
+              # When we set up Honeycomb/Grafana/etc, swap to the real
+              # OTEL_EXPORTER_OTLP_ENDPOINT and remove this line.
+              - key: OTEL_TRACES_EXPORTER
+                value: none
+
               # Set via dashboard (sync: false hides from yaml).
               # SECRET_KEY_BASE must be ≥64 bytes for Phoenix's cookie session
               # store; Render's `generateValue: true` produces a value that's
