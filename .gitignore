@@ -1,0 +1,9 @@
+.DS_Store
+*.swp
+*.swo
+.idea/
+.vscode/
+
+# Sprite-side artifacts that may end up here if you run captain-picard
+# locally rather than in an AoD sprite. The orchestrator commits plan/
+# itself, so don't ignore that — only ignore truly local cruft.
