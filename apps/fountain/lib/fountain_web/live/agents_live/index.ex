@@ -6,11 +6,13 @@ defmodule FountainWeb.AgentsLive.Index do
 
   @impl true
   def mount(_params, _session, socket) do
-    all_agents = Agents.list_agents()
+    user_id = socket.assigns.current_user.id
+    all_agents = Agents.list_agents(user_id, [])
 
     {:ok,
      socket
      |> assign(:page_title, "Agents")
+     |> assign(:user_id, user_id)
      |> assign(:agents, all_agents)
      |> assign(:facet_counts, compute_facets(all_agents))
      |> assign(:all_environments, extract_environments(all_agents))
@@ -44,7 +46,7 @@ defmodule FountainWeb.AgentsLive.Index do
      |> assign(:filter_env_ids, env_ids)
      |> assign(:filter_has_skills, has_skills)
      |> assign(:filter_has_mcp, has_mcp)
-     |> assign(:agents, Agents.list_agents(filters))}
+     |> assign(:agents, Agents.list_agents(socket.assigns.user_id, filters))}
   end
 
   @impl true
@@ -56,20 +58,21 @@ defmodule FountainWeb.AgentsLive.Index do
      |> assign(:filter_env_ids, [])
      |> assign(:filter_has_skills, false)
      |> assign(:filter_has_mcp, false)
-     |> assign(:agents, Agents.list_agents())}
+     |> assign(:agents, Agents.list_agents(socket.assigns.user_id, []))}
   end
 
   @impl true
   def handle_event("delete", %{"id" => id}, socket) do
-    agent = Agents.get_agent!(id)
+    user_id = socket.assigns.user_id
+    agent = Agents.get_agent!(id, user_id)
     {:ok, _} = Agents.delete_agent(agent)
 
-    all_agents = Agents.list_agents()
+    all_agents = Agents.list_agents(user_id, [])
     filters = current_filters(socket.assigns)
 
     {:noreply,
      socket
-     |> assign(:agents, Agents.list_agents(filters))
+     |> assign(:agents, Agents.list_agents(user_id, filters))
      |> assign(:facet_counts, compute_facets(all_agents))
      |> assign(:all_environments, extract_environments(all_agents))
      |> put_flash(:info, "Deleted #{agent.name}")}

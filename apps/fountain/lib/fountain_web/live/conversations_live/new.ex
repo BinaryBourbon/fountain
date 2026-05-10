@@ -5,12 +5,14 @@ defmodule FountainWeb.ConversationsLive.New do
 
   @impl true
   def mount(_params, _session, socket) do
-    agents = Agents.list_agents()
-    vaults = Vaults.list_vaults()
+    user_id = socket.assigns.current_user.id
+    agents = Agents.list_agents(user_id, [])
+    vaults = Vaults.list_vaults(user_id)
 
     {:ok,
      socket
      |> assign(:page_title, "New conversation")
+     |> assign(:user_id, user_id)
      |> assign(:agents, agents)
      |> assign(:vaults, vaults)
      |> assign(:form, %{
@@ -28,6 +30,7 @@ defmodule FountainWeb.ConversationsLive.New do
   def handle_event("submit", %{"conv" => params}, socket) do
     params = if params["vault_id"] == "", do: Map.delete(params, "vault_id"), else: params
     params = Map.put(params, "source", "ui")
+    params = Map.put(params, "user_id", socket.assigns.user_id)
 
     case Conversations.start_conversation(params) do
       {:ok, conv} ->

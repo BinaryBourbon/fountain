@@ -59,8 +59,9 @@ defmodule FountainWeb.ConversationsLive.Index do
   end
 
   defp load_data(socket) do
-    convs = Conversations.list_conversations_by_activity()
-    agents = Agents.list_agents()
+    user_id = socket.assigns.current_user.id
+    convs = Conversations.list_conversations(user_id)
+    agents = Agents.list_agents(user_id, [])
 
     sorted = sort_conversations(convs, socket.assigns.sort_by, socket.assigns.sort_dir)
 
