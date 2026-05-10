@@ -13,9 +13,6 @@ Mimic.copy(Sprites.Filesystem)
 Mimic.copy(Fountain.SpritesClient)
 Mimic.copy(Horde.DynamicSupervisor)
 Mimic.copy(Req)
-Mimic.copy(Fountain.GithubReleases)
-Mimic.copy(Fountain.UpdateChecker)
-Mimic.copy(Fountain.Upgrader)
 
 # Stripe modules — needed by billing tests and webhook controller tests.
 Mimic.copy(Stripe.Webhook)

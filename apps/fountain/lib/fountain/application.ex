@@ -46,8 +46,7 @@ defmodule Fountain.Application do
              members: :auto
            ]},
           FountainWeb.Endpoint
-        ] ++
-        maybe_update_checker()
+        ]
 
     opts = [strategy: :one_for_one, name: Fountain.Supervisor]
 
@@ -90,13 +89,5 @@ defmodule Fountain.Application do
   # BEAM stop.
   defp skip_rehydrate? do
     Application.get_env(:fountain, :skip_rehydrate, false)
-  end
-
-  defp maybe_update_checker do
-    if Application.get_env(:fountain, :start_update_checker, true) do
-      [Fountain.UpdateChecker]
-    else
-      []
-    end
   end
 end

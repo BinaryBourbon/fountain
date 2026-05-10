@@ -25,23 +25,6 @@ defmodule FountainWeb.Layouts do
     <div class="min-h-screen bg-[var(--color-bg-0)] text-[var(--color-text-primary)]">
       <.flash_group flash={@flash} />
 
-      <%!-- Update available banner --%>
-      <div
-        :if={not is_nil(assigns[:update_status]) and assigns.update_status.has_update}
-        class="bg-[var(--color-info)] text-white px-4 py-2 flex items-center justify-between text-sm"
-      >
-        <span>
-          &#11014; Version {@update_status.latest_version} available
-          <span class="opacity-75 text-xs ml-2">(current: {@update_status.current_version})</span>
-        </span>
-        <button
-          phx-click="upgrade"
-          class="bg-white text-[var(--color-info)] px-3 py-1 rounded text-xs font-medium hover:opacity-90"
-        >
-          Upgrade
-        </button>
-      </div>
-
       <%!-- Layout wrapper — peer checkbox drives mobile sidebar --%>
       <div class="flex relative">
         <input

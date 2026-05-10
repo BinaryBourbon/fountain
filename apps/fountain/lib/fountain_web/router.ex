@@ -38,11 +38,6 @@ defmodule FountainWeb.Router do
     plug FountainWeb.Plugs.TenantSessionAuth
   end
 
-  # Legacy single-tenant admin pipeline (kept for ops/upgrade endpoints)
-  pipeline :authed_admin do
-    plug FountainWeb.Plugs.SessionAuth
-  end
-
   ## ─── Public routes ───────────────────────────────────────────────────────────
 
   scope "/", FountainWeb do
@@ -162,8 +157,7 @@ defmodule FountainWeb.Router do
     live_session :active_subscription,
       on_mount: [
         {FountainWeb.Live.Hooks, :require_authenticated_user},
-        {FountainWeb.Live.Hooks, :require_active_subscription},
-        {FountainWeb.Hooks.UpdateCheckerHook, :default}
+        {FountainWeb.Live.Hooks, :require_active_subscription}
       ] do
       live "/", ConversationsLive.Index, :index
       live "/conversations/new", ConversationsLive.New, :new
@@ -176,8 +170,7 @@ defmodule FountainWeb.Router do
     # details. See decisions/0006-hard-stripe-billing-gate-at-launch.md.
     live_session :authenticated,
       on_mount: [
-        {FountainWeb.Live.Hooks, :require_authenticated_user},
-        {FountainWeb.Hooks.UpdateCheckerHook, :default}
+        {FountainWeb.Live.Hooks, :require_authenticated_user}
       ] do
       live "/dashboard", DashboardLive.Index, :index
       live "/onboarding", OnboardingLive.Wizard, :index
@@ -205,18 +198,10 @@ defmodule FountainWeb.Router do
     live_session :admin,
       on_mount: [
         {FountainWeb.Live.Hooks, :require_authenticated_user},
-        {FountainWeb.Live.Hooks, :require_admin},
-        {FountainWeb.Hooks.UpdateCheckerHook, :default}
+        {FountainWeb.Live.Hooks, :require_admin}
       ] do
       live "/admin", AdminLive.Index, :index
     end
-  end
-
-  ## ─── Legacy admin-only routes ──────────────────────────────────────────────────
-
-  scope "/admin", FountainWeb do
-    pipe_through [:browser, :authed_admin]
-    post "/upgrade", AdminController, :upgrade
   end
 
   ## ─── Dev dashboard ─────────────────────────────────────────────────────────────
