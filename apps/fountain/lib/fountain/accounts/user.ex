@@ -7,6 +7,7 @@ defmodule Fountain.Accounts.User do
 
   @roles ~w(user admin)
   @subscription_statuses ~w(trialing active past_due canceled)
+  @theme_values ~w(light dark system)
 
   schema "users" do
     field :email, :string
@@ -21,6 +22,7 @@ defmodule Fountain.Accounts.User do
     field :subscription_status, :string, default: "trialing"
     field :trial_ends_at, :utc_datetime
     field :session_version, :integer, default: 0
+    field :theme_preference, :string, default: "system"
 
     has_many :api_keys, Fountain.Accounts.ApiKey
     has_one :data_key, Fountain.Accounts.UserDataKey
@@ -62,6 +64,13 @@ defmodule Fountain.Accounts.User do
     user
     |> cast(attrs, [:stripe_customer_id, :subscription_status, :trial_ends_at])
     |> validate_inclusion(:subscription_status, @subscription_statuses)
+  end
+
+  @doc "Changeset for updating theme preference (light | dark | system)."
+  def theme_changeset(user, attrs) do
+    user
+    |> cast(attrs, [:theme_preference])
+    |> validate_inclusion(:theme_preference, @theme_values)
   end
 
   @doc "Changeset for resetting a password (validates + hashes new password)."
