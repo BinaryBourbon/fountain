@@ -4,12 +4,11 @@ The captain-picard orchestrator reads this every cycle and writes the conversati
 
 ## Now
 
-- phase-3-design-pass — designer (conv 3d57d38d-6c08-4c82-8eb7-91ba4c249981)
-- phase-3-release-validation — release-validator (conv 127ee5f3-f2a4-47de-98a8-cf7e7c29330e)
+- fix/bug-1-cli-token-endpoint — general-purpose-engineer (conv 9c4a2a41-9f73-4e4e-b621-8993aa837f77)
 
 ## Next
 
-- **G3** — Human reviews validation report and gives go/no-go for public launch.
+- **G3** — Human reviews validation report + fixes and gives go/no-go for public launch.
 
 ## Gated
 
