@@ -100,6 +100,7 @@ defmodule FountainWeb.Router do
   scope "/api/auth", FountainWeb do
     pipe_through :api_public
 
+    post "/token", AuthTokenController, :create
     post "/register", RegistrationController, :api_create
     post "/forgot", PasswordResetController, :api_forgot
   end
