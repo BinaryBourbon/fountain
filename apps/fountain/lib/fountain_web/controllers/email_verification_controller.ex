@@ -45,7 +45,7 @@ defmodule FountainWeb.EmailVerificationController do
 
                 conn
                 |> log_in_user(verified_user)
-                |> redirect(to: "/onboarding/step/1")
+                |> redirect(to: ~p"/onboarding/step_1")
 
               {:error, _changeset} ->
                 conn
@@ -79,7 +79,7 @@ defmodule FountainWeb.EmailVerificationController do
     if user.onboarding_completed_at do
       ~p"/"
     else
-      "/onboarding/step/1"
+      ~p"/onboarding/step_1"
     end
   end
 end

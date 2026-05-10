@@ -82,7 +82,7 @@ defmodule FountainWeb.SessionController do
     if user.onboarding_completed_at do
       ~p"/"
     else
-      "/onboarding/step/1"
+      ~p"/onboarding/step_1"
     end
   end
 end
