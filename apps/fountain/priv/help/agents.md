@@ -21,7 +21,7 @@ curl -s -X POST "$FOUNTAIN_BASE_URL/api/agents" \
     "runtime": "claude",
     "model": "anthropic/claude-sonnet-4-6",
     "system": "You are a research assistant. Cite primary sources.",
-    "skills": ["aod"],
+    "skills": ["fountain"],
     "mcp_servers": {
       "everything": {
         "command": "npx",
@@ -87,4 +87,4 @@ Skills are reusable instructional/context files that get mounted into a sprite a
 - For **codex**: concatenated into `~/.codex/AGENTS.md`.
 - For **gemini**: concatenated into `~/.gemini/GEMINI.md`.
 
-Bundled skills live under `apps/fountain/priv/sprite_skills/`. Reference them by directory name in the agent's `skills` array. The bundled `aod` skill is **always** mounted regardless — it's how a sprite-internal agent calls back to spawn more conversations.
+Bundled skills live under `apps/fountain/priv/sprite_skills/`. Reference them by directory name in the agent's `skills` array. The bundled `fountain` skill is **always** mounted regardless — it's how a sprite-internal agent calls back to spawn more conversations.
