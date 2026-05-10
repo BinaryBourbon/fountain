@@ -56,7 +56,7 @@ projects:
               - key: RESEND_API_KEY
                 sync: false
               - key: EMAIL_FROM
-                value: noreply@fountain.dev
+                value: noreply@updates.inevitable.fyi
 
               - key: ELIXIR_VERSION
                 value: "1.18.4"
