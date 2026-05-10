@@ -4,15 +4,13 @@ The captain-picard orchestrator reads this every cycle and writes the conversati
 
 ## Now
 
-- phase-3-foundation — general-purpose-engineer (conv 866bd410-239e-49be-b12d-2c6db6560410)
-- phase-3-tenant-contexts — general-purpose-engineer (conv 375654ae-31f7-4a94-a205-95b9eae0e2ba)
+- phase-3-auth — general-purpose-engineer (conv 08cfee62-ed0e-4299-850f-e1b6a537e2e3)
+- phase-3-cli — general-purpose-engineer (conv 1792b2f1-2dae-4e5f-89e0-3b78c497f5c0)
 
 ## Next
 
-- phase-3-auth — auth plugs, registration, email verification, GitHub OAuth, password reset, API key issuance (depends on foundation)
-- phase-3-onboarding-liveview — designer + engineer for onboarding wizard, log viewer, billing UI, API keys UI
-- phase-3-billing — Stripe integration, hard gate, usage event wiring
-- phase-3-cli — rename aod→fountain binary, new subcommands, multi-profile credentials, remove aod-up/down
+- phase-3-billing — Stripe integration, hard gate, BillingLive (depends on auth)
+- phase-3-onboarding-liveview — onboarding wizard, log viewer, API keys UI (depends on auth)
 
 ## Gated
 
