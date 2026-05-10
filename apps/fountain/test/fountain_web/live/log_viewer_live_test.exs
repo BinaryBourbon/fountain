@@ -26,7 +26,7 @@ defmodule FountainWeb.LogViewerLiveTest do
 
       conn = login_user(conn, attacker)
 
-      assert {:error, {:live_redirect, %{to: "/conversations"}}} =
+      assert {:error, {:live_redirect, %{to: "/"}}} =
                live(conn, ~p"/conversations/#{conv.id}/logs")
     end
 
