@@ -28,10 +28,7 @@ defmodule Fountain.Umbrella.MixProject do
       fountain: [
         applications: [fountain_cli: :permanent, runtime_tools: :permanent],
         steps: [:assemble, &Burrito.wrap/1],
-        burrito:
-          Keyword.merge(burrito_targets(skip_nifs: true),
-            extra_steps: [fetch: [pre: [Fountain.Burrito.InjectMuslPath]]]
-          )
+        burrito: burrito_targets(skip_nifs: true)
       ],
       fountain_server: [
         applications: [fountain_cli: :permanent, fountain: :permanent]

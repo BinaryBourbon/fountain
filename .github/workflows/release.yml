@@ -4,6 +4,19 @@ on:
   push:
     tags:
       - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to release as (e.g. v0.1.0). Must already exist on a commit."
+        required: true
+
+env:
+  ELIXIR_VERSION: "1.19.5"
+  # OTP_VERSION is also encoded in the macOS custom_erts URL in mix.exs
+  # (vendor-erts-otp-28.4). Bytecode built here runs against that ERTS,
+  # so the major version MUST match.
+  OTP_VERSION: "28.4"
+  ZIG_VERSION: "0.13.0"
 
 jobs:
   build:
@@ -26,13 +39,13 @@ jobs:
       - name: Install Elixir
         uses: erlef/setup-beam@v1
         with:
-          elixir-version: "1.18"
-          otp-version: "27"
+          elixir-version: ${{ env.ELIXIR_VERSION }}
+          otp-version: ${{ env.OTP_VERSION }}
 
       - name: Install Zig
         uses: mlugg/setup-zig@v1
         with:
-          version: "0.13.0"
+          version: ${{ env.ZIG_VERSION }}
 
       - name: Cache deps
         uses: actions/cache@v4
@@ -47,7 +60,7 @@ jobs:
         env:
           MIX_ENV: prod
           BURRITO_TARGETS: ${{ matrix.target }}
-        run: mix release fountain
+        run: mix release fountain --overwrite
 
       - name: Stage artifact
         run: |
@@ -71,6 +84,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Resolve tag
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "tag=${{ github.event.inputs.tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
@@ -79,6 +101,8 @@ jobs:
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: ${{ steps.tag.outputs.tag }}
           files: |
             artifacts/fountain-linux-x86_64/fountain-linux-x86_64
             artifacts/fountain-macos-aarch64/fountain-macos-aarch64
