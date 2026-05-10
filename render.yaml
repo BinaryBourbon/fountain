@@ -13,7 +13,7 @@ projects:
               mix local.rebar --force
               mix deps.get --only prod
               MIX_ENV=prod mix compile
-              MIX_ENV=prod mix release
+              MIX_ENV=prod mix release fountain_server
             startCommand: _build/prod/rel/fountain_server/bin/server
             preDeployCommand: _build/prod/rel/fountain_server/bin/migrate
             healthCheckPath: /health
