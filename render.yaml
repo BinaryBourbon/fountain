@@ -65,7 +65,7 @@ projects:
               - key: ELIXIR_VERSION
                 value: "1.18.4"
               - key: ERLANG_VERSION
-                value: "27.0"
+                value: "28.0.2"
 
               - key: DATABASE_URL
                 fromDatabase:
