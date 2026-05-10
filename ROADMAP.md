@@ -4,12 +4,15 @@ The captain-picard orchestrator reads this every cycle and writes the conversati
 
 ## Now
 
-_(empty — awaiting G3 go/no-go from human operator)_
+_(empty — Fountain has launched. Waiting for post-launch data before dispatching next work.)_
 
 ## Next
 
-- **G3** — Human gives go/no-go for public launch.
+- Monitor for early user issues (reliability-engineer on standby)
+- product-analyst: instrument PostHog/Honeycomb and establish WAU baseline
+- growth-marketer: launch announcement and first growth experiment
+- Post-launch backlog: NC-1 (dark mode), NC-4/5/6/9 (test coverage + cleanup)
 
 ## Gated
 
-_(nothing — G3 is the final gate)_
+- **Post-G3 gate** — Review WAU at 30 days. If traction, unlock org/team features phase.
