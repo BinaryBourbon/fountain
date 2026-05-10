@@ -102,3 +102,108 @@ jobs:
             artifacts/fountain-darwin-amd64/fountain-darwin-amd64
             artifacts/fountain-darwin-arm64/fountain-darwin-arm64
           fail_on_unmatched_files: true
+
+  bump-tap:
+    name: Bump Homebrew tap
+    runs-on: ubuntu-latest
+    needs: release
+
+    steps:
+      - name: Resolve tag
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            tag="${{ github.event.inputs.tag }}"
+          else
+            tag="${GITHUB_REF#refs/tags/}"
+          fi
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Compute SHA256s
+        id: sha
+        run: |
+          set -euo pipefail
+          for a in fountain-darwin-amd64 fountain-darwin-arm64 fountain-linux-amd64 fountain-linux-arm64; do
+            sum=$(sha256sum "artifacts/${a}/${a}" | awk '{print $1}')
+            key=$(echo "${a#fountain-}" | tr - _)
+            echo "${key}=${sum}" >> "$GITHUB_OUTPUT"
+          done
+
+      - name: Checkout tap repo
+        uses: actions/checkout@v4
+        with:
+          repository: BinaryBourbon/homebrew-tap
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: tap
+
+      - name: Write formula
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+          VERSION: ${{ steps.tag.outputs.version }}
+          SHA_DARWIN_ARM64: ${{ steps.sha.outputs.darwin_arm64 }}
+          SHA_DARWIN_AMD64: ${{ steps.sha.outputs.darwin_amd64 }}
+          SHA_LINUX_ARM64: ${{ steps.sha.outputs.linux_arm64 }}
+          SHA_LINUX_AMD64: ${{ steps.sha.outputs.linux_amd64 }}
+        run: |
+          cat > tap/Formula/fountain.rb <<EOF
+          class Fountain < Formula
+            desc "CLI for Fountain — HTTP/JSON client, SSE consumer, and secret-store helper"
+            homepage "https://github.com/BinaryBourbon/fountain"
+            version "${VERSION}"
+            license "MIT"
+
+            on_macos do
+              on_arm do
+                url "https://github.com/BinaryBourbon/fountain/releases/download/${TAG}/fountain-darwin-arm64"
+                sha256 "${SHA_DARWIN_ARM64}"
+              end
+              on_intel do
+                url "https://github.com/BinaryBourbon/fountain/releases/download/${TAG}/fountain-darwin-amd64"
+                sha256 "${SHA_DARWIN_AMD64}"
+              end
+            end
+
+            on_linux do
+              on_arm do
+                url "https://github.com/BinaryBourbon/fountain/releases/download/${TAG}/fountain-linux-arm64"
+                sha256 "${SHA_LINUX_ARM64}"
+              end
+              on_intel do
+                url "https://github.com/BinaryBourbon/fountain/releases/download/${TAG}/fountain-linux-amd64"
+                sha256 "${SHA_LINUX_AMD64}"
+              end
+            end
+
+            def install
+              arch = Hardware::CPU.arm? ? "arm64" : "amd64"
+              os = OS.mac? ? "darwin" : "linux"
+              bin.install "fountain-#{os}-#{arch}" => "fountain"
+            end
+
+            test do
+              assert_match "fountain", shell_output("#{bin}/fountain --help")
+            end
+          end
+          EOF
+
+      - name: Commit and push
+        working-directory: tap
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          git config user.name "fountain-release-bot"
+          git config user.email "noreply@github.com"
+          if git diff --quiet -- Formula/fountain.rb; then
+            echo "Formula already up to date for ${TAG}; nothing to commit."
+            exit 0
+          fi
+          git add Formula/fountain.rb
+          git commit -m "fountain ${TAG}"
+          git push
