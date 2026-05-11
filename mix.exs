@@ -7,7 +7,8 @@ defmodule Fountain.Umbrella.MixProject do
       version: "0.1.0",
       deps: deps(),
       releases: releases(),
-      aliases: aliases()
+      aliases: aliases(),
+      test_coverage: [tool: ExCoveralls]
     ]
   end
 
