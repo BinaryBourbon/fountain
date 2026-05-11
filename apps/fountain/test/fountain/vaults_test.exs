@@ -282,6 +282,26 @@ defmodule Fountain.VaultsTest do
     end
   end
 
+  describe "VaultSecret.decrypt/2" do
+    test "decrypts a vault secret that was encrypted with the tenant key" do
+      user = insert_verified_user()
+      vault = insert_vault(user_id: user.id)
+      {:ok, dek} = Fountain.Crypto.load_tenant_key(user.id)
+
+      {:ok, _secret} =
+        Vaults.upsert_secret(vault, %{"key" => "DECRYPT_ME", "value" => "plaintext_value"}, dek)
+
+      # Load the raw secret (with ciphertext) to test decrypt directly
+      [raw_secret] = Vaults.list_secrets(vault)
+      assert {:ok, "plaintext_value"} = Fountain.Vaults.VaultSecret.decrypt(raw_secret, dek)
+    end
+
+    test "returns :error for a non-VaultSecret argument" do
+      dek = :crypto.strong_rand_bytes(32)
+      assert :error = Fountain.Vaults.VaultSecret.decrypt(%{}, dek)
+    end
+  end
+
   describe "decrypted_env/2" do
     test "returns a map of key => plaintext value" do
       user = insert_verified_user()
