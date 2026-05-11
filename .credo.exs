@@ -93,6 +93,10 @@
           {Credo.Check.Readability.LargeNumbers, []},
           {Credo.Check.Readability.ModuleAttributeNames, []},
           {Credo.Check.Readability.ModuleNames, []},
+          # Enforced everywhere except OpenAPI schema boilerplate structs
+          # (FountainWeb.Schemas.*) which are auto-generated and don't warrant docs.
+          {Credo.Check.Readability.ModuleDoc,
+           [ignore_names: [~r/^FountainWeb\.Schemas\./]]},
           {Credo.Check.Readability.ParenthesesInCondition, []},
           {Credo.Check.Readability.PipeIntoAnonymousFunctions, []},
           {Credo.Check.Readability.PredicateFunctionNames, []},
@@ -150,7 +154,7 @@
         ],
         disabled: [
           #
-          # ── Tech debt: pre-existing violations ────────────────────────────────────
+          # ── Tech debt: pre-existing violations ────────────────────────────────────────────────
           # These checks found issues in the initial codebase. Disabled here so CI is
           # a clean gate for new issues. Re-enable each check as its violations are
           # fixed.
@@ -162,8 +166,6 @@
           {Credo.Check.Readability.AliasOrder, []},
           # Readability: lines > 120 chars in conversation_server.ex
           {Credo.Check.Readability.MaxLineLength, [priority: :low, max_length: 120]},
-          # Readability: missing @moduledoc on 30+ nested OpenAPI schema structs in schemas.ex
-          {Credo.Check.Readability.ModuleDoc, []},
           # Readability: zero-arity function with parens in application.ex:82
           {Credo.Check.Readability.ParenthesesOnZeroArityDefs, []},
           # Readability: explicit try in conversation_server.ex:242
@@ -180,12 +182,12 @@
           {Credo.Check.Refactor.Nesting, []},
 
           #
-          # ── Checks scheduled for next check update (opt-in for now) ───────────────
+          # ── Checks scheduled for next update (opt-in for now) ───────────────────────────
           {Credo.Check.Refactor.UtcNowTruncate, []},
 
           #
-          # ── Controversial and experimental checks ─────────────────────────────────
-          # (opt-in, move to :enabled and use `mix credo --strict` to see low priority checks)
+          # ── Controversial and experimental checks ────────────────────────────────────
+          # (opt-in, move to :enabled and use `mix credo --strict` to see)
           #
           {Credo.Check.Consistency.MultiAliasImportRequireUse, []},
           {Credo.Check.Consistency.UnusedVariableNames, []},
