@@ -1,5 +1,5 @@
 defmodule Fountain.CryptoTest do
-  use ExUnit.Case, async: true
+  use Fountain.DataCase, async: true
 
   alias Fountain.Crypto
 
