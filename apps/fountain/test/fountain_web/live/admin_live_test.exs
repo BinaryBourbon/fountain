@@ -117,12 +117,12 @@ defmodule FountainWeb.AdminLiveTest do
 
     test "renders active sandboxes in the table", %{conn: conn} do
       admin = insert_admin()
-      sandbox = insert_sandbox(user_id: admin.id, status: "running")
+      sandbox = insert_sandbox(user_id: admin.id, status: "ready")
       conn = login_user(conn, admin)
       {:ok, _lv, html} = live(conn, ~p"/admin")
 
       assert html =~ String.slice(sandbox.id, 0, 8)
-      assert html =~ "running"
+      assert html =~ "ready"
     end
 
     test "does not show terminated sandboxes", %{conn: conn} do

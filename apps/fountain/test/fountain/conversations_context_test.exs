@@ -996,57 +996,6 @@ defmodule Fountain.ConversationsContextTest do
     end
   end
 
-  # ────────────────────────────────────────────────────────────────────────────
-  # insert_turn_images/2
-  # ────────────────────────────────────────────────────────────────────────────
-
-  describe "insert_turn_images/2" do
-    test "returns {:ok, []} immediately for empty images list" do
-      user = insert_verified_user()
-      conv = insert_conversation(user_id: user.id)
-      turn = insert_turn(conv)
-
-      assert {:ok, []} = Conversations.insert_turn_images(turn.id, [])
-    end
-
-    test "inserts a single image and returns {:ok, 1}" do
-      user = insert_verified_user()
-      conv = insert_conversation(user_id: user.id)
-      turn = insert_turn(conv)
-
-      images = [%{media_type: "image/png", data: <<1, 2, 3>>}]
-      assert {:ok, 1} = Conversations.insert_turn_images(turn.id, images)
-    end
-
-    test "inserts multiple images and returns {:ok, count}" do
-      user = insert_verified_user()
-      conv = insert_conversation(user_id: user.id)
-      turn = insert_turn(conv)
-
-      images = [
-        %{media_type: "image/png", data: <<1, 2, 3>>},
-        %{media_type: "image/jpeg", data: <<4, 5, 6>>}
-      ]
-
-      assert {:ok, 2} = Conversations.insert_turn_images(turn.id, images)
-    end
-
-    test "images are queryable via list_turns after insert" do
-      user = insert_verified_user()
-      conv = insert_conversation(user_id: user.id)
-      turn = insert_turn(conv)
-
-      images = [%{media_type: "image/png", data: <<10, 20, 30>>}]
-      {:ok, 1} = Conversations.insert_turn_images(turn.id, images)
-
-      [loaded_turn] = Conversations.list_turns(conv.id)
-      assert length(loaded_turn.images) == 1
-      [img] = loaded_turn.images
-      assert img.media_type == "image/png"
-      assert img.data == <<10, 20, 30>>
-    end
-  end
-
   describe "output_bytes_by_stream/2" do
     test "returns empty map when there are no output events for the turn" do
       user = insert_verified_user()
@@ -1298,8 +1247,14 @@ defmodule Fountain.ConversationsContextTest do
       conv = insert_conversation(user_id: user.id)
       turn = insert_turn(conv)
 
-      images = [%{media_type: "image/png", data: <<1, 2, 3>>}]
-      {:ok, 1} = Conversations.insert_turn_images(turn.id, images)
+      %Fountain.Conversations.TurnImage{}
+      |> Fountain.Conversations.TurnImage.changeset(%{
+        turn_id: turn.id,
+        position: 0,
+        media_type: "image/png",
+        data: <<1, 2, 3>>
+      })
+      |> Repo.insert!()
 
       [loaded_turn] = Conversations.list_turns_with_images(conv.id)
       assert length(loaded_turn.images) == 1
@@ -1322,13 +1277,16 @@ defmodule Fountain.ConversationsContextTest do
       conv = insert_conversation(user_id: user.id)
       turn = insert_turn(conv)
 
-      images = [
-        %{media_type: "image/png", data: <<10>>},
-        %{media_type: "image/jpeg", data: <<20>>},
-        %{media_type: "image/gif", data: <<30>>}
-      ]
-
-      {:ok, 3} = Conversations.insert_turn_images(turn.id, images)
+      for {mt, data, pos} <- [{"image/png", <<10>>, 0}, {"image/jpeg", <<20>>, 1}, {"image/gif", <<30>>, 2}] do
+        %Fountain.Conversations.TurnImage{}
+        |> Fountain.Conversations.TurnImage.changeset(%{
+          turn_id: turn.id,
+          position: pos,
+          media_type: mt,
+          data: data
+        })
+        |> Repo.insert!()
+      end
 
       [loaded_turn] = Conversations.list_turns_with_images(conv.id)
       positions = Enum.map(loaded_turn.images, & &1.position)

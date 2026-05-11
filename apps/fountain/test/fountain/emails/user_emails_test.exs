@@ -11,10 +11,7 @@ defmodule Fountain.Emails.UserEmailsTest do
 
       assert {:ok, _email} = UserEmails.deliver_verification_email(user, "test_token_abc123")
 
-      assert_email_sent(%{
-        subject: "Verify your Fountain account",
-        to: [{user.email, user.email}]
-      })
+      assert_email_sent(subject: "Verify your Fountain account", to: [{user.email, user.email}])
     end
 
     test "email body contains the verification token" do
@@ -49,10 +46,7 @@ defmodule Fountain.Emails.UserEmailsTest do
 
       assert {:ok, _email} = UserEmails.deliver_password_reset_email(user, "reset_token_abc")
 
-      assert_email_sent(%{
-        subject: "Reset your Fountain password",
-        to: [{user.email, user.email}]
-      })
+      assert_email_sent(subject: "Reset your Fountain password", to: [{user.email, user.email}])
     end
 
     test "email body contains the reset token" do
