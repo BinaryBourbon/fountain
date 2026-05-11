@@ -1,0 +1,105 @@
+name: Release bump
+
+# Manually-triggered workflow that bumps the version in both mix.exs
+# files (umbrella + fountain app), commits, tags, and pushes.
+# The tag push then dispatches release.yml which builds Go CLI binaries.
+#
+# Run from Actions tab → "Release bump" → "Run workflow".
+# Defaults to `patch`; minor / major are also available.
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: "Which segment to bump"
+        required: true
+        default: "patch"
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+
+jobs:
+  bump:
+    name: Bump version, commit, tag, push
+    runs-on: ubuntu-latest
+
+    permissions:
+      # Push commit + tag back to main.
+      contents: write
+      # Dispatch release.yml after the tag push (the tag push itself
+      # doesn't trigger release.yml because tags pushed by GITHUB_TOKEN
+      # don't fire downstream workflows — GitHub anti-recursion safeguard).
+      actions: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history so git tag sees existing tags and push back
+          # to main isn't rejected as a shallow-clone.
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute next version
+        id: ver
+        run: |
+          set -euo pipefail
+          current=$(grep -oE 'version: "[0-9]+\.[0-9]+\.[0-9]+"' mix.exs \
+            | head -1 \
+            | sed -E 's/version: "([0-9]+\.[0-9]+\.[0-9]+)"/\1/')
+          echo "current=$current"
+          IFS='.' read -r major minor patch <<<"$current"
+          case "${{ inputs.bump }}" in
+            patch) patch=$((patch + 1)) ;;
+            minor) minor=$((minor + 1)); patch=0 ;;
+            major) major=$((major + 1)); minor=0; patch=0 ;;
+            *) echo "unknown bump: ${{ inputs.bump }}" >&2; exit 1 ;;
+          esac
+          next="${major}.${minor}.${patch}"
+          tag="v${next}"
+          echo "next=$next"    >> "$GITHUB_OUTPUT"
+          echo "tag=$tag"      >> "$GITHUB_OUTPUT"
+          echo "current=$current" >> "$GITHUB_OUTPUT"
+          if git rev-parse "refs/tags/${tag}" >/dev/null 2>&1; then
+            echo "tag ${tag} already exists" >&2
+            exit 1
+          fi
+
+      - name: Update mix.exs files
+        run: |
+          set -euo pipefail
+          current='${{ steps.ver.outputs.current }}'
+          next='${{ steps.ver.outputs.next }}'
+          # Only touch the umbrella and the fountain app. Hard-coded
+          # rather than `find` to avoid clobbering version: in deps.
+          sed -i -E "s/version: \"${current}\"/version: \"${next}\"/" mix.exs
+          sed -i -E "s/version: \"${current}\"/version: \"${next}\"/" apps/fountain/mix.exs
+          git diff --stat
+
+      - name: Commit, tag, push
+        env:
+          TAG: ${{ steps.ver.outputs.tag }}
+          NEXT: ${{ steps.ver.outputs.next }}
+        run: |
+          set -euo pipefail
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add mix.exs apps/fountain/mix.exs
+          # [skip ci] keeps this commit from re-triggering CI on main.
+          # release.yml is dispatched explicitly in the next step.
+          git commit -m "chore(release): ${TAG} [skip ci]"
+          git tag -a "${TAG}" -m "Release ${TAG}"
+          git push origin HEAD:main
+          git push origin "${TAG}"
+
+      - name: Dispatch release.yml
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.ver.outputs.tag }}
+        run: |
+          set -euo pipefail
+          # Tag push above ran under GITHUB_TOKEN, so release.yml's
+          # `on: push: tags:` trigger is suppressed. Dispatch explicitly.
+          gh workflow run release.yml --ref "${TAG}" -f tag="${TAG}"
+          echo "Dispatched release.yml for ${TAG}"
