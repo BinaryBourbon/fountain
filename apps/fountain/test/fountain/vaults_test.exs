@@ -10,7 +10,7 @@ defmodule Fountain.VaultsTest do
 
       assert {:ok, vault} = Vaults.create_vault(attrs)
       assert vault.user_id == user.id
-      assert vault.name == attrs.name
+      assert vault.name == attrs["name"]
     end
 
     test "returns error changeset with missing required fields" do
@@ -65,7 +65,7 @@ defmodule Fountain.VaultsTest do
       user = insert_verified_user()
       vault = insert_vault(user_id: user.id)
 
-      assert {:ok, updated} = Vaults.update_vault(vault, %{name: "renamed"})
+      assert {:ok, updated} = Vaults.update_vault(vault, %{"name" => "renamed"})
       assert updated.name == "renamed"
     end
   end
@@ -86,7 +86,9 @@ defmodule Fountain.VaultsTest do
       vault = insert_vault(user_id: user.id)
       {:ok, dek} = Fountain.Crypto.load_tenant_key(user.id)
 
-      assert {:ok, secret} = Vaults.upsert_secret(vault, %{key: "TOKEN", value: "xyz"}, dek)
+      assert {:ok, secret} =
+               Vaults.upsert_secret(vault, %{"key" => "TOKEN", "value" => "xyz"}, dek)
+
       assert secret.key == "TOKEN"
     end
 
@@ -95,8 +97,8 @@ defmodule Fountain.VaultsTest do
       vault = insert_vault(user_id: user.id)
       {:ok, dek} = Fountain.Crypto.load_tenant_key(user.id)
 
-      {:ok, _} = Vaults.upsert_secret(vault, %{key: "TOKEN", value: "first"}, dek)
-      {:ok, _} = Vaults.upsert_secret(vault, %{key: "TOKEN", value: "second"}, dek)
+      {:ok, _} = Vaults.upsert_secret(vault, %{"key" => "TOKEN", "value" => "first"}, dek)
+      {:ok, _} = Vaults.upsert_secret(vault, %{"key" => "TOKEN", "value" => "second"}, dek)
 
       secrets = Vaults.list_secrets(vault)
       assert length(secrets) == 1
@@ -139,10 +141,10 @@ defmodule Fountain.VaultsTest do
       vault = insert_vault(user_id: user.id)
       {:ok, dek} = Fountain.Crypto.load_tenant_key(user.id)
 
-      Vaults.upsert_secret(vault, %{key: "SECRET_A", value: "val_a"}, dek)
-      Vaults.upsert_secret(vault, %{key: "SECRET_B", value: "val_b"}, dek)
+      Vaults.upsert_secret(vault, %{"key" => "SECRET_A", "value" => "val_a"}, dek)
+      Vaults.upsert_secret(vault, %{"key" => "SECRET_B", "value" => "val_b"}, dek)
 
-      assert {:ok, decrypted} = Vaults.decrypted_env(vault, dek)
+      decrypted = Vaults.decrypted_env(vault, dek)
       assert decrypted["SECRET_A"] == "val_a"
       assert decrypted["SECRET_B"] == "val_b"
     end
@@ -152,8 +154,7 @@ defmodule Fountain.VaultsTest do
       vault = insert_vault(user_id: user.id)
       {:ok, dek} = Fountain.Crypto.load_tenant_key(user.id)
 
-      assert {:ok, decrypted} = Vaults.decrypted_env(vault, dek)
-      assert decrypted == %{}
+      assert Vaults.decrypted_env(vault, dek) == %{}
     end
 
     test "vault secrets override environment secrets on key collision" do
@@ -162,11 +163,16 @@ defmodule Fountain.VaultsTest do
       vault = insert_vault(user_id: user.id)
       {:ok, dek} = Fountain.Crypto.load_tenant_key(user.id)
 
-      Fountain.Environments.upsert_secret(env, %{key: "DB_URL", value: "env_value"}, dek)
-      Vaults.upsert_secret(vault, %{key: "DB_URL", value: "vault_value"}, dek)
+      Fountain.Environments.upsert_secret(
+        env,
+        %{"key" => "DB_URL", "value" => "env_value"},
+        dek
+      )
 
-      {:ok, env_map} = Fountain.Environments.decrypted_env(env, dek)
-      {:ok, vault_map} = Vaults.decrypted_env(vault, dek)
+      Vaults.upsert_secret(vault, %{"key" => "DB_URL", "value" => "vault_value"}, dek)
+
+      env_map = Fountain.Environments.decrypted_env(env, dek)
+      vault_map = Vaults.decrypted_env(vault, dek)
 
       merged = Map.merge(env_map, vault_map)
       assert merged["DB_URL"] == "vault_value"

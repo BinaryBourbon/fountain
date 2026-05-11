@@ -10,7 +10,7 @@ defmodule Fountain.EnvironmentsTest do
 
       assert {:ok, env} = Environments.create_environment(attrs)
       assert env.user_id == user.id
-      assert env.name == attrs.name
+      assert env.name == attrs["name"]
     end
 
     test "returns error changeset with missing required fields" do
@@ -77,7 +77,7 @@ defmodule Fountain.EnvironmentsTest do
       user = insert_verified_user()
       env = insert_env(user_id: user.id)
 
-      assert {:ok, updated} = Environments.update_environment(env, %{name: "renamed"})
+      assert {:ok, updated} = Environments.update_environment(env, %{"name" => "renamed"})
       assert updated.name == "renamed"
     end
   end
@@ -98,7 +98,9 @@ defmodule Fountain.EnvironmentsTest do
       env = insert_env(user_id: user.id)
       {:ok, dek} = Fountain.Crypto.load_tenant_key(user.id)
 
-      assert {:ok, secret} = Environments.upsert_secret(env, %{key: "API_KEY", value: "abc123"}, dek)
+      assert {:ok, secret} =
+               Environments.upsert_secret(env, %{"key" => "API_KEY", "value" => "abc123"}, dek)
+
       assert secret.key == "API_KEY"
     end
 
@@ -107,8 +109,8 @@ defmodule Fountain.EnvironmentsTest do
       env = insert_env(user_id: user.id)
       {:ok, dek} = Fountain.Crypto.load_tenant_key(user.id)
 
-      {:ok, _} = Environments.upsert_secret(env, %{key: "API_KEY", value: "first"}, dek)
-      {:ok, _} = Environments.upsert_secret(env, %{key: "API_KEY", value: "second"}, dek)
+      {:ok, _} = Environments.upsert_secret(env, %{"key" => "API_KEY", "value" => "first"}, dek)
+      {:ok, _} = Environments.upsert_secret(env, %{"key" => "API_KEY", "value" => "second"}, dek)
 
       secrets = Environments.list_secrets(env)
       assert length(secrets) == 1
@@ -151,10 +153,10 @@ defmodule Fountain.EnvironmentsTest do
       env = insert_env(user_id: user.id)
       {:ok, dek} = Fountain.Crypto.load_tenant_key(user.id)
 
-      Environments.upsert_secret(env, %{key: "HOST", value: "localhost"}, dek)
-      Environments.upsert_secret(env, %{key: "PORT", value: "5432"}, dek)
+      Environments.upsert_secret(env, %{"key" => "HOST", "value" => "localhost"}, dek)
+      Environments.upsert_secret(env, %{"key" => "PORT", "value" => "5432"}, dek)
 
-      assert {:ok, decrypted} = Environments.decrypted_env(env, dek)
+      decrypted = Environments.decrypted_env(env, dek)
       assert decrypted["HOST"] == "localhost"
       assert decrypted["PORT"] == "5432"
     end
@@ -164,8 +166,7 @@ defmodule Fountain.EnvironmentsTest do
       env = insert_env(user_id: user.id)
       {:ok, dek} = Fountain.Crypto.load_tenant_key(user.id)
 
-      assert {:ok, decrypted} = Environments.decrypted_env(env, dek)
-      assert decrypted == %{}
+      assert Environments.decrypted_env(env, dek) == %{}
     end
   end
 end

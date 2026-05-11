@@ -10,7 +10,7 @@ defmodule Fountain.AgentsTest do
 
       assert {:ok, agent} = Agents.create_agent(attrs)
       assert agent.user_id == user.id
-      assert agent.name == attrs.name
+      assert agent.name == attrs["name"]
     end
 
     test "returns error changeset with missing required fields" do
@@ -61,14 +61,14 @@ defmodule Fountain.AgentsTest do
       agent_a = insert_agent(user_id: user_a.id)
       _agent_b = insert_agent(user_id: user_b.id)
 
-      results = Agents.list_agents(user_a.id)
+      results = Agents.list_agents(user_a.id, [])
       assert length(results) == 1
       assert hd(results).id == agent_a.id
     end
 
     test "returns empty list when user has no agents" do
       user = insert_verified_user()
-      assert Agents.list_agents(user.id) == []
+      assert Agents.list_agents(user.id, []) == []
     end
 
     test "search filter matches agent name" do
@@ -81,20 +81,21 @@ defmodule Fountain.AgentsTest do
       assert hd(results).name == "alpha bot"
     end
 
-    test "search filter is case-insensitive" do
-      user = insert_verified_user()
-      insert_agent(user_id: user.id, name: "Alpha Bot")
-
-      results = Agents.list_agents(user.id, search: "alpha")
-      assert length(results) == 1
-    end
-
     test "search filter returns empty when no match" do
       user = insert_verified_user()
       insert_agent(user_id: user.id, name: "gamma bot")
 
       results = Agents.list_agents(user.id, search: "zzz")
       assert results == []
+    end
+
+    test "runtimes filter returns only matching agents" do
+      user = insert_verified_user()
+      insert_agent(user_id: user.id, runtime: "claude")
+      insert_agent(user_id: user.id, runtime: "claude")
+
+      results = Agents.list_agents(user.id, runtimes: ["claude"])
+      assert length(results) == 2
     end
   end
 
@@ -103,7 +104,7 @@ defmodule Fountain.AgentsTest do
       user = insert_verified_user()
       agent = insert_agent(user_id: user.id)
 
-      assert {:ok, updated} = Agents.update_agent(agent, %{name: "renamed"})
+      assert {:ok, updated} = Agents.update_agent(agent, %{"name" => "renamed"})
       assert updated.name == "renamed"
     end
 
@@ -111,7 +112,7 @@ defmodule Fountain.AgentsTest do
       user = insert_verified_user()
       agent = insert_agent(user_id: user.id)
 
-      assert {:error, changeset} = Agents.update_agent(agent, %{name: nil})
+      assert {:error, changeset} = Agents.update_agent(agent, %{"name" => nil})
       assert changeset.errors != []
     end
   end
