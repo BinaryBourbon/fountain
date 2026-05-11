@@ -262,7 +262,7 @@ defmodule Fountain.BillingTest do
     end
   end
 
-  # -- Helpers ------------------------------------------------------------------
+  # ── Helpers ──────────────────────────────────────────────────────────────────
 
   defp user_with_status(status) do
     user = insert_verified_user()
