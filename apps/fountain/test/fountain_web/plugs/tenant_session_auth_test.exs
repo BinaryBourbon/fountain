@@ -52,5 +52,29 @@ defmodule FountainWeb.Plugs.TenantSessionAuthTest do
       assert conn.halted
       assert Phoenix.ConnTest.redirected_to(conn) == "/auth/login"
     end
+
+    test "redirects when user_id is an integer instead of a string", %{conn: conn} do
+      conn =
+        conn
+        |> Phoenix.ConnTest.init_test_session(%{})
+        |> Plug.Conn.put_session(:user_id, 12345)
+        |> Plug.Conn.put_session(:session_version, 0)
+        |> TenantSessionAuth.call([])
+
+      assert conn.halted
+      assert Phoenix.ConnTest.redirected_to(conn) == "/auth/login"
+    end
+
+    test "redirects when session_version is a string instead of an integer", %{conn: conn} do
+      conn =
+        conn
+        |> Phoenix.ConnTest.init_test_session(%{})
+        |> Plug.Conn.put_session(:user_id, Ecto.UUID.generate())
+        |> Plug.Conn.put_session(:session_version, "1")
+        |> TenantSessionAuth.call([])
+
+      assert conn.halted
+      assert Phoenix.ConnTest.redirected_to(conn) == "/auth/login"
+    end
   end
 end

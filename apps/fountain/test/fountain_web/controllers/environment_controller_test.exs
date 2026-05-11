@@ -115,6 +115,17 @@ defmodule FountainWeb.EnvironmentControllerTest do
       conn = put_json(conn, "/api/environments/#{env.id}", %{name: "updated"})
       assert json_response(conn, 401)
     end
+
+    test "returns 422 when name is empty string", %{conn: conn, user: user, raw_key: raw_key} do
+      env = insert_env(user_id: user.id)
+
+      conn =
+        conn
+        |> authed_with_key(raw_key)
+        |> put_json("/api/environments/#{env.id}", %{name: ""})
+
+      assert json_response(conn, 422)
+    end
   end
 
   describe "DELETE /api/environments/:id" do
