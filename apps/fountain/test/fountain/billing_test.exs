@@ -262,6 +262,70 @@ defmodule Fountain.BillingTest do
     end
   end
 
+  describe "usage_summary/3 — sandbox_minutes edge cases" do
+    @period_start ~U[2026-05-01 00:00:00Z]
+    @period_end ~U[2026-06-01 00:00:00Z]
+
+    setup do
+      {:ok, user: insert_verified_user()}
+    end
+
+    test "sandbox_minutes defaults to 0 when duration_ms key is absent from metadata", %{
+      user: user
+    } do
+      insert_event(user, "sandbox_terminated", ~U[2026-05-10 12:00:00Z], %{})
+
+      summary = Billing.usage_summary(user.id, @period_start, @period_end)
+
+      assert summary.sandbox_minutes == 0.0
+    end
+
+    test "sandbox_minutes handles mixed events where some lack duration_ms", %{user: user} do
+      insert_event(user, "sandbox_terminated", ~U[2026-05-10 12:00:00Z], %{
+        "duration_ms" => 60_000
+      })
+
+      insert_event(user, "sandbox_terminated", ~U[2026-05-11 12:00:00Z], %{})
+
+      summary = Billing.usage_summary(user.id, @period_start, @period_end)
+
+      # Only the first event contributes 1 minute; the second defaults to 0
+      assert summary.sandbox_minutes == 1.0
+    end
+  end
+
+  describe "sync_subscription/1 — trial_end nil branch" do
+    setup do
+      user = insert_verified_user()
+      user = Repo.update!(Ecto.Changeset.change(user, stripe_customer_id: "cus_trial_nil"))
+      {:ok, user: user}
+    end
+
+    test "sets trial_ends_at to nil when trial_end is nil in the event", %{user: _user} do
+      event = %Stripe.Event{
+        type: "customer.subscription.updated",
+        data: %{object: %{customer: "cus_trial_nil", status: "active", trial_end: nil}}
+      }
+
+      assert {:ok, updated_user} = Billing.sync_subscription(event)
+      assert updated_user.trial_ends_at == nil
+    end
+  end
+
+  describe "sync_subscription/1 — extract_customer_id nil branch" do
+    test "returns {:error, :user_not_found} when customer resolves to nil" do
+      # Pass an unrecognized map that doesn't match %{id: _}; extract_customer_id
+      # falls through to the catch-all clause returning nil, which then hits
+      # get_user_by_stripe_customer_id(nil) -> nil -> {:error, :user_not_found}
+      event = %Stripe.Event{
+        type: "customer.subscription.updated",
+        data: %{object: %{customer: %{}, status: "active", trial_end: nil}}
+      }
+
+      assert {:error, :user_not_found} = Billing.sync_subscription(event)
+    end
+  end
+
   # ── Helpers ──────────────────────────────────────────────────────────────────
 
   defp user_with_status(status) do

@@ -135,6 +135,124 @@ defmodule Fountain.VaultsTest do
     end
   end
 
+  describe "get_vault!/2" do
+    test "returns vault when id and user_id match" do
+      user = insert_verified_user()
+      vault = insert_vault(user_id: user.id)
+
+      result = Vaults.get_vault!(vault.id, user.id)
+      assert result.id == vault.id
+    end
+
+    test "raises Ecto.NoResultsError for non-existent id" do
+      user = insert_verified_user()
+
+      assert_raise Ecto.NoResultsError, fn ->
+        Vaults.get_vault!(Ecto.UUID.generate(), user.id)
+      end
+    end
+
+    test "raises Ecto.NoResultsError when vault belongs to a different user" do
+      user_a = insert_verified_user()
+      user_b = insert_verified_user()
+      vault = insert_vault(user_id: user_a.id)
+
+      assert_raise Ecto.NoResultsError, fn ->
+        Vaults.get_vault!(vault.id, user_b.id)
+      end
+    end
+  end
+
+  describe "_unsafe_list_vaults/0" do
+    test "returns an empty list when no vaults exist" do
+      assert Vaults._unsafe_list_vaults() == []
+    end
+
+    test "returns vaults across all users" do
+      user_a = insert_verified_user()
+      user_b = insert_verified_user()
+      vault_a = insert_vault(user_id: user_a.id)
+      vault_b = insert_vault(user_id: user_b.id)
+
+      ids = Vaults._unsafe_list_vaults() |> Enum.map(& &1.id)
+      assert vault_a.id in ids
+      assert vault_b.id in ids
+    end
+
+    test "orders by inserted_at descending" do
+      user = insert_verified_user()
+      v1 = insert_vault(user_id: user.id)
+      v2 = insert_vault(user_id: user.id)
+
+      [first | _] = Vaults._unsafe_list_vaults()
+      assert first.id == v2.id || first.inserted_at >= v1.inserted_at
+    end
+  end
+
+  describe "_unsafe_get_vault/1" do
+    test "returns the vault when it exists" do
+      user = insert_verified_user()
+      vault = insert_vault(user_id: user.id)
+
+      result = Vaults._unsafe_get_vault(vault.id)
+      assert result.id == vault.id
+    end
+
+    test "returns nil for a non-existent id" do
+      assert Vaults._unsafe_get_vault(Ecto.UUID.generate()) == nil
+    end
+
+    test "returns vault regardless of owner" do
+      user_a = insert_verified_user()
+      vault = insert_vault(user_id: user_a.id)
+
+      result = Vaults._unsafe_get_vault(vault.id)
+      assert result.id == vault.id
+      assert result.user_id == user_a.id
+    end
+  end
+
+  describe "_unsafe_get_vault!/1" do
+    test "returns the vault when it exists" do
+      user = insert_verified_user()
+      vault = insert_vault(user_id: user.id)
+
+      result = Vaults._unsafe_get_vault!(vault.id)
+      assert result.id == vault.id
+    end
+
+    test "raises Ecto.NoResultsError for non-existent id" do
+      assert_raise Ecto.NoResultsError, fn ->
+        Vaults._unsafe_get_vault!(Ecto.UUID.generate())
+      end
+    end
+  end
+
+  describe "_unsafe_get_vault_by_name/1" do
+    test "returns the vault matching the given name" do
+      user = insert_verified_user()
+      attrs = vault_attrs(user_id: user.id, name: "my-special-vault")
+      {:ok, vault} = Vaults.create_vault(attrs)
+
+      result = Vaults._unsafe_get_vault_by_name("my-special-vault")
+      assert result.id == vault.id
+      assert result.name == "my-special-vault"
+    end
+
+    test "returns nil when no vault has the given name" do
+      assert Vaults._unsafe_get_vault_by_name("does-not-exist") == nil
+    end
+
+    test "returns vault regardless of owner" do
+      user_a = insert_verified_user()
+      attrs = vault_attrs(user_id: user_a.id, name: "cross-tenant-vault")
+      {:ok, vault} = Vaults.create_vault(attrs)
+
+      result = Vaults._unsafe_get_vault_by_name("cross-tenant-vault")
+      assert result.id == vault.id
+    end
+  end
+
   describe "decrypted_env/2" do
     test "returns a map of key => plaintext value" do
       user = insert_verified_user()

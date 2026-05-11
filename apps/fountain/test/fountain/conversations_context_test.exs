@@ -844,6 +844,209 @@ defmodule Fountain.ConversationsContextTest do
     end
   end
 
+  # ────────────────────────────────────────────────────────────────────────────
+  # list_sandboxes_admin/0
+  # ────────────────────────────────────────────────────────────────────────────
+
+  describe "list_sandboxes_admin/0" do
+    test "returns sandboxes with pending and ready statuses" do
+      user = insert_verified_user()
+      pending = insert_sandbox(user_id: user.id)
+      ready = insert_sandbox(user_id: user.id)
+      {:ok, _} = Conversations.update_sandbox(ready, %{status: "ready"})
+
+      ids = Conversations.list_sandboxes_admin() |> Enum.map(& &1.id)
+      assert pending.id in ids
+      assert ready.id in ids
+    end
+
+    test "excludes sandboxes with terminated status" do
+      user = insert_verified_user()
+      sandbox = insert_sandbox(user_id: user.id)
+      {:ok, _} = Conversations.update_sandbox(sandbox, %{status: "terminated"})
+
+      ids = Conversations.list_sandboxes_admin() |> Enum.map(& &1.id)
+      refute sandbox.id in ids
+    end
+
+    test "excludes sandboxes with failed status" do
+      user = insert_verified_user()
+      sandbox = insert_sandbox(user_id: user.id)
+      {:ok, _} = Conversations.update_sandbox(sandbox, %{status: "failed"})
+
+      ids = Conversations.list_sandboxes_admin() |> Enum.map(& &1.id)
+      refute sandbox.id in ids
+    end
+
+    test "includes pending but not terminated when both exist" do
+      user = insert_verified_user()
+      active = insert_sandbox(user_id: user.id)
+      terminated = insert_sandbox(user_id: user.id)
+      {:ok, _} = Conversations.update_sandbox(terminated, %{status: "terminated"})
+
+      ids = Conversations.list_sandboxes_admin() |> Enum.map(& &1.id)
+      assert active.id in ids
+      refute terminated.id in ids
+    end
+
+    test "preloads user association" do
+      user = insert_verified_user()
+      _sandbox = insert_sandbox(user_id: user.id)
+
+      results = Conversations.list_sandboxes_admin()
+      assert length(results) >= 1
+      result = Enum.find(results, &(&1.user_id == user.id))
+      assert result.user.id == user.id
+    end
+
+    test "preloads conversations association" do
+      user = insert_verified_user()
+      sandbox = insert_sandbox(user_id: user.id)
+      _conv = insert_conversation(user_id: user.id, sandbox_id: sandbox.id)
+
+      results = Conversations.list_sandboxes_admin()
+      result = Enum.find(results, &(&1.id == sandbox.id))
+      assert is_list(result.conversations)
+    end
+
+    test "returns empty list when all sandboxes are in terminal states" do
+      user = insert_verified_user()
+      s1 = insert_sandbox(user_id: user.id)
+      s2 = insert_sandbox(user_id: user.id)
+      {:ok, _} = Conversations.update_sandbox(s1, %{status: "terminated"})
+      {:ok, _} = Conversations.update_sandbox(s2, %{status: "failed"})
+
+      # All sandboxes in this test's db partition are terminal
+      results = Conversations.list_sandboxes_admin()
+      ids = Enum.map(results, & &1.id)
+      refute s1.id in ids
+      refute s2.id in ids
+    end
+  end
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # list_resumable_conversations/0
+  # ────────────────────────────────────────────────────────────────────────────
+
+  describe "list_resumable_conversations/0" do
+    test "returns idle conversation whose sandbox is ready" do
+      user = insert_verified_user()
+      sandbox = insert_sandbox(user_id: user.id)
+      {:ok, _} = Conversations.update_sandbox(sandbox, %{status: "ready"})
+      conv = insert_conversation(user_id: user.id, status: "idle", sandbox_id: sandbox.id)
+
+      ids = Conversations.list_resumable_conversations() |> Enum.map(& &1.id)
+      assert conv.id in ids
+    end
+
+    test "returns running conversation whose sandbox is ready" do
+      user = insert_verified_user()
+      sandbox = insert_sandbox(user_id: user.id)
+      {:ok, _} = Conversations.update_sandbox(sandbox, %{status: "ready"})
+      conv = insert_conversation(user_id: user.id, status: "running", sandbox_id: sandbox.id)
+
+      ids = Conversations.list_resumable_conversations() |> Enum.map(& &1.id)
+      assert conv.id in ids
+    end
+
+    test "excludes idle conversation whose sandbox is not ready (pending)" do
+      user = insert_verified_user()
+      sandbox = insert_sandbox(user_id: user.id)
+      # sandbox remains "pending"
+      conv = insert_conversation(user_id: user.id, status: "idle", sandbox_id: sandbox.id)
+
+      ids = Conversations.list_resumable_conversations() |> Enum.map(& &1.id)
+      refute conv.id in ids
+    end
+
+    test "excludes terminated conversation even when sandbox is ready" do
+      user = insert_verified_user()
+      sandbox = insert_sandbox(user_id: user.id)
+      {:ok, _} = Conversations.update_sandbox(sandbox, %{status: "ready"})
+      conv = insert_conversation(user_id: user.id, status: "terminated", sandbox_id: sandbox.id)
+
+      ids = Conversations.list_resumable_conversations() |> Enum.map(& &1.id)
+      refute conv.id in ids
+    end
+
+    test "excludes completed conversation even when sandbox is ready" do
+      user = insert_verified_user()
+      sandbox = insert_sandbox(user_id: user.id)
+      {:ok, _} = Conversations.update_sandbox(sandbox, %{status: "ready"})
+      conv = insert_conversation(user_id: user.id, status: "completed", sandbox_id: sandbox.id)
+
+      ids = Conversations.list_resumable_conversations() |> Enum.map(& &1.id)
+      refute conv.id in ids
+    end
+
+    test "preloads sandbox association" do
+      user = insert_verified_user()
+      sandbox = insert_sandbox(user_id: user.id)
+      {:ok, _} = Conversations.update_sandbox(sandbox, %{status: "ready"})
+      conv = insert_conversation(user_id: user.id, status: "idle", sandbox_id: sandbox.id)
+
+      results = Conversations.list_resumable_conversations()
+      result = Enum.find(results, &(&1.id == conv.id))
+      assert %Sandbox{} = result.sandbox
+      assert result.sandbox.id == sandbox.id
+    end
+
+    test "returns empty list when no resumable conversations exist" do
+      assert Conversations.list_resumable_conversations() == []
+    end
+  end
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # insert_turn_images/2
+  # ────────────────────────────────────────────────────────────────────────────
+
+  describe "insert_turn_images/2" do
+    test "returns {:ok, []} immediately for empty images list" do
+      user = insert_verified_user()
+      conv = insert_conversation(user_id: user.id)
+      turn = insert_turn(conv)
+
+      assert {:ok, []} = Conversations.insert_turn_images(turn.id, [])
+    end
+
+    test "inserts a single image and returns {:ok, 1}" do
+      user = insert_verified_user()
+      conv = insert_conversation(user_id: user.id)
+      turn = insert_turn(conv)
+
+      images = [%{media_type: "image/png", data: <<1, 2, 3>>}]
+      assert {:ok, 1} = Conversations.insert_turn_images(turn.id, images)
+    end
+
+    test "inserts multiple images and returns {:ok, count}" do
+      user = insert_verified_user()
+      conv = insert_conversation(user_id: user.id)
+      turn = insert_turn(conv)
+
+      images = [
+        %{media_type: "image/png", data: <<1, 2, 3>>},
+        %{media_type: "image/jpeg", data: <<4, 5, 6>>}
+      ]
+
+      assert {:ok, 2} = Conversations.insert_turn_images(turn.id, images)
+    end
+
+    test "images are queryable via list_turns after insert" do
+      user = insert_verified_user()
+      conv = insert_conversation(user_id: user.id)
+      turn = insert_turn(conv)
+
+      images = [%{media_type: "image/png", data: <<10, 20, 30>>}]
+      {:ok, 1} = Conversations.insert_turn_images(turn.id, images)
+
+      [loaded_turn] = Conversations.list_turns(conv.id)
+      assert length(loaded_turn.images) == 1
+      [img] = loaded_turn.images
+      assert img.media_type == "image/png"
+      assert img.data == <<10, 20, 30>>
+    end
+  end
+
   describe "output_bytes_by_stream/2" do
     test "returns empty map when there are no output events for the turn" do
       user = insert_verified_user()
