@@ -145,13 +145,7 @@ defmodule Fountain.BillingTest do
          %{user: user} do
       event = %Stripe.Event{
         type: "customer.subscription.updated",
-        data: %Stripe.Event.Data{
-          object: %Stripe.Subscription{
-            customer: "cus_abc123",
-            status: "active",
-            trial_end: nil
-          }
-        }
+        data: %{object: %{customer: "cus_abc123", status: "active", trial_end: nil}}
       }
 
       assert {:ok, updated_user} = Billing.sync_subscription(event)
@@ -163,13 +157,7 @@ defmodule Fountain.BillingTest do
          %{user: _user} do
       event = %Stripe.Event{
         type: "customer.subscription.deleted",
-        data: %Stripe.Event.Data{
-          object: %Stripe.Subscription{
-            customer: "cus_abc123",
-            status: "active",
-            trial_end: nil
-          }
-        }
+        data: %{object: %{customer: "cus_abc123", status: "active", trial_end: nil}}
       }
 
       assert {:ok, updated_user} = Billing.sync_subscription(event)
@@ -183,13 +171,7 @@ defmodule Fountain.BillingTest do
 
       event = %Stripe.Event{
         type: "customer.subscription.created",
-        data: %Stripe.Event.Data{
-          object: %Stripe.Subscription{
-            customer: "cus_abc123",
-            status: "trialing",
-            trial_end: unix_ts
-          }
-        }
+        data: %{object: %{customer: "cus_abc123", status: "trialing", trial_end: unix_ts}}
       }
 
       assert {:ok, updated_user} = Billing.sync_subscription(event)
@@ -200,13 +182,7 @@ defmodule Fountain.BillingTest do
     test "unrecognized customer_id returns {:error, :user_not_found}" do
       event = %Stripe.Event{
         type: "customer.subscription.updated",
-        data: %Stripe.Event.Data{
-          object: %Stripe.Subscription{
-            customer: "cus_unknown999",
-            status: "active",
-            trial_end: nil
-          }
-        }
+        data: %{object: %{customer: "cus_unknown999", status: "active", trial_end: nil}}
       }
 
       assert {:error, :user_not_found} = Billing.sync_subscription(event)
@@ -215,9 +191,7 @@ defmodule Fountain.BillingTest do
     test "unknown event type returns {:ok, :ignored}" do
       event = %Stripe.Event{
         type: "invoice.payment_succeeded",
-        data: %Stripe.Event.Data{
-          object: %{}
-        }
+        data: %{object: %{}}
       }
 
       assert {:ok, :ignored} = Billing.sync_subscription(event)
@@ -233,13 +207,7 @@ defmodule Fountain.BillingTest do
           ] do
         event = %Stripe.Event{
           type: "customer.subscription.updated",
-          data: %Stripe.Event.Data{
-            object: %Stripe.Subscription{
-              customer: "cus_abc123",
-              status: stripe_status,
-              trial_end: nil
-            }
-          }
+          data: %{object: %{customer: "cus_abc123", status: stripe_status, trial_end: nil}}
         }
 
         assert {:ok, updated_user} = Billing.sync_subscription(event)
@@ -253,13 +221,7 @@ defmodule Fountain.BillingTest do
          %{user: _user} do
       event = %Stripe.Event{
         type: "customer.subscription.updated",
-        data: %Stripe.Event.Data{
-          object: %Stripe.Subscription{
-            customer: %{id: "cus_abc123"},
-            status: "active",
-            trial_end: nil
-          }
-        }
+        data: %{object: %{customer: %{id: "cus_abc123"}, status: "active", trial_end: nil}}
       }
 
       assert {:ok, updated_user} = Billing.sync_subscription(event)
