@@ -1,5 +1,6 @@
 defmodule Fountain.BillingTest do
   use Fountain.DataCase, async: true
+  use Mimic
 
   alias Fountain.Billing
   alias Fountain.Billing.UsageEvent
@@ -70,7 +71,7 @@ defmodule Fountain.BillingTest do
     end
 
     test "sums duration_ms from sandbox_terminated events into sandbox_minutes", %{user: user} do
-      # 60_000 ms = 1 min, 120_000 ms = 2 min → total 3.0 minutes
+      # 60_000 ms = 1 min, 120_000 ms = 2 min -> total 3.0 minutes
       insert_event(user, "sandbox_terminated", ~U[2026-05-10 12:00:00Z], %{"duration_ms" => 60_000})
       insert_event(user, "sandbox_terminated", ~U[2026-05-10 12:30:00Z], %{"duration_ms" => 120_000})
 
@@ -80,9 +81,9 @@ defmodule Fountain.BillingTest do
     end
 
     test "excludes events outside the period", %{user: user} do
-      # One second before period start — excluded
+      # One second before period start - excluded
       insert_event(user, "turn_started", ~U[2026-04-30 23:59:59Z])
-      # Exactly at period_end — excluded (query uses `< ^period_end`)
+      # Exactly at period_end - excluded (query uses `< ^period_end`)
       insert_event(user, "sandbox_provisioned", ~U[2026-06-01 00:00:00Z])
 
       summary = Billing.usage_summary(user.id, @period_start, @period_end)
@@ -93,7 +94,214 @@ defmodule Fountain.BillingTest do
     end
   end
 
-  # ── Helpers ──────────────────────────────────────────────────────────────────
+  describe "emit/5" do
+    setup do
+      {:ok, user: insert_verified_user()}
+    end
+
+    test "inserts a UsageEvent and returns {:ok, event} with correct fields", %{user: user} do
+      resource_id = Ecto.UUID.generate()
+
+      assert {:ok, event} =
+               Billing.emit(user.id, "sandbox_provisioned", resource_id, "sandbox", %{
+                 "foo" => "bar"
+               })
+
+      assert event.user_id == user.id
+      assert event.event_type == "sandbox_provisioned"
+      assert event.resource_id == resource_id
+      assert event.resource_type == "sandbox"
+      assert event.metadata == %{"foo" => "bar"}
+      assert event.id != nil
+    end
+
+    test "metadata defaults to %{} when called with arity 4", %{user: user} do
+      resource_id = Ecto.UUID.generate()
+
+      assert {:ok, event} = Billing.emit(user.id, "turn_started", resource_id, "conversation")
+
+      assert event.metadata == %{}
+    end
+
+    test "emitted event is queryable from the DB", %{user: user} do
+      assert {:ok, event} =
+               Billing.emit(user.id, "sandbox_terminated", nil, nil, %{"duration_ms" => 30_000})
+
+      persisted = Repo.get!(UsageEvent, event.id)
+      assert persisted.user_id == user.id
+      assert persisted.event_type == "sandbox_terminated"
+      assert persisted.metadata == %{"duration_ms" => 30_000}
+    end
+  end
+
+  describe "sync_subscription/1" do
+    setup do
+      user = insert_verified_user()
+      user = Repo.update!(Ecto.Changeset.change(user, stripe_customer_id: "cus_abc123"))
+      {:ok, user: user}
+    end
+
+    test "customer.subscription.updated with matching customer_id updates subscription_status to active",
+         %{user: user} do
+      event = %Stripe.Event{
+        type: "customer.subscription.updated",
+        data: %Stripe.Event.Data{
+          object: %Stripe.Subscription{
+            customer: "cus_abc123",
+            status: "active",
+            trial_end: nil
+          }
+        }
+      }
+
+      assert {:ok, updated_user} = Billing.sync_subscription(event)
+      assert updated_user.id == user.id
+      assert updated_user.subscription_status == "active"
+    end
+
+    test "customer.subscription.deleted sets status to canceled regardless of sub.status",
+         %{user: _user} do
+      event = %Stripe.Event{
+        type: "customer.subscription.deleted",
+        data: %Stripe.Event.Data{
+          object: %Stripe.Subscription{
+            customer: "cus_abc123",
+            status: "active",
+            trial_end: nil
+          }
+        }
+      }
+
+      assert {:ok, updated_user} = Billing.sync_subscription(event)
+      assert updated_user.subscription_status == "canceled"
+    end
+
+    test "customer.subscription.created with trialing status and trial_end sets status and trial_ends_at",
+         %{user: _user} do
+      unix_ts = 1_800_000_000
+      expected_dt = DateTime.from_unix!(unix_ts) |> DateTime.truncate(:second)
+
+      event = %Stripe.Event{
+        type: "customer.subscription.created",
+        data: %Stripe.Event.Data{
+          object: %Stripe.Subscription{
+            customer: "cus_abc123",
+            status: "trialing",
+            trial_end: unix_ts
+          }
+        }
+      }
+
+      assert {:ok, updated_user} = Billing.sync_subscription(event)
+      assert updated_user.subscription_status == "trialing"
+      assert updated_user.trial_ends_at == expected_dt
+    end
+
+    test "unrecognized customer_id returns {:error, :user_not_found}" do
+      event = %Stripe.Event{
+        type: "customer.subscription.updated",
+        data: %Stripe.Event.Data{
+          object: %Stripe.Subscription{
+            customer: "cus_unknown999",
+            status: "active",
+            trial_end: nil
+          }
+        }
+      }
+
+      assert {:error, :user_not_found} = Billing.sync_subscription(event)
+    end
+
+    test "unknown event type returns {:ok, :ignored}" do
+      event = %Stripe.Event{
+        type: "invoice.payment_succeeded",
+        data: %Stripe.Event.Data{
+          object: %{}
+        }
+      }
+
+      assert {:ok, :ignored} = Billing.sync_subscription(event)
+    end
+
+    test "status coercion: unpaid -> past_due, incomplete -> past_due, incomplete_expired -> canceled, paused -> past_due",
+         %{user: _user} do
+      for {stripe_status, expected_status} <- [
+            {"unpaid", "past_due"},
+            {"incomplete", "past_due"},
+            {"incomplete_expired", "canceled"},
+            {"paused", "past_due"}
+          ] do
+        event = %Stripe.Event{
+          type: "customer.subscription.updated",
+          data: %Stripe.Event.Data{
+            object: %Stripe.Subscription{
+              customer: "cus_abc123",
+              status: stripe_status,
+              trial_end: nil
+            }
+          }
+        }
+
+        assert {:ok, updated_user} = Billing.sync_subscription(event)
+
+        assert updated_user.subscription_status == expected_status,
+               "expected #{stripe_status} -> #{expected_status}, got #{updated_user.subscription_status}"
+      end
+    end
+
+    test "extract_customer_id works with expanded customer object %{id: customer_id}",
+         %{user: _user} do
+      event = %Stripe.Event{
+        type: "customer.subscription.updated",
+        data: %Stripe.Event.Data{
+          object: %Stripe.Subscription{
+            customer: %{id: "cus_abc123"},
+            status: "active",
+            trial_end: nil
+          }
+        }
+      }
+
+      assert {:ok, updated_user} = Billing.sync_subscription(event)
+      assert updated_user.subscription_status == "active"
+    end
+  end
+
+  describe "create_stripe_customer/1" do
+    test "on Stripe success: stores stripe_customer_id on user and sets trial_ends_at ~14 days from now" do
+      user = insert_verified_user()
+
+      stub(Stripe.Customer, :create, fn _attrs ->
+        {:ok, %Stripe.Customer{id: "cus_new123"}}
+      end)
+
+      assert {:ok, updated_user} = Billing.create_stripe_customer(user)
+      assert updated_user.stripe_customer_id == "cus_new123"
+      assert %DateTime{} = updated_user.trial_ends_at
+
+      expected_lower = DateTime.utc_now() |> DateTime.add(13 * 24 * 60 * 60, :second)
+      expected_upper = DateTime.utc_now() |> DateTime.add(15 * 24 * 60 * 60, :second)
+
+      assert DateTime.compare(updated_user.trial_ends_at, expected_lower) in [:gt, :eq]
+      assert DateTime.compare(updated_user.trial_ends_at, expected_upper) in [:lt, :eq]
+    end
+
+    test "on Stripe error: returns {:error, reason} without modifying the user" do
+      user = insert_verified_user()
+
+      stub(Stripe.Customer, :create, fn _attrs ->
+        {:error, %Stripe.Error{message: "card declined"}}
+      end)
+
+      assert {:error, %Stripe.Error{message: "card declined"}} =
+               Billing.create_stripe_customer(user)
+
+      unchanged = Repo.get!(Fountain.Accounts.User, user.id)
+      assert unchanged.stripe_customer_id == nil
+    end
+  end
+
+  # -- Helpers ------------------------------------------------------------------
 
   defp user_with_status(status) do
     user = insert_verified_user()
