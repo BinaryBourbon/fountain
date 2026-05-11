@@ -84,6 +84,25 @@ defmodule FountainWeb.AgentControllerTest do
       conn = post_json(conn, "/api/agents", payload)
       assert json_response(conn, 401)
     end
+
+    test "returns 422 when a skill entry has neither content nor source", %{conn: conn, raw_key: raw_key} do
+      # OpenApiSpex does not enforce the content/source mutual-exclusivity rule;
+      # the Ecto changeset's validate_skills/1 does, so this reaches the DB layer
+      # as a pure changeset error and is rendered as 422.
+      payload = %{
+        name: "test-bot",
+        model: "anthropic/claude-sonnet-4-6",
+        runtime: "claude",
+        skills: [%{name: "my-skill"}]
+      }
+
+      conn =
+        conn
+        |> authed_with_key(raw_key)
+        |> post_json("/api/agents", payload)
+
+      assert json_response(conn, 422)
+    end
   end
 
   describe "PUT /api/agents/:id" do

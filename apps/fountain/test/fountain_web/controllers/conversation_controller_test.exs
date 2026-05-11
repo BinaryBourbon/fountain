@@ -150,6 +150,31 @@ defmodule FountainWeb.ConversationControllerTest do
 
       assert json_response(conn, 402)
     end
+
+    test "returns 404 when agent_id does not exist", %{conn: conn, raw_key: raw_key} do
+      unknown_agent_id = Ecto.UUID.generate()
+
+      conn =
+        conn
+        |> authed_with_key(raw_key)
+        |> put_req_header("content-type", "application/json")
+        |> post("/api/conversations", Jason.encode!(%{"agent_id" => unknown_agent_id, "prompt" => "hello"}))
+
+      assert json_response(conn, 404)
+    end
+
+    test "returns 404 when agent belongs to a different user", %{conn: conn, raw_key: raw_key} do
+      other_user = insert_verified_user()
+      other_agent = insert_agent(user_id: other_user.id)
+
+      conn =
+        conn
+        |> authed_with_key(raw_key)
+        |> put_req_header("content-type", "application/json")
+        |> post("/api/conversations", Jason.encode!(%{"agent_id" => other_agent.id, "prompt" => "hello"}))
+
+      assert json_response(conn, 404)
+    end
   end
 
   describe "POST /api/conversations/:conversation_id/prompts" do
