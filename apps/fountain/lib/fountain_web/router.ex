@@ -45,6 +45,16 @@ defmodule FountainWeb.Router do
     get "/health", HealthController, :show
   end
 
+  # llms.txt convention (https://llmstxt.org/) + external SKILL.md for agentic IDEs.
+  # No pipeline: plain-text GETs with no auth, no CSRF, no session. The
+  # controller sets `text/plain; charset=utf-8` explicitly.
+  scope "/", FountainWeb do
+    get "/llms.txt", LlmsController, :index
+    get "/llms-full.txt", LlmsController, :full
+    get "/skill", LlmsController, :skill
+    get "/skills/fountain/SKILL.md", LlmsController, :skill
+  end
+
   scope "/api" do
     pipe_through :api_public
     get "/openapi.json", OpenApiSpex.Plug.RenderSpec, []
@@ -138,8 +148,7 @@ defmodule FountainWeb.Router do
 
     resources "/agents", AgentController, except: [:new, :edit]
 
-    resources "/conversations", ConversationController,
-      only: [:index, :show, :create, :delete] do
+    resources "/conversations", ConversationController, only: [:index, :show, :create, :delete] do
       post "/prompts", ConversationController, :prompt, as: :prompt
       post "/interrupt", ConversationController, :interrupt, as: :interrupt
       post "/terminate", ConversationController, :terminate, as: :terminate
@@ -195,8 +204,10 @@ defmodule FountainWeb.Router do
       live "/api-keys", ApiKeysLive.Index, :index
       live "/help", HelpLive.Show, :index
       live "/help/:topic", HelpLive.Show, :show
+
       # ── Phase-3-billing: account/billing ───────────────────────────────────
       live "/account/billing", Live.BillingLive, :index
+
       # ── BYO inference credentials (ADR 0008) ───────────────────────────────
       live "/account/inference-credentials", InferenceCredentialsLive.Index, :index
     end

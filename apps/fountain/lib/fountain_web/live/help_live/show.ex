@@ -19,6 +19,7 @@ defmodule FountainWeb.HelpLive.Show do
     {"manifest", "Manifest"},
     {"spawning", "Spawning sub-agents"},
     {"api", "API reference"},
+    {"for-llms", "For LLMs"},
     {"runbook", "Operating"}
   ]
 
@@ -95,6 +96,13 @@ defmodule FountainWeb.HelpLive.Show do
             class="block rounded px-3 py-1.5 text-sm hover:bg-zinc-100 text-zinc-600"
           >
             API reference (Swagger) ↗
+          </a>
+          <a
+            href="/llms.txt"
+            target="_blank"
+            class="block rounded px-3 py-1.5 text-sm hover:bg-zinc-100 text-zinc-600"
+          >
+            For LLMs (/llms.txt) ↗
           </a>
         </nav>
       </aside>

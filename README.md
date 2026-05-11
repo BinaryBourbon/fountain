@@ -27,6 +27,17 @@ fountain apply -f agent-specs
 
 `fountain apply` walks the directory and applies every `*.yml` / `*.yaml` doc that declares both `apiVersion` and `kind`. See [`cli/README.md`](cli/README.md) for the rest of the command surface.
 
+## Point an LLM at Fountain
+
+Every Fountain instance serves a plain-text [`/llms.txt`](https://founta.inevitable.fyi/llms.txt), a bundled [`/llms-full.txt`](https://founta.inevitable.fyi/llms-full.txt), and a drop-in [`/skill`](https://founta.inevitable.fyi/skill) so any agentic IDE (Claude Code, Cursor, Continue, Aider, ...) can learn the API from one fetch:
+
+```sh
+mkdir -p ~/.claude/skills/fountain
+curl -fsSL https://founta.inevitable.fyi/skill > ~/.claude/skills/fountain/SKILL.md
+```
+
+After that, telling Claude "spin up a researcher agent on Fountain and have it audit the auth module" Just Works — the skill describes the four primitives (Environment / Vault / Agent / Conversation), the CLI commands, the API endpoints, the SSE format, and the per-runtime result filters.
+
 ## Bootstrap a workstation
 
 See [`SETUP.md`](SETUP.md) for the full local bootstrap (mise + Postgres + deps). The toolchain version is pinned in `.tool-versions` and mirrored in `render.yaml`, so a fresh laptop or ephemeral VM gets the same Erlang/Elixir as production.
