@@ -225,8 +225,13 @@ defmodule Fountain.ConversationsContextTest do
       c1 = insert_conversation(user_id: user.id)
       c2 = insert_conversation(user_id: user.id)
 
-      # Touch c1 to make it more recently updated
-      {:ok, _} = Conversations.update_conversation(c1, %{status: "idle"})
+      # Backdate c2 so c1 is guaranteed to sort first regardless of wall-clock
+      # precision (utc_datetime has second granularity).
+      past = DateTime.add(DateTime.utc_now(), -3600, :second) |> DateTime.truncate(:second)
+      Fountain.Repo.update_all(
+        Ecto.Query.from(c in Conversation, where: c.id == ^c2.id),
+        set: [updated_at: past]
+      )
 
       [first | _] = Conversations.list_conversations_by_activity(user.id)
       assert first.id == c1.id
