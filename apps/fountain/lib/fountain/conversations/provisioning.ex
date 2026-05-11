@@ -54,8 +54,7 @@ defmodule Fountain.Conversations.Provisioning do
   @doc false
   def render_env_file(sprite_env) do
     sprite_env
-    |> Enum.map(fn {k, v} -> "#{k}=#{shell_escape_value(to_string(v))}" end)
-    |> Enum.join("\n")
+    |> Enum.map_join("\n", fn {k, v} -> "#{k}=#{shell_escape_value(to_string(v))}" end)
     |> Kernel.<>("\n")
   end
 
