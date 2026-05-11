@@ -53,18 +53,7 @@ defmodule FountainWeb.Layouts do
           <%!-- Sidebar header --%>
           <div class="flex items-center justify-between p-4 border-b border-[var(--color-border)] shrink-0">
             <.link navigate={~p"/conversations"} class="flex items-center gap-2">
-              <div class="size-7 rounded-md bg-[var(--color-brand)] flex items-center justify-center">
-                <svg
-                  class="size-4 text-white"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2.5"
-                  aria-hidden="true"
-                >
-                  <path d="M3 12h18M3 6l9-3 9 3M3 18l9 3 9-3" />
-                </svg>
-              </div>
+              <img src="/images/app-icon.png" alt="" class="size-7 rounded-md" />
               <span class="font-semibold text-sm text-[var(--color-text-primary)]">Fountain</span>
             </.link>
             <%!-- Mobile close button --%>
