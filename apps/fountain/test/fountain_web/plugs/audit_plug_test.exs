@@ -77,7 +77,7 @@ defmodule FountainWeb.Plugs.AuditTest do
       sent_conn(conn)
 
       events = Fountain.Audit.list_recent_for_user(user.id)
-      assert length(events) >= 1
+      assert events != []
       [event | _] = events
       assert event.resource_type == "secret"
       assert event.resource_id == "sec1"
@@ -99,7 +99,7 @@ defmodule FountainWeb.Plugs.AuditTest do
       sent_conn(conn)
 
       events = Fountain.Audit.list_recent_for_user(user.id)
-      assert length(events) >= 1
+      assert events != []
       [event | _] = events
       assert event.resource_type == "vault_secret"
       assert event.resource_id == "vsec1"
@@ -122,7 +122,7 @@ defmodule FountainWeb.Plugs.AuditTest do
       sent_conn(conn)
 
       events = Fountain.Audit.list_recent_for_user(user.id)
-      assert length(events) >= 1
+      assert events != []
       [event | _] = events
       assert event.resource_type == "conversation"
       assert event.resource_id == conv_id
@@ -144,7 +144,7 @@ defmodule FountainWeb.Plugs.AuditTest do
       sent_conn(conn)
 
       events = Fountain.Audit.list_recent_for_user(user.id)
-      assert length(events) >= 1
+      assert events != []
       [event | _] = events
       # "conversations" with trailing "s" stripped -> "conversation"
       assert event.resource_type == "conversation"
@@ -168,7 +168,7 @@ defmodule FountainWeb.Plugs.AuditTest do
       sent_conn(conn)
 
       events = Fountain.Audit.list_recent_for_user(user.id)
-      assert length(events) >= 1
+      assert events != []
       [event | _] = events
       assert event.resource_type == "agent"
       assert event.resource_id == resource_id
@@ -190,7 +190,7 @@ defmodule FountainWeb.Plugs.AuditTest do
       sent_conn(conn)
 
       events = Fountain.Audit.list_recent_for_user(user.id)
-      assert length(events) >= 1
+      assert events != []
       [event | _] = events
       assert event.resource_type == "unknown"
     end
