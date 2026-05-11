@@ -94,6 +94,29 @@ defmodule FountainWeb.Plugs.RateLimitTest do
     end
   end
 
+  describe "call/2 — IP-based keying (isolation disabled)" do
+    # These tests temporarily disable test isolation to exercise format_ip branches.
+    # They restore isolation to `true` (not delete) so subsequent tests are unaffected.
+    setup do
+      Application.put_env(:fountain, :rate_limit_test_isolation, false)
+      on_exit(fn -> Application.put_env(:fountain, :rate_limit_test_isolation, true) end)
+    end
+
+    test "uses IP tuple as key when isolation is off", %{conn: conn} do
+      conn = %{conn | remote_ip: {10, 0, 0, 1}}
+      opts = RateLimit.init(bucket: unique_bucket(), max: 10)
+      result = RateLimit.call(conn, opts)
+      refute result.halted
+    end
+
+    test "uses 'unknown' as key when remote_ip is nil", %{conn: conn} do
+      conn = %{conn | remote_ip: nil}
+      opts = RateLimit.init(bucket: unique_bucket(), max: 10)
+      result = RateLimit.call(conn, opts)
+      refute result.halted
+    end
+  end
+
   describe "call/2 — rate limited" do
     test "halts the conn with 429 when limit is exceeded", %{conn: conn} do
       opts = RateLimit.init(bucket: unique_bucket(), max: 1, window_ms: 60_000)
