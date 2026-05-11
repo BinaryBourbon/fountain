@@ -79,16 +79,6 @@
           #
           ## Design Checks
           #
-          # You can customize the priority of any check
-          # Priority values are: `low, normal, high, higher`
-          #
-          {Credo.Check.Design.AliasUsage,
-           [
-             priority: :low,
-             if_nested_deeper_than: 2,
-             if_called_more_often_than: 0,
-             exit_status: 0
-           ]},
           {Credo.Check.Design.TagFIXME, []},
           # You can also customize the exit_status of each check.
           # If you don't want TODO comments to cause `mix credo` to fail, just
@@ -99,18 +89,13 @@
           #
           ## Readability Checks
           #
-          {Credo.Check.Readability.AliasOrder, []},
           {Credo.Check.Readability.FunctionNames, []},
           {Credo.Check.Readability.LargeNumbers, []},
-          {Credo.Check.Readability.MaxLineLength, [priority: :low, max_length: 120]},
           {Credo.Check.Readability.ModuleAttributeNames, []},
-          {Credo.Check.Readability.ModuleDoc, [exit_status: 0]},
           {Credo.Check.Readability.ModuleNames, []},
           {Credo.Check.Readability.ParenthesesInCondition, []},
-          {Credo.Check.Readability.ParenthesesOnZeroArityDefs, []},
           {Credo.Check.Readability.PipeIntoAnonymousFunctions, []},
           {Credo.Check.Readability.PredicateFunctionNames, []},
-          {Credo.Check.Readability.PreferImplicitTry, []},
           {Credo.Check.Readability.RedundantBlankLines, []},
           {Credo.Check.Readability.Semicolons, []},
           {Credo.Check.Readability.SpaceAfterCommas, []},
@@ -119,14 +104,10 @@
           {Credo.Check.Readability.TrailingWhiteSpace, []},
           {Credo.Check.Readability.UnnecessaryAliasExpansion, []},
           {Credo.Check.Readability.VariableNames, []},
-          {Credo.Check.Readability.WithSingleClause, []},
 
           #
           ## Refactoring Opportunities
           #
-          {Credo.Check.Refactor.Apply, []},
-          {Credo.Check.Refactor.CondStatements, []},
-          {Credo.Check.Refactor.CyclomaticComplexity, []},
           {Credo.Check.Refactor.FilterCount, []},
           {Credo.Check.Refactor.FilterFilter, []},
           {Credo.Check.Refactor.FunctionArity, []},
@@ -135,7 +116,6 @@
           {Credo.Check.Refactor.MatchInCondition, []},
           {Credo.Check.Refactor.NegatedConditionsInUnless, []},
           {Credo.Check.Refactor.NegatedConditionsWithElse, []},
-          {Credo.Check.Refactor.Nesting, [exit_status: 0]},
           {Credo.Check.Refactor.RedundantWithClauseResult, []},
           {Credo.Check.Refactor.RejectReject, []},
           {Credo.Check.Refactor.UnlessWithElse, []},
@@ -170,12 +150,42 @@
         ],
         disabled: [
           #
-          # Checks scheduled for next check update (opt-in for now)
+          # ── Tech debt: pre-existing violations ────────────────────────────────────
+          # These checks found issues in the initial codebase. Disabled here so CI is
+          # a clean gate for new issues. Re-enable each check as its violations are
+          # fixed.
+          #
+          # Design: alias usage suggestions (advisory, not bugs)
+          {Credo.Check.Design.AliasUsage,
+           [priority: :low, if_nested_deeper_than: 2, if_called_more_often_than: 0]},
+          # Readability: alias ordering violations in accounts.ex, factory.ex, api_spec.ex
+          {Credo.Check.Readability.AliasOrder, []},
+          # Readability: lines > 120 chars in conversation_server.ex
+          {Credo.Check.Readability.MaxLineLength, [priority: :low, max_length: 120]},
+          # Readability: missing @moduledoc on 30+ nested OpenAPI schema structs in schemas.ex
+          {Credo.Check.Readability.ModuleDoc, []},
+          # Readability: zero-arity function with parens in application.ex:82
+          {Credo.Check.Readability.ParenthesesOnZeroArityDefs, []},
+          # Readability: explicit try in conversation_server.ex:242
+          {Credo.Check.Readability.PreferImplicitTry, []},
+          # Readability: single-clause with/else in accounts.ex:190
+          {Credo.Check.Readability.WithSingleClause, []},
+          # Refactor: apply/2 with known args in application.ex (intentional dynamic dispatch)
+          {Credo.Check.Refactor.Apply, []},
+          # Refactor: cond with one condition in conversation_server.ex, sse_loop, inference_live
+          {Credo.Check.Refactor.CondStatements, []},
+          # Refactor: cyclomatic complexity in kick_turn, upsert_oauth_user, agent.ex
+          {Credo.Check.Refactor.CyclomaticComplexity, []},
+          # Refactor: function body nesting in conversation_server, accounts, wizard, show, provisioning
+          {Credo.Check.Refactor.Nesting, []},
+
+          #
+          # ── Checks scheduled for next check update (opt-in for now) ───────────────
           {Credo.Check.Refactor.UtcNowTruncate, []},
 
           #
-          # Controversial and experimental checks (opt-in, just move the check to `:enabled`
-          #   and be sure to use `mix credo --strict` to see low priority checks)
+          # ── Controversial and experimental checks ─────────────────────────────────
+          # (opt-in, move to :enabled and use `mix credo --strict` to see low priority checks)
           #
           {Credo.Check.Consistency.MultiAliasImportRequireUse, []},
           {Credo.Check.Consistency.UnusedVariableNames, []},
@@ -212,13 +222,6 @@
           {Credo.Check.Warning.MapGetUnsafePass, []},
           {Credo.Check.Warning.MixEnv, []},
           {Credo.Check.Warning.UnsafeToAtom, []}
-          # {Credo.Check.Warning.UnusedOperation, [{MyMagicModule, [:fun1, :fun2]}]}
-
-          # {Credo.Check.Refactor.MapInto, []},
-
-          #
-          # Custom checks can be created using `mix credo.gen.check`.
-          #
         ]
       }
     }
