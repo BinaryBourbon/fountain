@@ -92,7 +92,9 @@ defmodule FountainWeb.PasswordResetController do
 
                 password_error = errors |> Map.get(:password, []) |> List.first()
 
-                render(conn, :reset_form,
+                conn
+                |> put_status(:unprocessable_entity)
+                |> render(:reset_form,
                   token: token,
                   error: password_error || "Could not update password.",
                   layout: false

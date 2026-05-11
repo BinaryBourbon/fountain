@@ -17,7 +17,13 @@ defmodule FountainWeb.UeberauthController do
   # directly and falls through to the "Unknown OAuth provider" branch.
   # The `base_path` in config/config.exs must match the route prefix
   # (`/auth/oauth`) for the plug to recognize the path.
-  plug Ueberauth
+  #
+  # In test mode, the plug is skipped so that tests can assign
+  # :ueberauth_auth / :ueberauth_failure directly without triggering a real
+  # OAuth network round-trip.
+  unless Application.compile_env(:fountain, :ueberauth_test_mode, false) do
+    plug Ueberauth
+  end
 
   # Only fires if Ueberauth passes through (unknown / unconfigured provider).
   def request(conn, _params) do

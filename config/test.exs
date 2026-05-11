@@ -13,7 +13,14 @@ config :fountain, FountainWeb.Endpoint,
 
 config :fountain, :skip_rehydrate, true
 config :fountain, :checkpoint_creation_enabled, false
-config :fountain, :rate_limit_enabled, false
+
+# Skip the Ueberauth plug so tests can set :ueberauth_auth/:ueberauth_failure
+# directly without triggering a real OAuth network round-trip.
+config :fountain, :ueberauth_test_mode, true
+
+# Key rate limit buckets by calling process PID instead of IP, so async
+# ExUnit tests don't share counters. Each test runs in its own process.
+config :fountain, :rate_limit_test_isolation, true
 
 config :logger, level: :warning
 config :phoenix, :plug_init_mode, :runtime

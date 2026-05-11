@@ -58,26 +58,22 @@ defmodule FountainWeb.Plugs.RateLimit do
   end
 
   def call(conn, opts) do
-    if Application.get_env(:fountain, :rate_limit_enabled, true) do
-      ensure_table()
-      key = key_for(conn, opts.bucket)
+    ensure_table()
+    key = key_for(conn, opts.bucket)
 
-      case bump(key, opts) do
-        :ok ->
-          conn
+    case bump(key, opts) do
+      :ok ->
+        conn
 
-        {:limited, retry_after_secs} ->
-          conn
-          |> put_resp_header("retry-after", to_string(retry_after_secs))
-          |> put_resp_content_type("application/json")
-          |> send_resp(
-            429,
-            Jason.encode!(%{error: "rate_limited", retry_after_seconds: retry_after_secs})
-          )
-          |> halt()
-      end
-    else
-      conn
+      {:limited, retry_after_secs} ->
+        conn
+        |> put_resp_header("retry-after", to_string(retry_after_secs))
+        |> put_resp_content_type("application/json")
+        |> send_resp(
+          429,
+          Jason.encode!(%{error: "rate_limited", retry_after_seconds: retry_after_secs})
+        )
+        |> halt()
     end
   end
 
@@ -107,7 +103,15 @@ defmodule FountainWeb.Plugs.RateLimit do
   end
 
   defp key_for(conn, bucket) do
-    {bucket, format_ip(conn.remote_ip)}
+    # In test isolation mode, key by the calling process PID rather than IP.
+    # This prevents async ExUnit tests from sharing rate limit counters while
+    # still allowing dedicated rate-limit tests to accumulate counts naturally
+    # (all requests in a test run in the same process).
+    if Application.get_env(:fountain, :rate_limit_test_isolation, false) do
+      {bucket, self()}
+    else
+      {bucket, format_ip(conn.remote_ip)}
+    end
   end
 
   defp format_ip(nil), do: "unknown"

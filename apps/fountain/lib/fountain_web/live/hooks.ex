@@ -25,6 +25,8 @@ defmodule FountainWeb.Live.Hooks do
     if the user's subscription is `past_due` or `canceled`. Must run after
     `:require_authenticated_user` (current_user must already be assigned).
   - `:require_admin` — halts if current_user is absent or not an admin.
+    Unauthenticated users are redirected to login (HTTP redirect). Authenticated
+    non-admin users are redirected to /dashboard (live redirect).
   """
 
   import Phoenix.LiveView
@@ -76,10 +78,15 @@ defmodule FountainWeb.Live.Hooks do
     socket = mount_current_user(session, socket)
     user = socket.assigns[:current_user]
 
-    if is_nil(user) or user.role != "admin" do
-      {:halt, redirect(socket, to: ~p"/auth/login")}
-    else
-      {:cont, socket}
+    cond do
+      is_nil(user) ->
+        {:halt, redirect(socket, to: ~p"/auth/login")}
+
+      user.role != "admin" ->
+        {:halt, push_navigate(socket, to: ~p"/dashboard")}
+
+      true ->
+        {:cont, socket}
     end
   end
 
