@@ -1,4 +1,5 @@
 defmodule FountainWeb.ConversationsLive.Show do
+  @moduledoc false
   use FountainWeb, :live_view
 
   alias Fountain.Conversations
@@ -748,7 +749,7 @@ defmodule FountainWeb.ConversationsLive.Show do
     }
   end
 
-  # ── tree node renderer ───────────────────────────────────────────────
+  # ── tree node renderer ─────────────────────────────────────────────
 
   attr :node, :map, required: true
   attr :runtime, :string, required: true
@@ -939,7 +940,7 @@ defmodule FountainWeb.ConversationsLive.Show do
   attr :block, :map, required: true
   attr :stream, :string, default: nil
 
-  # ── per-block renderers ────────────────────────────────────────────────
+  # ── per-block renderers ──────────────────────────────────────────────
 
   defp block_row(%{block: %{kind: :init}} = assigns) do
     ~H"""
@@ -1031,7 +1032,7 @@ defmodule FountainWeb.ConversationsLive.Show do
     """
   end
 
-  # ── event → blocks ────────────────────────────────────────────────
+  # ── event → blocks ────────────────────────────────────────────
 
   # Splits an event's `data` (which may be a stream-json chunk with N
   # lines) into a flat list of structured blocks. Each block is a map
@@ -1104,7 +1105,7 @@ defmodule FountainWeb.ConversationsLive.Show do
   defp short_kind(%{"type" => t}), do: to_string(t)
   defp short_kind(_), do: "raw"
 
-  # ── claude (stream-json) ───────────────────────────────────────────────
+  # ── claude (stream-json) ─────────────────────────────────────────────────
   defp event_blocks("claude", %{"type" => "system", "subtype" => "init"} = ev) do
     model = ev["model"]
 
@@ -1184,7 +1185,7 @@ defmodule FountainWeb.ConversationsLive.Show do
 
   defp event_blocks("claude", %{"type" => "rate_limit_event"}), do: []
 
-  # ── codex (`codex exec --json`) ───────────────────────────────────────────────
+  # ── codex (`codex exec --json`) ───────────────────────────────────────────────────
   defp event_blocks("codex", %{"type" => "thread.started", "thread_id" => id}),
     do: [%{kind: :init, summary: "thread: #{id}"}]
 
@@ -1214,7 +1215,7 @@ defmodule FountainWeb.ConversationsLive.Show do
   defp event_blocks("codex", %{"type" => "error", "message" => m}),
     do: [%{kind: :error, body: m}]
 
-  # ── gemini (`gemini --output-format stream-json`) ──────────────────────
+  # ── gemini (`gemini --output-format stream-json`) ──────────────────────────
   defp event_blocks("gemini", %{"type" => "init"} = ev) do
     summary =
       ["session started", ev["model"]]
@@ -1268,7 +1269,7 @@ defmodule FountainWeb.ConversationsLive.Show do
     [%{kind: :result, body: bits, raw: Jason.encode!(ev, pretty: true)}]
   end
 
-  # ── opencode (`opencode run --format json`) ───────────────────────────
+  # ── opencode (`opencode run --format json`) ───────────────────────────────
   defp event_blocks("opencode", %{"type" => "step_start"}), do: []
 
   defp event_blocks("opencode", %{"type" => "text", "part" => %{"text" => t}})
