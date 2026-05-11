@@ -34,6 +34,19 @@ defmodule FountainWeb.ApiKeyControllerTest do
       assert json_response(conn, 422)
     end
 
+    test "returns 422 when name is empty string", %{conn: conn} do
+      user = insert_verified_user()
+      {_record, raw_key} = insert_api_key(user)
+
+      conn =
+        conn
+        |> authed_with_key(raw_key)
+        |> Plug.Conn.put_req_header("content-type", "application/json")
+        |> post("/api/auth/api-keys", Jason.encode!(%{name: ""}))
+
+      assert json_response(conn, 422)
+    end
+
     test "returns 401 without valid API key", %{conn: conn} do
       conn =
         conn

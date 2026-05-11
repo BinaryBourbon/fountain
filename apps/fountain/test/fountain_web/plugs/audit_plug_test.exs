@@ -228,6 +228,32 @@ defmodule FountainWeb.Plugs.AuditTest do
       assert event.resource_type == "unknown"
     end
 
+    test "handles nil remote_ip without crashing and creates audit event", %{conn: conn} do
+      user = insert_verified_user()
+
+      conn
+      |> Map.merge(%{method: "POST", request_path: "/api/conversations", path_info: ["api", "conversations"], params: %{}})
+      |> Map.put(:remote_ip, nil)
+      |> Plug.Conn.assign(:current_user, user)
+      |> Audit.call([])
+      |> Plug.Conn.send_resp(201, "ok")
+
+      assert Fountain.Audit.list_recent_for_user(user.id) != []
+    end
+
+    test "handles string remote_ip without crashing and creates audit event", %{conn: conn} do
+      user = insert_verified_user()
+
+      conn
+      |> Map.merge(%{method: "POST", request_path: "/api/conversations", path_info: ["api", "conversations"], params: %{}})
+      |> Map.put(:remote_ip, "192.168.1.1")
+      |> Plug.Conn.assign(:current_user, user)
+      |> Audit.call([])
+      |> Plug.Conn.send_resp(201, "ok")
+
+      assert Fountain.Audit.list_recent_for_user(user.id) != []
+    end
+
     test "records user_id as nil when no current_user is assigned", %{conn: conn} do
       # We verify the plug runs and completes without error.
       # The before_send callback calls Audit.record/1 with user_id: nil.
