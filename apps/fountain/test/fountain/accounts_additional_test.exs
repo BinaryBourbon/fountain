@@ -251,6 +251,80 @@ defmodule Fountain.AccountsAdditionalTest do
     end
   end
 
+  # ── authenticate_user/2 ─────────────────────────────────────────────────────
+
+  describe "authenticate_user/2" do
+    test "returns {:ok, user} for valid email and password" do
+      user = insert_verified_user(%{"password" => "correcthorse"})
+      assert {:ok, returned} = Accounts.authenticate_user(user.email, "correcthorse")
+      assert returned.id == user.id
+    end
+
+    test "returns {:error, :wrong_password} when password does not match" do
+      user = insert_verified_user(%{"password" => "correcthorse"})
+      assert {:error, :wrong_password} = Accounts.authenticate_user(user.email, "wrongpassword")
+    end
+
+    test "returns {:error, :not_found} when no user exists with that email" do
+      assert {:error, :not_found} = Accounts.authenticate_user("nobody@nowhere.test", "anypassword")
+    end
+  end
+
+  # ── verify_email/1 ──────────────────────────────────────────────────────────
+
+  describe "verify_email/1" do
+    test "sets email_verified_at to a non-nil datetime" do
+      {:ok, user} = Fountain.Accounts.register_user(%{"email" => "unverified#{System.unique_integer([:positive])}@example.com", "password" => "password123"})
+      assert is_nil(user.email_verified_at)
+
+      assert {:ok, verified} = Accounts.verify_email(user)
+      assert %DateTime{} = verified.email_verified_at
+    end
+
+    test "calling verify_email again on an already-verified user succeeds" do
+      user = insert_verified_user()
+      assert {:ok, _} = Accounts.verify_email(user)
+    end
+  end
+
+  # ── complete_onboarding/1 ───────────────────────────────────────────────────
+
+  describe "complete_onboarding/1" do
+    test "sets onboarding_state to 'completed' and onboarding_completed_at to a datetime" do
+      user = insert_verified_user()
+      assert is_nil(user.onboarding_completed_at)
+
+      assert {:ok, updated} = Accounts.complete_onboarding(user)
+      assert updated.onboarding_state == "completed"
+      assert %DateTime{} = updated.onboarding_completed_at
+    end
+  end
+
+  # ── advance_onboarding/2 ────────────────────────────────────────────────────
+
+  describe "advance_onboarding/2" do
+    test "advances to step_1 and only sets onboarding_state" do
+      user = insert_verified_user()
+      assert {:ok, updated} = Accounts.advance_onboarding(user, "step_1")
+      assert updated.onboarding_state == "step_1"
+      assert is_nil(updated.onboarding_completed_at)
+    end
+
+    test "advances to step_3 and only sets onboarding_state" do
+      user = insert_verified_user()
+      assert {:ok, updated} = Accounts.advance_onboarding(user, "step_3")
+      assert updated.onboarding_state == "step_3"
+      assert is_nil(updated.onboarding_completed_at)
+    end
+
+    test "advancing to 'completed' also sets onboarding_completed_at" do
+      user = insert_verified_user()
+      assert {:ok, updated} = Accounts.advance_onboarding(user, "completed")
+      assert updated.onboarding_state == "completed"
+      assert %DateTime{} = updated.onboarding_completed_at
+    end
+  end
+
   # ── touch_api_key/1 ─────────────────────────────────────────────────────────
 
   describe "touch_api_key/1" do

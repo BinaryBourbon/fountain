@@ -326,6 +326,50 @@ defmodule Fountain.BillingTest do
     end
   end
 
+  describe "usage_summary/3 — atom-key duration_ms metadata" do
+    @period_start ~U[2026-05-01 00:00:00Z]
+    @period_end ~U[2026-06-01 00:00:00Z]
+
+    setup do
+      {:ok, user: insert_verified_user()}
+    end
+
+    test "reads duration_ms from atom-keyed metadata when string key is absent", %{user: user} do
+      # Insert the event directly with atom key in metadata (bypasses Jason decode path)
+      %UsageEvent{}
+      |> UsageEvent.changeset(%{
+        user_id: user.id,
+        event_type: "sandbox_terminated",
+        inserted_at: ~U[2026-05-10 12:00:00Z],
+        metadata: %{duration_ms: 120_000}
+      })
+      |> Repo.insert!()
+
+      summary = Billing.usage_summary(user.id, @period_start, @period_end)
+
+      # 120_000 ms = 2.0 minutes
+      assert summary.sandbox_minutes == 2.0
+    end
+  end
+
+  describe "sync_subscription/1 — coerce_status catch-all" do
+    setup do
+      user = insert_verified_user()
+      user = Repo.update!(Ecto.Changeset.change(user, stripe_customer_id: "cus_coerce_catchall"))
+      {:ok, user: user}
+    end
+
+    test "unknown stripe status is coerced to past_due", %{user: _user} do
+      event = %Stripe.Event{
+        type: "customer.subscription.updated",
+        data: %{object: %{customer: "cus_coerce_catchall", status: "some_future_status", trial_end: nil}}
+      }
+
+      assert {:ok, updated_user} = Billing.sync_subscription(event)
+      assert updated_user.subscription_status == "past_due"
+    end
+  end
+
   # ── Helpers ──────────────────────────────────────────────────────────────────
 
   defp user_with_status(status) do
