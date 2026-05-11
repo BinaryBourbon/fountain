@@ -169,4 +169,29 @@ defmodule Fountain.EnvironmentsTest do
       assert Environments.decrypted_env(env, dek) == %{}
     end
   end
+
+  describe "get_secret/2" do
+    test "returns the secret when env_id and key match" do
+      user = insert_verified_user()
+      env = insert_env(user_id: user.id)
+      {:ok, dek} = Fountain.Crypto.load_tenant_key(user.id)
+      {:ok, secret} = Environments.upsert_secret(env, %{"key" => "MY_KEY", "value" => "val"}, dek)
+
+      result = Environments.get_secret(env.id, "MY_KEY")
+      assert result != nil
+      assert result.id == secret.id
+      assert result.key == "MY_KEY"
+    end
+
+    test "returns nil when key does not exist in the environment" do
+      user = insert_verified_user()
+      env = insert_env(user_id: user.id)
+
+      assert Environments.get_secret(env.id, "MISSING_KEY") == nil
+    end
+
+    test "returns nil when env_id does not exist" do
+      assert Environments.get_secret(Ecto.UUID.generate(), "ANY_KEY") == nil
+    end
+  end
 end

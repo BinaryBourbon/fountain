@@ -98,6 +98,22 @@ defmodule FountainWeb.UeberauthControllerTest do
       assert redirected_to(conn) == ~p"/auth/login"
     end
 
+    test "uses fallback message when failure has no errors", %{conn: conn} do
+      failure = %Ueberauth.Failure{
+        provider: :github,
+        strategy: Ueberauth.Strategy.Github,
+        errors: []
+      }
+
+      conn =
+        conn
+        |> Phoenix.ConnTest.init_test_session(%{})
+        |> assign_failure(failure)
+        |> get(~p"/auth/oauth/github/callback")
+
+      assert redirected_to(conn) == ~p"/auth/login"
+    end
+
     test "redirects to login when GitHub returns no email", %{conn: conn} do
       auth = %{github_auth("") | info: %Ueberauth.Auth.Info{email: nil}}
 
@@ -106,6 +122,19 @@ defmodule FountainWeb.UeberauthControllerTest do
         |> Phoenix.ConnTest.init_test_session(%{})
         |> assign_auth(auth)
         |> get(~p"/auth/oauth/github/callback")
+
+      assert redirected_to(conn) == ~p"/auth/login"
+    end
+  end
+
+  describe "request/2 — unknown provider fallback" do
+    test "redirects to login with error flash when provider is not configured", %{conn: conn} do
+      # In ueberauth_test_mode the Ueberauth plug is skipped, so request/2
+      # fires directly for any GET /auth/oauth/:provider request.
+      conn =
+        conn
+        |> Phoenix.ConnTest.init_test_session(%{})
+        |> get(~p"/auth/oauth/github")
 
       assert redirected_to(conn) == ~p"/auth/login"
     end

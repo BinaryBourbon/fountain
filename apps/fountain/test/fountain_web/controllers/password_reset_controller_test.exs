@@ -3,6 +3,13 @@ defmodule FountainWeb.PasswordResetControllerTest do
 
   alias Fountain.Accounts
 
+  describe "GET /auth/forgot-password" do
+    test "renders the forgot password form", %{conn: conn} do
+      conn = get(conn, ~p"/auth/forgot-password")
+      assert html_response(conn, 200) =~ "reset"
+    end
+  end
+
   describe "POST /api/auth/forgot" do
     test "always returns 200 regardless of whether email exists", %{conn: conn} do
       conn =
