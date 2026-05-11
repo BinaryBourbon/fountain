@@ -99,7 +99,7 @@ defmodule FountainWeb.AuditLiveTest do
       })
 
       events = Audit.list_recent_for_user(user.id, 10)
-      assert length(events) >= 1
+      refute Enum.empty?(events)
       assert Enum.all?(events, &(&1.user_id == user.id))
     end
   end
