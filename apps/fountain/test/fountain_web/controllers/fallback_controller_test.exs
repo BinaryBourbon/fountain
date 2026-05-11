@@ -37,6 +37,15 @@ defmodule FountainWeb.FallbackControllerTest do
     end
   end
 
+  describe "{:error, binary_reason} → 400" do
+    test "binary error reason returns 400 with error body", %{conn: conn} do
+      conn = FountainWeb.FallbackController.call(conn, {:error, "custom_error_message"})
+      assert conn.status == 400
+      body = Jason.decode!(conn.resp_body)
+      assert body["error"] == "custom_error_message"
+    end
+  end
+
   describe "{:error, :not_found} → 404" do
     test "GET /api/agents/:id with a nonexistent UUID returns 404 with error body", %{conn: conn} do
       user = insert_verified_user()

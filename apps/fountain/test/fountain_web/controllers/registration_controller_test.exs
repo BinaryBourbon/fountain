@@ -68,6 +68,13 @@ defmodule FountainWeb.RegistrationControllerTest do
     end
   end
 
+  describe "GET /auth/check-email" do
+    test "renders the check-email page", %{conn: conn} do
+      conn = get(conn, ~p"/auth/check-email")
+      assert html_response(conn, 200) =~ ~r/email/i
+    end
+  end
+
   describe "rate limiting" do
     test "blocks 6th registration from same IP within the hour", %{conn: conn} do
       # The rate limit bucket is keyed by IP. In tests, all requests share

@@ -345,6 +345,35 @@ defmodule Fountain.AccountsAdditionalTest do
     end
   end
 
+  # ── register_user/1 ─────────────────────────────────────────────────────────
+
+  describe "register_user/1" do
+    test "returns {:ok, user} with valid attrs" do
+      email = "reg_#{System.unique_integer([:positive])}@example.com"
+      assert {:ok, user} = Accounts.register_user(%{"email" => email, "password" => "password123"})
+      assert user.email == email
+    end
+
+    test "automatically creates a UserDataKey for the new user" do
+      email = "reg_key_#{System.unique_integer([:positive])}@example.com"
+      {:ok, user} = Accounts.register_user(%{"email" => email, "password" => "password123"})
+      assert {:ok, _dek} = Fountain.Crypto.load_tenant_key(user.id)
+    end
+
+    test "returns {:error, changeset} on duplicate email" do
+      email = "dup_#{System.unique_integer([:positive])}@example.com"
+      {:ok, _} = Accounts.register_user(%{"email" => email, "password" => "password123"})
+      assert {:error, changeset} = Accounts.register_user(%{"email" => email, "password" => "password123"})
+      assert changeset.errors != []
+    end
+
+    test "returns {:error, changeset} when password is too short" do
+      email = "short_#{System.unique_integer([:positive])}@example.com"
+      assert {:error, changeset} = Accounts.register_user(%{"email" => email, "password" => "short"})
+      assert changeset.errors[:password] != nil
+    end
+  end
+
   # ── upsert_oauth_user/3 ─────────────────────────────────────────────────────
 
   describe "upsert_oauth_user/3" do
