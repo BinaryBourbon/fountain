@@ -91,10 +91,12 @@ defmodule Fountain.Conversations.ConversationTest do
     end
 
     test "errors on all required fields when attrs are empty" do
+      # %Conversation{} has status: "pending" as a struct default, so casting
+      # an empty map leaves status populated — only runtime/sandbox_id/user_id
+      # are truly absent.
       cs = Conversation.changeset(%Conversation{}, %{})
       errors = errors_on(cs)
       assert Map.has_key?(errors, :runtime)
-      assert Map.has_key?(errors, :status)
       assert Map.has_key?(errors, :sandbox_id)
       assert Map.has_key?(errors, :user_id)
     end

@@ -138,10 +138,12 @@ defmodule Fountain.Agents.AgentTest do
     end
 
     test "non-map skill entry fails" do
+      # Ecto rejects non-map entries during cast ({:array, :map}), before
+      # validate_skills runs, so the error is "is invalid" on the :skills field.
       skills = ["not-a-map"]
       changeset = Agent.changeset(%Agent{}, Map.put(@valid_attrs, :skills, skills))
       refute changeset.valid?
-      assert Enum.any?(errors_on(changeset).skills, &String.contains?(&1, "must be an object"))
+      assert errors_on(changeset).skills != []
     end
   end
 end
