@@ -125,6 +125,21 @@ defmodule FountainWeb.UeberauthControllerTest do
 
       assert redirected_to(conn) == ~p"/auth/login"
     end
+
+    test "redirects to login when GitHub returns an empty-string email", %{conn: conn} do
+      auth = github_auth("")
+
+      conn =
+        conn
+        |> Phoenix.ConnTest.init_test_session(%{})
+        |> assign_auth(auth)
+        |> get(~p"/auth/oauth/github/callback")
+
+      assert redirected_to(conn) == ~p"/auth/login"
+
+      assert Phoenix.Flash.get(conn.assigns.flash, :error) =~
+               "GitHub did not return a verified email address."
+    end
   end
 
   describe "request/2 — unknown provider fallback" do

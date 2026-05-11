@@ -186,5 +186,25 @@ defmodule FountainWeb.OnboardingLiveCredentialTest do
 
       assert html =~ "Saved and validated."
     end
+
+    test "save_credential shows timeout error when request times out", %{lv: lv} do
+      stub(Req, :get, fn _url, _opts ->
+        {:error, %Mint.TransportError{reason: :timeout}}
+      end)
+
+      html = render_click(lv, "save_credential", %{"provider" => "anthropic_api_key", "value" => "sk-ant-any-key"})
+
+      assert html =~ "Validation timed out"
+    end
+
+    test "save_credential shows generic error for unexpected network failures", %{lv: lv} do
+      stub(Req, :get, fn _url, _opts ->
+        {:error, %Mint.TransportError{reason: :econnrefused}}
+      end)
+
+      html = render_click(lv, "save_credential", %{"provider" => "anthropic_api_key", "value" => "sk-ant-any-key"})
+
+      assert html =~ "Could not reach provider"
+    end
   end
 end
