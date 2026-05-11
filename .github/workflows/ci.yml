@@ -39,7 +39,7 @@ jobs:
         uses: erlef/setup-beam@v1.24.0
         with:
           elixir-version: "1.19.2"
-          otp-version: "28"
+          otp-version: "28.3"
 
       - name: Restore deps cache
         uses: actions/cache@v4
@@ -69,6 +69,9 @@ jobs:
 
       - name: Run Credo
         run: mix credo
+
+      - name: Audit dependencies
+        run: mix hex.audit
 
       - name: Set up database
         run: mix ecto.create --quiet && mix ecto.migrate --quiet
