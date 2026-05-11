@@ -894,7 +894,7 @@ defmodule Fountain.ConversationsContextTest do
       _sandbox = insert_sandbox(user_id: user.id)
 
       results = Conversations.list_sandboxes_admin()
-      assert length(results) >= 1
+      assert results != []
       result = Enum.find(results, &(&1.user_id == user.id))
       assert result.user.id == user.id
     end
@@ -1155,6 +1155,184 @@ defmodule Fountain.ConversationsContextTest do
 
       result = Conversations.output_bytes_by_stream(conv.id, turn.id)
       assert Map.has_key?(result, "stdout")
+    end
+  end
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # stream_log_events/2
+  # ────────────────────────────────────────────────────────────────────────────
+
+  describe "stream_log_events/2" do
+    setup do
+      user = insert_verified_user()
+      conv = insert_conversation(user_id: user.id)
+      %{user: user, conv: conv}
+    end
+
+    test "streams all events for a conversation when after_id is 0", %{conv: conv} do
+      e1 = insert_log_event(conv, kind: "output", stream: "stdout", data: "a")
+      e2 = insert_log_event(conv, kind: "output", stream: "stderr", data: "b")
+
+      ids =
+        Repo.transaction(fn ->
+          Conversations.stream_log_events(conv.id) |> Enum.map(& &1.id)
+        end)
+
+      assert {:ok, result_ids} = ids
+      assert e1.id in result_ids
+      assert e2.id in result_ids
+    end
+
+    test "returns events ordered by id ascending", %{conv: conv} do
+      e1 = insert_log_event(conv, kind: "output", stream: "stdout", data: "first")
+      e2 = insert_log_event(conv, kind: "output", stream: "stdout", data: "second")
+      e3 = insert_log_event(conv, kind: "output", stream: "stdout", data: "third")
+
+      {:ok, ids} =
+        Repo.transaction(fn ->
+          Conversations.stream_log_events(conv.id) |> Enum.map(& &1.id)
+        end)
+
+      assert ids == [e1.id, e2.id, e3.id]
+    end
+
+    test "filters events with id greater than after_id", %{conv: conv} do
+      e1 = insert_log_event(conv, kind: "output", stream: "stdout", data: "a")
+      e2 = insert_log_event(conv, kind: "output", stream: "stdout", data: "b")
+      e3 = insert_log_event(conv, kind: "output", stream: "stdout", data: "c")
+
+      {:ok, ids} =
+        Repo.transaction(fn ->
+          Conversations.stream_log_events(conv.id, e1.id) |> Enum.map(& &1.id)
+        end)
+
+      refute e1.id in ids
+      assert e2.id in ids
+      assert e3.id in ids
+    end
+
+    test "returns empty stream when no events exist", %{conv: conv} do
+      {:ok, ids} =
+        Repo.transaction(fn ->
+          Conversations.stream_log_events(conv.id) |> Enum.map(& &1.id)
+        end)
+
+      assert ids == []
+    end
+
+    test "does not return events from other conversations", %{conv: conv} do
+      user = insert_verified_user()
+      other_conv = insert_conversation(user_id: user.id)
+      _other = insert_log_event(other_conv, kind: "output", stream: "stdout", data: "other")
+      mine = insert_log_event(conv, kind: "output", stream: "stdout", data: "mine")
+
+      {:ok, ids} =
+        Repo.transaction(fn ->
+          Conversations.stream_log_events(conv.id) |> Enum.map(& &1.id)
+        end)
+
+      assert ids == [mine.id]
+    end
+
+    test "returns empty stream when all events are at or before after_id", %{conv: conv} do
+      e1 = insert_log_event(conv, kind: "output", stream: "stdout", data: "a")
+
+      {:ok, ids} =
+        Repo.transaction(fn ->
+          Conversations.stream_log_events(conv.id, e1.id) |> Enum.map(& &1.id)
+        end)
+
+      assert ids == []
+    end
+  end
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # list_turns_with_images/1
+  # ────────────────────────────────────────────────────────────────────────────
+
+  describe "list_turns_with_images/1" do
+    test "returns empty list when conversation has no turns" do
+      user = insert_verified_user()
+      conv = insert_conversation(user_id: user.id)
+
+      assert Conversations.list_turns_with_images(conv.id) == []
+    end
+
+    test "returns all turns for the conversation" do
+      user = insert_verified_user()
+      conv = insert_conversation(user_id: user.id)
+      t1 = insert_turn(conv)
+      t2 = insert_turn(conv)
+
+      ids = Conversations.list_turns_with_images(conv.id) |> Enum.map(& &1.id)
+      assert t1.id in ids
+      assert t2.id in ids
+    end
+
+    test "orders turns by turn_number ascending" do
+      user = insert_verified_user()
+      conv = insert_conversation(user_id: user.id)
+      t1 = insert_turn(conv)
+      t2 = insert_turn(conv)
+
+      [first, second] = Conversations.list_turns_with_images(conv.id)
+      assert first.turn_number < second.turn_number
+      assert first.id == t1.id
+      assert second.id == t2.id
+    end
+
+    test "does not return turns from other conversations" do
+      user = insert_verified_user()
+      conv1 = insert_conversation(user_id: user.id)
+      conv2 = insert_conversation(user_id: user.id)
+      t1 = insert_turn(conv1)
+      _t2 = insert_turn(conv2)
+
+      results = Conversations.list_turns_with_images(conv1.id)
+      assert length(results) == 1
+      assert hd(results).id == t1.id
+    end
+
+    test "preloads images association on each turn" do
+      user = insert_verified_user()
+      conv = insert_conversation(user_id: user.id)
+      turn = insert_turn(conv)
+
+      images = [%{media_type: "image/png", data: <<1, 2, 3>>}]
+      {:ok, 1} = Conversations.insert_turn_images(turn.id, images)
+
+      [loaded_turn] = Conversations.list_turns_with_images(conv.id)
+      assert length(loaded_turn.images) == 1
+      [img] = loaded_turn.images
+      assert img.media_type == "image/png"
+      assert img.data == <<1, 2, 3>>
+    end
+
+    test "returns turns with empty images list when no images have been inserted" do
+      user = insert_verified_user()
+      conv = insert_conversation(user_id: user.id)
+      _turn = insert_turn(conv)
+
+      [loaded_turn] = Conversations.list_turns_with_images(conv.id)
+      assert loaded_turn.images == []
+    end
+
+    test "orders images by position ascending when multiple images exist" do
+      user = insert_verified_user()
+      conv = insert_conversation(user_id: user.id)
+      turn = insert_turn(conv)
+
+      images = [
+        %{media_type: "image/png", data: <<10>>},
+        %{media_type: "image/jpeg", data: <<20>>},
+        %{media_type: "image/gif", data: <<30>>}
+      ]
+
+      {:ok, 3} = Conversations.insert_turn_images(turn.id, images)
+
+      [loaded_turn] = Conversations.list_turns_with_images(conv.id)
+      positions = Enum.map(loaded_turn.images, & &1.position)
+      assert positions == Enum.sort(positions)
     end
   end
 end

@@ -135,6 +135,35 @@ defmodule Fountain.VaultsTest do
     end
   end
 
+  describe "get_secret/2" do
+    test "returns the secret for the given vault_id and key" do
+      user = insert_verified_user()
+      vault = insert_vault(user_id: user.id)
+      insert_vault_secret(vault, key: "MY_SECRET")
+
+      result = Vaults.get_secret(vault.id, "MY_SECRET")
+      assert result != nil
+      assert result.key == "MY_SECRET"
+      assert result.vault_id == vault.id
+    end
+
+    test "returns nil when the key does not exist in the vault" do
+      user = insert_verified_user()
+      vault = insert_vault(user_id: user.id)
+
+      assert Vaults.get_secret(vault.id, "NONEXISTENT") == nil
+    end
+
+    test "returns nil when the vault_id does not match" do
+      user = insert_verified_user()
+      vault_a = insert_vault(user_id: user.id)
+      vault_b = insert_vault(user_id: user.id)
+      insert_vault_secret(vault_a, key: "ONLY_IN_A")
+
+      assert Vaults.get_secret(vault_b.id, "ONLY_IN_A") == nil
+    end
+  end
+
   describe "get_vault!/2" do
     test "returns vault when id and user_id match" do
       user = insert_verified_user()

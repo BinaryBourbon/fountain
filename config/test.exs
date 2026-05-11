@@ -29,3 +29,7 @@ config :phoenix, sort_verified_routes_query_params: true
 # Swoosh test adapter — use Swoosh.TestAssertions in tests
 config :fountain, Fountain.Mailer, adapter: Swoosh.Adapters.Test
 config :swoosh, :api_client, false
+
+# Point excoveralls at the repo-root coveralls.json regardless of which
+# app directory Mix happens to have as cwd when the settings are loaded.
+config :excoveralls, config_file: Path.expand("../coveralls.json", __DIR__)
