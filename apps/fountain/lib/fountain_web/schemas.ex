@@ -8,6 +8,7 @@ defmodule FountainWeb.Schemas do
   alias OpenApiSpex.Schema
 
   defmodule Sandbox do
+    @moduledoc false
     require OpenApiSpex
 
     OpenApiSpex.schema(%{
@@ -27,6 +28,7 @@ defmodule FountainWeb.Schemas do
   end
 
   defmodule Conversation do
+    @moduledoc false
     require OpenApiSpex
 
     OpenApiSpex.schema(%{
@@ -53,6 +55,7 @@ defmodule FountainWeb.Schemas do
   end
 
   defmodule ConversationResponse do
+    @moduledoc false
     require OpenApiSpex
 
     OpenApiSpex.schema(%{
@@ -64,6 +67,7 @@ defmodule FountainWeb.Schemas do
   end
 
   defmodule ConversationListResponse do
+    @moduledoc false
     require OpenApiSpex
 
     OpenApiSpex.schema(%{
@@ -77,6 +81,7 @@ defmodule FountainWeb.Schemas do
   end
 
   defmodule ImageInput do
+    @moduledoc false
     require OpenApiSpex
 
     OpenApiSpex.schema(%{
@@ -99,6 +104,7 @@ defmodule FountainWeb.Schemas do
   end
 
   defmodule ConversationCreateRequest do
+    @moduledoc false
     require OpenApiSpex
 
     OpenApiSpex.schema(%{
@@ -130,6 +136,7 @@ defmodule FountainWeb.Schemas do
   end
 
   defmodule PromptRequest do
+    @moduledoc false
     require OpenApiSpex
 
     OpenApiSpex.schema(%{
@@ -149,6 +156,7 @@ defmodule FountainWeb.Schemas do
   end
 
   defmodule PromptResponse do
+    @moduledoc false
     require OpenApiSpex
 
     OpenApiSpex.schema(%{
@@ -160,6 +168,7 @@ defmodule FountainWeb.Schemas do
   end
 
   defmodule Turn do
+    @moduledoc false
     require OpenApiSpex
 
     OpenApiSpex.schema(%{
@@ -185,6 +194,7 @@ defmodule FountainWeb.Schemas do
   end
 
   defmodule TurnListResponse do
+    @moduledoc false
     require OpenApiSpex
 
     OpenApiSpex.schema(%{
@@ -196,6 +206,7 @@ defmodule FountainWeb.Schemas do
   end
 
   defmodule Agent do
+    @moduledoc false
     require OpenApiSpex
 
     OpenApiSpex.schema(%{
@@ -243,6 +254,7 @@ defmodule FountainWeb.Schemas do
   end
 
   defmodule AgentResponse do
+    @moduledoc false
     require OpenApiSpex
 
     OpenApiSpex.schema(%{
@@ -254,6 +266,7 @@ defmodule FountainWeb.Schemas do
   end
 
   defmodule AgentListResponse do
+    @moduledoc false
     require OpenApiSpex
 
     OpenApiSpex.schema(%{
@@ -265,6 +278,7 @@ defmodule FountainWeb.Schemas do
   end
 
   defmodule AgentRequest do
+    @moduledoc false
     require OpenApiSpex
 
     OpenApiSpex.schema(%{
@@ -349,6 +363,7 @@ defmodule FountainWeb.Schemas do
   end
 
   defmodule Repository do
+    @moduledoc false
     require OpenApiSpex
 
     OpenApiSpex.schema(%{
@@ -363,6 +378,7 @@ defmodule FountainWeb.Schemas do
   end
 
   defmodule Environment do
+    @moduledoc false
     require OpenApiSpex
 
     OpenApiSpex.schema(%{
@@ -386,6 +402,7 @@ defmodule FountainWeb.Schemas do
   end
 
   defmodule EnvironmentResponse do
+    @moduledoc false
     require OpenApiSpex
 
     OpenApiSpex.schema(%{
@@ -397,6 +414,7 @@ defmodule FountainWeb.Schemas do
   end
 
   defmodule EnvironmentListResponse do
+    @moduledoc false
     require OpenApiSpex
 
     OpenApiSpex.schema(%{
@@ -408,6 +426,7 @@ defmodule FountainWeb.Schemas do
   end
 
   defmodule EnvironmentRequest do
+    @moduledoc false
     require OpenApiSpex
 
     OpenApiSpex.schema(%{
@@ -450,6 +469,7 @@ defmodule FountainWeb.Schemas do
   end
 
   defmodule Secret do
+    @moduledoc false
     require OpenApiSpex
 
     OpenApiSpex.schema(%{
@@ -468,6 +488,7 @@ defmodule FountainWeb.Schemas do
   end
 
   defmodule SecretResponse do
+    @moduledoc false
     require OpenApiSpex
 
     OpenApiSpex.schema(%{
@@ -479,6 +500,7 @@ defmodule FountainWeb.Schemas do
   end
 
   defmodule SecretListResponse do
+    @moduledoc false
     require OpenApiSpex
 
     OpenApiSpex.schema(%{
@@ -490,6 +512,7 @@ defmodule FountainWeb.Schemas do
   end
 
   defmodule SecretRequest do
+    @moduledoc false
     require OpenApiSpex
 
     OpenApiSpex.schema(%{
@@ -504,6 +527,7 @@ defmodule FountainWeb.Schemas do
   end
 
   defmodule Vault do
+    @moduledoc false
     require OpenApiSpex
 
     OpenApiSpex.schema(%{
@@ -524,6 +548,7 @@ defmodule FountainWeb.Schemas do
   end
 
   defmodule VaultResponse do
+    @moduledoc false
     require OpenApiSpex
 
     OpenApiSpex.schema(%{
@@ -535,6 +560,7 @@ defmodule FountainWeb.Schemas do
   end
 
   defmodule VaultListResponse do
+    @moduledoc false
     require OpenApiSpex
 
     OpenApiSpex.schema(%{
@@ -546,6 +572,7 @@ defmodule FountainWeb.Schemas do
   end
 
   defmodule VaultRequest do
+    @moduledoc false
     require OpenApiSpex
 
     OpenApiSpex.schema(%{
@@ -577,6 +604,7 @@ defmodule FountainWeb.Schemas do
   end
 
   defmodule VaultSecret do
+    @moduledoc false
     require OpenApiSpex
 
     OpenApiSpex.schema(%{
@@ -596,6 +624,7 @@ defmodule FountainWeb.Schemas do
   end
 
   defmodule VaultSecretResponse do
+    @moduledoc false
     require OpenApiSpex
 
     OpenApiSpex.schema(%{
@@ -607,6 +636,7 @@ defmodule FountainWeb.Schemas do
   end
 
   defmodule VaultSecretListResponse do
+    @moduledoc false
     require OpenApiSpex
 
     OpenApiSpex.schema(%{
@@ -618,6 +648,7 @@ defmodule FountainWeb.Schemas do
   end
 
   defmodule VaultSecretRequest do
+    @moduledoc false
     require OpenApiSpex
 
     OpenApiSpex.schema(%{
