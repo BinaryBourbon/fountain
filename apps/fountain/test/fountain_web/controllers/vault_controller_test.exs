@@ -82,6 +82,15 @@ defmodule FountainWeb.VaultControllerTest do
       conn = post_json(conn, "/api/vaults", payload)
       assert json_response(conn, 401)
     end
+
+    test "returns 422 when name is empty", %{conn: conn, raw_key: raw_key} do
+      conn =
+        conn
+        |> authed_with_key(raw_key)
+        |> post_json("/api/vaults", %{name: ""})
+
+      assert json_response(conn, 422)
+    end
   end
 
   describe "PUT /api/vaults/:id" do
@@ -114,6 +123,17 @@ defmodule FountainWeb.VaultControllerTest do
       vault = insert_vault(user_id: user.id)
       conn = put_json(conn, "/api/vaults/#{vault.id}", %{name: "updated"})
       assert json_response(conn, 401)
+    end
+
+    test "returns 422 when name is empty", %{conn: conn, user: user, raw_key: raw_key} do
+      vault = insert_vault(user_id: user.id)
+
+      conn =
+        conn
+        |> authed_with_key(raw_key)
+        |> put_json("/api/vaults/#{vault.id}", %{name: ""})
+
+      assert json_response(conn, 422)
     end
   end
 

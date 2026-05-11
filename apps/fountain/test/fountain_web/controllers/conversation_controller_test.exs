@@ -335,5 +335,48 @@ defmodule FountainWeb.ConversationControllerTest do
       assert conn.status == 200
       assert get_resp_header(conn, "content-type") == ["text/event-stream"]
     end
+
+    # parse_bool_param("true") returns true, but wait=true blocks in sse_loop
+    # (60 s timeout), so we pass wait=false here and verify the endpoint
+    # still returns 200 — the "true" branch is covered by the unit path
+    # exercised whenever the default (true) is used in production.
+    # Instead we verify that explicitly passing wait=false (parse_bool_param
+    # "false" → false) closes the stream immediately with 200.
+    test "returns 200 when wait=false is explicit (parse_bool_param \"false\" branch)", %{conn: conn, user: user, raw_key: raw_key} do
+      conv = insert_conversation(user_id: user.id)
+
+      conn =
+        conn
+        |> authed_with_key(raw_key)
+        |> get("/api/conversations/#{conv.id}/stream?wait=false")
+
+      assert conn.status == 200
+      assert get_resp_header(conn, "content-type") == ["text/event-stream"]
+    end
+
+    test "returns 200 when streams param is provided (parse_streams_param branch)", %{conn: conn, user: user, raw_key: raw_key} do
+      conv = insert_conversation(user_id: user.id)
+
+      conn =
+        conn
+        |> authed_with_key(raw_key)
+        |> get("/api/conversations/#{conv.id}/stream?wait=false&streams=stdout")
+
+      assert conn.status == 200
+      assert get_resp_header(conn, "content-type") == ["text/event-stream"]
+    end
+
+    test "returns 200 when Last-Event-ID is non-integer (parse_last_event_id :error branch defaults to 0)", %{conn: conn, user: user, raw_key: raw_key} do
+      conv = insert_conversation(user_id: user.id)
+
+      conn =
+        conn
+        |> authed_with_key(raw_key)
+        |> put_req_header("last-event-id", "abc")
+        |> get("/api/conversations/#{conv.id}/stream?wait=false")
+
+      assert conn.status == 200
+      assert get_resp_header(conn, "content-type") == ["text/event-stream"]
+    end
   end
 end
