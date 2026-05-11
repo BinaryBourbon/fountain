@@ -632,6 +632,7 @@ defmodule FountainWeb.Schemas do
   end
 
   defmodule HealthResponse do
+    @moduledoc false
     require OpenApiSpex
 
     OpenApiSpex.schema(%{
@@ -643,6 +644,7 @@ defmodule FountainWeb.Schemas do
   end
 
   defmodule Error do
+    @moduledoc false
     require OpenApiSpex
 
     OpenApiSpex.schema(%{
@@ -654,6 +656,7 @@ defmodule FountainWeb.Schemas do
   end
 
   defmodule ChangesetError do
+    @moduledoc false
     require OpenApiSpex
 
     OpenApiSpex.schema(%{

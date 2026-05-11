@@ -1,4 +1,5 @@
 defmodule FountainWeb.ConversationJSON do
+  @moduledoc false
   alias Fountain.Conversations.{Conversation, Sandbox, Turn}
 
   def index(%{conversations: convs}), do: %{data: Enum.map(convs, &data/1)}

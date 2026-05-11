@@ -1,4 +1,5 @@
 defmodule FountainWeb.ConversationController do
+  @moduledoc false
   use FountainWeb, :controller
   use OpenApiSpex.ControllerSpecs
 
