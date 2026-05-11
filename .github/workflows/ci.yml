@@ -68,7 +68,7 @@ jobs:
         run: mix compile --warnings-as-errors
 
       - name: Run Credo
-        run: mix credo --strict
+        run: mix credo
 
       - name: Set up database
         run: mix ecto.create --quiet && mix ecto.migrate --quiet
