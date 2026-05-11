@@ -1,4 +1,5 @@
 defmodule FountainWeb.OnboardingLive.Wizard do
+  @moduledoc false
   use FountainWeb, :live_view
 
   alias Fountain.{Accounts, Agents, Crypto, Environments, InferenceCredentials}
@@ -55,7 +56,7 @@ defmodule FountainWeb.OnboardingLive.Wizard do
     |> assign(:inference_messages, %{})
   end
 
-  ## ── Inference (step_1) ──────────────────────────────────────────────────
+  ## ── Inference (step_1) ───────────────────────────────────────────
 
   @impl true
   def handle_event("save_credential", %{"provider" => provider_str, "value" => value}, socket) do
@@ -115,7 +116,7 @@ defmodule FountainWeb.OnboardingLive.Wizard do
     end
   end
 
-  ## ── Environment (step_2) ────────────────────────────────────────────────
+  ## ── Environment (step_2) ────────────────────────────────────────────
 
   def handle_event("validate_env", %{"env" => params}, socket) do
     {:noreply, assign(socket, :env_form, params)}
@@ -132,7 +133,7 @@ defmodule FountainWeb.OnboardingLive.Wizard do
 
   def handle_event("skip_env", _params, socket), do: advance(socket, "step_3")
 
-  ## ── Agent (step_3) ──────────────────────────────────────────────────────
+  ## ── Agent (step_3) ────────────────────────────────────────────
 
   def handle_event("validate_agent", %{"agent" => params}, socket) do
     {:noreply, assign(socket, :agent_form, params)}
@@ -157,7 +158,7 @@ defmodule FountainWeb.OnboardingLive.Wizard do
 
   def handle_event("skip_agent", _params, socket), do: advance(socket, "step_4")
 
-  ## ── Start (step_4) ──────────────────────────────────────────────────────
+  ## ── Start (step_4) ────────────────────────────────────────────
 
   def handle_event("start_conversation", _params, socket) do
     {:ok, user} = Accounts.complete_onboarding(socket.assigns.user)
@@ -170,7 +171,7 @@ defmodule FountainWeb.OnboardingLive.Wizard do
     {:noreply, push_navigate(socket, to: ~p"/dashboard")}
   end
 
-  ## ── Helpers ─────────────────────────────────────────────────────────────
+  ## ── Helpers ───────────────────────────────────────────────
 
   defp advance(socket, next_step) do
     {:ok, user} = Accounts.advance_onboarding(socket.assigns.user, next_step)
@@ -195,7 +196,7 @@ defmodule FountainWeb.OnboardingLive.Wizard do
     |> Map.new(fn {k, [first | _]} -> {to_string(k), first} end)
   end
 
-  ## ── Render ──────────────────────────────────────────────────────────────
+  ## ── Render ───────────────────────────────────────────────
 
   @impl true
   def render(assigns) do
