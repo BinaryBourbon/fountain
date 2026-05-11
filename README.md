@@ -4,6 +4,29 @@ A multi-tenant API and UI for managing agents, repos, secrets, and conversations
 
 This repo is the bus for the [`captain-picard`](https://github.com/jhgaylor/aod-specs) Agent on Demand orchestrator. See `OPERATING_MODEL.md` for how the team operates and `ROADMAP.md` for what's open.
 
+## Get started with the CLI
+
+Install the `fountain` binary from the [Homebrew tap](https://github.com/BinaryBourbon/homebrew-tap):
+
+```sh
+brew install BinaryBourbon/tap/fountain
+```
+
+Log in against your Fountain instance — prompts for email + password, writes `~/.fountain/credentials`:
+
+```sh
+fountain auth login
+```
+
+Apply a manifest. [`jhgaylor/agent-specs`](https://github.com/jhgaylor/agent-specs) is a public example tree of agents, environments, and vaults:
+
+```sh
+git clone https://github.com/jhgaylor/agent-specs
+fountain apply -f agent-specs
+```
+
+`fountain apply` walks the directory and applies every `*.yml` / `*.yaml` doc that declares both `apiVersion` and `kind`. See [`cli/README.md`](cli/README.md) for the rest of the command surface.
+
 ## Bootstrap a workstation
 
 See [`SETUP.md`](SETUP.md) for the full local bootstrap (mise + Postgres + deps). The toolchain version is pinned in `.tool-versions` and mirrored in `render.yaml`, so a fresh laptop or ephemeral VM gets the same Erlang/Elixir as production.
