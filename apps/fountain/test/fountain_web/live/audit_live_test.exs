@@ -103,4 +103,39 @@ defmodule FountainWeb.AuditLiveTest do
       assert Enum.all?(events, &(&1.user_id == user.id))
     end
   end
+
+  describe "AuditLive.Index — :tick refresh" do
+    test ":tick message reloads events without crashing", %{conn: conn} do
+      user = insert_verified_user()
+      conn = login_user(conn, user)
+      {:ok, lv, _html} = live(conn, ~p"/audit")
+
+      send(lv.pid, :tick)
+      html = render(lv)
+      assert html =~ "Audit log"
+    end
+
+    test ":tick picks up new events since mount", %{conn: conn} do
+      user = insert_verified_user()
+      conn = login_user(conn, user)
+      {:ok, lv, html_before} = live(conn, ~p"/audit")
+
+      # Create an event after mount
+      Audit.record!(%{
+        action: "POST /api/agents",
+        resource_type: "agent",
+        resource_id: Ecto.UUID.generate(),
+        actor: "api",
+        request_ip: "1.2.3.4",
+        metadata: %{"status" => 201},
+        user_id: user.id
+      })
+
+      send(lv.pid, :tick)
+      html_after = render(lv)
+
+      refute html_before =~ "1.2.3.4"
+      assert html_after =~ "1.2.3.4"
+    end
+  end
 end
