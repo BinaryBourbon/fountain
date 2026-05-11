@@ -224,6 +224,18 @@ defmodule FountainWeb.ConversationControllerTest do
 
       assert json_response(conn, 404)
     end
+
+    test "returns 404 when conversation belongs to a different user", %{conn: conn, raw_key: raw_key} do
+      other_user = insert_verified_user()
+      other_conv = insert_conversation(user_id: other_user.id)
+
+      conn =
+        conn
+        |> authed_with_key(raw_key)
+        |> post_json("/api/conversations/#{other_conv.id}/prompts", %{"prompt" => "hello"})
+
+      assert json_response(conn, 404)
+    end
   end
 
   describe "POST /api/conversations/:conversation_id/terminate" do

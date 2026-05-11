@@ -89,6 +89,30 @@ defmodule FountainWeb.LogViewerLiveTest do
       assert html =~ conv.id
     end
 
+    test "stage event kind renders [stage:X:Y] format", %{conn: conn} do
+      user = insert_verified_user()
+      conv = insert_conversation(user_id: user.id)
+      insert_log_event(conv, kind: "stage", stream: "", stage: "provision", state: "started", data: "")
+
+      conn = login_user(conn, user)
+      {:ok, _lv, html} = live(conn, ~p"/conversations/#{conv.id}/logs")
+
+      assert html =~ "[stage:provision:started]"
+      refute html =~ "[stdout]"
+    end
+
+    test "stderr event renders with red line class", %{conn: conn} do
+      user = insert_verified_user()
+      conv = insert_conversation(user_id: user.id)
+      insert_log_event(conv, kind: "output", stream: "stderr", data: "error output")
+
+      conn = login_user(conn, user)
+      {:ok, _lv, html} = live(conn, ~p"/conversations/#{conv.id}/logs")
+
+      assert html =~ "error output"
+      assert html =~ "text-red-400"
+    end
+
     test "handle_info with unknown message is ignored", %{conn: conn} do
       user = insert_verified_user()
       conv = insert_conversation(user_id: user.id)
