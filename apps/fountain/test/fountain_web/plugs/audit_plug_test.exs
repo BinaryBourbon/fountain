@@ -32,30 +32,63 @@ defmodule FountainWeb.Plugs.AuditTest do
     end
   end
 
-  describe "call/2 — write methods register before_send hook" do
-    test "POST request registers a before_send callback", %{conn: conn} do
-      conn = %{conn | method: "POST", request_path: "/api/conversations"}
-      result = Audit.call(conn, [])
-      # before_send hooks are accumulated; verify one was added
-      assert result.before_send != conn.before_send
+  describe "call/2 — write methods create audit events on send" do
+    # Verify that the audit plug records an event by sending the conn
+    # and checking the audit log — avoids relying on private before_send internals.
+
+    test "POST request creates an audit event", %{conn: conn} do
+      user = insert_verified_user()
+
+      conn
+      |> Map.merge(%{method: "POST", request_path: "/api/conversations", path_info: ["api", "conversations"], params: %{}})
+      |> Map.put(:remote_ip, {127, 0, 0, 1})
+      |> Plug.Conn.assign(:current_user, user)
+      |> Audit.call([])
+      |> Plug.Conn.send_resp(201, "ok")
+
+      assert Fountain.Audit.list_recent_for_user(user.id) != []
     end
 
-    test "PUT request registers a before_send callback", %{conn: conn} do
-      conn = %{conn | method: "PUT", request_path: "/api/conversations/123"}
-      result = Audit.call(conn, [])
-      assert result.before_send != conn.before_send
+    test "PUT request creates an audit event", %{conn: conn} do
+      user = insert_verified_user()
+      id = Ecto.UUID.generate()
+
+      conn
+      |> Map.merge(%{method: "PUT", request_path: "/api/agents/#{id}", path_info: ["api", "agents", id], params: %{}})
+      |> Map.put(:remote_ip, {127, 0, 0, 1})
+      |> Plug.Conn.assign(:current_user, user)
+      |> Audit.call([])
+      |> Plug.Conn.send_resp(200, "ok")
+
+      assert Fountain.Audit.list_recent_for_user(user.id) != []
     end
 
-    test "PATCH request registers a before_send callback", %{conn: conn} do
-      conn = %{conn | method: "PATCH", request_path: "/api/conversations/123"}
-      result = Audit.call(conn, [])
-      assert result.before_send != conn.before_send
+    test "PATCH request creates an audit event", %{conn: conn} do
+      user = insert_verified_user()
+      id = Ecto.UUID.generate()
+
+      conn
+      |> Map.merge(%{method: "PATCH", request_path: "/api/agents/#{id}", path_info: ["api", "agents", id], params: %{}})
+      |> Map.put(:remote_ip, {127, 0, 0, 1})
+      |> Plug.Conn.assign(:current_user, user)
+      |> Audit.call([])
+      |> Plug.Conn.send_resp(200, "ok")
+
+      assert Fountain.Audit.list_recent_for_user(user.id) != []
     end
 
-    test "DELETE request registers a before_send callback", %{conn: conn} do
-      conn = %{conn | method: "DELETE", request_path: "/api/conversations/123"}
-      result = Audit.call(conn, [])
-      assert result.before_send != conn.before_send
+    test "DELETE request creates an audit event", %{conn: conn} do
+      user = insert_verified_user()
+      id = Ecto.UUID.generate()
+
+      conn
+      |> Map.merge(%{method: "DELETE", request_path: "/api/agents/#{id}", path_info: ["api", "agents", id], params: %{}})
+      |> Map.put(:remote_ip, {127, 0, 0, 1})
+      |> Plug.Conn.assign(:current_user, user)
+      |> Audit.call([])
+      |> Plug.Conn.send_resp(204, "")
+
+      assert Fountain.Audit.list_recent_for_user(user.id) != []
     end
   end
 

@@ -95,14 +95,17 @@ defmodule Fountain.CryptoTest do
   end
 
   describe "load_tenant_key/1" do
-    test "returns {:error, :not_found} when no user_data_key row exists" do
-      user = insert_verified_user()
-      # A fresh user has no UserDataKey row
-      assert {:error, :not_found} = Crypto.load_tenant_key(user.id)
+    test "returns {:error, :not_found} when no user_data_key row exists for the id" do
+      # A random UUID has no UserDataKey row — no DB setup needed.
+      assert {:error, :not_found} = Crypto.load_tenant_key(Ecto.UUID.generate())
     end
 
     test "returns {:error, :unwrap_failed} when wrapped_key is corrupted" do
       user = insert_verified_user()
+
+      # Replace the valid UserDataKey created by register_user with garbage.
+      import Ecto.Query, only: [from: 2]
+      Fountain.Repo.delete_all(from k in Fountain.Accounts.UserDataKey, where: k.user_id == ^user.id)
 
       %Fountain.Accounts.UserDataKey{}
       |> Fountain.Accounts.UserDataKey.changeset(%{
