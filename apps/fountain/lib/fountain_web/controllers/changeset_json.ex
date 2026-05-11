@@ -1,4 +1,5 @@
 defmodule FountainWeb.ChangesetJSON do
+  @moduledoc false
   def error(%{changeset: changeset}) do
     %{errors: translate(changeset)}
   end

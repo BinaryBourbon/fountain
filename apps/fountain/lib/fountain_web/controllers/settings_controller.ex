@@ -1,4 +1,5 @@
 defmodule FountainWeb.SettingsController do
+  @moduledoc false
   use FountainWeb, :controller
 
   alias Fountain.Accounts.User

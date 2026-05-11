@@ -1,4 +1,5 @@
 defmodule FountainWeb.EnvironmentJSON do
+  @moduledoc false
   alias Fountain.Environments.Environment
 
   def index(%{environments: envs}), do: %{data: Enum.map(envs, &data/1)}

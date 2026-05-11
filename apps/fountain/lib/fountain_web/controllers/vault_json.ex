@@ -1,4 +1,5 @@
 defmodule FountainWeb.VaultJSON do
+  @moduledoc false
   alias Fountain.Vaults.Vault
 
   def index(%{vaults: vaults}), do: %{data: Enum.map(vaults, &data/1)}

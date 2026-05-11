@@ -1,7 +1,8 @@
 defmodule FountainWeb.Router do
+  @moduledoc false
   use FountainWeb, :router
 
-  ## ─── Pipelines ─────────────────────────────────────────────────────────────────
+  ## ─── Pipelines ──────────────────────────────────────────────────────────────────────────────────
 
   # Public JSON — spec rendering, health, public auth endpoints
   pipeline :api_public do
@@ -38,7 +39,7 @@ defmodule FountainWeb.Router do
     plug FountainWeb.Plugs.TenantSessionAuth
   end
 
-  ## ─── Public routes ───────────────────────────────────────────────────────────
+  ## ─── Public routes ────────────────────────────────────────────────────────────────────
 
   scope "/", FountainWeb do
     pipe_through :api_public
@@ -61,7 +62,7 @@ defmodule FountainWeb.Router do
     get "/docs", OpenApiSpex.Plug.SwaggerUI, path: "/api/openapi.json"
   end
 
-  ## ─── Public browser routes ──────────────────────────────────────────────────
+  ## ─── Public browser routes ────────────────────────────────────────────────────────────────────────
 
   # Marketing landing page — public, no auth required
   scope "/", FountainWeb do
@@ -106,7 +107,7 @@ defmodule FountainWeb.Router do
     get "/confirm/:token", EmailVerificationController, :confirm
   end
 
-  ## ─── Public JSON auth endpoints ──────────────────────────────────────────────
+  ## ─── Public JSON auth endpoints ───────────────────────────────────────────────────────────────────────
 
   scope "/api/auth", FountainWeb do
     pipe_through :api_public
@@ -116,7 +117,7 @@ defmodule FountainWeb.Router do
     post "/forgot", PasswordResetController, :api_forgot
   end
 
-  ## ─── Stripe webhook (phase-3-billing) ─────────────────────────────────────────────
+  ## ─── Stripe webhook (phase-3-billing) ───────────────────────────────────────────────────────────────────
   # No TenantAPIAuth: authenticated via Stripe-Signature header verification.
   # Must be reachable by Stripe's servers without a bearer token.
 
@@ -125,7 +126,7 @@ defmodule FountainWeb.Router do
     post "/webhook", StripeWebhookController, :create
   end
 
-  ## ─── Authenticated JSON resource endpoints ──────────────────────────────────────
+  ## ─── Authenticated JSON resource endpoints ──────────────────────────────────────────────────────────────
 
   scope "/api/auth", FountainWeb do
     pipe_through :api
@@ -158,15 +159,15 @@ defmodule FountainWeb.Router do
     end
   end
 
-  ## ─── Authenticated browser / LiveView routes ───────────────────────────────────────
+  ## ─── Authenticated browser / LiveView routes ──────────────────────────────────────────────────────────────────
 
   scope "/", FountainWeb do
     pipe_through [:browser, :browser_authenticated]
 
-    # ── Theme preference — CSRF-protected, session-authenticated ────────────────
+    # ── Theme preference — CSRF-protected, session-authenticated ─────────────────────────────────────────
     patch "/api/settings/theme", SettingsController, :update_theme
 
-    # ── Phase-3-billing: conversation routes require an active subscription ─────────
+    # ── Phase-3-billing: conversation routes require an active subscription ─────────────────
     # :require_active_subscription runs after :require_authenticated_user and
     # redirects to /account/billing on SubscriptionRequiredError.
     live_session :active_subscription,
@@ -179,7 +180,7 @@ defmodule FountainWeb.Router do
       live "/conversations/:id", ConversationsLive.Show, :show
     end
 
-    # ── Read-only and settings routes — no subscription gate ────────────────
+    # ── Read-only and settings routes — no subscription gate ──────────────────────────────────
     # Users can reach these routes even when past_due / canceled so they can
     # view past logs, manage resources, complete onboarding, and update payment
     # details. See decisions/0006-hard-stripe-billing-gate-at-launch.md.
@@ -205,10 +206,10 @@ defmodule FountainWeb.Router do
       live "/help", HelpLive.Show, :index
       live "/help/:topic", HelpLive.Show, :show
 
-      # ── Phase-3-billing: account/billing ───────────────────────────────────
+      # ── Phase-3-billing: account/billing ─────────────────────────────────────────────────────
       live "/account/billing", Live.BillingLive, :index
 
-      # ── BYO inference credentials (ADR 0008) ───────────────────────────────
+      # ── BYO inference credentials (ADR 0008) ───────────────────────────────────────────────
       live "/account/inference-credentials", InferenceCredentialsLive.Index, :index
     end
 
@@ -221,7 +222,7 @@ defmodule FountainWeb.Router do
     end
   end
 
-  ## ─── Dev dashboard ─────────────────────────────────────────────────────────────
+  ## ─── Dev dashboard ──────────────────────────────────────────────────────────────────────────────────
 
   if Application.compile_env(:fountain, :dev_routes) do
     import Phoenix.LiveDashboard.Router

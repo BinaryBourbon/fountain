@@ -1,4 +1,5 @@
 defmodule FountainWeb.RegistrationHTML do
+  @moduledoc false
   use FountainWeb, :html
 
   def new(assigns) do

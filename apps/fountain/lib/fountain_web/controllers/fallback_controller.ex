@@ -1,4 +1,5 @@
 defmodule FountainWeb.FallbackController do
+  @moduledoc false
   use FountainWeb, :controller
 
   def call(conn, {:error, %Ecto.Changeset{} = changeset}) do

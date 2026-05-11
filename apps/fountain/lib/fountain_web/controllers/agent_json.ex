@@ -1,4 +1,5 @@
 defmodule FountainWeb.AgentJSON do
+  @moduledoc false
   alias Fountain.Agents.Agent
 
   def index(%{agents: agents}), do: %{data: Enum.map(agents, &data/1)}

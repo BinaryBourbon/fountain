@@ -1,4 +1,5 @@
 defmodule FountainWeb.TurnImageController do
+  @moduledoc false
   use FountainWeb, :controller
 
   alias Fountain.Conversations

@@ -1,4 +1,5 @@
 defmodule FountainWeb.AgentController do
+  @moduledoc false
   use FountainWeb, :controller
   use OpenApiSpex.ControllerSpecs
 
