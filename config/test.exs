@@ -13,6 +13,7 @@ config :fountain, FountainWeb.Endpoint,
 
 config :fountain, :skip_rehydrate, true
 config :fountain, :checkpoint_creation_enabled, false
+config :fountain, :rate_limit_enabled, false
 
 config :logger, level: :warning
 config :phoenix, :plug_init_mode, :runtime

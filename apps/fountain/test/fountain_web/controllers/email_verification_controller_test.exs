@@ -11,7 +11,7 @@ defmodule FountainWeb.EmailVerificationControllerTest do
       token = Phoenix.Token.sign(FountainWeb.Endpoint, "email_verification", user.id)
       conn = get(conn, ~p"/users/confirm/#{token}")
 
-      assert redirected_to(conn) == ~p"/onboarding/step/1"
+      assert redirected_to(conn) == ~p"/onboarding/step_1"
       assert get_session(conn, :user_id) == user.id
 
       # User should be verified in DB

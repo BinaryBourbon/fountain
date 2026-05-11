@@ -47,8 +47,8 @@ defmodule FountainWeb.ApiKeyControllerTest do
   describe "DELETE /api/auth/api-keys/:id" do
     test "revokes the key and returns 204", %{conn: conn} do
       user = insert_verified_user()
-      {auth_record, auth_raw} = insert_api_key(user, "auth-key")
-      {target_record, _} = insert_api_key(user, "target-key")
+      {_auth_record, auth_raw} = insert_api_key(user, "auth-key")
+      {target_record, target_raw} = insert_api_key(user, "target-key")
 
       conn =
         conn
@@ -57,8 +57,8 @@ defmodule FountainWeb.ApiKeyControllerTest do
 
       assert conn.status == 204
 
-      # Key is now revoked
-      assert {:error, :not_found} = Accounts.revoke_api_key(user.id, target_record.id)
+      # Key is now revoked — authentication with the revoked key fails
+      assert {:error, :invalid} = Accounts.get_user_by_api_key(target_raw)
     end
 
     test "returns 404 when key does not belong to user", %{conn: conn} do

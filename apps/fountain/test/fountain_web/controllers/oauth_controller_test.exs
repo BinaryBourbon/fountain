@@ -50,7 +50,7 @@ defmodule FountainWeb.UeberauthControllerTest do
         |> assign_auth(auth)
         |> get(~p"/auth/oauth/github/callback")
 
-      assert redirected_to(conn) == ~p"/onboarding/step/1"
+      assert redirected_to(conn) == ~p"/onboarding/step_1"
       user_id = get_session(conn, :user_id)
       assert user_id
 
@@ -72,7 +72,7 @@ defmodule FountainWeb.UeberauthControllerTest do
   end
 
   describe "callback/2 — success (existing user)" do
-    test "logs in existing user and redirects to dashboard", %{conn: conn} do
+    test "logs in existing user and redirects to conversations", %{conn: conn} do
       user = insert_verified_user()
       auth = github_auth(user.email, "gh_existing_#{System.unique_integer()}")
 
@@ -82,7 +82,7 @@ defmodule FountainWeb.UeberauthControllerTest do
         |> assign_auth(auth)
         |> get(~p"/auth/oauth/github/callback")
 
-      assert redirected_to(conn) == ~p"/"
+      assert redirected_to(conn) == ~p"/conversations"
       assert get_session(conn, :user_id) == user.id
     end
   end

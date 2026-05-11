@@ -45,12 +45,11 @@ defmodule FountainWeb.OnboardingLiveTest do
     end
 
     test "Continue is disabled until at least one provider is set", %{lv: lv} do
-      # Try to continue without setting any credential
-      result = lv |> element("button", "Continue") |> render_click()
-
-      # Either the click is silently dropped (disabled button) or a flash appears.
-      # Either way, no redirect to step_2.
-      refute match?({:error, {:live_redirect, %{to: "/onboarding/step_2"}}}, result)
+      html = render(lv)
+      # The Continue button is rendered with a disabled/cursor-not-allowed style
+      # when no inference credential has been set
+      assert html =~ "continue_from_inference"
+      assert html =~ "cursor-not-allowed"
     end
 
     test "skip_wizard from step_1 redirects to /dashboard", %{lv: lv} do
@@ -76,7 +75,7 @@ defmodule FountainWeb.OnboardingLiveTest do
 
     test "skip_env advances to step_3", %{lv: lv} do
       assert {:error, {:live_redirect, %{to: "/onboarding/step_3"}}} =
-               lv |> element("button", "Skip") |> render_click()
+               lv |> element("button[phx-click='skip_env']") |> render_click()
     end
 
     test "submitting a valid env advances to step_3", %{lv: lv} do

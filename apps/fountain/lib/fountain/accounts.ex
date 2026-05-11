@@ -132,14 +132,14 @@ defmodule Fountain.Accounts do
 
   @doc """
   Advance the onboarding wizard to the given state.
-  Valid states: "step_1", "step_2", "step_3", "completed"
+  Valid states: "step_1", "step_2", "step_3", "step_4", "completed"
 
   When state is "completed", also sets `onboarding_completed_at`.
   """
   @spec advance_onboarding(User.t(), String.t()) ::
           {:ok, User.t()} | {:error, Ecto.Changeset.t()}
   def advance_onboarding(%User{} = user, state)
-      when state in ~w(step_1 step_2 step_3 completed) do
+      when state in ~w(step_1 step_2 step_3 step_4 completed) do
     now = DateTime.utc_now() |> DateTime.truncate(:second)
 
     changes =

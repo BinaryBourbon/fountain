@@ -58,22 +58,26 @@ defmodule FountainWeb.Plugs.RateLimit do
   end
 
   def call(conn, opts) do
-    ensure_table()
-    key = key_for(conn, opts.bucket)
+    if Application.get_env(:fountain, :rate_limit_enabled, true) do
+      ensure_table()
+      key = key_for(conn, opts.bucket)
 
-    case bump(key, opts) do
-      :ok ->
-        conn
+      case bump(key, opts) do
+        :ok ->
+          conn
 
-      {:limited, retry_after_secs} ->
-        conn
-        |> put_resp_header("retry-after", to_string(retry_after_secs))
-        |> put_resp_content_type("application/json")
-        |> send_resp(
-          429,
-          Jason.encode!(%{error: "rate_limited", retry_after_seconds: retry_after_secs})
-        )
-        |> halt()
+        {:limited, retry_after_secs} ->
+          conn
+          |> put_resp_header("retry-after", to_string(retry_after_secs))
+          |> put_resp_content_type("application/json")
+          |> send_resp(
+            429,
+            Jason.encode!(%{error: "rate_limited", retry_after_seconds: retry_after_secs})
+          )
+          |> halt()
+      end
+    else
+      conn
     end
   end
 
