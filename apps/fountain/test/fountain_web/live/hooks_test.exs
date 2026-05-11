@@ -32,6 +32,19 @@ defmodule FountainWeb.Live.HooksTest do
     updated
   end
 
+  # ── :require_authenticated_user ─────────────────────────────────────────────
+
+  describe ":require_authenticated_user hook" do
+    test "redirects unverified user to /auth/login with flash error", %{conn: conn} do
+      user = insert_user()
+      # user has no email_verified_at — do NOT call verify_email
+      conn = login_user(conn, user)
+
+      assert {:error, {:redirect, %{to: path}}} = live(conn, ~p"/dashboard")
+      assert path =~ "/auth/login"
+    end
+  end
+
   # ── :require_active_subscription ────────────────────────────────────────────
 
   describe ":require_active_subscription hook" do
@@ -77,6 +90,19 @@ defmodule FountainWeb.Live.HooksTest do
       # The cookie still carries the old session_version=0, but DB is now 1
       assert {:error, {:redirect, %{to: path}}} = live(conn, ~p"/dashboard")
       assert path =~ "/auth/login"
+    end
+  end
+
+  # ── :require_admin ──────────────────────────────────────────────────────────
+
+  describe ":require_admin hook" do
+    test "redirects non-admin user to /dashboard", %{conn: conn} do
+      user = insert_verified_user()
+      # insert_verified_user creates a regular user with role "user"
+      conn = login_user(conn, user)
+
+      assert {:error, {:live_redirect, %{to: path}}} = live(conn, ~p"/admin")
+      assert path == "/dashboard"
     end
   end
 
