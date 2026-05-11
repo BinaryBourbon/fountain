@@ -233,5 +233,6 @@ defmodule FountainWeb.AdminLiveTest do
       # format_ts renders "YYYY-MM-DD HH:MM" — the year is always present
       assert html =~ to_string(Date.utc_today().year)
     end
+
   end
 end
