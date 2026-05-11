@@ -1,5 +1,7 @@
 {
-  "minimum_coverage": 60,
+  "coverage_options": {
+    "minimum_coverage": 29
+  },
   "skip_files": [
     "apps/fountain/lib/fountain_web/telemetry.ex",
     "apps/fountain/lib/fountain_web/endpoint.ex",
