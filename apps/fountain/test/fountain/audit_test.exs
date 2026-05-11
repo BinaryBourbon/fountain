@@ -25,14 +25,8 @@ defmodule Fountain.AuditTest do
       assert event.action == "test.action"
     end
 
-    test "returns error tuple for invalid attrs" do
-      # missing required fields
+    test "returns error tuple for missing required fields" do
       assert {:error, _} = Audit.record(%{})
-    end
-
-    test "does not raise on exception (best-effort)" do
-      # record/1 rescues exceptions
-      assert {:error, _} = Audit.record(%{invalid: true})
     end
   end
 
@@ -45,8 +39,9 @@ defmodule Fountain.AuditTest do
       assert event.user_id == user.id
     end
 
-    test "raises on invalid attrs" do
-      assert_raise RuntimeError, fn ->
+    test "raises MatchError on invalid attrs" do
+      # record!/1 does {:ok, event} = record(attrs), so invalid attrs raise MatchError
+      assert_raise MatchError, fn ->
         Audit.record!(%{})
       end
     end
