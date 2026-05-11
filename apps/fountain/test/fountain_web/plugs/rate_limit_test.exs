@@ -96,14 +96,6 @@ defmodule FountainWeb.Plugs.RateLimitTest do
 
   describe "call/2 — rate limited" do
     test "halts the conn with 429 when limit is exceeded", %{conn: conn} do
-      # Use test-isolation mode off so bump uses IP key — but we set a low limit.
-      # Actually rely on the process-keyed path by setting test isolation.
-      Application.put_env(:fountain, :rate_limit_test_isolation, true)
-
-      on_exit(fn ->
-        Application.delete_env(:fountain, :rate_limit_test_isolation)
-      end)
-
       opts = RateLimit.init(bucket: unique_bucket(), max: 1, window_ms: 60_000)
 
       # First request passes
