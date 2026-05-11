@@ -6,15 +6,14 @@ defmodule FountainWeb.FallbackControllerTest do
   use FountainWeb.ConnCase, async: true
 
   describe "{:error, %Ecto.Changeset{}} → 422" do
-    test "POST /api/vaults with duplicate name returns 422 with errors body", %{conn: conn} do
+    test "POST /api/agents with missing required fields returns 422 with errors body", %{conn: conn} do
       user = insert_verified_user()
       {_key, raw_key} = insert_api_key(user)
-      vault = insert_vault(user_id: user.id)
 
       conn =
         conn
         |> authed_with_key(raw_key)
-        |> post_json("/api/vaults", %{name: vault.name})
+        |> post_json("/api/agents", %{})
 
       assert %{"errors" => _} = json_response(conn, 422)
     end
@@ -23,7 +22,7 @@ defmodule FountainWeb.FallbackControllerTest do
   describe "{:error, :vault_not_found} → 404" do
     test "POST /api/conversations with nonexistent vault_id returns 404", %{conn: conn} do
       user = insert_verified_user()
-      agent = insert_agent(%{"user_id" => user.id})
+      agent = insert_agent(user_id: user.id)
       {_key, raw_key} = insert_api_key(user)
 
       conn =

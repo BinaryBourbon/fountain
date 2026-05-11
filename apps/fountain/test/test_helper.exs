@@ -19,3 +19,5 @@ Mimic.copy(Stripe.Webhook)
 Mimic.copy(Stripe.Customer)
 Mimic.copy(Stripe.BillingPortal.Session)
 Mimic.copy(Stripe.Checkout.Session)
+
+Mimic.copy(Fountain.Conversations.ConversationServer)
