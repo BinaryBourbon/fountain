@@ -739,7 +739,7 @@ defmodule Fountain.ConversationsContextTest do
     test "returns all events when no opts given", %{conv: conv} do
       e1 = insert_log_event(conv, kind: "output", stream: "stdout", data: "a")
       e2 = insert_log_event(conv, kind: "output", stream: "stderr", data: "b")
-      e3 = insert_log_event(conv, kind: "stage", stage: "provision")
+      e3 = insert_log_event(conv, kind: "stage", stream: "", stage: "provision")
 
       ids = Conversations.list_log_events(conv.id) |> Enum.map(& &1.id)
       assert e1.id in ids
@@ -749,7 +749,7 @@ defmodule Fountain.ConversationsContextTest do
 
     test "no filter with empty streams list returns all events", %{conv: conv} do
       e1 = insert_log_event(conv, kind: "output", stream: "stdout")
-      e2 = insert_log_event(conv, kind: "stage", stage: "provision")
+      e2 = insert_log_event(conv, kind: "stage", stream: "", stage: "provision")
 
       ids = Conversations.list_log_events(conv.id, 0, streams: []) |> Enum.map(& &1.id)
       assert e1.id in ids
@@ -759,7 +759,7 @@ defmodule Fountain.ConversationsContextTest do
     test "streams: [\"stdout\"] returns only stdout events", %{conv: conv} do
       stdout = insert_log_event(conv, kind: "output", stream: "stdout", data: "out")
       stderr = insert_log_event(conv, kind: "output", stream: "stderr", data: "err")
-      stage = insert_log_event(conv, kind: "stage", stage: "provision")
+      stage = insert_log_event(conv, kind: "stage", stream: "", stage: "provision")
 
       results = Conversations.list_log_events(conv.id, 0, streams: ["stdout"])
       ids = Enum.map(results, & &1.id)
@@ -771,7 +771,7 @@ defmodule Fountain.ConversationsContextTest do
     test "streams: [\"stderr\"] returns only stderr events", %{conv: conv} do
       stdout = insert_log_event(conv, kind: "output", stream: "stdout")
       stderr = insert_log_event(conv, kind: "output", stream: "stderr")
-      stage = insert_log_event(conv, kind: "stage", stage: "provision")
+      stage = insert_log_event(conv, kind: "stage", stream: "", stage: "provision")
 
       results = Conversations.list_log_events(conv.id, 0, streams: ["stderr"])
       ids = Enum.map(results, & &1.id)
@@ -783,7 +783,7 @@ defmodule Fountain.ConversationsContextTest do
     test "streams: [\"stage\"] returns only stage kind events", %{conv: conv} do
       stdout = insert_log_event(conv, kind: "output", stream: "stdout")
       stderr = insert_log_event(conv, kind: "output", stream: "stderr")
-      stage = insert_log_event(conv, kind: "stage", stage: "provision")
+      stage = insert_log_event(conv, kind: "stage", stream: "", stage: "provision")
 
       results = Conversations.list_log_events(conv.id, 0, streams: ["stage"])
       ids = Enum.map(results, & &1.id)
@@ -795,7 +795,7 @@ defmodule Fountain.ConversationsContextTest do
     test "streams: [\"stdout\", \"stage\"] returns stdout and stage events", %{conv: conv} do
       stdout = insert_log_event(conv, kind: "output", stream: "stdout")
       stderr = insert_log_event(conv, kind: "output", stream: "stderr")
-      stage = insert_log_event(conv, kind: "stage", stage: "provision")
+      stage = insert_log_event(conv, kind: "stage", stream: "", stage: "provision")
 
       results = Conversations.list_log_events(conv.id, 0, streams: ["stdout", "stage"])
       ids = Enum.map(results, & &1.id)
