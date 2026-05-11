@@ -93,4 +93,26 @@ defmodule Fountain.CryptoTest do
       assert Crypto.wrap_dek(dek) != Crypto.wrap_dek(dek)
     end
   end
+
+  describe "load_tenant_key/1" do
+    test "returns {:error, :not_found} when no user_data_key row exists" do
+      user = insert_verified_user()
+      # A fresh user has no UserDataKey row
+      assert {:error, :not_found} = Crypto.load_tenant_key(user.id)
+    end
+
+    test "returns {:error, :unwrap_failed} when wrapped_key is corrupted" do
+      user = insert_verified_user()
+
+      %Fountain.Accounts.UserDataKey{}
+      |> Fountain.Accounts.UserDataKey.changeset(%{
+        user_id: user.id,
+        wrapped_key: :crypto.strong_rand_bytes(60),
+        algorithm: "aes_256_gcm_wrap"
+      })
+      |> Fountain.Repo.insert!()
+
+      assert {:error, :unwrap_failed} = Crypto.load_tenant_key(user.id)
+    end
+  end
 end

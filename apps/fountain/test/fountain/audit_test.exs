@@ -120,4 +120,25 @@ defmodule Fountain.AuditTest do
       assert length(events) == 4
     end
   end
+
+  describe "_unsafe_list_recent/1" do
+    test "returns all events across all users" do
+      user1 = insert_verified_user()
+      user2 = insert_verified_user()
+      Audit.record!(valid_attrs(user1.id))
+      Audit.record!(valid_attrs(user2.id))
+
+      events = Audit._unsafe_list_recent()
+      user_ids = Enum.map(events, & &1.user_id)
+      assert user1.id in user_ids
+      assert user2.id in user_ids
+    end
+
+    test "respects the limit parameter" do
+      user = insert_verified_user()
+      for _ <- 1..5, do: Audit.record!(valid_attrs(user.id))
+
+      assert length(Audit._unsafe_list_recent(3)) == 3
+    end
+  end
 end
