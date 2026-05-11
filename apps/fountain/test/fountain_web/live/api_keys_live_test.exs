@@ -82,5 +82,17 @@ defmodule FountainWeb.ApiKeysLiveTest do
       # Try via context directly — LiveView won't even show other user's keys
       assert {:error, :not_found} = Accounts.revoke_api_key(attacker.id, owner_key.id)
     end
+
+    test "revoking a non-existent key shows an error flash", %{conn: conn} do
+      user = insert_verified_user()
+      conn = login_user(conn, user)
+      {:ok, lv, _html} = live(conn, ~p"/api-keys")
+
+      # Send a revoke event with a UUID that doesn't exist for this user
+      render_click(lv, "revoke", %{"id" => Ecto.UUID.generate()})
+
+      html = render(lv)
+      assert html =~ "Key not found"
+    end
   end
 end
