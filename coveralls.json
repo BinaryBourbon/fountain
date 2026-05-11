@@ -1,6 +1,6 @@
 {
   "coverage_options": {
-    "minimum_coverage": 30
+    "minimum_coverage": 31
   },
   "skip_files": [
     "apps/fountain/lib/fountain_web/telemetry.ex",
