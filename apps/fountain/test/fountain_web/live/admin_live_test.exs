@@ -179,4 +179,59 @@ defmodule FountainWeb.AdminLiveTest do
       assert html =~ to_string(now.year)
     end
   end
+
+  describe "AdminLive.Index — sandbox conversations branch" do
+    test "shows dash when sandbox has no conversations", %{conn: conn} do
+      admin = insert_admin()
+      _sandbox = insert_sandbox(user_id: admin.id, status: "ready")
+      conn = login_user(conn, admin)
+      {:ok, _lv, html} = live(conn, ~p"/admin")
+
+      # The empty-conversations span renders an em-dash
+      assert html =~ "—"
+    end
+
+    test "renders conversation links when sandbox has conversations", %{conn: conn} do
+      admin = insert_admin()
+      sandbox = insert_sandbox(user_id: admin.id, status: "ready")
+      conv = insert_conversation(sandbox: sandbox, user_id: admin.id)
+      conn = login_user(conn, admin)
+      {:ok, _lv, html} = live(conn, ~p"/admin")
+
+      # The conversation id prefix should appear as a link
+      assert html =~ String.slice(conv.id, 0, 8)
+      assert html =~ "/conversations/#{conv.id}"
+    end
+
+    test "renders pending sandbox with fallback zinc status color", %{conn: conn} do
+      admin = insert_admin()
+      _sandbox = insert_sandbox(user_id: admin.id, status: "pending")
+      conn = login_user(conn, admin)
+      {:ok, _lv, html} = live(conn, ~p"/admin")
+
+      assert html =~ "pending"
+      # fallback clause: zinc classes
+      assert html =~ "text-zinc-500"
+    end
+
+    test "renders starting sandbox with fallback zinc status color", %{conn: conn} do
+      admin = insert_admin()
+      _sandbox = insert_sandbox(user_id: admin.id, status: "starting")
+      conn = login_user(conn, admin)
+      {:ok, _lv, html} = live(conn, ~p"/admin")
+
+      assert html =~ "starting"
+      assert html =~ "text-zinc-500"
+    end
+
+    test "sandbox inserted_at timestamp is formatted in the table", %{conn: conn} do
+      admin = insert_admin()
+      _sandbox = insert_sandbox(user_id: admin.id, status: "ready")
+      conn = login_user(conn, admin)
+      {:ok, _lv, html} = live(conn, ~p"/admin")
+
+      # format_ts renders "YYYY-MM-DD HH:MM" — the year is always present
+      assert html =~ to_string(Date.utc_today().year)
+    end
+  end
 end

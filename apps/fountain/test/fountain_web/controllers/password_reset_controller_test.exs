@@ -76,5 +76,14 @@ defmodule FountainWeb.PasswordResetControllerTest do
       conn = post(conn, ~p"/auth/reset", %{"token" => "badtoken", "password" => "validpassword123"})
       assert redirected_to(conn) == ~p"/auth/forgot-password"
     end
+
+    test "redirects with error when user no longer exists in database", %{conn: conn} do
+      # Sign a token with a UUID that doesn't correspond to any user
+      missing_id = Ecto.UUID.generate()
+      token = Phoenix.Token.sign(FountainWeb.Endpoint, "password_reset", missing_id)
+
+      conn = post(conn, ~p"/auth/reset", %{"token" => token, "password" => "validpassword123"})
+      assert redirected_to(conn) == ~p"/auth/forgot-password"
+    end
   end
 end

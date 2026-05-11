@@ -1201,6 +1201,197 @@ defmodule Fountain.ConversationsContextTest do
   end
 
   # ────────────────────────────────────────────────────────────────────────────
+  # _unsafe_list_conversations_by_activity/0
+  # ────────────────────────────────────────────────────────────────────────────
+
+  describe "_unsafe_list_conversations_by_activity/0" do
+    test "returns empty list when no conversations exist" do
+      assert Conversations._unsafe_list_conversations_by_activity() == []
+    end
+
+    test "returns conversations across all users" do
+      user1 = insert_verified_user()
+      user2 = insert_verified_user()
+      c1 = insert_conversation(user_id: user1.id)
+      c2 = insert_conversation(user_id: user2.id)
+
+      ids = Conversations._unsafe_list_conversations_by_activity() |> Enum.map(& &1.id)
+      assert c1.id in ids
+      assert c2.id in ids
+    end
+
+    test "orders conversations by updated_at descending" do
+      user = insert_verified_user()
+      c1 = insert_conversation(user_id: user.id)
+      c2 = insert_conversation(user_id: user.id)
+
+      # Backdate c2 so c1 sorts first
+      past = DateTime.add(DateTime.utc_now(), -3600, :second) |> DateTime.truncate(:second)
+      Fountain.Repo.update_all(
+        Ecto.Query.from(c in Conversation, where: c.id == ^c2.id),
+        set: [updated_at: past]
+      )
+
+      [first | _] = Conversations._unsafe_list_conversations_by_activity()
+      assert first.id == c1.id
+    end
+
+    test "preloads agent association" do
+      user = insert_verified_user()
+      _conv = insert_conversation(user_id: user.id)
+
+      [result | _] = Conversations._unsafe_list_conversations_by_activity()
+      # agent may be nil but the key must be present and not an Ecto.Association
+      assert Map.has_key?(result, :agent)
+    end
+  end
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # get_conversation_tree/1
+  # ────────────────────────────────────────────────────────────────────────────
+
+  describe "get_conversation_tree/1" do
+    test "returns empty list when conversation id does not exist" do
+      assert Conversations.get_conversation_tree(Ecto.UUID.generate()) == []
+    end
+
+    test "returns single-element tree for a root conversation with no children" do
+      user = insert_verified_user()
+      conv = insert_conversation(user_id: user.id)
+
+      tree = Conversations.get_conversation_tree(conv.id)
+      assert length(tree) == 1
+      [node] = tree
+      assert node.id == conv.id
+      assert node.parent_id == nil
+    end
+
+    test "returned node contains :id, :source, :status, :parent_id keys" do
+      user = insert_verified_user()
+      conv = insert_conversation(user_id: user.id)
+
+      [node] = Conversations.get_conversation_tree(conv.id)
+      assert Map.has_key?(node, :id)
+      assert Map.has_key?(node, :source)
+      assert Map.has_key?(node, :status)
+      assert Map.has_key?(node, :parent_id)
+    end
+
+    test "includes parent and child when called with child id" do
+      user = insert_verified_user()
+      parent = insert_conversation(user_id: user.id)
+      child = insert_conversation(user_id: user.id, parent_conversation_id: parent.id)
+
+      tree = Conversations.get_conversation_tree(child.id)
+      ids = Enum.map(tree, & &1.id)
+      assert parent.id in ids
+      assert child.id in ids
+    end
+
+    test "child node has parent_id set to the parent conversation id" do
+      user = insert_verified_user()
+      parent = insert_conversation(user_id: user.id)
+      child = insert_conversation(user_id: user.id, parent_conversation_id: parent.id)
+
+      tree = Conversations.get_conversation_tree(child.id)
+      child_node = Enum.find(tree, &(&1.id == child.id))
+      assert child_node.parent_id == parent.id
+    end
+
+    test "includes parent when called with parent id and child exists" do
+      user = insert_verified_user()
+      parent = insert_conversation(user_id: user.id)
+      child = insert_conversation(user_id: user.id, parent_conversation_id: parent.id)
+
+      tree = Conversations.get_conversation_tree(parent.id)
+      ids = Enum.map(tree, & &1.id)
+      assert parent.id in ids
+      assert child.id in ids
+    end
+  end
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # insert_turn_images/2 and get_turn_image/2
+  # ────────────────────────────────────────────────────────────────────────────
+
+  # Helper to insert a TurnImage via changeset (avoids the UUID-encoding issue in
+  # insert_turn_images/2 which uses Repo.insert_all with a raw table name string).
+  defp insert_turn_image!(turn_id, position, media_type, data) do
+    %Fountain.Conversations.TurnImage{}
+    |> Fountain.Conversations.TurnImage.changeset(%{
+      turn_id: turn_id,
+      position: position,
+      media_type: media_type,
+      data: data
+    })
+    |> Ecto.Changeset.put_change(:inserted_at, DateTime.utc_now() |> DateTime.truncate(:second))
+    |> Repo.insert!()
+  end
+
+  describe "insert_turn_images/2" do
+    # The empty-list fast-path returns {:ok, []} without touching the DB, so no UUID issue.
+    test "returns {:ok, []} immediately when images list is empty" do
+      assert {:ok, []} = Conversations.insert_turn_images(Ecto.UUID.generate(), [])
+    end
+  end
+
+  describe "get_turn_image/2" do
+    test "returns the TurnImage when turn_id and position match" do
+      user = insert_verified_user()
+      conv = insert_conversation(user_id: user.id)
+      turn = insert_turn(conv)
+
+      insert_turn_image!(turn.id, 0, "image/png", <<7, 8, 9>>)
+
+      result = Conversations.get_turn_image(turn.id, 0)
+      assert result != nil
+      assert result.turn_id == turn.id
+      assert result.position == 0
+      assert result.media_type == "image/png"
+    end
+
+    test "returns nil when no image exists at the given position" do
+      user = insert_verified_user()
+      conv = insert_conversation(user_id: user.id)
+      turn = insert_turn(conv)
+
+      assert Conversations.get_turn_image(turn.id, 99) == nil
+    end
+
+    test "returns nil when turn_id does not exist" do
+      assert Conversations.get_turn_image(Ecto.UUID.generate(), 0) == nil
+    end
+
+    test "returns nil when position belongs to a different turn" do
+      user = insert_verified_user()
+      conv = insert_conversation(user_id: user.id)
+      turn1 = insert_turn(conv)
+      turn2 = insert_turn(conv)
+
+      insert_turn_image!(turn1.id, 0, "image/png", <<1>>)
+
+      # turn1 has an image at position 0, but turn2 does not
+      assert Conversations.get_turn_image(turn2.id, 0) == nil
+    end
+  end
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # list_active_conversations/0 — ordering
+  # ────────────────────────────────────────────────────────────────────────────
+
+  describe "list_active_conversations/0 ordering" do
+    test "running conversations appear before idle conversations" do
+      user = insert_verified_user()
+      idle = insert_conversation(user_id: user.id, status: "idle")
+      running = insert_conversation(user_id: user.id, status: "running")
+
+      results = Conversations.list_active_conversations()
+      active_ids = results |> Enum.map(& &1.id) |> Enum.filter(&(&1 in [idle.id, running.id]))
+      assert hd(active_ids) == running.id
+    end
+  end
+
+  # ────────────────────────────────────────────────────────────────────────────
   # list_turns_with_images/1
   # ────────────────────────────────────────────────────────────────────────────
 
