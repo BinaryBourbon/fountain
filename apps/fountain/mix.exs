@@ -15,7 +15,8 @@ defmodule Fountain.MixProject do
       aliases: aliases(),
       deps: deps(),
       listeners: [Phoenix.CodeReloader],
-      test_coverage: [tool: ExCoveralls]
+      test_coverage: [tool: ExCoveralls],
+      preferred_cli_env: [muzak: :test]
     ]
   end
 
@@ -74,7 +75,8 @@ defmodule Fountain.MixProject do
       {:excoveralls, "~> 0.18", only: :test},
       {:mimic, "~> 1.7", only: :test},
       {:lazy_html, ">= 0.1.0", only: :test},
-      {:stream_data, "~> 1.1", only: [:dev, :test]}
+      {:stream_data, "~> 1.1", only: [:dev, :test]},
+      {:muzak, "~> 1.1", only: :test}
     ]
   end
 

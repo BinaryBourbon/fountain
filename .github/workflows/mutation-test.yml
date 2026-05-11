@@ -1,0 +1,108 @@
+name: Mutation Testing
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/fountain/lib/fountain/crypto.ex"
+      - "apps/fountain/lib/fountain/accounts/api_key.ex"
+      - "apps/fountain/lib/fountain/environments/secret.ex"
+      - "apps/fountain/lib/fountain/conversations/conversation.ex"
+  pull_request:
+    paths:
+      - "apps/fountain/lib/fountain/crypto.ex"
+      - "apps/fountain/lib/fountain/accounts/api_key.ex"
+      - "apps/fountain/lib/fountain/environments/secret.ex"
+      - "apps/fountain/lib/fountain/conversations/conversation.ex"
+
+concurrency:
+  group: mutation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  muzak:
+    name: Muzak Mutation Testing
+    runs-on: ubuntu-24.04
+
+    permissions:
+      contents: read
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: fountain_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      MIX_ENV: test
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Elixir
+        id: beam
+        uses: erlef/setup-beam@v1.24.0
+        with:
+          elixir-version: "1.19.2"
+          otp-version: "28.3"
+
+      - name: Restore deps cache
+        uses: actions/cache@v5
+        with:
+          path: deps
+          key: ${{ runner.os }}-mutation-mix-${{ hashFiles('**/mix.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-mutation-mix-
+            ${{ runner.os }}-mix-
+
+      - name: Restore build cache
+        uses: actions/cache@v5
+        with:
+          path: _build
+          key: ${{ runner.os }}-mutation-build-${{ steps.beam.outputs.otp-version }}-${{ steps.beam.outputs.elixir-version }}-${{ hashFiles('**/mix.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-mutation-build-${{ steps.beam.outputs.otp-version }}-${{ steps.beam.outputs.elixir-version }}-
+            ${{ runner.os }}-mutation-build-
+            ${{ runner.os }}-build-
+
+      - name: Install dependencies
+        run: mix deps.get
+
+      - name: Compile
+        run: mix compile
+
+      - name: Set up database
+        run: mix ecto.create --quiet && mix ecto.migrate --quiet
+
+      - name: Run muzak mutation testing
+        id: muzak
+        run: |
+          mix muzak 2>&1 | tee /tmp/muzak-output.txt || true
+
+      - name: Post results to job summary
+        if: always()
+        run: |
+          echo "## Muzak Mutation Testing Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Target modules (crypto + auth + state logic):**" >> $GITHUB_STEP_SUMMARY
+          echo "- \`apps/fountain/lib/fountain/crypto.ex\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`apps/fountain/lib/fountain/accounts/api_key.ex\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`apps/fountain/lib/fountain/environments/secret.ex\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`apps/fountain/lib/fountain/conversations/conversation.ex\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Output" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          cat /tmp/muzak-output.txt >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "> Surviving mutations indicate logic not covered by the test suite." >> $GITHUB_STEP_SUMMARY
+          echo "> This job is **informational only** — surviving mutations do not block merges." >> $GITHUB_STEP_SUMMARY
