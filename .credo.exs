@@ -95,8 +95,7 @@
           {Credo.Check.Readability.ModuleNames, []},
           # Enforced everywhere except OpenAPI schema boilerplate structs
           # (FountainWeb.Schemas.*) which are auto-generated and don't warrant docs.
-          {Credo.Check.Readability.ModuleDoc,
-           [ignore_names: [~r/^FountainWeb\.Schemas\./]]},
+          {Credo.Check.Readability.ModuleDoc, [ignore_names: [~r/^FountainWeb\.Schemas\./]]},
           {Credo.Check.Readability.ParenthesesInCondition, []},
           {Credo.Check.Readability.PipeIntoAnonymousFunctions, []},
           {Credo.Check.Readability.PredicateFunctionNames, []},
