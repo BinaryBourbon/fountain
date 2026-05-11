@@ -341,9 +341,8 @@ defmodule Fountain.Conversations.ConversationServer do
                  env,
                  secrets,
                  conv_id
-               ),
-             :ok <- run_setup_script(sprite, env, sprite_env, conv_id) do
-          :ok
+               ) do
+          run_setup_script(sprite, env, sprite_env, conv_id)
         end
     end
   end
