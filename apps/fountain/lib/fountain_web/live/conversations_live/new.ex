@@ -1,4 +1,5 @@
 defmodule FountainWeb.ConversationsLive.New do
+  @moduledoc false
   use FountainWeb, :live_view
 
   alias Fountain.{Agents, Conversations, Vaults}

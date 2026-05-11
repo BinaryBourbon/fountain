@@ -1,4 +1,5 @@
 defmodule FountainWeb.LogViewerLive.Show do
+  @moduledoc false
   use FountainWeb, :live_view
 
   alias Fountain.Conversations

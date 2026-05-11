@@ -1,4 +1,5 @@
 defmodule FountainWeb.AgentsLive.Form do
+  @moduledoc false
   use FountainWeb, :live_view
 
   alias Fountain.{Agents, Environments}
