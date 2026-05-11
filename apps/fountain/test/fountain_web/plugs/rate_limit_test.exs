@@ -115,6 +115,13 @@ defmodule FountainWeb.Plugs.RateLimitTest do
       result = RateLimit.call(conn, opts)
       refute result.halted
     end
+
+    test "uses to_string as key when remote_ip is a binary string", %{conn: conn} do
+      conn = %{conn | remote_ip: "192.168.1.1"}
+      opts = RateLimit.init(bucket: unique_bucket(), max: 10)
+      result = RateLimit.call(conn, opts)
+      refute result.halted
+    end
   end
 
   describe "call/2 — rate limited" do

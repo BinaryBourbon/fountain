@@ -344,4 +344,47 @@ defmodule Fountain.AccountsAdditionalTest do
       assert :ok = Accounts.touch_api_key(fake_raw)
     end
   end
+
+  # ── upsert_oauth_user/3 ─────────────────────────────────────────────────────
+
+  describe "upsert_oauth_user/3" do
+    test "creates a brand-new user when neither identity nor email exists" do
+      email = "oauth_new_#{System.unique_integer([:positive])}@example.com"
+      attrs = %{"email" => email, "name" => "OAuth User"}
+
+      assert {:ok, user, :new} =
+               Accounts.upsert_oauth_user("github", "uid_#{System.unique_integer()}", attrs)
+
+      assert user.email == email
+      assert user.email_verified_at != nil
+      # UserDataKey should have been created automatically
+      assert {:ok, _dek} = Fountain.Crypto.load_tenant_key(user.id)
+    end
+
+    test "links an existing user when email matches but no OauthIdentity exists" do
+      existing_user = insert_verified_user()
+
+      assert {:ok, user, :existing} =
+               Accounts.upsert_oauth_user("github", "uid_#{System.unique_integer()}", %{
+                 "email" => existing_user.email
+               })
+
+      assert user.id == existing_user.id
+    end
+
+    test "returns :existing when the OauthIdentity already exists" do
+      existing_user = insert_verified_user()
+      provider_uid = "uid_#{System.unique_integer()}"
+
+      # First call creates identity
+      {:ok, _, :existing} =
+        Accounts.upsert_oauth_user("github", provider_uid, %{"email" => existing_user.email})
+
+      # Second call reuses existing identity
+      assert {:ok, user, :existing} =
+               Accounts.upsert_oauth_user("github", provider_uid, %{"email" => existing_user.email})
+
+      assert user.id == existing_user.id
+    end
+  end
 end

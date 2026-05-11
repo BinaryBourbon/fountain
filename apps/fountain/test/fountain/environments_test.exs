@@ -213,6 +213,25 @@ defmodule Fountain.EnvironmentsTest do
     end
   end
 
+  describe "Secret.decrypt/2" do
+    test "decrypts a secret that was encrypted with the tenant key" do
+      user = insert_verified_user()
+      env = insert_env(user_id: user.id)
+      {:ok, dek} = Fountain.Crypto.load_tenant_key(user.id)
+
+      {:ok, secret} =
+        Environments.upsert_secret(env, %{"key" => "DECRYPT_ME", "value" => "plaintext_value"}, dek)
+
+      reloaded = Fountain.Repo.get!(Fountain.Environments.Secret, secret.id)
+      assert {:ok, "plaintext_value"} = Fountain.Environments.Secret.decrypt(reloaded, dek)
+    end
+
+    test "returns :error for a non-Secret struct argument" do
+      dek = :crypto.strong_rand_bytes(32)
+      assert :error = Fountain.Environments.Secret.decrypt(%{}, dek)
+    end
+  end
+
   describe "get_secret/2" do
     test "returns the secret when env_id and key match" do
       user = insert_verified_user()
