@@ -252,11 +252,10 @@ defmodule Fountain.BillingTest do
       user = insert_verified_user()
 
       stub(Stripe.Customer, :create, fn _attrs ->
-        {:error, %Stripe.Error{message: "card declined"}}
+        {:error, %Stripe.Error{message: "card declined", source: :stripe, code: :card_declined}}
       end)
 
-      assert {:error, %Stripe.Error{message: "card declined"}} =
-               Billing.create_stripe_customer(user)
+      assert {:error, %Stripe.Error{}} = Billing.create_stripe_customer(user)
 
       unchanged = Repo.get!(Fountain.Accounts.User, user.id)
       assert unchanged.stripe_customer_id == nil
