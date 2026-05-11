@@ -168,6 +168,17 @@ defmodule Fountain.EnvironmentsTest do
 
       assert Environments.decrypted_env(env, dek) == %{}
     end
+
+    test "silently skips secrets that fail to decrypt with wrong DEK" do
+      user = insert_verified_user()
+      env = insert_env(user_id: user.id)
+      {:ok, dek} = Fountain.Crypto.load_tenant_key(user.id)
+      Environments.upsert_secret(env, %{"key" => "MY_KEY", "value" => "secret"}, dek)
+
+      wrong_dek = :crypto.strong_rand_bytes(32)
+      result = Environments.decrypted_env(env, wrong_dek)
+      assert result == %{}
+    end
   end
 
   describe "_unsafe_list_environments/0" do

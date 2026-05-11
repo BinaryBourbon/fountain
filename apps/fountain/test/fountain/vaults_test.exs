@@ -324,6 +324,17 @@ defmodule Fountain.VaultsTest do
       assert Vaults.decrypted_env(vault, dek) == %{}
     end
 
+    test "silently skips secrets that fail to decrypt with wrong DEK" do
+      user = insert_verified_user()
+      vault = insert_vault(user_id: user.id)
+      {:ok, dek} = Fountain.Crypto.load_tenant_key(user.id)
+      Vaults.upsert_secret(vault, %{"key" => "MY_KEY", "value" => "secret"}, dek)
+
+      wrong_dek = :crypto.strong_rand_bytes(32)
+      result = Vaults.decrypted_env(vault, wrong_dek)
+      assert result == %{}
+    end
+
     test "vault secrets override environment secrets on key collision" do
       user = insert_verified_user()
       env = insert_env(user_id: user.id)
