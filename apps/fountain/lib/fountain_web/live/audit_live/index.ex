@@ -1,4 +1,5 @@
 defmodule FountainWeb.AuditLive.Index do
+  @moduledoc false
   use FountainWeb, :live_view
 
   alias Fountain.Audit

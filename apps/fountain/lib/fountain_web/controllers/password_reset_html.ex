@@ -1,4 +1,5 @@
 defmodule FountainWeb.PasswordResetHTML do
+  @moduledoc false
   use FountainWeb, :html
 
   def forgot_form(assigns) do

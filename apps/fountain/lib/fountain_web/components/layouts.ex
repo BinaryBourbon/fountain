@@ -1,4 +1,5 @@
 defmodule FountainWeb.Layouts do
+  @moduledoc false
   use FountainWeb, :html
 
   embed_templates "layouts/*"

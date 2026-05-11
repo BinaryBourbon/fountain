@@ -1,4 +1,5 @@
 defmodule FountainWeb.VaultsLive.Index do
+  @moduledoc false
   use FountainWeb, :live_view
 
   alias Fountain.Vaults
