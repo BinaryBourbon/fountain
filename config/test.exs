@@ -1,7 +1,8 @@
 import Config
 
 config :fountain, Fountain.Repo,
-  url: System.get_env("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/fountain_test"),
+  url:
+    System.get_env("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/fountain_test"),
   pool: Ecto.Adapters.SQL.Sandbox,
   pool_size: 5
 
