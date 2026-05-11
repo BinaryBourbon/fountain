@@ -1,15 +1,22 @@
 %{
   default: [
     mutation_filter: fn files ->
-      target_files = [
-        "apps/fountain/lib/fountain/crypto.ex",
-        "apps/fountain/lib/fountain/accounts/api_key.ex",
-        "apps/fountain/lib/fountain/environments/secret.ex",
-        "apps/fountain/lib/fountain/conversations/conversation.ex"
+      IO.puts("DEBUG muzak files sample: #{inspect(Enum.take(files, 3))}")
+      IO.puts("DEBUG total files: #{length(files)}")
+
+      target_basenames = [
+        "crypto.ex",
+        "api_key.ex",
+        "secret.ex",
+        "conversation.ex"
       ]
 
       files
-      |> Enum.filter(fn file -> Enum.any?(target_files, &String.ends_with?(file, &1)) end)
+      |> Enum.filter(fn file ->
+        basename = Path.basename(file)
+        Enum.member?(target_basenames, basename)
+      end)
+      |> tap(fn matched -> IO.puts("DEBUG matched: #{inspect(matched)}") end)
       |> Enum.map(&{&1, nil})
     end
   ]
