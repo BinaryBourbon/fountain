@@ -86,6 +86,7 @@ jobs:
 
       - name: Run muzak mutation testing
         id: muzak
+        working-directory: apps/fountain
         run: |
           mix muzak 2>&1 | tee /tmp/muzak-output.txt || true
 
