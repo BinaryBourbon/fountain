@@ -88,6 +88,10 @@ jobs:
         id: muzak
         working-directory: apps/fountain
         run: |
+          # NOTE: muzak 1.1.1 (2022) crashes on Elixir 1.18+ due to Inspect.Algebra
+          # internal changes. Infrastructure is in place; re-enable enforcement once
+          # muzak publishes an Elixir 1.18+ compatible release.
+          # Track: https://github.com/devonestes/muzak/issues
           mix muzak 2>&1 | tee /tmp/muzak-output.txt || true
 
       - name: Post results to job summary
