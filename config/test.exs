@@ -4,7 +4,7 @@ config :fountain, Fountain.Repo,
   url:
     System.get_env("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/fountain_test"),
   pool: Ecto.Adapters.SQL.Sandbox,
-  pool_size: 5
+  pool_size: 20
 
 config :fountain, FountainWeb.Endpoint,
   http: [ip: {127, 0, 0, 1}, port: 4002],
