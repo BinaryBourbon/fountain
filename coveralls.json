@@ -1,0 +1,12 @@
+{
+  "minimum_coverage": 60,
+  "skip_files": [
+    "apps/fountain/lib/fountain_web/telemetry.ex",
+    "apps/fountain/lib/fountain_web/endpoint.ex",
+    "apps/fountain/lib/fountain_web/router.ex",
+    "apps/fountain/lib/fountain/application.ex",
+    "apps/fountain/lib/fountain/repo.ex",
+    "apps/fountain/lib/fountain_web/api_spec.ex",
+    "apps/fountain/priv/"
+  ]
+}

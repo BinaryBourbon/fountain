@@ -70,6 +70,7 @@ defmodule Fountain.MixProject do
       {:ueberauth_github, "~> 0.8"},
       # Test / dev
       {:sobelow, "~> 0.13", only: [:dev, :test], runtime: false},
+      {:excoveralls, "~> 0.18", only: :test},
       {:mimic, "~> 1.7", only: :test},
       {:lazy_html, ">= 0.1.0", only: :test},
       {:stream_data, "~> 1.1", only: [:dev, :test]}

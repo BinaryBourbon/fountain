@@ -5,6 +5,10 @@ on:
     branches: [main]
   pull_request:
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     name: Build and Test
@@ -82,5 +86,8 @@ jobs:
       - name: Set up database
         run: mix ecto.create --quiet && mix ecto.migrate --quiet
 
-      - name: Run tests
-        run: mix test
+      - name: Run tests with coverage
+        run: mix coveralls
+
+      - name: Validate OpenAPI spec
+        run: mix openapi.spec.json --spec FountainWeb.ApiSpec --output /tmp/openapi.json && jq empty /tmp/openapi.json
