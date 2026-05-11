@@ -1254,6 +1254,7 @@ defmodule Fountain.ConversationsContextTest do
         media_type: "image/png",
         data: <<1, 2, 3>>
       })
+      |> Ecto.Changeset.put_change(:inserted_at, DateTime.utc_now() |> DateTime.truncate(:second))
       |> Repo.insert!()
 
       [loaded_turn] = Conversations.list_turns_with_images(conv.id)
@@ -1277,6 +1278,7 @@ defmodule Fountain.ConversationsContextTest do
       conv = insert_conversation(user_id: user.id)
       turn = insert_turn(conv)
 
+      now = DateTime.utc_now() |> DateTime.truncate(:second)
       for {mt, data, pos} <- [{"image/png", <<10>>, 0}, {"image/jpeg", <<20>>, 1}, {"image/gif", <<30>>, 2}] do
         %Fountain.Conversations.TurnImage{}
         |> Fountain.Conversations.TurnImage.changeset(%{
@@ -1285,6 +1287,7 @@ defmodule Fountain.ConversationsContextTest do
           media_type: mt,
           data: data
         })
+        |> Ecto.Changeset.put_change(:inserted_at, now)
         |> Repo.insert!()
       end
 
