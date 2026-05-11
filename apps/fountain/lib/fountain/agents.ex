@@ -102,7 +102,7 @@ defmodule Fountain.Agents do
   defp apply_has_skills(query, false), do: query
 
   defp apply_has_skills(query, true) do
-    from a in query, where: fragment("json_array_length(?)", a.skills) > 0
+    from a in query, where: fragment("cardinality(?)", a.skills) > 0
   end
 
   defp apply_has_mcp(query, false), do: query
