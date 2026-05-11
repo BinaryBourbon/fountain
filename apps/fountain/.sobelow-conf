@@ -1,0 +1,10 @@
+[
+  verbose: false,
+  private: false,
+  skip: false,
+  router: "lib/fountain_web/router.ex",
+  exit: "high",
+  format: "txt",
+  ignore: [],
+  ignore_files: []
+]
