@@ -230,6 +230,10 @@ defmodule FountainWeb.ConversationsLive.Show do
      |> push_event("view_mode_changed", %{mode: Atom.to_string(next)})}
   end
 
+  def handle_event("toggle_graph", _, socket) do
+    {:noreply, assign(socket, :graph_open, !socket.assigns.graph_open)}
+  end
+
   defp parse_view_mode(mode, current) do
     case mode do
       "chat" -> :chat
@@ -237,10 +241,6 @@ defmodule FountainWeb.ConversationsLive.Show do
       "raw" -> :raw
       _ -> current
     end
-  end
-
-  def handle_event("toggle_graph", _, socket) do
-    {:noreply, assign(socket, :graph_open, !socket.assigns.graph_open)}
   end
 
   # The `stage` pill toggles **all framework activity**: stage markers
