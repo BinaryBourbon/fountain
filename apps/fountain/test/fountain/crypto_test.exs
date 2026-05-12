@@ -108,6 +108,27 @@ defmodule Fountain.CryptoTest do
       assert {:error, :not_found} = Crypto.load_tenant_key(Ecto.UUID.generate())
     end
 
+    test "returns {:error, :unwrap_failed} when wrapped_key decrypts to non-32-byte value" do
+      user = insert_verified_user()
+      master = Application.fetch_env!(:fountain, :master_secrets_key)
+
+      # Wrap something that is NOT 32 bytes using the key-wrap AAD
+      bad_wrapped = Crypto.encrypt("short", master, "fountain.key_wrap")
+
+      import Ecto.Query, only: [from: 2]
+      Fountain.Repo.delete_all(from k in Fountain.Accounts.UserDataKey, where: k.user_id == ^user.id)
+
+      %Fountain.Accounts.UserDataKey{}
+      |> Fountain.Accounts.UserDataKey.changeset(%{
+        user_id: user.id,
+        wrapped_key: bad_wrapped,
+        algorithm: "aes_256_gcm_wrap"
+      })
+      |> Fountain.Repo.insert!()
+
+      assert {:error, :unwrap_failed} = Crypto.load_tenant_key(user.id)
+    end
+
     test "returns {:error, :unwrap_failed} when wrapped_key is corrupted" do
       user = insert_verified_user()
 
