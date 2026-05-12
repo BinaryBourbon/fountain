@@ -22,7 +22,9 @@ defmodule FountainWeb.Plugs.TenantAPIAuthTest do
 
       assert conn.halted
       assert conn.status == 401
-      assert Jason.decode!(conn.resp_body)["error"] =~ "missing"
+      body = Jason.decode!(conn.resp_body)
+      assert body["error"] =~ "missing"
+      assert body["reason"] == "api_key_invalid"
     end
 
     test "returns 401 for malformed Authorization header", %{conn: conn} do
@@ -33,9 +35,10 @@ defmodule FountainWeb.Plugs.TenantAPIAuthTest do
 
       assert conn.halted
       assert conn.status == 401
+      assert Jason.decode!(conn.resp_body)["reason"] == "api_key_invalid"
     end
 
-    test "returns 401 for wrong key", %{conn: conn} do
+    test "returns 401 with api_key_invalid for unknown key", %{conn: conn} do
       conn =
         conn
         |> authed_with_key("ftn_" <> String.duplicate("0", 64))
@@ -43,9 +46,10 @@ defmodule FountainWeb.Plugs.TenantAPIAuthTest do
 
       assert conn.halted
       assert conn.status == 401
+      assert Jason.decode!(conn.resp_body)["reason"] == "api_key_invalid"
     end
 
-    test "returns 401 for revoked key", %{conn: conn} do
+    test "returns 401 with api_key_revoked for revoked key", %{conn: conn} do
       user = insert_verified_user()
       {record, raw_key} = insert_api_key(user)
       {:ok, _} = Fountain.Accounts.revoke_api_key(user.id, record.id)
@@ -57,6 +61,9 @@ defmodule FountainWeb.Plugs.TenantAPIAuthTest do
 
       assert conn.halted
       assert conn.status == 401
+      body = Jason.decode!(conn.resp_body)
+      assert body["error"] =~ "revoked"
+      assert body["reason"] == "api_key_revoked"
     end
 
     test "cross-tenant key does not authenticate another user", %{conn: conn} do
