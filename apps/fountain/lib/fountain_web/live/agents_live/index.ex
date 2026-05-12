@@ -234,7 +234,17 @@ defmodule FountainWeb.AgentsLive.Index do
               class="hover:bg-[#0d1117] transition-colors duration-150"
               style="border-bottom:1px solid #161616;"
             >
-              <td class="px-4 py-3 font-medium" style="color:#e5e7eb;">{a.name}</td>
+              <td class="px-4 py-3">
+                <div class="flex items-center gap-2.5">
+                  <img
+                    :if={a.avatar_media_type}
+                    src={~p"/agents/#{a.id}/avatar"}
+                    class="w-7 h-7 rounded-md object-cover shrink-0"
+                    alt=""
+                  />
+                  <span class="font-medium" style="color:#e5e7eb;">{a.name}</span>
+                </div>
+              </td>
               <td class="px-4 py-3">
                 <span
                   class="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-semibold"
