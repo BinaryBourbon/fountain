@@ -1,5 +1,6 @@
 defmodule FountainWeb.ApiKeyControllerTest do
   use FountainWeb.ConnCase, async: true
+  use Mimic
 
   alias Fountain.Accounts
 
@@ -54,6 +55,24 @@ defmodule FountainWeb.ApiKeyControllerTest do
         |> post("/api/auth/api-keys", Jason.encode!(%{name: "test"}))
 
       assert json_response(conn, 401)
+    end
+
+    test "returns 422 with changeset error when Accounts.create_api_key fails", %{conn: conn} do
+      user = insert_verified_user()
+      {_record, raw_key} = insert_api_key(user)
+
+      stub(Fountain.Accounts, :create_api_key, fn _user_id, _name ->
+        cs = %Ecto.Changeset{valid?: false, errors: [name: {"has already been taken", []}]}
+        {:error, cs}
+      end)
+
+      conn =
+        conn
+        |> authed_with_key(raw_key)
+        |> Plug.Conn.put_req_header("content-type", "application/json")
+        |> post("/api/auth/api-keys", Jason.encode!(%{name: "CI pipeline"}))
+
+      assert json_response(conn, 422)
     end
   end
 

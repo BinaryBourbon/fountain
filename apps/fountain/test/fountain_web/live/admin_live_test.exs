@@ -234,5 +234,54 @@ defmodule FountainWeb.AdminLiveTest do
       assert html =~ to_string(Date.utc_today().year)
     end
 
+    test "renders running sandbox with blue status color", %{conn: conn} do
+      admin = insert_admin()
+      # "running" is not in the changeset enum so insert directly via Ecto.Changeset.change/2
+      sandbox = insert_sandbox(user_id: admin.id, status: "ready")
+
+      {:ok, _sandbox} =
+        Ecto.Changeset.change(sandbox, status: "running")
+        |> Fountain.Repo.update()
+
+      conn = login_user(conn, admin)
+      {:ok, _lv, html} = live(conn, ~p"/admin")
+
+      assert html =~ "running"
+      assert html =~ "text-blue-800"
+    end
+
+  end
+end
+
+defmodule FountainWeb.AdminLiveErrorTest do
+  use FountainWeb.ConnCase, async: false
+  use Mimic
+
+  import Phoenix.LiveViewTest
+
+  alias Fountain.Accounts
+
+  defp insert_admin(overrides \\ %{}) do
+    user = insert_verified_user(overrides)
+    {:ok, admin} = Accounts.update_user_role(user, "admin")
+    admin
+  end
+
+  describe "AdminLive.Index — toggle_admin error path" do
+    test "shows error flash when update_user_role fails", %{conn: conn} do
+      admin = insert_admin()
+      target = insert_verified_user()
+      conn = login_user(conn, admin)
+      {:ok, lv, _html} = live(conn, ~p"/admin")
+
+      stub(Accounts, :update_user_role, fn _user, _role ->
+        {:error, %Ecto.Changeset{}}
+      end)
+
+      lv |> element("button[phx-value-id='#{target.id}']", "Make admin") |> render_click()
+
+      html = render(lv)
+      assert html =~ "Failed to update role"
+    end
   end
 end

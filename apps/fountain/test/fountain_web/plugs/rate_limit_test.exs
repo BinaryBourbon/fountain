@@ -11,6 +11,12 @@ defmodule FountainWeb.Plugs.RateLimitTest do
     :ok
   end
 
+  describe "table/0" do
+    test "returns the ETS table atom" do
+      assert RateLimit.table() == :aod_rate_limit
+    end
+  end
+
   describe "ensure_table/0" do
     test "is idempotent — safe to call multiple times" do
       assert RateLimit.ensure_table() != :error
