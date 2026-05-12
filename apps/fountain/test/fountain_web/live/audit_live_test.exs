@@ -139,3 +139,40 @@ defmodule FountainWeb.AuditLiveTest do
     end
   end
 end
+
+# format_ts(nil) is unreachable from the DB (inserted_at is NOT NULL), so we
+# stub Audit.list_recent_for_user to return a synthetic event with nil
+# inserted_at. Mimic stubs must be visible to the LiveView process, so this
+# non-async module uses global mode.
+defmodule FountainWeb.AuditLiveFormatTsTest do
+  use FountainWeb.ConnCase, async: false
+  use Mimic
+
+  import Phoenix.LiveViewTest
+
+  setup :set_mimic_global
+
+  test "event with nil inserted_at renders an empty timestamp cell", %{conn: conn} do
+    user = insert_verified_user()
+
+    synthetic_event = %Fountain.Audit.Event{
+      id: 1,
+      action: "GET /nil-ts-test",
+      resource_type: "agent",
+      resource_id: "niltstest",
+      actor: "api",
+      user_id: user.id,
+      inserted_at: nil,
+      metadata: %{}
+    }
+
+    stub(Fountain.Audit, :list_recent_for_user, fn _id, _limit -> [synthetic_event] end)
+
+    conn = login_user(conn, user)
+    {:ok, _lv, html} = live(conn, ~p"/audit")
+
+    assert html =~ "GET /nil-ts-test"
+    # The nil inserted_at renders as an empty string — no date visible in the cell
+    assert html =~ ~r|<td class="px-3 py-1\.5 text-zinc-500 text-xs">\s*</td>|
+  end
+end

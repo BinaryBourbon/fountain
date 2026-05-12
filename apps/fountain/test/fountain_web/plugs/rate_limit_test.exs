@@ -82,6 +82,15 @@ defmodule FountainWeb.Plugs.RateLimitTest do
       # New window — should be :ok again
       assert :ok = RateLimit.bump(key, opts)
     end
+
+    test "returns {:limited, 1} when remaining window is less than 1 second" do
+      # Use a 500ms window — retry_ms will be < 1000, so max(div(retry_ms,1000), 1) == 1
+      opts = %{bucket: unique_bucket(), max: 1, window_ms: 500}
+      key = {opts.bucket, self()}
+
+      RateLimit.bump(key, opts)
+      assert {:limited, 1} = RateLimit.bump(key, opts)
+    end
   end
 
   describe "call/2 — pass-through" do

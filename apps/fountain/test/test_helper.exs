@@ -22,3 +22,5 @@ Mimic.copy(Stripe.Checkout.Session)
 
 Mimic.copy(Fountain.Conversations.ConversationServer)
 Mimic.copy(Fountain.Accounts)
+Mimic.copy(Fountain.Audit)
+Mimic.copy(Fountain.Crypto)

@@ -108,5 +108,14 @@ defmodule FountainWeb.PasswordResetControllerTest do
       conn = post(conn, ~p"/auth/reset", %{"token" => expired_token, "password" => "newpassword123"})
       assert redirected_to(conn) == ~p"/auth/forgot-password"
     end
+
+    test "returns 422 with error json when token and password are both missing", %{conn: conn} do
+      conn =
+        conn
+        |> Plug.Conn.put_req_header("content-type", "application/json")
+        |> post(~p"/auth/reset", Jason.encode!(%{}))
+
+      assert json_response(conn, 422)["error"] == "token and password are required"
+    end
   end
 end

@@ -26,6 +26,37 @@ defmodule FountainWeb.OnboardingLiveTest do
       assert {:error, {:redirect, %{to: path}}} = live(conn, ~p"/onboarding/step_1")
       assert path =~ "/auth/login"
     end
+
+    # Exercises mount(_params, ...) — no step key in params
+    test "visiting /onboarding (no step) for incomplete user redirects to current step", %{conn: conn} do
+      user = insert_verified_user()
+      conn = login_user(conn, user)
+
+      # /onboarding routes to the no-step mount clause; user has no
+      # onboarding_state so it redirects to step_1
+      assert {:error, {:live_redirect, %{to: "/onboarding/step_1"}}} =
+               live(conn, ~p"/onboarding")
+    end
+
+    test "visiting /onboarding (no step) for completed user redirects to /dashboard", %{conn: conn} do
+      user = insert_verified_user()
+      {:ok, completed_user} = Fountain.Accounts.complete_onboarding(user)
+
+      conn = login_user(conn, completed_user)
+
+      assert {:error, {:live_redirect, %{to: "/dashboard"}}} =
+               live(conn, ~p"/onboarding")
+    end
+
+    test "visiting /onboarding (no step) for user mid-wizard redirects to their current step", %{conn: conn} do
+      user = insert_verified_user()
+      {:ok, user} = Fountain.Accounts.advance_onboarding(user, "step_2")
+
+      conn = login_user(conn, user)
+
+      assert {:error, {:live_redirect, %{to: "/onboarding/step_2"}}} =
+               live(conn, ~p"/onboarding")
+    end
   end
 
   describe "OnboardingLive.Wizard — step 1 (inference)" do
@@ -227,6 +258,33 @@ defmodule FountainWeb.OnboardingLiveCredentialTest do
       html = render_click(lv, "save_credential", %{"provider" => "anthropic_api_key", "value" => "sk-ant-any-key"})
 
       assert html =~ "Could not reach provider"
+    end
+
+    test "save_credential shows 'Could not save' when Crypto.load_tenant_key fails", %{lv: lv} do
+      # Req.get returns 200 so validation passes, but DEK loading fails
+      stub(Req, :get, fn _url, _opts -> {:ok, %Req.Response{status: 200}} end)
+      stub(Fountain.Crypto, :load_tenant_key, fn _user_id -> {:error, :no_key} end)
+
+      html =
+        render_click(lv, "save_credential", %{
+          "provider" => "anthropic_api_key",
+          "value" => "sk-ant-valid-key"
+        })
+
+      assert html =~ "Could not save"
+    end
+
+    test "continue_from_inference advances to step_2 when a credential is set", %{lv: lv} do
+      # Save a real credential first so has_any_credential? returns true
+      stub(Req, :get, fn _url, _opts -> {:ok, %Req.Response{status: 200}} end)
+
+      render_click(lv, "save_credential", %{
+        "provider" => "anthropic_api_key",
+        "value" => "sk-ant-valid-key"
+      })
+
+      assert {:error, {:live_redirect, %{to: "/onboarding/step_2"}}} =
+               render_click(lv, "continue_from_inference", %{})
     end
   end
 end

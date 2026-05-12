@@ -108,3 +108,39 @@ defmodule FountainWeb.ApiKeysLiveTest do
     end
   end
 end
+
+# Accounts.create_api_key stub must be visible to the LiveView process, so
+# this uses Mimic global mode in a separate non-async module.
+defmodule FountainWeb.ApiKeysLiveErrorTest do
+  use FountainWeb.ConnCase, async: false
+  use Mimic
+
+  import Phoenix.LiveViewTest
+
+  alias Fountain.Accounts
+
+  setup :set_mimic_global
+
+  describe "ApiKeysLive.Index — create_key error path" do
+    test "create_key shows flash error when Accounts.create_api_key returns error", %{conn: conn} do
+      user = insert_verified_user()
+
+      stub(Accounts, :create_api_key, fn _user_id, _label ->
+        cs =
+          %Fountain.Accounts.ApiKey{}
+          |> Ecto.Changeset.change()
+          |> Ecto.Changeset.add_error(:name, "is invalid")
+
+        {:error, cs}
+      end)
+
+      conn = login_user(conn, user)
+      {:ok, lv, _html} = live(conn, ~p"/api-keys")
+
+      render_submit(lv |> element("form[phx-submit='create_key']"), %{label: "bad-key"})
+
+      html = render(lv)
+      assert html =~ "Failed to create API key"
+    end
+  end
+end

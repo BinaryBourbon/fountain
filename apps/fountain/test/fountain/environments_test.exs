@@ -224,6 +224,29 @@ defmodule Fountain.EnvironmentsTest do
     end
   end
 
+  describe "Secret.changeset/3 — put_ciphertext nil branch" do
+    test "does not update value_ciphertext when value is not in attrs" do
+      existing_ciphertext = <<1, 2, 3>>
+      dek = :crypto.strong_rand_bytes(32)
+      env_id = Ecto.UUID.generate()
+
+      secret = %Fountain.Environments.Secret{value_ciphertext: existing_ciphertext}
+
+      changeset =
+        Fountain.Environments.Secret.changeset(
+          secret,
+          %{"key" => "NEW_KEY", "environment_id" => env_id},
+          dek
+        )
+
+      # value not in attrs → get_change(:value) is nil → nil branch is hit
+      # ciphertext field is not changed
+      refute Ecto.Changeset.get_change(changeset, :value_ciphertext)
+      # changeset is invalid because value is required
+      refute changeset.valid?
+    end
+  end
+
   describe "Secret.decrypt/2" do
     test "decrypts a secret that was encrypted with the tenant key" do
       user = insert_verified_user()
