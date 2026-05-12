@@ -1731,6 +1731,14 @@ defmodule Fountain.ConversationsContextTest do
     end
   end
 
+  describe "insert_sandbox/1 factory — no explicit user_id" do
+    test "creates a new user when no user_id is provided" do
+      # Triggers the insert_verified_user().id fallback in insert_sandbox (factory.ex line 129)
+      sandbox = insert_sandbox()
+      assert is_binary(sandbox.user_id)
+    end
+  end
+
   describe "insert_conversation/1 factory — agent without explicit user_id" do
     test "derives user_id from agent when no user_id is provided" do
       user = insert_verified_user()
