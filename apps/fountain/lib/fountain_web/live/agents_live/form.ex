@@ -19,7 +19,12 @@ defmodule FountainWeb.AgentsLive.Form do
      |> assign(:action, action)
      |> assign(:agent, agent)
      |> assign(:form, agent_to_form(agent))
-     |> assign(:errors, %{})}
+     |> assign(:errors, %{})
+     |> allow_upload(:avatar,
+       accept: ~w(image/jpeg image/png image/gif image/webp),
+       max_entries: 1,
+       max_file_size: 5_242_880
+     )}
   end
 
   defp load(%{"id" => id}, user_id), do: {Agents.get_agent!(id, user_id), :edit}
@@ -46,6 +51,21 @@ defmodule FountainWeb.AgentsLive.Form do
     {:noreply, assign(socket, :form, params)}
   end
 
+  def handle_event("cancel_upload", %{"ref" => ref}, socket) do
+    {:noreply, cancel_upload(socket, :avatar, ref)}
+  end
+
+  def handle_event("remove_avatar", _, socket) do
+    agent = socket.assigns.agent
+
+    if agent.id do
+      Agents.delete_avatar(agent)
+      {:noreply, assign(socket, :agent, %{agent | avatar_media_type: nil})}
+    else
+      {:noreply, socket}
+    end
+  end
+
   def handle_event("submit", %{"agent" => params}, socket) do
     with {:ok, mcp} <- parse_mcp(params),
          {:ok, skills} <- parse_skills(params) do
@@ -57,7 +77,10 @@ defmodule FountainWeb.AgentsLive.Form do
         |> Map.drop(["skills_json", "mcp_servers_json"])
         |> nil_if_blank("environment_id")
 
-      save(socket, attrs)
+      case save(socket, attrs) do
+        {:ok, socket} -> {:noreply, socket}
+        {:error, socket} -> {:noreply, socket}
+      end
     else
       {:error, field, msg} ->
         {:noreply, assign(socket, :errors, %{field => msg})}
@@ -66,22 +89,40 @@ defmodule FountainWeb.AgentsLive.Form do
 
   defp save(%{assigns: %{action: :new}} = socket, attrs) do
     case Agents.create_agent(attrs) do
-      {:ok, _agent} ->
-        {:noreply, socket |> put_flash(:info, "Agent created") |> push_navigate(to: ~p"/agents")}
+      {:ok, agent} ->
+        maybe_upload_avatar(socket, agent)
+
+        {:ok,
+         socket
+         |> put_flash(:info, "Agent created")
+         |> push_navigate(to: ~p"/agents")}
 
       {:error, cs} ->
-        {:noreply, assign(socket, :errors, changeset_errors(cs))}
+        {:error, assign(socket, :errors, changeset_errors(cs))}
     end
   end
 
-  defp save(%{assigns: %{action: :edit, agent: agent}} = socket, attrs) do
-    case Agents.update_agent(agent, attrs) do
-      {:ok, _agent} ->
-        {:noreply, socket |> put_flash(:info, "Agent updated") |> push_navigate(to: ~p"/agents")}
+  defp save(%{assigns: %{action: :edit, agent: existing}} = socket, attrs) do
+    case Agents.update_agent(existing, attrs) do
+      {:ok, saved} ->
+        maybe_upload_avatar(socket, saved)
+
+        {:ok,
+         socket
+         |> put_flash(:info, "Agent updated")
+         |> push_navigate(to: ~p"/agents")}
 
       {:error, cs} ->
-        {:noreply, assign(socket, :errors, changeset_errors(cs))}
+        {:error, assign(socket, :errors, changeset_errors(cs))}
     end
+  end
+
+  defp maybe_upload_avatar(socket, agent) do
+    consume_uploaded_entries(socket, :avatar, fn %{path: path}, entry ->
+      data = File.read!(path)
+      Agents.upload_avatar(agent, data, entry.client_type)
+      {:ok, :uploaded}
+    end)
   end
 
   defp parse_skills(%{"skills_json" => v}) when v in [nil, ""], do: {:ok, []}
@@ -90,6 +131,7 @@ defmodule FountainWeb.AgentsLive.Form do
     case Jason.decode(json) do
       {:ok, list} when is_list(list) -> {:ok, list}
       {:ok, _} -> {:error, "skills_json", "must be a JSON array"}
+
       {:error, %Jason.DecodeError{} = e} ->
         {:error, "skills_json", "invalid JSON: #{Exception.message(e)}"}
     end
@@ -101,6 +143,7 @@ defmodule FountainWeb.AgentsLive.Form do
     case Jason.decode(json) do
       {:ok, m} when is_map(m) -> {:ok, m}
       {:ok, _} -> {:error, "mcp_servers_json", "must be a JSON object"}
+
       {:error, %Jason.DecodeError{} = e} ->
         {:error, "mcp_servers_json", "invalid JSON: #{Exception.message(e)}"}
     end
@@ -116,6 +159,11 @@ defmodule FountainWeb.AgentsLive.Form do
     end)
     |> Map.new(fn {k, [first | _]} -> {to_string(k), first} end)
   end
+
+  defp upload_error_to_string(:too_large), do: "File too large (max 5 MB)"
+  defp upload_error_to_string(:not_accepted), do: "Unsupported file type"
+  defp upload_error_to_string(:too_many_files), do: "Only one avatar allowed"
+  defp upload_error_to_string(_), do: "Upload failed"
 
   @impl true
   def render(assigns) do
@@ -150,6 +198,55 @@ defmodule FountainWeb.AgentsLive.Form do
             <option value="">— none —</option>
             <option :for={e <- @envs} value={e.id} selected={@form["environment_id"] == e.id}>{e.name}</option>
           </select>
+        </div>
+
+        <%!-- Avatar upload --%>
+        <div class="space-y-2">
+          <label class="block text-sm font-medium text-zinc-700">Avatar</label>
+
+          <div :if={@agent.id && @agent.avatar_media_type} class="flex items-center gap-3">
+            <img
+              src={~p"/agents/#{@agent.id}/avatar"}
+              class="w-14 h-14 rounded-xl object-cover border border-zinc-200"
+              alt="Current avatar"
+            />
+            <button
+              type="button"
+              phx-click="remove_avatar"
+              class="text-sm text-rose-600 hover:text-rose-800 underline underline-offset-2"
+            >
+              Remove
+            </button>
+          </div>
+
+          <.live_file_input
+            upload={@uploads.avatar}
+            class="block text-sm text-zinc-700 file:mr-3 file:rounded file:border-0
+                   file:bg-zinc-100 file:px-3 file:py-1.5 file:text-sm file:font-medium
+                   file:cursor-pointer hover:file:bg-zinc-200"
+          />
+          <p class="text-xs text-zinc-500">JPEG, PNG, GIF, or WebP · max 5 MB</p>
+
+          <div :for={entry <- @uploads.avatar.entries} class="flex items-center gap-3">
+            <.live_img_preview
+              entry={entry}
+              class="w-14 h-14 rounded-xl object-cover border border-zinc-200"
+            />
+            <div class="text-sm text-zinc-600">
+              <p class="font-medium">{entry.client_name}</p>
+              <button
+                type="button"
+                phx-click="cancel_upload"
+                phx-value-ref={entry.ref}
+                class="text-rose-600 hover:text-rose-800 underline underline-offset-2"
+              >
+                Remove
+              </button>
+            </div>
+            <p :for={err <- upload_errors(@uploads.avatar, entry)} class="text-rose-600 text-xs">
+              {upload_error_to_string(err)}
+            </p>
+          </div>
         </div>
 
         <.input id="skills_json" name="agent[skills_json]" type="textarea" rows="6"
