@@ -138,10 +138,18 @@ defmodule FountainWeb.Layouts do
             aria-label="Primary navigation"
           >
             <.nav_link href={~p"/conversations"} label="Conversations" current={@current_path} />
-            <.nav_link href={~p"/agents"} label="Agents" current={@current_path} />
-            <.nav_link href={~p"/environments"} label="Environments" current={@current_path} />
-            <.nav_link href={~p"/vaults"} label="Vaults" current={@current_path} />
           </nav>
+
+          <%!-- New conversation --%>
+          <div class="px-2 pb-1 shrink-0">
+            <.link
+              navigate={~p"/conversations/new"}
+              class="block w-full rounded-md px-3 py-1.5 text-sm font-medium text-center
+                     bg-indigo-600 text-white hover:bg-indigo-500 transition-colors"
+            >
+              + New Conversation
+            </.link>
+          </div>
 
           <%!-- Conversation filters --%>
           <div class="px-2 pt-0.5 pb-1 flex items-center gap-1.5 shrink-0">
@@ -234,6 +242,13 @@ defmodule FountainWeb.Layouts do
                 child_count={Map.get(@child_counts, conv.id, 0)}
               />
             </details>
+          </div>
+
+          <%!-- Tools section --%>
+          <div class="border-t border-[var(--color-border)] px-2 py-1.5 space-y-0.5 shrink-0">
+            <.nav_link href={~p"/agents"} label="Agents" current={@current_path} />
+            <.nav_link href={~p"/environments"} label="Environments" current={@current_path} />
+            <.nav_link href={~p"/vaults"} label="Vaults" current={@current_path} />
           </div>
 
           <%!-- Settings section --%>
