@@ -165,17 +165,17 @@ defmodule Fountain.AccountsAdditionalTest do
       assert returned_user.id == user.id
     end
 
-    test "returns {:error, :invalid} for an unknown key" do
+    test "returns {:error, :not_found} for an unknown key" do
       fake_raw = "ftn_" <> String.duplicate("a", 64)
-      assert {:error, :invalid} = Accounts.get_user_by_api_key(fake_raw)
+      assert {:error, :not_found} = Accounts.get_user_by_api_key(fake_raw)
     end
 
-    test "returns {:error, :invalid} for a revoked key" do
+    test "returns {:error, :revoked} for a revoked key" do
       user = insert_verified_user()
       {:ok, {key, raw_key}} = Accounts.create_api_key(user.id, "revokeme")
       {:ok, _} = Accounts.revoke_api_key(user.id, key.id)
 
-      assert {:error, :invalid} = Accounts.get_user_by_api_key(raw_key)
+      assert {:error, :revoked} = Accounts.get_user_by_api_key(raw_key)
     end
   end
 
