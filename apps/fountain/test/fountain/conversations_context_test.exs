@@ -1739,6 +1739,13 @@ defmodule Fountain.ConversationsContextTest do
       assert conv.user_id == user.id
       assert conv.agent_id == agent.id
     end
+
+    test "creates a new user when neither user_id nor agent is provided" do
+      # Triggers the insert_verified_user().id fallback (factory.ex line 147)
+      conv = insert_conversation()
+      assert is_binary(conv.user_id)
+      assert is_nil(conv.agent_id)
+    end
   end
 
   describe "factory to_atom_map — safe_to_existing_atom fallback" do
