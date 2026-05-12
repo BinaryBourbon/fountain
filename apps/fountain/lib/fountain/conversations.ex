@@ -515,7 +515,7 @@ defmodule Fountain.Conversations do
              source: attrs["source"] || "api",
              parent_conversation_id: attrs["parent_conversation_id"]
            }) do
-      {:ok, _pid} =
+      start_result =
         Horde.DynamicSupervisor.start_child(
           Fountain.ConversationSupervisor,
           {ConversationServer,
@@ -527,15 +527,21 @@ defmodule Fountain.Conversations do
            ]}
         )
 
-      result = _unsafe_get_conversation!(conv.id)
+      case start_result do
+        {:ok, _pid} ->
+          result = _unsafe_get_conversation!(conv.id)
 
-      if result.parent_conversation_id do
-        root_id = get_root_conversation_id(result.id)
-        broadcast_graph_update(root_id)
+          if result.parent_conversation_id do
+            root_id = get_root_conversation_id(result.id)
+            broadcast_graph_update(root_id)
+          end
+
+          broadcast_sidebar_update(user_id)
+          {:ok, result}
+
+        {:error, reason} ->
+          {:error, {:server_start_failed, reason}}
       end
-
-      broadcast_sidebar_update(user_id)
-      {:ok, result}
     else
       nil -> {:error, :not_found}
       {:error, _} = err -> err
