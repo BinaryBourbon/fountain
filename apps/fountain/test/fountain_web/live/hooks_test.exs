@@ -137,4 +137,32 @@ defmodule FountainWeb.Live.HooksTest do
       assert true
     end
   end
+
+  # ── Direct on_mount unit tests ───────────────────────────────────────────────
+  # The :browser_authenticated plug redirects unauthenticated requests before
+  # reaching LiveView, so the is_nil(user) branches are never triggered through
+  # the router. Call on_mount directly with a minimal socket to cover them.
+
+  describe "on_mount/4 — nil user unit paths" do
+    defp minimal_socket do
+      struct(Phoenix.LiveView.Socket, %{
+        endpoint: FountainWeb.Endpoint,
+        assigns: %{__changed__: %{}}
+      })
+    end
+
+    test ":require_authenticated_user halts with login redirect when current_user is nil" do
+      {:halt, socket} =
+        FountainWeb.Live.Hooks.on_mount(:require_authenticated_user, %{}, %{}, minimal_socket())
+
+      assert socket.redirected == {:redirect, %{status: 302, to: "/auth/login"}}
+    end
+
+    test ":require_admin halts with login redirect when current_user is nil" do
+      {:halt, socket} =
+        FountainWeb.Live.Hooks.on_mount(:require_admin, %{}, %{}, minimal_socket())
+
+      assert socket.redirected == {:redirect, %{status: 302, to: "/auth/login"}}
+    end
+  end
 end
