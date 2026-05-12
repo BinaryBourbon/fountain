@@ -45,6 +45,14 @@ defmodule Fountain.CryptoTest do
       end
     end
 
+    test "decrypt raises ArgumentError when called with a key that is not 32 bytes" do
+      ciphertext = Crypto.encrypt("secret", @key)
+
+      assert_raise ArgumentError, ~r/32 bytes/, fn ->
+        Crypto.decrypt(ciphertext, @short_key)
+      end
+    end
+
     test "each encryption of the same plaintext produces a different ciphertext (random IV)" do
       c1 = Crypto.encrypt("same", @key)
       c2 = Crypto.encrypt("same", @key)

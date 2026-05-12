@@ -132,6 +132,14 @@ defmodule Fountain.BillingTest do
       assert persisted.event_type == "sandbox_terminated"
       assert persisted.metadata == %{"duration_ms" => 30_000}
     end
+
+    test "raises Ecto.ConstraintError when user_id does not exist (FK constraint)" do
+      nonexistent_user_id = Ecto.UUID.generate()
+
+      assert_raise Ecto.ConstraintError, ~r/usage_events_user_id_fkey/, fn ->
+        Billing.emit(nonexistent_user_id, "sandbox_provisioned", nil, nil)
+      end
+    end
   end
 
   describe "sync_subscription/1" do

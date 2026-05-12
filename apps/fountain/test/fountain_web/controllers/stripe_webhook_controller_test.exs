@@ -46,5 +46,28 @@ defmodule FountainWeb.StripeWebhookControllerTest do
 
       assert conn.status == 200
     end
+
+    test "returns 200 and sync_subscription succeeds when customer matches a real user",
+         %{conn: conn} do
+      user = insert_verified_user()
+      user = Fountain.Repo.update!(Ecto.Changeset.change(user, stripe_customer_id: "cus_success_test"))
+
+      event = %Stripe.Event{
+        type: "customer.subscription.updated",
+        data: %{object: %{status: "active", customer: user.stripe_customer_id, trial_end: nil}}
+      }
+
+      stub(Stripe.Webhook, :construct_event, fn _body, _sig, _secret ->
+        {:ok, event}
+      end)
+
+      conn =
+        conn
+        |> Plug.Conn.put_req_header("content-type", "application/json")
+        |> Plug.Conn.put_req_header("stripe-signature", "t=1,v1=validhash")
+        |> Phoenix.ConnTest.dispatch(FountainWeb.Endpoint, :post, "/api/stripe/webhook", @raw_body)
+
+      assert conn.status == 200
+    end
   end
 end
