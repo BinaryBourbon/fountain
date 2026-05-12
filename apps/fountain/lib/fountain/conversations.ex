@@ -228,6 +228,10 @@ defmodule Fountain.Conversations do
     conv
     |> Conversation.changeset(attrs)
     |> Repo.update()
+    |> tap(fn
+      {:ok, updated} -> broadcast_sidebar_update(updated.user_id)
+      _ -> :ok
+    end)
   end
 
   @doc """
@@ -235,9 +239,11 @@ defmodule Fountain.Conversations do
   if alive), then delete the conversation row. Cascades to turns and log
   events via the FK.
   """
-  def delete_conversation(%Conversation{id: id} = conv) do
+  def delete_conversation(%Conversation{id: id, user_id: user_id} = conv) do
     _ = Fountain.Conversations.ConversationServer.terminate(id)
-    Repo.delete(conv)
+    result = Repo.delete(conv)
+    if match?({:ok, _}, result), do: broadcast_sidebar_update(user_id)
+    result
   end
 
   # ── turns ─────────────────────────────────────────────────────────────────
@@ -481,6 +487,7 @@ defmodule Fountain.Conversations do
         broadcast_graph_update(root_id)
       end
 
+      broadcast_sidebar_update(user_id)
       {:ok, result}
     else
       nil -> {:error, :not_found}
@@ -516,6 +523,14 @@ defmodule Fountain.Conversations do
       Fountain.PubSub,
       "conversations:graph:#{root_id}",
       {:graph_updated}
+    )
+  end
+
+  defp broadcast_sidebar_update(user_id) when is_binary(user_id) do
+    Phoenix.PubSub.broadcast(
+      Fountain.PubSub,
+      "sidebar:#{user_id}",
+      {:sidebar_update, user_id}
     )
   end
 

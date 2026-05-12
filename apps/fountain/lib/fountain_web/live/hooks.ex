@@ -36,6 +36,7 @@ defmodule FountainWeb.Live.Hooks do
 
   alias Fountain.Accounts
   alias Fountain.Billing
+  alias Fountain.Conversations
 
   def on_mount(:require_authenticated_user, _params, session, socket) do
     socket = mount_current_user(session, socket)
@@ -52,7 +53,7 @@ defmodule FountainWeb.Live.Hooks do
          |> redirect(to: ~p"/auth/login")}
 
       true ->
-        {:cont, track_current_path(socket)}
+        {:cont, socket |> track_current_path() |> mount_live_sidebar()}
     end
   end
 
@@ -117,5 +118,35 @@ defmodule FountainWeb.Live.Hooks do
     |> Phoenix.LiveView.attach_hook(:current_path, :handle_params, fn _params, uri, socket ->
       {:cont, assign(socket, :current_path, URI.parse(uri).path)}
     end)
+  end
+
+  # Subscribe to the user's sidebar PubSub topic and load the initial
+  # conversation list into socket assigns. A handle_info hook intercepts
+  # {:sidebar_update, user_id} messages and refreshes nav_conversations
+  # in-place, so the sidebar re-renders without any per-LiveView code.
+  defp mount_live_sidebar(socket) do
+    user_id = socket.assigns.current_user.id
+
+    if connected?(socket) do
+      Phoenix.PubSub.subscribe(Fountain.PubSub, "sidebar:#{user_id}")
+    end
+
+    socket
+    |> assign(:nav_conversations, load_sidebar_conversations(user_id))
+    |> attach_hook(:sidebar_nav, :handle_info, fn
+      {:sidebar_update, ^user_id}, socket ->
+        {:halt, assign(socket, :nav_conversations, load_sidebar_conversations(user_id))}
+
+      _, socket ->
+        {:cont, socket}
+    end)
+  end
+
+  defp load_sidebar_conversations(user_id) do
+    try do
+      Conversations.list_conversations_by_activity(user_id)
+    rescue
+      _ -> []
+    end
   end
 end
