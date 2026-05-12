@@ -183,6 +183,14 @@ defmodule FountainWeb.OnboardingLiveTest do
       assert html =~ "Create an agent"
       assert html =~ "my-agent-draft"
     end
+
+    test "environment options are rendered when user has environments", %{conn: conn, user: user} do
+      env = insert_env(user_id: user.id)
+      {:ok, _lv, html} = live(conn, ~p"/onboarding/step_3")
+
+      assert html =~ env.name
+      assert html =~ "option"
+    end
   end
 
   describe "OnboardingLive.Wizard — step 4 (finish)" do
@@ -194,6 +202,17 @@ defmodule FountainWeb.OnboardingLiveTest do
 
       assert {:error, {:live_redirect, %{to: "/conversations/new"}}} =
                lv |> element("button", "Start first conversation") |> render_click()
+    end
+
+    test "displays agent count when user has agents", %{conn: conn} do
+      user = insert_verified_user()
+      {:ok, user} = Fountain.Accounts.advance_onboarding(user, "step_4")
+      _agent = insert_agent(user_id: user.id)
+      conn = login_user(conn, user)
+      {:ok, _lv, html} = live(conn, ~p"/onboarding/step_4")
+
+      assert html =~ "agent"
+      assert html =~ "ready to go"
     end
   end
 end
