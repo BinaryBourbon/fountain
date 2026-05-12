@@ -284,6 +284,21 @@
             destroyed() {
               this._handleViewMode = null;
             }
+          },
+          // ── Roots filter persistence (localStorage) ─────────────────────────
+          RootsFilterPersist: {
+            mounted() {
+              const saved = localStorage.getItem("fountain-sidebar-roots-only");
+              if (saved === "true") {
+                this.pushEvent("restore_roots_only", {});
+              }
+              this._removeRootsOnly = this.handleEvent("roots_only_changed", ({ value }) => {
+                localStorage.setItem("fountain-sidebar-roots-only", value);
+              });
+            },
+            destroyed() {
+              if (this._removeRootsOnly) this._removeRootsOnly();
+            }
           }
         };
 

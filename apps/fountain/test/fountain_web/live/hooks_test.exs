@@ -138,6 +138,60 @@ defmodule FountainWeb.Live.HooksTest do
     end
   end
 
+  # ── sidebar roots filter persistence ────────────────────────────────────────
+
+  describe "sidebar roots filter persistence" do
+    setup do
+      user = insert_verified_user()
+      %{user: user}
+    end
+
+    @tag :restore_roots_only
+    test "restore_roots_only sets sidebar_roots_only to true", %{conn: conn, user: user} do
+      conn = login_user(conn, user)
+      {:ok, view, html} = live(conn, ~p"/conversations")
+
+      # default is false — button shows "Show root conversations only"
+      assert html =~ "Show root conversations only"
+
+      render_hook(view, "restore_roots_only", %{})
+
+      assert render(view) =~ "Showing roots only"
+    end
+
+    @tag :restore_roots_only
+    test "restore_roots_only is idempotent when already true", %{conn: conn, user: user} do
+      conn = login_user(conn, user)
+      {:ok, view, _html} = live(conn, ~p"/conversations")
+
+      render_hook(view, "restore_roots_only", %{})
+      render_hook(view, "restore_roots_only", %{})
+
+      assert render(view) =~ "Showing roots only"
+    end
+
+    @tag :push_roots_only_changed
+    test "sidebar_toggle_roots_only pushes roots_only_changed with value true", %{conn: conn, user: user} do
+      conn = login_user(conn, user)
+      {:ok, view, _html} = live(conn, ~p"/conversations")
+
+      view |> element("[phx-click='sidebar_toggle_roots_only']") |> render_click()
+      assert_push_event(view, "roots_only_changed", %{value: "true"})
+    end
+
+    @tag :push_roots_only_changed
+    test "sidebar_toggle_roots_only pushes roots_only_changed with value false when toggled twice", %{conn: conn, user: user} do
+      conn = login_user(conn, user)
+      {:ok, view, _html} = live(conn, ~p"/conversations")
+
+      view |> element("[phx-click='sidebar_toggle_roots_only']") |> render_click()
+      assert_push_event(view, "roots_only_changed", %{value: "true"})
+
+      view |> element("[phx-click='sidebar_toggle_roots_only']") |> render_click()
+      assert_push_event(view, "roots_only_changed", %{value: "false"})
+    end
+  end
+
   # ── Direct on_mount unit tests ───────────────────────────────────────────────
   # The :browser_authenticated plug redirects unauthenticated requests before
   # reaching LiveView, so the is_nil(user) branches are never triggered through

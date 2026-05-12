@@ -154,6 +154,8 @@ defmodule FountainWeb.Layouts do
           <%!-- Conversation filters --%>
           <div class="px-2 pt-0.5 pb-1 flex items-center gap-1.5 shrink-0">
             <button
+              id="roots-filter-persist"
+              phx-hook="RootsFilterPersist"
               type="button"
               phx-click="sidebar_toggle_roots_only"
               title={if @sidebar_roots_only, do: "Showing roots only — click to show all", else: "Show root conversations only"}
