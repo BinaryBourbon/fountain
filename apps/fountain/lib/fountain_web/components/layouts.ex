@@ -7,17 +7,26 @@ defmodule FountainWeb.Layouts do
   alias Fountain.Conversations
 
   def app(assigns) do
+    # nav_conversations is pre-loaded into socket assigns by the live sidebar
+    # hook (mount_live_sidebar) for all authenticated LiveView pages. Fall back
+    # to a fresh DB fetch for any non-LiveView rendering context.
     convs =
-      case assigns[:current_user] do
-        %{id: user_id} ->
-          try do
-            Conversations.list_conversations_by_activity(user_id)
-          rescue
-            _ -> []
-          end
+      case assigns[:nav_conversations] do
+        convs when is_list(convs) ->
+          convs
 
         _ ->
-          []
+          case assigns[:current_user] do
+            %{id: user_id} ->
+              try do
+                Conversations.list_conversations_by_activity(user_id)
+              rescue
+                _ -> []
+              end
+
+            _ ->
+              []
+          end
       end
 
     assigns = assign(assigns, :nav_conversations, convs)
