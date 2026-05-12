@@ -8,6 +8,7 @@ defmodule Fountain.Accounts.User do
   @roles ~w(user admin)
   @subscription_statuses ~w(trialing active past_due canceled)
   @theme_values ~w(light dark system)
+  @visible_stream_values ~w(stdout stderr stage)
 
   schema "users" do
     field :email, :string
@@ -23,6 +24,8 @@ defmodule Fountain.Accounts.User do
     field :trial_ends_at, :utc_datetime
     field :session_version, :integer, default: 0
     field :theme_preference, :string, default: "system"
+    field :conversations_roots_only, :boolean, default: false
+    field :conversation_visible_streams, {:array, :string}, default: ["stdout", "stderr", "stage"]
 
     has_many :api_keys, Fountain.Accounts.ApiKey
     has_one :data_key, Fountain.Accounts.UserDataKey
@@ -71,6 +74,13 @@ defmodule Fountain.Accounts.User do
     user
     |> cast(attrs, [:theme_preference])
     |> validate_inclusion(:theme_preference, @theme_values)
+  end
+
+  @doc "Changeset for updating conversation filter preferences."
+  def preferences_changeset(user, attrs) do
+    user
+    |> cast(attrs, [:conversations_roots_only, :conversation_visible_streams])
+    |> validate_subset(:conversation_visible_streams, @visible_stream_values)
   end
 
   @doc "Changeset for resetting a password (validates + hashes new password)."

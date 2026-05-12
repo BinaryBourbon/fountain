@@ -155,6 +155,21 @@ defmodule Fountain.Accounts do
   end
 
   @doc """
+  Update conversation filter preferences for the user.
+
+  Accepts a subset of: `conversations_roots_only` (boolean) and
+  `conversation_visible_streams` (list of "stdout", "stderr", "stage").
+
+  Returns `{:ok, user}` or `{:error, changeset}`.
+  """
+  @spec update_preferences(User.t(), map()) :: {:ok, User.t()} | {:error, Ecto.Changeset.t()}
+  def update_preferences(%User{} = user, attrs) do
+    user
+    |> User.preferences_changeset(attrs)
+    |> Repo.update()
+  end
+
+  @doc """
   Find or create a user from an OAuth provider callback.
 
   Looks up by `(provider, provider_uid)` first; falls back to email lookup
