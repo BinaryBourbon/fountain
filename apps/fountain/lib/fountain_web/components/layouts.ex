@@ -315,8 +315,17 @@ defmodule FountainWeb.Layouts do
     task_label = if first_turn, do: truncate(first_turn.prompt, 55), else: nil
     agent_name = assigns.conv.agent && assigns.conv.agent.name
 
+    turn_count = Map.get(assigns.conv, :turn_count, 0) || 0
+
+    turns_label =
+      case turn_count do
+        0 -> nil
+        1 -> "1 turn"
+        n -> "#{n} turns"
+      end
+
     meta =
-      [agent_name, sidebar_relative_time(assigns.conv.updated_at)]
+      [agent_name, turns_label, sidebar_relative_time(assigns.conv.updated_at)]
       |> Enum.reject(&is_nil/1)
       |> Enum.join(" · ")
 

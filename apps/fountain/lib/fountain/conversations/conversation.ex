@@ -20,6 +20,10 @@ defmodule Fountain.Conversations.Conversation do
     field :source, :string, default: "api"
     field :parent_conversation_id, :binary_id
     field :callback_api_key_id, :binary_id
+
+    # Populated by list_conversations_by_activity/1 — not persisted.
+    field :turn_count, :integer, virtual: true, default: 0
+
     belongs_to :user, User
     belongs_to :sandbox, Sandbox
     belongs_to :agent, Agent
