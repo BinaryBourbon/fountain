@@ -110,11 +110,33 @@ defmodule Fountain.Conversations do
         group_by: t.conversation_id,
         select: %{conversation_id: t.conversation_id, count: count(t.id)}
 
+    last_turn_at =
+      from t in Turn,
+        group_by: t.conversation_id,
+        select: %{conversation_id: t.conversation_id, last_at: max(t.inserted_at)}
+
+    last_log_at =
+      from le in LogEvent,
+        group_by: le.conversation_id,
+        select: %{conversation_id: le.conversation_id, last_at: max(le.inserted_at)}
+
     Repo.all(
       from c in Conversation,
         where: c.user_id == ^user_id,
         left_join: tc in subquery(turn_counts), on: tc.conversation_id == c.id,
-        order_by: [desc: c.updated_at, desc: c.id],
+        left_join: lt in subquery(last_turn_at), on: lt.conversation_id == c.id,
+        left_join: ll in subquery(last_log_at), on: ll.conversation_id == c.id,
+        order_by: [
+          desc:
+            fragment(
+              "GREATEST(COALESCE(?, ?), COALESCE(?, ?), ?)",
+              ll.last_at,
+              c.inserted_at,
+              lt.last_at,
+              c.inserted_at,
+              c.inserted_at
+            )
+        ],
         select: %{c | turn_count: fragment("COALESCE(?, 0)", tc.count)}
     )
     |> Repo.preload([:agent, turns: first_turn_query()])
