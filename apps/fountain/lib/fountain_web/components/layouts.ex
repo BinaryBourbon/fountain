@@ -62,7 +62,7 @@ defmodule FountainWeb.Layouts do
         <aside
           id="app-sidebar"
           class="fixed md:sticky top-0 inset-y-0 left-0 z-40
-                 flex flex-col w-64 h-screen
+                 flex flex-col w-72 h-screen
                  border-r border-[var(--color-border)] bg-[var(--color-bg-1)]
                  -translate-x-full peer-checked:translate-x-0 md:translate-x-0
                  transition-transform duration-200"
@@ -86,7 +86,7 @@ defmodule FountainWeb.Layouts do
 
           <%!-- Primary nav --%>
           <nav
-            class="px-2 pt-2 pb-1 text-sm space-y-0.5 shrink-0"
+            class="px-2 pt-1 pb-0.5 text-sm space-y-0.5 shrink-0"
             aria-label="Primary navigation"
           >
             <.nav_link href={~p"/conversations"} label="Conversations" current={@current_path} />
@@ -96,14 +96,14 @@ defmodule FountainWeb.Layouts do
           </nav>
 
           <%!-- Recent conversations (scrollable, grouped by date) --%>
-          <div class="flex-1 min-h-0 overflow-y-auto px-2 py-1">
+          <div class="flex-1 min-h-0 overflow-y-auto px-2 py-0.5">
             <details
               :for={{group_label, group_convs} <- @nav_conversation_groups}
               open={group_label in ["Active", "Today", "Yesterday"]}
               class="group"
             >
               <summary class="
-                flex items-center gap-1 px-3 py-0.5
+                flex items-center gap-1 px-3 py-px
                 cursor-pointer select-none
                 text-[10px] uppercase tracking-wider font-medium
                 text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]
@@ -136,7 +136,7 @@ defmodule FountainWeb.Layouts do
           </div>
 
           <%!-- Settings section --%>
-          <div class="border-t border-[var(--color-border)] px-2 py-2 space-y-0.5 shrink-0">
+          <div class="border-t border-[var(--color-border)] px-2 py-1.5 space-y-0.5 shrink-0">
             <p class="px-3 pt-1 pb-0.5 text-[10px] uppercase tracking-wider text-[var(--color-text-muted)] font-medium">
               Settings
             </p>
@@ -153,7 +153,7 @@ defmodule FountainWeb.Layouts do
           </div>
 
           <%!-- Sidebar footer --%>
-          <div class="border-t border-[var(--color-border)] px-3 py-3 shrink-0">
+          <div class="border-t border-[var(--color-border)] px-3 py-2.5 shrink-0">
             <div class="flex items-center justify-between gap-2">
               <div class="min-w-0 flex-1">
                 <p
@@ -256,7 +256,7 @@ defmodule FountainWeb.Layouts do
     <a
       href={@href}
       class={[
-        "block rounded-md px-3 py-1.5 text-sm transition-colors",
+        "block rounded-md px-3 py-1 text-sm transition-colors",
         if(@active,
           do: "bg-[var(--color-bg-2)] font-medium text-[var(--color-text-primary)]",
           else: "text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-2)] hover:text-[var(--color-text-primary)]"
@@ -286,7 +286,6 @@ defmodule FountainWeb.Layouts do
     agent_name = assigns.conv.agent && assigns.conv.agent.name
     turn_count = Map.get(assigns.conv, :turn_count, 0) || 0
 
-    # meta line is now just agent + time; turn count lives in its own badge
     meta =
       [agent_name, sidebar_relative_time(assigns.conv.updated_at)]
       |> Enum.reject(&is_nil/1)
@@ -315,7 +314,7 @@ defmodule FountainWeb.Layouts do
     <a
       href={@href}
       class={[
-        "flex items-start gap-2 rounded-md px-3 py-1.5 text-sm transition-colors",
+        "flex items-start gap-2 rounded-md px-3 py-1 text-sm transition-colors",
         if(@active,
           do: "bg-[var(--color-bg-2)] font-medium text-[var(--color-text-primary)]",
           else: "text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-2)] hover:text-[var(--color-text-primary)]"
@@ -327,7 +326,6 @@ defmodule FountainWeb.Layouts do
         title={@status_label}
       />
       <span class="flex-1 min-w-0">
-        <%!-- Label row: task text truncates; badges stay pinned right --%>
         <span class="flex items-center gap-1">
           <span
             :if={@task_label}
@@ -338,7 +336,6 @@ defmodule FountainWeb.Layouts do
             class="truncate italic text-[var(--color-text-muted)] text-[13px]"
           >(no task yet)</span>
 
-          <%!-- Turn-count badge --%>
           <span
             :if={@turn_count > 0}
             class="inline-flex shrink-0 items-center gap-0.5 rounded px-1 py-0.5
@@ -353,7 +350,6 @@ defmodule FountainWeb.Layouts do
             {@turn_count}
           </span>
 
-          <%!-- Branch badge --%>
           <span
             :if={@child_count > 0}
             class="inline-flex shrink-0 items-center gap-0.5 rounded px-1 py-0.5
