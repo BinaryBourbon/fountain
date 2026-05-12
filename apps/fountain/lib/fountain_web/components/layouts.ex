@@ -29,8 +29,23 @@ defmodule FountainWeb.Layouts do
           end
       end
 
+    # Count how many direct children each conversation has. Computed from
+    # parent_conversation_id values already present in the loaded list —
+    # no additional DB query needed.
+    child_counts =
+      convs
+      |> Enum.map(& &1.parent_conversation_id)
+      |> Enum.reject(&is_nil/1)
+      |> Enum.frequencies()
+
     groups = group_conversations_by_date(convs)
-    assigns = assign(assigns, nav_conversations: convs, nav_conversation_groups: groups)
+
+    assigns =
+      assign(assigns,
+        nav_conversations: convs,
+        nav_conversation_groups: groups,
+        child_counts: child_counts
+      )
 
     ~H"""
     <div class="min-h-screen bg-[var(--color-bg-0)] text-[var(--color-text-primary)]">
@@ -104,7 +119,6 @@ defmodule FountainWeb.Layouts do
                 text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]
                 list-none [&::-webkit-details-marker]:hidden
               ">
-                <%!-- Chevron: points right when closed, down when open --%>
                 <svg
                   class="size-2.5 shrink-0 -rotate-90 group-open:rotate-0 transition-transform duration-150"
                   viewBox="0 0 20 20"
@@ -126,6 +140,7 @@ defmodule FountainWeb.Layouts do
                 :for={conv <- group_convs}
                 conv={conv}
                 current={@current_path}
+                child_count={Map.get(@child_counts, conv.id, 0)}
               />
             </details>
           </div>
@@ -177,24 +192,10 @@ defmodule FountainWeb.Layouts do
                 aria-label="Toggle dark mode"
                 class="shrink-0 rounded-md p-1.5 text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-2)] hover:text-[var(--color-text-primary)] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-focus-ring)]"
               >
-                <%!-- Moon icon (shown in light mode — click to go dark) --%>
-                <svg
-                  id="theme-icon-moon"
-                  class="size-4"
-                  viewBox="0 0 20 20"
-                  fill="currentColor"
-                  aria-hidden="true"
-                >
+                <svg id="theme-icon-moon" class="size-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
                   <path d="M17.293 13.293A8 8 0 0 1 6.707 2.707a8.001 8.001 0 1 0 10.586 10.586z" />
                 </svg>
-                <%!-- Sun icon (hidden by default; shown in dark mode) --%>
-                <svg
-                  id="theme-icon-sun"
-                  class="size-4 hidden"
-                  viewBox="0 0 20 20"
-                  fill="currentColor"
-                  aria-hidden="true"
-                >
+                <svg id="theme-icon-sun" class="size-4 hidden" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
                   <path
                     fill-rule="evenodd"
                     d="M10 2a1 1 0 0 1 1 1v1a1 1 0 1 1-2 0V3a1 1 0 0 1 1-1Zm4 8a4 4 0 1 1-8 0 4 4 0 0 1 8 0Zm-.464 4.95.707.707a1 1 0 0 0 1.414-1.414l-.707-.707a1 1 0 0 0-1.414 1.414Zm2.12-10.607a1 1 0 0 1 0 1.414l-.706.707a1 1 0 1 1-1.414-1.414l.707-.707a1 1 0 0 1 1.414 0ZM17 11a1 1 0 1 0 0-2h-1a1 1 0 1 0 0 2h1Zm-7 4a1 1 0 0 1 1 1v1a1 1 0 1 1-2 0v-1a1 1 0 0 1 1-1ZM5.05 6.464A1 1 0 1 0 6.465 5.05l-.708-.707a1 1 0 0 0-1.414 1.414l.707.707Zm1.414 8.486-.707.707a1 1 0 0 1-1.414-1.414l.707-.707a1 1 0 0 1 1.414 1.414ZM4 11a1 1 0 1 0 0-2H3a1 1 0 0 0 0 2h1Z"
@@ -215,12 +216,7 @@ defmodule FountainWeb.Layouts do
               class="cursor-pointer rounded-md p-1.5 text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-2)]"
               aria-label="Open navigation"
             >
-              <svg
-                class="size-5"
-                viewBox="0 0 20 20"
-                fill="currentColor"
-                aria-hidden="true"
-              >
+              <svg class="size-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
                 <path
                   fill-rule="evenodd"
                   d="M2 4.75A.75.75 0 0 1 2.75 4h14.5a.75.75 0 0 1 0 1.5H2.75A.75.75 0 0 1 2 4.75ZM2 10a.75.75 0 0 1 .75-.75h14.5a.75.75 0 0 1 0 1.5H2.75A.75.75 0 0 1 2 10Zm0 5.25a.75.75 0 0 1 .75-.75h14.5a.75.75 0 0 1 0 1.5H2.75a.75.75 0 0 1-.75-.75Z"
@@ -301,6 +297,7 @@ defmodule FountainWeb.Layouts do
 
   attr :conv, :map, required: true
   attr :current, :string, default: ""
+  attr :child_count, :integer, default: 0
 
   defp conv_nav_link(assigns) do
     href = "/conversations/#{assigns.conv.id}"
@@ -337,6 +334,13 @@ defmodule FountainWeb.Layouts do
         s -> {"bg-[var(--color-text-muted)]", s}
       end
 
+    child_label =
+      case assigns.child_count do
+        0 -> nil
+        1 -> "1 branch"
+        n -> "#{n} branches"
+      end
+
     assigns =
       assign(assigns,
         href: href,
@@ -344,7 +348,8 @@ defmodule FountainWeb.Layouts do
         task_label: task_label,
         meta: meta,
         dot_class: dot_class,
-        status_label: status_label
+        status_label: status_label,
+        child_label: child_label
       )
 
     ~H"""
@@ -364,9 +369,30 @@ defmodule FountainWeb.Layouts do
         title={@status_label}
       />
       <span class="flex-1 min-w-0">
-        <span :if={@task_label} class="block truncate">{@task_label}</span>
-        <span :if={!@task_label} class="block truncate italic text-[var(--color-text-muted)]">
-          (no task yet)
+        <%!-- Task label row: truncates, badge stays pinned right --%>
+        <span class="flex items-center gap-1.5">
+          <span
+            :if={@task_label}
+            class="truncate"
+          >{@task_label}</span>
+          <span
+            :if={!@task_label}
+            class="truncate italic text-[var(--color-text-muted)]"
+          >(no task yet)</span>
+          <span
+            :if={@child_label}
+            class="inline-flex shrink-0 items-center gap-0.5 rounded px-1 py-0.5
+                   text-[10px] font-medium leading-none
+                   bg-[var(--color-bg-2)] text-[var(--color-text-muted)]
+                   border border-[var(--color-border)]"
+            title={@child_label}
+          >
+            <%!-- Git-branch icon --%>
+            <svg class="size-2.5" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+              <path d="M5 3.25a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0zm0 2.122a2.25 2.25 0 1 0-1.5 0v.878A2.25 2.25 0 0 0 5.75 8.5h1.5v2.128a2.251 2.251 0 1 0 1.5 0V8.5h1.5a2.25 2.25 0 0 0 2.25-2.25v-.878a2.25 2.25 0 1 0-1.5 0v.878a.75.75 0 0 1-.75.75h-4.5A.75.75 0 0 1 5 6.25v-.878zm3.75 7.378a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0zm3-8.75a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0z" />
+            </svg>
+            {@child_count}
+          </span>
         </span>
         <span
           :if={@meta != ""}
