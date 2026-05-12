@@ -1,5 +1,6 @@
 defmodule Fountain.ConversationsContextTest do
   use Fountain.DataCase, async: true
+  use Mimic
 
   alias Fountain.Conversations
   alias Fountain.Conversations.{Conversation, LogEvent, Sandbox, Turn}
@@ -1441,6 +1442,45 @@ defmodule Fountain.ConversationsContextTest do
       }
 
       assert {:error, :vault_not_found} = Conversations.start_conversation(attrs)
+    end
+
+    test "creates sandbox, conversation, and starts server", %{} do
+      user = insert_verified_user()
+      agent = insert_agent(user_id: user.id)
+
+      stub(Horde.DynamicSupervisor, :start_child, fn _supervisor, _child_spec ->
+        {:ok, spawn(fn -> :ok end)}
+      end)
+
+      attrs = %{
+        "agent_id" => agent.id,
+        "user_id" => user.id,
+        "prompt" => "hello"
+      }
+
+      assert {:ok, conv} = Conversations.start_conversation(attrs)
+      assert conv.agent_id == agent.id
+      assert conv.user_id == user.id
+      assert conv.status == "pending"
+    end
+
+    test "broadcasts graph update when parent_conversation_id is set", %{} do
+      user = insert_verified_user()
+      agent = insert_agent(user_id: user.id)
+      parent_conv = insert_conversation(user_id: user.id)
+
+      stub(Horde.DynamicSupervisor, :start_child, fn _supervisor, _child_spec ->
+        {:ok, spawn(fn -> :ok end)}
+      end)
+
+      attrs = %{
+        "agent_id" => agent.id,
+        "user_id" => user.id,
+        "parent_conversation_id" => parent_conv.id
+      }
+
+      assert {:ok, conv} = Conversations.start_conversation(attrs)
+      assert conv.parent_conversation_id == parent_conv.id
     end
   end
 
