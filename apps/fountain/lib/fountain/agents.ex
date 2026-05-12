@@ -75,6 +75,8 @@ defmodule Fountain.Agents do
     |> apply_has_skills(Keyword.get(filters, :has_skills, false))
     |> apply_has_mcp(Keyword.get(filters, :has_mcp, false))
     |> Repo.all()
+    # Preload done post-query (not inline in `from`) because select_merge is
+    # incompatible with Ecto's inline preload compilation.
     |> Repo.preload(:environment)
   end
 

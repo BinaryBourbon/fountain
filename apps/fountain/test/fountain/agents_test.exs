@@ -297,6 +297,17 @@ defmodule Fountain.AgentsTest do
       assert hd(results).conversation_count == 0
     end
 
+    test "does not return agents belonging to another user" do
+      user_a = insert_verified_user()
+      user_b = insert_verified_user()
+      agent_a = insert_agent(user_id: user_a.id)
+      _agent_b = insert_agent(user_id: user_b.id)
+
+      results = Agents.list_agents_with_counts(user_a.id, [])
+      assert length(results) == 1
+      assert hd(results).id == agent_a.id
+    end
+
     test "returns correct conversation_count for agent with conversations" do
       user = insert_verified_user()
       agent = insert_agent(user_id: user.id)
