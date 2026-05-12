@@ -213,19 +213,34 @@ defmodule FountainWeb.ConversationsLive.Show do
   end
 
   def handle_event("set_view_mode", %{"mode" => mode}, socket) do
-    next =
-      case mode do
-        "chat" -> :chat
-        "pretty" -> :pretty
-        "raw" -> :raw
-        _ -> socket.assigns.view_mode
-      end
+    next = parse_view_mode(mode, socket.assigns.view_mode)
 
-    {:noreply, assign(socket, :view_mode, next)}
+    {:noreply,
+     socket
+     |> assign(:view_mode, next)
+     |> push_event("view_mode_changed", %{mode: Atom.to_string(next)})}
+  end
+
+  def handle_event("restore_view_mode", %{"mode" => mode}, socket) do
+    next = parse_view_mode(mode, socket.assigns.view_mode)
+
+    {:noreply,
+     socket
+     |> assign(:view_mode, next)
+     |> push_event("view_mode_changed", %{mode: Atom.to_string(next)})}
   end
 
   def handle_event("toggle_graph", _, socket) do
     {:noreply, assign(socket, :graph_open, !socket.assigns.graph_open)}
+  end
+
+  defp parse_view_mode(mode, current) do
+    case mode do
+      "chat" -> :chat
+      "pretty" -> :pretty
+      "raw" -> :raw
+      _ -> current
+    end
   end
 
   # The `stage` pill toggles **all framework activity**: stage markers
@@ -317,7 +332,12 @@ defmodule FountainWeb.ConversationsLive.Show do
           <.stream_pill name="stdout" label="stdout" active={MapSet.member?(@visible_streams, "stdout")} />
           <.stream_pill name="stderr" label="stderr" active={MapSet.member?(@visible_streams, "stderr")} />
         </div>
-        <div class="inline-flex rounded overflow-hidden border border-zinc-300 font-mono">
+        <div
+          id="view-mode-persist"
+          class="inline-flex rounded overflow-hidden border border-zinc-300 font-mono"
+          phx-hook="ViewModePersist"
+          data-view-mode={@view_mode}
+        >
           <.view_mode_button mode="chat" label="chat" active={@view_mode == :chat} />
           <.view_mode_button mode="pretty" label="pretty" active={@view_mode == :pretty} />
           <.view_mode_button mode="raw" label="raw" active={@view_mode == :raw} />
