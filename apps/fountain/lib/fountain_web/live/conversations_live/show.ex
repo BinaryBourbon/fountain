@@ -2,6 +2,7 @@ defmodule FountainWeb.ConversationsLive.Show do
   @moduledoc false
   use FountainWeb, :live_view
 
+  alias Fountain.Accounts
   alias Fountain.Conversations
   alias Fountain.Conversations.{ConversationServer, LogEvent}
 
@@ -38,7 +39,7 @@ defmodule FountainWeb.ConversationsLive.Show do
          |> assign(:conv, conv)
          |> assign(:events, events)
          |> assign(:turns_by_id, load_turns(id))
-         |> assign(:visible_streams, MapSet.new(["stdout", "stderr", "stage"]))
+         |> assign(:visible_streams, MapSet.new(initial_visible_streams(socket.assigns.current_user)))
          |> assign(:view_mode, :pretty)
          |> assign(:prompt, "")
          |> assign(:pending_images, [])
@@ -54,6 +55,13 @@ defmodule FountainWeb.ConversationsLive.Show do
       Map.put(t, :image_count, image_count)
     end)
     |> Map.new(&{&1.id, &1})
+  end
+
+  defp initial_visible_streams(user) do
+    case user.conversation_visible_streams do
+      streams when is_list(streams) -> streams
+      _ -> ["stdout", "stderr", "stage"]
+    end
   end
 
   # Pair `started`/`done` stage events by name (most recent open
@@ -197,10 +205,11 @@ defmodule FountainWeb.ConversationsLive.Show do
     {:noreply, assign(socket, :prompt, p)}
   end
 
-  # Toggle a stream filter pill on/off. Defaults to all three on.
-  # Note: we name the assign `:visible_streams` rather than `:streams`
-  # because Phoenix LiveView reserves `:streams` for its built-in
-  # streams collection API and refuses to let us shadow it.
+  # Toggle a stream filter pill on/off. Persists the new preference to the
+  # database so it survives page reloads. Note: we name the assign
+  # `:visible_streams` rather than `:streams` because Phoenix LiveView
+  # reserves `:streams` for its built-in streams collection API and
+  # refuses to let us shadow it.
   def handle_event("toggle_stream", %{"stream" => name}, socket) do
     visible =
       if MapSet.member?(socket.assigns.visible_streams, name) do
@@ -208,6 +217,11 @@ defmodule FountainWeb.ConversationsLive.Show do
       else
         MapSet.put(socket.assigns.visible_streams, name)
       end
+
+    Accounts.update_preferences(
+      socket.assigns.current_user,
+      %{conversation_visible_streams: MapSet.to_list(visible)}
+    )
 
     {:noreply, assign(socket, :visible_streams, visible)}
   end
@@ -675,7 +689,7 @@ defmodule FountainWeb.ConversationsLive.Show do
     """
   end
 
-  # ── grouping events into stage sections ─────────────────────────────────────────────
+  # ── grouping events into stage sections ───────────────────────────────────────────────
 
   # Walk the events list and produce a flat list of "tree nodes" where
   # each `started`-stage event opens a `:section` node that contains all
@@ -786,7 +800,7 @@ defmodule FountainWeb.ConversationsLive.Show do
     }
   end
 
-  # ── tree node renderer ─────────────────────────────────────────────
+  # ── tree node renderer ───────────────────────────────────────────────────
 
   attr :node, :map, required: true
   attr :runtime, :string, required: true
@@ -977,7 +991,7 @@ defmodule FountainWeb.ConversationsLive.Show do
   attr :block, :map, required: true
   attr :stream, :string, default: nil
 
-  # ── per-block renderers ──────────────────────────────────────────────
+  # ── per-block renderers ────────────────────────────────────────────────────
 
   defp block_row(%{block: %{kind: :init}} = assigns) do
     ~H"""
@@ -1069,7 +1083,7 @@ defmodule FountainWeb.ConversationsLive.Show do
     """
   end
 
-  # ── event → blocks ────────────────────────────────────────────
+  # ── event → blocks ──────────────────────────────────────────────
 
   # Splits an event's `data` (which may be a stream-json chunk with N
   # lines) into a flat list of structured blocks. Each block is a map
@@ -1142,7 +1156,7 @@ defmodule FountainWeb.ConversationsLive.Show do
   defp short_kind(%{"type" => t}), do: to_string(t)
   defp short_kind(_), do: "raw"
 
-  # ── claude (stream-json) ─────────────────────────────────────────────────
+  # ── claude (stream-json) ────────────────────────────────────────────────────────────
   defp event_blocks("claude", %{"type" => "system", "subtype" => "init"} = ev) do
     model = ev["model"]
 
@@ -1222,7 +1236,7 @@ defmodule FountainWeb.ConversationsLive.Show do
 
   defp event_blocks("claude", %{"type" => "rate_limit_event"}), do: []
 
-  # ── codex (`codex exec --json`) ───────────────────────────────────────────────────
+  # ── codex (`codex exec --json`) ────────────────────────────────────────────────────────
   defp event_blocks("codex", %{"type" => "thread.started", "thread_id" => id}),
     do: [%{kind: :init, summary: "thread: #{id}"}]
 
@@ -1306,7 +1320,7 @@ defmodule FountainWeb.ConversationsLive.Show do
     [%{kind: :result, body: bits, raw: Jason.encode!(ev, pretty: true)}]
   end
 
-  # ── opencode (`opencode run --format json`) ───────────────────────────────
+  # ── opencode (`opencode run --format json`) ───────────────────────────────────
   defp event_blocks("opencode", %{"type" => "step_start"}), do: []
 
   defp event_blocks("opencode", %{"type" => "text", "part" => %{"text" => t}})
@@ -1356,7 +1370,7 @@ defmodule FountainWeb.ConversationsLive.Show do
 
   defp truncate(s, _), do: s
 
-  # ── stage row helpers ──────────────────────────────────────────────────
+  # ── stage row helpers ───────────────────────────────────────────────────────
 
   defp stage_icon("provision"), do: "&#10024;"
   defp stage_icon("checkpoint_restore"), do: "&#128230;"
