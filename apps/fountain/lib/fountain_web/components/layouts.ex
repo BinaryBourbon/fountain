@@ -138,10 +138,18 @@ defmodule FountainWeb.Layouts do
             aria-label="Primary navigation"
           >
             <.nav_link href={~p"/conversations"} label="Conversations" current={@current_path} />
-            <.nav_link href={~p"/agents"} label="Agents" current={@current_path} />
-            <.nav_link href={~p"/environments"} label="Environments" current={@current_path} />
-            <.nav_link href={~p"/vaults"} label="Vaults" current={@current_path} />
           </nav>
+
+          <%!-- New conversation --%>
+          <div class="px-2 pb-1 shrink-0">
+            <.link
+              navigate={~p"/conversations/new"}
+              class="block w-full rounded-md px-3 py-1.5 text-sm font-medium text-center
+                     bg-indigo-600 text-white hover:bg-indigo-500 transition-colors"
+            >
+              + New Conversation
+            </.link>
+          </div>
 
           <%!-- Conversation filters --%>
           <div class="px-2 pt-0.5 pb-1 flex items-center gap-1.5 shrink-0">
@@ -234,6 +242,16 @@ defmodule FountainWeb.Layouts do
                 child_count={Map.get(@child_counts, conv.id, 0)}
               />
             </details>
+          </div>
+
+          <%!-- Tools section --%>
+          <div class="border-t border-[var(--color-border)] px-2 py-1.5 space-y-0.5 shrink-0">
+            <p class="px-3 pt-1 pb-0.5 text-[10px] uppercase tracking-wider text-[var(--color-text-muted)] font-medium">
+              Tools
+            </p>
+            <.nav_link href={~p"/agents"} label="Agents" current={@current_path} />
+            <.nav_link href={~p"/environments"} label="Environments" current={@current_path} />
+            <.nav_link href={~p"/vaults"} label="Vaults" current={@current_path} />
           </div>
 
           <%!-- Settings section --%>
@@ -421,7 +439,7 @@ defmodule FountainWeb.Layouts do
         )
       ]}
     >
-      <%!-- Role chip: 28×28 rounded-square showing agent initials --%>
+      <%!-- Role chip: 28x28 rounded-square showing agent initials --%>
       <span
         class={[
           "inline-flex items-center justify-center shrink-0",
@@ -454,7 +472,7 @@ defmodule FountainWeb.Layouts do
                      text-[10px] font-medium leading-none
                      bg-[var(--color-bg-2)] text-[var(--color-text-muted)]
                      border border-[var(--color-border)]"
-              title={"#{@turn_count} #{if @turn_count == 1, do: \"turn\", else: \"turns\"}"}
+              title={~s(#{@turn_count} #{if @turn_count == 1, do: ~s(turn), else: ~s(turns)})}
             >
               <svg class="size-2.5" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
                 <path fill-rule="evenodd" d="M1 2.75A.75.75 0 0 1 1.75 2h12.5a.75.75 0 0 1 .75.75v8.5a.75.75 0 0 1-.75.75h-6.5L5 14v-2H1.75a.75.75 0 0 1-.75-.75v-8.5Z" clip-rule="evenodd" />
@@ -467,7 +485,7 @@ defmodule FountainWeb.Layouts do
                      text-[10px] font-medium leading-none
                      bg-[var(--color-bg-2)] text-[var(--color-text-muted)]
                      border border-[var(--color-border)]"
-              title={"#{@child_count} #{if @child_count == 1, do: \"branch\", else: \"branches\"}"}
+              title={~s(#{@child_count} #{if @child_count == 1, do: ~s(branch), else: ~s(branches)})}
             >
               <svg class="size-2.5" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
                 <path d="M5 3.25a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0zm0 2.122a2.25 2.25 0 1 0-1.5 0v.878A2.25 2.25 0 0 0 5.75 8.5h1.5v2.128a2.251 2.251 0 1 0 1.5 0V8.5h1.5a2.25 2.25 0 0 0 2.25-2.25v-.878a2.25 2.25 0 1 0-1.5 0v.878a.75.75 0 0 1-.75.75h-4.5A.75.75 0 0 1 5 6.25v-.878zm3.75 7.378a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0zm3-8.75a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0z" />
@@ -541,9 +559,9 @@ defmodule FountainWeb.Layouts do
 
   # Extract the most identifying target from a prompt for use as the
   # subtitle leading element. Patterns tried in order:
-  #   1. GitHub PR URL  → owner/repo#123
-  #   2. GitHub repo URL → owner/repo
-  #   3. repo_url=...   → owner/repo
+  #   1. GitHub PR URL  -> owner/repo#123
+  #   2. GitHub repo URL -> owner/repo
+  #   3. repo_url=...   -> owner/repo
   # Falls back to the agent name (which may itself be nil).
   defp extract_sidebar_target(_prompt, nil), do: nil
   defp extract_sidebar_target(nil, agent_name), do: agent_name
