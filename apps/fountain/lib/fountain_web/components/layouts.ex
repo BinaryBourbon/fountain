@@ -409,7 +409,8 @@ defmodule FountainWeb.Layouts do
 
     raw_prompt = first_turn && first_turn.prompt
     task_label = clean_conv_title(raw_prompt)
-    agent_name = assigns.conv.agent && assigns.conv.agent.name
+    agent = assigns.conv.agent
+    agent_name = agent && agent.name
     turn_count = Map.get(assigns.conv, :turn_count, 0) || 0
 
     target = extract_sidebar_target(raw_prompt, agent_name)
@@ -421,6 +422,7 @@ defmodule FountainWeb.Layouts do
       |> Enum.join(" · ")
 
     {initials, chip_class} = role_chip_style(agent_name)
+    avatar_url = if agent && Map.get(agent, :avatar_media_type), do: "/agents/#{agent.id}/avatar"
 
     assigns =
       assign(assigns,
@@ -430,6 +432,7 @@ defmodule FountainWeb.Layouts do
         subtitle: subtitle,
         initials: initials,
         chip_class: chip_class,
+        avatar_url: avatar_url,
         turn_count: turn_count
       )
 
@@ -444,8 +447,16 @@ defmodule FountainWeb.Layouts do
         )
       ]}
     >
-      <%!-- Role chip: 28x28 rounded-square showing agent initials --%>
+      <%!-- Role chip: 28x28 rounded-square showing agent avatar or initials --%>
+      <img
+        :if={@avatar_url}
+        src={@avatar_url}
+        class="w-7 h-7 rounded-[6px] object-cover shrink-0"
+        alt=""
+        title={if @conv.agent, do: @conv.agent.name}
+      />
       <span
+        :if={!@avatar_url}
         class={[
           "inline-flex items-center justify-center shrink-0",
           "w-7 h-7 rounded-[6px] text-[10px] font-bold leading-none select-none",
