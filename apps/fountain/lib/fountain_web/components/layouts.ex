@@ -150,7 +150,7 @@ defmodule FountainWeb.Layouts do
           <%!-- New conversation --%>
           <div class="px-2 pb-1 shrink-0">
             <.link
-              navigate={~p"/conversations/new"}
+              href={~p"/conversations/new"}
               class="block w-full rounded-md px-3 py-1.5 text-sm font-medium text-center
                      bg-indigo-600 text-white hover:bg-indigo-500 transition-colors"
             >
