@@ -318,13 +318,14 @@ defmodule FountainWeb.AgentsLive.Index do
   defp stat_badge_style(_type, 0),
     do: "background:#111;color:#374151;border:1px solid #1f1f1f;"
 
+  defp stat_badge_style(:skills, _),
+    do: "background:#0d1f0d;color:#6ee7b7;border:1px solid #1a3a1a;"
+
+  defp stat_badge_style(:mcp, _),
+    do: "background:#0d1525;color:#93c5fd;border:1px solid #1a2a4a;"
+
   defp stat_badge_style(:conversations, _),
     do: "background:#1a0d1a;color:#c084fc;border:1px solid #2d1a3a;"
-
-  # :skills -> "background:#0d1f0d;color:#6ee7b7;border:1px solid #1a3a1a;"
-  # :mcp    -> "background:#0d1525;color:#93c5fd;border:1px solid #1a2a4a;"
-  defp stat_badge_style(_type, _),
-    do: "background:#1a1a1a;color:#9ca3af;border:1px solid #2a2a2a;"
 
   defp env_badge_style(name) do
     lower = String.downcase(name)
