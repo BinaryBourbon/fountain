@@ -429,6 +429,57 @@ defmodule FountainWeb.ConversationControllerTest do
     end
   end
 
+  describe "GET /api/conversations/:conversation_id/stream with log events (replay path)" do
+    test "replays existing log events when wait=false and conversation has events", %{conn: conn, user: user, raw_key: raw_key} do
+      conv = insert_conversation(user_id: user.id)
+      insert_log_event(conv, %{kind: "output", stream: "stdout", data: "hello"})
+
+      conn =
+        conn
+        |> authed_with_key(raw_key)
+        |> get("/api/conversations/#{conv.id}/stream?wait=false")
+
+      assert conn.status == 200
+      assert get_resp_header(conn, "content-type") == ["text/event-stream"]
+      body = conn.resp_body
+      assert body =~ "event: output"
+      assert body =~ "hello"
+    end
+
+    test "replays only matching stream events when streams filter is set", %{conn: conn, user: user, raw_key: raw_key} do
+      conv = insert_conversation(user_id: user.id)
+      insert_log_event(conv, %{kind: "output", stream: "stdout", data: "stdout-data"})
+      insert_log_event(conv, %{kind: "output", stream: "stderr", data: "stderr-data"})
+
+      conn =
+        conn
+        |> authed_with_key(raw_key)
+        |> get("/api/conversations/#{conv.id}/stream?wait=false&streams=stdout")
+
+      assert conn.status == 200
+      body = conn.resp_body
+      assert body =~ "stdout-data"
+      refute body =~ "stderr-data"
+    end
+
+    test "replays events after last_event_id when Last-Event-ID header is set", %{conn: conn, user: user, raw_key: raw_key} do
+      conv = insert_conversation(user_id: user.id)
+      ev1 = insert_log_event(conv, %{kind: "output", stream: "stdout", data: "first"})
+      insert_log_event(conv, %{kind: "output", stream: "stdout", data: "second"})
+
+      conn =
+        conn
+        |> authed_with_key(raw_key)
+        |> put_req_header("last-event-id", "#{ev1.id}")
+        |> get("/api/conversations/#{conv.id}/stream?wait=false")
+
+      assert conn.status == 200
+      body = conn.resp_body
+      refute body =~ "first"
+      assert body =~ "second"
+    end
+  end
+
   describe "POST /api/conversations with images" do
     test "returns 201 with conversation when images array is provided (decode_images non-empty branch)", %{conn: conn, user: user, raw_key: raw_key} do
       agent = insert_agent(user_id: user.id)
