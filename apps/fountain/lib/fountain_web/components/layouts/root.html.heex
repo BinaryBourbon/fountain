@@ -276,13 +276,12 @@
               if (saved) {
                 this.pushEvent("restore_view_mode", { mode: saved });
               }
-              this._handleViewMode = ({ mode }) => {
+              this._removeViewMode = this.handleEvent("view_mode_changed", ({ mode }) => {
                 localStorage.setItem("fountain-view-mode", mode);
-              };
-              this.handleEvent("view_mode_changed", this._handleViewMode);
+              });
             },
             destroyed() {
-              this._handleViewMode = null;
+              if (this._removeViewMode) this._removeViewMode();
             }
           },
           // ── Roots filter persistence (localStorage) ─────────────────────────
