@@ -137,7 +137,19 @@ defmodule Fountain.Conversations do
               c.inserted_at
             )
         ],
-        select: %{c | turn_count: fragment("COALESCE(?, 0)", tc.count)}
+        select: %{
+          c
+          | turn_count: fragment("COALESCE(?, 0)", tc.count),
+            last_active_at:
+              fragment(
+                "GREATEST(COALESCE(?, ?), COALESCE(?, ?), ?)",
+                ll.last_at,
+                c.inserted_at,
+                lt.last_at,
+                c.inserted_at,
+                c.inserted_at
+              )
+        }
     )
     |> Repo.preload([:agent, turns: first_turn_query()])
   end

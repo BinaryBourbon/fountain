@@ -357,8 +357,12 @@ defmodule FountainWeb.Layouts do
     |> Enum.reject(fn {_, items} -> items == [] end)
   end
 
-  defp conv_date(%{updated_at: nil}), do: nil
-  defp conv_date(%{updated_at: dt}), do: DateTime.to_date(dt)
+  defp conv_date(%{last_active_at: dt}) when not is_nil(dt), do: to_date(dt)
+  defp conv_date(%{inserted_at: dt}) when not is_nil(dt), do: to_date(dt)
+  defp conv_date(_), do: nil
+
+  defp to_date(%DateTime{} = dt), do: DateTime.to_date(dt)
+  defp to_date(%NaiveDateTime{} = dt), do: NaiveDateTime.to_date(dt)
 
   attr :href, :string, required: true
   attr :label, :string, required: true
@@ -407,7 +411,7 @@ defmodule FountainWeb.Layouts do
     turn_count = Map.get(assigns.conv, :turn_count, 0) || 0
 
     target = extract_sidebar_target(raw_prompt, agent_name)
-    time_str = sidebar_relative_time(assigns.conv.updated_at)
+    time_str = sidebar_relative_time(assigns.conv.last_active_at || assigns.conv.inserted_at)
 
     subtitle =
       [target, time_str]
@@ -438,7 +442,7 @@ defmodule FountainWeb.Layouts do
         )
       ]}
     >
-      <%!-- Role chip: 28×28 rounded-square showing agent initials --%>
+      <%!-- Role chip: 28x28 rounded-square showing agent initials --%>
       <span
         class={[
           "inline-flex items-center justify-center shrink-0",
@@ -471,7 +475,7 @@ defmodule FountainWeb.Layouts do
                      text-[10px] font-medium leading-none
                      bg-[var(--color-bg-2)] text-[var(--color-text-muted)]
                      border border-[var(--color-border)]"
-              title={"#{@turn_count} #{if @turn_count == 1, do: "turn", else: "turns"}"}
+              title={~s(#{@turn_count} #{if @turn_count == 1, do: ~s(turn), else: ~s(turns)})}
             >
               <svg class="size-2.5" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
                 <path fill-rule="evenodd" d="M1 2.75A.75.75 0 0 1 1.75 2h12.5a.75.75 0 0 1 .75.75v8.5a.75.75 0 0 1-.75.75h-6.5L5 14v-2H1.75a.75.75 0 0 1-.75-.75v-8.5Z" clip-rule="evenodd" />
@@ -484,7 +488,7 @@ defmodule FountainWeb.Layouts do
                      text-[10px] font-medium leading-none
                      bg-[var(--color-bg-2)] text-[var(--color-text-muted)]
                      border border-[var(--color-border)]"
-              title={"#{@child_count} #{if @child_count == 1, do: "branch", else: "branches"}"}
+              title={~s(#{@child_count} #{if @child_count == 1, do: ~s(branch), else: ~s(branches)})}
             >
               <svg class="size-2.5" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
                 <path d="M5 3.25a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0zm0 2.122a2.25 2.25 0 1 0-1.5 0v.878A2.25 2.25 0 0 0 5.75 8.5h1.5v2.128a2.251 2.251 0 1 0 1.5 0V8.5h1.5a2.25 2.25 0 0 0 2.25-2.25v-.878a2.25 2.25 0 1 0-1.5 0v.878a.75.75 0 0 1-.75.75h-4.5A.75.75 0 0 1 5 6.25v-.878zm3.75 7.378a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0zm3-8.75a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0z" />
@@ -558,9 +562,9 @@ defmodule FountainWeb.Layouts do
 
   # Extract the most identifying target from a prompt for use as the
   # subtitle leading element. Patterns tried in order:
-  #   1. GitHub PR URL  → owner/repo#123
-  #   2. GitHub repo URL → owner/repo
-  #   3. repo_url=...   → owner/repo
+  #   1. GitHub PR URL  -> owner/repo#123
+  #   2. GitHub repo URL -> owner/repo
+  #   3. repo_url=...   -> owner/repo
   # Falls back to the agent name (which may itself be nil).
   defp extract_sidebar_target(_prompt, nil), do: nil
   defp extract_sidebar_target(nil, agent_name), do: agent_name
@@ -590,8 +594,10 @@ defmodule FountainWeb.Layouts do
   end
 
   defp sidebar_relative_time(nil), do: nil
+  defp sidebar_relative_time(%NaiveDateTime{} = dt),
+    do: sidebar_relative_time(DateTime.from_naive!(dt, "Etc/UTC"))
 
-  defp sidebar_relative_time(dt) do
+  defp sidebar_relative_time(%DateTime{} = dt) do
     secs = max(0, DateTime.diff(DateTime.utc_now(), dt))
 
     cond do
