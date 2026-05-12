@@ -226,12 +226,13 @@ defmodule Fountain.ConversationsContextTest do
       c1 = insert_conversation(user_id: user.id)
       c2 = insert_conversation(user_id: user.id)
 
-      # Backdate c2 so c1 is guaranteed to sort first regardless of wall-clock
-      # precision (utc_datetime has second granularity).
+      # Backdate c2 so c1 is guaranteed to sort first. list_conversations_by_activity
+      # orders by GREATEST(last_log_at, last_turn_at, inserted_at) — no turns or log
+      # events here, so the tiebreaker is inserted_at, not updated_at.
       past = DateTime.add(DateTime.utc_now(), -3600, :second) |> DateTime.truncate(:second)
       Fountain.Repo.update_all(
         Ecto.Query.from(c in Conversation, where: c.id == ^c2.id),
-        set: [updated_at: past]
+        set: [inserted_at: past]
       )
 
       [first | _] = Conversations.list_conversations_by_activity(user.id)
@@ -1758,7 +1759,7 @@ defmodule Fountain.ConversationsContextTest do
 
   describe "factory to_atom_map — safe_to_existing_atom fallback" do
     test "to_atom_map with an unknown string key does not crash and returns the string as fallback" do
-      # "xyzquuxfoo_novel_key_never_an_atom" is not an existing Elixir atom,
+      # \"xyzquuxfoo_novel_key_never_an_atom\" is not an existing Elixir atom,
       # so safe_to_existing_atom triggers its rescue clause and returns the string key.
       result = Fountain.Factory.to_atom_map(%{
         "sprite_name" => "test-sprite",
