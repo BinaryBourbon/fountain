@@ -6,12 +6,23 @@ defmodule FountainWeb.ConversationsLive.NewTest do
   describe "mount" do
     test "renders new conversation form for authenticated user", %{conn: conn} do
       user = insert_verified_user()
+      insert_agent(user_id: user.id)
       conn = login_user(conn, user)
 
       {:ok, _view, html} = live(conn, ~p"/conversations/new")
 
       assert html =~ "phx-submit"
       assert html =~ "<textarea"
+    end
+
+    test "renders empty state when user has no agents", %{conn: conn} do
+      user = insert_verified_user()
+      conn = login_user(conn, user)
+
+      {:ok, _view, html} = live(conn, ~p"/conversations/new")
+
+      assert html =~ "No agents defined yet"
+      refute html =~ "phx-submit"
     end
 
     test "redirects unauthenticated user to login", %{conn: conn} do
@@ -41,13 +52,14 @@ defmodule FountainWeb.ConversationsLive.NewTest do
     # is on the client side, but we verify mount is side-effect free).
     test "mounting /conversations/new twice in a row succeeds both times", %{conn: conn} do
       user = insert_verified_user()
+      insert_agent(user_id: user.id)
       conn = login_user(conn, user)
 
       {:ok, _view1, html1} = live(conn, ~p"/conversations/new")
       {:ok, _view2, html2} = live(conn, ~p"/conversations/new")
 
-      assert html1 =~ "<textarea"
-      assert html2 =~ "<textarea"
+      assert html1 =~ "phx-submit"
+      assert html2 =~ "phx-submit"
     end
   end
 end
