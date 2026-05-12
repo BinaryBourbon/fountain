@@ -31,7 +31,41 @@ defmodule Fountain.Vaults do
 
   @doc "List vaults scoped to user."
   def list_vaults(user_id) when is_binary(user_id) do
-    Repo.all(from v in Vault, where: v.user_id == ^user_id, order_by: [desc: v.inserted_at, desc: v.id])
+    Repo.all(
+      from v in Vault,
+        where: v.user_id == ^user_id,
+        order_by: [desc: v.inserted_at, desc: v.id]
+    )
+  end
+
+  @doc """
+  List vaults scoped to user, with `:secret_count` attached as a virtual
+  field via a lightweight aggregation query.
+  """
+  def list_vaults_with_counts(user_id) when is_binary(user_id) do
+    secret_counts_query =
+      from s in VaultSecret,
+        join: v in Vault,
+        on: s.vault_id == v.id,
+        where: v.user_id == ^user_id,
+        group_by: s.vault_id,
+        select: %{vault_id: s.vault_id, count: count(s.id)}
+
+    vaults =
+      Repo.all(
+        from v in Vault,
+          where: v.user_id == ^user_id,
+          order_by: [desc: v.inserted_at, desc: v.id]
+      )
+
+    secret_map =
+      secret_counts_query
+      |> Repo.all()
+      |> Map.new(&{&1.vault_id, &1.count})
+
+    Enum.map(vaults, fn vault ->
+      Map.put(vault, :secret_count, Map.get(secret_map, vault.id, 0))
+    end)
   end
 
   @doc "Get vault scoped to user. Returns nil on wrong owner or missing id."
@@ -61,7 +95,9 @@ defmodule Fountain.Vaults do
   # ── secrets ───────────────────────────────────────────────────────────────
 
   def list_secrets(%Vault{id: vault_id}) do
-    Repo.all(from s in VaultSecret, where: s.vault_id == ^vault_id, order_by: [asc: s.key])
+    Repo.all(
+      from s in VaultSecret, where: s.vault_id == ^vault_id, order_by: [asc: s.key]
+    )
   end
 
   def get_secret(vault_id, key) do
