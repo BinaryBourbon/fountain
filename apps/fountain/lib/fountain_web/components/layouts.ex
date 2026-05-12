@@ -79,6 +79,12 @@ defmodule FountainWeb.Layouts do
 
     groups = group_conversations_by_date(filtered_convs)
 
+    footer_open =
+      Enum.any?(
+        ["/api-keys", "/account/billing", "/audit", "/help", "/admin"],
+        &String.starts_with?(assigns[:current_path] || "", &1)
+      )
+
     assigns =
       assign(assigns,
         nav_conversations: convs,
@@ -86,7 +92,8 @@ defmodule FountainWeb.Layouts do
         child_counts: child_counts,
         sidebar_roots_only: roots_only,
         sidebar_agent_filter: agent_filter,
-        sidebar_unique_agents: unique_agents
+        sidebar_unique_agents: unique_agents,
+        footer_open: footer_open
       )
 
     ~H"""
@@ -256,56 +263,68 @@ defmodule FountainWeb.Layouts do
             <.nav_link href={~p"/vaults"} label="Vaults" current={@current_path} />
           </div>
 
-          <%!-- Settings section --%>
-          <div class="border-t border-[var(--color-border)] px-2 py-1.5 space-y-0.5 shrink-0">
-            <p class="px-3 pt-1 pb-0.5 text-[10px] uppercase tracking-wider text-[var(--color-text-muted)] font-medium">
-              Settings
-            </p>
-            <.nav_link href={~p"/api-keys"} label="API Keys" current={@current_path} />
-            <.nav_link href={~p"/account/billing"} label="Billing" current={@current_path} />
-            <.nav_link href={~p"/audit"} label="Audit log" current={@current_path} />
-            <.nav_link href={~p"/help"} label="Help" current={@current_path} />
-            <.nav_link
-              :if={assigns[:current_user] && assigns.current_user.role == "admin"}
-              href={~p"/admin"}
-              label="Admin"
-              current={@current_path}
-            />
-          </div>
-
-          <%!-- Sidebar footer --%>
-          <div class="border-t border-[var(--color-border)] px-3 py-2.5 shrink-0">
-            <div class="flex items-center justify-between gap-2">
-              <div class="min-w-0 flex-1">
-                <p
+          <%!-- Sidebar footer: click username to reveal settings --%>
+          <div class="border-t border-[var(--color-border)] shrink-0 flex items-start">
+            <details class="flex-1 min-w-0 group" open={@footer_open}>
+              <summary class="
+                flex items-center gap-2 px-3 py-2.5
+                cursor-pointer select-none
+                list-none [&::-webkit-details-marker]:hidden
+                hover:bg-[var(--color-bg-2)] transition-colors
+              ">
+                <span
                   :if={assigns[:current_user]}
-                  class="text-xs font-medium text-[var(--color-text-primary)] truncate"
+                  class="flex-1 min-w-0 text-xs font-medium text-[var(--color-text-primary)] truncate"
                 >
                   {assigns.current_user.email}
-                </p>
+                </span>
+                <svg
+                  class="size-3.5 shrink-0 text-[var(--color-text-muted)] -rotate-90 group-open:rotate-0 transition-transform duration-150"
+                  viewBox="0 0 20 20"
+                  fill="currentColor"
+                  aria-hidden="true"
+                >
+                  <path
+                    fill-rule="evenodd"
+                    d="M5.22 8.22a.75.75 0 0 1 1.06 0L10 11.94l3.72-3.72a.75.75 0 1 1 1.06 1.06l-4.25 4.25a.75.75 0 0 1-1.06 0L5.22 9.28a.75.75 0 0 1 0-1.06Z"
+                    clip-rule="evenodd"
+                  />
+                </svg>
+              </summary>
+              <div class="px-2 pt-0.5 pb-2 space-y-0.5 border-t border-[var(--color-border)]">
+                <.nav_link href={~p"/api-keys"} label="API Keys" current={@current_path} />
+                <.nav_link href={~p"/account/billing"} label="Billing" current={@current_path} />
+                <.nav_link href={~p"/audit"} label="Audit log" current={@current_path} />
+                <.nav_link href={~p"/help"} label="Help" current={@current_path} />
+                <.nav_link
+                  :if={assigns[:current_user] && assigns.current_user.role == "admin"}
+                  href={~p"/admin"}
+                  label="Admin"
+                  current={@current_path}
+                />
                 <a
                   href={~p"/auth/logout"}
                   data-method="post"
-                  class="text-xs text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] transition-colors"
+                  class="block rounded-md px-3 py-1 text-sm text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-2)] hover:text-[var(--color-text-primary)] transition-colors"
                 >
                   Sign out
                 </a>
               </div>
-              <button
-                id="theme-toggle"
-                phx-hook="ThemeToggle"
-                type="button"
-                aria-label="Toggle dark mode"
-                class="shrink-0 rounded-md p-1.5 text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-2)] hover:text-[var(--color-text-primary)] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-focus-ring)]"
-              >
-                <svg id="theme-icon-moon" class="size-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                  <path d="M17.293 13.293A8 8 0 0 1 6.707 2.707a8.001 8.001 0 1 0 10.586 10.586z" />
-                </svg>
-                <svg id="theme-icon-sun" class="size-4 hidden" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                  <path fill-rule="evenodd" d="M10 2a1 1 0 0 1 1 1v1a1 1 0 1 1-2 0V3a1 1 0 0 1 1-1Zm4 8a4 4 0 1 1-8 0 4 4 0 0 1 8 0Zm-.464 4.95.707.707a1 1 0 0 0 1.414-1.414l-.707-.707a1 1 0 0 0-1.414 1.414Zm2.12-10.607a1 1 0 0 1 0 1.414l-.706.707a1 1 0 1 1-1.414-1.414l.707-.707a1 1 0 0 1 1.414 0ZM17 11a1 1 0 1 0 0-2h-1a1 1 0 1 0 0 2h1Zm-7 4a1 1 0 0 1 1 1v1a1 1 0 1 1-2 0v-1a1 1 0 0 1 1-1ZM5.05 6.464A1 1 0 1 0 6.465 5.05l-.708-.707a1 1 0 0 0-1.414 1.414l.707.707Zm1.414 8.486-.707.707a1 1 0 0 1-1.414-1.414l.707-.707a1 1 0 0 1 1.414 1.414ZM4 11a1 1 0 1 0 0-2H3a1 1 0 0 0 0 2h1Z" clip-rule="evenodd" />
-                </svg>
-              </button>
-            </div>
+            </details>
+            <button
+              id="theme-toggle"
+              phx-hook="ThemeToggle"
+              type="button"
+              aria-label="Toggle dark mode"
+              class="shrink-0 mt-1 mr-1.5 rounded-md p-1.5 text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-2)] hover:text-[var(--color-text-primary)] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-focus-ring)]"
+            >
+              <svg id="theme-icon-moon" class="size-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                <path d="M17.293 13.293A8 8 0 0 1 6.707 2.707a8.001 8.001 0 1 0 10.586 10.586z" />
+              </svg>
+              <svg id="theme-icon-sun" class="size-4 hidden" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                <path fill-rule="evenodd" d="M10 2a1 1 0 0 1 1 1v1a1 1 0 1 1-2 0V3a1 1 0 0 1 1-1Zm4 8a4 4 0 1 1-8 0 4 4 0 0 1 8 0Zm-.464 4.95.707.707a1 1 0 0 0 1.414-1.414l-.707-.707a1 1 0 0 0-1.414 1.414Zm2.12-10.607a1 1 0 0 1 0 1.414l-.706.707a1 1 0 1 1-1.414-1.414l.707-.707a1 1 0 0 1 1.414 0ZM17 11a1 1 0 1 0 0-2h-1a1 1 0 1 0 0 2h1Zm-7 4a1 1 0 0 1 1 1v1a1 1 0 1 1-2 0v-1a1 1 0 0 1 1-1ZM5.05 6.464A1 1 0 1 0 6.465 5.05l-.708-.707a1 1 0 0 0-1.414 1.414l.707.707Zm1.414 8.486-.707.707a1 1 0 0 1-1.414-1.414l.707-.707a1 1 0 0 1 1.414 1.414ZM4 11a1 1 0 1 0 0-2H3a1 1 0 0 0 0 2h1Z" clip-rule="evenodd" />
+              </svg>
+            </button>
           </div>
         </aside>
 
@@ -409,7 +428,8 @@ defmodule FountainWeb.Layouts do
 
     raw_prompt = first_turn && first_turn.prompt
     task_label = clean_conv_title(raw_prompt)
-    agent_name = assigns.conv.agent && assigns.conv.agent.name
+    agent = assigns.conv.agent
+    agent_name = agent && agent.name
     turn_count = Map.get(assigns.conv, :turn_count, 0) || 0
 
     target = extract_sidebar_target(raw_prompt, agent_name)
@@ -421,6 +441,7 @@ defmodule FountainWeb.Layouts do
       |> Enum.join(" · ")
 
     {initials, chip_class} = role_chip_style(agent_name)
+    avatar_url = if agent && Map.get(agent, :avatar_media_type), do: "/agents/#{agent.id}/avatar"
 
     assigns =
       assign(assigns,
@@ -430,6 +451,7 @@ defmodule FountainWeb.Layouts do
         subtitle: subtitle,
         initials: initials,
         chip_class: chip_class,
+        avatar_url: avatar_url,
         turn_count: turn_count
       )
 
@@ -444,8 +466,16 @@ defmodule FountainWeb.Layouts do
         )
       ]}
     >
-      <%!-- Role chip: 28x28 rounded-square showing agent initials --%>
+      <%!-- Role chip: 28x28 rounded-square showing agent avatar or initials --%>
+      <img
+        :if={@avatar_url}
+        src={@avatar_url}
+        class="w-7 h-7 rounded-[6px] object-cover shrink-0"
+        alt=""
+        title={if @conv.agent, do: @conv.agent.name}
+      />
       <span
+        :if={!@avatar_url}
         class={[
           "inline-flex items-center justify-center shrink-0",
           "w-7 h-7 rounded-[6px] text-[10px] font-bold leading-none select-none",

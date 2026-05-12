@@ -232,7 +232,17 @@ defmodule FountainWeb.AgentsLive.Index do
               :for={a <- @agents}
               class="border-b border-[var(--color-border)] last:border-0 hover:bg-[var(--color-bg-2)] transition-colors duration-150"
             >
-              <td class="px-4 py-3 font-medium text-[var(--color-text-primary)]">{a.name}</td>
+              <td class="px-4 py-3">
+                <div class="flex items-center gap-2.5">
+                  <img
+                    :if={a.avatar_media_type}
+                    src={~p"/agents/#{a.id}/avatar"}
+                    class="w-7 h-7 rounded-md object-cover shrink-0"
+                    alt=""
+                  />
+                  <span class="font-medium text-[var(--color-text-primary)]">{a.name}</span>
+                </div>
+              </td>
               <td class="px-4 py-3">
                 <span class={["inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-semibold", runtime_badge_class(a.runtime)]}>
                   <span class="w-1.5 h-1.5 rounded-full" style="background:currentColor;"></span>

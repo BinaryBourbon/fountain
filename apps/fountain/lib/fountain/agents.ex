@@ -4,6 +4,7 @@ defmodule Fountain.Agents do
   import Ecto.Query, only: [from: 2]
 
   alias Fountain.Agents.Agent
+  alias Fountain.Agents.AgentAvatar
   alias Fountain.Conversations.Conversation
   alias Fountain.Repo
 
@@ -94,6 +95,38 @@ defmodule Fountain.Agents do
   end
 
   def delete_agent(%Agent{} = agent), do: Repo.delete(agent)
+
+  @doc "Upload or replace the avatar for an agent."
+  def upload_avatar(%Agent{} = agent, data, media_type)
+      when is_binary(data) and is_binary(media_type) do
+    now = DateTime.utc_now() |> DateTime.truncate(:second)
+
+    Repo.transaction(fn ->
+      Repo.insert!(
+        %AgentAvatar{agent_id: agent.id, data: data, inserted_at: now},
+        on_conflict: {:replace, [:data, :inserted_at]},
+        conflict_target: :agent_id
+      )
+
+      agent
+      |> Ecto.Changeset.change(%{avatar_media_type: media_type})
+      |> Repo.update!()
+    end)
+  end
+
+  @doc "Remove the avatar for an agent."
+  def delete_avatar(%Agent{} = agent) do
+    Repo.transaction(fn ->
+      Repo.delete_all(from(av in AgentAvatar, where: av.agent_id == ^agent.id))
+
+      agent
+      |> Ecto.Changeset.change(%{avatar_media_type: nil})
+      |> Repo.update!()
+    end)
+  end
+
+  @doc "Fetch the raw avatar blob for an agent. Returns nil if none uploaded."
+  def get_avatar(%Agent{id: agent_id}), do: Repo.get(AgentAvatar, agent_id)
 
   defp apply_search(query, ""), do: query
 
