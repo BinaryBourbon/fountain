@@ -124,6 +124,10 @@ defmodule FountainWeb.Live.Hooks do
   # conversation list into socket assigns. A handle_info hook intercepts
   # {:sidebar_update, user_id} messages and refreshes nav_conversations
   # in-place, so the sidebar re-renders without any per-LiveView code.
+  #
+  # A handle_event hook intercepts the two sidebar filter events
+  # (sidebar_toggle_roots_only, sidebar_set_agent_filter) so they never
+  # reach — and confuse — the current LiveView's own handle_event.
   defp mount_live_sidebar(socket) do
     user_id = socket.assigns.current_user.id
 
@@ -133,11 +137,24 @@ defmodule FountainWeb.Live.Hooks do
 
     socket
     |> assign(:nav_conversations, load_sidebar_conversations(user_id))
+    |> assign(:sidebar_roots_only, false)
+    |> assign(:sidebar_agent_filter, nil)
     |> attach_hook(:sidebar_nav, :handle_info, fn
       {:sidebar_update, ^user_id}, socket ->
         {:halt, assign(socket, :nav_conversations, load_sidebar_conversations(user_id))}
 
       _, socket ->
+        {:cont, socket}
+    end)
+    |> attach_hook(:sidebar_filters, :handle_event, fn
+      "sidebar_toggle_roots_only", _params, socket ->
+        {:halt, assign(socket, :sidebar_roots_only, !socket.assigns.sidebar_roots_only)}
+
+      "sidebar_set_agent_filter", %{"agent_id" => agent_id}, socket ->
+        filter = if agent_id == "", do: nil, else: agent_id
+        {:halt, assign(socket, :sidebar_agent_filter, filter)}
+
+      _event, _params, socket ->
         {:cont, socket}
     end)
   end

@@ -26,19 +26,43 @@ defmodule FountainWeb.Layouts do
           end
       end
 
+    roots_only = Map.get(assigns, :sidebar_roots_only, false)
+    agent_filter = Map.get(assigns, :sidebar_agent_filter, nil)
+
+    unique_agents =
+      convs
+      |> Enum.map(& &1.agent)
+      |> Enum.reject(&is_nil/1)
+      |> Enum.uniq_by(& &1.id)
+      |> Enum.sort_by(& &1.name)
+
+    # child_counts always uses the full unfiltered list so badges stay correct
+    # regardless of which filters are active.
     child_counts =
       convs
       |> Enum.map(& &1.parent_conversation_id)
       |> Enum.reject(&is_nil/1)
       |> Enum.frequencies()
 
-    groups = group_conversations_by_date(convs)
+    filtered_convs =
+      convs
+      |> then(fn cs ->
+        if roots_only, do: Enum.filter(cs, &is_nil(&1.parent_conversation_id)), else: cs
+      end)
+      |> then(fn cs ->
+        if agent_filter, do: Enum.filter(cs, &(&1.agent_id == agent_filter)), else: cs
+      end)
+
+    groups = group_conversations_by_date(filtered_convs)
 
     assigns =
       assign(assigns,
         nav_conversations: convs,
         nav_conversation_groups: groups,
-        child_counts: child_counts
+        child_counts: child_counts,
+        sidebar_roots_only: roots_only,
+        sidebar_agent_filter: agent_filter,
+        sidebar_unique_agents: unique_agents
       )
 
     ~H"""
@@ -94,6 +118,52 @@ defmodule FountainWeb.Layouts do
             <.nav_link href={~p"/environments"} label="Environments" current={@current_path} />
             <.nav_link href={~p"/vaults"} label="Vaults" current={@current_path} />
           </nav>
+
+          <%!-- Conversation filters --%>
+          <div class="px-2 pt-0.5 pb-1 flex items-center gap-1.5 shrink-0">
+            <button
+              type="button"
+              phx-click="sidebar_toggle_roots_only"
+              title={if @sidebar_roots_only, do: "Showing roots only — click to show all", else: "Show root conversations only"}
+              class={[
+                "shrink-0 inline-flex items-center gap-1 rounded px-2 py-1",
+                "text-[11px] font-medium leading-none transition-colors border",
+                if(@sidebar_roots_only,
+                  do:
+                    "bg-[var(--color-bg-2)] text-[var(--color-text-primary)] border-[var(--color-text-muted)]/40",
+                  else:
+                    "bg-transparent text-[var(--color-text-muted)] border-[var(--color-border)] hover:text-[var(--color-text-secondary)]"
+                )
+              ]}
+            >
+              <svg class="size-3 shrink-0" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                <path d="M5 3.25a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0zm0 2.122a2.25 2.25 0 1 0-1.5 0v.878A2.25 2.25 0 0 0 5.75 8.5h1.5v2.128a2.251 2.251 0 1 0 1.5 0V8.5h1.5a2.25 2.25 0 0 0 2.25-2.25v-.878a2.25 2.25 0 1 0-1.5 0v.878a.75.75 0 0 1-.75.75h-4.5A.75.75 0 0 1 5 6.25v-.878zm3.75 7.378a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0zm3-8.75a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0z" />
+              </svg>
+              Roots
+            </button>
+
+            <form
+              :if={length(@sidebar_unique_agents) > 1}
+              phx-change="sidebar_set_agent_filter"
+              class="flex-1 min-w-0"
+            >
+              <select
+                name="agent_id"
+                class="w-full rounded px-1.5 py-1 text-[11px] leading-none
+                       bg-[var(--color-bg-0)] border border-[var(--color-border)]
+                       text-[var(--color-text-muted)] focus:outline-none cursor-pointer"
+              >
+                <option value="">All agents</option>
+                <option
+                  :for={agent <- @sidebar_unique_agents}
+                  value={agent.id}
+                  selected={@sidebar_agent_filter == agent.id}
+                >
+                  {agent.name}
+                </option>
+              </select>
+            </form>
+          </div>
 
           <%!-- Recent conversations (scrollable, grouped by date) --%>
           <div class="flex-1 min-h-0 overflow-y-auto px-2 py-0.5">
@@ -367,7 +437,7 @@ defmodule FountainWeb.Layouts do
 
         <span
           :if={@meta != ""}
-          class="block text-[11px] text-[var(--color-text-muted)] truncate mt-0.5"
+          class="block text-[11px] text-[var(--color-text-muted)] truncate"
         >
           {@meta}
         </span>
