@@ -13,39 +13,39 @@ defmodule FountainWeb.ConversationsLive.IndexTest do
 
     test "shows all conversations by default", %{conn: conn, user: user, root: root, child: child} do
       conn = login_user(conn, user)
-      {:ok, _view, html} = live(conn, ~p"/conversations")
+      {:ok, view, _html} = live(conn, ~p"/conversations")
 
-      assert html =~ short(root.id)
-      assert html =~ short(child.id)
+      assert has_element?(view, "[phx-value-id='#{root.id}']")
+      assert has_element?(view, "[phx-value-id='#{child.id}']")
     end
 
-    test "shows only roots when preference is already true", %{conn: conn, user: user, root: root, child: child} do
+    test "shows only roots when preference is already true",
+         %{conn: conn, user: user, root: root, child: child} do
       {:ok, _} = Fountain.Accounts.update_preferences(user, %{conversations_roots_only: true})
       # Reload user from DB so session has current preference
       user = Fountain.Accounts.get_user!(user.id)
 
       conn = login_user(conn, user)
-      {:ok, _view, html} = live(conn, ~p"/conversations")
+      {:ok, view, _html} = live(conn, ~p"/conversations")
 
-      assert html =~ short(root.id)
-      refute html =~ short(child.id)
+      assert has_element?(view, "[phx-value-id='#{root.id}']")
+      refute has_element?(view, "[phx-value-id='#{child.id}']")
     end
 
     test "toggle_roots_only hides child conversations and persists preference",
          %{conn: conn, user: user, root: root, child: child} do
       conn = login_user(conn, user)
-      {:ok, view, html} = live(conn, ~p"/conversations")
+      {:ok, view, _html} = live(conn, ~p"/conversations")
 
       # Both visible initially
-      assert html =~ short(root.id)
-      assert html =~ short(child.id)
+      assert has_element?(view, "[phx-value-id='#{root.id}']")
+      assert has_element?(view, "[phx-value-id='#{child.id}']")
 
       # Toggle to roots only
       render_click(view, "toggle_roots_only")
-      html = render(view)
 
-      assert html =~ short(root.id)
-      refute html =~ short(child.id)
+      assert has_element?(view, "[phx-value-id='#{root.id}']")
+      refute has_element?(view, "[phx-value-id='#{child.id}']")
 
       # Preference was persisted
       reloaded = Fountain.Accounts.get_user!(user.id)
@@ -61,15 +61,12 @@ defmodule FountainWeb.ConversationsLive.IndexTest do
       {:ok, view, _html} = live(conn, ~p"/conversations")
 
       render_click(view, "toggle_roots_only")
-      html = render(view)
 
-      assert html =~ short(root.id)
-      assert html =~ short(child.id)
+      assert has_element?(view, "[phx-value-id='#{root.id}']")
+      assert has_element?(view, "[phx-value-id='#{child.id}']")
 
       reloaded = Fountain.Accounts.get_user!(user.id)
       assert reloaded.conversations_roots_only == false
     end
   end
-
-  defp short(id), do: binary_part(id, 0, 8)
 end
