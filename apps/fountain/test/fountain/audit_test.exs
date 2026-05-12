@@ -141,4 +141,12 @@ defmodule Fountain.AuditTest do
       assert length(Audit._unsafe_list_recent(3)) == 3
     end
   end
+
+  describe "record/1 — exception rescue" do
+    test "returns {:error, :exception} when attrs cause a runtime exception" do
+      # Passing a non-enumerable triggers Protocol.UndefinedError inside cast,
+      # which is rescued and returns {:error, :exception} with a warning log.
+      assert {:error, :exception} = Audit.record(:not_a_map)
+    end
+  end
 end
