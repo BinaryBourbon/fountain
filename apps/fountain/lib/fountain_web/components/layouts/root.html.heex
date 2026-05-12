@@ -276,13 +276,12 @@
               if (saved === "true") {
                 this.pushEvent("restore_roots_only", {});
               }
-              this._handleRootsOnly = ({ value }) => {
+              this._removeRootsOnly = this.handleEvent("roots_only_changed", ({ value }) => {
                 localStorage.setItem("fountain-sidebar-roots-only", value);
-              };
-              this.handleEvent("roots_only_changed", this._handleRootsOnly);
+              });
             },
             destroyed() {
-              this._handleRootsOnly = null;
+              if (this._removeRootsOnly) this._removeRootsOnly();
             }
           }
         };
