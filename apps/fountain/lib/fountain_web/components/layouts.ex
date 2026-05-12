@@ -6,6 +6,30 @@ defmodule FountainWeb.Layouts do
 
   alias Fountain.Conversations
 
+  # Initials and Tailwind chip classes per agent name slug.
+  # If two roles collide on initials, disambiguate here rather than
+  # algorithmically — keeps display stable as agents are added.
+  @role_styles %{
+    "general-purpose-engineer" => {"GE", "bg-sky-500/20 text-sky-600"},
+    "pr-reviewer"              => {"PR", "bg-violet-500/20 text-violet-600"},
+    "captain-picard"           => {"CP", "bg-amber-500/20 text-amber-700"},
+    "customer-researcher"      => {"CR", "bg-teal-500/20 text-teal-600"},
+    "designer"                 => {"DE", "bg-rose-500/20 text-rose-600"},
+    "growth-marketer"          => {"GM", "bg-emerald-500/20 text-emerald-700"}
+  }
+
+  # Regex patterns applied in sequence to strip leading boilerplate from a
+  # first-turn prompt before showing it as the sidebar title.
+  # Note: \x23 is # (hex 0x23) — avoids #{} interpolation in ~r sigil.
+  @strip_regexes [
+    # "You are a/an [role description]. " — agent role preamble sentence
+    ~r/\AYou are (?:a |an )[^.!]+[.!]\s*/,
+    # "## Heading\n" — markdown section header (1-6 hashes)
+    ~r/\A(?:\x23){1,6}[^\S\n]+[^\n]+\n+/,
+    # Lines of key=value pairs at start (e.g. repo_url=... branch=... )
+    ~r/\A(?:[a-z_][a-z0-9_]*=[^\n]+\n)+\n*/
+  ]
+
   def app(assigns) do
     convs =
       case assigns[:nav_conversations] do
@@ -191,7 +215,14 @@ defmodule FountainWeb.Layouts do
                     clip-rule="evenodd"
                   />
                 </svg>
-                <span class="flex-1">{group_label}</span>
+                <span class="flex-1 flex items-center gap-1.5">
+                  {group_label}
+                  <span
+                    :if={group_label == "Active"}
+                    class="size-1.5 rounded-full bg-green-500 animate-pulse
+                           shadow-[0_0_0_3px_rgba(34,197,94,0.25)]"
+                  />
+                </span>
                 <span class="font-normal normal-case tracking-normal tabular-nums">
                   {length(group_convs)}
                 </span>
@@ -352,31 +383,29 @@ defmodule FountainWeb.Layouts do
         turns -> List.first(turns)
       end
 
-    task_label = if first_turn, do: truncate(first_turn.prompt, 55), else: nil
+    raw_prompt = first_turn && first_turn.prompt
+    task_label = clean_conv_title(raw_prompt)
     agent_name = assigns.conv.agent && assigns.conv.agent.name
     turn_count = Map.get(assigns.conv, :turn_count, 0) || 0
 
-    meta =
-      [agent_name, sidebar_relative_time(assigns.conv.updated_at)]
+    target = extract_sidebar_target(raw_prompt, agent_name)
+    time_str = sidebar_relative_time(assigns.conv.updated_at)
+
+    subtitle =
+      [target, time_str]
       |> Enum.reject(&is_nil/1)
       |> Enum.join(" · ")
 
-    {dot_class, status_label} =
-      case assigns.conv.status do
-        "running" -> {"bg-[var(--status-starting-text)] animate-pulse", "running"}
-        "ready"   -> {"bg-[var(--status-ready-text)]", "ready"}
-        "pending" -> {"bg-[var(--status-pending-text)]", "pending"}
-        s         -> {"bg-[var(--color-text-muted)]", s}
-      end
+    {initials, chip_class} = role_chip_style(agent_name)
 
     assigns =
       assign(assigns,
         href: href,
         active: active,
         task_label: task_label,
-        meta: meta,
-        dot_class: dot_class,
-        status_label: status_label,
+        subtitle: subtitle,
+        initials: initials,
+        chip_class: chip_class,
         turn_count: turn_count
       )
 
@@ -384,66 +413,139 @@ defmodule FountainWeb.Layouts do
     <a
       href={@href}
       class={[
-        "flex items-start gap-2 rounded-md px-3 py-1 text-sm transition-colors",
+        "flex items-center gap-2.5 rounded-md px-3 py-1.5 text-sm transition-colors",
         if(@active,
-          do: "bg-[var(--color-bg-2)] font-medium text-[var(--color-text-primary)]",
+          do: "bg-[var(--color-bg-2)] text-[var(--color-text-primary)]",
           else: "text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-2)] hover:text-[var(--color-text-primary)]"
         )
       ]}
     >
+      <%!-- Role chip: 28×28 rounded-square showing agent initials --%>
       <span
-        class={["size-2 rounded-full shrink-0 mt-1.5", @dot_class]}
-        title={@status_label}
-      />
+        class={[
+          "inline-flex items-center justify-center shrink-0",
+          "w-7 h-7 rounded-[6px] text-[10px] font-bold leading-none select-none",
+          @chip_class
+        ]}
+        title={if @conv.agent, do: @conv.agent.name}
+      >
+        {@initials}
+      </span>
+
+      <%!-- Text block --%>
       <span class="flex-1 min-w-0">
-        <span class="flex items-center gap-1">
-          <span
-            :if={@task_label}
-            class="truncate text-[13px]"
-          >{@task_label}</span>
-          <span
-            :if={!@task_label}
-            class="truncate italic text-[var(--color-text-muted)] text-[13px]"
-          >(no task yet)</span>
-
-          <span
-            :if={@turn_count > 0}
-            class="inline-flex shrink-0 items-center gap-0.5 rounded px-1 py-0.5
-                   text-[10px] font-medium leading-none
-                   bg-[var(--color-bg-2)] text-[var(--color-text-muted)]
-                   border border-[var(--color-border)]"
-            title={"#{@turn_count} #{if @turn_count == 1, do: "turn", else: "turns"}"}
-          >
-            <svg class="size-2.5" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-              <path fill-rule="evenodd" d="M1 2.75A.75.75 0 0 1 1.75 2h12.5a.75.75 0 0 1 .75.75v8.5a.75.75 0 0 1-.75.75h-6.5L5 14v-2H1.75a.75.75 0 0 1-.75-.75v-8.5Z" clip-rule="evenodd" />
-            </svg>
-            {@turn_count}
+        <%!-- Line 1: title + right-aligned counters --%>
+        <span class="flex items-baseline justify-between gap-1">
+          <span class="flex-1 min-w-0">
+            <span
+              :if={@task_label}
+              class="block truncate text-[13px] text-[var(--color-text-primary)]"
+            >{@task_label}</span>
+            <span
+              :if={!@task_label}
+              class="block truncate italic text-[11px] text-[var(--color-text-muted)]"
+            >(no task yet)</span>
           </span>
-
-          <span
-            :if={@child_count > 0}
-            class="inline-flex shrink-0 items-center gap-0.5 rounded px-1 py-0.5
-                   text-[10px] font-medium leading-none
-                   bg-[var(--color-bg-2)] text-[var(--color-text-muted)]
-                   border border-[var(--color-border)]"
-            title={"#{@child_count} #{if @child_count == 1, do: "branch", else: "branches"}"}
-          >
-            <svg class="size-2.5" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-              <path d="M5 3.25a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0zm0 2.122a2.25 2.25 0 1 0-1.5 0v.878A2.25 2.25 0 0 0 5.75 8.5h1.5v2.128a2.251 2.251 0 1 0 1.5 0V8.5h1.5a2.25 2.25 0 0 0 2.25-2.25v-.878a2.25 2.25 0 1 0-1.5 0v.878a.75.75 0 0 1-.75.75h-4.5A.75.75 0 0 1 5 6.25v-.878zm3.75 7.378a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0zm3-8.75a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0z" />
-            </svg>
-            {@child_count}
+          <span class="shrink-0 flex items-baseline gap-1.5">
+            <span
+              :if={@turn_count > 0}
+              class="text-[11px] text-[var(--color-text-muted)] tabular-nums"
+              title={"#{@turn_count} #{if @turn_count == 1, do: "turn", else: "turns"}"}
+            >{@turn_count}</span>
+            <span
+              :if={@child_count > 0}
+              class="text-[11px] text-[var(--color-text-muted)] tabular-nums"
+              title={"#{@child_count} #{if @child_count == 1, do: "branch", else: "branches"}"}
+            >&#x2442;{@child_count}</span>
           </span>
         </span>
 
+        <%!-- Line 2: target · timestamp --%>
         <span
-          :if={@meta != ""}
+          :if={@subtitle != ""}
           class="block text-[11px] text-[var(--color-text-muted)] truncate"
-        >
-          {@meta}
-        </span>
+        >{@subtitle}</span>
       </span>
     </a>
     """
+  end
+
+  # Returns {initials, tailwind_classes} for a role chip.
+  # Known roles use the curated @role_styles map.
+  # Unknown roles derive initials from word-initial letters of the agent name.
+  defp role_chip_style(nil) do
+    {"?", "bg-[var(--color-bg-2)] text-[var(--color-text-muted)]"}
+  end
+
+  defp role_chip_style(agent_name) do
+    case Map.get(@role_styles, agent_name) do
+      {_initials, _classes} = style ->
+        style
+
+      nil ->
+        initials =
+          agent_name
+          |> String.split(["_", "-", " "])
+          |> Enum.reject(&(&1 == ""))
+          |> Enum.take(2)
+          |> Enum.map_join("", &String.first/1)
+          |> String.upcase()
+
+        initials = if initials == "", do: "?", else: initials
+        {initials, "bg-[var(--color-bg-2)] text-[var(--color-text-muted)]"}
+    end
+  end
+
+  # Strip leading boilerplate from a first-turn prompt, then return the
+  # first meaningful line truncated to 55 chars. Returns nil if the
+  # prompt is nil or reduces to empty after stripping.
+  defp clean_conv_title(nil), do: nil
+
+  defp clean_conv_title(prompt) when is_binary(prompt) do
+    cleaned =
+      Enum.reduce(@strip_regexes, String.trim(prompt), fn pat, acc ->
+        Regex.replace(pat, acc, "", global: false)
+      end)
+      |> String.trim()
+
+    case cleaned do
+      "" ->
+        nil
+
+      text ->
+        text
+        |> String.split("\n")
+        |> Enum.map(&String.trim/1)
+        |> Enum.reject(&(&1 == ""))
+        |> List.first()
+        |> truncate(55)
+    end
+  end
+
+  # Extract the most identifying target from a prompt for use as the
+  # subtitle leading element. Patterns tried in order:
+  #   1. GitHub PR URL  → owner/repo#123
+  #   2. GitHub repo URL → owner/repo
+  #   3. repo_url=...   → owner/repo
+  # Falls back to the agent name (which may itself be nil).
+  defp extract_sidebar_target(_prompt, nil), do: nil
+  defp extract_sidebar_target(nil, agent_name), do: agent_name
+
+  defp extract_sidebar_target(prompt, agent_name) when is_binary(prompt) do
+    cond do
+      m = Regex.run(~r{github\.com/([^/\s]+/[^/\s]+)/pull/(\d+)}, prompt) ->
+        [_, repo, pr] = m
+        "#{repo}##{pr}"
+
+      m = Regex.run(~r{github\.com/([^/\s]+/[^/\s#?]+)(?:/|\s|$)}, prompt) ->
+        Enum.at(m, 1)
+
+      m = Regex.run(~r{repo_url=https?://[^\s]*/([^/\s]+/[^/\s]+)(?:\s|$)}, prompt) ->
+        Enum.at(m, 1)
+
+      true ->
+        agent_name
+    end
   end
 
   defp truncate(nil, _max), do: nil
