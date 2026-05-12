@@ -169,6 +169,27 @@ defmodule FountainWeb.Live.HooksTest do
 
       assert render(view) =~ "Showing roots only"
     end
+
+    @tag :push_roots_only_changed
+    test "sidebar_toggle_roots_only pushes roots_only_changed with value true", %{conn: conn, user: user} do
+      conn = login_user(conn, user)
+      {:ok, view, _html} = live(conn, ~p"/conversations")
+
+      view |> element("[phx-click='sidebar_toggle_roots_only']") |> render_click()
+      assert_push_event(view, "roots_only_changed", %{value: "true"})
+    end
+
+    @tag :push_roots_only_changed
+    test "sidebar_toggle_roots_only pushes roots_only_changed with value false when toggled twice", %{conn: conn, user: user} do
+      conn = login_user(conn, user)
+      {:ok, view, _html} = live(conn, ~p"/conversations")
+
+      view |> element("[phx-click='sidebar_toggle_roots_only']") |> render_click()
+      assert_push_event(view, "roots_only_changed", %{value: "true"})
+
+      view |> element("[phx-click='sidebar_toggle_roots_only']") |> render_click()
+      assert_push_event(view, "roots_only_changed", %{value: "false"})
+    end
   end
 
   # ── Direct on_mount unit tests ───────────────────────────────────────────────
