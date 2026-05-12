@@ -23,6 +23,7 @@ defmodule Fountain.Conversations.Conversation do
 
     # Populated by list_conversations_by_activity/1 — not persisted.
     field :turn_count, :integer, virtual: true, default: 0
+    field :last_active_at, :utc_datetime_usec, virtual: true
 
     belongs_to :user, User
     belongs_to :sandbox, Sandbox
