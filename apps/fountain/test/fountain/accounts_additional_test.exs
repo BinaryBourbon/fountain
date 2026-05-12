@@ -225,6 +225,13 @@ defmodule Fountain.AccountsAdditionalTest do
       user1 = insert_verified_user()
       user2 = insert_verified_user()
 
+      # Back-date user1 so ordering is deterministic even when both inserts
+      # happen within the same timestamp tick
+      earlier = DateTime.add(DateTime.utc_now(), -5, :second) |> DateTime.truncate(:second)
+      Repo.update_all(from(u in Fountain.Accounts.User, where: u.id == ^user1.id),
+        set: [inserted_at: earlier]
+      )
+
       ids = Accounts.list_users() |> Enum.map(& &1.id)
       assert user1.id in ids
       assert user2.id in ids
