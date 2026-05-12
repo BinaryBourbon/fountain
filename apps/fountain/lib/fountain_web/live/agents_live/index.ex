@@ -215,51 +215,53 @@ defmodule FountainWeb.AgentsLive.Index do
 
         <table
           :if={@agents != []}
-          class="w-full text-sm rounded-lg overflow-hidden"
-          style="background:#0a0a0a;border:1px solid #1a1a1a;"
+          class="w-full text-sm rounded-lg overflow-hidden bg-[var(--color-bg-1)] border border-[var(--color-border)]"
         >
-          <thead style="border-bottom:1px solid #222;">
+          <thead class="border-b border-[var(--color-border)]">
             <tr>
-              <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide" style="color:#4b5563;">Name</th>
-              <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide" style="color:#4b5563;">Runtime</th>
-              <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide" style="color:#4b5563;">Model</th>
-              <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide" style="color:#4b5563;">Stats</th>
-              <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide" style="color:#4b5563;">Env</th>
+              <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">Name</th>
+              <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">Runtime</th>
+              <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">Model</th>
+              <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">Stats</th>
+              <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">Env</th>
               <th class="px-4 py-3"></th>
             </tr>
           </thead>
           <tbody>
             <tr
               :for={a <- @agents}
-              class="hover:bg-[#0d1117] transition-colors duration-150"
-              style="border-bottom:1px solid #161616;"
+              class="border-b border-[var(--color-border)] last:border-0 hover:bg-[var(--color-bg-2)] transition-colors duration-150"
             >
-              <td class="px-4 py-3 font-medium" style="color:#e5e7eb;">{a.name}</td>
               <td class="px-4 py-3">
-                <span
-                  class="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-semibold"
-                  style={runtime_badge_style(a.runtime)}
-                >
+                <div class="flex items-center gap-2.5">
+                  <img
+                    :if={a.avatar_media_type}
+                    src={~p"/agents/#{a.id}/avatar"}
+                    class="w-7 h-7 rounded-md object-cover shrink-0"
+                    alt=""
+                  />
+                  <span class="font-medium text-[var(--color-text-primary)]">{a.name}</span>
+                </div>
+              </td>
+              <td class="px-4 py-3">
+                <span class={["inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-semibold", runtime_badge_class(a.runtime)]}>
                   <span class="w-1.5 h-1.5 rounded-full" style="background:currentColor;"></span>
                   {a.runtime}
                 </span>
               </td>
-              <td class="px-4 py-3 font-mono text-xs" style="color:#4b5563;">{a.model}</td>
+              <td class="px-4 py-3 font-mono text-xs text-[var(--color-text-muted)]">{a.model}</td>
               <td class="px-4 py-3">
                 <div class="flex items-center gap-1.5 flex-wrap">
                   <span
-                    class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium"
-                    style={stat_badge_style(:skills, length(a.skills))}
+                    class={["inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium", stat_badge_class(:skills, length(a.skills))]}
                     title={"#{length(a.skills)} skills"}
                   >⚡ {length(a.skills)}</span>
                   <span
-                    class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium"
-                    style={stat_badge_style(:mcp, map_size(a.mcp_servers))}
+                    class={["inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium", stat_badge_class(:mcp, map_size(a.mcp_servers))]}
                     title={"#{map_size(a.mcp_servers)} MCP servers"}
                   >🔌 {map_size(a.mcp_servers)}</span>
                   <span
-                    class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium"
-                    style={stat_badge_style(:conversations, a.conversation_count)}
+                    class={["inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium", stat_badge_class(:conversations, a.conversation_count)]}
                     title={"#{a.conversation_count} total conversations"}
                   >💬 {a.conversation_count}</span>
                 </div>
@@ -267,22 +269,17 @@ defmodule FountainWeb.AgentsLive.Index do
               <td class="px-4 py-3">
                 <span
                   :if={a.environment}
-                  class="inline-flex items-center px-2 py-1 rounded text-xs font-medium"
-                  style={env_badge_style(a.environment.name)}
+                  class={["inline-flex items-center px-2 py-1 rounded text-xs font-medium", env_badge_class(a.environment.name)]}
                 >{a.environment.name}</span>
-                <span :if={!a.environment} style="color:#374151;">—</span>
+                <span :if={!a.environment} class="text-[var(--color-text-muted)]">—</span>
               </td>
               <td class="px-4 py-3 text-right">
                 <div class="inline-flex gap-1">
                   <.link navigate={~p"/agents/#{a.id}/edit"}>
-                    <button
-                      class="px-2 py-1 rounded text-xs cursor-pointer"
-                      style="background:#1a1a1a;border:1px solid #2a2a2a;color:#9ca3af;"
-                    >Edit</button>
+                    <.btn_secondary>Edit</.btn_secondary>
                   </.link>
                   <button
-                    class="px-2 py-1 rounded text-xs cursor-pointer"
-                    style="background:#1a0d0d;border:1px solid #3a1a1a;color:#f87171;"
+                    class="px-2 py-1 rounded text-xs cursor-pointer bg-[var(--color-error-bg)] border border-[var(--color-error)] text-[var(--color-error-text)] hover:bg-[var(--color-error)] hover:text-white transition-colors"
                     phx-click="delete"
                     phx-value-id={a.id}
                     data-confirm="Delete agent?"
@@ -334,45 +331,52 @@ defmodule FountainWeb.AgentsLive.Index do
       assigns.filter_has_mcp
   end
 
-  defp runtime_badge_style("claude"),
-    do: "background:#0d1f0d;color:#6ee7b7;border:1px solid #1a3a1a;"
+  defp runtime_badge_class("claude"),
+    do:
+      "bg-[var(--color-success-bg)] text-[var(--color-success-text)] border border-[var(--color-success)]"
 
-  defp runtime_badge_style("gemini"),
-    do: "background:#0d1525;color:#93c5fd;border:1px solid #1a2a4a;"
+  defp runtime_badge_class("gemini"),
+    do:
+      "bg-[var(--color-info-bg)] text-[var(--color-info-text)] border border-[var(--color-info)]"
 
-  defp runtime_badge_style("opencode"),
-    do: "background:#150d25;color:#a78bfa;border:1px solid #2a1a4a;"
+  defp runtime_badge_class("opencode"),
+    do: "bg-[var(--color-bg-2)] text-[var(--color-brand)] border border-[var(--color-brand)]"
 
-  defp runtime_badge_style("codex"),
-    do: "background:#1a1200;color:#fbbf24;border:1px solid #3a2a00;"
+  defp runtime_badge_class("codex"),
+    do:
+      "bg-[var(--color-warning-bg)] text-[var(--color-warning-text)] border border-[var(--color-warning)]"
 
-  defp runtime_badge_style(_),
-    do: "background:#1a1a1a;color:#9ca3af;border:1px solid #2a2a2a;"
+  defp runtime_badge_class(_),
+    do:
+      "bg-[var(--color-bg-2)] text-[var(--color-text-secondary)] border border-[var(--color-border)]"
 
-  defp stat_badge_style(_type, 0),
-    do: "background:#111;color:#374151;border:1px solid #1f1f1f;"
+  defp stat_badge_class(_type, 0),
+    do:
+      "bg-[var(--color-bg-2)] text-[var(--color-text-muted)] border border-[var(--color-border)]"
 
-  defp stat_badge_style(:skills, _),
-    do: "background:#0d1f0d;color:#6ee7b7;border:1px solid #1a3a1a;"
+  defp stat_badge_class(:skills, _),
+    do:
+      "bg-[var(--color-success-bg)] text-[var(--color-success-text)] border border-[var(--color-success)]"
 
-  defp stat_badge_style(:mcp, _),
-    do: "background:#0d1525;color:#93c5fd;border:1px solid #1a2a4a;"
+  defp stat_badge_class(:mcp, _),
+    do:
+      "bg-[var(--color-info-bg)] text-[var(--color-info-text)] border border-[var(--color-info)]"
 
-  defp stat_badge_style(:conversations, _),
-    do: "background:#1a0d1a;color:#c084fc;border:1px solid #2d1a3a;"
+  defp stat_badge_class(:conversations, _),
+    do: "bg-[var(--color-bg-2)] text-[var(--color-brand)] border border-[var(--color-brand)]"
 
-  defp env_badge_style(name) do
+  defp env_badge_class(name) do
     lower = String.downcase(name)
 
     cond do
       String.contains?(lower, "prod") ->
-        "background:#0d1f0d;color:#6ee7b7;border:1px solid #1a3a1a;"
+        "bg-[var(--color-success-bg)] text-[var(--color-success-text)] border border-[var(--color-success)]"
 
       String.contains?(lower, "dev") or String.contains?(lower, "staging") ->
-        "background:#0d1525;color:#93c5fd;border:1px solid #1a2a4a;"
+        "bg-[var(--color-info-bg)] text-[var(--color-info-text)] border border-[var(--color-info)]"
 
       true ->
-        "background:#1a1a1a;color:#9ca3af;border:1px solid #2a2a2a;"
+        "bg-[var(--color-bg-2)] text-[var(--color-text-secondary)] border border-[var(--color-border)]"
     end
   end
 end
