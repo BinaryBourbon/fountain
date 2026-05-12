@@ -255,14 +255,30 @@ defmodule Fountain.Conversations do
     |> Repo.preload([:sandbox, :agent, :vault])
   end
 
-  @doc "List conversations for user, ordered by most recently active."
-  def list_conversations(user_id) when is_binary(user_id) do
-    Repo.all(
+  @doc """
+  List conversations for user, ordered by most recently updated.
+
+  Pass `roots_only: true` to exclude child conversations (those with a
+  `parent_conversation_id`). Useful for hiding agent-spawned sub-conversations
+  from the index when the user only wants to see top-level sessions.
+  """
+  def list_conversations(user_id, opts \\ []) when is_binary(user_id) do
+    roots_only = Keyword.get(opts, :roots_only, false)
+
+    base =
       from c in Conversation,
         where: c.user_id == ^user_id,
         order_by: [desc: c.updated_at, desc: c.id],
         preload: [:agent, turns: ^first_turn_query()]
-    )
+
+    query =
+      if roots_only do
+        from c in base, where: is_nil(c.parent_conversation_id)
+      else
+        base
+      end
+
+    Repo.all(query)
   end
 
   def create_conversation(attrs) do

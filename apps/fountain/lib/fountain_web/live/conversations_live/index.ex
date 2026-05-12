@@ -2,7 +2,7 @@ defmodule FountainWeb.ConversationsLive.Index do
   @moduledoc false
   use FountainWeb, :live_view
 
-  alias Fountain.{Agents, Conversations}
+  alias Fountain.{Accounts, Agents, Conversations}
 
   @poll_interval 2_000
 
@@ -10,11 +10,14 @@ defmodule FountainWeb.ConversationsLive.Index do
   def mount(_params, _session, socket) do
     if connected?(socket), do: Process.send_after(self(), :tick, @poll_interval)
 
+    user = socket.assigns.current_user
+
     {:ok,
      socket
      |> assign(:page_title, "Conversations")
      |> assign(:sort_by, :inserted_at)
      |> assign(:sort_dir, :desc)
+     |> assign(:roots_only, user.conversations_roots_only)
      |> load_data()}
   end
 
@@ -69,9 +72,26 @@ defmodule FountainWeb.ConversationsLive.Index do
      |> load_data()}
   end
 
+  def handle_event("toggle_roots_only", _, socket) do
+    user = socket.assigns.current_user
+    roots_only = !socket.assigns.roots_only
+
+    case Accounts.update_preferences(user, %{conversations_roots_only: roots_only}) do
+      {:ok, _} ->
+        {:noreply,
+         socket
+         |> assign(:roots_only, roots_only)
+         |> load_data()}
+
+      {:error, _} ->
+        {:noreply, put_flash(socket, :error, "Could not save preference")}
+    end
+  end
+
   defp load_data(socket) do
     user_id = socket.assigns.current_user.id
-    convs = Conversations.list_conversations(user_id)
+    roots_only = socket.assigns.roots_only
+    convs = Conversations.list_conversations(user_id, roots_only: roots_only)
     agents = Agents.list_agents(user_id, [])
 
     sorted = sort_conversations(convs, socket.assigns.sort_by, socket.assigns.sort_dir)
@@ -105,9 +125,24 @@ defmodule FountainWeb.ConversationsLive.Index do
     <div class="space-y-4">
       <div class="flex items-center justify-between">
         <h1 class="text-2xl font-semibold">Conversations</h1>
-        <.link navigate={~p"/conversations/new"}>
-          <.button>+ New conversation</.button>
-        </.link>
+        <div class="flex items-center gap-2">
+          <button
+            type="button"
+            phx-click="toggle_roots_only"
+            class={[
+              "px-3 py-1 rounded text-sm font-mono border",
+              if(@roots_only,
+                do: "bg-[var(--color-bg-2)] text-[var(--color-text-primary)] border-[var(--color-border)]",
+                else: "text-[var(--color-text-muted)] border-[var(--color-border)] hover:text-[var(--color-text-secondary)]"
+              )
+            ]}
+          >
+            {if @roots_only, do: "roots only", else: "all"}
+          </button>
+          <.link navigate={~p"/conversations/new"}>
+            <.button>+ New conversation</.button>
+          </.link>
+        </div>
       </div>
 
       <.table
