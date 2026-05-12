@@ -56,9 +56,8 @@ defmodule FountainWeb.ConversationsLive.ShowTest do
       conn = login_user(conn, user)
       {:ok, view, _html} = live(conn, ~p"/conversations/#{conversation.id}")
 
-      assert_push_event(view, "view_mode_changed", %{mode: "chat"}) do
-        view |> element("[phx-click='set_view_mode'][phx-value-mode='chat']") |> render_click()
-      end
+      view |> element("[phx-click='set_view_mode'][phx-value-mode='chat']") |> render_click()
+      assert_push_event(view, "view_mode_changed", %{mode: "chat"})
     end
   end
 end
