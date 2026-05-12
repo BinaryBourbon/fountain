@@ -224,6 +224,18 @@ defmodule FountainWeb.ConversationsLive.Show do
     {:noreply, assign(socket, :view_mode, next)}
   end
 
+  def handle_event("restore_view_mode", %{"mode" => mode}, socket) do
+    next =
+      case mode do
+        "chat" -> :chat
+        "pretty" -> :pretty
+        "raw" -> :raw
+        _ -> socket.assigns.view_mode
+      end
+
+    {:noreply, assign(socket, :view_mode, next)}
+  end
+
   def handle_event("toggle_graph", _, socket) do
     {:noreply, assign(socket, :graph_open, !socket.assigns.graph_open)}
   end
