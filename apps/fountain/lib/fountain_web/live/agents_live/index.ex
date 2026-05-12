@@ -213,47 +213,81 @@ defmodule FountainWeb.AgentsLive.Index do
           No agents match the current filters.
         </div>
 
-        <table :if={@agents != []} class="w-full text-sm bg-white rounded shadow border border-zinc-200">
-          <thead class="text-left text-zinc-500 border-b border-zinc-200">
+        <table
+          :if={@agents != []}
+          class="w-full text-sm rounded-lg overflow-hidden"
+          style="background:#0a0a0a;border:1px solid #1a1a1a;"
+        >
+          <thead style="border-bottom:1px solid #222;">
             <tr>
-              <th class="px-4 py-2">Name</th>
-              <th class="px-4 py-2">Runtime</th>
-              <th class="px-4 py-2">Model</th>
-              <th class="px-4 py-2">Env</th>
-              <th class="px-4 py-2">Conversations</th>
-              <th class="px-4 py-2"></th>
+              <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide" style="color:#4b5563;">Name</th>
+              <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide" style="color:#4b5563;">Runtime</th>
+              <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide" style="color:#4b5563;">Model</th>
+              <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide" style="color:#4b5563;">Stats</th>
+              <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide" style="color:#4b5563;">Env</th>
+              <th class="px-4 py-3"></th>
             </tr>
           </thead>
           <tbody>
-            <tr :for={a <- @agents} class="border-b border-zinc-100 last:border-0 hover:bg-zinc-50">
-              <td class="px-4 py-2 font-medium">{a.name}</td>
-              <td class="px-4 py-2">
-                <span style={runtime_badge_style(a.runtime)} class="px-2 py-0.5 rounded text-xs font-medium">
+            <tr
+              :for={a <- @agents}
+              class="hover:bg-[#0d1117] transition-colors duration-150"
+              style="border-bottom:1px solid #161616;"
+            >
+              <td class="px-4 py-3 font-medium" style="color:#e5e7eb;">{a.name}</td>
+              <td class="px-4 py-3">
+                <span
+                  class="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-semibold"
+                  style={runtime_badge_style(a.runtime)}
+                >
+                  <span class="w-1.5 h-1.5 rounded-full" style="background:currentColor;"></span>
                   {a.runtime}
                 </span>
               </td>
-              <td class="px-4 py-2 text-zinc-600 font-mono text-xs">{a.model}</td>
-              <td class="px-4 py-2">
+              <td class="px-4 py-3 font-mono text-xs" style="color:#4b5563;">{a.model}</td>
+              <td class="px-4 py-3">
+                <div class="flex items-center gap-1.5 flex-wrap">
+                  <span
+                    class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium"
+                    style={stat_badge_style(:skills, length(a.skills))}
+                    title={"#{length(a.skills)} skills"}
+                  >⚡ {length(a.skills)}</span>
+                  <span
+                    class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium"
+                    style={stat_badge_style(:mcp, map_size(a.mcp_servers))}
+                    title={"#{map_size(a.mcp_servers)} MCP servers"}
+                  >🔌 {map_size(a.mcp_servers)}</span>
+                  <span
+                    class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium"
+                    style={stat_badge_style(:conversations, a.conversation_count)}
+                    title={"#{a.conversation_count} total conversations"}
+                  >💬 {a.conversation_count}</span>
+                </div>
+              </td>
+              <td class="px-4 py-3">
                 <span
                   :if={a.environment}
+                  class="inline-flex items-center px-2 py-1 rounded text-xs font-medium"
                   style={env_badge_style(a.environment.name)}
-                  class="px-2 py-0.5 rounded text-xs font-medium"
-                >
-                  {a.environment.name}
-                </span>
-                <span :if={!a.environment} class="text-zinc-400">—</span>
+                >{a.environment.name}</span>
+                <span :if={!a.environment} style="color:#374151;">—</span>
               </td>
-              <td class="px-4 py-2">
-                <span
-                  style={stat_badge_style(:conversations, a.conversation_count)}
-                  class="px-2 py-0.5 rounded text-xs font-medium"
-                >
-                  {a.conversation_count}
-                </span>
-              </td>
-              <td class="px-4 py-2 text-right space-x-2">
-                <.link navigate={~p"/agents/#{a.id}/edit"}><.btn_secondary>Edit</.btn_secondary></.link>
-                <.btn_danger phx-click="delete" phx-value-id={a.id} data-confirm="Delete agent?">Delete</.btn_danger>
+              <td class="px-4 py-3 text-right">
+                <div class="inline-flex gap-1">
+                  <.link navigate={~p"/agents/#{a.id}/edit"}>
+                    <button
+                      class="px-2 py-1 rounded text-xs cursor-pointer"
+                      style="background:#1a1a1a;border:1px solid #2a2a2a;color:#9ca3af;"
+                    >Edit</button>
+                  </.link>
+                  <button
+                    class="px-2 py-1 rounded text-xs cursor-pointer"
+                    style="background:#1a0d0d;border:1px solid #3a1a1a;color:#f87171;"
+                    phx-click="delete"
+                    phx-value-id={a.id}
+                    data-confirm="Delete agent?"
+                  >Delete</button>
+                </div>
               </td>
             </tr>
           </tbody>
