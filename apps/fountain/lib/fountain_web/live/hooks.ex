@@ -128,8 +128,13 @@ defmodule FountainWeb.Live.Hooks do
   # A handle_event hook intercepts the two sidebar filter events
   # (sidebar_toggle_roots_only, sidebar_set_agent_filter) so they never
   # reach — and confuse — the current LiveView's own handle_event.
+  #
+  # sidebar_roots_only is initialised from user.conversations_roots_only (DB)
+  # so the sidebar renders the correct filter state on the very first paint,
+  # with no localStorage round-trip. The toggle also persists back to DB.
   defp mount_live_sidebar(socket) do
-    user_id = socket.assigns.current_user.id
+    user = socket.assigns.current_user
+    user_id = user.id
 
     if connected?(socket) do
       Phoenix.PubSub.subscribe(Fountain.PubSub, "sidebar:#{user_id}")
@@ -137,7 +142,7 @@ defmodule FountainWeb.Live.Hooks do
 
     socket
     |> assign(:nav_conversations, load_sidebar_conversations(user_id))
-    |> assign(:sidebar_roots_only, false)
+    |> assign(:sidebar_roots_only, user.conversations_roots_only)
     |> assign(:sidebar_agent_filter, nil)
     |> attach_hook(:sidebar_nav, :handle_info, fn
       {:sidebar_update, ^user_id}, socket ->
@@ -152,6 +157,8 @@ defmodule FountainWeb.Live.Hooks do
 
       "sidebar_toggle_roots_only", _params, socket ->
         next = !socket.assigns.sidebar_roots_only
+        Accounts.update_preferences(socket.assigns.current_user, %{conversations_roots_only: next})
+
         {:halt,
          socket
          |> assign(:sidebar_roots_only, next)
