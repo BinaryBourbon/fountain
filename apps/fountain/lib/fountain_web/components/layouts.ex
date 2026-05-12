@@ -29,7 +29,8 @@ defmodule FountainWeb.Layouts do
           end
       end
 
-    assigns = assign(assigns, :nav_conversations, convs)
+    groups = group_conversations_by_date(convs)
+    assigns = assign(assigns, nav_conversations: convs, nav_conversation_groups: groups)
 
     ~H"""
     <div class="min-h-screen bg-[var(--color-bg-0)] text-[var(--color-text-primary)]">
@@ -89,18 +90,44 @@ defmodule FountainWeb.Layouts do
             <.nav_link href={~p"/vaults"} label="Vaults" current={@current_path} />
           </nav>
 
-          <%!-- Recent conversations (scrollable) --%>
+          <%!-- Recent conversations (scrollable, grouped by date) --%>
           <div class="flex-1 min-h-0 overflow-y-auto px-2 py-1">
-            <div :if={@nav_conversations != []}>
-              <p class="px-3 py-1 text-[10px] uppercase tracking-wider text-[var(--color-text-muted)] font-medium">
-                Recent
-              </p>
+            <details
+              :for={{group_label, group_convs} <- @nav_conversation_groups}
+              open={group_label in ["Active", "Today", "Yesterday"]}
+              class="group"
+            >
+              <summary class="
+                flex items-center gap-1 px-3 py-1
+                cursor-pointer select-none
+                text-[10px] uppercase tracking-wider font-medium
+                text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]
+                list-none [&::-webkit-details-marker]:hidden
+              ">
+                <%!-- Chevron: points right when closed, down when open --%>
+                <svg
+                  class="size-2.5 shrink-0 -rotate-90 group-open:rotate-0 transition-transform duration-150"
+                  viewBox="0 0 20 20"
+                  fill="currentColor"
+                  aria-hidden="true"
+                >
+                  <path
+                    fill-rule="evenodd"
+                    d="M5.22 8.22a.75.75 0 0 1 1.06 0L10 11.94l3.72-3.72a.75.75 0 1 1 1.06 1.06l-4.25 4.25a.75.75 0 0 1-1.06 0L5.22 9.28a.75.75 0 0 1 0-1.06Z"
+                    clip-rule="evenodd"
+                  />
+                </svg>
+                <span class="flex-1">{group_label}</span>
+                <span class="font-normal normal-case tracking-normal tabular-nums">
+                  {length(group_convs)}
+                </span>
+              </summary>
               <.conv_nav_link
-                :for={conv <- @nav_conversations}
+                :for={conv <- group_convs}
                 conv={conv}
                 current={@current_path}
               />
-            </div>
+            </details>
           </div>
 
           <%!-- Settings section --%>
@@ -212,6 +239,37 @@ defmodule FountainWeb.Layouts do
     </div>
     """
   end
+
+  # Groups conversations into labelled buckets by recency. Running conversations
+  # are always surfaced first regardless of when they were last active.
+  defp group_conversations_by_date(convs) do
+    now = DateTime.utc_now()
+    today = DateTime.to_date(now)
+    yesterday = Date.add(today, -1)
+    week_start = Date.add(today, -7)
+
+    {running, rest} = Enum.split_with(convs, &(&1.status == "running"))
+
+    [
+      {"Active", running},
+      {"Today", Enum.filter(rest, &(conv_date(&1) == today))},
+      {"Yesterday", Enum.filter(rest, &(conv_date(&1) == yesterday))},
+      {"Past 7 days",
+       Enum.filter(rest, fn c ->
+         d = conv_date(c)
+         d && Date.compare(d, week_start) != :lt && Date.compare(d, yesterday) == :lt
+       end)},
+      {"Older",
+       Enum.filter(rest, fn c ->
+         d = conv_date(c)
+         d && Date.compare(d, week_start) == :lt
+       end)}
+    ]
+    |> Enum.reject(fn {_, items} -> items == [] end)
+  end
+
+  defp conv_date(%{updated_at: nil}), do: nil
+  defp conv_date(%{updated_at: dt}), do: DateTime.to_date(dt)
 
   attr :href, :string, required: true
   attr :label, :string, required: true
