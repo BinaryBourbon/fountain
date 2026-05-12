@@ -276,24 +276,30 @@ defmodule Fountain.Accounts do
   @doc """
   Authenticate a raw API key string.
 
-  Hashes the raw key with SHA-256, queries `api_keys` for an active (non-revoked) match,
-  and returns the associated user.
+  Hashes the raw key with SHA-256, queries `api_keys` for a matching row, and
+  returns the associated user when the key is active.
 
-  Returns `{:ok, user}` or `{:error, :invalid}`. Revoked keys always return `:invalid`.
+  Returns `{:ok, user}` for an active match, `{:error, :revoked}` when the hash
+  matches a row whose `revoked_at` is set, and `{:error, :not_found}` when no
+  row matches. Callers (e.g. the auth plug) can distinguish these to give
+  legitimate clients holding a stale token a more useful error than a generic
+  401.
   """
-  @spec get_user_by_api_key(String.t()) :: {:ok, User.t()} | {:error, :invalid}
+  @spec get_user_by_api_key(String.t()) ::
+          {:ok, User.t()} | {:error, :revoked | :not_found}
   def get_user_by_api_key(raw_key) when is_binary(raw_key) do
     key_hash = hash_key(raw_key)
 
     query =
       from k in ApiKey,
-        where: k.key_hash == ^key_hash and is_nil(k.revoked_at),
+        where: k.key_hash == ^key_hash,
         join: u in assoc(k, :user),
         preload: [user: u]
 
     case Repo.one(query) do
-      nil -> {:error, :invalid}
-      key -> {:ok, key.user}
+      nil -> {:error, :not_found}
+      %ApiKey{revoked_at: nil} = key -> {:ok, key.user}
+      %ApiKey{} -> {:error, :revoked}
     end
   end
 
@@ -339,7 +345,11 @@ defmodule Fountain.Accounts do
 
   defp insert_oauth_identity(user_id, provider, provider_uid) do
     %OauthIdentity{}
-    |> OauthIdentity.changeset(%{user_id: user_id, provider: provider, provider_uid: provider_uid})
+    |> OauthIdentity.changeset(%{
+      user_id: user_id,
+      provider: provider,
+      provider_uid: provider_uid
+    })
     |> Repo.insert(on_conflict: :nothing, conflict_target: [:provider, :provider_uid])
   end
 
