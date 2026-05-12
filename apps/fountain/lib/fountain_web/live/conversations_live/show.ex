@@ -42,7 +42,8 @@ defmodule FountainWeb.ConversationsLive.Show do
          |> assign(:view_mode, :pretty)
          |> assign(:prompt, "")
          |> assign(:pending_images, [])
-         |> assign(:graph, graph)}
+         |> assign(:graph, graph)
+         |> assign(:graph_open, false)}
     end
   end
 
@@ -223,6 +224,10 @@ defmodule FountainWeb.ConversationsLive.Show do
     {:noreply, assign(socket, :view_mode, next)}
   end
 
+  def handle_event("toggle_graph", _, socket) do
+    {:noreply, assign(socket, :graph_open, !socket.assigns.graph_open)}
+  end
+
   # The `stage` pill toggles **all framework activity**: stage markers
   # (provision started/done, etc.) AND output that was emitted while a
   # framework stage was active (apt under packages, git under clone,
@@ -291,7 +296,19 @@ defmodule FountainWeb.ConversationsLive.Show do
         </div>
       </div>
 
-      <.conversation_graph graph={@graph} conv_id={@conv.id} />
+      <div>
+        <button
+          type="button"
+          phx-click="toggle_graph"
+          class="text-xs text-zinc-400 hover:text-zinc-200 font-mono flex items-center gap-1.5"
+        >
+          <span>{if @graph_open, do: "▾", else: "▸"}</span>
+          <span>{if @graph_open, do: "hide graph", else: "view graph"}</span>
+        </button>
+        <div :if={@graph_open} class="mt-2">
+          <.conversation_graph graph={@graph} conv_id={@conv.id} />
+        </div>
+      </div>
 
       <div class="flex items-center justify-between gap-2 text-xs">
         <div class={["flex items-center gap-2", @view_mode == :chat && "invisible"]}>
@@ -377,7 +394,7 @@ defmodule FountainWeb.ConversationsLive.Show do
       phx-update="ignore"
       data-graph={Jason.encode!(@graph)}
       data-current-id={@conv_id}
-      class="w-full h-40 bg-zinc-900 border-b border-zinc-800"
+      class="w-full h-[28rem] bg-zinc-900 rounded border border-zinc-800"
     />
     """
   end
