@@ -254,11 +254,31 @@ defmodule FountainWeb.AgentsLive.Form do
           value={@form["skills_json"]}
           placeholder={~s([{"source": "anthropics/skills", "name": "frontend-design"}])}/>
         <.error_msg field="skills_json" errors={@errors}/>
-        <p class="text-xs text-zinc-500 -mt-2">
-          Each entry is either inline (<code>{~s({"name": "...", "content": "<SKILL.md body>"})}</code>)
-          or github via <a href="https://skills.sh" class="underline">skills.sh</a>
-          (<code>{~s({"source": "owner/repo", "name": "<optional>"})}</code>).
-        </p>
+        <div class="text-xs text-zinc-500 -mt-2 space-y-2">
+          <p>
+            Each entry is either inline
+            (<code>{~s({"name": "...", "content": "<SKILL.md body>"})}</code>)
+            or a GitHub skill via
+            <a href="https://skills.sh" target="_blank" class="underline">skills.sh</a>
+            (<code>{~s({"source": "owner/repo", "name": "<optional>"})}</code>).
+            <.link navigate={~p"/help/skills"} class="underline">Skills help →</.link>
+          </p>
+          <div class="rounded border border-blue-200 bg-blue-50 px-3 py-2 text-blue-900 leading-relaxed">
+            <strong>Always included:</strong>
+            the built-in <code>fountain</code> skill is automatically mounted in every
+            conversation — no need to declare it. It gives the agent
+            <code>$FOUNTAIN_TOKEN</code>, <code>$FOUNTAIN_BASE_URL</code>, and
+            <code>$FOUNTAIN_CONVERSATION_ID</code> so it can spawn and coordinate sub-agents.
+          </div>
+          <p>
+            Common GitHub skills:
+            <code>{~s({"source": "anthropics/skills", "name": "brainstorming"})}</code>
+            ·
+            <code>{~s({"source": "anthropics/skills", "name": "test-driven-development"})}</code>
+            ·
+            <code>{~s({"source": "anthropics/skills", "name": "systematic-debugging"})}</code>
+          </p>
+        </div>
 
         <.input id="mcp_servers_json" name="agent[mcp_servers_json]" type="textarea" rows="6"
           label="MCP servers (JSON object)" value={@form["mcp_servers_json"]}/>

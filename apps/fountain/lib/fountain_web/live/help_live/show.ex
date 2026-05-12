@@ -14,6 +14,7 @@ defmodule FountainWeb.HelpLive.Show do
   @topics [
     {"quickstart", "Quickstart"},
     {"agents", "Agents"},
+    {"skills", "Skills"},
     {"environments", "Environments"},
     {"vaults", "Vaults"},
     {"manifest", "Manifest"},

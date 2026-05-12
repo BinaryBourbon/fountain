@@ -1759,7 +1759,7 @@ defmodule Fountain.ConversationsContextTest do
 
   describe "factory to_atom_map — safe_to_existing_atom fallback" do
     test "to_atom_map with an unknown string key does not crash and returns the string as fallback" do
-      # "xyzquuxfoo_novel_key_never_an_atom" is not an existing Elixir atom,
+      # \"xyzquuxfoo_novel_key_never_an_atom\" is not an existing Elixir atom,
       # so safe_to_existing_atom triggers its rescue clause and returns the string key.
       result = Fountain.Factory.to_atom_map(%{
         "sprite_name" => "test-sprite",
