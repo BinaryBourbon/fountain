@@ -57,7 +57,7 @@ defmodule FountainWeb.Plugs.TenantSessionAuthTest do
       conn =
         conn
         |> Phoenix.ConnTest.init_test_session(%{})
-        |> Plug.Conn.put_session(:user_id, 12345)
+        |> Plug.Conn.put_session(:user_id, 12_345)
         |> Plug.Conn.put_session(:session_version, 0)
         |> TenantSessionAuth.call([])
 
