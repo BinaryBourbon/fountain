@@ -4,6 +4,7 @@ defmodule Fountain.Agents do
   import Ecto.Query, only: [from: 2]
 
   alias Fountain.Agents.Agent
+  alias Fountain.Conversations.Conversation
   alias Fountain.Repo
 
   @doc """
@@ -52,6 +53,29 @@ defmodule Fountain.Agents do
     |> apply_has_skills(Keyword.get(filters, :has_skills, false))
     |> apply_has_mcp(Keyword.get(filters, :has_mcp, false))
     |> Repo.all()
+  end
+
+  @doc "List agents for user_id with total conversation counts. Accepts same filters as list_agents/2."
+  def list_agents_with_counts(user_id, filters) when is_binary(user_id) and is_list(filters) do
+    counts_subquery =
+      from c in Conversation,
+        group_by: c.agent_id,
+        select: %{agent_id: c.agent_id, count: count(c.id)}
+
+    from(a in Agent,
+      where: a.user_id == ^user_id,
+      order_by: [desc: a.inserted_at, desc: a.id],
+      left_join: counts in subquery(counts_subquery),
+      on: counts.agent_id == a.id,
+      select_merge: %{conversation_count: fragment("COALESCE(?, 0)", counts.count)}
+    )
+    |> apply_search(Keyword.get(filters, :search, ""))
+    |> apply_runtimes(Keyword.get(filters, :runtimes, []))
+    |> apply_env_ids(Keyword.get(filters, :env_ids, []))
+    |> apply_has_skills(Keyword.get(filters, :has_skills, false))
+    |> apply_has_mcp(Keyword.get(filters, :has_mcp, false))
+    |> Repo.all()
+    |> Repo.preload(:environment)
   end
 
   def create_agent(attrs) do
