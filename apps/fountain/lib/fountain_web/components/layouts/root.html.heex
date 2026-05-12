@@ -269,6 +269,22 @@
             },
             destroyed() { document.removeEventListener("keydown", this.trap); }
           },
+          // ── View mode persistence (localStorage) ────────────────────────────
+          ViewModePersist: {
+            mounted() {
+              const saved = localStorage.getItem("fountain-view-mode");
+              if (saved) {
+                this.pushEvent("restore_view_mode", { mode: saved });
+              }
+              this._handleViewMode = ({ mode }) => {
+                localStorage.setItem("fountain-view-mode", mode);
+              };
+              this.handleEvent("view_mode_changed", this._handleViewMode);
+            },
+            destroyed() {
+              this._handleViewMode = null;
+            }
+          },
           // ── Roots filter persistence (localStorage) ─────────────────────────
           RootsFilterPersist: {
             mounted() {
