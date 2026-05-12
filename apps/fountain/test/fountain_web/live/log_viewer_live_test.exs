@@ -124,5 +124,55 @@ defmodule FountainWeb.LogViewerLiveTest do
       send(lv.pid, {:unrecognized_message, "ignored"})
       assert render(lv) =~ conv.id
     end
+
+    test "unrecognized stream type renders with text-zinc-500 class", %{conn: conn} do
+      user = insert_verified_user()
+      conv = insert_conversation(user_id: user.id)
+
+      conn = login_user(conn, user)
+      {:ok, lv, _html} = live(conn, ~p"/conversations/#{conv.id}/logs")
+
+      # Send a log event with a non-standard stream — bypasses DB validation so
+      # log_stream_class/1 hits the catch-all clause and returns "text-zinc-500"
+      log_entry = %Fountain.Conversations.LogEvent{
+        id: Ecto.UUID.generate(),
+        conversation_id: conv.id,
+        kind: "output",
+        stream: "other",
+        data: "unknown stream output",
+        inserted_at: DateTime.utc_now() |> DateTime.truncate(:second)
+      }
+
+      send(lv.pid, {:log_event, log_entry})
+
+      html = render(lv)
+      assert html =~ "unknown stream output"
+      assert html =~ "text-zinc-500"
+    end
+
+    test "format_ts/1 returns empty string for a nil inserted_at", %{conn: conn} do
+      user = insert_verified_user()
+      conv = insert_conversation(user_id: user.id)
+
+      conn = login_user(conn, user)
+      {:ok, lv, _html} = live(conn, ~p"/conversations/#{conv.id}/logs")
+
+      # Send a log event with inserted_at: nil to exercise format_ts(nil) -> ""
+      log_entry = %Fountain.Conversations.LogEvent{
+        id: Ecto.UUID.generate(),
+        conversation_id: conv.id,
+        kind: "output",
+        stream: "stdout",
+        data: "nil timestamp output",
+        inserted_at: nil
+      }
+
+      send(lv.pid, {:log_event, log_entry})
+
+      html = render(lv)
+      assert html =~ "nil timestamp output"
+      # The timestamp span should render with empty content (no HH:MM:SS digits)
+      refute html =~ ~r/\d{2}:\d{2}:\d{2}.*nil timestamp output/
+    end
   end
 end

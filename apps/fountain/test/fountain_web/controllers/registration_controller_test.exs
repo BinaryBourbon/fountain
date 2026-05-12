@@ -66,6 +66,17 @@ defmodule FountainWeb.RegistrationControllerTest do
 
       assert json_response(conn, 422)
     end
+
+    test "returns 422 with changeset errors on duplicate email", %{conn: conn} do
+      insert_user(%{"email" => "taken_json@example.com"})
+
+      conn =
+        conn
+        |> Plug.Conn.put_req_header("content-type", "application/json")
+        |> post("/api/auth/register", Jason.encode!(%{email: "taken_json@example.com", password: "password123"}))
+
+      assert json_response(conn, 422)
+    end
   end
 
   describe "GET /auth/check-email" do

@@ -7,6 +7,7 @@ defmodule FountainWeb.UeberauthControllerTest do
   """
 
   use FountainWeb.ConnCase, async: true
+  use Mimic
 
   alias Fountain.Accounts
 
@@ -139,6 +140,30 @@ defmodule FountainWeb.UeberauthControllerTest do
 
       assert Phoenix.Flash.get(conn.assigns.flash, :error) =~
                "GitHub did not return a verified email address."
+    end
+  end
+
+  describe "callback/2 — upsert_oauth_user error" do
+    test "redirects to login with error flash when upsert_oauth_user returns an error", %{conn: conn} do
+      email = "github_error_#{System.unique_integer()}@example.com"
+      auth = github_auth(email)
+
+      stub(Accounts, :upsert_oauth_user, fn _provider, _uid, _attrs ->
+        changeset =
+          %Fountain.Accounts.User{}
+          |> Ecto.Changeset.change()
+          |> Ecto.Changeset.add_error(:email, "simulated failure")
+        {:error, changeset}
+      end)
+
+      conn =
+        conn
+        |> Phoenix.ConnTest.init_test_session(%{})
+        |> assign_auth(auth)
+        |> get(~p"/auth/oauth/github/callback")
+
+      assert redirected_to(conn) == ~p"/auth/login"
+      assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "Could not sign in"
     end
   end
 

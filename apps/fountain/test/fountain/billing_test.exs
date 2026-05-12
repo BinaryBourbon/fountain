@@ -205,6 +205,24 @@ defmodule Fountain.BillingTest do
       assert {:ok, :ignored} = Billing.sync_subscription(event)
     end
 
+    test "status coercion: past_due -> past_due, canceled -> canceled",
+         %{user: _user} do
+      for {stripe_status, expected_status} <- [
+            {"past_due", "past_due"},
+            {"canceled", "canceled"}
+          ] do
+        event = %Stripe.Event{
+          type: "customer.subscription.updated",
+          data: %{object: %{customer: "cus_abc123", status: stripe_status, trial_end: nil}}
+        }
+
+        assert {:ok, updated_user} = Billing.sync_subscription(event)
+
+        assert updated_user.subscription_status == expected_status,
+               "expected #{stripe_status} -> #{expected_status}, got #{updated_user.subscription_status}"
+      end
+    end
+
     test "status coercion: unpaid -> past_due, incomplete -> past_due, incomplete_expired -> canceled, paused -> past_due",
          %{user: _user} do
       for {stripe_status, expected_status} <- [

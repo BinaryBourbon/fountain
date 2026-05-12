@@ -43,6 +43,12 @@ defmodule FountainWeb.Live.HooksTest do
       assert {:error, {:redirect, %{to: path}}} = live(conn, ~p"/dashboard")
       assert path =~ "/auth/login"
     end
+
+    test "redirects unauthenticated user (no session) to /auth/login", %{conn: conn} do
+      # No login — session has no user_id, so current_user is nil
+      assert {:error, {:redirect, %{to: path}}} = live(conn, ~p"/dashboard")
+      assert path =~ "/auth/login"
+    end
   end
 
   # ── :require_active_subscription ────────────────────────────────────────────
@@ -103,6 +109,12 @@ defmodule FountainWeb.Live.HooksTest do
 
       assert {:error, {:live_redirect, %{to: path}}} = live(conn, ~p"/admin")
       assert path == "/dashboard"
+    end
+
+    test "redirects unauthenticated user (no session) to /auth/login", %{conn: conn} do
+      # require_admin mounts current_user itself; nil user -> HTTP redirect to login
+      assert {:error, {:redirect, %{to: path}}} = live(conn, ~p"/admin")
+      assert path =~ "/auth/login"
     end
   end
 

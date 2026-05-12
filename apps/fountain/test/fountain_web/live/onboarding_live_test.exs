@@ -93,6 +93,17 @@ defmodule FountainWeb.OnboardingLiveTest do
 
       assert html =~ "Create an environment" or html =~ "can&#39;t be blank"
     end
+
+    test "validate_env updates the form without navigating away", %{lv: lv} do
+      html =
+        lv
+        |> form("form[phx-change='validate_env']", env: %{name: "typing-name"})
+        |> render_change()
+
+      # Still on step 2 and the typed value is reflected in the form
+      assert html =~ "Create an environment"
+      assert html =~ "typing-name"
+    end
   end
 
   describe "OnboardingLive.Wizard — step 3 (agent)" do
@@ -129,6 +140,17 @@ defmodule FountainWeb.OnboardingLiveTest do
         |> render_submit()
 
       assert html =~ "can&#39;t be blank"
+    end
+
+    test "validate_agent updates the form without navigating away", %{lv: lv} do
+      html =
+        lv
+        |> form("form[phx-change='validate_agent']", agent: %{name: "my-agent-draft"})
+        |> render_change()
+
+      # Still on step 3 and the typed value is reflected in the form
+      assert html =~ "Create an agent"
+      assert html =~ "my-agent-draft"
     end
   end
 

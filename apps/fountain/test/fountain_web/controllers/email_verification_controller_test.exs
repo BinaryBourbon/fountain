@@ -1,5 +1,6 @@
 defmodule FountainWeb.EmailVerificationControllerTest do
   use FountainWeb.ConnCase, async: true
+  use Mimic
 
   alias Fountain.Accounts
   alias Fountain.Repo
@@ -55,20 +56,40 @@ defmodule FountainWeb.EmailVerificationControllerTest do
     test "redirects with error for expired token", %{conn: conn} do
       user = insert_user()
 
-      # Sign with a negative max_age so it's immediately expired
-      token = Phoenix.Token.sign(FountainWeb.Endpoint, "email_verification", user.id)
+      # Sign the token as if it were issued 2 days ago (> 24h max_age).
+      # Phoenix.Token.sign/4 accepts `signed_at:` in seconds.
+      two_days_ago = System.system_time(:second) - 2 * 24 * 60 * 60
+      token = Phoenix.Token.sign(FountainWeb.Endpoint, "email_verification", user.id, signed_at: two_days_ago)
 
-      # Verify with max_age: 0 to simulate expiry — instead, forge an expired
-      # token by verifying with a deliberate max_age: -1 on the token itself.
-      # We can't forge Phoenix.Token directly, so we'll just use an old token
-      # by calling the controller with an invalid string.
-      bad_conn = get(conn, ~p"/users/confirm/badtoken")
-      assert redirected_to(bad_conn) =~ "/auth/login"
+      conn = get(conn, ~p"/users/confirm/#{token}")
+
+      assert redirected_to(conn) == ~p"/auth/login"
+      assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "expired"
     end
 
     test "redirects with error for invalid token", %{conn: conn} do
       conn = get(conn, ~p"/users/confirm/thisisnotavalidtoken")
       assert redirected_to(conn) == ~p"/auth/login"
+    end
+
+    test "redirects with error when verify_email returns an error changeset", %{conn: conn} do
+      user = insert_user()
+
+      # Stub Accounts.verify_email/1 to simulate a DB-level failure so that
+      # line 53 (the {:error, _changeset} branch) is exercised.
+      stub(Accounts, :verify_email, fn _user ->
+        changeset =
+          %Fountain.Accounts.User{}
+          |> Ecto.Changeset.change()
+          |> Ecto.Changeset.add_error(:email, "simulated failure")
+        {:error, changeset}
+      end)
+
+      token = Phoenix.Token.sign(FountainWeb.Endpoint, "email_verification", user.id)
+      conn = get(conn, ~p"/users/confirm/#{token}")
+
+      assert redirected_to(conn) == ~p"/auth/login"
+      assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "went wrong"
     end
   end
 end

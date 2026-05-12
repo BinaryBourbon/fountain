@@ -17,6 +17,18 @@ defmodule FountainWeb.ApiKeysLiveTest do
       assert html =~ "ftn_"
     end
 
+    test "renders key with nil last_used_at using em-dash placeholder", %{conn: conn} do
+      user = insert_verified_user()
+      insert_api_key(user, "never-used")
+
+      conn = login_user(conn, user)
+      {:ok, _lv, html} = live(conn, ~p"/api-keys")
+
+      # Key exists, page renders without error; last_used_at is nil so "—" appears
+      assert html =~ "never-used"
+      assert html =~ "—"
+    end
+
     test "shows empty state when no keys exist", %{conn: conn} do
       user = insert_verified_user()
       conn = login_user(conn, user)

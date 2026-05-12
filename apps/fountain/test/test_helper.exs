@@ -21,3 +21,4 @@ Mimic.copy(Stripe.BillingPortal.Session)
 Mimic.copy(Stripe.Checkout.Session)
 
 Mimic.copy(Fountain.Conversations.ConversationServer)
+Mimic.copy(Fountain.Accounts)
