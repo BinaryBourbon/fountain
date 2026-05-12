@@ -98,13 +98,25 @@ defmodule Fountain.Conversations do
   end
 
   @doc "List conversations for `user_id`, ordered by most recently active."
+  @doc """
+  Populates the `turn_count` virtual field on each conversation by LEFT
+  JOINing a subquery that counts turns per conversation. This avoids an
+  N+1 and keeps the result a plain list of `%Conversation{}` structs.
+  """
   def list_conversations_by_activity(user_id) when is_binary(user_id) do
+    turn_counts =
+      from t in Turn,
+        group_by: t.conversation_id,
+        select: %{conversation_id: t.conversation_id, count: count(t.id)}
+
     Repo.all(
       from c in Conversation,
         where: c.user_id == ^user_id,
+        left_join: tc in subquery(turn_counts), on: tc.conversation_id == c.id,
         order_by: [desc: c.updated_at, desc: c.id],
-        preload: [:agent, turns: ^first_turn_query()]
+        select: %{c | turn_count: fragment("COALESCE(?, 0)", tc.count)}
     )
+    |> Repo.preload([:agent, turns: first_turn_query()])
   end
 
   @doc """
