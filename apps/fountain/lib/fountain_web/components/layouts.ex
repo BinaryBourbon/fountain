@@ -20,11 +20,12 @@ defmodule FountainWeb.Layouts do
 
   # Regex patterns applied in sequence to strip leading boilerplate from a
   # first-turn prompt before showing it as the sidebar title.
+  # Note: \x23 is # (hex 0x23) — avoids #{} interpolation in ~r sigil.
   @strip_regexes [
     # "You are a/an [role description]. " — agent role preamble sentence
     ~r/\AYou are (?:a |an )[^.!]+[.!]\s*/,
     # "## Heading\n" — markdown section header (1-6 hashes)
-    ~R/\A#{1,6}[^\S\n]+[^\n]+\n+/,
+    ~r/\A(?:\x23){1,6}[^\S\n]+[^\n]+\n+/,
     # Lines of key=value pairs at start (e.g. repo_url=... branch=... )
     ~r/\A(?:[a-z_][a-z0-9_]*=[^\n]+\n)+\n*/
   ]
