@@ -390,5 +390,82 @@ defmodule FountainWeb.ConversationControllerTest do
       assert conn.status == 200
       assert get_resp_header(conn, "content-type") == ["text/event-stream"]
     end
+
+    test "returns 200 when wait=0 (parse_bool_param \"0\" → false, non-blocking)", %{conn: conn, user: user, raw_key: raw_key} do
+      conv = insert_conversation(user_id: user.id)
+
+      conn =
+        conn
+        |> authed_with_key(raw_key)
+        |> get("/api/conversations/#{conv.id}/stream?wait=0")
+
+      assert conn.status == 200
+      assert get_resp_header(conn, "content-type") == ["text/event-stream"]
+    end
+
+    test "returns 200 when streams= is empty string (parse_streams_param \"\" → nil)", %{conn: conn, user: user, raw_key: raw_key} do
+      conv = insert_conversation(user_id: user.id)
+
+      conn =
+        conn
+        |> authed_with_key(raw_key)
+        |> get("/api/conversations/#{conv.id}/stream?wait=false&streams=")
+
+      assert conn.status == 200
+      assert get_resp_header(conn, "content-type") == ["text/event-stream"]
+    end
+
+    test "returns 200 when Last-Event-ID is empty string (parse_last_event_id \"\" → 0)", %{conn: conn, user: user, raw_key: raw_key} do
+      conv = insert_conversation(user_id: user.id)
+
+      conn =
+        conn
+        |> authed_with_key(raw_key)
+        |> put_req_header("last-event-id", "")
+        |> get("/api/conversations/#{conv.id}/stream?wait=false")
+
+      assert conn.status == 200
+      assert get_resp_header(conn, "content-type") == ["text/event-stream"]
+    end
+  end
+
+  describe "POST /api/conversations with images" do
+    test "returns 201 with conversation when images array is provided (decode_images non-empty branch)", %{conn: conn, user: user, raw_key: raw_key} do
+      agent = insert_agent(user_id: user.id)
+
+      stub(Horde.DynamicSupervisor, :start_child, fn _supervisor, _child_spec ->
+        {:ok, spawn(fn -> :ok end)}
+      end)
+
+      image_data = Base.encode64("fake-image-bytes")
+
+      conn =
+        conn
+        |> authed_with_key(raw_key)
+        |> post_json("/api/conversations", %{
+          "agent_id" => agent.id,
+          "images" => [%{"media_type" => "image/png", "data" => image_data}]
+        })
+
+      assert json_response(conn, 201)
+    end
+
+    test "returns 201 with conversation when no images provided (decode_images [] branch)", %{conn: conn, user: user, raw_key: raw_key} do
+      agent = insert_agent(user_id: user.id)
+
+      stub(Horde.DynamicSupervisor, :start_child, fn _supervisor, _child_spec ->
+        {:ok, spawn(fn -> :ok end)}
+      end)
+
+      conn =
+        conn
+        |> authed_with_key(raw_key)
+        |> post_json("/api/conversations", %{
+          "agent_id" => agent.id,
+          "images" => []
+        })
+
+      assert json_response(conn, 201)
+    end
   end
 end

@@ -1551,6 +1551,29 @@ defmodule Fountain.ConversationsContextTest do
       assert {:ok, conv} = Conversations.start_conversation(attrs)
       assert conv.parent_conversation_id == parent_conv.id
     end
+
+    test "succeeds when vault_id is empty string", %{} do
+      user = insert_verified_user()
+      agent = insert_agent(user_id: user.id)
+
+      stub(Horde.DynamicSupervisor, :start_child, fn _sup, _spec -> {:ok, spawn(fn -> :ok end)} end)
+
+      attrs = %{"agent_id" => agent.id, "user_id" => user.id, "vault_id" => ""}
+      assert {:ok, conv} = Conversations.start_conversation(attrs)
+      assert is_nil(conv.vault_id)
+    end
+
+    test "succeeds and links vault when valid vault_id provided", %{} do
+      user = insert_verified_user()
+      agent = insert_agent(user_id: user.id)
+      vault = insert_vault(user_id: user.id)
+
+      stub(Horde.DynamicSupervisor, :start_child, fn _sup, _spec -> {:ok, spawn(fn -> :ok end)} end)
+
+      attrs = %{"agent_id" => agent.id, "user_id" => user.id, "vault_id" => vault.id}
+      assert {:ok, conv} = Conversations.start_conversation(attrs)
+      assert conv.vault_id == vault.id
+    end
   end
 
   # ────────────────────────────────────────────────────────────────────────────
