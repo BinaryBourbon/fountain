@@ -284,13 +284,12 @@
               if (this._removeViewMode) this._removeViewMode();
             }
           },
-          // ── Roots filter persistence (localStorage) ─────────────────────────
+          // ── Roots filter — DB is now the source of truth for the initial render.
+          // This hook only keeps localStorage in sync for informational purposes;
+          // it no longer pushes restore_roots_only on mount since the server reads
+          // the preference from user.conversations_roots_only at mount time.
           RootsFilterPersist: {
             mounted() {
-              const saved = localStorage.getItem("fountain-sidebar-roots-only");
-              if (saved === "true") {
-                this.pushEvent("restore_roots_only", {});
-              }
               this._removeRootsOnly = this.handleEvent("roots_only_changed", ({ value }) => {
                 localStorage.setItem("fountain-sidebar-roots-only", value);
               });
