@@ -1421,6 +1421,75 @@ defmodule Fountain.ConversationsContextTest do
 
       assert {:error, :no_agent} = Conversations.wake_conversation(conv.id)
     end
+
+    test "returns {:ok, conv} reusing existing sandbox when sprite is still alive" do
+      user = insert_verified_user()
+      agent = insert_agent(user_id: user.id)
+      sandbox = insert_sandbox(user_id: user.id, sprite_name: "test-sprite-alive")
+      {:ok, sandbox} = Conversations.update_sandbox(sandbox, %{status: "ready"})
+      conv = insert_conversation(user_id: user.id, agent: agent, sandbox: sandbox, status: "idle")
+
+      fake_client = %{}
+
+      stub(Fountain.SpritesClient, :get!, fn -> fake_client end)
+      stub(Sprites, :get_sprite, fn _client, _name -> {:ok, %{name: "test-sprite-alive"}} end)
+
+      stub(Horde.DynamicSupervisor, :start_child, fn _supervisor, _child_spec ->
+        {:ok, spawn(fn -> :ok end)}
+      end)
+
+      assert {:ok, _conv} = Conversations.wake_conversation(conv.id)
+    end
+
+    test "returns {:ok, conv} creating fresh sandbox when sprite is gone" do
+      user = insert_verified_user()
+      agent = insert_agent(user_id: user.id)
+      sandbox = insert_sandbox(user_id: user.id, sprite_name: "test-sprite-gone")
+      {:ok, sandbox} = Conversations.update_sandbox(sandbox, %{status: "ready"})
+      conv = insert_conversation(user_id: user.id, agent: agent, sandbox: sandbox, status: "idle")
+
+      fake_client = %{}
+
+      stub(Fountain.SpritesClient, :get!, fn -> fake_client end)
+      stub(Sprites, :get_sprite, fn _client, _name -> {:error, :not_found} end)
+
+      stub(Horde.DynamicSupervisor, :start_child, fn _supervisor, _child_spec ->
+        {:ok, spawn(fn -> :ok end)}
+      end)
+
+      assert {:ok, _conv} = Conversations.wake_conversation(conv.id)
+    end
+
+    test "returns {:ok, conv} creating fresh sandbox when sandbox is pending (not ready)" do
+      user = insert_verified_user()
+      agent = insert_agent(user_id: user.id)
+      # sandbox remains "pending" (not "ready"), so maybe_reuse_sandbox hits the _ -> :create_new branch
+      sandbox = insert_sandbox(user_id: user.id)
+      conv = insert_conversation(user_id: user.id, agent: agent, sandbox: sandbox, status: "idle")
+
+      stub(Horde.DynamicSupervisor, :start_child, fn _supervisor, _child_spec ->
+        {:ok, spawn(fn -> :ok end)}
+      end)
+
+      assert {:ok, _conv} = Conversations.wake_conversation(conv.id)
+    end
+
+    test "returns {:ok, conv} when old sandbox is already terminated (mark_old_sandbox_terminated no-op)" do
+      user = insert_verified_user()
+      agent = insert_agent(user_id: user.id)
+      sandbox = insert_sandbox(user_id: user.id, sprite_name: "test-sprite-terminated")
+      {:ok, sandbox} = Conversations.update_sandbox(sandbox, %{status: "terminated"})
+      conv = insert_conversation(user_id: user.id, agent: agent, sandbox: sandbox, status: "idle")
+
+      stub(Horde.DynamicSupervisor, :start_child, fn _supervisor, _child_spec ->
+        {:ok, spawn(fn -> :ok end)}
+      end)
+
+      # sandbox status is "terminated" (not "ready"), so maybe_reuse_sandbox returns :create_new,
+      # which calls create_fresh_sandbox_and_start -> mark_old_sandbox_terminated(sandbox.id)
+      # where the sandbox is already terminated, hitting the no-op branch
+      assert {:ok, _conv} = Conversations.wake_conversation(conv.id)
+    end
   end
 
   # ────────────────────────────────────────────────────────────────────────────
