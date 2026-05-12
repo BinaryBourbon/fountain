@@ -196,7 +196,7 @@ defmodule FountainWeb.AgentsLive.Index do
       <div class="flex-1 min-w-0 space-y-4">
         <div class="flex items-center justify-between">
           <h1 class="text-2xl font-semibold">Agents</h1>
-          <.link navigate={~p"/agents/new"}><.btn>+ New agent</.btn></.link>
+          <.link href={~p"/agents/new"}><.btn>+ New agent</.btn></.link>
         </div>
 
         <div
@@ -275,7 +275,7 @@ defmodule FountainWeb.AgentsLive.Index do
               </td>
               <td class="px-4 py-3 text-right">
                 <div class="inline-flex gap-1">
-                  <.link navigate={~p"/agents/#{a.id}/edit"}>
+                  <.link href={~p"/agents/#{a.id}/edit"}>
                     <.btn_secondary>Edit</.btn_secondary>
                   </.link>
                   <button
