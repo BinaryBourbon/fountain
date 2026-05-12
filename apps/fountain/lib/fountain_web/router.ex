@@ -167,6 +167,9 @@ defmodule FountainWeb.Router do
     # ── Theme preference — CSRF-protected, session-authenticated ─────────────────────────────────────────
     patch "/api/settings/theme", SettingsController, :update_theme
 
+    # ── Avatar serving — tenant-scoped image endpoint ─────────────────────────────────────────────────────
+    get "/agents/:id/avatar", AgentAvatarController, :show
+
     # ── Phase-3-billing: conversation routes require an active subscription ─────────────────
     # :require_active_subscription runs after :require_authenticated_user and
     # redirects to /account/billing on SubscriptionRequiredError.
