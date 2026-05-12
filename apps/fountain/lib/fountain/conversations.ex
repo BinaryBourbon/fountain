@@ -274,8 +274,8 @@ defmodule Fountain.Conversations do
       |> Enum.with_index()
       |> Enum.map(fn {%{media_type: mt, data: data}, idx} ->
         %{
-          id: Ecto.UUID.generate(),
-          turn_id: turn_id,
+          id: Ecto.UUID.dump!(Ecto.UUID.generate()),
+          turn_id: Ecto.UUID.dump!(turn_id),
           position: idx,
           media_type: mt,
           data: data,

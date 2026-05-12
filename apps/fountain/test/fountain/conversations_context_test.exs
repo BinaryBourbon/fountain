@@ -1333,6 +1333,14 @@ defmodule Fountain.ConversationsContextTest do
     test "returns {:ok, []} immediately when images list is empty" do
       assert {:ok, []} = Conversations.insert_turn_images(Ecto.UUID.generate(), [])
     end
+
+    test "inserts images and returns count" do
+      user = insert_verified_user()
+      conv = insert_conversation(user_id: user.id)
+      turn = insert_turn(conv)
+      images = [%{media_type: "image/png", data: <<1, 2, 3>>}]
+      assert {:ok, 1} = Conversations.insert_turn_images(turn.id, images)
+    end
   end
 
   describe "get_turn_image/2" do
