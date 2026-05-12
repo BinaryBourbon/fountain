@@ -22,6 +22,7 @@ defmodule Fountain.Agents.Agent do
     field :skills, {:array, :map}, default: []
     field :mcp_servers, :map, default: %{}
     field :metadata, :map, default: %{}
+    field :conversation_count, :integer, virtual: true, default: 0
     belongs_to :user, User
     belongs_to :environment, Environment
     timestamps(type: :utc_datetime)
