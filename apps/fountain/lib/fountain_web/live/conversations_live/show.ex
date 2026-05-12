@@ -213,7 +213,12 @@ defmodule FountainWeb.ConversationsLive.Show do
   end
 
   def handle_event("set_view_mode", %{"mode" => mode}, socket) do
-    {:noreply, assign(socket, :view_mode, parse_view_mode(mode, socket.assigns.view_mode))}
+    next = parse_view_mode(mode, socket.assigns.view_mode)
+
+    {:noreply,
+     socket
+     |> assign(:view_mode, next)
+     |> push_event("view_mode_changed", %{mode: Atom.to_string(next)})}
   end
 
   def handle_event("restore_view_mode", %{"mode" => mode}, socket) do
