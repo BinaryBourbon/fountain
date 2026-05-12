@@ -97,8 +97,9 @@ defmodule Fountain.Conversations do
     )
   end
 
-  @doc "List conversations for `user_id`, ordered by most recently active."
   @doc """
+  List conversations for `user_id`, ordered by most recently active.
+
   Populates the `turn_count` virtual field on each conversation by LEFT
   JOINing a subquery that counts turns per conversation. This avoids an
   N+1 and keeps the result a plain list of `%Conversation{}` structs.
