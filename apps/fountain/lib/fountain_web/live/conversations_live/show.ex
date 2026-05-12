@@ -213,27 +213,20 @@ defmodule FountainWeb.ConversationsLive.Show do
   end
 
   def handle_event("set_view_mode", %{"mode" => mode}, socket) do
-    next =
-      case mode do
-        "chat" -> :chat
-        "pretty" -> :pretty
-        "raw" -> :raw
-        _ -> socket.assigns.view_mode
-      end
-
-    {:noreply, assign(socket, :view_mode, next)}
+    {:noreply, assign(socket, :view_mode, parse_view_mode(mode, socket.assigns.view_mode))}
   end
 
   def handle_event("restore_view_mode", %{"mode" => mode}, socket) do
-    next =
-      case mode do
-        "chat" -> :chat
-        "pretty" -> :pretty
-        "raw" -> :raw
-        _ -> socket.assigns.view_mode
-      end
+    {:noreply, assign(socket, :view_mode, parse_view_mode(mode, socket.assigns.view_mode))}
+  end
 
-    {:noreply, assign(socket, :view_mode, next)}
+  defp parse_view_mode(mode, current) do
+    case mode do
+      "chat" -> :chat
+      "pretty" -> :pretty
+      "raw" -> :raw
+      _ -> current
+    end
   end
 
   def handle_event("toggle_graph", _, socket) do
