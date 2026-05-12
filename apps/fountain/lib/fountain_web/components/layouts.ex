@@ -357,9 +357,12 @@ defmodule FountainWeb.Layouts do
     |> Enum.reject(fn {_, items} -> items == [] end)
   end
 
-  defp conv_date(%{last_active_at: dt}) when not is_nil(dt), do: DateTime.to_date(dt)
-  defp conv_date(%{inserted_at: dt}) when not is_nil(dt), do: DateTime.to_date(dt)
+  defp conv_date(%{last_active_at: dt}) when not is_nil(dt), do: to_date(dt)
+  defp conv_date(%{inserted_at: dt}) when not is_nil(dt), do: to_date(dt)
   defp conv_date(_), do: nil
+
+  defp to_date(%DateTime{} = dt), do: DateTime.to_date(dt)
+  defp to_date(%NaiveDateTime{} = dt), do: NaiveDateTime.to_date(dt)
 
   attr :href, :string, required: true
   attr :label, :string, required: true
@@ -591,8 +594,10 @@ defmodule FountainWeb.Layouts do
   end
 
   defp sidebar_relative_time(nil), do: nil
+  defp sidebar_relative_time(%NaiveDateTime{} = dt),
+    do: sidebar_relative_time(DateTime.from_naive!(dt, "Etc/UTC"))
 
-  defp sidebar_relative_time(dt) do
+  defp sidebar_relative_time(%DateTime{} = dt) do
     secs = max(0, DateTime.diff(DateTime.utc_now(), dt))
 
     cond do
