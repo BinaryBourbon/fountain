@@ -246,6 +246,9 @@ defmodule FountainWeb.Layouts do
 
           <%!-- Tools section --%>
           <div class="border-t border-[var(--color-border)] px-2 py-1.5 space-y-0.5 shrink-0">
+            <p class="px-3 pt-1 pb-0.5 text-[10px] uppercase tracking-wider text-[var(--color-text-muted)] font-medium">
+              Tools
+            </p>
             <.nav_link href={~p"/agents"} label="Agents" current={@current_path} />
             <.nav_link href={~p"/environments"} label="Environments" current={@current_path} />
             <.nav_link href={~p"/vaults"} label="Vaults" current={@current_path} />
