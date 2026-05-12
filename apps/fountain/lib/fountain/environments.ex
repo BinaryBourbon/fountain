@@ -3,6 +3,7 @@ defmodule Fountain.Environments do
 
   import Ecto.Query, only: [from: 2]
 
+  alias Fountain.Agents.Agent
   alias Fountain.Environments.{Environment, Secret}
   alias Fountain.Repo
 
@@ -29,6 +30,50 @@ defmodule Fountain.Environments do
         where: e.user_id == ^user_id,
         order_by: [desc: e.inserted_at, desc: e.id]
     )
+  end
+
+  @doc """
+  List environments scoped to user, with `:secret_count` and `:agent_count`
+  attached as virtual fields via two lightweight aggregation queries.
+  """
+  def list_environments_with_counts(user_id) when is_binary(user_id) do
+    secret_counts_query =
+      from s in Secret,
+        join: e in Environment,
+        on: s.environment_id == e.id,
+        where: e.user_id == ^user_id,
+        group_by: s.environment_id,
+        select: %{environment_id: s.environment_id, count: count(s.id)}
+
+    agent_counts_query =
+      from a in Agent,
+        where: a.user_id == ^user_id,
+        where: not is_nil(a.environment_id),
+        group_by: a.environment_id,
+        select: %{environment_id: a.environment_id, count: count(a.id)}
+
+    envs =
+      Repo.all(
+        from e in Environment,
+          where: e.user_id == ^user_id,
+          order_by: [desc: e.inserted_at, desc: e.id]
+      )
+
+    secret_map =
+      secret_counts_query
+      |> Repo.all()
+      |> Map.new(&{&1.environment_id, &1.count})
+
+    agent_map =
+      agent_counts_query
+      |> Repo.all()
+      |> Map.new(&{&1.environment_id, &1.count})
+
+    Enum.map(envs, fn env ->
+      env
+      |> Map.put(:secret_count, Map.get(secret_map, env.id, 0))
+      |> Map.put(:agent_count, Map.get(agent_map, env.id, 0))
+    end)
   end
 
   @doc "Get environment scoped to user. Returns nil on wrong owner or missing id."
