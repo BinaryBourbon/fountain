@@ -480,6 +480,25 @@ defmodule FountainWeb.ConversationControllerTest do
     end
   end
 
+  describe "POST /api/conversations — parent conversation header" do
+    test "returns 201 when x-fountain-parent-conversation-id header is set", %{conn: conn, user: user, raw_key: raw_key} do
+      agent = insert_agent(user_id: user.id)
+      parent_conv = insert_conversation(user_id: user.id)
+
+      stub(Horde.DynamicSupervisor, :start_child, fn _supervisor, _child_spec ->
+        {:ok, spawn(fn -> :ok end)}
+      end)
+
+      conn =
+        conn
+        |> authed_with_key(raw_key)
+        |> put_req_header("x-fountain-parent-conversation-id", parent_conv.id)
+        |> post_json("/api/conversations", %{"agent_id" => agent.id})
+
+      assert json_response(conn, 201)
+    end
+  end
+
   describe "POST /api/conversations with images" do
     test "returns 201 with conversation when images array is provided (decode_images non-empty branch)", %{conn: conn, user: user, raw_key: raw_key} do
       agent = insert_agent(user_id: user.id)
