@@ -276,9 +276,13 @@
               if (saved) {
                 this.pushEvent("restore_view_mode", { mode: saved });
               }
-              this.handleEvent("view_mode_changed", ({ mode }) => {
+              this._handleViewMode = ({ mode }) => {
                 localStorage.setItem("fountain-view-mode", mode);
-              });
+              };
+              this.handleEvent("view_mode_changed", this._handleViewMode);
+            },
+            destroyed() {
+              this._handleViewMode = null;
             }
           }
         };
