@@ -1490,6 +1490,43 @@ defmodule Fountain.ConversationsContextTest do
       # where the sandbox is already terminated, hitting the no-op branch
       assert {:ok, _conv} = Conversations.wake_conversation(conv.id)
     end
+
+    test "mark_old_sandbox_terminated handles deleted sandbox gracefully" do
+      user = insert_verified_user()
+      agent = insert_agent(user_id: user.id)
+      # sandbox remains "pending" so maybe_reuse_sandbox returns :create_new
+      sandbox = insert_sandbox(user_id: user.id)
+      conv = insert_conversation(user_id: user.id, agent: agent, sandbox: sandbox, status: "idle")
+
+      # Point the conversation at a non-existent sandbox_id (bypassing FK) so that
+      # mark_old_sandbox_terminated receives an id whose get_sandbox returns nil,
+      # hitting the nil -> :ok branch (line 635).
+      ghost_sandbox_id = Ecto.UUID.generate()
+      {:ok, ghost_uuid_bin} = Ecto.UUID.dump(ghost_sandbox_id)
+      {:ok, conv_id_bin} = Ecto.UUID.dump(conv.id)
+
+      # Temporarily disable FK checks, update the conversation to reference a
+      # non-existent sandbox_id, then re-enable. This simulates the case where
+      # a sandbox was deleted out-of-band (e.g., admin cleanup) so that
+      # mark_old_sandbox_terminated receives an id whose get_sandbox returns nil.
+      Ecto.Adapters.SQL.query!(Fountain.Repo, "SET session_replication_role = replica", [])
+
+      Ecto.Adapters.SQL.query!(
+        Fountain.Repo,
+        "UPDATE conversations SET sandbox_id = $1 WHERE id = $2",
+        [ghost_uuid_bin, conv_id_bin]
+      )
+
+      # Also delete the original sandbox record now that the FK is no longer referenced.
+      Ecto.Adapters.SQL.query!(Fountain.Repo, "SET session_replication_role = DEFAULT", [])
+      Fountain.Repo.delete!(sandbox)
+
+      stub(Horde.DynamicSupervisor, :start_child, fn _supervisor, _child_spec ->
+        {:ok, spawn(fn -> :ok end)}
+      end)
+
+      assert {:ok, _conv} = Conversations.wake_conversation(conv.id)
+    end
   end
 
   # ────────────────────────────────────────────────────────────────────────────
@@ -1691,6 +1728,31 @@ defmodule Fountain.ConversationsContextTest do
       [loaded_turn] = Conversations.list_turns_with_images(conv.id)
       positions = Enum.map(loaded_turn.images, & &1.position)
       assert positions == Enum.sort(positions)
+    end
+  end
+
+  describe "insert_conversation/1 factory — agent without explicit user_id" do
+    test "derives user_id from agent when no user_id is provided" do
+      user = insert_verified_user()
+      agent = insert_agent(user_id: user.id)
+      conv = insert_conversation(agent: agent)
+      assert conv.user_id == user.id
+      assert conv.agent_id == agent.id
+    end
+  end
+
+  describe "factory to_atom_map — safe_to_existing_atom fallback" do
+    test "to_atom_map with an unknown string key does not crash and returns the string as fallback" do
+      # "xyzquuxfoo_novel_key_never_an_atom" is not an existing Elixir atom,
+      # so safe_to_existing_atom triggers its rescue clause and returns the string key.
+      result = Fountain.Factory.to_atom_map(%{
+        "sprite_name" => "test-sprite",
+        "xyzquuxfoo_novel_key_never_an_atom" => "ignored_value"
+      })
+
+      assert Map.get(result, :sprite_name) == "test-sprite"
+      # The unknown key is preserved as a string (fallback)
+      assert Map.get(result, "xyzquuxfoo_novel_key_never_an_atom") == "ignored_value"
     end
   end
 end
