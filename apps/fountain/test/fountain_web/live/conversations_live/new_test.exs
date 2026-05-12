@@ -63,3 +63,66 @@ defmodule FountainWeb.ConversationsLive.NewTest do
     end
   end
 end
+
+# Submit tests require Mimic global mode (stubs visible to the LiveView
+# process), which is incompatible with async: true — isolated in a
+# separate non-async module.
+defmodule FountainWeb.ConversationsLive.NewSubmitTest do
+  use FountainWeb.ConnCase, async: false
+  use Mimic
+
+  import Phoenix.LiveViewTest
+
+  setup :set_mimic_global
+
+  describe "submit" do
+    setup %{conn: conn} do
+      user = insert_verified_user()
+      agent = insert_agent(user_id: user.id)
+      conn = login_user(conn, user)
+      {:ok, lv, _html} = live(conn, ~p"/conversations/new")
+      %{lv: lv, agent: agent}
+    end
+
+    test "redirects to the new conversation on success", %{lv: lv, agent: agent} do
+      stub(Horde.DynamicSupervisor, :start_child, fn _supervisor, _child_spec ->
+        {:ok, :test_pid}
+      end)
+
+      params = %{"agent_id" => agent.id, "prompt" => "hello", "vault_id" => ""}
+
+      assert {:error, {:live_redirect, %{to: path}}} =
+               lv
+               |> element("form[phx-submit='submit']")
+               |> render_submit(%{"conv" => params})
+
+      assert String.starts_with?(path, "/conversations/")
+    end
+
+    test "shows agent-not-found flash when agent_id is unknown", %{lv: lv} do
+      params = %{"agent_id" => Ecto.UUID.generate(), "prompt" => "hello", "vault_id" => ""}
+
+      html =
+        lv
+        |> element("form[phx-submit='submit']")
+        |> render_submit(%{"conv" => params})
+
+      assert html =~ "Agent not found"
+    end
+
+    test "shows error flash when conversation server fails to start", %{lv: lv, agent: agent} do
+      stub(Horde.DynamicSupervisor, :start_child, fn _supervisor, _child_spec ->
+        {:error, :test_failure}
+      end)
+
+      params = %{"agent_id" => agent.id, "prompt" => "hello", "vault_id" => ""}
+
+      html =
+        lv
+        |> element("form[phx-submit='submit']")
+        |> render_submit(%{"conv" => params})
+
+      assert html =~ "Failed:"
+    end
+  end
+end
