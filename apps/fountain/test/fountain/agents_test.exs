@@ -286,4 +286,78 @@ defmodule Fountain.AgentsTest do
       assert agent_with_mcp.id in ids
     end
   end
+
+  describe "list_agents_with_counts/2" do
+    test "returns conversation_count 0 for agent with no conversations" do
+      user = insert_verified_user()
+      _agent = insert_agent(user_id: user.id)
+
+      results = Agents.list_agents_with_counts(user.id, [])
+      assert length(results) == 1
+      assert hd(results).conversation_count == 0
+    end
+
+    test "does not return agents belonging to another user" do
+      user_a = insert_verified_user()
+      user_b = insert_verified_user()
+      agent_a = insert_agent(user_id: user_a.id)
+      _agent_b = insert_agent(user_id: user_b.id)
+
+      results = Agents.list_agents_with_counts(user_a.id, [])
+      assert length(results) == 1
+      assert hd(results).id == agent_a.id
+    end
+
+    test "returns correct conversation_count for agent with conversations" do
+      user = insert_verified_user()
+      agent = insert_agent(user_id: user.id)
+      insert_conversation(user_id: user.id, agent_id: agent.id)
+      insert_conversation(user_id: user.id, agent_id: agent.id)
+
+      results = Agents.list_agents_with_counts(user.id, [])
+      assert length(results) == 1
+      assert hd(results).conversation_count == 2
+    end
+
+    test "does not count conversations belonging to other agents" do
+      user = insert_verified_user()
+      agent_a = insert_agent(user_id: user.id)
+      agent_b = insert_agent(user_id: user.id)
+      insert_conversation(user_id: user.id, agent_id: agent_b.id)
+
+      results = Agents.list_agents_with_counts(user.id, [])
+      a_result = Enum.find(results, &(&1.id == agent_a.id))
+      assert a_result.conversation_count == 0
+    end
+
+    test "accepts the same filters as list_agents/2" do
+      user = insert_verified_user()
+      insert_agent(user_id: user.id, name: "alpha", runtime: "claude")
+      insert_agent(user_id: user.id, name: "beta", runtime: "gemini")
+
+      results = Agents.list_agents_with_counts(user.id, runtimes: ["claude"])
+      assert length(results) == 1
+      assert hd(results).name == "alpha"
+    end
+
+    test "does not count conversations belonging to another user" do
+      user_a = insert_verified_user()
+      user_b = insert_verified_user()
+      agent = insert_agent(user_id: user_a.id)
+      insert_conversation(user_id: user_b.id, agent_id: agent.id)
+
+      results = Agents.list_agents_with_counts(user_a.id, [])
+      assert length(results) == 1
+      assert hd(results).conversation_count == 0
+    end
+
+    test "preloads the environment association" do
+      user = insert_verified_user()
+      env = insert_env(user_id: user.id)
+      _agent = insert_agent(user_id: user.id, environment_id: env.id)
+
+      results = Agents.list_agents_with_counts(user.id, [])
+      assert hd(results).environment.id == env.id
+    end
+  end
 end

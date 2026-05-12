@@ -8,7 +8,7 @@ defmodule FountainWeb.AgentsLive.Index do
   @impl true
   def mount(_params, _session, socket) do
     user_id = socket.assigns.current_user.id
-    all_agents = Agents.list_agents(user_id, [])
+    all_agents = Agents.list_agents_with_counts(user_id, [])
 
     {:ok,
      socket
@@ -47,7 +47,7 @@ defmodule FountainWeb.AgentsLive.Index do
      |> assign(:filter_env_ids, env_ids)
      |> assign(:filter_has_skills, has_skills)
      |> assign(:filter_has_mcp, has_mcp)
-     |> assign(:agents, Agents.list_agents(socket.assigns.user_id, filters))}
+     |> assign(:agents, Agents.list_agents_with_counts(socket.assigns.user_id, filters))}
   end
 
   @impl true
@@ -59,7 +59,7 @@ defmodule FountainWeb.AgentsLive.Index do
      |> assign(:filter_env_ids, [])
      |> assign(:filter_has_skills, false)
      |> assign(:filter_has_mcp, false)
-     |> assign(:agents, Agents.list_agents(socket.assigns.user_id, []))}
+     |> assign(:agents, Agents.list_agents_with_counts(socket.assigns.user_id, []))}
   end
 
   @impl true
@@ -68,12 +68,12 @@ defmodule FountainWeb.AgentsLive.Index do
     agent = Agents.get_agent!(id, user_id)
     {:ok, _} = Agents.delete_agent(agent)
 
-    all_agents = Agents.list_agents(user_id, [])
+    all_agents = Agents.list_agents_with_counts(user_id, [])
     filters = current_filters(socket.assigns)
 
     {:noreply,
      socket
-     |> assign(:agents, Agents.list_agents(user_id, filters))
+     |> assign(:agents, Agents.list_agents_with_counts(user_id, filters))
      |> assign(:facet_counts, compute_facets(all_agents))
      |> assign(:all_environments, extract_environments(all_agents))
      |> put_flash(:info, "Deleted #{agent.name}")}
@@ -213,25 +213,81 @@ defmodule FountainWeb.AgentsLive.Index do
           No agents match the current filters.
         </div>
 
-        <table :if={@agents != []} class="w-full text-sm bg-white rounded shadow border border-zinc-200">
-          <thead class="text-left text-zinc-500 border-b border-zinc-200">
+        <table
+          :if={@agents != []}
+          class="w-full text-sm rounded-lg overflow-hidden"
+          style="background:#0a0a0a;border:1px solid #1a1a1a;"
+        >
+          <thead style="border-bottom:1px solid #222;">
             <tr>
-              <th class="px-4 py-2">Name</th>
-              <th class="px-4 py-2">Runtime</th>
-              <th class="px-4 py-2">Model</th>
-              <th class="px-4 py-2">Env</th>
-              <th class="px-4 py-2"></th>
+              <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide" style="color:#4b5563;">Name</th>
+              <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide" style="color:#4b5563;">Runtime</th>
+              <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide" style="color:#4b5563;">Model</th>
+              <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide" style="color:#4b5563;">Stats</th>
+              <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide" style="color:#4b5563;">Env</th>
+              <th class="px-4 py-3"></th>
             </tr>
           </thead>
           <tbody>
-            <tr :for={a <- @agents} class="border-b border-zinc-100 last:border-0 hover:bg-zinc-50">
-              <td class="px-4 py-2 font-medium">{a.name}</td>
-              <td class="px-4 py-2 text-zinc-600">{a.runtime}</td>
-              <td class="px-4 py-2 text-zinc-600 font-mono text-xs">{a.model}</td>
-              <td class="px-4 py-2 text-zinc-600">{env_name(a.environment)}</td>
-              <td class="px-4 py-2 text-right space-x-2">
-                <.link navigate={~p"/agents/#{a.id}/edit"}><.btn_secondary>Edit</.btn_secondary></.link>
-                <.btn_danger phx-click="delete" phx-value-id={a.id} data-confirm="Delete agent?">Delete</.btn_danger>
+            <tr
+              :for={a <- @agents}
+              class="hover:bg-[#0d1117] transition-colors duration-150"
+              style="border-bottom:1px solid #161616;"
+            >
+              <td class="px-4 py-3 font-medium" style="color:#e5e7eb;">{a.name}</td>
+              <td class="px-4 py-3">
+                <span
+                  class="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-semibold"
+                  style={runtime_badge_style(a.runtime)}
+                >
+                  <span class="w-1.5 h-1.5 rounded-full" style="background:currentColor;"></span>
+                  {a.runtime}
+                </span>
+              </td>
+              <td class="px-4 py-3 font-mono text-xs" style="color:#4b5563;">{a.model}</td>
+              <td class="px-4 py-3">
+                <div class="flex items-center gap-1.5 flex-wrap">
+                  <span
+                    class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium"
+                    style={stat_badge_style(:skills, length(a.skills))}
+                    title={"#{length(a.skills)} skills"}
+                  >⚡ {length(a.skills)}</span>
+                  <span
+                    class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium"
+                    style={stat_badge_style(:mcp, map_size(a.mcp_servers))}
+                    title={"#{map_size(a.mcp_servers)} MCP servers"}
+                  >🔌 {map_size(a.mcp_servers)}</span>
+                  <span
+                    class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium"
+                    style={stat_badge_style(:conversations, a.conversation_count)}
+                    title={"#{a.conversation_count} total conversations"}
+                  >💬 {a.conversation_count}</span>
+                </div>
+              </td>
+              <td class="px-4 py-3">
+                <span
+                  :if={a.environment}
+                  class="inline-flex items-center px-2 py-1 rounded text-xs font-medium"
+                  style={env_badge_style(a.environment.name)}
+                >{a.environment.name}</span>
+                <span :if={!a.environment} style="color:#374151;">—</span>
+              </td>
+              <td class="px-4 py-3 text-right">
+                <div class="inline-flex gap-1">
+                  <.link navigate={~p"/agents/#{a.id}/edit"}>
+                    <button
+                      class="px-2 py-1 rounded text-xs cursor-pointer"
+                      style="background:#1a1a1a;border:1px solid #2a2a2a;color:#9ca3af;"
+                    >Edit</button>
+                  </.link>
+                  <button
+                    class="px-2 py-1 rounded text-xs cursor-pointer"
+                    style="background:#1a0d0d;border:1px solid #3a1a1a;color:#f87171;"
+                    phx-click="delete"
+                    phx-value-id={a.id}
+                    data-confirm="Delete agent?"
+                  >Delete</button>
+                </div>
               </td>
             </tr>
           </tbody>
@@ -240,9 +296,6 @@ defmodule FountainWeb.AgentsLive.Index do
     </div>
     """
   end
-
-  defp env_name(nil), do: "—"
-  defp env_name(env), do: env.name
 
   defp compute_facets(agents) do
     runtimes = Enum.frequencies_by(agents, & &1.runtime)
@@ -279,5 +332,47 @@ defmodule FountainWeb.AgentsLive.Index do
       assigns.filter_env_ids != [] or
       assigns.filter_has_skills or
       assigns.filter_has_mcp
+  end
+
+  defp runtime_badge_style("claude"),
+    do: "background:#0d1f0d;color:#6ee7b7;border:1px solid #1a3a1a;"
+
+  defp runtime_badge_style("gemini"),
+    do: "background:#0d1525;color:#93c5fd;border:1px solid #1a2a4a;"
+
+  defp runtime_badge_style("opencode"),
+    do: "background:#150d25;color:#a78bfa;border:1px solid #2a1a4a;"
+
+  defp runtime_badge_style("codex"),
+    do: "background:#1a1200;color:#fbbf24;border:1px solid #3a2a00;"
+
+  defp runtime_badge_style(_),
+    do: "background:#1a1a1a;color:#9ca3af;border:1px solid #2a2a2a;"
+
+  defp stat_badge_style(_type, 0),
+    do: "background:#111;color:#374151;border:1px solid #1f1f1f;"
+
+  defp stat_badge_style(:skills, _),
+    do: "background:#0d1f0d;color:#6ee7b7;border:1px solid #1a3a1a;"
+
+  defp stat_badge_style(:mcp, _),
+    do: "background:#0d1525;color:#93c5fd;border:1px solid #1a2a4a;"
+
+  defp stat_badge_style(:conversations, _),
+    do: "background:#1a0d1a;color:#c084fc;border:1px solid #2d1a3a;"
+
+  defp env_badge_style(name) do
+    lower = String.downcase(name)
+
+    cond do
+      String.contains?(lower, "prod") ->
+        "background:#0d1f0d;color:#6ee7b7;border:1px solid #1a3a1a;"
+
+      String.contains?(lower, "dev") or String.contains?(lower, "staging") ->
+        "background:#0d1525;color:#93c5fd;border:1px solid #1a2a4a;"
+
+      true ->
+        "background:#1a1a1a;color:#9ca3af;border:1px solid #2a2a2a;"
+    end
   end
 end
