@@ -147,6 +147,9 @@ defmodule FountainWeb.Live.Hooks do
         {:cont, socket}
     end)
     |> attach_hook(:sidebar_filters, :handle_event, fn
+      "restore_roots_only", _params, socket ->
+        {:halt, assign(socket, :sidebar_roots_only, true)}
+
       "sidebar_toggle_roots_only", _params, socket ->
         {:halt, assign(socket, :sidebar_roots_only, !socket.assigns.sidebar_roots_only)}
 
