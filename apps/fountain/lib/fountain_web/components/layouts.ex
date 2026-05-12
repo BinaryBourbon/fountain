@@ -434,8 +434,8 @@ defmodule FountainWeb.Layouts do
 
       <%!-- Text block --%>
       <span class="flex-1 min-w-0">
-        <%!-- Line 1: title + right-aligned counters --%>
-        <span class="flex items-baseline justify-between gap-1">
+        <%!-- Line 1: title + right-aligned counter badges --%>
+        <span class="flex items-center justify-between gap-1">
           <span class="flex-1 min-w-0">
             <span
               :if={@task_label}
@@ -446,17 +446,33 @@ defmodule FountainWeb.Layouts do
               class="block truncate italic text-[11px] text-[var(--color-text-muted)]"
             >(no task yet)</span>
           </span>
-          <span class="shrink-0 flex items-baseline gap-1.5">
+          <span class="shrink-0 flex items-center gap-1">
             <span
               :if={@turn_count > 0}
-              class="text-[11px] text-[var(--color-text-muted)] tabular-nums"
+              class="inline-flex items-center gap-0.5 rounded px-1 py-0.5
+                     text-[10px] font-medium leading-none
+                     bg-[var(--color-bg-2)] text-[var(--color-text-muted)]
+                     border border-[var(--color-border)]"
               title={"#{@turn_count} #{if @turn_count == 1, do: "turn", else: "turns"}"}
-            >{@turn_count}</span>
+            >
+              <svg class="size-2.5" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                <path fill-rule="evenodd" d="M1 2.75A.75.75 0 0 1 1.75 2h12.5a.75.75 0 0 1 .75.75v8.5a.75.75 0 0 1-.75.75h-6.5L5 14v-2H1.75a.75.75 0 0 1-.75-.75v-8.5Z" clip-rule="evenodd" />
+              </svg>
+              {@turn_count}
+            </span>
             <span
               :if={@child_count > 0}
-              class="text-[11px] text-[var(--color-text-muted)] tabular-nums"
+              class="inline-flex items-center gap-0.5 rounded px-1 py-0.5
+                     text-[10px] font-medium leading-none
+                     bg-[var(--color-bg-2)] text-[var(--color-text-muted)]
+                     border border-[var(--color-border)]"
               title={"#{@child_count} #{if @child_count == 1, do: "branch", else: "branches"}"}
-            >&#x2442;{@child_count}</span>
+            >
+              <svg class="size-2.5" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                <path d="M5 3.25a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0zm0 2.122a2.25 2.25 0 1 0-1.5 0v.878A2.25 2.25 0 0 0 5.75 8.5h1.5v2.128a2.251 2.251 0 1 0 1.5 0V8.5h1.5a2.25 2.25 0 0 0 2.25-2.25v-.878a2.25 2.25 0 1 0-1.5 0v.878a.75.75 0 0 1-.75.75h-4.5A.75.75 0 0 1 5 6.25v-.878zm3.75 7.378a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0zm3-8.75a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0z" />
+              </svg>
+              {@child_count}
+            </span>
           </span>
         </span>
 
