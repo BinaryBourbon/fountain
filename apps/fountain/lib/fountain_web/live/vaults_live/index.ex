@@ -57,9 +57,9 @@ defmodule FountainWeb.VaultsLive.Index do
         <.link navigate={~p"/vaults/new"}><.btn>+ New vault</.btn></.link>
       </div>
 
-      <p class="text-sm max-w-2xl" style="color:#6b7280;">
-        A <strong style="color:#9ca3af;">vault</strong> is a bag of env-var overrides — your credentials, a teammate's, or a virtual identity.
-        Pick one when starting a conversation and its values override the environment's baseline secrets at sprite spawn.
+      <p class="text-sm max-w-2xl text-[var(--color-text-muted)]">
+        A <strong class="text-[var(--color-text-secondary)]">vault</strong> is a bag of env-var overrides — your credentials, a teammate&#39;s, or a virtual identity.
+        Pick one when starting a conversation and its values override the environment&#39;s baseline secrets at sprite spawn.
       </p>
 
       <%!-- Search bar --%>
@@ -70,78 +70,69 @@ defmodule FountainWeb.VaultsLive.Index do
           value={@filter_search}
           phx-debounce="200"
           placeholder="Search vaults…"
-          class="w-64 rounded border px-3 py-1.5 text-sm focus:outline-none"
-          style="background:#111;border-color:#2a2a2a;color:#e5e7eb;"
+          class="w-64 rounded border border-[var(--color-border)] px-3 py-1.5 text-sm focus:outline-none bg-[var(--color-bg-1)] text-[var(--color-text-primary)]"
         />
       </form>
 
       <%!-- Empty state — no vaults at all --%>
       <div
         :if={@vaults == [] and @filter_search == ""}
-        class="rounded-lg p-10 text-center"
-        style="background:#0a0a0a;border:1px dashed #2a2a2a;"
+        class="rounded-lg p-10 text-center bg-[var(--color-bg-1)] border border-dashed border-[var(--color-border)]"
       >
-        <p class="text-sm" style="color:#6b7280;">No vaults yet.</p>
-        <p class="text-xs mt-1" style="color:#374151;">Create a vault to store a set of credential overrides you can apply per conversation.</p>
+        <p class="text-sm text-[var(--color-text-muted)]">No vaults yet.</p>
+        <p class="text-xs mt-1 text-[var(--color-text-secondary)]">Create a vault to store a set of credential overrides you can apply per conversation.</p>
       </div>
 
       <%!-- Empty state — search returned nothing --%>
       <div
         :if={@vaults == [] and @filter_search != ""}
-        class="rounded-lg p-8 text-center"
-        style="background:#0a0a0a;border:1px dashed #2a2a2a;"
+        class="rounded-lg p-8 text-center bg-[var(--color-bg-1)] border border-dashed border-[var(--color-border)]"
       >
-        <p class="text-sm" style="color:#6b7280;">No vaults match <span class="font-mono" style="color:#9ca3af;">"{@filter_search}"</span>.</p>
+        <p class="text-sm text-[var(--color-text-muted)]">
+          No vaults match <span class="font-mono text-[var(--color-text-secondary)]">&#34;{@filter_search}&#34;</span>.
+        </p>
       </div>
 
       <%!-- Table --%>
       <table
         :if={@vaults != []}
-        class="w-full text-sm rounded-lg overflow-hidden"
-        style="background:#0a0a0a;border:1px solid #1a1a1a;"
+        class="w-full text-sm rounded-lg overflow-hidden bg-[var(--color-bg-1)] border border-[var(--color-border)]"
       >
-        <thead style="border-bottom:1px solid #222;">
+        <thead class="border-b border-[var(--color-border)]">
           <tr>
-            <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide" style="color:#4b5563;">Name</th>
-            <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide" style="color:#4b5563;">Description</th>
-            <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide" style="color:#4b5563;">Secrets</th>
+            <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">Name</th>
+            <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">Description</th>
+            <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">Secrets</th>
             <th class="px-4 py-3"></th>
           </tr>
         </thead>
         <tbody>
           <tr
             :for={v <- @vaults}
-            class="hover:bg-[#0d1117] transition-colors duration-150"
-            style="border-bottom:1px solid #161616;"
+            class="border-b border-[var(--color-border)] last:border-0 hover:bg-[var(--color-bg-2)] transition-colors duration-150"
           >
-            <td class="px-4 py-3 font-medium" style="color:#e5e7eb;">{v.name}</td>
+            <td class="px-4 py-3 font-medium text-[var(--color-text-primary)]">{v.name}</td>
             <td class="px-4 py-3 max-w-md">
               <span
                 :if={v.description != ""}
-                class="text-xs block truncate"
-                style="color:#4b5563;"
+                class="text-xs block truncate text-[var(--color-text-muted)]"
                 title={v.description}
               >{v.description}</span>
-              <span :if={v.description == ""} style="color:#374151;">—</span>
+              <span :if={v.description == ""} class="text-[var(--color-text-muted)]">&#8212;</span>
             </td>
             <td class="px-4 py-3">
               <span
-                class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium"
-                style={secrets_badge_style(v.secret_count)}
+                class={["inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium", secrets_badge_class(v.secret_count)]}
                 title={"#{v.secret_count} secrets"}
-              >🔑 {v.secret_count}</span>
+              >&#128273; {v.secret_count}</span>
             </td>
             <td class="px-4 py-3 text-right">
               <div class="inline-flex gap-1">
                 <.link navigate={~p"/vaults/#{v.id}/edit"}>
-                  <button
-                    class="px-2 py-1 rounded text-xs cursor-pointer"
-                    style="background:#1a1a1a;border:1px solid #2a2a2a;color:#9ca3af;"
-                  >Edit</button>
+                  <.btn_secondary>Edit</.btn_secondary>
                 </.link>
                 <button
-                  class="px-2 py-1 rounded text-xs cursor-pointer"
-                  style="background:#1a0d0d;border:1px solid #3a1a1a;color:#f87171;"
+                  class="px-2 py-1 rounded text-xs cursor-pointer bg-[var(--color-error-bg)] border border-[var(--color-error)] text-[var(--color-error-text)] hover:bg-[var(--color-error)] hover:text-white transition-colors"
                   phx-click="delete"
                   phx-value-id={v.id}
                   data-confirm="Delete vault?"
@@ -155,9 +146,10 @@ defmodule FountainWeb.VaultsLive.Index do
     """
   end
 
-  defp secrets_badge_style(0),
-    do: "background:#111;color:#374151;border:1px solid #1f1f1f;"
+  defp secrets_badge_class(0),
+    do: "bg-[var(--color-bg-2)] text-[var(--color-text-muted)] border border-[var(--color-border)]"
 
-  defp secrets_badge_style(_),
-    do: "background:#1a1200;color:#fbbf24;border:1px solid #3a2a00;"
+  defp secrets_badge_class(_),
+    do:
+      "bg-[var(--color-warning-bg)] text-[var(--color-warning-text)] border border-[var(--color-warning)]"
 end
