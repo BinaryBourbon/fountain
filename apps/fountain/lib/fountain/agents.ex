@@ -59,6 +59,7 @@ defmodule Fountain.Agents do
   def list_agents_with_counts(user_id, filters) when is_binary(user_id) and is_list(filters) do
     counts_subquery =
       from c in Conversation,
+        where: c.user_id == ^user_id,
         group_by: c.agent_id,
         select: %{agent_id: c.agent_id, count: count(c.id)}
 

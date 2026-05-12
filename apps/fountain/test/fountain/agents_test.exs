@@ -340,6 +340,17 @@ defmodule Fountain.AgentsTest do
       assert hd(results).name == "alpha"
     end
 
+    test "does not count conversations belonging to another user" do
+      user_a = insert_verified_user()
+      user_b = insert_verified_user()
+      agent = insert_agent(user_id: user_a.id)
+      insert_conversation(user_id: user_b.id, agent_id: agent.id)
+
+      results = Agents.list_agents_with_counts(user_a.id, [])
+      assert length(results) == 1
+      assert hd(results).conversation_count == 0
+    end
+
     test "preloads the environment association" do
       user = insert_verified_user()
       env = insert_env(user_id: user.id)
