@@ -1376,6 +1376,67 @@ defmodule Fountain.ConversationsContextTest do
   end
 
   # ────────────────────────────────────────────────────────────────────────────
+  # wake_conversation/2
+  # ────────────────────────────────────────────────────────────────────────────
+
+  describe "wake_conversation/2" do
+    test "returns {:error, :not_found} when conversation does not exist" do
+      assert {:error, :not_found} = Conversations.wake_conversation(Ecto.UUID.generate())
+    end
+
+    test "returns {:error, :gone} when conversation status is terminated" do
+      user = insert_verified_user()
+      conv = insert_conversation(user_id: user.id, status: "terminated")
+
+      assert {:error, :gone} = Conversations.wake_conversation(conv.id)
+    end
+
+    test "returns {:error, :gone} when conversation status is failed" do
+      user = insert_verified_user()
+      conv = insert_conversation(user_id: user.id, status: "failed")
+
+      assert {:error, :gone} = Conversations.wake_conversation(conv.id)
+    end
+
+    test "returns {:error, :gone} when conversation status is completed" do
+      user = insert_verified_user()
+      conv = insert_conversation(user_id: user.id, status: "completed")
+
+      assert {:error, :gone} = Conversations.wake_conversation(conv.id)
+    end
+
+    test "returns {:error, :no_agent} when conversation has no agent_id" do
+      user = insert_verified_user()
+      # insert_conversation does not set an agent by default, so agent_id is nil
+      conv = insert_conversation(user_id: user.id, status: "idle")
+
+      assert {:error, :no_agent} = Conversations.wake_conversation(conv.id)
+    end
+  end
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # start_conversation/1
+  # ────────────────────────────────────────────────────────────────────────────
+
+  describe "start_conversation/1" do
+    test "returns {:error, :vault_not_found} when vault_id belongs to a different user" do
+      user1 = insert_verified_user()
+      user2 = insert_verified_user()
+      agent = insert_agent(user_id: user1.id)
+      # vault belongs to user2, not user1
+      vault = insert_vault(user_id: user2.id)
+
+      attrs = %{
+        "agent_id" => agent.id,
+        "user_id" => user1.id,
+        "vault_id" => vault.id
+      }
+
+      assert {:error, :vault_not_found} = Conversations.start_conversation(attrs)
+    end
+  end
+
+  # ────────────────────────────────────────────────────────────────────────────
   # list_active_conversations/0 — ordering
   # ────────────────────────────────────────────────────────────────────────────
 
