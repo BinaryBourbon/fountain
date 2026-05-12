@@ -327,7 +327,12 @@ defmodule FountainWeb.ConversationsLive.Show do
           <.stream_pill name="stdout" label="stdout" active={MapSet.member?(@visible_streams, "stdout")} />
           <.stream_pill name="stderr" label="stderr" active={MapSet.member?(@visible_streams, "stderr")} />
         </div>
-        <div class="inline-flex rounded overflow-hidden border border-zinc-300 font-mono">
+        <div
+          id="view-mode-persist"
+          class="inline-flex rounded overflow-hidden border border-zinc-300 font-mono"
+          phx-hook="ViewModePersist"
+          data-view-mode={@view_mode}
+        >
           <.view_mode_button mode="chat" label="chat" active={@view_mode == :chat} />
           <.view_mode_button mode="pretty" label="pretty" active={@view_mode == :pretty} />
           <.view_mode_button mode="raw" label="raw" active={@view_mode == :raw} />
