@@ -7,9 +7,6 @@ defmodule FountainWeb.Layouts do
   alias Fountain.Conversations
 
   def app(assigns) do
-    # nav_conversations is pre-loaded into socket assigns by the live sidebar
-    # hook (mount_live_sidebar) for all authenticated LiveView pages. Fall back
-    # to a fresh DB fetch for any non-LiveView rendering context.
     convs =
       case assigns[:nav_conversations] do
         convs when is_list(convs) ->
@@ -29,9 +26,6 @@ defmodule FountainWeb.Layouts do
           end
       end
 
-    # Count how many direct children each conversation has. Computed from
-    # parent_conversation_id values already present in the loaded list —
-    # no additional DB query needed.
     child_counts =
       convs
       |> Enum.map(& &1.parent_conversation_id)
@@ -51,7 +45,6 @@ defmodule FountainWeb.Layouts do
     <div class="min-h-screen bg-[var(--color-bg-0)] text-[var(--color-text-primary)]">
       <.flash_group flash={@flash} />
 
-      <%!-- Layout wrapper — peer checkbox drives mobile sidebar --%>
       <div class="flex relative">
         <input
           type="checkbox"
@@ -60,18 +53,16 @@ defmodule FountainWeb.Layouts do
           aria-label="Toggle navigation"
         />
 
-        <%!-- Mobile backdrop (visible when sidebar open) --%>
         <label
           for="sidebar-toggle"
           class="peer-checked:block hidden fixed inset-0 z-30 bg-black/50 md:hidden cursor-pointer"
           aria-hidden="true"
         />
 
-        <%!-- Sidebar --%>
         <aside
           id="app-sidebar"
           class="fixed md:sticky top-0 inset-y-0 left-0 z-40
-                 flex flex-col w-56 h-screen
+                 flex flex-col w-64 h-screen
                  border-r border-[var(--color-border)] bg-[var(--color-bg-1)]
                  -translate-x-full peer-checked:translate-x-0 md:translate-x-0
                  transition-transform duration-200"
@@ -82,7 +73,6 @@ defmodule FountainWeb.Layouts do
               <img src="/images/app-icon.png" alt="" class="size-7 rounded-md" />
               <span class="font-semibold text-sm text-[var(--color-text-primary)]">Fountain</span>
             </.link>
-            <%!-- Mobile close button --%>
             <label
               for="sidebar-toggle"
               class="md:hidden cursor-pointer rounded-md p-1 text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-2)]"
@@ -96,7 +86,7 @@ defmodule FountainWeb.Layouts do
 
           <%!-- Primary nav --%>
           <nav
-            class="px-2 pt-3 pb-1 text-sm space-y-0.5 shrink-0"
+            class="px-2 pt-2 pb-1 text-sm space-y-0.5 shrink-0"
             aria-label="Primary navigation"
           >
             <.nav_link href={~p"/conversations"} label="Conversations" current={@current_path} />
@@ -113,7 +103,7 @@ defmodule FountainWeb.Layouts do
               class="group"
             >
               <summary class="
-                flex items-center gap-1 px-3 py-1
+                flex items-center gap-1 px-3 py-0.5
                 cursor-pointer select-none
                 text-[10px] uppercase tracking-wider font-medium
                 text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]
@@ -151,11 +141,7 @@ defmodule FountainWeb.Layouts do
               Settings
             </p>
             <.nav_link href={~p"/api-keys"} label="API Keys" current={@current_path} />
-            <.nav_link
-              href={~p"/account/billing"}
-              label="Billing"
-              current={@current_path}
-            />
+            <.nav_link href={~p"/account/billing"} label="Billing" current={@current_path} />
             <.nav_link href={~p"/audit"} label="Audit log" current={@current_path} />
             <.nav_link href={~p"/help"} label="Help" current={@current_path} />
             <.nav_link
@@ -166,7 +152,7 @@ defmodule FountainWeb.Layouts do
             />
           </div>
 
-          <%!-- Sidebar footer: user email, theme toggle, sign-out --%>
+          <%!-- Sidebar footer --%>
           <div class="border-t border-[var(--color-border)] px-3 py-3 shrink-0">
             <div class="flex items-center justify-between gap-2">
               <div class="min-w-0 flex-1">
@@ -184,7 +170,6 @@ defmodule FountainWeb.Layouts do
                   Sign out
                 </a>
               </div>
-              <%!-- Theme toggle --%>
               <button
                 id="theme-toggle"
                 phx-hook="ThemeToggle"
@@ -196,11 +181,7 @@ defmodule FountainWeb.Layouts do
                   <path d="M17.293 13.293A8 8 0 0 1 6.707 2.707a8.001 8.001 0 1 0 10.586 10.586z" />
                 </svg>
                 <svg id="theme-icon-sun" class="size-4 hidden" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                  <path
-                    fill-rule="evenodd"
-                    d="M10 2a1 1 0 0 1 1 1v1a1 1 0 1 1-2 0V3a1 1 0 0 1 1-1Zm4 8a4 4 0 1 1-8 0 4 4 0 0 1 8 0Zm-.464 4.95.707.707a1 1 0 0 0 1.414-1.414l-.707-.707a1 1 0 0 0-1.414 1.414Zm2.12-10.607a1 1 0 0 1 0 1.414l-.706.707a1 1 0 1 1-1.414-1.414l.707-.707a1 1 0 0 1 1.414 0ZM17 11a1 1 0 1 0 0-2h-1a1 1 0 1 0 0 2h1Zm-7 4a1 1 0 0 1 1 1v1a1 1 0 1 1-2 0v-1a1 1 0 0 1 1-1ZM5.05 6.464A1 1 0 1 0 6.465 5.05l-.708-.707a1 1 0 0 0-1.414 1.414l.707.707Zm1.414 8.486-.707.707a1 1 0 0 1-1.414-1.414l.707-.707a1 1 0 0 1 1.414 1.414ZM4 11a1 1 0 1 0 0-2H3a1 1 0 0 0 0 2h1Z"
-                    clip-rule="evenodd"
-                  />
+                  <path fill-rule="evenodd" d="M10 2a1 1 0 0 1 1 1v1a1 1 0 1 1-2 0V3a1 1 0 0 1 1-1Zm4 8a4 4 0 1 1-8 0 4 4 0 0 1 8 0Zm-.464 4.95.707.707a1 1 0 0 0 1.414-1.414l-.707-.707a1 1 0 0 0-1.414 1.414Zm2.12-10.607a1 1 0 0 1 0 1.414l-.706.707a1 1 0 1 1-1.414-1.414l.707-.707a1 1 0 0 1 1.414 0ZM17 11a1 1 0 1 0 0-2h-1a1 1 0 1 0 0 2h1Zm-7 4a1 1 0 0 1 1 1v1a1 1 0 1 1-2 0v-1a1 1 0 0 1 1-1ZM5.05 6.464A1 1 0 1 0 6.465 5.05l-.708-.707a1 1 0 0 0-1.414 1.414l.707.707Zm1.414 8.486-.707.707a1 1 0 0 1-1.414-1.414l.707-.707a1 1 0 0 1 1.414 1.414ZM4 11a1 1 0 1 0 0-2H3a1 1 0 0 0 0 2h1Z" clip-rule="evenodd" />
                 </svg>
               </button>
             </div>
@@ -209,7 +190,6 @@ defmodule FountainWeb.Layouts do
 
         <%!-- Main content area --%>
         <div class="flex-1 min-w-0 flex flex-col">
-          <%!-- Mobile top bar --%>
           <div class="md:hidden flex items-center gap-3 px-4 py-3 border-b border-[var(--color-border)] bg-[var(--color-bg-1)] sticky top-0 z-20">
             <label
               for="sidebar-toggle"
@@ -217,11 +197,7 @@ defmodule FountainWeb.Layouts do
               aria-label="Open navigation"
             >
               <svg class="size-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                <path
-                  fill-rule="evenodd"
-                  d="M2 4.75A.75.75 0 0 1 2.75 4h14.5a.75.75 0 0 1 0 1.5H2.75A.75.75 0 0 1 2 4.75ZM2 10a.75.75 0 0 1 .75-.75h14.5a.75.75 0 0 1 0 1.5H2.75A.75.75 0 0 1 2 10Zm0 5.25a.75.75 0 0 1 .75-.75h14.5a.75.75 0 0 1 0 1.5H2.75a.75.75 0 0 1-.75-.75Z"
-                  clip-rule="evenodd"
-                />
+                <path fill-rule="evenodd" d="M2 4.75A.75.75 0 0 1 2.75 4h14.5a.75.75 0 0 1 0 1.5H2.75A.75.75 0 0 1 2 4.75ZM2 10a.75.75 0 0 1 .75-.75h14.5a.75.75 0 0 1 0 1.5H2.75A.75.75 0 0 1 2 10Zm0 5.25a.75.75 0 0 1 .75-.75h14.5a.75.75 0 0 1 0 1.5H2.75a.75.75 0 0 1-.75-.75Z" clip-rule="evenodd" />
               </svg>
             </label>
             <span class="font-semibold text-sm text-[var(--color-text-primary)]">Fountain</span>
@@ -236,8 +212,6 @@ defmodule FountainWeb.Layouts do
     """
   end
 
-  # Groups conversations into labelled buckets by recency. Running conversations
-  # are always surfaced first regardless of when they were last active.
   defp group_conversations_by_date(convs) do
     now = DateTime.utc_now()
     today = DateTime.to_date(now)
@@ -285,8 +259,7 @@ defmodule FountainWeb.Layouts do
         "block rounded-md px-3 py-1.5 text-sm transition-colors",
         if(@active,
           do: "bg-[var(--color-bg-2)] font-medium text-[var(--color-text-primary)]",
-          else:
-            "text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-2)] hover:text-[var(--color-text-primary)]"
+          else: "text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-2)] hover:text-[var(--color-text-primary)]"
         )
       ]}
     >
@@ -311,34 +284,20 @@ defmodule FountainWeb.Layouts do
 
     task_label = if first_turn, do: truncate(first_turn.prompt, 55), else: nil
     agent_name = assigns.conv.agent && assigns.conv.agent.name
-
     turn_count = Map.get(assigns.conv, :turn_count, 0) || 0
 
-    turns_label =
-      case turn_count do
-        0 -> nil
-        1 -> "1 turn"
-        n -> "#{n} turns"
-      end
-
+    # meta line is now just agent + time; turn count lives in its own badge
     meta =
-      [agent_name, turns_label, sidebar_relative_time(assigns.conv.updated_at)]
+      [agent_name, sidebar_relative_time(assigns.conv.updated_at)]
       |> Enum.reject(&is_nil/1)
       |> Enum.join(" · ")
 
     {dot_class, status_label} =
       case assigns.conv.status do
         "running" -> {"bg-[var(--status-starting-text)] animate-pulse", "running"}
-        "ready" -> {"bg-[var(--status-ready-text)]", "ready"}
+        "ready"   -> {"bg-[var(--status-ready-text)]", "ready"}
         "pending" -> {"bg-[var(--status-pending-text)]", "pending"}
-        s -> {"bg-[var(--color-text-muted)]", s}
-      end
-
-    child_label =
-      case assigns.child_count do
-        0 -> nil
-        1 -> "1 branch"
-        n -> "#{n} branches"
+        s         -> {"bg-[var(--color-text-muted)]", s}
       end
 
     assigns =
@@ -349,18 +308,17 @@ defmodule FountainWeb.Layouts do
         meta: meta,
         dot_class: dot_class,
         status_label: status_label,
-        child_label: child_label
+        turn_count: turn_count
       )
 
     ~H"""
     <a
       href={@href}
       class={[
-        "flex items-start gap-2 rounded-md px-3 py-2 text-sm transition-colors",
+        "flex items-start gap-2 rounded-md px-3 py-1.5 text-sm transition-colors",
         if(@active,
           do: "bg-[var(--color-bg-2)] font-medium text-[var(--color-text-primary)]",
-          else:
-            "text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-2)] hover:text-[var(--color-text-primary)]"
+          else: "text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-2)] hover:text-[var(--color-text-primary)]"
         )
       ]}
     >
@@ -369,31 +327,48 @@ defmodule FountainWeb.Layouts do
         title={@status_label}
       />
       <span class="flex-1 min-w-0">
-        <%!-- Task label row: truncates, badge stays pinned right --%>
-        <span class="flex items-center gap-1.5">
+        <%!-- Label row: task text truncates; badges stay pinned right --%>
+        <span class="flex items-center gap-1">
           <span
             :if={@task_label}
-            class="truncate"
+            class="truncate text-[13px]"
           >{@task_label}</span>
           <span
             :if={!@task_label}
-            class="truncate italic text-[var(--color-text-muted)]"
+            class="truncate italic text-[var(--color-text-muted)] text-[13px]"
           >(no task yet)</span>
+
+          <%!-- Turn-count badge --%>
           <span
-            :if={@child_label}
+            :if={@turn_count > 0}
             class="inline-flex shrink-0 items-center gap-0.5 rounded px-1 py-0.5
                    text-[10px] font-medium leading-none
                    bg-[var(--color-bg-2)] text-[var(--color-text-muted)]
                    border border-[var(--color-border)]"
-            title={@child_label}
+            title={"#{@turn_count} #{if @turn_count == 1, do: "turn", else: "turns"}"}
           >
-            <%!-- Git-branch icon --%>
+            <svg class="size-2.5" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+              <path fill-rule="evenodd" d="M1 2.75A.75.75 0 0 1 1.75 2h12.5a.75.75 0 0 1 .75.75v8.5a.75.75 0 0 1-.75.75h-6.5L5 14v-2H1.75a.75.75 0 0 1-.75-.75v-8.5Z" clip-rule="evenodd" />
+            </svg>
+            {@turn_count}
+          </span>
+
+          <%!-- Branch badge --%>
+          <span
+            :if={@child_count > 0}
+            class="inline-flex shrink-0 items-center gap-0.5 rounded px-1 py-0.5
+                   text-[10px] font-medium leading-none
+                   bg-[var(--color-bg-2)] text-[var(--color-text-muted)]
+                   border border-[var(--color-border)]"
+            title={"#{@child_count} #{if @child_count == 1, do: "branch", else: "branches"}"}
+          >
             <svg class="size-2.5" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
               <path d="M5 3.25a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0zm0 2.122a2.25 2.25 0 1 0-1.5 0v.878A2.25 2.25 0 0 0 5.75 8.5h1.5v2.128a2.251 2.251 0 1 0 1.5 0V8.5h1.5a2.25 2.25 0 0 0 2.25-2.25v-.878a2.25 2.25 0 1 0-1.5 0v.878a.75.75 0 0 1-.75.75h-4.5A.75.75 0 0 1 5 6.25v-.878zm3.75 7.378a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0zm3-8.75a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0z" />
             </svg>
             {@child_count}
           </span>
         </span>
+
         <span
           :if={@meta != ""}
           class="block text-[11px] text-[var(--color-text-muted)] truncate mt-0.5"
