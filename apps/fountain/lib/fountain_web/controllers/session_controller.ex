@@ -80,7 +80,7 @@ defmodule FountainWeb.SessionController do
 
   defp after_login_path(user) do
     if user.onboarding_completed_at do
-      ~p"/"
+      ~p"/conversations"
     else
       ~p"/onboarding/step_1"
     end

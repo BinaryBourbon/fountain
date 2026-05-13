@@ -39,6 +39,11 @@ defmodule FountainWeb.Router do
     plug FountainWeb.Plugs.TenantSessionAuth
   end
 
+  # Optional browser auth — loads current_user if session exists, no redirect if absent
+  pipeline :browser_optional_auth do
+    plug FountainWeb.Plugs.OptionalSessionAuth
+  end
+
   ## ─── Public routes ────────────────────────────────────────────────────────────────────
 
   scope "/", FountainWeb do
@@ -64,9 +69,9 @@ defmodule FountainWeb.Router do
 
   ## ─── Public browser routes ────────────────────────────────────────────────────────────────────────
 
-  # Marketing landing page — public, no auth required
+  # Marketing landing page — public, shows auth-aware nav for logged-in users
   scope "/", FountainWeb do
-    pipe_through :browser
+    pipe_through [:browser, :browser_optional_auth]
     get "/", MarketingController, :home
   end
 

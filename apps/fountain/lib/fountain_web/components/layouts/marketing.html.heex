@@ -7,18 +7,27 @@
         <span class="font-semibold text-sm text-[var(--color-text-primary)]">Fountain</span>
       </a>
       <nav class="flex items-center gap-3">
-        <a
-          href={~p"/auth/login"}
-          class="text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] transition-colors px-3 py-1.5 rounded-md hover:bg-[var(--color-bg-2)]"
-        >
-          Sign in
-        </a>
-        <a
-          href={~p"/auth/register"}
-          class="text-sm font-medium bg-[var(--color-brand)] text-white px-4 py-1.5 rounded-md hover:bg-[var(--color-brand-hover)] transition-colors"
-        >
-          Get started
-        </a>
+        <%= if @current_user do %>
+          <a
+            href={~p"/conversations"}
+            class="text-sm font-medium bg-[var(--color-brand)] text-white px-4 py-1.5 rounded-md hover:bg-[var(--color-brand-hover)] transition-colors"
+          >
+            Go to app
+          </a>
+        <% else %>
+          <a
+            href={~p"/auth/login"}
+            class="text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] transition-colors px-3 py-1.5 rounded-md hover:bg-[var(--color-bg-2)]"
+          >
+            Sign in
+          </a>
+          <a
+            href={~p"/auth/register"}
+            class="text-sm font-medium bg-[var(--color-brand)] text-white px-4 py-1.5 rounded-md hover:bg-[var(--color-brand-hover)] transition-colors"
+          >
+            Get started
+          </a>
+        <% end %>
       </nav>
     </div>
   </header>
@@ -33,8 +42,12 @@
     <div class="max-w-5xl mx-auto px-6 py-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-[var(--color-text-muted)]">
       <span>© 2026 Fountain. Managed agent infrastructure for teams who'd rather build than configure.</span>
       <div class="flex items-center gap-4">
-        <a href={~p"/auth/login"} class="hover:text-[var(--color-text-secondary)] transition-colors">Sign in</a>
-        <a href={~p"/auth/register"} class="hover:text-[var(--color-text-secondary)] transition-colors">Register</a>
+        <%= if @current_user do %>
+          <a href={~p"/conversations"} class="hover:text-[var(--color-text-secondary)] transition-colors">Go to app</a>
+        <% else %>
+          <a href={~p"/auth/login"} class="hover:text-[var(--color-text-secondary)] transition-colors">Sign in</a>
+          <a href={~p"/auth/register"} class="hover:text-[var(--color-text-secondary)] transition-colors">Register</a>
+        <% end %>
       </div>
     </div>
   </footer>
