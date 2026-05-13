@@ -463,58 +463,55 @@ defmodule FountainWeb.Layouts do
     <.link
       {@link_attrs}
       class={[
-        "flex items-end gap-2.5 rounded-md px-3 py-1.5 text-sm transition-colors",
+        "block rounded-md px-3 py-1.5 text-sm transition-colors",
         if(@active,
           do: "bg-[var(--color-bg-2)] text-[var(--color-text-primary)]",
           else: "text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-2)] hover:text-[var(--color-text-primary)]"
         )
       ]}
     >
-      <%!-- Role chip: 28x28 rounded-square showing agent avatar or initials --%>
-      <div class="relative shrink-0">
-        <img
-          :if={@avatar_url}
-          src={@avatar_url}
-          class="w-7 h-7 rounded-[6px] object-cover"
-          alt=""
-          title={if @conv.agent, do: @conv.agent.name}
-        />
-        <span
-          :if={!@avatar_url}
-          class={[
-            "inline-flex items-center justify-center",
-            "w-7 h-7 rounded-[6px] text-[10px] font-bold leading-none select-none",
-            @chip_class
-          ]}
-          title={if @conv.agent, do: @conv.agent.name}
-        >
-          {@initials}
+      <%!-- Line 1: title (full width, no avatar indent) --%>
+      <span
+        :if={@task_label}
+        class="block truncate text-[13px] text-[var(--color-text-primary)]"
+        title={@task_label}
+      >{@task_label}</span>
+      <span
+        :if={!@task_label}
+        class="block truncate italic text-[11px] text-[var(--color-text-muted)]"
+      >(no task yet)</span>
+
+      <%!-- Line 2: small avatar + subtitle + badges --%>
+      <span class="flex items-center gap-1.5 mt-0.5">
+        <%!-- Role chip: 20x20, sits inline with subtitle text --%>
+        <span class="relative shrink-0">
+          <img
+            :if={@avatar_url}
+            src={@avatar_url}
+            class="w-5 h-5 rounded-[4px] object-cover"
+            alt=""
+            title={if @conv.agent, do: @conv.agent.name}
+          />
+          <span
+            :if={!@avatar_url}
+            class={[
+              "inline-flex items-center justify-center",
+              "w-5 h-5 rounded-[4px] text-[9px] font-bold leading-none select-none",
+              @chip_class
+            ]}
+            title={if @conv.agent, do: @conv.agent.name}
+          >
+            {@initials}
+          </span>
+          <span
+            :if={@unread?}
+            class="absolute -top-0.5 -right-0.5 size-1.5 rounded-full bg-indigo-500 border border-[var(--color-bg-1)]"
+            aria-label="unread activity"
+          />
         </span>
-        <span
-          :if={@unread?}
-          class="absolute -top-0.5 -right-0.5 size-2 rounded-full bg-indigo-500 border-2 border-[var(--color-bg-1)]"
-          aria-label="unread activity"
-        />
-      </div>
 
-      <%!-- Text block --%>
-      <span class="flex-1 min-w-0">
-        <%!-- Line 1: title --%>
-        <span
-          :if={@task_label}
-          class="block truncate text-[13px] text-[var(--color-text-primary)]"
-          title={@task_label}
-        >{@task_label}</span>
-        <span
-          :if={!@task_label}
-          class="block truncate italic text-[11px] text-[var(--color-text-muted)]"
-        >(no task yet)</span>
-
-        <%!-- Line 2: target · timestamp + counter badges --%>
-        <span
-          :if={@subtitle != "" or @turn_count > 0 or @child_count > 0}
-          class="flex items-center gap-1"
-        >
+        <%!-- Subtitle + badges --%>
+        <span class="flex-1 min-w-0 flex items-center gap-1">
           <span
             :if={@subtitle != ""}
             class="flex-1 min-w-0 text-[11px] text-[var(--color-text-muted)] truncate"
