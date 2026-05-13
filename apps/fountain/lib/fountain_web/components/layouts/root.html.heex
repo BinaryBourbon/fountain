@@ -302,12 +302,12 @@
           // user.conversation_view_mode at mount time.
           ViewModePersist: {
             mounted() {
-              this._removeViewMode = this.handleEvent("view_mode_changed", ({ mode }) => {
+              this._viewModeRef = this.handleEvent("view_mode_changed", ({ mode }) => {
                 localStorage.setItem("fountain-view-mode", mode);
               });
             },
             destroyed() {
-              if (this._removeViewMode) this._removeViewMode();
+              this.removeHandleEvent(this._viewModeRef);
             }
           },
           // ── Roots filter — DB is now the source of truth for the initial render.
@@ -316,12 +316,12 @@
           // the preference from user.conversations_roots_only at mount time.
           RootsFilterPersist: {
             mounted() {
-              this._removeRootsOnly = this.handleEvent("roots_only_changed", ({ value }) => {
+              this._rootsOnlyRef = this.handleEvent("roots_only_changed", ({ value }) => {
                 localStorage.setItem("fountain-sidebar-roots-only", value);
               });
             },
             destroyed() {
-              if (this._removeRootsOnly) this._removeRootsOnly();
+              this.removeHandleEvent(this._rootsOnlyRef);
             }
           }
         };
