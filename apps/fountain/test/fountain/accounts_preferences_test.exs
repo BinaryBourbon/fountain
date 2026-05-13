@@ -73,4 +73,47 @@ defmodule Fountain.AccountsPreferencesTest do
       assert user.conversation_visible_streams == ["stdout", "stderr", "stage"]
     end
   end
+
+  describe "User.preferences_changeset/2 for conversation_view_mode" do
+    test "accepts valid view modes" do
+      for mode <- ["chat", "pretty", "raw"] do
+        cs = User.preferences_changeset(%User{}, %{conversation_view_mode: mode})
+        assert cs.valid?, "expected #{inspect(mode)} to be valid"
+      end
+    end
+
+    test "rejects invalid view mode" do
+      cs = User.preferences_changeset(%User{}, %{conversation_view_mode: "tree"})
+      refute cs.valid?
+      assert cs.errors[:conversation_view_mode] != nil
+    end
+
+    test "accepts partial update without view mode" do
+      cs = User.preferences_changeset(%User{}, %{conversations_roots_only: true})
+      assert cs.valid?
+    end
+  end
+
+  describe "Accounts.update_preferences/2 for conversation_view_mode" do
+    setup do
+      {:ok, user: insert_verified_user()}
+    end
+
+    test "persists conversation_view_mode to database", %{user: user} do
+      assert {:ok, updated} = Accounts.update_preferences(user, %{conversation_view_mode: "chat"})
+      assert updated.conversation_view_mode == "chat"
+
+      reloaded = Accounts.get_user!(user.id)
+      assert reloaded.conversation_view_mode == "chat"
+    end
+
+    test "new users default to pretty view mode", %{user: user} do
+      assert user.conversation_view_mode == "pretty"
+    end
+
+    test "returns error changeset for invalid view mode", %{user: user} do
+      assert {:error, changeset} = Accounts.update_preferences(user, %{conversation_view_mode: "invalid"})
+      assert changeset.errors[:conversation_view_mode] != nil
+    end
+  end
 end
