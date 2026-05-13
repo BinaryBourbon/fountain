@@ -134,7 +134,7 @@ defmodule Fountain.Conversations do
         order_by: [
           desc:
             fragment(
-              "GREATEST(COALESCE(?, ?), COALESCE(?, ?), ?)",
+              "GREATEST(COALESCE(?, ?::timestamptz), COALESCE(?, ?::timestamptz), ?::timestamptz)",
               ll.last_at,
               c.inserted_at,
               lt.last_at,
@@ -147,7 +147,7 @@ defmodule Fountain.Conversations do
           | turn_count: fragment("COALESCE(?, 0)", tc.count),
             last_active_at:
               fragment(
-                "GREATEST(COALESCE(?, ?), COALESCE(?, ?), ?)",
+                "GREATEST(COALESCE(?, ?::timestamptz), COALESCE(?, ?::timestamptz), ?::timestamptz)",
                 ll.last_at,
                 c.inserted_at,
                 lt.last_at,
@@ -289,7 +289,7 @@ defmodule Fountain.Conversations do
         select: %{
           c
           | last_active_at:
-              fragment("COALESCE(?, ?)", ll.last_at, c.inserted_at)
+              fragment("COALESCE(?, ?::timestamptz)", ll.last_at, c.inserted_at)
         }
 
     query =

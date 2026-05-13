@@ -1843,7 +1843,7 @@ defmodule Fountain.ConversationsContextTest do
       insert_log_event(conv, kind: "output", stream: "stdout", inserted_at: later)
 
       [result] = Conversations.list_conversations(user.id)
-      assert DateTime.compare(result.last_active_at, conv.inserted_at) == :gt
+      assert DateTime.compare(result.last_active_at, DateTime.from_naive!(conv.inserted_at, "Etc/UTC")) == :gt
     end
 
     test "stage events (reconnects) do NOT advance last_active_at" do
