@@ -432,6 +432,7 @@ defmodule FountainWeb.Layouts do
     agent = assigns.conv.agent
     agent_name = agent && agent.name
     turn_count = Map.get(assigns.conv, :turn_count, 0) || 0
+    unread? = not active and unread_conv?(assigns.conv)
 
     target = extract_sidebar_target(raw_prompt, agent_name)
     time_str = sidebar_relative_time(assigns.conv.last_active_at || assigns.conv.inserted_at)
@@ -454,6 +455,7 @@ defmodule FountainWeb.Layouts do
         chip_class: chip_class,
         avatar_url: avatar_url,
         turn_count: turn_count,
+        unread?: unread?,
         link_attrs: [href: href]
       )
 
@@ -469,24 +471,31 @@ defmodule FountainWeb.Layouts do
       ]}
     >
       <%!-- Role chip: 28x28 rounded-square showing agent avatar or initials --%>
-      <img
-        :if={@avatar_url}
-        src={@avatar_url}
-        class="w-7 h-7 rounded-[6px] object-cover shrink-0"
-        alt=""
-        title={if @conv.agent, do: @conv.agent.name}
-      />
-      <span
-        :if={!@avatar_url}
-        class={[
-          "inline-flex items-center justify-center shrink-0",
-          "w-7 h-7 rounded-[6px] text-[10px] font-bold leading-none select-none",
-          @chip_class
-        ]}
-        title={if @conv.agent, do: @conv.agent.name}
-      >
-        {@initials}
-      </span>
+      <div class="relative shrink-0">
+        <img
+          :if={@avatar_url}
+          src={@avatar_url}
+          class="w-7 h-7 rounded-[6px] object-cover"
+          alt=""
+          title={if @conv.agent, do: @conv.agent.name}
+        />
+        <span
+          :if={!@avatar_url}
+          class={[
+            "inline-flex items-center justify-center",
+            "w-7 h-7 rounded-[6px] text-[10px] font-bold leading-none select-none",
+            @chip_class
+          ]}
+          title={if @conv.agent, do: @conv.agent.name}
+        >
+          {@initials}
+        </span>
+        <span
+          :if={@unread?}
+          class="absolute -top-0.5 -right-0.5 size-2 rounded-full bg-indigo-500 border-2 border-[var(--color-bg-1)]"
+          aria-label="unread activity"
+        />
+      </div>
 
       <%!-- Text block --%>
       <span class="flex-1 min-w-0">
@@ -541,6 +550,17 @@ defmodule FountainWeb.Layouts do
     </.link>
     """
   end
+
+  # True when the conversation has output activity that post-dates the last
+  # time the user viewed it. Stage events (reconnects, lifecycle) are already
+  # excluded from last_active_at by the query layer, so this comparison is
+  # reconnect-safe.
+  defp unread_conv?(%{last_read_at: nil, last_active_at: _}), do: true
+  defp unread_conv?(%{last_read_at: _, last_active_at: nil}), do: false
+  defp unread_conv?(%{last_read_at: read_at, last_active_at: active_at}) do
+    DateTime.compare(active_at, read_at) == :gt
+  end
+  defp unread_conv?(_), do: false
 
   # Returns {initials, tailwind_classes} for a role chip.
   # Known roles use the curated @role_styles map.
