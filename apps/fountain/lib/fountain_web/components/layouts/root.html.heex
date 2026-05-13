@@ -98,6 +98,32 @@
           }
         });
 
+        // ── Sidebar navigation ───────────────────────────────────────────────
+        // LiveView registers a document-level bubble-phase click handler that
+        // intercepts <a href> clicks on internal routes and routes them via the
+        // WebSocket. Cross-session navigation (e.g. conversations → agents) then
+        // fails silently: LiveView's redirect can't cross live_session boundaries,
+        // but it already called preventDefault() so the browser doesn't navigate
+        // either.
+        //
+        // Fix: attach a bubble-phase listener to #app-sidebar. It fires before
+        // LiveView's document handler (closer elements bubble first) and calls
+        // stopPropagation(), so LiveView's handler never runs. The browser then
+        // follows the href normally via a full-page navigation, which works
+        // reliably across all live_session boundaries.
+        //
+        // Modified clicks (Cmd/Ctrl/Shift/Alt) are left through so cmd+click
+        // still opens links in a new tab.
+        const sidebar = document.getElementById("app-sidebar");
+        if (sidebar) {
+          sidebar.addEventListener("click", (e) => {
+            const link = e.target.closest("a[href]");
+            if (!link) return;
+            if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+            e.stopPropagation();
+          });
+        }
+
         // ── LiveView hooks ───────────────────────────────────────────────────
         const Hooks = {
           ScrollBottom: {
@@ -362,7 +388,7 @@
                 <span class="text-[var(--color-text-secondary)]">Vaults</span>
                 <span class="flex gap-1">
                   <kbd class="px-2 py-0.5 bg-[var(--color-bg-2)] border border-[var(--color-border)] rounded text-xs font-mono">g</kbd>
-                  <kbd class="px-2 py-0.5 bg-[var(--color-bg-2)] border border-[var(--color-border)] rounded text-xs font-mono">v</kbd>
+                  <kbd class="px-2 py-0.5 bg-[var(--color-bg-2)] border border-[var(--color-bg-2)] rounded text-xs font-mono">v</kbd>
                 </span>
               </div>
             </div>
