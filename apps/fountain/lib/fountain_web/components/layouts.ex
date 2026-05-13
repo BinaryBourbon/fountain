@@ -354,36 +354,36 @@ defmodule FountainWeb.Layouts do
 
   defp group_conversations_by_date(convs) do
     now = DateTime.utc_now()
-    today = DateTime.to_date(now)
-    yesterday = Date.add(today, -1)
-    week_start = Date.add(today, -7)
 
     {running, rest} = Enum.split_with(convs, &(&1.status == "running"))
 
     [
       {"Active", running},
-      {"Today", Enum.filter(rest, &(conv_date(&1) == today))},
-      {"Yesterday", Enum.filter(rest, &(conv_date(&1) == yesterday))},
+      {"Today", Enum.filter(rest, &(hours_ago(conv_dt(&1), now) < 24))},
+      {"Yesterday",
+       Enum.filter(rest, fn c ->
+         h = hours_ago(conv_dt(c), now)
+         h >= 24 && h < 48
+       end)},
       {"Past 7 days",
        Enum.filter(rest, fn c ->
-         d = conv_date(c)
-         d && Date.compare(d, week_start) != :lt && Date.compare(d, yesterday) == :lt
+         h = hours_ago(conv_dt(c), now)
+         h >= 48 && h < 168
        end)},
-      {"Older",
-       Enum.filter(rest, fn c ->
-         d = conv_date(c)
-         d && Date.compare(d, week_start) == :lt
-       end)}
+      {"Older", Enum.filter(rest, &(hours_ago(conv_dt(&1), now) >= 168))}
     ]
     |> Enum.reject(fn {_, items} -> items == [] end)
   end
 
-  defp conv_date(%{last_active_at: dt}) when not is_nil(dt), do: to_date(dt)
-  defp conv_date(%{inserted_at: dt}) when not is_nil(dt), do: to_date(dt)
-  defp conv_date(_), do: nil
+  defp conv_dt(%{last_active_at: dt}) when not is_nil(dt), do: to_utc(dt)
+  defp conv_dt(%{inserted_at: dt}) when not is_nil(dt), do: to_utc(dt)
+  defp conv_dt(_), do: nil
 
-  defp to_date(%DateTime{} = dt), do: DateTime.to_date(dt)
-  defp to_date(%NaiveDateTime{} = dt), do: NaiveDateTime.to_date(dt)
+  defp to_utc(%DateTime{} = dt), do: dt
+  defp to_utc(%NaiveDateTime{} = dt), do: DateTime.from_naive!(dt, "Etc/UTC")
+
+  defp hours_ago(nil, _now), do: 999_999
+  defp hours_ago(dt, now), do: max(0, div(DateTime.diff(now, dt), 3600))
 
   attr :href, :string, required: true
   attr :label, :string, required: true
