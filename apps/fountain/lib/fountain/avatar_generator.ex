@@ -41,9 +41,8 @@ defmodule Fountain.AvatarGenerator do
   @spec generate(binary(), String.t(), String.t()) :: {:ok, binary()} | {:error, term()}
   def generate(user_id, base, mood) do
     with {:ok, api_key} <- get_openai_key(user_id),
-         prompt = build_prompt(base, mood),
-         {:ok, data} <- call_openai(api_key, prompt) do
-      {:ok, data}
+         prompt = build_prompt(base, mood) do
+      call_openai(api_key, prompt)
     end
   end
 
