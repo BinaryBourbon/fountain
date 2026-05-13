@@ -129,7 +129,7 @@ defmodule Fountain.Conversations do
 
     Repo.all(
       from c in Conversation,
-        where: c.user_id == ^user_id,
+        where: c.user_id == ^user_id and c.status != "terminated",
         left_join: tc in subquery(turn_counts), on: tc.conversation_id == c.id,
         left_join: lt in subquery(last_turn_at), on: lt.conversation_id == c.id,
         left_join: ll in subquery(last_log_at), on: ll.conversation_id == c.id,

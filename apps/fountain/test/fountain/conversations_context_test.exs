@@ -238,6 +238,17 @@ defmodule Fountain.ConversationsContextTest do
       [first | _] = Conversations.list_conversations_by_activity(user.id)
       assert first.id == c1.id
     end
+
+    test "excludes terminated conversations" do
+      user = insert_verified_user()
+      active = insert_conversation(user_id: user.id, status: "idle")
+      _terminated = insert_conversation(user_id: user.id, status: "terminated")
+
+      results = Conversations.list_conversations_by_activity(user.id)
+      ids = Enum.map(results, & &1.id)
+      assert active.id in ids
+      assert length(results) == 1
+    end
   end
 
   describe "list_conversations/1" do
