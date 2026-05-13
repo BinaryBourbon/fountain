@@ -499,20 +499,27 @@ defmodule FountainWeb.Layouts do
 
       <%!-- Text block --%>
       <span class="flex-1 min-w-0">
-        <%!-- Line 1: title + right-aligned counter badges --%>
-        <span class="flex items-center justify-between gap-1">
-          <span class="flex-1 min-w-0">
-            <span
-              :if={@task_label}
-              class="block truncate text-[13px] text-[var(--color-text-primary)]"
-              title={@task_label}
-            >{@task_label}</span>
-            <span
-              :if={!@task_label}
-              class="block truncate italic text-[11px] text-[var(--color-text-muted)]"
-            >(no task yet)</span>
-          </span>
-          <span class="shrink-0 flex items-center gap-1">
+        <%!-- Line 1: title --%>
+        <span
+          :if={@task_label}
+          class="block truncate text-[13px] text-[var(--color-text-primary)]"
+          title={@task_label}
+        >{@task_label}</span>
+        <span
+          :if={!@task_label}
+          class="block truncate italic text-[11px] text-[var(--color-text-muted)]"
+        >(no task yet)</span>
+
+        <%!-- Line 2: target · timestamp + counter badges --%>
+        <span
+          :if={@subtitle != "" or @turn_count > 0 or @child_count > 0}
+          class="flex items-center gap-1"
+        >
+          <span
+            :if={@subtitle != ""}
+            class="flex-1 min-w-0 text-[11px] text-[var(--color-text-muted)] truncate"
+          >{@subtitle}</span>
+          <span class="ml-auto shrink-0 flex items-center gap-1">
             <span
               :if={@turn_count > 0}
               class="inline-flex items-center gap-0.5 rounded px-1 py-0.5
@@ -541,12 +548,6 @@ defmodule FountainWeb.Layouts do
             </span>
           </span>
         </span>
-
-        <%!-- Line 2: target · timestamp --%>
-        <span
-          :if={@subtitle != ""}
-          class="block text-[11px] text-[var(--color-text-muted)] truncate"
-        >{@subtitle}</span>
       </span>
     </.link>
     """
