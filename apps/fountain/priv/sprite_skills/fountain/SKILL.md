@@ -55,6 +55,11 @@ while IFS= read -r conv; do
   | jq -r '.data | fromjson? | select(.type=="result") | .result' \
   | tail -n1
 done <<<"$ids"
+
+# 5. Terminate all spawned conversations now that you have what you need.
+echo "$ids" | xargs -n1 -P10 -I{} \
+  curl -s -X POST "$FOUNTAIN_BASE_URL/api/conversations/{}/terminate" \
+    -H "Authorization: Bearer $FOUNTAIN_TOKEN"
 ```
 
 ### B. Spawn one and block until it answers
@@ -82,6 +87,10 @@ curl -sN --max-time 5 \
 | awk '/^data: /{sub(/^data: /,""); print}' \
 | jq -r '.data | fromjson? | select(.type=="result") | .result' \
 | tail -n1
+
+# Terminate once you have the result — don't leave the sprite running.
+curl -s -X POST "$FOUNTAIN_BASE_URL/api/conversations/$CONV/terminate" \
+  -H "Authorization: Bearer $FOUNTAIN_TOKEN"
 ```
 
 ## SSE wire format (so you don't have to discover it)
@@ -166,19 +175,53 @@ curl -s -X POST "$FOUNTAIN_BASE_URL/api/conversations/$CONV/prompts" \
 Then poll status / read the stream the same way. The runtime session
 resumes — the agent remembers turn 1.
 
-## Tear down when you're done
+## Terminate agents when you're done
+
+Every spawned conversation holds a live Sprite (a real compute sandbox) until
+explicitly terminated or until Fountain's idle timeout fires. **Terminate as
+soon as you have what you need** — don't leave agents idling.
 
 ```bash
+# Terminate a single conversation:
 curl -s -X POST "$FOUNTAIN_BASE_URL/api/conversations/$CONV/terminate" \
   -H "Authorization: Bearer $FOUNTAIN_TOKEN"
+
+# Terminate a batch (e.g. after a fan-out gather):
+echo "$ids" | xargs -n1 -P10 -I{} \
+  curl -s -X POST "$FOUNTAIN_BASE_URL/api/conversations/{}/terminate" \
+    -H "Authorization: Bearer $FOUNTAIN_TOKEN"
+```
+
+Terminate is idempotent — calling it on an already-terminated conversation is
+harmless. It is **not** the same as deleting: the conversation record and its
+stream history are preserved so you (or the operator) can audit what happened.
+The Sprite is simply stopped and its resources released.
+
+When to terminate:
+- **After Pattern A gather** — terminate all N conversations once you have
+  collected all results (see step 5 in Pattern A above).
+- **After Pattern B** — terminate immediately after reading the stream.
+- **On early exit / error** — if your script errors out before completing,
+  terminate whatever you already spawned. A `trap` works well:
+
+```bash
+# Set up cleanup at the top of your script, before spawning anything.
+spawned_ids=()
+trap 'echo "${spawned_ids[@]}" | tr " " "\n" | xargs -n1 -P10 -I{} \
+  curl -s -X POST "$FOUNTAIN_BASE_URL/api/conversations/{}/terminate" \
+    -H "Authorization: Bearer $FOUNTAIN_TOKEN"' EXIT
+
+# Register each id as you spawn it.
+spawned_ids+=("$CONV")
 ```
 
 ## Important
 
+- **Always terminate when done.** Sprites are real compute. Orphaned conversations run until Fountain's idle timeout — wasteful and expensive.
 - **Always `wait=false` for gather.** Otherwise you'll burn N × `--max-time` seconds for no reason.
-- **Parallelize spawn / poll / gather** with `xargs -P` — one provisioning takes ~5–15s, and there's no reason to do them sequentially.
+- **Parallelize spawn / poll / gather / terminate** with `xargs -P` — one provisioning takes ~5–15s, and there's no reason to do them sequentially.
 - **Don't recurse forever.** Spawned agents have the same skill. Cap depth with a `MAX_DEPTH` you check before spawning.
-- **Costs add up.** Every conversation provisions a real sandbox.
+- **Costs add up.** Every conversation provisions a real sandbox. Terminate promptly.
 - **Re-read `$FOUNTAIN_TOKEN` from env on each call.** It's a per-conversation key scoped to this conversation's owner, not a long-lived admin token. Fountain rotates it on every fresh provision and every reattach (e.g. after a deploy or BEAM restart), revoking the previous value. If a request returns 401 with `"reason": "api_key_revoked"`, your cached copy is stale — re-source `$FOUNTAIN_TOKEN` from the environment before retrying. Don't leak it outside the sprite.
 - **API path is `/api/...`.** The bare `/conversations` redirects (302 → /login) for non-browser requests.
 - **Provenance is automatic.** `FOUNTAIN_CONVERSATION_ID` is always present in your sprite's environment. Every `POST /api/conversations` call that includes `X-Fountain-Parent-Conversation-Id: $FOUNTAIN_CONVERSATION_ID` records this conversation as the parent, letting the operator reconstruct the full spawn chain.
