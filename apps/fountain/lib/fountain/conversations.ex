@@ -8,6 +8,8 @@ defmodule Fountain.Conversations do
 
   import Ecto.Query
 
+  require Logger
+
   alias Fountain.Conversations.{Conversation, LogEvent, Sandbox, Turn, TurnImage}
   alias Fountain.Repo
 
@@ -106,7 +108,7 @@ defmodule Fountain.Conversations do
 
   Only `kind: "output"` log events count toward `last_active_at` —
   `kind: "stage"` events (reattach, sandbox lifecycle) are excluded so
-  that reconnects don’t artificially bump a conversation to the top.
+  that reconnects don't artificially bump a conversation to the top.
   """
   def list_conversations_by_activity(user_id) when is_binary(user_id) do
     turn_counts =
@@ -561,7 +563,16 @@ defmodule Fountain.Conversations do
           {:ok, result}
 
         {:error, reason} ->
-          {:error, {:server_start_failed, reason}}
+          # The conversation row was created successfully; mark it and its
+          # sandbox failed so the status is visible on the conversation page,
+          # then return it so callers (UI + API) navigate there rather than
+          # leaving the user stuck on the new-conversation form.
+          Logger.error("ConversationServer failed to start for conv #{conv.id}: #{inspect(reason)}")
+          update_conversation(conv, %{status: "failed"})
+          update_sandbox(sandbox, %{status: "failed"})
+          result = _unsafe_get_conversation!(conv.id)
+          broadcast_sidebar_update(user_id)
+          {:ok, result}
       end
     else
       nil -> {:error, :not_found}
