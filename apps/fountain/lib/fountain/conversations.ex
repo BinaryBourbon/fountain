@@ -11,7 +11,7 @@ defmodule Fountain.Conversations do
   alias Fountain.Conversations.{Conversation, LogEvent, Sandbox, Turn, TurnImage}
   alias Fountain.Repo
 
-  # ── sandboxes ─────────────────────────────────────────────────────────────
+  # ── sandboxes ──────────────────────────────────────────────────────────────────────────
 
   def list_sandboxes do
     Repo.all(from s in Sandbox, order_by: [desc: s.inserted_at])
@@ -46,7 +46,7 @@ defmodule Fountain.Conversations do
     |> Repo.update()
   end
 
-  # ── conversations ─────────────────────────────────────────────────────────
+  # ── conversations ─────────────────────────────────────────────────────────────────────
 
   @doc """
   WARNING: returns conversations across all tenants. Only call from
@@ -103,6 +103,10 @@ defmodule Fountain.Conversations do
   Populates the `turn_count` virtual field on each conversation by LEFT
   JOINing a subquery that counts turns per conversation. This avoids an
   N+1 and keeps the result a plain list of `%Conversation{}` structs.
+
+  Only `kind: "output"` log events count toward `last_active_at` —
+  `kind: "stage"` events (reattach, sandbox lifecycle) are excluded so
+  that reconnects don’t artificially bump a conversation to the top.
   """
   def list_conversations_by_activity(user_id) when is_binary(user_id) do
     turn_counts =
@@ -117,6 +121,7 @@ defmodule Fountain.Conversations do
 
     last_log_at =
       from le in LogEvent,
+        where: le.kind == "output",
         group_by: le.conversation_id,
         select: %{conversation_id: le.conversation_id, last_at: max(le.inserted_at)}
 
@@ -309,7 +314,7 @@ defmodule Fountain.Conversations do
     result
   end
 
-  # ── turns ─────────────────────────────────────────────────────────────────
+  # ── turns ─────────────────────────────────────────────────────────────────────────────
 
   def list_turns(conversation_id) do
     Repo.all(
@@ -403,7 +408,7 @@ defmodule Fountain.Conversations do
     n
   end
 
-  # ── log events ────────────────────────────────────────────────────────────
+  # ── log events ──────────────────────────────────────────────────────────────────────────
 
   @doc """
   Insert a log event. Returns the inserted struct (with integer `:id`,
@@ -490,7 +495,7 @@ defmodule Fountain.Conversations do
     |> Map.new()
   end
 
-  # ── high-level lifecycle ──────────────────────────────────────────────────
+  # ── high-level lifecycle ──────────────────────────────────────────────────────────
 
   alias Fountain.Agents
   alias Fountain.Conversations.ConversationServer
