@@ -175,6 +175,9 @@ defmodule FountainWeb.Router do
     # ── Avatar serving — tenant-scoped image endpoint ─────────────────────────────────────────────────────
     get "/agents/:id/avatar", AgentAvatarController, :show
 
+    # ── Turn image serving — session-authenticated so <img> tags can load without a bearer token ──────────
+    get "/conversations/:conversation_id/turns/:turn_id/images/:position", TurnImageController, :show
+
     # ── Phase-3-billing: conversation routes require an active subscription ─────────────────
     # :require_active_subscription runs after :require_authenticated_user and
     # redirects to /account/billing on SubscriptionRequiredError.
