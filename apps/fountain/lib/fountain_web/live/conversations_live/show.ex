@@ -405,7 +405,7 @@ defmodule FountainWeb.ConversationsLive.Show do
           <label class="cursor-pointer flex items-center gap-1 text-xs text-zinc-500 hover:text-zinc-700">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2 2v12a2 2 0 002 2z" />
             </svg>
             <span>{if @pending_images == [], do: "Attach images", else: "#{length(@pending_images)} image(s)"}</span>
             <input type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple class="hidden"
@@ -526,14 +526,14 @@ defmodule FountainWeb.ConversationsLive.Show do
       <.chat_message
         role={:user}
         name="you"
-        avatar="&#128100;"
+        avatar="👤"
         glyph_class="bg-blue-600 text-white"
         timestamp={@turn.started_at}
       >
         <div :if={@image_count > 0} class="flex flex-wrap gap-2 mb-2">
           <%= for pos <- 0..(@image_count - 1) do %>
-            <a href={"/api/conversations/#{@conv.id}/turns/#{@turn.id}/images/#{pos}"} target="_blank">
-              <img src={"/api/conversations/#{@conv.id}/turns/#{@turn.id}/images/#{pos}"}
+            <a href={"/conversations/#{@conv.id}/turns/#{@turn.id}/images/#{pos}"} target="_blank">
+              <img src={"/conversations/#{@conv.id}/turns/#{@turn.id}/images/#{pos}"}
                 class="max-w-[300px] max-h-[200px] object-contain rounded border border-blue-400/30" />
             </a>
           <% end %>
@@ -648,11 +648,11 @@ defmodule FountainWeb.ConversationsLive.Show do
 
   defp format_chat_time(_), do: ""
 
-  defp agent_glyph("claude"), do: "&#10022;"
-  defp agent_glyph("codex"), do: "&#9671;"
-  defp agent_glyph("gemini"), do: "&#9672;"
-  defp agent_glyph("opencode"), do: "&#9673;"
-  defp agent_glyph(_), do: "&#129302;"
+  defp agent_glyph("claude"), do: "✦"
+  defp agent_glyph("codex"), do: "◇"
+  defp agent_glyph("gemini"), do: "◈"
+  defp agent_glyph("opencode"), do: "◉"
+  defp agent_glyph(_), do: "🤖"
 
   # Walk this turn's events and pull out every `:text` block from each
   # runtime's stream-json. Joined so multi-message turns (claude can
