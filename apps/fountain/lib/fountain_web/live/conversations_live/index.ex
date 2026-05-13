@@ -248,7 +248,7 @@ defmodule FountainWeb.ConversationsLive.Index do
     end
   end
 
-  defp unread?(%{last_read_at: nil}), do: true
+  defp unread?(%{last_read_at: nil, last_active_at: _}), do: true
   defp unread?(%{last_read_at: _, last_active_at: nil}), do: false
   defp unread?(%{last_read_at: read_at, last_active_at: active_at}) do
     DateTime.compare(active_at, read_at) == :gt

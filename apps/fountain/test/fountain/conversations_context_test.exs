@@ -1829,7 +1829,10 @@ defmodule Fountain.ConversationsContextTest do
       conv = insert_conversation(user_id: user.id)
 
       [result] = Conversations.list_conversations(user.id)
-      assert result.last_active_at == result.inserted_at
+      assert DateTime.compare(
+               result.last_active_at,
+               DateTime.from_naive!(result.inserted_at, "Etc/UTC")
+             ) == :eq
     end
 
     test "advances past inserted_at when output log events exist" do
