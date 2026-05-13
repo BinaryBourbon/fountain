@@ -1,10 +1,10 @@
 defmodule Fountain.AvatarGenerator do
   @moduledoc """
-  Generate avatar images using OpenAI DALL-E 3.
+  Generate avatar images using OpenAI's image generation API.
 
   Accepts a character base (robot / human / alien) and mood
-  (serious / casual / goofy), builds a prompt, calls the DALL-E 3
-  image-generation API, and returns the raw PNG binary.
+  (serious / casual / goofy), builds a prompt, calls the
+  `gpt-image-1` model, and returns the raw PNG binary.
 
   Uses the user's stored OpenAI API key from `Fountain.InferenceCredentials`.
   Returns `{:error, :no_openai_key}` if none is configured.
@@ -45,7 +45,7 @@ defmodule Fountain.AvatarGenerator do
     end
   end
 
-  @doc "Build the DALL-E prompt for the given base and mood. Exported for testability."
+  @doc "Build the image generation prompt for the given base and mood. Exported for testability."
   @spec build_prompt(String.t(), String.t()) :: String.t()
   def build_prompt(base, mood) do
     base_desc = Map.get(@base_descriptions, base, "a character")
@@ -70,7 +70,7 @@ defmodule Fountain.AvatarGenerator do
 
   defp call_openai(api_key, prompt) do
     body = %{
-      model: "dall-e-3",
+      model: "gpt-image-1",
       prompt: prompt,
       n: 1,
       size: "1024x1024",
