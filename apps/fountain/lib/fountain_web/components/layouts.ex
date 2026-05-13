@@ -150,7 +150,7 @@ defmodule FountainWeb.Layouts do
           <%!-- New conversation --%>
           <div class="px-2 pb-1 shrink-0">
             <.link
-              href={~p"/conversations/new"}
+              navigate={~p"/conversations/new"}
               class="block w-full rounded-md px-3 py-1.5 text-sm font-medium text-center
                      bg-indigo-600 text-white hover:bg-indigo-500 transition-colors"
             >
@@ -302,13 +302,12 @@ defmodule FountainWeb.Layouts do
                   label="Admin"
                   current={@current_path}
                 />
-                <a
+                <.link
                   href={~p"/auth/logout"}
-                  data-method="post"
                   class="block rounded-md px-3 py-1 text-sm text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-2)] hover:text-[var(--color-text-primary)] transition-colors"
                 >
                   Sign out
-                </a>
+                </.link>
               </div>
             </details>
             <button
@@ -397,8 +396,8 @@ defmodule FountainWeb.Layouts do
     assigns = assign(assigns, :active, active)
 
     ~H"""
-    <a
-      href={@href}
+    <.link
+      navigate={@href}
       class={[
         "block rounded-md px-3 py-1 text-sm transition-colors",
         if(@active,
@@ -408,7 +407,7 @@ defmodule FountainWeb.Layouts do
       ]}
     >
       {@label}
-    </a>
+    </.link>
     """
   end
 
@@ -456,8 +455,8 @@ defmodule FountainWeb.Layouts do
       )
 
     ~H"""
-    <a
-      href={@href}
+    <.link
+      navigate={@href}
       class={[
         "flex items-center gap-2.5 rounded-md px-3 py-1.5 text-sm transition-colors",
         if(@active,
@@ -536,7 +535,7 @@ defmodule FountainWeb.Layouts do
           class="block text-[11px] text-[var(--color-text-muted)] truncate"
         >{@subtitle}</span>
       </span>
-    </a>
+    </.link>
     """
   end
 
