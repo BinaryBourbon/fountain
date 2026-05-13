@@ -9,15 +9,13 @@ defmodule Mix.Tasks.Fountain.BackfillTitles do
 
       mix fountain.backfill_titles
 
-  Runs in batches of 50, prints progress to stdout. Safe to re-run —
+  Runs in order of most-recently-created first. Safe to re-run —
   only processes conversations where title IS NULL.
   """
 
   use Mix.Task
 
-  require Logger
-
-  @batch_size 50
+  alias Fountain.{Conversations, Crypto, InferenceCredentials}
 
   @impl Mix.Task
   def run(_args) do
@@ -25,10 +23,9 @@ defmodule Mix.Tasks.Fountain.BackfillTitles do
 
     import Ecto.Query
 
-    alias Fountain.{Conversations, Crypto, InferenceCredentials, Repo}
     alias Fountain.Conversations.{Conversation, Turn}
+    alias Fountain.Repo
 
-    # Load all conversation IDs + user IDs that have a first-turn prompt but no title.
     rows =
       Repo.all(
         from c in Conversation,
@@ -45,28 +42,22 @@ defmodule Mix.Tasks.Fountain.BackfillTitles do
     if total == 0 do
       IO.puts("Nothing to do.")
     else
-      # Cache credentials per user so we only decrypt once per user.
-      cred_cache = %{}
-
       rows
       |> Enum.with_index(1)
-      |> Enum.reduce(cred_cache, fn {{conv_id, user_id, prompt}, idx}, cache ->
+      |> Enum.reduce(%{}, fn {{conv_id, user_id, prompt}, idx}, cache ->
         IO.write("[#{idx}/#{total}] conv #{String.slice(conv_id, 0, 8)}... ")
 
         {cache, creds} =
           case Map.fetch(cache, user_id) do
-            {:ok, val} ->
-              {cache, val}
-
+            {:ok, val} -> {cache, val}
             :error ->
-              val = load_credentials(user_id, Crypto)
+              val = load_credentials(user_id)
               {Map.put(cache, user_id, val), val}
           end
 
         case creds do
           {:error, reason} ->
             IO.puts("SKIP (credentials unavailable: #{inspect(reason)})")
-            cache
 
           {:ok, inference_creds} ->
             case Fountain.Conversations.TitleGenerator.generate(prompt, inference_creds) do
@@ -78,17 +69,17 @@ defmodule Mix.Tasks.Fountain.BackfillTitles do
               {:error, reason} ->
                 IO.puts("FAIL (#{inspect(reason)})")
             end
-
-            cache
         end
+
+        cache
       end)
 
       IO.puts("\nDone.")
     end
   end
 
-  defp load_credentials(user_id, crypto_mod) do
-    with {:ok, dek} <- crypto_mod.load_tenant_key(user_id),
+  defp load_credentials(user_id) do
+    with {:ok, dek} <- Crypto.load_tenant_key(user_id),
          {:ok, creds} <- InferenceCredentials.decrypted_for_user(user_id, dek) do
       {:ok, creds}
     end
