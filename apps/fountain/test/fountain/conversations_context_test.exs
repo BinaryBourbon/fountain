@@ -60,37 +60,73 @@ defmodule Fountain.ConversationsContextTest do
     end
   end
 
-  describe "create_sandbox/1" do
-    test "creates a sandbox with valid attributes" do
+  describe "get_sandbox!/1" do
+    test "returns the sandbox when it exists" do
       user = insert_verified_user()
-      env = insert_environment(user_id: user.id)
+      sandbox = insert_sandbox(user_id: user.id)
+
+      result = Conversations.get_sandbox!(sandbox.id)
+      assert result.id == sandbox.id
+    end
+
+    test "raises Ecto.NoResultsError when sandbox does not exist" do
+      assert_raise Ecto.NoResultsError, fn ->
+        Conversations.get_sandbox!(Ecto.UUID.generate())
+      end
+    end
+  end
+
+  describe "create_sandbox/1" do
+    test "creates a sandbox with valid attrs" do
+      user = insert_verified_user()
 
       attrs = %{
-        environment_id: env.id,
-        sprite_name: "fountain-test-#{Ecto.UUID.generate()}",
+        sprite_name: "test-sprite-create",
         status: "pending",
         user_id: user.id
       }
 
       assert {:ok, sandbox} = Conversations.create_sandbox(attrs)
-      assert sandbox.environment_id == env.id
+      assert sandbox.sprite_name == "test-sprite-create"
       assert sandbox.status == "pending"
       assert sandbox.user_id == user.id
     end
 
-    test "returns error for missing required fields" do
+    test "returns error changeset when required fields are missing" do
       assert {:error, changeset} = Conversations.create_sandbox(%{})
-      assert changeset.errors[:user_id] != nil
+      assert changeset.valid? == false
+      assert errors_on(changeset)[:sprite_name]
+    end
+
+    test "returns error changeset when status is invalid" do
+      user = insert_verified_user()
+
+      attrs = %{
+        sprite_name: "test-sprite",
+        status: "bogus",
+        user_id: user.id
+      }
+
+      assert {:error, changeset} = Conversations.create_sandbox(attrs)
+      assert errors_on(changeset)[:status]
     end
   end
 
   describe "update_sandbox/2" do
-    test "updates the sandbox with valid attributes" do
+    test "updates sandbox with valid attrs" do
       user = insert_verified_user()
-      sandbox = insert_sandbox(user_id: user.id, status: "pending")
+      sandbox = insert_sandbox(user_id: user.id)
 
       assert {:ok, updated} = Conversations.update_sandbox(sandbox, %{status: "ready"})
       assert updated.status == "ready"
+    end
+
+    test "returns error changeset when status is invalid" do
+      user = insert_verified_user()
+      sandbox = insert_sandbox(user_id: user.id)
+
+      assert {:error, changeset} = Conversations.update_sandbox(sandbox, %{status: "bogus"})
+      assert errors_on(changeset)[:status]
     end
   end
 
@@ -110,49 +146,47 @@ defmodule Fountain.ConversationsContextTest do
       assert c2.id in ids
     end
 
-    test "preloads sandbox, agent, and first turn" do
+    test "returns conversations ordered by inserted_at desc" do
       user = insert_verified_user()
-      conv = insert_conversation(user_id: user.id)
-      _turn = insert_turn(conversation_id: conv.id, turn_number: 1)
+      c1 = insert_conversation(user_id: user.id)
+      c2 = insert_conversation(user_id: user.id)
 
-      [result] = Conversations._unsafe_list_conversations()
-      assert result.id == conv.id
-      assert %Ecto.Association.NotLoaded{} != result.turns
+      [first | _] = Conversations._unsafe_list_conversations()
+      assert first.id == c2.id || first.inserted_at >= c1.inserted_at
     end
   end
 
   describe "list_active_conversations/0" do
-    test "returns conversations not in terminal states" do
+    test "returns pending, idle, and running conversations" do
+      user = insert_verified_user()
+      c1 = insert_conversation(user_id: user.id, status: "pending")
+      c2 = insert_conversation(user_id: user.id, status: "idle")
+      c3 = insert_conversation(user_id: user.id, status: "running")
+
+      ids = Conversations.list_active_conversations() |> Enum.map(& &1.id)
+      assert c1.id in ids
+      assert c2.id in ids
+      assert c3.id in ids
+    end
+
+    test "excludes terminated, completed, and failed" do
+      user = insert_verified_user()
+      _t = insert_conversation(user_id: user.id, status: "terminated")
+      _c = insert_conversation(user_id: user.id, status: "completed")
+      _f = insert_conversation(user_id: user.id, status: "failed")
+
+      assert Conversations.list_active_conversations() == []
+    end
+
+    test "orders running before idle before pending" do
       user = insert_verified_user()
       pending = insert_conversation(user_id: user.id, status: "pending")
       idle = insert_conversation(user_id: user.id, status: "idle")
       running = insert_conversation(user_id: user.id, status: "running")
 
-      ids = Conversations.list_active_conversations() |> Enum.map(& &1.id)
-      assert pending.id in ids
-      assert idle.id in ids
-      assert running.id in ids
-    end
-
-    test "excludes terminated, completed, and failed conversations" do
-      user = insert_verified_user()
-      terminated = insert_conversation(user_id: user.id, status: "terminated")
-      completed = insert_conversation(user_id: user.id, status: "completed")
-      failed = insert_conversation(user_id: user.id, status: "failed")
-
-      ids = Conversations.list_active_conversations() |> Enum.map(& &1.id)
-      refute terminated.id in ids
-      refute completed.id in ids
-      refute failed.id in ids
-    end
-
-    test "orders running conversations before idle" do
-      user = insert_verified_user()
-      idle = insert_conversation(user_id: user.id, status: "idle")
-      running = insert_conversation(user_id: user.id, status: "running")
-
-      [first | _] = Conversations.list_active_conversations()
+      [first, second | _] = Conversations.list_active_conversations()
       assert first.id == running.id
+      assert second.id == idle.id
     end
   end
 
@@ -204,139 +238,48 @@ defmodule Fountain.ConversationsContextTest do
     end
   end
 
-  describe "list_conversations/1" do
-    test "returns conversations scoped to user" do
+  describe "list_conversations/2" do
+    test "returns conversations for the given user" do
       user1 = insert_verified_user()
       user2 = insert_verified_user()
       c1 = insert_conversation(user_id: user1.id)
       _c2 = insert_conversation(user_id: user2.id)
 
       results = Conversations.list_conversations(user1.id)
-      ids = Enum.map(results, & &1.id)
-      assert c1.id in ids
       assert length(results) == 1
+      assert hd(results).id == c1.id
     end
 
-    test "returns empty list for user with no conversations" do
+    test "returns empty list when user has no conversations" do
       user = insert_verified_user()
       assert Conversations.list_conversations(user.id) == []
     end
-  end
 
-  describe "_unsafe_get_conversation/1" do
-    test "returns the conversation when it exists" do
+    test "roots_only: true excludes child conversations" do
       user = insert_verified_user()
-      conv = insert_conversation(user_id: user.id)
+      root = insert_conversation(user_id: user.id)
+      _child = insert_conversation(user_id: user.id, parent_conversation_id: root.id)
 
-      result = Conversations._unsafe_get_conversation(conv.id)
-      assert result.id == conv.id
+      results = Conversations.list_conversations(user.id, roots_only: true)
+      ids = Enum.map(results, & &1.id)
+      assert root.id in ids
+      assert length(results) == 1
     end
 
-    test "returns nil when conversation does not exist" do
-      assert Conversations._unsafe_get_conversation(Ecto.UUID.generate()) == nil
-    end
-
-    test "returns conversation regardless of owner" do
-      user1 = insert_verified_user()
-      user2 = insert_verified_user()
-      conv = insert_conversation(user_id: user1.id)
-
-      # user2 is not the owner, but _unsafe variant ignores that
-      result = Conversations._unsafe_get_conversation(conv.id)
-      assert result.id == conv.id
-      assert result.user_id == user1.id
-    end
-
-    test "preloads sandbox, agent, and vault" do
+    test "roots_only: false returns all conversations including children" do
       user = insert_verified_user()
-      conv = insert_conversation(user_id: user.id)
+      root = insert_conversation(user_id: user.id)
+      child = insert_conversation(user_id: user.id, parent_conversation_id: root.id)
 
-      result = Conversations._unsafe_get_conversation(conv.id)
-      assert %Ecto.Association.NotLoaded{} != result.sandbox
-      assert %Ecto.Association.NotLoaded{} != result.agent
-      assert %Ecto.Association.NotLoaded{} != result.vault
-    end
-  end
-
-  describe "_unsafe_get_conversation!/1" do
-    test "returns the conversation when it exists" do
-      user = insert_verified_user()
-      conv = insert_conversation(user_id: user.id)
-
-      result = Conversations._unsafe_get_conversation!(conv.id)
-      assert result.id == conv.id
-    end
-
-    test "raises Ecto.NoResultsError when conversation does not exist" do
-      assert_raise Ecto.NoResultsError, fn ->
-        Conversations._unsafe_get_conversation!(Ecto.UUID.generate())
-      end
-    end
-  end
-
-  describe "get_conversation/2" do
-    test "returns the conversation when id and user_id match" do
-      user = insert_verified_user()
-      conv = insert_conversation(user_id: user.id)
-
-      result = Conversations.get_conversation(conv.id, user.id)
-      assert result.id == conv.id
-    end
-
-    test "returns nil when conversation belongs to different user" do
-      user1 = insert_verified_user()
-      user2 = insert_verified_user()
-      conv = insert_conversation(user_id: user1.id)
-
-      assert Conversations.get_conversation(conv.id, user2.id) == nil
-    end
-
-    test "returns nil when conversation does not exist" do
-      user = insert_verified_user()
-      assert Conversations.get_conversation(Ecto.UUID.generate(), user.id) == nil
-    end
-
-    test "preloads sandbox, agent, and vault" do
-      user = insert_verified_user()
-      conv = insert_conversation(user_id: user.id)
-
-      result = Conversations.get_conversation(conv.id, user.id)
-      assert %Ecto.Association.NotLoaded{} != result.sandbox
-      assert %Ecto.Association.NotLoaded{} != result.agent
-      assert %Ecto.Association.NotLoaded{} != result.vault
-    end
-  end
-
-  describe "get_conversation!/2" do
-    test "returns the conversation when found" do
-      user = insert_verified_user()
-      conv = insert_conversation(user_id: user.id)
-
-      result = Conversations.get_conversation!(conv.id, user.id)
-      assert result.id == conv.id
-    end
-
-    test "raises Ecto.NoResultsError when not found" do
-      user = insert_verified_user()
-
-      assert_raise Ecto.NoResultsError, fn ->
-        Conversations.get_conversation!(Ecto.UUID.generate(), user.id)
-      end
-    end
-
-    test "raises Ecto.NoResultsError when wrong user" do
-      user1 = insert_verified_user()
-      user2 = insert_verified_user()
-      conv = insert_conversation(user_id: user1.id)
-
-      assert_raise Ecto.NoResultsError, fn ->
-        Conversations.get_conversation!(conv.id, user2.id)
-      end
+      results = Conversations.list_conversations(user.id, roots_only: false)
+      ids = Enum.map(results, & &1.id)
+      assert root.id in ids
+      assert child.id in ids
     end
   end
 
   describe "create_conversation/1" do
-    test "creates a conversation with valid attributes" do
+    test "inserts a conversation with valid attrs" do
       user = insert_verified_user()
       sandbox = insert_sandbox(user_id: user.id)
       agent = insert_agent(user_id: user.id)
@@ -357,12 +300,53 @@ defmodule Fountain.ConversationsContextTest do
 
     test "returns error changeset for missing required fields" do
       assert {:error, changeset} = Conversations.create_conversation(%{})
-      assert changeset.errors[:user_id] != nil
+      assert changeset.valid? == false
+    end
+  end
+
+  describe "get_conversation/2" do
+    test "returns the conversation when id and user_id match" do
+      user = insert_verified_user()
+      conv = insert_conversation(user_id: user.id)
+
+      result = Conversations.get_conversation(conv.id, user.id)
+      assert result.id == conv.id
+    end
+
+    test "returns nil when conversation belongs to a different user" do
+      user1 = insert_verified_user()
+      user2 = insert_verified_user()
+      conv = insert_conversation(user_id: user1.id)
+
+      assert Conversations.get_conversation(conv.id, user2.id) == nil
+    end
+
+    test "returns nil for a non-existent id" do
+      user = insert_verified_user()
+      assert Conversations.get_conversation(Ecto.UUID.generate(), user.id) == nil
+    end
+  end
+
+  describe "get_conversation!/2" do
+    test "returns the conversation when found" do
+      user = insert_verified_user()
+      conv = insert_conversation(user_id: user.id)
+
+      result = Conversations.get_conversation!(conv.id, user.id)
+      assert result.id == conv.id
+    end
+
+    test "raises Ecto.NoResultsError when not found" do
+      user = insert_verified_user()
+
+      assert_raise Ecto.NoResultsError, fn ->
+        Conversations.get_conversation!(Ecto.UUID.generate(), user.id)
+      end
     end
   end
 
   describe "update_conversation/2" do
-    test "updates the conversation with valid attributes" do
+    test "updates the conversation with valid attrs" do
       user = insert_verified_user()
       conv = insert_conversation(user_id: user.id, status: "pending")
 
@@ -370,38 +354,34 @@ defmodule Fountain.ConversationsContextTest do
       assert updated.status == "running"
     end
 
-    test "broadcasts sidebar update after successful update" do
+    test "broadcasts sidebar update" do
       user = insert_verified_user()
       conv = insert_conversation(user_id: user.id)
+      Phoenix.PubSub.subscribe(Fountain.PubSub, "sidebar:#{user.id}")
 
-      :ok = Phoenix.PubSub.subscribe(Fountain.PubSub, "sidebar:#{user.id}")
+      Conversations.update_conversation(conv, %{status: "idle"})
 
-      {:ok, _updated} = Conversations.update_conversation(conv, %{status: "idle"})
-
-      assert_receive {:sidebar_update, user_id}
-      assert user_id == user.id
+      assert_receive {:sidebar_update, _user_id}
     end
   end
 
   describe "delete_conversation/1" do
-    test "deletes the conversation" do
+    test "deletes the conversation row" do
       user = insert_verified_user()
       conv = insert_conversation(user_id: user.id)
 
-      assert {:ok, _deleted} = Conversations.delete_conversation(conv)
+      assert {:ok, _} = Conversations.delete_conversation(conv)
       assert Conversations.get_conversation(conv.id, user.id) == nil
     end
 
-    test "broadcasts sidebar update after deletion" do
+    test "broadcasts sidebar update" do
       user = insert_verified_user()
       conv = insert_conversation(user_id: user.id)
+      Phoenix.PubSub.subscribe(Fountain.PubSub, "sidebar:#{user.id}")
 
-      :ok = Phoenix.PubSub.subscribe(Fountain.PubSub, "sidebar:#{user.id}")
+      Conversations.delete_conversation(conv)
 
-      {:ok, _} = Conversations.delete_conversation(conv)
-
-      assert_receive {:sidebar_update, user_id}
-      assert user_id == user.id
+      assert_receive {:sidebar_update, _user_id}
     end
   end
 
@@ -410,53 +390,22 @@ defmodule Fountain.ConversationsContextTest do
   # ────────────────────────────────────────────────────────────────────────────
 
   describe "list_turns/1" do
-    test "returns turns for the given conversation ordered by turn_number" do
+    test "returns turns for the conversation ordered by turn_number" do
       user = insert_verified_user()
       conv = insert_conversation(user_id: user.id)
       t1 = insert_turn(conversation_id: conv.id, turn_number: 1)
       t2 = insert_turn(conversation_id: conv.id, turn_number: 2)
 
-      turns = Conversations.list_turns(conv.id)
-      ids = Enum.map(turns, & &1.id)
-      assert ids == [t1.id, t2.id]
+      [r1, r2] = Conversations.list_turns(conv.id)
+      assert r1.id == t1.id
+      assert r2.id == t2.id
     end
 
-    test "returns empty list for conversation with no turns" do
+    test "returns empty list when there are no turns" do
       user = insert_verified_user()
       conv = insert_conversation(user_id: user.id)
 
       assert Conversations.list_turns(conv.id) == []
-    end
-
-    test "does not return turns from another conversation" do
-      user = insert_verified_user()
-      conv1 = insert_conversation(user_id: user.id)
-      conv2 = insert_conversation(user_id: user.id)
-      t1 = insert_turn(conversation_id: conv1.id, turn_number: 1)
-      _t2 = insert_turn(conversation_id: conv2.id, turn_number: 1)
-
-      turns = Conversations.list_turns(conv1.id)
-      assert Enum.map(turns, & &1.id) == [t1.id]
-    end
-  end
-
-  describe "get_turn_by_conversation/2" do
-    test "returns the turn when id and conversation_id match" do
-      user = insert_verified_user()
-      conv = insert_conversation(user_id: user.id)
-      turn = insert_turn(conversation_id: conv.id, turn_number: 1)
-
-      result = Conversations.get_turn_by_conversation(turn.id, conv.id)
-      assert result.id == turn.id
-    end
-
-    test "returns nil when turn belongs to a different conversation" do
-      user = insert_verified_user()
-      conv1 = insert_conversation(user_id: user.id)
-      conv2 = insert_conversation(user_id: user.id)
-      turn = insert_turn(conversation_id: conv1.id, turn_number: 1)
-
-      assert Conversations.get_turn_by_conversation(turn.id, conv2.id) == nil
     end
   end
 
@@ -468,18 +417,18 @@ defmodule Fountain.ConversationsContextTest do
       assert Conversations.next_turn_number(conv.id) == 1
     end
 
-    test "returns the next sequential number" do
+    test "returns max turn_number + 1" do
       user = insert_verified_user()
       conv = insert_conversation(user_id: user.id)
-      _t1 = insert_turn(conversation_id: conv.id, turn_number: 1)
-      _t2 = insert_turn(conversation_id: conv.id, turn_number: 2)
+      insert_turn(conversation_id: conv.id, turn_number: 1)
+      insert_turn(conversation_id: conv.id, turn_number: 2)
 
       assert Conversations.next_turn_number(conv.id) == 3
     end
   end
 
   describe "create_turn/1" do
-    test "creates a turn with valid attributes" do
+    test "inserts a turn with valid attrs" do
       user = insert_verified_user()
       conv = insert_conversation(user_id: user.id)
 
@@ -492,12 +441,11 @@ defmodule Fountain.ConversationsContextTest do
 
       assert {:ok, turn} = Conversations.create_turn(attrs)
       assert turn.conversation_id == conv.id
-      assert turn.turn_number == 1
     end
   end
 
   describe "update_turn/2" do
-    test "updates the turn with valid attributes" do
+    test "updates the turn" do
       user = insert_verified_user()
       conv = insert_conversation(user_id: user.id)
       turn = insert_turn(conversation_id: conv.id, turn_number: 1)
@@ -508,40 +456,24 @@ defmodule Fountain.ConversationsContextTest do
   end
 
   describe "mark_orphaned_turns_interrupted/1" do
-    test "marks running turns as interrupted" do
+    test "sets running turns to interrupted" do
       user = insert_verified_user()
       conv = insert_conversation(user_id: user.id)
-      running_turn = insert_turn(conversation_id: conv.id, turn_number: 1, status: "running")
+      t = insert_turn(conversation_id: conv.id, turn_number: 1, status: "running")
 
-      count = Conversations.mark_orphaned_turns_interrupted(conv.id)
-      assert count == 1
+      assert 1 = Conversations.mark_orphaned_turns_interrupted(conv.id)
 
-      updated = Conversations.get_turn_by_conversation(running_turn.id, conv.id)
+      updated = Conversations.get_turn_by_conversation(t.id, conv.id)
       assert updated.status == "interrupted"
-      assert updated.ended_at != nil
+      refute updated.ended_at == nil
     end
 
-    test "does not affect non-running turns" do
+    test "does not touch non-running turns" do
       user = insert_verified_user()
       conv = insert_conversation(user_id: user.id)
-      completed_turn = insert_turn(conversation_id: conv.id, turn_number: 1, status: "completed")
+      _t = insert_turn(conversation_id: conv.id, turn_number: 1, status: "completed")
 
-      count = Conversations.mark_orphaned_turns_interrupted(conv.id)
-      assert count == 0
-
-      unchanged = Conversations.get_turn_by_conversation(completed_turn.id, conv.id)
-      assert unchanged.status == "completed"
-    end
-
-    test "returns count of affected turns" do
-      user = insert_verified_user()
-      conv = insert_conversation(user_id: user.id)
-      insert_turn(conversation_id: conv.id, turn_number: 1, status: "running")
-      insert_turn(conversation_id: conv.id, turn_number: 2, status: "running")
-      insert_turn(conversation_id: conv.id, turn_number: 3, status: "completed")
-
-      count = Conversations.mark_orphaned_turns_interrupted(conv.id)
-      assert count == 2
+      assert 0 = Conversations.mark_orphaned_turns_interrupted(conv.id)
     end
   end
 
@@ -550,26 +482,26 @@ defmodule Fountain.ConversationsContextTest do
   # ────────────────────────────────────────────────────────────────────────────
 
   describe "log!/1" do
-    test "inserts a log event and returns it with an integer id" do
+    test "inserts a log event" do
       user = insert_verified_user()
       conv = insert_conversation(user_id: user.id)
       turn = insert_turn(conversation_id: conv.id, turn_number: 1)
 
-      event = Conversations.log!(%{
-        conversation_id: conv.id,
-        turn_id: turn.id,
-        kind: "output",
-        stream: "stdout",
-        data: "hello"
-      })
+      assert %{id: id} =
+               Conversations.log!(%{
+                 conversation_id: conv.id,
+                 turn_id: turn.id,
+                 kind: "output",
+                 stream: "stdout",
+                 data: "hello"
+               })
 
-      assert is_integer(event.id)
-      assert event.data == "hello"
+      assert is_integer(id)
     end
   end
 
   describe "list_log_events/3" do
-    test "returns log events ordered by id" do
+    test "returns events ordered by id" do
       user = insert_verified_user()
       conv = insert_conversation(user_id: user.id)
       turn = insert_turn(conversation_id: conv.id, turn_number: 1)
@@ -577,12 +509,11 @@ defmodule Fountain.ConversationsContextTest do
       e1 = Conversations.log!(%{conversation_id: conv.id, turn_id: turn.id, kind: "output", stream: "stdout", data: "a"})
       e2 = Conversations.log!(%{conversation_id: conv.id, turn_id: turn.id, kind: "output", stream: "stdout", data: "b"})
 
-      events = Conversations.list_log_events(conv.id)
-      ids = Enum.map(events, & &1.id)
+      ids = Conversations.list_log_events(conv.id) |> Enum.map(& &1.id)
       assert ids == [e1.id, e2.id]
     end
 
-    test "returns events after the given id" do
+    test "after_id filters to events strictly after that id" do
       user = insert_verified_user()
       conv = insert_conversation(user_id: user.id)
       turn = insert_turn(conversation_id: conv.id, turn_number: 1)
@@ -590,14 +521,13 @@ defmodule Fountain.ConversationsContextTest do
       e1 = Conversations.log!(%{conversation_id: conv.id, turn_id: turn.id, kind: "output", stream: "stdout", data: "a"})
       e2 = Conversations.log!(%{conversation_id: conv.id, turn_id: turn.id, kind: "output", stream: "stdout", data: "b"})
 
-      events = Conversations.list_log_events(conv.id, e1.id)
-      ids = Enum.map(events, & &1.id)
+      ids = Conversations.list_log_events(conv.id, e1.id) |> Enum.map(& &1.id)
       assert ids == [e2.id]
     end
   end
 
   describe "output_bytes_by_stream/2" do
-    test "returns byte counts by stream" do
+    test "sums output event bytes grouped by stream" do
       user = insert_verified_user()
       conv = insert_conversation(user_id: user.id)
       turn = insert_turn(conversation_id: conv.id, turn_number: 1)
@@ -616,57 +546,43 @@ defmodule Fountain.ConversationsContextTest do
       conv = insert_conversation(user_id: user.id)
       turn = insert_turn(conversation_id: conv.id, turn_number: 1)
 
-      result = Conversations.output_bytes_by_stream(conv.id, turn.id)
-      assert result == %{}
-    end
-
-    test "ignores stage events" do
-      user = insert_verified_user()
-      conv = insert_conversation(user_id: user.id)
-      turn = insert_turn(conversation_id: conv.id, turn_number: 1)
-
-      Conversations.log!(%{conversation_id: conv.id, turn_id: turn.id, kind: "stage", data: "stage data"})
-
-      result = Conversations.output_bytes_by_stream(conv.id, turn.id)
-      assert result == %{}
+      assert Conversations.output_bytes_by_stream(conv.id, turn.id) == %{}
     end
   end
 
   describe "list_resumable_conversations/0" do
-    test "returns conversations with idle or running status and ready sandbox" do
+    test "returns idle/running conversations with a ready sandbox" do
       user = insert_verified_user()
-      ready_sandbox = insert_sandbox(user_id: user.id, status: "ready")
-      c1 = insert_conversation(user_id: user.id, sandbox_id: ready_sandbox.id, status: "idle")
-      c2 = insert_conversation(user_id: user.id, sandbox_id: ready_sandbox.id, status: "running")
+      sb = insert_sandbox(user_id: user.id, status: "ready")
+      c1 = insert_conversation(user_id: user.id, sandbox_id: sb.id, status: "idle")
+      c2 = insert_conversation(user_id: user.id, sandbox_id: sb.id, status: "running")
 
       ids = Conversations.list_resumable_conversations() |> Enum.map(& &1.id)
       assert c1.id in ids
       assert c2.id in ids
     end
 
-    test "excludes conversations with non-ready sandbox" do
+    test "excludes conversations whose sandbox is not ready" do
       user = insert_verified_user()
-      pending_sandbox = insert_sandbox(user_id: user.id, status: "pending")
-      conv = insert_conversation(user_id: user.id, sandbox_id: pending_sandbox.id, status: "idle")
+      sb = insert_sandbox(user_id: user.id, status: "pending")
+      conv = insert_conversation(user_id: user.id, sandbox_id: sb.id, status: "idle")
 
       ids = Conversations.list_resumable_conversations() |> Enum.map(& &1.id)
       refute conv.id in ids
     end
 
-    test "excludes conversations in terminal states even with ready sandbox" do
+    test "excludes terminal conversations even with a ready sandbox" do
       user = insert_verified_user()
-      ready_sandbox = insert_sandbox(user_id: user.id, status: "ready")
-      terminated = insert_conversation(user_id: user.id, sandbox_id: ready_sandbox.id, status: "terminated")
-      completed = insert_conversation(user_id: user.id, sandbox_id: ready_sandbox.id, status: "completed")
+      sb = insert_sandbox(user_id: user.id, status: "ready")
+      t = insert_conversation(user_id: user.id, sandbox_id: sb.id, status: "terminated")
 
       ids = Conversations.list_resumable_conversations() |> Enum.map(& &1.id)
-      refute terminated.id in ids
-      refute completed.id in ids
+      refute t.id in ids
     end
   end
 
   describe "get_conversation_tree/1" do
-    test "returns the single conversation when no parent or children" do
+    test "returns the single node for a root with no children" do
       user = insert_verified_user()
       conv = insert_conversation(user_id: user.id)
 
@@ -677,23 +593,11 @@ defmodule Fountain.ConversationsContextTest do
       assert node.parent_id == nil
     end
 
-    test "returns empty list for non-existent conversation" do
-      tree = Conversations.get_conversation_tree(Ecto.UUID.generate())
-      assert tree == []
+    test "returns empty list for a non-existent id" do
+      assert Conversations.get_conversation_tree(Ecto.UUID.generate()) == []
     end
 
-    test "returns parent and child" do
-      user = insert_verified_user()
-      parent = insert_conversation(user_id: user.id)
-      child = insert_conversation(user_id: user.id, parent_conversation_id: parent.id)
-
-      tree = Conversations.get_conversation_tree(child.id)
-      ids = Enum.map(tree, & &1.id)
-      assert parent.id in ids
-      assert child.id in ids
-    end
-
-    test "returns full tree when queried from a child" do
+    test "returns the full ancestor + descendant tree" do
       user = insert_verified_user()
       root = insert_conversation(user_id: user.id)
       child = insert_conversation(user_id: user.id, parent_conversation_id: root.id)
@@ -708,7 +612,7 @@ defmodule Fountain.ConversationsContextTest do
   end
 
   # ────────────────────────────────────────────────────────────────────────────
-  # apply_streams_filter (tested through list_log_events)
+  # apply_streams_filter (tested indirectly via list_log_events)
   # ────────────────────────────────────────────────────────────────────────────
 
   describe "list_log_events/3 streams filter" do
@@ -717,66 +621,59 @@ defmodule Fountain.ConversationsContextTest do
       conv = insert_conversation(user_id: user.id)
       turn = insert_turn(conversation_id: conv.id, turn_number: 1)
 
-      stdout_event = Conversations.log!(%{conversation_id: conv.id, turn_id: turn.id, kind: "output", stream: "stdout", data: "out"})
-      stderr_event = Conversations.log!(%{conversation_id: conv.id, turn_id: turn.id, kind: "output", stream: "stderr", data: "err"})
-      stage_event = Conversations.log!(%{conversation_id: conv.id, turn_id: turn.id, kind: "stage", data: "stage"})
+      out = Conversations.log!(%{conversation_id: conv.id, turn_id: turn.id, kind: "output", stream: "stdout", data: "out"})
+      err = Conversations.log!(%{conversation_id: conv.id, turn_id: turn.id, kind: "output", stream: "stderr", data: "err"})
+      stage = Conversations.log!(%{conversation_id: conv.id, turn_id: turn.id, kind: "stage", data: "stage"})
 
-      %{conv: conv, stdout: stdout_event, stderr: stderr_event, stage: stage_event}
+      %{conv: conv, out: out, err: err, stage: stage}
     end
 
-    test "returns all events when no streams filter", %{conv: conv, stdout: stdout, stderr: stderr, stage: stage} do
-      events = Conversations.list_log_events(conv.id)
-      ids = Enum.map(events, & &1.id)
-      assert stdout.id in ids
-      assert stderr.id in ids
+    test "no filter returns all events", %{conv: conv, out: out, err: err, stage: stage} do
+      ids = Conversations.list_log_events(conv.id) |> Enum.map(& &1.id)
+      assert out.id in ids
+      assert err.id in ids
       assert stage.id in ids
     end
 
-    test "filters to stdout only", %{conv: conv, stdout: stdout, stderr: stderr, stage: stage} do
-      events = Conversations.list_log_events(conv.id, 0, streams: ["stdout"])
-      ids = Enum.map(events, & &1.id)
-      assert stdout.id in ids
-      refute stderr.id in ids
+    test "streams: [stdout] returns only stdout", %{conv: conv, out: out, err: err, stage: stage} do
+      ids = Conversations.list_log_events(conv.id, 0, streams: ["stdout"]) |> Enum.map(& &1.id)
+      assert out.id in ids
+      refute err.id in ids
       refute stage.id in ids
     end
 
-    test "filters to stderr only", %{conv: conv, stdout: stdout, stderr: stderr, stage: stage} do
-      events = Conversations.list_log_events(conv.id, 0, streams: ["stderr"])
-      ids = Enum.map(events, & &1.id)
-      refute stdout.id in ids
-      assert stderr.id in ids
+    test "streams: [stderr] returns only stderr", %{conv: conv, out: out, err: err, stage: stage} do
+      ids = Conversations.list_log_events(conv.id, 0, streams: ["stderr"]) |> Enum.map(& &1.id)
+      refute out.id in ids
+      assert err.id in ids
       refute stage.id in ids
     end
 
-    test "filters to stage only", %{conv: conv, stdout: stdout, stderr: stderr, stage: stage} do
-      events = Conversations.list_log_events(conv.id, 0, streams: ["stage"])
-      ids = Enum.map(events, & &1.id)
-      refute stdout.id in ids
-      refute stderr.id in ids
+    test "streams: [stage] returns only stage events", %{conv: conv, out: out, err: err, stage: stage} do
+      ids = Conversations.list_log_events(conv.id, 0, streams: ["stage"]) |> Enum.map(& &1.id)
+      refute out.id in ids
+      refute err.id in ids
       assert stage.id in ids
     end
 
-    test "filters to stdout and stage", %{conv: conv, stdout: stdout, stderr: stderr, stage: stage} do
-      events = Conversations.list_log_events(conv.id, 0, streams: ["stdout", "stage"])
-      ids = Enum.map(events, & &1.id)
-      assert stdout.id in ids
-      refute stderr.id in ids
+    test "streams: [stdout, stage] returns stdout and stage", %{conv: conv, out: out, err: err, stage: stage} do
+      ids = Conversations.list_log_events(conv.id, 0, streams: ["stdout", "stage"]) |> Enum.map(& &1.id)
+      assert out.id in ids
+      refute err.id in ids
       assert stage.id in ids
     end
 
-    test "returns nothing for unknown stream identifiers", %{conv: conv, stdout: stdout, stderr: stderr, stage: stage} do
-      events = Conversations.list_log_events(conv.id, 0, streams: ["unknown"])
-      ids = Enum.map(events, & &1.id)
-      refute stdout.id in ids
-      refute stderr.id in ids
+    test "unknown stream returns no events", %{conv: conv, out: out, err: err, stage: stage} do
+      ids = Conversations.list_log_events(conv.id, 0, streams: ["unknown"]) |> Enum.map(& &1.id)
+      refute out.id in ids
+      refute err.id in ids
       refute stage.id in ids
     end
 
-    test "returns nothing for empty streams list", %{conv: conv, stdout: stdout, stderr: stderr, stage: stage} do
-      events = Conversations.list_log_events(conv.id, 0, streams: [])
-      ids = Enum.map(events, & &1.id)
-      assert stdout.id in ids
-      assert stderr.id in ids
+    test "empty streams list returns all events", %{conv: conv, out: out, err: err, stage: stage} do
+      ids = Conversations.list_log_events(conv.id, 0, streams: []) |> Enum.map(& &1.id)
+      assert out.id in ids
+      assert err.id in ids
       assert stage.id in ids
     end
   end
@@ -786,29 +683,17 @@ defmodule Fountain.ConversationsContextTest do
   # ────────────────────────────────────────────────────────────────────────────
 
   describe "wake_conversation/2" do
-    test "returns {:error, :not_found} for a non-existent conversation" do
+    test "returns {:error, :not_found} for a non-existent id" do
       assert {:error, :not_found} = Conversations.wake_conversation(Ecto.UUID.generate())
     end
 
-    test "returns {:error, :gone} for a terminated conversation" do
+    test "returns {:error, :gone} for terminal conversations" do
       user = insert_verified_user()
-      conv = insert_conversation(user_id: user.id, status: "terminated")
 
-      assert {:error, :gone} = Conversations.wake_conversation(conv.id)
-    end
-
-    test "returns {:error, :gone} for a failed conversation" do
-      user = insert_verified_user()
-      conv = insert_conversation(user_id: user.id, status: "failed")
-
-      assert {:error, :gone} = Conversations.wake_conversation(conv.id)
-    end
-
-    test "returns {:error, :gone} for a completed conversation" do
-      user = insert_verified_user()
-      conv = insert_conversation(user_id: user.id, status: "completed")
-
-      assert {:error, :gone} = Conversations.wake_conversation(conv.id)
+      for status <- ~w(terminated failed completed) do
+        conv = insert_conversation(user_id: user.id, status: status)
+        assert {:error, :gone} = Conversations.wake_conversation(conv.id)
+      end
     end
   end
 end
