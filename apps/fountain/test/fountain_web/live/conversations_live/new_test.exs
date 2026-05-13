@@ -110,19 +110,19 @@ defmodule FountainWeb.ConversationsLive.NewSubmitTest do
       assert html =~ "Agent not found"
     end
 
-    test "shows error flash when conversation server fails to start", %{lv: lv, agent: agent} do
+    test "redirects to the conversation page when server fails to start", %{lv: lv, agent: agent} do
       stub(Horde.DynamicSupervisor, :start_child, fn _supervisor, _child_spec ->
         {:error, :test_failure}
       end)
 
       params = %{"agent_id" => agent.id, "prompt" => "hello", "vault_id" => ""}
 
-      html =
-        lv
-        |> element("form[phx-submit='submit']")
-        |> render_submit(%{"conv" => params})
+      assert {:error, {:live_redirect, %{to: path}}} =
+               lv
+               |> element("form[phx-submit='submit']")
+               |> render_submit(%{"conv" => params})
 
-      assert html =~ "Failed:"
+      assert String.starts_with?(path, "/conversations/")
     end
   end
 end
