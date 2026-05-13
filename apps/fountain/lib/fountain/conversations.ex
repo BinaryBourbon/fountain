@@ -266,24 +266,41 @@ defmodule Fountain.Conversations do
   Pass `roots_only: true` to exclude child conversations (those with a
   `parent_conversation_id`). Useful for hiding agent-spawned sub-conversations
   from the index when the user only wants to see top-level sessions.
+
+  Populates the `last_active_at` virtual field using `kind: "output"` log
+  events only — stage events (reconnects, lifecycle) are excluded so
+  reconnects don't produce false unread indicators.
   """
   def list_conversations(user_id, opts \\ []) when is_binary(user_id) do
     roots_only = Keyword.get(opts, :roots_only, false)
 
+    last_log_at =
+      from le in LogEvent,
+        where: le.kind == "output",
+        group_by: le.conversation_id,
+        select: %{conversation_id: le.conversation_id, last_at: max(le.inserted_at)}
+
     base =
       from c in Conversation,
+        as: :conv,
         where: c.user_id == ^user_id,
+        left_join: ll in subquery(last_log_at), on: ll.conversation_id == c.id,
         order_by: [desc: c.updated_at, desc: c.id],
-        preload: [:agent, turns: ^first_turn_query()]
+        select: %{
+          c
+          | last_active_at:
+              fragment("COALESCE(?, ?)", ll.last_at, c.inserted_at)
+        }
 
     query =
       if roots_only do
-        from c in base, where: is_nil(c.parent_conversation_id)
+        where(base, [conv: c], is_nil(c.parent_conversation_id))
       else
         base
       end
 
     Repo.all(query)
+    |> Repo.preload([:agent, turns: first_turn_query()])
   end
 
   def create_conversation(attrs) do
@@ -312,6 +329,30 @@ defmodule Fountain.Conversations do
     result = Repo.delete(conv)
     if match?({:ok, _}, result), do: broadcast_sidebar_update(user_id)
     result
+  end
+
+  @doc """
+  Record that `user_id` has read `conversation_id` as of now.
+
+  Scoped to owner — silently no-ops for a wrong user_id. Broadcasts a
+  sidebar update so the unread dot clears in the nav without waiting for
+  the next natural PubSub event.
+  """
+  def mark_read(conversation_id, user_id)
+      when is_binary(conversation_id) and is_binary(user_id) do
+    now = DateTime.utc_now() |> DateTime.truncate(:microsecond)
+
+    case Repo.update_all(
+           from(c in Conversation,
+             where: c.id == ^conversation_id and c.user_id == ^user_id
+           ),
+           set: [last_read_at: now]
+         ) do
+      {0, _} -> :ok
+      {_, _} ->
+        broadcast_sidebar_update(user_id)
+        :ok
+    end
   end
 
   # ── turns ─────────────────────────────────────────────────────────────────────────────
