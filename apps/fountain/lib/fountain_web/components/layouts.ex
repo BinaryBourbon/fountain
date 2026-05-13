@@ -496,6 +496,7 @@ defmodule FountainWeb.Layouts do
             <span
               :if={@task_label}
               class="block truncate text-[13px] text-[var(--color-text-primary)]"
+              title={@task_label}
             >{@task_label}</span>
             <span
               :if={!@task_label}
