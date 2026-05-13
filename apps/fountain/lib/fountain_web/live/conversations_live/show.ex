@@ -513,11 +513,18 @@ defmodule FountainWeb.ConversationsLive.Show do
     runtime_label = assigns.conv.runtime
     image_count = Map.get(assigns.turn, :image_count, 0)
 
+    avatar_url =
+      case assigns.conv.agent do
+        %{id: id, avatar_media_type: mt} when is_binary(mt) -> "/agents/#{id}/avatar"
+        _ -> nil
+      end
+
     assigns =
       assign(assigns,
         reply: reply,
         agent_name: agent_name || runtime_label,
         agent_glyph: agent_glyph(runtime_label),
+        avatar_url: avatar_url,
         image_count: image_count
       )
 
@@ -546,6 +553,7 @@ defmodule FountainWeb.ConversationsLive.Show do
         role={:assistant}
         name={@agent_name}
         avatar={@agent_glyph}
+        avatar_url={@avatar_url}
         glyph_class="bg-zinc-200 text-zinc-700"
         timestamp={@turn.ended_at}
       >
@@ -559,6 +567,7 @@ defmodule FountainWeb.ConversationsLive.Show do
         role={:assistant}
         name={@agent_name}
         avatar={@agent_glyph}
+        avatar_url={@avatar_url}
         glyph_class="bg-zinc-200 text-zinc-700"
         timestamp={nil}
         muted
@@ -575,6 +584,7 @@ defmodule FountainWeb.ConversationsLive.Show do
         role={:assistant}
         name={@agent_name}
         avatar={@agent_glyph}
+        avatar_url={@avatar_url}
         glyph_class="bg-zinc-200 text-zinc-700"
         timestamp={@turn.ended_at}
         muted
@@ -588,6 +598,7 @@ defmodule FountainWeb.ConversationsLive.Show do
   attr :role, :atom, required: true
   attr :name, :string, required: true
   attr :avatar, :string, required: true
+  attr :avatar_url, :string, default: nil
   attr :glyph_class, :string, required: true
   attr :timestamp, :any, default: nil
   attr :muted, :boolean, default: false
@@ -600,10 +611,11 @@ defmodule FountainWeb.ConversationsLive.Show do
       @role == :user && "flex-row-reverse"
     ]}>
       <div class={[
-        "shrink-0 size-8 rounded-full flex items-center justify-center text-sm shadow-sm",
+        "shrink-0 size-8 rounded-full flex items-center justify-center text-sm shadow-sm overflow-hidden",
         @glyph_class
       ]}>
-        {@avatar}
+        <img :if={@avatar_url} src={@avatar_url} class="w-full h-full object-cover" />
+        <span :if={is_nil(@avatar_url)}>{@avatar}</span>
       </div>
       <div class={[
         "max-w-[78%] flex flex-col gap-1",
