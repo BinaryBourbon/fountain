@@ -157,14 +157,23 @@ defmodule FountainWeb.ConversationsLive.Index do
         </:empty_state>
         <:col :let={c} label="Status"><.badge status={c.status} /></:col>
         <:col :let={c} label="Task">
-          <%= if c.title do %>
-            <div class="font-medium truncate" title={first_prompt(c) || c.title}>{c.title}</div>
-          <% else %>
-            <%= case first_prompt(c) do %>
-              <% nil -> %><span class="text-[var(--color-text-muted)]">—</span>
-              <% prompt -> %><div class="line-clamp-3 text-[var(--color-text-muted)]" title={prompt}>{prompt}</div>
-            <% end %>
-          <% end %>
+          <div class="flex items-start gap-1.5">
+            <span
+              :if={unread?(c)}
+              class="mt-1.5 size-1.5 shrink-0 rounded-full bg-indigo-500"
+              aria-label="unread activity"
+            />
+            <div class="min-w-0">
+              <%= if c.title do %>
+                <div class="font-medium truncate" title={first_prompt(c) || c.title}>{c.title}</div>
+              <% else %>
+                <%= case first_prompt(c) do %>
+                  <% nil -> %><span class="text-[var(--color-text-muted)]">—</span>
+                  <% prompt -> %><div class="line-clamp-3 text-[var(--color-text-muted)]" title={prompt}>{prompt}</div>
+                <% end %>
+              <% end %>
+            </div>
+          </div>
         </:col>
         <:col :let={c} label="Agent">
           <.link navigate={~p"/conversations/#{c.id}"} class="block truncate text-[var(--color-text-primary)] hover:underline font-medium">
@@ -238,6 +247,13 @@ defmodule FountainWeb.ConversationsLive.Index do
         prompt |> String.trim() |> String.replace(~r/\s+/, " ")
     end
   end
+
+  defp unread?(%{last_read_at: nil}), do: true
+  defp unread?(%{last_read_at: _, last_active_at: nil}), do: false
+  defp unread?(%{last_read_at: read_at, last_active_at: active_at}) do
+    DateTime.compare(active_at, read_at) == :gt
+  end
+  defp unread?(_), do: false
 
   attr :source, :string, default: "api"
 
