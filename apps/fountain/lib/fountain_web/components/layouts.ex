@@ -463,7 +463,7 @@ defmodule FountainWeb.Layouts do
     <.link
       {@link_attrs}
       class={[
-        "flex items-center gap-2.5 rounded-md px-3 py-1.5 text-sm transition-colors",
+        "flex items-end gap-2.5 rounded-md px-3 py-1.5 text-sm transition-colors",
         if(@active,
           do: "bg-[var(--color-bg-2)] text-[var(--color-text-primary)]",
           else: "text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-2)] hover:text-[var(--color-text-primary)]"
