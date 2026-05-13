@@ -269,13 +269,13 @@
             },
             destroyed() { document.removeEventListener("keydown", this.trap); }
           },
-          // ── View mode persistence (localStorage) ────────────────────────────
+          // ── View mode persistence — DB is now the source of truth for the
+          // initial render. This hook only keeps localStorage in sync for
+          // informational purposes; it no longer pushes restore_view_mode on
+          // mount since the server reads the preference from
+          // user.conversation_view_mode at mount time.
           ViewModePersist: {
             mounted() {
-              const saved = localStorage.getItem("fountain-view-mode");
-              if (saved) {
-                this.pushEvent("restore_view_mode", { mode: saved });
-              }
               this._removeViewMode = this.handleEvent("view_mode_changed", ({ mode }) => {
                 localStorage.setItem("fountain-view-mode", mode);
               });

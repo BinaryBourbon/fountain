@@ -40,7 +40,7 @@ defmodule FountainWeb.ConversationsLive.Show do
          |> assign(:events, events)
          |> assign(:turns_by_id, load_turns(id))
          |> assign(:visible_streams, MapSet.new(initial_visible_streams(socket.assigns.current_user)))
-         |> assign(:view_mode, :pretty)
+         |> assign(:view_mode, initial_view_mode(socket.assigns.current_user))
          |> assign(:prompt, "")
          |> assign(:pending_images, [])
          |> assign(:graph, graph)
@@ -61,6 +61,13 @@ defmodule FountainWeb.ConversationsLive.Show do
     case user.conversation_visible_streams do
       streams when is_list(streams) -> streams
       _ -> ["stdout", "stderr", "stage"]
+    end
+  end
+
+  defp initial_view_mode(user) do
+    case user.conversation_view_mode do
+      mode when mode in ["chat", "pretty", "raw"] -> String.to_existing_atom(mode)
+      _ -> :pretty
     end
   end
 
@@ -229,14 +236,10 @@ defmodule FountainWeb.ConversationsLive.Show do
   def handle_event("set_view_mode", %{"mode" => mode}, socket) do
     next = parse_view_mode(mode, socket.assigns.view_mode)
 
-    {:noreply,
-     socket
-     |> assign(:view_mode, next)
-     |> push_event("view_mode_changed", %{mode: Atom.to_string(next)})}
-  end
-
-  def handle_event("restore_view_mode", %{"mode" => mode}, socket) do
-    next = parse_view_mode(mode, socket.assigns.view_mode)
+    Accounts.update_preferences(
+      socket.assigns.current_user,
+      %{conversation_view_mode: Atom.to_string(next)}
+    )
 
     {:noreply,
      socket
