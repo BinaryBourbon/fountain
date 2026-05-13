@@ -11,9 +11,6 @@ defmodule Mix.Tasks.Fountain.BackfillTitles do
 
   Runs in order of most-recently-created first. Safe to re-run —
   only processes conversations where title IS NULL.
-
-  Sets `server: false` on the endpoint before starting so the HTTP
-  listener is not started — safe to run alongside a live server.
   """
 
   use Mix.Task
@@ -22,10 +19,31 @@ defmodule Mix.Tasks.Fountain.BackfillTitles do
 
   @impl Mix.Task
   def run(_args) do
-    # Prevent the Phoenix endpoint from binding the HTTP port so this task
-    # can run safely on a host where the server is already listening.
-    Application.put_env(:fountain_web, FountainWeb.Endpoint, server: false)
-    Mix.Task.run("app.start")
+    # 1. Evaluate runtime.exs so env-based config (MASTER_SECRETS_KEY, etc.)
+    #    is applied. DATABASE_URL is only wired to the Repo in runtime.exs
+    #    when PHX_SERVER=1, so we configure it manually in step 2.
+    Mix.Task.run("app.config")
+
+    # 2. Configure Repo directly from DATABASE_URL — runtime.exs skips this
+    #    block when running outside the server (no PHX_SERVER env var).
+    database_url =
+      System.get_env("DATABASE_URL") ||
+        raise "DATABASE_URL environment variable is not set"
+
+    Application.put_env(:fountain, Fountain.Repo,
+      url: database_url,
+      pool_size: 2,
+      ssl: true,
+      ssl_opts: [verify: :verify_none]
+    )
+
+    # 3. Suppress the HTTP listener so we don't fight the running server for
+    #    port 10000. The endpoint is supervised under the :fountain app.
+    endpoint_config = Application.get_env(:fountain, FountainWeb.Endpoint, [])
+    Application.put_env(:fountain, FountainWeb.Endpoint, Keyword.put(endpoint_config, :server, false))
+
+    # 4. Start the OTP app (Repo, PubSub, Horde, etc.) but not the HTTP listener.
+    {:ok, _} = Application.ensure_all_started(:fountain)
 
     import Ecto.Query
 
