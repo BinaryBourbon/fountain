@@ -12,9 +12,8 @@ defmodule Mix.Tasks.Fountain.BackfillTitles do
   Runs in order of most-recently-created first. Safe to re-run —
   only processes conversations where title IS NULL.
 
-  Uses `Application.ensure_all_started(:fountain)` instead of
-  `app.start` so the web endpoint is not started — safe to run
-  alongside a live server.
+  Sets `server: false` on the endpoint before starting so the HTTP
+  listener is not started — safe to run alongside a live server.
   """
 
   use Mix.Task
@@ -23,7 +22,10 @@ defmodule Mix.Tasks.Fountain.BackfillTitles do
 
   @impl Mix.Task
   def run(_args) do
-    {:ok, _} = Application.ensure_all_started(:fountain)
+    # Prevent the Phoenix endpoint from binding the HTTP port so this task
+    # can run safely on a host where the server is already listening.
+    Application.put_env(:fountain_web, FountainWeb.Endpoint, server: false)
+    Mix.Task.run("app.start")
 
     import Ecto.Query
 
