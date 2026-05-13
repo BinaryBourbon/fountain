@@ -2,7 +2,7 @@ defmodule FountainWeb.AgentsLive.Form do
   @moduledoc false
   use FountainWeb, :live_view
 
-  alias Fountain.{Agents, Environments}
+  alias Fountain.{Agents, AvatarGenerator, Environments}
   alias Fountain.Agents.Agent
 
   @impl true
@@ -20,6 +20,13 @@ defmodule FountainWeb.AgentsLive.Form do
      |> assign(:agent, agent)
      |> assign(:form, agent_to_form(agent))
      |> assign(:errors, %{})
+     |> assign(:avatar_tab, :upload)
+     |> assign(:avatar_base, "robot")
+     |> assign(:avatar_mood, "serious")
+     |> assign(:generating_avatar, false)
+     |> assign(:generated_avatar_data, nil)
+     |> assign(:generated_avatar_preview, nil)
+     |> assign(:avatar_error, nil)
      |> allow_upload(:avatar,
        accept: ~w(image/jpeg image/png image/gif image/webp),
        max_entries: 1,
@@ -66,6 +73,46 @@ defmodule FountainWeb.AgentsLive.Form do
     end
   end
 
+  def handle_event("switch_avatar_tab", %{"tab" => tab}, socket) do
+    {:noreply, assign(socket, :avatar_tab, String.to_existing_atom(tab))}
+  end
+
+  def handle_event("set_avatar_base", %{"base" => base}, socket)
+      when base in ["robot", "human", "alien"] do
+    {:noreply, assign(socket, :avatar_base, base)}
+  end
+
+  def handle_event("set_avatar_mood", %{"mood" => mood}, socket)
+      when mood in ["serious", "casual", "goofy"] do
+    {:noreply, assign(socket, :avatar_mood, mood)}
+  end
+
+  def handle_event("generate_avatar", _params, socket) do
+    user_id = socket.assigns.user_id
+    base = socket.assigns.avatar_base
+    mood = socket.assigns.avatar_mood
+
+    socket =
+      socket
+      |> assign(:generating_avatar, true)
+      |> assign(:avatar_error, nil)
+      |> assign(:generated_avatar_data, nil)
+      |> assign(:generated_avatar_preview, nil)
+
+    {:noreply,
+     start_async(socket, :generate_avatar, fn ->
+       AvatarGenerator.generate(user_id, base, mood)
+     end)}
+  end
+
+  def handle_event("discard_generated_avatar", _, socket) do
+    {:noreply,
+     socket
+     |> assign(:generated_avatar_data, nil)
+     |> assign(:generated_avatar_preview, nil)
+     |> assign(:avatar_error, nil)}
+  end
+
   def handle_event("submit", %{"agent" => params}, socket) do
     with {:ok, mcp} <- parse_mcp(params),
          {:ok, skills} <- parse_skills(params) do
@@ -87,10 +134,51 @@ defmodule FountainWeb.AgentsLive.Form do
     end
   end
 
+  @impl true
+  def handle_async(:generate_avatar, {:ok, {:ok, data}}, socket) do
+    preview = "data:image/png;base64," <> Base.encode64(data)
+
+    {:noreply,
+     socket
+     |> assign(:generating_avatar, false)
+     |> assign(:generated_avatar_data, data)
+     |> assign(:generated_avatar_preview, preview)
+     |> assign(:avatar_error, nil)}
+  end
+
+  def handle_async(:generate_avatar, {:ok, {:error, :no_openai_key}}, socket) do
+    {:noreply,
+     socket
+     |> assign(:generating_avatar, false)
+     |> assign(:avatar_error, "No OpenAI API key found. Add one in Settings → Credentials.")}
+  end
+
+  def handle_async(:generate_avatar, {:ok, {:error, reason}}, socket)
+      when is_binary(reason) do
+    {:noreply,
+     socket
+     |> assign(:generating_avatar, false)
+     |> assign(:avatar_error, reason)}
+  end
+
+  def handle_async(:generate_avatar, {:ok, {:error, _reason}}, socket) do
+    {:noreply,
+     socket
+     |> assign(:generating_avatar, false)
+     |> assign(:avatar_error, "Avatar generation failed. Please try again.")}
+  end
+
+  def handle_async(:generate_avatar, {:exit, _reason}, socket) do
+    {:noreply,
+     socket
+     |> assign(:generating_avatar, false)
+     |> assign(:avatar_error, "Avatar generation failed. Please try again.")}
+  end
+
   defp save(%{assigns: %{action: :new}} = socket, attrs) do
     case Agents.create_agent(attrs) do
       {:ok, agent} ->
-        maybe_upload_avatar(socket, agent)
+        maybe_set_avatar(socket, agent)
 
         {:ok,
          socket
@@ -105,7 +193,7 @@ defmodule FountainWeb.AgentsLive.Form do
   defp save(%{assigns: %{action: :edit, agent: existing}} = socket, attrs) do
     case Agents.update_agent(existing, attrs) do
       {:ok, saved} ->
-        maybe_upload_avatar(socket, saved)
+        maybe_set_avatar(socket, saved)
 
         {:ok,
          socket
@@ -117,12 +205,21 @@ defmodule FountainWeb.AgentsLive.Form do
     end
   end
 
-  defp maybe_upload_avatar(socket, agent) do
-    consume_uploaded_entries(socket, :avatar, fn %{path: path}, entry ->
-      data = File.read!(path)
-      Agents.upload_avatar(agent, data, entry.client_type)
-      {:ok, :uploaded}
-    end)
+  # File uploads take priority; fall back to generated avatar data if present.
+  defp maybe_set_avatar(socket, agent) do
+    uploaded =
+      consume_uploaded_entries(socket, :avatar, fn %{path: path}, entry ->
+        data = File.read!(path)
+        Agents.upload_avatar(agent, data, entry.client_type)
+        {:ok, :uploaded}
+      end)
+
+    if uploaded == [] do
+      case socket.assigns.generated_avatar_data do
+        nil -> :ok
+        data -> Agents.upload_avatar(agent, data, "image/png")
+      end
+    end
   end
 
   defp parse_skills(%{"skills_json" => v}) when v in [nil, ""], do: {:ok, []}
@@ -200,11 +297,13 @@ defmodule FountainWeb.AgentsLive.Form do
           </select>
         </div>
 
-        <%!-- Avatar upload --%>
-        <div class="space-y-2">
+        <%!-- Avatar --%>
+        <div class="space-y-3">
           <label class="block text-sm font-medium text-zinc-700">Avatar</label>
 
-          <div :if={@agent.id && @agent.avatar_media_type} class="flex items-center gap-3">
+          <%!-- Current DB avatar (hidden when a generated preview is pending) --%>
+          <div :if={@agent.id && @agent.avatar_media_type && !@generated_avatar_preview}
+               class="flex items-center gap-3">
             <img
               src={~p"/agents/#{@agent.id}/avatar"}
               class="w-14 h-14 rounded-xl object-cover border border-zinc-200"
@@ -219,33 +318,146 @@ defmodule FountainWeb.AgentsLive.Form do
             </button>
           </div>
 
-          <.live_file_input
-            upload={@uploads.avatar}
-            class="block text-sm text-zinc-700 file:mr-3 file:rounded file:border-0
-                   file:bg-zinc-100 file:px-3 file:py-1.5 file:text-sm file:font-medium
-                   file:cursor-pointer hover:file:bg-zinc-200"
-          />
-          <p class="text-xs text-zinc-500">JPEG, PNG, GIF, or WebP · max 5 MB</p>
-
-          <div :for={entry <- @uploads.avatar.entries} class="flex items-center gap-3">
-            <.live_img_preview
-              entry={entry}
+          <%!-- Generated avatar preview --%>
+          <div :if={@generated_avatar_preview} class="flex items-center gap-3">
+            <img
+              src={@generated_avatar_preview}
               class="w-14 h-14 rounded-xl object-cover border border-zinc-200"
+              alt="Generated avatar preview"
             />
-            <div class="text-sm text-zinc-600">
-              <p class="font-medium">{entry.client_name}</p>
+            <div class="text-sm space-y-0.5">
+              <p class="text-zinc-500">Will be saved when you submit.</p>
               <button
                 type="button"
-                phx-click="cancel_upload"
-                phx-value-ref={entry.ref}
+                phx-click="discard_generated_avatar"
                 class="text-rose-600 hover:text-rose-800 underline underline-offset-2"
               >
-                Remove
+                Discard
               </button>
             </div>
-            <p :for={err <- upload_errors(@uploads.avatar, entry)} class="text-rose-600 text-xs">
-              {upload_error_to_string(err)}
-            </p>
+          </div>
+
+          <%!-- Tab switcher --%>
+          <div class="flex gap-0.5 rounded-lg border border-zinc-200 bg-zinc-50 p-0.5 w-fit text-sm">
+            <button
+              type="button"
+              phx-click="switch_avatar_tab"
+              phx-value-tab="upload"
+              class={[
+                "px-3 py-1 rounded-md transition-colors",
+                @avatar_tab == :upload && "bg-white shadow-sm font-medium text-zinc-900",
+                @avatar_tab != :upload && "text-zinc-500 hover:text-zinc-700"
+              ]}
+            >
+              Upload
+            </button>
+            <button
+              type="button"
+              phx-click="switch_avatar_tab"
+              phx-value-tab="generate"
+              class={[
+                "px-3 py-1 rounded-md transition-colors",
+                @avatar_tab == :generate && "bg-white shadow-sm font-medium text-zinc-900",
+                @avatar_tab != :generate && "text-zinc-500 hover:text-zinc-700"
+              ]}
+            >
+              Generate with AI
+            </button>
+          </div>
+
+          <%!-- Upload tab --%>
+          <div :if={@avatar_tab == :upload} class="space-y-2">
+            <.live_file_input
+              upload={@uploads.avatar}
+              class="block text-sm text-zinc-700 file:mr-3 file:rounded file:border-0
+                     file:bg-zinc-100 file:px-3 file:py-1.5 file:text-sm file:font-medium
+                     file:cursor-pointer hover:file:bg-zinc-200"
+            />
+            <p class="text-xs text-zinc-500">JPEG, PNG, GIF, or WebP · max 5 MB</p>
+
+            <div :for={entry <- @uploads.avatar.entries} class="flex items-center gap-3">
+              <.live_img_preview
+                entry={entry}
+                class="w-14 h-14 rounded-xl object-cover border border-zinc-200"
+              />
+              <div class="text-sm text-zinc-600">
+                <p class="font-medium">{entry.client_name}</p>
+                <button
+                  type="button"
+                  phx-click="cancel_upload"
+                  phx-value-ref={entry.ref}
+                  class="text-rose-600 hover:text-rose-800 underline underline-offset-2"
+                >
+                  Remove
+                </button>
+              </div>
+              <p :for={err <- upload_errors(@uploads.avatar, entry)} class="text-rose-600 text-xs">
+                {upload_error_to_string(err)}
+              </p>
+            </div>
+          </div>
+
+          <%!-- Generate tab --%>
+          <div :if={@avatar_tab == :generate} class="space-y-3">
+            <%!-- Base picker --%>
+            <div class="space-y-1.5">
+              <p class="text-xs font-medium text-zinc-600">Base</p>
+              <div class="flex gap-1.5">
+                <button
+                  :for={b <- AvatarGenerator.bases()}
+                  type="button"
+                  phx-click="set_avatar_base"
+                  phx-value-base={b}
+                  class={[
+                    "px-3 py-1.5 rounded-md text-sm border transition-colors",
+                    @avatar_base == b && "bg-zinc-900 text-white border-zinc-900",
+                    @avatar_base != b && "bg-white text-zinc-600 border-zinc-300 hover:bg-zinc-50"
+                  ]}
+                >
+                  {String.capitalize(b)}
+                </button>
+              </div>
+            </div>
+
+            <%!-- Mood picker --%>
+            <div class="space-y-1.5">
+              <p class="text-xs font-medium text-zinc-600">Mood</p>
+              <div class="flex gap-1.5">
+                <button
+                  :for={m <- AvatarGenerator.moods()}
+                  type="button"
+                  phx-click="set_avatar_mood"
+                  phx-value-mood={m}
+                  class={[
+                    "px-3 py-1.5 rounded-md text-sm border transition-colors",
+                    @avatar_mood == m && "bg-zinc-900 text-white border-zinc-900",
+                    @avatar_mood != m && "bg-white text-zinc-600 border-zinc-300 hover:bg-zinc-50"
+                  ]}
+                >
+                  {String.capitalize(m)}
+                </button>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              phx-click="generate_avatar"
+              disabled={@generating_avatar}
+              class="flex items-center gap-2 rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium
+                     text-white hover:bg-zinc-700 disabled:opacity-60 disabled:cursor-not-allowed"
+            >
+              <%= if @generating_avatar do %>
+                <svg class="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                  <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                Generating…
+              <% else %>
+                Generate
+              <% end %>
+            </button>
+
+            <p :if={@avatar_error} class="text-rose-600 text-xs">{@avatar_error}</p>
           </div>
         </div>
 
