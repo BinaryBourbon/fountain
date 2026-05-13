@@ -1771,4 +1771,106 @@ defmodule Fountain.ConversationsContextTest do
       assert Map.get(result, "xyzquuxfoo_novel_key_never_an_atom") == "ignored_value"
     end
   end
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # mark_read/2
+  # ────────────────────────────────────────────────────────────────────────────
+
+  describe "mark_read/2" do
+    test "sets last_read_at to approximately now" do
+      user = insert_verified_user()
+      conv = insert_conversation(user_id: user.id)
+      assert is_nil(conv.last_read_at)
+
+      before = DateTime.utc_now()
+      :ok = Conversations.mark_read(conv.id, user.id)
+      after_time = DateTime.utc_now()
+
+      reloaded = Conversations.get_conversation(conv.id, user.id)
+      refute is_nil(reloaded.last_read_at)
+      assert DateTime.compare(reloaded.last_read_at, before) in [:gt, :eq]
+      assert DateTime.compare(reloaded.last_read_at, after_time) in [:lt, :eq]
+    end
+
+    test "is scoped to owner — does not update another user's conversation" do
+      user1 = insert_verified_user()
+      user2 = insert_verified_user()
+      conv = insert_conversation(user_id: user1.id)
+
+      :ok = Conversations.mark_read(conv.id, user2.id)
+
+      reloaded = Conversations.get_conversation(conv.id, user1.id)
+      assert is_nil(reloaded.last_read_at)
+    end
+
+    test "calling twice updates last_read_at to a more recent time" do
+      user = insert_verified_user()
+      conv = insert_conversation(user_id: user.id)
+
+      :ok = Conversations.mark_read(conv.id, user.id)
+      first_read = Conversations.get_conversation(conv.id, user.id).last_read_at
+
+      Process.sleep(2)
+
+      :ok = Conversations.mark_read(conv.id, user.id)
+      second_read = Conversations.get_conversation(conv.id, user.id).last_read_at
+
+      assert DateTime.compare(second_read, first_read) in [:gt, :eq]
+    end
+  end
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # list_conversations/2 — last_active_at and unread safety
+  # ────────────────────────────────────────────────────────────────────────────
+
+  describe "list_conversations/2 last_active_at" do
+    test "defaults to inserted_at when there are no log events" do
+      user = insert_verified_user()
+      conv = insert_conversation(user_id: user.id)
+
+      [result] = Conversations.list_conversations(user.id)
+      assert result.last_active_at == result.inserted_at
+    end
+
+    test "advances past inserted_at when output log events exist" do
+      user = insert_verified_user()
+      conv = insert_conversation(user_id: user.id)
+
+      later = DateTime.utc_now() |> DateTime.add(60, :second) |> DateTime.truncate(:microsecond)
+      insert_log_event(conv, kind: "output", stream: "stdout", inserted_at: later)
+
+      [result] = Conversations.list_conversations(user.id)
+      assert DateTime.compare(result.last_active_at, conv.inserted_at) == :gt
+    end
+
+    test "stage events (reconnects) do NOT advance last_active_at" do
+      user = insert_verified_user()
+      conv = insert_conversation(user_id: user.id)
+
+      baseline_at = List.first(Conversations.list_conversations(user.id)).last_active_at
+
+      later = DateTime.utc_now() |> DateTime.add(300, :second) |> DateTime.truncate(:microsecond)
+      insert_log_event(conv, kind: "stage", data: "reattach", stream: "", inserted_at: later)
+
+      [result] = Conversations.list_conversations(user.id)
+      assert DateTime.compare(result.last_active_at, baseline_at) == :eq
+    end
+
+    test "last_read_at is nil by default" do
+      user = insert_verified_user()
+      insert_conversation(user_id: user.id)
+
+      [result] = Conversations.list_conversations(user.id)
+      assert is_nil(result.last_read_at)
+    end
+
+    test "last_read_at is populated after mark_read" do
+      user = insert_verified_user()
+      conv = insert_conversation(user_id: user.id)
+      Conversations.mark_read(conv.id, user.id)
+
+      [result] = Conversations.list_conversations(user.id)
+      refute is_nil(result.last_read_at)
+    end
+  end
 end
