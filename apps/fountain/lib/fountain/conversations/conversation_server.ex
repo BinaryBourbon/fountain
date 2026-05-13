@@ -101,6 +101,7 @@ defmodule Fountain.Conversations.ConversationServer do
       sandbox_id: Keyword.fetch!(args, :sandbox_id),
       runtime_module: Keyword.fetch!(args, :runtime_module),
       initial_prompt: Keyword.get(args, :initial_prompt),
+      user_id: nil,
       sprite: nil,
       sprite_env: [],
       current_command: nil,
@@ -143,7 +144,7 @@ defmodule Fountain.Conversations.ConversationServer do
         secrets = merge_secrets(env, vault, dek)
 
         state =
-          %{state | runtime_session_id: conv.runtime_session_id, tenant_key: dek, inference_credentials: inference_creds}
+          %{state | user_id: conv.user_id, runtime_session_id: conv.runtime_session_id, tenant_key: dek, inference_credentials: inference_creds}
 
         dispatch_provision(state, conv, sandbox, agent, env, vault, secrets)
 
@@ -1053,6 +1054,14 @@ defmodule Fountain.Conversations.ConversationServer do
       "conv:#{state.conversation_id}",
       {:log_event, event}
     )
+
+    if state.user_id do
+      Phoenix.PubSub.broadcast(
+        Fountain.PubSub,
+        "sidebar:#{state.user_id}",
+        {:sidebar_update, state.user_id}
+      )
+    end
   end
 
   # Drop replayed bytes before persisting. After reattach, sprites replays
