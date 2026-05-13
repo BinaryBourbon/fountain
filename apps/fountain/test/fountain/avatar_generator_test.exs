@@ -21,10 +21,10 @@ defmodule Fountain.AvatarGeneratorTest do
       assert AvatarGenerator.build_prompt("alien", "goofy") =~ "alien"
     end
 
-    test "includes the mood description" do
-      assert AvatarGenerator.build_prompt("robot", "serious") =~ "serious"
-      assert AvatarGenerator.build_prompt("human", "casual") =~ "casual"
-      assert AvatarGenerator.build_prompt("alien", "goofy") =~ "goofy"
+    test "includes the expanded mood description" do
+      assert AvatarGenerator.build_prompt("robot", "serious") =~ "serious, professional"
+      assert AvatarGenerator.build_prompt("human", "casual") =~ "relaxed, friendly"
+      assert AvatarGenerator.build_prompt("alien", "goofy") =~ "silly, humorous"
     end
 
     test "falls back gracefully for unknown values" do
