@@ -157,9 +157,13 @@ defmodule FountainWeb.ConversationsLive.Index do
         </:empty_state>
         <:col :let={c} label="Status"><.badge status={c.status} /></:col>
         <:col :let={c} label="Task">
-          <%= case first_prompt(c) do %>
-            <% nil -> %><span class="text-[var(--color-text-muted)]">—</span>
-            <% prompt -> %><div class="line-clamp-3" title={prompt}>{prompt}</div>
+          <%= if c.title do %>
+            <div class="font-medium truncate" title={first_prompt(c) || c.title}>{c.title}</div>
+          <% else %>
+            <%= case first_prompt(c) do %>
+              <% nil -> %><span class="text-[var(--color-text-muted)]">—</span>
+              <% prompt -> %><div class="line-clamp-3 text-[var(--color-text-muted)]" title={prompt}>{prompt}</div>
+            <% end %>
           <% end %>
         </:col>
         <:col :let={c} label="Agent">

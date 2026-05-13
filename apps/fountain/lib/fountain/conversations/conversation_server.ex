@@ -862,6 +862,23 @@ defmodule Fountain.Conversations.ConversationServer do
     # Store images in DB
     {:ok, _} = Conversations.insert_turn_images(turn.id, images)
 
+    # On the first turn, asynchronously generate a short title for the sidebar.
+    if turn.turn_number == 1 do
+      conv_id = state.conversation_id
+      creds = state.inference_credentials
+
+      Task.start(fn ->
+        case Fountain.Conversations.TitleGenerator.generate(prompt, creds) do
+          {:ok, title} ->
+            fresh = Conversations._unsafe_get_conversation!(conv_id)
+            Conversations.update_conversation(fresh, %{title: title})
+
+          {:error, reason} ->
+            Logger.warning("Title generation failed for conv #{conv_id}: #{inspect(reason)}")
+        end
+      end)
+    end
+
     # Write image temp files to sprite
     image_paths = write_image_temp_files(state.sprite, turn.id, images)
 
