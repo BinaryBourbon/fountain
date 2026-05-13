@@ -29,6 +29,7 @@ defmodule FountainWeb.ConversationsLive.Show do
           root_node = Enum.find(graph, fn n -> is_nil(n.parent_id) end)
           root_id = if root_node, do: root_node.id, else: id
           Phoenix.PubSub.subscribe(Fountain.PubSub, "conversations:graph:#{root_id}")
+          Conversations.mark_read(id, user_id)
         end
 
         events = Conversations.list_log_events(id) |> annotate_durations()

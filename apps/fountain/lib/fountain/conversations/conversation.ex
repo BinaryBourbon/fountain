@@ -21,6 +21,7 @@ defmodule Fountain.Conversations.Conversation do
     field :parent_conversation_id, :binary_id
     field :callback_api_key_id, :binary_id
     field :title, :string
+    field :last_read_at, :utc_datetime_usec
 
     # Populated by list_conversations_by_activity/1 — not persisted.
     field :turn_count, :integer, virtual: true, default: 0
