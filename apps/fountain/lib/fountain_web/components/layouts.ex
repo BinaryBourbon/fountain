@@ -85,6 +85,18 @@ defmodule FountainWeb.Layouts do
         &String.starts_with?(assigns[:current_path] || "", &1)
       )
 
+    current_path = assigns[:current_path] || ""
+
+    logo_link_attrs =
+      if session_for(current_path) == :active_subscription,
+        do: [navigate: ~p"/conversations"],
+        else: [href: ~p"/conversations"]
+
+    new_conv_link_attrs =
+      if session_for(current_path) == :active_subscription,
+        do: [navigate: ~p"/conversations/new"],
+        else: [href: ~p"/conversations/new"]
+
     assigns =
       assign(assigns,
         nav_conversations: convs,
@@ -93,7 +105,9 @@ defmodule FountainWeb.Layouts do
         sidebar_roots_only: roots_only,
         sidebar_agent_filter: agent_filter,
         sidebar_unique_agents: unique_agents,
-        footer_open: footer_open
+        footer_open: footer_open,
+        logo_link_attrs: logo_link_attrs,
+        new_conv_link_attrs: new_conv_link_attrs
       )
 
     ~H"""
@@ -124,10 +138,10 @@ defmodule FountainWeb.Layouts do
         >
           <%!-- Sidebar header --%>
           <div class="flex items-center justify-between p-4 border-b border-[var(--color-border)] shrink-0">
-            <a href={~p"/conversations"} class="flex items-center gap-2">
+            <.link {@logo_link_attrs} class="flex items-center gap-2">
               <img src="/images/app-icon.png" alt="" class="size-7 rounded-md" />
               <span class="font-semibold text-sm text-[var(--color-text-primary)]">Fountain</span>
-            </a>
+            </.link>
             <label
               for="sidebar-toggle"
               class="md:hidden cursor-pointer rounded-md p-1 text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-2)]"
@@ -149,13 +163,13 @@ defmodule FountainWeb.Layouts do
 
           <%!-- New conversation --%>
           <div class="px-2 pb-1 shrink-0">
-            <a
-              href={~p"/conversations/new"}
+            <.link
+              {@new_conv_link_attrs}
               class="block w-full rounded-md px-3 py-1.5 text-sm font-medium text-center
                      bg-indigo-600 text-white hover:bg-indigo-500 transition-colors"
             >
               + New Conversation
-            </a>
+            </.link>
           </div>
 
           <%!-- Conversation filters --%>
@@ -393,11 +407,16 @@ defmodule FountainWeb.Layouts do
       (String.starts_with?(assigns.current || "", assigns.href) and assigns.href != "/") or
         assigns.current == assigns.href
 
-    assigns = assign(assigns, :active, active)
+    link_attrs =
+      if session_for(assigns.current) == session_for(assigns.href),
+        do: [navigate: assigns.href],
+        else: [href: assigns.href]
+
+    assigns = assign(assigns, active: active, link_attrs: link_attrs)
 
     ~H"""
-    <a
-      href={@href}
+    <.link
+      {@link_attrs}
       class={[
         "block rounded-md px-3 py-1 text-sm transition-colors",
         if(@active,
@@ -407,9 +426,23 @@ defmodule FountainWeb.Layouts do
       ]}
     >
       {@label}
-    </a>
+    </.link>
     """
   end
+
+  # Map a path to its live_session.
+  # /conversations/:id/logs is in :authenticated (log viewer live_session),
+  # not :active_subscription, despite sharing the /conversations prefix.
+  defp session_for(path) when is_binary(path) do
+    cond do
+      String.match?(path, ~r{^/conversations/[^/]+/logs}) -> :authenticated
+      String.starts_with?(path, "/conversations") -> :active_subscription
+      String.starts_with?(path, "/admin") -> :admin
+      true -> :authenticated
+    end
+  end
+
+  defp session_for(_), do: :authenticated
 
   attr :conv, :map, required: true
   attr :current, :string, default: ""
@@ -442,6 +475,11 @@ defmodule FountainWeb.Layouts do
     {initials, chip_class} = role_chip_style(agent_name)
     avatar_url = if agent && Map.get(agent, :avatar_media_type), do: "/agents/#{agent.id}/avatar"
 
+    link_attrs =
+      if session_for(assigns.current) == :active_subscription,
+        do: [navigate: href],
+        else: [href: href]
+
     assigns =
       assign(assigns,
         href: href,
@@ -451,12 +489,13 @@ defmodule FountainWeb.Layouts do
         initials: initials,
         chip_class: chip_class,
         avatar_url: avatar_url,
-        turn_count: turn_count
+        turn_count: turn_count,
+        link_attrs: link_attrs
       )
 
     ~H"""
-    <a
-      href={@href}
+    <.link
+      {@link_attrs}
       class={[
         "flex items-center gap-2.5 rounded-md px-3 py-1.5 text-sm transition-colors",
         if(@active,
@@ -535,7 +574,7 @@ defmodule FountainWeb.Layouts do
           class="block text-[11px] text-[var(--color-text-muted)] truncate"
         >{@subtitle}</span>
       </span>
-    </a>
+    </.link>
     """
   end
 
