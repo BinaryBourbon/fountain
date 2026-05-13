@@ -21,7 +21,8 @@ defmodule FountainWeb.EnvironmentsLive.Form do
      |> assign(:form, env_to_form(env))
      |> assign(:errors, %{})
      |> assign(:secrets, secrets_for(env))
-     |> assign(:new_secret, %{"key" => "", "value" => ""})}
+     |> assign(:new_secret, %{"key" => "", "value" => ""})
+     |> assign(:repositories, env.repositories || [])}
   end
 
   defp load(%{"id" => id}, user_id), do: {Environments.get_environment!(id, user_id), :edit}
@@ -37,8 +38,7 @@ defmodule FountainWeb.EnvironmentsLive.Form do
       "env_vars_json" => Jason.encode!(e.env_vars || %{}, pretty: true),
       "packages_json" => Jason.encode!(e.packages || %{}, pretty: true),
       "networking_type" => e.networking_type || "unrestricted",
-      "networking_config_json" => Jason.encode!(e.networking_config || %{}, pretty: true),
-      "repositories_json" => Jason.encode!(e.repositories || [], pretty: true)
+      "networking_config_json" => Jason.encode!(e.networking_config || %{}, pretty: true)
     }
   end
 
@@ -47,27 +47,39 @@ defmodule FountainWeb.EnvironmentsLive.Form do
 
   @impl true
   def handle_event("validate", %{"env" => params}, socket) do
-    {:noreply, assign(socket, :form, params)}
+    repos = extract_repos_from_params(params)
+    {:noreply, socket |> assign(:form, params) |> assign(:repositories, repos)}
+  end
+
+  def handle_event("add_repo", _, socket) do
+    repos =
+      socket.assigns.repositories ++
+        [%{"url" => "", "mount_path" => "/workspace/", "secret_key" => "", "ref" => ""}]
+
+    {:noreply, assign(socket, :repositories, repos)}
+  end
+
+  def handle_event("remove_repo", %{"index" => index_str}, socket) do
+    index = String.to_integer(index_str)
+    repos = List.delete_at(socket.assigns.repositories, index)
+    {:noreply, assign(socket, :repositories, repos)}
   end
 
   def handle_event("submit", %{"env" => params}, socket) do
+    repos = extract_repos_from_params(params)
+
     with {:ok, env_vars} <- parse_json_object(params["env_vars_json"], "env_vars_json"),
          {:ok, packages} <- parse_json_object(params["packages_json"], "packages_json"),
          {:ok, networking} <-
            parse_json_object(params["networking_config_json"], "networking_config_json"),
-         {:ok, repos} <- parse_repos(params["repositories_json"]) do
+         :ok <- validate_repos(repos) do
       attrs =
         params
         |> Map.put("env_vars", env_vars)
         |> Map.put("packages", packages)
         |> Map.put("networking_config", networking)
         |> Map.put("repositories", repos)
-        |> Map.drop([
-          "env_vars_json",
-          "packages_json",
-          "networking_config_json",
-          "repositories_json"
-        ])
+        |> Map.drop(["env_vars_json", "packages_json", "networking_config_json"])
 
       save(socket, attrs)
     else
@@ -147,14 +159,45 @@ defmodule FountainWeb.EnvironmentsLive.Form do
     end
   end
 
-  defp parse_repos(nil), do: {:ok, []}
-  defp parse_repos(""), do: {:ok, []}
+  defp extract_repos_from_params(params) do
+    case params["repositories"] do
+      nil ->
+        []
 
-  defp parse_repos(json) do
-    case Jason.decode(json) do
-      {:ok, list} when is_list(list) -> {:ok, list}
-      _ -> {:error, "repositories_json", "must be a JSON array of repo specs"}
+      repos_map when is_map(repos_map) ->
+        repos_map
+        |> Enum.sort_by(fn {k, _} -> String.to_integer(k) end)
+        |> Enum.map(fn {_, r} -> r end)
+
+      _ ->
+        []
     end
+  end
+
+  defp validate_repos([]), do: :ok
+
+  defp validate_repos(repos) do
+    Enum.reduce_while(repos, :ok, fn repo, _acc ->
+      url = repo["url"] || ""
+      mount = repo["mount_path"] || ""
+
+      cond do
+        url == "" ->
+          {:halt, {:error, "repositories", "each repo must have a url"}}
+
+        not String.starts_with?(url, "https://") ->
+          {:halt, {:error, "repositories", "each repo url must start with https://"}}
+
+        mount == "" ->
+          {:halt, {:error, "repositories", "each repo must have a mount_path"}}
+
+        not String.starts_with?(mount, "/") ->
+          {:halt, {:error, "repositories", "each repo mount_path must be an absolute path"}}
+
+        true ->
+          {:cont, :ok}
+      end
+    end)
   end
 
   defp changeset_errors(cs) do
@@ -196,15 +239,77 @@ defmodule FountainWeb.EnvironmentsLive.Form do
           placeholder='{"PROJECT_ROOT": "/workspace/repo"}'/>
         <.error_msg field="env_vars_json" errors={@errors}/>
 
-        <.input id="repositories_json" name="env[repositories_json]" type="textarea" rows="6"
-          label="Repositories (JSON array)" value={@form["repositories_json"]}
-          placeholder={~s|[\n  {\n    "url": "https://github.com/ravi-hq/agent-on-demand",\n    "mount_path": "/workspace/agent-on-demand",\n    "secret_key": "GITHUB_TOKEN"\n  }\n]|}/>
-        <.error_msg field="repositories_json" errors={@errors}/>
-        <p class="text-xs text-zinc-500">
-          Each repo: <code>url</code> (https://...), <code>mount_path</code> (absolute), optional
-          <code>secret_key</code> (name of an env secret holding a token; used as
-          <code>x-access-token</code> for the clone), optional <code>ref</code> (branch/tag).
-        </p>
+        <div class="space-y-2">
+          <label class="block text-sm font-medium text-zinc-700">Repositories</label>
+
+          <div :if={@repositories == []} class="text-sm text-zinc-400 italic py-1">
+            No repositories configured.
+          </div>
+
+          <div
+            :for={{repo, i} <- Enum.with_index(@repositories)}
+            class="border border-zinc-200 rounded-md p-3 space-y-2 bg-zinc-50"
+          >
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-semibold text-zinc-500 uppercase tracking-wide">Repo {i + 1}</span>
+              <button
+                type="button"
+                phx-click="remove_repo"
+                phx-value-index={i}
+                class="text-xs text-rose-500 hover:text-rose-700 font-medium"
+              >
+                Remove
+              </button>
+            </div>
+            <.input
+              id={"repo_#{i}_url"}
+              name={"env[repositories][#{i}][url]"}
+              label="URL"
+              value={repo["url"] || ""}
+              placeholder="https://github.com/owner/repo"
+            />
+            <.input
+              id={"repo_#{i}_mount_path"}
+              name={"env[repositories][#{i}][mount_path]"}
+              label="Mount path"
+              value={repo["mount_path"] || ""}
+              placeholder="/workspace/repo"
+            />
+            <div class="grid grid-cols-2 gap-2">
+              <.input
+                id={"repo_#{i}_secret_key"}
+                name={"env[repositories][#{i}][secret_key]"}
+                label="Secret key (optional)"
+                value={repo["secret_key"] || ""}
+                placeholder="GITHUB_TOKEN"
+              />
+              <.input
+                id={"repo_#{i}_ref"}
+                name={"env[repositories][#{i}][ref]"}
+                label="Ref / branch (optional)"
+                value={repo["ref"] || ""}
+                placeholder="main"
+              />
+            </div>
+          </div>
+
+          <button
+            type="button"
+            phx-click="add_repo"
+            class="text-sm font-medium text-indigo-600 hover:text-indigo-800"
+          >
+            + Add repository
+          </button>
+          <.error_msg field="repositories" errors={@errors} />
+          <p class="text-xs text-zinc-500 mt-1">
+            Repos are cloned into the sprite before your setup script runs.
+            Set <code>mount_path</code> to where the repo should appear — use
+            <code>/workspace/repo-name</code> as the convention (cloned repos live under
+            <code>/workspace/</code> in the sprite). Use <code>secret_key</code> to name
+            an env secret whose value is passed as <code>x-access-token</code> for
+            cloning private repos.
+          </p>
+        </div>
 
         <div class="grid grid-cols-2 gap-3">
           <div class="space-y-1">
@@ -220,7 +325,7 @@ defmodule FountainWeb.EnvironmentsLive.Form do
         <.error_msg field="networking_config_json" errors={@errors}/>
 
         <div class="flex gap-2">
-          <.btn type="submit" phx-disable-with="Saving…">Save</.btn>
+          <.btn type="submit" phx-disable-with="Saving\u2026">Save</.btn>
           <.link navigate={~p"/environments"}><.btn_secondary>Cancel</.btn_secondary></.link>
         </div>
       </form>
@@ -238,7 +343,7 @@ defmodule FountainWeb.EnvironmentsLive.Form do
           <tbody>
             <tr :for={s <- @secrets} class="border-b border-zinc-100 last:border-0">
               <td class="py-2 font-mono">{s.key}</td>
-              <td class="py-2 text-zinc-400 font-mono text-xs">•••••••</td>
+              <td class="py-2 text-zinc-400 font-mono text-xs">&bull;&bull;&bull;&bull;&bull;&bull;&bull;</td>
               <td class="py-2 text-right">
                 <.btn_danger phx-click="delete_secret" phx-value-id={s.id} data-confirm="Delete?">Delete</.btn_danger>
               </td>

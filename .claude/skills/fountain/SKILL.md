@@ -14,6 +14,26 @@ each runs in its own fresh Sprite.
 > (the bare path is the LiveView UI). The right URL is
 > `$FOUNTAIN_BASE_URL/api/conversations`.
 
+## Finding cloned repositories
+
+If the environment was configured with repositories, they are cloned into the
+sprite **before** the setup script runs. **Look for cloned repos under
+`/workspace/`** — for example, a repo cloned with `mount_path:
+"/workspace/my-repo"` will be at `/workspace/my-repo` inside the sprite.
+
+```bash
+# List all cloned repos:
+ls /workspace/
+
+# Navigate to a specific repo:
+cd /workspace/my-repo
+```
+
+When writing prompts for spawned agents that need to work with source code,
+tell them to look in `/workspace/<repo-name>` — that is the conventional
+location. If you are unsure of the repo name, `ls /workspace/` will show
+what is available.
+
 ## The two patterns you'll use
 
 ### A. Fan out N agents and collect their answers
@@ -225,3 +245,4 @@ spawned_ids+=("$CONV")
 - **Re-read `$FOUNTAIN_TOKEN` from env on each call.** It's a per-conversation key scoped to this conversation's owner, not a long-lived admin token. Fountain rotates it on every fresh provision and every reattach (e.g. after a deploy or BEAM restart), revoking the previous value. If a request returns 401 with `"reason": "api_key_revoked"`, your cached copy is stale — re-source `$FOUNTAIN_TOKEN` from the environment before retrying. Don't leak it outside the sprite.
 - **API path is `/api/...`.** The bare `/conversations` redirects (302 → /login) for non-browser requests.
 - **Provenance is automatic.** `FOUNTAIN_CONVERSATION_ID` is always present in your sprite's environment. Every `POST /api/conversations` call that includes `X-Fountain-Parent-Conversation-Id: $FOUNTAIN_CONVERSATION_ID` records this conversation as the parent, letting the operator reconstruct the full spawn chain.
+- **Cloned repos are under `/workspace/`.** When an environment is configured with repositories, they are cloned to their configured `mount_path` (e.g. `/workspace/my-repo`) before the setup script runs. Always look in `/workspace/` first when you need to find source code.
