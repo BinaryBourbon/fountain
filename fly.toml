@@ -1,0 +1,59 @@
+# fly.toml — Fly.io deployment configuration
+#
+# Setup steps:
+#   1. fly launch --no-deploy        # creates the app and imports this config
+#   2. fly postgres create           # provision a Postgres cluster
+#   3. fly postgres attach <pg-app>  # sets DATABASE_URL secret automatically
+#   4. fly secrets set \
+#        SECRET_KEY_BASE=$(mix phx.gen.secret) \
+#        MASTER_SECRETS_KEY=$(openssl rand 32 | base64 | tr '+/' '-_' | tr -d '=') \
+#        GITHUB_OAUTH_CLIENT_ID=... \
+#        GITHUB_OAUTH_CLIENT_SECRET=... \
+#        STRIPE_SECRET_KEY=... \
+#        STRIPE_PUBLISHABLE_KEY=... \
+#        STRIPE_WEBHOOK_SECRET=... \
+#        STRIPE_PRICE_ID=... \
+#        RESEND_API_KEY=... \
+#        SPRITES_TOKEN=...
+#   5. fly deploy
+
+app = 'fountain'
+primary_region = 'sea'
+
+[build]
+
+[deploy]
+  release_command = '/app/bin/fountain_server eval "Fountain.Release.migrate()"'
+
+[env]
+  PHX_SERVER = 'true'
+  PORT = '8080'
+  FOUNTAIN_DOMAIN = 'fountain.fly.dev'
+  EMAIL_FROM = 'noreply@updates.inevitable.fyi'
+  OTEL_TRACES_EXPORTER = 'none'
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = 'stop'
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ['app']
+
+  [http_service.concurrency]
+    type = 'connections'
+    hard_limit = 1000
+    soft_limit = 800
+
+  [[http_service.checks]]
+    grace_period = '10s'
+    interval = '30s'
+    method = 'GET'
+    path = '/health'
+    protocol = 'http'
+    timeout = '5s'
+
+[[vm]]
+  memory = '1gb'
+  cpu_kind = 'shared'
+  cpus = 1
