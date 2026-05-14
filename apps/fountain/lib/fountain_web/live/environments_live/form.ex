@@ -5,6 +5,8 @@ defmodule FountainWeb.EnvironmentsLive.Form do
   alias Fountain.{Crypto, Environments}
   alias Fountain.Environments.Environment
 
+  @supported_managers ~w(apt npm pip cargo gem go)
+
   @impl true
   def mount(params, _session, socket) do
     user_id = socket.assigns.current_user.id
@@ -22,7 +24,10 @@ defmodule FountainWeb.EnvironmentsLive.Form do
      |> assign(:errors, %{})
      |> assign(:secrets, secrets_for(env))
      |> assign(:new_secret, %{"key" => "", "value" => ""})
-     |> assign(:repositories, env.repositories || [])}
+     |> assign(:repositories, env.repositories || [])
+     |> assign(:env_vars, env_to_env_var_list(env.env_vars || %{}))
+     |> assign(:packages, env_to_packages_strings(env.packages || %{}))
+     |> assign(:available_managers, available_managers(env.packages || %{}))}
   end
 
   defp load(%{"id" => id}, user_id), do: {Environments.get_environment!(id, user_id), :edit}
@@ -35,11 +40,23 @@ defmodule FountainWeb.EnvironmentsLive.Form do
     %{
       "name" => e.name || "",
       "setup_script" => e.setup_script || "",
-      "env_vars_json" => Jason.encode!(e.env_vars || %{}, pretty: true),
-      "packages_json" => Jason.encode!(e.packages || %{}, pretty: true),
       "networking_type" => e.networking_type || "unrestricted",
       "networking_config_json" => Jason.encode!(e.networking_config || %{}, pretty: true)
     }
+  end
+
+  defp env_to_env_var_list(env_vars) do
+    Enum.map(env_vars, fn {k, v} -> %{"key" => k, "value" => v} end)
+  end
+
+  defp env_to_packages_strings(packages) do
+    Map.new(packages, fn {manager, pkgs} ->
+      {manager, Enum.join(pkgs, "\n")}
+    end)
+  end
+
+  defp available_managers(packages) do
+    @supported_managers -- Map.keys(packages)
   end
 
   defp secrets_for(%Environment{id: nil}), do: []
@@ -48,7 +65,42 @@ defmodule FountainWeb.EnvironmentsLive.Form do
   @impl true
   def handle_event("validate", %{"env" => params}, socket) do
     repos = extract_repos_from_params(params)
-    {:noreply, socket |> assign(:form, params) |> assign(:repositories, repos)}
+    env_vars = extract_env_vars_from_params(params)
+    packages = extract_packages_from_params(params, socket.assigns.packages)
+
+    {:noreply,
+     socket
+     |> assign(:form, params)
+     |> assign(:repositories, repos)
+     |> assign(:env_vars, env_vars)
+     |> assign(:packages, packages)}
+  end
+
+  def handle_event("add_env_var", _, socket) do
+    env_vars = socket.assigns.env_vars ++ [%{"key" => "", "value" => ""}]
+    {:noreply, assign(socket, :env_vars, env_vars)}
+  end
+
+  def handle_event("remove_env_var", %{"index" => index_str}, socket) do
+    index = String.to_integer(index_str)
+    env_vars = List.delete_at(socket.assigns.env_vars, index)
+    {:noreply, assign(socket, :env_vars, env_vars)}
+  end
+
+  def handle_event("add_package_manager", %{"manager" => manager}, socket) do
+    packages = Map.put(socket.assigns.packages, manager, "")
+    available = socket.assigns.available_managers -- [manager]
+    {:noreply, socket |> assign(:packages, packages) |> assign(:available_managers, available)}
+  end
+
+  def handle_event("remove_package_manager", %{"manager" => manager}, socket) do
+    packages = Map.delete(socket.assigns.packages, manager)
+
+    available =
+      (socket.assigns.available_managers ++ [manager])
+      |> Enum.sort_by(&Enum.find_index(@supported_managers, fn m -> m == &1 end))
+
+    {:noreply, socket |> assign(:packages, packages) |> assign(:available_managers, available)}
   end
 
   def handle_event("add_repo", _, socket) do
@@ -67,19 +119,35 @@ defmodule FountainWeb.EnvironmentsLive.Form do
 
   def handle_event("submit", %{"env" => params}, socket) do
     repos = extract_repos_from_params(params)
+    env_vars_list = extract_env_vars_from_params(params)
+    packages_strings = extract_packages_from_params(params, socket.assigns.packages)
 
-    with {:ok, env_vars} <- parse_json_object(params["env_vars_json"], "env_vars_json"),
-         {:ok, packages} <- parse_json_object(params["packages_json"], "packages_json"),
-         {:ok, networking} <-
+    with {:ok, networking} <-
            parse_json_object(params["networking_config_json"], "networking_config_json"),
+         :ok <- validate_env_vars(env_vars_list),
          :ok <- validate_repos(repos) do
+      env_vars_map = Map.new(env_vars_list, fn %{"key" => k, "value" => v} -> {k, v} end)
+
+      packages_map =
+        packages_strings
+        |> Map.new(fn {manager, pkg_str} ->
+          pkgs =
+            pkg_str
+            |> String.split("\n")
+            |> Enum.map(&String.trim/1)
+            |> Enum.reject(&(&1 == ""))
+
+          {manager, pkgs}
+        end)
+        |> Map.reject(fn {_, pkgs} -> pkgs == [] end)
+
       attrs =
         params
-        |> Map.put("env_vars", env_vars)
-        |> Map.put("packages", packages)
+        |> Map.put("env_vars", env_vars_map)
+        |> Map.put("packages", packages_map)
         |> Map.put("networking_config", networking)
         |> Map.put("repositories", repos)
-        |> Map.drop(["env_vars_json", "packages_json", "networking_config_json"])
+        |> Map.drop(["networking_config_json"])
 
       save(socket, attrs)
     else
@@ -94,7 +162,11 @@ defmodule FountainWeb.EnvironmentsLive.Form do
 
   def handle_event("add_secret", %{"secret" => %{"key" => k, "value" => v}}, socket)
       when k != "" and v != "" do
-    case Environments.upsert_secret(socket.assigns.env, %{"key" => k, "value" => v}, socket.assigns.tenant_key) do
+    case Environments.upsert_secret(
+           socket.assigns.env,
+           %{"key" => k, "value" => v},
+           socket.assigns.tenant_key
+         ) do
       {:ok, _} ->
         {:noreply,
          socket
@@ -126,6 +198,7 @@ defmodule FountainWeb.EnvironmentsLive.Form do
 
   defp save(%{assigns: %{action: :new}} = socket, attrs) do
     attrs = Map.put(attrs, "user_id", socket.assigns.user_id)
+
     case Environments.create_environment(attrs) do
       {:ok, env} ->
         {:noreply,
@@ -142,20 +215,34 @@ defmodule FountainWeb.EnvironmentsLive.Form do
     case Environments.update_environment(env, attrs) do
       {:ok, _env} ->
         {:noreply,
-         socket |> put_flash(:info, "Environment updated") |> push_navigate(to: ~p"/environments")}
+         socket
+         |> put_flash(:info, "Environment updated")
+         |> push_navigate(to: ~p"/environments")}
 
       {:error, cs} ->
         {:noreply, assign(socket, :errors, changeset_errors(cs))}
     end
   end
 
-  defp parse_json_object(nil, _field), do: {:ok, %{}}
-  defp parse_json_object("", _field), do: {:ok, %{}}
+  defp extract_env_vars_from_params(params) do
+    case params["env_vars"] do
+      nil ->
+        []
 
-  defp parse_json_object(json, field) do
-    case Jason.decode(json) do
-      {:ok, m} when is_map(m) -> {:ok, m}
-      _ -> {:error, field, "must be a JSON object"}
+      vars_map when is_map(vars_map) ->
+        vars_map
+        |> Enum.sort_by(fn {k, _} -> String.to_integer(k) end)
+        |> Enum.map(fn {_, r} -> r end)
+
+      _ ->
+        []
+    end
+  end
+
+  defp extract_packages_from_params(params, current_packages) do
+    case params["packages"] do
+      pkg_map when is_map(pkg_map) -> pkg_map
+      _ -> current_packages
     end
   end
 
@@ -171,6 +258,23 @@ defmodule FountainWeb.EnvironmentsLive.Form do
 
       _ ->
         []
+    end
+  end
+
+  defp validate_env_vars([]), do: :ok
+
+  defp validate_env_vars(env_vars) do
+    keys = Enum.map(env_vars, &(&1["key"] || ""))
+
+    cond do
+      Enum.any?(keys, &(&1 == "")) ->
+        {:error, "env_vars", "each variable must have a key"}
+
+      length(keys) != length(Enum.uniq(keys)) ->
+        {:error, "env_vars", "variable keys must be unique"}
+
+      true ->
+        :ok
     end
   end
 
@@ -200,6 +304,16 @@ defmodule FountainWeb.EnvironmentsLive.Form do
     end)
   end
 
+  defp parse_json_object(nil, _field), do: {:ok, %{}}
+  defp parse_json_object("", _field), do: {:ok, %{}}
+
+  defp parse_json_object(json, field) do
+    case Jason.decode(json) do
+      {:ok, m} when is_map(m) -> {:ok, m}
+      _ -> {:error, field, "must be a JSON object"}
+    end
+  end
+
   defp changeset_errors(cs) do
     cs
     |> Ecto.Changeset.traverse_errors(fn {msg, opts} ->
@@ -225,20 +339,107 @@ defmodule FountainWeb.EnvironmentsLive.Form do
         <.input id="env_name" name="env[name]" label="Name" value={@form["name"]} autofocus required />
         <.error_msg field="name" errors={@errors}/>
 
-        <.input id="packages_json" name="env[packages_json]" type="textarea" rows="3"
-          label="Packages (JSON object)" value={@form["packages_json"]}
-          placeholder='{"apt": ["jq", "ripgrep"], "npm": ["typescript"]}'/>
-        <.error_msg field="packages_json" errors={@errors}/>
+        <%!-- Packages --%>
+        <div class="space-y-2">
+          <label class="block text-sm font-medium text-zinc-700">Packages</label>
+
+          <div :if={map_size(@packages) == 0} class="text-sm text-zinc-400 italic py-1">
+            No packages configured.
+          </div>
+
+          <div
+            :for={{manager, pkg_str} <- Enum.sort(@packages)}
+            class="border border-zinc-200 rounded-md p-3 bg-zinc-50 space-y-1"
+          >
+            <div class="flex items-center justify-between">
+              <span class="text-sm font-mono font-semibold text-zinc-700">{manager}</span>
+              <button
+                type="button"
+                phx-click="remove_package_manager"
+                phx-value-manager={manager}
+                class="text-xs text-rose-500 hover:text-rose-700 font-medium"
+              >
+                Remove
+              </button>
+            </div>
+            <textarea
+              id={"pkg_#{manager}"}
+              name={"env[packages][#{manager}]"}
+              rows="3"
+              placeholder="one package per line"
+              class="w-full rounded border border-zinc-300 px-2 py-1.5 text-sm font-mono resize-y"
+            >{pkg_str}</textarea>
+          </div>
+
+          <div :if={@available_managers != []} class="flex gap-1.5 flex-wrap">
+            <button
+              :for={m <- @available_managers}
+              type="button"
+              phx-click="add_package_manager"
+              phx-value-manager={m}
+              class="text-xs border border-dashed border-zinc-300 rounded px-2 py-1 text-zinc-500 hover:border-indigo-400 hover:text-indigo-600 transition-colors"
+            >
+              + {m}
+            </button>
+          </div>
+          <.error_msg field="packages" errors={@errors} />
+        </div>
 
         <.input id="setup_script" name="env[setup_script]" type="textarea" rows="6"
           label="Setup script (runs after packages, before agent turns)" value={@form["setup_script"]}
           placeholder="curl -LsSf https://astral.sh/uv/install.sh | sh"/>
 
-        <.input id="env_vars_json" name="env[env_vars_json]" type="textarea" rows="4"
-          label="Env vars (JSON object — non-secret)" value={@form["env_vars_json"]}
-          placeholder='{"PROJECT_ROOT": "/workspace/repo"}'/>
-        <.error_msg field="env_vars_json" errors={@errors}/>
+        <%!-- Env vars --%>
+        <div class="space-y-2">
+          <label class="block text-sm font-medium text-zinc-700">
+            Env vars <span class="font-normal text-zinc-400">(non-secret)</span>
+          </label>
 
+          <div :if={@env_vars == []} class="text-sm text-zinc-400 italic py-1">
+            No variables configured.
+          </div>
+
+          <div class="space-y-1.5">
+            <div :for={{ev, i} <- Enum.with_index(@env_vars)} class="flex gap-2 items-center">
+              <input
+                id={"ev_#{i}_key"}
+                type="text"
+                name={"env[env_vars][#{i}][key]"}
+                value={ev["key"] || ""}
+                placeholder="KEY"
+                class="w-36 rounded border border-zinc-300 px-2 py-1.5 text-sm font-mono"
+              />
+              <span class="text-zinc-400 text-sm select-none">=</span>
+              <input
+                id={"ev_#{i}_value"}
+                type="text"
+                name={"env[env_vars][#{i}][value]"}
+                value={ev["value"] || ""}
+                placeholder="value"
+                class="flex-1 rounded border border-zinc-300 px-2 py-1.5 text-sm"
+              />
+              <button
+                type="button"
+                phx-click="remove_env_var"
+                phx-value-index={i}
+                class="text-xs text-rose-500 hover:text-rose-700 font-medium shrink-0"
+              >
+                Remove
+              </button>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            phx-click="add_env_var"
+            class="text-sm font-medium text-indigo-600 hover:text-indigo-800"
+          >
+            + Add variable
+          </button>
+          <.error_msg field="env_vars" errors={@errors} />
+        </div>
+
+        <%!-- Repositories --%>
         <div class="space-y-2">
           <label class="block text-sm font-medium text-zinc-700">Repositories</label>
 
@@ -325,7 +526,7 @@ defmodule FountainWeb.EnvironmentsLive.Form do
         <.error_msg field="networking_config_json" errors={@errors}/>
 
         <div class="flex gap-2">
-          <.btn type="submit" phx-disable-with="Saving\u2026">Save</.btn>
+          <.btn type="submit" phx-disable-with="Saving…">Save</.btn>
           <.link navigate={~p"/environments"}><.btn_secondary>Cancel</.btn_secondary></.link>
         </div>
       </form>
