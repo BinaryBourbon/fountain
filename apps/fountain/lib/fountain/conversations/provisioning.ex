@@ -62,13 +62,13 @@ defmodule Fountain.Conversations.Provisioning do
     # Quote values containing whitespace, quotes, or shell metacharacters.
     # Escape inner double quotes.
     if String.match?(v, ~r/[\s"'\\$`]/) do
-      ~s|"|  <> String.replace(v, ~s|"|, ~s|\\"|) <> ~s|"|   
+      ~s|"| <> String.replace(v, ~s|"|, ~s|\\"|) <> ~s|"|
     else
       v
     end
   end
 
-  # ── checkpoint create / restore ────────────────────────────────────────────────────────────
+  # ── checkpoint create / restore ───────────────────────────────────────────
 
   @doc """
   Create a sprites.dev checkpoint of the fully-provisioned sprite. The
@@ -148,7 +148,7 @@ defmodule Fountain.Conversations.Provisioning do
     )
   end
 
-  # ── packages ──────────────────────────────────────────────────────────────────────────────
+  # ── packages ──────────────────────────────────────────────────────────────
 
   @doc """
   Install OS / language packages declared on the env. Recognized keys:
@@ -236,7 +236,7 @@ defmodule Fountain.Conversations.Provisioning do
     if quoted == "", do: [], else: ["npm install -g --no-progress --silent #{quoted}"]
   end
 
-  # ── network policy ─────────────────────────────────────────────────────────────────────────
+  # ── network policy ────────────────────────────────────────────────────────
 
   @doc """
   Apply the env's networking config to the sprite. `unrestricted` is a
@@ -273,7 +273,7 @@ defmodule Fountain.Conversations.Provisioning do
 
   def apply_network_policy(_sprite, _env, _conv_id), do: :ok
 
-  # ── git clone ──────────────────────────────────────────────────────────────────────────────
+  # ── git clone ─────────────────────────────────────────────────────────────
 
   @doc """
   Clone every repository declared on the env into the sprite at its
@@ -448,7 +448,7 @@ defmodule Fountain.Conversations.Provisioning do
 
   def scrub_token(s), do: s
 
-  # ── helpers ────────────────────────────────────────────────────────────────────────────
+  # ── helpers ───────────────────────────────────────────────────────────────
 
   @doc false
   def shell_quote(s), do: "'" <> String.replace(s, "'", "'\\''" ) <> "'"

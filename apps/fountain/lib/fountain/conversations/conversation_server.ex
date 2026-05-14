@@ -16,7 +16,7 @@ defmodule Fountain.Conversations.ConversationServer do
   alias Fountain.{Accounts, Agents, Conversations, Crypto, Environments, InferenceCredentials, SpritesClient, Substitution, Vaults}
   alias Fountain.Conversations.Conversation
 
-  # ── public api ───────────────────────────────────────────────────────────────────────────────
+  # ── public api ────────────────────────────────────────────────────────────
 
   def start_link(args) do
     conv_id = Keyword.fetch!(args, :conversation_id)
@@ -92,7 +92,7 @@ defmodule Fountain.Conversations.ConversationServer do
     end
   end
 
-  # ── GenServer ─────────────────────────────────────────────────────────────────────────────
+  # ── GenServer ─────────────────────────────────────────────────────────────
 
   @impl true
   def init(args) do
@@ -846,7 +846,7 @@ defmodule Fountain.Conversations.ConversationServer do
     :ok
   end
 
-  # ── helpers ──────────────────────────────────────────────────────────────────────────────
+  # ── helpers ───────────────────────────────────────────────────────────────
 
   defp create_sprite(name) do
     client = SpritesClient.get!()

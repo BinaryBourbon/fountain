@@ -146,7 +146,7 @@ if config_env() == :prod and server? do
     http: [ip: {0, 0, 0, 0, 0, 0, 0, 0}],
     secret_key_base: secret_key_base
 
-  # ── OpenTelemetry ─────────────────────────────────────────────────────────────────────────
+  # ── OpenTelemetry ─────────────────────────────────────────────────────────
   #
   # Export traces via OTLP (HTTP/protobuf). Reads standard OTEL env vars:
   #   OTEL_SERVICE_NAME          — defaults to "fountain"
