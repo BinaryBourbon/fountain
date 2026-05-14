@@ -170,33 +170,39 @@ defmodule Fountain.Conversations.Provisioning do
         :ok
 
       cmds ->
-        publish_stage(conv_id, "packages", "started", %{commands: length(cmds)})
+        Fountain.Telemetry.span(
+          [:packages],
+          %{conv_id: conv_id, commands: length(cmds)},
+          fn ->
+            publish_stage(conv_id, "packages", "started", %{commands: length(cmds)})
 
-        result =
-          Enum.reduce_while(cmds, :ok, fn cmd, _ ->
-            {output, code} =
-              Sprites.cmd(sprite, "bash", ["-lc", cmd],
-                env: sprite_env,
-                stderr_to_stdout: true,
-                timeout: 300_000
-              )
+            result =
+              Enum.reduce_while(cmds, :ok, fn cmd, _ ->
+                {output, code} =
+                  Sprites.cmd(sprite, "bash", ["-lc", cmd],
+                    env: sprite_env,
+                    stderr_to_stdout: true,
+                    timeout: 300_000
+                  )
 
-            log_output(conv_id, "packages", output)
+                log_output(conv_id, "packages", output)
 
-            if code == 0,
-              do: {:cont, :ok},
-              else: {:halt, {:error, {:packages, code, output}}}
-          end)
+                if code == 0,
+                  do: {:cont, :ok},
+                  else: {:halt, {:error, {:packages, code, output}}}
+              end)
 
-        case result do
-          :ok ->
-            publish_stage(conv_id, "packages", "done")
-            :ok
+            case result do
+              :ok ->
+                publish_stage(conv_id, "packages", "done")
+                {:ok, %{outcome: :ok}}
 
-          {:error, {:packages, code, _}} = err ->
-            publish_stage(conv_id, "packages", "failed", %{exit_code: code})
-            err
-        end
+              {:error, {:packages, code, _}} = err ->
+                publish_stage(conv_id, "packages", "failed", %{exit_code: code})
+                {err, %{outcome: :failed, exit_code: code}}
+            end
+          end
+        )
     end
   end
 
@@ -445,7 +451,7 @@ defmodule Fountain.Conversations.Provisioning do
   # ── helpers ───────────────────────────────────────────────────────────────
 
   @doc false
-  def shell_quote(s), do: "'" <> String.replace(s, "'", "'\\''") <> "'"
+  def shell_quote(s), do: "'" <> String.replace(s, "'", "'\\''" ) <> "'"
 
   defp publish_stage(conv_id, stage, state, meta \\ %{}) do
     Conversations.log!(%{
