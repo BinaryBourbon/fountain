@@ -87,7 +87,7 @@ defmodule Fountain.Runtimes.Claude.StreamTracer do
     :ok
   end
 
-  # ── private ───────────────────────────────────────────────────────────────
+  # ── private ─────────────────────────────────────────────────────────────────────────
 
   # Split at newlines; last element is the (possibly empty) incomplete tail.
   defp split_lines(s) do
@@ -106,7 +106,7 @@ defmodule Fountain.Runtimes.Claude.StreamTracer do
     end
   end
 
-  # ── event handlers ────────────────────────────────────────────────────────
+  # ── event handlers ────────────────────────────────────────────────────────────────────
 
   # System init: record model + tool count.
   defp process_event(tracer, %{"type" => "system", "subtype" => "init"} = event) do
@@ -178,7 +178,7 @@ defmodule Fountain.Runtimes.Claude.StreamTracer do
 
   defp process_event(tracer, _event), do: tracer
 
-  # ── content block handlers ────────────────────────────────────────────────
+  # ── content block handlers ───────────────────────────────────────────────────────────────────
 
   # Tool use block: open a child span for the tool call.
   defp process_content_block(tracer, %{"type" => "tool_use", "id" => id, "name" => name}) do
@@ -211,7 +211,7 @@ defmodule Fountain.Runtimes.Claude.StreamTracer do
 
   defp process_content_block(tracer, _block), do: tracer
 
-  # ── helpers ───────────────────────────────────────────────────────────────
+  # ── helpers ─────────────────────────────────────────────────────────────────────────
 
   defp set_if_present(map, key, attr) do
     case Map.get(map, key) do

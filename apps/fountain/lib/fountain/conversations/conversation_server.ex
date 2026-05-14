@@ -16,7 +16,7 @@ defmodule Fountain.Conversations.ConversationServer do
   alias Fountain.{Accounts, Agents, Conversations, Crypto, Environments, InferenceCredentials, SpritesClient, Substitution, Vaults}
   alias Fountain.Conversations.Conversation
 
-  # ── public api ────────────────────────────────────────────────────────────
+  # ── public api ───────────────────────────────────────────────────────────────────────────────
 
   def start_link(args) do
     conv_id = Keyword.fetch!(args, :conversation_id)
@@ -92,7 +92,7 @@ defmodule Fountain.Conversations.ConversationServer do
     end
   end
 
-  # ── GenServer ─────────────────────────────────────────────────────────────
+  # ── GenServer ─────────────────────────────────────────────────────────────────────────────
 
   @impl true
   def init(args) do
@@ -111,6 +111,9 @@ defmodule Fountain.Conversations.ConversationServer do
       # OTel span context for the in-flight turn (started in kick_turn,
       # ended in the :exit / :interrupt handlers).
       current_turn_span: nil,
+      # Stream tracer for parsing Claude's stream-json stdout into OTel
+      # child spans and events. nil for non-Claude runtimes.
+      stream_tracer: nil,
       # Bytes of replayed output to drop on reattach, keyed by stream.
       # Empty map outside a reattach window. See attempt_session_attach.
       replay_skip: %{},
@@ -705,6 +708,9 @@ defmodule Fountain.Conversations.ConversationServer do
       turn_number: state.current_turn.turn_number
     })
 
+    # Finalize stream tracer: close any tool spans still open (abandoned calls).
+    Fountain.Runtimes.Claude.StreamTracer.finalize(state.stream_tracer)
+
     end_turn_span(state.current_turn_span, :error, %{"outcome" => "interrupted"})
 
     conv = Conversations._unsafe_get_conversation!(state.conversation_id)
@@ -716,7 +722,8 @@ defmodule Fountain.Conversations.ConversationServer do
        | current_command: nil,
          current_command_ref: nil,
          current_turn: nil,
-         current_turn_span: nil
+         current_turn_span: nil,
+         stream_tracer: nil
      }}
   end
 
@@ -735,7 +742,36 @@ defmodule Fountain.Conversations.ConversationServer do
 
   @impl true
   def handle_info({:stdout, %{ref: ref}, data}, %{current_command_ref: ref} = state) do
-    {:noreply, log_with_replay_skip(state, "stdout", data)}
+    new_state = log_with_replay_skip(state, "stdout", data)
+
+    # Feed non-replayed bytes into the stream tracer (Claude only).
+    # Replayed bytes were already processed in a prior BEAM lifetime; skip them
+    # to avoid duplicate spans. The replay window shrinks as we consume bytes,
+    # so we compute how much of this chunk is genuinely new.
+    skip = Map.get(state.replay_skip, "stdout", 0)
+    size = byte_size(data)
+
+    new_tracer =
+      cond do
+        is_nil(state.stream_tracer) ->
+          nil
+
+        skip == 0 ->
+          Fountain.Runtimes.Claude.StreamTracer.handle_chunk(state.stream_tracer, data)
+
+        skip >= size ->
+          # Entire chunk is replayed — discard.
+          state.stream_tracer
+
+        true ->
+          # Partial replay: only forward the fresh suffix.
+          Fountain.Runtimes.Claude.StreamTracer.handle_chunk(
+            state.stream_tracer,
+            binary_part(data, skip, size - skip)
+          )
+      end
+
+    {:noreply, %{new_state | stream_tracer: new_tracer}}
   end
 
   def handle_info({:stderr, %{ref: ref}, data}, %{current_command_ref: ref} = state) do
@@ -758,6 +794,9 @@ defmodule Fountain.Conversations.ConversationServer do
       exit_code: code
     })
 
+    # Finalize stream tracer: close any tool spans still open (abandoned calls).
+    Fountain.Runtimes.Claude.StreamTracer.finalize(state.stream_tracer)
+
     # Close the OTel turn span we opened in kick_turn.
     end_turn_span(
       state.current_turn_span,
@@ -774,7 +813,8 @@ defmodule Fountain.Conversations.ConversationServer do
        | current_command: nil,
          current_command_ref: nil,
          current_turn: nil,
-         current_turn_span: nil
+         current_turn_span: nil,
+         stream_tracer: nil
      }}
   end
 
@@ -806,7 +846,7 @@ defmodule Fountain.Conversations.ConversationServer do
     :ok
   end
 
-  # ── helpers ───────────────────────────────────────────────────────────────
+  # ── helpers ──────────────────────────────────────────────────────────────────────────────
 
   defp create_sprite(name) do
     client = SpritesClient.get!()
@@ -945,7 +985,11 @@ defmodule Fountain.Conversations.ConversationServer do
           "turn_number" => turn_number,
           "mode" => Atom.to_string(mode),
           "runtime" => to_string(conv.runtime),
-          "model" => agent && agent.model
+          "model" => agent && agent.model,
+          "agent_id" => agent && agent.id,
+          "user_id" => state.user_id,
+          "prompt_length" => byte_size(prompt),
+          "image_count" => length(images)
         }
       })
 
@@ -971,13 +1015,21 @@ defmodule Fountain.Conversations.ConversationServer do
             :ok = Sprites.close_stdin(command)
           end
 
+          # Start a stream tracer for Claude (stream-json → OTel child spans).
+          # Other runtimes produce unstructured output; tracer stays nil.
+          stream_tracer =
+            if state.runtime_module == Fountain.Runtimes.Claude do
+              Fountain.Runtimes.Claude.StreamTracer.new(turn_span)
+            end
+
           %{
             state
             | current_command: command,
               current_command_ref: command.ref,
               current_turn: turn,
               runtime_session_id: runtime_session_id,
-              current_turn_span: turn_span
+              current_turn_span: turn_span,
+              stream_tracer: stream_tracer
           }
 
         {:error, reason} ->

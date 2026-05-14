@@ -145,4 +145,54 @@ if config_env() == :prod and server? do
     url: [host: host, port: 443, scheme: "https"],
     http: [ip: {0, 0, 0, 0, 0, 0, 0, 0}],
     secret_key_base: secret_key_base
+
+  # ── OpenTelemetry ─────────────────────────────────────────────────────────────────────────
+  #
+  # Export traces via OTLP (HTTP/protobuf). Reads standard OTEL env vars:
+  #   OTEL_SERVICE_NAME          — defaults to "fountain"
+  #   OTEL_EXPORTER_OTLP_ENDPOINT — e.g. "https://api.honeycomb.io"
+  #   OTEL_EXPORTER_OTLP_HEADERS  — e.g. "x-honeycomb-team=<key>"
+  #
+  # For Honeycomb specifically you can also set HONEYCOMB_API_KEY and the
+  # exporter config below will wire it up automatically.
+  otel_endpoint =
+    System.get_env("OTEL_EXPORTER_OTLP_ENDPOINT") ||
+      System.get_env("HONEYCOMB_ENDPOINT", "https://api.honeycomb.io")
+
+  # Parse "key=val,key2=val2" header strings produced by OTEL_EXPORTER_OTLP_HEADERS,
+  # then layer on Honeycomb-specific headers if HONEYCOMB_API_KEY is set.
+  otel_headers =
+    case System.get_env("OTEL_EXPORTER_OTLP_HEADERS") do
+      nil ->
+        []
+
+      raw ->
+        raw
+        |> String.split(",")
+        |> Enum.flat_map(fn pair ->
+          case String.split(pair, "=", parts: 2) do
+            [k, v] -> [{String.trim(k), String.trim(v)}]
+            _ -> []
+          end
+        end)
+    end
+
+  otel_headers =
+    case System.get_env("HONEYCOMB_API_KEY") do
+      nil -> otel_headers
+      key -> [{"x-honeycomb-team", key} | otel_headers]
+    end
+
+  config :opentelemetry,
+    span_processor: :batch,
+    traces_exporter: :otlp,
+    resource: [
+      {"service.name", System.get_env("OTEL_SERVICE_NAME", "fountain")},
+      {"deployment.environment", System.get_env("FLY_APP_NAME", "prod")}
+    ]
+
+  config :opentelemetry_exporter,
+    otlp_protocol: :http_protobuf,
+    otlp_endpoint: otel_endpoint,
+    otlp_headers: otel_headers
 end

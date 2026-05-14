@@ -62,13 +62,13 @@ defmodule Fountain.Conversations.Provisioning do
     # Quote values containing whitespace, quotes, or shell metacharacters.
     # Escape inner double quotes.
     if String.match?(v, ~r/[\s"'\\$`]/) do
-      ~s|"| <> String.replace(v, ~s|"|, ~s|\\"|) <> ~s|"|
+      ~s|"|  <> String.replace(v, ~s|"|, ~s|\\"|) <> ~s|"|   
     else
       v
     end
   end
 
-  # ── checkpoint create / restore ───────────────────────────────────────────
+  # ── checkpoint create / restore ────────────────────────────────────────────────────────────
 
   @doc """
   Create a sprites.dev checkpoint of the fully-provisioned sprite. The
@@ -148,7 +148,7 @@ defmodule Fountain.Conversations.Provisioning do
     )
   end
 
-  # ── packages ──────────────────────────────────────────────────────────────
+  # ── packages ──────────────────────────────────────────────────────────────────────────────
 
   @doc """
   Install OS / language packages declared on the env. Recognized keys:
@@ -170,33 +170,39 @@ defmodule Fountain.Conversations.Provisioning do
         :ok
 
       cmds ->
-        publish_stage(conv_id, "packages", "started", %{commands: length(cmds)})
+        Fountain.Telemetry.span(
+          [:packages],
+          %{conv_id: conv_id, commands: length(cmds)},
+          fn ->
+            publish_stage(conv_id, "packages", "started", %{commands: length(cmds)})
 
-        result =
-          Enum.reduce_while(cmds, :ok, fn cmd, _ ->
-            {output, code} =
-              Sprites.cmd(sprite, "bash", ["-lc", cmd],
-                env: sprite_env,
-                stderr_to_stdout: true,
-                timeout: 300_000
-              )
+            result =
+              Enum.reduce_while(cmds, :ok, fn cmd, _ ->
+                {output, code} =
+                  Sprites.cmd(sprite, "bash", ["-lc", cmd],
+                    env: sprite_env,
+                    stderr_to_stdout: true,
+                    timeout: 300_000
+                  )
 
-            log_output(conv_id, "packages", output)
+                log_output(conv_id, "packages", output)
 
-            if code == 0,
-              do: {:cont, :ok},
-              else: {:halt, {:error, {:packages, code, output}}}
-          end)
+                if code == 0,
+                  do: {:cont, :ok},
+                  else: {:halt, {:error, {:packages, code, output}}}
+              end)
 
-        case result do
-          :ok ->
-            publish_stage(conv_id, "packages", "done")
-            :ok
+            case result do
+              :ok ->
+                publish_stage(conv_id, "packages", "done")
+                {:ok, %{outcome: :ok}}
 
-          {:error, {:packages, code, _}} = err ->
-            publish_stage(conv_id, "packages", "failed", %{exit_code: code})
-            err
-        end
+              {:error, {:packages, code, _}} = err ->
+                publish_stage(conv_id, "packages", "failed", %{exit_code: code})
+                {err, %{outcome: :failed, exit_code: code}}
+            end
+          end
+        )
     end
   end
 
@@ -230,7 +236,7 @@ defmodule Fountain.Conversations.Provisioning do
     if quoted == "", do: [], else: ["npm install -g --no-progress --silent #{quoted}"]
   end
 
-  # ── network policy ────────────────────────────────────────────────────────
+  # ── network policy ─────────────────────────────────────────────────────────────────────────
 
   @doc """
   Apply the env's networking config to the sprite. `unrestricted` is a
@@ -267,7 +273,7 @@ defmodule Fountain.Conversations.Provisioning do
 
   def apply_network_policy(_sprite, _env, _conv_id), do: :ok
 
-  # ── git clone ─────────────────────────────────────────────────────────────
+  # ── git clone ──────────────────────────────────────────────────────────────────────────────
 
   @doc """
   Clone every repository declared on the env into the sprite at its
@@ -442,10 +448,10 @@ defmodule Fountain.Conversations.Provisioning do
 
   def scrub_token(s), do: s
 
-  # ── helpers ───────────────────────────────────────────────────────────────
+  # ── helpers ────────────────────────────────────────────────────────────────────────────
 
   @doc false
-  def shell_quote(s), do: "'" <> String.replace(s, "'", "'\\''") <> "'"
+  def shell_quote(s), do: "'" <> String.replace(s, "'", "'\\''" ) <> "'"
 
   defp publish_stage(conv_id, stage, state, meta \\ %{}) do
     Conversations.log!(%{
