@@ -130,6 +130,19 @@
             mounted() { this.el.scrollTop = this.el.scrollHeight; },
             updated() { this.el.scrollTop = this.el.scrollHeight; }
           },
+          // Prevents a collapsed <details> section from staying closed when
+          // LiveView adds new content to it. Because `open?` is always `true`
+          // for turn/recursive sections, LiveView's diff never re-sends the
+          // `open` attribute — so a user-collapsed section won't reopen on its
+          // own. This hook restores `open` whenever the element's content is
+          // updated and `data-force-open` says it should stay open.
+          KeepOpen: {
+            updated() {
+              if (this.el.dataset.forceOpen === "true" && !this.el.open) {
+                this.el.open = true;
+              }
+            }
+          },
           SubmitOnCmdEnter: {
             mounted() {
               this.handler = (e) => {

@@ -875,7 +875,13 @@ defmodule FountainWeb.ConversationsLive.Show do
       )
 
     ~H"""
-    <details open={@open?} class="group">
+    <details
+      id={"section-#{@node.started.id}"}
+      open={@open?}
+      data-force-open={to_string(@open?)}
+      phx-hook="KeepOpen"
+      class="group"
+    >
       <summary class={[
         "cursor-pointer flex items-center gap-3 text-xs",
         not @has_kids? && "list-none cursor-default"
