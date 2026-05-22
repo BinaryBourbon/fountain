@@ -10,10 +10,13 @@
 # is enough durability for a personal cluster. Bump `instances` to 3
 # only if Postgres-level HA matters more than the storage cost.
 #
-# Storage sized at 20Gi: Render's `basic-1gb` plan caps at 1GB so today's
-# data is well under that, but envelope-encrypted vault/environment rows
-# and conversation turns grow over time. Cheaper to start with headroom
-# than to grow a Longhorn volume mid-incident.
+# Storage sized at 10Gi: Render's `basic-1gb` plan caps at 1GB so
+# today's data is well under that. 20Gi was the original sizing but
+# Longhorn's 3-replica default × 3 nodes (each 102 GB max, ~70 GB
+# already scheduled) failed to schedule a 20Gi volume with
+# `precheck new replica failed: insufficient storage`. 10Gi fits
+# comfortably and Longhorn supports online expansion if/when the
+# encrypted vault/environment rows + conversation turns outgrow it.
 apiVersion: postgresql.cnpg.io/v1
 kind: Cluster
 metadata:
@@ -33,7 +36,7 @@ spec:
 
   storage:
     storageClass: longhorn
-    size: 20Gi
+    size: 10Gi
 
   resources:
     requests:
