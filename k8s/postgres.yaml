@@ -2,9 +2,10 @@
 # `fountain-pg-app` with `host`, `port`, `username`, `password`, `dbname`,
 # `uri` keys — the Deployment consumes `uri` as DATABASE_URL.
 #
-# `standard` image variant pins postgres 17 with pgvector preinstalled.
+# `standard` image variant pins postgres 18 with pgvector preinstalled.
 # Fountain doesn't use embeddings today but the extension is cheap to
 # carry and matches mem0 / guild — keep the lower-regret default.
+# Pinned to 18.x to match Render's source DB during the home-cloud cutover.
 #
 # Single instance — Longhorn replicates the volume across nodes, which
 # is enough durability for a personal cluster. Bump `instances` to 3
@@ -25,7 +26,7 @@ metadata:
 spec:
   instances: 1
 
-  imageName: ghcr.io/cloudnative-pg/postgresql:17.6-standard-trixie
+  imageName: ghcr.io/cloudnative-pg/postgresql:18.4-standard-trixie
 
   bootstrap:
     initdb:
