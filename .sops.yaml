@@ -1,0 +1,13 @@
+# SOPS encryption config — must match home-cloud's so Flux's
+# kustomize-controller (loaded with the matching age private key in the
+# `sops-age` Secret) can decrypt *.enc.yaml files in this repo at
+# reconcile time.
+#
+# Today the only *.enc.yaml expected here is k8s/fountain-infisical-auth.enc.yaml
+# — the Universal Auth credentials for the per-app machine identity that
+# the Infisical operator uses to fetch fountain's runtime secrets from
+# magpie.inevitable.fyi.
+creation_rules:
+  - path_regex: '\.enc\.yaml$'
+    encrypted_regex: '^(data|stringData)$'
+    age: 'age1gqdqq7uagezyew5uvhylgcasuntmltqx3mdxmwa6es5k393hg3ns4fsyrt'

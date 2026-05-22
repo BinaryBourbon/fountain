@@ -1,0 +1,24 @@
+apiVersion: v1
+kind: Secret
+metadata:
+    name: fountain-infisical-auth
+    namespace: fountain
+type: Opaque
+stringData:
+    clientId: ENC[AES256_GCM,data:TGgFuE/HtYkWnU18xzDJD+e2Xd277+wDGXzEf3/9ysUm1nHk,iv:Dgo+Sk0pVLY67DpEQBVlF85YLQIjX/W/udaH4E1dF7A=,tag:G/SmsYdgbWcyrkeUmt++jQ==,type:str]
+    clientSecret: ENC[AES256_GCM,data:lmlldXMBrQyw8l+mHwQ8aszknZudNgy7U34kTNXXxD32/BFfa/0Qu6XGwcUNCF8q8vDYLb195IWeFQmYzEA1sQ==,iv:fXjKJB14r7XhXORJFk5KYnFK3WGUTfSoVrqP8ZDuyaU=,tag:XmLoKhCVrzT+zAH524LKZQ==,type:str]
+sops:
+    age:
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSA0Y0pETWtMU2ZWODlqN3VT
+            RTFMQWw0N1VCemo2MXF0R0dtcFZiY05adlQ0CmppSDQ0Q1QyOGNWNUM4M0JnYzdQ
+            L0tXQitWRzNjSGV2L0dkY2hJMGk2cFEKLS0tIG1TQmNwTDE3OGN5cjhyWWlXS2k3
+            cVY0Y2ZwL2l1OUlPaWJXOFIvVERxL00KAziLCqMDoQDArbdwkq5gh04LQKJ0wDtF
+            rhhIFmfvjvuFM0DBnSWbmQcfxUZ1yQmmPmxbEQGsvR4kXTaCFDmqSg==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1gqdqq7uagezyew5uvhylgcasuntmltqx3mdxmwa6es5k393hg3ns4fsyrt
+    encrypted_regex: ^(data|stringData)$
+    lastmodified: "2026-05-21T23:45:41Z"
+    mac: ENC[AES256_GCM,data:Q4i/mYWln3+ROyN1VMsLMKvPyT2aqcXho2iXVDk7V9v18kjGtkbkCDFvev0Bb2EaCGQ4taZc6djeUEZxmqgm3xlpDot4jViVgqPHfUtjnT23bp8wJWJa6PXg9z8v3fNHUFI1UpRrhv/JjK+MSF26ccMLs2rwQL04dPPLzyrznMQ=,iv:GMrgbQqQ/Dq3YBK1ac/4xYOPB7ktQEN3AxWoAHSsj70=,tag:ghu9sQ8UmWEVyZdbASsmEQ==,type:str]
+    version: 3.13.0

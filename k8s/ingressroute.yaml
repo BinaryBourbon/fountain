@@ -1,0 +1,43 @@
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: fountain
+  namespace: fountain
+  labels:
+    app: fountain
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    # Staging host. At cutover, swap to fountain.inevitable.fyi in the
+    # same commit that updates certificate.yaml and the deployment's
+    # FOUNTAIN_DOMAIN env var.
+    - match: "Host(`fountain-hc.inevitable.fyi`)"
+      kind: Rule
+      services:
+        - name: fountain
+          port: 80
+  tls:
+    secretName: fountain-tls
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: fountain-http
+  namespace: fountain
+  labels:
+    app: fountain
+spec:
+  entryPoints:
+    - web
+  routes:
+    - match: "Host(`fountain-hc.inevitable.fyi`)"
+      kind: Rule
+      middlewares:
+        # redirect-https lives in the default namespace; cross-namespace
+        # refs need the namespace qualifier.
+        - name: redirect-https
+          namespace: default
+      services:
+        - name: fountain
+          port: 80

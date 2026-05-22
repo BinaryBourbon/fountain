@@ -1,0 +1,43 @@
+# Postgres backend for Fountain. CNPG auto-generates Secret
+# `fountain-pg-app` with `host`, `port`, `username`, `password`, `dbname`,
+# `uri` keys — the Deployment consumes `uri` as DATABASE_URL.
+#
+# `standard` image variant pins postgres 17 with pgvector preinstalled.
+# Fountain doesn't use embeddings today but the extension is cheap to
+# carry and matches mem0 / guild — keep the lower-regret default.
+#
+# Single instance — Longhorn replicates the volume across nodes, which
+# is enough durability for a personal cluster. Bump `instances` to 3
+# only if Postgres-level HA matters more than the storage cost.
+#
+# Storage sized at 20Gi: Render's `basic-1gb` plan caps at 1GB so today's
+# data is well under that, but envelope-encrypted vault/environment rows
+# and conversation turns grow over time. Cheaper to start with headroom
+# than to grow a Longhorn volume mid-incident.
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: fountain-pg
+  namespace: fountain
+spec:
+  instances: 1
+
+  imageName: ghcr.io/cloudnative-pg/postgresql:17.6-standard-trixie
+
+  bootstrap:
+    initdb:
+      database: fountain
+      owner: fountain
+      postInitTemplateSQL:
+        - CREATE EXTENSION IF NOT EXISTS vector;
+
+  storage:
+    storageClass: longhorn
+    size: 20Gi
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 512Mi
+    limits:
+      memory: 1Gi

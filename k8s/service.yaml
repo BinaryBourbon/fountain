@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: fountain
+  namespace: fountain
+  labels:
+    app: fountain
+spec:
+  type: ClusterIP
+  selector:
+    app: fountain
+  ports:
+    - port: 80
+      targetPort: 4000
