@@ -11,7 +11,11 @@ on:
     branches: [main]
 
 env:
-  IMAGE: ghcr.io/${{ github.repository_owner }}/fountain
+  # ${{ github.repository_owner }} resolves to "BinaryBourbon" with the
+  # mixed case the org uses, but Docker registry repository names must be
+  # lowercase. Hardcoded rather than ${,,} via a shell step — the org
+  # name is stable enough that the indirection isn't worth it.
+  IMAGE: ghcr.io/binarybourbon/fountain
 
 jobs:
   build:
