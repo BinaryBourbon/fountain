@@ -12,7 +12,7 @@ spec:
     # Staging host. At cutover, swap to fountain.inevitable.fyi in the
     # same commit that updates certificate.yaml and the deployment's
     # FOUNTAIN_DOMAIN env var.
-    - match: "Host(`fountain-hc.inevitable.fyi`)"
+    - match: "Host(`fountain.inevitable.fyi`)"
       kind: Rule
       services:
         - name: fountain
@@ -31,7 +31,7 @@ spec:
   entryPoints:
     - web
   routes:
-    - match: "Host(`fountain-hc.inevitable.fyi`)"
+    - match: "Host(`fountain.inevitable.fyi`)"
       kind: Rule
       middlewares:
         # redirect-https lives in the default namespace; cross-namespace

@@ -9,4 +9,4 @@ spec:
     name: letsencrypt-production
     kind: ClusterIssuer
   dnsNames:
-    - fountain-hc.inevitable.fyi
+    - fountain.inevitable.fyi

@@ -58,7 +58,7 @@ spec:
             # Certificate (certificate.yaml) and IngressRoute
             # (ingressroute.yaml) must move together.
             - name: FOUNTAIN_DOMAIN
-              value: fountain-hc.inevitable.fyi
+              value: fountain.inevitable.fyi
             - name: EMAIL_FROM
               value: noreply@updates.inevitable.fyi
             # No OTLP collector in-cluster yet — without this,
