@@ -44,10 +44,17 @@ RUN mix compile \
 
 FROM debian:bookworm-slim AS runtime
 
+# Git SHA of the source commit, surfaced in-app under the sidebar email
+# popup so we can confirm at-a-glance which build is running (and that
+# we're on home-cloud vs Render). Wired up by the build workflow; falls
+# back to "dev" for local `docker build` invocations.
+ARG BUILD_SHA=dev
+
 ENV LANG=C.UTF-8 \
     MIX_ENV=prod \
     PHX_SERVER=true \
-    PORT=4000
+    PORT=4000 \
+    FOUNTAIN_BUILD_SHA=$BUILD_SHA
 
 RUN apt-get update -y \
  && apt-get install -y --no-install-recommends \

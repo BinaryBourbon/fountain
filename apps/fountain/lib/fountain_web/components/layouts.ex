@@ -11,11 +11,11 @@ defmodule FountainWeb.Layouts do
   # algorithmically — keeps display stable as agents are added.
   @role_styles %{
     "general-purpose-engineer" => {"GE", "bg-sky-500/20 text-sky-600"},
-    "pr-reviewer"              => {"PR", "bg-violet-500/20 text-violet-600"},
-    "captain-picard"           => {"CP", "bg-amber-500/20 text-amber-700"},
-    "customer-researcher"      => {"CR", "bg-teal-500/20 text-teal-600"},
-    "designer"                 => {"DE", "bg-rose-500/20 text-rose-600"},
-    "growth-marketer"          => {"GM", "bg-emerald-500/20 text-emerald-700"}
+    "pr-reviewer" => {"PR", "bg-violet-500/20 text-violet-600"},
+    "captain-picard" => {"CP", "bg-amber-500/20 text-amber-700"},
+    "customer-researcher" => {"CR", "bg-teal-500/20 text-teal-600"},
+    "designer" => {"DE", "bg-rose-500/20 text-rose-600"},
+    "growth-marketer" => {"GM", "bg-emerald-500/20 text-emerald-700"}
   }
 
   # Regex patterns applied in sequence to strip leading boilerplate from a
@@ -310,6 +310,9 @@ defmodule FountainWeb.Layouts do
                 >
                   Sign out
                 </a>
+                <p class="px-3 pt-2 text-[10px] font-mono text-[var(--color-text-muted)] select-text">
+                  {build_version()}
+                </p>
               </div>
             </details>
             <button
@@ -351,6 +354,17 @@ defmodule FountainWeb.Layouts do
       </div>
     </div>
     """
+  end
+
+  # Deployment marker shown under the sidebar email popup. Combines the
+  # umbrella app version with the short git SHA the Docker image was
+  # built from. `FOUNTAIN_BUILD_SHA` is set in the runtime image via a
+  # docker build-arg wired up in .github/workflows/build.yml; local dev
+  # falls back to "dev".
+  defp build_version do
+    vsn = :fountain |> Application.spec(:vsn) |> to_string()
+    sha = "FOUNTAIN_BUILD_SHA" |> System.get_env("dev") |> String.slice(0, 7)
+    "v#{vsn} · #{sha}"
   end
 
   defp group_conversations_by_date(convs) do
@@ -556,9 +570,11 @@ defmodule FountainWeb.Layouts do
   # reconnect-safe.
   defp unread_conv?(%{last_read_at: nil, last_active_at: _}), do: true
   defp unread_conv?(%{last_read_at: _, last_active_at: nil}), do: false
+
   defp unread_conv?(%{last_read_at: read_at, last_active_at: active_at}) do
     DateTime.compare(active_at, read_at) == :gt
   end
+
   defp unread_conv?(_), do: false
 
   # Returns {initials, tailwind_classes} for a role chip.
@@ -647,6 +663,7 @@ defmodule FountainWeb.Layouts do
   end
 
   defp sidebar_relative_time(nil), do: nil
+
   defp sidebar_relative_time(%NaiveDateTime{} = dt),
     do: sidebar_relative_time(DateTime.from_naive!(dt, "Etc/UTC"))
 
