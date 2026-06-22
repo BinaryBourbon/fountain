@@ -144,6 +144,13 @@ if config_env() == :prod and server? do
   config :fountain, FountainWeb.Endpoint,
     url: [host: host, port: 443, scheme: "https"],
     http: [ip: {0, 0, 0, 0, 0, 0, 0, 0}],
+    # check_origin guards the LiveView websocket/longpoll handshake. Setting an
+    # explicit list replaces the default (the endpoint's own host), so we must
+    # re-list it here. `//*.replit.dev` allows Replit preview/dev subdomains.
+    check_origin: [
+      "//#{host}",
+      "//*.replit.dev"
+    ],
     secret_key_base: secret_key_base
 
   # ── OpenTelemetry ─────────────────────────────────────────────────────────
