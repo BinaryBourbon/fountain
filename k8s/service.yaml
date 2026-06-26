@@ -10,5 +10,6 @@ spec:
   selector:
     app: fountain
   ports:
-    - port: 80
+    - name: http
+      port: 80
       targetPort: 4000

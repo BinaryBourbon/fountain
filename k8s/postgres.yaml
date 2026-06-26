@@ -23,6 +23,8 @@ kind: Cluster
 metadata:
   name: fountain-pg
   namespace: fountain
+  labels:
+    app: fountain
 spec:
   instances: 1
 

@@ -3,6 +3,8 @@ kind: Certificate
 metadata:
   name: fountain-tls
   namespace: fountain
+  labels:
+    app: fountain
 spec:
   secretName: fountain-tls
   issuerRef:

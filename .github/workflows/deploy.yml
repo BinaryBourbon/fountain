@@ -27,6 +27,7 @@ jobs:
   trigger:
     name: Trigger Render deploy
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - name: POST to Render deploy hook
         env:
