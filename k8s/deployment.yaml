@@ -80,6 +80,12 @@ spec:
             # environment value in the DB unreadable.
             - secretRef:
                 name: fountain-secrets
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1001
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
           resources:
             requests:
               cpu: 100m

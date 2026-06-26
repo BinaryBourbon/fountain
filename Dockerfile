@@ -59,13 +59,17 @@ ENV LANG=C.UTF-8 \
 RUN apt-get update -y \
  && apt-get install -y --no-install-recommends \
       libstdc++6 openssl libncurses6 locales ca-certificates tini \
- && rm -rf /var/lib/apt/lists/*
+ && rm -rf /var/lib/apt/lists/* \
+ && groupadd --system --gid 1001 fountain \
+ && useradd --system --uid 1001 --gid fountain --no-create-home fountain
 
 WORKDIR /app
 
-COPY --from=build /app/_build/prod/rel/fountain_server ./
+COPY --chown=fountain:fountain --from=build /app/_build/prod/rel/fountain_server ./
 
 EXPOSE 4000
+
+USER fountain
 
 ENTRYPOINT ["/usr/bin/tini", "--"]
 # Migrations run on every boot. Idempotent (Ecto.Migrator skips
