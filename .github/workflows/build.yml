@@ -9,6 +9,17 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
+    # These paths never affect the OCI image, so skip the (multi-arch,
+    # ~slow) build when a commit touches only them. Crucially this covers
+    # k8s/** so the auto-pin commit from pin-image.yml doesn't trigger a
+    # fresh build → pin → build chase. (Pushes made with the default
+    # GITHUB_TOKEN don't trigger workflows anyway, but a human editing a
+    # manifest would, hence the explicit ignore.)
+    paths-ignore:
+      - "k8s/**"
+      - "docs/**"
+      - "decisions/**"
+      - "**/*.md"
 
 env:
   # ${{ github.repository_owner }} resolves to "BinaryBourbon" with the
