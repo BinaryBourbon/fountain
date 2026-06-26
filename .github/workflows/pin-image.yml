@@ -1,0 +1,92 @@
+name: Pin image
+
+# Opens a PR to update the SHA tag pinned in k8s/deployment.yaml
+# whenever the build workflow completes successfully on main.
+#
+# Flow: push to main → build.yml builds and pushes
+#   ghcr.io/binarybourbon/fountain:sha-<sha>
+#       → this workflow opens a PR to pin that tag in deployment.yaml
+#       → merging the PR deploys via Flux reconciliation.
+
+on:
+  workflow_run:
+    workflows: [build]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  pin:
+    name: Open PR to update image pin
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          # Need credentials to push the bump branch.
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Resolve image tag
+        id: tag
+        run: |
+          sha="${{ github.event.workflow_run.head_sha }}"
+          echo "sha=${sha}"               >> "$GITHUB_OUTPUT"
+          echo "short=${sha:0:7}"         >> "$GITHUB_OUTPUT"
+          echo "image=ghcr.io/binarybourbon/fountain:sha-${sha}" >> "$GITHUB_OUTPUT"
+
+      - name: Skip if already pinned to this SHA
+        id: check
+        run: |
+          want="${{ steps.tag.outputs.sha }}"
+          current=$(grep -oE 'ghcr\.io/binarybourbon/fountain:sha-[0-9a-f]+' \
+            k8s/deployment.yaml | head -1 | sed -E 's/.*:sha-//')
+          echo "current_sha=${current}" >> "$GITHUB_OUTPUT"
+          if [ "${current}" = "${want}" ]; then
+            echo "skip=true"  >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Update k8s/deployment.yaml
+        if: steps.check.outputs.skip == 'false'
+        env:
+          IMAGE: ${{ steps.tag.outputs.image }}
+        run: |
+          sed -i -E \
+            "s|ghcr\.io/binarybourbon/fountain:sha-[0-9a-f]+|${IMAGE}|" \
+            k8s/deployment.yaml
+
+      - name: Create branch and open PR
+        if: steps.check.outputs.skip == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SHA:   ${{ steps.tag.outputs.sha }}
+          SHORT: ${{ steps.tag.outputs.short }}
+          IMAGE: ${{ steps.tag.outputs.image }}
+        run: |
+          set -euo pipefail
+          branch="release/pin-image-${SHORT}"
+
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "${branch}"
+          git add k8s/deployment.yaml
+          git commit -m "chore(deploy): pin image to sha-${SHORT}"
+          git push origin "${branch}"
+
+          body=$(printf \
+            'Automated image pin bump — triggered after a successful build on `main`.\n\n**Image:** `%s`\n**Commit:** %s\n\nMerge to deploy to k8s via Flux reconciliation.' \
+            "${IMAGE}" "${SHA}")
+
+          gh pr create \
+            --title "chore(deploy): pin image to sha-${SHORT}" \
+            --body  "${body}" \
+            --base  main \
+            --head  "${branch}"
