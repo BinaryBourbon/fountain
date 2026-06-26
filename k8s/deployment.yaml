@@ -11,10 +11,16 @@ metadata:
     # effect. The Phoenix release reads env at boot, not per-request.
     secrets.infisical.com/auto-reload: "true"
 spec:
-  replicas: 1
-  # Single replica: SECRET_KEY_BASE is one value across pods, so this is
-  # safe to scale later — left at 1 for now to keep CNPG single-writer
-  # behavior obvious and to match the current Render footprint.
+  replicas: 2
+  # Two replicas for HA. This is only safe because the pods form a real
+  # Erlang cluster: libcluster (DNSPoll against the fountain-headless
+  # Service) connects the BEAM nodes, which lets Horde route per-conversation
+  # ConversationServers cluster-wide and Phoenix.PubSub fan `conv:<id>`
+  # events across pods. Without that wiring (RELEASE_DISTRIBUTION/RELEASE_NODE/
+  # RELEASE_COOKIE/CLUSTER_DNS_QUERY below + the headless Service) two pods
+  # run as isolated islands and conversation streaming silently breaks for
+  # whichever pod didn't spawn the conversation. CNPG remains the single
+  # writer — the app tier is the stateless part being scaled here.
   strategy:
     type: RollingUpdate
     rollingUpdate:
@@ -37,7 +43,49 @@ spec:
           ports:
             - name: http
               containerPort: 4000
+            # Erlang distribution: epmd + the pinned dist port (see
+            # ERL_AFLAGS). Informational here, but lets a future
+            # NetworkPolicy reference them by name.
+            - name: epmd
+              containerPort: 4369
+            - name: erldist
+              containerPort: 9100
           env:
+            # --- Erlang clustering (required for >1 replica) ---
+            # Pod IP via the downward API; RELEASE_NODE interpolates it
+            # below. Must be declared before any env that references
+            # $(POD_IP) — k8s only substitutes vars defined earlier.
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: RELEASE_DISTRIBUTION
+              value: name
+            # Node name MUST use the release name `fountain_server` as its
+            # basename: libcluster's DNSPoll derives the peer node name from
+            # RELEASE_NAME (= fountain_server in the release), so a mismatched
+            # basename here means peers are discovered but never connect.
+            - name: RELEASE_NODE
+              value: fountain_server@$(POD_IP)
+            # Shared Erlang cookie so the nodes accept each other's
+            # connections. Reuses SECRET_KEY_BASE — already identical across
+            # all pods and present in fountain-secrets — to avoid a separate
+            # Infisical key that, if missing, would let each pod generate a
+            # random cookie and silently fail to cluster. Swap to a dedicated
+            # RELEASE_COOKIE key here if you'd rather not reuse it.
+            - name: RELEASE_COOKIE
+              valueFrom:
+                secretKeyRef:
+                  name: fountain-secrets
+                  key: SECRET_KEY_BASE
+            # Pin the distribution listener to a single port so it's
+            # firewall/NetworkPolicy-friendly (epmd otherwise hands out a
+            # random high port per boot).
+            - name: ERL_AFLAGS
+              value: "-kernel inet_dist_listen_min 9100 inet_dist_listen_max 9100"
+            # Headless Service FQDN libcluster polls to discover peer pods.
+            - name: CLUSTER_DNS_QUERY
+              value: fountain-headless.fountain.svc.cluster.local
             # CNPG-generated `fountain-pg-app` Secret. `uri` is the
             # postgres://user:pass@host:port/db URL Ecto consumes
             # directly via DATABASE_URL.
