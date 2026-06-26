@@ -20,6 +20,9 @@ concurrency:
   group: render-deploy
   cancel-in-progress: false
 
+permissions:
+  contents: read
+
 jobs:
   trigger:
     name: Trigger Render deploy
