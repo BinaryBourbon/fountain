@@ -30,13 +30,10 @@ spec:
     spec:
       containers:
         - name: fountain
-          # `:latest` is mutable — the build workflow rebuilds on every
-          # push to main. `imagePullPolicy: Always` forces a manifest
-          # check on pod start so `kubectl rollout restart` actually
-          # picks up the new digest. Swap to a pinned `:sha-...` tag
-          # once releases are stable.
-          image: ghcr.io/binarybourbon/fountain:latest
-          imagePullPolicy: Always
+          # Pinned to the sha tag produced by the build workflow for the
+          # last commit that ran it. Update this alongside any deploy.
+          image: ghcr.io/binarybourbon/fountain:sha-0e76cd7b287e6af13a1251cbff663985aafc87d3
+          imagePullPolicy: IfNotPresent
           ports:
             - name: http
               containerPort: 4000
@@ -91,6 +88,7 @@ spec:
               cpu: 100m
               memory: 512Mi
             limits:
+              cpu: 500m
               memory: 1Gi
           readinessProbe:
             httpGet:

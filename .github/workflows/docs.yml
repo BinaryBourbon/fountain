@@ -20,6 +20,7 @@ jobs:
   build-and-deploy:
     name: Build and deploy docs
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
       pages: write
