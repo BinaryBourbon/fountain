@@ -13,4 +13,3 @@ resources:
   # the home-cloud age key; Flux's kustomize-controller decrypts on
   # reconcile via the `decryption` block on this repo's Flux
   # Kustomization (clusters/home/apps/fountain.yaml in home-cloud).
-  - fountain-infisical-auth.enc.yaml
