@@ -1,19 +1,33 @@
 # API reference
 
-Fountain exposes a REST API. All endpoints are under `/api/v1/` and return JSON.
+Fountain exposes a REST API. All endpoints are under `/api/` and return JSON.
+
+The authoritative, always-current reference is the served OpenAPI spec:
+
+- `GET /api/openapi.json` - OpenAPI 3.1 spec, generated from the code (public, no auth)
+- `GET /api/docs` - Swagger UI over the same spec
+
+The endpoint listings below are a convenience summary of that spec.
 
 ## Authentication
 
 **API key (recommended for scripts and CI):**
 
-Create a key under Account -> API Keys, then pass it as a Bearer token:
+Create a key under Account -> API Keys (or exchange credentials via `POST /api/auth/token`, which is what `fountain auth login` does), then pass it as a Bearer token:
 
 ```bash
-curl -H "Authorization: Bearer ft_your_api_key" \
-     https://founta.inevitable.fyi/api/v1/agents
+curl -H "Authorization: Bearer $FOUNTAIN_API_KEY" \
+     https://founta.inevitable.fyi/api/agents
 ```
 
-**Session cookie:** Obtained via GitHub OAuth at `/auth/github`. Used by the web UI.
+```
+POST   /api/auth/token             # email + password -> a fresh API key
+GET    /api/auth/me                # identity of the authenticated user
+POST   /api/auth/api-keys          # create a key (plaintext returned once)
+DELETE /api/auth/api-keys/:id      # revoke a key
+```
+
+**Session cookie:** Obtained via OAuth at `/auth/oauth/:provider` or email/password login. Used by the web UI.
 
 ## Rate limiting
 
@@ -22,47 +36,57 @@ Requests are rate-limited per API key (or IP for unauthenticated requests). On l
 ## Agents
 
 ```
-GET    /api/v1/agents              # list (supports ?search=, ?runtime=)
-POST   /api/v1/agents              # create
-GET    /api/v1/agents/:id
-PUT    /api/v1/agents/:id
-DELETE /api/v1/agents/:id
+GET    /api/agents              # list (supports ?search=, ?runtime=)
+POST   /api/agents              # create
+GET    /api/agents/:id
+PUT    /api/agents/:id
+DELETE /api/agents/:id
 ```
 
 ## Environments
 
 ```
-GET    /api/v1/environments
-POST   /api/v1/environments
-GET    /api/v1/environments/:id
-PUT    /api/v1/environments/:id
-DELETE /api/v1/environments/:id
-GET    /api/v1/environments/:id/secrets
-POST   /api/v1/environments/:id/secrets       # upsert
-DELETE /api/v1/environments/:id/secrets/:key
+GET    /api/environments
+POST   /api/environments
+GET    /api/environments/:id
+PUT    /api/environments/:id
+DELETE /api/environments/:id
+GET    /api/environments/:id/secrets          # keys + timestamps only
+POST   /api/environments/:id/secrets          # upsert
+DELETE /api/environments/:id/secrets/:key
 ```
+
+Secret values are **write-only**: once stored, the API never returns them. Listing returns each secret's key, id, and timestamps.
 
 ## Vaults
 
 ```
-GET    /api/v1/vaults
-POST   /api/v1/vaults
-GET    /api/v1/vaults/:id
-PUT    /api/v1/vaults/:id
-DELETE /api/v1/vaults/:id
-GET    /api/v1/vaults/:id/secrets
-POST   /api/v1/vaults/:id/secrets
-DELETE /api/v1/vaults/:id/secrets/:key
+GET    /api/vaults
+POST   /api/vaults
+GET    /api/vaults/:id
+PUT    /api/vaults/:id
+DELETE /api/vaults/:id
+GET    /api/vaults/:id/secrets                # keys + timestamps only
+POST   /api/vaults/:id/secrets
+DELETE /api/vaults/:id/secrets/:key
 ```
+
+The same write-only rule applies to vault secret values.
 
 ## Conversations
 
+Conversations are multi-turn: create one with an initial prompt, then keep prompting it.
+
 ```
-GET    /api/v1/conversations
-POST   /api/v1/conversations          # start a run
-GET    /api/v1/conversations/:id
-GET    /api/v1/conversations/:id/turns
-GET    /api/v1/conversations/:id/stream  # SSE log stream
+GET    /api/conversations
+POST   /api/conversations                  # start (agent_id; optional vault_id, prompt, images)
+GET    /api/conversations/:id
+DELETE /api/conversations/:id
+POST   /api/conversations/:id/prompts      # follow-up turn
+POST   /api/conversations/:id/interrupt    # stop the running turn
+POST   /api/conversations/:id/terminate    # end the conversation and sandbox
+GET    /api/conversations/:id/turns
+GET    /api/conversations/:id/stream       # SSE log stream
 ```
 
 ## Error responses
