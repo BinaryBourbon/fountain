@@ -22,6 +22,11 @@ defmodule Fountain.Agents.Agent do
     field :skills, {:array, :map}, default: []
     field :mcp_servers, :map, default: %{}
     field :metadata, :map, default: %{}
+    # Vaults a conversation may attach to this agent. nil = any tenant
+    # vault (legacy), [] = none, non-empty = allowlist. Vault values win
+    # on env-var collision, so an attached vault can override reviewed
+    # agent config — this is the lever that scopes who can do that.
+    field :allowed_vault_ids, {:array, :binary_id}
     field :avatar_media_type, :string
     field :conversation_count, :integer, virtual: true, default: 0
     belongs_to :user, User
@@ -42,6 +47,7 @@ defmodule Fountain.Agents.Agent do
       :skills,
       :mcp_servers,
       :metadata,
+      :allowed_vault_ids,
       :user_id,
       :environment_id
     ])
