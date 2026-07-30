@@ -113,6 +113,73 @@ defmodule FountainWeb.ApiKeyControllerTest do
     end
   end
 
+  describe "GET /api/auth/api-keys" do
+    test "lists active keys newest-first with metadata only", %{conn: conn} do
+      user = insert_verified_user()
+      {first, raw_key} = insert_api_key(user, "first-key")
+      {second, _} = insert_api_key(user, "second-key")
+
+      # inserted_at is second-granular; backdate the first key so the
+      # newest-first ordering assertion can't tie.
+      first =
+        first
+        |> Ecto.Changeset.change(inserted_at: DateTime.add(first.inserted_at, -60, :second))
+        |> Fountain.Repo.update!()
+
+      conn =
+        conn
+        |> authed_with_key(raw_key)
+        |> get("/api/auth/api-keys")
+
+      %{"data" => keys} = json_response(conn, 200)
+      assert Enum.map(keys, & &1["id"]) == [second.id, first.id]
+
+      for key <- keys do
+        assert key["name"]
+        assert key["prefix"]
+        assert key["created_at"]
+        assert Map.has_key?(key, "last_used_at")
+        refute Map.has_key?(key, "key")
+        refute Map.has_key?(key, "key_hash")
+      end
+    end
+
+    test "excludes revoked keys", %{conn: conn} do
+      user = insert_verified_user()
+      {_auth, raw_key} = insert_api_key(user, "auth-key")
+      {revoked, _} = insert_api_key(user, "revoked-key")
+      {:ok, _} = Accounts.revoke_api_key(user.id, revoked.id)
+
+      conn =
+        conn
+        |> authed_with_key(raw_key)
+        |> get("/api/auth/api-keys")
+
+      %{"data" => keys} = json_response(conn, 200)
+      refute Enum.any?(keys, &(&1["id"] == revoked.id))
+    end
+
+    test "only returns the authenticated user's keys", %{conn: conn} do
+      user_a = insert_verified_user()
+      user_b = insert_verified_user()
+      {_key_b, _} = insert_api_key(user_b, "other-tenant")
+      {key_a, raw_a} = insert_api_key(user_a, "mine")
+
+      conn =
+        conn
+        |> authed_with_key(raw_a)
+        |> get("/api/auth/api-keys")
+
+      %{"data" => keys} = json_response(conn, 200)
+      assert Enum.map(keys, & &1["id"]) == [key_a.id]
+    end
+
+    test "returns 401 without valid API key", %{conn: conn} do
+      conn = get(conn, "/api/auth/api-keys")
+      assert json_response(conn, 401)
+    end
+  end
+
   describe "GET /api/auth/me" do
     test "returns user identity for authenticated request", %{conn: conn} do
       user = insert_verified_user()

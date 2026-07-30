@@ -137,6 +137,7 @@ defmodule FountainWeb.Router do
     pipe_through :api
 
     get "/me", AuthMeController, :show
+    get "/api-keys", ApiKeyController, :index
     post "/api-keys", ApiKeyController, :create
     delete "/api-keys/:id", ApiKeyController, :delete
   end
