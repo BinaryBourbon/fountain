@@ -91,11 +91,11 @@ defmodule Fountain.Agents.Agent do
     end
   end
 
+  defp skill_errors(_entry, i), do: [skills: "entry #{i}: must be an object"]
+
   # Mirrors SpriteSkills.safe_token!/1 — the ref is interpolated into the
   # sprite-side install command, so reject anything outside the allow-list
   # at write time instead of failing the spawn later.
   defp valid_ref?(ref) when is_binary(ref), do: Regex.match?(~r{\A[A-Za-z0-9._/-]+\z}, ref)
   defp valid_ref?(_), do: false
-
-  defp skill_errors(_entry, i), do: [skills: "entry #{i}: must be an object"]
 end
