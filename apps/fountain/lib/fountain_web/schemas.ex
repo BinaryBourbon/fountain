@@ -397,8 +397,9 @@ defmodule FountainWeb.Schemas do
           description:
             "Refines networking_type: limited. allowed_hosts is the only key " <>
               "honored today; unknown keys are ignored. Under limited, egress is " <>
-              "restricted to the allowlisted domains — with no allowed_hosts, " <>
-              "nothing is allowlisted.",
+              "restricted to the allowlisted domains. With no allowed_hosts (or an " <>
+              "empty list), the sandbox denies all egress by default — this is a " <>
+              "deny-all, not an allow-all.",
           properties: %{
             allowed_hosts: %Schema{
               type: :array,
@@ -458,8 +459,9 @@ defmodule FountainWeb.Schemas do
           description:
             "Refines networking_type: limited. allowed_hosts is the only key " <>
               "honored today; unknown keys are ignored. Under limited, egress is " <>
-              "restricted to the allowlisted domains — with no allowed_hosts, " <>
-              "nothing is allowlisted.",
+              "restricted to the allowlisted domains. With no allowed_hosts (or an " <>
+              "empty list), the sandbox denies all egress by default — this is a " <>
+              "deny-all, not an allow-all.",
           properties: %{
             allowed_hosts: %Schema{
               type: :array,
@@ -497,8 +499,9 @@ defmodule FountainWeb.Schemas do
           description:
             "Refines networking_type: limited. allowed_hosts is the only key " <>
               "honored today; unknown keys are ignored. Under limited, egress is " <>
-              "restricted to the allowlisted domains — with no allowed_hosts, " <>
-              "nothing is allowlisted.",
+              "restricted to the allowlisted domains. With no allowed_hosts (or an " <>
+              "empty list), the sandbox denies all egress by default — this is a " <>
+              "deny-all, not an allow-all.",
           properties: %{
             allowed_hosts: %Schema{
               type: :array,
