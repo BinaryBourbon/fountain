@@ -241,7 +241,11 @@ defmodule Fountain.Conversations.Provisioning do
   @doc """
   Apply the env's networking config to the sprite. `unrestricted` is a
   no-op (sprites are open by default). `limited` builds an allowlist from
-  `networking_config.allowed_hosts: [...]`.
+  `networking_config.allowed_hosts: [...]`. Sprites treats a policy with no
+  rules as "no enforcement" (allow-all), so an empty/absent allowlist is
+  translated into an explicit deny-all rule rather than a bare `rules: []`
+  — otherwise `limited` with nothing allowed would silently open full
+  egress instead of denying it.
   """
   def apply_network_policy(_sprite, nil, _conv_id), do: :ok
 
@@ -255,7 +259,7 @@ defmodule Fountain.Conversations.Provisioning do
       [:network_policy],
       %{conv_id: conv_id, hosts: length(hosts)},
       fn ->
-        rules = Enum.map(hosts, &%Sprites.Policy.Rule{domain: &1, action: "allow"})
+        rules = network_policy_rules(hosts)
         publish_stage(conv_id, "network", "started", %{type: "limited", hosts: length(hosts)})
 
         case Sprites.update_network_policy(sprite, %Sprites.Policy{rules: rules}) do
@@ -272,6 +276,16 @@ defmodule Fountain.Conversations.Provisioning do
   end
 
   def apply_network_policy(_sprite, _env, _conv_id), do: :ok
+
+  # An empty allowlist must still deny by default. Sending Sprites a bare
+  # `rules: []` is interpreted as "no enforcement" (allow-all) on their
+  # side, so `limited` with nothing allowed would otherwise fail open.
+  # The deny rule stands alone — no `include: "defaults"` — since pulling
+  # in Sprites' own default allowances would defeat the deny-all.
+  defp network_policy_rules([]), do: [%Sprites.Policy.Rule{domain: "*", action: "deny"}]
+
+  defp network_policy_rules(hosts),
+    do: Enum.map(hosts, &%Sprites.Policy.Rule{domain: &1, action: "allow"})
 
   # ── git clone ─────────────────────────────────────────────────────────────
 

@@ -92,6 +92,51 @@ defmodule Fountain.Environments.EnvironmentTest do
   end
 
   # ---------------------------------------------------------------------------
+  # validate_networking_config
+  # ---------------------------------------------------------------------------
+
+  describe "validate_networking_config" do
+    test "allowed_hosts as a list of hostnames passes" do
+      cs =
+        changeset(%{
+          "networking_type" => "limited",
+          "networking_config" => %{"allowed_hosts" => ["registry.npmjs.org", "github.com"]}
+        })
+
+      assert cs.valid?
+    end
+
+    test "config without allowed_hosts passes (unknown keys are ignored)" do
+      cs = changeset(%{"networking_config" => %{"future_knob" => true}})
+      assert cs.valid?
+    end
+
+    test "allowed_hosts as a bare string fails" do
+      errors =
+        changeset(%{"networking_config" => %{"allowed_hosts" => "github.com"}})
+        |> errors_on()
+
+      assert "allowed_hosts must be a list of hostnames" in errors.networking_config
+    end
+
+    test "allowed_hosts containing an empty string fails" do
+      errors =
+        changeset(%{"networking_config" => %{"allowed_hosts" => ["github.com", ""]}})
+        |> errors_on()
+
+      assert "allowed_hosts entries must be non-empty strings" in errors.networking_config
+    end
+
+    test "allowed_hosts containing a non-string fails" do
+      errors =
+        changeset(%{"networking_config" => %{"allowed_hosts" => [42]}})
+        |> errors_on()
+
+      assert "allowed_hosts entries must be non-empty strings" in errors.networking_config
+    end
+  end
+
+  # ---------------------------------------------------------------------------
   # validate_repositories
   # ---------------------------------------------------------------------------
 
