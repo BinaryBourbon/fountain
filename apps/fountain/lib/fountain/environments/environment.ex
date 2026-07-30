@@ -60,7 +60,7 @@ defmodule Fountain.Environments.Environment do
     |> validate_change(:networking_config, &validate_networking_config/2)
     |> validate_change(:repositories, &validate_repositories/2)
     |> maybe_invalidate_checkpoint()
-    |> unique_constraint(:name)
+    |> unique_constraint(:name, name: :environments_user_id_name_index)
   end
 
   # If any provisioning-relevant field changed AND the caller didn't

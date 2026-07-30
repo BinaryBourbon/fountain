@@ -33,6 +33,8 @@ fountain apply -f path/to/directory/    # walks all *.yml / *.yaml files
 
 Apply is idempotent - create if new, update if changed. Supported kinds: `Environment`, `Vault`, `Agent`.
 
+The CLI compiles every document into a single manifest and sends it to `POST /api/apply` in one request; the server reconciles environments, then vaults, then agents, and resolves agent `environment:` name references — including environments that already exist on the server. Against older servers without `/api/apply`, the CLI falls back to per-resource calls.
+
 ## Read resources
 
 ```bash

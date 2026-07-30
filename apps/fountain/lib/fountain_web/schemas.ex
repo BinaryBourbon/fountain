@@ -796,6 +796,94 @@ defmodule FountainWeb.Schemas do
     })
   end
 
+  defmodule ManifestResource do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "ManifestResource",
+      description:
+        "One compiled document from a fountain.yml manifest. `spec` matches the " <>
+          "create/update schema for the kind, plus an inline `secrets` map " <>
+          "(Environment and Vault). Agent specs may reference an environment by " <>
+          "name via `environment`; the server resolves it to `environment_id`.",
+      type: :object,
+      properties: %{
+        kind: %Schema{type: :string, enum: ["Environment", "Vault", "Agent"]},
+        name: %Schema{type: :string, minLength: 1, maxLength: 200},
+        spec: %Schema{type: :object, additionalProperties: true}
+      },
+      required: [:kind, :name]
+    })
+  end
+
+  defmodule ApplyRequest do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "ApplyRequest",
+      type: :object,
+      properties: %{
+        resources: %Schema{type: :array, items: ManifestResource}
+      },
+      required: [:resources]
+    })
+  end
+
+  defmodule ApplySecretResult do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "ApplySecretResult",
+      description: "Outcome for one secret key. Values are never echoed back.",
+      type: :object,
+      properties: %{
+        key: %Schema{type: :string},
+        action: %Schema{type: :string, enum: ["upserted", "error"]},
+        errors: %Schema{type: :object, additionalProperties: true, nullable: true}
+      },
+      required: [:key, :action]
+    })
+  end
+
+  defmodule ApplyResult do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "ApplyResult",
+      type: :object,
+      properties: %{
+        kind: %Schema{type: :string},
+        name: %Schema{type: :string},
+        action: %Schema{type: :string, enum: ["created", "updated", "error"]},
+        errors: %Schema{type: :object, additionalProperties: true, nullable: true},
+        secrets: %Schema{type: :array, items: ApplySecretResult}
+      },
+      required: [:kind, :name, :action]
+    })
+  end
+
+  defmodule ApplyResponse do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "ApplyResponse",
+      type: :object,
+      properties: %{
+        data: %Schema{
+          type: :object,
+          properties: %{results: %Schema{type: :array, items: ApplyResult}},
+          required: [:results]
+        }
+      },
+      required: [:data]
+    })
+  end
+
   defmodule ChangesetError do
     @moduledoc false
     require OpenApiSpex

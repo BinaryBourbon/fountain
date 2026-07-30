@@ -58,7 +58,7 @@ defmodule Fountain.Agents.Agent do
     )
     |> validate_length(:name, min: 1, max: 200)
     |> validate_skills()
-    |> unique_constraint(:name)
+    |> unique_constraint(:name, name: :agents_user_id_name_index)
     |> foreign_key_constraint(:environment_id)
   end
 
