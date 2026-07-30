@@ -53,6 +53,7 @@ defmodule Fountain.Environments.Environment do
     |> validate_required([:name])
     |> validate_inclusion(:networking_type, @networking)
     |> validate_length(:name, min: 1, max: 200)
+    |> validate_change(:networking_config, &validate_networking_config/2)
     |> validate_change(:repositories, &validate_repositories/2)
     |> maybe_invalidate_checkpoint()
     |> unique_constraint(:name)
@@ -91,4 +92,28 @@ defmodule Fountain.Environments.Environment do
   end
 
   defp validate_repositories(_, _), do: []
+
+  # networking_config's only honored key is "allowed_hosts" (see
+  # Provisioning.apply_network_policy/3 — under `limited` it becomes the
+  # sprite's domain allowlist). Unknown keys stay allowed for forward
+  # compat, but a malformed allowed_hosts fails here instead of silently
+  # producing a policy the author didn't intend.
+  defp validate_networking_config(_field, %{} = config) do
+    case Map.get(config, "allowed_hosts") || Map.get(config, :allowed_hosts) do
+      nil ->
+        []
+
+      hosts when is_list(hosts) ->
+        if Enum.all?(hosts, fn h -> is_binary(h) and h != "" end) do
+          []
+        else
+          [networking_config: "allowed_hosts entries must be non-empty strings"]
+        end
+
+      _ ->
+        [networking_config: "allowed_hosts must be a list of hostnames"]
+    end
+  end
+
+  defp validate_networking_config(_, _), do: []
 end

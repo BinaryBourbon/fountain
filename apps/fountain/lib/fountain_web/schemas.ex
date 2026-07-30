@@ -392,7 +392,22 @@ defmodule FountainWeb.Schemas do
         env_vars: %Schema{type: :object, additionalProperties: %Schema{type: :string}},
         setup_script: %Schema{type: :string},
         networking_type: %Schema{type: :string, enum: ~w(unrestricted limited)},
-        networking_config: %Schema{type: :object, additionalProperties: true},
+        networking_config: %Schema{
+          type: :object,
+          description:
+            "Refines networking_type: limited. allowed_hosts is the only key " <>
+              "honored today; unknown keys are ignored. Under limited, egress is " <>
+              "restricted to the allowlisted domains — with no allowed_hosts, " <>
+              "nothing is allowlisted.",
+          properties: %{
+            allowed_hosts: %Schema{
+              type: :array,
+              items: %Schema{type: :string},
+              description: "Domains the sandbox may reach when networking_type is limited."
+            }
+          },
+          additionalProperties: true
+        },
         repositories: %Schema{type: :array, items: Repository},
         inserted_at: %Schema{type: :string, format: :"date-time"},
         updated_at: %Schema{type: :string, format: :"date-time"}
@@ -438,7 +453,22 @@ defmodule FountainWeb.Schemas do
         env_vars: %Schema{type: :object, additionalProperties: %Schema{type: :string}},
         setup_script: %Schema{type: :string},
         networking_type: %Schema{type: :string, enum: ~w(unrestricted limited)},
-        networking_config: %Schema{type: :object, additionalProperties: true},
+        networking_config: %Schema{
+          type: :object,
+          description:
+            "Refines networking_type: limited. allowed_hosts is the only key " <>
+              "honored today; unknown keys are ignored. Under limited, egress is " <>
+              "restricted to the allowlisted domains — with no allowed_hosts, " <>
+              "nothing is allowlisted.",
+          properties: %{
+            allowed_hosts: %Schema{
+              type: :array,
+              items: %Schema{type: :string},
+              description: "Domains the sandbox may reach when networking_type is limited."
+            }
+          },
+          additionalProperties: true
+        },
         repositories: %Schema{type: :array, items: Repository}
       },
       required: [:name]
@@ -462,7 +492,22 @@ defmodule FountainWeb.Schemas do
         env_vars: %Schema{type: :object, additionalProperties: %Schema{type: :string}},
         setup_script: %Schema{type: :string},
         networking_type: %Schema{type: :string, enum: ~w(unrestricted limited)},
-        networking_config: %Schema{type: :object, additionalProperties: true},
+        networking_config: %Schema{
+          type: :object,
+          description:
+            "Refines networking_type: limited. allowed_hosts is the only key " <>
+              "honored today; unknown keys are ignored. Under limited, egress is " <>
+              "restricted to the allowlisted domains — with no allowed_hosts, " <>
+              "nothing is allowlisted.",
+          properties: %{
+            allowed_hosts: %Schema{
+              type: :array,
+              items: %Schema{type: :string},
+              description: "Domains the sandbox may reach when networking_type is limited."
+            }
+          },
+          additionalProperties: true
+        },
         repositories: %Schema{type: :array, items: Repository}
       }
     })
