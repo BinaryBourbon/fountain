@@ -87,8 +87,12 @@ defmodule Fountain.MixProject do
       "ecto.reset": ["ecto.drop", "ecto.setup"],
       test: ["test"],
       # Render the served OpenAPI spec to a file (same content as
-      # /api/openapi.json). The release workflow attaches it per tag.
-      "openapi.export": ["openapi.spec.json --spec FountainWeb.ApiSpec ../../dist/openapi.json"]
+      # /api/openapi.json — RenderSpec doesn't include open_api_spex's
+      # vendor extensions, so this must match with --vendor-extensions=false.
+      # The release workflow attaches it per tag.
+      "openapi.export": [
+        "openapi.spec.json --spec FountainWeb.ApiSpec --vendor-extensions=false ../../dist/openapi.json"
+      ]
     ]
   end
 end
