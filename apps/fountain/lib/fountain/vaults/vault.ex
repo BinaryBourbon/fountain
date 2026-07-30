@@ -22,6 +22,6 @@ defmodule Fountain.Vaults.Vault do
     |> cast(attrs, [:name, :description, :metadata, :user_id])
     |> validate_required([:name])
     |> validate_length(:name, min: 1, max: 200)
-    |> unique_constraint(:name)
+    |> unique_constraint(:name, name: :vaults_user_id_name_index)
   end
 end

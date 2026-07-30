@@ -86,6 +86,11 @@ defmodule Fountain.Environments do
     Repo.get_by!(Environment, id: id, user_id: user_id)
   end
 
+  @doc "Get environment by name scoped to user. Returns nil when missing."
+  def get_environment_by_name(name, user_id) when is_binary(name) and is_binary(user_id) do
+    Repo.get_by(Environment, name: name, user_id: user_id)
+  end
+
   def create_environment(attrs) do
     %Environment{}
     |> Environment.changeset(attrs)

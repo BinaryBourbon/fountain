@@ -155,6 +155,9 @@ defmodule FountainWeb.Router do
 
     resources "/agents", AgentController, except: [:new, :edit]
 
+    # Bulk apply for compiled fountain.yml manifests (`fountain apply`).
+    post "/apply", ApplyController, :create
+
     resources "/conversations", ConversationController, only: [:index, :show, :create, :delete] do
       post "/prompts", ConversationController, :prompt, as: :prompt
       post "/interrupt", ConversationController, :interrupt, as: :interrupt

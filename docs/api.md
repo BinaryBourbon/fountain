@@ -73,6 +73,26 @@ DELETE /api/vaults/:id/secrets/:key
 
 The same write-only rule applies to vault secret values.
 
+## Bulk apply
+
+```
+POST   /api/apply                # apply a compiled manifest in one request
+```
+
+Takes the compiled form of a `fountain.yml` manifest — this is what `fountain apply` sends:
+
+```json
+{
+  "resources": [
+    {"kind": "Environment", "name": "proj", "spec": {"setup_script": "...", "secrets": {"TOKEN": "..."}}},
+    {"kind": "Vault", "name": "alice", "spec": {"secrets": {"GH": "..."}}},
+    {"kind": "Agent", "name": "researcher", "spec": {"model": "...", "runtime": "claude", "environment": "proj"}}
+  ]
+}
+```
+
+Resources are upserted by name in a fixed order (environments, then vaults, then agents), so an agent's `spec.environment` name reference resolves against environments in the same manifest **or** environments that already exist. Application is best-effort per resource: the response is always `200` with a per-resource result — `action` of `created`, `updated`, or `error` (with changeset-style `errors`), plus per-key secret outcomes. Secret values are never echoed back.
+
 ## Conversations
 
 Conversations are multi-turn: create one with an initial prompt, then keep prompting it.

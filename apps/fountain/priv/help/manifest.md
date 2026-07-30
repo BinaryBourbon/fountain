@@ -15,11 +15,11 @@ spec:
   # ... fields matching the API schema for the kind ...
 ```
 
-The `metadata.name` is the upsert key. If a resource with that name exists, it's PUT; if not, it's POSTed.
+The `metadata.name` is the upsert key. If a resource with that name exists, it's updated; if not, it's created.
 
 ## Order is irrelevant inside the file
 
-`fountain apply` reconciles **environments first, vaults second, agents last** — so an agent doc can reference an environment by name (`spec.environment: my-env`) even if that environment is defined later in the file. Vaults aren't referenced from agents (they're picked per-conversation), so the order between envs and vaults doesn't matter functionally; the predictable ordering just makes the apply output easier to skim.
+`fountain apply` reconciles **environments first, vaults second, agents last** — so an agent doc can reference an environment by name (`spec.environment: my-env`) even if that environment is defined later in the file. The reference also resolves against environments that **already exist** server-side, so a manifest can attach an agent to an environment managed elsewhere; a name that matches neither the manifest nor an existing environment fails that agent doc. Vaults aren't referenced from agents (they're picked per-conversation), so the order between envs and vaults doesn't matter functionally; the predictable ordering just makes the apply output easier to skim.
 
 ## Example
 
@@ -83,9 +83,11 @@ agent  ~  researcher
 
 Errors per-resource go to stderr but don't stop the run; other resources still apply.
 
+Under the hood the CLI compiles the whole manifest into one document and sends it to `POST /api/apply` in a single request — the server reconciles everything and returns per-resource results. (Against older servers without that endpoint, the CLI falls back to one call per resource.)
+
 ## Idempotency
 
-Re-applying the same file is a no-op (every resource shows `~` because we always PUT, but the spec doesn't change). Useful for CI: keep `fountain.yml` in source control, run `fountain apply -f fountain.yml` from your deploy pipeline.
+Re-applying the same file is a no-op (every resource shows `~` because existing resources are always re-written, but the spec doesn't change). Useful for CI: keep `fountain.yml` in source control, run `fountain apply -f fountain.yml` from your deploy pipeline.
 
 ## Apply-time secret resolution (so you can commit `fountain.yml`)
 

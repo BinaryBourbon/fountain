@@ -54,6 +54,130 @@ func runApply(cmd *cobra.Command, args []string) error {
 	envs, vaults = expandApplySecrets(envs, vaults, applyVars)
 
 	c := activeClient()
+
+	results, err := postApply(c, buildApplyPayload(envs, vaults, agents))
+	if err != nil {
+		if api.StatusCode(err) == 404 {
+			// Server predates POST /api/apply — reconcile resource-by-resource.
+			legacyApply(c, envs, vaults, agents)
+			return nil
+		}
+		Fatalf("apply failed: %v", err)
+	}
+
+	if renderApplyResults(results) {
+		os.Exit(1)
+	}
+	return nil
+}
+
+// ── bulk apply ─────────────────────────────────────────────────────────
+
+// applyResource is one compiled manifest document. The whole manifest is
+// sent to POST /api/apply in a single request; the server reconciles by
+// name (environments first, then vaults, then agents) and resolves agent
+// `spec.environment` references server-side — including environments that
+// already exist but aren't part of this manifest.
+type applyResource struct {
+	Kind string         `json:"kind"`
+	Name string         `json:"name"`
+	Spec map[string]any `json:"spec"`
+}
+
+type applySecretResult struct {
+	Key    string         `json:"key"`
+	Action string         `json:"action"`
+	Errors map[string]any `json:"errors"`
+}
+
+type applyResult struct {
+	Kind    string              `json:"kind"`
+	Name    string              `json:"name"`
+	Action  string              `json:"action"`
+	Errors  map[string]any      `json:"errors"`
+	Secrets []applySecretResult `json:"secrets"`
+}
+
+func buildApplyPayload(envs, vaults, agents []*manifest.Doc) []applyResource {
+	var out []applyResource
+	for _, group := range [][]*manifest.Doc{envs, vaults, agents} {
+		for _, d := range group {
+			name := requireName(d)
+			spec := cloneMap(d.Spec)
+			// Ownership fields are server-assigned; don't transmit fields the
+			// server is just going to drop.
+			delete(spec, "id")
+			delete(spec, "user_id")
+			delete(spec, "created_by")
+			out = append(out, applyResource{Kind: d.Kind, Name: name, Spec: spec})
+		}
+	}
+	return out
+}
+
+func postApply(c *api.Client, resources []applyResource) ([]applyResult, error) {
+	var resp struct {
+		Data struct {
+			Results []applyResult `json:"results"`
+		} `json:"data"`
+	}
+	body := map[string]any{"resources": resources}
+	if err := c.Post("/apply", body, &resp); err != nil {
+		return nil, err
+	}
+	return resp.Data.Results, nil
+}
+
+var applyKindLabels = map[string]string{
+	"Environment": "env",
+	"Vault":       "vault",
+	"Agent":       "agent",
+}
+
+// renderApplyResults prints one line per resource in the same format the
+// per-resource loop used (`+` create, `~` update, `!` error to stderr) and
+// reports whether any resource or secret failed.
+func renderApplyResults(results []applyResult) (anyFailed bool) {
+	for _, r := range results {
+		label := applyKindLabels[r.Kind]
+		if label == "" {
+			label = strings.ToLower(r.Kind)
+		}
+		switch r.Action {
+		case "created":
+			fmt.Printf("%s  +  %s\n", label, r.Name)
+		case "updated":
+			fmt.Printf("%s  ~  %s\n", label, r.Name)
+		default:
+			anyFailed = true
+			warnf("%s  !  %s: %s", label, r.Name, formatResultErrors(r.Errors))
+		}
+		for _, s := range r.Secrets {
+			if s.Action == "upserted" {
+				fmt.Printf("  secret  ~  %s/%s\n", r.Name, s.Key)
+			} else {
+				anyFailed = true
+				warnf("  secret  !  %s/%s: %s", r.Name, s.Key, formatResultErrors(s.Errors))
+			}
+		}
+	}
+	return anyFailed
+}
+
+func formatResultErrors(errs map[string]any) string {
+	if len(errs) == 0 {
+		return "apply failed"
+	}
+	parts := make([]string, 0, len(errs))
+	for _, k := range sortedKeys(errs) {
+		parts = append(parts, fmt.Sprintf("%s: %v", k, errs[k]))
+	}
+	return strings.Join(parts, "; ")
+}
+
+// legacyApply is the pre-bulk reconciliation path: one GET+write per
+// resource and one POST per secret. Kept for servers without /api/apply.
+func legacyApply(c *api.Client, envs, vaults, agents []*manifest.Doc) {
 	envIDByName := map[string]string{}
 	anyFailed := false
 
@@ -80,7 +204,6 @@ func runApply(cmd *cobra.Command, args []string) error {
 	if anyFailed {
 		os.Exit(1)
 	}
-	return nil
 }
 
 // ── grouping ───────────────────────────────────────────────────────────
