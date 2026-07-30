@@ -91,6 +91,18 @@ defmodule FountainWeb.VaultControllerTest do
 
       assert json_response(conn, 422)
     end
+
+    test "round-trips metadata", %{conn: conn, raw_key: raw_key} do
+      payload = %{name: "tagged-vault", metadata: %{"managed-by" => "chant"}}
+
+      conn =
+        conn
+        |> authed_with_key(raw_key)
+        |> post_json("/api/vaults", payload)
+
+      body = json_response(conn, 201)
+      assert body["data"]["metadata"] == %{"managed-by" => "chant"}
+    end
   end
 
   describe "PUT /api/vaults/:id" do

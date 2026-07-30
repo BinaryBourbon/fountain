@@ -163,6 +163,13 @@ defmodule Fountain.Environments.EnvironmentTest do
       refute Map.has_key?(cs.changes, :checkpoint_id)
     end
 
+    test "does not touch checkpoint_id when only metadata changes" do
+      env_with_checkpoint = %Environment{checkpoint_id: "ckpt_abc"}
+      cs = Environment.changeset(env_with_checkpoint, %{"metadata" => %{"owner" => "chant"}})
+
+      refute Map.has_key?(cs.changes, :checkpoint_id)
+    end
+
     test "preserves an explicit checkpoint_id even when a warm_start_field also changes" do
       env_with_checkpoint = %Environment{checkpoint_id: "ckpt_abc"}
 

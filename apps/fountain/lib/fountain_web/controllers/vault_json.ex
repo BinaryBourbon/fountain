@@ -10,6 +10,7 @@ defmodule FountainWeb.VaultJSON do
       id: v.id,
       name: v.name,
       description: v.description,
+      metadata: v.metadata,
       inserted_at: v.inserted_at,
       updated_at: v.updated_at
     }
