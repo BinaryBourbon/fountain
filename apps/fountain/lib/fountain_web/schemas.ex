@@ -394,6 +394,7 @@ defmodule FountainWeb.Schemas do
         networking_type: %Schema{type: :string, enum: ~w(unrestricted limited)},
         networking_config: %Schema{type: :object, additionalProperties: true},
         repositories: %Schema{type: :array, items: Repository},
+        metadata: %Schema{type: :object, additionalProperties: true},
         inserted_at: %Schema{type: :string, format: :"date-time"},
         updated_at: %Schema{type: :string, format: :"date-time"}
       },
@@ -439,7 +440,8 @@ defmodule FountainWeb.Schemas do
         setup_script: %Schema{type: :string},
         networking_type: %Schema{type: :string, enum: ~w(unrestricted limited)},
         networking_config: %Schema{type: :object, additionalProperties: true},
-        repositories: %Schema{type: :array, items: Repository}
+        repositories: %Schema{type: :array, items: Repository},
+        metadata: %Schema{type: :object, additionalProperties: true}
       },
       required: [:name]
     })
@@ -463,7 +465,8 @@ defmodule FountainWeb.Schemas do
         setup_script: %Schema{type: :string},
         networking_type: %Schema{type: :string, enum: ~w(unrestricted limited)},
         networking_config: %Schema{type: :object, additionalProperties: true},
-        repositories: %Schema{type: :array, items: Repository}
+        repositories: %Schema{type: :array, items: Repository},
+        metadata: %Schema{type: :object, additionalProperties: true}
       }
     })
   end
@@ -540,6 +543,7 @@ defmodule FountainWeb.Schemas do
         id: %Schema{type: :string, format: :uuid},
         name: %Schema{type: :string},
         description: %Schema{type: :string},
+        metadata: %Schema{type: :object, additionalProperties: true},
         inserted_at: %Schema{type: :string, format: :"date-time"},
         updated_at: %Schema{type: :string, format: :"date-time"}
       },
@@ -580,7 +584,8 @@ defmodule FountainWeb.Schemas do
       type: :object,
       properties: %{
         name: %Schema{type: :string, minLength: 1, maxLength: 200},
-        description: %Schema{type: :string}
+        description: %Schema{type: :string},
+        metadata: %Schema{type: :object, additionalProperties: true}
       },
       required: [:name]
     })
@@ -598,7 +603,8 @@ defmodule FountainWeb.Schemas do
       type: :object,
       properties: %{
         name: %Schema{type: :string, minLength: 1, maxLength: 200},
-        description: %Schema{type: :string}
+        description: %Schema{type: :string},
+        metadata: %Schema{type: :object, additionalProperties: true}
       }
     })
   end
