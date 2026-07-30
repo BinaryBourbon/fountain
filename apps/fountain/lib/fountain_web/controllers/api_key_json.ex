@@ -13,4 +13,17 @@ defmodule FountainWeb.ApiKeyJSON do
       created_at: key.inserted_at
     }
   end
+
+  @doc "Key listing — metadata only, never the key or its hash."
+  def index(%{keys: keys}), do: %{data: Enum.map(keys, &summary/1)}
+
+  defp summary(%ApiKey{} = key) do
+    %{
+      id: key.id,
+      name: key.name,
+      prefix: key.key_prefix,
+      created_at: key.inserted_at,
+      last_used_at: key.last_used_at
+    }
+  end
 end

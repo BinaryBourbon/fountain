@@ -22,6 +22,11 @@ defmodule Fountain.Agents.Agent do
     field :skills, {:array, :map}, default: []
     field :mcp_servers, :map, default: %{}
     field :metadata, :map, default: %{}
+    # Vaults a conversation may attach to this agent. nil = any tenant
+    # vault (legacy), [] = none, non-empty = allowlist. Vault values win
+    # on env-var collision, so an attached vault can override reviewed
+    # agent config — this is the lever that scopes who can do that.
+    field :allowed_vault_ids, {:array, :binary_id}
     field :avatar_media_type, :string
     field :conversation_count, :integer, virtual: true, default: 0
     belongs_to :user, User
@@ -42,6 +47,7 @@ defmodule Fountain.Agents.Agent do
       :skills,
       :mcp_servers,
       :metadata,
+      :allowed_vault_ids,
       :user_id,
       :environment_id
     ])
@@ -68,6 +74,7 @@ defmodule Fountain.Agents.Agent do
     has_content = is_binary(Map.get(entry, "content") || Map.get(entry, :content))
     has_source = is_binary(Map.get(entry, "source") || Map.get(entry, :source))
     name = Map.get(entry, "name") || Map.get(entry, :name)
+    ref = Map.get(entry, "ref") || Map.get(entry, :ref)
 
     cond do
       has_content and has_source ->
@@ -79,10 +86,22 @@ defmodule Fountain.Agents.Agent do
       has_content and not is_binary(name) ->
         [skills: "entry #{i}: inline skills require a name"]
 
+      has_content and not is_nil(ref) ->
+        [skills: "entry #{i}: ref only applies to github-sourced skills"]
+
+      not is_nil(ref) and not valid_ref?(ref) ->
+        [skills: "entry #{i}: ref must match [A-Za-z0-9._/-]+ (tag, branch, or sha)"]
+
       true ->
         []
     end
   end
 
   defp skill_errors(_entry, i), do: [skills: "entry #{i}: must be an object"]
+
+  # Mirrors SpriteSkills.safe_token!/1 — the ref is interpolated into the
+  # sprite-side install command, so reject anything outside the allow-list
+  # at write time instead of failing the spawn later.
+  defp valid_ref?(ref) when is_binary(ref), do: Regex.match?(~r{\A[A-Za-z0-9._/-]+\z}, ref)
+  defp valid_ref?(_), do: false
 end

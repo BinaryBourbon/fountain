@@ -117,7 +117,8 @@ defmodule FountainWeb.Schemas do
           format: :uuid,
           nullable: true,
           description:
-            "Optional vault whose secrets override the environment's baseline at sprite spawn."
+            "Optional vault whose secrets override the environment's baseline at sprite spawn. " <>
+              "Must satisfy the agent's allowed_vault_ids when that allowlist is set."
         },
         prompt: %Schema{type: :string, description: "Optional first turn prompt."},
         images: %Schema{
@@ -229,7 +230,8 @@ defmodule FountainWeb.Schemas do
           type: :array,
           description:
             "Each entry is either inline (`{name, content}` — full SKILL.md text written to the sprite) " <>
-              "or github (`{source, name?}` — installed on the sprite via the skills.sh CLI). " <>
+              "or github (`{source, ref?, name?}` — installed on the sprite via the skills.sh CLI, " <>
+              "optionally pinned to a tag/branch/sha via `ref`). " <>
               "Exactly one of `content` or `source` must be set on each entry.",
           items: %Schema{
             type: :object,
@@ -240,12 +242,30 @@ defmodule FountainWeb.Schemas do
                 type: :string,
                 description: "GitHub `owner/repo` for skills.sh-sourced entries.",
                 pattern: "^[A-Za-z0-9._/-]+$"
+              },
+              ref: %Schema{
+                type: :string,
+                description:
+                  "Optional tag, branch, or sha pinning a github-sourced skill " <>
+                    "(installed as `owner/repo@ref`). Without it the default branch " <>
+                    "is fetched at spawn time.",
+                pattern: "^[A-Za-z0-9._/-]+$"
               }
             }
           }
         },
         mcp_servers: %Schema{type: :object, additionalProperties: true},
         metadata: %Schema{type: :object, additionalProperties: true},
+        allowed_vault_ids: %Schema{
+          type: :array,
+          items: %Schema{type: :string, format: :uuid},
+          nullable: true,
+          description:
+            "Vaults a conversation may attach to this agent. null (default) allows " <>
+              "any vault the tenant owns; an empty list forbids attaching any vault; " <>
+              "a non-empty list is an allowlist. Vault values override the agent's " <>
+              "environment on key collision, so this scopes who can override reviewed config."
+        },
         inserted_at: %Schema{type: :string, format: :"date-time"},
         updated_at: %Schema{type: :string, format: :"date-time"}
       },
@@ -298,7 +318,8 @@ defmodule FountainWeb.Schemas do
           type: :array,
           description:
             "Each entry is either inline (`{name, content}` — full SKILL.md text written to the sprite) " <>
-              "or github (`{source, name?}` — installed on the sprite via the skills.sh CLI). " <>
+              "or github (`{source, ref?, name?}` — installed on the sprite via the skills.sh CLI, " <>
+              "optionally pinned to a tag/branch/sha via `ref`). " <>
               "Exactly one of `content` or `source` must be set on each entry.",
           items: %Schema{
             type: :object,
@@ -309,12 +330,29 @@ defmodule FountainWeb.Schemas do
                 type: :string,
                 description: "GitHub `owner/repo` for skills.sh-sourced entries.",
                 pattern: "^[A-Za-z0-9._/-]+$"
+              },
+              ref: %Schema{
+                type: :string,
+                description:
+                  "Optional tag, branch, or sha pinning a github-sourced skill " <>
+                    "(installed as `owner/repo@ref`). Without it the default branch " <>
+                    "is fetched at spawn time.",
+                pattern: "^[A-Za-z0-9._/-]+$"
               }
             }
           }
         },
         mcp_servers: %Schema{type: :object, additionalProperties: true},
-        metadata: %Schema{type: :object, additionalProperties: true}
+        metadata: %Schema{type: :object, additionalProperties: true},
+        allowed_vault_ids: %Schema{
+          type: :array,
+          items: %Schema{type: :string, format: :uuid},
+          nullable: true,
+          description:
+            "Vaults a conversation may attach to this agent. null (default) allows " <>
+              "any vault the tenant owns; an empty list forbids attaching any vault; " <>
+              "a non-empty list is an allowlist."
+        }
       },
       required: [:name, :model, :runtime]
     })
@@ -341,7 +379,8 @@ defmodule FountainWeb.Schemas do
           type: :array,
           description:
             "Each entry is either inline (`{name, content}` — full SKILL.md text written to the sprite) " <>
-              "or github (`{source, name?}` — installed on the sprite via the skills.sh CLI). " <>
+              "or github (`{source, ref?, name?}` — installed on the sprite via the skills.sh CLI, " <>
+              "optionally pinned to a tag/branch/sha via `ref`). " <>
               "Exactly one of `content` or `source` must be set on each entry.",
           items: %Schema{
             type: :object,
@@ -352,12 +391,29 @@ defmodule FountainWeb.Schemas do
                 type: :string,
                 description: "GitHub `owner/repo` for skills.sh-sourced entries.",
                 pattern: "^[A-Za-z0-9._/-]+$"
+              },
+              ref: %Schema{
+                type: :string,
+                description:
+                  "Optional tag, branch, or sha pinning a github-sourced skill " <>
+                    "(installed as `owner/repo@ref`). Without it the default branch " <>
+                    "is fetched at spawn time.",
+                pattern: "^[A-Za-z0-9._/-]+$"
               }
             }
           }
         },
         mcp_servers: %Schema{type: :object, additionalProperties: true},
-        metadata: %Schema{type: :object, additionalProperties: true}
+        metadata: %Schema{type: :object, additionalProperties: true},
+        allowed_vault_ids: %Schema{
+          type: :array,
+          items: %Schema{type: :string, format: :uuid},
+          nullable: true,
+          description:
+            "Vaults a conversation may attach to this agent. null (default) allows " <>
+              "any vault the tenant owns; an empty list forbids attaching any vault; " <>
+              "a non-empty list is an allowlist."
+        }
       }
     })
   end
@@ -410,6 +466,7 @@ defmodule FountainWeb.Schemas do
           additionalProperties: true
         },
         repositories: %Schema{type: :array, items: Repository},
+        metadata: %Schema{type: :object, additionalProperties: true},
         inserted_at: %Schema{type: :string, format: :"date-time"},
         updated_at: %Schema{type: :string, format: :"date-time"}
       },
@@ -471,7 +528,8 @@ defmodule FountainWeb.Schemas do
           },
           additionalProperties: true
         },
-        repositories: %Schema{type: :array, items: Repository}
+        repositories: %Schema{type: :array, items: Repository},
+        metadata: %Schema{type: :object, additionalProperties: true}
       },
       required: [:name]
     })
@@ -511,7 +569,8 @@ defmodule FountainWeb.Schemas do
           },
           additionalProperties: true
         },
-        repositories: %Schema{type: :array, items: Repository}
+        repositories: %Schema{type: :array, items: Repository},
+        metadata: %Schema{type: :object, additionalProperties: true}
       }
     })
   end
@@ -588,6 +647,7 @@ defmodule FountainWeb.Schemas do
         id: %Schema{type: :string, format: :uuid},
         name: %Schema{type: :string},
         description: %Schema{type: :string},
+        metadata: %Schema{type: :object, additionalProperties: true},
         inserted_at: %Schema{type: :string, format: :"date-time"},
         updated_at: %Schema{type: :string, format: :"date-time"}
       },
@@ -628,7 +688,8 @@ defmodule FountainWeb.Schemas do
       type: :object,
       properties: %{
         name: %Schema{type: :string, minLength: 1, maxLength: 200},
-        description: %Schema{type: :string}
+        description: %Schema{type: :string},
+        metadata: %Schema{type: :object, additionalProperties: true}
       },
       required: [:name]
     })
@@ -646,7 +707,8 @@ defmodule FountainWeb.Schemas do
       type: :object,
       properties: %{
         name: %Schema{type: :string, minLength: 1, maxLength: 200},
-        description: %Schema{type: :string}
+        description: %Schema{type: :string},
+        metadata: %Schema{type: :object, additionalProperties: true}
       }
     })
   end

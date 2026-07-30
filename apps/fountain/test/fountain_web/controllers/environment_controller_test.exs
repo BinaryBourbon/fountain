@@ -82,6 +82,18 @@ defmodule FountainWeb.EnvironmentControllerTest do
       conn = post_json(conn, "/api/environments", payload)
       assert json_response(conn, 401)
     end
+
+    test "round-trips metadata", %{conn: conn, raw_key: raw_key} do
+      payload = %{name: "tagged-env", metadata: %{"managed-by" => "chant", "team" => "payments"}}
+
+      conn =
+        conn
+        |> authed_with_key(raw_key)
+        |> post_json("/api/environments", payload)
+
+      body = json_response(conn, 201)
+      assert body["data"]["metadata"] == %{"managed-by" => "chant", "team" => "payments"}
+    end
   end
 
   describe "PUT /api/environments/:id" do

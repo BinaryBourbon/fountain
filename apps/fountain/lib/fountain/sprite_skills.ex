@@ -6,11 +6,13 @@ defmodule Fountain.SpriteSkills do
 
     * `%{"name" => name, "content" => skill_md}` — inline. Written
       directly to `<runtime.skills_root>/<name>/SKILL.md`.
-    * `%{"source" => "owner/repo", "name" => optional}` — github.
-      Installed via the [skills.sh](https://skills.sh) CLI on the sprite:
-      `npx -y skills@latest add <source> --global --agent <runtime-agent>
-      --yes [--skill <name>]`. Each runtime declares its own
-      `skills_sh_agent` so the CLI writes to the right on-disk layout.
+    * `%{"source" => "owner/repo", "ref" => optional, "name" => optional}` —
+      github. Installed via the [skills.sh](https://skills.sh) CLI on the
+      sprite: `npx -y skills@latest add <source>[@<ref>] --global --agent
+      <runtime-agent> --yes [--skill <name>]`. A `ref` (tag, branch, or sha)
+      pins the install; without one the repo's default branch is used at
+      spawn time. Each runtime declares its own `skills_sh_agent` so the
+      CLI writes to the right on-disk layout.
 
   The bundled `fountain` skill at `priv/sprite_skills/fountain/SKILL.md` is
   always prepended as an inline skill — it's how the per-conversation callback
@@ -104,15 +106,7 @@ defmodule Fountain.SpriteSkills do
     safe_agent = safe_token!(agent_id)
 
     Enum.each(github, fn entry ->
-      source = safe_token!(entry["source"])
-
-      cmd =
-        "npx -y skills@latest add #{source} --global --agent #{safe_agent} --yes" <>
-          case entry["name"] do
-            nil -> ""
-            "" -> ""
-            name -> " --skill #{safe_token!(name)}"
-          end
+      cmd = github_install_cmd(entry, safe_agent)
 
       {output, code} =
         Sprites.cmd(sprite, "bash", ["-lc", cmd],
@@ -126,6 +120,29 @@ defmodule Fountain.SpriteSkills do
         )
       end
     end)
+  end
+
+  # Build the skills.sh install command for one github entry. `@ref` pins
+  # the fetch to a tag/branch/sha (skills.sh resolves `owner/repo@ref`).
+  # Every interpolated value passes the safe_token! allow-list separately —
+  # `@` itself is never accepted inside a token.
+  @doc false
+  def github_install_cmd(entry, safe_agent) do
+    source = safe_token!(entry["source"])
+
+    pinned =
+      case entry["ref"] do
+        nil -> source
+        "" -> source
+        ref -> source <> "@" <> safe_token!(ref)
+      end
+
+    "npx -y skills@latest add #{pinned} --global --agent #{safe_agent} --yes" <>
+      case entry["name"] do
+        nil -> ""
+        "" -> ""
+        name -> " --skill #{safe_token!(name)}"
+      end
   end
 
   # Allow-list quoting guard for values interpolated into `bash -lc`.

@@ -30,6 +30,9 @@ defmodule Fountain.Environments.Environment do
     field :networking_config, :map, default: %{}
     field :repositories, {:array, :map}, default: []
     field :checkpoint_id, :string
+    # Free-form caller bookkeeping. Deliberately NOT a warm-start field:
+    # changing it must not invalidate the provisioning checkpoint.
+    field :metadata, :map, default: %{}
     belongs_to :user, User
     has_many :secrets, Secret
     timestamps(type: :utc_datetime)
@@ -48,6 +51,7 @@ defmodule Fountain.Environments.Environment do
       :networking_config,
       :repositories,
       :checkpoint_id,
+      :metadata,
       :user_id
     ])
     |> validate_required([:name])
