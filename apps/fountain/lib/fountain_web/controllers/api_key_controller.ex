@@ -1,7 +1,8 @@
 defmodule FountainWeb.ApiKeyController do
   @moduledoc """
-  API key issuance and revocation for the authenticated user.
+  API key issuance, listing, and revocation for the authenticated user.
 
+  GET    /api/auth/api-keys      — list active keys (never returns key material)
   POST   /api/auth/api-keys      — create a new key (returns plaintext once)
   DELETE /api/auth/api-keys/:id  — revoke a key
   """
@@ -9,6 +10,11 @@ defmodule FountainWeb.ApiKeyController do
   use FountainWeb, :controller
 
   alias Fountain.Accounts
+
+  def index(conn, _params) do
+    user = conn.assigns.current_user
+    render(conn, :index, keys: Accounts.list_api_keys(user.id))
+  end
 
   def create(conn, %{"name" => name}) when is_binary(name) and name != "" do
     user = conn.assigns.current_user
