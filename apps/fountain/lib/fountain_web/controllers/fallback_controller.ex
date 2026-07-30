@@ -24,6 +24,15 @@ defmodule FountainWeb.FallbackController do
     |> json(%{error: "vault_not_found"})
   end
 
+  # The agent's allowed_vault_ids forbids attaching this (existing, same-
+  # tenant) vault. Unlike :vault_not_found this is a policy denial, so a
+  # distinct status + message tells the caller which knob to look at.
+  def call(conn, {:error, :vault_not_allowed}) do
+    conn
+    |> put_status(:unprocessable_entity)
+    |> json(%{error: "vault_not_allowed", message: "vault is not in the agent's allowed_vault_ids"})
+  end
+
   def call(conn, {:error, reason}) when is_binary(reason) do
     conn
     |> put_status(:bad_request)

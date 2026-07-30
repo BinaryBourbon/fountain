@@ -560,7 +560,7 @@ defmodule Fountain.Conversations do
       when is_binary(user_id) do
     with %Agents.Agent{} = agent <- Agents.get_agent(agent_id, user_id) || {:error, :not_found},
          {:ok, runtime_module} <- Fountain.Runtimes.for_runtime(agent.runtime),
-         {:ok, vault_id} <- resolve_vault_id(attrs["vault_id"], user_id),
+         {:ok, vault_id} <- resolve_vault_id(attrs["vault_id"], user_id, agent),
          {:ok, sandbox} <-
            create_sandbox(%{
              environment_id: agent.environment_id,
@@ -666,14 +666,26 @@ defmodule Fountain.Conversations do
 
   defp tenant_prefix(user_id) when is_binary(user_id), do: binary_part(user_id, 0, 8)
 
-  defp resolve_vault_id(nil, _user_id), do: {:ok, nil}
-  defp resolve_vault_id("", _user_id), do: {:ok, nil}
+  defp resolve_vault_id(nil, _user_id, _agent), do: {:ok, nil}
+  defp resolve_vault_id("", _user_id, _agent), do: {:ok, nil}
 
-  defp resolve_vault_id(id, user_id) when is_binary(id) and is_binary(user_id) do
-    case Fountain.Vaults.get_vault(id, user_id) do
-      nil -> {:error, :vault_not_found}
-      vault -> {:ok, vault.id}
+  defp resolve_vault_id(id, user_id, agent) when is_binary(id) and is_binary(user_id) do
+    with :ok <- check_vault_allowed(id, agent) do
+      case Fountain.Vaults.get_vault(id, user_id) do
+        nil -> {:error, :vault_not_found}
+        vault -> {:ok, vault.id}
+      end
     end
+  end
+
+  # Vault values win on env-var collision, so an attached vault overrides
+  # the agent's reviewed environment. agent.allowed_vault_ids scopes who
+  # may do that: nil keeps the legacy any-tenant-vault behavior, [] forbids
+  # attaching any vault, a non-empty list is an allowlist.
+  defp check_vault_allowed(_vault_id, %Agents.Agent{allowed_vault_ids: nil}), do: :ok
+
+  defp check_vault_allowed(vault_id, %Agents.Agent{allowed_vault_ids: allowed}) do
+    if vault_id in allowed, do: :ok, else: {:error, :vault_not_allowed}
   end
 
   @doc """

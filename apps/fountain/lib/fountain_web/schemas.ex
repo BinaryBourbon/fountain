@@ -117,7 +117,8 @@ defmodule FountainWeb.Schemas do
           format: :uuid,
           nullable: true,
           description:
-            "Optional vault whose secrets override the environment's baseline at sprite spawn."
+            "Optional vault whose secrets override the environment's baseline at sprite spawn. " <>
+              "Must satisfy the agent's allowed_vault_ids when that allowlist is set."
         },
         prompt: %Schema{type: :string, description: "Optional first turn prompt."},
         images: %Schema{
@@ -246,6 +247,16 @@ defmodule FountainWeb.Schemas do
         },
         mcp_servers: %Schema{type: :object, additionalProperties: true},
         metadata: %Schema{type: :object, additionalProperties: true},
+        allowed_vault_ids: %Schema{
+          type: :array,
+          items: %Schema{type: :string, format: :uuid},
+          nullable: true,
+          description:
+            "Vaults a conversation may attach to this agent. null (default) allows " <>
+              "any vault the tenant owns; an empty list forbids attaching any vault; " <>
+              "a non-empty list is an allowlist. Vault values override the agent's " <>
+              "environment on key collision, so this scopes who can override reviewed config."
+        },
         inserted_at: %Schema{type: :string, format: :"date-time"},
         updated_at: %Schema{type: :string, format: :"date-time"}
       },
@@ -314,7 +325,16 @@ defmodule FountainWeb.Schemas do
           }
         },
         mcp_servers: %Schema{type: :object, additionalProperties: true},
-        metadata: %Schema{type: :object, additionalProperties: true}
+        metadata: %Schema{type: :object, additionalProperties: true},
+        allowed_vault_ids: %Schema{
+          type: :array,
+          items: %Schema{type: :string, format: :uuid},
+          nullable: true,
+          description:
+            "Vaults a conversation may attach to this agent. null (default) allows " <>
+              "any vault the tenant owns; an empty list forbids attaching any vault; " <>
+              "a non-empty list is an allowlist."
+        }
       },
       required: [:name, :model, :runtime]
     })
@@ -357,7 +377,16 @@ defmodule FountainWeb.Schemas do
           }
         },
         mcp_servers: %Schema{type: :object, additionalProperties: true},
-        metadata: %Schema{type: :object, additionalProperties: true}
+        metadata: %Schema{type: :object, additionalProperties: true},
+        allowed_vault_ids: %Schema{
+          type: :array,
+          items: %Schema{type: :string, format: :uuid},
+          nullable: true,
+          description:
+            "Vaults a conversation may attach to this agent. null (default) allows " <>
+              "any vault the tenant owns; an empty list forbids attaching any vault; " <>
+              "a non-empty list is an allowlist."
+        }
       }
     })
   end
