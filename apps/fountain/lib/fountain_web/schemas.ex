@@ -229,7 +229,8 @@ defmodule FountainWeb.Schemas do
           type: :array,
           description:
             "Each entry is either inline (`{name, content}` — full SKILL.md text written to the sprite) " <>
-              "or github (`{source, name?}` — installed on the sprite via the skills.sh CLI). " <>
+              "or github (`{source, ref?, name?}` — installed on the sprite via the skills.sh CLI, " <>
+              "optionally pinned to a tag/branch/sha via `ref`). " <>
               "Exactly one of `content` or `source` must be set on each entry.",
           items: %Schema{
             type: :object,
@@ -239,6 +240,14 @@ defmodule FountainWeb.Schemas do
               source: %Schema{
                 type: :string,
                 description: "GitHub `owner/repo` for skills.sh-sourced entries.",
+                pattern: "^[A-Za-z0-9._/-]+$"
+              },
+              ref: %Schema{
+                type: :string,
+                description:
+                  "Optional tag, branch, or sha pinning a github-sourced skill " <>
+                    "(installed as `owner/repo@ref`). Without it the default branch " <>
+                    "is fetched at spawn time.",
                 pattern: "^[A-Za-z0-9._/-]+$"
               }
             }
@@ -298,7 +307,8 @@ defmodule FountainWeb.Schemas do
           type: :array,
           description:
             "Each entry is either inline (`{name, content}` — full SKILL.md text written to the sprite) " <>
-              "or github (`{source, name?}` — installed on the sprite via the skills.sh CLI). " <>
+              "or github (`{source, ref?, name?}` — installed on the sprite via the skills.sh CLI, " <>
+              "optionally pinned to a tag/branch/sha via `ref`). " <>
               "Exactly one of `content` or `source` must be set on each entry.",
           items: %Schema{
             type: :object,
@@ -308,6 +318,14 @@ defmodule FountainWeb.Schemas do
               source: %Schema{
                 type: :string,
                 description: "GitHub `owner/repo` for skills.sh-sourced entries.",
+                pattern: "^[A-Za-z0-9._/-]+$"
+              },
+              ref: %Schema{
+                type: :string,
+                description:
+                  "Optional tag, branch, or sha pinning a github-sourced skill " <>
+                    "(installed as `owner/repo@ref`). Without it the default branch " <>
+                    "is fetched at spawn time.",
                 pattern: "^[A-Za-z0-9._/-]+$"
               }
             }
@@ -341,7 +359,8 @@ defmodule FountainWeb.Schemas do
           type: :array,
           description:
             "Each entry is either inline (`{name, content}` — full SKILL.md text written to the sprite) " <>
-              "or github (`{source, name?}` — installed on the sprite via the skills.sh CLI). " <>
+              "or github (`{source, ref?, name?}` — installed on the sprite via the skills.sh CLI, " <>
+              "optionally pinned to a tag/branch/sha via `ref`). " <>
               "Exactly one of `content` or `source` must be set on each entry.",
           items: %Schema{
             type: :object,
@@ -351,6 +370,14 @@ defmodule FountainWeb.Schemas do
               source: %Schema{
                 type: :string,
                 description: "GitHub `owner/repo` for skills.sh-sourced entries.",
+                pattern: "^[A-Za-z0-9._/-]+$"
+              },
+              ref: %Schema{
+                type: :string,
+                description:
+                  "Optional tag, branch, or sha pinning a github-sourced skill " <>
+                    "(installed as `owner/repo@ref`). Without it the default branch " <>
+                    "is fetched at spawn time.",
                 pattern: "^[A-Za-z0-9._/-]+$"
               }
             }

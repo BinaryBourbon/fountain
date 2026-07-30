@@ -123,6 +123,37 @@ defmodule Fountain.Agents.AgentTest do
       assert Enum.any?(errors_on(changeset).skills, &String.contains?(&1, "only one of"))
     end
 
+    test "github skill pinned with a ref passes" do
+      skills = [%{"source" => "owner/repo", "ref" => "v1.2.0"}]
+      changeset = Agent.changeset(%Agent{}, Map.put(@valid_attrs, :skills, skills))
+      assert changeset.valid?
+    end
+
+    test "ref on an inline skill fails" do
+      skills = [%{"name" => "foo", "content" => "x", "ref" => "main"}]
+      changeset = Agent.changeset(%Agent{}, Map.put(@valid_attrs, :skills, skills))
+      refute changeset.valid?
+
+      assert Enum.any?(
+               errors_on(changeset).skills,
+               &String.contains?(&1, "ref only applies to github-sourced")
+             )
+    end
+
+    test "ref with shell-unsafe characters fails" do
+      skills = [%{"source" => "owner/repo", "ref" => "main; rm -rf /"}]
+      changeset = Agent.changeset(%Agent{}, Map.put(@valid_attrs, :skills, skills))
+      refute changeset.valid?
+      assert Enum.any?(errors_on(changeset).skills, &String.contains?(&1, "ref must match"))
+    end
+
+    test "non-string ref fails" do
+      skills = [%{"source" => "owner/repo", "ref" => 42}]
+      changeset = Agent.changeset(%Agent{}, Map.put(@valid_attrs, :skills, skills))
+      refute changeset.valid?
+      assert Enum.any?(errors_on(changeset).skills, &String.contains?(&1, "ref must match"))
+    end
+
     test "skill with neither content nor source fails" do
       skills = [%{}]
       changeset = Agent.changeset(%Agent{}, Map.put(@valid_attrs, :skills, skills))
