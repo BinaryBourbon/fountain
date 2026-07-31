@@ -71,6 +71,25 @@ defmodule Fountain.ManifestTest do
       vault = Vaults.get_vault_by_name("v", user.id)
       assert Vaults.decrypted_env(vault, dek) == %{"PORT" => "5432", "DEBUG" => "true"}
     end
+
+    # chant's fountain lexicon marks resources it manages with
+    # metadata."managed-by" and prunes by reading that marker back from the
+    # list endpoints — bulk apply must persist spec.metadata verbatim.
+    test "spec.metadata (e.g. chant's managed-by marker) survives apply", %{user: user} do
+      marker = %{"managed-by" => "chant"}
+
+      {:ok, results} =
+        Manifest.apply_manifest(user.id, [
+          env_resource("e", %{"metadata" => marker}),
+          vault_resource("v", %{"metadata" => marker}),
+          agent_resource("a", %{"metadata" => marker})
+        ])
+
+      assert Enum.all?(results, &(&1.action == :created))
+      assert Environments.get_environment_by_name("e", user.id).metadata == marker
+      assert Vaults.get_vault_by_name("v", user.id).metadata == marker
+      assert Agents.get_agent_by_name("a", user.id).metadata == marker
+    end
   end
 
   describe "apply_manifest/2 updates" do
