@@ -15,6 +15,20 @@ defmodule FountainWeb.SessionController do
 
   alias Fountain.Accounts
 
+  # The JSON sibling POST /api/auth/token has been limited to 10/hour since
+  # launch; this form had no limit at all, so credential stuffing simply used
+  # the HTML endpoint instead. Same bucket name as the JSON path so an attacker
+  # cannot get a second allowance by switching surface.
+  plug FountainWeb.Plugs.RateLimit,
+       [bucket: "auth_token", max: 10, window_ms: 3_600_000]
+       when action in [:create]
+
+  # The legacy admin form brute-forces a single shared secret, so it gets a
+  # tighter budget than a per-account login.
+  plug FountainWeb.Plugs.RateLimit,
+       [bucket: "admin_login", max: 5, window_ms: 3_600_000]
+       when action in [:legacy_create]
+
   ## Multi-tenant email/password login
 
   def new(conn, _params) do
