@@ -78,13 +78,17 @@ jobs:
       - name: Compile (warnings as errors)
         run: mix compile --warnings-as-errors
 
+      # --strict, matching `mix precommit`. CI used to run the default profile
+      # while precommit ran --strict, so a strict violation passed CI and only
+      # showed up for whoever ran precommit next.
       - name: Run Credo
-        run: mix credo
+        run: mix credo --strict
 
       - name: Audit dependencies
-        # Non-blocking: still surfaces retired packages in the log but does
-        # not fail the build. earmark 1.4.x is retired upstream (no longer
-        # maintained); migration off it tracked separately.
+        # Deliberately non-blocking. A package can be retired upstream at any
+        # moment by someone else, and that would break every build here for a
+        # reason unrelated to the change under test. It stays visible in the
+        # log. Currently flags earmark 1.4.48 (deprecated, unmaintained).
         continue-on-error: true
         run: mix hex.audit
 

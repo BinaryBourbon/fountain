@@ -812,7 +812,7 @@ defmodule Fountain.ConversationsContextTest do
       assert stage.id in ids
     end
 
-    test "streams: [\"stdout\", \"stage\"] returns stdout and stage events", %{conv: conv} do
+    test ~s|streams: ["stdout", "stage"] returns stdout and stage events|, %{conv: conv} do
       stdout = insert_log_event(conv, kind: "output", stream: "stdout")
       stderr = insert_log_event(conv, kind: "output", stream: "stderr")
       stage = insert_log_event(conv, kind: "stage", stream: "", stage: "provision")
