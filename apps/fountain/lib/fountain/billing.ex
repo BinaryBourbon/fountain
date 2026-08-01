@@ -128,6 +128,60 @@ defmodule Fountain.Billing do
   end
 
   @doc """
+  Cancels every subscription attached to the user's Stripe customer.
+
+  Used when an account is deleted. Returns the number cancelled, or an error if
+  Stripe could not be reached or refused — the caller must treat that as fatal,
+  because deleting an account that keeps being charged leaves the person with no
+  account to log into and cancel from.
+
+  Cancels rather than deleting the Stripe Customer: invoices are financial
+  records a business is required to retain, and Stripe is the system of record
+  for them. Ending the billing relationship does not require destroying the
+  accounting trail.
+
+  Lists with `status: "all"` and cancels everything not already in a terminal
+  state. Filtering the API call to `"active"` would be the obvious thing and
+  would be wrong: a `trialing` subscription has not charged yet but will, and
+  `past_due` and `unpaid` are still live billing relationships. Only `canceled`
+  and `incomplete_expired` can no longer produce a charge.
+
+  Skipping the already-terminal ones also makes a retry after a partial failure
+  safe.
+  """
+  @cancellable ~w(active trialing past_due unpaid incomplete paused)
+
+  @spec cancel_subscriptions(User.t()) :: {:ok, non_neg_integer()} | {:error, term()}
+  def cancel_subscriptions(%User{stripe_customer_id: nil}), do: {:ok, 0}
+  def cancel_subscriptions(%User{stripe_customer_id: ""}), do: {:ok, 0}
+
+  def cancel_subscriptions(%User{stripe_customer_id: customer_id}) do
+    case Stripe.Subscription.list(%{customer: customer_id, status: "all", limit: 100}) do
+      {:ok, %{data: subs} = list} ->
+        # A customer with more than 100 subscriptions is not a thing we create,
+        # but silently cancelling the first page and reporting success would
+        # leave the rest charging a deleted account.
+        if Map.get(list, :has_more, false) do
+          {:error, :too_many_subscriptions}
+        else
+          subs |> Enum.filter(&(to_string(&1.status) in @cancellable)) |> cancel_each()
+        end
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp cancel_each(subs) do
+    Enum.reduce_while(subs, {:ok, 0}, fn sub, {:ok, count} ->
+      case Stripe.Subscription.cancel(sub.id) do
+        {:ok, _} -> {:cont, {:ok, count + 1}}
+        {:error, reason} -> {:halt, {:error, reason}}
+      end
+    end)
+  end
+
+  @doc """
   Returns the user with a `stripe_customer_id`, creating the Stripe Customer if
   it is missing.
 

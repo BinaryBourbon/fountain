@@ -201,5 +201,3 @@ Being straight about what self-hosting does not yet include:
   per-commit SHAs ([#190](https://github.com/BinaryBourbon/fountain/issues/190)),
   so pinning means pinning a SHA.
 - **No first-admin bootstrap**; the role is set in SQL.
-- **No account deletion**
-  ([#170](https://github.com/BinaryBourbon/fountain/issues/170)).

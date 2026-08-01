@@ -70,10 +70,19 @@ defmodule FountainWeb.SessionController do
     |> render(:new, error: "Email and password are required.", layout: false)
   end
 
-  def delete(conn, _params) do
-    conn
-    |> configure_session(drop: true)
-    |> redirect(to: ~p"/auth/login")
+  def delete(conn, params) do
+    conn = configure_session(conn, drop: true)
+
+    # Account deletion redirects here to drop the session, since a LiveView
+    # cannot clear the session cookie itself. The confirmation has to be shown
+    # after the redirect: by this point there is no account left to show it on.
+    if params["deleted"] == "1" do
+      conn
+      |> put_flash(:info, "Your account and all of its data have been deleted.")
+      |> redirect(to: ~p"/auth/login")
+    else
+      redirect(conn, to: ~p"/auth/login")
+    end
   end
 
   ## Legacy single-tenant admin token (kept for ops runbook compat)

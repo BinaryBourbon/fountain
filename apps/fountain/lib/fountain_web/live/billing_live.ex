@@ -9,10 +9,12 @@ defmodule FountainWeb.Live.BillingLive do
 
   use FountainWeb, :live_view
 
+  alias Fountain.Accounts.Deletion
   alias Fountain.Billing
 
   @impl true
   def mount(_params, _session, socket) do
+    socket = FountainWeb.Audited.put_client_ip(socket)
     user = socket.assigns.current_user
     {period_start, period_end} = current_month_range()
     usage = Billing.usage_summary(user.id, period_start, period_end)
@@ -23,7 +25,9 @@ defmodule FountainWeb.Live.BillingLive do
        usage: usage,
        period_start: period_start,
        period_end: period_end,
-       stripe_url_loading: false
+       stripe_url_loading: false,
+       delete_confirmation: "",
+       deleting: false
      )}
   end
 
@@ -41,6 +45,56 @@ defmodule FountainWeb.Live.BillingLive do
          socket
          |> assign(:stripe_url_loading, false)
          |> put_flash(:error, "Unable to reach Stripe. Please try again.")}
+    end
+  end
+
+  @impl true
+  def handle_event("confirm_delete_input", %{"email" => email}, socket) do
+    {:noreply, assign(socket, :delete_confirmation, email)}
+  end
+
+  # Typing the account's own email is the confirmation. It is not a security
+  # control — the session already proves who this is — it is a speed bump, so
+  # the irreversible button cannot be hit by reflex.
+  @impl true
+  def handle_event("delete_account", %{"email" => email}, socket) do
+    user = socket.assigns.current_user
+
+    cond do
+      email != user.email ->
+        {:noreply, put_flash(socket, :error, "Type your email address exactly to confirm.")}
+
+      socket.assigns.deleting ->
+        {:noreply, socket}
+
+      true ->
+        socket = assign(socket, :deleting, true)
+
+        case Deletion.delete_user(user,
+               actor: "self",
+               request_ip: socket.assigns[:client_ip]
+             ) do
+          {:ok, _summary} ->
+            # Straight out through the controller so the session is dropped;
+            # a LiveView cannot clear the session cookie itself.
+            {:noreply, redirect(socket, to: ~p"/auth/logout?deleted=1")}
+
+          {:error, {:stripe, _reason}} ->
+            {:noreply,
+             socket
+             |> assign(:deleting, false)
+             |> put_flash(
+               :error,
+               "Your subscription could not be cancelled, so nothing was deleted. " <>
+                 "Please try again, or contact support if it keeps failing."
+             )}
+
+          {:error, _reason} ->
+            {:noreply,
+             socket
+             |> assign(:deleting, false)
+             |> put_flash(:error, "Account deletion failed. Nothing was deleted.")}
+        end
     end
   end
 
@@ -133,6 +187,40 @@ defmodule FountainWeb.Live.BillingLive do
           </div>
         </dl>
       </div>
+
+      <%!-- Danger zone --%>
+      <div class="rounded-lg border border-red-200 bg-white p-6 shadow-sm">
+        <h2 class="mb-1 text-lg font-medium text-red-700">Delete account</h2>
+        <p class="mb-4 text-sm text-gray-600">
+          Cancels your subscription, destroys every running sandbox, and permanently
+          deletes your agents, environments, vaults, conversations and stored secrets.
+          Secrets are encrypted with a key held only for your account; deleting the
+          account destroys that key, so they cannot be recovered afterwards by anyone.
+          <strong>This cannot be undone.</strong>
+        </p>
+
+        <form phx-submit="delete_account" class="space-y-3">
+          <label class="block text-sm text-gray-700">
+            Type <span class="font-mono font-semibold"><%= @current_user.email %></span> to confirm
+            <input
+              type="text"
+              name="email"
+              autocomplete="off"
+              value={@delete_confirmation}
+              phx-change="confirm_delete_input"
+              class="mt-1 block w-full rounded border-gray-300 text-sm shadow-sm"
+            />
+          </label>
+
+          <button
+            type="submit"
+            disabled={@delete_confirmation != @current_user.email or @deleting}
+            class="rounded bg-red-600 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-gray-300"
+          >
+            <%= if @deleting, do: "Deleting…", else: "Delete my account" %>
+          </button>
+        </form>
+      </div>
     </div>
     """
   end
@@ -143,7 +231,16 @@ defmodule FountainWeb.Live.BillingLive do
     now = DateTime.utc_now()
     period_start = %DateTime{now | day: 1, hour: 0, minute: 0, second: 0, microsecond: {0, 0}}
     last_day = :calendar.last_day_of_the_month(now.year, now.month)
-    period_end = %DateTime{now | day: last_day, hour: 23, minute: 59, second: 59, microsecond: {0, 0}}
+
+    period_end = %DateTime{
+      now
+      | day: last_day,
+        hour: 23,
+        minute: 59,
+        second: 59,
+        microsecond: {0, 0}
+    }
+
     {period_start, period_end}
   end
 
