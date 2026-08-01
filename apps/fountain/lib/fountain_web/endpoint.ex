@@ -10,6 +10,20 @@ defmodule FountainWeb.Endpoint do
   # the latter to a port serving nothing reads as the app being broken.
   plug :force_ssl
 
+  # kubelet hits these directly on the pod IP, over plain http and with no
+  # X-Forwarded-Proto, because there is no proxy on that path. Plug.SSL sees
+  # http and answers 301, the probe scores a redirect as a failure, and the pod
+  # never becomes ready — the deployment then stalls on its progress deadline
+  # with an app that is running perfectly.
+  #
+  # Exempting them costs nothing: both are public, unauthenticated, and carry no
+  # secrets. Every other response still redirects and still carries HSTS.
+  @no_ssl_redirect ["/health", "/health/ready"]
+
+  defp force_ssl(%Plug.Conn{request_path: path} = conn, _opts)
+       when path in @no_ssl_redirect,
+       do: conn
+
   defp force_ssl(conn, _opts) do
     case Application.get_env(:fountain, :force_ssl) do
       nil -> conn
