@@ -1,15 +1,87 @@
-version: "3.9"
+# Fountain, self-hosted.
+#
+#   cp .env.compose.example .env    # then fill in the generated keys
+#   docker compose up -d
+#   open http://localhost:4000
+#
+# For local development you only want the database, and `docker compose up -d
+# postgres` still does exactly that — `mix setup` creates fountain_dev itself.
+# See SETUP.md.
 services:
   postgres:
     image: postgres:16
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: fountain_dev
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: fountain
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      # The app runs migrations at boot, so it must not start against a
+      # database that is still initialising.
+      test: ["CMD-SHELL", "pg_isready -U postgres -d fountain"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    image: ghcr.io/binarybourbon/fountain:${FOUNTAIN_IMAGE_TAG:-latest}
+    # To run your own build instead of the published image, comment the line
+    # above and uncomment this:
+    #   build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "${PORT:-4000}:4000"
+    environment:
+      PHX_SERVER: "true"
+      PORT: "4000"
+
+      DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD:-postgres}@postgres:5432/fountain
+      # A stock postgres image does not serve TLS, and this was hardcoded on —
+      # which is why a compose setup could not have worked before.
+      DATABASE_SSL: "false"
+
+      # Absolute and scheme-ful: it builds the links in verification emails and
+      # is handed to every sprite as FOUNTAIN_BASE_URL. Change it if you reach
+      # this instance by anything other than localhost.
+      PUBLIC_URL: ${PUBLIC_URL:-http://localhost:4000}
+
+      SECRET_KEY_BASE: ${SECRET_KEY_BASE:?set SECRET_KEY_BASE in .env — see .env.compose.example}
+      MASTER_SECRETS_KEY: ${MASTER_SECRETS_KEY:?set MASTER_SECRETS_KEY in .env — see .env.compose.example}
+
+      # Conversations need a Sprites token. The app boots without one; every
+      # attempt to start a conversation then fails.
+      SPRITES_TOKEN: ${SPRITES_TOKEN:-}
+
+      # Off by default here: the subscription gate is meaningful for the hosted
+      # service and is a lock with no key on a self-hosted instance.
+      BILLING_ENABLED: ${BILLING_ENABLED:-false}
+
+      # No mail by default, so a first run needs nothing external. Verify your
+      # account with:
+      #   docker compose exec app bin/fountain_server eval \
+      #     'Fountain.Release.verify_email("you@example.com")'
+      # Set RESEND_API_KEY or SMTP_HOST to send real mail instead.
+      EMAIL_DELIVERY: ${EMAIL_DELIVERY:-none}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      EMAIL_FROM: ${EMAIL_FROM:-noreply@localhost}
+
+      # Open by default so the first account can be created. Close it once
+      # yours exists.
+      REGISTRATION_ENABLED: ${REGISTRATION_ENABLED:-true}
+
+      # There is no OTLP collector in a default compose setup, and without this
+      # the exporter retries per span and floods the logs.
+      OTEL_TRACES_EXPORTER: "none"
+    restart: unless-stopped
 
 volumes:
   postgres_data:
