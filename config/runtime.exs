@@ -67,6 +67,15 @@ master_secrets_key =
 config :fountain, :master_secrets_key, master_secrets_key
 config :fountain, :sprites_token, System.get_env("SPRITES_TOKEN")
 
+# SpritesClient has read :sprites_base_url from application env since it was
+# written, but nothing ever set it — so the default was the only value, and
+# pointing an instance at a different sandbox backend meant editing config and
+# rebuilding. Wiring it does not make Sprites self-hostable (see #189), it just
+# stops the endpoint being baked into the release.
+config :fountain,
+       :sprites_base_url,
+       System.get_env("SPRITES_BASE_URL", "https://api.sprites.dev")
+
 # Two different shapes are needed and they are not interchangeable:
 #
 #   :public_url — absolute, scheme-ful. Used to build links that leave the app
@@ -335,16 +344,51 @@ if config_env() == :prod and server? do
   # fills in 443, so this is byte-identical to the previous hardcoding.
   public_uri = URI.parse(public_url)
 
+  extra_origins =
+    case System.get_env("CHECK_ORIGIN_EXTRA") do
+      blank when blank in [nil, ""] -> []
+      list -> list |> String.split(",", trim: true) |> Enum.map(&String.trim/1)
+    end
+
+  # Everything below only makes sense over TLS, so it is derived from the scheme
+  # of PUBLIC_URL rather than set independently. A self-hoster on plain http
+  # gets none of it and keeps working; anyone on https gets all of it without
+  # having to know it exists.
+  https? = public_uri.scheme == "https"
+
+  # A cookie marked secure is never sent back over http, so this must not be on
+  # for an http deployment — it would look like login silently failing.
+  config :fountain, :secure_cookie, https?
+
+  # force_ssl also emits HSTS. rewrite_on is required behind a terminating
+  # proxy: without it every request looks like http to the app and redirects
+  # into a loop.
+  if https? do
+    config :fountain, FountainWeb.Endpoint,
+      force_ssl: [
+        rewrite_on: [:x_forwarded_proto, :x_forwarded_host, :x_forwarded_port],
+        hsts: true,
+        # One year, and subdomains, which is what preload lists require. No
+        # `preload` directive: that is a one-way door — getting off the preload
+        # list takes months — and it is not this change's call to make.
+        expires: 31_536_000,
+        subdomains: true
+      ]
+  end
+
   config :fountain, FountainWeb.Endpoint,
     url: [host: host, port: public_uri.port || 443, scheme: public_uri.scheme || "https"],
     http: [ip: {0, 0, 0, 0, 0, 0, 0, 0}],
     # check_origin guards the LiveView websocket/longpoll handshake. Setting an
     # explicit list replaces the default (the endpoint's own host), so we must
     # re-list it here. `//*.replit.dev` allows Replit preview/dev subdomains.
-    check_origin: [
-      "//#{host}",
-      "//*.replit.dev"
-    ],
+    # An explicit list replaces the default (the endpoint's own host), so the
+    # host has to be re-listed here. `//*.replit.dev` used to be in this list,
+    # which let a LiveView websocket be opened from any Replit subdomain — dev
+    # convenience that leaked into the production branch. Extra origins are now
+    # opt-in via CHECK_ORIGIN_EXTRA, so a preview environment can add its own
+    # without every deployment inheriting it.
+    check_origin: ["//#{host}" | extra_origins],
     secret_key_base: secret_key_base
 
   # ── OpenTelemetry ─────────────────────────────────────────────────────────

@@ -144,6 +144,19 @@ with Caddy, nginx, or a tunnel, and then:
   all collapse into one bucket keyed on the proxy
 - close registration, or set `REGISTRATION_ALLOWED_EMAIL_DOMAINS`
 
+An `https://` `PUBLIC_URL` also switches on HTTPS redirection, HSTS (one year,
+including subdomains — not preloaded) and the `secure` flag on the session
+cookie. All three are derived from the scheme rather than set separately,
+because none of them can be on for an `http://` instance: a cookie marked
+secure is never sent back, and the redirect would point at a port serving
+nothing. If you terminate TLS in front of Fountain, make sure your proxy sets
+`X-Forwarded-Proto` — the redirect uses it, and without it every request looks
+like plain http and loops.
+
+`CHECK_ORIGIN_EXTRA` adds origins allowed to open a LiveView websocket, as a
+comma-separated list. Your own host is always included; add to this only for
+something like a preview environment on a different domain.
+
 Registration is open by default. An instance on the public internet with
 registration open will be found.
 

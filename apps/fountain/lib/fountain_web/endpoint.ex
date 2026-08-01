@@ -2,9 +2,6 @@ defmodule FountainWeb.Endpoint do
   @moduledoc false
   use Phoenix.Endpoint, otp_app: :fountain
 
-  # The session will be stored in the cookie and signed,
-  # this means its contents can be read but not tampered with.
-  # Set :encryption_salt if you would also like to encrypt it.
   @doc """
   CIDRs treated as proxies when walking X-Forwarded-For.
 
@@ -21,6 +18,16 @@ defmodule FountainWeb.Endpoint do
     ])
   end
 
+  # `secure` is set from config rather than hardcoded: a self-hosted instance on
+  # plain http (the compose default) would never receive a cookie marked secure,
+  # so it cannot simply be true. runtime.exs turns it on whenever PUBLIC_URL is
+  # https, which is every deployment that can actually honour it.
+  #
+  # Signed, not encrypted. The contents are readable but not forgeable, and today
+  # that is a user id and a session version counter. Adding an encryption_salt
+  # would log every existing session out to hide two values that are already
+  # tamper-proof — worth doing alongside the first change that puts anything
+  # else in here, not on its own.
   @session_options [
     store: :cookie,
     key: "_fountain_key",
@@ -83,6 +90,21 @@ defmodule FountainWeb.Endpoint do
 
   plug Plug.MethodOverride
   plug Plug.Head
-  plug Plug.Session, @session_options
+  # Not `plug Plug.Session, @session_options`: the `secure` flag has to be
+  # decided at runtime. A release is one artifact, and the same artifact runs
+  # the hosted instance behind TLS and a self-hoster's compose stack on plain
+  # http — where a cookie marked secure is simply never sent back, so login
+  # silently fails.
+  plug :session
+
+  defp session(conn, _opts) do
+    Plug.Session.call(conn, Plug.Session.init(session_options()))
+  end
+
+  @doc false
+  def session_options do
+    Keyword.put(@session_options, :secure, Application.get_env(:fountain, :secure_cookie, false))
+  end
+
   plug FountainWeb.Router
 end
