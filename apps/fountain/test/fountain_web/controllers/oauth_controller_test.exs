@@ -11,16 +11,28 @@ defmodule FountainWeb.UeberauthControllerTest do
 
   alias Fountain.Accounts
 
-  # Simulate a successful Ueberauth auth struct from GitHub
-  defp github_auth(email, uid \\ nil) do
+  # Simulate a successful Ueberauth auth struct from GitHub.
+  #
+  # `raw_info` carries the /user/emails payload, and the callback reads the
+  # `verified` flag out of it rather than trusting `info.email` — see
+  # FountainWeb.OauthEmail. Pass `verified: false` to model the address a
+  # GitHub account can hold as primary without ever confirming it.
+  defp github_auth(email, uid \\ nil, opts \\ []) do
     uid = uid || "gh_#{System.unique_integer([:positive])}"
+    verified = Keyword.get(opts, :verified, true)
 
     %Ueberauth.Auth{
       provider: :github,
       uid: uid,
       info: %Ueberauth.Auth.Info{email: email},
       credentials: %Ueberauth.Auth.Credentials{},
-      extra: %Ueberauth.Auth.Extra{}
+      extra: %Ueberauth.Auth.Extra{
+        raw_info: %{
+          user: %{
+            "emails" => [%{"email" => email, "primary" => true, "verified" => verified}]
+          }
+        }
+      }
     }
   end
 
@@ -139,12 +151,14 @@ defmodule FountainWeb.UeberauthControllerTest do
       assert redirected_to(conn) == ~p"/auth/login"
 
       assert Phoenix.Flash.get(conn.assigns.flash, :error) =~
-               "GitHub did not return a verified email address."
+               "did not return an email address"
     end
   end
 
   describe "callback/2 — upsert_oauth_user error" do
-    test "redirects to login with error flash when upsert_oauth_user returns an error", %{conn: conn} do
+    test "redirects to login with error flash when upsert_oauth_user returns an error", %{
+      conn: conn
+    } do
       email = "github_error_#{System.unique_integer()}@example.com"
       auth = github_auth(email)
 
@@ -153,6 +167,7 @@ defmodule FountainWeb.UeberauthControllerTest do
           %Fountain.Accounts.User{}
           |> Ecto.Changeset.change()
           |> Ecto.Changeset.add_error(:email, "simulated failure")
+
         {:error, changeset}
       end)
 
@@ -177,6 +192,75 @@ defmodule FountainWeb.UeberauthControllerTest do
         |> get(~p"/auth/oauth/github")
 
       assert redirected_to(conn) == ~p"/auth/login"
+    end
+  end
+
+  describe "an email the provider has not verified" do
+    test "is refused rather than linked to an existing account", %{conn: conn} do
+      # The takeover path. ueberauth_github picks the address flagged `primary`
+      # out of /user/emails and never looks at `verified` beside it, so a
+      # GitHub account can present an unconfirmed address. If it matches an
+      # existing Fountain account, upsert_oauth_user/3 would attach the
+      # identity to it.
+      victim = insert_verified_user()
+
+      conn =
+        conn
+        |> assign_auth(github_auth(victim.email, "gh_attacker", verified: false))
+        |> get(~p"/auth/oauth/github/callback")
+
+      assert redirected_to(conn) == ~p"/auth/login"
+      assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "has not verified"
+      refute get_session(conn, :user_id)
+
+      # And no identity was attached.
+      refute Fountain.Repo.get_by(Fountain.Accounts.OauthIdentity, provider_uid: "gh_attacker")
+    end
+
+    test "is refused for a brand-new signup too", %{conn: conn} do
+      # Creating an account on an unverified address is a smaller problem than
+      # takeover, but the account would be marked email_verified_at on the
+      # strength of an assertion the provider did not make.
+      email = "unverified_#{System.unique_integer([:positive])}@example.com"
+
+      conn =
+        conn
+        |> assign_auth(github_auth(email, nil, verified: false))
+        |> get(~p"/auth/oauth/github/callback")
+
+      assert redirected_to(conn) == ~p"/auth/login"
+      refute Accounts.get_user_by_email(email)
+    end
+
+    test "a verified address still signs in normally", %{conn: conn} do
+      user = insert_verified_user()
+
+      conn =
+        conn
+        |> assign_auth(github_auth(user.email, "gh_ok", verified: true))
+        |> get(~p"/auth/oauth/github/callback")
+
+      assert redirected_to(conn) == ~p"/conversations"
+      assert get_session(conn, :user_id) == user.id
+    end
+
+    test "a payload with no emails list at all is refused", %{conn: conn} do
+      # Older strategy versions, or a provider that returns nothing usable.
+      # Failing closed is the only safe default when the assertion is absent.
+      user = insert_verified_user()
+
+      auth = %Ueberauth.Auth{
+        provider: :github,
+        uid: "gh_noraw",
+        info: %Ueberauth.Auth.Info{email: user.email},
+        credentials: %Ueberauth.Auth.Credentials{},
+        extra: %Ueberauth.Auth.Extra{}
+      }
+
+      conn = conn |> assign_auth(auth) |> get(~p"/auth/oauth/github/callback")
+
+      assert redirected_to(conn) == ~p"/auth/login"
+      refute get_session(conn, :user_id)
     end
   end
 end

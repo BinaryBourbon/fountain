@@ -49,59 +49,66 @@ defmodule FountainWeb.UeberauthController do
   def callback(%{assigns: %{ueberauth_auth: auth}} = conn, _params) do
     provider = to_string(auth.provider)
     provider_uid = to_string(auth.uid)
-    email = get_in(auth.info, [Access.key(:email)])
+    # Not `auth.info.email`: that address can be a GitHub primary that has never
+    # been confirmed, and upsert_oauth_user/3 links any matching address to an
+    # existing account. See FountainWeb.OauthEmail.
+    case FountainWeb.OauthEmail.verified_email(auth) do
+      {:error, reason} ->
+        FountainWeb.Audited.from_conn(conn, "auth.oauth.rejected", "user",
+          metadata: %{"provider" => provider, "reason" => to_string(reason)}
+        )
 
-    if is_nil(email) or email == "" do
-      conn
-      |> put_flash(
-        :error,
-        "GitHub did not return a verified email address. " <>
-          "Please add a public email to your GitHub account and try again."
-      )
-      |> redirect(to: ~p"/auth/login")
-    else
-      attrs = %{"email" => email}
+        conn
+        |> put_flash(:error, FountainWeb.OauthEmail.explain(reason))
+        |> redirect(to: ~p"/auth/login")
 
-      case Fountain.Accounts.upsert_oauth_user(provider, provider_uid, attrs) do
-        {:ok, user, :new} ->
-          FountainWeb.Audited.from_conn(conn, "auth.oauth.signup", "user",
-            user_id: user.id,
-            metadata: %{"provider" => provider}
-          )
+      {:ok, email} ->
+        do_callback(conn, provider, provider_uid, email)
+    end
+  end
 
-          # The email+password path does this after verification. OAuth skips
-          # verification entirely (the provider asserts the address), so without
-          # this every GitHub signup had no Stripe customer and no trial_ends_at.
-          Fountain.Workers.StripeCustomerSync.enqueue(user)
+  defp do_callback(conn, provider, provider_uid, email) do
+    attrs = %{"email" => email}
 
-          conn
-          |> configure_session(renew: true)
-          |> put_session(:user_id, user.id)
-          |> put_session(:session_version, user.session_version)
-          |> redirect(to: ~p"/onboarding/step_1")
+    case Fountain.Accounts.upsert_oauth_user(provider, provider_uid, attrs) do
+      {:ok, user, :new} ->
+        FountainWeb.Audited.from_conn(conn, "auth.oauth.signup", "user",
+          user_id: user.id,
+          metadata: %{"provider" => provider}
+        )
 
-        {:ok, user, :existing} ->
-          FountainWeb.Audited.from_conn(conn, "auth.oauth.login", "user",
-            user_id: user.id,
-            metadata: %{"provider" => provider}
-          )
+        # The email+password path does this after verification. OAuth skips
+        # verification entirely (the provider asserts the address), so without
+        # this every GitHub signup had no Stripe customer and no trial_ends_at.
+        Fountain.Workers.StripeCustomerSync.enqueue(user)
 
-          conn
-          |> configure_session(renew: true)
-          |> put_session(:user_id, user.id)
-          |> put_session(:session_version, user.session_version)
-          |> redirect(to: ~p"/conversations")
+        conn
+        |> configure_session(renew: true)
+        |> put_session(:user_id, user.id)
+        |> put_session(:session_version, user.session_version)
+        |> redirect(to: ~p"/onboarding/step_1")
 
-        {:error, reason} when reason in [:registration_closed, :email_domain_not_allowed] ->
-          conn
-          |> put_flash(:error, "Registration is not open on this instance.")
-          |> redirect(to: ~p"/auth/login")
+      {:ok, user, :existing} ->
+        FountainWeb.Audited.from_conn(conn, "auth.oauth.login", "user",
+          user_id: user.id,
+          metadata: %{"provider" => provider}
+        )
 
-        {:error, _changeset} ->
-          conn
-          |> put_flash(:error, "Could not sign in with GitHub. Please try again.")
-          |> redirect(to: ~p"/auth/login")
-      end
+        conn
+        |> configure_session(renew: true)
+        |> put_session(:user_id, user.id)
+        |> put_session(:session_version, user.session_version)
+        |> redirect(to: ~p"/conversations")
+
+      {:error, reason} when reason in [:registration_closed, :email_domain_not_allowed] ->
+        conn
+        |> put_flash(:error, "Registration is not open on this instance.")
+        |> redirect(to: ~p"/auth/login")
+
+      {:error, _changeset} ->
+        conn
+        |> put_flash(:error, "Could not sign in with GitHub. Please try again.")
+        |> redirect(to: ~p"/auth/login")
     end
   end
 end
