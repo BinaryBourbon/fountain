@@ -398,7 +398,10 @@ defmodule Fountain.Conversations.Provisioning do
             timeout: 600_000
           )
 
-        log_output(conv_id, "clone", output)
+        # The HTTPS path scrubbed and this one did not, which is exactly the
+        # kind of divergence the registry-based redaction in
+        # Conversations.log!/1 is there to make impossible.
+        log_output(conv_id, "clone", scrub_token(output))
 
         if code == 0, do: :ok, else: {:error, {:clone, url, code}}
 

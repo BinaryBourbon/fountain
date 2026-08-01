@@ -582,6 +582,16 @@ defmodule Fountain.Conversations.ConversationServer do
   end
 
   defp build_sprite_env(state, agent, env, secrets) do
+    state
+    |> do_build_sprite_env(agent, env, secrets)
+    |> tap(fn sprite_env ->
+      # Register before anything can log. Provisioning writes output from its
+      # very first step, and the secrets are already in the sprite by then.
+      Fountain.Conversations.Redaction.put(state.conversation_id, sprite_env)
+    end)
+  end
+
+  defp do_build_sprite_env(state, agent, env, secrets) do
     (state.runtime_module.default_env(agent, state.inference_credentials) || []) ++
       fountain_callback_env(state.callback_token) ++
       conversation_env(state.conversation_id) ++
@@ -855,6 +865,8 @@ defmodule Fountain.Conversations.ConversationServer do
   # until an admin/janitor sweeps it; that's a known gap, not a regression.
   @impl true
   def terminate(_reason, state) do
+    Fountain.Conversations.Redaction.delete(state.conversation_id)
+
     if state.conversation_id do
       case Conversations._unsafe_get_conversation(state.conversation_id) do
         %Conversation{user_id: user_id, callback_api_key_id: id}
