@@ -52,7 +52,7 @@ defmodule Fountain.TransportSecurityConfigTest do
     end
 
     test "force_ssl is on with HSTS", %{config: config} do
-      force_ssl = config[FountainWeb.Endpoint][:force_ssl]
+      force_ssl = config[:force_ssl]
 
       assert force_ssl[:hsts] == true
       assert force_ssl[:expires] == 31_536_000
@@ -62,12 +62,28 @@ defmodule Fountain.TransportSecurityConfigTest do
     test "force_ssl rewrites on forwarded headers", %{config: config} do
       # Without this every request looks like http behind a terminating proxy
       # and the redirect loops.
-      assert :x_forwarded_proto in config[FountainWeb.Endpoint][:force_ssl][:rewrite_on]
+      assert :x_forwarded_proto in config[:force_ssl][:rewrite_on]
     end
 
     test "HSTS is not preloaded", %{config: config} do
       # Deliberate: the preload list is a one-way door measured in months.
-      refute config[FountainWeb.Endpoint][:force_ssl][:preload]
+      refute config[:force_ssl][:preload]
+    end
+
+    test "force_ssl is not set under the Endpoint key", %{config: config} do
+      # This is the bug that reached production. Phoenix reads
+      # FountainWeb.Endpoint's :force_ssl with Application.compile_env, so
+      # setting it from runtime.exs fails the release's validate_compile_env
+      # check and the node aborts during boot:
+      #
+      #   ERROR! the application :fountain has a different value set for path
+      #   [:force_ssl] inside key FountainWeb.Endpoint during runtime compared
+      #   to compile time.
+      #
+      # Config.Reader validates values, not whether they may be set at runtime,
+      # so the original tests passed while every pod CrashLoopBackOff'd. The
+      # endpoint applies Plug.SSL from :fountain, :force_ssl instead.
+      refute config[FountainWeb.Endpoint][:force_ssl]
     end
   end
 
@@ -83,6 +99,7 @@ defmodule Fountain.TransportSecurityConfigTest do
 
     test "force_ssl is off", %{config: config} do
       # Otherwise the compose quick-start redirects to a port serving nothing.
+      refute config[:force_ssl]
       refute config[FountainWeb.Endpoint][:force_ssl]
     end
   end

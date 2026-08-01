@@ -117,5 +117,28 @@ jobs:
       - name: Run tests with coverage
         run: mix coveralls
 
+      # Builds a release and runs its config providers. Config.Reader tests
+      # validate config *values*; only a real boot catches a key that may not be
+      # set at runtime at all. A `force_ssl` moved into runtime.exs passed every
+      # test and then CrashLoopBackOff'd every pod with:
+      #   ERROR! the application :fountain has a different value set for path
+      #   [:force_ssl] inside key FountainWeb.Endpoint during runtime compared
+      #   to compile time.
+      - name: Release boots with production config
+        env:
+          MIX_ENV: prod
+          PHX_SERVER: "true"
+          SECRET_KEY_BASE: ci-only-not-a-secret-000000000000000000000000000000000000000000000000
+          # 43 chars of base64url = 32 zero bytes. Valid format, obviously not a key.
+          MASTER_SECRETS_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+          DATABASE_URL: postgres://postgres:postgres@localhost/fountain_test
+          PUBLIC_URL: https://ci.example.com
+          EMAIL_DELIVERY: none
+        run: |
+          set -euo pipefail
+          mix deps.get --only prod
+          mix release fountain_server --overwrite
+          _build/prod/rel/fountain_server/bin/fountain_server eval 'IO.puts("release boots")'
+
       - name: Validate OpenAPI spec
         run: mix openapi.spec.json --spec FountainWeb.ApiSpec --output /tmp/openapi.json && jq empty /tmp/openapi.json
