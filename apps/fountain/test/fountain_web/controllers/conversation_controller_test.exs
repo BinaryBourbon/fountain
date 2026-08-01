@@ -23,7 +23,10 @@ defmodule FountainWeb.ConversationControllerTest do
       assert conv.id in ids
     end
 
-    test "does not include conversations belonging to other users", %{conn: conn, raw_key: raw_key} do
+    test "does not include conversations belonging to other users", %{
+      conn: conn,
+      raw_key: raw_key
+    } do
       other_user = insert_verified_user()
       other_conv = insert_conversation(user_id: other_user.id)
 
@@ -41,7 +44,11 @@ defmodule FountainWeb.ConversationControllerTest do
   end
 
   describe "GET /api/conversations/:id" do
-    test "returns 200 with the conversation for the authenticated user", %{conn: conn, user: user, raw_key: raw_key} do
+    test "returns 200 with the conversation for the authenticated user", %{
+      conn: conn,
+      user: user,
+      raw_key: raw_key
+    } do
       conv = insert_conversation(user_id: user.id)
 
       conn = conn |> authed_with_key(raw_key) |> get("/api/conversations/#{conv.id}")
@@ -50,7 +57,10 @@ defmodule FountainWeb.ConversationControllerTest do
       assert body["data"]["id"] == conv.id
     end
 
-    test "returns 404 when the conversation belongs to a different user", %{conn: conn, raw_key: raw_key} do
+    test "returns 404 when the conversation belongs to a different user", %{
+      conn: conn,
+      raw_key: raw_key
+    } do
       other_user = insert_verified_user()
       other_conv = insert_conversation(user_id: other_user.id)
 
@@ -67,7 +77,11 @@ defmodule FountainWeb.ConversationControllerTest do
   end
 
   describe "GET /api/conversations/:conversation_id/turns" do
-    test "returns 200 with turns list for the authenticated user", %{conn: conn, user: user, raw_key: raw_key} do
+    test "returns 200 with turns list for the authenticated user", %{
+      conn: conn,
+      user: user,
+      raw_key: raw_key
+    } do
       conv = insert_conversation(user_id: user.id)
       turn = insert_turn(conv, [])
 
@@ -79,7 +93,11 @@ defmodule FountainWeb.ConversationControllerTest do
       assert turn.id in ids
     end
 
-    test "returns 200 with an empty list when there are no turns", %{conn: conn, user: user, raw_key: raw_key} do
+    test "returns 200 with an empty list when there are no turns", %{
+      conn: conn,
+      user: user,
+      raw_key: raw_key
+    } do
       conv = insert_conversation(user_id: user.id)
 
       conn = conn |> authed_with_key(raw_key) |> get("/api/conversations/#{conv.id}/turns")
@@ -88,7 +106,10 @@ defmodule FountainWeb.ConversationControllerTest do
       assert body["data"] == []
     end
 
-    test "returns 404 when the conversation belongs to a different user", %{conn: conn, raw_key: raw_key} do
+    test "returns 404 when the conversation belongs to a different user", %{
+      conn: conn,
+      raw_key: raw_key
+    } do
       other_user = insert_verified_user()
       other_conv = insert_conversation(user_id: other_user.id)
 
@@ -98,8 +119,57 @@ defmodule FountainWeb.ConversationControllerTest do
     end
   end
 
+  describe "subscription gate" do
+    test "POST /api/conversations/:id/prompts returns 402 when cancelled", %{
+      conn: conn,
+      user: user,
+      raw_key: raw_key
+    } do
+      # Prompting wakes a dormant conversation, which provisions a fresh sprite.
+      # It was the one provisioning path with no billing check at all.
+      conv = insert_conversation(user_id: user.id)
+
+      stub(ConversationServer, :send_prompt, fn _id, _prompt, _images ->
+        {:error, :subscription_required}
+      end)
+
+      conn =
+        conn
+        |> authed_with_key(raw_key)
+        |> post_json("/api/conversations/#{conv.id}/prompts", %{"prompt" => "hi"})
+
+      body = json_response(conn, 402)
+      assert body["error"] == "subscription_required"
+      assert body["upgrade_url"] == "/account/billing"
+    end
+
+    test "POST /api/conversations returns 402 when cancelled", %{
+      conn: conn,
+      user: user,
+      raw_key: raw_key
+    } do
+      agent = insert_agent(user_id: user.id)
+
+      {:ok, _} =
+        user
+        |> Fountain.Accounts.User.billing_changeset(%{subscription_status: "canceled"})
+        |> Fountain.Repo.update()
+
+      conn =
+        conn
+        |> authed_with_key(raw_key)
+        |> post_json("/api/conversations", %{"agent_id" => agent.id})
+
+      assert json_response(conn, 402)["error"] == "subscription_required"
+    end
+  end
+
   describe "sandbox concurrency cap" do
-    test "POST /api/conversations returns 429 at the cap", %{conn: conn, user: user, raw_key: raw_key} do
+    test "POST /api/conversations returns 429 at the cap", %{
+      conn: conn,
+      user: user,
+      raw_key: raw_key
+    } do
       agent = insert_agent(user_id: user.id)
 
       for _ <- 1..Fountain.Quotas.default_limit(),
@@ -116,7 +186,11 @@ defmodule FountainWeb.ConversationControllerTest do
       assert body["limit"] == 5
     end
 
-    test "POST /api/conversations succeeds below the cap", %{conn: conn, user: user, raw_key: raw_key} do
+    test "POST /api/conversations succeeds below the cap", %{
+      conn: conn,
+      user: user,
+      raw_key: raw_key
+    } do
       agent = insert_agent(user_id: user.id)
       insert_sandbox(user_id: user.id, status: "ready")
 
@@ -130,7 +204,11 @@ defmodule FountainWeb.ConversationControllerTest do
       assert json_response(conn, 201)
     end
 
-    test "prompting a dormant conversation is capped too", %{conn: conn, user: user, raw_key: raw_key} do
+    test "prompting a dormant conversation is capped too", %{
+      conn: conn,
+      user: user,
+      raw_key: raw_key
+    } do
       # send_prompt on a dead GenServer wakes the conversation, which provisions
       # a fresh sprite — so it has to be subject to the same cap, or the cap is
       # trivially bypassed by prompting instead of creating.
@@ -159,7 +237,10 @@ defmodule FountainWeb.ConversationControllerTest do
       assert conn.status == 204
     end
 
-    test "returns 404 when the conversation belongs to a different user", %{conn: conn, raw_key: raw_key} do
+    test "returns 404 when the conversation belongs to a different user", %{
+      conn: conn,
+      raw_key: raw_key
+    } do
       other_user = insert_verified_user()
       other_conv = insert_conversation(user_id: other_user.id)
 
@@ -185,12 +266,17 @@ defmodule FountainWeb.ConversationControllerTest do
     end
 
     test "returns {\"agent\", id} when header contains a conversation id" do
-      assert ConversationController.infer_provenance("some-conv-uuid") == {"agent", "some-conv-uuid"}
+      assert ConversationController.infer_provenance("some-conv-uuid") ==
+               {"agent", "some-conv-uuid"}
     end
   end
 
   describe "POST /api/conversations" do
-    test "returns 402 when user has a canceled subscription", %{conn: conn, user: user, raw_key: raw_key} do
+    test "returns 402 when user has a canceled subscription", %{
+      conn: conn,
+      user: user,
+      raw_key: raw_key
+    } do
       Fountain.Repo.update!(Ecto.Changeset.change(user, subscription_status: "canceled"))
       agent = insert_agent(user_id: user.id)
 
@@ -210,7 +296,10 @@ defmodule FountainWeb.ConversationControllerTest do
         conn
         |> authed_with_key(raw_key)
         |> put_req_header("content-type", "application/json")
-        |> post("/api/conversations", Jason.encode!(%{"agent_id" => unknown_agent_id, "prompt" => "hello"}))
+        |> post(
+          "/api/conversations",
+          Jason.encode!(%{"agent_id" => unknown_agent_id, "prompt" => "hello"})
+        )
 
       assert json_response(conn, 404)
     end
@@ -223,7 +312,10 @@ defmodule FountainWeb.ConversationControllerTest do
         conn
         |> authed_with_key(raw_key)
         |> put_req_header("content-type", "application/json")
-        |> post("/api/conversations", Jason.encode!(%{"agent_id" => other_agent.id, "prompt" => "hello"}))
+        |> post(
+          "/api/conversations",
+          Jason.encode!(%{"agent_id" => other_agent.id, "prompt" => "hello"})
+        )
 
       assert json_response(conn, 404)
     end
@@ -242,9 +334,16 @@ defmodule FountainWeb.ConversationControllerTest do
       assert json_response(conn, 200)["status"] == "queued"
     end
 
-    test "returns 404 when ConversationServer is not running", %{conn: conn, user: user, raw_key: raw_key} do
+    test "returns 404 when ConversationServer is not running", %{
+      conn: conn,
+      user: user,
+      raw_key: raw_key
+    } do
       conv = insert_conversation(user_id: user.id)
-      stub(ConversationServer, :send_prompt, fn _id, _prompt, _images -> {:error, :not_running} end)
+
+      stub(ConversationServer, :send_prompt, fn _id, _prompt, _images ->
+        {:error, :not_running}
+      end)
 
       conn =
         conn
@@ -277,7 +376,10 @@ defmodule FountainWeb.ConversationControllerTest do
       assert json_response(conn, 404)
     end
 
-    test "returns 404 when conversation belongs to a different user", %{conn: conn, raw_key: raw_key} do
+    test "returns 404 when conversation belongs to a different user", %{
+      conn: conn,
+      raw_key: raw_key
+    } do
       other_user = insert_verified_user()
       other_conv = insert_conversation(user_id: other_user.id)
 
@@ -303,7 +405,11 @@ defmodule FountainWeb.ConversationControllerTest do
       assert conn.status == 204
     end
 
-    test "returns 404 when ConversationServer is not running", %{conn: conn, user: user, raw_key: raw_key} do
+    test "returns 404 when ConversationServer is not running", %{
+      conn: conn,
+      user: user,
+      raw_key: raw_key
+    } do
       conv = insert_conversation(user_id: user.id)
       stub(ConversationServer, :terminate, fn _id -> {:error, :not_running} end)
 
@@ -340,7 +446,11 @@ defmodule FountainWeb.ConversationControllerTest do
       assert conn.status == 204
     end
 
-    test "returns 404 when ConversationServer is not running", %{conn: conn, user: user, raw_key: raw_key} do
+    test "returns 404 when ConversationServer is not running", %{
+      conn: conn,
+      user: user,
+      raw_key: raw_key
+    } do
       conv = insert_conversation(user_id: user.id)
       stub(ConversationServer, :interrupt, fn _id -> {:error, :not_running} end)
 
@@ -352,7 +462,11 @@ defmodule FountainWeb.ConversationControllerTest do
       assert json_response(conn, 404)
     end
 
-    test "returns 409 conflict when conversation is idle", %{conn: conn, user: user, raw_key: raw_key} do
+    test "returns 409 conflict when conversation is idle", %{
+      conn: conn,
+      user: user,
+      raw_key: raw_key
+    } do
       conv = insert_conversation(user_id: user.id)
       stub(ConversationServer, :interrupt, fn _id -> {:error, :idle} end)
 
@@ -388,7 +502,11 @@ defmodule FountainWeb.ConversationControllerTest do
       assert json_response(conn, 404)
     end
 
-    test "returns 200 with text/event-stream content-type when wait=false", %{conn: conn, user: user, raw_key: raw_key} do
+    test "returns 200 with text/event-stream content-type when wait=false", %{
+      conn: conn,
+      user: user,
+      raw_key: raw_key
+    } do
       conv = insert_conversation(user_id: user.id)
 
       conn =
@@ -406,7 +524,11 @@ defmodule FountainWeb.ConversationControllerTest do
     # exercised whenever the default (true) is used in production.
     # Instead we verify that explicitly passing wait=false (parse_bool_param
     # "false" → false) closes the stream immediately with 200.
-    test "returns 200 when wait=false is explicit (parse_bool_param \"false\" branch)", %{conn: conn, user: user, raw_key: raw_key} do
+    test "returns 200 when wait=false is explicit (parse_bool_param \"false\" branch)", %{
+      conn: conn,
+      user: user,
+      raw_key: raw_key
+    } do
       conv = insert_conversation(user_id: user.id)
 
       conn =
@@ -418,7 +540,11 @@ defmodule FountainWeb.ConversationControllerTest do
       assert get_resp_header(conn, "content-type") == ["text/event-stream"]
     end
 
-    test "returns 200 when streams param is provided (parse_streams_param branch)", %{conn: conn, user: user, raw_key: raw_key} do
+    test "returns 200 when streams param is provided (parse_streams_param branch)", %{
+      conn: conn,
+      user: user,
+      raw_key: raw_key
+    } do
       conv = insert_conversation(user_id: user.id)
 
       conn =
@@ -430,7 +556,8 @@ defmodule FountainWeb.ConversationControllerTest do
       assert get_resp_header(conn, "content-type") == ["text/event-stream"]
     end
 
-    test "returns 200 when Last-Event-ID is non-integer (parse_last_event_id :error branch defaults to 0)", %{conn: conn, user: user, raw_key: raw_key} do
+    test "returns 200 when Last-Event-ID is non-integer (parse_last_event_id :error branch defaults to 0)",
+         %{conn: conn, user: user, raw_key: raw_key} do
       conv = insert_conversation(user_id: user.id)
 
       conn =
@@ -443,7 +570,11 @@ defmodule FountainWeb.ConversationControllerTest do
       assert get_resp_header(conn, "content-type") == ["text/event-stream"]
     end
 
-    test "returns 200 when wait=0 (parse_bool_param \"0\" → false, non-blocking)", %{conn: conn, user: user, raw_key: raw_key} do
+    test "returns 200 when wait=0 (parse_bool_param \"0\" → false, non-blocking)", %{
+      conn: conn,
+      user: user,
+      raw_key: raw_key
+    } do
       conv = insert_conversation(user_id: user.id)
 
       conn =
@@ -455,7 +586,11 @@ defmodule FountainWeb.ConversationControllerTest do
       assert get_resp_header(conn, "content-type") == ["text/event-stream"]
     end
 
-    test "returns 200 when streams= is empty string (parse_streams_param \"\" → nil)", %{conn: conn, user: user, raw_key: raw_key} do
+    test "returns 200 when streams= is empty string (parse_streams_param \"\" → nil)", %{
+      conn: conn,
+      user: user,
+      raw_key: raw_key
+    } do
       conv = insert_conversation(user_id: user.id)
 
       conn =
@@ -467,7 +602,11 @@ defmodule FountainWeb.ConversationControllerTest do
       assert get_resp_header(conn, "content-type") == ["text/event-stream"]
     end
 
-    test "returns 200 when Last-Event-ID is empty string (parse_last_event_id \"\" → 0)", %{conn: conn, user: user, raw_key: raw_key} do
+    test "returns 200 when Last-Event-ID is empty string (parse_last_event_id \"\" → 0)", %{
+      conn: conn,
+      user: user,
+      raw_key: raw_key
+    } do
       conv = insert_conversation(user_id: user.id)
 
       conn =
@@ -482,7 +621,11 @@ defmodule FountainWeb.ConversationControllerTest do
   end
 
   describe "GET /api/conversations/:conversation_id/stream with log events (replay path)" do
-    test "replays existing log events when wait=false and conversation has events", %{conn: conn, user: user, raw_key: raw_key} do
+    test "replays existing log events when wait=false and conversation has events", %{
+      conn: conn,
+      user: user,
+      raw_key: raw_key
+    } do
       conv = insert_conversation(user_id: user.id)
       insert_log_event(conv, %{kind: "output", stream: "stdout", data: "hello"})
 
@@ -498,7 +641,11 @@ defmodule FountainWeb.ConversationControllerTest do
       assert body =~ "hello"
     end
 
-    test "replays only matching stream events when streams filter is set", %{conn: conn, user: user, raw_key: raw_key} do
+    test "replays only matching stream events when streams filter is set", %{
+      conn: conn,
+      user: user,
+      raw_key: raw_key
+    } do
       conv = insert_conversation(user_id: user.id)
       insert_log_event(conv, %{kind: "output", stream: "stdout", data: "stdout-data"})
       insert_log_event(conv, %{kind: "output", stream: "stderr", data: "stderr-data"})
@@ -514,7 +661,11 @@ defmodule FountainWeb.ConversationControllerTest do
       refute body =~ "stderr-data"
     end
 
-    test "replays events after last_event_id when Last-Event-ID header is set", %{conn: conn, user: user, raw_key: raw_key} do
+    test "replays events after last_event_id when Last-Event-ID header is set", %{
+      conn: conn,
+      user: user,
+      raw_key: raw_key
+    } do
       conv = insert_conversation(user_id: user.id)
       ev1 = insert_log_event(conv, %{kind: "output", stream: "stdout", data: "first"})
       insert_log_event(conv, %{kind: "output", stream: "stdout", data: "second"})
@@ -533,7 +684,11 @@ defmodule FountainWeb.ConversationControllerTest do
   end
 
   describe "POST /api/conversations — parent conversation header" do
-    test "returns 201 when x-fountain-parent-conversation-id header is set", %{conn: conn, user: user, raw_key: raw_key} do
+    test "returns 201 when x-fountain-parent-conversation-id header is set", %{
+      conn: conn,
+      user: user,
+      raw_key: raw_key
+    } do
       agent = insert_agent(user_id: user.id)
       parent_conv = insert_conversation(user_id: user.id)
 
@@ -552,7 +707,8 @@ defmodule FountainWeb.ConversationControllerTest do
   end
 
   describe "POST /api/conversations with images" do
-    test "returns 201 with conversation when images array is provided (decode_images non-empty branch)", %{conn: conn, user: user, raw_key: raw_key} do
+    test "returns 201 with conversation when images array is provided (decode_images non-empty branch)",
+         %{conn: conn, user: user, raw_key: raw_key} do
       agent = insert_agent(user_id: user.id)
 
       stub(Horde.DynamicSupervisor, :start_child, fn _supervisor, _child_spec ->
@@ -572,7 +728,11 @@ defmodule FountainWeb.ConversationControllerTest do
       assert json_response(conn, 201)
     end
 
-    test "returns 201 with conversation when no images provided (decode_images [] branch)", %{conn: conn, user: user, raw_key: raw_key} do
+    test "returns 201 with conversation when no images provided (decode_images [] branch)", %{
+      conn: conn,
+      user: user,
+      raw_key: raw_key
+    } do
       agent = insert_agent(user_id: user.id)
 
       stub(Horde.DynamicSupervisor, :start_child, fn _supervisor, _child_spec ->

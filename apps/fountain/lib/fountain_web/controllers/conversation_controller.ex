@@ -174,9 +174,13 @@ defmodule FountainWeb.ConversationController do
             {:error, "conversation_busy"}
 
           # Waking a dormant conversation provisions a fresh sprite, so it is
-          # subject to the concurrency cap. Pass the tuple through to the
-          # fallback controller rather than letting it blow the case clause.
+          # subject to both the concurrency cap and the subscription gate. Pass
+          # these through to the fallback controller rather than letting them
+          # blow the case clause — an unmatched tuple here is a 500, not a 402.
           {:error, {:sandbox_quota_exceeded, _}} = err ->
+            err
+
+          {:error, :subscription_required} = err ->
             err
         end
     end

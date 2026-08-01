@@ -8,9 +8,13 @@ defmodule Fountain.Billing do
       Fountain.Billing.assert_active!(current_user)
 
   Call sites:
-  - `ConversationServer.init/1` — blocks new conversations at the GenServer level
-  - `POST /api/conversations` controller — returns HTTP 402 on failure
-  - `on_mount :require_active_subscription` LiveView hook — redirects to billing page
+  - `Conversations.start_conversation/1` and the wake path — the backstop. Every
+    route to a sprite passes through one of these, so a new surface cannot
+    silently skip the gate the way `POST /api/conversations/:id/prompts` did.
+  - `POST /api/conversations` controller — fast 402 before doing any work
+  - `on_mount :require_active_subscription` LiveView hook — redirects to billing.
+    Mount-time only, so it does not cover a session that is cancelled mid-flight;
+    the context-level check does.
 
   ## Webhook sync
 
@@ -53,6 +57,23 @@ defmodule Fountain.Billing do
 
   def assert_active!(%User{}), do: raise(SubscriptionRequiredError)
 
+  @doc """
+  Non-raising gate, for `with` pipelines in contexts.
+
+  Accepts a user or a user id. An unknown id fails closed: a caller that cannot
+  identify the user must not be able to provision on someone's behalf.
+  """
+  @spec check_active(User.t() | binary()) :: :ok | {:error, :subscription_required}
+  def check_active(%User{subscription_status: status}) when status in @active_statuses, do: :ok
+  def check_active(%User{}), do: {:error, :subscription_required}
+
+  def check_active(user_id) when is_binary(user_id) do
+    case Repo.get(User, user_id) do
+      nil -> {:error, :subscription_required}
+      user -> check_active(user)
+    end
+  end
+
   # ─── Stripe customer ────────────────────────────────────────────────────────
 
   @doc """
@@ -81,6 +102,37 @@ defmodule Fountain.Billing do
     end
   end
 
+  @doc """
+  Returns the user with a `stripe_customer_id`, creating the Stripe Customer if
+  it is missing.
+
+  Checkout must never be opened without one. Passing `customer_email` instead
+  makes Stripe mint its own Customer whose id we never learn, so the resulting
+  `customer.subscription.created` webhook matches no user and the payment is
+  taken without ever activating the account.
+  """
+  @spec ensure_stripe_customer(User.t()) :: {:ok, User.t()} | {:error, term()}
+  def ensure_stripe_customer(%User{stripe_customer_id: id} = user)
+      when is_binary(id) and id != "",
+      do: {:ok, user}
+
+  def ensure_stripe_customer(%User{} = user), do: create_stripe_customer(user)
+
+  @doc """
+  Attach a Stripe customer id to a user that has none.
+
+  Used to repair the accounts created before Checkout guaranteed a customer:
+  `checkout.session.completed` carries both the customer id and our
+  `client_reference_id`, which is the only way back to the user for a Customer
+  Stripe minted on its own.
+  """
+  @spec attach_stripe_customer(User.t(), binary()) :: {:ok, User.t()} | {:error, term()}
+  def attach_stripe_customer(%User{} = user, customer_id) when is_binary(customer_id) do
+    user
+    |> User.billing_changeset(%{stripe_customer_id: customer_id})
+    |> Repo.update()
+  end
+
   # ─── Webhook sync ───────────────────────────────────────────────────────────
 
   @doc """
@@ -91,6 +143,32 @@ defmodule Fountain.Billing do
   All other event types return `{:ok, :ignored}` without touching the DB.
   """
   @spec sync_subscription(Stripe.Event.t()) :: {:ok, User.t() | :ignored} | {:error, term()}
+  def sync_subscription(%Stripe.Event{
+        type: "checkout.session.completed",
+        data: %{object: session}
+      }) do
+    customer_id = extract_customer_id(Map.get(session, :customer))
+    user_id = Map.get(session, :client_reference_id)
+
+    cond do
+      is_nil(customer_id) ->
+        {:ok, :ignored}
+
+      # Already linked — the subscription events will carry the same customer.
+      not is_nil(get_user_by_stripe_customer_id(customer_id)) ->
+        {:ok, :ignored}
+
+      is_binary(user_id) ->
+        case Repo.get(User, user_id) do
+          nil -> {:error, :user_not_found}
+          user -> attach_stripe_customer(user, customer_id)
+        end
+
+      true ->
+        {:error, :user_not_found}
+    end
+  end
+
   def sync_subscription(%Stripe.Event{type: type, data: %{object: sub}})
       when type in [
              "customer.subscription.created",
