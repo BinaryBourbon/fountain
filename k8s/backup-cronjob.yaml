@@ -1,0 +1,188 @@
+# Nightly logical backup of the Fountain database to the private
+# `fountain-backups` Garage bucket.
+#
+# WHY THIS RATHER THAN CNPG'S OWN BACKUPS
+#
+# CNPG's in-tree `spec.backup.barmanObjectStore` is the obvious answer and is
+# NOT usable on this cluster today. The operator is 1.29.1, and as of 1.26 the
+# barman-cloud tooling was moved out of the operand images into a separate
+# CNPG-I plugin. Verified directly: `ghcr.io/cloudnative-pg/postgresql:18.4-
+# standard-trixie` contains no `barman-cloud-*` binaries and no Python at all,
+# and no barman-cloud plugin or ObjectStore CRD is installed in the cluster.
+# Configuring barmanObjectStore in that state produces a Cluster that looks
+# backed up and archives nothing.
+#
+# So this is a deliberate interim: a plain `pg_dump` on a schedule, entirely
+# self-contained in this repo, giving a real restorable artifact today. The
+# database is ~155MB, so a nightly full dump is cheap.
+#
+# WHAT IT DOES NOT GIVE YOU
+#
+# No point-in-time recovery — recovery granularity is 24 hours, back to the
+# last nightly dump. PITR needs continuous WAL archiving, which needs the
+# barman-cloud plugin installed cluster-wide (a home-cloud repo change, since
+# it affects every CNPG cluster there). Tracked separately.
+#
+# RESTORE
+#
+#   kubectl exec -n fountain -i fountain-pg-1 -c postgres -- \
+#     pg_restore -U postgres -d fountain --clean --if-exists < fountain-<ts>.dump
+#
+# Restore is exercised in the runbook; a backup nobody has restored is a
+# hypothesis, not a backup.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: fountain-pg-backup
+  namespace: fountain
+  labels:
+    app: fountain
+spec:
+  # 03:17 UTC — off the hour so it doesn't pile onto every other cron in the
+  # cluster, and well clear of the nightly image builds.
+  schedule: "17 3 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 5
+  # If a node is down at 03:17, still run when the cluster recovers, but don't
+  # fire a stampede of missed runs.
+  startingDeadlineSeconds: 3600
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        spec:
+          restartPolicy: OnFailure
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 26
+            fsGroup: 26
+          volumes:
+            - name: work
+              emptyDir:
+                # Dump is compressed; the database is ~155MB. 2Gi is generous
+                # and bounded so a runaway dump cannot fill the node.
+                sizeLimit: 2Gi
+          # pg_dump runs first, to completion, into the shared volume. The
+          # upload container only starts once it has succeeded, so a failed
+          # dump can never be uploaded as a valid-looking empty object.
+          initContainers:
+            - name: dump
+              image: ghcr.io/cloudnative-pg/postgresql:18.4-standard-trixie
+              command: ["/bin/bash", "-c"]
+              args:
+                - |
+                  set -euo pipefail
+                  TS="$(date -u +%Y-%m-%dT%H-%M-%SZ)"
+                  OUT="/work/fountain-${TS}.dump"
+
+                  echo "Dumping ${PGDATABASE} from ${PGHOST}..."
+                  # -Fc: custom format, compressed, restorable with pg_restore
+                  # and selective about what it replays.
+                  pg_dump -Fc -Z6 --no-owner --no-privileges -f "$OUT"
+
+                  ls -lh "$OUT"
+                  # Refuse to hand a suspiciously small file to the uploader —
+                  # a truncated dump that uploads cleanly is worse than a
+                  # failed job, because it looks like a backup.
+                  SIZE=$(stat -c %s "$OUT")
+                  if [ "$SIZE" -lt 10240 ]; then
+                    echo "FAIL: dump is only ${SIZE} bytes, refusing to upload"
+                    exit 1
+                  fi
+                  echo "$OUT" > /work/latest
+              env:
+                - name: PGHOST
+                  value: fountain-pg-rw
+                - name: PGPORT
+                  value: "5432"
+                - name: PGDATABASE
+                  valueFrom:
+                    secretKeyRef: { name: fountain-pg-app, key: dbname }
+                - name: PGUSER
+                  valueFrom:
+                    secretKeyRef: { name: fountain-pg-app, key: username }
+                - name: PGPASSWORD
+                  valueFrom:
+                    secretKeyRef: { name: fountain-pg-app, key: password }
+              volumeMounts:
+                - { name: work, mountPath: /work }
+              resources:
+                requests: { cpu: 50m, memory: 128Mi }
+                limits: { memory: 512Mi }
+          containers:
+            - name: upload
+              image: amazon/aws-cli:2.31.19
+              command: ["/bin/sh", "-c"]
+              args:
+                - |
+                  set -eu
+                  # Garage serves path-style only — the bucket is not resolvable
+                  # as a DNS subdomain of the in-cluster service name. There is
+                  # no environment variable for this, so write a config file.
+                  # AWS_CONFIG_FILE points at the shared volume because the
+                  # container runs as a non-root uid with no writable home.
+                  printf '[default]\ns3 =\n    addressing_style = path\n' > /work/aws-config
+
+                  FILE="$(cat /work/latest)"
+                  BASE="$(basename "$FILE")"
+                  DEST="s3://${BUCKET}/pg_dump/${BASE}"
+
+                  echo "Uploading ${BASE}..."
+                  # --no-progress: the per-chunk progress lines are hundreds of
+                  # KB of log per run, which is pure noise in an aggregator.
+                  aws --endpoint-url "$S3_ENDPOINT" s3 cp --no-progress "$FILE" "$DEST"
+
+                  # Read back the object size and compare against the local
+                  # file. A silently truncated upload is the failure mode that
+                  # would otherwise go unnoticed until a restore.
+                  #
+                  # list-objects-v2 rather than head-object: Garage answers
+                  # HeadObject with 400 here, and a verification step that
+                  # always fails is worse than none — it would mask a real
+                  # mismatch behind an expected error.
+                  LOCAL=$(stat -c %s "$FILE")
+                  REMOTE=$(aws --endpoint-url "$S3_ENDPOINT" s3api list-objects-v2 \
+                    --bucket "$BUCKET" --prefix "pg_dump/${BASE}" \
+                    --query "Contents[?Key=='pg_dump/${BASE}'].Size | [0]" --output text)
+                  echo "local=${LOCAL} remote=${REMOTE}"
+                  if [ "$LOCAL" != "$REMOTE" ]; then
+                    echo "FAIL: size mismatch after upload"
+                    exit 1
+                  fi
+
+                  # Prune anything older than the retention window. Done after
+                  # a verified upload so a run that failed to produce a new
+                  # backup never deletes an old one.
+                  CUTOFF=$(date -u -d "-${RETENTION_DAYS} days" +%Y-%m-%d)
+                  echo "Pruning dumps older than ${CUTOFF}..."
+                  aws --endpoint-url "$S3_ENDPOINT" s3api list-objects-v2 \
+                    --bucket "$BUCKET" --prefix "pg_dump/" \
+                    --query "Contents[?LastModified<'${CUTOFF}'].Key" --output text \
+                    | tr '\t' '\n' | grep -v '^$' | grep -v '^None$' | while read -r KEY; do
+                        echo "  deleting ${KEY}"
+                        aws --endpoint-url "$S3_ENDPOINT" s3api delete-object \
+                          --bucket "$BUCKET" --key "$KEY"
+                      done || true
+
+                  echo "Backup complete: ${DEST}"
+              env:
+                - name: S3_ENDPOINT
+                  value: http://s3.garage.svc.cluster.local:3900
+                - name: BUCKET
+                  value: fountain-backups
+                - name: RETENTION_DAYS
+                  value: "14"
+                # Garage needs a region set even though it ignores the value.
+                - name: AWS_DEFAULT_REGION
+                  value: garage
+                - name: AWS_CONFIG_FILE
+                  value: /work/aws-config
+              envFrom:
+                - secretRef:
+                    name: fountain-backup-s3-credentials
+              volumeMounts:
+                - { name: work, mountPath: /work }
+              resources:
+                requests: { cpu: 50m, memory: 128Mi }
+                limits: { memory: 512Mi }

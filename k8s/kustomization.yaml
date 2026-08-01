@@ -7,6 +7,7 @@ resources:
   # the Secret exists before the Cluster starts archiving WAL into it.
   - backup-bucket-rbac.yaml
   - backup-bucket-bootstrap.yaml
+  - backup-cronjob.yaml
   - postgres.yaml
   - infisicalsecret.yaml
   - deployment.yaml
