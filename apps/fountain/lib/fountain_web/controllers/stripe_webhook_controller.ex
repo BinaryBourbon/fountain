@@ -27,8 +27,16 @@ defmodule FountainWeb.StripeWebhookController do
 
     case Stripe.Webhook.construct_event(raw_body, sig_header, secret) do
       {:ok, event} ->
-        process_event(event)
-        send_resp(conn, 200, "")
+        case process_event(event) do
+          :ok ->
+            send_resp(conn, 200, "")
+
+          :retry ->
+            # 500 so Stripe redelivers. Previously every outcome answered 200,
+            # which threw away the only recovery mechanism there is for a
+            # transient failure — the event was logged and then gone forever.
+            send_resp(conn, 500, "")
+        end
 
       {:error, reason} ->
         Logger.warning("[stripe_webhook] Signature verification failed: #{inspect(reason)}")
@@ -37,13 +45,32 @@ defmodule FountainWeb.StripeWebhookController do
   end
 
   defp process_event(event) do
-    case Billing.sync_subscription(event) do
+    case Billing.handle_event(event) do
+      {:ok, :duplicate} ->
+        Logger.info("[stripe_webhook] Ignoring duplicate delivery of #{event.id}")
+        :ok
+
+      {:ok, :stale} ->
+        Logger.info("[stripe_webhook] Ignoring out-of-order event #{event.id}")
+        :ok
+
       {:ok, _} ->
+        :ok
+
+      # Retrying cannot fix an event whose customer we do not recognise, so
+      # acknowledge it rather than making Stripe redeliver for three days.
+      {:error, :user_not_found} ->
+        Logger.error("[stripe_webhook] No user for event #{event.id} (#{event.type})")
         :ok
 
       {:error, reason} ->
         Logger.error("[stripe_webhook] Event processing error: #{inspect(reason)}")
+        :retry
     end
+  rescue
+    e ->
+      Logger.error("[stripe_webhook] Unhandled error: #{Exception.message(e)}")
+      :retry
   end
 
   defp webhook_secret do
