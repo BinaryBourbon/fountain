@@ -25,7 +25,12 @@ defmodule Fountain.Conversations.ConversationServer do
     Vaults
   }
 
-  alias Fountain.Conversations.Conversation
+  alias Fountain.Conversations.{Conversation, Lifecycle}
+
+  # How often the sandbox lifetime bounds are evaluated. A minute is far finer
+  # than the bounds themselves (an hour, a day), so the cost of the tick is
+  # irrelevant and the overshoot is bounded by it.
+  @lifecycle_check_ms :timer.minutes(1)
 
   # ── public api ────────────────────────────────────────────────────────────
 
@@ -139,9 +144,16 @@ defmodule Fountain.Conversations.ConversationServer do
       # durable record; we keep the raw value in memory only while this
       # GenServer is alive. Rotated on every fresh provision/reattach;
       # revoked in terminate/2.
-      callback_token: nil
+      callback_token: nil,
+      # Sandbox lifetime bookkeeping. `started_at` is set once the sprite
+      # exists; `last_activity_at` moves on every turn start and end. See
+      # Fountain.Conversations.Lifecycle for what the bounds are and why
+      # reclaiming a sandbox does not end the conversation.
+      sandbox_started_at: nil,
+      last_activity_at: DateTime.utc_now()
     }
 
+    schedule_lifecycle_check()
     {:ok, state, {:continue, :provision}}
   end
 
@@ -311,7 +323,14 @@ defmodule Fountain.Conversations.ConversationServer do
           # doesn't block the user's first turn.
           maybe_create_checkpoint_async(sprite, env)
 
-          new_state = %{state | sprite: sprite, sprite_env: sprite_env}
+          # Dated from the sandbox row, not from now, so the absolute lifetime
+          # ceiling survives a restart and a reattach rather than resetting.
+          new_state = %{
+            state
+            | sprite: sprite,
+              sprite_env: sprite_env,
+              sandbox_started_at: sandbox.inserted_at
+          }
 
           case state.initial_prompt do
             nil -> {:noreply, new_state}
@@ -453,7 +472,13 @@ defmodule Fountain.Conversations.ConversationServer do
         # between the original provision and this reattach.
         Fountain.Conversations.Provisioning.write_env_file(sprite, sprite_env)
 
-        new_state = %{state | sprite: sprite, sprite_env: sprite_env}
+        new_state = %{
+          state
+          | sprite: sprite,
+            sprite_env: sprite_env,
+            sandbox_started_at: sandbox.inserted_at
+        }
+
         new_state = reattach_running_turn(new_state)
 
         case state.initial_prompt do
@@ -842,7 +867,7 @@ defmodule Fountain.Conversations.ConversationServer do
 
     {:noreply,
      %{
-       state
+       touch_activity(state)
        | current_command: nil,
          current_command_ref: nil,
          current_turn: nil,
@@ -856,7 +881,76 @@ defmodule Fountain.Conversations.ConversationServer do
     {:noreply, state}
   end
 
+  # ── sandbox lifetime ──────────────────────────────────────────────────────
+
+  def handle_info(:lifecycle_check, state) do
+    schedule_lifecycle_check()
+
+    started_at = state.sandbox_started_at
+
+    cond do
+      # No sprite yet: provisioning is still in flight and there is nothing to
+      # reclaim. The reaper handles a provision that never finishes.
+      is_nil(started_at) ->
+        {:noreply, state}
+
+      true ->
+        case Lifecycle.check(started_at, state.last_activity_at, state.current_command != nil) do
+          {:expired, reason} -> reclaim_sandbox(state, reason)
+          :ok -> {:noreply, state}
+        end
+    end
+  end
+
   def handle_info(_msg, state), do: {:noreply, state}
+
+  defp schedule_lifecycle_check do
+    Process.send_after(self(), :lifecycle_check, @lifecycle_check_ms)
+  end
+
+  defp touch_activity(state), do: %{state | last_activity_at: DateTime.utc_now()}
+
+  # Tear down the sprite and stop, leaving the conversation `idle` so the next
+  # prompt wakes it with a fresh sandbox. Setting the conversation `terminated`
+  # here would make it permanently unresumable — a cost control turning into
+  # data loss. See Fountain.Conversations.Lifecycle.
+  defp reclaim_sandbox(state, reason) do
+    Logger.info(
+      "reclaiming sandbox for conv #{state.conversation_id}: #{reason} " <>
+        "(sprite #{inspect(state.sprite && state.sprite.name)})"
+    )
+
+    if state.sprite, do: _ = Sprites.destroy(state.sprite)
+
+    if state.sandbox_id do
+      sandbox = Conversations.get_sandbox!(state.sandbox_id)
+
+      if sandbox.status not in ["terminated", "failed"] do
+        {:ok, _} =
+          Conversations.update_sandbox(sandbox, %{status: "terminated", terminated_at: now()})
+      end
+    end
+
+    # The conversation stays idle and resumable; only the sandbox is gone.
+    conv = Conversations._unsafe_get_conversation!(state.conversation_id)
+    if conv.status == "running", do: Conversations.update_conversation(conv, %{status: "idle"})
+
+    # `state` is a stage-lifecycle vocabulary — LogEvent allows only
+    # started/done/failed/interrupted, and both the CLI and the LiveView switch
+    # on it. A reclaimed sandbox is a stage that reached its end, so "done" is
+    # accurate and needs no client to learn a new word; the `reason` and
+    # `message` fields carry what actually happened. The new part clients key on
+    # is the "sandbox" stage itself.
+    publish_stage(state.conversation_id, "sandbox", "done", %{
+      event: "reclaimed",
+      reason: to_string(reason),
+      message: Lifecycle.explain(reason)
+    })
+
+    :telemetry.execute([:fountain, :sandbox, :reclaimed], %{count: 1}, %{reason: reason})
+
+    {:stop, :normal, %{state | sprite: nil}}
+  end
 
   # Best-effort revoke of the per-conversation API key when this server
   # exits — covers both clean termination (`:terminate_conv`) and crash
@@ -971,6 +1065,7 @@ defmodule Fountain.Conversations.ConversationServer do
   end
 
   defp kick_turn(state, prompt, agent, images) do
+    state = touch_activity(state)
     conv = Conversations._unsafe_get_conversation!(state.conversation_id)
     turn_number = Conversations.next_turn_number(state.conversation_id)
 

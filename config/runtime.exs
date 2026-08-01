@@ -135,6 +135,32 @@ allowed_signup_domains =
 
 config :fountain, :registration_allowed_email_domains, allowed_signup_domains
 
+# Sandbox lifetime bounds. Either set to 0 disables that bound; an operator who
+# wants sandboxes to live until explicitly terminated sets both to 0 and gets
+# the pre-#167 behaviour back. Reclaiming a sandbox does not end its
+# conversation — see Fountain.Conversations.Lifecycle.
+#
+# Refused at boot rather than ignored: a typo here would otherwise silently
+# disable the bound, and an operator who set a limit deserves to find out that
+# it did not take effect now rather than from a bill.
+parse_bound = fn var, default ->
+  case System.get_env(var, default) |> Integer.parse() do
+    {n, ""} when n >= 0 ->
+      n
+
+    _ ->
+      raise """
+      #{var} must be a non-negative integer (got: #{inspect(System.get_env(var))}).
+
+      Set it to 0 to disable this bound entirely.
+      """
+  end
+end
+
+config :fountain,
+  sandbox_idle_timeout_minutes: parse_bound.("SANDBOX_IDLE_TIMEOUT_MINUTES", "60"),
+  sandbox_max_lifetime_hours: parse_bound.("SANDBOX_MAX_LIFETIME_HOURS", "24")
+
 # CIDRs treated as proxies when resolving the client IP from X-Forwarded-For.
 # Only widen this to cover addresses that are genuinely proxies — anything
 # trusted here is stepped over, so an over-broad list lets a client spoof its

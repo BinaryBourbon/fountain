@@ -52,7 +52,7 @@ defmodule Fountain.Workers.SandboxReaper do
   require Logger
 
   alias Fountain.Conversations
-  alias Fountain.Conversations.{ConversationServer, Sandbox}
+  alias Fountain.Conversations.{ConversationServer, Lifecycle, Sandbox, Turn}
   alias Fountain.Repo
 
   # Long enough to clear the slowest legitimate provision: package installs get
@@ -71,6 +71,7 @@ defmodule Fountain.Workers.SandboxReaper do
   @impl Oban.Worker
   def perform(_job) do
     released = release_stuck_sandboxes()
+    expired = expire_abandoned_sandboxes()
 
     result =
       case list_sprites() do
@@ -79,7 +80,7 @@ defmodule Fountain.Workers.SandboxReaper do
           untracked = report_untracked(live_names)
 
           Logger.info(
-            "reaper: released=#{released} destroyed=#{destroyed} " <>
+            "reaper: released=#{released} expired=#{expired} destroyed=#{destroyed} " <>
               "untracked=#{untracked} live=#{MapSet.size(live_names)}"
           )
 
@@ -92,7 +93,7 @@ defmodule Fountain.Workers.SandboxReaper do
           {:error, reason}
       end
 
-    :telemetry.execute([:fountain, :reaper, :run], %{released: released}, %{})
+    :telemetry.execute([:fountain, :reaper, :run], %{released: released, expired: expired}, %{})
 
     result
   end
@@ -130,6 +131,85 @@ defmodule Fountain.Workers.SandboxReaper do
   # this is not just a local check.
   defp server_alive?(%Sandbox{conversations: conversations}) do
     Enum.any?(conversations, fn conv -> ConversationServer.whereis(conv.id) != nil end)
+  end
+
+  # ── pass 1b: ready sandboxes nobody is holding ────────────────────────────
+
+  @doc """
+  Marks `ready` sandboxes past their lifetime bound as terminated.
+
+  This is the half of #167 that the ConversationServer cannot do. The server
+  enforces its own idle timeout while it is alive, but a sandbox whose server
+  died — a crash, a node that left the cluster, a deploy that happened to land
+  between the rehydrator's scan and a reattach — has nothing watching it. The
+  83-day-old sandbox in production was exactly that: `ready`, no server, alive
+  since 2026-05-10.
+
+  Activity is read from the conversation's most recent turn rather than from
+  `sandboxes.updated_at` or `conversations.updated_at`, both of which get
+  touched by bookkeeping the user had nothing to do with — the rehydrator moves
+  `conversations.updated_at` on every boot, which would make an abandoned
+  conversation look freshly active after each deploy.
+  """
+  def expire_abandoned_sandboxes do
+    idle = Lifecycle.idle_timeout_seconds()
+    max_lifetime = Lifecycle.max_lifetime_seconds()
+
+    if is_nil(idle) and is_nil(max_lifetime) do
+      0
+    else
+      now = DateTime.utc_now()
+
+      Sandbox
+      |> where([s], s.status == "ready")
+      |> Repo.all()
+      |> Repo.preload(:conversations)
+      |> Enum.reject(&server_alive?/1)
+      |> Enum.filter(&expired?(&1, now))
+      |> Enum.map(&expire/1)
+      |> length()
+    end
+  end
+
+  defp expired?(sandbox, now) do
+    Lifecycle.check(sandbox.inserted_at, last_activity_at(sandbox), false, now) != :ok
+  end
+
+  # Newest turn across the sandbox's conversations, falling back to when the
+  # sandbox itself was created for one that never took a turn.
+  defp last_activity_at(%Sandbox{inserted_at: inserted_at, conversations: convs}) do
+    conv_ids = Enum.map(convs, & &1.id)
+
+    latest =
+      if conv_ids == [] do
+        nil
+      else
+        Turn
+        |> where([t], t.conversation_id in ^conv_ids)
+        |> select([t], max(t.inserted_at))
+        |> Repo.one()
+      end
+
+    latest || inserted_at
+  end
+
+  defp expire(sandbox) do
+    {:ok, _} =
+      Conversations.update_sandbox(sandbox, %{
+        status: "terminated",
+        terminated_at: DateTime.utc_now() |> DateTime.truncate(:second)
+      })
+
+    Logger.info(
+      "reaper: expired abandoned sandbox #{sandbox.id} (#{sandbox.sprite_name}) — " <>
+        "ready with no live server past its lifetime bound"
+    )
+
+    # The conversation is deliberately left alone. It stays resumable, and the
+    # next prompt provisions a fresh sandbox with the same runtime session.
+    # The sprite itself is destroyed by pass 2 on this same run, now that the
+    # row is terminal.
+    sandbox
   end
 
   # ── pass 2: terminal rows whose sprite is still there ─────────────────────

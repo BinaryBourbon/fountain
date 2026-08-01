@@ -107,6 +107,128 @@ defmodule Fountain.Workers.SandboxReaperTest do
     end
   end
 
+  describe "abandoned ready sandboxes" do
+    defp with_bounds(pairs, fun) do
+      previous = Enum.map(pairs, fn {k, _} -> {k, Application.get_env(:fountain, k)} end)
+      Enum.each(pairs, fn {k, v} -> Application.put_env(:fountain, k, v) end)
+
+      try do
+        fun.()
+      after
+        Enum.each(previous, fn {k, v} -> Application.put_env(:fountain, k, v) end)
+      end
+    end
+
+    defp age_rows(sandbox, conv, minutes) do
+      ts = minutes_ago(minutes)
+      Repo.update_all(from(s in Sandbox, where: s.id == ^sandbox.id), set: [inserted_at: ts])
+
+      if conv do
+        Repo.update_all(
+          from(t in Fountain.Conversations.Turn, where: t.conversation_id == ^conv.id),
+          set: [inserted_at: ts]
+        )
+      end
+
+      Repo.reload(sandbox)
+    end
+
+    test "a ready sandbox with no server and no recent turn is expired" do
+      # The 83-day production sandbox. Its ConversationServer is long gone, so
+      # nothing was watching it — the server-side idle timeout cannot help.
+      user = insert_verified_user()
+      sandbox = insert_sandbox(user_id: user.id, status: "ready")
+      conv = insert_conversation(user_id: user.id, sandbox: sandbox, status: "idle")
+      insert_turn(conv, %{status: "completed"})
+      sandbox = age_rows(sandbox, conv, 60 * 24 * 83)
+
+      with_bounds([sandbox_idle_timeout_minutes: 60, sandbox_max_lifetime_hours: 24], fn ->
+        capture_log(fn -> assert 1 = SandboxReaper.expire_abandoned_sandboxes() end)
+      end)
+
+      assert Repo.reload(sandbox).status == "terminated"
+
+      # The conversation must survive — reclaiming is a cost control, not a
+      # delete. assert_resumable/1 refuses terminated/failed/completed, so
+      # marking it here would lock the user out of their own history forever.
+      assert Repo.reload(conv).status == "idle"
+      refute Repo.reload(conv).status in ~w(terminated failed completed)
+    end
+
+    test "recent turn activity keeps a sandbox alive" do
+      user = insert_verified_user()
+      sandbox = insert_sandbox(user_id: user.id, status: "ready")
+      conv = insert_conversation(user_id: user.id, sandbox: sandbox)
+      insert_turn(conv, %{status: "completed"})
+
+      with_bounds([sandbox_idle_timeout_minutes: 60, sandbox_max_lifetime_hours: 24], fn ->
+        assert 0 = SandboxReaper.expire_abandoned_sandboxes()
+      end)
+
+      assert Repo.reload(sandbox).status == "ready"
+    end
+
+    test "a live ConversationServer is left to enforce its own timeout" do
+      user = insert_verified_user()
+      sandbox = insert_sandbox(user_id: user.id, status: "ready")
+      conv = insert_conversation(user_id: user.id, sandbox: sandbox)
+      age_rows(sandbox, conv, 60 * 24 * 83)
+
+      stub(Fountain.Conversations.ConversationServer, :whereis, fn id ->
+        if id == conv.id, do: self(), else: nil
+      end)
+
+      with_bounds([sandbox_idle_timeout_minutes: 60, sandbox_max_lifetime_hours: 24], fn ->
+        assert 0 = SandboxReaper.expire_abandoned_sandboxes()
+      end)
+
+      assert Repo.reload(sandbox).status == "ready"
+    end
+
+    test "with both bounds disabled nothing is expired" do
+      user = insert_verified_user()
+      sandbox = insert_sandbox(user_id: user.id, status: "ready")
+      conv = insert_conversation(user_id: user.id, sandbox: sandbox)
+      age_rows(sandbox, conv, 60 * 24 * 83)
+
+      with_bounds([sandbox_idle_timeout_minutes: 0, sandbox_max_lifetime_hours: 0], fn ->
+        assert 0 = SandboxReaper.expire_abandoned_sandboxes()
+      end)
+
+      assert Repo.reload(sandbox).status == "ready"
+    end
+
+    test "a sandbox that never took a turn is dated from its own creation" do
+      # Otherwise a sandbox with no turns has no activity timestamp at all and
+      # would either never expire or expire immediately.
+      user = insert_verified_user()
+      sandbox = insert_sandbox(user_id: user.id, status: "ready")
+      conv = insert_conversation(user_id: user.id, sandbox: sandbox)
+      sandbox = age_rows(sandbox, conv, 60 * 5)
+
+      with_bounds([sandbox_idle_timeout_minutes: 60, sandbox_max_lifetime_hours: 24], fn ->
+        capture_log(fn -> assert 1 = SandboxReaper.expire_abandoned_sandboxes() end)
+      end)
+
+      assert Repo.reload(sandbox).status == "terminated"
+    end
+
+    test "expiring a sandbox makes its sprite eligible for destruction the same run" do
+      user = insert_verified_user()
+      sandbox = insert_sandbox(user_id: user.id, status: "ready")
+      conv = insert_conversation(user_id: user.id, sandbox: sandbox)
+      age_rows(sandbox, conv, 60 * 24 * 83)
+      stub_sprites([sandbox.sprite_name])
+      capture_destroys()
+
+      with_bounds([sandbox_idle_timeout_minutes: 60, sandbox_max_lifetime_hours: 24], fn ->
+        capture_log(fn -> assert :ok = perform_job(SandboxReaper, %{}) end)
+      end)
+
+      assert destroyed_names() == [sandbox.sprite_name]
+    end
+  end
+
   describe "leaked sprites" do
     test "destroys a sprite whose sandbox row is terminal" do
       # The ordinary leak: both destroy call sites in ConversationServer discard

@@ -109,6 +109,24 @@ Pick one:
 Password reset also needs working mail. With `EMAIL_DELIVERY=none` the only
 route back into a locked-out account is the database.
 
+## Sandbox lifetime
+
+Sandboxes are reclaimed when they go idle or reach a maximum age, so an
+abandoned conversation stops costing you:
+
+| Setting | Default | |
+|---|---|---|
+| `SANDBOX_IDLE_TIMEOUT_MINUTES` | `60` | No turn activity for this long and the sandbox is torn down |
+| `SANDBOX_MAX_LIFETIME_HOURS` | `24` | Absolute ceiling from creation, regardless of activity |
+
+Set either to `0` to disable it. A value that is not a non-negative integer
+refuses to boot rather than quietly disabling the bound.
+
+Reclaiming ends the **sandbox**, not the conversation. The conversation stays
+resumable — the next prompt provisions a fresh sandbox and the runtime resumes
+the same session — so the cost of a bound being too aggressive is a
+re-provisioning wait, not lost work.
+
 ## Billing
 
 The compose file sets `BILLING_ENABLED=false`. The subscription gate exists for
