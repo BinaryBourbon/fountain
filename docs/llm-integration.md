@@ -6,7 +6,7 @@ Fountain is built to be consumed by AI coding tools. Every instance exposes mach
 
 ```bash
 mkdir -p ~/.claude/skills/fountain
-curl -fsSL https://founta.inevitable.fyi/skill > ~/.claude/skills/fountain/SKILL.md
+curl -fsSL https://fountain.inevitable.fyi/skill > ~/.claude/skills/fountain/SKILL.md
 ```
 
 After that, telling Claude "spin up a researcher agent on Fountain and have it audit the auth module" Just Works.
@@ -20,8 +20,8 @@ After that, telling Claude "spin up a researcher agent on Fountain and have it a
 | `/skill` | Claude Code / Cursor skill file | IDE skills |
 
 ```bash
-curl https://founta.inevitable.fyi/llms.txt
-curl https://founta.inevitable.fyi/llms-full.txt
+curl https://fountain.inevitable.fyi/llms.txt
+curl https://fountain.inevitable.fyi/llms-full.txt
 ```
 
 ## Self-hosted instances
@@ -41,8 +41,8 @@ Fountain will ship a first-party MCP server exposing all four primitives as tool
       "command": "npx",
       "args": ["-y", "@fountain/mcp-server"],
       "env": {
-        "FOUNTAIN_TOKEN": "ft_your_api_key",
-        "FOUNTAIN_ENDPOINT": "https://founta.inevitable.fyi"
+        "FOUNTAIN_API_KEY": "ftn_your_api_key",
+        "FOUNTAIN_BASE_URL": "https://fountain.inevitable.fyi"
       }
     }
   }

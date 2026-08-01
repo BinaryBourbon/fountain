@@ -59,7 +59,7 @@ defmodule FountainWeb.LlmsController do
     - **Agent** — named runtime config (runtime + model + system prompt + skills + MCP servers + an environment)
     - **Conversation** — one running instance of an agent inside a freshly provisioned sprite, streamable over SSE
 
-    Public instance: <https://founta.inevitable.fyi>. Source: <https://github.com/BinaryBourbon/fountain>.
+    Public instance: <https://fountain.inevitable.fyi>. Source: <https://github.com/BinaryBourbon/fountain>.
 
     ## Get started
 

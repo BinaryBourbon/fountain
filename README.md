@@ -45,32 +45,32 @@ fountain apply -f agent-specs
 
 ```sh
 # Get a session token (email + password)
-TOKEN=$(curl -sX POST https://founta.inevitable.fyi/api/auth/token \
+TOKEN=$(curl -sX POST https://fountain.inevitable.fyi/api/auth/token \
   -H 'Content-Type: application/json' \
   -d '{"email":"you@example.com","password":"..."}'  | jq -r .token)
 
 # Or create a long-lived API key in the UI: Account → API Keys
 # Then use it directly:
-TOKEN=ft_your_api_key
+TOKEN=ftn_your_api_key
 ```
 
 ### Manage resources
 
 ```sh
 # Create an environment
-curl -sX POST https://founta.inevitable.fyi/api/environments \
+curl -sX POST https://fountain.inevitable.fyi/api/environments \
   -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' \
   -d '{"name":"python-data","networking_type":"unrestricted"}'
 
 # Upsert a secret
-curl -sX POST https://founta.inevitable.fyi/api/environments/$ENV_ID/secrets \
+curl -sX POST https://fountain.inevitable.fyi/api/environments/$ENV_ID/secrets \
   -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' \
   -d '{"key":"OPENAI_API_KEY","value":"sk-..."}'
 
 # Create an agent
-curl -sX POST https://founta.inevitable.fyi/api/agents \
+curl -sX POST https://fountain.inevitable.fyi/api/agents \
   -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' \
   -d '{"name":"researcher","model":"anthropic/claude-sonnet-4-6","runtime":"claude","environment_id":"$ENV_ID"}'
@@ -80,7 +80,7 @@ curl -sX POST https://founta.inevitable.fyi/api/agents \
 
 ```sh
 # Start a conversation
-CONV=$(curl -sX POST https://founta.inevitable.fyi/api/conversations \
+CONV=$(curl -sX POST https://fountain.inevitable.fyi/api/conversations \
   -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' \
   -d "{\"agent_id\":\"$AGENT_ID\",\"prompt\":\"Audit the auth module for security issues\"}")
@@ -88,7 +88,7 @@ CONV=$(curl -sX POST https://founta.inevitable.fyi/api/conversations \
 CONV_ID=$(echo $CONV | jq -r .id)
 
 # Stream log events (SSE)
-curl -sN https://founta.inevitable.fyi/api/conversations/$CONV_ID/stream \
+curl -sN https://fountain.inevitable.fyi/api/conversations/$CONV_ID/stream \
   -H "Authorization: Bearer $TOKEN"
 ```
 
@@ -96,17 +96,17 @@ Each SSE event is a JSON object: `{"kind":"output","stream":"stdout","data":"...
 
 ### Explore the full API
 
-Interactive Swagger UI: `https://founta.inevitable.fyi/api/docs`
+Interactive Swagger UI: `https://fountain.inevitable.fyi/api/docs`
 
-OpenAPI spec: `https://founta.inevitable.fyi/api/openapi.json`
+OpenAPI spec: `https://fountain.inevitable.fyi/api/openapi.json`
 
 ## Point an LLM at Fountain
 
-Every Fountain instance serves a plain-text [`/llms.txt`](https://founta.inevitable.fyi/llms.txt), a bundled [`/llms-full.txt`](https://founta.inevitable.fyi/llms-full.txt), and a drop-in [`/skill`](https://founta.inevitable.fyi/skill) so any agentic IDE (Claude Code, Cursor, Continue, Aider, ...) can learn the API from one fetch:
+Every Fountain instance serves a plain-text [`/llms.txt`](https://fountain.inevitable.fyi/llms.txt), a bundled [`/llms-full.txt`](https://fountain.inevitable.fyi/llms-full.txt), and a drop-in [`/skill`](https://fountain.inevitable.fyi/skill) so any agentic IDE (Claude Code, Cursor, Continue, Aider, ...) can learn the API from one fetch:
 
 ```sh
 mkdir -p ~/.claude/skills/fountain
-curl -fsSL https://founta.inevitable.fyi/skill > ~/.claude/skills/fountain/SKILL.md
+curl -fsSL https://fountain.inevitable.fyi/skill > ~/.claude/skills/fountain/SKILL.md
 ```
 
 After that, telling Claude “spin up a researcher agent on Fountain and have it audit the auth module” Just Works — the skill describes the four primitives (Environment / Vault / Agent / Conversation), the CLI commands, the API endpoints, the SSE format, and the per-runtime result filters.
