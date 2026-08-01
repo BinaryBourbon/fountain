@@ -4,6 +4,12 @@ defmodule Fountain.SpritesClient do
   application env (set in runtime.exs).
   """
 
+  require Logger
+
+  # The list endpoint returns 50 per page. A reconciliation that stops at the
+  # first page is worse than no reconciliation, because it looks complete.
+  @max_pages 40
+
   @doc "Returns a Sprites client, or raises if SPRITES_TOKEN is not set."
   def get! do
     token =
@@ -12,5 +18,51 @@ defmodule Fountain.SpritesClient do
 
     base_url = Application.get_env(:fountain, :sprites_base_url, "https://api.sprites.dev")
     Sprites.new(token, base_url: base_url)
+  end
+
+  @doc """
+  Every sprite name on the account, as a MapSet.
+
+  `Sprites.list/2` cannot be used for this. It pattern-matches the `"sprites"`
+  key out of the response and discards `has_more` and
+  `next_continuation_token`, so it returns the first page and gives no
+  indication there is more — against production that was 50 names out of 114.
+  Anything comparing that list to the database would silently treat two thirds
+  of the account as non-existent.
+
+  Returns `{:error, :truncated}` rather than a short list if the account somehow
+  exceeds `#{@max_pages}` pages, because a caller deciding what to delete must
+  never be handed a partial view that looks whole.
+  """
+  @spec list_all_sprite_names() :: {:ok, MapSet.t(String.t())} | {:error, term()}
+  def list_all_sprite_names do
+    collect(get!(), nil, MapSet.new(), 0)
+  end
+
+  defp collect(_client, _token, _acc, page) when page >= @max_pages do
+    Logger.error("sprites: list exceeded #{@max_pages} pages — refusing to return a partial view")
+    {:error, :truncated}
+  end
+
+  defp collect(client, token, acc, page) do
+    params = if token, do: [continuation_token: token], else: []
+
+    case Req.get(client.req, url: "/v1/sprites", params: params) do
+      {:ok, %{status: status, body: %{"sprites" => sprites} = body}} when status in 200..299 ->
+        acc = Enum.reduce(sprites, acc, fn s, set -> MapSet.put(set, s["name"]) end)
+        next = body["next_continuation_token"]
+
+        if body["has_more"] && is_binary(next) && next != "" do
+          collect(client, next, acc, page + 1)
+        else
+          {:ok, acc}
+        end
+
+      {:ok, %{status: status, body: body}} ->
+        {:error, {:api_error, status, body}}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
   end
 end

@@ -1,0 +1,244 @@
+defmodule Fountain.Workers.SandboxReaperTest do
+  @moduledoc """
+  Reconciliation between the `sandboxes` table and sprites.dev.
+
+  The risk here is asymmetric and points in one direction: failing to reap a
+  sprite costs money and quota, while reaping the wrong one destroys someone's
+  running work and cannot be undone. So most of these tests are about what the
+  reaper refuses to touch.
+  """
+
+  use Fountain.DataCase, async: false
+  use Mimic
+
+  import ExUnit.CaptureLog
+
+  alias Fountain.Conversations.Sandbox
+  alias Fountain.Repo
+  alias Fountain.Workers.SandboxReaper
+
+  setup :set_mimic_global
+
+  defp minutes_ago(n),
+    do: DateTime.utc_now() |> DateTime.add(-n * 60, :second) |> DateTime.truncate(:second)
+
+  # updated_at is managed by Ecto, so age has to be forced with a raw update.
+  defp age_sandbox(sandbox, minutes) do
+    ts = minutes_ago(minutes)
+    Repo.update_all(from(s in Sandbox, where: s.id == ^sandbox.id), set: [updated_at: ts])
+    %{sandbox | updated_at: ts}
+  end
+
+  defp stub_sprites(names) do
+    stub(Fountain.SpritesClient, :list_all_sprite_names, fn -> {:ok, MapSet.new(names)} end)
+    stub(Fountain.SpritesClient, :get!, fn -> :client end)
+  end
+
+  defp capture_destroys do
+    test = self()
+
+    stub(Sprites, :sprite, fn :client, name -> {:handle, name} end)
+
+    stub(Sprites, :destroy, fn {:handle, name} ->
+      send(test, {:destroyed, name})
+      :ok
+    end)
+  end
+
+  defp destroyed_names do
+    receive do
+      {:destroyed, name} -> [name | destroyed_names()]
+    after
+      0 -> []
+    end
+  end
+
+  describe "stuck sandboxes" do
+    test "a row stuck in pending past the grace period is released" do
+      # This is the quota half: Quotas counts pending/starting toward the
+      # concurrent cap, so a row left behind by a BEAM that died mid-provision
+      # consumes a tenant's allowance forever, with no self-serve way out.
+      sandbox = insert_sandbox(status: "pending") |> age_sandbox(120)
+
+      capture_log(fn -> assert 1 = SandboxReaper.release_stuck_sandboxes() end)
+
+      assert %{status: "failed", terminated_at: %DateTime{}} = Repo.reload(sandbox)
+    end
+
+    test "starting is released too" do
+      sandbox = insert_sandbox(status: "starting") |> age_sandbox(120)
+
+      capture_log(fn -> assert 1 = SandboxReaper.release_stuck_sandboxes() end)
+
+      assert Repo.reload(sandbox).status == "failed"
+    end
+
+    test "a recent row is left alone" do
+      # A slow provision is not a stuck one. Package installs get 300s per
+      # command and a clone gets 600s, and they run in sequence.
+      sandbox = insert_sandbox(status: "pending") |> age_sandbox(5)
+
+      assert 0 = SandboxReaper.release_stuck_sandboxes()
+      assert Repo.reload(sandbox).status == "pending"
+    end
+
+    test "a ready sandbox is never released, however old" do
+      # An idle sandbox is a lifetime question (#167), not a stuck one. Marking
+      # it failed here would kill live conversations.
+      sandbox = insert_sandbox(status: "ready") |> age_sandbox(60 * 24 * 90)
+
+      assert 0 = SandboxReaper.release_stuck_sandboxes()
+      assert Repo.reload(sandbox).status == "ready"
+    end
+
+    test "a row with a live ConversationServer is left alone" do
+      # Whatever the clock says, a running server means provisioning is still
+      # in flight somewhere in the cluster.
+      user = insert_verified_user()
+      sandbox = insert_sandbox(user_id: user.id, status: "pending") |> age_sandbox(600)
+      conv = insert_conversation(user_id: user.id, sandbox: sandbox)
+
+      stub(Fountain.Conversations.ConversationServer, :whereis, fn id ->
+        if id == conv.id, do: self(), else: nil
+      end)
+
+      assert 0 = SandboxReaper.release_stuck_sandboxes()
+      assert Repo.reload(sandbox).status == "pending"
+    end
+  end
+
+  describe "leaked sprites" do
+    test "destroys a sprite whose sandbox row is terminal" do
+      # The ordinary leak: both destroy call sites in ConversationServer discard
+      # the result and mark the row terminal regardless, so a transient failure
+      # at sprites.dev strands the sprite permanently.
+      sandbox = insert_sandbox(status: "terminated")
+      stub_sprites([sandbox.sprite_name])
+      capture_destroys()
+
+      capture_log(fn -> assert :ok = perform_job(SandboxReaper, %{}) end)
+
+      assert destroyed_names() == [sandbox.sprite_name]
+    end
+
+    test "destroys for failed sandboxes as well as terminated" do
+      sandbox = insert_sandbox(status: "failed")
+      stub_sprites([sandbox.sprite_name])
+      capture_destroys()
+
+      capture_log(fn -> assert :ok = perform_job(SandboxReaper, %{}) end)
+
+      assert destroyed_names() == [sandbox.sprite_name]
+    end
+
+    test "never destroys a sprite whose sandbox is still live" do
+      ready = insert_sandbox(status: "ready")
+      pending = insert_sandbox(status: "pending")
+      stub_sprites([ready.sprite_name, pending.sprite_name])
+      capture_destroys()
+
+      capture_log(fn -> assert :ok = perform_job(SandboxReaper, %{}) end)
+
+      assert destroyed_names() == []
+    end
+
+    test "never destroys a sprite with no sandbox row" do
+      # The rule that keeps this safe. The same SPRITES_TOKEN can be in a
+      # developer's shell or a staging instance, and a sprite created seconds
+      # ago may not have committed its row yet — production holds a `jake-*`
+      # sprite that is exactly this case. Absence of a row is not evidence of a
+      # leak, and this mistake is the one that cannot be undone.
+      stub_sprites(["someone-elses-sprite", "aod-conv-legacy"])
+      capture_destroys()
+
+      capture_log(fn -> assert :ok = perform_job(SandboxReaper, %{}) end)
+
+      assert destroyed_names() == []
+    end
+
+    test "untracked sprites are counted so the drift is visible" do
+      # Inert is not the same as ignored — an operator still has to be able to
+      # see that 102 sprites have no row, which is what production looked like.
+      insert_sandbox(status: "ready", sprite_name: "known-1")
+
+      test = self()
+
+      :telemetry.attach(
+        "reaper-untracked-#{System.unique_integer([:positive])}",
+        [:fountain, :reaper, :untracked],
+        fn _e, measurements, _meta, _cfg -> send(test, {:untracked, measurements.count}) end,
+        nil
+      )
+
+      capture_log(fn ->
+        assert 2 =
+                 SandboxReaper.report_untracked(
+                   MapSet.new(["known-1", "stranger-a", "stranger-b"])
+                 )
+      end)
+
+      assert_received {:untracked, 2}
+    end
+
+    test "a row whose sprite is already gone needs no work" do
+      insert_sandbox(status: "terminated")
+      stub_sprites([])
+      capture_destroys()
+
+      capture_log(fn -> assert :ok = perform_job(SandboxReaper, %{}) end)
+
+      assert destroyed_names() == []
+    end
+
+    test "one destroy failure does not stop the rest" do
+      doomed = insert_sandbox(status: "terminated")
+      other = insert_sandbox(status: "terminated")
+      stub_sprites([doomed.sprite_name, other.sprite_name])
+
+      test = self()
+      stub(Sprites, :sprite, fn :client, name -> {:handle, name} end)
+
+      stub(Sprites, :destroy, fn {:handle, name} ->
+        if name == doomed.sprite_name do
+          {:error, :boom}
+        else
+          send(test, {:destroyed, name})
+          :ok
+        end
+      end)
+
+      capture_log(fn -> assert :ok = perform_job(SandboxReaper, %{}) end)
+
+      assert destroyed_names() == [other.sprite_name]
+    end
+  end
+
+  describe "when sprites.dev is unreachable" do
+    test "stuck rows are still released and the job retries" do
+      # The quota fix needs no network, so it must not be held hostage to the
+      # API being up. Returning an error lets Oban retry the rest.
+      sandbox = insert_sandbox(status: "pending") |> age_sandbox(120)
+      stub(Fountain.SpritesClient, :list_all_sprite_names, fn -> {:error, :nxdomain} end)
+
+      capture_log(fn ->
+        assert {:error, :nxdomain} = perform_job(SandboxReaper, %{})
+      end)
+
+      assert Repo.reload(sandbox).status == "failed"
+    end
+
+    test "a truncated listing destroys nothing" do
+      # SpritesClient refuses to return a partial page set. Treating a partial
+      # view as complete would make every unlisted sprite look like it had
+      # already been destroyed.
+      sandbox = insert_sandbox(status: "terminated")
+      stub(Fountain.SpritesClient, :list_all_sprite_names, fn -> {:error, :truncated} end)
+      capture_destroys()
+
+      capture_log(fn -> assert {:error, :truncated} = perform_job(SandboxReaper, %{}) end)
+
+      assert destroyed_names() == []
+      assert Repo.reload(sandbox).status == "terminated"
+    end
+  end
+end
