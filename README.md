@@ -127,3 +127,11 @@ See [`SETUP.md`](SETUP.md) for the full local bootstrap (mise + Postgres + deps)
 ## Contributing
 
 See [`CLAUDE.md`](CLAUDE.md) for architecture, test patterns, tenant isolation contract, and things to avoid. See [`OPERATING_MODEL.md`](OPERATING_MODEL.md) for how the team operates.
+
+## Licence
+
+Fountain is [MIT licensed](LICENSE). Use it, run it, modify it, host it.
+
+If a directory named `ee/` appears in this repository later, the code in it is
+**not** covered by that licence and will carry its own — the MIT grant above
+applies to everything outside `ee/`. Nothing lives there today.
