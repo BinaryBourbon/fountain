@@ -32,16 +32,14 @@ defmodule Fountain.Workers.StripeCustomerSync do
         :ok
 
       user ->
-        case Billing.ensure_stripe_customer(user) do
+        case ensure_customer_and_trial(user) do
           {:ok, _} ->
             :ok
 
           {:error, reason} ->
             # Returning an error tuple lets Oban retry with backoff rather than
             # losing this the way the old fire-and-forget Task did.
-            Logger.warning(
-              "stripe_customer_sync: failed for #{user_id}: #{inspect(reason)}"
-            )
+            Logger.warning("stripe_customer_sync: failed for #{user_id}: #{inspect(reason)}")
 
             {:error, reason}
         end
@@ -55,5 +53,22 @@ defmodule Fountain.Workers.StripeCustomerSync do
     %{user_id: user_id}
     |> new()
     |> Oban.insert()
+  end
+
+  # The customer and the trial subscription, in that order. Split because
+  # Billing.create_stripe_customer/1 is also on the Checkout path, where opening
+  # a trial moments before a paid subscription would be wrong.
+  #
+  # A user who already has a subscription is left alone: this job is unique per
+  # user for 5 minutes but not forever, and minting a second subscription for
+  # someone who already converted would bill them twice.
+  defp ensure_customer_and_trial(user) do
+    with {:ok, user} <- Billing.ensure_stripe_customer(user) do
+      if user.subscription_status == "trialing" and is_nil(user.trial_ends_at) do
+        Billing.start_trial_subscription(user)
+      else
+        {:ok, user}
+      end
+    end
   end
 end
