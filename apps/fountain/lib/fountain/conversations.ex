@@ -776,6 +776,7 @@ defmodule Fountain.Conversations do
              source: attrs["source"] || "api",
              parent_conversation_id: parent_id
            }) do
+      # No prompt in the child spec — see start_conversation_server/4.
       start_result =
         Horde.DynamicSupervisor.start_child(
           Fountain.ConversationSupervisor,
@@ -783,13 +784,20 @@ defmodule Fountain.Conversations do
            [
              conversation_id: conv.id,
              sandbox_id: sandbox.id,
-             runtime_module: runtime_module,
-             initial_prompt: attrs["prompt"]
+             runtime_module: runtime_module
            ]}
         )
 
       case start_result do
         {:ok, _pid} ->
+          if is_binary(attrs["prompt"]) and attrs["prompt"] != "" do
+            ConversationServer.queue_initial_prompt(
+              conv.id,
+              attrs["prompt"],
+              attrs["images"] || []
+            )
+          end
+
           result = _unsafe_get_conversation!(conv.id)
 
           if result.parent_conversation_id do
@@ -961,6 +969,20 @@ defmodule Fountain.Conversations do
     end
   end
 
+  # The child spec deliberately carries no prompt.
+  #
+  # Horde redistributes children when cluster membership changes — which every
+  # deploy does — and restarts each one from its *stored child spec*. A prompt
+  # baked into that spec is therefore replayed on every rebalance, silently
+  # re-running the user's last message against the agent. Production
+  # accumulated 38 turns from 2 distinct prompts on one conversation this way,
+  # one duplicate per rollout, and the agent on the other end spent several
+  # turns pointing out it was being asked the same thing repeatedly.
+  #
+  # So the prompt is delivered out of band, after the server exists. A cast is
+  # queued behind handle_continue(:provision), so it is processed once
+  # provisioning finishes; if provisioning fails the server stops and the cast
+  # dies with it, which is the right outcome — no turn on a failed provision.
   defp start_conversation_server(conv, sandbox_id, runtime_module, initial_prompt) do
     with {:ok, _pid} <-
            Horde.DynamicSupervisor.start_child(
@@ -969,10 +991,13 @@ defmodule Fountain.Conversations do
               [
                 conversation_id: conv.id,
                 sandbox_id: sandbox_id,
-                runtime_module: runtime_module,
-                initial_prompt: initial_prompt
+                runtime_module: runtime_module
               ]}
            ) do
+      if is_binary(initial_prompt) and initial_prompt != "" do
+        ConversationServer.queue_initial_prompt(conv.id, initial_prompt)
+      end
+
       {:ok, _unsafe_get_conversation!(conv.id)}
     end
   end

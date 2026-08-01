@@ -69,6 +69,21 @@ defmodule Fountain.Conversations.ConversationServer do
     end
   end
 
+  @doc """
+  Deliver the prompt a conversation was started for, after the server exists.
+
+  Deliberately not a `start_link` argument. Horde restarts a redistributed
+  child from its *stored child spec*, so anything in there is replayed on every
+  cluster membership change — which every deploy causes. A prompt in the spec
+  therefore re-ran the user's last message on each rollout.
+
+  A cast rather than a call: it queues behind `handle_continue(:provision)`,
+  which can take minutes, and no caller is waiting on the turn to finish.
+  """
+  def queue_initial_prompt(conv_id, prompt, images \\ []) do
+    GenServer.cast(via(conv_id), {:initial_prompt, prompt, images})
+  end
+
   def interrupt(conv_id) do
     case whereis(conv_id) do
       nil -> {:error, :not_running}
@@ -116,7 +131,6 @@ defmodule Fountain.Conversations.ConversationServer do
       conversation_id: Keyword.fetch!(args, :conversation_id),
       sandbox_id: Keyword.fetch!(args, :sandbox_id),
       runtime_module: Keyword.fetch!(args, :runtime_module),
-      initial_prompt: Keyword.get(args, :initial_prompt),
       user_id: nil,
       sprite: nil,
       sprite_env: [],
@@ -332,10 +346,10 @@ defmodule Fountain.Conversations.ConversationServer do
               sandbox_started_at: sandbox.inserted_at
           }
 
-          case state.initial_prompt do
-            nil -> {:noreply, new_state}
-            p -> {:noreply, kick_turn(new_state, p, agent, [])}
-          end
+          # Any prompt this conversation was started for arrives as a cast,
+          # already queued behind this handle_continue. See
+          # queue_initial_prompt/3.
+          {:noreply, new_state}
         else
           {:error, reason} ->
             Logger.error("provision step failed: #{inspect(reason)}")
@@ -481,10 +495,7 @@ defmodule Fountain.Conversations.ConversationServer do
 
         new_state = reattach_running_turn(new_state)
 
-        case state.initial_prompt do
-          nil -> {:noreply, new_state}
-          p -> {:noreply, kick_turn(new_state, p, agent, [])}
-        end
+        {:noreply, new_state}
 
       {:error, reason} ->
         Logger.warning(
@@ -796,6 +807,24 @@ defmodule Fountain.Conversations.ConversationServer do
     {:ok, _} = Conversations.update_conversation(conv, %{status: "terminated"})
     publish_stage(state.conversation_id, "terminate", "done")
     {:stop, :normal, :ok, state}
+  end
+
+  # The prompt a conversation was started for. Ignored if a turn is somehow
+  # already running — the cast is queued behind provisioning, so that should not
+  # happen, and re-running is the failure this whole mechanism exists to avoid.
+  @impl true
+  def handle_cast({:initial_prompt, prompt, images}, state) do
+    if state.current_command do
+      Logger.warning(
+        "conv #{state.conversation_id}: initial prompt arrived while a turn was running; dropping it"
+      )
+
+      {:noreply, state}
+    else
+      conv = Conversations._unsafe_get_conversation!(state.conversation_id)
+      agent = if conv.agent_id, do: Agents._unsafe_get_agent!(conv.agent_id)
+      {:noreply, kick_turn(state, prompt, agent, images)}
+    end
   end
 
   @impl true

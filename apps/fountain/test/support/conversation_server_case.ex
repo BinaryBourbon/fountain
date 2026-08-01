@@ -102,12 +102,21 @@ defmodule Fountain.ConversationServerCase do
     args = [
       conversation_id: conv.id,
       sandbox_id: conv.sandbox_id,
-      runtime_module: runtime,
-      initial_prompt: Keyword.get(opts, :initial_prompt)
+      runtime_module: runtime
     ]
 
     {:ok, pid} = GenServer.start(Fountain.Conversations.ConversationServer, args)
     ref = Process.monitor(pid)
+
+    # The prompt is delivered out of band, exactly as production does it: it is
+    # not a start_link argument, because Horde replays a stored child spec on
+    # every redistribution and would re-run the prompt on each deploy. Cast to
+    # the pid rather than through the registry, since this harness starts the
+    # server outside Horde.
+    case Keyword.get(opts, :initial_prompt) do
+      nil -> :ok
+      prompt -> GenServer.cast(pid, {:initial_prompt, prompt, Keyword.get(opts, :images, [])})
+    end
 
     # handle_continue(:provision) runs before any call is answered, so a
     # synchronous call is enough to know provisioning has finished.
