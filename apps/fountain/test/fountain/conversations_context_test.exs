@@ -1260,19 +1260,19 @@ defmodule Fountain.ConversationsContextTest do
   end
 
   # ────────────────────────────────────────────────────────────────────────────
-  # get_conversation_tree/1
+  # _unsafe_get_conversation_tree/1
   # ────────────────────────────────────────────────────────────────────────────
 
-  describe "get_conversation_tree/1" do
+  describe "_unsafe_get_conversation_tree/1" do
     test "returns empty list when conversation id does not exist" do
-      assert Conversations.get_conversation_tree(Ecto.UUID.generate()) == []
+      assert Conversations._unsafe_get_conversation_tree(Ecto.UUID.generate()) == []
     end
 
     test "returns single-element tree for a root conversation with no children" do
       user = insert_verified_user()
       conv = insert_conversation(user_id: user.id)
 
-      tree = Conversations.get_conversation_tree(conv.id)
+      tree = Conversations._unsafe_get_conversation_tree(conv.id)
       assert length(tree) == 1
       [node] = tree
       assert node.id == conv.id
@@ -1283,7 +1283,7 @@ defmodule Fountain.ConversationsContextTest do
       user = insert_verified_user()
       conv = insert_conversation(user_id: user.id)
 
-      [node] = Conversations.get_conversation_tree(conv.id)
+      [node] = Conversations._unsafe_get_conversation_tree(conv.id)
       assert Map.has_key?(node, :id)
       assert Map.has_key?(node, :source)
       assert Map.has_key?(node, :status)
@@ -1295,7 +1295,7 @@ defmodule Fountain.ConversationsContextTest do
       parent = insert_conversation(user_id: user.id)
       child = insert_conversation(user_id: user.id, parent_conversation_id: parent.id)
 
-      tree = Conversations.get_conversation_tree(child.id)
+      tree = Conversations._unsafe_get_conversation_tree(child.id)
       ids = Enum.map(tree, & &1.id)
       assert parent.id in ids
       assert child.id in ids
@@ -1306,7 +1306,7 @@ defmodule Fountain.ConversationsContextTest do
       parent = insert_conversation(user_id: user.id)
       child = insert_conversation(user_id: user.id, parent_conversation_id: parent.id)
 
-      tree = Conversations.get_conversation_tree(child.id)
+      tree = Conversations._unsafe_get_conversation_tree(child.id)
       child_node = Enum.find(tree, &(&1.id == child.id))
       assert child_node.parent_id == parent.id
     end
@@ -1316,7 +1316,7 @@ defmodule Fountain.ConversationsContextTest do
       parent = insert_conversation(user_id: user.id)
       child = insert_conversation(user_id: user.id, parent_conversation_id: parent.id)
 
-      tree = Conversations.get_conversation_tree(parent.id)
+      tree = Conversations._unsafe_get_conversation_tree(parent.id)
       ids = Enum.map(tree, & &1.id)
       assert parent.id in ids
       assert child.id in ids
