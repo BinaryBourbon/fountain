@@ -61,7 +61,38 @@ master_secrets_key =
 
 config :fountain, :master_secrets_key, master_secrets_key
 config :fountain, :sprites_token, System.get_env("SPRITES_TOKEN")
-config :fountain, :public_url, System.get_env("FOUNTAIN_DOMAIN", "http://localhost:4000")
+
+# Two different shapes are needed and they are not interchangeable:
+#
+#   :public_url — absolute, scheme-ful. Used to build links that leave the app
+#                 (verification/reset emails, llms.txt) and as FOUNTAIN_BASE_URL
+#                 inside every sprite.
+#   :phx_host   — bare host. Used for the endpoint url and check_origin.
+#
+# `FOUNTAIN_DOMAIN` was used verbatim for both, and every shipped example sets
+# it bare (render.yaml, fly.toml, k8s/deployment.yaml), so :public_url came out
+# schemeless — "fountain.example.com/users/confirm/<token>" is not a link, and
+# a schemeless FOUNTAIN_BASE_URL is not resolvable by the in-sprite client.
+#
+# PUBLIC_URL and PHX_HOST are the explicit replacements. FOUNTAIN_DOMAIN still
+# works and is normalised into whichever shape is being asked for, so existing
+# deployments keep booting and get correct links without an env change.
+default_scheme = if env == :prod, do: "https", else: "http"
+
+public_url =
+  Fountain.PublicUrl.absolute(
+    System.get_env("PUBLIC_URL") || System.get_env("FOUNTAIN_DOMAIN"),
+    default_scheme
+  )
+
+phx_host =
+  case System.get_env("PHX_HOST") do
+    blank when blank in [nil, ""] -> Fountain.PublicUrl.host(public_url)
+    host -> host
+  end
+
+config :fountain, :public_url, public_url
+config :fountain, :phx_host, phx_host
 # Inference credentials are per-user (BYO, ADR 0008) and live in the
 # inference_credentials table — no platform-level env vars for them.
 
@@ -137,12 +168,18 @@ if config_env() == :prod and server? do
     System.get_env("SECRET_KEY_BASE") ||
       raise "environment variable SECRET_KEY_BASE is missing."
 
-  host = System.get_env("FOUNTAIN_DOMAIN") || "localhost"
+  host = phx_host
 
   config :fountain, :dns_cluster_query, System.get_env("DNS_CLUSTER_QUERY")
 
+  # Scheme and port come from PUBLIC_URL rather than being pinned to https/443,
+  # so a self-hoster terminating on plain HTTP or a non-standard port generates
+  # correct URLs. For the hosted deployment PUBLIC_URL is https, and URI.parse
+  # fills in 443, so this is byte-identical to the previous hardcoding.
+  public_uri = URI.parse(public_url)
+
   config :fountain, FountainWeb.Endpoint,
-    url: [host: host, port: 443, scheme: "https"],
+    url: [host: host, port: public_uri.port || 443, scheme: public_uri.scheme || "https"],
     http: [ip: {0, 0, 0, 0, 0, 0, 0, 0}],
     # check_origin guards the LiveView websocket/longpoll handshake. Setting an
     # explicit list replaces the default (the endpoint's own host), so we must

@@ -152,10 +152,7 @@ defmodule FountainWeb.LlmsController do
 
   ## ─── Helpers ──────────────────────────────────────────────────────────────
 
-  defp base_url do
-    Application.get_env(:fountain, :public_url, "https://founta.inevitable.fyi")
-    |> String.trim_trailing("/")
-  end
+  defp base_url, do: Fountain.PublicUrl.base()
 
   defp send_text(conn, body) do
     conn

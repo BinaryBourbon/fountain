@@ -25,7 +25,11 @@ projects:
 
               - key: PHX_SERVER
                 value: "true"
-              - key: FOUNTAIN_DOMAIN
+              # PUBLIC_URL: absolute base for outbound links + sprite
+              # FOUNTAIN_BASE_URL. PHX_HOST: bare host for the endpoint.
+              - key: PUBLIC_URL
+                value: https://fountain.inevitable.fyi
+              - key: PHX_HOST
                 value: fountain.inevitable.fyi
               - key: PORT
                 value: "10000"

@@ -21,7 +21,7 @@ defmodule Fountain.Emails.UserEmails do
   @spec deliver_verification_email(User.t(), String.t()) ::
           {:ok, term()} | {:error, term()}
   def deliver_verification_email(%User{} = user, token) do
-    base_url = Application.get_env(:fountain, :public_url, "http://localhost:4000")
+    base_url = Fountain.PublicUrl.base()
     verify_url = "#{base_url}/users/confirm/#{token}"
 
     new()
@@ -41,7 +41,7 @@ defmodule Fountain.Emails.UserEmails do
   @spec deliver_password_reset_email(User.t(), String.t()) ::
           {:ok, term()} | {:error, term()}
   def deliver_password_reset_email(%User{} = user, token) do
-    base_url = Application.get_env(:fountain, :public_url, "http://localhost:4000")
+    base_url = Fountain.PublicUrl.base()
     reset_url = "#{base_url}/auth/reset/#{token}"
 
     new()

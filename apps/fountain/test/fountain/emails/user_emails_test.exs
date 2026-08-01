@@ -40,6 +40,53 @@ defmodule Fountain.Emails.UserEmailsTest do
     end
   end
 
+  describe "link absoluteness" do
+    # These assert on the scheme, not just the path. The original tests only
+    # checked "/users/confirm/<token>", which passed happily while production
+    # was emitting "fountain.inevitable.fyi/users/confirm/<token>" — a string
+    # no mail client will render as a link.
+    setup do
+      original = Application.get_env(:fountain, :public_url)
+      on_exit(fn -> Application.put_env(:fountain, :public_url, original) end)
+      :ok
+    end
+
+    test "verification link is absolute even if :public_url is set to a bare host" do
+      Application.put_env(:fountain, :public_url, "fountain.example.com")
+      user = insert_verified_user()
+
+      assert {:ok, _} = UserEmails.deliver_verification_email(user, "tok")
+
+      assert_email_sent(fn email ->
+        assert email.html_body =~ "https://fountain.example.com/users/confirm/tok"
+        assert email.text_body =~ "https://fountain.example.com/users/confirm/tok"
+      end)
+    end
+
+    test "reset link is absolute even if :public_url is set to a bare host" do
+      Application.put_env(:fountain, :public_url, "fountain.example.com")
+      user = insert_verified_user()
+
+      assert {:ok, _} = UserEmails.deliver_password_reset_email(user, "tok")
+
+      assert_email_sent(fn email ->
+        assert email.html_body =~ "https://fountain.example.com/auth/reset/tok"
+        assert email.text_body =~ "https://fountain.example.com/auth/reset/tok"
+      end)
+    end
+
+    test "an absolute :public_url is preserved verbatim" do
+      Application.put_env(:fountain, :public_url, "https://custom.example.org")
+      user = insert_verified_user()
+
+      assert {:ok, _} = UserEmails.deliver_verification_email(user, "tok")
+
+      assert_email_sent(fn email ->
+        assert email.html_body =~ "https://custom.example.org/users/confirm/tok"
+      end)
+    end
+  end
+
   describe "deliver_password_reset_email/2" do
     test "delivers an email with the correct subject to the user" do
       user = insert_verified_user()

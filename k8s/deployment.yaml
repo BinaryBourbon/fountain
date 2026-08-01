@@ -102,6 +102,17 @@ spec:
             # in the same commit as the Cloudflare record swap. The
             # Certificate (certificate.yaml) and IngressRoute
             # (ingressroute.yaml) must move together.
+            # PUBLIC_URL is the absolute base for outbound links (verification
+            # and reset emails, llms.txt) and for FOUNTAIN_BASE_URL inside every
+            # sprite. PHX_HOST is the bare host for the endpoint and
+            # check_origin. FOUNTAIN_DOMAIN used to serve both, which produced
+            # schemeless links; it is kept here only so a rollback to an image
+            # predating the split still boots with the right host, and can be
+            # dropped once the current image is settled.
+            - name: PUBLIC_URL
+              value: https://fountain.inevitable.fyi
+            - name: PHX_HOST
+              value: fountain.inevitable.fyi
             - name: FOUNTAIN_DOMAIN
               value: fountain.inevitable.fyi
             - name: EMAIL_FROM
