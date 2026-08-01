@@ -107,6 +107,25 @@ curl -sS -X DELETE https://api.sprites.dev/v1/sprites/<name> \
 
 As of 2026-08-01 the untracked set is 102 sprites named `aod-*`, all `cold`, created before the rename to `fountain-*`. They are safe to remove; nothing in the current schema references them.
 
+## Account deletion / erasure request
+
+Users close their own account at **/account/billing → Delete account**, typing their email to confirm. For someone locked out, or a request that arrived by email, use **/admin → Delete** on their row.
+
+Both run `Fountain.Accounts.Deletion.delete_user/2`, in this order:
+
+1. cancel every non-terminal Stripe subscription — **if this fails nothing is deleted**, because an account that no longer exists but is still being charged leaves the person with nowhere to cancel from;
+2. destroy the tenant's sprites (failures here are logged; `SandboxReaper` finishes the job);
+3. write an `account.deleted` audit event carrying the email and user id in `metadata`, since `audit_events.user_id` nilifies on delete;
+4. delete the user row — cascades take agents, api_keys, conversations, environments, vaults, oauth_identities, inference_credentials and `user_data_keys`.
+
+Deleting `user_data_keys` destroys the per-tenant DEK, so any residual ciphertext is unrecoverable rather than merely unreferenced.
+
+`usage_events`, `audit_events` and `sandboxes` nilify their `user_id` instead of cascading — operational and financial history survives without naming anybody.
+
+**Backups still hold the data.** A `pg_dump` taken before the deletion contains both the ciphertext and the wrapped key. If a request requires erasure from backups, the honest answer is the retention window: state it, and let the backups expire.
+
+The Stripe customer is deliberately *not* deleted. Invoices are financial records the business is required to retain, and Stripe is the system of record.
+
 ## Rate limit overflow
 
 Symptoms: API returns `429 rate_limited` with a `Retry-After` header.

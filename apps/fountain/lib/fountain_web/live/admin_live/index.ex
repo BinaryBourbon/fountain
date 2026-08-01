@@ -3,6 +3,7 @@ defmodule FountainWeb.AdminLive.Index do
   use FountainWeb, :live_view
 
   alias Fountain.{Accounts, Conversations, Quotas}
+  alias Fountain.Accounts.Deletion
 
   @impl true
   def mount(_params, _session, socket) do
@@ -10,6 +11,7 @@ defmodule FountainWeb.AdminLive.Index do
 
     {:ok,
      socket
+     |> FountainWeb.Audited.put_client_ip()
      |> assign(:page_title, "Admin")
      |> assign_users()
      |> assign(:sandboxes, Conversations.list_sandboxes_admin())
@@ -37,7 +39,8 @@ defmodule FountainWeb.AdminLive.Index do
         Fountain.Audit.record_admin(%{
           actor_user_id: socket.assigns.current_user.id,
           target_user_id: user.id,
-          event_type: if(new_role == "admin", do: "admin.role.granted", else: "admin.role.revoked"),
+          event_type:
+            if(new_role == "admin", do: "admin.role.granted", else: "admin.role.revoked"),
           metadata: %{"email" => user.email, "from" => user.role, "to" => new_role}
         })
 
@@ -70,6 +73,53 @@ defmodule FountainWeb.AdminLive.Index do
       {:noreply, socket |> assign_users() |> put_flash(:info, "Sandbox limit updated")}
     else
       _ -> {:noreply, put_flash(socket, :error, "Limit must be a whole number of 0 or more")}
+    end
+  end
+
+  # The support path for a deletion request that cannot go through the account
+  # page — a locked-out user, or one who asked by email. Same teardown as
+  # self-serve; only the actor recorded differs.
+  @impl true
+  def handle_event("delete_user", %{"id" => id}, socket) do
+    admin = socket.assigns.current_user
+
+    if id == admin.id do
+      # The UI hides the button, but an event can still be sent by hand. An
+      # admin deleting themselves mid-session is a support problem, not a
+      # feature.
+      {:noreply, put_flash(socket, :error, "Use your own account page to delete your account")}
+    else
+      user = Accounts.get_user!(id)
+
+      case Deletion.delete_user(user,
+             actor: "admin:#{admin.id}",
+             request_ip: socket.assigns[:client_ip]
+           ) do
+        {:ok, _summary} ->
+          Fountain.Audit.record_admin(%{
+            actor_user_id: admin.id,
+            target_user_id: user.id,
+            event_type: "admin.account.deleted",
+            metadata: %{"email" => user.email}
+          })
+
+          {:noreply,
+           socket
+           |> assign_users()
+           |> assign(:sandboxes, Conversations.list_sandboxes_admin())
+           |> put_flash(:info, "Deleted #{user.email}")}
+
+        {:error, {:stripe, _}} ->
+          {:noreply,
+           put_flash(
+             socket,
+             :error,
+             "Could not cancel #{user.email}'s subscription — nothing was deleted"
+           )}
+
+        {:error, _} ->
+          {:noreply, put_flash(socket, :error, "Deletion failed — nothing was deleted")}
+      end
     end
   end
 
@@ -145,11 +195,19 @@ defmodule FountainWeb.AdminLive.Index do
                 </span>
               </td>
               <td class="px-4 py-2 text-zinc-500 text-xs">{format_date(u.inserted_at)}</td>
-              <td class="px-4 py-2 text-right">
+              <td class="px-4 py-2 text-right space-x-3">
                 <button phx-click="toggle_admin" phx-value-id={u.id}
                   data-confirm={"Toggle admin for #{u.email}?"}
                   class="text-xs text-zinc-600 hover:text-zinc-900 underline">
                   {if u.role == "admin", do: "Remove admin", else: "Make admin"}
+                </button>
+                <button
+                  :if={u.id != @current_user.id}
+                  phx-click="delete_user"
+                  phx-value-id={u.id}
+                  data-confirm={"Permanently delete #{u.email}? This cancels their subscription, destroys their sandboxes and erases their data. It cannot be undone."}
+                  class="text-xs text-red-600 hover:text-red-800 underline">
+                  Delete
                 </button>
               </td>
             </tr>
