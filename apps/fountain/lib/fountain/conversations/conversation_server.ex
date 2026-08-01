@@ -861,8 +861,12 @@ defmodule Fountain.Conversations.ConversationServer do
   # Best-effort revoke of the per-conversation API key when this server
   # exits — covers both clean termination (`:terminate_conv`) and crash
   # paths that hit `{:stop, :normal, state}` after a provision failure.
-  # If the BEAM crashes hard, the row in `api_keys` is orphaned and lives
-  # until an admin/janitor sweeps it; that's a known gap, not a regression.
+  # If the BEAM crashes hard the row in `api_keys` is left behind, but it is no
+  # longer dangerous: `callback_api_key_opts/0` sets an `expires_at`, so an
+  # un-revoked key stops authenticating on its own, and RetentionPruner deletes
+  # the row later. It used to live forever, which is what made a sweeper
+  # necessary — see SandboxReaper for the sprite half, which does not
+  # self-heal.
   @impl true
   def terminate(_reason, state) do
     Fountain.Conversations.Redaction.delete(state.conversation_id)

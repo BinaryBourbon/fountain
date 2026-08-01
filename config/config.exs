@@ -13,7 +13,12 @@ config :fountain, Oban,
      crontab: [
        # 04:23 UTC — after the 03:17 database backup, so pruning never races
        # the dump and a backup always captures the pre-prune state.
-       {"23 4 * * *", Fountain.Workers.RetentionPruner}
+       {"23 4 * * *", Fountain.Workers.RetentionPruner},
+       # Hourly: a leaked sprite costs money and a stuck sandbox row holds
+       # tenant quota, so the gap between the leak and its cleanup is what
+       # matters. Each run is one paginated list plus at most a handful of
+       # deletes.
+       {"7 * * * *", Fountain.Workers.SandboxReaper}
      ]}
   ]
 

@@ -67,24 +67,45 @@ If `interrupt` returns `no_turn_running`, the GenServer thinks no turn is in fli
 
 ## Orphaned sprites
 
-Symptoms: sprites.dev billing shows sprites we don't recognize. Fountain's `sandboxes` table doesn't have a row for them.
+`Fountain.Workers.SandboxReaper` runs hourly and handles this. Each run:
 
-This shouldn't happen after a clean stop — `Fountain.Conversations.Rehydrator` reattaches on boot. It can happen after a hard kill (BEAM crash) on a sandbox that hadn't reached `ready` yet (those don't get rehydrated):
+1. marks `pending`/`starting` sandboxes older than 60 minutes as `failed` when no `ConversationServer` is alive for them — this is what frees a tenant's concurrent-sandbox quota after a crash mid-provision;
+2. destroys sprites whose sandbox row is already `terminated` or `failed`, up to 25 per run;
+3. counts sprites with no sandbox row at all, and **touches none of them**.
+
+Step 3 is deliberate. The same `SPRITES_TOKEN` may be in a developer's shell or another instance, and a sprite created seconds ago may not have committed its row yet — absence of a row is not evidence of a leak, and that is the one mistake here that cannot be undone.
+
+Check what it is seeing:
 
 ```bash
-# List all sprites in your account
-curl -sS https://api.sprites.dev/v1/sprites \
-  -H "Authorization: Bearer $SPRITES_TOKEN" | jq -r '.[].name'
-
-# Cross-reference with your Fountain sandbox table (run on Render via the
-# Postgres dashboard, or psql against DATABASE_URL)
-psql "$DATABASE_URL" -c \
-  "SELECT sprite_name FROM sandboxes WHERE status NOT IN ('terminated','failed')"
-
-# Anything in the first list not in the second is an orphan. Destroy:
-curl -sS -X DELETE https://api.sprites.dev/v1/sprites/<name> \
-  -H "Authorization: Bearer $SPRITES_TOKEN"
+kubectl logs -n fountain -l app=fountain --since=2h | grep 'reaper:'
+# reaper: released=0 destroyed=2 untracked=102 live=114
 ```
+
+A steady non-zero `destroyed` means sprite deletion is failing on the normal path — both `Sprites.destroy` call sites in `ConversationServer` discard their result, so the reaper is the only thing that notices.
+
+### Cleaning up untracked sprites by hand
+
+The reaper will never do this. Look at the list before deleting anything.
+
+```bash
+TOKEN=$(kubectl get secret fountain-secrets -n fountain \
+  -o jsonpath='{.data.SPRITES_TOKEN}' | base64 -d)
+
+# The response is an object, not an array, and it pages at 50 with
+# has_more/next_continuation_token — a single unpaginated call sees a fraction
+# of the account.
+curl -sS https://api.sprites.dev/v1/sprites \
+  -H "Authorization: Bearer $TOKEN" | jq -r '.sprites[].name'
+
+kubectl exec -n fountain fountain-pg-1 -- \
+  psql -U postgres -d fountain -At -c "SELECT sprite_name FROM sandboxes"
+
+curl -sS -X DELETE https://api.sprites.dev/v1/sprites/<name> \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+As of 2026-08-01 the untracked set is 102 sprites named `aod-*`, all `cold`, created before the rename to `fountain-*`. They are safe to remove; nothing in the current schema references them.
 
 ## Rate limit overflow
 
