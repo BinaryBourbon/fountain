@@ -589,6 +589,7 @@ defmodule Fountain.Conversations do
     with %Agents.Agent{} = agent <- Agents.get_agent(agent_id, user_id) || {:error, :not_found},
          {:ok, runtime_module} <- Fountain.Runtimes.for_runtime(agent.runtime),
          {:ok, vault_id} <- resolve_vault_id(attrs["vault_id"], user_id, agent),
+         :ok <- Fountain.Billing.check_active(user_id),
          :ok <- Fountain.Quotas.check_sandbox_quota(user_id),
          {:ok, sandbox} <-
            create_sandbox(%{
@@ -792,7 +793,11 @@ defmodule Fountain.Conversations do
   defp create_fresh_sandbox_and_start(conv, agent, runtime_module, initial_prompt) do
     # The sandbox being replaced is excluded: it is retired immediately below,
     # so counting it would block a wake that leaves concurrency unchanged.
-    with :ok <-
+    # Waking a dormant conversation provisions a fresh sprite, so it is subject
+    # to the same gate as creating one. Without this, prompting an existing
+    # conversation was an unmetered way past billing entirely.
+    with :ok <- Fountain.Billing.check_active(conv.user_id),
+         :ok <-
            Fountain.Quotas.check_sandbox_quota(conv.user_id, exclude: conv.sandbox_id),
          {:ok, new_sandbox} <-
            create_sandbox(%{

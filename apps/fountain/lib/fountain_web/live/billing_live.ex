@@ -161,25 +161,30 @@ defmodule FountainWeb.Live.BillingLive do
     else
       price_id = Application.get_env(:fountain, :stripe_price_id, "")
 
-      base_params = %{
-        mode: "subscription",
-        line_items: [%{price: price_id, quantity: 1}],
-        success_url: return_url <> "?checkout=success",
-        cancel_url: return_url,
-        # Show "Add promotion code" link on the Checkout page. Promotion codes
-        # are user-facing redeemable strings tied to coupons created in the
-        # Stripe dashboard. Without this flag, the field is hidden by default.
-        allow_promotion_codes: true
-      }
+      # Never fall back to `customer_email`. That makes Stripe mint its own
+      # Customer whose id we never learn, so the subscription webhook matches no
+      # user: the card is charged and the account is never activated. Creating
+      # the Customer first means the id is always ours.
+      with {:ok, user} <- Billing.ensure_stripe_customer(user) do
+        params = %{
+          mode: "subscription",
+          line_items: [%{price: price_id, quantity: 1}],
+          success_url: return_url <> "?checkout=success",
+          cancel_url: return_url,
+          customer: user.stripe_customer_id,
+          # Second route back to the user if the customer link is ever lost —
+          # checkout.session.completed carries this through.
+          client_reference_id: user.id,
+          # Show "Add promotion code" link on the Checkout page. Promotion codes
+          # are user-facing redeemable strings tied to coupons created in the
+          # Stripe dashboard. Without this flag, the field is hidden by default.
+          allow_promotion_codes: true
+        }
 
-      params =
-        if user.stripe_customer_id,
-          do: Map.put(base_params, :customer, user.stripe_customer_id),
-          else: Map.put(base_params, :customer_email, user.email)
-
-      case Stripe.Checkout.Session.create(params) do
-        {:ok, session} -> {:ok, session.url}
-        error -> error
+        case Stripe.Checkout.Session.create(params) do
+          {:ok, session} -> {:ok, session.url}
+          error -> error
+        end
       end
     end
   end

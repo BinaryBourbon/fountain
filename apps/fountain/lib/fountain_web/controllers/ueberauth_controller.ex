@@ -11,6 +11,8 @@ defmodule FountainWeb.UeberauthController do
 
   use FountainWeb, :controller
 
+  alias Fountain.Billing
+
   # Ueberauth's plug handles the request phase (redirect to the provider)
   # and the callback phase (parse the response into assigns). It MUST be
   # in the controller's plug pipeline — otherwise `request/2` is hit
@@ -64,6 +66,11 @@ defmodule FountainWeb.UeberauthController do
 
       case Fountain.Accounts.upsert_oauth_user(provider, provider_uid, attrs) do
         {:ok, user, :new} ->
+          # The email+password path does this after verification. OAuth skips
+          # verification entirely (the provider asserts the address), so without
+          # this every GitHub signup had no Stripe customer and no trial_ends_at.
+          Task.async(fn -> Billing.create_stripe_customer(user) end)
+
           conn
           |> configure_session(renew: true)
           |> put_session(:user_id, user.id)

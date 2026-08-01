@@ -46,6 +46,15 @@ defmodule FountainWeb.ConversationsLive.New do
       {:error, :vault_not_found} ->
         {:noreply, put_flash(socket, :error, "Vault not found")}
 
+      # The on_mount hook gates at mount only, so a socket that connected while
+      # the subscription was active survives a mid-session cancellation. The
+      # context check catches that; send them where they can fix it.
+      {:error, :subscription_required} ->
+        {:noreply,
+         socket
+         |> put_flash(:error, "An active subscription is required to start a conversation.")
+         |> push_navigate(to: ~p"/account/billing")}
+
       {:error, {:sandbox_quota_exceeded, %{count: count, limit: limit}}} ->
         {:noreply,
          put_flash(

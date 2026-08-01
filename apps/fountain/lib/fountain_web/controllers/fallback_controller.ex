@@ -33,6 +33,14 @@ defmodule FountainWeb.FallbackController do
     |> json(%{error: "vault_not_allowed", message: "vault is not in the agent's allowed_vault_ids"})
   end
 
+  # Subscription gate (ADR 0006). Raised from the context so every provisioning
+  # path renders the same response, rather than each controller inventing one.
+  def call(conn, {:error, :subscription_required}) do
+    conn
+    |> put_status(:payment_required)
+    |> json(%{error: "subscription_required", upgrade_url: "/account/billing"})
+  end
+
   # Per-tenant sandbox concurrency cap (ADR 0005). 429 rather than 402: this is
   # a rate/concurrency condition the caller can clear by terminating a
   # conversation, not a billing state they have to resolve by paying.
