@@ -33,6 +33,14 @@ defmodule FountainWeb.FallbackController do
     |> json(%{error: "vault_not_allowed", message: "vault is not in the agent's allowed_vault_ids"})
   end
 
+  # An unknown or cross-tenant parent conversation. 404 rather than 403 so the
+  # caller cannot use the response to probe which conversation ids exist.
+  def call(conn, {:error, :parent_not_found}) do
+    conn
+    |> put_status(:not_found)
+    |> json(%{error: "parent_conversation_not_found"})
+  end
+
   # Subscription gate (ADR 0006). Raised from the context so every provisioning
   # path renders the same response, rather than each controller inventing one.
   def call(conn, {:error, :subscription_required}) do

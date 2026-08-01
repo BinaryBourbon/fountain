@@ -22,7 +22,7 @@ defmodule FountainWeb.ConversationsLive.Show do
         {:ok, socket |> put_flash(:error, "Conversation not found") |> push_navigate(to: ~p"/conversations")}
 
       conv ->
-        graph = Conversations.get_conversation_tree(id)
+        graph = Conversations.get_conversation_tree(id, socket.assigns.current_user.id)
 
         if connected?(socket) do
           Phoenix.PubSub.subscribe(Fountain.PubSub, "conv:#{id}")
@@ -122,7 +122,7 @@ defmodule FountainWeb.ConversationsLive.Show do
   @impl true
   def handle_info({:graph_updated}, socket) do
     id = socket.assigns.conv.id
-    {:noreply, assign(socket, :graph, Conversations.get_conversation_tree(id))}
+    {:noreply, assign(socket, :graph, Conversations.get_conversation_tree(id, socket.assigns.current_user.id))}
   end
 
   @impl true

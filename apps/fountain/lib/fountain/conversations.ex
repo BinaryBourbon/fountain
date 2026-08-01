@@ -182,9 +182,12 @@ defmodule Fountain.Conversations do
     Repo.all(
       from c in Conversation,
         where: c.user_id == ^user_id and c.status != "terminated",
-        left_join: tc in subquery(turn_counts), on: tc.conversation_id == c.id,
-        left_join: lt in subquery(last_turn_at), on: lt.conversation_id == c.id,
-        left_join: ll in subquery(last_log_at), on: ll.conversation_id == c.id,
+        left_join: tc in subquery(turn_counts),
+        on: tc.conversation_id == c.id,
+        left_join: lt in subquery(last_turn_at),
+        on: lt.conversation_id == c.id,
+        left_join: ll in subquery(last_log_at),
+        on: ll.conversation_id == c.id,
         order_by: [
           desc:
             fragment(
@@ -215,13 +218,75 @@ defmodule Fountain.Conversations do
 
   @doc """
   Returns all conversations in the same spawn tree as `conversation_id`,
-  including ancestors up to the root and all their descendants.
+  scoped to `user_id`.
 
   Each entry is a map with keys: :id, :source, :status, :parent_id
 
-  Returns `[]` when `conversation_id` does not exist.
+  Returns `[]` when the conversation does not exist or belongs to someone else.
+
+  Every reference to `conversations` carries the tenant predicate. Without it
+  the recursion walks straight across tenant boundaries, which leaked
+  conversation ids, sources and statuses in both directions: a conversation
+  parented onto another tenant's conversation pulled their whole tree into this
+  view, and put this one into theirs.
+
+  The root is the furthest *reachable* ancestor rather than the one with a NULL
+  parent. For clean data those are the same node. They differ only where a
+  foreign parent link already exists in the data, and picking the boundary node
+  degrades to "show the part of the tree you own" instead of returning nothing.
   """
-  def get_conversation_tree(conversation_id) do
+  def get_conversation_tree(conversation_id, user_id) when is_binary(user_id) do
+    sql = """
+    WITH RECURSIVE
+    ancestors(id, parent_conversation_id, depth) AS (
+      SELECT id, parent_conversation_id, 0
+      FROM conversations WHERE id = $1 AND user_id = $2
+      UNION ALL
+      SELECT c.id, c.parent_conversation_id, a.depth + 1
+      FROM conversations c
+      INNER JOIN ancestors a ON c.id = a.parent_conversation_id
+      -- depth bound: parent links are client-supplied, and a cycle would
+      -- otherwise spin this CTE forever.
+      WHERE c.user_id = $2 AND a.depth < 100
+    ),
+    root_row AS (
+      SELECT id FROM ancestors ORDER BY depth DESC LIMIT 1
+    ),
+    tree(id, source, status, parent_id, depth) AS (
+      SELECT c.id, c.source, c.status, c.parent_conversation_id, 0
+      FROM conversations c, root_row r
+      WHERE c.id = r.id AND c.user_id = $2
+      UNION ALL
+      SELECT c.id, c.source, c.status, c.parent_conversation_id, t.depth + 1
+      FROM conversations c
+      INNER JOIN tree t ON c.parent_conversation_id = t.id
+      WHERE c.user_id = $2 AND t.depth < 100
+    )
+    SELECT id, source, status, parent_id FROM tree
+    """
+
+    with {:ok, conv_uuid} <- Ecto.UUID.dump(conversation_id),
+         {:ok, user_uuid} <- Ecto.UUID.dump(user_id) do
+      %{rows: rows} = Repo.query!(sql, [conv_uuid, user_uuid])
+
+      Enum.map(rows, fn [id, source, status, parent_id] ->
+        %{
+          id: load_uuid!(id),
+          source: source,
+          status: status,
+          parent_id: load_uuid(parent_id)
+        }
+      end)
+    else
+      _ -> []
+    end
+  end
+
+  @doc """
+  WARNING: walks the spawn tree across all tenants. Admin/internal use only —
+  user-facing callers must use `get_conversation_tree/2`.
+  """
+  def _unsafe_get_conversation_tree(conversation_id) do
     sql = """
     WITH RECURSIVE
     ancestors(id, parent_conversation_id) AS (
@@ -338,7 +403,8 @@ defmodule Fountain.Conversations do
       from c in Conversation,
         as: :conv,
         where: c.user_id == ^user_id,
-        left_join: ll in subquery(last_log_at), on: ll.conversation_id == c.id,
+        left_join: ll in subquery(last_log_at),
+        on: ll.conversation_id == c.id,
         order_by: [desc: c.updated_at, desc: c.id],
         select: %{
           c
@@ -406,7 +472,9 @@ defmodule Fountain.Conversations do
            ),
            set: [last_read_at: now]
          ) do
-      {0, _} -> :ok
+      {0, _} ->
+        :ok
+
       {_, _} ->
         broadcast_sidebar_update(user_id)
         :ok
@@ -658,12 +726,14 @@ defmodule Fountain.Conversations do
     with %Agents.Agent{} = agent <- Agents.get_agent(agent_id, user_id) || {:error, :not_found},
          {:ok, runtime_module} <- Fountain.Runtimes.for_runtime(agent.runtime),
          {:ok, vault_id} <- resolve_vault_id(attrs["vault_id"], user_id, agent),
+         {:ok, parent_id} <- resolve_parent_id(attrs["parent_conversation_id"], user_id),
          :ok <- Fountain.Billing.check_active(user_id),
          :ok <- Fountain.Quotas.check_sandbox_quota(user_id),
          {:ok, sandbox} <-
            create_sandbox(%{
              environment_id: agent.environment_id,
-             sprite_name: attrs["sprite_name"] || "fountain-#{tenant_prefix(user_id)}-#{short_id()}",
+             sprite_name:
+               attrs["sprite_name"] || "fountain-#{tenant_prefix(user_id)}-#{short_id()}",
              status: "pending",
              user_id: user_id
            }),
@@ -676,7 +746,7 @@ defmodule Fountain.Conversations do
              runtime: agent.runtime,
              status: "pending",
              source: attrs["source"] || "api",
-             parent_conversation_id: attrs["parent_conversation_id"]
+             parent_conversation_id: parent_id
            }) do
       start_result =
         Horde.DynamicSupervisor.start_child(
@@ -707,7 +777,10 @@ defmodule Fountain.Conversations do
           # sandbox failed so the status is visible on the conversation page,
           # then return it so callers (UI + API) navigate there rather than
           # leaving the user stuck on the new-conversation form.
-          Logger.error("ConversationServer failed to start for conv #{conv.id}: #{inspect(reason)}")
+          Logger.error(
+            "ConversationServer failed to start for conv #{conv.id}: #{inspect(reason)}"
+          )
+
           update_conversation(conv, %{status: "failed"})
           update_sandbox(sandbox, %{status: "failed"})
           result = _unsafe_get_conversation!(conv.id)
@@ -764,6 +837,23 @@ defmodule Fountain.Conversations do
   defp short_id, do: Ecto.UUID.generate() |> binary_part(0, 8)
 
   defp tenant_prefix(user_id) when is_binary(user_id), do: binary_part(user_id, 0, 8)
+
+  # `parent_conversation_id` arrives from a client-supplied header
+  # (X-Fountain-Parent-Conversation-Id). The changeset only enforced an FK, so
+  # any conversation id in the system was accepted — including another tenant's,
+  # which grafted this conversation onto their spawn tree and theirs onto ours.
+  #
+  # A legitimate spawn comes from inside a sprite holding that tenant's own
+  # token, so ownership always matches; a mismatch is a bug or an attack.
+  defp resolve_parent_id(nil, _user_id), do: {:ok, nil}
+  defp resolve_parent_id("", _user_id), do: {:ok, nil}
+
+  defp resolve_parent_id(id, user_id) when is_binary(id) and is_binary(user_id) do
+    case get_conversation(id, user_id) do
+      nil -> {:error, :parent_not_found}
+      conv -> {:ok, conv.id}
+    end
+  end
 
   defp resolve_vault_id(nil, _user_id, _agent), do: {:ok, nil}
   defp resolve_vault_id("", _user_id, _agent), do: {:ok, nil}
