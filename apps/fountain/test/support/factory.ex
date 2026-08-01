@@ -33,10 +33,18 @@ defmodule Fountain.Factory do
     verified
   end
 
-  def insert_api_key(user, name \\ nil) do
+  def insert_api_key(user, name \\ nil, opts \\ []) do
     name = name || "key-#{uniq()}"
-    {:ok, {key_record, raw_key}} = Fountain.Accounts.create_api_key(user.id, name)
+    {:ok, {key_record, raw_key}} = Fountain.Accounts.create_api_key(user.id, name, opts)
     {key_record, raw_key}
+  end
+
+  @doc """
+  A key with the narrow scope handed to sandboxes — the credential an agent
+  running inside a sprite actually holds.
+  """
+  def insert_sprite_api_key(user, opts \\ []) do
+    insert_api_key(user, "sprite:#{uniq()}", Keyword.put_new(opts, :scopes, ["sprite"]))
   end
 
   # ── environments ──────────────────────────────────────────────────────────

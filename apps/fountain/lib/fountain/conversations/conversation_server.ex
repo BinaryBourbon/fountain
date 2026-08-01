@@ -13,7 +13,18 @@ defmodule Fountain.Conversations.ConversationServer do
   require Logger
   require OpenTelemetry.Tracer
 
-  alias Fountain.{Accounts, Agents, Conversations, Crypto, Environments, InferenceCredentials, SpritesClient, Substitution, Vaults}
+  alias Fountain.{
+    Accounts,
+    Agents,
+    Conversations,
+    Crypto,
+    Environments,
+    InferenceCredentials,
+    SpritesClient,
+    Substitution,
+    Vaults
+  }
+
   alias Fountain.Conversations.Conversation
 
   # ── public api ────────────────────────────────────────────────────────────
@@ -139,7 +150,11 @@ defmodule Fountain.Conversations.ConversationServer do
     conv = Conversations._unsafe_get_conversation!(state.conversation_id)
     sandbox = Conversations.get_sandbox!(state.sandbox_id)
     agent = if conv.agent_id, do: Agents._unsafe_get_agent!(conv.agent_id), else: nil
-    env = if agent && agent.environment_id, do: Environments._unsafe_get_environment(agent.environment_id)
+
+    env =
+      if agent && agent.environment_id,
+        do: Environments._unsafe_get_environment(agent.environment_id)
+
     vault = if conv.vault_id, do: Vaults._unsafe_get_vault(conv.vault_id)
 
     case load_tenant_state(conv.user_id) do
@@ -147,7 +162,13 @@ defmodule Fountain.Conversations.ConversationServer do
         secrets = merge_secrets(env, vault, dek)
 
         state =
-          %{state | user_id: conv.user_id, runtime_session_id: conv.runtime_session_id, tenant_key: dek, inference_credentials: inference_creds}
+          %{
+            state
+            | user_id: conv.user_id,
+              runtime_session_id: conv.runtime_session_id,
+              tenant_key: dek,
+              inference_credentials: inference_creds
+          }
 
         dispatch_provision(state, conv, sandbox, agent, env, vault, secrets)
 
@@ -576,7 +597,9 @@ defmodule Fountain.Conversations.ConversationServer do
   # Inject the current conversation ID so the bundled fountain skill can
   # propagate it as X-Fountain-Parent-Conversation-Id when spawning children.
   defp conversation_env(nil), do: []
-  defp conversation_env(conv_id) when is_binary(conv_id), do: [{"FOUNTAIN_CONVERSATION_ID", conv_id}]
+
+  defp conversation_env(conv_id) when is_binary(conv_id),
+    do: [{"FOUNTAIN_CONVERSATION_ID", conv_id}]
 
   @doc false
   def git_author_env do
@@ -863,6 +886,46 @@ defmodule Fountain.Conversations.ConversationServer do
     end
   end
 
+  # How long a sprite's callback key stays valid.
+  #
+  # This is a backstop, not the primary control: the key is revoked at
+  # terminate/2 and rotated on every provision and reattach, so under normal
+  # operation it is replaced long before expiry. It exists for the hard-crash
+  # case, where the row is orphaned and would otherwise be valid forever.
+  #
+  # The default is deliberately generous. The token is only rotated on provision
+  # and reattach, so a TTL shorter than the longest continuously-running
+  # conversation would expire a token mid-flight and break the agent's callbacks
+  # — a worse failure than a long-lived orphan. Lower it if conversations in your
+  # deployment are short.
+  @default_callback_key_ttl_seconds 30 * 24 * 60 * 60
+
+  defp callback_key_ttl_seconds do
+    Application.get_env(:fountain, :callback_key_ttl_seconds, @default_callback_key_ttl_seconds)
+  end
+
+  @doc """
+  Options used when minting a sprite's callback key.
+
+  `"sprite"` scope, not full: the sandbox can stream, prompt and spawn
+  sub-agents, but cannot mint a key that would survive the revoke at teardown.
+  The expiry is a backstop for the orphan case — if the BEAM dies hard the row
+  is never revoked, and without it the key stays valid forever.
+
+  Public so the scope and expiry can be asserted directly: this module has no
+  test coverage of its own (#192), and an unscoped callback token is the
+  privilege-escalation path the scoping exists to close.
+  """
+  def callback_api_key_opts do
+    [
+      scopes: ["sprite"],
+      expires_at:
+        DateTime.utc_now()
+        |> DateTime.add(callback_key_ttl_seconds(), :second)
+        |> DateTime.truncate(:second)
+    ]
+  end
+
   # Issue a fresh per-conversation API key scoped to the conversation
   # owner, revoking any prior one. The plaintext is only kept in
   # `state.callback_token` — the durable record is a hash in `api_keys`,
@@ -873,7 +936,11 @@ defmodule Fountain.Conversations.ConversationServer do
       _ = Accounts.revoke_api_key(conv.user_id, id)
     end
 
-    case Accounts.create_api_key(conv.user_id, "sprite:#{String.slice(conv.id, 0, 8)}") do
+    case Accounts.create_api_key(
+           conv.user_id,
+           "sprite:#{String.slice(conv.id, 0, 8)}",
+           callback_api_key_opts()
+         ) do
       {:ok, {%Accounts.ApiKey{id: key_id}, raw}} ->
         {:ok, conv} = Conversations.update_conversation(conv, %{callback_api_key_id: key_id})
         {%{state | callback_token: raw}, conv}
@@ -946,7 +1013,9 @@ defmodule Fountain.Conversations.ConversationServer do
       end
 
     {cmd, args, build_opts} =
-      state.runtime_module.build_command(agent, prompt, mode, runtime_session_id, [images: image_paths])
+      state.runtime_module.build_command(agent, prompt, mode, runtime_session_id,
+        images: image_paths
+      )
 
     # If a runtime embeds the prompt in argv (codex), it returns
     # `stdin?: false` and we skip the Sprites.write/close_stdin pipeline.

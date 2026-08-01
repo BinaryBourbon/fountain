@@ -44,6 +44,11 @@ defmodule FountainWeb.Router do
     plug FountainWeb.Plugs.OptionalSessionAuth
   end
 
+  # Layered on top of :api for routes that manage API keys themselves.
+  pipeline :require_key_management do
+    plug FountainWeb.Plugs.RequireKeyManagement
+  end
+
   ## ─── Public routes ────────────────────────────────────────────────────────────────────
 
   scope "/", FountainWeb do
@@ -137,6 +142,13 @@ defmodule FountainWeb.Router do
     pipe_through :api
 
     get "/me", AuthMeController, :show
+  end
+
+  # Key management is scope-gated: the per-conversation token a sprite holds
+  # must not be able to mint a second key that survives conversation teardown.
+  scope "/api/auth", FountainWeb do
+    pipe_through [:api, :require_key_management]
+
     get "/api-keys", ApiKeyController, :index
     post "/api-keys", ApiKeyController, :create
     delete "/api-keys/:id", ApiKeyController, :delete

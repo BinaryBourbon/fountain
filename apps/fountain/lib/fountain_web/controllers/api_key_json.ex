@@ -23,7 +23,12 @@ defmodule FountainWeb.ApiKeyJSON do
       name: key.name,
       prefix: key.key_prefix,
       created_at: key.inserted_at,
-      last_used_at: key.last_used_at
+      last_used_at: key.last_used_at,
+      # A tenant's list is mostly auto-issued `sprite:*` conversation tokens.
+      # Surfacing scope and expiry is what makes those distinguishable from a
+      # key the user created and is responsible for.
+      scopes: key.scopes,
+      expires_at: key.expires_at
     }
   end
 end

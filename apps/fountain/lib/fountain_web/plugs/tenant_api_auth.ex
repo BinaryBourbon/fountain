@@ -25,12 +25,20 @@ defmodule FountainWeb.Plugs.TenantAPIAuth do
   def call(conn, _opts) do
     with [auth_header] <- get_req_header(conn, "authorization"),
          "Bearer " <> raw_key <- auth_header,
-         {:ok, user} <- Accounts.get_user_by_api_key(raw_key) do
+         {:ok, user, api_key} <- Accounts.authenticate_api_key(raw_key) do
       Task.async(fn -> Accounts.touch_api_key(raw_key) end)
-      assign(conn, :current_user, user)
+
+      conn
+      |> assign(:current_user, user)
+      # Scope lives on the key, so downstream guards need the record — a sandbox
+      # token is otherwise indistinguishable from the tenant's own key.
+      |> assign(:current_api_key, api_key)
     else
       {:error, :revoked} ->
         unauthorized(conn, "API key has been revoked", "api_key_revoked")
+
+      {:error, :expired} ->
+        unauthorized(conn, "API key has expired", "api_key_expired")
 
       _ ->
         unauthorized(conn, "Invalid or missing API key", "api_key_invalid")
