@@ -124,21 +124,75 @@ jobs:
       #   ERROR! the application :fountain has a different value set for path
       #   [:force_ssl] inside key FountainWeb.Endpoint during runtime compared
       #   to compile time.
-      - name: Release boots with production config
+      # Two distinct failures have shipped past every other check here, one
+      # after the other, from the same change:
+      #
+      #   1. force_ssl set from runtime.exs failed validate_compile_env and the
+      #      node aborted during boot.
+      #   2. the node then booted fine and Plug.SSL 301'd every kubelet probe,
+      #      so no pod ever became ready.
+      #
+      # From outside they look identical — pods not Ready, rollout stalled — and
+      # neither is visible to a Config.Reader test or to `mix test`. So this
+      # boots a real release with production-shaped config and then asks it the
+      # questions kubelet asks: over plain http, on the pod's own port, with no
+      # proxy and no X-Forwarded-Proto.
+      #
+      # The Host header matters more than the address. Plug.SSL's default
+      # exclude is [hosts: ["localhost", "127.0.0.1"]], so a probe sent to
+      # either name is never redirected and this check would pass while
+      # production 301s. kubelet dials the pod IP, which is in neither list, so
+      # the probe carries a pod-shaped Host to reproduce that.
+      - name: Release boots and answers its health probes
         env:
           MIX_ENV: prod
           PHX_SERVER: "true"
+          PORT: "4000"
           SECRET_KEY_BASE: ci-only-not-a-secret-000000000000000000000000000000000000000000000000
           # 43 chars of base64url = 32 zero bytes. Valid format, obviously not a key.
           MASTER_SECRETS_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
           DATABASE_URL: postgres://postgres:postgres@localhost/fountain_test
+          # The CI Postgres service serves no TLS, and DATABASE_SSL defaults on
+          # in prod — without this the release dies on a connection timeout and
+          # the step fails for a reason that has nothing to do with the app.
+          DATABASE_SSL: "false"
           PUBLIC_URL: https://ci.example.com
           EMAIL_DELIVERY: none
+          # No collector on a runner; without this the exporter retries per span.
+          OTEL_TRACES_EXPORTER: none
         run: |
           set -euo pipefail
           mix deps.get --only prod
           mix release fountain_server --overwrite
-          _build/prod/rel/fountain_server/bin/fountain_server eval 'IO.puts("release boots")'
+
+          # Config providers run here. A key that may not be set at runtime
+          # aborts boot at this point rather than serving anything.
+          _build/prod/rel/fountain_server/bin/fountain_server eval 'IO.puts("config ok")'
+
+          _build/prod/rel/fountain_server/bin/fountain_server daemon
+          trap '_build/prod/rel/fountain_server/bin/fountain_server stop || true' EXIT
+
+          probe() {
+            # Exactly, not "2xx or 3xx". A 301 is what broke production: curl
+            # -f does not fail on a redirect, so the status has to be compared.
+            for _ in $(seq 1 45); do
+              code=$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: 10.42.0.1' "http://127.0.0.1:4000$1") || code=000
+              if [ "$code" = "200" ]; then
+                echo "  $1 -> 200"
+                return 0
+              fi
+              if [ "$code" != "000" ] && [ "$code" != "502" ]; then
+                echo "  $1 -> $code (expected 200)" >&2
+                return 1
+              fi
+              sleep 2
+            done
+            echo "  $1 never answered" >&2
+            return 1
+          }
+
+          probe /health
+          probe /health/ready
 
       - name: Validate OpenAPI spec
         run: mix openapi.spec.json --spec FountainWeb.ApiSpec --output /tmp/openapi.json && jq empty /tmp/openapi.json
