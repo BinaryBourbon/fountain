@@ -16,7 +16,9 @@ projects:
               MIX_ENV=prod mix release fountain_server
             startCommand: _build/prod/rel/fountain_server/bin/server
             preDeployCommand: _build/prod/rel/fountain_server/bin/migrate
-            healthCheckPath: /health
+            # Render uses this to gate traffic, which is a readiness question —
+            # /health is static and would pass with an unreachable database.
+            healthCheckPath: /health/ready
 
             envVars:
               # Shared secrets + config from the dashboard-managed env group.

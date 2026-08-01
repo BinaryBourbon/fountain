@@ -153,17 +153,40 @@ spec:
             limits:
               cpu: 500m
               memory: 1Gi
-          readinessProbe:
+          # Ecto.Migrator is a supervised child that runs before the Endpoint
+          # starts, so a slow migration means no listening socket yet. Without
+          # this, liveness (30s + 3 × 30s) would start restarting the pod
+          # mid-migration and loop. The startup probe holds both other probes
+          # off until the app answers, allowing 30 × 5s = 150s to boot.
+          startupProbe:
             httpGet:
               path: /health
               port: http
-            initialDelaySeconds: 10
             periodSeconds: 5
+            failureThreshold: 30
+          # Readiness gates traffic: it checks Postgres, so a pod that cannot
+          # serve is pulled from the Service without being killed. Recovery
+          # needs no restart.
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: http
+            periodSeconds: 5
+            # Explicit, because this probe does real work and the default is 1s.
+            # Measured: ~3ms when Postgres is healthy, ~2.9s to answer 503 when
+            # it is stopped. 4s leaves margin over that so kubelet records the
+            # 503 instead of timing out — both count as a failure, but only one
+            # of them is legible afterwards.
+            timeoutSeconds: 4
+            # 6 × 5s ≈ 30s before a pod leaves the Service, so a CNPG failover
+            # does not empty the endpoint list.
             failureThreshold: 6
+          # Liveness restarts the pod, so it stays static and dependency-free.
+          # Pointing it at /health/ready would restart every pod at once during
+          # a Postgres blip, which does nothing to fix Postgres.
           livenessProbe:
             httpGet:
               path: /health
               port: http
-            initialDelaySeconds: 30
             periodSeconds: 30
             failureThreshold: 3

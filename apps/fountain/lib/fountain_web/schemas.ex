@@ -188,7 +188,10 @@ defmodule FountainWeb.Schemas do
         started_at: %Schema{type: :string, format: :"date-time", nullable: true},
         ended_at: %Schema{type: :string, format: :"date-time", nullable: true},
         inserted_at: %Schema{type: :string, format: :"date-time"},
-        image_count: %Schema{type: :integer, description: "Number of images attached to this turn."}
+        image_count: %Schema{
+          type: :integer,
+          description: "Number of images attached to this turn."
+        }
       },
       required: [:id, :turn_number, :prompt, :status]
     })
@@ -236,8 +239,14 @@ defmodule FountainWeb.Schemas do
           items: %Schema{
             type: :object,
             properties: %{
-              name: %Schema{type: :string, description: "Skill name (required for inline entries)."},
-              content: %Schema{type: :string, description: "Full SKILL.md body for inline entries."},
+              name: %Schema{
+                type: :string,
+                description: "Skill name (required for inline entries)."
+              },
+              content: %Schema{
+                type: :string,
+                description: "Full SKILL.md body for inline entries."
+              },
               source: %Schema{
                 type: :string,
                 description: "GitHub `owner/repo` for skills.sh-sourced entries.",
@@ -324,8 +333,14 @@ defmodule FountainWeb.Schemas do
           items: %Schema{
             type: :object,
             properties: %{
-              name: %Schema{type: :string, description: "Skill name (required for inline entries)."},
-              content: %Schema{type: :string, description: "Full SKILL.md body for inline entries."},
+              name: %Schema{
+                type: :string,
+                description: "Skill name (required for inline entries)."
+              },
+              content: %Schema{
+                type: :string,
+                description: "Full SKILL.md body for inline entries."
+              },
               source: %Schema{
                 type: :string,
                 description: "GitHub `owner/repo` for skills.sh-sourced entries.",
@@ -385,8 +400,14 @@ defmodule FountainWeb.Schemas do
           items: %Schema{
             type: :object,
             properties: %{
-              name: %Schema{type: :string, description: "Skill name (required for inline entries)."},
-              content: %Schema{type: :string, description: "Full SKILL.md body for inline entries."},
+              name: %Schema{
+                type: :string,
+                description: "Skill name (required for inline entries)."
+              },
+              content: %Schema{
+                type: :string,
+                description: "Full SKILL.md body for inline entries."
+              },
               source: %Schema{
                 type: :string,
                 description: "GitHub `owner/repo` for skills.sh-sourced entries.",
@@ -781,6 +802,26 @@ defmodule FountainWeb.Schemas do
       type: :object,
       properties: %{status: %Schema{type: :string, example: "ok"}},
       required: [:status]
+    })
+  end
+
+  defmodule ReadinessResponse do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "ReadinessResponse",
+      type: :object,
+      properties: %{
+        status: %Schema{type: :string, enum: ["ok", "error"], example: "ok"},
+        checks: %Schema{
+          type: :object,
+          description: "Per-dependency result. `ok` or `error`, with no further detail.",
+          additionalProperties: %Schema{type: :string, enum: ["ok", "error"]},
+          example: %{"database" => "ok"}
+        }
+      },
+      required: [:status, :checks]
     })
   end
 
