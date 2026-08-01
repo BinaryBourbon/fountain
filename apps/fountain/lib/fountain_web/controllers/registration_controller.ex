@@ -36,6 +36,11 @@ defmodule FountainWeb.RegistrationController do
         |> put_flash(:info, "Account created! Check your email to verify your address.")
         |> redirect(to: ~p"/auth/check-email")
 
+      {:error, reason} when is_atom(reason) ->
+        conn
+        |> put_status(:forbidden)
+        |> render(:new, errors: %{email: [registration_message(reason)]}, layout: false)
+
       {:error, changeset} ->
         errors = Ecto.Changeset.traverse_errors(changeset, fn {msg, _opts} -> msg end)
 
@@ -44,6 +49,14 @@ defmodule FountainWeb.RegistrationController do
         |> render(:new, errors: errors, layout: false)
     end
   end
+
+  defp registration_message(:registration_closed),
+    do: "Registration is closed on this instance."
+
+  defp registration_message(:email_domain_not_allowed),
+    do: "That email domain is not permitted on this instance."
+
+  defp registration_message(_), do: "Registration is not available."
 
   ## JSON path
 
@@ -59,6 +72,11 @@ defmodule FountainWeb.RegistrationController do
           user_id: user.id,
           message: "Check your email to verify your account."
         })
+
+      {:error, reason} when is_atom(reason) ->
+        conn
+        |> put_status(:forbidden)
+        |> json(%{error: to_string(reason), message: registration_message(reason)})
 
       {:error, changeset} ->
         conn

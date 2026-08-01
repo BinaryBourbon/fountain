@@ -41,15 +41,63 @@ defmodule Fountain.Accounts do
   def get_user!(id) when is_binary(id), do: Repo.get!(User, id)
 
   @doc """
+  Whether `email` may create an account on this instance.
+
+  Registration was open to the world with no way to close it: a self-hoster
+  exposing an instance had no control over who signed up, and on the hosted side
+  every signup consumes the platform Sprites token.
+
+  Checked in the context rather than the controller because there are three
+  ways to create an account — the HTML form, the JSON endpoint, and an OAuth
+  callback for an unrecognised identity. A control that only covers the form is
+  not a control.
+  """
+  @spec registration_allowed?(String.t() | nil) :: :ok | {:error, atom()}
+  def registration_allowed?(email) do
+    cond do
+      not Application.get_env(:fountain, :registration_enabled, true) ->
+        {:error, :registration_closed}
+
+      not domain_allowed?(email) ->
+        {:error, :email_domain_not_allowed}
+
+      true ->
+        :ok
+    end
+  end
+
+  defp domain_allowed?(email) do
+    case Application.get_env(:fountain, :registration_allowed_email_domains, []) do
+      [] ->
+        true
+
+      domains ->
+        case String.split(to_string(email), "@") do
+          [_, domain] -> String.downcase(domain) in domains
+          _ -> false
+        end
+    end
+  end
+
+  @doc """
   Register a new user with email + password.
 
   Also creates a `UserDataKey` row in the same transaction, wrapping a freshly
   generated DEK with the platform master key.
 
-  Returns `{:ok, user}` or `{:error, changeset}`.
+  Returns `{:ok, user}`, `{:error, changeset}`, or `{:error, reason}` when
+  registration is closed or the email domain is not allowed.
   """
-  @spec register_user(map()) :: {:ok, User.t()} | {:error, Ecto.Changeset.t()}
+  @spec register_user(map()) :: {:ok, User.t()} | {:error, Ecto.Changeset.t() | atom()}
   def register_user(attrs) do
+    email = attrs["email"] || attrs[:email]
+
+    with :ok <- registration_allowed?(email) do
+      do_register_user(attrs)
+    end
+  end
+
+  defp do_register_user(attrs) do
     Repo.transaction(fn ->
       with {:ok, user} <- insert_user(attrs),
            {:ok, _udk} <- create_user_data_key(user.id) do
@@ -209,7 +257,13 @@ defmodule Fountain.Accounts do
               end
 
             nil ->
-              # Brand-new user from OAuth
+              # Brand-new user from OAuth — a registration like any other, and
+              # the path most likely to be forgotten by a controller-level gate.
+              case registration_allowed?(email) do
+                :ok -> :ok
+                {:error, reason} -> Repo.rollback(reason)
+              end
+
               verified_at = DateTime.utc_now() |> DateTime.truncate(:second)
 
               with {:ok, user} <-

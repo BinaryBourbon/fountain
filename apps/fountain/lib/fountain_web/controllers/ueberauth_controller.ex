@@ -93,6 +93,11 @@ defmodule FountainWeb.UeberauthController do
           |> put_session(:session_version, user.session_version)
           |> redirect(to: ~p"/conversations")
 
+        {:error, reason} when reason in [:registration_closed, :email_domain_not_allowed] ->
+          conn
+          |> put_flash(:error, "Registration is not open on this instance.")
+          |> redirect(to: ~p"/auth/login")
+
         {:error, _changeset} ->
           conn
           |> put_flash(:error, "Could not sign in with GitHub. Please try again.")
