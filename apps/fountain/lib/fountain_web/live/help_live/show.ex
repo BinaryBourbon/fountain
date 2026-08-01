@@ -11,28 +11,15 @@ defmodule FountainWeb.HelpLive.Show do
 
   use FountainWeb, :live_view
 
-  @topics [
-    {"quickstart", "Quickstart"},
-    {"agents", "Agents"},
-    {"skills", "Skills"},
-    {"environments", "Environments"},
-    {"vaults", "Vaults"},
-    {"manifest", "Manifest"},
-    {"spawning", "Spawning sub-agents"},
-    {"api", "API reference"},
-    {"for-llms", "For LLMs"},
-    {"runbook", "Operating"}
-  ]
-
   @impl true
   def mount(_params, _session, socket) do
-    {:ok, assign(socket, :topics, @topics)}
+    {:ok, assign(socket, :topics, Fountain.Help.topics())}
   end
 
   @impl true
   def handle_params(params, _uri, socket) do
     slug = params["topic"] || "quickstart"
-    topic = Enum.find(@topics, fn {s, _} -> s == slug end)
+    topic = Enum.find(Fountain.Help.topics(), fn {s, _} -> s == slug end)
 
     case topic do
       nil ->

@@ -136,8 +136,10 @@ defmodule Fountain.Agents do
   defp apply_search(query, ""), do: query
 
   defp apply_search(query, search) do
+    # ilike, not like: a case-sensitive search box is a broken one, and this
+    # backs both the agents list in the UI and the documented ?search= param.
     term = "%#{search}%"
-    from a in query, where: like(a.name, ^term)
+    from a in query, where: ilike(a.name, ^term)
   end
 
   defp apply_runtimes(query, []), do: query
