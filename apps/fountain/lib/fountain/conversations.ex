@@ -42,10 +42,62 @@ defmodule Fountain.Conversations do
     |> Repo.insert()
   end
 
+  @doc """
+  Update a sandbox, emitting usage events on billable transitions.
+
+  Every sandbox status change in the system goes through here — fresh
+  provisioning, the wake path, and the terminate-when-the-server-is-already-dead
+  path in `ConversationServer.terminate/1`. Metering at this choke point means a
+  new caller cannot forget to record usage, which is how `Billing.emit/5` ended
+  up with no call sites at all despite being documented, schema'd and tested.
+  """
   def update_sandbox(%Sandbox{} = sandbox, attrs) do
-    sandbox
-    |> Sandbox.changeset(attrs)
-    |> Repo.update()
+    was = sandbox.status
+
+    with {:ok, updated} <- sandbox |> Sandbox.changeset(attrs) |> Repo.update() do
+      record_sandbox_usage(was, updated)
+      {:ok, updated}
+    end
+  end
+
+  @billable_terminal ~w(terminated failed)
+
+  # Transitions only: update_sandbox/2 is called repeatedly with the same status
+  # in places, and double-counting a sandbox would overstate a bill.
+  defp record_sandbox_usage(was, %Sandbox{status: "ready"} = sandbox) when was != "ready" do
+    Fountain.Billing.record_usage(
+      sandbox.user_id,
+      "sandbox_provisioned",
+      sandbox.id,
+      "sandbox",
+      %{"sprite_name" => sandbox.sprite_name}
+    )
+  end
+
+  defp record_sandbox_usage(was, %Sandbox{status: status} = sandbox)
+       when status in @billable_terminal and was not in @billable_terminal do
+    # `failed` counts too: a sprite that died mid-provision still ran, and was
+    # still billed by Sprites. Recording only clean terminations would
+    # understate cost precisely when something is going wrong.
+    Fountain.Billing.record_usage(
+      sandbox.user_id,
+      "sandbox_terminated",
+      sandbox.id,
+      "sandbox",
+      %{
+        "duration_ms" => sandbox_duration_ms(sandbox),
+        "final_status" => status
+      }
+    )
+  end
+
+  defp record_sandbox_usage(_was, _sandbox), do: :ok
+
+  defp sandbox_duration_ms(%Sandbox{inserted_at: nil}), do: 0
+
+  defp sandbox_duration_ms(%Sandbox{inserted_at: started} = sandbox) do
+    ended = sandbox.terminated_at || DateTime.utc_now()
+    ended |> DateTime.diff(started, :millisecond) |> max(0)
   end
 
   # ── conversations ─────────────────────────────────────────────────────────────────────
@@ -448,9 +500,26 @@ defmodule Fountain.Conversations do
   end
 
   def create_turn(attrs) do
-    %Turn{}
-    |> Turn.changeset(attrs)
-    |> Repo.insert()
+    with {:ok, turn} <- %Turn{} |> Turn.changeset(attrs) |> Repo.insert() do
+      record_turn_usage(turn)
+      {:ok, turn}
+    end
+  end
+
+  # Turns carry no user_id of their own, so resolve it through the conversation.
+  # One narrow select per turn, and turns are prompt-frequency rather than
+  # request-frequency, so this is not a hot path.
+  defp record_turn_usage(%Turn{} = turn) do
+    case Repo.one(from c in Conversation, where: c.id == ^turn.conversation_id, select: c.user_id) do
+      nil ->
+        :ok
+
+      user_id ->
+        Fountain.Billing.record_usage(user_id, "turn_started", turn.id, "turn", %{
+          "conversation_id" => turn.conversation_id,
+          "turn_number" => turn.turn_number
+        })
+    end
   end
 
   def update_turn(%Turn{} = turn, attrs) do

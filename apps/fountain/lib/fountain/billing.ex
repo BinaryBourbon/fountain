@@ -25,6 +25,8 @@ defmodule Fountain.Billing do
 
   import Ecto.Query
 
+  require Logger
+
   alias Fountain.Accounts.User
   alias Fountain.Billing.UsageEvent
   alias Fountain.Repo
@@ -243,10 +245,42 @@ defmodule Fountain.Billing do
   # ─── Usage emission ─────────────────────────────────────────────────────────
 
   @doc """
+  Best-effort `emit/5`.
+
+  Metering is bookkeeping: it must never be able to fail a conversation. A bad
+  changeset, a dropped connection or an unexpected raise is logged and swallowed,
+  the same contract `Fountain.Audit.record/1` uses. The cost is that a silent
+  metering outage looks like zero usage — worth an alert once there is anything
+  to bill.
+  """
+  @spec record_usage(binary(), String.t(), binary() | nil, String.t() | nil, map()) ::
+          {:ok, UsageEvent.t()} | {:error, term()}
+  def record_usage(user_id, event_type, resource_id, resource_type, metadata \\ %{}) do
+    case emit(user_id, event_type, resource_id, resource_type, metadata) do
+      {:ok, _} = ok ->
+        ok
+
+      {:error, %Ecto.Changeset{} = cs} ->
+        Logger.warning("usage: #{event_type} rejected: #{inspect(cs.errors)}")
+        {:error, :invalid}
+    end
+  rescue
+    e ->
+      Logger.warning("usage: #{event_type} failed: #{Exception.message(e)}")
+      {:error, :exception}
+  end
+
+  @doc """
   Writes a usage event synchronously to `usage_events`.
 
-  Called from `ConversationServer` at sandbox provisioning, turn start,
-  and sandbox termination points.
+  Raises nothing itself but returns `{:error, changeset}` on rejection. Callers
+  on a conversation's critical path should use `record_usage/5`, which cannot
+  fail the operation it is measuring.
+
+  Emitted from `Conversations.update_sandbox/2` and `Conversations.create_turn/1`
+  rather than from `ConversationServer`, so every path that provisions, runs or
+  tears down a sandbox is counted — including the wake path and the
+  terminate-when-the-server-is-already-dead path.
   """
   @spec emit(binary(), String.t(), binary() | nil, String.t() | nil, map()) ::
           {:ok, UsageEvent.t()} | {:error, Ecto.Changeset.t()}
