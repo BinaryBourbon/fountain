@@ -145,14 +145,15 @@ personal hostnames. It is worth reading for reference and is not worth applying.
 A generic chart is
 [#191](https://github.com/BinaryBourbon/fountain/issues/191).
 
+## Licence
+
+Fountain is MIT licensed — running your own instance is explicitly fine,
+including commercially.
+
 ## Known gaps
 
 Being straight about what self-hosting does not yet include:
 
-- **No licence.** The repository has no `LICENSE` file
-  ([#183](https://github.com/BinaryBourbon/fountain/issues/183)), so strictly
-  speaking nobody has been granted permission to run it. That is being resolved;
-  until it is, treat this page as documentation rather than a grant.
 - **Sprites is a hosted dependency** and the endpoint is not configurable
   ([#189](https://github.com/BinaryBourbon/fountain/issues/189)).
 - **No published version tags for the server image** — only `latest` and
