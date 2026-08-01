@@ -246,9 +246,9 @@ defmodule Fountain.Accounts do
 
   Returns `{:ok, {%ApiKey{}, raw_key_string}}` or `{:error, changeset}`.
   """
-  @spec create_api_key(binary(), String.t()) ::
+  @spec create_api_key(binary(), String.t(), keyword()) ::
           {:ok, {ApiKey.t(), String.t()}} | {:error, Ecto.Changeset.t()}
-  def create_api_key(user_id, name) when is_binary(user_id) and is_binary(name) do
+  def create_api_key(user_id, name, opts \\ []) when is_binary(user_id) and is_binary(name) do
     raw = "ftn_" <> Base.encode16(:crypto.strong_rand_bytes(32), case: :lower)
     key_hash = hash_key(raw)
     key_prefix = String.slice(raw, 0, 8)
@@ -258,7 +258,9 @@ defmodule Fountain.Accounts do
       user_id: user_id,
       name: name,
       key_hash: key_hash,
-      key_prefix: key_prefix
+      key_prefix: key_prefix,
+      scopes: Keyword.get(opts, :scopes, ["full"]),
+      expires_at: Keyword.get(opts, :expires_at)
     })
     |> Repo.insert()
     |> case do
@@ -301,8 +303,26 @@ defmodule Fountain.Accounts do
   401.
   """
   @spec get_user_by_api_key(String.t()) ::
-          {:ok, User.t()} | {:error, :revoked | :not_found}
+          {:ok, User.t()} | {:error, :revoked | :expired | :not_found}
   def get_user_by_api_key(raw_key) when is_binary(raw_key) do
+    case authenticate_api_key(raw_key) do
+      {:ok, user, _key} -> {:ok, user}
+      {:error, _} = err -> err
+    end
+  end
+
+  @doc """
+  Authenticate a raw API key and return the key record alongside the user.
+
+  The auth plug needs the record, not just the user: scope is carried on the key,
+  so a caller holding a sandbox token is otherwise indistinguishable from the
+  human who owns the tenant.
+
+  Returns `{:ok, user, api_key}`, or `{:error, :revoked | :expired | :not_found}`.
+  """
+  @spec authenticate_api_key(String.t()) ::
+          {:ok, User.t(), ApiKey.t()} | {:error, :revoked | :expired | :not_found}
+  def authenticate_api_key(raw_key) when is_binary(raw_key) do
     key_hash = hash_key(raw_key)
 
     query =
@@ -312,9 +332,14 @@ defmodule Fountain.Accounts do
         preload: [user: u]
 
     case Repo.one(query) do
-      nil -> {:error, :not_found}
-      %ApiKey{revoked_at: nil} = key -> {:ok, key.user}
-      %ApiKey{} -> {:error, :revoked}
+      nil ->
+        {:error, :not_found}
+
+      %ApiKey{revoked_at: revoked} when not is_nil(revoked) ->
+        {:error, :revoked}
+
+      %ApiKey{} = key ->
+        if ApiKey.expired?(key), do: {:error, :expired}, else: {:ok, key.user, key}
     end
   end
 
