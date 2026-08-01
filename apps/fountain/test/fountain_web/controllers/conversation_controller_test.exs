@@ -620,6 +620,99 @@ defmodule FountainWeb.ConversationControllerTest do
     end
   end
 
+  # Every test above passed while the endpoint 406'd for every real client,
+  # because Phoenix.ConnTest sends no Accept header and `plug :accepts` then
+  # falls through to the default format. A real SSE client — the Go CLI, the
+  # browser's EventSource, curl -H — sends `Accept: text/event-stream`, which
+  # `plug :accepts, ["json"]` refuses before the action runs. So these tests
+  # send the header on purpose.
+  describe "GET /api/conversations/:conversation_id/stream — content negotiation" do
+    test "accepts the Accept header a real SSE client sends", %{
+      conn: conn,
+      user: user,
+      raw_key: raw_key
+    } do
+      conv = insert_conversation(user_id: user.id)
+
+      conn =
+        conn
+        |> authed_with_key(raw_key)
+        |> put_req_header("accept", "text/event-stream")
+        |> get("/api/conversations/#{conv.id}/stream?wait=false")
+
+      assert conn.status == 200
+      assert get_resp_header(conn, "content-type") == ["text/event-stream"]
+    end
+
+    test "still replays buffered events with that header set", %{
+      conn: conn,
+      user: user,
+      raw_key: raw_key
+    } do
+      conv = insert_conversation(user_id: user.id)
+      insert_log_event(conv, %{kind: "output", stream: "stdout", data: "hello"})
+
+      conn =
+        conn
+        |> authed_with_key(raw_key)
+        |> put_req_header("accept", "text/event-stream")
+        |> get("/api/conversations/#{conv.id}/stream?wait=false")
+
+      assert conn.status == 200
+      assert conn.resp_body =~ "event: output"
+      assert conn.resp_body =~ "hello"
+    end
+
+    test "an unknown conversation still renders a JSON 404", %{conn: conn, raw_key: raw_key} do
+      # The route negotiates no format at all now, so the fallback path has to
+      # keep working without one.
+      conn =
+        conn
+        |> authed_with_key(raw_key)
+        |> put_req_header("accept", "text/event-stream")
+        |> get("/api/conversations/#{Ecto.UUID.generate()}/stream")
+
+      assert json_response(conn, 404)
+    end
+
+    test "authentication is still enforced on the stream route", %{conn: conn, user: user} do
+      # The stream lives in its own scope now. It shares the `:api` pipeline
+      # rather than a copy of it, and this is what holds that true.
+      conv = insert_conversation(user_id: user.id)
+
+      conn =
+        conn
+        |> put_req_header("accept", "text/event-stream")
+        |> get("/api/conversations/#{conv.id}/stream?wait=false")
+
+      assert json_response(conn, 401)
+    end
+
+    test "another tenant's conversation is still a 404", %{conn: conn, raw_key: raw_key} do
+      other = insert_conversation(user_id: insert_verified_user().id)
+
+      conn =
+        conn
+        |> authed_with_key(raw_key)
+        |> put_req_header("accept", "text/event-stream")
+        |> get("/api/conversations/#{other.id}/stream?wait=false")
+
+      assert json_response(conn, 404)
+    end
+
+    test "JSON endpoints still refuse text/event-stream", %{conn: conn, raw_key: raw_key} do
+      # The fix is scoped to the stream route: negotiation was not loosened
+      # across /api, so asking a JSON endpoint for an event stream is still a
+      # 406 rather than a 500 from a missing template.
+      assert_raise Phoenix.NotAcceptableError, fn ->
+        conn
+        |> authed_with_key(raw_key)
+        |> put_req_header("accept", "text/event-stream")
+        |> get("/api/conversations")
+      end
+    end
+  end
+
   describe "GET /api/conversations/:conversation_id/stream with log events (replay path)" do
     test "replays existing log events when wait=false and conversation has events", %{
       conn: conn,
