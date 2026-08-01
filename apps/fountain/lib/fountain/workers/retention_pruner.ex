@@ -1,0 +1,134 @@
+defmodule Fountain.Workers.RetentionPruner do
+  @moduledoc """
+  Deletes rows past their retention window.
+
+  Several tables grew without any bound: `log_events` is one row per stdout or
+  stderr chunk from every sprite and is currently 114MB of a 155MB database, and
+  the only pruning mechanism the project had was a `DELETE` statement pasted in
+  the runbook for a human to run.
+
+  ## Choosing the windows
+
+  `log_events` is the one that matters for size and the one to be careful with,
+  because it holds the visible output of a conversation — pruning it removes
+  what a user sees when they open an old conversation, not just internal
+  bookkeeping. The 90 day default deletes **nothing** today (no row is older
+  than 90 days) while bounding growth from here, which leaves time to pick a
+  different number before it ever removes anything.
+
+  The rest are operational and safe to expire sooner: a revoked API key can
+  never be used again, and `stripe_events` only has to outlive Stripe's
+  three-day redelivery window to do its job.
+
+  `usage_events` gets the longest window because it is the input to billing
+  history, and `turn_images` is deliberately absent — those rows are owned by
+  their turn and go when the conversation does.
+
+  Every window is configurable, and setting one to `nil` disables pruning for
+  that table entirely.
+  """
+
+  use Oban.Worker, queue: :maintenance, max_attempts: 3
+
+  import Ecto.Query
+
+  require Logger
+
+  alias Fountain.Repo
+
+  @defaults [
+    log_events: 90,
+    audit_events: 365,
+    stripe_events: 90,
+    revoked_api_keys: 30,
+    usage_events: 400
+  ]
+
+  @impl Oban.Worker
+  def perform(_job) do
+    results = Enum.map(@defaults, fn {table, _} -> {table, prune(table)} end)
+
+    deleted = results |> Enum.map(&elem(&1, 1)) |> Enum.sum()
+
+    if deleted > 0 do
+      detail =
+        results
+        |> Enum.reject(&(elem(&1, 1) == 0))
+        |> Enum.map_join(", ", fn {t, n} -> "#{t}=#{n}" end)
+
+      Logger.info("retention: pruned #{deleted} rows (#{detail})")
+    end
+
+    :ok
+  end
+
+  @doc "Retention window in days for `table`, or nil when disabled."
+  def window_days(table) do
+    :fountain
+    |> Application.get_env(:retention_days, [])
+    |> Keyword.get(table, Keyword.fetch!(@defaults, table))
+  end
+
+  @doc "Tables this worker prunes, with their default windows."
+  def defaults, do: @defaults
+
+  @doc """
+  Delete expired rows from one table. Returns the number deleted.
+
+  Public so a pruning run can be triggered and asserted directly rather than
+  only through the scheduler.
+  """
+  def prune(table) do
+    case window_days(table) do
+      nil -> 0
+      days -> do_prune(table, cutoff(days))
+    end
+  end
+
+  defp cutoff(days), do: DateTime.utc_now() |> DateTime.add(-days * 86_400, :second)
+
+  defp do_prune(:log_events, cutoff) do
+    delete_where("log_events", dynamic([r], r.inserted_at < ^cutoff))
+  end
+
+  defp do_prune(:audit_events, cutoff) do
+    delete_where("audit_events", dynamic([r], r.inserted_at < ^cutoff))
+  end
+
+  defp do_prune(:stripe_events, cutoff) do
+    delete_where("stripe_events", dynamic([r], r.inserted_at < ^cutoff))
+  end
+
+  defp do_prune(:usage_events, cutoff) do
+    delete_where("usage_events", dynamic([r], r.inserted_at < ^cutoff))
+  end
+
+  defp do_prune(:revoked_api_keys, cutoff) do
+    # Only revoked keys. An active key is never pruned no matter how old, since
+    # deleting one would silently break whoever is holding it.
+    delete_where(
+      "api_keys",
+      dynamic([r], not is_nil(r.revoked_at) and r.revoked_at < ^cutoff)
+    )
+  end
+
+  # Deletes in batches so a large backlog cannot hold a single long transaction
+  # open against the primary.
+  defp delete_where(table, condition, batch \\ 5_000, acc \\ 0) do
+    ids =
+      from(r in table, where: ^condition, select: r.id, limit: ^batch)
+      |> Repo.all()
+
+    case ids do
+      [] ->
+        acc
+
+      ids ->
+        {count, _} = from(r in table, where: r.id in ^ids) |> Repo.delete_all()
+
+        if length(ids) < batch,
+          do: acc + count,
+          else: delete_where(table, condition, batch, acc + count)
+    end
+  end
+end

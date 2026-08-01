@@ -23,6 +23,8 @@ defmodule Fountain.DataCase do
       import Ecto
       import Ecto.Changeset
       import Ecto.Query
+      use Oban.Testing, repo: Fountain.Repo
+
       import Fountain.DataCase
       import Fountain.Factory
     end

@@ -1,5 +1,22 @@
 import Config
 
+# Oban: durable background jobs. The Cron plugin elects a leader across the
+# cluster itself, so scheduled work runs once regardless of replica count —
+# the problem the Rehydrator solves by hand.
+config :fountain, Oban,
+  repo: Fountain.Repo,
+  queues: [maintenance: 1, billing: 5],
+  plugins: [
+    # Oban's own job-table pruning: completed jobs older than 7 days.
+    {Oban.Plugins.Pruner, max_age: 7 * 24 * 60 * 60},
+    {Oban.Plugins.Cron,
+     crontab: [
+       # 04:23 UTC — after the 03:17 database backup, so pruning never races
+       # the dump and a backup always captures the pre-prune state.
+       {"23 4 * * *", Fountain.Workers.RetentionPruner}
+     ]}
+  ]
+
 config :fountain,
   ecto_repos: [Fountain.Repo],
   generators: [timestamp_type: :utc_datetime, binary_id: true]
