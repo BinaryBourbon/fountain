@@ -10,13 +10,24 @@ defmodule FountainWeb.Router do
     plug FountainWeb.Plugs.PutApiSpec, module: FountainWeb.ApiSpec
   end
 
-  # Authenticated JSON — TenantAPIAuth gate for all resource endpoints
+  # Authenticated API — TenantAPIAuth gate for all resource endpoints.
+  #
+  # Content negotiation is deliberately NOT part of this pipeline. Every
+  # authenticated route pipes through `:accepts_json` as well, except the SSE
+  # stream, which cannot: a real EventSource client sends
+  # `Accept: text/event-stream`, and `plug :accepts, ["json"]` refuses that with
+  # 406 before the action ever runs. Keeping the auth chain in one pipeline
+  # means the stream route cannot drift out of it — a second copy of these
+  # plugs would be one forgotten line away from an unauthenticated endpoint.
   pipeline :api do
-    plug :accepts, ["json"]
     plug FountainWeb.Plugs.PutApiSpec, module: FountainWeb.ApiSpec
     plug FountainWeb.Plugs.TenantAPIAuth
     plug FountainWeb.Plugs.RateLimit, bucket: "api", max: 600
     plug FountainWeb.Plugs.Audit
+  end
+
+  pipeline :accepts_json do
+    plug :accepts, ["json"]
   end
 
   # Base browser pipeline — session, flash, CSRF, secure headers
@@ -139,7 +150,7 @@ defmodule FountainWeb.Router do
   ## ─── Authenticated JSON resource endpoints ──────────────────────────────────────────────────────────────
 
   scope "/api/auth", FountainWeb do
-    pipe_through :api
+    pipe_through [:accepts_json, :api]
 
     get "/me", AuthMeController, :show
   end
@@ -147,7 +158,7 @@ defmodule FountainWeb.Router do
   # Key management is scope-gated: the per-conversation token a sprite holds
   # must not be able to mint a second key that survives conversation teardown.
   scope "/api/auth", FountainWeb do
-    pipe_through [:api, :require_key_management]
+    pipe_through [:accepts_json, :api, :require_key_management]
 
     get "/api-keys", ApiKeyController, :index
     post "/api-keys", ApiKeyController, :create
@@ -155,7 +166,7 @@ defmodule FountainWeb.Router do
   end
 
   scope "/api", FountainWeb do
-    pipe_through :api
+    pipe_through [:accepts_json, :api]
 
     resources "/environments", EnvironmentController, except: [:new, :edit] do
       resources "/secrets", SecretController, only: [:index, :create, :delete]
@@ -174,10 +185,21 @@ defmodule FountainWeb.Router do
       post "/prompts", ConversationController, :prompt, as: :prompt
       post "/interrupt", ConversationController, :interrupt, as: :interrupt
       post "/terminate", ConversationController, :terminate, as: :terminate
-      get "/stream", ConversationController, :stream, as: :stream
       get "/turns", ConversationController, :turns, as: :turns
       get "/turns/:turn_id/images/:position", TurnImageController, :show, as: :turn_image
     end
+  end
+
+  # Server-sent events. Same auth chain as the rest of /api, minus content
+  # negotiation — see the `:api` pipeline. The action sets its own
+  # `text/event-stream` content-type and its error paths go through
+  # FallbackController's `json/2`, which does not consult the negotiated
+  # format, so there is nothing here for `:accepts` to decide.
+  scope "/api", FountainWeb do
+    pipe_through :api
+
+    get "/conversations/:conversation_id/stream", ConversationController, :stream,
+      as: :conversation_stream
   end
 
   ## ─── Authenticated browser / LiveView routes ──────────────────────────────────────────────────────────────────
@@ -192,7 +214,9 @@ defmodule FountainWeb.Router do
     get "/agents/:id/avatar", AgentAvatarController, :show
 
     # ── Turn image serving — session-authenticated so <img> tags can load without a bearer token ──────────
-    get "/conversations/:conversation_id/turns/:turn_id/images/:position", TurnImageController, :show
+    get "/conversations/:conversation_id/turns/:turn_id/images/:position",
+        TurnImageController,
+        :show
 
     # ── Phase-3-billing: conversation routes require an active subscription ─────────────────
     # :require_active_subscription runs after :require_authenticated_user and
