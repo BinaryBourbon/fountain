@@ -2,6 +2,22 @@ defmodule FountainWeb.Endpoint do
   @moduledoc false
   use Phoenix.Endpoint, otp_app: :fountain
 
+  # First in the pipeline, and applied by hand rather than through the endpoint's
+  # `force_ssl:` option: Phoenix reads that option with Application.compile_env,
+  # so setting it from runtime.exs aborts boot with a validate_compile_env
+  # error. Runtime is the only place it can be decided — the same release runs
+  # an https deployment and a self-hoster's http compose stack, and redirecting
+  # the latter to a port serving nothing reads as the app being broken.
+  plug :force_ssl
+
+  defp force_ssl(conn, _opts) do
+    case Application.get_env(:fountain, :force_ssl) do
+      nil -> conn
+      [] -> conn
+      opts -> Plug.SSL.call(conn, Plug.SSL.init(opts))
+    end
+  end
+
   @doc """
   CIDRs treated as proxies when walking X-Forwarded-For.
 

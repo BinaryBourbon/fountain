@@ -360,20 +360,29 @@ if config_env() == :prod and server? do
   # for an http deployment — it would look like login silently failing.
   config :fountain, :secure_cookie, https?
 
-  # force_ssl also emits HSTS. rewrite_on is required behind a terminating
-  # proxy: without it every request looks like http to the app and redirects
-  # into a loop.
+  # Deliberately NOT `config :fountain, FountainWeb.Endpoint, force_ssl: ...`.
+  # Phoenix reads that key with Application.compile_env, so setting it here
+  # fails the release's validate_compile_env check and aborts boot:
+  #
+  #   ERROR! the application :fountain has a different value set for path
+  #   [:force_ssl] inside key FountainWeb.Endpoint during runtime compared to
+  #   compile time.
+  #
+  # The endpoint applies Plug.SSL itself from this key instead, which is what
+  # `force_ssl:` does internally anyway — and it has to be a runtime decision,
+  # since one release artifact serves both an https deployment and a
+  # self-hoster's http compose stack.
+  #
+  # rewrite_on is required behind a terminating proxy: without it every request
+  # looks like http to the app and the redirect loops.
   if https? do
-    config :fountain, FountainWeb.Endpoint,
-      force_ssl: [
-        rewrite_on: [:x_forwarded_proto, :x_forwarded_host, :x_forwarded_port],
-        hsts: true,
-        # One year, and subdomains, which is what preload lists require. No
-        # `preload` directive: that is a one-way door — getting off the preload
-        # list takes months — and it is not this change's call to make.
-        expires: 31_536_000,
-        subdomains: true
-      ]
+    config :fountain, :force_ssl,
+      rewrite_on: [:x_forwarded_proto, :x_forwarded_host, :x_forwarded_port],
+      hsts: true,
+      # One year, including subdomains. No `preload`: that is a one-way door —
+      # getting off the preload list takes months — and not this change's call.
+      expires: 31_536_000,
+      subdomains: true
   end
 
   config :fountain, FountainWeb.Endpoint,
