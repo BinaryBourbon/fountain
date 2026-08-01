@@ -122,15 +122,71 @@ psql "$DATABASE_URL" -c "VACUUM ANALYZE audit_events"
 
 ## Postgres backup + restore
 
-On Render, daily backups are managed by the Postgres add-on dashboard — there's nothing to wire up. Manual snapshots:
+A `fountain-pg-backup` CronJob (`k8s/backup-cronjob.yaml`) takes a compressed
+`pg_dump` every night at 03:17 UTC and uploads it to the private
+`fountain-backups` bucket on the home-cloud Garage cluster, under `pg_dump/`.
+Dumps older than 14 days are pruned after each successful upload.
+
+The job verifies the uploaded object's size against the local file and fails if
+they differ — a silently truncated upload is the failure mode that would
+otherwise stay hidden until you needed it.
+
+**Recovery granularity is 24 hours.** This is a nightly logical dump, not
+continuous archiving; there is no point-in-time recovery. CNPG's own
+`barmanObjectStore` would give PITR but is not usable here: as of CNPG 1.26 the
+barman-cloud tooling moved out of the operand images into a separate plugin, and
+neither the plugin nor its `ObjectStore` CRD is installed on this cluster.
+Configuring `spec.backup` without it yields a Cluster that reports healthy and
+archives nothing.
+
+**Garage is in the same cluster as the database.** This covers a bad migration,
+an accidental `DROP`, or an application bug. It does not cover loss of the
+cluster or the site.
+
+### Check backups are actually running
 
 ```bash
-# Backup
-pg_dump "$DATABASE_URL" > fountain.sql
-
-# Restore (with the app stopped, against a fresh database)
-psql "$NEW_DATABASE_URL" < fountain.sql
+kubectl get cronjob fountain-pg-backup -n fountain
+kubectl get jobs -n fountain -l app=fountain --sort-by=.metadata.creationTimestamp | tail -5
+kubectl exec -n garage garage-0 -- /garage bucket info fountain-backups
 ```
+
+### Restore
+
+Note the Garage quirk: `aws s3 cp` issues a `HeadObject` first and Garage
+answers that with `400`, so **use `s3api get-object` to download**. Uploads via
+`s3 cp` are fine.
+
+```bash
+# Credentials for the backup bucket (never printed)
+eval "$(kubectl get secret fountain-backup-s3-credentials -n fountain \
+  -o go-template='export AWS_ACCESS_KEY_ID={{index .data "AWS_ACCESS_KEY_ID" | base64decode}}{{"\n"}}export AWS_SECRET_ACCESS_KEY={{index .data "AWS_SECRET_ACCESS_KEY" | base64decode}}{{"\n"}}')"
+export AWS_DEFAULT_REGION=garage
+EP=http://garage-s3:3900        # over the tailnet; in-cluster use http://s3.garage.svc.cluster.local:3900
+
+# Newest dump
+LATEST=$(aws --endpoint-url $EP s3api list-objects-v2 --bucket fountain-backups \
+  --prefix pg_dump/ --query 'sort_by(Contents,&LastModified)[-1].Key' --output text)
+aws --endpoint-url $EP s3api get-object --bucket fountain-backups --key "$LATEST" restore.dump
+
+# Restore into a scratch database first and compare, before touching the live one.
+# `postgres` is superuser but only over the pod's local socket — the app role is
+# deliberately NOCREATEDB, so grant it for the duration and revoke afterwards.
+kubectl exec -n fountain fountain-pg-1 -c postgres -- psql -U postgres -c "CREATE DATABASE restore_verify;"
+kubectl exec -n fountain -i fountain-pg-1 -c postgres -- \
+  pg_restore -U postgres -d restore_verify --no-owner --no-privileges < restore.dump
+kubectl exec -n fountain fountain-pg-1 -c postgres -- \
+  psql -U postgres -d restore_verify -c "SELECT count(*) FROM users;"
+```
+
+`pg_restore` reports one ignored error, `must be owner of extension vector`, on
+a `COMMENT ON EXTENSION` statement. It is cosmetic — the extension comes from
+the cluster's `postInitTemplateSQL` and the data restores fully.
+
+This procedure was exercised end to end on 2026-08-01 against a real nightly
+artifact: every table matched the live database (users 191, agents 45,
+conversations 255, environments 22, vaults 5). Re-run it periodically — a
+backup nobody has restored is a hypothesis, not a backup.
 
 ## BEAM crash recovery
 
