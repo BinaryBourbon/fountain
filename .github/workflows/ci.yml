@@ -128,8 +128,9 @@ jobs:
         env:
           MIX_ENV: prod
           PHX_SERVER: "true"
-          SECRET_KEY_BASE: ci-only-not-a-secret-0000000000000000000000000000000000000000000000000000
-          MASTER_SECRETS_KEY: ci-only-not-a-secret-AAAAAAAAAAAAAAAAAAAAA
+          SECRET_KEY_BASE: ci-only-not-a-secret-000000000000000000000000000000000000000000000000
+          # 43 chars of base64url = 32 zero bytes. Valid format, obviously not a key.
+          MASTER_SECRETS_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
           DATABASE_URL: postgres://postgres:postgres@localhost/fountain_test
           PUBLIC_URL: https://ci.example.com
           EMAIL_DELIVERY: none
