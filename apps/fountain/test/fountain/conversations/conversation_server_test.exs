@@ -269,6 +269,40 @@ defmodule Fountain.Conversations.ConversationServerTest do
     end
   end
 
+  describe "secret redaction wiring" do
+    test "the server registers the sprite env for redaction", %{conv: conv, env: env} do
+      # The registry only protects anything if something populates it. This is
+      # the assertion that would have caught Billing.emit/5 having no call
+      # sites: verify from the operation, not from the helper.
+      {:ok, _} =
+        Fountain.Environments.upsert_secret(
+          env,
+          %{"key" => "LEAKY_TOKEN", "value" => "tenant-secret-cccccccccccc"},
+          <<0::256>>
+        )
+
+      stub_happy_sprite()
+      Mimic.stub(Fountain.Crypto, :load_tenant_key, fn _ -> {:ok, <<0::256>>} end)
+
+      {pid, _ref, :alive} = start_server(conv)
+
+      values = Fountain.Conversations.Redaction.lookup(conv.id)
+      assert "tenant-secret-cccccccccccc" in values
+
+      GenServer.stop(pid)
+    end
+
+    test "registered values are forgotten when the server stops", %{conv: conv} do
+      stub_happy_sprite()
+
+      {pid, ref, :alive} = start_server(conv)
+      GenServer.stop(pid)
+      assert_stopped(ref)
+
+      assert Fountain.Conversations.Redaction.lookup(conv.id) == []
+    end
+  end
+
   describe "teardown" do
     test "revokes the sprite's callback key when the server stops", %{conv: conv} do
       stub_happy_sprite()

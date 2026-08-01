@@ -627,10 +627,24 @@ defmodule Fountain.Conversations do
     # under 1s (provision steps run in tens of ms).
     attrs = Map.put_new(attrs, :inserted_at, DateTime.utc_now())
 
+    # Redact here rather than at the call sites. Sprite output is persisted
+    # verbatim and log_events has none of the encryption the secret itself has,
+    # so a path that forgets to scrub writes plaintext credentials to a table
+    # that outlives the conversation. Doing it at the single writer means a new
+    # log path is covered whether or not its author knew to.
+    attrs = redact_attrs(attrs)
+
     %LogEvent{}
     |> LogEvent.changeset(attrs)
     |> Repo.insert!()
   end
+
+  defp redact_attrs(%{conversation_id: conv_id, data: data} = attrs)
+       when is_binary(conv_id) and is_binary(data) do
+    %{attrs | data: Fountain.Conversations.Redaction.redact(conv_id, data)}
+  end
+
+  defp redact_attrs(attrs), do: attrs
 
   @doc """
   Stream persisted log events for a conversation, ordered by id.
