@@ -90,3 +90,28 @@ chmod +x fountain && sudo mv fountain /usr/local/bin/
 ```
 
 Pinned versions are at `https://github.com/BinaryBourbon/fountain/releases/download/<tag>/fountain-<os>-<arch>`.
+
+## Streaming long turns
+
+`fountain run`, `fountain conv prompt` and `fountain conv stream` follow a
+conversation until the turn reaches a terminal state.
+
+The server closes an SSE connection after 60 seconds of quiet, so a turn that
+thinks for a while without emitting output will see the connection drop. The CLI
+reconnects using `Last-Event-ID`, so anything produced while disconnected is
+replayed rather than lost, and a dropped connection is never mistaken for a
+finished turn.
+
+If nothing arrives at all for 30 minutes the CLI gives up with an explicit
+error naming the conversation, rather than exiting successfully. Override the
+wait with `FOUNTAIN_STREAM_IDLE_TIMEOUT` (seconds):
+
+```sh
+FOUNTAIN_STREAM_IDLE_TIMEOUT=7200 fountain run researcher -p "audit the auth module"
+```
+
+Reattach to a conversation at any time — nothing is lost by disconnecting:
+
+```sh
+fountain conv stream <conversation-id>
+```

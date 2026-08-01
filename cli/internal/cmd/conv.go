@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -11,7 +10,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/BinaryBourbon/fountain/cli/internal/api"
 	"github.com/BinaryBourbon/fountain/cli/internal/output"
@@ -270,53 +268,35 @@ func runAgent(cmd *cobra.Command, target string) error {
 
 // ── stream loop ─────────────────────────────────────────────────────────
 
-// followUntilIdle opens the SSE stream for conv `id` and prints output
-// until a `stage=turn state=done` event arrives or the server closes.
+// followUntilIdle streams conv `id` until the turn reaches a terminal state,
+// reconnecting across server-side idle disconnects. See stream.go.
 func followUntilIdle(convID string) error {
 	c := activeClient()
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-	defer cancel()
 
-	req, err := c.NewStreamRequest(ctx, "/conversations/"+convID+"/stream", "")
-	if err != nil {
-		return err
-	}
-	httpClient := &http.Client{} // no global timeout — streams are long-lived
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		Fatalf("stream request failed: %v", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		body, _ := io.ReadAll(resp.Body)
-		Fatalf("stream HTTP %d: %s", resp.StatusCode, body)
-	}
-
-	buf := make([]byte, 8192)
-	var pending bytes.Buffer
-	for {
-		n, err := resp.Body.Read(buf)
-		if n > 0 {
-			pending.Write(buf[:n])
-			events, leftover := sse.Feed(pending.String())
-			pending.Reset()
-			pending.WriteString(leftover)
-			for _, ev := range events {
-				if handleEvent(ev) {
-					return nil
-				}
-			}
-		}
-		if err == io.EOF {
-			return nil
-		}
+	open := func(ctx context.Context, lastEventID string) (io.ReadCloser, error) {
+		req, err := c.NewStreamRequest(ctx, "/conversations/"+convID+"/stream", lastEventID)
 		if err != nil {
-			if ctx.Err() == context.DeadlineExceeded {
-				Fatal("stream timeout")
-			}
-			Fatalf("stream read: %v", err)
+			return nil, err
 		}
+		// No client timeout: streams are long-lived and the idle watchdog in
+		// followStream is what bounds them.
+		resp, err := (&http.Client{}).Do(req)
+		if err != nil {
+			return nil, err
+		}
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			body, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			// Auth and not-found are not worth retrying.
+			if resp.StatusCode == 401 || resp.StatusCode == 403 || resp.StatusCode == 404 {
+				Fatalf("stream HTTP %d: %s", resp.StatusCode, body)
+			}
+			return nil, fmt.Errorf("stream HTTP %d: %s", resp.StatusCode, body)
+		}
+		return resp.Body, nil
 	}
+
+	return followStream(open, streamIdleTimeout(), convID)
 }
 
 // handleEvent prints output and returns true when the turn is done.
@@ -332,6 +312,21 @@ func handleEvent(ev sse.Event) bool {
 		if stage == "turn" && state == "done" {
 			exit := exitCodeFromStageDone(data)
 			fmt.Fprintf(os.Stderr, "▸ turn done (exit_code=%s)\n", exit)
+			return true
+		}
+		// Terminal states where no turn will ever complete. Without these the
+		// stream would reconnect and wait out the idle timeout for a turn that
+		// is never coming.
+		if stage == "turn" && state == "failed" {
+			fmt.Fprintf(os.Stderr, "▸ turn failed\n")
+			return true
+		}
+		if stage == "provision" && state == "failed" {
+			fmt.Fprintf(os.Stderr, "▸ provisioning failed — the sandbox never started\n")
+			return true
+		}
+		if stage == "terminate" && state == "done" {
+			fmt.Fprintf(os.Stderr, "▸ conversation terminated\n")
 			return true
 		}
 		fmt.Fprintf(os.Stderr, "▸ %s: %s\n", stage, state)
