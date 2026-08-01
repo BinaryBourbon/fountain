@@ -85,6 +85,27 @@ defmodule Fountain.Billing do
     end
   end
 
+  # `trialing` is only active while the trial actually has time left. The
+  # subscription created at signup means Stripe drives this and sends a webhook
+  # when the trial ends — but the whole reason trials never expired is that the
+  # expiry depended on something arriving. Checking the clock too means an
+  # undelivered webhook, a Stripe outage or a misconfigured endpoint delays
+  # revenue rather than forfeiting it.
+  #
+  # A nil `trial_ends_at` is treated as no expiry. 159 production accounts are
+  # in that state, from before a trial end was recorded at all; deciding their
+  # cutoff is a business call, not something a boolean should do silently. See
+  # Fountain.Release.expire_legacy_trials/1.
+  defp do_check_active(%User{subscription_status: "trialing", trial_ends_at: nil}), do: :ok
+
+  defp do_check_active(%User{subscription_status: "trialing", trial_ends_at: ends_at}) do
+    if DateTime.compare(DateTime.utc_now(), ends_at) == :lt do
+      :ok
+    else
+      {:error, :subscription_required}
+    end
+  end
+
   defp do_check_active(%User{subscription_status: status}) when status in @active_statuses,
     do: :ok
 
@@ -101,31 +122,116 @@ defmodule Fountain.Billing do
 
   # ─── Stripe customer ────────────────────────────────────────────────────────
 
-  @doc """
-  Creates a Stripe Customer for the given user, stores `stripe_customer_id`,
-  and sets `trial_ends_at` to 14 days from now.
+  @trial_days 14
 
-  Intended to be called via `Task.async` after email verification so it does
-  not block the HTTP response. The user is already `trialing` by default;
-  this call attaches the customer record to Stripe before the trial ends.
+  @doc "Length of the free trial, in days."
+  def trial_days, do: @trial_days
+
+  @doc """
+  Creates a Stripe Customer for the given user.
+
+  Customer only. Starting the trial is `start_trial_subscription/1`, kept
+  separate because this function is also on the Checkout path — where the user
+  is about to buy, and opening a trialing subscription moments before a paid one
+  would be wrong.
   """
   @spec create_stripe_customer(User.t()) :: {:ok, User.t()} | {:error, term()}
   def create_stripe_customer(%User{} = user) do
     with {:ok, %Stripe.Customer{id: customer_id}} <-
            Stripe.Customer.create(%{email: user.email, metadata: %{"user_id" => user.id}}) do
-      trial_ends_at =
-        DateTime.utc_now()
-        |> DateTime.add(14 * 24 * 60 * 60, :second)
-        |> DateTime.truncate(:second)
-
       user
-      |> User.billing_changeset(%{
-        stripe_customer_id: customer_id,
-        trial_ends_at: trial_ends_at
-      })
+      |> User.billing_changeset(%{stripe_customer_id: customer_id})
       |> Repo.update()
     end
   end
+
+  @doc """
+  Opens a trialing Stripe Subscription and records what Stripe says about it.
+
+  This is the missing piece behind "trials never expire". Signup created a
+  Customer and nothing else, so Stripe had no subscription object to run a trial
+  against, would never emit a lifecycle webhook for one, and nothing anywhere
+  moved the account off `trialing` when the date passed.
+
+  `missing_payment_method: "cancel"` decides what happens at the end for someone
+  who never entered a card, which is the common case. The alternative,
+  `create_invoice`, raises an unpaid invoice and puts the subscription in
+  `past_due`, which starts Stripe's dunning emails — chasing payment on an
+  invoice from someone who never agreed to pay. Cancelling is quieter, says
+  nothing untrue, and `canceled` closes the gate just as effectively.
+
+  Called from `Workers.StripeCustomerSync`, so a Stripe failure retries with
+  backoff.
+
+  `trial_ends_at` comes from the subscription's `trial_end` rather than being
+  computed locally, so the database agrees with the thing that will actually do
+  the charging.
+
+  A missing `STRIPE_PRICE_ID` is not an error: a self-hosted instance has no
+  price and no Stripe. It falls back to recording a local trial end so the
+  account still behaves like a trial, and logs loudly enough to be found if the
+  price is missing somewhere that does bill.
+  """
+  @spec start_trial_subscription(User.t()) :: {:ok, User.t()} | {:error, term()}
+  def start_trial_subscription(%User{stripe_customer_id: nil} = user), do: {:ok, user}
+
+  def start_trial_subscription(%User{} = user) do
+    case Application.get_env(:fountain, :stripe_price_id) do
+      price when is_binary(price) and price != "" ->
+        create_trial_subscription(user, price)
+
+      _ ->
+        require Logger
+
+        Logger.warning(
+          "no STRIPE_PRICE_ID — user #{user.id} gets a local trial with no subscription"
+        )
+
+        record_local_trial(user)
+    end
+  end
+
+  defp create_trial_subscription(user, price_id) do
+    params = %{
+      customer: user.stripe_customer_id,
+      items: [%{price: price_id}],
+      trial_period_days: @trial_days,
+      trial_settings: %{end_behavior: %{missing_payment_method: "cancel"}},
+      metadata: %{"user_id" => user.id}
+    }
+
+    case Stripe.Subscription.create(params) do
+      {:ok, sub} ->
+        user
+        |> User.billing_changeset(%{
+          subscription_status: to_string(sub.status),
+          trial_ends_at: unix_to_datetime(Map.get(sub, :trial_end)),
+          subscription_synced_at: DateTime.utc_now() |> DateTime.truncate(:second)
+        })
+        |> Repo.update()
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp record_local_trial(user) do
+    user
+    |> User.billing_changeset(%{trial_ends_at: trial_end_from_now()})
+    |> Repo.update()
+  end
+
+  @doc false
+  def trial_end_from_now do
+    DateTime.utc_now()
+    |> DateTime.add(@trial_days * 24 * 60 * 60, :second)
+    |> DateTime.truncate(:second)
+  end
+
+  defp unix_to_datetime(ts) when is_integer(ts),
+    do: DateTime.from_unix!(ts) |> DateTime.truncate(:second)
+
+  defp unix_to_datetime(_), do: trial_end_from_now()
 
   @doc """
   Cancels every subscription attached to the user's Stripe customer.

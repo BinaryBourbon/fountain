@@ -419,13 +419,29 @@ defmodule Fountain.Accounts do
   defp insert_user(attrs, :password) do
     %User{}
     |> User.registration_changeset(attrs)
+    |> put_trial_end()
     |> Repo.insert()
   end
 
   defp insert_user(attrs, :oauth) do
     %User{}
     |> User.oauth_registration_changeset(attrs)
+    |> put_trial_end()
     |> Repo.insert()
+  end
+
+  # Every account gets a trial deadline the moment it exists, before Stripe is
+  # involved at all.
+  #
+  # The trial is really driven by a Stripe subscription, and the gate reads
+  # `trial_ends_at`, treating nil as "no expiry". If the date were only written
+  # when Stripe was successfully reached, an account whose customer or
+  # subscription call failed would sit at nil and be free forever — which is
+  # exactly how 159 production accounts got there. Stripe's `trial_end`
+  # overwrites this with the authoritative value as soon as the subscription
+  # exists; until then the local date is a floor, not a guess nobody checks.
+  defp put_trial_end(changeset) do
+    Ecto.Changeset.put_change(changeset, :trial_ends_at, Fountain.Billing.trial_end_from_now())
   end
 
   defp create_user_data_key(user_id) do
