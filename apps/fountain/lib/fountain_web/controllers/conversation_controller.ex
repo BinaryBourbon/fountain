@@ -294,6 +294,25 @@ defmodule FountainWeb.ConversationController do
         description:
           "Resume after this event id (integer as string). " <>
             "Missing or unparseable values are treated as 0."
+      ],
+      # Both load-bearing in the bundled SKILL.md files and undocumented here
+      # until now.
+      streams: [
+        in: :query,
+        type: :string,
+        required: false,
+        description:
+          "Comma-separated subset of `stdout`, `stderr`, `stage`. " <>
+            "Omitted or empty means all three."
+      ],
+      wait: [
+        in: :query,
+        type: :string,
+        required: false,
+        description:
+          "`false`/`0` drains the buffered events and closes immediately, " <>
+            "rather than holding the connection open for the live tail. " <>
+            "Defaults to true."
       ]
     ],
     responses: [

@@ -36,7 +36,7 @@ Requests are rate-limited per API key (or IP for unauthenticated requests). On l
 ## Agents
 
 ```
-GET    /api/agents              # list (supports ?search=, ?runtime=)
+GET    /api/agents              # list (?search=, ?runtime=, ?environment_id=, ?has_skills=, ?has_mcp=)
 POST   /api/agents              # create
 GET    /api/agents/:id
 PUT    /api/agents/:id
@@ -106,7 +106,7 @@ POST   /api/conversations/:id/prompts      # follow-up turn
 POST   /api/conversations/:id/interrupt    # stop the running turn
 POST   /api/conversations/:id/terminate    # end the conversation and sandbox
 GET    /api/conversations/:id/turns
-GET    /api/conversations/:id/stream       # SSE log stream
+GET    /api/conversations/:id/stream       # SSE log stream (?streams=stdout,stderr,stage  ?wait=false)
 ```
 
 ## Error responses

@@ -17,21 +17,6 @@ defmodule FountainWeb.LlmsController do
 
   use FountainWeb, :controller
 
-  # Topic order mirrors FountainWeb.HelpLive.Show — keep them in sync so the
-  # bundled doc reads the same as the in-app nav.
-  @help_topics [
-    {"quickstart", "Quickstart"},
-    {"agents", "Agents"},
-    {"environments", "Environments"},
-    {"vaults", "Vaults"},
-    {"manifest", "Manifest"},
-    {"spawning", "Spawning sub-agents"},
-    {"api", "API reference"},
-    {"secrets-managers", "Secrets managers"},
-    {"for-llms", "For LLMs"},
-    {"runbook", "Operating"}
-  ]
-
   def index(conn, _params) do
     send_text(conn, render_index(base_url()))
   end
@@ -119,7 +104,7 @@ defmodule FountainWeb.LlmsController do
   end
 
   defp bundled_help_sections do
-    Enum.map(@help_topics, fn {slug, title} ->
+    Enum.map(Fountain.Help.topics(), fn {slug, title} ->
       body = read_help(slug)
       ["\n\n## ", title, " (`/help/", slug, "`)\n\n", body, "\n"]
     end)
