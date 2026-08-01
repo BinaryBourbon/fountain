@@ -38,13 +38,26 @@ defmodule FountainWeb.SessionController do
   def create(conn, %{"email" => email, "password" => password}) do
     case Accounts.authenticate_user(email, password) do
       {:ok, user} ->
+        FountainWeb.Audited.from_conn(conn, "auth.login", "session",
+          user_id: user.id,
+          actor: "ui",
+          metadata: %{"result" => "ok"}
+        )
+
         conn
         |> configure_session(renew: true)
         |> put_session(:user_id, user.id)
         |> put_session(:session_version, user.session_version)
         |> redirect(to: after_login_path(user))
 
-      {:error, _reason} ->
+      {:error, reason} ->
+        # Failures matter more than successes here: a run of them against one
+        # account is the signal you want, and there was no record of any.
+        FountainWeb.Audited.from_conn(conn, "auth.login.failed", "session",
+          actor: "ui",
+          metadata: %{"email" => email, "reason" => to_string(reason)}
+        )
+
         conn
         |> put_status(:unauthorized)
         |> render(:new, error: "Invalid email or password.", layout: false)

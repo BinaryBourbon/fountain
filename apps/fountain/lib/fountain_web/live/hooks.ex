@@ -53,7 +53,11 @@ defmodule FountainWeb.Live.Hooks do
          |> redirect(to: ~p"/auth/login")}
 
       true ->
-        {:cont, socket |> track_current_path() |> mount_live_sidebar()}
+        {:cont,
+         socket
+         |> FountainWeb.Audited.put_client_ip()
+         |> track_current_path()
+         |> mount_live_sidebar()}
     end
   end
 

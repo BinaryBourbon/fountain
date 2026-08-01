@@ -28,9 +28,14 @@ defmodule FountainWeb.Endpoint do
     same_site: "Lax"
   ]
 
+  # peer_data + x_headers so LiveView can resolve a client address for audit
+  # events. Without them every UI-originated audit row has a nil request_ip,
+  # which is most of the value of auditing the UI in the first place.
+  @connect_info [session: @session_options, peer_data: true, x_headers: true]
+
   socket "/live", Phoenix.LiveView.Socket,
-    websocket: [connect_info: [session: @session_options]],
-    longpoll: [connect_info: [session: @session_options]]
+    websocket: [connect_info: @connect_info],
+    longpoll: [connect_info: @connect_info]
 
   # Serve at "/" the static files from "priv/static" directory.
   #

@@ -88,6 +88,13 @@ defmodule FountainWeb.PasswordResetController do
           user ->
             case Accounts.reset_password(user, password) do
               {:ok, _user} ->
+                # Also invalidates every existing session, so this is a
+                # security-relevant event even when the user initiated it.
+                FountainWeb.Audited.from_conn(conn, "auth.password.reset", "user",
+                  user_id: user.id,
+                  resource_id: user.id
+                )
+
                 conn
                 |> configure_session(drop: true)
                 |> put_flash(:info, "Password updated. Please sign in with your new password.")

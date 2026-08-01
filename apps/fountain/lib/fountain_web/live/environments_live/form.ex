@@ -168,6 +168,11 @@ defmodule FountainWeb.EnvironmentsLive.Form do
            socket.assigns.tenant_key
          ) do
       {:ok, _} ->
+        FountainWeb.Audited.from_socket(socket, "environment.secret.write", "secret",
+          resource_id: socket.assigns.env.id,
+          metadata: %{"key" => k}
+        )
+
         {:noreply,
          socket
          |> assign(:secrets, secrets_for(socket.assigns.env))
@@ -186,6 +191,11 @@ defmodule FountainWeb.EnvironmentsLive.Form do
 
     if secret do
       Environments.delete_secret(secret)
+
+      FountainWeb.Audited.from_socket(socket, "environment.secret.delete", "secret",
+        resource_id: socket.assigns.env.id,
+        metadata: %{"key" => secret.key}
+      )
 
       {:noreply,
        socket

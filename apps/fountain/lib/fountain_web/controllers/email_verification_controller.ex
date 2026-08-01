@@ -37,6 +37,11 @@ defmodule FountainWeb.EmailVerificationController do
           user ->
             case Accounts.verify_email(user) do
               {:ok, verified_user} ->
+                FountainWeb.Audited.from_conn(conn, "auth.email.verified", "user",
+                  user_id: verified_user.id,
+                  resource_id: verified_user.id
+                )
+
                 # Durable job rather than a linked Task: this used to be a bare
                 # Task.async with no await, so it could be killed when the
                 # request process finished and a Stripe error vanished silently,

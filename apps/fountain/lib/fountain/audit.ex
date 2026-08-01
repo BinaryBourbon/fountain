@@ -13,6 +13,7 @@ defmodule Fountain.Audit do
 
   import Ecto.Query
 
+  alias Fountain.Audit.AdminEvent
   alias Fountain.Audit.Event
   alias Fountain.Repo
 
@@ -49,6 +50,34 @@ defmodule Fountain.Audit do
   def record!(attrs) do
     {:ok, event} = record(attrs)
     event
+  end
+
+  @doc """
+  Record an administrative action taken against another user.
+
+  Separate from `record/1` because these need both an actor and a target, which
+  `audit_events` cannot express. Best-effort on the same terms.
+  """
+  @spec record_admin(map()) :: {:ok, AdminEvent.t()} | {:error, term()}
+  def record_admin(attrs) do
+    attrs =
+      attrs
+      |> Map.new()
+      |> Map.put_new(:metadata, %{})
+      |> Map.put_new(:inserted_at, DateTime.utc_now() |> DateTime.truncate(:second))
+
+    %AdminEvent{} |> AdminEvent.changeset(attrs) |> Repo.insert()
+  rescue
+    e ->
+      require Logger
+      Logger.warning("audit: admin record failed: #{inspect(e)}")
+      {:error, :exception}
+  end
+
+  @doc "Most recent administrative actions, newest first. Admin surfaces only."
+  @spec list_recent_admin(pos_integer()) :: [AdminEvent.t()]
+  def list_recent_admin(limit \\ 100) do
+    Repo.all(from e in AdminEvent, order_by: [desc: e.inserted_at, desc: e.id], limit: ^limit)
   end
 
   @doc """
