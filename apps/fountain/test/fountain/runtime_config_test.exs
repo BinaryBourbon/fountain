@@ -16,7 +16,10 @@ defmodule Fountain.RuntimeConfigTest do
   @required %{
     "PHX_SERVER" => "true",
     "SECRET_KEY_BASE" => String.duplicate("a", 64),
-    "DATABASE_URL" => "postgres://u:p@localhost/db"
+    "DATABASE_URL" => "postgres://u:p@localhost/db",
+    # Prod now refuses to boot with no mail delivery configured, so every
+    # prod-config evaluation needs one.
+    "RESEND_API_KEY" => "re_test_key"
   }
 
   setup do
@@ -27,7 +30,7 @@ defmodule Fountain.RuntimeConfigTest do
     on_exit(fn ->
       System.put_env(previous)
 
-      for k <- ~w(PUBLIC_URL PHX_HOST FOUNTAIN_DOMAIN),
+      for k <- ~w(PUBLIC_URL PHX_HOST FOUNTAIN_DOMAIN RESEND_API_KEY SMTP_HOST EMAIL_DELIVERY),
           not Map.has_key?(previous, k),
           do: System.delete_env(k)
     end)
@@ -36,7 +39,7 @@ defmodule Fountain.RuntimeConfigTest do
   end
 
   defp read_prod_config(env) do
-    for k <- ~w(PUBLIC_URL PHX_HOST FOUNTAIN_DOMAIN), do: System.delete_env(k)
+    for k <- ~w(PUBLIC_URL PHX_HOST FOUNTAIN_DOMAIN SMTP_HOST EMAIL_DELIVERY), do: System.delete_env(k)
     System.put_env(env)
     Config.Reader.read!(@runtime_exs, env: :prod)[:fountain]
   end
