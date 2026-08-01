@@ -64,7 +64,10 @@ defmodule FountainWeb.Router do
 
   scope "/", FountainWeb do
     pipe_through :api_public
+    # Liveness: static. Readiness: checks the dependencies this instance cannot
+    # serve without. See FountainWeb.HealthController for why they are separate.
     get "/health", HealthController, :show
+    get "/health/ready", HealthController, :ready
   end
 
   # llms.txt convention (https://llmstxt.org/) + external SKILL.md for agentic IDEs.

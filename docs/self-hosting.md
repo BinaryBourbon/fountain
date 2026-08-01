@@ -137,6 +137,29 @@ internet — it enumerates routes, request rates and database timings.
 
 Logs go to stdout: `docker compose logs -f app`.
 
+### Health endpoints
+
+Two, because restarting a container and taking it out of a load balancer are
+different decisions:
+
+| | |
+|---|---|
+| `GET /health` | Always 200 while the app is running. Checks nothing. Point a **restart** check here — if it consulted the database, a Postgres blip would restart every container at once, which does not fix Postgres |
+| `GET /health/ready` | 200 when this instance can serve, 503 when it cannot reach its database. Point **load balancer** and deploy gates here |
+
+```bash
+curl -sS localhost:4000/health/ready
+# {"checks":{"database":"ok"},"status":"ok"}
+```
+
+Both are public and unauthenticated, and report `ok`/`error` per check with no
+further detail — a failing check does not describe your database to whoever
+asked.
+
+A healthy check takes about 2ms; an unreachable database takes a few seconds to
+give up, so give the check a timeout above one second if your platform defaults
+lower.
+
 ## Kubernetes
 
 `k8s/` in this repository is the maintainer's own cluster, not a template: it
