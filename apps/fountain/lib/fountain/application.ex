@@ -28,7 +28,8 @@ defmodule Fountain.Application do
         {Ecto.Migrator,
          repos: Application.fetch_env!(:fountain, :ecto_repos), skip: skip_migrations?()},
         {DNSCluster, query: Application.get_env(:fountain, :dns_cluster_query) || :ignore},
-        {Phoenix.PubSub, name: Fountain.PubSub}
+        {Phoenix.PubSub, name: Fountain.PubSub},
+        {Oban, Application.fetch_env!(:fountain, Oban)}
       ] ++
         cluster_children(cluster_topologies) ++
         [

@@ -45,6 +45,7 @@ defmodule Fountain.MixProject do
       {:dns_cluster, "~> 0.2.0"},
       {:bandit, "~> 1.5"},
       {:remote_ip, "~> 1.2"},
+      {:oban, "~> 2.19"},
       # ravi-hq fork: includes the filesystem URL fix (/v1/sprites/<name>/fs/*)
       # and the attach_session URL fix. Upstream `superfly/sprites-ex` returns
       # 404 from `Filesystem.write`, so the bundled `fountain` SKILL.md silently
