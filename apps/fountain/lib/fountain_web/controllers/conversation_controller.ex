@@ -164,9 +164,20 @@ defmodule FountainWeb.ConversationController do
 
       _ ->
         case ConversationServer.send_prompt(id, prompt, images) do
-          :ok -> json(conn, %{status: "queued"})
-          {:error, :not_running} -> {:error, :not_found}
-          {:error, :busy} -> {:error, "conversation_busy"}
+          :ok ->
+            json(conn, %{status: "queued"})
+
+          {:error, :not_running} ->
+            {:error, :not_found}
+
+          {:error, :busy} ->
+            {:error, "conversation_busy"}
+
+          # Waking a dormant conversation provisions a fresh sprite, so it is
+          # subject to the concurrency cap. Pass the tuple through to the
+          # fallback controller rather than letting it blow the case clause.
+          {:error, {:sandbox_quota_exceeded, _}} = err ->
+            err
         end
     end
   end

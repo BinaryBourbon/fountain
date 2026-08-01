@@ -1562,6 +1562,55 @@ defmodule Fountain.ConversationsContextTest do
       assert {:error, :vault_not_found} = Conversations.start_conversation(attrs)
     end
 
+    test "is refused once the tenant is at its concurrent-sandbox cap" do
+      user = insert_verified_user()
+      agent = insert_agent(user_id: user.id)
+      for _ <- 1..Fountain.Quotas.default_limit(), do: insert_sandbox(user_id: user.id, status: "ready")
+
+      assert {:error, {:sandbox_quota_exceeded, %{count: 5, limit: 5}}} =
+               Conversations.start_conversation(%{"agent_id" => agent.id, "user_id" => user.id})
+    end
+
+    test "the cap is checked before any sandbox row is allocated" do
+      user = insert_verified_user()
+      agent = insert_agent(user_id: user.id)
+      for _ <- 1..5, do: insert_sandbox(user_id: user.id, status: "ready")
+
+      before = Fountain.Quotas.active_sandbox_count(user.id)
+      assert {:error, _} = Conversations.start_conversation(%{"agent_id" => agent.id, "user_id" => user.id})
+
+      # A denial that still allocated would let a caller ratchet past the cap
+      # by retrying, which is the failure mode the cap exists to prevent.
+      assert Fountain.Quotas.active_sandbox_count(user.id) == before
+    end
+
+    test "one tenant at its cap does not block another" do
+      capped = insert_verified_user()
+      other = insert_verified_user()
+      for _ <- 1..5, do: insert_sandbox(user_id: capped.id, status: "ready")
+      agent = insert_agent(user_id: other.id)
+
+      stub(Horde.DynamicSupervisor, :start_child, fn _s, _spec -> {:ok, spawn(fn -> :ok end)} end)
+
+      assert {:ok, _} =
+               Conversations.start_conversation(%{"agent_id" => agent.id, "user_id" => other.id})
+    end
+
+    test "terminated sandboxes free capacity" do
+      user = insert_verified_user()
+      agent = insert_agent(user_id: user.id)
+      [first | _] = for _ <- 1..5, do: insert_sandbox(user_id: user.id, status: "ready")
+
+      assert {:error, _} =
+               Conversations.start_conversation(%{"agent_id" => agent.id, "user_id" => user.id})
+
+      {:ok, _} = Conversations.update_sandbox(first, %{status: "terminated"})
+      stub(Horde.DynamicSupervisor, :start_child, fn _s, _spec -> {:ok, spawn(fn -> :ok end)} end)
+
+      assert {:ok, _} =
+               Conversations.start_conversation(%{"agent_id" => agent.id, "user_id" => user.id})
+    end
+
     test "creates sandbox, conversation, and starts server", %{} do
       user = insert_verified_user()
       agent = insert_agent(user_id: user.id)

@@ -64,6 +64,19 @@ defmodule Fountain.Accounts.User do
     |> unique_constraint(:email)
   end
 
+  @doc """
+  Changeset for the per-tenant sandbox concurrency cap (ADR 0005).
+
+  Admin-only. Zero is valid and meaningful — it is the lever for cutting off an
+  abusive tenant without deleting their account.
+  """
+  def sandbox_limit_changeset(user, attrs) do
+    user
+    |> cast(attrs, [:max_concurrent_sandboxes])
+    |> validate_required([:max_concurrent_sandboxes])
+    |> validate_number(:max_concurrent_sandboxes, greater_than_or_equal_to: 0)
+  end
+
   @doc "Changeset for billing field updates (driven by Stripe webhooks)."
   def billing_changeset(user, attrs) do
     user

@@ -2,7 +2,7 @@ defmodule FountainWeb.AdminLive.Index do
   @moduledoc false
   use FountainWeb, :live_view
 
-  alias Fountain.{Accounts, Conversations}
+  alias Fountain.{Accounts, Conversations, Quotas}
 
   @impl true
   def mount(_params, _session, socket) do
@@ -11,7 +11,7 @@ defmodule FountainWeb.AdminLive.Index do
     {:ok,
      socket
      |> assign(:page_title, "Admin")
-     |> assign(:users, Accounts.list_users())
+     |> assign_users()
      |> assign(:sandboxes, Conversations.list_sandboxes_admin())}
   end
 
@@ -21,7 +21,7 @@ defmodule FountainWeb.AdminLive.Index do
 
     {:noreply,
      socket
-     |> assign(:users, Accounts.list_users())
+     |> assign_users()
      |> assign(:sandboxes, Conversations.list_sandboxes_admin())}
   end
 
@@ -32,14 +32,34 @@ defmodule FountainWeb.AdminLive.Index do
 
     case Accounts.update_user_role(user, new_role) do
       {:ok, _} ->
-        {:noreply,
-         socket
-         |> assign(:users, Accounts.list_users())
-         |> put_flash(:info, "Role updated")}
+        {:noreply, socket |> assign_users() |> put_flash(:info, "Role updated")}
 
       {:error, _} ->
         {:noreply, put_flash(socket, :error, "Failed to update role")}
     end
+  end
+
+  # The concurrency cap is the only lever for a noisy or abusive tenant
+  # (ADR 0005). Without this it is adjustable only with direct database access,
+  # which makes it useless in an incident.
+  @impl true
+  def handle_event("set_sandbox_limit", %{"user_id" => id, "limit" => raw}, socket) do
+    with {limit, ""} <- Integer.parse(String.trim(raw)),
+         user = Accounts.get_user!(id),
+         {:ok, _} <- Accounts.update_sandbox_limit(user, limit) do
+      {:noreply, socket |> assign_users() |> put_flash(:info, "Sandbox limit updated")}
+    else
+      _ -> {:noreply, put_flash(socket, :error, "Limit must be a whole number of 0 or more")}
+    end
+  end
+
+  defp assign_users(socket) do
+    users =
+      Enum.map(Accounts.list_users(), fn u ->
+        Map.put(u, :active_sandboxes, Quotas.active_sandbox_count(u.id))
+      end)
+
+    assign(socket, :users, users)
   end
 
   @impl true
@@ -58,6 +78,7 @@ defmodule FountainWeb.AdminLive.Index do
             <tr>
               <th class="px-4 py-2">Email</th>
               <th class="px-4 py-2">Role</th>
+              <th class="px-4 py-2">Sandboxes</th>
               <th class="px-4 py-2">Onboarding</th>
               <th class="px-4 py-2">Joined</th>
               <th class="px-4 py-2"></th>
@@ -76,6 +97,26 @@ defmodule FountainWeb.AdminLive.Index do
                 ]}>
                   {u.role}
                 </span>
+              </td>
+              <td class="px-4 py-2">
+                <form phx-submit="set_sandbox_limit" id={"sandbox-limit-#{u.id}"} class="flex items-center gap-1">
+                  <input type="hidden" name="user_id" value={u.id} />
+                  <span class={[
+                    "text-xs tabular-nums",
+                    if(u.active_sandboxes >= u.max_concurrent_sandboxes,
+                      do: "text-red-600 font-medium",
+                      else: "text-zinc-500"
+                    )
+                  ]}>{u.active_sandboxes} /</span>
+                  <input
+                    type="number"
+                    name="limit"
+                    min="0"
+                    value={u.max_concurrent_sandboxes}
+                    class="w-14 rounded border border-zinc-200 px-1 py-0.5 text-xs"
+                  />
+                  <button class="text-xs text-zinc-500 hover:text-zinc-900 underline">set</button>
+                </form>
               </td>
               <td class="px-4 py-2 text-zinc-500 text-xs">
                 {u.onboarding_state}

@@ -387,6 +387,19 @@ defmodule Fountain.Accounts do
     user |> Ecto.Changeset.change(role: role) |> Repo.update()
   end
 
+  @doc """
+  Set a user's concurrent-sandbox cap (ADR 0005). Admin-only.
+
+  Without this the cap is only adjustable with direct database access, which
+  makes it unusable in the two situations it exists for: raising it for a
+  trusted tenant, and dropping it to zero during abuse.
+  """
+  def update_sandbox_limit(%User{} = user, limit) do
+    user
+    |> User.sandbox_limit_changeset(%{max_concurrent_sandboxes: limit})
+    |> Repo.update()
+  end
+
   @doc false
   def hash_key(raw_key) when is_binary(raw_key) do
     :crypto.hash(:sha256, raw_key) |> Base.encode16(case: :lower)

@@ -168,10 +168,9 @@ defmodule FountainWeb.AdminLiveTest do
       admin = insert_admin()
       # Mark onboarding complete via direct Repo update
       now = DateTime.utc_now() |> DateTime.truncate(:second)
+
       {:ok, admin_with_date} =
-        Fountain.Repo.update(
-          Ecto.Changeset.change(admin, onboarding_completed_at: now)
-        )
+        Fountain.Repo.update(Ecto.Changeset.change(admin, onboarding_completed_at: now))
 
       conn = login_user(conn, admin_with_date)
       {:ok, _lv, html} = live(conn, ~p"/admin")
@@ -249,7 +248,82 @@ defmodule FountainWeb.AdminLiveTest do
       assert html =~ "running"
       assert html =~ "text-blue-800"
     end
+  end
 
+  describe "AdminLive.Index — sandbox concurrency cap" do
+    test "shows each user's active sandbox count against their cap", %{conn: conn} do
+      admin = insert_admin()
+      insert_sandbox(user_id: admin.id, status: "ready")
+      insert_sandbox(user_id: admin.id, status: "pending")
+
+      conn = login_user(conn, admin)
+      {:ok, _lv, html} = live(conn, ~p"/admin")
+
+      assert html =~ "Sandboxes"
+      assert html =~ "2 /"
+    end
+
+    test "admin can raise a user's cap", %{conn: conn} do
+      admin = insert_admin()
+      target = insert_verified_user()
+
+      conn = login_user(conn, admin)
+      {:ok, lv, _html} = live(conn, ~p"/admin")
+
+      lv
+      |> element("#sandbox-limit-#{target.id}")
+      |> render_submit(%{"user_id" => target.id, "limit" => "25"})
+
+      assert Fountain.Quotas.sandbox_limit(target.id) == 25
+      assert render(lv) =~ "Sandbox limit updated"
+    end
+
+    test "admin can drop a cap to zero to cut off an abusive tenant", %{conn: conn} do
+      admin = insert_admin()
+      target = insert_verified_user()
+
+      conn = login_user(conn, admin)
+      {:ok, lv, _html} = live(conn, ~p"/admin")
+
+      lv
+      |> element("#sandbox-limit-#{target.id}")
+      |> render_submit(%{"user_id" => target.id, "limit" => "0"})
+
+      assert Fountain.Quotas.sandbox_limit(target.id) == 0
+
+      assert {:error, {:sandbox_quota_exceeded, _}} =
+               Fountain.Quotas.check_sandbox_quota(target.id)
+    end
+
+    test "a negative cap is rejected", %{conn: conn} do
+      admin = insert_admin()
+      target = insert_verified_user()
+
+      conn = login_user(conn, admin)
+      {:ok, lv, _html} = live(conn, ~p"/admin")
+
+      lv
+      |> element("#sandbox-limit-#{target.id}")
+      |> render_submit(%{"user_id" => target.id, "limit" => "-1"})
+
+      assert Fountain.Quotas.sandbox_limit(target.id) == Fountain.Quotas.default_limit()
+      assert render(lv) =~ "whole number"
+    end
+
+    test "a non-numeric cap is rejected", %{conn: conn} do
+      admin = insert_admin()
+      target = insert_verified_user()
+
+      conn = login_user(conn, admin)
+      {:ok, lv, _html} = live(conn, ~p"/admin")
+
+      lv
+      |> element("#sandbox-limit-#{target.id}")
+      |> render_submit(%{"user_id" => target.id, "limit" => "lots"})
+
+      assert Fountain.Quotas.sandbox_limit(target.id) == Fountain.Quotas.default_limit()
+      assert render(lv) =~ "whole number"
+    end
   end
 end
 

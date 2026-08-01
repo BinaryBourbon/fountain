@@ -33,6 +33,22 @@ defmodule FountainWeb.FallbackController do
     |> json(%{error: "vault_not_allowed", message: "vault is not in the agent's allowed_vault_ids"})
   end
 
+  # Per-tenant sandbox concurrency cap (ADR 0005). 429 rather than 402: this is
+  # a rate/concurrency condition the caller can clear by terminating a
+  # conversation, not a billing state they have to resolve by paying.
+  def call(conn, {:error, {:sandbox_quota_exceeded, %{count: count, limit: limit}}}) do
+    conn
+    |> put_status(:too_many_requests)
+    |> json(%{
+      error: "sandbox_quota_exceeded",
+      message:
+        "You have #{count} of #{limit} concurrent sandboxes in use. " <>
+          "Terminate a conversation before starting another.",
+      active_sandboxes: count,
+      limit: limit
+    })
+  end
+
   def call(conn, {:error, reason}) when is_binary(reason) do
     conn
     |> put_status(:bad_request)
