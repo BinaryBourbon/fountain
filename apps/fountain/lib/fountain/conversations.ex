@@ -589,6 +589,7 @@ defmodule Fountain.Conversations do
     with %Agents.Agent{} = agent <- Agents.get_agent(agent_id, user_id) || {:error, :not_found},
          {:ok, runtime_module} <- Fountain.Runtimes.for_runtime(agent.runtime),
          {:ok, vault_id} <- resolve_vault_id(attrs["vault_id"], user_id, agent),
+         :ok <- Fountain.Quotas.check_sandbox_quota(user_id),
          {:ok, sandbox} <-
            create_sandbox(%{
              environment_id: agent.environment_id,
@@ -789,7 +790,11 @@ defmodule Fountain.Conversations do
   end
 
   defp create_fresh_sandbox_and_start(conv, agent, runtime_module, initial_prompt) do
-    with {:ok, new_sandbox} <-
+    # The sandbox being replaced is excluded: it is retired immediately below,
+    # so counting it would block a wake that leaves concurrency unchanged.
+    with :ok <-
+           Fountain.Quotas.check_sandbox_quota(conv.user_id, exclude: conv.sandbox_id),
+         {:ok, new_sandbox} <-
            create_sandbox(%{
              environment_id: agent.environment_id,
              sprite_name: "fountain-#{tenant_prefix(conv.user_id)}-#{short_id()}",

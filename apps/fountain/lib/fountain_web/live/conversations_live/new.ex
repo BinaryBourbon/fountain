@@ -46,6 +46,15 @@ defmodule FountainWeb.ConversationsLive.New do
       {:error, :vault_not_found} ->
         {:noreply, put_flash(socket, :error, "Vault not found")}
 
+      {:error, {:sandbox_quota_exceeded, %{count: count, limit: limit}}} ->
+        {:noreply,
+         put_flash(
+           socket,
+           :error,
+           "You have #{count} of #{limit} concurrent sandboxes in use. " <>
+             "Terminate a conversation before starting another."
+         )}
+
       {:error, reason} ->
         {:noreply, put_flash(socket, :error, "Failed: #{inspect(reason)}")}
     end

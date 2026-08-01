@@ -98,6 +98,58 @@ defmodule FountainWeb.ConversationControllerTest do
     end
   end
 
+  describe "sandbox concurrency cap" do
+    test "POST /api/conversations returns 429 at the cap", %{conn: conn, user: user, raw_key: raw_key} do
+      agent = insert_agent(user_id: user.id)
+
+      for _ <- 1..Fountain.Quotas.default_limit(),
+          do: insert_sandbox(user_id: user.id, status: "ready")
+
+      conn =
+        conn
+        |> authed_with_key(raw_key)
+        |> post_json("/api/conversations", %{"agent_id" => agent.id})
+
+      body = json_response(conn, 429)
+      assert body["error"] == "sandbox_quota_exceeded"
+      assert body["active_sandboxes"] == 5
+      assert body["limit"] == 5
+    end
+
+    test "POST /api/conversations succeeds below the cap", %{conn: conn, user: user, raw_key: raw_key} do
+      agent = insert_agent(user_id: user.id)
+      insert_sandbox(user_id: user.id, status: "ready")
+
+      stub(Horde.DynamicSupervisor, :start_child, fn _s, _spec -> {:ok, spawn(fn -> :ok end)} end)
+
+      conn =
+        conn
+        |> authed_with_key(raw_key)
+        |> post_json("/api/conversations", %{"agent_id" => agent.id})
+
+      assert json_response(conn, 201)
+    end
+
+    test "prompting a dormant conversation is capped too", %{conn: conn, user: user, raw_key: raw_key} do
+      # send_prompt on a dead GenServer wakes the conversation, which provisions
+      # a fresh sprite — so it has to be subject to the same cap, or the cap is
+      # trivially bypassed by prompting instead of creating.
+      conv = insert_conversation(user_id: user.id)
+      for _ <- 1..5, do: insert_sandbox(user_id: user.id, status: "ready")
+
+      stub(ConversationServer, :send_prompt, fn _id, _prompt, _images ->
+        {:error, {:sandbox_quota_exceeded, %{count: 5, limit: 5}}}
+      end)
+
+      conn =
+        conn
+        |> authed_with_key(raw_key)
+        |> post_json("/api/conversations/#{conv.id}/prompts", %{"prompt" => "hi"})
+
+      assert json_response(conn, 429)["error"] == "sandbox_quota_exceeded"
+    end
+  end
+
   describe "DELETE /api/conversations/:id" do
     test "deletes the conversation and returns 204", %{conn: conn, user: user, raw_key: raw_key} do
       conv = insert_conversation(user_id: user.id)
