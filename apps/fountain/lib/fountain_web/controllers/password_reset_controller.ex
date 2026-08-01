@@ -20,6 +20,13 @@ defmodule FountainWeb.PasswordResetController do
        [bucket: "password_reset", max: 5, window_ms: 3_600_000]
        when action in [:api_forgot]
 
+  # Submitting a reset was the one auth endpoint with no limit. The token is
+  # Phoenix.Token-signed so it is not practically guessable, but an unlimited
+  # endpoint that does bcrypt work on every call is a cheap way to burn CPU.
+  plug FountainWeb.Plugs.RateLimit,
+       [bucket: "password_reset_submit", max: 10, window_ms: 3_600_000]
+       when action in [:reset]
+
   ## HTML — "forgot password" form
 
   def forgot_form(conn, _params) do

@@ -111,6 +111,17 @@ metrics_port =
   end
 
 config :fountain, :metrics_port, metrics_port
+
+# CIDRs treated as proxies when resolving the client IP from X-Forwarded-For.
+# Only widen this to cover addresses that are genuinely proxies — anything
+# trusted here is stepped over, so an over-broad list lets a client spoof its
+# way past rate limiting.
+if proxies = System.get_env("TRUSTED_PROXIES") do
+  config :fountain,
+         :trusted_proxies,
+         proxies |> String.split(",", trim: true) |> Enum.map(&String.trim/1)
+end
+
 # Inference credentials are per-user (BYO, ADR 0008) and live in the
 # inference_credentials table — no platform-level env vars for them.
 

@@ -5,6 +5,22 @@ defmodule FountainWeb.Endpoint do
   # The session will be stored in the cookie and signed,
   # this means its contents can be read but not tampered with.
   # Set :encryption_salt if you would also like to encrypt it.
+  @doc """
+  CIDRs treated as proxies when walking X-Forwarded-For.
+
+  Defaults to the k3s pod and service networks plus loopback. Deliberately not
+  all of RFC1918: LAN clients reach this deployment directly, and trusting
+  192.168/16 would step over the very addresses being rate-limited.
+  """
+  def trusted_proxies do
+    Application.get_env(:fountain, :trusted_proxies, [
+      "10.42.0.0/16",
+      "10.43.0.0/16",
+      "127.0.0.1/32",
+      "::1/128"
+    ])
+  end
+
   @session_options [
     store: :cookie,
     key: "_fountain_key",
@@ -39,6 +55,15 @@ defmodule FountainWeb.Endpoint do
     param_key: "request_logger",
     cookie_key: "request_logger"
 
+  # Resolve the real client address before anything keys on it. Fountain sits
+  # behind Traefik, so conn.remote_ip is the ingress pod — which made every
+  # per-IP rate-limit bucket effectively global and every audit row attribute to
+  # the proxy.
+  #
+  # The forwarding header is only honoured for connections that actually came
+  # from a trusted proxy — see the plug's moduledoc for why that check cannot be
+  # left to RemoteIp.
+  plug FountainWeb.Plugs.ClientIp
   plug Plug.RequestId
   plug Plug.Telemetry, event_prefix: [:phoenix, :endpoint]
 
