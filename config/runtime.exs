@@ -40,16 +40,21 @@ config :fountain, FountainWeb.Endpoint,
 
 env = config_env()
 
+# The dev fallback below is derived from a constant committed to this repo, so it
+# must never be reachable in :prod. The guard is deliberately on config_env()
+# alone — gating it on `server?` too would hand that public key to every prod
+# process started without PHX_SERVER=true (release eval tasks, migrations, seeds,
+# a remote console), and any of those can create a tenant DEK.
 master_secrets_key =
-  case {System.get_env("MASTER_SECRETS_KEY"), env, server?} do
-    {nil, :prod, true} ->
+  case {System.get_env("MASTER_SECRETS_KEY"), env} do
+    {nil, :prod} ->
       raise "environment variable MASTER_SECRETS_KEY is missing (32 bytes, url-safe base64, no padding). " <>
               "Generate: openssl rand 32 | base64 | tr '+/' '-_' | tr -d '='"
 
-    {nil, _, _} ->
+    {nil, _} ->
       :crypto.hash(:sha256, "fountain:dev:master_secrets_key")
 
-    {encoded, _, _} ->
+    {encoded, _} ->
       case Base.url_decode64(encoded, padding: false) do
         {:ok, <<_::binary-32>> = key} ->
           key

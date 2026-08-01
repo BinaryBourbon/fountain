@@ -9,6 +9,15 @@ defmodule Fountain.Conversations.TurnImage do
 
   @valid_media_types ~w(image/png image/jpeg image/gif image/webp)
 
+  @doc """
+  Media types this endpoint is willing to store or serve.
+
+  Read at serve time as well as in `changeset/2`: rows reach this table via
+  `Conversations.insert_turn_images/2`, which uses `Repo.insert_all` against a
+  raw table name and therefore never runs the changeset.
+  """
+  def valid_media_types, do: @valid_media_types
+
   schema "turn_images" do
     field :position, :integer
     field :media_type, :string

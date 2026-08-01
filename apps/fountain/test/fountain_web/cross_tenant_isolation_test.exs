@@ -63,6 +63,121 @@ defmodule FountainWeb.CrossTenantIsolationTest do
     end
   end
 
+  # ── Turn images ────────────────────────────────────────────────────────────
+
+  describe "turn images" do
+    defp conv_with_image(user) do
+      agent = insert_agent(user_id: user.id)
+      conv = insert_conversation(user_id: user.id, agent: agent)
+      turn = insert_turn(conv)
+
+      {:ok, _} =
+        Fountain.Conversations.insert_turn_images(turn.id, [
+          %{media_type: "image/png", data: <<137, 80, 78, 71>>}
+        ])
+
+      {conv, turn}
+    end
+
+    test "GET /api/.../images/:position returns 404 for another user's image", %{conn: conn} do
+      {user_a, _user_b, _key_a, key_b} = two_users()
+      {conv_a, turn_a} = conv_with_image(user_a)
+
+      conn =
+        conn
+        |> authed_with_key(key_b)
+        |> get("/api/conversations/#{conv_a.id}/turns/#{turn_a.id}/images/0")
+
+      assert response(conn, 404)
+    end
+
+    test "session-authenticated route returns 404 for another user's image", %{conn: conn} do
+      {user_a, user_b, _key_a, _key_b} = two_users()
+      {conv_a, turn_a} = conv_with_image(user_a)
+
+      conn =
+        conn
+        |> login_user(user_b)
+        |> get("/conversations/#{conv_a.id}/turns/#{turn_a.id}/images/0")
+
+      assert response(conn, 404)
+    end
+
+    test "owner can still read their own image", %{conn: conn} do
+      {user_a, _user_b, key_a, _key_b} = two_users()
+      {conv_a, turn_a} = conv_with_image(user_a)
+
+      conn =
+        conn
+        |> authed_with_key(key_a)
+        |> get("/api/conversations/#{conv_a.id}/turns/#{turn_a.id}/images/0")
+
+      assert response(conn, 200) == <<137, 80, 78, 71>>
+      assert Plug.Conn.get_resp_header(conn, "content-type") |> hd() =~ "image/png"
+    end
+
+    test "a turn id from another conversation the caller owns is still rejected", %{conn: conn} do
+      {user_a, _user_b, key_a, _key_b} = two_users()
+      {conv_a, _turn_a} = conv_with_image(user_a)
+      {_conv_other, turn_other} = conv_with_image(user_a)
+
+      conn =
+        conn
+        |> authed_with_key(key_a)
+        |> get("/api/conversations/#{conv_a.id}/turns/#{turn_other.id}/images/0")
+
+      assert response(conn, 404)
+    end
+
+    test "an image stored with a non-image media type is not served", %{conn: conn} do
+      # insert_turn_images/2 goes through Repo.insert_all against a raw table
+      # name, so TurnImage.changeset/2 (and its allowlist) never runs — a
+      # hostile media_type can reach the table. Refuse it at serve time so it
+      # can never come back as active content on the app's origin.
+      {user_a, _user_b, key_a, _key_b} = two_users()
+      agent = insert_agent(user_id: user_a.id)
+      conv = insert_conversation(user_id: user_a.id, agent: agent)
+      turn = insert_turn(conv)
+
+      {:ok, _} =
+        Fountain.Conversations.insert_turn_images(turn.id, [
+          %{media_type: "text/html", data: "<script>alert(1)</script>"}
+        ])
+
+      conn =
+        conn
+        |> authed_with_key(key_a)
+        |> get("/api/conversations/#{conv.id}/turns/#{turn.id}/images/0")
+
+      assert response(conn, 404)
+    end
+
+    test "served images carry nosniff", %{conn: conn} do
+      {user_a, _user_b, key_a, _key_b} = two_users()
+      {conv_a, turn_a} = conv_with_image(user_a)
+
+      conn =
+        conn
+        |> authed_with_key(key_a)
+        |> get("/api/conversations/#{conv_a.id}/turns/#{turn_a.id}/images/0")
+
+      assert response(conn, 200)
+      assert Plug.Conn.get_resp_header(conn, "x-content-type-options") == ["nosniff"]
+    end
+
+    test "malformed ids 404 rather than raising", %{conn: conn} do
+      {user_a, _user_b, key_a, _key_b} = two_users()
+      {conv_a, _turn_a} = conv_with_image(user_a)
+
+      conn =
+        conn
+        |> authed_with_key(key_a)
+        |> get("/api/conversations/#{conv_a.id}/turns/not-a-uuid/images/0")
+
+      assert response(conn, 404)
+    end
+  end
+
   # ── Agents ─────────────────────────────────────────────────────────────────
 
   describe "agents" do

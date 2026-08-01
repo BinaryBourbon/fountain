@@ -381,8 +381,32 @@ defmodule Fountain.Conversations do
     )
   end
 
+  @doc """
+  Fetch a turn by conversation without tenant scoping.
+
+  Prefer `get_turn_by_conversation/3` anywhere the caller is reachable from a
+  user-facing surface.
+  """
   def get_turn_by_conversation(turn_id, conversation_id) do
     Repo.get_by(Turn, id: turn_id, conversation_id: conversation_id)
+  end
+
+  @doc """
+  Fetch a turn by conversation, scoped to the owning user.
+
+  Joins through the conversation so a turn belonging to another tenant is
+  indistinguishable from one that doesn't exist.
+  """
+  def get_turn_by_conversation(turn_id, conversation_id, user_id) when is_binary(user_id) do
+    Repo.one(
+      from t in Turn,
+        join: c in Conversation,
+        on: c.id == t.conversation_id,
+        where:
+          t.id == ^turn_id and t.conversation_id == ^conversation_id and
+            c.user_id == ^user_id,
+        select: t
+    )
   end
 
   def insert_turn_images(_turn_id, []), do: {:ok, []}
