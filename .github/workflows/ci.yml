@@ -91,6 +91,22 @@ jobs:
       - name: Security scan (sobelow)
         run: mix sobelow --config
 
+      - name: Set up Go
+        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version-file: cli/go.mod
+          cache-dependency-path: cli/go.sum
+
+      # The CLI had tests since launch that no workflow ever ran, so they gated
+      # neither a merge nor a release.
+      - name: CLI tests
+        working-directory: cli
+        run: go test ./...
+
+      - name: CLI vet
+        working-directory: cli
+        run: go vet ./...
+
       - name: Set up database
         run: mix ecto.create --quiet && mix ecto.migrate --quiet
 
