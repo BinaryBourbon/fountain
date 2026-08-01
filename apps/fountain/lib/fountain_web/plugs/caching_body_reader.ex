@@ -20,8 +20,23 @@ defmodule FountainWeb.CachingBodyReader do
           | {:more, binary(), Plug.Conn.t()}
           | {:error, term()}
   def read_body(conn, opts) do
-    {:ok, body, conn} = Plug.Conn.read_body(conn, opts)
-    conn = put_in(conn.assigns[:raw_body], body)
-    {:ok, body, conn}
+    # Every branch has to be passed through. This used to hard-match
+    # `{:ok, body, conn}`, so a request larger than the parser's read length —
+    # where `Plug.Conn.read_body/2` returns `{:more, ...}` — raised a MatchError
+    # and surfaced as a 500 on every endpoint, instead of the 413 that
+    # `Plug.Parsers` produces when it is told the body did not fit. An
+    # oversized upload is a client error and should read as one.
+    case Plug.Conn.read_body(conn, opts) do
+      {:ok, body, conn} ->
+        {:ok, body, put_in(conn.assigns[:raw_body], body)}
+
+      {:more, partial, conn} ->
+        # Deliberately not cached: a partial body would let the Stripe webhook
+        # verifier compute a signature over something that was never sent.
+        {:more, partial, conn}
+
+      {:error, _} = err ->
+        err
+    end
   end
 end

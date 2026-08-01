@@ -1078,8 +1078,23 @@ defmodule Fountain.Conversations.ConversationServer do
         started_at: now()
       })
 
-    # Store images in DB
-    {:ok, _} = Conversations.insert_turn_images(turn.id, images)
+    # Store images. A rejected image must not take the turn down with it: this
+    # used to hard-match {:ok, _}, which is why validation could not be added to
+    # the insert path without crashing the server mid-turn.
+    case Conversations.insert_turn_images(turn.id, images) do
+      {:ok, _count} ->
+        :ok
+
+      {:error, changeset} ->
+        # Log only. A `turn`/`started` stage event is what the LiveView uses to
+        # create a turn row, so publishing one here would invent a second turn.
+        Logger.warning(
+          "turn #{turn.id}: image rejected, continuing without it: " <>
+            inspect(changeset.errors)
+        )
+
+        :ok
+    end
 
     # On the first turn, asynchronously generate a short title for the sidebar.
     if turn.turn_number == 1 do

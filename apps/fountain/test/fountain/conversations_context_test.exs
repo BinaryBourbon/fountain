@@ -230,6 +230,7 @@ defmodule Fountain.ConversationsContextTest do
       # falls back to inserted_at when there are no turns or log events, so
       # this is the field that controls ordering for brand-new conversations.
       past = DateTime.add(DateTime.utc_now(), -3600, :second) |> DateTime.truncate(:second)
+
       Fountain.Repo.update_all(
         Ecto.Query.from(c in Conversation, where: c.id == ^c2.id),
         set: [inserted_at: past]
@@ -671,7 +672,8 @@ defmodule Fountain.ConversationsContextTest do
       assert count == 0
 
       # conv2's running turn should be untouched
-      assert Conversations.get_turn_by_conversation(running_in_conv2.id, conv2.id).status == "running"
+      assert Conversations.get_turn_by_conversation(running_in_conv2.id, conv2.id).status ==
+               "running"
     end
 
     test "updates running turns to interrupted status in db" do
@@ -1240,6 +1242,7 @@ defmodule Fountain.ConversationsContextTest do
 
       # Backdate c2 so c1 sorts first
       past = DateTime.add(DateTime.utc_now(), -3600, :second) |> DateTime.truncate(:second)
+
       Fountain.Repo.update_all(
         Ecto.Query.from(c in Conversation, where: c.id == ^c2.id),
         set: [updated_at: past]
@@ -1327,8 +1330,8 @@ defmodule Fountain.ConversationsContextTest do
   # insert_turn_images/2 and get_turn_image/2
   # ────────────────────────────────────────────────────────────────────────────
 
-  # Helper to insert a TurnImage via changeset (avoids the UUID-encoding issue in
-  # insert_turn_images/2 which uses Repo.insert_all with a raw table name string).
+  # Helper to insert a TurnImage via changeset directly, for tests that need a
+  # row without exercising insert_turn_images/2.
   defp insert_turn_image!(turn_id, position, media_type, data) do
     %Fountain.Conversations.TurnImage{}
     |> Fountain.Conversations.TurnImage.changeset(%{
@@ -1342,9 +1345,8 @@ defmodule Fountain.ConversationsContextTest do
   end
 
   describe "insert_turn_images/2" do
-    # The empty-list fast-path returns {:ok, []} without touching the DB, so no UUID issue.
-    test "returns {:ok, []} immediately when images list is empty" do
-      assert {:ok, []} = Conversations.insert_turn_images(Ecto.UUID.generate(), [])
+    test "returns {:ok, 0} immediately when images list is empty" do
+      assert {:ok, 0} = Conversations.insert_turn_images(Ecto.UUID.generate(), [])
     end
 
     test "inserts images and returns count" do
@@ -1353,6 +1355,47 @@ defmodule Fountain.ConversationsContextTest do
       turn = insert_turn(conv)
       images = [%{media_type: "image/png", data: <<1, 2, 3>>}]
       assert {:ok, 1} = Conversations.insert_turn_images(turn.id, images)
+    end
+
+    test "positions are assigned in order" do
+      user = insert_verified_user()
+      conv = insert_conversation(user_id: user.id)
+      turn = insert_turn(conv)
+
+      assert {:ok, 2} =
+               Conversations.insert_turn_images(turn.id, [
+                 %{media_type: "image/png", data: <<1>>},
+                 %{media_type: "image/jpeg", data: <<2>>}
+               ])
+
+      assert Conversations.get_turn_image(turn.id, 0).media_type == "image/png"
+      assert Conversations.get_turn_image(turn.id, 1).media_type == "image/jpeg"
+    end
+
+    test "a disallowed media type is refused instead of stored" do
+      # This used to go through Repo.insert_all against a raw table name, so the
+      # schema's allowlist never ran and the schema described validation that
+      # nothing performed.
+      user = insert_verified_user()
+      conv = insert_conversation(user_id: user.id)
+      turn = insert_turn(conv)
+
+      assert {:error, changeset} =
+               Conversations.insert_turn_images(turn.id, [
+                 %{media_type: "text/html", data: "<script>alert(1)</script>"}
+               ])
+
+      assert {"is invalid", _} = changeset.errors[:media_type]
+      assert Conversations.get_turn_image(turn.id, 0) == nil
+    end
+
+    test "an unknown turn is refused rather than orphaning a row" do
+      assert {:error, changeset} =
+               Conversations.insert_turn_images(Ecto.UUID.generate(), [
+                 %{media_type: "image/png", data: <<1>>}
+               ])
+
+      refute changeset.valid? and changeset.errors == []
     end
   end
 
@@ -1475,6 +1518,7 @@ defmodule Fountain.ConversationsContextTest do
     test "returns {:ok, conv} creating fresh sandbox when sandbox is pending (not ready)" do
       user = insert_verified_user()
       agent = insert_agent(user_id: user.id)
+
       # sandbox remains "pending" (not "ready"), so maybe_reuse_sandbox hits the _ -> :create_new branch
       sandbox = insert_sandbox(user_id: user.id)
       conv = insert_conversation(user_id: user.id, agent: agent, sandbox: sandbox, status: "idle")
@@ -1565,7 +1609,9 @@ defmodule Fountain.ConversationsContextTest do
     test "is refused once the tenant is at its concurrent-sandbox cap" do
       user = insert_verified_user()
       agent = insert_agent(user_id: user.id)
-      for _ <- 1..Fountain.Quotas.default_limit(), do: insert_sandbox(user_id: user.id, status: "ready")
+
+      for _ <- 1..Fountain.Quotas.default_limit(),
+          do: insert_sandbox(user_id: user.id, status: "ready")
 
       assert {:error, {:sandbox_quota_exceeded, %{count: 5, limit: 5}}} =
                Conversations.start_conversation(%{"agent_id" => agent.id, "user_id" => user.id})
@@ -1577,7 +1623,9 @@ defmodule Fountain.ConversationsContextTest do
       for _ <- 1..5, do: insert_sandbox(user_id: user.id, status: "ready")
 
       before = Fountain.Quotas.active_sandbox_count(user.id)
-      assert {:error, _} = Conversations.start_conversation(%{"agent_id" => agent.id, "user_id" => user.id})
+
+      assert {:error, _} =
+               Conversations.start_conversation(%{"agent_id" => agent.id, "user_id" => user.id})
 
       # A denial that still allocated would let a caller ratchet past the cap
       # by retrying, which is the failure mode the cap exists to prevent.
@@ -1654,7 +1702,9 @@ defmodule Fountain.ConversationsContextTest do
       user = insert_verified_user()
       agent = insert_agent(user_id: user.id)
 
-      stub(Horde.DynamicSupervisor, :start_child, fn _sup, _spec -> {:ok, spawn(fn -> :ok end)} end)
+      stub(Horde.DynamicSupervisor, :start_child, fn _sup, _spec ->
+        {:ok, spawn(fn -> :ok end)}
+      end)
 
       attrs = %{"agent_id" => agent.id, "user_id" => user.id, "vault_id" => ""}
       assert {:ok, conv} = Conversations.start_conversation(attrs)
@@ -1666,7 +1716,9 @@ defmodule Fountain.ConversationsContextTest do
       agent = insert_agent(user_id: user.id)
       vault = insert_vault(user_id: user.id)
 
-      stub(Horde.DynamicSupervisor, :start_child, fn _sup, _spec -> {:ok, spawn(fn -> :ok end)} end)
+      stub(Horde.DynamicSupervisor, :start_child, fn _sup, _spec ->
+        {:ok, spawn(fn -> :ok end)}
+      end)
 
       attrs = %{"agent_id" => agent.id, "user_id" => user.id, "vault_id" => vault.id}
       assert {:ok, conv} = Conversations.start_conversation(attrs)
@@ -1678,7 +1730,9 @@ defmodule Fountain.ConversationsContextTest do
       vault = insert_vault(user_id: user.id)
       agent = insert_agent(user_id: user.id, allowed_vault_ids: [vault.id])
 
-      stub(Horde.DynamicSupervisor, :start_child, fn _sup, _spec -> {:ok, spawn(fn -> :ok end)} end)
+      stub(Horde.DynamicSupervisor, :start_child, fn _sup, _spec ->
+        {:ok, spawn(fn -> :ok end)}
+      end)
 
       attrs = %{"agent_id" => agent.id, "user_id" => user.id, "vault_id" => vault.id}
       assert {:ok, conv} = Conversations.start_conversation(attrs)
@@ -1708,7 +1762,9 @@ defmodule Fountain.ConversationsContextTest do
       user = insert_verified_user()
       agent = insert_agent(user_id: user.id, allowed_vault_ids: [])
 
-      stub(Horde.DynamicSupervisor, :start_child, fn _sup, _spec -> {:ok, spawn(fn -> :ok end)} end)
+      stub(Horde.DynamicSupervisor, :start_child, fn _sup, _spec ->
+        {:ok, spawn(fn -> :ok end)}
+      end)
 
       attrs = %{"agent_id" => agent.id, "user_id" => user.id}
       assert {:ok, conv} = Conversations.start_conversation(attrs)
@@ -1816,7 +1872,12 @@ defmodule Fountain.ConversationsContextTest do
       turn = insert_turn(conv)
 
       now = DateTime.utc_now() |> DateTime.truncate(:second)
-      for {mt, data, pos} <- [{"image/png", <<10>>, 0}, {"image/jpeg", <<20>>, 1}, {"image/gif", <<30>>, 2}] do
+
+      for {mt, data, pos} <- [
+            {"image/png", <<10>>, 0},
+            {"image/jpeg", <<20>>, 1},
+            {"image/gif", <<30>>, 2}
+          ] do
         %Fountain.Conversations.TurnImage{}
         |> Fountain.Conversations.TurnImage.changeset(%{
           turn_id: turn.id,
@@ -1863,10 +1924,11 @@ defmodule Fountain.ConversationsContextTest do
     test "to_atom_map with an unknown string key does not crash and returns the string as fallback" do
       # \"xyzquuxfoo_novel_key_never_an_atom\" is not an existing Elixir atom,
       # so safe_to_existing_atom triggers its rescue clause and returns the string key.
-      result = Fountain.Factory.to_atom_map(%{
-        "sprite_name" => "test-sprite",
-        "xyzquuxfoo_novel_key_never_an_atom" => "ignored_value"
-      })
+      result =
+        Fountain.Factory.to_atom_map(%{
+          "sprite_name" => "test-sprite",
+          "xyzquuxfoo_novel_key_never_an_atom" => "ignored_value"
+        })
 
       assert Map.get(result, :sprite_name) == "test-sprite"
       # The unknown key is preserved as a string (fallback)
@@ -1931,6 +1993,7 @@ defmodule Fountain.ConversationsContextTest do
       conv = insert_conversation(user_id: user.id)
 
       [result] = Conversations.list_conversations(user.id)
+
       assert DateTime.compare(
                result.last_active_at,
                DateTime.from_naive!(result.inserted_at, "Etc/UTC")
@@ -1945,7 +2008,11 @@ defmodule Fountain.ConversationsContextTest do
       insert_log_event(conv, kind: "output", stream: "stdout", inserted_at: later)
 
       [result] = Conversations.list_conversations(user.id)
-      assert DateTime.compare(result.last_active_at, DateTime.from_naive!(conv.inserted_at, "Etc/UTC")) == :gt
+
+      assert DateTime.compare(
+               result.last_active_at,
+               DateTime.from_naive!(conv.inserted_at, "Etc/UTC")
+             ) == :gt
     end
 
     test "stage events (reconnects) do NOT advance last_active_at" do
