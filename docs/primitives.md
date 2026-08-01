@@ -95,7 +95,9 @@ A **Conversation** is a running session of an Agent inside a sandboxed VM. It st
 2. Fountain resolves the full env-var set and spawns a Sprites sandbox
 3. The agent runs; log events stream in real time over SSE (`GET /api/conversations/:id/stream`)
 4. Follow-up prompts go to `POST /api/conversations/:id/prompts`; a running turn can be interrupted (`POST .../interrupt`) and the whole conversation ended early (`POST .../terminate`)
-5. The sandbox exits when the conversation terminates or a timeout hits
+5. The sandbox exits when the conversation terminates, or when it is reclaimed for being idle (default 60 minutes with no turn activity) or for reaching its maximum lifetime (default 24 hours)
+
+Reclaiming ends the **sandbox**, not the conversation. The conversation stays resumable: the next prompt provisions a fresh sandbox and the runtime resumes the same session, so history is preserved and the only cost is the provisioning wait. Self-hosters can widen or disable both bounds with `SANDBOX_IDLE_TIMEOUT_MINUTES` and `SANDBOX_MAX_LIFETIME_HOURS` (`0` disables).
 
 ### Status lifecycle
 

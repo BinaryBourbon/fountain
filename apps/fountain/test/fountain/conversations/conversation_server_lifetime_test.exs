@@ -1,0 +1,203 @@
+defmodule Fountain.Conversations.ConversationServerLifetimeTest do
+  @moduledoc """
+  A live ConversationServer reclaiming its own sandbox.
+
+  The bound is checked on a one-minute timer, so these send `:lifecycle_check`
+  directly rather than waiting for it — the timer's only job is to call the
+  same code path.
+  """
+
+  use Fountain.ConversationServerCase
+
+  alias Fountain.Conversations.Lifecycle
+
+  defp with_bounds(pairs, fun) do
+    previous = Enum.map(pairs, fn {k, _} -> {k, Application.get_env(:fountain, k)} end)
+    Enum.each(pairs, fn {k, v} -> Application.put_env(:fountain, k, v) end)
+
+    try do
+      fun.()
+    after
+      Enum.each(previous, fn {k, v} -> Application.put_env(:fountain, k, v) end)
+    end
+  end
+
+  # These start from a `ready` sandbox, which routes the server down the
+  # reattach path rather than a fresh provision. The shared harness only covers
+  # provisioning, so the two reattach-specific calls are stubbed here.
+  defp stub_reattach do
+    sprite = stub_happy_sprite()
+    stub(Sprites, :get_sprite, fn _client, _name -> {:ok, %{}} end)
+    stub(Sprites, :sprite, fn _client, _name -> sprite end)
+    sprite
+  end
+
+  defp aged_conversation(minutes) do
+    user = insert_verified_user()
+    agent = insert_agent(user_id: user.id)
+    sandbox = insert_sandbox(user_id: user.id, status: "ready")
+
+    ts = DateTime.utc_now() |> DateTime.add(-minutes * 60, :second) |> DateTime.truncate(:second)
+
+    Fountain.Repo.update_all(
+      from(s in Fountain.Conversations.Sandbox, where: s.id == ^sandbox.id),
+      set: [inserted_at: ts]
+    )
+
+    conv =
+      insert_conversation(user_id: user.id, agent: agent, sandbox: sandbox, status: "idle")
+
+    {conv, Fountain.Repo.reload(sandbox)}
+  end
+
+  describe "idle timeout" do
+    test "an idle server tears down its sandbox and stops" do
+      {conv, sandbox} = aged_conversation(180)
+      stub_reattach()
+
+      test = self()
+      stub(Sprites, :destroy, fn _sprite -> send(test, :destroyed) && :ok end)
+
+      with_bounds([sandbox_idle_timeout_minutes: 60, sandbox_max_lifetime_hours: 24], fn ->
+        {pid, ref, :alive} = start_server(conv)
+
+        # last_activity_at is set at init, so age it to look abandoned.
+        :sys.replace_state(pid, fn state ->
+          %{state | last_activity_at: DateTime.add(DateTime.utc_now(), -7200, :second)}
+        end)
+
+        send(pid, :lifecycle_check)
+        assert :normal = assert_stopped(ref)
+      end)
+
+      assert_received :destroyed
+      assert Fountain.Repo.reload(sandbox).status == "terminated"
+    end
+
+    test "the conversation stays resumable" do
+      # The whole design rests on this. assert_resumable/1 refuses terminated,
+      # so if reclaiming marked the conversation the user would lose access to
+      # their own history permanently — a cost control turned into data loss.
+      {conv, _sandbox} = aged_conversation(180)
+      stub_reattach()
+
+      with_bounds([sandbox_idle_timeout_minutes: 60, sandbox_max_lifetime_hours: 24], fn ->
+        {pid, ref, :alive} = start_server(conv)
+
+        :sys.replace_state(pid, fn state ->
+          %{state | last_activity_at: DateTime.add(DateTime.utc_now(), -7200, :second)}
+        end)
+
+        send(pid, :lifecycle_check)
+        assert_stopped(ref)
+      end)
+
+      assert Fountain.Repo.reload(conv).status == "idle"
+    end
+
+    test "a recently active server is left running" do
+      {conv, sandbox} = aged_conversation(180)
+      stub_reattach()
+
+      with_bounds([sandbox_idle_timeout_minutes: 60, sandbox_max_lifetime_hours: 999], fn ->
+        {pid, _ref, :alive} = start_server(conv)
+
+        send(pid, :lifecycle_check)
+        # A synchronous call after the cast proves it processed the message and
+        # is still alive.
+        assert is_map(:sys.get_state(pid))
+
+        GenServer.stop(pid)
+      end)
+
+      assert Fountain.Repo.reload(sandbox).status == "ready"
+    end
+
+    test "bounds disabled means the server never reclaims" do
+      {conv, sandbox} = aged_conversation(60 * 24 * 83)
+      stub_reattach()
+
+      with_bounds([sandbox_idle_timeout_minutes: 0, sandbox_max_lifetime_hours: 0], fn ->
+        {pid, _ref, :alive} = start_server(conv)
+
+        :sys.replace_state(pid, fn state ->
+          %{state | last_activity_at: DateTime.add(DateTime.utc_now(), -99_999_999, :second)}
+        end)
+
+        send(pid, :lifecycle_check)
+        assert is_map(:sys.get_state(pid))
+
+        GenServer.stop(pid)
+      end)
+
+      assert Fountain.Repo.reload(sandbox).status == "ready"
+    end
+  end
+
+  describe "max lifetime" do
+    test "an old sandbox is reclaimed even with recent activity" do
+      {conv, sandbox} = aged_conversation(60 * 48)
+      stub_reattach()
+
+      with_bounds([sandbox_idle_timeout_minutes: 0, sandbox_max_lifetime_hours: 24], fn ->
+        {pid, ref, :alive} = start_server(conv)
+
+        send(pid, :lifecycle_check)
+        assert :normal = assert_stopped(ref)
+      end)
+
+      assert Fountain.Repo.reload(sandbox).status == "terminated"
+    end
+
+    test "the ceiling is dated from the sandbox row, not from server start" do
+      # Otherwise every restart, reattach and deploy would reset the ceiling and
+      # a long-lived sandbox would never reach it.
+      {conv, sandbox} = aged_conversation(60 * 48)
+      stub_reattach()
+
+      with_bounds([sandbox_idle_timeout_minutes: 0, sandbox_max_lifetime_hours: 24], fn ->
+        {pid, ref, :alive} = start_server(conv)
+
+        assert %{sandbox_started_at: started} = :sys.get_state(pid)
+        assert DateTime.compare(started, sandbox.inserted_at) == :eq
+
+        send(pid, :lifecycle_check)
+        assert_stopped(ref)
+      end)
+    end
+  end
+
+  describe "before a sprite exists" do
+    test "nothing is reclaimed while provisioning is still in flight" do
+      # sandbox_started_at is nil until the sprite is up. Reclaiming here would
+      # fight the provisioner; the reaper's stuck-row pass owns this case.
+      {conv, _sandbox} = aged_conversation(60 * 24)
+      stub_reattach()
+      stub(Sprites, :get_sprite, fn _client, _name -> {:error, :not_found} end)
+
+      with_bounds([sandbox_idle_timeout_minutes: 1, sandbox_max_lifetime_hours: 1], fn ->
+        {pid, ref, settled} = start_server(conv)
+
+        if settled == :alive do
+          assert %{sandbox_started_at: nil} = :sys.get_state(pid)
+          send(pid, :lifecycle_check)
+          assert is_map(:sys.get_state(pid))
+          GenServer.stop(pid)
+        else
+          # A provision failure stops the server on its own, which is fine —
+          # the point is that the lifecycle check did not do it.
+          assert_stopped(ref)
+        end
+      end)
+    end
+  end
+
+  describe "the reclaim message" do
+    test "explains itself in terms the user can act on" do
+      with_bounds([sandbox_idle_timeout_minutes: 90, sandbox_max_lifetime_hours: 6], fn ->
+        assert Lifecycle.explain(:idle) =~ "90 minutes idle"
+        assert Lifecycle.explain(:max_lifetime) =~ "6 hour"
+      end)
+    end
+  end
+end

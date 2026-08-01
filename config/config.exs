@@ -29,6 +29,15 @@ config :fountain,
   registration_enabled: true,
   registration_allowed_email_domains: []
 
+# Sandbox lifetime bounds. A sandbox used to live until something explicitly
+# terminated it; production had one idle for 83 days. Reclaiming only tears down
+# the sandbox — the conversation stays resumable and the next prompt provisions
+# a fresh one — so the cost of being wrong here is a re-provision, not lost
+# work. Set either to 0 to disable. See Fountain.Conversations.Lifecycle.
+config :fountain,
+  sandbox_idle_timeout_minutes: 60,
+  sandbox_max_lifetime_hours: 24
+
 config :fountain,
   ecto_repos: [Fountain.Repo],
   generators: [timestamp_type: :utc_datetime, binary_id: true]
