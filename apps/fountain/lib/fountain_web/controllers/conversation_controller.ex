@@ -302,7 +302,17 @@ defmodule FountainWeb.ConversationController do
     ]
   )
 
-  @heartbeat_ms 15_000
+  # Both read from application env so the loop can be driven at test speed.
+  # Waiting 15s for a heartbeat and 60s for the idle exit is why none of this
+  # had tests: the timings are the behaviour, and the behaviour was unreachable.
+  @default_heartbeat_ms 15_000
+  @default_idle_timeout_ms 60_000
+
+  defp heartbeat_ms,
+    do: Application.get_env(:fountain, :sse_heartbeat_ms, @default_heartbeat_ms)
+
+  defp idle_timeout_ms,
+    do: Application.get_env(:fountain, :sse_idle_timeout_ms, @default_idle_timeout_ms)
 
   def stream(conn, %{"conversation_id" => id} = params) do
     user = conn.assigns.current_user
@@ -336,7 +346,7 @@ defmodule FountainWeb.ConversationController do
         {conn, last_id} = replay(conn, id, last_event_id, streams)
 
         if wait? do
-          Process.send_after(self(), :heartbeat, @heartbeat_ms)
+          Process.send_after(self(), :heartbeat, heartbeat_ms())
           sse_loop(conn, last_id, streams)
         else
           # `?wait=false` → close immediately after replay. Useful when
@@ -481,14 +491,14 @@ defmodule FountainWeb.ConversationController do
       :heartbeat ->
         case Plug.Conn.chunk(conn, ": heartbeat\n\n") do
           {:ok, conn} ->
-            Process.send_after(self(), :heartbeat, @heartbeat_ms)
+            Process.send_after(self(), :heartbeat, heartbeat_ms())
             sse_loop(conn, last_id, streams)
 
           {:error, _} ->
             conn
         end
     after
-      60_000 ->
+      idle_timeout_ms() ->
         # Long quiet — exit cleanly so the client reconnects.
         conn
     end
