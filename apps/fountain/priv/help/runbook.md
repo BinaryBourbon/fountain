@@ -120,6 +120,51 @@ psql "$DATABASE_URL" -c \
 psql "$DATABASE_URL" -c "VACUUM ANALYZE audit_events"
 ```
 
+## What you have when it breaks
+
+**Metrics.** The app exposes Prometheus metrics on port 9568 (`FountainWeb.MetricsPlug`),
+scraped every 30s by the cluster's kube-prometheus-stack and queryable in Grafana.
+Deliberately *not* on the public endpoint — the IngressRoute matches on `Host`
+with no path predicate, so anything mounted there is world-readable.
+
+Useful series: `phoenix_router_dispatch_stop_count` (request rate, by route,
+method and status), `phoenix_router_dispatch_stop_duration_bucket` (latency),
+`phoenix_router_dispatch_exception_count` (unhandled errors),
+`fountain_repo_query_queue_time_bucket` (connection-pool saturation),
+`fountain_provision_stop_count` / `_exception_count` (sandbox provisioning).
+
+```bash
+kubectl port-forward -n fountain svc/fountain 9568:9568
+curl -s localhost:9568/metrics | head -40
+```
+
+**Logs.** Alloy ships all pod logs to Loki; query `{namespace="fountain"}` in
+Grafana. Phoenix request logging is on — it was disabled in `config/prod.exs`,
+which meant production kept no record of HTTP requests at all. Set
+`PHOENIX_REQUEST_LOG=false` on the Deployment to mute it without a code change.
+
+**Alerts.** `k8s/prometheusrule.yaml` routes through Alertmanager to ntfy
+(warning = priority 3, critical = priority 4). Covers backup staleness and
+failure, metrics target down, 5xx rate, unhandled exceptions, DB pool
+saturation, and provisioning failures.
+
+```bash
+kubectl get prometheusrule -n fountain
+# currently firing:
+kubectl port-forward -n monitoring svc/kube-prometheus-stack-prometheus 9090:9090
+curl -s localhost:9090/api/v1/alerts | jq '.data.alerts[] | select(.labels.namespace=="fountain")'
+```
+
+**Traces.** Instrumented (`Fountain.Telemetry` spans, `traceparent` propagated
+into sprites) but exported nowhere: `OTEL_TRACES_EXPORTER=none` on the
+Deployment, because there is no Tempo/Jaeger/collector in the cluster. Turning
+it on without one makes the exporter retry `localhost:4318` per span and flood
+the logs. Stand up a collector first.
+
+**Error tracking.** Still none — no Sentry/GlitchTip. Exceptions reach the logs
+and the `phoenix_router_dispatch_exception_count` counter, but there is no
+grouping, no stack-trace history, and no per-release regression view.
+
 ## Postgres backup + restore
 
 A `fountain-pg-backup` CronJob (`k8s/backup-cronjob.yaml`) takes a compressed

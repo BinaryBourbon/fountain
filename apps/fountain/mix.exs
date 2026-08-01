@@ -38,6 +38,7 @@ defmodule Fountain.MixProject do
       {:postgrex, ">= 0.0.0"},
       {:phoenix_live_dashboard, "~> 0.8.3"},
       {:telemetry_metrics, "~> 1.0"},
+      {:telemetry_metrics_prometheus_core, "~> 1.2"},
       {:telemetry_poller, "~> 1.0"},
       {:jason, "~> 1.2"},
       {:earmark, "~> 1.4"},

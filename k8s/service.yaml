@@ -5,6 +5,11 @@ metadata:
   namespace: fountain
   labels:
     app: fountain
+    # Distinguishes this Service from fountain-headless, which shares the
+    # `app: fountain` label but exposes only the Erlang distribution ports.
+    # The ServiceMonitor selects on this so it can't bind a target with no
+    # metrics port.
+    monitoring: fountain-web
 spec:
   type: ClusterIP
   selector:
@@ -13,6 +18,12 @@ spec:
     - name: http
       port: 80
       targetPort: 4000
+    # Prometheus scrape target. Exposed on the Service so the ServiceMonitor can
+    # reach it, but deliberately absent from the IngressRoute — that matches on
+    # Host with no path predicate, so anything on the public endpoint is public.
+    - name: metrics
+      port: 9568
+      targetPort: metrics
 ---
 # Headless service (clusterIP: None) — DNS returns one A record per pod IP
 # instead of a single VIP. libcluster's DNSPoll strategy queries this name

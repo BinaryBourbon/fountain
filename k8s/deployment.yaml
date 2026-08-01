@@ -50,6 +50,10 @@ spec:
               containerPort: 4369
             - name: erldist
               containerPort: 9100
+            # Prometheus scrape endpoint (FountainWeb.MetricsPlug), served by a
+            # separate Bandit listener so it never rides the public endpoint.
+            - name: metrics
+              containerPort: 9568
           env:
             # --- Erlang clustering (required for >1 replica) ---
             # Pod IP via the downward API; RELEASE_NODE interpolates it
