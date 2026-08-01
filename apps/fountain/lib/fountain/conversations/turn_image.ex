@@ -28,9 +28,14 @@ defmodule Fountain.Conversations.TurnImage do
 
   def changeset(image, attrs) do
     image
-    |> cast(attrs, [:position, :media_type, :data, :turn_id])
+    |> cast(attrs, [:position, :media_type, :data, :turn_id, :inserted_at])
     |> validate_required([:position, :media_type, :data, :turn_id])
     |> validate_inclusion(:media_type, @valid_media_types)
+    |> validate_number(:position, greater_than_or_equal_to: 0)
     |> unique_constraint([:turn_id, :position])
+    # Without this a missing turn raises Ecto.ConstraintError instead of
+    # returning a changeset, which would crash the ConversationServer — the
+    # exact failure mode that kept validation out of this path.
+    |> foreign_key_constraint(:turn_id)
   end
 end

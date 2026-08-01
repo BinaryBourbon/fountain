@@ -529,27 +529,41 @@ defmodule Fountain.Conversations do
     )
   end
 
-  def insert_turn_images(_turn_id, []), do: {:ok, []}
+  def insert_turn_images(_turn_id, []), do: {:ok, 0}
 
+  @doc """
+  Store a turn's images.
+
+  Goes through `TurnImage.changeset/2` rather than `Repo.insert_all` against a
+  raw table name. The old path skipped the schema entirely, so the media-type
+  allowlist, the required fields and the `(turn_id, position)` unique constraint
+  never ran — the schema described validation that nothing performed, and a
+  client could store an arbitrary media type. Volume here is a handful of rows
+  per turn, so there was never a bulk-insert win to protect.
+
+  Returns `{:ok, count}` or `{:error, changeset}`. Both are handled by the
+  caller; a rejected image must not take a turn down with it.
+  """
   def insert_turn_images(turn_id, images) do
     now = DateTime.utc_now() |> DateTime.truncate(:second)
 
-    rows =
-      images
-      |> Enum.with_index()
-      |> Enum.map(fn {%{media_type: mt, data: data}, idx} ->
-        %{
-          id: Ecto.UUID.dump!(Ecto.UUID.generate()),
-          turn_id: Ecto.UUID.dump!(turn_id),
+    images
+    |> Enum.with_index()
+    |> Enum.reduce_while({:ok, 0}, fn {%{media_type: mt, data: data}, idx}, {:ok, count} ->
+      changeset =
+        TurnImage.changeset(%TurnImage{}, %{
+          turn_id: turn_id,
           position: idx,
           media_type: mt,
           data: data,
           inserted_at: now
-        }
-      end)
+        })
 
-    {count, _} = Repo.insert_all("turn_images", rows)
-    {:ok, count}
+      case Repo.insert(changeset) do
+        {:ok, _} -> {:cont, {:ok, count + 1}}
+        {:error, cs} -> {:halt, {:error, cs}}
+      end
+    end)
   end
 
   def get_turn_image(turn_id, position) do

@@ -71,7 +71,7 @@ defmodule FountainWeb.ConversationController do
       "Creates a sandbox + conversation pair, starts the runtime in a fresh sprite, " <>
         "and (if `prompt` is supplied) sends it as turn 1. " <>
         "Pass `X-Fountain-Parent-Conversation-Id` header to record which conversation spawned this one. " <>
-          "Legacy `X-AoD-Parent-Conversation-Id` is still accepted for sprites provisioned before the rename.",
+        "Legacy `X-AoD-Parent-Conversation-Id` is still accepted for sprites provisioned before the rename.",
     request_body: {"Conversation attrs", "application/json", Schemas.ConversationCreateRequest},
     responses: [
       created: {"Conversation", "application/json", Schemas.ConversationResponse},
@@ -91,8 +91,13 @@ defmodule FountainWeb.ConversationController do
 
   def create(conn, params) do
     user = conn.assigns.current_user
-    images = decode_images(params["images"])
 
+    with {:ok, images} <- decode_images(params["images"]) do
+      create_with_images(conn, params, user, images)
+    end
+  end
+
+  defp create_with_images(conn, params, user, images) do
     parent_header =
       List.first(get_req_header(conn, "x-fountain-parent-conversation-id")) ||
         List.first(get_req_header(conn, "x-aod-parent-conversation-id"))
@@ -156,8 +161,13 @@ defmodule FountainWeb.ConversationController do
 
   def prompt(conn, %{"conversation_id" => id, "prompt" => prompt} = params) do
     user = conn.assigns.current_user
-    images = decode_images(params["images"])
 
+    with {:ok, images} <- decode_images(params["images"]) do
+      do_prompt(conn, id, prompt, user, images)
+    end
+  end
+
+  defp do_prompt(conn, id, prompt, user, images) do
     case Conversations.get_conversation(id, user.id) do
       nil ->
         {:error, :not_found}
@@ -353,21 +363,69 @@ defmodule FountainWeb.ConversationController do
     s |> String.split(",", trim: true) |> Enum.map(&String.trim/1)
   end
 
-  defp decode_images(nil), do: []
-  defp decode_images([]), do: []
+  @max_image_bytes 10 * 1024 * 1024
+
+  @doc false
+  # Exposed for tests: a body large enough to exercise the size guard through
+  # HTTP is rejected by the body parser first, so the guard itself would
+  # otherwise be untestable.
+  def decode_images_for_test(images), do: decode_images(images)
+
+  # Validates before anything is stored, and returns an error the caller can
+  # turn into a 400. Previously this decoded with `Base.decode64!` and raised a
+  # bare ArgumentError past the size limit — both surfaced as a 500, telling a
+  # client with a malformed request that the server was broken. The media type
+  # was not checked at all, so a client could store an arbitrary one.
+  defp decode_images(nil), do: {:ok, []}
+  defp decode_images([]), do: {:ok, []}
 
   defp decode_images(images) when is_list(images) do
-    Enum.map(images, fn img ->
-      b64 = img["data"] || img[:data]
-      mt = img["media_type"] || img[:media_type]
-      data = Base.decode64!(b64)
-
-      if byte_size(data) > 10 * 1024 * 1024 do
-        raise ArgumentError, "Image exceeds 10MB limit"
+    Enum.reduce_while(images, {:ok, []}, fn img, {:ok, acc} ->
+      case decode_image(img) do
+        {:ok, decoded} -> {:cont, {:ok, acc ++ [decoded]}}
+        {:error, _} = err -> {:halt, err}
       end
-
-      %{media_type: mt, data: data}
     end)
+  end
+
+  defp decode_images(_), do: {:error, "images must be a list"}
+
+  defp decode_image(img) when is_map(img) do
+    b64 = img["data"] || img[:data]
+    mt = img["media_type"] || img[:media_type]
+
+    with :ok <- validate_media_type(mt),
+         {:ok, data} <- decode_base64(b64),
+         :ok <- validate_size(data) do
+      {:ok, %{media_type: mt, data: data}}
+    end
+  end
+
+  defp decode_image(_), do: {:error, "each image must be an object"}
+
+  defp validate_media_type(mt) do
+    if mt in Fountain.Conversations.TurnImage.valid_media_types() do
+      :ok
+    else
+      {:error,
+       "unsupported image media_type #{inspect(mt)} — must be one of " <>
+         Enum.join(Fountain.Conversations.TurnImage.valid_media_types(), ", ")}
+    end
+  end
+
+  defp decode_base64(b64) when is_binary(b64) do
+    case Base.decode64(b64) do
+      {:ok, data} -> {:ok, data}
+      :error -> {:error, "image data must be base64-encoded"}
+    end
+  end
+
+  defp decode_base64(_), do: {:error, "image data is required"}
+
+  defp validate_size(data) do
+    if byte_size(data) > @max_image_bytes,
+      do: {:error, "image exceeds the 10MB limit"},
+      else: :ok
   end
 
   defp parse_last_event_id(nil), do: 0

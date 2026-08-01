@@ -130,19 +130,16 @@ defmodule FountainWeb.CrossTenantIsolationTest do
     end
 
     test "an image stored with a non-image media type is not served", %{conn: conn} do
-      # insert_turn_images/2 goes through Repo.insert_all against a raw table
-      # name, so TurnImage.changeset/2 (and its allowlist) never runs — a
-      # hostile media_type can reach the table. Refuse it at serve time so it
-      # can never come back as active content on the app's origin.
+      # #203 closed the ingest path, so this row can no longer be written through
+      # insert_turn_images/2 — it is inserted raw here on purpose. Rows written
+      # before that fix still exist, and defence at serve time is what keeps
+      # them from coming back as active content on the app's origin.
       {user_a, _user_b, key_a, _key_b} = two_users()
       agent = insert_agent(user_id: user_a.id)
       conv = insert_conversation(user_id: user_a.id, agent: agent)
       turn = insert_turn(conv)
 
-      {:ok, _} =
-        Fountain.Conversations.insert_turn_images(turn.id, [
-          %{media_type: "text/html", data: "<script>alert(1)</script>"}
-        ])
+      insert_raw_turn_image(turn.id, "text/html", "<script>alert(1)</script>")
 
       conn =
         conn
@@ -385,5 +382,20 @@ defmodule FountainWeb.CrossTenantIsolationTest do
       |> post_json("/api/conversations", %{"agent_id" => agent_a.id})
       |> json_response(404)
     end
+  end
+
+  # Bypasses TurnImage.changeset/2 deliberately, to reproduce a row written
+  # before ingest validation existed. Nothing in lib/ writes this way any more.
+  defp insert_raw_turn_image(turn_id, media_type, data) do
+    Fountain.Repo.insert_all("turn_images", [
+      %{
+        id: Ecto.UUID.dump!(Ecto.UUID.generate()),
+        turn_id: Ecto.UUID.dump!(turn_id),
+        position: 0,
+        media_type: media_type,
+        data: data,
+        inserted_at: DateTime.utc_now() |> DateTime.truncate(:second)
+      }
+    ])
   end
 end
