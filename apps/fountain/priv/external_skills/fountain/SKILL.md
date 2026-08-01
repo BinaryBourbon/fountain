@@ -1,6 +1,6 @@
 ---
 name: fountain
-description: Operate Fountain (https://founta.inevitable.fyi) — a multi-tenant service that runs sandboxed coding agents (claude/codex/gemini/opencode) inside per-conversation sprites. Use this skill whenever the user asks you to spin up an agent on Fountain, delegate work to another agent, fan out a task across N agents, manage Fountain agents/environments/vaults declaratively, or drive the `fountain` CLI. Reads `FOUNTAIN_API_KEY` (required) and `FOUNTAIN_BASE_URL` (defaults to https://founta.inevitable.fyi).
+description: Operate Fountain (https://fountain.inevitable.fyi) — a multi-tenant service that runs sandboxed coding agents (claude/codex/gemini/opencode) inside per-conversation sprites. Use this skill whenever the user asks you to spin up an agent on Fountain, delegate work to another agent, fan out a task across N agents, manage Fountain agents/environments/vaults declaratively, or drive the `fountain` CLI. Reads `FOUNTAIN_API_KEY` (required) and `FOUNTAIN_BASE_URL` (defaults to https://fountain.inevitable.fyi).
 ---
 
 # Fountain — driving the API, CLI, and manifest from outside a sprite
@@ -33,7 +33,7 @@ stream for the final answer.
 Everything under `/api/*` requires `Authorization: Bearer <FOUNTAIN_API_KEY>`.
 
 ```bash
-export FOUNTAIN_BASE_URL=https://founta.inevitable.fyi
+export FOUNTAIN_BASE_URL=https://fountain.inevitable.fyi
 export FOUNTAIN_API_KEY=<key>
 ```
 

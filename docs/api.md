@@ -17,7 +17,7 @@ Create a key under Account -> API Keys (or exchange credentials via `POST /api/a
 
 ```bash
 curl -H "Authorization: Bearer $FOUNTAIN_API_KEY" \
-     https://founta.inevitable.fyi/api/agents
+     https://fountain.inevitable.fyi/api/agents
 ```
 
 ```
