@@ -71,6 +71,8 @@ defmodule Fountain.MixProject do
       {:uniq, "~> 0.6"},
       {:stripity_stripe, "~> 3.0"},
       {:swoosh, "~> 1.17"},
+      # SMTP delivery, so a self-hoster is not obliged to use a SaaS provider.
+      {:gen_smtp, "~> 1.2"},
       {:ueberauth, "~> 0.10"},
       {:ueberauth_github, "~> 0.8"},
       # Test / dev

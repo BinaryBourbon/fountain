@@ -165,6 +165,32 @@ the logs. Stand up a collector first.
 and the `phoenix_router_dispatch_exception_count` counter, but there is no
 grouping, no stack-trace history, and no per-release regression view.
 
+## Email is not being delivered
+
+Production refuses to boot with no mail delivery configured, so an instance
+that is running has one of `RESEND_API_KEY`, `SMTP_HOST`, or
+`EMAIL_DELIVERY=none`. That last one disables email entirely.
+
+Symptom: a user signs up, never receives a verification email, and cannot log
+in — `hooks.ex` refuses login while `email_verified_at` is nil.
+
+```bash
+# Which mode is this instance in?
+kubectl exec -n fountain deploy/fountain -- sh -c 'echo "resend=${RESEND_API_KEY:+set} smtp=${SMTP_HOST:-unset} delivery=${EMAIL_DELIVERY:-default}"'
+```
+
+Verify an account without sending anything — the escape hatch for
+`EMAIL_DELIVERY=none`, and for a provider outage:
+
+```bash
+kubectl exec -n fountain deploy/fountain -- \
+  bin/fountain_server eval 'Fountain.Release.verify_email("user@example.com")'
+```
+
+Sending domains must be verified with the provider (SPF/DKIM/DMARC) before
+`EMAIL_FROM` can deliver to arbitrary inboxes, so a freshly configured provider
+can accept mail and still have it rejected downstream.
+
 ## Postgres backup + restore
 
 A `fountain-pg-backup` CronJob (`k8s/backup-cronjob.yaml`) takes a compressed

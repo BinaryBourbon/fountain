@@ -169,16 +169,73 @@ config :stripity_stripe,
 # Set per environment (test-mode price in dev, live-mode price in prod).
 config :fountain, :stripe_price_id, System.get_env("STRIPE_PRICE_ID")
 
-# Swoosh Resend adapter for prod; overridden to Local/Test in dev/test via env configs.
-# Domain (updates.inevitable.fyi) must be verified in Resend with SPF/DKIM/DMARC DNS
-# records before the configured EMAIL_FROM address can deliver.
+# Mail delivery.
+#
+# With no adapter configured this used to silently fall back to
+# Swoosh.Adapters.Local — an in-memory mailbox with no preview route in prod. So
+# the verification email went nowhere, and since login is refused while
+# email_verified_at is nil, the very first signup on a fresh instance
+# dead-ended with nothing pointing at the cause. Silence is the worst possible
+# behaviour here, so an unconfigured production instance now refuses to boot and
+# says what to do about it.
+#
+# Resend is the hosted option. SMTP is the one that matters for self-hosting —
+# it was named in the launch checklist and the engineering plan and never
+# actually implemented, so operators were told to set SMTP_* variables that did
+# nothing.
 if config_env() == :prod do
   config :fountain, :email_from, System.get_env("EMAIL_FROM", "noreply@updates.inevitable.fyi")
 
-  if api_key = System.get_env("RESEND_API_KEY") do
-    config :fountain, Fountain.Mailer,
-      adapter: Swoosh.Adapters.Resend,
-      api_key: api_key
+  cond do
+    api_key = System.get_env("RESEND_API_KEY") ->
+      config :fountain, Fountain.Mailer, adapter: Swoosh.Adapters.Resend, api_key: api_key
+
+    smtp_host = System.get_env("SMTP_HOST") ->
+      config :fountain, Fountain.Mailer,
+        adapter: Swoosh.Adapters.SMTP,
+        relay: smtp_host,
+        port: String.to_integer(System.get_env("SMTP_PORT", "587")),
+        username: System.get_env("SMTP_USERNAME"),
+        password: System.get_env("SMTP_PASSWORD"),
+        # STARTTLS by default; set SMTP_TLS=never for a relay on a trusted
+        # network that does not offer it.
+        tls: String.to_atom(System.get_env("SMTP_TLS", "always")),
+        auth: if(System.get_env("SMTP_USERNAME"), do: :always, else: :never),
+        retries: 2
+
+    System.get_env("EMAIL_DELIVERY") == "none" ->
+      # Explicit opt-out, for an instance that only uses OAuth sign-in or is
+      # being evaluated. Accounts created with email + password cannot verify
+      # themselves in this mode; see Fountain.Release.verify_email/1.
+      # IO.puts rather than IO.warn: a stacktrace here points at config code and
+      # tells the operator nothing.
+      IO.puts(:stderr, """
+
+      [fountain] EMAIL_DELIVERY=none — email is disabled.
+
+      Verification and password-reset emails will not be delivered. Accounts
+      created with email + password cannot complete signup unless an operator
+      verifies them:
+
+          bin/fountain_server eval 'Fountain.Release.verify_email("you@example.com")'
+      """)
+
+    true ->
+      raise """
+      No mail delivery is configured.
+
+      Verification and password-reset emails would be discarded, and signup
+      would dead-end with no visible error. Set one of:
+
+        RESEND_API_KEY=...                 hosted delivery via Resend
+        SMTP_HOST=... SMTP_PORT=587        any SMTP server
+          SMTP_USERNAME=... SMTP_PASSWORD=...
+        EMAIL_DELIVERY=none                deliberately disable email
+
+      With EMAIL_DELIVERY=none, verify the first account manually:
+
+          bin/fountain_server eval 'Fountain.Release.verify_email("you@example.com")'
+      """
   end
 end
 

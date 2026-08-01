@@ -17,6 +17,11 @@ defmodule Fountain.MasterKeyConfigTest do
   setup do
     previous = System.get_env()
 
+    # Prod refuses to boot with no mail delivery configured; these cases are
+    # about the master key, so give them one.
+    System.put_env("RESEND_API_KEY", "re_test_key")
+    for k <- ~w(SMTP_HOST EMAIL_DELIVERY), do: System.delete_env(k)
+
     on_exit(fn ->
       System.put_env(previous)
 
