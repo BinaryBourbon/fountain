@@ -10,7 +10,6 @@
     "lib/fountain/telemetry.ex",
     "lib/fountain/sprite_skills.ex",
     "lib/fountain/sprites_client.ex",
-    "lib/fountain/conversations/conversation_server.ex",
     "lib/fountain/conversations/provisioning.ex",
     "lib/fountain/conversations/rehydrator.ex",
     "lib/fountain/runtimes/",

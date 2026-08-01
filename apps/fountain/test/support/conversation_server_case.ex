@@ -1,0 +1,133 @@
+defmodule Fountain.ConversationServerCase do
+  @moduledoc """
+  Harness for driving a real `ConversationServer` in tests.
+
+  The module has had no tests of its own since launch — 1,183 lines covering
+  provisioning, reattach, turn handling and teardown, holding tenant secrets and
+  spending money, excluded from the coverage gate and `Mimic.copy`'d out of
+  every caller's tests. The reason it stayed untested is that starting one
+  reaches for the Sprites API, the filesystem inside a sprite, a runtime CLI and
+  OpenTelemetry.
+
+  This stubs that boundary once, permissively, so an individual test only has to
+  express the thing it cares about. `stub/3` is used rather than `expect/3` so
+  unstated calls are allowed; tests that care about a specific interaction
+  override it.
+  """
+
+  use ExUnit.CaseTemplate
+
+  using do
+    quote do
+      use Fountain.DataCase, async: false
+      use Mimic
+
+      import Fountain.ConversationServerCase
+
+      alias Fountain.Conversations
+      alias Fountain.Conversations.ConversationServer
+
+      # The server runs in its own process, so per-process stubs set from the
+      # test would not apply to it. Global mode is safe here because these
+      # modules are async: false, and ExUnit runs those one at a time after the
+      # async ones have finished.
+      setup :set_mimic_global
+
+      # The server also needs to reach the sandbox from its own process.
+      setup do
+        Ecto.Adapters.SQL.Sandbox.mode(Fountain.Repo, {:shared, self()})
+        :ok
+      end
+    end
+  end
+
+  @doc """
+  Stub every external boundary a provision touches, on the happy path.
+
+  Returns the sprite the stubbed `Sprites.create/2` will hand back.
+  """
+  def stub_happy_sprite(name \\ "test-sprite") do
+    sprite = %{name: name, id: "sprite_" <> name}
+
+    Mimic.stub(Fountain.SpritesClient, :get!, fn -> %{token: "test"} end)
+    Mimic.stub(Sprites, :create, fn _client, _name -> {:ok, sprite} end)
+    Mimic.stub(Sprites, :destroy, fn _sprite -> :ok end)
+    Mimic.stub(Sprites, :cmd, fn _sprite, _cmd, _opts -> {:ok, %{exit_code: 0, stdout: ""}} end)
+    Mimic.stub(Sprites, :list_sessions, fn _sprite -> {:ok, []} end)
+    Mimic.stub(Sprites, :update_network_policy, fn _sprite, _policy -> :ok end)
+    Mimic.stub(Sprites.Filesystem, :write, fn _sprite, _path, _contents -> :ok end)
+
+    Mimic.stub(Fountain.SpriteSkills, :mount, fn _sprite, _runtime, _skills -> :ok end)
+
+    Mimic.stub(Fountain.Conversations.Provisioning, :write_env_file, fn _s, _e -> :ok end)
+
+    Mimic.stub(Fountain.Conversations.Provisioning, :install_packages, fn _s, _e, _se, _c ->
+      :ok
+    end)
+
+    Mimic.stub(Fountain.Conversations.Provisioning, :apply_network_policy, fn _s, _e, _c ->
+      :ok
+    end)
+
+    Mimic.stub(Fountain.Conversations.Provisioning, :clone_repositories, fn _s, _e, _sec, _c ->
+      :ok
+    end)
+
+    Mimic.stub(Fountain.Conversations.Provisioning, :create_checkpoint, fn _s, _e ->
+      {:error, :no_env}
+    end)
+
+    Mimic.stub(Fountain.Conversations.Provisioning, :restore_checkpoint, fn _s, _c ->
+      {:error, :no_checkpoint}
+    end)
+
+    # Per-tenant crypto is exercised in its own tests; here it only needs to
+    # succeed so provisioning can proceed.
+    Mimic.stub(Fountain.Crypto, :load_tenant_key, fn _user_id -> {:ok, <<0::256>>} end)
+    Mimic.stub(Fountain.InferenceCredentials, :decrypted_for_user, fn _u, _k -> {:ok, %{}} end)
+
+    sprite
+  end
+
+  @doc """
+  Start a real ConversationServer for `conv` and wait for it to settle.
+
+  Started outside Horde and unlinked, so a server that legitimately stops —
+  which the failure paths do — doesn't take the test process with it.
+  """
+  def start_server(conv, opts \\ []) do
+    runtime = Keyword.get(opts, :runtime, Fountain.Test.FakeRuntime)
+    Application.put_env(:fountain, :test_observer, self())
+
+    args = [
+      conversation_id: conv.id,
+      sandbox_id: conv.sandbox_id,
+      runtime_module: runtime,
+      initial_prompt: Keyword.get(opts, :initial_prompt)
+    ]
+
+    {:ok, pid} = GenServer.start(Fountain.Conversations.ConversationServer, args)
+    ref = Process.monitor(pid)
+
+    # handle_continue(:provision) runs before any call is answered, so a
+    # synchronous call is enough to know provisioning has finished.
+    settled =
+      try do
+        _ = :sys.get_state(pid)
+        :alive
+      catch
+        :exit, _ -> :stopped
+      end
+
+    {pid, ref, settled}
+  end
+
+  @doc "Wait for a monitored server to stop, or fail the test."
+  def assert_stopped(ref, timeout \\ 2_000) do
+    receive do
+      {:DOWN, ^ref, :process, _pid, reason} -> reason
+    after
+      timeout -> raise "expected the ConversationServer to stop, but it is still running"
+    end
+  end
+end
