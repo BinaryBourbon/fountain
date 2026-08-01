@@ -17,6 +17,13 @@ config :fountain, Oban,
      ]}
   ]
 
+# Self-hosting switches. Defaults preserve the hosted behaviour; a self-hoster
+# turns billing off and closes registration without patching source.
+config :fountain,
+  billing_enabled: true,
+  registration_enabled: true,
+  registration_allowed_email_domains: []
+
 config :fountain,
   ecto_repos: [Fountain.Repo],
   generators: [timestamp_type: :utc_datetime, binary_id: true]

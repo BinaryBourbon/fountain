@@ -54,10 +54,21 @@ defmodule Fountain.Billing do
   Raises `SubscriptionRequiredError` for `past_due` and `canceled` statuses.
   """
   @spec assert_active!(User.t()) :: :ok
-  def assert_active!(%User{subscription_status: status}) when status in @active_statuses,
-    do: :ok
+  def assert_active!(%User{} = user) do
+    case check_active(user) do
+      :ok -> :ok
+      {:error, :subscription_required} -> raise(SubscriptionRequiredError)
+    end
+  end
 
-  def assert_active!(%User{}), do: raise(SubscriptionRequiredError)
+  @doc """
+  Whether the subscription gate is enforced at all.
+
+  ADR 0006 made it a product invariant. On a self-hosted instance it is a lock
+  on the front door with no key, so `BILLING_ENABLED=false` disables it — config
+  rather than the source patch the ADR assumed.
+  """
+  def enabled?, do: Application.get_env(:fountain, :billing_enabled, true)
 
   @doc """
   Non-raising gate, for `with` pipelines in contexts.
@@ -66,15 +77,27 @@ defmodule Fountain.Billing do
   identify the user must not be able to provision on someone's behalf.
   """
   @spec check_active(User.t() | binary()) :: :ok | {:error, :subscription_required}
-  def check_active(%User{subscription_status: status}) when status in @active_statuses, do: :ok
-  def check_active(%User{}), do: {:error, :subscription_required}
-
-  def check_active(user_id) when is_binary(user_id) do
-    case Repo.get(User, user_id) do
-      nil -> {:error, :subscription_required}
-      user -> check_active(user)
+  def check_active(subject) do
+    if enabled?() do
+      do_check_active(subject)
+    else
+      :ok
     end
   end
+
+  defp do_check_active(%User{subscription_status: status}) when status in @active_statuses,
+    do: :ok
+
+  defp do_check_active(%User{}), do: {:error, :subscription_required}
+
+  defp do_check_active(user_id) when is_binary(user_id) do
+    case Repo.get(User, user_id) do
+      nil -> {:error, :subscription_required}
+      user -> do_check_active(user)
+    end
+  end
+
+  defp do_check_active(_), do: {:error, :subscription_required}
 
   # ─── Stripe customer ────────────────────────────────────────────────────────
 

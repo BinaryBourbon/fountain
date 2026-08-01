@@ -112,6 +112,29 @@ metrics_port =
 
 config :fountain, :metrics_port, metrics_port
 
+# ADR 0006 made the subscription gate a product invariant. For a self-hosted
+# instance it is just a lock on the front door with no key, so it is now
+# config rather than a source patch.
+config :fountain, :billing_enabled, System.get_env("BILLING_ENABLED", "true") != "false"
+
+# Registration was open to the world with no way to close it. A self-hoster
+# exposing an instance had no control over who signed up, and on the hosted
+# side every signup consumes the platform Sprites token.
+config :fountain, :registration_enabled, System.get_env("REGISTRATION_ENABLED", "true") != "false"
+
+allowed_signup_domains =
+  case System.get_env("REGISTRATION_ALLOWED_EMAIL_DOMAINS") do
+    blank when blank in [nil, ""] ->
+      []
+
+    list ->
+      list
+      |> String.split(",", trim: true)
+      |> Enum.map(&(&1 |> String.trim() |> String.downcase()))
+  end
+
+config :fountain, :registration_allowed_email_domains, allowed_signup_domains
+
 # CIDRs treated as proxies when resolving the client IP from X-Forwarded-For.
 # Only widen this to cover addresses that are genuinely proxies — anything
 # trusted here is stepped over, so an over-broad list lets a client spoof its
@@ -244,11 +267,33 @@ if config_env() == :prod and server? do
     System.get_env("DATABASE_URL") ||
       raise "environment variable DATABASE_URL is missing."
 
+  # verify_none is the historical behaviour. DATABASE_SSL_VERIFY=true turns on
+  # real certificate verification, using an explicit CA bundle when given and
+  # the OS trust store otherwise — no extra dependency, and OTP loads it.
+  database_ssl_opts =
+    case {System.get_env("DATABASE_SSL_VERIFY"), System.get_env("DATABASE_SSL_CA_FILE")} do
+      {"true", nil} ->
+        [verify: :verify_peer, cacerts: :public_key.cacerts_get(), depth: 3]
+
+      {"true", ca_file} ->
+        [verify: :verify_peer, cacertfile: to_charlist(ca_file), depth: 3]
+
+      _ ->
+        [verify: :verify_none]
+    end
+
   config :fountain, Fountain.Repo,
     url: database_url,
     pool_size: String.to_integer(System.get_env("POOL_SIZE") || "10"),
-    ssl: true,
-    ssl_opts: [verify: :verify_none]
+    # TLS was hardcoded on with no override, which meant the canonical
+    # self-host setup — app and Postgres in containers — could not connect at
+    # all, because a stock postgres image does not serve TLS. Defaults to on so
+    # the hosted deployment is unchanged.
+    ssl: System.get_env("DATABASE_SSL", "true") != "false",
+    # verify_none is the historical behaviour: encrypted but not authenticated,
+    # so a MITM between app and database is possible. Set DATABASE_SSL_VERIFY=true
+    # with DATABASE_SSL_CA_FILE to actually verify the server.
+    ssl_opts: database_ssl_opts
 
   secret_key_base =
     System.get_env("SECRET_KEY_BASE") ||
