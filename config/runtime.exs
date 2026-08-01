@@ -98,6 +98,19 @@ phx_host =
 
 config :fountain, :public_url, public_url
 config :fountain, :phx_host, phx_host
+
+# Prometheus scrape endpoint, served on its own port by FountainWeb.MetricsPlug
+# rather than through the public endpoint. Defaults to on in prod and off
+# elsewhere, so dev and test never bind a stray listener.
+metrics_port =
+  case System.get_env("METRICS_PORT") do
+    nil -> if env == :prod, do: 9568, else: nil
+    "" -> nil
+    "0" -> nil
+    port -> String.to_integer(port)
+  end
+
+config :fountain, :metrics_port, metrics_port
 # Inference credentials are per-user (BYO, ADR 0008) and live in the
 # inference_credentials table — no platform-level env vars for them.
 

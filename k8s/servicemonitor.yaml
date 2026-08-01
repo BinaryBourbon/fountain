@@ -1,0 +1,27 @@
+# Scrapes FountainWeb.MetricsPlug on the `metrics` port of the fountain
+# Service. No auth: unlike Garage's admin port this listener is not routable
+# from outside the cluster — the IngressRoute matches on Host and forwards only
+# to the `http` port, so 9568 is reachable from Prometheus and nowhere else.
+#
+# The Service selects both pods, so each replica is scraped as its own target
+# and per-pod series (VM memory, run-queue depth) stay distinguishable rather
+# than being load-balanced into noise.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: fountain
+  namespace: fountain
+  labels:
+    app: fountain
+spec:
+  namespaceSelector:
+    matchNames:
+      - fountain
+  selector:
+    matchLabels:
+      monitoring: fountain-web
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: 30s
+      scrapeTimeout: 10s

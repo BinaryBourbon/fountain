@@ -12,6 +12,8 @@ resources:
   - infisicalsecret.yaml
   - deployment.yaml
   - service.yaml
+  - servicemonitor.yaml
+  - prometheusrule.yaml
   - ingressroute.yaml
   - certificate.yaml
   # Per-app machine identity for the Infisical operator. Encrypted with

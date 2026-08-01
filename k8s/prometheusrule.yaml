@@ -1,0 +1,180 @@
+# Alerts for Fountain.
+#
+# Routed by the existing home-cloud Alertmanager to ntfy: severity `warning`
+# goes out at priority 3, `critical` at priority 4. Prometheus picks this up
+# regardless of release label (ruleSelectorNilUsesHelmValues: false in the
+# kube-prometheus-stack HelmRelease), matching k8s/monitoring/custom-alerts.yaml
+# in home-cloud.
+#
+# Only gaps the upstream chart does not already cover. Node pressure, PVC fill,
+# pod crash-looping and deployment-replica mismatch all ship with
+# kube-prometheus-stack and are deliberately not duplicated here.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: fountain-alerts
+  namespace: fountain
+  labels:
+    app: fountain
+    app.kubernetes.io/part-of: home-cloud
+spec:
+  groups:
+    # ── Backups ───────────────────────────────────────────────────────────
+    #
+    # The point of these: a backup CronJob that quietly stops is the classic
+    # way backups rot. Nothing noticed for as long as it took to look, and by
+    # then the newest artifact is however old the silence is.
+    - name: fountain-backups
+      interval: 60s
+      rules:
+        - alert: FountainBackupStale
+          # kube_cronjob_status_last_successful_time is seconds since epoch of
+          # the last *successful* run. 36h allows one missed nightly plus the
+          # startingDeadlineSeconds window before shouting.
+          expr: |
+            time() - kube_cronjob_status_last_successful_time{
+              namespace="fountain", cronjob="fountain-pg-backup"
+            } > 36 * 3600
+          for: 10m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Fountain Postgres backup has not succeeded in over 36h"
+            description: |
+              The last successful fountain-pg-backup run was
+              {{ $value | humanizeDuration }} ago. The newest restorable dump in
+              s3://fountain-backups/pg_dump/ is at least that old, so recovery
+              would lose everything since.
+
+              Check: kubectl get jobs -n fountain --sort-by=.metadata.creationTimestamp | tail
+              Logs:  kubectl logs -n fountain job/<name> -c dump
+                     kubectl logs -n fountain job/<name> -c upload
+              Restore procedure: /help/runbook
+
+        # The staleness alert above cannot fire if the CronJob has never run
+        # even once — last_successful_time is simply absent, and `time() - absent`
+        # is nothing rather than a large number.
+        - alert: FountainBackupNeverSucceeded
+          expr: |
+            absent(kube_cronjob_status_last_successful_time{
+              namespace="fountain", cronjob="fountain-pg-backup"
+            })
+          for: 26h
+          labels:
+            severity: critical
+          annotations:
+            summary: "Fountain Postgres backup has never completed successfully"
+            description: |
+              No successful run has ever been recorded for fountain-pg-backup.
+              Either the CronJob was just created and has not fired yet, or every
+              run so far has failed. Either way there is no verified backup.
+
+        - alert: FountainBackupJobFailing
+          expr: |
+            kube_job_status_failed{namespace="fountain", job_name=~"fountain-pg-backup.*"} > 0
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "A Fountain backup job failed"
+            description: |
+              {{ $labels.job_name }} has a failed pod. The nightly dump may not
+              have been uploaded. A single failure is not yet data loss —
+              FountainBackupStale escalates if it keeps happening.
+
+        - alert: FountainBackupSuspended
+          expr: kube_cronjob_spec_suspend{namespace="fountain", cronjob="fountain-pg-backup"} == 1
+          for: 1h
+          labels:
+            severity: warning
+          annotations:
+            summary: "Fountain backup CronJob is suspended"
+            description: |
+              fountain-pg-backup is suspended, so no backups are being taken.
+              This is fine during maintenance and dangerous if forgotten.
+
+    # ── Application health ────────────────────────────────────────────────
+    - name: fountain-app
+      interval: 30s
+      rules:
+        - alert: FountainMetricsTargetDown
+          # Also the canary for "the app is up but wedged": Prometheus scrapes
+          # a separate Bandit listener inside the same BEAM, so a scrape failure
+          # while pods look Ready means the VM itself is in trouble.
+          expr: up{namespace="fountain", service="fountain"} == 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Fountain metrics endpoint is not scrapeable"
+            description: |
+              Prometheus cannot scrape {{ $labels.pod }} on the metrics port.
+              The pod may be Ready from the readiness probe's point of view while
+              the BEAM is unable to serve.
+
+        - alert: FountainHighServerErrorRate
+          # 5xx as a share of all responses. Rate over 5m so a single blip does
+          # not page; 5% sustained for 10m is a real regression.
+          expr: |
+            sum(rate(phoenix_router_dispatch_stop_count{namespace="fountain", status=~"5.."}[5m]))
+              /
+            sum(rate(phoenix_router_dispatch_stop_count{namespace="fountain"}[5m]))
+              > 0.05
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Over 5% of Fountain responses are 5xx"
+            description: |
+              {{ $value | humanizePercentage }} of responses over the last 5
+              minutes were server errors. There is no error tracking yet, so the
+              detail is in the pod logs (Loki: {namespace="fountain"}).
+
+        - alert: FountainUnhandledExceptions
+          expr: |
+            sum(rate(phoenix_router_dispatch_exception_count{namespace="fountain"}[5m])) > 0.1
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Fountain is raising unhandled exceptions"
+            description: |
+              Exceptions escaping the router on {{ $labels.route }}. Until error
+              tracking lands these have no stack traces anywhere but the logs.
+
+        - alert: FountainDatabasePoolSaturated
+          # queue_time is time spent waiting for a connection. It climbs when the
+          # pool is exhausted, which presents as "everything got slow" rather
+          # than "one query got slow" — a genuinely hard thing to diagnose
+          # without this signal.
+          expr: |
+            histogram_quantile(0.95,
+              sum(rate(fountain_repo_query_queue_time_bucket{namespace="fountain"}[5m])) by (le)
+            ) > 100
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Fountain is waiting on the database connection pool"
+            description: |
+              p95 wait for a connection is {{ $value | humanize }}ms. Pool size is
+              10 per replica. Sustained waits mean either slow queries holding
+              connections or genuine saturation.
+
+    # ── Sandboxes ─────────────────────────────────────────────────────────
+    - name: fountain-sandboxes
+      interval: 60s
+      rules:
+        - alert: FountainProvisionFailures
+          expr: |
+            sum(rate(fountain_provision_exception_count{namespace="fountain"}[15m])) > 0.05
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Fountain sandbox provisioning is failing"
+            description: |
+              Provisions are erroring. Users see conversations that fail to start.
+              Most likely causes: the Sprites API is unhealthy, the platform
+              SPRITES_TOKEN is invalid or rate-limited, or tenants are hitting the
+              concurrency cap. There are no retries on the provisioning path.
