@@ -11,7 +11,6 @@ defmodule FountainWeb.UeberauthController do
 
   use FountainWeb, :controller
 
-
   # Ueberauth's plug handles the request phase (redirect to the provider)
   # and the callback phase (parse the response into assigns). It MUST be
   # in the controller's plug pipeline — otherwise `request/2` is hit
