@@ -23,6 +23,9 @@ defmodule Fountain.Accounts.User do
     field :stripe_customer_id, :string
     field :subscription_status, :string, default: "trialing"
     field :trial_ends_at, :utc_datetime
+    # Stripe `created` of the last subscription event applied — the ordering
+    # guard's watermark. See Billing.sync_subscription/1.
+    field :subscription_synced_at, :utc_datetime
     field :session_version, :integer, default: 0
     field :theme_preference, :string, default: "system"
     field :conversations_roots_only, :boolean, default: false
@@ -80,7 +83,12 @@ defmodule Fountain.Accounts.User do
   @doc "Changeset for billing field updates (driven by Stripe webhooks)."
   def billing_changeset(user, attrs) do
     user
-    |> cast(attrs, [:stripe_customer_id, :subscription_status, :trial_ends_at])
+    |> cast(attrs, [
+      :stripe_customer_id,
+      :subscription_status,
+      :trial_ends_at,
+      :subscription_synced_at
+    ])
     |> validate_inclusion(:subscription_status, @subscription_statuses)
   end
 
@@ -94,7 +102,11 @@ defmodule Fountain.Accounts.User do
   @doc "Changeset for updating conversation filter preferences."
   def preferences_changeset(user, attrs) do
     user
-    |> cast(attrs, [:conversations_roots_only, :conversation_visible_streams, :conversation_view_mode])
+    |> cast(attrs, [
+      :conversations_roots_only,
+      :conversation_visible_streams,
+      :conversation_view_mode
+    ])
     |> validate_subset(:conversation_visible_streams, @visible_stream_values)
     |> validate_inclusion(:conversation_view_mode, @view_mode_values)
   end

@@ -138,6 +138,49 @@ defmodule Fountain.Billing do
   # ─── Webhook sync ───────────────────────────────────────────────────────────
 
   @doc """
+  Entry point for a verified Stripe webhook event.
+
+  Claims the event id first, so a redelivery is a no-op rather than a second
+  application. Stripe retries a failed delivery for up to three days and makes
+  no ordering promise, so without this a replayed
+  `customer.subscription.updated{active}` arriving after `.deleted` silently
+  reactivates a cancelled account.
+
+  Returns `{:ok, :duplicate}` for an event already seen.
+  """
+  @spec handle_event(Stripe.Event.t()) ::
+          {:ok, User.t() | :ignored | :duplicate | :stale} | {:error, term()}
+  def handle_event(%Stripe.Event{id: id, type: type} = event) when is_binary(id) do
+    if claim_event(id, type) == :claimed do
+      sync_subscription(event)
+    else
+      {:ok, :duplicate}
+    end
+  end
+
+  # No id (hand-built events in tests) — nothing to dedupe against.
+  def handle_event(%Stripe.Event{} = event), do: sync_subscription(event)
+
+  # Atomic claim: the unique primary key is what makes concurrent deliveries of
+  # the same event resolve to exactly one winner.
+  defp claim_event(id, type) do
+    {count, _} =
+      Repo.insert_all(
+        "stripe_events",
+        [
+          %{
+            id: id,
+            type: type,
+            inserted_at: DateTime.utc_now() |> DateTime.truncate(:second)
+          }
+        ],
+        on_conflict: :nothing
+      )
+
+    if count == 1, do: :claimed, else: :duplicate
+  end
+
+  @doc """
   Syncs `users.subscription_status` (and `trial_ends_at`) from a verified
   Stripe webhook event.
 
@@ -171,7 +214,7 @@ defmodule Fountain.Billing do
     end
   end
 
-  def sync_subscription(%Stripe.Event{type: type, data: %{object: sub}})
+  def sync_subscription(%Stripe.Event{type: type, data: %{object: sub}} = event)
       when type in [
              "customer.subscription.created",
              "customer.subscription.updated",
@@ -186,21 +229,42 @@ defmodule Fountain.Billing do
         ts when is_integer(ts) -> DateTime.from_unix!(ts) |> DateTime.truncate(:second)
       end
 
+    event_created = event_created_at(event)
+
     case get_user_by_stripe_customer_id(customer_id) do
       nil ->
         {:error, :user_not_found}
 
       user ->
-        user
-        |> User.billing_changeset(%{
-          subscription_status: status,
-          trial_ends_at: trial_ends_at
-        })
-        |> Repo.update()
+        if stale?(user.subscription_synced_at, event_created) do
+          # An older event arriving after a newer one. Applying it would move the
+          # account backwards — reactivating a cancellation, or re-locking an
+          # account that has already recovered.
+          {:ok, :stale}
+        else
+          user
+          |> User.billing_changeset(%{
+            subscription_status: status,
+            trial_ends_at: trial_ends_at,
+            subscription_synced_at: event_created || user.subscription_synced_at
+          })
+          |> Repo.update()
+        end
     end
   end
 
   def sync_subscription(_event), do: {:ok, :ignored}
+
+  defp event_created_at(%Stripe.Event{created: ts}) when is_integer(ts),
+    do: DateTime.from_unix!(ts) |> DateTime.truncate(:second)
+
+  defp event_created_at(_), do: nil
+
+  # Unknown timestamps are treated as fresh: refusing to apply an event we
+  # cannot order would be worse than applying it.
+  defp stale?(nil, _incoming), do: false
+  defp stale?(_synced, nil), do: false
+  defp stale?(synced, incoming), do: DateTime.compare(incoming, synced) == :lt
 
   # ─── Usage summary ──────────────────────────────────────────────────────────
 
