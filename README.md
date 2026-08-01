@@ -4,6 +4,15 @@ A multi-tenant API and UI for managing agents, repos, secrets, and conversations
 
 This repo is the bus for the [`captain-picard`](https://github.com/jhgaylor/aod-specs) Agent on Demand orchestrator. See `OPERATING_MODEL.md` for how the team operates and `ROADMAP.md` for what's open.
 
+## Self-hosting
+
+Run your own instance: [docs/self-hosting.md](docs/self-hosting.md).
+
+```sh
+cp .env.compose.example .env   # then fill in the generated keys
+docker compose up -d
+```
+
 ## Three surfaces
 
 Every public feature lives on all three:

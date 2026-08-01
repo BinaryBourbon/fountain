@@ -63,7 +63,7 @@ Pick **one** path:
 docker compose up -d postgres
 ```
 
-Brings up Postgres 16 on `localhost:5432` with role `postgres`/`postgres` and database `fountain_dev`. Stop with `docker compose down`; data persists in the `postgres_data` volume.
+Brings up Postgres 16 on `localhost:5432` with role `postgres`/`postgres`. `mix setup` creates `fountain_dev` itself. (`docker compose up` with no service name also starts Fountain — see [self-hosting](docs/self-hosting.md).) Stop with `docker compose down`; data persists in the `postgres_data` volume.
 
 ### Option B — Native Postgres
 

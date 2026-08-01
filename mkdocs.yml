@@ -49,6 +49,7 @@ markdown_extensions:
 nav:
   - Home: index.md
   - Setup: setup.md
+  - Self-hosting: self-hosting.md
   - The four primitives: primitives.md
   - CLI reference: cli.md
   - API reference: api.md

@@ -57,3 +57,6 @@ aod.yml
 # Burrito output.
 /burrito_out/
 
+
+# mkdocs build output
+site/
