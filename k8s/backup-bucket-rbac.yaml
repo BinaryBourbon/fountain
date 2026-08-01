@@ -1,0 +1,75 @@
+# RBAC for the backup-bucket bootstrap Job.
+#
+# Mirrors the loki/share bootstrap pattern in the home-cloud repo: the Job
+# needs to exec `/garage` inside a Garage pod to create the bucket and key,
+# then write the resulting credentials as a Secret in this namespace.
+#
+# The Role in the `garage` namespace is deliberately cross-namespace. Fountain's
+# Flux Kustomization reconciles with the kustomize-controller service account,
+# so it can create it; keeping it here rather than in home-cloud keeps "Fountain
+# has backups" self-contained in the repo that owns Fountain.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: fountain-backup-bootstrap
+  namespace: fountain
+---
+# Exec into garage pods to run the /garage CLI.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: fountain-backup-bootstrap-garage-exec
+  namespace: garage
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["pods/exec"]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: fountain-backup-bootstrap-garage-exec
+  namespace: garage
+subjects:
+  - kind: ServiceAccount
+    name: fountain-backup-bootstrap
+    namespace: fountain
+roleRef:
+  kind: Role
+  name: fountain-backup-bootstrap-garage-exec
+  apiGroup: rbac.authorization.k8s.io
+---
+# Write the credential Secret in the fountain namespace.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: fountain-backup-bootstrap-secret-writer
+  namespace: fountain
+rules:
+  # K8s RBAC ignores resourceNames on `create` (authorization happens before
+  # the resource name is known), so create is namespace-scoped.
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list", "create"]
+  # Updates/patches are pinned to the specific Secret.
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["update", "patch"]
+    resourceNames: ["fountain-backup-s3-credentials"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: fountain-backup-bootstrap-secret-writer
+  namespace: fountain
+subjects:
+  - kind: ServiceAccount
+    name: fountain-backup-bootstrap
+    namespace: fountain
+roleRef:
+  kind: Role
+  name: fountain-backup-bootstrap-secret-writer
+  apiGroup: rbac.authorization.k8s.io

@@ -1,0 +1,100 @@
+# One-shot (idempotent) setup for the private `fountain-backups` bucket on the
+# home-cloud Garage cluster, plus the credentials CNPG uses to write into it.
+#
+# Deliberately a separate step from enabling backups on the Cluster: if the
+# barmanObjectStore config went live before this Secret existed, Postgres would
+# start archiving WAL to a destination it cannot reach. A failing archive_command
+# makes Postgres *retain* WAL on the data volume rather than drop it, so a broken
+# destination is a slow disk-fill, not a no-op. Land this, confirm the Secret
+# exists, then enable backups.
+#
+# NOT website-enabled and not quota-shared with `share` — this bucket holds base
+# backups and WAL for the production database.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: fountain-backup-bucket-bootstrap
+  namespace: fountain
+  annotations:
+    # Re-create the Job when the script changes so an edited bootstrap re-runs
+    # without a manual `kubectl delete job` first.
+    kustomize.toolkit.fluxcd.io/force: "true"
+spec:
+  backoffLimit: 6
+  ttlSecondsAfterFinished: 86400
+  template:
+    spec:
+      serviceAccountName: fountain-backup-bootstrap
+      restartPolicy: OnFailure
+      containers:
+        - name: bootstrap
+          image: alpine/k8s:1.30.0
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -eu
+              NS=fountain
+              SECRET=fountain-backup-s3-credentials
+              GARAGE_NS=garage
+              GARAGE_POD=garage-0
+              BUCKET=fountain-backups
+              KEY=fountain-backup-key
+
+              echo "Waiting for $GARAGE_POD to be Ready..."
+              kubectl wait pod "$GARAGE_POD" -n "$GARAGE_NS" \
+                --for=condition=Ready --timeout=120s
+
+              GAR="kubectl exec $GARAGE_POD -n $GARAGE_NS -- /garage"
+
+              echo "Ensuring bucket $BUCKET exists..."
+              $GAR bucket create "$BUCKET" 2>/dev/null || echo "  (bucket already exists)"
+
+              # Garage replication_factor is 2, so N bytes stored costs 2N across
+              # the cluster. The database is ~155MB, so 5GiB is roughly 30x
+              # headroom for 14 days of base backups plus WAL, while bounding a
+              # runaway WAL stream so it cannot starve the loki/share buckets.
+              echo "Capping $BUCKET at 5GiB..."
+              $GAR bucket set-quotas "$BUCKET" --max-size 5GiB
+
+              echo "Ensuring key $KEY exists..."
+              if ! $GAR key info "$KEY" >/dev/null 2>&1; then
+                $GAR key create "$KEY"
+              else
+                echo "  (key already exists)"
+              fi
+
+              echo "Granting $KEY read+write on $BUCKET..."
+              $GAR bucket allow --read --write "$BUCKET" --key "$KEY"
+
+              # Bucket/quota/key-grant above are idempotent and re-run every
+              # time. Only the Secret write is skipped when it already exists:
+              # Garage will re-show the secret for an existing key, but
+              # rewriting it would churn the value CNPG has already loaded.
+              if kubectl get secret "$SECRET" -n "$NS" >/dev/null 2>&1; then
+                echo "Secret $NS/$SECRET already exists; done."
+                exit 0
+              fi
+
+              echo "Fetching key info..."
+              INFO=$($GAR key info --show-secret "$KEY")
+              ACCESS_KEY=$(echo "$INFO" | awk '/^Key ID:/ {print $3}')
+              SECRET_KEY=$(echo "$INFO" | awk '/^Secret key:/ {print $3}')
+
+              if [ -z "$ACCESS_KEY" ] || [ -z "$SECRET_KEY" ]; then
+                echo "FAIL: could not parse Key ID / Secret key from garage output:"
+                echo "$INFO"
+                exit 1
+              fi
+
+              echo "Creating Secret $NS/$SECRET..."
+              kubectl create secret generic "$SECRET" -n "$NS" \
+                --from-literal=AWS_ACCESS_KEY_ID="$ACCESS_KEY" \
+                --from-literal=AWS_SECRET_ACCESS_KEY="$SECRET_KEY"
+
+              echo "Done."
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 64Mi

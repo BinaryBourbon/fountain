@@ -3,6 +3,10 @@ kind: Kustomization
 resources:
   - namespace.yaml
   - serviceaccount.yaml
+  # Bucket + credentials for Postgres backups. Ordered before postgres.yaml so
+  # the Secret exists before the Cluster starts archiving WAL into it.
+  - backup-bucket-rbac.yaml
+  - backup-bucket-bootstrap.yaml
   - postgres.yaml
   - infisicalsecret.yaml
   - deployment.yaml
