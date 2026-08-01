@@ -7,7 +7,10 @@ defmodule FountainWeb.Plugs.Audit do
       `POST conversations`, `DELETE environments/:id/secrets/:id`).
     * `resource_type`, `resource_id`: derived from the matched route's
       action + params.
-    * `actor`: `"api"` for now; could be made request-driven later.
+    * `actor`: derived from the credential — `"sprite"` for a per-conversation
+      callback token, `"api"` otherwise. Previously hardcoded to `"api"`, which
+      made a human, a CI job and an agent running inside a sandbox
+      indistinguishable in the trail.
     * `request_ip`: from `conn.remote_ip`.
     * `metadata`: response status code.
 
@@ -44,13 +47,26 @@ defmodule FountainWeb.Plugs.Audit do
       action: "#{conn.method} #{conn.request_path}",
       resource_type: resource_type,
       resource_id: resource_id,
-      actor: "api",
+      actor: actor(conn),
       request_ip: format_ip(conn.remote_ip),
       metadata: %{"status" => conn.status},
       user_id: current_user_id(conn)
     })
 
     conn
+  end
+
+  # A sandbox acting on the tenant's behalf is a materially different claim from
+  # the tenant acting directly, and the scopes added for the sandbox
+  # privilege-escalation fix make the two distinguishable.
+  defp actor(conn) do
+    case conn.assigns[:current_api_key] do
+      %Fountain.Accounts.ApiKey{scopes: scopes} ->
+        if "sprite" in scopes, do: "sprite", else: "api"
+
+      _ ->
+        "api"
+    end
   end
 
   defp current_user_id(conn) do

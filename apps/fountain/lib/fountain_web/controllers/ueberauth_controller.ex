@@ -65,6 +65,11 @@ defmodule FountainWeb.UeberauthController do
 
       case Fountain.Accounts.upsert_oauth_user(provider, provider_uid, attrs) do
         {:ok, user, :new} ->
+          FountainWeb.Audited.from_conn(conn, "auth.oauth.signup", "user",
+            user_id: user.id,
+            metadata: %{"provider" => provider}
+          )
+
           # The email+password path does this after verification. OAuth skips
           # verification entirely (the provider asserts the address), so without
           # this every GitHub signup had no Stripe customer and no trial_ends_at.
@@ -77,6 +82,11 @@ defmodule FountainWeb.UeberauthController do
           |> redirect(to: ~p"/onboarding/step_1")
 
         {:ok, user, :existing} ->
+          FountainWeb.Audited.from_conn(conn, "auth.oauth.login", "user",
+            user_id: user.id,
+            metadata: %{"provider" => provider}
+          )
+
           conn
           |> configure_session(renew: true)
           |> put_session(:user_id, user.id)

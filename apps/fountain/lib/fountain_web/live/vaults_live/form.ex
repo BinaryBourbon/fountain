@@ -57,6 +57,11 @@ defmodule FountainWeb.VaultsLive.Form do
       when k != "" and v != "" do
     case Vaults.upsert_secret(socket.assigns.vault, %{"key" => k, "value" => v}, socket.assigns.tenant_key) do
       {:ok, _} ->
+        FountainWeb.Audited.from_socket(socket, "vault.secret.write", "vault_secret",
+          resource_id: socket.assigns.vault.id,
+          metadata: %{"key" => k}
+        )
+
         {:noreply,
          socket
          |> assign(:secrets, secrets_for(socket.assigns.vault))
@@ -75,6 +80,11 @@ defmodule FountainWeb.VaultsLive.Form do
 
     if secret do
       Vaults.delete_secret(secret)
+
+      FountainWeb.Audited.from_socket(socket, "vault.secret.delete", "vault_secret",
+        resource_id: socket.assigns.vault.id,
+        metadata: %{"key" => secret.key}
+      )
 
       {:noreply,
        socket

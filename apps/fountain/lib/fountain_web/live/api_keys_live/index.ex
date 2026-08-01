@@ -21,6 +21,11 @@ defmodule FountainWeb.ApiKeysLive.Index do
   def handle_event("create_key", %{"label" => label}, socket) do
     case Accounts.create_api_key(socket.assigns.user_id, label) do
       {:ok, {key, raw_token}} ->
+        FountainWeb.Audited.from_socket(socket, "api_key.created", "api_key",
+          resource_id: key.id,
+          metadata: %{"name" => key.name, "scopes" => key.scopes}
+        )
+
         {:noreply,
          socket
          |> assign(:keys, Accounts.list_api_keys(socket.assigns.user_id))
@@ -37,7 +42,12 @@ defmodule FountainWeb.ApiKeysLive.Index do
 
   def handle_event("revoke", %{"id" => id}, socket) do
     case Accounts.revoke_api_key(socket.assigns.user_id, id) do
-      {:ok, _} ->
+      {:ok, revoked} ->
+        FountainWeb.Audited.from_socket(socket, "api_key.revoked", "api_key",
+          resource_id: id,
+          metadata: %{"name" => revoked.name}
+        )
+
         {:noreply,
          socket
          |> assign(:keys, Accounts.list_api_keys(socket.assigns.user_id))

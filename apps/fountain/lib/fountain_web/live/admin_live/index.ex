@@ -12,7 +12,8 @@ defmodule FountainWeb.AdminLive.Index do
      socket
      |> assign(:page_title, "Admin")
      |> assign_users()
-     |> assign(:sandboxes, Conversations.list_sandboxes_admin())}
+     |> assign(:sandboxes, Conversations.list_sandboxes_admin())
+     |> assign(:admin_events, Fountain.Audit.list_recent_admin(25))}
   end
 
   @impl true
@@ -22,7 +23,8 @@ defmodule FountainWeb.AdminLive.Index do
     {:noreply,
      socket
      |> assign_users()
-     |> assign(:sandboxes, Conversations.list_sandboxes_admin())}
+     |> assign(:sandboxes, Conversations.list_sandboxes_admin())
+     |> assign(:admin_events, Fountain.Audit.list_recent_admin(25))}
   end
 
   @impl true
@@ -32,6 +34,13 @@ defmodule FountainWeb.AdminLive.Index do
 
     case Accounts.update_user_role(user, new_role) do
       {:ok, _} ->
+        Fountain.Audit.record_admin(%{
+          actor_user_id: socket.assigns.current_user.id,
+          target_user_id: user.id,
+          event_type: if(new_role == "admin", do: "admin.role.granted", else: "admin.role.revoked"),
+          metadata: %{"email" => user.email, "from" => user.role, "to" => new_role}
+        })
+
         {:noreply, socket |> assign_users() |> put_flash(:info, "Role updated")}
 
       {:error, _} ->
@@ -47,6 +56,17 @@ defmodule FountainWeb.AdminLive.Index do
     with {limit, ""} <- Integer.parse(String.trim(raw)),
          user = Accounts.get_user!(id),
          {:ok, _} <- Accounts.update_sandbox_limit(user, limit) do
+      Fountain.Audit.record_admin(%{
+        actor_user_id: socket.assigns.current_user.id,
+        target_user_id: user.id,
+        event_type: "admin.sandbox_limit.changed",
+        metadata: %{
+          "email" => user.email,
+          "from" => user.max_concurrent_sandboxes,
+          "to" => limit
+        }
+      })
+
       {:noreply, socket |> assign_users() |> put_flash(:info, "Sandbox limit updated")}
     else
       _ -> {:noreply, put_flash(socket, :error, "Limit must be a whole number of 0 or more")}
@@ -173,6 +193,38 @@ defmodule FountainWeb.AdminLive.Index do
                 </span>
               </td>
               <td class="px-4 py-2 text-xs text-zinc-500">{format_ts(s.inserted_at)}</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+      <section class="space-y-3">
+        <h2 class="text-lg font-medium">Recent admin actions</h2>
+        <p class="text-sm text-zinc-500">
+          Role grants and quota changes. Previously unrecorded — the
+          <code>admin_audit_events</code> table existed with no writer.
+        </p>
+
+        <div :if={@admin_events == []} class="text-sm text-zinc-500">Nothing yet.</div>
+
+        <table :if={@admin_events != []} class="w-full text-sm bg-white rounded shadow border border-zinc-200">
+          <thead class="text-left text-zinc-500 border-b border-zinc-200">
+            <tr>
+              <th class="px-4 py-2">When</th>
+              <th class="px-4 py-2">Action</th>
+              <th class="px-4 py-2">Target</th>
+              <th class="px-4 py-2">Detail</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr :for={e <- @admin_events} class="border-b border-zinc-100 last:border-0">
+              <td class="px-4 py-2 text-xs text-zinc-500">{format_ts(e.inserted_at)}</td>
+              <td class="px-4 py-2 font-mono text-xs">{e.event_type}</td>
+              <td class="px-4 py-2 font-mono text-xs">{e.metadata["email"]}</td>
+              <td class="px-4 py-2 text-xs text-zinc-500">
+                <span :if={e.metadata["from"] != nil}>
+                  {e.metadata["from"]} &rarr; {e.metadata["to"]}
+                </span>
+              </td>
             </tr>
           </tbody>
         </table>
