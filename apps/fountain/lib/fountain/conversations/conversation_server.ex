@@ -854,7 +854,7 @@ defmodule Fountain.Conversations.ConversationServer do
   end
 
   defp fountain_callback_env(token) do
-    base = Application.get_env(:fountain, :public_url)
+    base = Fountain.PublicUrl.base()
 
     if is_binary(base) and base != "" and is_binary(token) and token != "" do
       [{"FOUNTAIN_BASE_URL", base}, {"FOUNTAIN_TOKEN", token}]

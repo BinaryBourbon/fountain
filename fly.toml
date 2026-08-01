@@ -28,7 +28,10 @@ primary_region = 'sea'
 [env]
   PHX_SERVER = 'true'
   PORT = '8080'
-  FOUNTAIN_DOMAIN = 'fountain.fly.dev'
+  # PUBLIC_URL: absolute base for outbound links + sprite FOUNTAIN_BASE_URL.
+  # PHX_HOST: bare host for the endpoint and check_origin.
+  PUBLIC_URL = 'https://fountain.fly.dev'
+  PHX_HOST = 'fountain.fly.dev'
   EMAIL_FROM = 'noreply@updates.inevitable.fyi'
   OTEL_TRACES_EXPORTER = 'none'
 
