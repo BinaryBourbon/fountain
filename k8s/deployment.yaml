@@ -38,7 +38,7 @@ spec:
         - name: fountain
           # Pinned to the sha tag produced by the build workflow for the
           # last commit that ran it. Update this alongside any deploy.
-          image: ghcr.io/binarybourbon/fountain:sha-5dd5e4dcf66115f148f5e66f35d00e495c8e5015
+          image: ghcr.io/binarybourbon/fountain:sha-db3bb199e99fc602f7aaef66412c75dbf07e4258
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
