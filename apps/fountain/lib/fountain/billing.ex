@@ -248,6 +248,14 @@ defmodule Fountain.Billing do
   `canceled` or `past_due` account back to `trialing`: the support lever for
   "give this person another look".
 
+  The extension also advances `subscription_synced_at`, because an operator
+  decision outranks anything already in flight: without the stamp, a straggler
+  event from the old cancelled subscription (or a re-checkout race) with a
+  newer `created` than the last synced event would silently revert the
+  extension and gate the user again. Events younger than the extension still
+  apply — Stripe remains the authority for everything that happens *after* the
+  operator acted.
+
   Refused for `active` (they are paying; there is no trial) and `comped`
   (already free; extending would demote them to a trial that ends).
   """
@@ -270,7 +278,11 @@ defmodule Fountain.Billing do
 
     with :ok <- push_stripe_trial_end(user, new_end) do
       user
-      |> User.billing_changeset(%{subscription_status: "trialing", trial_ends_at: new_end})
+      |> User.billing_changeset(%{
+        subscription_status: "trialing",
+        trial_ends_at: new_end,
+        subscription_synced_at: DateTime.truncate(now, :second)
+      })
       |> Repo.update()
     end
   end

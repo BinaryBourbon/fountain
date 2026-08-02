@@ -684,6 +684,78 @@ defmodule Fountain.BillingTest do
       assert {:error, :active_subscription} = Billing.extend_trial(active, 7)
       assert {:error, :comped} = Billing.extend_trial(comped, 7)
     end
+
+    test "a straggler webhook cannot revert the extension" do
+      # The #334 shape: the operator re-opens a canceled account, then a
+      # delayed event from the old subscription arrives. Its `created` predates
+      # the extension, so the stamp the extension writes makes it stale.
+      user =
+        billing_state(insert_verified_user(),
+          subscription_status: "canceled",
+          stripe_customer_id: "cus_straggler",
+          stripe_subscription_id: "sub_straggler",
+          trial_ends_at: nil
+        )
+
+      stub(Stripe.Subscription, :list, fn _ -> {:ok, %{data: []}} end)
+
+      straggler_created = DateTime.utc_now() |> DateTime.add(-60, :second) |> DateTime.to_unix()
+
+      assert {:ok, extended} = Billing.extend_trial(user, 7)
+      assert extended.subscription_status == "trialing"
+
+      assert {:ok, :stale} =
+               Billing.sync_subscription(%Stripe.Event{
+                 id: "evt_straggler",
+                 type: "customer.subscription.deleted",
+                 created: straggler_created,
+                 data: %{
+                   object: %{
+                     id: "sub_straggler",
+                     customer: "cus_straggler",
+                     status: "canceled",
+                     trial_end: nil
+                   }
+                 }
+               })
+
+      assert Repo.reload!(user).subscription_status == "trialing"
+    end
+
+    test "an event younger than the extension still applies" do
+      # Stripe stays authoritative for what happens after the operator acted —
+      # the stamp only outranks the past, not the future.
+      user =
+        billing_state(insert_verified_user(),
+          subscription_status: "canceled",
+          stripe_customer_id: "cus_after_ext",
+          stripe_subscription_id: "sub_after_ext",
+          trial_ends_at: nil
+        )
+
+      stub(Stripe.Subscription, :list, fn _ -> {:ok, %{data: []}} end)
+
+      assert {:ok, _} = Billing.extend_trial(user, 7)
+
+      later = DateTime.utc_now() |> DateTime.add(60, :second) |> DateTime.to_unix()
+
+      assert {:ok, updated} =
+               Billing.sync_subscription(%Stripe.Event{
+                 id: "evt_after_ext",
+                 type: "customer.subscription.updated",
+                 created: later,
+                 data: %{
+                   object: %{
+                     id: "sub_after_ext",
+                     customer: "cus_after_ext",
+                     status: "active",
+                     trial_end: nil
+                   }
+                 }
+               })
+
+      assert updated.subscription_status == "active"
+    end
   end
 
   describe "comp_account/1 and revoke_comp/1" do
