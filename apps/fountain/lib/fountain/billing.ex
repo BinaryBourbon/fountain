@@ -387,6 +387,35 @@ defmodule Fountain.Billing do
   end
 
   @doc """
+  Whether the user's Stripe customer has any subscription that can still
+  produce a charge. `{:ok, true}` / `{:ok, false}`, or `{:error, reason}` when
+  Stripe cannot be asked — the caller must not guess.
+
+  This is the guard in front of Checkout. Our local `subscription_status` can
+  read `canceled` while a live subscription still exists in Stripe (a lost or
+  misordered webhook, or a `.deleted` from an old trial subscription landing
+  after the paid one's events) — and a subscription cancelled at period end is
+  still `active` in Stripe until the period ends. Opening Checkout in either
+  state creates a second, duplicate subscription; such a user belongs in the
+  Billing Portal, where the existing subscription can be renewed instead.
+
+  "Live" is the same set `cancel_subscriptions/1` cancels: everything except
+  the terminal `canceled` and `incomplete_expired`.
+  """
+  @spec has_live_subscription?(User.t()) :: {:ok, boolean()} | {:error, term()}
+  def has_live_subscription?(%User{stripe_customer_id: id}) when id in [nil, ""], do: {:ok, false}
+
+  def has_live_subscription?(%User{stripe_customer_id: customer_id}) do
+    case Stripe.Subscription.list(%{customer: customer_id, status: :all, limit: 100}) do
+      {:ok, %{data: subs}} ->
+        {:ok, Enum.any?(subs, &(to_string(&1.status) in @cancellable))}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  @doc """
   Returns the user with a `stripe_customer_id`, creating the Stripe Customer if
   it is missing.
 
@@ -541,6 +570,20 @@ defmodule Fountain.Billing do
         ts when is_integer(ts) -> DateTime.from_unix!(ts) |> DateTime.truncate(:second)
       end
 
+    # A portal cancellation flips this flag while the status stays "active":
+    # the user keeps access until the period ends and `.deleted` arrives. Synced
+    # so the billing page can say "access until <date>" instead of hard-locking
+    # (or saying nothing) at the webhook. `.deleted` clears it — the pending
+    # cancellation has happened, and a stale flag would haunt a resubscription.
+    cancel_at_period_end =
+      type != "customer.subscription.deleted" and Map.get(sub, :cancel_at_period_end) == true
+
+    current_period_end =
+      case Map.get(sub, :current_period_end) do
+        ts when is_integer(ts) -> DateTime.from_unix!(ts) |> DateTime.truncate(:second)
+        _ -> nil
+      end
+
     event_created = event_created_at(event)
 
     case get_user_by_stripe_customer_id(customer_id) do
@@ -565,7 +608,9 @@ defmodule Fountain.Billing do
           |> User.billing_changeset(%{
             subscription_status: status,
             trial_ends_at: trial_ends_at,
-            subscription_synced_at: event_created || user.subscription_synced_at
+            subscription_synced_at: event_created || user.subscription_synced_at,
+            cancel_at_period_end: cancel_at_period_end,
+            current_period_end: current_period_end
           })
           |> Repo.update()
         end
