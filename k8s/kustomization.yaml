@@ -6,9 +6,10 @@
 #
 # The pin: k8s/deployment.yaml is now a strategic-merge *patch*, but it keeps
 # its name and its `image: ghcr.io/binarybourbon/fountain:sha-…` line on
-# purpose — pin-image.yml seds that line on the deploy branch, and the
-# atomicity that #231 bought (base + overlay + pin in one deploy-branch
-# commit) holds by construction because all three live in this one tree.
+# purpose — publish-manifests.yml seds that line in the OCI manifest artifact
+# (#304), and the atomicity that #231 bought (base + overlay + pin in one
+# published artifact) holds by construction because all three live in this
+# one tree.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:

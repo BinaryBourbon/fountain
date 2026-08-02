@@ -10,11 +10,9 @@ on:
   push:
     branches: [main]
     # These paths never affect the OCI image, so skip the (multi-arch,
-    # ~slow) build when a commit touches only them. Crucially this covers
-    # k8s/** so the auto-pin commit from pin-image.yml doesn't trigger a
-    # fresh build → pin → build chase. (Pushes made with the default
-    # GITHUB_TOKEN don't trigger workflows anyway, but a human editing a
-    # manifest would, hence the explicit ignore.)
+    # ~slow) build when a commit touches only them. A manifest-only change
+    # still reaches the cluster: publish-manifests.yml can be dispatched to
+    # republish the artifact from an already-built commit.
     paths-ignore:
       - "k8s/**"
       # The portable self-hosting manifests — never part of the image.
