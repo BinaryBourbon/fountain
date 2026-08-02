@@ -53,12 +53,12 @@ echo "REGISTRATION_ENABLED=false" >> .env
 docker compose up -d
 ```
 
-To make yourself an admin, set the role directly — there is no bootstrap flow
-for the first admin yet:
+Make yourself the admin — recorded in the admin audit trail like any other
+role grant:
 
 ```bash
-docker compose exec postgres psql -U postgres -d fountain \
-  -c "UPDATE users SET role = 'admin' WHERE email = 'you@example.com';"
+docker compose exec app bin/fountain_server eval \
+  'Fountain.Release.promote_admin("you@example.com")'
 ```
 
 ## Versioning and upgrades
@@ -270,4 +270,3 @@ Being straight about what self-hosting does not yet include:
 
 - **Sprites is a hosted dependency** — `SPRITES_BASE_URL` can repoint it, but
   there is no self-hostable sandbox backend to point it at.
-- **No first-admin bootstrap**; the role is set in SQL.

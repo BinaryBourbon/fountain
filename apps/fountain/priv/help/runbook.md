@@ -231,6 +231,21 @@ Sending domains must be verified with the provider (SPF/DKIM/DMARC) before
 `EMAIL_FROM` can deliver to arbitrary inboxes, so a freshly configured provider
 can accept mail and still have it rejected downstream.
 
+## Granting admin without the panel
+
+The first admin — or an instance whose only admin is locked out — cannot use
+**/admin**. Grant the role from a release task instead; it is recorded as
+`admin.role.granted` with a system actor, so it shows in the admin audit trail
+like any panel-originated grant:
+
+```bash
+kubectl exec -n fountain deploy/fountain -- \
+  sh -c "PHX_SERVER=false bin/fountain_server eval 'Fountain.Release.promote_admin(\"you@example.com\")'"
+```
+
+Revoking has no release task; that is done from **/admin**, by an admin, on
+purpose.
+
 ## Postgres backup + restore
 
 A `fountain-pg-backup` CronJob (`k8s/backup-cronjob.yaml`) takes a compressed
