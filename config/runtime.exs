@@ -277,6 +277,18 @@ config :stripity_stripe,
 # Set per environment (test-mode price in dev, live-mode price in prod).
 config :fountain, :stripe_price_id, System.get_env("STRIPE_PRICE_ID")
 
+# Monthly price in cents, display-only, for the admin billing overview's MRR
+# tile (the API only tells us the price *id*). Unset → the tile says the price
+# isn't configured rather than showing a fabricated number. One amount on
+# purpose: a second price tier must change this shape, loudly.
+stripe_price_monthly_cents =
+  case System.get_env("STRIPE_PRICE_MONTHLY_CENTS") do
+    value when value in [nil, ""] -> nil
+    value -> String.to_integer(value)
+  end
+
+config :fountain, :stripe_price_monthly_cents, stripe_price_monthly_cents
+
 # Mail delivery.
 #
 # With no adapter configured this used to silently fall back to

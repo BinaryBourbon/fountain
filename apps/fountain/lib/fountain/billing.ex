@@ -754,6 +754,85 @@ defmodule Fountain.Billing do
   defp to_minutes(%Decimal{} = ms), do: Decimal.to_float(ms) / 60_000.0
   defp to_minutes(ms) when is_number(ms), do: ms / 60_000.0
 
+  # ─── Admin billing overview (#286) ──────────────────────────────────────────
+
+  @doc """
+  The numbers an operator checks daily, in one read-only pass — for the admin
+  panel (no tenant scoping; the caller is behind `require_admin`).
+
+  - `status_counts` — users per `subscription_status`
+  - `trials_ending_7d` — trialing users whose `trial_ends_at` is within the
+    next 7 days
+  - `conversions_this_month` — `checkout.session.completed` webhook events
+    since the start of the current UTC month. Every verified webhook is
+    claimed into `stripe_events` before handling, so the claim table is a
+    complete record of checkouts — including a canceled user coming back.
+  - `mrr_cents` — active subscriptions × the configured monthly price
+    (`:stripe_price_monthly_cents`, from `STRIPE_PRICE_MONTHLY_CENTS`).
+    `nil` when the price isn't configured — no number is better than a made-up
+    one. Deliberately `active` only: `past_due` is at-risk revenue, comped is
+    not revenue. Honesty note: this breaks the day there is a second price;
+    the config is a single amount on purpose so that day is loud.
+  - `recent_events` — the last processed webhook events, newest first.
+    Failures are not listed because failed deliveries are never claimed —
+    they exist only in Stripe's dashboard and our logs today.
+
+  Options: `:price_cents` overrides the configured price (tests), `:now`
+  pins the clock, `:event_limit` caps `recent_events` (default 10).
+  """
+  @spec overview_admin(keyword()) :: map()
+  def overview_admin(opts \\ []) do
+    now = Keyword.get(opts, :now, DateTime.utc_now())
+
+    price_cents =
+      Keyword.get(opts, :price_cents, Application.get_env(:fountain, :stripe_price_monthly_cents))
+
+    event_limit = Keyword.get(opts, :event_limit, 10)
+
+    status_counts =
+      from(u in User, group_by: u.subscription_status, select: {u.subscription_status, count(u.id)})
+      |> Repo.all()
+      |> Map.new()
+
+    in_7d = DateTime.add(now, 7, :day)
+
+    trials_ending_7d =
+      Repo.one(
+        from u in User,
+          where:
+            u.subscription_status == "trialing" and not is_nil(u.trial_ends_at) and
+              u.trial_ends_at >= ^now and u.trial_ends_at <= ^in_7d,
+          select: count(u.id)
+      ) || 0
+
+    month_start = %{now | day: 1, hour: 0, minute: 0, second: 0, microsecond: {0, 6}}
+
+    conversions_this_month =
+      Repo.one(
+        from e in "stripe_events",
+          where: e.type == "checkout.session.completed" and e.inserted_at >= ^month_start,
+          select: count(e.id)
+      ) || 0
+
+    recent_events =
+      Repo.all(
+        from e in "stripe_events",
+          order_by: [desc: e.inserted_at],
+          limit: ^event_limit,
+          select: %{id: e.id, type: e.type, inserted_at: e.inserted_at}
+      )
+
+    active = Map.get(status_counts, "active", 0)
+
+    %{
+      status_counts: status_counts,
+      trials_ending_7d: trials_ending_7d,
+      conversions_this_month: conversions_this_month,
+      mrr_cents: price_cents && active * price_cents,
+      recent_events: recent_events
+    }
+  end
+
   # ─── Usage emission ─────────────────────────────────────────────────────────
 
   @doc """

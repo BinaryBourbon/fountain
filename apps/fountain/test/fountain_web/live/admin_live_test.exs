@@ -477,6 +477,39 @@ defmodule FountainWeb.AdminLiveTest do
     end
   end
 
+  describe "AdminLive.Index — billing overview section" do
+    test "renders tiles, status chips linking to the filtered table, and events", %{conn: conn} do
+      admin = insert_admin()
+
+      Fountain.Repo.update!(
+        Ecto.Changeset.change(insert_verified_user(), subscription_status: "active")
+      )
+
+      Fountain.Repo.insert_all("stripe_events", [
+        %{
+          id: "evt_admin_test",
+          type: "checkout.session.completed",
+          inserted_at: DateTime.utc_now() |> DateTime.truncate(:second)
+        }
+      ])
+
+      conn = login_user(conn, admin)
+      {:ok, _lv, html} = live(conn, ~p"/admin")
+
+      assert html =~ "MRR"
+      assert html =~ "Trials ending in 7 days"
+      assert html =~ "Conversions this month"
+      # no STRIPE_PRICE_MONTHLY_CENTS in test → honest placeholder, not a number
+      assert html =~ "set STRIPE_PRICE_MONTHLY_CENTS"
+      # status chips link into the filtered user table from #285
+      assert html =~ "/admin?status=active"
+      assert html =~ "/admin?status=past_due"
+      # recent webhook events listed
+      assert html =~ "evt_admin_test"
+      assert html =~ "checkout.session.completed"
+    end
+  end
+
   describe "AdminLive.Index — search, filter, sort" do
     # The layout renders the logged-in admin's email in the nav, so negative
     # assertions must target a third user, never the admin.

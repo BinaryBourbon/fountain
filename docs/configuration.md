@@ -87,6 +87,7 @@ signup with no visible error. See [Email](self-hosting.md#email).
 | `STRIPE_SECRET_KEY` | — | for billing | Stripe API key |
 | `STRIPE_WEBHOOK_SECRET` | — | for billing | Verifies `POST /api/stripe/webhook` signatures |
 | `STRIPE_PRICE_ID` | — | for checkout | The subscription price surfaced by Checkout. Unset with billing enabled, signups get a purely local 14-day trial and a logged warning |
+| `STRIPE_PRICE_MONTHLY_CENTS` | — | no | Monthly price in cents (e.g. `2900`), display-only: feeds the admin billing overview's MRR tile. Unset, the tile shows a placeholder instead of a fabricated number |
 
 ## Proxies and origins
 
