@@ -151,7 +151,9 @@ Pick one:
 | `EMAIL_DELIVERY=none` | No email. Verify accounts with `Fountain.Release.verify_email/1` |
 
 Password reset also needs working mail. With `EMAIL_DELIVERY=none` the only
-route back into a locked-out account is the database.
+route back into a locked-out account is the database. Provider-side setup —
+domain verification, SMTP details, what each mode means for signup — is in
+the [mail integration guide](integrations/mail.md).
 
 ## Sandbox lifetime
 
@@ -175,7 +177,8 @@ re-provisioning wait, not lost work.
 
 The compose file sets `BILLING_ENABLED=false`. The subscription gate exists for
 the hosted service; on your own instance it is a lock with no key. Leave it off
-unless you are running Fountain commercially and have configured Stripe.
+unless you are running Fountain commercially and have configured Stripe — the
+[Stripe integration guide](integrations/stripe.md) covers that setup.
 
 ## Putting it on the internet
 
@@ -216,7 +219,8 @@ Error tracking is off unless you opt in: set `SENTRY_DSN` and crashes —
 including the ones that never touch a web request — are reported with stack
 traces, grouped, and correlated with releases. The endpoint can be sentry.io
 or anything Sentry-API-compatible (GlitchTip, for a fully self-hosted stack).
-Unset, nothing ever leaves your instance.
+Unset, nothing ever leaves your instance. Setup and the Crons pattern for
+backup-job alerting are in the [Sentry integration guide](integrations/sentry.md).
 
 ### Health endpoints
 
