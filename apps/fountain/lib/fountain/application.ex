@@ -9,6 +9,7 @@ defmodule Fountain.Application do
   def start(_type, _args) do
     FountainWeb.Plugs.RateLimit.ensure_table()
     Fountain.Telemetry.attach_default_logger()
+    attach_sentry_handler()
 
     # OpenTelemetry instrumentation (prod only — deps not compiled in dev/test).
     # apply/3 defers symbol resolution past compile time so dev/test compiles
@@ -91,5 +92,26 @@ defmodule Fountain.Application do
   # BEAM stop.
   defp skip_rehydrate? do
     Application.get_env(:fountain, :skip_rehydrate, false)
+  end
+
+  # Crash reports from any process — ConversationServer, workers, bare Tasks —
+  # become Sentry error events. That non-router surface is the whole point:
+  # router exceptions already show up in metrics, while a ConversationServer
+  # crash mid-provision used to produce a log line and nothing else (#211).
+  #
+  # Error events only, no structured-log forwarding, and rate-limited so an
+  # error loop cannot burn the event quota. Attached only when a DSN is
+  # configured, so the default install reports nothing anywhere.
+  defp attach_sentry_handler do
+    if Application.get_env(:sentry, :dsn) do
+      :logger.add_handler(:sentry, Sentry.LoggerHandler, %{
+        config: %{
+          metadata: [:request_id],
+          rate_limiting: [max_events: 20, interval: 60_000]
+        }
+      })
+    end
+
+    :ok
   end
 end

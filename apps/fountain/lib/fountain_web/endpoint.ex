@@ -118,6 +118,12 @@ defmodule FountainWeb.Endpoint do
     json_decoder: Phoenix.json_library(),
     body_reader: {FountainWeb.CachingBodyReader, :read_body, []}
 
+  # Attaches request context (method, path, scrubbed headers/params) to any
+  # Sentry event reported while this request is being handled. Sentry's
+  # default scrubbers drop auth headers, cookies and password-shaped params.
+  # A no-op while SENTRY_DSN is unset.
+  plug Sentry.PlugContext
+
   plug Plug.MethodOverride
   plug Plug.Head
   # Not `plug Plug.Session, @session_options`: the `secure` flag has to be

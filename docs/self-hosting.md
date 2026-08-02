@@ -205,6 +205,12 @@ internet — it enumerates routes, request rates and database timings.
 
 Logs go to stdout: `docker compose logs -f app`.
 
+Error tracking is off unless you opt in: set `SENTRY_DSN` and crashes —
+including the ones that never touch a web request — are reported with stack
+traces, grouped, and correlated with releases. The endpoint can be sentry.io
+or anything Sentry-API-compatible (GlitchTip, for a fully self-hosted stack).
+Unset, nothing ever leaves your instance.
+
 ### Health endpoints
 
 Two, because restarting a container and taking it out of a load balancer are

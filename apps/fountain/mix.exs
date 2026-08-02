@@ -32,6 +32,7 @@ defmodule Fountain.MixProject do
 
   defp deps do
     [
+      {:sentry, "~> 13.3"},
       {:phoenix, "~> 1.8.5"},
       {:phoenix_ecto, "~> 4.5"},
       {:ecto_sql, "~> 3.13"},
