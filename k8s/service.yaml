@@ -1,55 +1,21 @@
+# Patch over the baseline Service: the metrics port (Prometheus scrape
+# target — exposed for the ServiceMonitor, deliberately absent from the
+# IngressRoute) and the `monitoring` label the ServiceMonitor selects on, so
+# it can't bind a target with no metrics port. fountain-headless is a separate
+# resource (service-headless.yaml), not part of this patch.
 apiVersion: v1
 kind: Service
 metadata:
   name: fountain
   namespace: fountain
   labels:
-    app: fountain
-    # Distinguishes this Service from fountain-headless, which shares the
-    # `app: fountain` label but exposes only the Erlang distribution ports.
-    # The ServiceMonitor selects on this so it can't bind a target with no
-    # metrics port.
     monitoring: fountain-web
 spec:
   type: ClusterIP
-  selector:
-    app: fountain
   ports:
     - name: http
       port: 80
       targetPort: 4000
-    # Prometheus scrape target. Exposed on the Service so the ServiceMonitor can
-    # reach it, but deliberately absent from the IngressRoute — that matches on
-    # Host with no path predicate, so anything on the public endpoint is public.
     - name: metrics
       port: 9568
       targetPort: metrics
----
-# Headless service (clusterIP: None) — DNS returns one A record per pod IP
-# instead of a single VIP. libcluster's DNSPoll strategy queries this name
-# (CLUSTER_DNS_QUERY in the Deployment) to discover peer pods and form the
-# Erlang cluster that backs Horde + Phoenix.PubSub. Distribution traffic
-# itself flows pod-IP → pod-IP on epmd (4369) + the pinned dist port (9100),
-# not through this service. publishNotReadyAddresses lets pods find each
-# other during a rollout before they pass readiness, so the cluster forms
-# promptly instead of waiting out the readiness gate.
-apiVersion: v1
-kind: Service
-metadata:
-  name: fountain-headless
-  namespace: fountain
-  labels:
-    app: fountain
-spec:
-  type: ClusterIP
-  clusterIP: None
-  publishNotReadyAddresses: true
-  selector:
-    app: fountain
-  ports:
-    - name: epmd
-      port: 4369
-      targetPort: 4369
-    - name: erldist
-      port: 9100
-      targetPort: 9100
