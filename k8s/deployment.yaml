@@ -3,8 +3,8 @@
 # rollout strategy come from the base and are deliberately not repeated.
 #
 # This file keeps its name and its image line even though it is now a patch:
-# pin-image.yml seds `ghcr.io/binarybourbon/fountain:sha-…` in
-# k8s/deployment.yaml on the deploy branch. See kustomization.yaml.
+# publish-manifests.yml seds `ghcr.io/binarybourbon/fountain:sha-…` in
+# k8s/deployment.yaml inside the OCI manifest artifact. See kustomization.yaml.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -30,10 +30,11 @@ spec:
     spec:
       containers:
         - name: fountain
-          # Inert on this branch. Flux tracks `deploy`, not `main`, and the
-          # pin-image workflow rewrites this line there — on the tree that was
-          # actually built, with the tag built from it. The value below is
-          # whatever was last committed here and is not what runs. See #231.
+          # Inert in git. Flux deploys the OCI artifact at
+          # ghcr.io/binarybourbon/fountain-manifests, and publish-manifests.yml
+          # rewrites this line in the artifact — on the tree that was actually
+          # built, with the tag built from it. The value below is whatever was
+          # last committed here and is not what runs. See #231, #304.
           image: ghcr.io/binarybourbon/fountain:sha-b1e612b6fdcb844514e67e1a00a8a84bcdec0147
           ports:
             # Erlang distribution: epmd + the pinned dist port (see

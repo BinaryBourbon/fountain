@@ -1,0 +1,147 @@
+name: publish-manifests
+
+# Publishes what Flux deploys: an OCI artifact at
+# ghcr.io/binarybourbon/fountain-manifests holding the exact tree that was
+# built, plus the image tag built from it, pinned in k8s/deployment.yaml.
+# That pairing is the point. Flux once tracked `main`, where the two arrive
+# in separate commits minutes apart — the PR changes k8s/deployment.yaml,
+# the image finishes building later, and the pin lands after that. Flux
+# polls every 5 minutes, so it routinely applied a manifest against the
+# previous image.
+#
+# That is not theoretical: #241 moved the readiness probe to a new path, Flux
+# applied it against an image with no such route, and every pod 404'd its
+# probe and never became ready. A derived, force-pushed `deploy` branch fixed
+# that (#250); the artifact replaces the branch with the same guarantee and
+# less git machinery (#304). This workflow pushes no git refs at all.
+#
+# Flow: push to main → build.yml builds and pushes
+#   ghcr.io/binarybourbon/fountain:sha-<sha>
+#       → this workflow publishes the artifact from *that sha's tree* with
+#         the matching tag pinned: immutable `sha-<short>` plus a moving
+#         `latest`
+#       → the cluster's OCIRepository reconciles `latest`.
+#
+# Rollback is one command, no git involved:
+#   flux tag artifact oci://ghcr.io/binarybourbon/fountain-manifests:sha-<old> --tag latest
+#
+# `main` is never deployed directly and its k8s/deployment.yaml image tag is
+# inert — see the note in that file.
+
+on:
+  workflow_run:
+    workflows: [build]
+    types: [completed]
+    branches: [main]
+  # Manual escape hatch: republishes from an already-built commit. The
+  # image-existence check below is what makes this safe — a sha whose image
+  # was never built is refused before anything is published.
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: "Commit to publish (defaults to the branch tip)"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Publish the manifest artifact
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: write
+    env:
+      # The commit that was actually built — NOT main's tip. Pinning onto
+      # the tip is what let a newer manifest ride out with an older image.
+      SRC_SHA: ${{ github.event.workflow_run.head_sha || inputs.sha || github.sha }}
+      MANIFESTS: ghcr.io/binarybourbon/fountain-manifests
+
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: ${{ env.SRC_SHA }}
+          # Full history: the backwards-move guard below walks ancestry.
+          fetch-depth: 0
+
+      - name: Resolve image tag
+        id: tag
+        run: |
+          sha="${SRC_SHA}"
+          {
+            echo "sha=${sha}"
+            echo "short=${sha:0:7}"
+            echo "image=ghcr.io/binarybourbon/fountain:sha-${sha}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Verify the image exists
+        # A no-op after workflow_run (the build just succeeded), but the guard
+        # that keeps workflow_dispatch honest: never publish a manifest whose
+        # image cannot be pulled.
+        run: docker manifest inspect "${{ steps.tag.outputs.image }}" > /dev/null
+
+      - name: Pin the image tag in the working tree
+        env:
+          IMAGE: ${{ steps.tag.outputs.image }}
+        run: |
+          set -euo pipefail
+          sed -i -E \
+            "s|ghcr\.io/binarybourbon/fountain:sha-[0-9a-f]+|${IMAGE}|" \
+            k8s/deployment.yaml
+          git diff --stat k8s/deployment.yaml
+
+      - name: Setup flux CLI
+        uses: fluxcd/flux2/action@54e4ba378e155ada619caafdc599e5c4d759ce5c # v2.8.7
+        with:
+          # Matches the cluster's source-controller. Nothing here is
+          # version-sensitive, but drift is one more thing to reason about
+          # during an incident.
+          version: 2.8.7
+
+      - name: Publish the manifest artifact
+        env:
+          SHA: ${{ steps.tag.outputs.sha }}
+          SHORT: ${{ steps.tag.outputs.short }}
+        run: |
+          set -euo pipefail
+
+          echo "${{ secrets.GITHUB_TOKEN }}" \
+            | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+          # Refuse to move `latest` backwards. Builds can finish out of order —
+          # a slow build for an older commit must not overwrite a newer deploy
+          # with stale manifests. The artifact's source sha lives in the
+          # standard OCI revision annotation (set by --revision below), so this
+          # needs no extra state. Absent annotation (first run) or an unknown
+          # sha both fall through to publishing.
+          previous=$(docker buildx imagetools inspect --raw "${MANIFESTS}:latest" 2>/dev/null \
+            | jq -r '.annotations["org.opencontainers.image.revision"] // empty' || true)
+
+          if [ -n "${previous}" ] && [ "${previous}" != "${SHA}" ]; then
+            if git merge-base --is-ancestor "${SHA}" "${previous}" 2>/dev/null; then
+              echo "sha-${SHORT} is an ancestor of the published ${previous:0:7}; refusing to move latest backwards."
+              exit 0
+            fi
+          fi
+
+          # Stage exactly what the cluster Kustomization consumes: ./k8s plus
+          # the ../deploy/k8s baseline its kustomization references, relative
+          # layout intact. The tree is evaluated in-cluster by
+          # kustomize-controller.
+          staging=$(mktemp -d)
+          cp -R k8s "${staging}/k8s"
+          mkdir -p "${staging}/deploy"
+          cp -R deploy/k8s "${staging}/deploy/k8s"
+
+          flux push artifact "oci://${MANIFESTS}:sha-${SHORT}" \
+            --path="${staging}" \
+            --source="https://github.com/${{ github.repository }}" \
+            --revision="${SHA}"
+
+          flux tag artifact "oci://${MANIFESTS}:sha-${SHORT}" --tag latest
+
+          echo "manifest artifact published: ${MANIFESTS}:sha-${SHORT} (revision ${SHA}), latest re-tagged"
