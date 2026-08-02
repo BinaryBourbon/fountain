@@ -59,12 +59,19 @@ defmodule Fountain.Workers.StripeCustomerSync do
   # Billing.create_stripe_customer/1 is also on the Checkout path, where opening
   # a trial moments before a paid subscription would be wrong.
   #
-  # A user who already has a subscription is left alone: this job is unique per
-  # user for 5 minutes but not forever, and minting a second subscription for
-  # someone who already converted would bill them twice.
+  # A user who already has a subscription of record is left alone: this job is
+  # unique per user for 5 minutes but not forever, and minting a second
+  # subscription for someone who already converted would bill them twice.
+  #
+  # The guard is the subscription id, NOT trial_ends_at (#351): registration
+  # stamps trial_ends_at on every account as the pre-verification floor, so a
+  # nil check here was permanently false and start_trial_subscription was
+  # unreachable — no signup ever got a Stripe subscription, and nothing
+  # Stripe-driven (trial_will_end, the deletion at trial end, the lifecycle
+  # emails hanging off both) could happen for those accounts.
   defp ensure_customer_and_trial(user) do
     with {:ok, user} <- Billing.ensure_stripe_customer(user) do
-      if user.subscription_status == "trialing" and is_nil(user.trial_ends_at) do
+      if user.subscription_status == "trialing" and is_nil(user.stripe_subscription_id) do
         Billing.start_trial_subscription(user)
       else
         {:ok, user}
