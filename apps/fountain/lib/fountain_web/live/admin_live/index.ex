@@ -6,6 +6,9 @@ defmodule FountainWeb.AdminLive.Index do
   alias Fountain.Accounts.Deletion
 
   @usage_window_days 30
+  @per_page 25
+  @statuses ~w(trialing active past_due canceled comped)
+  @sorts ~w(email joined trial_end last_activity)
 
   @impl true
   def mount(_params, _session, socket) do
@@ -15,9 +18,18 @@ defmodule FountainWeb.AdminLive.Index do
      socket
      |> FountainWeb.Audited.put_client_ip()
      |> assign(:page_title, "Admin")
-     |> assign_users()
      |> assign(:sandboxes, Conversations.list_sandboxes_admin())
      |> assign(:admin_events, Fountain.Audit.list_recent_admin(25))}
+  end
+
+  # Filter/sort/page state lives in the URL, so the 10s refresh, admin
+  # actions, and browser reloads all preserve position.
+  @impl true
+  def handle_params(params, _uri, socket) do
+    {:noreply,
+     socket
+     |> assign(:filters, parse_filters(params))
+     |> assign_users()}
   end
 
   @impl true
@@ -29,6 +41,20 @@ defmodule FountainWeb.AdminLive.Index do
      |> assign_users()
      |> assign(:sandboxes, Conversations.list_sandboxes_admin())
      |> assign(:admin_events, Fountain.Audit.list_recent_admin(25))}
+  end
+
+  @impl true
+  def handle_event("filter", params, socket) do
+    filters = %{
+      socket.assigns.filters
+      | search: params["q"] || "",
+        status: if(params["status"] in @statuses, do: params["status"]),
+        role: if(params["role"] in ~w(admin user), do: params["role"]),
+        verified: parse_verified(params["verified"]),
+        page: 1
+    }
+
+    {:noreply, push_patch(socket, to: admin_path(filters))}
   end
 
   @impl true
@@ -221,6 +247,7 @@ defmodule FountainWeb.AdminLive.Index do
   end
 
   defp assign_users(socket) do
+    f = socket.assigns.filters
     now = DateTime.utc_now()
 
     # Upper bound one second ahead: the column is second-precision, so a bound
@@ -231,16 +258,101 @@ defmodule FountainWeb.AdminLive.Index do
         DateTime.add(now, -@usage_window_days, :day),
         DateTime.add(now, 1, :second)
       )
+
     no_usage = %{conversations: 0, turns: 0, sandbox_minutes: 0.0}
+    sandbox_counts = Quotas.active_sandbox_counts()
+
+    %{users: users, total: total} =
+      Accounts.list_users_admin(
+        search: f.search,
+        status: f.status,
+        role: f.role,
+        verified: f.verified,
+        sort: f.sort,
+        dir: f.dir,
+        page: f.page,
+        per_page: @per_page
+      )
 
     users =
-      Enum.map(Accounts.list_users(), fn u ->
+      Enum.map(users, fn u ->
         u
-        |> Map.put(:active_sandboxes, Quotas.active_sandbox_count(u.id))
+        |> Map.put(:active_sandboxes, Map.get(sandbox_counts, u.id, 0))
         |> Map.put(:usage, Map.get(usage, u.id, no_usage))
       end)
 
-    assign(socket, :users, users)
+    socket
+    |> assign(:users, users)
+    |> assign(:total_users, total)
+  end
+
+  defp parse_filters(params) do
+    %{
+      search: params["q"] || "",
+      status: if(params["status"] in @statuses, do: params["status"]),
+      role: if(params["role"] in ~w(admin user), do: params["role"]),
+      verified: parse_verified(params["verified"]),
+      sort: if(params["sort"] in @sorts, do: params["sort"], else: "joined"),
+      dir: if(params["dir"] in ~w(asc desc), do: params["dir"], else: "desc"),
+      page: parse_page(params["page"])
+    }
+  end
+
+  defp parse_verified("yes"), do: true
+  defp parse_verified("no"), do: false
+  defp parse_verified(_), do: nil
+
+  defp parse_page(raw) do
+    case is_binary(raw) && Integer.parse(raw) do
+      {page, ""} when page > 0 -> page
+      _ -> 1
+    end
+  end
+
+  defp admin_path(f) do
+    params =
+      [
+        q: if(f.search != "", do: f.search),
+        status: f.status,
+        role: f.role,
+        verified:
+          case f.verified do
+            true -> "yes"
+            false -> "no"
+            nil -> nil
+          end,
+        sort: if(f.sort != "joined", do: f.sort),
+        dir: if(f.dir != "desc", do: f.dir),
+        page: if(f.page > 1, do: f.page)
+      ]
+      |> Enum.reject(fn {_k, v} -> is_nil(v) end)
+
+    ~p"/admin?#{params}"
+  end
+
+  defp sort_toggle(f, col) do
+    cond do
+      f.sort == col -> %{f | dir: flip(f.dir), page: 1}
+      col == "email" -> %{f | sort: col, dir: "asc", page: 1}
+      true -> %{f | sort: col, dir: "desc", page: 1}
+    end
+  end
+
+  defp flip("asc"), do: "desc"
+  defp flip(_), do: "asc"
+
+  defp page_count(total), do: max(div(total + @per_page - 1, @per_page), 1)
+
+  attr :label, :string, required: true
+  attr :col, :string, required: true
+  attr :filters, :map, required: true
+
+  defp sort_header(assigns) do
+    ~H"""
+    <.link patch={admin_path(sort_toggle(@filters, @col))} class="hover:text-zinc-900">
+      {@label}<span :if={@filters.sort == @col}> {if @filters.dir == "asc", do: "▲", else: "▼"}</span>
+    </.link>
+    """
   end
 
   @impl true
@@ -253,25 +365,76 @@ defmodule FountainWeb.AdminLive.Index do
       </div>
 
       <section class="space-y-3">
-        <h2 class="text-lg font-medium">Users ({length(@users)})</h2>
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-lg font-medium">Users ({@total_users})</h2>
+          <form phx-change="filter" id="user-filters" class="flex flex-wrap items-center gap-2">
+            <input
+              type="text"
+              name="q"
+              value={@filters.search}
+              placeholder="Search email…"
+              phx-debounce="300"
+              autocomplete="off"
+              class="w-48 rounded border border-zinc-200 px-2 py-1 text-xs"
+            />
+            <select name="status" class="rounded border border-zinc-200 px-1 py-1 text-xs">
+              <option value="">any status</option>
+              <option :for={s <- ~w(trialing active past_due canceled comped)} value={s} selected={@filters.status == s}>
+                {s}
+              </option>
+            </select>
+            <select name="role" class="rounded border border-zinc-200 px-1 py-1 text-xs">
+              <option value="">any role</option>
+              <option value="admin" selected={@filters.role == "admin"}>admin</option>
+              <option value="user" selected={@filters.role == "user"}>user</option>
+            </select>
+            <select name="verified" class="rounded border border-zinc-200 px-1 py-1 text-xs">
+              <option value="">any verification</option>
+              <option value="yes" selected={@filters.verified == true}>verified</option>
+              <option value="no" selected={@filters.verified == false}>unverified</option>
+            </select>
+          </form>
+        </div>
         <table class="w-full text-sm bg-white rounded shadow border border-zinc-200">
           <thead class="text-left text-zinc-500 border-b border-zinc-200">
             <tr>
-              <th class="px-4 py-2">Email</th>
+              <th class="px-4 py-2">
+                <.sort_header label="Email" col="email" filters={@filters} />
+              </th>
               <th class="px-4 py-2">Role</th>
-              <th class="px-4 py-2">Billing</th>
+              <th class="px-4 py-2">
+                <.sort_header label="Billing" col="trial_end" filters={@filters} />
+              </th>
               <th class="px-4 py-2" title="Last 30 days: conversations / turns / sandbox minutes">
                 Usage 30d
               </th>
               <th class="px-4 py-2">Sandboxes</th>
               <th class="px-4 py-2">Onboarding</th>
-              <th class="px-4 py-2">Joined</th>
+              <th class="px-4 py-2">
+                <.sort_header label="Last active" col="last_activity" filters={@filters} />
+              </th>
+              <th class="px-4 py-2">
+                <.sort_header label="Joined" col="joined" filters={@filters} />
+              </th>
               <th class="px-4 py-2"></th>
             </tr>
           </thead>
           <tbody>
+            <tr :if={@users == []}>
+              <td colspan="9" class="px-4 py-6 text-center text-sm text-zinc-500">
+                No users match.
+              </td>
+            </tr>
             <tr :for={u <- @users} class="border-b border-zinc-100 last:border-0 hover:bg-zinc-50">
-              <td class="px-4 py-2 font-mono text-xs">{u.email}</td>
+              <td class="px-4 py-2 font-mono text-xs">
+                {u.email}
+                <span
+                  :if={is_nil(u.email_verified_at)}
+                  class="ml-1 inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium border bg-zinc-100 text-zinc-500 border-zinc-200"
+                >
+                  unverified
+                </span>
+              </td>
               <td class="px-4 py-2">
                 <span class={[
                   "inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium border",
@@ -369,6 +532,9 @@ defmodule FountainWeb.AdminLive.Index do
                   · {format_date(u.onboarding_completed_at)}
                 </span>
               </td>
+              <td class="px-4 py-2 text-zinc-500 text-xs">
+                {if u.last_activity_at, do: format_date(u.last_activity_at), else: "—"}
+              </td>
               <td class="px-4 py-2 text-zinc-500 text-xs">{format_date(u.inserted_at)}</td>
               <td class="px-4 py-2 text-right space-x-3">
                 <button phx-click="toggle_admin" phx-value-id={u.id}
@@ -388,6 +554,24 @@ defmodule FountainWeb.AdminLive.Index do
             </tr>
           </tbody>
         </table>
+        <div
+          :if={page_count(@total_users) > 1 or @filters.page > 1}
+          class="flex items-center justify-between text-xs text-zinc-500"
+        >
+          <span>Page {@filters.page} of {page_count(@total_users)}</span>
+          <div class="space-x-3">
+            <.link :if={@filters.page > 1} patch={admin_path(%{@filters | page: @filters.page - 1})} class="underline">
+              ← prev
+            </.link>
+            <.link
+              :if={@filters.page < page_count(@total_users)}
+              patch={admin_path(%{@filters | page: @filters.page + 1})}
+              class="underline"
+            >
+              next →
+            </.link>
+          </div>
+        </div>
       </section>
 
       <section class="space-y-3">
