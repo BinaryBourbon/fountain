@@ -40,6 +40,11 @@ defmodule FountainWeb.Plugs.TenantAPIAuth do
       {:error, :expired} ->
         unauthorized(conn, "API key has expired", "api_key_expired")
 
+      # Neutral (#287): the key was valid — the holder already knows the
+      # account exists; the response still doesn't say why it's unusable.
+      {:error, :suspended} ->
+        unauthorized(conn, "This account is currently unavailable", "account_unavailable")
+
       _ ->
         unauthorized(conn, "Invalid or missing API key", "api_key_invalid")
     end

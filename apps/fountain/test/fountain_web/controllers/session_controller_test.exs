@@ -28,6 +28,31 @@ defmodule FountainWeb.SessionControllerTest do
     end
   end
 
+  describe "POST /auth/login — suspended account (#287)" do
+    test "refuses with a neutral message after a correct password", %{conn: conn} do
+      user = insert_verified_user()
+      {:ok, _, _} = Fountain.Accounts.suspend_user(user)
+
+      conn =
+        post(conn, ~p"/auth/login", %{"email" => user.email, "password" => "password123"})
+
+      body = html_response(conn, 401)
+      assert body =~ "currently unavailable"
+      refute body =~ "suspended"
+    end
+
+    test "wrong password on a suspended account looks like any bad login", %{conn: conn} do
+      user = insert_verified_user()
+      {:ok, _, _} = Fountain.Accounts.suspend_user(user)
+
+      conn = post(conn, ~p"/auth/login", %{"email" => user.email, "password" => "wrong"})
+
+      body = html_response(conn, 401)
+      assert body =~ "Invalid email or password"
+      refute body =~ "unavailable"
+    end
+  end
+
   describe "conn_case helpers" do
     test "authed/1 sets Bearer authorization header", %{conn: conn} do
       authed_conn = authed(conn)

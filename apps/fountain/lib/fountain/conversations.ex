@@ -88,6 +88,24 @@ defmodule Fountain.Conversations do
     end
   end
 
+  @doc """
+  Reap every active sandbox belonging to `user_id` — the suspension path
+  (#287). `_unsafe_` per the tenant contract: unscoped, and legitimate callers
+  are admin-driven (`Accounts.suspend_user/1` behind `require_admin`).
+
+  Best-effort by design: each sandbox reaps independently and a failure moves
+  on — suspension must not be blocked by one wedged sprite; `SandboxReaper`
+  sweeps stragglers. Returns the number of sandboxes reaped.
+  """
+  def _unsafe_reap_all_for_user(user_id) when is_binary(user_id) do
+    from(s in Sandbox,
+      where: s.user_id == ^user_id and s.status in ^Fountain.Quotas.active_statuses(),
+      select: s.id
+    )
+    |> Repo.all()
+    |> Enum.count(fn id -> match?({:ok, _}, _unsafe_reap_sandbox(id)) end)
+  end
+
   def create_sandbox(attrs) do
     %Sandbox{}
     |> Sandbox.changeset(attrs)
@@ -781,6 +799,7 @@ defmodule Fountain.Conversations do
          {:ok, runtime_module} <- Fountain.Runtimes.for_runtime(agent.runtime),
          {:ok, vault_id} <- resolve_vault_id(attrs["vault_id"], user_id, agent),
          {:ok, parent_id} <- resolve_parent_id(attrs["parent_conversation_id"], user_id),
+         :ok <- Fountain.Accounts.check_not_suspended(user_id),
          :ok <- Fountain.Billing.check_active(user_id),
          :ok <- Fountain.Quotas.check_sandbox_quota(user_id),
          {:ok, sandbox} <-
@@ -1034,7 +1053,8 @@ defmodule Fountain.Conversations do
     # Waking a dormant conversation provisions a fresh sprite, so it is subject
     # to the same gate as creating one. Without this, prompting an existing
     # conversation was an unmetered way past billing entirely.
-    with :ok <- Fountain.Billing.check_active(conv.user_id),
+    with :ok <- Fountain.Accounts.check_not_suspended(conv.user_id),
+         :ok <- Fountain.Billing.check_active(conv.user_id),
          :ok <-
            Fountain.Quotas.check_sandbox_quota(conv.user_id, exclude: conv.sandbox_id),
          {:ok, new_sandbox} <-

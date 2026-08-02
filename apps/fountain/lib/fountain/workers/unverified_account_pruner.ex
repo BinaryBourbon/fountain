@@ -62,8 +62,13 @@ defmodule Fountain.Workers.UnverifiedAccountPruner do
     cutoff = DateTime.utc_now() |> DateTime.add(-days, :day)
     exempt = exempt_substrings()
 
+    # Suspended accounts are excluded even when unverified: suspension marks
+    # an abuse investigation, and pruning would destroy the evidence (#287).
     User
-    |> where([u], is_nil(u.email_verified_at) and u.inserted_at < ^cutoff)
+    |> where(
+      [u],
+      is_nil(u.email_verified_at) and u.inserted_at < ^cutoff and is_nil(u.suspended_at)
+    )
     |> order_by([u], asc: u.inserted_at)
     |> limit(@batch)
     |> Repo.all()

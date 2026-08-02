@@ -89,16 +89,32 @@ defmodule FountainWeb.UeberauthController do
         |> redirect(to: ~p"/onboarding/step_1")
 
       {:ok, user, :existing} ->
-        FountainWeb.Audited.from_conn(conn, "auth.oauth.login", "user",
-          user_id: user.id,
-          metadata: %{"provider" => provider}
-        )
+        if Fountain.Accounts.suspended?(user) do
+          # Same neutral refusal as password login (#287): the provider
+          # asserted the identity, but a suspended account gets no session.
+          FountainWeb.Audited.from_conn(conn, "auth.login.failed", "session",
+            user_id: user.id,
+            metadata: %{"provider" => provider, "reason" => "suspended"}
+          )
 
-        conn
-        |> configure_session(renew: true)
-        |> put_session(:user_id, user.id)
-        |> put_session(:session_version, user.session_version)
-        |> redirect(to: ~p"/conversations")
+          conn
+          |> put_flash(
+            :error,
+            "This account is currently unavailable. Contact support if you believe this is an error."
+          )
+          |> redirect(to: ~p"/auth/login")
+        else
+          FountainWeb.Audited.from_conn(conn, "auth.oauth.login", "user",
+            user_id: user.id,
+            metadata: %{"provider" => provider}
+          )
+
+          conn
+          |> configure_session(renew: true)
+          |> put_session(:user_id, user.id)
+          |> put_session(:session_version, user.session_version)
+          |> redirect(to: ~p"/conversations")
+        end
 
       {:error, reason} when reason in [:registration_closed, :email_domain_not_allowed] ->
         conn

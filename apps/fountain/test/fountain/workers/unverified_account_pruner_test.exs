@@ -25,6 +25,17 @@ defmodule Fountain.Workers.UnverifiedAccountPrunerTest do
     :ok
   end
 
+  test "does not prune a suspended unverified account — it is evidence (#287)" do
+    suspended = backdate(insert_user(), 45)
+    {:ok, _, _} = Fountain.Accounts.suspend_user(suspended)
+    prunable = backdate(insert_user(), 45)
+
+    assert :ok = UnverifiedAccountPruner.perform(%Oban.Job{})
+
+    assert Fountain.Accounts.get_user(suspended.id)
+    assert Fountain.Accounts.get_user(prunable.id) == nil
+  end
+
   test "deletes only unverified accounts past the grace period" do
     stale = backdate(insert_user(), 45)
     fresh = insert_user()

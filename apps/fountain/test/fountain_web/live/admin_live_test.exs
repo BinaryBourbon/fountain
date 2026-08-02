@@ -477,6 +477,49 @@ defmodule FountainWeb.AdminLiveTest do
     end
   end
 
+  describe "AdminLive.Index — suspend (#287)" do
+    test "suspends and unsuspends with audit events and a badge", %{conn: conn} do
+      admin = insert_admin()
+      target = insert_verified_user()
+      insert_sandbox(user_id: target.id, status: "ready")
+      conn = login_user(conn, admin)
+      {:ok, lv, _html} = live(conn, ~p"/admin")
+
+      html =
+        lv
+        |> element("button[phx-click='toggle_suspend'][phx-value-id='#{target.id}']")
+        |> render_click()
+
+      assert Fountain.Accounts.suspended?(Fountain.Repo.reload!(target))
+      assert html =~ "suspended"
+      assert html =~ "Unsuspend"
+      assert html =~ "1 sandbox(es) reaped"
+
+      html =
+        lv
+        |> element("button[phx-click='toggle_suspend'][phx-value-id='#{target.id}']")
+        |> render_click()
+
+      refute Fountain.Accounts.suspended?(Fountain.Repo.reload!(target))
+      assert html =~ "Suspension lifted"
+
+      events = Fountain.Audit.list_recent_admin(10)
+      assert Enum.any?(events, &(&1.event_type == "admin.account.suspended"))
+      assert Enum.any?(events, &(&1.event_type == "admin.account.unsuspended"))
+    end
+
+    test "an admin cannot suspend themselves", %{conn: conn} do
+      admin = insert_admin()
+      conn = login_user(conn, admin)
+      {:ok, lv, _html} = live(conn, ~p"/admin")
+
+      render_click(lv, "toggle_suspend", %{"id" => admin.id})
+
+      refute Fountain.Accounts.suspended?(Fountain.Repo.reload!(admin))
+      assert render(lv) =~ "cannot suspend your own account"
+    end
+  end
+
   describe "AdminLive.Index — billing overview section" do
     test "renders tiles, status chips linking to the filtered table, and events", %{conn: conn} do
       admin = insert_admin()
