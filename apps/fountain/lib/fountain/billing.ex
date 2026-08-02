@@ -397,6 +397,36 @@ defmodule Fountain.Billing do
     end
   end
 
+  @doc false
+  # Stripe fires this three days before a trial ends. It used to fall through to
+  # the catch-all and be dropped, so the one notification Stripe goes out of its
+  # way to send us was received, parsed and discarded — while trials that (since
+  # #153) actually end now cut people off with no warning.
+  #
+  # Only enqueues; the send is a job. A mail failure must not make this return
+  # an error and have Stripe retry the whole event.
+  def sync_subscription(%Stripe.Event{
+        type: "customer.subscription.trial_will_end",
+        data: %{object: sub}
+      }) do
+    customer_id = extract_customer_id(Map.get(sub, :customer))
+
+    case customer_id && get_user_by_stripe_customer_id(customer_id) do
+      %User{} = user ->
+        trial_end =
+          case Map.get(sub, :trial_end) do
+            ts when is_integer(ts) -> DateTime.from_unix!(ts) |> DateTime.truncate(:second)
+            _ -> nil
+          end
+
+        Fountain.Workers.TrialEndingEmail.enqueue(user.id, trial_end)
+        {:ok, user}
+
+      _ ->
+        {:ok, :ignored}
+    end
+  end
+
   def sync_subscription(%Stripe.Event{type: type, data: %{object: sub}} = event)
       when type in [
              "customer.subscription.created",
