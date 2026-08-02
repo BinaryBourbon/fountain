@@ -126,9 +126,10 @@ defmodule Fountain.Accounts do
   Returns `{:ok, user}` on success, or one of:
   - `{:error, :not_found}` — no user with that email
   - `{:error, :wrong_password}` — user exists but password doesn't match
+  - `{:error, :suspended}` — password verified but the account is suspended
   """
   @spec authenticate_user(String.t(), String.t()) ::
-          {:ok, User.t()} | {:error, :not_found | :wrong_password}
+          {:ok, User.t()} | {:error, :not_found | :wrong_password | :suspended}
   def authenticate_user(email, password)
       when is_binary(email) and is_binary(password) do
     user = get_user_by_email(email)
