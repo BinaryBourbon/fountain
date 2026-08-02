@@ -6,7 +6,11 @@ defmodule Fountain.Accounts.User do
   @foreign_key_type :binary_id
 
   @roles ~w(user admin)
-  @subscription_statuses ~w(trialing active past_due canceled)
+  # "comped" is operator-granted free access, set only from the admin panel.
+  # It is deliberately distinct from a nil trial_ends_at (the legacy accident
+  # expire_legacy_trials cleans up) so a comp can never be swept by a backfill,
+  # and Billing.sync_subscription refuses to overwrite it from webhooks.
+  @subscription_statuses ~w(trialing active past_due canceled comped)
   @theme_values ~w(light dark system)
   @visible_stream_values ~w(stdout stderr stage)
   @view_mode_values ~w(chat pretty raw)

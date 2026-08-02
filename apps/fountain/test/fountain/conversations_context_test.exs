@@ -1983,4 +1983,27 @@ defmodule Fountain.ConversationsContextTest do
       refute is_nil(result.last_read_at)
     end
   end
+
+  describe "_unsafe_reap_sandbox/1" do
+    test "marks a ready sandbox with no live server terminated; conversations untouched" do
+      sandbox = insert_sandbox(status: "ready")
+      conv = insert_conversation(sandbox: sandbox, user_id: sandbox.user_id)
+
+      assert {:ok, :released} = Conversations._unsafe_reap_sandbox(sandbox.id)
+
+      reloaded = Conversations._unsafe_get_sandbox!(sandbox.id)
+      assert reloaded.status == "terminated"
+      assert reloaded.terminated_at
+      refute Conversations._unsafe_get_conversation(conv.id).status == "terminated"
+    end
+
+    test "is a no-op on an already-terminal sandbox" do
+      sandbox = insert_sandbox(status: "terminated")
+      assert {:ok, :already_terminal} = Conversations._unsafe_reap_sandbox(sandbox.id)
+    end
+
+    test "returns not_found for an unknown id" do
+      assert {:error, :not_found} = Conversations._unsafe_reap_sandbox(Ecto.UUID.generate())
+    end
+  end
 end
