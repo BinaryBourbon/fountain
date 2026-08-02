@@ -29,9 +29,10 @@ defmodule Fountain.Release do
       bin/fountain_server eval 'Fountain.Release.verify_email("you@example.com")'
   """
   def verify_email(email) when is_binary(email) do
-    load_app()
-    {:ok, _} = Application.ensure_all_started(@app)
+    with_repo(fn -> do_verify_email(email) end)
+  end
 
+  defp do_verify_email(email) do
     case Fountain.Accounts.get_user_by_email(email) do
       nil ->
         IO.puts(:stderr, "No account found for #{email}")
@@ -60,8 +61,11 @@ defmodule Fountain.Release do
 
   That is deliberate. Cutting off people who have been using the product free
   for months is a business decision with a support cost, not something a deploy
-  should do silently at 3am. Run it when you have decided, and tell people
-  first.
+  should do silently at 3am. Run it when you have decided.
+
+  (Queried 2026-08-02: the cohort turned out to be one internal test account
+  plus 158 signups that never verified their email and so have never been able
+  to log in — nobody real loses access when this runs.)
 
       # See who would be affected, change nothing:
       bin/fountain_server eval 'Fountain.Release.expire_legacy_trials(dry_run: true)'
@@ -73,9 +77,10 @@ defmodule Fountain.Release do
   the instant it ran, which is the hostile version of this.
   """
   def expire_legacy_trials(opts \\ []) do
-    load_app()
-    {:ok, _} = Application.ensure_all_started(@app)
+    with_repo(fn -> do_expire_legacy_trials(opts) end)
+  end
 
+  defp do_expire_legacy_trials(opts) do
     days = Keyword.get(opts, :days, 14)
     dry_run? = Keyword.get(opts, :dry_run, false)
 
@@ -105,6 +110,17 @@ defmodule Fountain.Release do
 
   defp repos do
     Application.fetch_env!(@app, :ecto_repos)
+  end
+
+  # Starts only the repo (and its deps), never the app. Booting the whole app
+  # from an eval task cannot work in production: the running server already
+  # holds the HTTP and metrics ports, and a task node that started Oban and
+  # the Horde registry would compete with the real cluster for jobs and
+  # conversation processes.
+  defp with_repo(fun) do
+    load_app()
+    {:ok, result, _started} = Ecto.Migrator.with_repo(Fountain.Repo, fn _repo -> fun.() end)
+    result
   end
 
   defp load_app do
