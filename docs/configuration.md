@@ -20,7 +20,7 @@ an error message.
 |---|---|---|---|
 | `DATABASE_URL` | — | prod | Postgres connection string. Boot fails without it |
 | `SECRET_KEY_BASE` | — | prod (serving) | Signs and encrypts session cookies and tokens. Generate: `openssl rand -base64 48` |
-| `MASTER_SECRETS_KEY` | — | prod | Wraps every tenant's data-encryption key ([back it up](self-hosting.md#back-up-master_secrets_key)). 32 bytes, url-safe base64, no padding: `openssl rand 32 \| base64 \| tr '+/' '-_' \| tr -d '='`. **Lose it and every stored secret is unrecoverable.** Boot refuses a malformed value |
+| `MASTER_SECRETS_KEY` | — | prod | Wraps every tenant's data-encryption key ([the secrets model](architecture.md#the-secrets-model)). 32 bytes, url-safe base64, no padding: `openssl rand 32 \| base64 \| tr '+/' '-_' \| tr -d '='`. **Lose it and every stored secret is unrecoverable.** Boot refuses a malformed value |
 | `PUBLIC_URL` | `http://localhost:4000` | effectively, prod | The externally visible base URL, scheme included. Builds every link that leaves the app (verification and reset emails, `llms.txt`) and is passed to every sandbox as `FOUNTAIN_BASE_URL`. An `https://` value also switches on HTTPS redirection, HSTS, and the secure cookie flag — all derived from the scheme |
 | `PHX_HOST` | host of `PUBLIC_URL` | — | Bare host for the endpoint URL and the LiveView origin check. Set only if it differs from `PUBLIC_URL`'s host |
 | `FOUNTAIN_DOMAIN` | — | deprecated | The old combined variable; still honoured as a fallback for both of the above. Prefer `PUBLIC_URL` / `PHX_HOST` |
@@ -98,7 +98,7 @@ signup with no visible error. See [Email](self-hosting.md#email).
 ## Clustering
 
 Only needed for more than one replica — see
-[Kubernetes](self-hosting.md#kubernetes) for where the wiring is shown.
+[Clustering](architecture.md#clustering) for what breaks without it.
 
 | Variable | Default | Required | Effect |
 |---|---|---|---|
