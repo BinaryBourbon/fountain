@@ -14,8 +14,8 @@ is a different thing, and this page assumes you want an instance that stays up.
 | **A mail provider** | Resend or any SMTP server. Optional — see [Email](#email) |
 
 Sprites is currently the only sandbox backend, and it is a hosted service, so a
-Fountain instance is not fully self-contained. `SPRITES_BASE_URL` is not yet
-configurable ([#189](https://github.com/BinaryBourbon/fountain/issues/189)).
+Fountain instance is not fully self-contained. `SPRITES_BASE_URL` repoints the
+API endpoint if you have a compatible one; there is no bundled alternative.
 
 ## Quick start
 
@@ -53,6 +53,43 @@ for the first admin yet:
 docker compose exec postgres psql -U postgres -d fountain \
   -c "UPDATE users SET role = 'admin' WHERE email = 'you@example.com';"
 ```
+
+## Versioning and upgrades
+
+Fountain follows [SemVer](https://semver.org/), pre-1.0: a patch release
+(`v0.3.0` → `v0.3.1`) is always safe to take; a minor release (`v0.3` → `v0.4`)
+may include breaking changes, and calls them out under **Upgrade notes** in the
+[changelog](changelog.md).
+
+Each release publishes the server image to `ghcr.io/binarybourbon/fountain`
+under two tags, alongside the tags that track development:
+
+| Tag | Moves? | Use it for |
+|---|---|---|
+| `vX.Y.Z` | Never | Pinning a known version — the recommended default |
+| `vX.Y` | To the newest patch in the line | Taking patches automatically without risking a breaking minor |
+| `latest` | On every merge to `main` | Nothing you keep running — it moves under you |
+| `sha-<commit>` | Never | Reproducing exactly what a given commit built |
+
+Releases v0.2.1 and earlier predate image tagging and exist only as `sha-`
+tags.
+
+The compose file reads `FOUNTAIN_IMAGE_TAG` from `.env`, so pinning is one
+line:
+
+```bash
+echo "FOUNTAIN_IMAGE_TAG=v0.3.0" >> .env
+```
+
+Upgrading is editing that value, then `docker compose pull && docker compose
+up -d`. Migrations run automatically at boot — idempotently, under an advisory
+lock — so rolling replicas do not race each other, and there are no manual
+migration steps unless a release's upgrade notes say otherwise. Downgrading is
+not supported once a newer version's migrations have run; restore from a
+backup instead.
+
+The CLI and the server are cut from the same tag, so matching versions are the
+tested pairing.
 
 ## Back up `MASTER_SECRETS_KEY`
 
@@ -208,9 +245,6 @@ including commercially.
 
 Being straight about what self-hosting does not yet include:
 
-- **Sprites is a hosted dependency** and the endpoint is not configurable
-  ([#189](https://github.com/BinaryBourbon/fountain/issues/189)).
-- **No published version tags for the server image** — only `latest` and
-  per-commit SHAs ([#190](https://github.com/BinaryBourbon/fountain/issues/190)),
-  so pinning means pinning a SHA.
+- **Sprites is a hosted dependency** — `SPRITES_BASE_URL` can repoint it, but
+  there is no self-hostable sandbox backend to point it at.
 - **No first-admin bootstrap**; the role is set in SQL.

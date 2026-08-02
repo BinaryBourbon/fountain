@@ -1,34 +1,143 @@
 # Changelog
 
-All notable changes to Fountain are documented here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+All notable changes to Fountain are documented here. Format:
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
+[SemVer](https://semver.org/).
 
-Versions track the public API and notable behavioural changes. Internal refactors, test additions, and doc updates are noted but don't bump the version on their own.
+Pre-1.0, a minor bump (`0.x` → `0.y`) may include breaking changes; when one
+does, the release carries an **Upgrade notes** section. Patch releases are
+always safe to take. Every release publishes the server image to
+`ghcr.io/binarybourbon/fountain` as `vX.Y.Z` (immutable) and `vX.Y` (moving,
+newest patch in the line). The full policy, including how migrations run on
+upgrade, is in
+[Versioning and upgrades](https://binarybourbon.github.io/fountain/self-hosting/#versioning-and-upgrades).
 
 ---
 
 ## [Unreleased]
 
+### Upgrade notes
+
+- Set `PUBLIC_URL` to your external URL, scheme included. It is now separate
+  from `PHX_HOST` and is what generated links, OAuth callbacks, and sandbox
+  callbacks are built from (#204). An `https://` `PUBLIC_URL` also switches on
+  the HTTPS redirect, HSTS, and secure session cookies (#241) — if you
+  terminate TLS in front of Fountain, your proxy must set `X-Forwarded-Proto`.
+- Production now refuses to boot without a mail setting. Configure
+  `RESEND_API_KEY`, `SMTP_HOST`, or explicitly opt out with
+  `EMAIL_DELIVERY=none` (#223).
+- Migrations continue to run automatically at boot; no manual steps.
+
 ### Added
-- Context-level ExUnit tests for `Agents`, `Environments`, `Vaults`, `Audit`, and `Substitution` (all `async: true`, using `DataCase` + factory helpers)
-- StreamData property-based tests for `Fountain.Substitution`
-- GitHub Actions CI pipeline (`.github/workflows/ci.yml`): format check, compile with warnings-as-errors, Credo, DB migrate, full test suite
-- `CLAUDE.md` contributor guide covering architecture, test patterns, tenant isolation contract, and things to avoid
+
+- Bulk manifest apply — a whole manifest in one request, and the CLI's
+  `fountain apply` uses it (#151)
+- Agent-scoped vault allowlists: an agent can be restricted to a named set of
+  vaults (#144)
+- `networking_config` on Environment, typed and documented (#146)
+- `metadata` field on Environment and Vault for external tooling (#145)
+- `GET /api/auth/api-keys` — list active keys, metadata only (#143)
+- GitHub-sourced agent skills require a ref/SHA pin (#149)
+- Account deletion, self-serve and admin (#234)
+- Billing that holds: real Stripe trial subscriptions with end dates (#244), a
+  warning email three days before a trial ends (#251), usage events (#213),
+  idempotent order-aware webhooks (#214), and billing gates on every
+  provisioning path (#212)
+- Sandbox lifecycle bounds: per-tenant concurrent-sandbox cap (#205), idle
+  timeout and maximum age (#233), and a reaper for leaked sprites and rows
+  stuck mid-provision (#232)
+- Durable job queue (#217)
+- Self-hosting support: compose file and guide (#225), configurable
+  `SPRITES_BASE_URL` (#189), database TLS / billing / registration switches
+  (#224), SMTP delivery (#223), split liveness and readiness probes (#230),
+  and an explicit MIT licence (#226)
+- LLM-generated conversation titles, agent avatars, unread indicators, and a
+  live-updating sidebar
+- Public documentation site (MkDocs); OTel instrumentation for the
+  conversation lifecycle (#125); Prometheus/Loki/Alertmanager wiring for the
+  hosted instance (#210)
+- Context-level and property-based test suites, with coverage held above a CI
+  floor
 
 ### Changed
-- Test DB `pool_size` raised from 5 → 20 to support concurrent async test modules without connection timeouts
-- `require_admin` LiveView hook now uses `push_navigate` (live redirect) for authenticated non-admin users instead of a hard HTTP redirect, making the hook testable with `{:live_redirect, _}` assertions
-- `advance_onboarding/2` guard extended to include `"step_4"` (wizard has four steps)
+
+- Agent, environment, and vault editors use structured form UI instead of raw
+  JSON textareas (#122–#124)
+- Sandboxes are named `fountain-<tenant>-<id>` (#70)
+- The hosted instance runs two clustered replicas (#132), with a single
+  elected leader for conversation rehydration (#133)
+- CI actually gates: strict Credo, coverage floor, sobelow, secret scanning,
+  CLI tests on release (#237), and a smoke test that boots the built image
+  against its own health probes (#249)
+- Deploys pin the exact built image on a dedicated `deploy` branch so manifest
+  and image can never diverge (#250)
 
 ### Fixed
-- `PasswordResetController` now returns `422 Unprocessable Entity` (was `200 OK`) on validation failure
-- Rate limiter keyed by calling process PID in test mode so async tests don't share ETS counters
-- `UeberAuthController` skips `plug Ueberauth` in test mode to prevent OAuth plug from overwriting manually-set `conn.assigns`
 
----
+- Conversations no longer replay their last prompt on every deploy (#248)
+- The SSE stream endpoint no longer 406s real clients (#229), and the CLI
+  resumes a dropped stream instead of reporting success (#219)
+- `force_ssl` is applied as a runtime plug (#243), with health probes exempt
+  from the HTTPS redirect (#245)
+- Paid checkouts are never orphaned (#212)
+- Turn images are validated at ingest, not only on serve (#235)
+- `agents.skills` migrated from `text[]` to `jsonb[]` (#65)
+- `PasswordResetController` returns `422 Unprocessable Entity` (was `200 OK`)
+  on validation failure
+
+### Security
+
+- HSTS, secure cookies, and a scoped `check_origin`, all derived from
+  `PUBLIC_URL` (#241)
+- OAuth identities require a provider-verified email before linking (#240)
+- Tenant secrets are redacted from sprite output before it is persisted (#222)
+- Real client IP resolution behind proxies, and rate-limited login forms
+  (#216)
+- Tenant scoping tightened across the conversation spawn graph (#215), turn
+  images (#202), sprite callback tokens — now with key expiry (#206), audit
+  events (#68), and per-conversation `FOUNTAIN_TOKEN`s scoped to their owner
+  (#75)
+- Provisioning hardening: `.env` values quoted inertly, SSH host keys
+  verified (#227)
+- Audit coverage extended to the browser surface, auth events, and admin
+  actions (#221); external audit findings addressed (#129, #130)
+
+## [0.2.1] — 2026-05-10
+
+### Fixed
+
+- CLI defaults its base URL to `fountain.inevitable.fyi` (#62)
+- Dashboard "Recent conversations" card links to `/conversations`
+
+## [0.2.0] — 2026-05-10
+
+### Added
+
+- Public marketing landing page at `/`
+- Cross-tenant security regression suite (#55)
+
+### Changed
+
+- CLI ported from Elixir/Burrito to Go; the Elixir CLI and its release
+  pipeline are removed (#60, #47, #50)
+- Unscoped context functions renamed `_unsafe_*` as an enforcement convention
+  (#54)
+
+### Fixed
+
+- Postgres `$N` placeholders in recursive CTE queries (#58)
+- `fountain apply` strips ownership fields before POST/PUT (#59)
+
+### Security
+
+- Agent, Environment, Secret, and Vault controllers scoped to the
+  authenticated user (#49, #51, #52); `user_id` propagated through
+  `start_conversation` and orphaned rows backfilled (#48)
 
 ## [0.1.0] — 2026-04-01
 
 ### Added
+
 - Multi-tenant API and UI for managing Agents, Environments, Vaults, and Conversations
 - GitHub OAuth login via Ueberauth
 - Stripe billing integration with subscription enforcement
@@ -40,3 +149,8 @@ Versions track the public API and notable behavioural changes. Internal refactor
 - `llms.txt` / `llms-full.txt` / `/skill` endpoints for LLM-native API discovery
 - Audit log for state-changing actions (append-only, best-effort)
 - Substitution engine for `${VAR}` / `$$` interpolation in agent configs
+
+[Unreleased]: https://github.com/BinaryBourbon/fountain/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/BinaryBourbon/fountain/compare/v0.2.0...v0.2.1
+[0.2.0]: https://github.com/BinaryBourbon/fountain/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/BinaryBourbon/fountain/releases/tag/v0.1.0

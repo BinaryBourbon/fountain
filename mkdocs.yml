@@ -36,6 +36,11 @@ plugins:
 markdown_extensions:
   - admonition
   - pymdownx.details
+  # Lets docs/changelog.md include the repo-root CHANGELOG.md. base_path is
+  # relative to the directory mkdocs runs from, i.e. the repo root — both
+  # docs.yml and a local `mkdocs serve` invoke it there.
+  - pymdownx.snippets:
+      check_paths: true
   - pymdownx.superfences
   - pymdownx.highlight:
       anchor_linenums: true

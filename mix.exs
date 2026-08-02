@@ -4,7 +4,9 @@ defmodule Fountain.Umbrella.MixProject do
   def project do
     [
       apps_path: "apps",
-      version: "0.1.0",
+      # Kept in lockstep with the newest v* git tag — release-bump.yml
+      # computes the next tag from this value.
+      version: "0.2.1",
       deps: deps(),
       releases: releases(),
       aliases: aliases(),

@@ -1,8 +1,9 @@
 name: Release
 
-# Builds the Go CLI under cli/ and attaches binaries to a GitHub
-# Release. Triggered by pushing a v*.*.* tag, or manually via
-# workflow_dispatch with an existing tag.
+# Builds the Go CLI under cli/, publishes the version-tagged server
+# image, and attaches binaries to a GitHub Release. Triggered by
+# pushing a v*.*.* tag, or manually via workflow_dispatch with an
+# existing tag.
 
 on:
   push:
@@ -148,11 +149,90 @@ jobs:
           name: openapi.json
           path: dist/openapi.json
 
+  image:
+    # The server image is built fresh from the tag's tree rather than
+    # re-tagging the sha- image build.yml already pushed, for two reasons:
+    # the tag points at release-bump's version commit, which build.yml never
+    # built ([skip ci] + GITHUB_TOKEN suppression), and the mix.exs version
+    # baked into the image is surfaced in-app — it must match the tag.
+    #
+    # Tags: vX.Y.Z is immutable; vX.Y moves to the newest patch in its line.
+    # :latest continues to track main via build.yml and is not touched here.
+    name: Publish versioned server image
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Resolve tag
+        id: tag
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            tag="${{ github.event.inputs.tag }}"
+          else
+            tag="${GITHUB_REF#refs/tags/}"
+          fi
+          if ! echo "${tag}" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "'${tag}' is not a vX.Y.Z tag" >&2
+            exit 1
+          fi
+          {
+            echo "tag=${tag}"
+            echo "minor=${tag%.*}"
+            echo "version=${tag#v}"
+          } >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          # The tag's commit, explicitly — a workflow_dispatch runs on the
+          # ref it was dispatched from, which need not be the tag.
+          ref: refs/tags/${{ steps.tag.outputs.tag }}
+          persist-credentials: false
+
+      - name: Resolve build sha
+        id: sha
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          build-args: |
+            BUILD_SHA=${{ steps.sha.outputs.sha }}
+          tags: |
+            ghcr.io/binarybourbon/fountain:${{ steps.tag.outputs.tag }}
+            ghcr.io/binarybourbon/fountain:${{ steps.tag.outputs.minor }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ steps.sha.outputs.sha }}
+            org.opencontainers.image.version=${{ steps.tag.outputs.version }}
+
   release:
     name: Create GitHub Release
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    needs: [build, openapi]
+    # image is a needs so a release is never published without its image —
+    # the release page is what tells a self-hoster the tag exists to pin.
+    needs: [build, openapi, image]
     permissions:
       contents: write
 
