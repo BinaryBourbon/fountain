@@ -132,6 +132,42 @@ defmodule Fountain.Quotas do
     end
   end
 
+  # Advisory-lock namespace for sandbox reservations; the second key is a hash
+  # of the user id. A hash collision between users only over-serializes two
+  # tenants' creations — never under-counts.
+  @lock_namespace 4315
+
+  @doc """
+  Check the cap and run `fun` (which must create the sandbox row) atomically,
+  under a per-user Postgres advisory lock.
+
+  `check_sandbox_quota/2` alone is check-then-insert: N concurrent requests at
+  the cap could each read `count < limit` before any row landed, and each go
+  on to provision a paid sprite (#330). The lock serializes check + insert per
+  user, so the second request re-counts after the first has committed. Scoped
+  per user: one tenant's burst cannot queue behind another's.
+
+  `fun` must return `{:ok, value}` or `{:error, reason}`; any error — the
+  quota's or `fun`'s — rolls the whole reservation back.
+  """
+  @spec with_sandbox_reservation(binary(), keyword(), (-> {:ok, term()} | {:error, term()})) ::
+          {:ok, term()} | {:error, term()}
+  def with_sandbox_reservation(user_id, quota_opts \\ [], fun) when is_binary(user_id) do
+    Repo.transaction(fn ->
+      Repo.query!("SELECT pg_advisory_xact_lock($1, $2)", [
+        @lock_namespace,
+        :erlang.phash2(user_id)
+      ])
+
+      with :ok <- check_sandbox_quota(user_id, quota_opts),
+           {:ok, value} <- fun.() do
+        value
+      else
+        {:error, reason} -> Repo.rollback(reason)
+      end
+    end)
+  end
+
   @doc "Default cap applied when a user has none set."
   def default_limit, do: @default_limit
 

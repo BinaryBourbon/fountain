@@ -801,15 +801,19 @@ defmodule Fountain.Conversations do
          {:ok, parent_id} <- resolve_parent_id(attrs["parent_conversation_id"], user_id),
          :ok <- Fountain.Accounts.check_not_suspended(user_id),
          :ok <- Fountain.Billing.check_active(user_id),
-         :ok <- Fountain.Quotas.check_sandbox_quota(user_id),
+         # Quota check + row insert under one per-user advisory lock: checked
+         # separately they are check-then-insert, and N concurrent requests at
+         # the cap could each pass and provision N-1 sprites over it (#330).
          {:ok, sandbox} <-
-           create_sandbox(%{
-             environment_id: agent.environment_id,
-             sprite_name:
-               attrs["sprite_name"] || "fountain-#{tenant_prefix(user_id)}-#{short_id()}",
-             status: "pending",
-             user_id: user_id
-           }),
+           Fountain.Quotas.with_sandbox_reservation(user_id, fn ->
+             create_sandbox(%{
+               environment_id: agent.environment_id,
+               sprite_name:
+                 attrs["sprite_name"] || "fountain-#{tenant_prefix(user_id)}-#{short_id()}",
+               status: "pending",
+               user_id: user_id
+             })
+           end),
          {:ok, conv} <-
            create_conversation(%{
              sandbox_id: sandbox.id,
@@ -1055,19 +1059,42 @@ defmodule Fountain.Conversations do
     # conversation was an unmetered way past billing entirely.
     with :ok <- Fountain.Accounts.check_not_suspended(conv.user_id),
          :ok <- Fountain.Billing.check_active(conv.user_id),
-         :ok <-
-           Fountain.Quotas.check_sandbox_quota(conv.user_id, exclude: conv.sandbox_id),
+         # Same reservation as start_conversation/1 — see the note there (#330).
          {:ok, new_sandbox} <-
-           create_sandbox(%{
-             environment_id: agent.environment_id,
-             sprite_name: "fountain-#{tenant_prefix(conv.user_id)}-#{short_id()}",
-             status: "pending",
-             user_id: conv.user_id
-           }),
+           Fountain.Quotas.with_sandbox_reservation(conv.user_id, [exclude: conv.sandbox_id], fn ->
+             create_sandbox(%{
+               environment_id: agent.environment_id,
+               sprite_name: "fountain-#{tenant_prefix(conv.user_id)}-#{short_id()}",
+               status: "pending",
+               user_id: conv.user_id
+             })
+           end),
          _ <- mark_old_sandbox_terminated(conv.sandbox_id),
          {:ok, conv} <-
            update_conversation(conv, %{sandbox_id: new_sandbox.id, status: "pending"}) do
-      start_conversation_server(conv, new_sandbox.id, runtime_module, initial_prompt)
+      case start_conversation_server(conv, new_sandbox.id, runtime_module, initial_prompt) do
+        {:ok, _} = ok ->
+          ok
+
+        {:error, {:already_started, _pid}} ->
+          # Lost a concurrent wake of the same conversation. The winner's
+          # server is running against its own sandbox; this one's just-created
+          # row would otherwise sit pending — holding a quota slot — until the
+          # reaper's pass an hour later, so a user at their cap could lock
+          # themselves out by double-clicking (#330). Clean up our own row and
+          # hand the prompt to the winner, which drops it if a turn is already
+          # running — exactly right for a double-click.
+          _ = mark_old_sandbox_terminated(new_sandbox.id)
+
+          if is_binary(initial_prompt) and initial_prompt != "" do
+            ConversationServer.queue_initial_prompt(conv.id, initial_prompt)
+          end
+
+          {:ok, _unsafe_get_conversation!(conv.id)}
+
+        {:error, _} = err ->
+          err
+      end
     end
   end
 

@@ -126,6 +126,63 @@ defmodule Fountain.QuotasTest do
     end
   end
 
+  describe "with_sandbox_reservation/3 (#330)" do
+    # The cross-connection serialization itself rests on
+    # pg_advisory_xact_lock and cannot be observed under the SQL sandbox
+    # (every allowed process shares one transaction). What these pin is the
+    # transactional composition: check + insert commit or roll back as one.
+
+    alias Fountain.Quotas
+
+    test "creates the row when below the cap" do
+      user = insert_verified_user()
+
+      assert {:ok, sandbox} =
+               Quotas.with_sandbox_reservation(user.id, fn ->
+                 {:ok, insert_sandbox(user_id: user.id, status: "pending")}
+               end)
+
+      assert Quotas.active_sandbox_count(user.id) == 1
+      assert sandbox.user_id == user.id
+    end
+
+    test "refuses at the cap and creates nothing" do
+      user = insert_verified_user()
+      for _ <- 1..5, do: insert_sandbox(user_id: user.id, status: "ready")
+
+      assert {:error, {:sandbox_quota_exceeded, %{count: 5, limit: 5}}} =
+               Quotas.with_sandbox_reservation(user.id, fn ->
+                 flunk("fun must not run once the quota refuses")
+               end)
+
+      assert Quotas.active_sandbox_count(user.id) == 5
+    end
+
+    test "a failure in fun rolls the reservation back" do
+      user = insert_verified_user()
+
+      assert {:error, :boom} =
+               Quotas.with_sandbox_reservation(user.id, fn ->
+                 insert_sandbox(user_id: user.id, status: "pending")
+                 {:error, :boom}
+               end)
+
+      # The row created inside the reservation is gone with it.
+      assert Quotas.active_sandbox_count(user.id) == 0
+    end
+
+    test "honours the :exclude option the wake path needs" do
+      user = insert_verified_user()
+      sandboxes = for _ <- 1..5, do: insert_sandbox(user_id: user.id, status: "ready")
+      replacing = hd(sandboxes)
+
+      assert {:ok, _} =
+               Quotas.with_sandbox_reservation(user.id, [exclude: replacing.id], fn ->
+                 {:ok, insert_sandbox(user_id: user.id, status: "pending")}
+               end)
+    end
+  end
+
   describe "check_sandbox_quota!/2" do
     test "returns :ok below the cap" do
       assert :ok = Quotas.check_sandbox_quota!(insert_verified_user().id)
