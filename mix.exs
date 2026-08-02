@@ -20,7 +20,11 @@ defmodule Fountain.Umbrella.MixProject do
         # fails to credit string-form filters as used and would fail the run.
         # Audit the ignore file by hand with `mix dialyzer --list-unused-filters`
         # (tuple entries report accurately) when trimming it.
-        plt_file: {:no_warn, "priv/plts/dialyzer.plt"}
+        plt_file: {:no_warn, "priv/plts/dialyzer.plt"},
+        # :mix so Mix.Task-based tasks (mix fountain.verify_lifecycle)
+        # analyze cleanly — without it every Mix.* call is "unknown function"
+        # and the task's whole call graph degrades to no_return noise.
+        plt_add_apps: [:mix]
       ]
     ]
   end
