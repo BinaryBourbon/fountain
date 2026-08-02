@@ -36,8 +36,14 @@ spec:
     spec:
       containers:
         - name: fountain
-          # Pinned to the sha tag produced by the build workflow for the
-          # last commit that ran it. Update this alongside any deploy.
+          # Inert on this branch. Flux tracks `deploy`, not `main`, and the
+          # pin-image workflow rewrites this line there — on the tree that was
+          # actually built, with the tag built from it. The value below is
+          # whatever was last committed here and is not what runs.
+          #
+          # The split exists because a manifest change and its image used to
+          # reach main in separate commits minutes apart, and Flux applied the
+          # first against the image from before the second. See #231.
           image: ghcr.io/binarybourbon/fountain:sha-b1e612b6fdcb844514e67e1a00a8a84bcdec0147
           imagePullPolicy: IfNotPresent
           ports:
