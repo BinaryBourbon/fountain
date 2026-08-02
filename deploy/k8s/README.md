@@ -43,12 +43,12 @@ kubectl exec -n fountain deploy/fountain -- \
   sh -c "PHX_SERVER=false bin/fountain_server eval 'Fountain.Release.verify_email(\"you@example.com\")'"
 ```
 
-Then close registration (`REGISTRATION_ENABLED: "false"` + re-apply) and, to
-make yourself admin, set the role in SQL — there is no first-admin bootstrap
-yet:
+Then close registration (`REGISTRATION_ENABLED: "false"` + re-apply) and make
+yourself admin — audit-recorded like any other role grant:
 
 ```bash
-psql "$DATABASE_URL" -c "UPDATE users SET role = 'admin' WHERE email = 'you@example.com';"
+kubectl exec -n fountain deploy/fountain -- \
+  sh -c "PHX_SERVER=false bin/fountain_server eval 'Fountain.Release.promote_admin(\"you@example.com\")'"
 ```
 
 ## Upgrades
