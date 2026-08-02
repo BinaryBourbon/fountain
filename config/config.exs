@@ -5,7 +5,10 @@ import Config
 # the problem the Rehydrator solves by hand.
 config :fountain, Oban,
   repo: Fountain.Repo,
-  queues: [maintenance: 1, billing: 5],
+  # exports is its own queue so a user-requested data export is never stuck
+  # behind a maintenance sweep; concurrency 1 because each job reads every row
+  # an account owns and two at once doubles that memory.
+  queues: [maintenance: 1, billing: 5, exports: 1],
   plugins: [
     # Oban's own job-table pruning: completed jobs older than 7 days.
     {Oban.Plugins.Pruner, max_age: 7 * 24 * 60 * 60},
