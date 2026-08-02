@@ -8,10 +8,14 @@ defmodule Mix.Tasks.Fountain.VerifyLifecycle do
 
   Creates a scratch user and a Stripe Test Clock, then walks:
   signup → trialing subscription → clock to T-3d → trial-ending email
-  enqueued → clock past trial end → canceled, gate refuses → subscribe with a
-  test card (the checkout-completes equivalent) → active, gate opens → cancel
-  at period end → access retained → clock past period end → canceled, gate
-  refuses → re-subscribe → active again (the return path).
+  enqueued → clock past trial end → canceled, gate refuses, trial-expired
+  email (#283) → subscribe with a test card (the checkout-completes
+  equivalent) → active, gate opens → cancel at period end → access retained,
+  `cancel_at_period_end`/`current_period_end` synced (#284) → clock past
+  period end → canceled, gate refuses, cancellation email, flag cleared →
+  re-subscribe → active again (the return path) → swap to an always-failing
+  card and advance past renewal → real dunning: `past_due`, gate refuses,
+  payment-failed email.
 
   At each step it asserts the **Fountain-side** state — `subscription_status`,
   `trial_ends_at`, `Billing.check_active/1`, enqueued email jobs. Stripe's own
@@ -59,7 +63,8 @@ defmodule Mix.Tasks.Fountain.VerifyLifecycle do
       state = step_subscribe(state)
       state = step_cancel_at_period_end(state)
       state = step_period_end(state)
-      _state = step_resubscribe(state)
+      state = step_resubscribe(state)
+      _state = step_dunning(state)
 
       info("\n✅  Lifecycle verified end to end.")
     after
@@ -156,17 +161,11 @@ defmodule Mix.Tasks.Fountain.VerifyLifecycle do
     sub = fetch_subscription!(user)
     {:ok, _} = Billing.sync_subscription(event("customer.subscription.trial_will_end", sub))
 
-    import Ecto.Query
+    check!(
+      "T-3d: trial-ending email enqueued",
+      email_enqueued?("Fountain.Workers.TrialEndingEmail", user.id)
+    )
 
-    enqueued =
-      Repo.exists?(
-        from j in Oban.Job,
-          where:
-            j.worker == "Fountain.Workers.TrialEndingEmail" and
-              fragment("?->>'user_id' = ?", j.args, ^user.id)
-      )
-
-    check!("T-3d: trial-ending email enqueued", enqueued)
     %{state | clock: clock}
   end
 
@@ -183,6 +182,11 @@ defmodule Mix.Tasks.Fountain.VerifyLifecycle do
     check!(
       "gate refuses after expiry",
       Billing.check_active(user.id) == {:error, :subscription_required}
+    )
+
+    check!(
+      "trial-expired email enqueued (#283)",
+      lifecycle_email_enqueued?(user.id, "trial_expired")
     )
 
     %{state | user: user, clock: clock}
@@ -210,6 +214,17 @@ defmodule Mix.Tasks.Fountain.VerifyLifecycle do
     )
 
     check!("gate still open until period end", Billing.check_active(user.id) == :ok)
+
+    # #284: the flag and period end are synced so the UI can say "access
+    # until <date>" instead of leaving a cancellation invisible.
+    check!("cancel_at_period_end flag synced (#284)", user.cancel_at_period_end == true)
+
+    check!(
+      "current_period_end synced and matches Stripe (#284)",
+      user.current_period_end != nil and
+        DateTime.to_unix(user.current_period_end) == sub.current_period_end
+    )
+
     %{state | user: user}
   end
 
@@ -227,6 +242,16 @@ defmodule Mix.Tasks.Fountain.VerifyLifecycle do
       Billing.check_active(user.id) == {:error, :subscription_required}
     )
 
+    check!(
+      "canceled-confirmation email enqueued (#283)",
+      lifecycle_email_enqueued?(user.id, "subscription_canceled")
+    )
+
+    check!(
+      "cancel_at_period_end cleared on .deleted (#284)",
+      user.cancel_at_period_end == false
+    )
+
     %{state | user: user, clock: clock}
   end
 
@@ -238,6 +263,58 @@ defmodule Mix.Tasks.Fountain.VerifyLifecycle do
     check!("return path: re-subscribe reactivates", user.subscription_status == "active")
     check!("gate open again", Billing.check_active(user.id) == :ok)
     %{state | user: user}
+  end
+
+  # Real dunning: swap the default card for one that always fails, advance the
+  # clock past renewal, and let Stripe's own retry machinery mark the
+  # subscription past_due. Nothing here is simulated except event transport.
+  defp step_dunning(%{user: user, clock: clock} = state) do
+    {:ok, pm} =
+      Stripe.PaymentMethod.attach("pm_card_chargeCustomerFail", %{
+        customer: user.stripe_customer_id
+      })
+
+    {:ok, _} =
+      Stripe.Customer.update(user.stripe_customer_id, %{
+        invoice_settings: %{default_payment_method: pm.id}
+      })
+
+    sub = fetch_subscription!(user, :active)
+    clock = advance!(clock, sub.current_period_end + 3600)
+    sub = poll_subscription_status!(user, "past_due")
+
+    {:ok, user} = Billing.sync_subscription(event("customer.subscription.updated", sub))
+
+    check!("past_due after failed renewal", user.subscription_status == "past_due")
+
+    check!(
+      "gate refuses while past_due",
+      Billing.check_active(user.id) == {:error, :subscription_required}
+    )
+
+    check!(
+      "payment-failed dunning email enqueued (#283)",
+      lifecycle_email_enqueued?(user.id, "payment_failed")
+    )
+
+    %{state | user: user, clock: clock}
+  end
+
+  # ── Assertions ─────────────────────────────────────────────────────────────
+
+  defp email_enqueued?(worker, user_id, extra \\ %{}) do
+    import Ecto.Query
+
+    args = Map.merge(%{"user_id" => user_id}, extra)
+
+    Repo.exists?(
+      from j in Oban.Job,
+        where: j.worker == ^worker and fragment("? @> ?", j.args, ^args)
+    )
+  end
+
+  defp lifecycle_email_enqueued?(user_id, kind) do
+    email_enqueued?("Fountain.Workers.LifecycleEmail", user_id, %{"email" => kind})
   end
 
   # ── Stripe helpers ─────────────────────────────────────────────────────────
