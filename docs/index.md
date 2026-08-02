@@ -26,6 +26,7 @@ Running Claude instances with worktrees locally and shuffling MCP configurations
 ## Get started
 
 - [**Local setup**](setup.md) - bootstrap a workstation in ~10 minutes
+- [**Architecture**](architecture.md) - what runs, what it talks to, what breaks when a dependency is down
 - [**Primitives deep-dive**](primitives.md) - understand the data model
 - [**CLI reference**](cli.md) - `fountain` command surface
 - [**API reference**](api.md) - REST endpoints and auth
