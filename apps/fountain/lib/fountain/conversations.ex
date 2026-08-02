@@ -983,7 +983,16 @@ defmodule Fountain.Conversations do
          {:ok, runtime_module} <- Fountain.Runtimes.for_runtime(conv.runtime) do
       case maybe_reuse_sandbox(conv) do
         {:reuse, sandbox_id} ->
-          start_conversation_server(conv, sandbox_id, runtime_module, initial_prompt)
+          # Reuse provisions nothing, so the fresh-path gates below never ran
+          # here — a canceled or suspended user could restart a server against
+          # a live sprite and keep prompting (#313). Same checks, minus the
+          # quota (reusing adds no concurrency). The per-turn gate in
+          # ConversationServer is the backstop; this one makes the refusal
+          # synchronous at the API door.
+          with :ok <- Fountain.Accounts.check_not_suspended(conv.user_id),
+               :ok <- Fountain.Billing.check_active(conv.user_id) do
+            start_conversation_server(conv, sandbox_id, runtime_module, initial_prompt)
+          end
 
         :create_new ->
           create_fresh_sandbox_and_start(conv, agent, runtime_module, initial_prompt)

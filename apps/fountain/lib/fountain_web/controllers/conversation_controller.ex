@@ -192,6 +192,9 @@ defmodule FountainWeb.ConversationController do
 
           {:error, :subscription_required} = err ->
             err
+
+          {:error, :account_suspended} = err ->
+            err
         end
     end
   end

@@ -8,13 +8,17 @@ defmodule Fountain.Billing do
       Fountain.Billing.assert_active!(current_user)
 
   Call sites:
-  - `Conversations.start_conversation/1` and the wake path — the backstop. Every
-    route to a sprite passes through one of these, so a new surface cannot
-    silently skip the gate the way `POST /api/conversations/:id/prompts` did.
+  - `ConversationServer.turn_gate/1` — the backstop. Every turn passes through
+    it, whichever door it entered by (controller, LiveView, or the queued
+    initial prompt a wake delivers), so a live session cannot outrun a
+    subscription that expires mid-flight and no new prompt surface can
+    silently skip the gate.
+  - `Conversations.start_conversation/1` and both arms of the wake path —
+    refuse before provisioning (or reattaching to) a sprite, so the caller
+    hears the refusal synchronously.
   - `POST /api/conversations` controller — fast 402 before doing any work
-  - `on_mount :require_active_subscription` LiveView hook — redirects to billing.
-    Mount-time only, so it does not cover a session that is cancelled mid-flight;
-    the context-level check does.
+  - `on_mount :require_active_subscription` LiveView hook — redirects to
+    billing at mount time.
 
   ## Webhook sync
 
