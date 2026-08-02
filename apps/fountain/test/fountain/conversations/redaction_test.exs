@@ -106,7 +106,7 @@ defmodule Fountain.Conversations.RedactionTest do
       Redaction.put(conv.id, [{"K", "value-that-must-not-persist"}])
       log_data(conv, "leaking value-that-must-not-persist here")
 
-      events = Conversations.list_log_events(conv.id)
+      events = Conversations._unsafe_list_log_events(conv.id)
 
       for e <- events do
         refute e.data =~ "value-that-must-not-persist"

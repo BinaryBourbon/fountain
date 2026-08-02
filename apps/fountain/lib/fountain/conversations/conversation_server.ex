@@ -108,7 +108,7 @@ defmodule Fountain.Conversations.ConversationServer do
             {:ok, _} = Conversations.update_conversation(conv, %{status: "terminated"})
 
             if conv.sandbox_id do
-              sb = Conversations.get_sandbox!(conv.sandbox_id)
+              sb = Conversations._unsafe_get_sandbox!(conv.sandbox_id)
 
               if sb.status not in ["terminated", "failed"] do
                 Conversations.update_sandbox(sb, %{status: "terminated", terminated_at: now})
@@ -174,7 +174,7 @@ defmodule Fountain.Conversations.ConversationServer do
   @impl true
   def handle_continue(:provision, state) do
     conv = Conversations._unsafe_get_conversation!(state.conversation_id)
-    sandbox = Conversations.get_sandbox!(state.sandbox_id)
+    sandbox = Conversations._unsafe_get_sandbox!(state.sandbox_id)
     agent = if conv.agent_id, do: Agents._unsafe_get_agent!(conv.agent_id), else: nil
 
     env =
@@ -741,16 +741,6 @@ defmodule Fountain.Conversations.ConversationServer do
     end
   end
 
-  def handle_call({:send_prompt, prompt}, _from, state) do
-    if state.current_command do
-      {:reply, {:error, :busy}, state}
-    else
-      conv = Conversations._unsafe_get_conversation!(state.conversation_id)
-      agent = if conv.agent_id, do: Agents._unsafe_get_agent!(conv.agent_id)
-      {:reply, :ok, kick_turn(state, prompt, agent, [])}
-    end
-  end
-
   def handle_call(:interrupt, _from, %{current_command: nil} = state) do
     {:reply, {:error, :idle}, state}
   end
@@ -798,7 +788,7 @@ defmodule Fountain.Conversations.ConversationServer do
 
   def handle_call(:terminate_conv, _from, state) do
     if state.sprite, do: _ = Sprites.destroy(state.sprite)
-    sandbox = Conversations.get_sandbox!(state.sandbox_id)
+    sandbox = Conversations._unsafe_get_sandbox!(state.sandbox_id)
 
     {:ok, _} =
       Conversations.update_sandbox(sandbox, %{status: "terminated", terminated_at: now()})
@@ -952,7 +942,7 @@ defmodule Fountain.Conversations.ConversationServer do
     if state.sprite, do: _ = Sprites.destroy(state.sprite)
 
     if state.sandbox_id do
-      sandbox = Conversations.get_sandbox!(state.sandbox_id)
+      sandbox = Conversations._unsafe_get_sandbox!(state.sandbox_id)
 
       if sandbox.status not in ["terminated", "failed"] do
         {:ok, _} =

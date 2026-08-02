@@ -23,7 +23,7 @@ defmodule FountainWeb.LogViewerLive.Show do
         )
       end
 
-      logs = Conversations.list_log_events(conversation.id)
+      logs = Conversations._unsafe_list_log_events(conversation.id)
 
       {:ok,
        socket

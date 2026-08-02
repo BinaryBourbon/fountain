@@ -8,20 +8,6 @@ defmodule Fountain.Agents do
   alias Fountain.Conversations.Conversation
   alias Fountain.Repo
 
-  @doc """
-  WARNING: returns agents across all tenants. Admin/internal use only.
-  User-facing code must use the arity-2 variant that takes user_id.
-  """
-  def _unsafe_list_agents(filters \\ []) do
-    from(a in Agent, order_by: [desc: a.inserted_at, desc: a.id], preload: [:environment])
-    |> apply_search(Keyword.get(filters, :search, ""))
-    |> apply_runtimes(Keyword.get(filters, :runtimes, []))
-    |> apply_env_ids(Keyword.get(filters, :env_ids, []))
-    |> apply_has_skills(Keyword.get(filters, :has_skills, false))
-    |> apply_has_mcp(Keyword.get(filters, :has_mcp, false))
-    |> Repo.all()
-  end
-
   @doc "WARNING: lookup by id without owner check. Admin/internal use only."
   def _unsafe_get_agent(id), do: Repo.get(Agent, id) |> Repo.preload(:environment)
 

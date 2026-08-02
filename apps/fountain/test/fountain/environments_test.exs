@@ -181,18 +181,6 @@ defmodule Fountain.EnvironmentsTest do
     end
   end
 
-  describe "_unsafe_list_environments/0" do
-    test "returns all environments regardless of user" do
-      u1 = insert_verified_user()
-      u2 = insert_verified_user()
-      e1 = insert_env(user_id: u1.id)
-      e2 = insert_env(user_id: u2.id)
-
-      ids = Environments._unsafe_list_environments() |> Enum.map(& &1.id)
-      assert e1.id in ids
-      assert e2.id in ids
-    end
-  end
 
   describe "_unsafe_get_environment/1" do
     test "returns the environment by id" do

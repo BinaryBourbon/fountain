@@ -58,10 +58,16 @@ Agents.list_agents(user_id, filters)
 
 # WRONG — unsafe, admin-only, prefixed accordingly
 Agents._unsafe_get_agent(id)
-Agents._unsafe_list_agents()
+Conversations._unsafe_get_sandbox(id)
 ```
 
 Functions prefixed `_unsafe_` bypass tenant scoping. **Never call them from user-facing code.** They exist for admin views and internal tooling only.
+
+The prefix goes on *every* unscoped function, including ones whose callers
+happen to check ownership first — the reader of a call site should not have to
+go and find out. A legitimate caller is an admin surface behind `require_admin`,
+a system-level sweep like the rehydrator or `SandboxReaper`, or a GenServer that
+has already established ownership.
 
 ## Envelope encryption
 

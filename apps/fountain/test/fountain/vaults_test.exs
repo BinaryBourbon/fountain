@@ -192,31 +192,6 @@ defmodule Fountain.VaultsTest do
     end
   end
 
-  describe "_unsafe_list_vaults/0" do
-    test "returns an empty list when no vaults exist" do
-      assert Vaults._unsafe_list_vaults() == []
-    end
-
-    test "returns vaults across all users" do
-      user_a = insert_verified_user()
-      user_b = insert_verified_user()
-      vault_a = insert_vault(user_id: user_a.id)
-      vault_b = insert_vault(user_id: user_b.id)
-
-      ids = Vaults._unsafe_list_vaults() |> Enum.map(& &1.id)
-      assert vault_a.id in ids
-      assert vault_b.id in ids
-    end
-
-    test "orders by inserted_at descending" do
-      user = insert_verified_user()
-      v1 = insert_vault(user_id: user.id)
-      v2 = insert_vault(user_id: user.id)
-
-      [first | _] = Vaults._unsafe_list_vaults()
-      assert first.id == v2.id || first.inserted_at >= v1.inserted_at
-    end
-  end
 
   describe "_unsafe_get_vault/1" do
     test "returns the vault when it exists" do

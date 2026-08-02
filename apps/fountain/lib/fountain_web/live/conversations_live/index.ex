@@ -194,7 +194,7 @@ defmodule FountainWeb.ConversationsLive.Index do
         <:col :let={c} label="">
           <div class="inline-flex gap-1 justify-end w-full">
             <.button
-              :if={c.status not in ["terminated", "completed", "failed"]}
+              :if={c.status not in ["terminated", "failed"]}
               variant="danger"
               phx-click="terminate"
               phx-value-id={c.id}
