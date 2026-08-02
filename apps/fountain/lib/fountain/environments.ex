@@ -9,14 +9,6 @@ defmodule Fountain.Environments do
 
   # ── environments ──────────────────────────────────────────────────────────
 
-  @doc """
-  WARNING: returns environments across all tenants. Admin/internal use only.
-  User-facing code must use the arity-1 variant that takes user_id.
-  """
-  def _unsafe_list_environments do
-    Repo.all(from e in Environment, order_by: [desc: e.inserted_at, desc: e.id])
-  end
-
   @doc "WARNING: lookup by id without owner check. Admin/internal use only."
   def _unsafe_get_environment(id), do: Repo.get(Environment, id)
 

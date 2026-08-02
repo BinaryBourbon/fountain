@@ -109,7 +109,7 @@ defmodule Fountain.Conversations.Rehydrator do
 
   defp sweep do
     Fountain.Telemetry.span([:rehydrate], %{}, fn ->
-      convs = Conversations.list_resumable_conversations()
+      convs = Conversations._unsafe_list_resumable_conversations()
       Logger.info("rehydrator: scanning #{length(convs)} resumable conversation(s)")
 
       started =

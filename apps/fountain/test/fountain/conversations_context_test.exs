@@ -9,9 +9,9 @@ defmodule Fountain.ConversationsContextTest do
   # Sandboxes
   # ────────────────────────────────────────────────────────────────────────────
 
-  describe "list_sandboxes/0" do
+  describe "_unsafe_list_sandboxes/0" do
     test "returns an empty list when no sandboxes exist" do
-      assert Conversations.list_sandboxes() == []
+      assert Conversations._unsafe_list_sandboxes() == []
     end
 
     test "returns all sandboxes" do
@@ -19,7 +19,7 @@ defmodule Fountain.ConversationsContextTest do
       s1 = insert_sandbox(user_id: user.id)
       s2 = insert_sandbox(user_id: user.id)
 
-      ids = Conversations.list_sandboxes() |> Enum.map(& &1.id)
+      ids = Conversations._unsafe_list_sandboxes() |> Enum.map(& &1.id)
       assert s1.id in ids
       assert s2.id in ids
     end
@@ -29,7 +29,7 @@ defmodule Fountain.ConversationsContextTest do
       s1 = insert_sandbox(user_id: user.id)
       s2 = insert_sandbox(user_id: user.id)
 
-      [first | _] = Conversations.list_sandboxes()
+      [first | _] = Conversations._unsafe_list_sandboxes()
       # Most recently inserted is first
       assert first.id == s2.id || first.inserted_at >= s1.inserted_at
     end
@@ -40,39 +40,39 @@ defmodule Fountain.ConversationsContextTest do
       s1 = insert_sandbox(user_id: user1.id)
       s2 = insert_sandbox(user_id: user2.id)
 
-      ids = Conversations.list_sandboxes() |> Enum.map(& &1.id)
+      ids = Conversations._unsafe_list_sandboxes() |> Enum.map(& &1.id)
       assert s1.id in ids
       assert s2.id in ids
     end
   end
 
-  describe "get_sandbox/1" do
+  describe "_unsafe_get_sandbox/1" do
     test "returns the sandbox when it exists" do
       user = insert_verified_user()
       sandbox = insert_sandbox(user_id: user.id)
 
-      result = Conversations.get_sandbox(sandbox.id)
+      result = Conversations._unsafe_get_sandbox(sandbox.id)
       assert result.id == sandbox.id
       assert result.sprite_name == sandbox.sprite_name
     end
 
     test "returns nil when sandbox does not exist" do
-      assert Conversations.get_sandbox(Ecto.UUID.generate()) == nil
+      assert Conversations._unsafe_get_sandbox(Ecto.UUID.generate()) == nil
     end
   end
 
-  describe "get_sandbox!/1" do
+  describe "_unsafe_get_sandbox!/1" do
     test "returns the sandbox when it exists" do
       user = insert_verified_user()
       sandbox = insert_sandbox(user_id: user.id)
 
-      result = Conversations.get_sandbox!(sandbox.id)
+      result = Conversations._unsafe_get_sandbox!(sandbox.id)
       assert result.id == sandbox.id
     end
 
     test "raises Ecto.NoResultsError when sandbox does not exist" do
       assert_raise Ecto.NoResultsError, fn ->
-        Conversations.get_sandbox!(Ecto.UUID.generate())
+        Conversations._unsafe_get_sandbox!(Ecto.UUID.generate())
       end
     end
   end
@@ -136,35 +136,9 @@ defmodule Fountain.ConversationsContextTest do
   # Conversations
   # ────────────────────────────────────────────────────────────────────────────
 
-  describe "_unsafe_list_conversations/0" do
-    test "returns an empty list when no conversations exist" do
-      assert Conversations._unsafe_list_conversations() == []
-    end
-
-    test "returns conversations across multiple users" do
-      user1 = insert_verified_user()
-      user2 = insert_verified_user()
-      c1 = insert_conversation(user_id: user1.id)
-      c2 = insert_conversation(user_id: user2.id)
-
-      ids = Conversations._unsafe_list_conversations() |> Enum.map(& &1.id)
-      assert c1.id in ids
-      assert c2.id in ids
-    end
-
-    test "preloads sandbox and agent" do
-      user = insert_verified_user()
-      conv = insert_conversation(user_id: user.id)
-
-      [result | _] = Conversations._unsafe_list_conversations()
-      assert result.id == conv.id
-      assert %Sandbox{} = result.sandbox
-    end
-  end
-
-  describe "list_active_conversations/0" do
+  describe "_unsafe_list_active_conversations/0" do
     test "returns empty list when no conversations exist" do
-      assert Conversations.list_active_conversations() == []
+      assert Conversations._unsafe_list_active_conversations() == []
     end
 
     test "returns conversations with non-terminal statuses" do
@@ -173,21 +147,20 @@ defmodule Fountain.ConversationsContextTest do
       idle = insert_conversation(user_id: user.id, status: "idle")
       running = insert_conversation(user_id: user.id, status: "running")
 
-      ids = Conversations.list_active_conversations() |> Enum.map(& &1.id)
+      ids = Conversations._unsafe_list_active_conversations() |> Enum.map(& &1.id)
       assert pending.id in ids
       assert idle.id in ids
       assert running.id in ids
     end
 
-    test "excludes terminated, completed, and failed conversations" do
+    test "excludes terminated and failed conversations" do
       user = insert_verified_user()
       terminated = insert_conversation(user_id: user.id, status: "terminated")
-      completed = insert_conversation(user_id: user.id, status: "completed")
+
       failed = insert_conversation(user_id: user.id, status: "failed")
 
-      ids = Conversations.list_active_conversations() |> Enum.map(& &1.id)
+      ids = Conversations._unsafe_list_active_conversations() |> Enum.map(& &1.id)
       refute terminated.id in ids
-      refute completed.id in ids
       refute failed.id in ids
     end
 
@@ -197,7 +170,7 @@ defmodule Fountain.ConversationsContextTest do
       c1 = insert_conversation(user_id: user1.id, status: "pending")
       c2 = insert_conversation(user_id: user2.id, status: "idle")
 
-      ids = Conversations.list_active_conversations() |> Enum.map(& &1.id)
+      ids = Conversations._unsafe_list_active_conversations() |> Enum.map(& &1.id)
       assert c1.id in ids
       assert c2.id in ids
     end
@@ -464,12 +437,12 @@ defmodule Fountain.ConversationsContextTest do
   # Turns
   # ────────────────────────────────────────────────────────────────────────────
 
-  describe "list_turns/1" do
+  describe "_unsafe_list_turns/1" do
     test "returns empty list when conversation has no turns" do
       user = insert_verified_user()
       conv = insert_conversation(user_id: user.id)
 
-      assert Conversations.list_turns(conv.id) == []
+      assert Conversations._unsafe_list_turns(conv.id) == []
     end
 
     test "returns all turns for the conversation" do
@@ -478,7 +451,7 @@ defmodule Fountain.ConversationsContextTest do
       t1 = insert_turn(conv)
       t2 = insert_turn(conv)
 
-      ids = Conversations.list_turns(conv.id) |> Enum.map(& &1.id)
+      ids = Conversations._unsafe_list_turns(conv.id) |> Enum.map(& &1.id)
       assert t1.id in ids
       assert t2.id in ids
     end
@@ -489,7 +462,7 @@ defmodule Fountain.ConversationsContextTest do
       t1 = insert_turn(conv)
       t2 = insert_turn(conv)
 
-      [first, second] = Conversations.list_turns(conv.id)
+      [first, second] = Conversations._unsafe_list_turns(conv.id)
       assert first.turn_number < second.turn_number
       assert first.id == t1.id
       assert second.id == t2.id
@@ -502,7 +475,7 @@ defmodule Fountain.ConversationsContextTest do
       t1 = insert_turn(conv1)
       _t2 = insert_turn(conv2)
 
-      results = Conversations.list_turns(conv1.id)
+      results = Conversations._unsafe_list_turns(conv1.id)
       assert length(results) == 1
       assert hd(results).id == t1.id
     end
@@ -749,7 +722,7 @@ defmodule Fountain.ConversationsContextTest do
     end
   end
 
-  describe "list_log_events/3" do
+  describe "_unsafe_list_log_events/3" do
     setup do
       user = insert_verified_user()
       conv = insert_conversation(user_id: user.id)
@@ -761,7 +734,7 @@ defmodule Fountain.ConversationsContextTest do
       e2 = insert_log_event(conv, kind: "output", stream: "stderr", data: "b")
       e3 = insert_log_event(conv, kind: "stage", stream: "", stage: "provision")
 
-      ids = Conversations.list_log_events(conv.id) |> Enum.map(& &1.id)
+      ids = Conversations._unsafe_list_log_events(conv.id) |> Enum.map(& &1.id)
       assert e1.id in ids
       assert e2.id in ids
       assert e3.id in ids
@@ -771,7 +744,7 @@ defmodule Fountain.ConversationsContextTest do
       e1 = insert_log_event(conv, kind: "output", stream: "stdout")
       e2 = insert_log_event(conv, kind: "stage", stream: "", stage: "provision")
 
-      ids = Conversations.list_log_events(conv.id, 0, streams: []) |> Enum.map(& &1.id)
+      ids = Conversations._unsafe_list_log_events(conv.id, 0, streams: []) |> Enum.map(& &1.id)
       assert e1.id in ids
       assert e2.id in ids
     end
@@ -781,7 +754,7 @@ defmodule Fountain.ConversationsContextTest do
       stderr = insert_log_event(conv, kind: "output", stream: "stderr", data: "err")
       stage = insert_log_event(conv, kind: "stage", stream: "", stage: "provision")
 
-      results = Conversations.list_log_events(conv.id, 0, streams: ["stdout"])
+      results = Conversations._unsafe_list_log_events(conv.id, 0, streams: ["stdout"])
       ids = Enum.map(results, & &1.id)
       assert stdout.id in ids
       refute stderr.id in ids
@@ -793,7 +766,7 @@ defmodule Fountain.ConversationsContextTest do
       stderr = insert_log_event(conv, kind: "output", stream: "stderr")
       stage = insert_log_event(conv, kind: "stage", stream: "", stage: "provision")
 
-      results = Conversations.list_log_events(conv.id, 0, streams: ["stderr"])
+      results = Conversations._unsafe_list_log_events(conv.id, 0, streams: ["stderr"])
       ids = Enum.map(results, & &1.id)
       refute stdout.id in ids
       assert stderr.id in ids
@@ -805,7 +778,7 @@ defmodule Fountain.ConversationsContextTest do
       stderr = insert_log_event(conv, kind: "output", stream: "stderr")
       stage = insert_log_event(conv, kind: "stage", stream: "", stage: "provision")
 
-      results = Conversations.list_log_events(conv.id, 0, streams: ["stage"])
+      results = Conversations._unsafe_list_log_events(conv.id, 0, streams: ["stage"])
       ids = Enum.map(results, & &1.id)
       refute stdout.id in ids
       refute stderr.id in ids
@@ -817,7 +790,7 @@ defmodule Fountain.ConversationsContextTest do
       stderr = insert_log_event(conv, kind: "output", stream: "stderr")
       stage = insert_log_event(conv, kind: "stage", stream: "", stage: "provision")
 
-      results = Conversations.list_log_events(conv.id, 0, streams: ["stdout", "stage"])
+      results = Conversations._unsafe_list_log_events(conv.id, 0, streams: ["stdout", "stage"])
       ids = Enum.map(results, & &1.id)
       assert stdout.id in ids
       refute stderr.id in ids
@@ -827,7 +800,7 @@ defmodule Fountain.ConversationsContextTest do
     test "streams: [\"unknown\"] returns empty list (unknown stream filter)", %{conv: conv} do
       _e = insert_log_event(conv, kind: "output", stream: "stdout")
 
-      assert Conversations.list_log_events(conv.id, 0, streams: ["unknown"]) == []
+      assert Conversations._unsafe_list_log_events(conv.id, 0, streams: ["unknown"]) == []
     end
 
     test "after_id filters events with id greater than after_id", %{conv: conv} do
@@ -835,7 +808,7 @@ defmodule Fountain.ConversationsContextTest do
       e2 = insert_log_event(conv, kind: "output", stream: "stdout")
       e3 = insert_log_event(conv, kind: "output", stream: "stdout")
 
-      ids = Conversations.list_log_events(conv.id, e1.id) |> Enum.map(& &1.id)
+      ids = Conversations._unsafe_list_log_events(conv.id, e1.id) |> Enum.map(& &1.id)
       refute e1.id in ids
       assert e2.id in ids
       assert e3.id in ids
@@ -846,7 +819,7 @@ defmodule Fountain.ConversationsContextTest do
       e2 = insert_log_event(conv, kind: "output", stream: "stdout")
       e3 = insert_log_event(conv, kind: "output", stream: "stdout")
 
-      ids = Conversations.list_log_events(conv.id) |> Enum.map(& &1.id)
+      ids = Conversations._unsafe_list_log_events(conv.id) |> Enum.map(& &1.id)
       assert ids == Enum.sort(ids)
       assert hd(ids) == e1.id
       assert List.last(ids) == e3.id
@@ -858,7 +831,7 @@ defmodule Fountain.ConversationsContextTest do
       _other = insert_log_event(other_conv, kind: "output", stream: "stdout")
       mine = insert_log_event(conv, kind: "output", stream: "stdout")
 
-      results = Conversations.list_log_events(conv.id)
+      results = Conversations._unsafe_list_log_events(conv.id)
       ids = Enum.map(results, & &1.id)
       assert ids == [mine.id]
     end
@@ -945,17 +918,17 @@ defmodule Fountain.ConversationsContextTest do
   end
 
   # ────────────────────────────────────────────────────────────────────────────
-  # list_resumable_conversations/0
+  # _unsafe_list_resumable_conversations/0
   # ────────────────────────────────────────────────────────────────────────────
 
-  describe "list_resumable_conversations/0" do
+  describe "_unsafe_list_resumable_conversations/0" do
     test "returns idle conversation whose sandbox is ready" do
       user = insert_verified_user()
       sandbox = insert_sandbox(user_id: user.id)
       {:ok, _} = Conversations.update_sandbox(sandbox, %{status: "ready"})
       conv = insert_conversation(user_id: user.id, status: "idle", sandbox_id: sandbox.id)
 
-      ids = Conversations.list_resumable_conversations() |> Enum.map(& &1.id)
+      ids = Conversations._unsafe_list_resumable_conversations() |> Enum.map(& &1.id)
       assert conv.id in ids
     end
 
@@ -965,7 +938,7 @@ defmodule Fountain.ConversationsContextTest do
       {:ok, _} = Conversations.update_sandbox(sandbox, %{status: "ready"})
       conv = insert_conversation(user_id: user.id, status: "running", sandbox_id: sandbox.id)
 
-      ids = Conversations.list_resumable_conversations() |> Enum.map(& &1.id)
+      ids = Conversations._unsafe_list_resumable_conversations() |> Enum.map(& &1.id)
       assert conv.id in ids
     end
 
@@ -975,7 +948,7 @@ defmodule Fountain.ConversationsContextTest do
       # sandbox remains "pending"
       conv = insert_conversation(user_id: user.id, status: "idle", sandbox_id: sandbox.id)
 
-      ids = Conversations.list_resumable_conversations() |> Enum.map(& &1.id)
+      ids = Conversations._unsafe_list_resumable_conversations() |> Enum.map(& &1.id)
       refute conv.id in ids
     end
 
@@ -985,17 +958,20 @@ defmodule Fountain.ConversationsContextTest do
       {:ok, _} = Conversations.update_sandbox(sandbox, %{status: "ready"})
       conv = insert_conversation(user_id: user.id, status: "terminated", sandbox_id: sandbox.id)
 
-      ids = Conversations.list_resumable_conversations() |> Enum.map(& &1.id)
+      ids = Conversations._unsafe_list_resumable_conversations() |> Enum.map(& &1.id)
       refute conv.id in ids
     end
 
-    test "excludes completed conversation even when sandbox is ready" do
+    test "excludes a terminated conversation even when sandbox is ready" do
+      # The sandbox being usable is not enough; the conversation has to be one
+      # someone can still talk to. This used to be asserted with "completed",
+      # a status nothing could produce, so it proved nothing.
       user = insert_verified_user()
       sandbox = insert_sandbox(user_id: user.id)
       {:ok, _} = Conversations.update_sandbox(sandbox, %{status: "ready"})
-      conv = insert_conversation(user_id: user.id, status: "completed", sandbox_id: sandbox.id)
+      conv = insert_conversation(user_id: user.id, status: "terminated", sandbox_id: sandbox.id)
 
-      ids = Conversations.list_resumable_conversations() |> Enum.map(& &1.id)
+      ids = Conversations._unsafe_list_resumable_conversations() |> Enum.map(& &1.id)
       refute conv.id in ids
     end
 
@@ -1005,14 +981,14 @@ defmodule Fountain.ConversationsContextTest do
       {:ok, _} = Conversations.update_sandbox(sandbox, %{status: "ready"})
       conv = insert_conversation(user_id: user.id, status: "idle", sandbox_id: sandbox.id)
 
-      results = Conversations.list_resumable_conversations()
+      results = Conversations._unsafe_list_resumable_conversations()
       result = Enum.find(results, &(&1.id == conv.id))
       assert %Sandbox{} = result.sandbox
       assert result.sandbox.id == sandbox.id
     end
 
     test "returns empty list when no resumable conversations exist" do
-      assert Conversations.list_resumable_conversations() == []
+      assert Conversations._unsafe_list_resumable_conversations() == []
     end
   end
 
@@ -1219,49 +1195,6 @@ defmodule Fountain.ConversationsContextTest do
   # _unsafe_list_conversations_by_activity/0
   # ────────────────────────────────────────────────────────────────────────────
 
-  describe "_unsafe_list_conversations_by_activity/0" do
-    test "returns empty list when no conversations exist" do
-      assert Conversations._unsafe_list_conversations_by_activity() == []
-    end
-
-    test "returns conversations across all users" do
-      user1 = insert_verified_user()
-      user2 = insert_verified_user()
-      c1 = insert_conversation(user_id: user1.id)
-      c2 = insert_conversation(user_id: user2.id)
-
-      ids = Conversations._unsafe_list_conversations_by_activity() |> Enum.map(& &1.id)
-      assert c1.id in ids
-      assert c2.id in ids
-    end
-
-    test "orders conversations by updated_at descending" do
-      user = insert_verified_user()
-      c1 = insert_conversation(user_id: user.id)
-      c2 = insert_conversation(user_id: user.id)
-
-      # Backdate c2 so c1 sorts first
-      past = DateTime.add(DateTime.utc_now(), -3600, :second) |> DateTime.truncate(:second)
-
-      Fountain.Repo.update_all(
-        Ecto.Query.from(c in Conversation, where: c.id == ^c2.id),
-        set: [updated_at: past]
-      )
-
-      [first | _] = Conversations._unsafe_list_conversations_by_activity()
-      assert first.id == c1.id
-    end
-
-    test "preloads agent association" do
-      user = insert_verified_user()
-      _conv = insert_conversation(user_id: user.id)
-
-      [result | _] = Conversations._unsafe_list_conversations_by_activity()
-      # agent may be nil but the key must be present and not an Ecto.Association
-      assert Map.has_key?(result, :agent)
-    end
-  end
-
   # ────────────────────────────────────────────────────────────────────────────
   # _unsafe_get_conversation_tree/1
   # ────────────────────────────────────────────────────────────────────────────
@@ -1462,11 +1395,16 @@ defmodule Fountain.ConversationsContextTest do
       assert {:error, :gone} = Conversations.wake_conversation(conv.id)
     end
 
-    test "returns {:error, :gone} when conversation status is completed" do
+    test "an idle conversation whose sandbox was reclaimed is still resumable" do
+      # The case #167 created and the reason `completed` was never needed:
+      # reclaiming an idle sandbox leaves the conversation resumable rather
+      # than closing it, so waking it must not be refused as :gone.
       user = insert_verified_user()
-      conv = insert_conversation(user_id: user.id, status: "completed")
+      agent = insert_agent(user_id: user.id)
+      sandbox = insert_sandbox(user_id: user.id, status: "terminated")
+      conv = insert_conversation(user_id: user.id, agent: agent, sandbox: sandbox, status: "idle")
 
-      assert {:error, :gone} = Conversations.wake_conversation(conv.id)
+      refute match?({:error, :gone}, Conversations.wake_conversation(conv.id))
     end
 
     test "returns {:error, :no_agent} when conversation has no agent_id" do
@@ -1773,16 +1711,16 @@ defmodule Fountain.ConversationsContextTest do
   end
 
   # ────────────────────────────────────────────────────────────────────────────
-  # list_active_conversations/0 — ordering
+  # _unsafe_list_active_conversations/0 — ordering
   # ────────────────────────────────────────────────────────────────────────────
 
-  describe "list_active_conversations/0 ordering" do
+  describe "_unsafe_list_active_conversations/0 ordering" do
     test "running conversations appear before idle conversations" do
       user = insert_verified_user()
       idle = insert_conversation(user_id: user.id, status: "idle")
       running = insert_conversation(user_id: user.id, status: "running")
 
-      results = Conversations.list_active_conversations()
+      results = Conversations._unsafe_list_active_conversations()
       active_ids = results |> Enum.map(& &1.id) |> Enum.filter(&(&1 in [idle.id, running.id]))
       assert hd(active_ids) == running.id
     end

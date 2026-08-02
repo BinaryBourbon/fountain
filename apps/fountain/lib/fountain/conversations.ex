@@ -13,9 +13,26 @@ defmodule Fountain.Conversations do
   alias Fountain.Conversations.{Conversation, LogEvent, Sandbox, Turn, TurnImage}
   alias Fountain.Repo
 
+  # ── on the _unsafe_ prefix ────────────────────────────────────────────────
+  #
+  # Every function here that does not scope by `user_id` carries the prefix,
+  # including the ones whose callers happen to check ownership first. That is
+  # the point of a convention: the reader of a call site should not have to go
+  # and find out.
+  #
+  # Several of these were unprefixed until #182 — `get_sandbox/1`,
+  # `list_turns/1`, `list_log_events/3` and friends. No call site was wrong, but
+  # nothing marked them either, so the audit that makes `_unsafe_` useful had a
+  # hole exactly where it mattered least visibly.
+  #
+  # A legitimate caller is one of: admin surfaces behind `require_admin`,
+  # system-level sweeps like the rehydrator and the reaper, or a GenServer that
+  # has already established ownership. Anything user-facing wants the scoped
+  # variant.
+
   # ── sandboxes ──────────────────────────────────────────────────────────────────────────
 
-  def list_sandboxes do
+  def _unsafe_list_sandboxes do
     Repo.all(from s in Sandbox, order_by: [desc: s.inserted_at])
   end
 
@@ -33,8 +50,8 @@ defmodule Fountain.Conversations do
     )
   end
 
-  def get_sandbox(id), do: Repo.get(Sandbox, id)
-  def get_sandbox!(id), do: Repo.get!(Sandbox, id)
+  def _unsafe_get_sandbox(id), do: Repo.get(Sandbox, id)
+  def _unsafe_get_sandbox!(id), do: Repo.get!(Sandbox, id)
 
   def create_sandbox(attrs) do
     %Sandbox{}
@@ -103,28 +120,15 @@ defmodule Fountain.Conversations do
   # ── conversations ─────────────────────────────────────────────────────────────────────
 
   @doc """
-  WARNING: returns conversations across all tenants. Only call from
-  admin-restricted paths or internal state lookups where ownership has
-  already been verified upstream.
-  """
-  def _unsafe_list_conversations do
-    Repo.all(
-      from c in Conversation,
-        order_by: [desc: c.inserted_at, desc: c.id],
-        preload: [:sandbox, :agent, turns: ^first_turn_query()]
-    )
-  end
-
-  @doc """
   Conversations the operator might still want to interact with: anything
   not in a terminal state. Ordered with active sessions on top
   (`running` > `idle`) and most-recent first within a status bucket.
   Used for the left-nav "active conversations" list.
   """
-  def list_active_conversations do
+  def _unsafe_list_active_conversations do
     Repo.all(
       from c in Conversation,
-        where: c.status not in ["terminated", "completed", "failed"],
+        where: c.status not in ["terminated", "failed"],
         order_by: [
           asc:
             fragment(
@@ -134,19 +138,6 @@ defmodule Fountain.Conversations do
           desc: c.inserted_at,
           desc: c.id
         ],
-        preload: [:agent, turns: ^first_turn_query()]
-    )
-  end
-
-  @doc """
-  WARNING: returns conversations across all tenants ordered by activity.
-  Admin/internal use only. User-facing code must use the arity-1 variant
-  that takes user_id.
-  """
-  def _unsafe_list_conversations_by_activity do
-    Repo.all(
-      from c in Conversation,
-        order_by: [desc: c.updated_at, desc: c.id],
         preload: [:agent, turns: ^first_turn_query()]
     )
   end
@@ -335,7 +326,7 @@ defmodule Fountain.Conversations do
   time of a clean BEAM stop: status `idle` or `running`, with a fully-
   provisioned (`ready`) sandbox.
   """
-  def list_resumable_conversations do
+  def _unsafe_list_resumable_conversations do
     Repo.all(
       from c in Conversation,
         join: s in Sandbox,
@@ -483,7 +474,7 @@ defmodule Fountain.Conversations do
 
   # ── turns ─────────────────────────────────────────────────────────────────────────────
 
-  def list_turns(conversation_id) do
+  def _unsafe_list_turns(conversation_id) do
     Repo.all(
       from t in Turn,
         where: t.conversation_id == ^conversation_id,
@@ -672,7 +663,7 @@ defmodule Fountain.Conversations do
     |> Repo.stream(max_rows: 100)
   end
 
-  def list_log_events(conversation_id, after_id \\ 0, opts \\ []) do
+  def _unsafe_list_log_events(conversation_id, after_id \\ 0, opts \\ []) do
     base =
       from e in LogEvent,
         where: e.conversation_id == ^conversation_id and e.id > ^after_id,
@@ -955,7 +946,7 @@ defmodule Fountain.Conversations do
   defp maybe_reuse_sandbox(%Conversation{sandbox_id: nil}), do: :create_new
 
   defp maybe_reuse_sandbox(%Conversation{sandbox_id: sandbox_id}) do
-    case get_sandbox(sandbox_id) do
+    case _unsafe_get_sandbox(sandbox_id) do
       %{status: "ready", sprite_name: name} when is_binary(name) ->
         client = Fountain.SpritesClient.get!()
 
@@ -1025,7 +1016,7 @@ defmodule Fountain.Conversations do
     end
   end
 
-  defp assert_resumable(%Conversation{status: s}) when s in ~w(terminated failed completed) do
+  defp assert_resumable(%Conversation{status: s}) when s in ~w(terminated failed) do
     {:error, :gone}
   end
 
@@ -1034,7 +1025,7 @@ defmodule Fountain.Conversations do
   defp mark_old_sandbox_terminated(nil), do: :ok
 
   defp mark_old_sandbox_terminated(sandbox_id) do
-    case get_sandbox(sandbox_id) do
+    case _unsafe_get_sandbox(sandbox_id) do
       nil ->
         :ok
 

@@ -32,7 +32,7 @@ defmodule FountainWeb.ConversationsLive.Show do
           Conversations.mark_read(id, user_id)
         end
 
-        events = Conversations.list_log_events(id) |> annotate_durations()
+        events = Conversations._unsafe_list_log_events(id) |> annotate_durations()
 
         {:ok,
          socket
@@ -50,7 +50,7 @@ defmodule FountainWeb.ConversationsLive.Show do
   end
 
   defp load_turns(conv_id) do
-    Conversations.list_turns(conv_id)
+    Conversations._unsafe_list_turns(conv_id)
     |> Enum.map(fn t ->
       image_count = length(t.images || [])
       Map.put(t, :image_count, image_count)
@@ -318,7 +318,7 @@ defmodule FountainWeb.ConversationsLive.Show do
             phx-click="interrupt" data-confirm="Stop the running turn?">
             Interrupt
           </.btn_secondary>
-          <.btn_danger :if={@conv.status not in ["terminated", "completed", "failed"]}
+          <.btn_danger :if={@conv.status not in ["terminated", "failed"]}
             phx-click="terminate" data-confirm="Terminate this conversation?">
             Terminate
           </.btn_danger>

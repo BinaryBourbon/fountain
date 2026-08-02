@@ -37,9 +37,16 @@ defmodule Fountain.Conversations.ConversationTest do
   # ---------------------------------------------------------------------------
 
   describe "statuses/0" do
-    test "returns all six valid statuses" do
-      assert Conversation.statuses() ==
-               ~w(pending running idle completed failed terminated)
+    test "returns the five valid statuses" do
+      assert Conversation.statuses() == ~w(pending running idle failed terminated)
+    end
+
+    test "completed is not one of them" do
+      # It was, three query sites filtered on it, and nothing ever wrote it —
+      # production had 247 terminated, 5 idle, 3 failed and zero completed. A
+      # status nothing can produce makes every filter keyed on it silently
+      # empty, which is worse than not having it.
+      refute "completed" in Conversation.statuses()
     end
   end
 
@@ -107,7 +114,7 @@ defmodule Fountain.Conversations.ConversationTest do
   # ---------------------------------------------------------------------------
 
   describe "changeset/2 status inclusion" do
-    for status <- ~w(pending running idle completed failed terminated) do
+    for status <- ~w(pending running idle failed terminated) do
       test "accepts status '#{status}'" do
         assert changeset(%{status: unquote(status)}).valid?
       end
@@ -142,12 +149,13 @@ defmodule Fountain.Conversations.ConversationTest do
 
   describe "changeset/2 status transition" do
     test "casts a status change from 'pending' to 'running'" do
-      cs = Conversation.changeset(%Conversation{status: "pending"}, %{
-        runtime: "claude",
-        status: "running",
-        sandbox_id: Ecto.UUID.generate(),
-        user_id: Ecto.UUID.generate()
-      })
+      cs =
+        Conversation.changeset(%Conversation{status: "pending"}, %{
+          runtime: "claude",
+          status: "running",
+          sandbox_id: Ecto.UUID.generate(),
+          user_id: Ecto.UUID.generate()
+        })
 
       assert cs.valid?
       assert Ecto.Changeset.get_change(cs, :status) == "running"

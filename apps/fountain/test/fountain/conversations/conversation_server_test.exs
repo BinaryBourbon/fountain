@@ -41,7 +41,7 @@ defmodule Fountain.Conversations.ConversationServerTest do
 
       {pid, _ref, :alive} = start_server(conv)
 
-      assert Conversations.get_sandbox!(sandbox.id).status == "ready"
+      assert Conversations._unsafe_get_sandbox!(sandbox.id).status == "ready"
       GenServer.stop(pid)
     end
 
@@ -85,7 +85,7 @@ defmodule Fountain.Conversations.ConversationServerTest do
       {pid, _ref, :alive} = start_server(conv, initial_prompt: "hello there")
 
       assert_received {:build_command, "hello there", _mode, _session, _opts}
-      assert [turn] = Conversations.list_turns(conv.id)
+      assert [turn] = Conversations._unsafe_list_turns(conv.id)
       assert turn.prompt == "hello there"
 
       GenServer.stop(pid)
@@ -96,7 +96,7 @@ defmodule Fountain.Conversations.ConversationServerTest do
 
       {pid, _ref, :alive} = start_server(conv)
 
-      assert Conversations.list_turns(conv.id) == []
+      assert Conversations._unsafe_list_turns(conv.id) == []
       GenServer.stop(pid)
     end
   end
@@ -109,7 +109,7 @@ defmodule Fountain.Conversations.ConversationServerTest do
       {_pid, ref, _} = start_server(conv)
       assert_stopped(ref)
 
-      assert Conversations.get_sandbox!(sandbox.id).status == "failed"
+      assert Conversations._unsafe_get_sandbox!(sandbox.id).status == "failed"
       assert Conversations._unsafe_get_conversation!(conv.id).status == "failed"
     end
 
@@ -143,7 +143,7 @@ defmodule Fountain.Conversations.ConversationServerTest do
       {_pid, ref, _} = start_server(conv, runtime: Fountain.Test.FailingRuntime)
       assert_stopped(ref)
 
-      assert Conversations.get_sandbox!(sandbox.id).status == "failed"
+      assert Conversations._unsafe_get_sandbox!(sandbox.id).status == "failed"
     end
 
     test "an unexpected exception is caught and does not leave the sandbox pending", %{
@@ -161,7 +161,7 @@ defmodule Fountain.Conversations.ConversationServerTest do
       {_pid, ref, _} = start_server(conv)
       assert_stopped(ref)
 
-      assert Conversations.get_sandbox!(sandbox.id).status == "failed"
+      assert Conversations._unsafe_get_sandbox!(sandbox.id).status == "failed"
       assert Conversations._unsafe_get_conversation!(conv.id).status == "failed"
     end
 
@@ -175,7 +175,7 @@ defmodule Fountain.Conversations.ConversationServerTest do
       {_pid, ref, _} = start_server(conv)
       assert_stopped(ref)
 
-      assert Conversations.get_sandbox!(sandbox.id).status == "failed"
+      assert Conversations._unsafe_get_sandbox!(sandbox.id).status == "failed"
     end
   end
 
@@ -201,7 +201,7 @@ defmodule Fountain.Conversations.ConversationServerTest do
       send(pid, {:exit, %{ref: ref}, 0})
       _ = :sys.get_state(pid)
 
-      assert [turn] = Conversations.list_turns(conv.id)
+      assert [turn] = Conversations._unsafe_list_turns(conv.id)
       assert turn.status == "completed"
       assert turn.exit_code == 0
       assert Conversations._unsafe_get_conversation!(conv.id).status == "idle"
@@ -215,7 +215,7 @@ defmodule Fountain.Conversations.ConversationServerTest do
       send(pid, {:exit, %{ref: ref}, 1})
       _ = :sys.get_state(pid)
 
-      assert [turn] = Conversations.list_turns(conv.id)
+      assert [turn] = Conversations._unsafe_list_turns(conv.id)
       assert turn.status == "failed"
       assert turn.exit_code == 1
 
@@ -231,7 +231,7 @@ defmodule Fountain.Conversations.ConversationServerTest do
       send(pid, {:stdout, %{ref: ref}, "hello from the sprite"})
       _ = :sys.get_state(pid)
 
-      events = Conversations.list_log_events(conv.id)
+      events = Conversations._unsafe_list_log_events(conv.id)
       assert Enum.any?(events, &(&1.data =~ "hello from the sprite"))
 
       GenServer.stop(pid)
@@ -253,7 +253,7 @@ defmodule Fountain.Conversations.ConversationServerTest do
       _ = :sys.get_state(pid)
 
       assert :ok = GenServer.call(pid, {:send_prompt, "second", []})
-      assert length(Conversations.list_turns(conv.id)) == 2
+      assert length(Conversations._unsafe_list_turns(conv.id)) == 2
 
       GenServer.stop(pid)
     end
@@ -326,7 +326,7 @@ defmodule Fountain.Conversations.ConversationServerTest do
       assert :ok = ConversationServer.terminate(conv.id)
 
       assert Conversations._unsafe_get_conversation!(conv.id).status == "terminated"
-      assert Conversations.get_sandbox!(sandbox.id).status == "terminated"
+      assert Conversations._unsafe_get_sandbox!(sandbox.id).status == "terminated"
     end
 
     test "reports not_running for an unknown conversation" do
@@ -337,7 +337,7 @@ defmodule Fountain.Conversations.ConversationServerTest do
       {:ok, _} = Conversations.update_sandbox(sandbox, %{status: "failed"})
 
       assert :ok = ConversationServer.terminate(conv.id)
-      assert Conversations.get_sandbox!(sandbox.id).status == "failed"
+      assert Conversations._unsafe_get_sandbox!(sandbox.id).status == "failed"
     end
   end
 

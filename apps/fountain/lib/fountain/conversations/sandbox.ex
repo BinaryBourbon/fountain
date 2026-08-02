@@ -14,7 +14,6 @@ defmodule Fountain.Conversations.Sandbox do
   schema "sandboxes" do
     field :sprite_name, :string
     field :status, :string, default: "pending"
-    field :exit_code, :integer
     field :terminated_at, :utc_datetime
     belongs_to :environment, Environment
     belongs_to :user, User
@@ -26,7 +25,7 @@ defmodule Fountain.Conversations.Sandbox do
 
   def changeset(sandbox, attrs) do
     sandbox
-    |> cast(attrs, [:sprite_name, :status, :exit_code, :terminated_at, :environment_id, :user_id])
+    |> cast(attrs, [:sprite_name, :status, :terminated_at, :environment_id, :user_id])
     |> validate_required([:sprite_name, :status, :user_id])
     |> validate_inclusion(:status, @statuses)
   end

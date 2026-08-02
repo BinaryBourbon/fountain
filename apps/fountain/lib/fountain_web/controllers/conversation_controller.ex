@@ -61,7 +61,7 @@ defmodule FountainWeb.ConversationController do
         {:error, :not_found}
 
       _ ->
-        render(conn, :turns, turns: Conversations.list_turns(id))
+        render(conn, :turns, turns: Conversations._unsafe_list_turns(id))
     end
   end
 
@@ -469,7 +469,7 @@ defmodule FountainWeb.ConversationController do
 
   defp replay(conn, conv_id, after_id, streams) do
     conv_id
-    |> Conversations.list_log_events(after_id, streams: streams)
+    |> Conversations._unsafe_list_log_events(after_id, streams: streams)
     |> Enum.reduce({conn, after_id}, fn ev, {acc_conn, _} ->
       case write_event(acc_conn, ev) do
         {:ok, c} -> {c, ev.id}

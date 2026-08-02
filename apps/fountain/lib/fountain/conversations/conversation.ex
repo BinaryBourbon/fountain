@@ -10,7 +10,16 @@ defmodule Fountain.Conversations.Conversation do
   @primary_key {:id, :binary_id, autogenerate: true}
   @foreign_key_type :binary_id
 
-  @statuses ~w(pending running idle completed failed terminated)
+  # No `completed`. It was in this list, three query sites filtered on it, and
+  # nothing ever wrote it — production has 247 terminated, 5 idle, 3 failed and
+  # zero completed, so every filter keyed on it was silently always empty.
+  #
+  # There is also no state it could describe. A conversation is either usable
+  # (pending/running/idle) or finished with (failed/terminated), and #167
+  # settled the ambiguous case: reclaiming an idle sandbox leaves the
+  # conversation `idle` and resumable rather than closing it. "Done" is the
+  # user's decision, and that is `terminated`.
+  @statuses ~w(pending running idle failed terminated)
   @sources ~w(ui api agent)
 
   schema "conversations" do

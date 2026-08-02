@@ -127,39 +127,6 @@ defmodule Fountain.AgentsTest do
     end
   end
 
-  describe "_unsafe_list_agents/1" do
-    test "returns agents across all users (no user_id filter)" do
-      user_a = insert_verified_user()
-      user_b = insert_verified_user()
-      agent_a = insert_agent(user_id: user_a.id)
-      agent_b = insert_agent(user_id: user_b.id)
-
-      ids = Agents._unsafe_list_agents() |> Enum.map(& &1.id)
-      assert agent_a.id in ids
-      assert agent_b.id in ids
-    end
-
-    test "search filter matches agent name" do
-      user = insert_verified_user()
-      insert_agent(user_id: user.id, name: "unsafe-alpha")
-      insert_agent(user_id: user.id, name: "unsafe-beta")
-
-      results = Agents._unsafe_list_agents(search: "unsafe-alpha")
-      assert length(results) == 1
-      assert hd(results).name == "unsafe-alpha"
-    end
-
-    test "runtimes filter returns only matching agents" do
-      user = insert_verified_user()
-      insert_agent(user_id: user.id, runtime: "gemini")
-      insert_agent(user_id: user.id, runtime: "claude")
-
-      results = Agents._unsafe_list_agents(runtimes: ["gemini"])
-      assert Enum.all?(results, &(&1.runtime == "gemini"))
-      assert Enum.any?(results, &(&1.runtime == "gemini"))
-    end
-  end
-
   describe "_unsafe_get_agent/1 and _unsafe_get_agent!/1" do
     test "_unsafe_get_agent returns the agent by id" do
       user = insert_verified_user()
