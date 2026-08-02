@@ -482,6 +482,99 @@ defmodule Fountain.Accounts do
     from(u in User, order_by: [asc: u.inserted_at]) |> Repo.all()
   end
 
+  @sortable_columns %{
+    "email" => :email,
+    "joined" => :inserted_at,
+    "trial_end" => :trial_ends_at,
+    "last_activity" => :last_activity
+  }
+
+  @doc """
+  Filtered, sorted, paginated user listing for the admin panel.
+
+  Options:
+
+  - `:search` — case-insensitive email substring
+  - `:status` — exact `subscription_status`
+  - `:role` — `"admin"` or `"user"`
+  - `:verified` — `true`/`false` (whether `email_verified_at` is set)
+  - `:sort` — `"email"`, `"joined"`, `"trial_end"`, or `"last_activity"`
+    (unknown values fall back to `"joined"`)
+  - `:dir` — `"asc"` or `"desc"` (default `"desc"`)
+  - `:page` / `:per_page` — 1-based offset pagination
+
+  Returns `%{users: users, total: filtered_count}`. Each user carries a
+  `:last_activity_at` key (latest usage event, `nil` if none) — sorting by it
+  needs the join anyway, so every caller gets the value for free.
+  """
+  @spec list_users_admin(keyword()) :: %{users: [User.t()], total: non_neg_integer()}
+  def list_users_admin(opts \\ []) do
+    page = opts |> Keyword.get(:page, 1) |> max(1)
+    per_page = Keyword.get(opts, :per_page, 25)
+
+    base = filter_users(opts)
+    total = Repo.aggregate(base, :count)
+
+    users =
+      base
+      |> join(:left, [u], a in subquery(last_activity_query()), on: a.user_id == u.id, as: :activity)
+      |> order_users(Keyword.get(opts, :sort), Keyword.get(opts, :dir, "desc"))
+      |> offset(^((page - 1) * per_page))
+      |> limit(^per_page)
+      |> select([u, activity: a], {u, a.last_at})
+      |> Repo.all()
+      |> Enum.map(fn {user, last_at} -> Map.put(user, :last_activity_at, last_at) end)
+
+    %{users: users, total: total}
+  end
+
+  defp filter_users(opts) do
+    Enum.reduce(opts, from(u in User), fn
+      {:search, term}, q when is_binary(term) and term != "" ->
+        where(q, [u], ilike(u.email, ^"%#{sanitize_like(term)}%"))
+
+      {:status, status}, q when is_binary(status) and status != "" ->
+        where(q, [u], u.subscription_status == ^status)
+
+      {:role, role}, q when role in ~w(admin user) ->
+        where(q, [u], u.role == ^role)
+
+      {:verified, true}, q ->
+        where(q, [u], not is_nil(u.email_verified_at))
+
+      {:verified, false}, q ->
+        where(q, [u], is_nil(u.email_verified_at))
+
+      _, q ->
+        q
+    end)
+  end
+
+  defp last_activity_query do
+    from(e in Fountain.Billing.UsageEvent,
+      group_by: e.user_id,
+      select: %{user_id: e.user_id, last_at: max(e.inserted_at)}
+    )
+  end
+
+  defp order_users(query, sort, dir) do
+    dir = if dir == "asc", do: :asc, else: :desc
+
+    case Map.get(@sortable_columns, sort, :inserted_at) do
+      :last_activity ->
+        # nulls always sink so never-active accounts don't bury the signal
+        dir = if dir == :asc, do: :asc_nulls_last, else: :desc_nulls_last
+        order_by(query, [u, activity: a], [{^dir, a.last_at}, {:asc, u.id}])
+
+      column ->
+        order_by(query, [u], [{^dir, field(u, ^column)}, {:asc, u.id}])
+    end
+  end
+
+  defp sanitize_like(term) do
+    String.replace(term, ~r/[\\%_]/, fn ch -> "\\" <> ch end)
+  end
+
   @doc "Update a user's role. Role must be 'admin' or 'user'."
   def update_user_role(%User{} = user, role) when role in ~w(admin user) do
     user |> Ecto.Changeset.change(role: role) |> Repo.update()

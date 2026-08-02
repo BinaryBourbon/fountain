@@ -58,6 +58,24 @@ defmodule Fountain.Quotas do
   end
 
   @doc """
+  Active-sandbox counts for every user with at least one, in a single query —
+  for the admin view, which refreshes on a timer and must not run a count per
+  row (the same contract as `Fountain.Billing.usage_summaries/2`).
+
+  Returns `%{user_id => count}`; users with no active sandboxes are absent.
+  """
+  @spec active_sandbox_counts() :: %{optional(binary()) => non_neg_integer()}
+  def active_sandbox_counts do
+    from(s in Sandbox,
+      where: s.status in @active_statuses,
+      group_by: s.user_id,
+      select: {s.user_id, count(s.id)}
+    )
+    |> Repo.all()
+    |> Map.new()
+  end
+
+  @doc """
   The concurrency cap for `user_id`.
 
   Falls back to the default if the user is missing or the column is null, so a

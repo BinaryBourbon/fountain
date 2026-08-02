@@ -445,6 +445,154 @@ defmodule FountainWeb.AdminLiveTest do
     end
   end
 
+  describe "AdminLive.Index — search, filter, sort" do
+    # The layout renders the logged-in admin's email in the nav, so negative
+    # assertions must target a third user, never the admin.
+    test "?q= narrows the table to matching emails", %{conn: conn} do
+      admin = insert_admin()
+      needle = insert_verified_user(%{email: "needle@example.com"})
+      straw = insert_verified_user(%{email: "straw@example.com"})
+      conn = login_user(conn, admin)
+
+      {:ok, _lv, html} = live(conn, ~p"/admin?q=needle")
+
+      assert html =~ needle.email
+      refute html =~ straw.email
+    end
+
+    test "typing in the search box patches the URL and filters", %{conn: conn} do
+      admin = insert_admin()
+      needle = insert_verified_user(%{email: "needle@example.com"})
+      straw = insert_verified_user(%{email: "straw@example.com"})
+      conn = login_user(conn, admin)
+      {:ok, lv, _html} = live(conn, ~p"/admin")
+
+      html =
+        lv
+        |> form("#user-filters")
+        |> render_change(%{"q" => "needle", "status" => "", "role" => "", "verified" => ""})
+
+      assert_patch(lv, ~p"/admin?q=needle")
+      assert html =~ needle.email
+      refute html =~ straw.email
+    end
+
+    test "filters by subscription status", %{conn: conn} do
+      admin = insert_admin()
+      trialing = insert_verified_user(%{email: "still-trialing@example.com"})
+
+      canceled =
+        Fountain.Repo.update!(
+          Ecto.Changeset.change(insert_verified_user(), subscription_status: "canceled")
+        )
+
+      conn = login_user(conn, admin)
+      {:ok, _lv, html} = live(conn, ~p"/admin?status=canceled")
+
+      assert html =~ canceled.email
+      refute html =~ trialing.email
+    end
+
+    test "filters by verification state and badges unverified users", %{conn: conn} do
+      admin = insert_admin()
+      verified = insert_verified_user(%{email: "is-verified@example.com"})
+      unverified = insert_user()
+      conn = login_user(conn, admin)
+
+      {:ok, _lv, html} = live(conn, ~p"/admin?verified=no")
+      assert html =~ unverified.email
+      assert html =~ "unverified"
+      refute html =~ verified.email
+    end
+
+    test "sorts by email via the header link", %{conn: conn} do
+      admin = insert_admin()
+      insert_verified_user(%{email: "zzz-sort@example.com"})
+      insert_verified_user(%{email: "aaa-sort@example.com"})
+      conn = login_user(conn, admin)
+      {:ok, lv, _html} = live(conn, ~p"/admin")
+
+      html = lv |> element("thead a", "Email") |> render_click()
+      assert_patch(lv, ~p"/admin?dir=asc&sort=email")
+
+      # Each email appears several times per row (confirm dialogs etc.);
+      # first-appearance order is what reflects row order.
+      assert Regex.scan(~r/(?:aaa|zzz)-sort@example\.com/, html)
+             |> List.flatten()
+             |> Enum.uniq() ==
+               ["aaa-sort@example.com", "zzz-sort@example.com"]
+    end
+
+    test "shows an empty state when nothing matches", %{conn: conn} do
+      admin = insert_admin()
+      conn = login_user(conn, admin)
+
+      {:ok, _lv, html} = live(conn, ~p"/admin?q=no-such-user")
+      assert html =~ "No users match."
+    end
+  end
+
+  describe "AdminLive.Index — pagination" do
+    # Bypasses register_user: 26 bcrypt hashes in one test is pure drag, and
+    # this test needs rows, not the registration pipeline.
+    defp insert_bare_users(count) do
+      for i <- 1..count do
+        Fountain.Repo.insert!(%Fountain.Accounts.User{
+          email: "bulk-#{i}-#{System.unique_integer([:positive])}@example.com",
+          password_hash: "not-a-real-hash"
+        })
+      end
+    end
+
+    test "shows 25 rows per page and preserves the page across refresh", %{conn: conn} do
+      admin = insert_admin()
+
+      # Back-date the admin so ascending order puts them firmly on page 1 —
+      # same-second inserts would otherwise tie-break on random uuid.
+      earlier = DateTime.add(DateTime.utc_now(), -60, :second) |> DateTime.truncate(:second)
+      Fountain.Repo.update!(Ecto.Changeset.change(admin, inserted_at: earlier))
+
+      insert_bare_users(26)
+      conn = login_user(conn, admin)
+
+      {:ok, lv, html} = live(conn, ~p"/admin?page=2&dir=asc")
+
+      # 27 users total (admin + 26): page 2 holds exactly the last two
+      assert html =~ "Page 2 of 2"
+      assert html =~ "Users (27)"
+
+      page2_emails =
+        Regex.scan(~r/bulk-\d+-\d+@example\.com/, html) |> List.flatten() |> Enum.uniq()
+
+      assert length(page2_emails) == 2
+
+      send(lv.pid, :refresh)
+      assert render(lv) =~ "Page 2 of 2"
+    end
+
+    test "prev/next links walk the pages", %{conn: conn} do
+      admin = insert_admin()
+      insert_bare_users(26)
+      conn = login_user(conn, admin)
+
+      {:ok, lv, _html} = live(conn, ~p"/admin")
+
+      lv |> element("a", "next →") |> render_click()
+      assert_patch(lv, ~p"/admin?page=2")
+
+      lv |> element("a", "← prev") |> render_click()
+      assert_patch(lv, ~p"/admin")
+    end
+
+    test "no pagination controls when everything fits on one page", %{conn: conn} do
+      admin = insert_admin()
+      conn = login_user(conn, admin)
+
+      {:ok, _lv, html} = live(conn, ~p"/admin")
+      refute html =~ "Page 1 of"
+    end
+  end
+
   describe "AdminLive.Index — usage column" do
     test "shows 30-day usage per user", %{conn: conn} do
       admin = insert_admin()
