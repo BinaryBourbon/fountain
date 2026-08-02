@@ -207,3 +207,5 @@ See `.env.example` for the full list. Key ones for local dev:
 ## Decisions
 
 Architecturally significant choices live in `decisions/NNNN-<title>.md`. When a decision is contentious or needs to constrain future work, write an ADR. Use `decisions/0001-template.md` as the template.
+
+**ADRs and docstrings must not describe unbuilt behavior as existing.** The 2026-07 audit found three mechanisms asserted as implemented (a quota check, metering call sites, a gate backstop) that did not exist — anyone reading the ADRs concluded the system was metered, capped and gated when it was none of those. If a document describes behavior that is not yet in code, say so explicitly (`**Status:** Proposed`, "not yet built"), and remove the caveat in the PR that builds it.
