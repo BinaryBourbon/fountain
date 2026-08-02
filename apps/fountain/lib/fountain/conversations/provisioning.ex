@@ -361,11 +361,18 @@ defmodule Fountain.Conversations.Provisioning do
     )
   end
 
+  # https + token is the only clone mechanism. An SSH path (key-from-secret,
+  # pinned host keys) existed here fully implemented but was unreachable —
+  # validation has required https:// since the schema was written, and nobody
+  # ever got an ssh repo past it. Deleted rather than enabled (#228): the use
+  # case is covered by token auth, and enabling it would first have required
+  # establishing that limited networking permits SSH at all. The implementation
+  # lives in git history if real demand ever shows up.
   defp clone_one(sprite, %{"url" => url} = repo, secrets, conv_id) do
-    cond do
-      ssh_url?(url) -> clone_ssh(sprite, repo, secrets, conv_id)
-      String.starts_with?(url, "https://") -> clone_https(sprite, repo, secrets, conv_id)
-      true -> {:error, {:clone_unsupported_url, url}}
+    if is_binary(url) and String.starts_with?(url, "https://") do
+      clone_https(sprite, repo, secrets, conv_id)
+    else
+      {:error, {:clone_unsupported_url, url}}
     end
   end
 
@@ -400,115 +407,10 @@ defmodule Fountain.Conversations.Provisioning do
     "export XDG_CONFIG_HOME=/tmp; "
   end
 
-  # Host keys for the common forges, so an SSH clone verifies who it is talking
-  # to. Every one of these was checked against the provider's own published
-  # fingerprints fetched over TLS — ssh-keyscan alone is the very channel this
-  # is meant to protect against, so scanning and pinning the result would be
-  # circular.
-  #
-  # Providers do rotate these (GitHub replaced its RSA key in 2023). A rotation
-  # makes clones from that host fail closed rather than silently succeed against
-  # an unknown key, which is the intended direction.
-  @known_hosts [
-                 "github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl",
-                 "github.com ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBEmKSENjQEezOmxkZMy7opKgwFB9nkt5YRrYMjNuG5N87uRgg6CLrbo5wAdT/y6v0mKV0U2w0WZ2YB/++Tpockg=",
-                 "github.com ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQCj7ndNxQowgcQnjshcLrqPEiiphnt+VTTvDP6mHBL9j1aNUkY4Ue1gvwnGLVlOhGeYrnZaMgRK6+PKCUXaDbC7qtbW8gIkhL7aGCsOr/C56SJMy/BCZfxd1nWzAOxSDPgVsmerOBYfNqltV9/hWCqBywINIR+5dIg6JTJ72pcEpEjcYgXkE2YEFXV1JHnsKgbLWNlhScqb2UmyRkQyytRLtL+38TGxkxCflmO+5Z8CSSNY7GidjMIZ7Q4zMjA2n1nGrlTDkzwDCsw+wqFPGQA179cnfGWOWRVruj16z6XyvxvjJwbz0wQZ75XK5tKSb7FNyeIEs4TT4jk+S4dhPeAUC5y+bDYirYgM4GC7uEnztnZyaVWQ7B381AK4Qdrwt51ZqExKbQpTUNn+EjqoTwvqNj4kqx5QUCI0ThS/YkOxJCXmPUWZbhjpCg56i+2aB6CmK2JGhn57K5mj0MNdBXA4/WnwH6XoPWJzK5Nyu2zB3nAZp+S5hpQs+p1vN1/wsjk=",
-                 "gitlab.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAfuCHKVTjquxvt6CM6tdG4SLp1Btn/nOeHHE5UOzRdf",
-                 "gitlab.com ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCsj2bNKTBSpIYDEGk9KxsGh3mySTRgMtXL583qmBpzeQ+jqCMRgBqB98u3z++J1sKlXHWfM9dyhSevkMwSbhoR8XIq/U0tCNyokEi/ueaBMCvbcTHhO7FcwzY92WK4Yt0aGROY5qX2UKSeOvuP4D6TPqKF1onrSzH9bx9XUf2lEdWT/ia1NEKjunUqu1xOB/StKDHMoX4/OKyIzuS0q/T1zOATthvasJFoPrAjkohTyaDUz2LN5JoH839hViyEG82yB+MjcFV5MU3N1l1QL3cVUCh93xSaua1N85qivl+siMkPGbO5xR/En4iEY6K2XPASUEMaieWVNTRCtJ4S8H+9",
-                 "bitbucket.org ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIazEu89wgQZ4bqs3d63QSMzYVa0MuJ2e2gKTKqu+UUO",
-                 "bitbucket.org ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQDQeJzhupRu0u0cdegZIa8e86EG2qOCsIsD1Xw0xSeiPDlCr7kq97NLmMbpKTX6Esc30NuoqEEHCuc7yWtwp8dI76EEEB1VqY9QJq6vk+aySyboD5QF61I/1WeTwu+deCbgKMGbUijeXhtfbxSxm6JwGrXrhBdofTsbKRUsrN1WoNgUa8uqN1Vx6WAJw1JHPhglEGGHea6QICwJOAr/6mrui/oB7pkaWKHj3z7d1IC4KWLtY47elvjbaTlkN04Kc/5LFEirorGYVbt15kAUlqGM65pk6ZBxtaO3+30LVlORZkxOh+LKL/BvbZ/iRNhItLqNyieoQj/uh/7Iv4uyH/cV/0b4WDSd3DptigWq84lJubb9t/DnZlrJazxyDCulTmKdOR7vs9gMTo+uoIrPSb8ScTtvw65+odKAlBj59dhnVp9zd7QUojOpXlL62Aw56U4oO+FALuevvMjiWeavKhJqlR7i5n9srYcrNV7ttmDw7kf/97P5zauIhxcjX+xHv4M="
-               ]
-               |> Enum.join("\n")
-               |> Kernel.<>("\n")
-
-  # SSH clone via key-from-secret. The private key is written to a short-lived
-  # path inside the sprite, GIT_SSH_COMMAND uses it for this clone, and the file
-  # is removed on exit.
-  defp clone_ssh(sprite, %{"url" => url, "mount_path" => mount} = repo, secrets, conv_id) do
-    case fetch_secret(repo["ssh_key_secret"], secrets) do
-      {:ok, key} ->
-        unique = :erlang.unique_integer([:positive])
-        key_path = "/tmp/aod_ssh_#{unique}"
-        hosts_path = "/tmp/aod_known_hosts_#{unique}"
-
-        # Written as files rather than heredoc'd into the command. The heredoc
-        # used a fixed sentinel, so a key containing a line equal to it
-        # terminated the heredoc early and the remainder of the key ran as
-        # shell — an arbitrary-write primitive into the provisioning command.
-        fs = Sprites.filesystem(sprite, "/")
-
-        with :ok <- Sprites.Filesystem.write(fs, key_path, key),
-             :ok <- Sprites.Filesystem.write(fs, hosts_path, @known_hosts) do
-          # Cleanup via trap rather than `rc=$?; rm ...`: with `set -e` a failed
-          # clone exits the shell immediately, so the trailing rm never ran and
-          # the private key stayed on the sprite for the rest of its life.
-          cmd =
-            ~s|set -e; |
-            |> Kernel.<>(
-              ~s|trap 'rm -f #{shell_quote(key_path)} #{shell_quote(hosts_path)}' EXIT; |
-            )
-            |> Kernel.<>(git_env_prefix())
-            |> Kernel.<>(~s|chmod 600 #{shell_quote(key_path)}; |)
-            |> Kernel.<>(~s|mkdir -p #{shell_quote(Path.dirname(mount))}; |)
-            # accept-new rather than no: a pinned host is verified and a
-            # mismatch fails, while an unrecognised host (someone's self-hosted
-            # git server) is still usable. `no` disabled the check entirely,
-            # including for a host whose key had changed under us.
-            |> Kernel.<>(
-              ~s|GIT_SSH_COMMAND='ssh -i #{key_path} -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=#{hosts_path}' |
-            )
-            |> Kernel.<>(
-              ~s|git clone --depth 50 #{branch_arg(repo)}#{shell_quote(url)} #{shell_quote(mount)}|
-            )
-
-          run_ssh_clone(sprite, cmd, url, conv_id)
-        else
-          {:error, reason} -> {:error, {:clone_ssh_write, reason}}
-        end
-
-      {:error, reason} ->
-        {:error, {:clone_ssh_secret, reason}}
-    end
-  end
-
-  defp run_ssh_clone(sprite, cmd, url, conv_id) do
-    {output, code} =
-      Sprites.cmd(sprite, "bash", ["-lc", cmd],
-        stderr_to_stdout: true,
-        timeout: 600_000
-      )
-
-    # The HTTPS path scrubbed and this one did not, which is exactly the kind of
-    # divergence the registry-based redaction in Conversations.log!/1 is there
-    # to make impossible.
-    log_output(conv_id, "clone", scrub_token(output))
-
-    if code == 0, do: :ok, else: {:error, {:clone, url, code}}
-  end
-
-  @doc false
-  def ssh_url?(url) when is_binary(url) do
-    String.starts_with?(url, "ssh://") or
-      Regex.match?(~r/^[^@\s]+@[^:\s]+:/, url)
-  end
-
-  def ssh_url?(_), do: false
-
   defp branch_arg(repo) do
     case repo["ref"] do
       ref when is_binary(ref) and ref != "" -> "-b #{shell_quote(ref)} "
       _ -> ""
-    end
-  end
-
-  defp fetch_secret(nil, _), do: {:error, :no_secret_key}
-  defp fetch_secret("", _), do: {:error, :no_secret_key}
-
-  defp fetch_secret(key, secrets) when is_map(secrets) do
-    case Map.get(secrets, key) do
-      nil -> {:error, {:missing_secret, key}}
-      "" -> {:error, {:empty_secret, key}}
-      v -> {:ok, v}
     end
   end
 

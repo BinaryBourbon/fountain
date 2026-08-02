@@ -51,20 +51,6 @@ Secrets are **never** returned by the API — only used internally during provis
 
 > Need to override these per-conversation (e.g. run as a different GitHub user)? See [Vaults](/help/vaults). A vault selected at conversation creation is layered over the environment's secrets, with vault values winning on key collision.
 
-## SSH clones
-
-Use `ssh_key_secret` instead of `secret_key`:
-
-```json
-{
-  "url": "git@github.com:my-org/private-repo.git",
-  "mount_path": "/workspace/private-repo",
-  "ssh_key_secret": "DEPLOY_KEY"
-}
-```
-
-The private key is written to a short-lived path inside the sprite, used as `GIT_SSH_COMMAND` for the clone, and removed on exit.
-
 ## Checkpoints
 
 The first provision of a given environment captures a sprite checkpoint after setup completes. Subsequent conversations on the same environment warm-start from that checkpoint — packages already installed, repos already cloned, setup_script already run. Editing any of those fields invalidates the checkpoint, forcing the next provision to re-run from scratch and capture a new one.

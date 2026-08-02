@@ -97,6 +97,13 @@ upgrade, is in
 - Deploys pin the exact built image on a dedicated `deploy` branch so manifest
   and image can never diverge (#250)
 
+### Removed
+
+- SSH repository clones (#228). Implemented and hardened but unreachable —
+  validation has required `https://` since the schema existed, and production
+  confirmed zero use. Private repos are covered by https + token secrets; the
+  implementation stays in git history if demand appears
+
 ### Fixed
 
 - Conversations no longer replay their last prompt on every deploy (#248)
@@ -122,8 +129,7 @@ upgrade, is in
   images (#202), sprite callback tokens — now with key expiry (#206), audit
   events (#68), and per-conversation `FOUNTAIN_TOKEN`s scoped to their owner
   (#75)
-- Provisioning hardening: `.env` values quoted inertly, SSH host keys
-  verified (#227)
+- Provisioning hardening: `.env` values quoted inertly (#227)
 - Audit coverage extended to the browser surface, auth events, and admin
   actions (#221); external audit findings addressed (#129, #130)
 
