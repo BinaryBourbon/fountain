@@ -15,7 +15,6 @@ defmodule Fountain.Accounts.User do
   @visible_stream_values ~w(stdout stderr stage)
   @view_mode_values ~w(chat pretty raw)
 
-
   @type t :: %__MODULE__{}
   schema "users" do
     field :email, :string

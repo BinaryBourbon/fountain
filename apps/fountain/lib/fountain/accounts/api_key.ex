@@ -25,7 +25,6 @@ defmodule Fountain.Accounts.ApiKey do
   # Scopes permitted to issue, list, or revoke API keys.
   @key_management_scopes ~w(full)
 
-
   @type t :: %__MODULE__{}
   schema "api_keys" do
     field :name, :string
