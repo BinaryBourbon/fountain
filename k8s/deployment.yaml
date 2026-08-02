@@ -101,6 +101,12 @@ spec:
               value: fountain.inevitable.fyi
             - name: EMAIL_FROM
               value: noreply@updates.inevitable.fyi
+            # Display-only price for the admin billing overview's MRR tile
+            # (#286). Matches the live price (price_1TVSgwDbTpLaSfbPV8fLtPT9,
+            # $29/mo as of 2026-08-02) — the API only exposes the price *id*,
+            # so the amount is stated here. Update alongside any price change.
+            - name: STRIPE_PRICE_MONTHLY_CENTS
+              value: "2900"
             # Deliberate unverified accounts (operator tests) survive the
             # unverified-account pruner (#258).
             - name: UNVERIFIED_PRUNE_EXEMPT
