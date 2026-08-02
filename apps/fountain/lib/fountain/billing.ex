@@ -568,11 +568,57 @@ defmodule Fountain.Billing do
             subscription_synced_at: event_created || user.subscription_synced_at
           })
           |> Repo.update()
+          |> tap(fn
+            {:ok, updated} -> enqueue_lifecycle_email(user.subscription_status, updated)
+            _ -> :ok
+          end)
         end
     end
   end
 
   def sync_subscription(_event), do: {:ok, :ignored}
+
+  # ─── Lifecycle emails (#283) ────────────────────────────────────────────────
+
+  # Which lifecycle email a status *transition* triggers, if any. Keyed on the
+  # transition and not the new status because Stripe fires several
+  # `customer.subscription.updated` events per dunning cycle, all carrying
+  # `past_due` — only the first one is news. A replayed event with the same
+  # status is likewise a no-op here (on top of the event-id claim upstream).
+  #
+  # `canceled` splits on where the account came from: a trial that ran out
+  # (`missing_payment_method: :cancel` deletes the subscription at trial end)
+  # gets the "trial expired, here's checkout" email; a paying account —
+  # cancelled by the user or by dunning exhaustion — gets the cancellation
+  # confirmation. A pre-subscription nil status counts as trialing.
+  defp lifecycle_email(same, same), do: nil
+  defp lifecycle_email(old, "canceled") when old in ["trialing", nil], do: "trial_expired"
+  defp lifecycle_email(_old, "canceled"), do: "subscription_canceled"
+  defp lifecycle_email(_old, "past_due"), do: "payment_failed"
+  defp lifecycle_email(_old, _new), do: nil
+
+  # Only enqueues; the send is a job (`Workers.LifecycleEmail`). A mail — or
+  # even enqueue — failure must not make the webhook return an error and have
+  # Stripe retry the whole event, so this always returns :ok.
+  defp enqueue_lifecycle_email(old_status, %User{} = user) do
+    case lifecycle_email(old_status, user.subscription_status) do
+      nil ->
+        :ok
+
+      email ->
+        case Fountain.Workers.LifecycleEmail.enqueue(user.id, email) do
+          {:ok, _job} ->
+            :ok
+
+          {:error, reason} ->
+            Logger.warning(
+              "lifecycle_email: enqueue #{email} for #{user.id} failed: #{inspect(reason)}"
+            )
+
+            :ok
+        end
+    end
+  end
 
   defp event_created_at(%Stripe.Event{created: ts}) when is_integer(ts),
     do: DateTime.from_unix!(ts) |> DateTime.truncate(:second)
