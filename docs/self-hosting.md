@@ -126,17 +126,27 @@ DATABASE_SSL_CA_FILE=/etc/ssl/certs/rds-ca.pem
 
 ### Backups
 
-Nothing here backs up your database. Fountain's own deployment uses a nightly
-`pg_dump` to object storage; the mechanism is described in the
-[operator runbook](https://github.com/BinaryBourbon/fountain/blob/main/apps/fountain/priv/help/runbook.md).
-At minimum:
+The compose file ships a nightly `pg_dump` service, off unless you opt in:
 
 ```bash
-docker compose exec postgres pg_dump -U postgres -Fc fountain > fountain-$(date +%F).dump
+docker compose --profile backup up -d
 ```
 
-Restore into a scratch database and check the row counts before you need it in
-anger. A backup nobody has restored is a hypothesis.
+Dumps land in the `backup_data` volume and are pruned after
+`BACKUP_RETENTION_DAYS` (default 14; `BACKUP_INTERVAL_SECONDS` sets the
+cadence). **That volume is on the same host as the database** — it protects
+against bad migrations and fat fingers, not a dead machine. Copy dumps
+off-host on a schedule, and remember the standing rule: a database backup
+alone cannot decrypt itself — it pairs with the
+[`MASTER_SECRETS_KEY` you backed up separately](#back-up-master_secrets_key).
+
+On Kubernetes, `deploy/k8s/backup-cronjob.yaml` is the same discipline
+against any S3-compatible bucket — dump, size-check, upload, verify, then
+prune — commented out of the kustomization until you create its secret.
+
+Restoring, and proving you can, is in
+[Operations](operations.md#backup-and-restore). A backup nobody has restored
+is a hypothesis.
 
 ## Email
 

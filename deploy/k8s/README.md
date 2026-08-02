@@ -70,6 +70,9 @@ supported once a newer version's migrations have run — restore from a backup.
   never expose it.
 - **Scaling**: one replica by default, and going higher is not just a number —
   see the comment atop `deployment.yaml`.
-- **Backups**: nothing here backs up your database, and `MASTER_SECRETS_KEY`
-  must be backed up separately from it — a database backup alone cannot
-  decrypt itself.
+- **Backups**: `backup-cronjob.yaml` ships a nightly `pg_dump` to any
+  S3-compatible bucket — commented out of `kustomization.yaml` until you
+  create its secret; setup is at the top of the file, the restore drill in
+  [the docs](https://binarybourbon.github.io/fountain/operations/#backup-and-restore).
+  `MASTER_SECRETS_KEY` must still be backed up separately — a database backup
+  alone cannot decrypt itself.

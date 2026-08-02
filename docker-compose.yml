@@ -83,5 +83,53 @@ services:
       OTEL_TRACES_EXPORTER: "none"
     restart: unless-stopped
 
+  # Nightly pg_dump into the backup_data volume, pruned after
+  # BACKUP_RETENTION_DAYS. Off unless you opt in:
+  #
+  #   docker compose --profile backup up -d
+  #
+  # The volume lives on the same host as the database, so this protects
+  # against bad migrations and fat fingers, not a dead machine — copy dumps
+  # off-host too, and back up MASTER_SECRETS_KEY separately: a database
+  # backup alone cannot decrypt itself. Restore drill:
+  # https://binarybourbon.github.io/fountain/operations/#backup-and-restore
+  backup:
+    image: postgres:16
+    profiles: ["backup"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGHOST: postgres
+      PGUSER: postgres
+      PGPASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      PGDATABASE: fountain
+      BACKUP_INTERVAL_SECONDS: ${BACKUP_INTERVAL_SECONDS:-86400}
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-14}
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      # A failed dump logs, deletes its partial file, and leaves every old
+      # backup alone — pruning happens only after a successful dump, so a
+      # broken database can never age out the backups you would restore from.
+      - |
+        while true; do
+          TS="$$(date -u +%Y-%m-%dT%H-%M-%SZ)"
+          OUT="/backups/fountain-$${TS}.dump"
+          echo "Dumping to $${OUT}..."
+          if pg_dump -Fc -Z6 --no-owner --no-privileges -f "$$OUT" \
+             && [ "$$(stat -c %s "$$OUT")" -ge 10240 ]; then
+            echo "Backup complete: $${OUT} ($$(stat -c %s "$$OUT") bytes)"
+            find /backups -name 'fountain-*.dump' -mtime "+$${BACKUP_RETENTION_DAYS}" -delete
+          else
+            echo "FAIL: dump did not complete; keeping old backups"
+            rm -f "$$OUT"
+          fi
+          sleep "$$BACKUP_INTERVAL_SECONDS"
+        done
+    volumes:
+      - backup_data:/backups
+    restart: unless-stopped
+
 volumes:
   postgres_data:
+  backup_data:

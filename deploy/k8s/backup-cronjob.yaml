@@ -1,0 +1,196 @@
+# Nightly logical backup to any S3-compatible bucket.
+#
+# Off by default: this file is commented out of kustomization.yaml. To enable:
+#
+#   1. Create the fountain-backup-s3 Secret:
+#
+#        kubectl create secret generic fountain-backup-s3 -n fountain \
+#          --from-literal=BUCKET=my-fountain-backups \
+#          --from-literal=AWS_ACCESS_KEY_ID=... \
+#          --from-literal=AWS_SECRET_ACCESS_KEY=... \
+#          --from-literal=AWS_DEFAULT_REGION=us-east-1 \
+#          --from-literal=S3_ENDPOINT= \
+#          --from-literal=S3_FORCE_PATH_STYLE=false
+#
+#      S3_ENDPOINT: blank for AWS S3; the endpoint URL for MinIO, Garage, R2,
+#      or any other S3-compatible store. S3_FORCE_PATH_STYLE: "true" for most
+#      self-hosted stores, which do not serve bucket-as-subdomain addressing.
+#
+#   2. Uncomment backup-cronjob.yaml in kustomization.yaml and re-apply.
+#
+# The shape mirrors what the hosted instance runs, and the ordering is the
+# point: dump to completion first, upload only a size-checked artifact,
+# verify the uploaded size, and prune old backups only after a verified
+# upload — so a failed run can never delete a good backup or leave a
+# truncated one looking valid.
+#
+# A backup nobody has restored is a hypothesis. The restore drill:
+# https://binarybourbon.github.io/fountain/operations/#backup-and-restore
+#
+# And the standing rule: a database backup alone cannot decrypt itself.
+# MASTER_SECRETS_KEY is backed up separately, and a restore needs the same
+# key the dump was written under.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: fountain-pg-backup
+  labels:
+    app: fountain
+spec:
+  # 03:17 UTC — off the hour so it does not pile onto other cluster crons.
+  schedule: "17 3 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 5
+  # If the cluster is down at 03:17, still run on recovery — once, not a
+  # stampede of missed runs.
+  startingDeadlineSeconds: 3600
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        spec:
+          restartPolicy: OnFailure
+          securityContext:
+            runAsNonRoot: true
+            # uid 999 is `postgres` in the postgres image; the aws-cli
+            # container just needs a non-root uid that can read the volume.
+            runAsUser: 999
+            fsGroup: 999
+          volumes:
+            - name: work
+              emptyDir:
+                # Dumps are compressed. Bump this if your database outgrows it;
+                # bounded so a runaway dump cannot fill the node.
+                sizeLimit: 2Gi
+          # pg_dump runs first, to completion, into the shared volume. The
+          # upload container starts only once it has succeeded, so a failed
+          # dump can never be uploaded as a valid-looking object.
+          initContainers:
+            - name: dump
+              image: postgres:16
+              command: ["/bin/bash", "-c"]
+              args:
+                - |
+                  set -euo pipefail
+                  TS="$(date -u +%Y-%m-%dT%H-%M-%SZ)"
+                  OUT="/work/fountain-${TS}.dump"
+
+                  echo "Dumping..."
+                  # -Fc: custom format, compressed, selectively restorable
+                  # with pg_restore.
+                  pg_dump -Fc -Z6 --no-owner --no-privileges -f "$OUT" "$DATABASE_URL"
+
+                  ls -lh "$OUT"
+                  # Refuse to hand a suspiciously small file to the uploader —
+                  # a truncated dump that uploads cleanly is worse than a
+                  # failed job, because it looks like a backup.
+                  SIZE=$(stat -c %s "$OUT")
+                  if [ "$SIZE" -lt 10240 ]; then
+                    echo "FAIL: dump is only ${SIZE} bytes, refusing to upload"
+                    exit 1
+                  fi
+                  echo "$OUT" > /work/latest
+              env:
+                # The same URL the app uses, from the same Secret.
+                - name: DATABASE_URL
+                  valueFrom:
+                    secretKeyRef: { name: fountain-secrets, key: DATABASE_URL }
+              volumeMounts:
+                - { name: work, mountPath: /work }
+              resources:
+                requests: { cpu: 50m, memory: 128Mi }
+                limits: { memory: 512Mi }
+          containers:
+            - name: upload
+              image: amazon/aws-cli:2.31.19
+              command: ["/bin/sh", "-c"]
+              args:
+                - |
+                  set -eu
+                  # Path-style addressing for stores that do not resolve the
+                  # bucket as a DNS subdomain. There is no env var for this in
+                  # the CLI, so write a config file — on the shared volume,
+                  # because this uid has no writable home.
+                  if [ "${S3_FORCE_PATH_STYLE:-false}" = "true" ]; then
+                    printf '[default]\ns3 =\n    addressing_style = path\n' > /work/aws-config
+                    export AWS_CONFIG_FILE=/work/aws-config
+                  fi
+                  ENDPOINT_ARGS=""
+                  if [ -n "${S3_ENDPOINT:-}" ]; then
+                    ENDPOINT_ARGS="--endpoint-url ${S3_ENDPOINT}"
+                  fi
+
+                  FILE="$(cat /work/latest)"
+                  BASE="$(basename "$FILE")"
+                  DEST="s3://${BUCKET}/pg_dump/${BASE}"
+
+                  echo "Uploading ${BASE}..."
+                  # --no-progress: per-chunk progress lines are pure noise in
+                  # a log aggregator.
+                  aws $ENDPOINT_ARGS s3 cp --no-progress "$FILE" "$DEST"
+
+                  # Read the object size back and compare against the local
+                  # file. A silently truncated upload is the failure mode that
+                  # goes unnoticed until a restore. list-objects-v2 rather
+                  # than head-object: some stores (Garage) answer HeadObject
+                  # with 400, and a verification step that always fails is
+                  # worse than none.
+                  LOCAL=$(stat -c %s "$FILE")
+                  REMOTE=$(aws $ENDPOINT_ARGS s3api list-objects-v2 \
+                    --bucket "$BUCKET" --prefix "pg_dump/${BASE}" \
+                    --query "Contents[?Key=='pg_dump/${BASE}'].Size | [0]" --output text)
+                  echo "local=${LOCAL} remote=${REMOTE}"
+                  if [ "$LOCAL" != "$REMOTE" ]; then
+                    echo "FAIL: size mismatch after upload"
+                    exit 1
+                  fi
+
+                  # Prune only after a verified upload, so a run that failed
+                  # to produce a new backup never deletes an old one.
+                  CUTOFF=$(date -u -d "-${RETENTION_DAYS} days" +%Y-%m-%d)
+                  echo "Pruning dumps older than ${CUTOFF}..."
+                  aws $ENDPOINT_ARGS s3api list-objects-v2 \
+                    --bucket "$BUCKET" --prefix "pg_dump/" \
+                    --query "Contents[?LastModified<'${CUTOFF}'].Key" --output text \
+                    | tr '\t' '\n' | grep -v '^$' | grep -v '^None$' | while read -r KEY; do
+                        echo "  deleting ${KEY}"
+                        aws $ENDPOINT_ARGS s3api delete-object \
+                          --bucket "$BUCKET" --key "$KEY"
+                      done || true
+
+                  echo "Backup complete: ${DEST}"
+
+                  # Optional Sentry Crons check-in: catches the job quietly
+                  # ceasing to run — the failure mode in-cluster alerts often
+                  # cannot see. Best-effort; a Sentry outage must never fail a
+                  # backup that succeeded. The monitor auto-creates on first
+                  # check-in; set its schedule (daily, 03:17 UTC, grace ~60min)
+                  # in the Sentry UI to arm missed-run alerting.
+                  if [ -n "${SENTRY_DSN:-}" ]; then
+                    K="${SENTRY_DSN#https://}"; K="${K%%@*}"
+                    HP="${SENTRY_DSN#*@}"; H="${HP%%/*}"; P="${HP##*/}"
+                    curl -fsS -m 10 \
+                      "https://${H}/api/${P}/cron/fountain-pg-dump/${K}/?status=ok" \
+                      >/dev/null && echo "Sentry check-in sent." \
+                      || echo "Sentry check-in failed (ignored)."
+                  fi
+              env:
+                - name: RETENTION_DAYS
+                  value: "14"
+                # Optional: enables the check-in above; absent, the job still
+                # runs and simply does not report.
+                - name: SENTRY_DSN
+                  valueFrom:
+                    secretKeyRef:
+                      name: fountain-secrets
+                      key: SENTRY_DSN
+                      optional: true
+              envFrom:
+                - secretRef:
+                    name: fountain-backup-s3
+              volumeMounts:
+                - { name: work, mountPath: /work }
+              resources:
+                requests: { cpu: 50m, memory: 128Mi }
+                limits: { memory: 512Mi }
