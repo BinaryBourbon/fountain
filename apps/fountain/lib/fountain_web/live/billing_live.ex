@@ -54,6 +54,28 @@ defmodule FountainWeb.Live.BillingLive do
     end
   end
 
+  # Invoices live in the Stripe portal, and a canceled account still needs its
+  # receipts — the Manage Subscription button no longer leads there once the
+  # status leaves active/past_due, so this is the direct route. Portal always,
+  # never Checkout: this must work for an account with no live subscription.
+  @impl true
+  def handle_event("billing_history", _params, socket) do
+    user = socket.assigns.current_user
+    socket = assign(socket, :stripe_url_loading, true)
+    return_url = FountainWeb.Endpoint.url() <> ~p"/account/billing"
+
+    case user.stripe_customer_id && portal_url(user.stripe_customer_id, return_url) do
+      {:ok, url} ->
+        {:noreply, redirect(socket, external: url)}
+
+      _ ->
+        {:noreply,
+         socket
+         |> assign(:stripe_url_loading, false)
+         |> put_flash(:error, "Unable to reach Stripe. Please try again.")}
+    end
+  end
+
   @impl true
   def handle_event("request_export", _params, socket) do
     user = socket.assigns.current_user
@@ -149,6 +171,19 @@ defmodule FountainWeb.Live.BillingLive do
         </div>
       <% end %>
 
+      <%!-- cancel-at-period-end notice: canceled in the portal, still inside
+           the paid period. Access continues until the period ends. --%>
+      <%= if canceling_at_period_end?(@current_user) do %>
+        <div
+          class="rounded border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800"
+          role="alert"
+        >
+          Your subscription is set to cancel — you keep full access until
+          <%= access_until_text(@current_user) %>. You can renew any time from
+          Manage Subscription.
+        </div>
+      <% end %>
+
       <%!-- Subscription status card --%>
       <div class="rounded-lg border bg-white p-6 shadow-sm">
         <h2 class="mb-4 text-lg font-medium">Subscription</h2>
@@ -176,6 +211,14 @@ defmodule FountainWeb.Live.BillingLive do
               </dd>
             </div>
           <% end %>
+          <%= if canceling_at_period_end?(@current_user) do %>
+            <div class="flex items-center justify-between">
+              <dt class="text-sm text-gray-500">Access until</dt>
+              <dd class="text-sm font-medium">
+                <%= access_until_text(@current_user) %>
+              </dd>
+            </div>
+          <% end %>
           <%= if @current_user.subscription_status == "active" do %>
             <div class="flex items-center justify-between">
               <dt class="text-sm text-gray-500">Billing period</dt>
@@ -187,7 +230,7 @@ defmodule FountainWeb.Live.BillingLive do
           <% end %>
         </dl>
 
-        <div class="mt-6">
+        <div class="mt-6 flex items-center gap-4">
           <button
             phx-click="manage_subscription"
             disabled={@stripe_url_loading}
@@ -199,6 +242,20 @@ defmodule FountainWeb.Live.BillingLive do
               Upgrade
             <% end %>
           </button>
+          <%!-- Invoices live in the portal. Manage Subscription already leads
+               there for active/past_due; every other status with a Stripe
+               customer (canceled above all — they paid, they need receipts)
+               gets a direct route. --%>
+          <%= if @current_user.stripe_customer_id &&
+                   @current_user.subscription_status not in ~w(active past_due) do %>
+            <button
+              phx-click="billing_history"
+              disabled={@stripe_url_loading}
+              class="text-sm font-medium text-indigo-600 hover:text-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Billing history &amp; invoices
+            </button>
+          <% end %>
         </div>
       </div>
 
@@ -355,43 +412,83 @@ defmodule FountainWeb.Live.BillingLive do
     return_url = FountainWeb.Endpoint.url() <> ~p"/account/billing"
 
     if user.subscription_status in ~w(active past_due) and user.stripe_customer_id do
-      case Stripe.BillingPortal.Session.create(%{
-             customer: user.stripe_customer_id,
-             return_url: return_url
-           }) do
-        {:ok, session} -> {:ok, session.url}
-        error -> error
-      end
+      portal_url(user.stripe_customer_id, return_url)
     else
-      price_id = Application.get_env(:fountain, :stripe_price_id, "")
-
-      # Never fall back to `customer_email`. That makes Stripe mint its own
-      # Customer whose id we never learn, so the subscription webhook matches no
-      # user: the card is charged and the account is never activated. Creating
-      # the Customer first means the id is always ours.
-      with {:ok, user} <- Billing.ensure_stripe_customer(user) do
-        params = %{
-          mode: :subscription,
-          line_items: [%{price: price_id, quantity: 1}],
-          success_url: return_url <> "?checkout=success",
-          cancel_url: return_url,
-          customer: user.stripe_customer_id,
-          # Second route back to the user if the customer link is ever lost —
-          # checkout.session.completed carries this through.
-          client_reference_id: user.id,
-          # Show "Add promotion code" link on the Checkout page. Promotion codes
-          # are user-facing redeemable strings tied to coupons created in the
-          # Stripe dashboard. Without this flag, the field is hidden by default.
-          allow_promotion_codes: true
-        }
-
-        case Stripe.Checkout.Session.create(params) do
-          {:ok, session} -> {:ok, session.url}
-          error -> error
-        end
-      end
+      checkout_or_portal(user, return_url)
     end
   end
+
+  # An existing customer may still hold a live subscription even when our local
+  # status says otherwise — most notably one cancelled at period end, which
+  # Stripe keeps "active" until the period actually ends (and a lost webhook
+  # leaves the same mismatch). Checkout would open a second, duplicate
+  # subscription on top of it, so those users go to the Portal, where the
+  # existing subscription can be renewed instead. A fresh customer has no
+  # subscriptions to duplicate, so no lookup is needed.
+  defp checkout_or_portal(%{stripe_customer_id: id} = user, return_url)
+       when is_binary(id) and id != "" do
+    case Billing.has_live_subscription?(user) do
+      {:ok, true} -> portal_url(id, return_url)
+      {:ok, false} -> checkout_url(user, return_url)
+      {:error, _} = error -> error
+    end
+  end
+
+  defp checkout_or_portal(user, return_url) do
+    # Never fall back to `customer_email`. That makes Stripe mint its own
+    # Customer whose id we never learn, so the subscription webhook matches no
+    # user: the card is charged and the account is never activated. Creating
+    # the Customer first means the id is always ours.
+    with {:ok, user} <- Billing.ensure_stripe_customer(user) do
+      checkout_url(user, return_url)
+    end
+  end
+
+  defp portal_url(customer_id, return_url) do
+    case Stripe.BillingPortal.Session.create(%{
+           customer: customer_id,
+           return_url: return_url
+         }) do
+      {:ok, session} -> {:ok, session.url}
+      error -> error
+    end
+  end
+
+  defp checkout_url(user, return_url) do
+    price_id = Application.get_env(:fountain, :stripe_price_id, "")
+
+    params = %{
+      mode: :subscription,
+      line_items: [%{price: price_id, quantity: 1}],
+      success_url: return_url <> "?checkout=success",
+      cancel_url: return_url,
+      customer: user.stripe_customer_id,
+      # Second route back to the user if the customer link is ever lost —
+      # checkout.session.completed carries this through.
+      client_reference_id: user.id,
+      # Show "Add promotion code" link on the Checkout page. Promotion codes
+      # are user-facing redeemable strings tied to coupons created in the
+      # Stripe dashboard. Without this flag, the field is hidden by default.
+      allow_promotion_codes: true
+    }
+
+    case Stripe.Checkout.Session.create(params) do
+      {:ok, session} -> {:ok, session.url}
+      error -> error
+    end
+  end
+
+  # Only an active subscription can be pending cancellation; once `.deleted`
+  # lands the status is canceled and the flag is cleared by the sync.
+  defp canceling_at_period_end?(user) do
+    user.subscription_status == "active" and user.cancel_at_period_end
+  end
+
+  defp access_until_text(%{current_period_end: %DateTime{} = ends_at}) do
+    Calendar.strftime(ends_at, "%B %-d, %Y")
+  end
+
+  defp access_until_text(_), do: "the end of the current billing period"
 
   defp trial_countdown_text(%{trial_ends_at: nil}), do: "Trial active"
 

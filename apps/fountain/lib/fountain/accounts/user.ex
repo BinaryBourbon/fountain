@@ -31,6 +31,11 @@ defmodule Fountain.Accounts.User do
     # Stripe `created` of the last subscription event applied — the ordering
     # guard's watermark. See Billing.sync_subscription/1.
     field :subscription_synced_at, :utc_datetime
+    # A portal cancellation leaves the subscription "active" with this flag set;
+    # access continues until current_period_end, when `.deleted` fires. Synced
+    # from subscription webhooks so the UI can say "access until <date>".
+    field :cancel_at_period_end, :boolean, default: false
+    field :current_period_end, :utc_datetime
     field :session_version, :integer, default: 0
     field :theme_preference, :string, default: "system"
     field :conversations_roots_only, :boolean, default: false
@@ -92,7 +97,9 @@ defmodule Fountain.Accounts.User do
       :stripe_customer_id,
       :subscription_status,
       :trial_ends_at,
-      :subscription_synced_at
+      :subscription_synced_at,
+      :cancel_at_period_end,
+      :current_period_end
     ])
     |> validate_inclusion(:subscription_status, @subscription_statuses)
   end
