@@ -476,7 +476,10 @@ defmodule Fountain.Conversations.ConversationServer do
 
     client = SpritesClient.get!()
 
-    case Sprites.get_sprite(client, sandbox.sprite_name) do
+    case Fountain.Retry.with_backoff(
+           fn -> Sprites.get_sprite(client, sandbox.sprite_name) end,
+           label: "sprite lookup on wake"
+         ) do
       {:ok, _info} ->
         sprite = Sprites.sprite(client, sandbox.sprite_name)
         {state, _conv} = rotate_callback_api_key(state, conv)
@@ -529,7 +532,9 @@ defmodule Fountain.Conversations.ConversationServer do
       publish_stage(state.conversation_id, "reattach", "done", %{outcome: "no_running_turn"})
       state
     else
-      case Sprites.list_sessions(state.sprite) do
+      case Fountain.Retry.with_backoff(fn -> Sprites.list_sessions(state.sprite) end,
+             label: "session list on reattach"
+           ) do
         {:ok, sessions} ->
           # Don't filter by `is_active`: a detached session reports
           # `is_active: false` while no client is connected, but the
@@ -1002,7 +1007,19 @@ defmodule Fountain.Conversations.ConversationServer do
 
   defp create_sprite(name) do
     client = SpritesClient.get!()
-    Sprites.create(client, name)
+
+    Fountain.Retry.with_backoff(
+      fn ->
+        case Sprites.create(client, name) do
+          # A 409 means a sprite with this name already exists. Names are
+          # unique per sandbox row, so the only way that happens is an earlier
+          # attempt that created it but lost the response — adopt it.
+          {:error, {:api_error, 409, _body}} -> {:ok, Sprites.sprite(client, name)}
+          other -> other
+        end
+      end,
+      label: "sprite create #{name}"
+    )
   end
 
   defp fountain_callback_env(token) do

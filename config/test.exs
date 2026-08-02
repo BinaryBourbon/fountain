@@ -23,6 +23,10 @@ config :fountain, :ueberauth_test_mode, true
 # ExUnit tests don't share counters. Each test runs in its own process.
 config :fountain, :rate_limit_test_isolation, true
 
+# Fountain.Retry sleeps between attempts; 1ms keeps retry-path tests fast
+# without changing the retry logic under test.
+config :fountain, :retry_base_ms, 1
+
 config :logger, level: :warning
 config :phoenix, :plug_init_mode, :runtime
 config :phoenix, sort_verified_routes_query_params: true
