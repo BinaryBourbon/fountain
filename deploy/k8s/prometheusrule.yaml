@@ -1,0 +1,187 @@
+# Generic alerts for a self-hosted Fountain — the operational knowledge from
+# running the hosted instance, with the hosted-specific routing and thresholds
+# removed.
+#
+# Off by default: this file is commented out of kustomization.yaml, because it
+# needs the PrometheusRule CRD (prometheus-operator / kube-prometheus-stack).
+# To enable: make sure your Prometheus scrapes the app's metrics port (9568 —
+# this baseline ships no ServiceMonitor, so wire the scrape however your stack
+# does it), check the label matchers below against how your scrape names
+# things, then uncomment the file in kustomization.yaml and re-apply.
+#
+# What is deliberately NOT here: node pressure, PVC fill, pod crash-looping,
+# replica mismatch — kube-prometheus-stack ships all of those; duplicating
+# them just doubles the paging.
+#
+# Every alert says what it means and what to do. The symptom → component map
+# is https://binarybourbon.github.io/fountain/architecture/ and the actions
+# are https://binarybourbon.github.io/fountain/operations/.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: fountain-alerts
+  labels:
+    app: fountain
+spec:
+  groups:
+    # ── Backups ───────────────────────────────────────────────────────────
+    #
+    # These watch the optional backup-cronjob.yaml and are inert until it
+    # exists: each expression is gated on kube-state-metrics seeing the
+    # CronJob, so enabling alerts without enabling backups does not page you
+    # about backups you chose not to take.
+    - name: fountain-backups
+      interval: 60s
+      rules:
+        - alert: FountainBackupStale
+          # last_successful_time is seconds-since-epoch of the last successful
+          # run. 36h allows one missed nightly plus the startingDeadline
+          # window before shouting.
+          expr: |
+            time() - kube_cronjob_status_last_successful_time{
+              namespace="fountain", cronjob="fountain-pg-backup"
+            } > 36 * 3600
+          for: 10m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Fountain Postgres backup has not succeeded in over 36h"
+            description: |
+              The newest restorable dump is at least {{ $value | humanizeDuration }}
+              old; recovery would lose everything since.
+              Check: kubectl get jobs -n fountain --sort-by=.metadata.creationTimestamp | tail
+              Logs:  kubectl logs -n fountain job/<name> -c dump
+                     kubectl logs -n fountain job/<name> -c upload
+
+        # The staleness alert cannot fire if the CronJob has never succeeded
+        # even once — the metric is simply absent. Gated on the CronJob
+        # existing so it stays silent when backups are not enabled at all.
+        - alert: FountainBackupNeverSucceeded
+          expr: |
+            absent(kube_cronjob_status_last_successful_time{
+              namespace="fountain", cronjob="fountain-pg-backup"
+            })
+              and on()
+            count(kube_cronjob_info{namespace="fountain", cronjob="fountain-pg-backup"}) > 0
+          for: 26h
+          labels:
+            severity: critical
+          annotations:
+            summary: "Fountain Postgres backup has never completed successfully"
+            description: |
+              The backup CronJob exists but no successful run has ever been
+              recorded. Either it was just created, or every run has failed.
+              Either way there is no verified backup yet.
+
+        - alert: FountainBackupJobFailing
+          expr: |
+            kube_job_status_failed{namespace="fountain", job_name=~"fountain-pg-backup.*"} > 0
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "A Fountain backup job failed"
+            description: |
+              {{ $labels.job_name }} has a failed pod; the nightly dump may not
+              have been uploaded. One failure is not yet data loss —
+              FountainBackupStale escalates if it keeps happening.
+
+        - alert: FountainBackupSuspended
+          expr: kube_cronjob_spec_suspend{namespace="fountain", cronjob="fountain-pg-backup"} == 1
+          for: 1h
+          labels:
+            severity: warning
+          annotations:
+            summary: "Fountain backup CronJob is suspended"
+            description: |
+              No backups are being taken. Fine during maintenance, dangerous
+              if forgotten.
+
+    # ── Application health ────────────────────────────────────────────────
+    - name: fountain-app
+      interval: 30s
+      rules:
+        - alert: FountainMetricsTargetDown
+          # The metrics listener is a separate socket inside the same BEAM, so
+          # a scrape failure while the pod still looks Ready means the VM
+          # itself is in trouble — this doubles as the "up but wedged" canary.
+          # NOTE: `job` here is whatever your scrape config named the target;
+          # adjust the matcher to yours.
+          expr: up{namespace="fountain"} == 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Fountain metrics endpoint is not scrapeable"
+            description: |
+              Prometheus cannot scrape {{ $labels.pod }} on the metrics port.
+              The pod may pass its readiness probe while the BEAM cannot serve.
+
+        - alert: FountainHighServerErrorRate
+          # 5xx as a share of all responses; 5% sustained for 10m is a real
+          # regression, a single blip is not.
+          expr: |
+            sum(rate(phoenix_router_dispatch_stop_count{namespace="fountain", status=~"5.."}[5m]))
+              /
+            sum(rate(phoenix_router_dispatch_stop_count{namespace="fountain"}[5m]))
+              > 0.05
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Over 5% of Fountain responses are 5xx"
+            description: |
+              {{ $value | humanizePercentage }} of responses are server errors.
+              Detail is in Sentry if you configured it, otherwise the pod logs.
+
+        - alert: FountainUnhandledExceptions
+          expr: |
+            sum(rate(phoenix_router_dispatch_exception_count{namespace="fountain"}[5m])) > 0.1
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Fountain is raising unhandled exceptions"
+            description: |
+              Exceptions escaping the router on {{ $labels.route }}. Stack
+              traces are in Sentry if configured, otherwise only the logs.
+
+        - alert: FountainDatabasePoolSaturated
+          # queue_time is time waiting for a pool connection. It climbs when
+          # every connection is checked out — the failure that presents as
+          # "everything got slow" rather than "one query got slow".
+          expr: |
+            histogram_quantile(0.95,
+              sum(rate(fountain_repo_query_queue_time_bucket{namespace="fountain"}[5m])) by (le)
+            ) > 100
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Fountain is waiting on the database connection pool"
+            description: |
+              p95 wait for a connection is {{ $value | humanize }}ms. The pool
+              is POOL_SIZE per replica (default 10). Sustained waits are slow
+              queries holding connections, or genuine saturation — raise
+              POOL_SIZE only after ruling out the former.
+
+    # ── Sandboxes ─────────────────────────────────────────────────────────
+    - name: fountain-sandboxes
+      interval: 60s
+      rules:
+        - alert: FountainProvisionFailures
+          # Provision calls already retry transient Sprites errors with
+          # backoff, so anything counted here failed after retries — users
+          # are seeing conversations that fail to start.
+          expr: |
+            sum(rate(fountain_provision_exception_count{namespace="fountain"}[15m])) > 0.05
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Fountain sandbox provisioning is failing"
+            description: |
+              Likely causes, in the order to check them: SPRITES_TOKEN invalid
+              or rate-limited, the Sprites API unhealthy, or tenants at their
+              concurrency cap. Triage:
+              https://binarybourbon.github.io/fountain/operations/#sprites-errors

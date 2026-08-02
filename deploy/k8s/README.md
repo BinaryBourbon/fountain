@@ -67,7 +67,10 @@ supported once a newer version's migrations have run — restore from a backup.
   startup probe allows 150s for boot-time migrations. Reasons are inline in
   `deployment.yaml`.
 - **Metrics**: Prometheus format on port 9568 (`metrics`). Scrape in-cluster;
-  never expose it.
+  never expose it. `prometheusrule.yaml` ships generic alerts (commented out
+  of `kustomization.yaml`; needs the PrometheusRule CRD), and
+  `../grafana/fountain-dashboard.json` is a starter dashboard for the same
+  metrics.
 - **Scaling**: one replica by default, and going higher is not just a number —
   see the comment atop `deployment.yaml`.
 - **Backups**: `backup-cronjob.yaml` ships a nightly `pg_dump` to any

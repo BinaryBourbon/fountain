@@ -223,6 +223,19 @@ The app serves Prometheus metrics on port 9568, which the compose file does not
 publish. Add a port mapping if you are scraping it, and keep it off the public
 internet — it enumerates routes, request rates and database timings.
 
+You do not have to start from a blank scrape. The repo ships an observability
+pack built from running the hosted instance:
+
+- **Alerts** — `deploy/k8s/prometheusrule.yaml`: error rate, unhandled
+  exceptions, pool saturation, provisioning failures, and staleness watches
+  for the optional backup CronJob, each commented with what it means and what
+  to do. Needs the PrometheusRule CRD; commented out of the kustomization
+  until you enable it.
+- **A starter dashboard** — `deploy/grafana/fountain-dashboard.json`, built
+  only from metrics the app actually exports. Import it into Grafana and pick
+  your Prometheus datasource; on compose, point any Prometheus at the metrics
+  port and import the same file.
+
 Logs go to stdout: `docker compose logs -f app`.
 
 Error tracking is off unless you opt in: set `SENTRY_DSN` and crashes —
