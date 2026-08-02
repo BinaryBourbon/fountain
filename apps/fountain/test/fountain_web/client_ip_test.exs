@@ -72,6 +72,30 @@ defmodule FountainWeb.ClientIpTest do
     end
   end
 
+  describe "an IPv4-mapped IPv6 peer (endpoint bound on [::])" do
+    # The endpoint listens on [::], so an IPv4 peer arrives as an IPv4-mapped
+    # IPv6 tuple — ::ffff:10.42.0.1 — which a v4 CIDR block never matches.
+    # Production bore this out: the peer gate failed on every request, the
+    # header was never consulted, and buckets keyed on the node gateway again.
+    test "a mapped cluster hop is still a trusted proxy" do
+      # ::ffff:10.42.0.1
+      assert resolve([{"x-forwarded-for", "203.0.113.7"}], {0, 0, 0, 0, 0, 65_535, 2602, 1}) ==
+               {203, 0, 113, 7}
+    end
+
+    test "the no-header fallback stores the unwrapped v4 address" do
+      assert resolve([], {0, 0, 0, 0, 0, 65_535, 2602, 1}) == {10, 42, 0, 1}
+    end
+
+    test "a mapped public peer still cannot forge its address" do
+      # ::ffff:198.51.100.9 — unwrapping must not widen trust.
+      assert resolve(
+               [{"x-forwarded-for", "1.2.3.4"}],
+               {0, 0, 0, 0, 0, 65_535, 50_739, 25_609}
+             ) == {198, 51, 100, 9}
+    end
+  end
+
   describe "trusted_proxies/0" do
     test "covers the k3s pod and service networks" do
       proxies = Endpoint.trusted_proxies()

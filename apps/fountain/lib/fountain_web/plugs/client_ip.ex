@@ -36,10 +36,22 @@ defmodule FountainWeb.Plugs.ClientIp do
 
   @impl Plug
   def call(conn, _opts) do
+    conn = %{conn | remote_ip: normalize(conn.remote_ip)}
     conn = %{conn | remote_ip: resolve(conn)}
     Logger.metadata(remote_ip: format(conn.remote_ip))
     conn
   end
+
+  # The endpoint listens on [::] (runtime.exs binds ip: {0,0,0,0,0,0,0,0}), so
+  # an IPv4 peer arrives as an IPv4-mapped IPv6 tuple — ::ffff:10.42.0.1 —
+  # which RemoteIp.Block never matches against an IPv4 CIDR. Left unwrapped,
+  # the peer gate below fails on every request, the forwarded header is never
+  # consulted, and every bucket and audit row keys on the node gateway again —
+  # the exact regression #216 fixed. Unwrap before any matching or storage.
+  defp normalize({0, 0, 0, 0, 0, 0xFFFF, hi, lo}),
+    do: {div(hi, 256), rem(hi, 256), div(lo, 256), rem(lo, 256)}
+
+  defp normalize(ip), do: ip
 
   defp resolve(conn) do
     if from_trusted_proxy?(conn.remote_ip) do
@@ -51,6 +63,7 @@ defmodule FountainWeb.Plugs.ClientIp do
 
   @doc "Whether `ip` is one of the configured proxy addresses."
   def from_trusted_proxy?(ip) when is_tuple(ip) do
+    ip = normalize(ip)
     Enum.any?(blocks(), &Block.contains?(&1, Block.encode(ip)))
   end
 
