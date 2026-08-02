@@ -131,6 +131,7 @@ defmodule Fountain.TrialExpiryTest do
       assert [%{price: "price_test"}] = params.items
 
       assert updated.stripe_customer_id == "cus_new"
+      assert updated.stripe_subscription_id == "sub_new"
       assert updated.subscription_status == "trialing"
       assert updated.trial_ends_at
     end

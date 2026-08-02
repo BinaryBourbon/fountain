@@ -26,6 +26,10 @@ defmodule Fountain.Accounts.User do
     field :max_concurrent_sandboxes, :integer, default: 5
     field :role, :string, default: "user"
     field :stripe_customer_id, :string
+    # The subscription of record. Webhook sync applies events for this
+    # subscription only — a customer can briefly carry two (mid-trial upgrade),
+    # and customer-keyed sync let the doomed one write the account's status.
+    field :stripe_subscription_id, :string
     field :subscription_status, :string, default: "trialing"
     field :trial_ends_at, :utc_datetime
     field :suspended_at, :utc_datetime
@@ -96,6 +100,7 @@ defmodule Fountain.Accounts.User do
     user
     |> cast(attrs, [
       :stripe_customer_id,
+      :stripe_subscription_id,
       :subscription_status,
       :trial_ends_at,
       :subscription_synced_at,

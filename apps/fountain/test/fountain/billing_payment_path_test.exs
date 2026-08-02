@@ -111,6 +111,241 @@ defmodule Fountain.BillingPaymentPathTest do
     end
   end
 
+  describe "mid-trial upgrade" do
+    # The #309 chain: Checkout in subscription mode always creates a *new*
+    # subscription, so an upgrade during the trial leaves two alive. Stripe
+    # then cancels the trial one (created with missing_payment_method: :cancel)
+    # at trial end, and customer-keyed sync applied that cancellation to the
+    # account of a customer who is paying on the other subscription.
+
+    defp trialing_user_on(customer_id, sub_id) do
+      user = insert_verified_user()
+      {:ok, user} = Billing.attach_stripe_customer(user, customer_id)
+
+      {:ok, user} =
+        user
+        |> User.billing_changeset(%{stripe_subscription_id: sub_id})
+        |> Repo.update()
+
+      user
+    end
+
+    defp sub_event(id, type, customer, sub_id, status, created) do
+      %Stripe.Event{
+        id: id,
+        type: type,
+        created: created,
+        data: %{object: %{id: sub_id, customer: customer, status: status, trial_end: nil}}
+      }
+    end
+
+    defp now_unix, do: DateTime.utc_now() |> DateTime.to_unix()
+
+    test "checkout completion adopts the new subscription and cancels the trial one" do
+      user = trialing_user_on("cus_upgrade", "sub_trial")
+      test = self()
+
+      expect(Stripe.Subscription, :list, fn %{customer: "cus_upgrade", status: :all} ->
+        {:ok,
+         %{
+           data: [
+             %Stripe.Subscription{id: "sub_trial", status: "trialing"},
+             %Stripe.Subscription{id: "sub_paid", status: "active"}
+           ],
+           has_more: false
+         }}
+      end)
+
+      expect(Stripe.Subscription, :cancel, fn id ->
+        send(test, {:cancelled, id})
+        {:ok, %Stripe.Subscription{id: id, status: "canceled"}}
+      end)
+
+      event = %Stripe.Event{
+        id: "evt_checkout_up",
+        type: "checkout.session.completed",
+        created: now_unix(),
+        data: %{
+          object: %{
+            customer: "cus_upgrade",
+            subscription: "sub_paid",
+            client_reference_id: user.id
+          }
+        }
+      }
+
+      assert {:ok, updated} = Billing.handle_event(event)
+      assert updated.stripe_subscription_id == "sub_paid"
+      assert updated.subscription_status == "active"
+
+      # Only the trial subscription is cancelled — never the one just paid for.
+      assert_received {:cancelled, "sub_trial"}
+      refute_received {:cancelled, "sub_paid"}
+    end
+
+    test "the dead trial subscription's deletion cannot lock out the paying account" do
+      # Both halves on one path: the upgrade above, then the straggler event
+      # Stripe sends when the abandoned trial subscription dies.
+      user = trialing_user_on("cus_locked", "sub_trial2")
+
+      stub(Stripe.Subscription, :list, fn _ ->
+        {:ok, %{data: [%Stripe.Subscription{id: "sub_trial2", status: "trialing"}], has_more: false}}
+      end)
+
+      stub(Stripe.Subscription, :cancel, fn id ->
+        {:ok, %Stripe.Subscription{id: id, status: "canceled"}}
+      end)
+
+      t0 = now_unix()
+
+      {:ok, _} =
+        Billing.handle_event(%Stripe.Event{
+          id: "evt_up2",
+          type: "checkout.session.completed",
+          created: t0,
+          data: %{
+            object: %{
+              customer: "cus_locked",
+              subscription: "sub_paid2",
+              client_reference_id: user.id
+            }
+          }
+        })
+
+      # The deletion for the old subscription arrives later, so the staleness
+      # guard alone would have let it through.
+      assert {:ok, :other_subscription} =
+               Billing.handle_event(
+                 sub_event(
+                   "evt_trial_dies",
+                   "customer.subscription.deleted",
+                   "cus_locked",
+                   "sub_trial2",
+                   "canceled",
+                   t0 + 60
+                 )
+               )
+
+      reloaded = Repo.reload(user)
+      assert reloaded.subscription_status == "active"
+      assert reloaded.stripe_subscription_id == "sub_paid2"
+
+      # The subscription of record still syncs normally.
+      assert {:ok, updated} =
+               Billing.handle_event(
+                 sub_event(
+                   "evt_paid_pd",
+                   "customer.subscription.updated",
+                   "cus_locked",
+                   "sub_paid2",
+                   "past_due",
+                   t0 + 120
+                 )
+               )
+
+      assert updated.subscription_status == "past_due"
+    end
+
+    test "a legacy account with no recorded subscription adopts from the first live event" do
+      user = insert_verified_user()
+      {:ok, user} = Billing.attach_stripe_customer(user, "cus_legacy")
+
+      assert {:ok, updated} =
+               Billing.sync_subscription(
+                 sub_event(
+                   "evt_legacy",
+                   "customer.subscription.updated",
+                   "cus_legacy",
+                   "sub_adopted",
+                   "active",
+                   now_unix()
+                 )
+               )
+
+      assert updated.stripe_subscription_id == "sub_adopted"
+      assert updated.subscription_status == "active"
+      assert Repo.reload(user).stripe_subscription_id == "sub_adopted"
+    end
+
+    test "a legacy account applies but does not adopt from a deletion" do
+      # During a pre-fix double-subscription window the dying trial must not
+      # become the subscription of record; the paying subscription's next
+      # event adopts and corrects instead.
+      user = insert_verified_user()
+      {:ok, user} = Billing.attach_stripe_customer(user, "cus_legacy_del")
+      t0 = now_unix()
+
+      assert {:ok, updated} =
+               Billing.sync_subscription(
+                 sub_event(
+                   "evt_legacy_del",
+                   "customer.subscription.deleted",
+                   "cus_legacy_del",
+                   "sub_doomed",
+                   "canceled",
+                   t0
+                 )
+               )
+
+      assert updated.subscription_status == "canceled"
+      assert updated.stripe_subscription_id == nil
+
+      # The paying subscription's monthly event recovers the account.
+      assert {:ok, recovered} =
+               Billing.sync_subscription(
+                 sub_event(
+                   "evt_legacy_rec",
+                   "customer.subscription.updated",
+                   "cus_legacy_del",
+                   "sub_alive",
+                   "active",
+                   t0 + 60
+                 )
+               )
+
+      assert recovered.subscription_status == "active"
+      assert recovered.stripe_subscription_id == "sub_alive"
+      assert Repo.reload(user).subscription_status == "active"
+    end
+
+    test "a failed Stripe cancel rolls the whole checkout apply back for redelivery" do
+      user = trialing_user_on("cus_rollback", "sub_trial3")
+
+      stub(Stripe.Subscription, :list, fn _ -> {:error, :stripe_down} end)
+
+      event = %Stripe.Event{
+        id: "evt_up_fail",
+        type: "checkout.session.completed",
+        created: now_unix(),
+        data: %{
+          object: %{
+            customer: "cus_rollback",
+            subscription: "sub_paid3",
+            client_reference_id: user.id
+          }
+        }
+      }
+
+      assert {:error, :stripe_down} = Billing.handle_event(event)
+
+      # Nothing half-applied, and the event id is unclaimed for the retry.
+      reloaded = Repo.reload(user)
+      assert reloaded.stripe_subscription_id == "sub_trial3"
+
+      stub(Stripe.Subscription, :list, fn _ ->
+        {:ok, %{data: [%Stripe.Subscription{id: "sub_trial3", status: "trialing"}], has_more: false}}
+      end)
+
+      stub(Stripe.Subscription, :cancel, fn id ->
+        {:ok, %Stripe.Subscription{id: id, status: "canceled"}}
+      end)
+
+      assert {:ok, updated} = Billing.handle_event(event)
+      assert updated.stripe_subscription_id == "sub_paid3"
+      assert updated.subscription_status == "active"
+    end
+  end
+
   describe "OAuth signups" do
     test "get a Stripe customer and a trial end date" do
       # The email+password path creates the customer after verification. OAuth

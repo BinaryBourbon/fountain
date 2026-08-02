@@ -205,6 +205,7 @@ defmodule Fountain.Billing do
       {:ok, sub} ->
         user
         |> User.billing_changeset(%{
+          stripe_subscription_id: sub.id,
           subscription_status: to_string(sub.status),
           trial_ends_at: unix_to_datetime(Map.get(sub, :trial_end)),
           subscription_synced_at: DateTime.utc_now() |> DateTime.truncate(:second)
@@ -247,6 +248,14 @@ defmodule Fountain.Billing do
   `canceled` or `past_due` account back to `trialing`: the support lever for
   "give this person another look".
 
+  The extension also advances `subscription_synced_at`, because an operator
+  decision outranks anything already in flight: without the stamp, a straggler
+  event from the old cancelled subscription (or a re-checkout race) with a
+  newer `created` than the last synced event would silently revert the
+  extension and gate the user again. Events younger than the extension still
+  apply — Stripe remains the authority for everything that happens *after* the
+  operator acted.
+
   Refused for `active` (they are paying; there is no trial) and `comped`
   (already free; extending would demote them to a trial that ends).
   """
@@ -269,7 +278,11 @@ defmodule Fountain.Billing do
 
     with :ok <- push_stripe_trial_end(user, new_end) do
       user
-      |> User.billing_changeset(%{subscription_status: "trialing", trial_ends_at: new_end})
+      |> User.billing_changeset(%{
+        subscription_status: "trialing",
+        trial_ends_at: new_end,
+        subscription_synced_at: DateTime.truncate(now, :second)
+      })
       |> Repo.update()
     end
   end
@@ -457,16 +470,30 @@ defmodule Fountain.Billing do
   `customer.subscription.updated{active}` arriving after `.deleted` silently
   reactivates a cancelled account.
 
+  Claim and apply run in one transaction: a failed apply rolls the claim back.
+  Otherwise the two halves defeat each other — the controller answers 500 so
+  Stripe redelivers, but the redelivery hits the already-claimed id and dedupes
+  into a no-op, and the event is lost for good. If that event was the
+  `customer.subscription.deleted` that ends a trial, no later event ever
+  corrects it.
+
   Returns `{:ok, :duplicate}` for an event already seen.
   """
   @spec handle_event(Stripe.Event.t()) ::
-          {:ok, User.t() | :ignored | :duplicate | :stale} | {:error, term()}
+          {:ok,
+           User.t() | :ignored | :duplicate | :stale | :comped_ignored | :other_subscription}
+          | {:error, term()}
   def handle_event(%Stripe.Event{id: id, type: type} = event) when is_binary(id) do
-    if claim_event(id, type) == :claimed do
-      sync_subscription(event)
-    else
-      {:ok, :duplicate}
-    end
+    Repo.transaction(fn ->
+      if claim_event(id, type) == :claimed do
+        case sync_subscription(event) do
+          {:ok, result} -> result
+          {:error, reason} -> Repo.rollback(reason)
+        end
+      else
+        :duplicate
+      end
+    end)
   end
 
   # No id (hand-built events in tests) — nothing to dedupe against.
@@ -495,33 +522,36 @@ defmodule Fountain.Billing do
   Syncs `users.subscription_status` (and `trial_ends_at`) from a verified
   Stripe webhook event.
 
-  Handles `customer.subscription.created`, `.updated`, `.deleted`.
+  Handles `customer.subscription.created`, `.updated`, `.deleted` — keyed by
+  **subscription**, not customer: the customer only locates the user, and an
+  event naming any subscription other than `users.stripe_subscription_id`
+  returns `{:ok, :other_subscription}` without touching the account. The
+  subscription of record is set at trial creation
+  (`start_trial_subscription/1`) and replaced when a Checkout completes
+  (`checkout.session.completed` adopts the new subscription and cancels every
+  other live one on the customer).
+
   All other event types return `{:ok, :ignored}` without touching the DB.
   """
-  @spec sync_subscription(Stripe.Event.t()) :: {:ok, User.t() | :ignored} | {:error, term()}
+  @spec sync_subscription(Stripe.Event.t()) ::
+          {:ok, User.t() | :ignored | :stale | :comped_ignored | :other_subscription}
+          | {:error, term()}
   def sync_subscription(%Stripe.Event{
         type: "checkout.session.completed",
         data: %{object: session}
       }) do
-    customer_id = extract_customer_id(Map.get(session, :customer))
+    customer_id = extract_stripe_id(Map.get(session, :customer))
+    subscription_id = extract_stripe_id(Map.get(session, :subscription))
     user_id = Map.get(session, :client_reference_id)
 
+    user =
+      get_user_by_stripe_customer_id(customer_id) ||
+        (is_binary(user_id) && Repo.get(User, user_id)) || nil
+
     cond do
-      is_nil(customer_id) ->
-        {:ok, :ignored}
-
-      # Already linked — the subscription events will carry the same customer.
-      not is_nil(get_user_by_stripe_customer_id(customer_id)) ->
-        {:ok, :ignored}
-
-      is_binary(user_id) ->
-        case Repo.get(User, user_id) do
-          nil -> {:error, :user_not_found}
-          user -> attach_stripe_customer(user, customer_id)
-        end
-
-      true ->
-        {:error, :user_not_found}
+      is_nil(customer_id) -> {:ok, :ignored}
+      is_nil(user) -> {:error, :user_not_found}
+      true -> complete_checkout(user, customer_id, subscription_id)
     end
   end
 
@@ -537,7 +567,7 @@ defmodule Fountain.Billing do
         type: "customer.subscription.trial_will_end",
         data: %{object: sub}
       }) do
-    customer_id = extract_customer_id(Map.get(sub, :customer))
+    customer_id = extract_stripe_id(Map.get(sub, :customer))
 
     case customer_id && get_user_by_stripe_customer_id(customer_id) do
       %User{} = user ->
@@ -561,7 +591,8 @@ defmodule Fountain.Billing do
              "customer.subscription.updated",
              "customer.subscription.deleted"
            ] do
-    customer_id = extract_customer_id(sub.customer)
+    customer_id = extract_stripe_id(sub.customer)
+    subscription_id = Map.get(sub, :id)
     status = coerce_status(sub.status, type)
 
     trial_ends_at =
@@ -598,25 +629,38 @@ defmodule Fountain.Billing do
         {:ok, :comped_ignored}
 
       user ->
-        if stale?(user.subscription_synced_at, event_created) do
-          # An older event arriving after a newer one. Applying it would move the
-          # account backwards — reactivating a cancellation, or re-locking an
-          # account that has already recovered.
-          {:ok, :stale}
-        else
-          user
-          |> User.billing_changeset(%{
-            subscription_status: status,
-            trial_ends_at: trial_ends_at,
-            subscription_synced_at: event_created || user.subscription_synced_at,
-            cancel_at_period_end: cancel_at_period_end,
-            current_period_end: current_period_end
-          })
-          |> Repo.update()
-          |> tap(fn
-            {:ok, updated} -> enqueue_lifecycle_email(user.subscription_status, updated)
-            _ -> :ok
-          end)
+        cond do
+          # The customer is how we find the user; the subscription is what the
+          # event is *about*, and only the subscription of record may write the
+          # account's status. A customer briefly carries two subscriptions
+          # during a mid-trial upgrade, and before this filter the doomed
+          # trial's deletion event locked out the paying account (#309).
+          other_subscription?(user, subscription_id) ->
+            {:ok, :other_subscription}
+
+          stale?(user.subscription_synced_at, event_created) ->
+            # An older event arriving after a newer one. Applying it would move
+            # the account backwards — reactivating a cancellation, or
+            # re-locking an account that has already recovered.
+            {:ok, :stale}
+
+          true ->
+            user
+            |> User.billing_changeset(
+              %{
+                subscription_status: status,
+                trial_ends_at: trial_ends_at,
+                subscription_synced_at: event_created || user.subscription_synced_at,
+                cancel_at_period_end: cancel_at_period_end,
+                current_period_end: current_period_end
+              }
+              |> maybe_adopt_subscription_id(user, subscription_id, type)
+            )
+            |> Repo.update()
+            |> tap(fn
+              {:ok, updated} -> enqueue_lifecycle_email(user.subscription_status, updated)
+              _ -> :ok
+            end)
         end
     end
   end
@@ -664,6 +708,100 @@ defmodule Fountain.Billing do
         end
     end
   end
+
+  # A session with no subscription (payment mode, or an old-style session) only
+  # backfills the customer link, exactly as before.
+  defp complete_checkout(%User{} = user, customer_id, nil) do
+    if user.stripe_customer_id == customer_id do
+      {:ok, :ignored}
+    else
+      attach_stripe_customer(user, customer_id)
+    end
+  end
+
+  defp complete_checkout(%User{} = user, customer_id, subscription_id) do
+    linked =
+      if user.stripe_customer_id == customer_id do
+        {:ok, user}
+      else
+        attach_stripe_customer(user, customer_id)
+      end
+
+    with {:ok, user} <- linked, do: adopt_subscription(user, subscription_id)
+  end
+
+  # Checkout in subscription mode always creates a *new* subscription, so a
+  # mid-trial upgrade leaves the old trialing subscription alive alongside it.
+  # Left alone, that subscription either dies at trial end — and its deletion
+  # webhook locks out a now-paying customer — or converts and double-bills
+  # them. Adopt the checkout's subscription as the account's subscription of
+  # record and cancel every other live one.
+  #
+  # The status write is the optimistic copy the new subscription's own webhook
+  # will confirm — necessary because that webhook may have already arrived and
+  # been ignored for carrying an unrecorded subscription id.
+  #
+  # A failed Stripe call surfaces as an error so the webhook answers 500 and
+  # Stripe redelivers; handle_event/1 rolls the claim (and the writes here)
+  # back, and already-cancelled subscriptions are skipped on the retry.
+  defp adopt_subscription(%User{subscription_status: "comped"} = user, _subscription_id),
+    do: {:ok, user}
+
+  defp adopt_subscription(%User{stripe_subscription_id: sub_id} = user, sub_id), do: {:ok, user}
+
+  defp adopt_subscription(%User{} = user, subscription_id) do
+    with {:ok, _cancelled} <- cancel_other_subscriptions(user, subscription_id) do
+      user
+      |> User.billing_changeset(%{
+        stripe_subscription_id: subscription_id,
+        subscription_status: "active"
+      })
+      |> Repo.update()
+    end
+  end
+
+  defp cancel_other_subscriptions(%User{stripe_customer_id: customer_id}, keep_sub_id) do
+    case Stripe.Subscription.list(%{customer: customer_id, status: :all, limit: 100}) do
+      {:ok, %{data: subs} = list} ->
+        if Map.get(list, :has_more, false) do
+          {:error, :too_many_subscriptions}
+        else
+          subs
+          |> Enum.filter(&(&1.id != keep_sub_id and to_string(&1.status) in @cancellable))
+          |> cancel_each()
+        end
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  # An event that names a different subscription than the account's recorded
+  # one is about a subscription this account no longer answers to. An event
+  # with no subscription id (hand-built in tests) and an account with none
+  # recorded (created before the id was persisted) both fall back to the old
+  # customer-keyed behavior.
+  defp other_subscription?(%User{stripe_subscription_id: recorded}, incoming)
+       when is_binary(recorded) and is_binary(incoming),
+       do: recorded != incoming
+
+  defp other_subscription?(_user, _incoming), do: false
+
+  # A legacy account (nil recorded id) adopts the subscription from the first
+  # live event that names one — but never from a deletion: during a pre-fix
+  # double-subscription window the dying trial must not become the subscription
+  # of record while a paying one is alive; the paying one's next event adopts
+  # and corrects instead.
+  defp maybe_adopt_subscription_id(
+         attrs,
+         %User{stripe_subscription_id: nil},
+         subscription_id,
+         type
+       )
+       when is_binary(subscription_id) and type != "customer.subscription.deleted",
+       do: Map.put(attrs, :stripe_subscription_id, subscription_id)
+
+  defp maybe_adopt_subscription_id(attrs, _user, _subscription_id, _type), do: attrs
 
   defp event_created_at(%Stripe.Event{created: ts}) when is_integer(ts),
     do: DateTime.from_unix!(ts) |> DateTime.truncate(:second)
@@ -896,10 +1034,11 @@ defmodule Fountain.Billing do
     Repo.get_by(User, stripe_customer_id: customer_id)
   end
 
-  # Stripe can return the customer as a plain string ID or as an expanded object.
-  defp extract_customer_id(customer) when is_binary(customer), do: customer
-  defp extract_customer_id(%{id: id}) when is_binary(id), do: id
-  defp extract_customer_id(_), do: nil
+  # Stripe returns related objects (customer, subscription) as either a plain
+  # string id or an expanded object, depending on the event and API version.
+  defp extract_stripe_id(value) when is_binary(value), do: value
+  defp extract_stripe_id(%{id: id}) when is_binary(id), do: id
+  defp extract_stripe_id(_), do: nil
 
   # Deleted events always map to "canceled" regardless of the Stripe status field.
   defp coerce_status(_stripe_status, "customer.subscription.deleted"), do: "canceled"
