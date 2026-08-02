@@ -1,0 +1,261 @@
+{
+  "__comment": "Starter Grafana dashboard for Fountain. Import via Dashboards > Import, then pick your Prometheus datasource. Panels use only metrics the app actually exports on :9568 (see FountainWeb.Telemetry.prometheus_metrics/0). Assumes the scrape adds a `namespace` label of `fountain` (kube-prometheus-stack style); strip those matchers if yours does not.",
+  "title": "Fountain",
+  "uid": "fountain-starter",
+  "schemaVersion": 39,
+  "editable": true,
+  "graphTooltip": 1,
+  "time": { "from": "now-6h", "to": "now" },
+  "refresh": "1m",
+  "templating": {
+    "list": [
+      {
+        "name": "DS_PROMETHEUS",
+        "label": "Prometheus",
+        "type": "datasource",
+        "query": "prometheus"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "type": "stat",
+      "title": "5xx share (5m)",
+      "gridPos": { "h": 5, "w": 4, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 0.01 },
+              { "color": "red", "value": 0.05 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(phoenix_router_dispatch_stop_count{namespace=\"fountain\", status=~\"5..\"}[5m])) / sum(rate(phoenix_router_dispatch_stop_count{namespace=\"fountain\"}[5m]))"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Unhandled exceptions /s (5m)",
+      "gridPos": { "h": 5, "w": 4, "x": 4, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 0.1 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(phoenix_router_dispatch_exception_count{namespace=\"fountain\"}[5m])) or vector(0)"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Provision failures /s (15m)",
+      "gridPos": { "h": 5, "w": 4, "x": 8, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 0.05 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(fountain_provision_exception_count{namespace=\"fountain\"}[15m])) or vector(0)"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "BEAM memory",
+      "gridPos": { "h": 5, "w": 4, "x": 12, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": { "defaults": { "unit": "deckbytes" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(vm_memory_total{namespace=\"fountain\"})",
+          "legendFormat": "total (kB)"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Turns completed /h",
+      "gridPos": { "h": 5, "w": 4, "x": 16, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": { "defaults": { "unit": "none" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(increase(fountain_turn_stop_count{namespace=\"fountain\"}[1h])) or vector(0)"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Provisions /h",
+      "gridPos": { "h": 5, "w": 4, "x": 20, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": { "defaults": { "unit": "none" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(increase(fountain_provision_stop_count{namespace=\"fountain\"}[1h])) or vector(0)"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "HTTP requests by status class",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 5 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": { "fillOpacity": 15, "stacking": { "mode": "normal" } }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (status) (label_replace(rate(phoenix_router_dispatch_stop_count{namespace=\"fountain\"}[5m]), \"status\", \"${1}xx\", \"status\", \"(.).+\"))",
+          "legendFormat": "{{status}}"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "HTTP request duration p50 / p95 / p99",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 5 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": { "defaults": { "unit": "ms" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(phoenix_router_dispatch_stop_duration_bucket{namespace=\"fountain\"}[5m])))",
+          "legendFormat": "p50"
+        },
+        {
+          "refId": "B",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(phoenix_router_dispatch_stop_duration_bucket{namespace=\"fountain\"}[5m])))",
+          "legendFormat": "p95"
+        },
+        {
+          "refId": "C",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(phoenix_router_dispatch_stop_duration_bucket{namespace=\"fountain\"}[5m])))",
+          "legendFormat": "p99"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Database: p95 query time vs p95 pool wait",
+      "description": "Pool wait (queue_time) climbing while query time stays flat means the pool is exhausted — everything gets slow at once. See the FountainDatabasePoolSaturated alert.",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 13 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": { "defaults": { "unit": "ms" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(fountain_repo_query_total_time_bucket{namespace=\"fountain\"}[5m])))",
+          "legendFormat": "p95 query time"
+        },
+        {
+          "refId": "B",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(fountain_repo_query_queue_time_bucket{namespace=\"fountain\"}[5m])))",
+          "legendFormat": "p95 pool wait"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Sandbox provisioning",
+      "description": "Completions and failures. Failures are post-retry — users saw a conversation fail to start.",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 13 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(fountain_provision_stop_count{namespace=\"fountain\"}[15m]))",
+          "legendFormat": "completed /s"
+        },
+        {
+          "refId": "B",
+          "expr": "sum(rate(fountain_provision_exception_count{namespace=\"fountain\"}[15m]))",
+          "legendFormat": "failed /s"
+        },
+        {
+          "refId": "C",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(fountain_provision_stop_duration_bucket{namespace=\"fountain\"}[30m]))) / 1000",
+          "legendFormat": "p95 duration (s)"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "BEAM run queues",
+      "description": "Sustained non-zero CPU run queue means the schedulers cannot keep up — the VM-level 'wedged' signal.",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 21 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": { "defaults": { "unit": "none" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(vm_total_run_queue_lengths_cpu{namespace=\"fountain\"})",
+          "legendFormat": "cpu"
+        },
+        {
+          "refId": "B",
+          "expr": "sum(vm_total_run_queue_lengths_io{namespace=\"fountain\"})",
+          "legendFormat": "io"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Slowest routes (p95, top 5)",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 21 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": { "defaults": { "unit": "ms" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "topk(5, histogram_quantile(0.95, sum by (route, le) (rate(phoenix_router_dispatch_stop_duration_bucket{namespace=\"fountain\"}[15m]))))",
+          "legendFormat": "{{route}}"
+        }
+      ]
+    }
+  ]
+}
