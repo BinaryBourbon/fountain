@@ -61,6 +61,7 @@ nav:
   - Integrations:
       - Overview: integrations/index.md
       - Sprites: integrations/sprites.md
+      - The Sprites contract: integrations/sprites-contract.md
       - GitHub OAuth: integrations/github-oauth.md
       - Stripe: integrations/stripe.md
       - Sentry: integrations/sentry.md

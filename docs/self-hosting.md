@@ -292,4 +292,6 @@ including commercially.
 Being straight about what self-hosting does not yet include:
 
 - **Sprites is a hosted dependency** — `SPRITES_BASE_URL` can repoint it, but
-  there is no self-hostable sandbox backend to point it at.
+  there is no self-hostable sandbox backend to point it at. What one would
+  have to implement is written down in
+  [the Sprites contract](integrations/sprites-contract.md).

@@ -4,6 +4,10 @@
 conversation runs in. It is a hosted service and currently the only backend —
 a Fountain instance is not fully self-contained without it.
 
+The exact API surface Fountain consumes — and what a compatible replacement
+behind `SPRITES_BASE_URL` would have to provide — is written down in
+[the Sprites contract](sprites-contract.md).
+
 ## Provider side
 
 Create a sprites.dev account and issue an API token. That token is the whole
