@@ -57,6 +57,13 @@ nav:
   - Self-hosting: self-hosting.md
   - Architecture: architecture.md
   - Configuration reference: configuration.md
+  - Integrations:
+      - Overview: integrations/index.md
+      - Sprites: integrations/sprites.md
+      - GitHub OAuth: integrations/github-oauth.md
+      - Stripe: integrations/stripe.md
+      - Sentry: integrations/sentry.md
+      - Mail: integrations/mail.md
   - The four primitives: primitives.md
   - CLI reference: cli.md
   - API reference: api.md
