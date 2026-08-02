@@ -216,6 +216,11 @@ jobs:
 
       - name: Build and push
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        env:
+          # v6 uploads a .dockerbuild build-record artifact by default. Nothing
+          # consumes it, and its presence broke the release job, whose
+          # download-all step failed on it after 5 retries — twice.
+          DOCKER_BUILD_RECORD_UPLOAD: "false"
         with:
           context: .
           file: ./Dockerfile
@@ -255,10 +260,15 @@ jobs:
             echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
           fi
 
+      # Only the artifacts the release ships, by name — never download-all.
+      # Jobs in this run upload artifacts we do not attach (the image job's
+      # docker build record, for one), and an undownloadable stray must not
+      # block the release.
       - name: Download artifacts
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           path: artifacts
+          pattern: "{fountain-*,openapi.json}"
 
       - name: Create release
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
