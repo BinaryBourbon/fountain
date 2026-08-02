@@ -30,6 +30,10 @@ upgrade, is in
 
 ### Added
 
+- Optional error tracking via Sentry (or any Sentry-API-compatible endpoint):
+  crashes from every process — not just web requests — are reported with
+  release correlation, rate-limited, with PII off. Fully inert unless
+  `SENTRY_DSN` is set (#211)
 - A portable Kubernetes baseline under `deploy/k8s/` — plain manifests,
   `kubectl apply -k`, no operators assumed; bring a Postgres and an ingress
   (#191)

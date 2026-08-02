@@ -136,6 +136,26 @@ metrics_port =
 
 config :fountain, :metrics_port, metrics_port
 
+# Error tracking (#211). Inert unless SENTRY_DSN is set: no account, no
+# events, nothing leaves the instance — a self-hoster is never conscripted
+# into a vendor. The SDK would read SENTRY_DSN on its own; it is spelled out
+# here so the contract is visible in one place.
+#
+# Hosted on sentry.io rather than self-hosted GlitchTip, deliberately: an
+# error tracker running on the same cluster as the app is down exactly when
+# it is needed. The sentry package is API-compatible with GlitchTip, so
+# pointing SENTRY_DSN at one later is the whole migration.
+config :sentry,
+  dsn: System.get_env("SENTRY_DSN"),
+  environment_name: System.get_env("SENTRY_ENVIRONMENT", to_string(env)),
+  # Correlates events with deploys: "this started with sha-…". Set by the
+  # image build; nil locally, which the SDK accepts.
+  release: System.get_env("FOUNTAIN_BUILD_SHA"),
+  in_app_otp_apps: [:fountain],
+  # This app holds tenant secrets; nothing the SDK can gather on its own
+  # (cookies, user IPs, request bodies) should ride along by default.
+  send_default_pii: false
+
 # ADR 0006 made the subscription gate a product invariant. For a self-hosted
 # instance it is just a lock on the front door with no key, so it is now
 # config rather than a source patch.
