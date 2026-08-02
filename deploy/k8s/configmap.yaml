@@ -1,0 +1,35 @@
+# Non-secret configuration. Secrets (SECRET_KEY_BASE, MASTER_SECRETS_KEY,
+# DATABASE_URL, SPRITES_TOKEN, mail credentials) belong in the
+# `fountain-secrets` Secret — see README.md for the create command.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fountain-config
+data:
+  # The externally-visible URL, scheme included. Builds verification and
+  # password-reset links and is handed to every sandbox as FOUNTAIN_BASE_URL,
+  # so it must resolve from outside the cluster. An https:// value also turns
+  # on the HTTPS redirect, HSTS and secure cookies — your ingress must then
+  # set X-Forwarded-Proto or every request looks like http and redirect-loops.
+  PUBLIC_URL: "https://fountain.example.com"
+
+  # The subscription gate is a lock with no key on a self-hosted instance
+  # unless you configure Stripe. Leave it off.
+  BILLING_ENABLED: "false"
+
+  # An instance on the public internet with registration open will be found.
+  # Open it just long enough to register yourself, or scope it:
+  # REGISTRATION_ALLOWED_EMAIL_DOMAINS: "example.com"
+  REGISTRATION_ENABLED: "true"
+
+  # "none" sends nothing: verify your first account with
+  #   kubectl exec -n fountain deploy/fountain -- \
+  #     sh -c "PHX_SERVER=false bin/fountain_server eval 'Fountain.Release.verify_email(\"you@example.com\")'"
+  # For real delivery set RESEND_API_KEY or SMTP_* in fountain-secrets and
+  # delete this key.
+  EMAIL_DELIVERY: "none"
+
+  # On by default; set to "false" only if your Postgres does not serve TLS.
+  # DATABASE_SSL_VERIFY / DATABASE_SSL_CA_FILE upgrade encryption to actual
+  # verification — see the self-hosting guide.
+  DATABASE_SSL: "true"

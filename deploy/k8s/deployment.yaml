@@ -1,0 +1,101 @@
+# The portable baseline. The probe layout, security posture and resource
+# shape mirror what the hosted instance learned the hard way (k8s/ at the
+# repo root); the personal infrastructure — CNPG, Infisical, Traefik,
+# Erlang clustering — does not follow it here.
+#
+# One replica on purpose. Running more requires a real Erlang cluster
+# (RELEASE_DISTRIBUTION/RELEASE_NODE/RELEASE_COOKIE, CLUSTER_DNS_QUERY
+# against a headless Service, and an open dist port) or the pods run as
+# isolated islands and conversation streaming silently breaks for whichever
+# pod didn't spawn the conversation. k8s/deployment.yaml in the repo root
+# shows the full wiring if you need HA.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fountain
+  labels:
+    app: fountain
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: fountain
+  template:
+    metadata:
+      labels:
+        app: fountain
+    spec:
+      containers:
+        - name: fountain
+          # Retagged by kustomization.yaml's images: block — edit the pin
+          # there, not here.
+          image: ghcr.io/binarybourbon/fountain:v0.3.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 4000
+            # Prometheus scrape endpoint, on its own listener so it never
+            # rides the public Service. Scrape it in-cluster; do not expose
+            # it — it enumerates routes, request rates and DB timings.
+            - name: metrics
+              containerPort: 9568
+          env:
+            - name: PHX_SERVER
+              value: "true"
+            - name: PORT
+              value: "4000"
+          envFrom:
+            - configMapRef:
+                name: fountain-config
+            # SECRET_KEY_BASE, MASTER_SECRETS_KEY, DATABASE_URL,
+            # SPRITES_TOKEN (+ mail/OAuth/Stripe if used). See README.md.
+            - secretRef:
+                name: fountain-secrets
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1001
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: 100m
+              memory: 512Mi
+            limits:
+              cpu: 500m
+              memory: 1Gi
+          # Migrations run at boot, before the endpoint listens. The startup
+          # probe holds the other probes off for up to 150s so a slow
+          # migration is not mistaken for a dead pod and restart-looped.
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 5
+            failureThreshold: 30
+          # Readiness checks Postgres and gates traffic: a pod that cannot
+          # serve is pulled from the Service without being killed, and
+          # recovery needs no restart. Generous timeout because answering
+          # 503 with a dead database takes ~3s, and a recorded 503 is more
+          # legible than a probe timeout.
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 4
+            failureThreshold: 6
+          # Liveness restarts the pod, so it checks nothing but the process:
+          # pointing it at the database would restart every pod at once
+          # during a Postgres blip, which does nothing to fix Postgres.
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 30
+            failureThreshold: 3

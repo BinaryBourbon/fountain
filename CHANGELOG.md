@@ -30,6 +30,9 @@ upgrade, is in
 
 ### Added
 
+- A portable Kubernetes baseline under `deploy/k8s/` — plain manifests,
+  `kubectl apply -k`, no operators assumed; bring a Postgres and an ingress
+  (#191)
 - Dialyzer now gates CI and `mix precommit` (#236). Triage of its 77 findings
   fixed real bugs: OTel spans were ended by passing the span where a
   timestamp belongs (silently corrupting recorded spans), Stripe API params

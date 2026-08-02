@@ -1,0 +1,32 @@
+# A standard networking.k8s.io/v1 Ingress. Edit the host, then uncomment
+# this file in kustomization.yaml.
+#
+# The contract your ingress must satisfy, whatever controller you run:
+#   - terminate TLS (or run PUBLIC_URL as http:// and accept what that means)
+#   - set X-Forwarded-Proto — with an https:// PUBLIC_URL the app redirects
+#     anything that looks like plain http, and without the header everything
+#     does, in a loop
+#   - allow WebSocket upgrades (LiveView)
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: fountain
+  annotations:
+    # Controller-specific annotations go here, e.g. for cert-manager:
+    # cert-manager.io/cluster-issuer: your-issuer
+spec:
+  # ingressClassName: nginx
+  rules:
+    - host: fountain.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: fountain
+                port:
+                  name: http
+  # tls:
+  #   - hosts: [fountain.example.com]
+  #     secretName: fountain-tls

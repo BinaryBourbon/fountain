@@ -230,11 +230,17 @@ lower.
 
 ## Kubernetes
 
-`k8s/` in this repository is the maintainer's own cluster, not a template: it
-assumes CNPG, Traefik, cert-manager, Infisical, Flux and Longhorn, and hardcodes
-personal hostnames. It is worth reading for reference and is not worth applying.
-A generic chart is
-[#191](https://github.com/BinaryBourbon/fountain/issues/191).
+A portable baseline lives in
+[`deploy/k8s/`](https://github.com/BinaryBourbon/fountain/tree/main/deploy/k8s)
+— plain manifests applied with `kubectl apply -k`, no operators or CRDs
+assumed. You bring a Postgres, an ingress controller, and the
+`fountain-secrets` Secret; its README walks through the rest, and the probe
+and scaling reasoning is commented inline in the manifests.
+
+`k8s/` in this repository is a different thing: the maintainer's own cluster
+(CNPG, Traefik, cert-manager, Infisical, Flux, Longhorn, personal hostnames).
+It is worth reading — it shows the full Erlang-clustering wiring for running
+more than one replica — and is not worth applying.
 
 ## Licence
 
