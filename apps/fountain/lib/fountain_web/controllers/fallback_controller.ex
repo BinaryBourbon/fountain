@@ -73,9 +73,38 @@ defmodule FountainWeb.FallbackController do
     })
   end
 
+  # Prompting a terminated conversation. 410 rather than 404: the id was
+  # real, the resource is gone for good, and the caller should stop retrying.
+  def call(conn, {:error, :gone}) do
+    conn
+    |> put_status(:gone)
+    |> json(%{error: "conversation_terminated"})
+  end
+
+  # The conversation's agent was deleted out from under it; it cannot resume.
+  def call(conn, {:error, :no_agent}) do
+    conn
+    |> put_status(:unprocessable_entity)
+    |> json(%{error: "no_agent", message: "the conversation's agent has been deleted"})
+  end
+
   def call(conn, {:error, reason}) when is_binary(reason) do
     conn
     |> put_status(:bad_request)
     |> json(%{error: reason})
+  end
+
+  # Terminal safety net (#332): an error shape nothing above recognises.
+  # Contexts grow new refusal atoms faster than controllers learn them, and
+  # every miss used to be a CaseClauseError 500. A domain refusal is the
+  # caller's problem, so 422 with the atom beats a blank 500 — and anything
+  # that genuinely is a server fault still shows up in the logs below.
+  def call(conn, {:error, reason}) when is_atom(reason) do
+    require Logger
+    Logger.warning("fallback: unmapped error atom #{inspect(reason)} on #{conn.request_path}")
+
+    conn
+    |> put_status(:unprocessable_entity)
+    |> json(%{error: to_string(reason)})
   end
 end
