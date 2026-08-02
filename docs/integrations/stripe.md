@@ -57,3 +57,35 @@ trial-ending threshold (the reminder email enqueues) and past trial end (the
 status flips and the gate refuses). The clock must be attached when the
 customer is created, so this is a deliberate test-mode exercise rather than
 something you bolt onto an existing signup.
+
+## Release verification: `mix fountain.verify_lifecycle`
+
+The Test Clock exercise above is automated as a repeatable command — run it
+before releasing **any billing-touching change**:
+
+```bash
+STRIPE_SECRET_KEY=sk_test_... mix fountain.verify_lifecycle
+```
+
+It creates a scratch user and a Test Clock, then walks the whole lifecycle —
+trial → T-3d warning email enqueued → expiry (gate refuses) → paid
+subscription with a test card (gate opens) → cancel at period end (access
+retained) → period end (gate refuses) → re-subscribe (the return path) —
+asserting the **Fountain-side** state at every step. Each fetched Stripe
+state is fed through `Billing.sync_subscription/1`, exactly what the webhook
+controller does after signature verification; webhook *delivery* needs a
+public endpoint and stays out of scope. Cleanup (clock + scratch user) runs
+even when a step fails.
+
+Notes:
+
+- **Test-mode key only** — live keys are refused outright. The CLI's key
+  lives in `~/.config/stripe/config.toml` (`test_mode_api_key`) and expires
+  every 90 days; an expired key fails the preflight with a `stripe login`
+  hint rather than a misleading mid-run error.
+- Runs against the dev database; the scratch user is deleted afterwards.
+- Deliberately **not CI**: external, ~1–2 minutes of clock advances, needs a
+  key. It is a release-check, run by a person (or an agent) with the result
+  pasted into the PR that motivated it.
+- `STRIPE_PRICE_ID` is honored when set; otherwise a throwaway test-mode
+  product/price is created under the clock's lifetime.
