@@ -30,6 +30,13 @@ upgrade, is in
 
 ### Added
 
+- Point-in-time recovery for the hosted database (#209): continuous WAL
+  archiving plus nightly base backups via the CNPG barman-cloud plugin into
+  the existing Garage bucket, retention 14 days, RPO ~5 minutes with the
+  nightly `pg_dump` kept as the operator-independent fallback. The dump job
+  now sends a Sentry Crons check-in, so a backup that quietly stops running
+  pages instead of rotting
+
 - Accounts that register and never verify their email are deleted after 30
   days (#258) — they cannot log in, and 158 of them were briefly mistaken for
   a legacy trial cohort. Same teardown as self-serve deletion, Stripe

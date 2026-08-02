@@ -1,0 +1,23 @@
+# Nightly base backup through the barman-cloud plugin. PITR needs both: the
+# WAL stream (continuous, from the Cluster's plugin config) and a base backup
+# to replay it against — recovery time grows with WAL replayed since the last
+# base.
+#
+# 02:47 UTC: before the 03:17 pg_dump so the two backup mechanisms never
+# contend, and both precede the 04:23/05:41 pruners. Note CNPG schedules are
+# SIX fields (leading seconds), unlike vanilla cron.
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: fountain-pg-base
+  namespace: fountain
+  labels:
+    app: fountain
+spec:
+  schedule: "0 47 2 * * *"
+  backupOwnerReference: self
+  cluster:
+    name: fountain-pg
+  method: plugin
+  pluginConfiguration:
+    name: barman-cloud.cloudnative-pg.io
