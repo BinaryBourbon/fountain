@@ -166,7 +166,31 @@ spec:
                       done || true
 
                   echo "Backup complete: ${DEST}"
+
+                  # Sentry Crons check-in (#209): a backup job that quietly
+                  # stops running is the classic way backups rot, and Sentry
+                  # (#211) alerts on a missed schedule. Best-effort — a Sentry
+                  # outage must never fail a backup that succeeded. The
+                  # monitor is auto-created on first check-in; set its
+                  # schedule (daily, 03:17 UTC, grace ~60min) in the Sentry UI
+                  # to arm missed-run alerting.
+                  if [ -n "${SENTRY_DSN:-}" ]; then
+                    K="${SENTRY_DSN#https://}"; K="${K%%@*}"
+                    HP="${SENTRY_DSN#*@}"; H="${HP%%/*}"; P="${HP##*/}"
+                    curl -fsS -m 10 \
+                      "https://${H}/api/${P}/cron/fountain-pg-dump/${K}/?status=ok" \
+                      >/dev/null && echo "Sentry check-in sent." \
+                      || echo "Sentry check-in failed (ignored)."
+                  fi
               env:
+                # Optional: enables the cron check-in above; absent, the job
+                # still runs and simply doesn't report.
+                - name: SENTRY_DSN
+                  valueFrom:
+                    secretKeyRef:
+                      name: fountain-secrets
+                      key: SENTRY_DSN
+                      optional: true
                 - name: S3_ENDPOINT
                   value: http://s3.garage.svc.cluster.local:3900
                 - name: BUCKET

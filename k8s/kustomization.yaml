@@ -19,6 +19,11 @@ resources:
   - backup-bucket-rbac.yaml
   - backup-bucket-bootstrap.yaml
   - backup-cronjob.yaml
+  # WAL archiving + base backups (#209): the ObjectStore the plugin archives
+  # into, and the nightly base backup PITR replays from. Ordered before
+  # postgres.yaml, whose plugins: block references the ObjectStore by name.
+  - objectstore.yaml
+  - scheduledbackup.yaml
   - postgres.yaml
   - infisicalsecret.yaml
   - service-headless.yaml
