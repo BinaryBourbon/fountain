@@ -19,6 +19,7 @@ defmodule FountainWeb.AdminLive.Index do
      |> FountainWeb.Audited.put_client_ip()
      |> assign(:page_title, "Admin")
      |> assign(:funnel, Fountain.Funnel.summary_admin())
+     |> assign(:billing_overview, Billing.overview_admin())
      |> assign(:sandboxes, Conversations.list_sandboxes_admin())
      |> assign(:admin_events, Fountain.Audit.list_recent_admin(25))}
   end
@@ -41,6 +42,7 @@ defmodule FountainWeb.AdminLive.Index do
      socket
      |> assign_users()
      |> assign(:funnel, Fountain.Funnel.summary_admin())
+     |> assign(:billing_overview, Billing.overview_admin())
      |> assign(:sandboxes, Conversations.list_sandboxes_admin())
      |> assign(:admin_events, Fountain.Audit.list_recent_admin(25))}
   end
@@ -401,6 +403,70 @@ defmodule FountainWeb.AdminLive.Index do
       </section>
 
       <section class="space-y-3">
+        <h2 class="text-lg font-medium">Billing</h2>
+        <div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
+          <div class="bg-white rounded shadow border border-zinc-200 px-4 py-3">
+            <div class="text-xs text-zinc-500">MRR</div>
+            <div class="text-2xl font-semibold tabular-nums">
+              {format_mrr(@billing_overview.mrr_cents)}
+            </div>
+            <div class="text-xs text-zinc-500">
+              {if @billing_overview.mrr_cents,
+                do: "active × monthly price",
+                else: "set STRIPE_PRICE_MONTHLY_CENTS"}
+            </div>
+          </div>
+          <.link
+            navigate={~p"/admin?status=trialing&sort=trial_end&dir=asc"}
+            class="bg-white rounded shadow border border-zinc-200 px-4 py-3 hover:border-zinc-400"
+          >
+            <div class="text-xs text-zinc-500">Trials ending in 7 days</div>
+            <div class="text-2xl font-semibold tabular-nums">
+              {@billing_overview.trials_ending_7d}
+            </div>
+            <div class="text-xs text-zinc-500">soonest first ↗</div>
+          </.link>
+          <div class="bg-white rounded shadow border border-zinc-200 px-4 py-3">
+            <div class="text-xs text-zinc-500">Conversions this month</div>
+            <div class="text-2xl font-semibold tabular-nums">
+              {@billing_overview.conversions_this_month}
+            </div>
+            <div class="text-xs text-zinc-500">completed checkouts</div>
+          </div>
+        </div>
+        <div class="flex flex-wrap gap-2">
+          <.link
+            :for={status <- ~w(trialing active past_due canceled comped)}
+            navigate={~p"/admin?status=#{status}"}
+            class={[
+              "inline-flex items-center gap-1.5 rounded px-2 py-1 text-xs font-medium border hover:opacity-75",
+              subscription_status_color(status)
+            ]}
+          >
+            {status}
+            <span class="tabular-nums">{Map.get(@billing_overview.status_counts, status, 0)}</span>
+          </.link>
+        </div>
+        <details class="text-sm">
+          <summary class="cursor-pointer text-zinc-500 hover:text-zinc-900">
+            Recent webhook events ({length(@billing_overview.recent_events)})
+          </summary>
+          <table class="w-full mt-2 text-sm bg-white rounded shadow border border-zinc-200 font-mono">
+            <tbody>
+              <tr
+                :for={e <- @billing_overview.recent_events}
+                class="border-b border-zinc-100 last:border-0"
+              >
+                <td class="px-4 py-1.5 text-xs text-zinc-500">{format_ts(e.inserted_at)}</td>
+                <td class="px-4 py-1.5 text-xs">{e.type}</td>
+                <td class="px-4 py-1.5 text-xs text-zinc-400">{e.id}</td>
+              </tr>
+            </tbody>
+          </table>
+        </details>
+      </section>
+
+      <section class="space-y-3">
         <div class="flex flex-wrap items-center justify-between gap-3">
           <h2 class="text-lg font-medium">Users ({@total_users})</h2>
           <form phx-change="filter" id="user-filters" class="flex flex-wrap items-center gap-2">
@@ -715,6 +781,14 @@ defmodule FountainWeb.AdminLive.Index do
   defp stage_label(:subscribed), do: "Subscribed"
 
   defp format_pct(fraction), do: "#{round(fraction * 100)}%"
+
+  defp format_mrr(nil), do: "—"
+
+  defp format_mrr(cents) do
+    dollars = div(cents, 100)
+    remainder = rem(cents, 100)
+    "$#{dollars}.#{String.pad_leading(to_string(remainder), 2, "0")}/mo"
+  end
 
   defp format_hours(h) when h < 1, do: "#{round(h * 60)}m"
   defp format_hours(h) when h < 48, do: "#{Float.round(h * 1.0, 1)}h"
