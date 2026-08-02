@@ -17,6 +17,9 @@ Sprites is currently the only sandbox backend, and it is a hosted service, so a
 Fountain instance is not fully self-contained. `SPRITES_BASE_URL` repoints the
 API endpoint if you have a compatible one; there is no bundled alternative.
 
+For what each piece of the system does and what breaks when a dependency is
+down, see [Architecture](architecture.md).
+
 ## Quick start
 
 ```bash

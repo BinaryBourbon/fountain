@@ -55,6 +55,7 @@ nav:
   - Home: index.md
   - Setup: setup.md
   - Self-hosting: self-hosting.md
+  - Architecture: architecture.md
   - The four primitives: primitives.md
   - CLI reference: cli.md
   - API reference: api.md
