@@ -46,6 +46,46 @@ defmodule FountainWeb.BillingLiveTest do
     user
   end
 
+  describe "billing disabled (#335)" do
+    # A self-hosted instance shows a trial countdown and an Upgrade button
+    # whose only possible outcome is "Unable to reach Stripe".
+
+    defp with_billing_disabled(fun) do
+      previous = Application.get_env(:fountain, :billing_enabled)
+      Application.put_env(:fountain, :billing_enabled, false)
+
+      try do
+        fun.()
+      after
+        Application.put_env(:fountain, :billing_enabled, previous)
+      end
+    end
+
+    test "no upgrade affordance, no trial countdown, a plain explanation", %{conn: conn} do
+      user = insert_verified_user()
+
+      with_billing_disabled(fn ->
+        {:ok, _lv, html} = live(login_user(conn, user), ~p"/account/billing")
+
+        assert html =~ "Billing is disabled on this instance"
+        refute html =~ "Upgrade"
+        refute html =~ "Manage Subscription"
+        refute html =~ "Trial"
+      end)
+    end
+
+    test "usage and the danger zone are still there", %{conn: conn} do
+      user = insert_verified_user()
+
+      with_billing_disabled(fn ->
+        {:ok, _lv, html} = live(login_user(conn, user), ~p"/account/billing")
+
+        assert html =~ "Usage This Month"
+        assert html =~ "Delete account"
+      end)
+    end
+  end
+
   describe "upgrade with no existing Stripe customer" do
     test "creates the customer first and never passes customer_email", %{conn: conn} do
       user = insert_verified_user()

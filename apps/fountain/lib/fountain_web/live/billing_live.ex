@@ -33,7 +33,11 @@ defmodule FountainWeb.Live.BillingLive do
        stripe_url_loading: false,
        delete_confirmation: "",
        deleting: false,
-       export: Exports.latest_export(user.id)
+       export: Exports.latest_export(user.id),
+       # On a billing-disabled instance the subscription card is noise: the
+       # status is meaningless with the gate off, and the Upgrade button can
+       # only ever flash "Unable to reach Stripe" (#335).
+       billing_enabled: Billing.enabled?()
      )}
   end
 
@@ -164,7 +168,7 @@ defmodule FountainWeb.Live.BillingLive do
       <h1 class="text-2xl font-semibold">Billing</h1>
 
       <%!-- past_due banner --%>
-      <%= if @current_user.subscription_status == "past_due" do %>
+      <%= if @billing_enabled and @current_user.subscription_status == "past_due" do %>
         <div class="rounded border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800" role="alert">
           Your subscription requires attention. Update your payment method to
           continue starting conversations.
@@ -173,7 +177,7 @@ defmodule FountainWeb.Live.BillingLive do
 
       <%!-- cancel-at-period-end notice: canceled in the portal, still inside
            the paid period. Access continues until the period ends. --%>
-      <%= if canceling_at_period_end?(@current_user) do %>
+      <%= if @billing_enabled and canceling_at_period_end?(@current_user) do %>
         <div
           class="rounded border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800"
           role="alert"
@@ -184,8 +188,19 @@ defmodule FountainWeb.Live.BillingLive do
         </div>
       <% end %>
 
+      <%!-- Billing disabled: no status theater, no button that can only fail --%>
+      <%= if not @billing_enabled do %>
+        <div class="rounded-lg border bg-white p-6 shadow-sm">
+          <h2 class="mb-2 text-lg font-medium">Subscription</h2>
+          <p class="text-sm text-gray-600">
+            Billing is disabled on this instance. All features are available
+            without a subscription.
+          </p>
+        </div>
+      <% end %>
+
       <%!-- Subscription status card --%>
-      <div class="rounded-lg border bg-white p-6 shadow-sm">
+      <div :if={@billing_enabled} class="rounded-lg border bg-white p-6 shadow-sm">
         <h2 class="mb-4 text-lg font-medium">Subscription</h2>
         <dl class="space-y-3">
           <div class="flex items-center justify-between">
