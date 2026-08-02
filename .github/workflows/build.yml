@@ -17,6 +17,8 @@ on:
     # manifest would, hence the explicit ignore.)
     paths-ignore:
       - "k8s/**"
+      # The portable self-hosting manifests — never part of the image.
+      - "deploy/**"
       - "docs/**"
       - "decisions/**"
       - "**/*.md"

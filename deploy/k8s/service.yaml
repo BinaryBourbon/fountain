@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: fountain
+  labels:
+    app: fountain
+spec:
+  selector:
+    app: fountain
+  ports:
+    - name: http
+      port: 80
+      targetPort: http

@@ -1,0 +1,21 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: fountain
+
+resources:
+  - namespace.yaml
+  - configmap.yaml
+  - deployment.yaml
+  - service.yaml
+  # Uncomment after editing the host in ingress.yaml. Left out of the base
+  # because ingress controllers and TLS setups vary too much to guess at —
+  # see README.md for the contract yours must satisfy.
+  # - ingress.yaml
+
+images:
+  # Pin a release, not `latest` — `latest` moves on every merge to main.
+  # Released tags: vX.Y.Z (immutable) and vX.Y (newest patch in the line).
+  # https://binarybourbon.github.io/fountain/self-hosting/#versioning-and-upgrades
+  - name: ghcr.io/binarybourbon/fountain
+    newTag: v0.3.0
