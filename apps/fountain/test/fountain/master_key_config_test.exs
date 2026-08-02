@@ -20,6 +20,11 @@ defmodule Fountain.MasterKeyConfigTest do
     # Prod refuses to boot with no mail delivery configured; these cases are
     # about the master key, so give them one.
     System.put_env("RESEND_API_KEY", "re_test_key")
+
+    # Prod requires a database URL regardless of PHX_SERVER since #256 (release
+    # eval tasks need the repo). Without this the test only passed when a
+    # sibling config test happened to run first and leak one — seed-dependent.
+    System.put_env("DATABASE_URL", "postgres://u:p@localhost/db")
     for k <- ~w(SMTP_HOST EMAIL_DELIVERY), do: System.delete_env(k)
 
     on_exit(fn ->
