@@ -18,6 +18,8 @@ defmodule Fountain.Exports.Export do
 
   @statuses ~w(pending completed failed)
 
+  @type t :: %__MODULE__{}
+
   schema "account_exports" do
     field :status, :string, default: "pending"
     field :payload, :binary
