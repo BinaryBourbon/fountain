@@ -92,12 +92,22 @@ defmodule Fountain.Billing do
   # undelivered webhook, a Stripe outage or a misconfigured endpoint delays
   # revenue rather than forfeiting it.
   #
-  # A nil `trial_ends_at` is treated as no expiry. 159 production accounts were
-  # in that state, from before a trial end was recorded at all; they were given
-  # an expiry on 2026-08-02 via Fountain.Release.expire_legacy_trials/1, which
-  # exists for any that reappear. A *deliberate* free account is "comped", not
-  # this.
-  defp do_check_active(%User{subscription_status: "trialing", trial_ends_at: nil}), do: :ok
+  # A nil `trial_ends_at` is "no expiry" only for accounts that predate the
+  # 2026-08-02 backfill (Fountain.Release.expire_legacy_trials/1 exists for any
+  # of those that reappear). Registration has stamped a trial end on every
+  # account since #244, so a newer account at nil means a stalled sync or data
+  # drift — and an open-ended branch here turned every such account into a free
+  # one (#314). Those fail closed; support can extend_trial to reopen them.
+  # A *deliberate* free account is "comped", not this.
+  @legacy_trial_cutoff ~U[2026-08-02 00:00:00Z]
+
+  defp do_check_active(%User{subscription_status: "trialing", trial_ends_at: nil} = user) do
+    if DateTime.compare(user.inserted_at, @legacy_trial_cutoff) == :lt do
+      :ok
+    else
+      {:error, :subscription_required}
+    end
+  end
 
   defp do_check_active(%User{subscription_status: "trialing", trial_ends_at: ends_at}) do
     if DateTime.compare(DateTime.utc_now(), ends_at) == :lt do

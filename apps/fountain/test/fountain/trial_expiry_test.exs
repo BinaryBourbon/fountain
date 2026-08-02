@@ -67,11 +67,24 @@ defmodule Fountain.TrialExpiryTest do
       assert {:error, :subscription_required} = Billing.check_active(user)
     end
 
-    test "a nil trial end is treated as no expiry" do
-      # 159 production accounts are in this state, from before a trial end was
-      # recorded at all. Expiring them is a business decision with a support
-      # cost, so it belongs in a task someone runs — not in this boolean.
-      assert :ok = Billing.check_active(trialing_user(nil))
+    test "a nil trial end is no expiry only for pre-backfill accounts" do
+      # 159 production accounts were in this state, from before a trial end was
+      # recorded at all; they were backfilled on 2026-08-02. Accounts older
+      # than the backfill keep the lenient reading in case any reappear.
+      legacy =
+        Repo.update!(
+          Ecto.Changeset.change(trialing_user(nil), inserted_at: ~U[2026-07-01 00:00:00Z])
+        )
+
+      assert :ok = Billing.check_active(legacy)
+    end
+
+    test "a post-backfill account with a nil trial end fails closed" do
+      # Registration stamps trial_ends_at on every account, so nil on a new
+      # account means a stalled sync or data drift. The open-ended branch here
+      # turned every such account into a free one (#314); support has
+      # extend_trial to reopen a legitimate casualty.
+      assert {:error, :subscription_required} = Billing.check_active(trialing_user(nil))
     end
 
     test "an active subscription is unaffected by the trial clock" do
