@@ -193,9 +193,7 @@ defmodule Mix.Tasks.Fountain.VerifyLifecycle do
   end
 
   defp step_subscribe(%{user: user} = state) do
-    sub = create_paid_subscription!(user)
-
-    {:ok, user} = Billing.sync_subscription(event("customer.subscription.created", sub))
+    user = complete_checkout_equivalent!(user)
 
     check!("active after checkout-equivalent subscribe", user.subscription_status == "active")
     check!("gate reopens when paid", Billing.check_active(user.id) == :ok)
@@ -256,13 +254,32 @@ defmodule Mix.Tasks.Fountain.VerifyLifecycle do
   end
 
   defp step_resubscribe(%{user: user} = state) do
-    sub = create_paid_subscription!(user)
-
-    {:ok, user} = Billing.sync_subscription(event("customer.subscription.created", sub))
+    user = complete_checkout_equivalent!(user)
 
     check!("return path: re-subscribe reactivates", user.subscription_status == "active")
     check!("gate open again", Billing.check_active(user.id) == :ok)
     %{state | user: user}
+  end
+
+  # Sync is keyed by subscription id (#284): a Checkout completion adopts the
+  # new subscription of record, then the subscription event applies its
+  # status — fed here in the same order Stripe sends them.
+  defp complete_checkout_equivalent!(user) do
+    sub = create_paid_subscription!(user)
+
+    {:ok, _} =
+      Billing.sync_subscription(
+        event("checkout.session.completed", %{
+          customer: user.stripe_customer_id,
+          subscription: sub.id,
+          client_reference_id: user.id
+        })
+      )
+
+    {:ok, %Fountain.Accounts.User{} = user} =
+      Billing.sync_subscription(event("customer.subscription.created", sub))
+
+    user
   end
 
   # Real dunning: swap the default card for one that always fails, advance the
