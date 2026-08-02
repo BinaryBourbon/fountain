@@ -191,6 +191,52 @@ defmodule Fountain.StripeWebhookIdempotencyTest do
     end
   end
 
+  describe "a failed apply releases the claim" do
+    # The 2026-08 audit's cancelling-pair finding (#312): idempotency claimed the
+    # event id, then the apply failed outside the claim's transaction. The 500
+    # made Stripe redeliver — into {:ok, :duplicate}. Both halves passed their
+    # own tests; this one exercises them together.
+    test "the redelivery that the 500 obtains actually applies" do
+      event =
+        sub_event(
+          "evt_retry",
+          "customer.subscription.deleted",
+          "cus_late_link",
+          "canceled",
+          now_unix()
+        )
+
+      # First delivery fails mid-apply: no user carries this customer id yet.
+      assert {:error, :user_not_found} = Billing.handle_event(event)
+
+      # The customer gets linked, then Stripe redelivers the same event id.
+      # With the claim rolled back this applies; before, it deduped to a no-op
+      # and the cancellation was lost forever.
+      user = user_with_customer("cus_late_link")
+
+      assert {:ok, updated} = Billing.handle_event(event)
+      assert updated.subscription_status == "canceled"
+      assert Repo.reload(user).subscription_status == "canceled"
+    end
+
+    test "a successful apply still claims — the redelivery dedupes" do
+      user = user_with_customer("cus_claimed")
+
+      event =
+        sub_event(
+          "evt_claimed",
+          "customer.subscription.updated",
+          "cus_claimed",
+          "active",
+          now_unix()
+        )
+
+      assert {:ok, _} = Billing.handle_event(event)
+      assert {:ok, :duplicate} = Billing.handle_event(event)
+      assert Repo.reload(user).subscription_status == "active"
+    end
+  end
+
   describe "unrelated events" do
     test "an unhandled type is claimed but ignored" do
       event = %Stripe.Event{

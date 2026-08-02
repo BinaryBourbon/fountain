@@ -457,16 +457,28 @@ defmodule Fountain.Billing do
   `customer.subscription.updated{active}` arriving after `.deleted` silently
   reactivates a cancelled account.
 
+  Claim and apply run in one transaction: a failed apply rolls the claim back.
+  Otherwise the two halves defeat each other — the controller answers 500 so
+  Stripe redelivers, but the redelivery hits the already-claimed id and dedupes
+  into a no-op, and the event is lost for good. If that event was the
+  `customer.subscription.deleted` that ends a trial, no later event ever
+  corrects it.
+
   Returns `{:ok, :duplicate}` for an event already seen.
   """
   @spec handle_event(Stripe.Event.t()) ::
           {:ok, User.t() | :ignored | :duplicate | :stale} | {:error, term()}
   def handle_event(%Stripe.Event{id: id, type: type} = event) when is_binary(id) do
-    if claim_event(id, type) == :claimed do
-      sync_subscription(event)
-    else
-      {:ok, :duplicate}
-    end
+    Repo.transaction(fn ->
+      if claim_event(id, type) == :claimed do
+        case sync_subscription(event) do
+          {:ok, result} -> result
+          {:error, reason} -> Repo.rollback(reason)
+        end
+      else
+        :duplicate
+      end
+    end)
   end
 
   # No id (hand-built events in tests) — nothing to dedupe against.
