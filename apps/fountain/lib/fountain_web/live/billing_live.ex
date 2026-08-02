@@ -264,7 +264,7 @@ defmodule FountainWeb.Live.BillingLive do
       # the Customer first means the id is always ours.
       with {:ok, user} <- Billing.ensure_stripe_customer(user) do
         params = %{
-          mode: "subscription",
+          mode: :subscription,
           line_items: [%{price: price_id, quantity: 1}],
           success_url: return_url <> "?checkout=success",
           cancel_url: return_url,

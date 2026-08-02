@@ -18,6 +18,7 @@ defmodule Fountain.Audit.AdminEvent do
 
   @primary_key {:id, :id, autogenerate: true}
 
+  @type t :: %__MODULE__{}
   schema "admin_audit_events" do
     # nil for system-originated actions
     field :actor_user_id, :binary_id

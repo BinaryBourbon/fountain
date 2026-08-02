@@ -66,7 +66,12 @@ defmodule Fountain.Telemetry do
         {result, extra}
       end)
     after
-      Tracer.end_span(parent)
+      # No-arg on purpose: end_span/1's argument is a *timestamp*, not a span
+      # — passing `parent` here handed a span_ctx record to the timestamp
+      # parameter. It never blew up because non-recording spans short-circuit
+      # before touching it, but a recording span got a corrupt end time. The
+      # current span *is* `parent` at this point, which is what no-arg ends.
+      Tracer.end_span()
       Tracer.set_current_span(previous)
     end
   end

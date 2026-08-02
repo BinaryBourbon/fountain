@@ -153,7 +153,7 @@ defmodule Fountain.TrialExpiryTest do
       Billing.start_trial_subscription(user)
 
       assert_received {:params, params}
-      assert params.trial_settings.end_behavior.missing_payment_method == "cancel"
+      assert params.trial_settings.end_behavior.missing_payment_method == :cancel
     end
 
     test "trial_ends_at comes from Stripe, not from local arithmetic" do

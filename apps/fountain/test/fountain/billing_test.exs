@@ -463,7 +463,7 @@ defmodule Fountain.BillingTest do
           trial_ends_at: nil
         )
 
-      stub(Stripe.Subscription, :list, fn %{customer: "cus_ext1", status: "trialing"} ->
+      stub(Stripe.Subscription, :list, fn %{customer: "cus_ext1", status: :trialing} ->
         {:ok, %{data: [%Stripe.Subscription{id: "sub_ext1", status: "trialing"}]}}
       end)
 
@@ -475,7 +475,7 @@ defmodule Fountain.BillingTest do
       end)
 
       assert {:ok, updated} = Billing.extend_trial(user, 14)
-      assert_receive {:stripe_update, %{trial_end: unix, proration_behavior: "none"}}
+      assert_receive {:stripe_update, %{trial_end: unix, proration_behavior: :none}}
       assert unix == DateTime.to_unix(updated.trial_ends_at)
     end
 

@@ -197,7 +197,7 @@ defmodule Fountain.Billing do
       customer: user.stripe_customer_id,
       items: [%{price: price_id}],
       trial_period_days: @trial_days,
-      trial_settings: %{end_behavior: %{missing_payment_method: "cancel"}},
+      trial_settings: %{end_behavior: %{missing_payment_method: :cancel}},
       metadata: %{"user_id" => user.id}
     }
 
@@ -281,11 +281,11 @@ defmodule Fountain.Billing do
     do: :ok
 
   defp push_stripe_trial_end(%User{stripe_customer_id: customer_id}, new_end) do
-    case Stripe.Subscription.list(%{customer: customer_id, status: "trialing", limit: 1}) do
+    case Stripe.Subscription.list(%{customer: customer_id, status: :trialing, limit: 1}) do
       {:ok, %{data: [sub | _]}} ->
         case Stripe.Subscription.update(sub.id, %{
                trial_end: DateTime.to_unix(new_end),
-               proration_behavior: "none"
+               proration_behavior: :none
              }) do
           {:ok, _} -> :ok
           {:error, reason} -> {:error, reason}
@@ -361,7 +361,7 @@ defmodule Fountain.Billing do
   def cancel_subscriptions(%User{stripe_customer_id: ""}), do: {:ok, 0}
 
   def cancel_subscriptions(%User{stripe_customer_id: customer_id}) do
-    case Stripe.Subscription.list(%{customer: customer_id, status: "all", limit: 100}) do
+    case Stripe.Subscription.list(%{customer: customer_id, status: :all, limit: 100}) do
       {:ok, %{data: subs} = list} ->
         # A customer with more than 100 subscriptions is not a thing we create,
         # but silently cancelling the first page and reporting success would

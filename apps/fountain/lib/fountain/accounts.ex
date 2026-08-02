@@ -231,8 +231,13 @@ defmodule Fountain.Accounts do
 
   Returns `{:ok, user, :new | :existing}` or `{:error, changeset}`.
   """
+  # The error can also be a registration_allowed?/1 atom: a brand-new OAuth
+  # identity on a closed instance rolls the transaction back with it. The spec
+  # used to omit the atoms, which made dialyzer condemn the controller branch
+  # that handles them as unreachable — it is not.
   @spec upsert_oauth_user(String.t(), String.t(), map()) ::
-          {:ok, User.t(), :new | :existing} | {:error, Ecto.Changeset.t()}
+          {:ok, User.t(), :new | :existing}
+          | {:error, Ecto.Changeset.t() | :registration_closed | :email_domain_not_allowed}
   def upsert_oauth_user(provider, provider_uid, attrs)
       when is_binary(provider) and is_binary(provider_uid) do
     Repo.transaction(fn ->
