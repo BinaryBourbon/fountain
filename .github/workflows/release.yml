@@ -139,6 +139,11 @@ jobs:
       - name: Install dependencies
         run: mix deps.get
 
+      # openapi.export boots the app, and since Oban arrived (#217) boot
+      # requires the oban_jobs table — an unmigrated database aborts startup.
+      - name: Set up database
+        run: mix ecto.create --quiet && mix ecto.migrate --quiet
+
       - name: Export spec
         working-directory: apps/fountain
         run: mix openapi.export
