@@ -34,6 +34,10 @@ echo "MASTER_SECRETS_KEY=$(openssl rand 32 | base64 | tr '+/' '-_' | tr -d '=\n'
 docker compose up -d
 ```
 
+This page explains the variables that shape a deployment as they come up; the
+complete list — including the deploy-level ones the compose file never
+mentions — is the [configuration reference](configuration.md).
+
 Then open <http://localhost:4000> and register. With the default
 `EMAIL_DELIVERY=none` nothing is sent, so verify your own account:
 
