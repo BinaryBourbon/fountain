@@ -28,6 +28,7 @@ defmodule Fountain.Accounts.User do
     field :stripe_customer_id, :string
     field :subscription_status, :string, default: "trialing"
     field :trial_ends_at, :utc_datetime
+    field :suspended_at, :utc_datetime
     # Stripe `created` of the last subscription event applied — the ordering
     # guard's watermark. See Billing.sync_subscription/1.
     field :subscription_synced_at, :utc_datetime

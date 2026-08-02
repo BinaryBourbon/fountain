@@ -43,6 +43,8 @@ defmodule Fountain.Audit.AdminEvent do
     admin.comp.granted
     admin.comp.revoked
     admin.sandbox.reaped
+    admin.account.suspended
+    admin.account.unsuspended
   )
 
   def event_types, do: @event_types

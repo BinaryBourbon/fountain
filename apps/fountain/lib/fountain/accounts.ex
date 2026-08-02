@@ -134,10 +134,18 @@ defmodule Fountain.Accounts do
     user = get_user_by_email(email)
 
     if user do
-      if Bcrypt.verify_pass(password, user.password_hash) do
-        {:ok, user}
-      else
-        {:error, :wrong_password}
+      cond do
+        not Bcrypt.verify_pass(password, user.password_hash) ->
+          {:error, :wrong_password}
+
+        # Password first, deliberately: a wrong guess against a suspended
+        # account answers "wrong password", so login responses never become
+        # an account-state oracle for someone probing addresses.
+        suspended?(user) ->
+          {:error, :suspended}
+
+        true ->
+          {:ok, user}
       end
     else
       # Constant-time dummy verify to prevent timing-based enumeration
@@ -377,10 +385,11 @@ defmodule Fountain.Accounts do
   so a caller holding a sandbox token is otherwise indistinguishable from the
   human who owns the tenant.
 
-  Returns `{:ok, user, api_key}`, or `{:error, :revoked | :expired | :not_found}`.
+  Returns `{:ok, user, api_key}`, or
+  `{:error, :revoked | :expired | :suspended | :not_found}`.
   """
   @spec authenticate_api_key(String.t()) ::
-          {:ok, User.t(), ApiKey.t()} | {:error, :revoked | :expired | :not_found}
+          {:ok, User.t(), ApiKey.t()} | {:error, :revoked | :expired | :suspended | :not_found}
   def authenticate_api_key(raw_key) when is_binary(raw_key) do
     key_hash = hash_key(raw_key)
 
@@ -398,7 +407,11 @@ defmodule Fountain.Accounts do
         {:error, :revoked}
 
       %ApiKey{} = key ->
-        if ApiKey.expired?(key), do: {:error, :expired}, else: {:ok, key.user, key}
+        cond do
+          ApiKey.expired?(key) -> {:error, :expired}
+          suspended?(key.user) -> {:error, :suspended}
+          true -> {:ok, key.user, key}
+        end
     end
   end
 
@@ -596,5 +609,66 @@ defmodule Fountain.Accounts do
   @doc false
   def hash_key(raw_key) when is_binary(raw_key) do
     :crypto.hash(:sha256, raw_key) |> Base.encode16(case: :lower)
+  end
+
+  ## Suspension (#287)
+
+  @doc """
+  Suspend an account: the reversible abuse lever between comp and delete.
+  Deletion is irreversible and destroys evidence; a zeroed sandbox quota stops
+  new sandboxes but not logins or running conversations. This stops everything,
+  reversibly.
+
+  Sets `suspended_at`, bumps `session_version` (existing sessions die at the
+  next request), then best-effort reaps every active sandbox — a failed sprite
+  termination logs and moves on rather than failing the suspend; `SandboxReaper`
+  sweeps stragglers. Login and API-key auth refuse while `suspended_at` is set.
+
+  Billing is deliberately untouched: the Stripe subscription keeps running and
+  webhooks keep syncing status (like comped, inverted — the status is accurate,
+  the gate is elsewhere). A suspension is short-lived or becomes a deletion;
+  pausing Stripe would add a resume path for an account we may be about to
+  destroy.
+
+  Returns `{:ok, user, reaped_count}`.
+  """
+  @spec suspend_user(User.t()) :: {:ok, User.t(), non_neg_integer()} | {:error, Ecto.Changeset.t()}
+  def suspend_user(%User{} = user) do
+    now = DateTime.utc_now() |> DateTime.truncate(:second)
+
+    with {:ok, updated} <-
+           user
+           |> Ecto.Changeset.change(suspended_at: now)
+           |> User.invalidate_sessions_changeset()
+           |> Repo.update() do
+      reaped = Fountain.Conversations._unsafe_reap_all_for_user(user.id)
+      {:ok, updated, reaped}
+    end
+  end
+
+  @doc """
+  Lift a suspension. Sessions stay invalidated (the user logs in again);
+  nothing is re-provisioned.
+  """
+  @spec unsuspend_user(User.t()) :: {:ok, User.t()} | {:error, Ecto.Changeset.t()}
+  def unsuspend_user(%User{} = user) do
+    user |> Ecto.Changeset.change(suspended_at: nil) |> Repo.update()
+  end
+
+  @doc "Whether the account is currently suspended."
+  @spec suspended?(User.t()) :: boolean()
+  def suspended?(%User{suspended_at: suspended_at}), do: not is_nil(suspended_at)
+
+  @doc """
+  Provisioning-path backstop, shaped like `Billing.check_active/1`: sessions
+  and API keys already refuse suspended accounts, but every route to a sprite
+  should fail even if a surface slips. An unknown id fails closed.
+  """
+  @spec check_not_suspended(binary()) :: :ok | {:error, :account_suspended}
+  def check_not_suspended(user_id) when is_binary(user_id) do
+    case Repo.one(from u in User, where: u.id == ^user_id, select: is_nil(u.suspended_at)) do
+      true -> :ok
+      _ -> {:error, :account_suspended}
+    end
   end
 end

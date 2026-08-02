@@ -60,7 +60,7 @@ defmodule FountainWeb.SessionController do
 
         conn
         |> put_status(:unauthorized)
-        |> render(:new, error: "Invalid email or password.", layout: false)
+        |> render(:new, error: login_error(reason), layout: false)
     end
   end
 
@@ -113,6 +113,13 @@ defmodule FountainWeb.SessionController do
   end
 
   ## Private
+
+  # Neutral on purpose (#287): says the account is unusable without labeling
+  # it, and only after the password verified — a guesser never learns state.
+  defp login_error(:suspended),
+    do: "This account is currently unavailable. Contact support if you believe this is an error."
+
+  defp login_error(_), do: "Invalid email or password."
 
   defp after_login_path(user) do
     if user.onboarding_completed_at do
