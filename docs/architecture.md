@@ -167,7 +167,8 @@ the normal resting state, not an error.
 
 ## Where to look
 
-The point of this page: given a symptom, predict the component.
+The point of this page: given a symptom, predict the component. The action
+level — what to run and what the output means — is [Operations](operations.md).
 
 | Symptom | Look at |
 |---|---|
