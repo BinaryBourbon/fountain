@@ -127,7 +127,6 @@ defmodule Fountain.AgentsTest do
     end
   end
 
-
   describe "_unsafe_get_agent/1 and _unsafe_get_agent!/1" do
     test "_unsafe_get_agent returns the agent by id" do
       user = insert_verified_user()

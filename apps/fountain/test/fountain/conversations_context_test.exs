@@ -136,7 +136,6 @@ defmodule Fountain.ConversationsContextTest do
   # Conversations
   # ────────────────────────────────────────────────────────────────────────────
 
-
   describe "_unsafe_list_active_conversations/0" do
     test "returns empty list when no conversations exist" do
       assert Conversations._unsafe_list_active_conversations() == []
@@ -1195,7 +1194,6 @@ defmodule Fountain.ConversationsContextTest do
   # ────────────────────────────────────────────────────────────────────────────
   # _unsafe_list_conversations_by_activity/0
   # ────────────────────────────────────────────────────────────────────────────
-
 
   # ────────────────────────────────────────────────────────────────────────────
   # _unsafe_get_conversation_tree/1

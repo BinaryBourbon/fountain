@@ -192,7 +192,6 @@ defmodule Fountain.VaultsTest do
     end
   end
 
-
   describe "_unsafe_get_vault/1" do
     test "returns the vault when it exists" do
       user = insert_verified_user()

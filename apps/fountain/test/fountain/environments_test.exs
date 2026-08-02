@@ -181,7 +181,6 @@ defmodule Fountain.EnvironmentsTest do
     end
   end
 
-
   describe "_unsafe_get_environment/1" do
     test "returns the environment by id" do
       user = insert_verified_user()
