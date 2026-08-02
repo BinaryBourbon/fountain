@@ -47,7 +47,7 @@ defmodule Fountain.Billing do
 
   # ─── Gate ──────────────────────────────────────────────────────────────────
 
-  @active_statuses ~w(trialing active)
+  @active_statuses ~w(trialing active comped)
 
   @doc """
   Returns `:ok` when the user's subscription allows new conversation creation.
@@ -92,10 +92,11 @@ defmodule Fountain.Billing do
   # undelivered webhook, a Stripe outage or a misconfigured endpoint delays
   # revenue rather than forfeiting it.
   #
-  # A nil `trial_ends_at` is treated as no expiry. 159 production accounts are
-  # in that state, from before a trial end was recorded at all; deciding their
-  # cutoff is a business call, not something a boolean should do silently. See
-  # Fountain.Release.expire_legacy_trials/1.
+  # A nil `trial_ends_at` is treated as no expiry. 159 production accounts were
+  # in that state, from before a trial end was recorded at all; they were given
+  # an expiry on 2026-08-02 via Fountain.Release.expire_legacy_trials/1, which
+  # exists for any that reappear. A *deliberate* free account is "comped", not
+  # this.
   defp do_check_active(%User{subscription_status: "trialing", trial_ends_at: nil}), do: :ok
 
   defp do_check_active(%User{subscription_status: "trialing", trial_ends_at: ends_at}) do
@@ -232,6 +233,104 @@ defmodule Fountain.Billing do
     do: DateTime.from_unix!(ts) |> DateTime.truncate(:second)
 
   defp unix_to_datetime(_), do: trial_end_from_now()
+
+  @doc """
+  Extends a user's trial by `days`, counted from whichever is later — now or
+  the current trial end — so an extension can never shorten a trial.
+
+  Stripe owns `trial_ends_at` for an account with a subscription still in its
+  trial (`sync_subscription/1` overwrites the local value on every subscription
+  event), so for those the extension goes through `Stripe.Subscription.update/2`
+  first and the local write is the optimistic copy the webhook will confirm.
+  An account with no live trial subscription — no Stripe customer at all, or a
+  subscription already ended — gets a plain local update, which also moves a
+  `canceled` or `past_due` account back to `trialing`: the support lever for
+  "give this person another look".
+
+  Refused for `active` (they are paying; there is no trial) and `comped`
+  (already free; extending would demote them to a trial that ends).
+  """
+  @spec extend_trial(User.t(), pos_integer()) :: {:ok, User.t()} | {:error, term()}
+  def extend_trial(%User{subscription_status: "active"}, _days),
+    do: {:error, :active_subscription}
+
+  def extend_trial(%User{subscription_status: "comped"}, _days), do: {:error, :comped}
+
+  def extend_trial(%User{} = user, days) when is_integer(days) and days > 0 do
+    now = DateTime.utc_now()
+
+    base =
+      case user.trial_ends_at do
+        %DateTime{} = ends_at -> if DateTime.compare(ends_at, now) == :gt, do: ends_at, else: now
+        nil -> now
+      end
+
+    new_end = base |> DateTime.add(days * 24 * 60 * 60, :second) |> DateTime.truncate(:second)
+
+    with :ok <- push_stripe_trial_end(user, new_end) do
+      user
+      |> User.billing_changeset(%{subscription_status: "trialing", trial_ends_at: new_end})
+      |> Repo.update()
+    end
+  end
+
+  # Stripe first, so a Stripe refusal leaves nothing half-applied. Only a
+  # subscription still trialing can have its trial moved; any other state means
+  # there is no live trial subscription and the local write stands alone.
+  defp push_stripe_trial_end(%User{stripe_customer_id: id}, _new_end) when id in [nil, ""],
+    do: :ok
+
+  defp push_stripe_trial_end(%User{stripe_customer_id: customer_id}, new_end) do
+    case Stripe.Subscription.list(%{customer: customer_id, status: "trialing", limit: 1}) do
+      {:ok, %{data: [sub | _]}} ->
+        case Stripe.Subscription.update(sub.id, %{
+               trial_end: DateTime.to_unix(new_end),
+               proration_behavior: "none"
+             }) do
+          {:ok, _} -> :ok
+          {:error, reason} -> {:error, reason}
+        end
+
+      {:ok, _} ->
+        :ok
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  @doc """
+  Marks an account comped: free access granted by an operator, indefinitely.
+
+  Any live Stripe subscription is cancelled first — a comped account must not
+  keep charging, and a surviving subscription's webhooks would fight the comp.
+  The cancellation webhook that follows is ignored by `sync_subscription/1`
+  (comped accounts are excluded from webhook sync), so the comp sticks until
+  `revoke_comp/1`.
+  """
+  @spec comp_account(User.t()) :: {:ok, User.t()} | {:error, term()}
+  def comp_account(%User{subscription_status: "comped"} = user), do: {:ok, user}
+
+  def comp_account(%User{} = user) do
+    with {:ok, _cancelled} <- cancel_subscriptions(user) do
+      user
+      |> User.billing_changeset(%{subscription_status: "comped"})
+      |> Repo.update()
+    end
+  end
+
+  @doc """
+  Ends a comp. The account becomes `canceled` — gated, with self-serve checkout
+  as the way back in — rather than guessing at whatever state preceded the comp.
+  """
+  @spec revoke_comp(User.t()) :: {:ok, User.t()} | {:error, :not_comped}
+  def revoke_comp(%User{subscription_status: "comped"} = user) do
+    user
+    |> User.billing_changeset(%{subscription_status: "canceled"})
+    |> Repo.update()
+  end
+
+  def revoke_comp(%User{}), do: {:error, :not_comped}
 
   @doc """
   Cancels every subscription attached to the user's Stripe customer.
@@ -448,6 +547,13 @@ defmodule Fountain.Billing do
       nil ->
         {:error, :user_not_found}
 
+      # A comp is an operator decision; Stripe events do not override it. In
+      # particular, comp_account/1 cancels the user's subscriptions, and the
+      # cancellation webhook that follows must not flip the account it just
+      # comped to "canceled". revoke_comp/1 is the only way out of comped.
+      %User{subscription_status: "comped"} ->
+        {:ok, :comped_ignored}
+
       user ->
         if stale?(user.subscription_synced_at, event_created) do
           # An older event arriving after a newer one. Applying it would move the
@@ -518,6 +624,44 @@ defmodule Fountain.Billing do
 
     %{conversations: conversations, turns: turns, sandbox_minutes: sandbox_minutes}
   end
+
+  @doc """
+  `usage_summary/3` for every user at once, in one query — for the admin view,
+  which refreshes on a timer and must not run a query per user.
+
+  Returns `%{user_id => %{conversations: n, turns: n, sandbox_minutes: f}}`;
+  users with no events in the period are absent.
+  """
+  @spec usage_summaries(DateTime.t(), DateTime.t()) :: %{optional(binary()) => map()}
+  def usage_summaries(%DateTime{} = period_start, %DateTime{} = period_end) do
+    empty = %{conversations: 0, turns: 0, sandbox_minutes: 0.0}
+
+    from(e in UsageEvent,
+      where: e.inserted_at >= ^period_start and e.inserted_at < ^period_end,
+      group_by: [e.user_id, e.event_type],
+      select:
+        {e.user_id, e.event_type, count(e.id),
+         sum(coalesce(fragment("(? ->> 'duration_ms')::numeric", e.metadata), 0))}
+    )
+    |> Repo.all()
+    |> Enum.reduce(%{}, fn {user_id, type, count, duration_ms}, acc ->
+      summary = Map.get(acc, user_id, empty)
+
+      summary =
+        case type do
+          "sandbox_provisioned" -> %{summary | conversations: count}
+          "turn_started" -> %{summary | turns: count}
+          "sandbox_terminated" -> %{summary | sandbox_minutes: to_minutes(duration_ms)}
+          _ -> summary
+        end
+
+      Map.put(acc, user_id, summary)
+    end)
+  end
+
+  defp to_minutes(nil), do: 0.0
+  defp to_minutes(%Decimal{} = ms), do: Decimal.to_float(ms) / 60_000.0
+  defp to_minutes(ms) when is_number(ms), do: ms / 60_000.0
 
   # ─── Usage emission ─────────────────────────────────────────────────────────
 

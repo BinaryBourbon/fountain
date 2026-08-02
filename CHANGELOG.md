@@ -30,6 +30,12 @@ upgrade, is in
 
 ### Added
 
+- Admin support tooling: subscription status, trial end and a Stripe dashboard
+  link per user, trial extension (Stripe-aware), a `comped` status for
+  operator-granted free access, per-user 30-day usage, and a sandbox reap
+  action (#169). Admin account deletions are now actually audit-recorded —
+  the event type was missing from the audit allowlist and failed validation
+  silently
 - Bulk manifest apply — a whole manifest in one request, and the CLI's
   `fountain apply` uses it (#151)
 - Agent-scoped vault allowlists: an agent can be restricted to a named set of

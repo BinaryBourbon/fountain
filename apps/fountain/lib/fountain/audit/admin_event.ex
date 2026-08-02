@@ -28,10 +28,20 @@ defmodule Fountain.Audit.AdminEvent do
     field :inserted_at, :utc_datetime
   end
 
+  # Closed allowlist: an unknown type fails validation and record_admin/1
+  # swallows the error, so an event type missing from this list is silently
+  # never recorded. That already happened once — admin.account.deleted shipped
+  # in the deletion work without being added here, and admin deletions left no
+  # audit row until the admin billing work tripped over the same behaviour.
   @event_types ~w(
     admin.role.granted
     admin.role.revoked
     admin.sandbox_limit.changed
+    admin.account.deleted
+    admin.trial.extended
+    admin.comp.granted
+    admin.comp.revoked
+    admin.sandbox.reaped
   )
 
   def event_types, do: @event_types

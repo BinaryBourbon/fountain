@@ -325,6 +325,139 @@ defmodule FountainWeb.AdminLiveTest do
       assert render(lv) =~ "whole number"
     end
   end
+
+  describe "AdminLive.Index — billing column" do
+    test "shows subscription status, trial end and a Stripe link", %{conn: conn} do
+      admin = insert_admin()
+
+      user = insert_verified_user()
+
+      user =
+        Fountain.Repo.update!(
+          Ecto.Changeset.change(user,
+            subscription_status: "trialing",
+            trial_ends_at: ~U[2027-03-01 00:00:00Z],
+            stripe_customer_id: "cus_admin_test"
+          )
+        )
+
+      conn = login_user(conn, admin)
+      {:ok, _lv, html} = live(conn, ~p"/admin")
+
+      assert html =~ "trialing"
+      assert html =~ "ends 2027-03-01"
+      assert html =~ "https://dashboard.stripe.com/customers/#{user.stripe_customer_id}"
+    end
+  end
+
+  describe "AdminLive.Index — extend_trial" do
+    test "extends the trial and records an admin audit event", %{conn: conn} do
+      admin = insert_admin()
+
+      user =
+        Fountain.Repo.update!(
+          Ecto.Changeset.change(insert_verified_user(),
+            subscription_status: "canceled",
+            trial_ends_at: nil
+          )
+        )
+
+      conn = login_user(conn, admin)
+      {:ok, lv, _html} = live(conn, ~p"/admin")
+
+      lv
+      |> form("#extend-trial-#{user.id}", %{"days" => "7"})
+      |> render_submit()
+
+      updated = Fountain.Repo.reload!(user)
+      assert updated.subscription_status == "trialing"
+      expected = DateTime.add(DateTime.utc_now(), 7 * 24 * 60 * 60, :second)
+      assert abs(DateTime.diff(updated.trial_ends_at, expected, :second)) < 60
+
+      assert Enum.any?(
+               Fountain.Audit.list_recent_admin(10),
+               &(&1.event_type == "admin.trial.extended" and &1.target_user_id == user.id)
+             )
+    end
+
+    test "rejects a non-numeric day count", %{conn: conn} do
+      admin = insert_admin()
+      user = insert_verified_user()
+      conn = login_user(conn, admin)
+      {:ok, lv, _html} = live(conn, ~p"/admin")
+
+      html =
+        lv
+        |> form("#extend-trial-#{user.id}", %{"days" => "nope"})
+        |> render_submit()
+
+      assert html =~ "whole number"
+    end
+  end
+
+  describe "AdminLive.Index — toggle_comp" do
+    test "comps and un-comps an account, with audit events", %{conn: conn} do
+      admin = insert_admin()
+      user = insert_verified_user()
+      conn = login_user(conn, admin)
+      {:ok, lv, _html} = live(conn, ~p"/admin")
+
+      lv
+      |> element("button[phx-value-id='#{user.id}'][phx-click='toggle_comp']")
+      |> render_click()
+
+      assert Fountain.Repo.reload!(user).subscription_status == "comped"
+
+      lv
+      |> element("button[phx-value-id='#{user.id}'][phx-click='toggle_comp']")
+      |> render_click()
+
+      assert Fountain.Repo.reload!(user).subscription_status == "canceled"
+
+      events = Fountain.Audit.list_recent_admin(10)
+      assert Enum.any?(events, &(&1.event_type == "admin.comp.granted"))
+      assert Enum.any?(events, &(&1.event_type == "admin.comp.revoked"))
+    end
+  end
+
+  describe "AdminLive.Index — reap_sandbox" do
+    test "reaps a ready sandbox with no live server and audits it", %{conn: conn} do
+      admin = insert_admin()
+      sandbox = insert_sandbox(status: "ready")
+      conn = login_user(conn, admin)
+      {:ok, lv, _html} = live(conn, ~p"/admin")
+
+      html =
+        lv
+        |> element("button[phx-value-id='#{sandbox.id}'][phx-click='reap_sandbox']")
+        |> render_click()
+
+      assert html =~ "released"
+      reloaded = Fountain.Conversations._unsafe_get_sandbox!(sandbox.id)
+      assert reloaded.status == "terminated"
+      assert reloaded.terminated_at
+
+      assert Enum.any?(
+               Fountain.Audit.list_recent_admin(10),
+               &(&1.event_type == "admin.sandbox.reaped" and
+                   &1.metadata["sandbox_id"] == sandbox.id)
+             )
+    end
+  end
+
+  describe "AdminLive.Index — usage column" do
+    test "shows 30-day usage per user", %{conn: conn} do
+      admin = insert_admin()
+      user = insert_verified_user()
+      {:ok, _} = Fountain.Billing.record_usage(user.id, "turn_started", nil, nil)
+      {:ok, _} = Fountain.Billing.record_usage(user.id, "sandbox_provisioned", nil, nil)
+
+      conn = login_user(conn, admin)
+      {:ok, _lv, html} = live(conn, ~p"/admin")
+
+      assert html =~ "1c · 1t · 0m"
+    end
+  end
 end
 
 defmodule FountainWeb.AdminLiveErrorTest do

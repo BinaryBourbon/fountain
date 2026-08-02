@@ -53,6 +53,41 @@ defmodule Fountain.Conversations do
   def _unsafe_get_sandbox(id), do: Repo.get(Sandbox, id)
   def _unsafe_get_sandbox!(id), do: Repo.get!(Sandbox, id)
 
+  @doc """
+  Support teardown of any tenant's sandbox, from the admin panel.
+
+  A conversation with a live `ConversationServer` is terminated through the
+  server, which destroys the sprite and ends the conversation — that is what
+  stopping a runaway agent means. A sandbox with no live server just has its
+  row marked terminated: the conversation stays resumable (next prompt gets a
+  fresh sandbox, same session) and the reaper destroys the sprite on its next
+  pass, the same split `SandboxReaper.expire_abandoned_sandboxes/0` uses.
+  """
+  def _unsafe_reap_sandbox(sandbox_id) do
+    alias Fountain.Conversations.ConversationServer
+
+    case _unsafe_get_sandbox(sandbox_id) do
+      nil ->
+        {:error, :not_found}
+
+      %Sandbox{status: s} when s in ["terminated", "failed"] ->
+        {:ok, :already_terminal}
+
+      sandbox ->
+        sandbox = Repo.preload(sandbox, :conversations)
+        live = Enum.filter(sandbox.conversations, &ConversationServer.whereis(&1.id))
+
+        if live == [] do
+          now = DateTime.utc_now() |> DateTime.truncate(:second)
+          {:ok, _} = update_sandbox(sandbox, %{status: "terminated", terminated_at: now})
+          {:ok, :released}
+        else
+          Enum.each(live, &ConversationServer.terminate(&1.id))
+          {:ok, :terminated}
+        end
+    end
+  end
+
   def create_sandbox(attrs) do
     %Sandbox{}
     |> Sandbox.changeset(attrs)
