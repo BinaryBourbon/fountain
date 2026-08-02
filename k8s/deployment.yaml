@@ -100,6 +100,10 @@ spec:
               value: fountain.inevitable.fyi
             - name: EMAIL_FROM
               value: noreply@updates.inevitable.fyi
+            # Deliberate unverified accounts (operator tests) survive the
+            # unverified-account pruner (#258).
+            - name: UNVERIFIED_PRUNE_EXEMPT
+              value: jhgaylor
             # No OTLP collector in-cluster yet — without this,
             # opentelemetry_exporter retries localhost:4318 per span and
             # floods logs with :econnrefused. Swap to the real
