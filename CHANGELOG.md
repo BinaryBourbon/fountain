@@ -30,6 +30,12 @@ upgrade, is in
 
 ### Added
 
+- Accounts that register and never verify their email are deleted after 30
+  days (#258) — they cannot log in, and 158 of them were briefly mistaken for
+  a legacy trial cohort. Same teardown as self-serve deletion, Stripe
+  cancellation included; `UNVERIFIED_PRUNE_AFTER_DAYS=0` disables,
+  `UNVERIFIED_PRUNE_EXEMPT` protects deliberate unverified accounts
+
 - Optional error tracking via Sentry (or any Sentry-API-compatible endpoint):
   crashes from every process — not just web requests — are reported with
   release correlation, rate-limited, with PII off. Fully inert unless

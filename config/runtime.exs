@@ -205,6 +205,21 @@ config :fountain,
   sandbox_idle_timeout_minutes: parse_bound.("SANDBOX_IDLE_TIMEOUT_MINUTES", "60"),
   sandbox_max_lifetime_hours: parse_bound.("SANDBOX_MAX_LIFETIME_HOURS", "24")
 
+# Accounts that registered and never verified are deleted after this many
+# days (#258) — they cannot log in, so they are rows, not users. 0 disables
+# the sweep. UNVERIFIED_PRUNE_EXEMPT is a comma-separated list of email
+# substrings that are never pruned (operator/test accounts that deliberately
+# stay unverified).
+unverified_prune_exempt =
+  case System.get_env("UNVERIFIED_PRUNE_EXEMPT") do
+    blank when blank in [nil, ""] -> []
+    list -> list |> String.split(",", trim: true) |> Enum.map(&String.trim/1)
+  end
+
+config :fountain,
+  unverified_prune_after_days: parse_bound.("UNVERIFIED_PRUNE_AFTER_DAYS", "30"),
+  unverified_prune_exempt: unverified_prune_exempt
+
 # CIDRs treated as proxies when resolving the client IP from X-Forwarded-For.
 # Only widen this to cover addresses that are genuinely proxies — anything
 # trusted here is stepped over, so an over-broad list lets a client spoof its
