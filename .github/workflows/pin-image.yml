@@ -1,21 +1,27 @@
 name: Pin image
 
-# After a successful build on main, bump the SHA tag pinned in
-# k8s/deployment.yaml and push it straight to main. Flux then reconciles
-# and rolls the Deployment.
+# Publishes the `deploy` branch: the only thing Flux reads.
 #
-# Flow: push to main → build.yml builds + pushes
+# Every commit here is the exact tree that was built, plus the image tag built
+# from it. That pairing is the point. Flux used to track `main`, where the two
+# arrive in separate commits minutes apart — the PR changes k8s/deployment.yaml,
+# the image finishes building later, and the pin lands after that. Flux polls
+# every 5 minutes, so it routinely applied a manifest against the previous
+# image.
+#
+# That is not theoretical: #241 moved the readiness probe to a new path, Flux
+# applied it against an image with no such route, and every pod 404'd its probe
+# and never became ready. Suspending Flux by hand did not prevent it either,
+# because the GitRepository can still be behind at the moment you resume.
+#
+# Flow: push to main → build.yml builds and pushes
 #   ghcr.io/binarybourbon/fountain:sha-<sha>
-#       → this workflow commits the matching tag into deployment.yaml
-#       → Flux reconciliation deploys it.
+#       → this workflow rebuilds `deploy` from *that sha's tree* with the
+#         matching tag committed on top
+#       → Flux reconciles `deploy`.
 #
-# Why a direct push (not a PR): the bump only rewrites the image tag in the
-# deploy manifest. The application code already merged through a PR and
-# passed CI on that very <sha>; this is a GitOps deploy-pointer update, not
-# a code change, so it doesn't need its own review gate. Pushing with the
-# default GITHUB_TOKEN also means the commit does NOT trigger another build
-# (GitHub suppresses workflow events from GITHUB_TOKEN pushes), so the pin
-# can't chase its own tail.
+# `main` is never deployed directly and its k8s/deployment.yaml image tag is
+# inert — see the note in that file.
 
 on:
   workflow_run:
@@ -38,9 +44,9 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
-          # Pin onto the current main tip; full history so the rebase
-          # below can resolve if main moved while the image built.
-          ref: main
+          # The commit that was actually built — NOT main's tip. Pinning onto
+          # the tip is what let a newer manifest ride out with an older image.
+          ref: ${{ github.event.workflow_run.head_sha }}
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -54,7 +60,7 @@ jobs:
             echo "image=ghcr.io/binarybourbon/fountain:sha-${sha}"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Pin and push
+      - name: Publish the deploy branch
         env:
           SHA: ${{ steps.tag.outputs.sha }}
           SHORT: ${{ steps.tag.outputs.short }}
@@ -62,22 +68,36 @@ jobs:
         run: |
           set -euo pipefail
 
-          current=$(grep -oE 'ghcr\.io/binarybourbon/fountain:sha-[0-9a-f]+' \
-            k8s/deployment.yaml | head -1 | sed -E 's/.*:sha-//')
-          if [ "${current}" = "${SHA}" ]; then
-            echo "Already pinned to sha-${SHORT}; nothing to do."
-            exit 0
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # Refuse to move deploy backwards. Builds can finish out of order — a
+          # slow build for an older commit must not overwrite a newer deploy
+          # with stale manifests. The source commit is recorded as a trailer so
+          # this can be checked without extra state.
+          git fetch origin "+refs/heads/deploy:refs/remotes/origin/deploy" || true
+
+          if git rev-parse --verify -q origin/deploy >/dev/null; then
+            previous=$(git log -1 --format=%B origin/deploy \
+              | sed -n 's/^Deployed-From: //p' | head -1)
+
+            if [ -n "${previous}" ] && [ "${previous}" != "${SHA}" ]; then
+              if git merge-base --is-ancestor "${SHA}" "${previous}"; then
+                echo "sha-${SHORT} is an ancestor of the deployed ${previous:0:7}; refusing to move deploy backwards."
+                exit 0
+              fi
+            fi
           fi
 
           sed -i -E \
             "s|ghcr\.io/binarybourbon/fountain:sha-[0-9a-f]+|${IMAGE}|" \
             k8s/deployment.yaml
 
-          git config user.name  "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add k8s/deployment.yaml
-          git commit -m "chore(deploy): pin image to sha-${SHORT}"
+          git commit -m "deploy: sha-${SHORT}" -m "Deployed-From: ${SHA}"
 
-          # Guard against a race where main advanced while the build ran.
-          git pull --rebase origin main
-          git push origin HEAD:main
+          # Force, because deploy is derived: it is rebuilt from each built
+          # commit rather than accumulating history of its own.
+          git push --force origin HEAD:deploy
+
+          echo "deploy now at $(git rev-parse --short HEAD) (from ${SHORT}, image ${IMAGE})"
