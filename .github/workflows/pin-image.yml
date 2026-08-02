@@ -96,8 +96,13 @@ jobs:
           git add k8s/deployment.yaml
           git commit -m "deploy: sha-${SHORT}" -m "Deployed-From: ${SHA}"
 
+          # Fully qualified on purpose. `HEAD:deploy` cannot create the branch
+          # on the first run — git refuses to guess a destination that does not
+          # exist yet ("You must fully qualify the ref"), which is exactly how
+          # this failed the first time it ran.
+          #
           # Force, because deploy is derived: it is rebuilt from each built
           # commit rather than accumulating history of its own.
-          git push --force origin HEAD:deploy
+          git push --force origin HEAD:refs/heads/deploy
 
           echo "deploy now at $(git rev-parse --short HEAD) (from ${SHORT}, image ${IMAGE})"
