@@ -260,6 +260,181 @@ defmodule Fountain.BillingTest do
     end
   end
 
+  describe "sync_subscription/1 — cancel at period end" do
+    setup do
+      user = insert_verified_user()
+
+      user =
+        Repo.update!(
+          Ecto.Changeset.change(user,
+            stripe_customer_id: "cus_cap",
+            subscription_status: "active"
+          )
+        )
+
+      {:ok, user: user}
+    end
+
+    test "a portal cancellation keeps the account active until period end", %{user: _user} do
+      period_end = 1_800_000_000
+
+      event = %Stripe.Event{
+        type: "customer.subscription.updated",
+        data: %{
+          object: %{
+            customer: "cus_cap",
+            status: "active",
+            trial_end: nil,
+            cancel_at_period_end: true,
+            current_period_end: period_end
+          }
+        }
+      }
+
+      assert {:ok, updated} = Billing.sync_subscription(event)
+
+      # The webhook must not hard-lock the account: Stripe keeps the
+      # subscription "active" until the period ends, and so do we.
+      assert updated.subscription_status == "active"
+      assert Billing.check_active(updated) == :ok
+
+      # ...but the pending cancellation and its date are recorded for the UI.
+      assert updated.cancel_at_period_end
+      assert updated.current_period_end == DateTime.from_unix!(period_end)
+    end
+
+    test "renewing from the portal clears the pending cancellation", %{user: user} do
+      Repo.update!(Ecto.Changeset.change(user, cancel_at_period_end: true))
+
+      event = %Stripe.Event{
+        type: "customer.subscription.updated",
+        data: %{
+          object: %{
+            customer: "cus_cap",
+            status: "active",
+            trial_end: nil,
+            cancel_at_period_end: false,
+            current_period_end: 1_800_000_000
+          }
+        }
+      }
+
+      assert {:ok, updated} = Billing.sync_subscription(event)
+      assert updated.subscription_status == "active"
+      refute updated.cancel_at_period_end
+    end
+
+    test "subscription.deleted locks the account and clears the pending flag", %{user: user} do
+      Repo.update!(Ecto.Changeset.change(user, cancel_at_period_end: true))
+
+      # Stripe's .deleted payload still carries cancel_at_period_end: true from
+      # the portal cancellation. It must not survive: a resubscription would
+      # otherwise show as "set to cancel" forever.
+      event = %Stripe.Event{
+        type: "customer.subscription.deleted",
+        data: %{
+          object: %{
+            customer: "cus_cap",
+            status: "canceled",
+            trial_end: nil,
+            cancel_at_period_end: true
+          }
+        }
+      }
+
+      assert {:ok, updated} = Billing.sync_subscription(event)
+      assert updated.subscription_status == "canceled"
+      refute updated.cancel_at_period_end
+      assert {:error, :subscription_required} = Billing.check_active(updated)
+    end
+
+    test "events without the field (older payload shapes) default to false", %{user: _user} do
+      event = %Stripe.Event{
+        type: "customer.subscription.updated",
+        data: %{object: %{customer: "cus_cap", status: "active", trial_end: nil}}
+      }
+
+      assert {:ok, updated} = Billing.sync_subscription(event)
+      refute updated.cancel_at_period_end
+      assert updated.current_period_end == nil
+    end
+  end
+
+  describe "sync_subscription/1 — the return path for canceled" do
+    test "a canceled account that buys again is re-activated by the webhook" do
+      user = insert_verified_user()
+
+      user =
+        Repo.update!(
+          Ecto.Changeset.change(user,
+            stripe_customer_id: "cus_return",
+            subscription_status: "canceled"
+          )
+        )
+
+      assert {:error, :subscription_required} = Billing.check_active(user)
+
+      # Checkout completed -> Stripe opens a fresh subscription and sends this.
+      event = %Stripe.Event{
+        type: "customer.subscription.created",
+        data: %{object: %{customer: "cus_return", status: "active", trial_end: nil}}
+      }
+
+      assert {:ok, updated} = Billing.sync_subscription(event)
+      assert updated.id == user.id
+      assert updated.subscription_status == "active"
+      assert Billing.check_active(updated) == :ok
+    end
+  end
+
+  describe "has_live_subscription?/1" do
+    test "false without a Stripe customer — nothing to duplicate" do
+      assert {:ok, false} = Billing.has_live_subscription?(insert_verified_user())
+    end
+
+    test "true when a subscription canceled at period end is still live" do
+      user = user_with_customer("cus_live_cap")
+
+      stub(Stripe.Subscription, :list, fn %{customer: "cus_live_cap", status: :all} ->
+        # cancel_at_period_end keeps the Stripe status "active" until the
+        # period ends — exactly the subscription Checkout would duplicate.
+        {:ok,
+         %{
+           data: [
+             %Stripe.Subscription{id: "sub_cap", status: "active", cancel_at_period_end: true}
+           ],
+           has_more: false
+         }}
+      end)
+
+      assert {:ok, true} = Billing.has_live_subscription?(user)
+    end
+
+    test "false when every subscription is terminal" do
+      user = user_with_customer("cus_all_dead")
+
+      stub(Stripe.Subscription, :list, fn _ ->
+        {:ok,
+         %{
+           data: [
+             %Stripe.Subscription{id: "sub_c", status: "canceled"},
+             %Stripe.Subscription{id: "sub_ie", status: "incomplete_expired"}
+           ],
+           has_more: false
+         }}
+      end)
+
+      assert {:ok, false} = Billing.has_live_subscription?(user)
+    end
+
+    test "a Stripe failure is reported, not guessed at" do
+      user = user_with_customer("cus_down")
+      stub(Stripe.Subscription, :list, fn _ -> {:error, :stripe_down} end)
+
+      assert {:error, :stripe_down} = Billing.has_live_subscription?(user)
+    end
+  end
+
   describe "create_stripe_customer/1" do
     test "on Stripe success: stores stripe_customer_id on user and sets trial_ends_at ~14 days from now" do
       user = insert_verified_user()
@@ -408,6 +583,11 @@ defmodule Fountain.BillingTest do
   defp user_with_status(status) do
     user = insert_verified_user()
     Ecto.Changeset.change(user, subscription_status: status) |> Repo.update!()
+  end
+
+  defp user_with_customer(customer_id) do
+    user = insert_verified_user()
+    Ecto.Changeset.change(user, stripe_customer_id: customer_id) |> Repo.update!()
   end
 
   defp insert_event(user, event_type, inserted_at, metadata \\ %{}) do
