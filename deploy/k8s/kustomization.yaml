@@ -12,6 +12,9 @@ resources:
   # because ingress controllers and TLS setups vary too much to guess at —
   # see README.md for the contract yours must satisfy.
   # - ingress.yaml
+  # Nightly pg_dump to any S3-compatible bucket. Uncomment after creating the
+  # fountain-backup-s3 Secret — setup is documented at the top of the file.
+  # - backup-cronjob.yaml
 
 images:
   # Pin a release, not `latest` — `latest` moves on every merge to main.

@@ -168,6 +168,89 @@ it. If you scrape metrics, provisioning failures show as
 
 ---
 
+## Backup and restore
+
+A backup here is two things: a `pg_dump` of Postgres **and the
+`MASTER_SECRETS_KEY` it was written under**. The key wraps every tenant's
+encryption key; a dump restored without it has secrets that nothing will
+ever decrypt. Store the key separately from the dumps, and treat "which key
+was live when this was taken" as part of a backup's identity.
+
+Taking them:
+
+- **Compose** — the bundled service, opt-in:
+  `docker compose --profile backup up -d`. Nightly `pg_dump` into the
+  `backup_data` volume, pruned after 14 days
+  ([details](self-hosting.md#backups)).
+- **Kubernetes** — `deploy/k8s/backup-cronjob.yaml`, nightly to any
+  S3-compatible bucket, commented out of the kustomization until you create
+  its secret. Setup is at the top of the file.
+
+### The restore drill
+
+A backup nobody has restored is a hypothesis. Periodically — and always
+before an upgrade — restore the newest dump into a scratch database and look
+at it. Compose:
+
+```bash
+docker compose --profile backup exec backup ls -lh /backups
+docker compose exec postgres createdb -U postgres fountain_drill
+docker compose --profile backup exec backup \
+  pg_restore --no-owner -d "dbname=fountain_drill" /backups/fountain-<ts>.dump
+
+# Does it hold what production holds?
+docker compose exec postgres psql -U postgres -d fountain_drill -c \
+  "SELECT (SELECT count(*) FROM users) AS users,
+          (SELECT count(*) FROM conversations) AS conversations,
+          (SELECT max(inserted_at) FROM audit_events) AS newest_audit_row"
+
+docker compose exec postgres dropdb -U postgres fountain_drill
+```
+
+Kubernetes: fetch the dump from the bucket and do the same against a scratch
+database on your Postgres:
+
+```bash
+aws s3 cp s3://<bucket>/pg_dump/fountain-<ts>.dump .
+createdb -h <host> -U <user> fountain_drill
+pg_restore --no-owner -h <host> -U <user> -d fountain_drill fountain-<ts>.dump
+```
+
+The drill passes when the counts look like production and the newest rows
+are from the night of the dump — not when `pg_restore` merely exits zero.
+
+### Restoring for real
+
+Stop the app first so nothing writes mid-restore (`docker compose stop app`,
+or scale the deployment to zero), then replace the live database and start
+the app again:
+
+```bash
+pg_restore --clean --if-exists --no-owner -d "$DATABASE_URL" fountain-<ts>.dump
+```
+
+Two rules that decide whether this works:
+
+- The restored data decrypts only under the `MASTER_SECRETS_KEY` that was
+  live when the dump was taken. If you rotated the key since, you need the
+  old one.
+- If the restore crosses an upgrade boundary, run the image version that
+  matches the dump — see [Upgrade gone wrong](#upgrade-gone-wrong).
+
+### Knowing the job still runs
+
+A backup job that quietly stops is the classic way backups rot. The
+Kubernetes CronJob has the [Sentry Crons
+check-in](integrations/sentry.md#crons-alerting-when-a-scheduled-job-stops-running)
+built in — set `SENTRY_DSN` and arm the monitor's schedule. On compose,
+check the service's log line dates:
+
+```bash
+docker compose --profile backup logs backup | tail -5
+```
+
+---
+
 ## Upgrade gone wrong
 
 The rules, in order of preference:
