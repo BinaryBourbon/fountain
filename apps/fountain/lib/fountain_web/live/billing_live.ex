@@ -11,6 +11,7 @@ defmodule FountainWeb.Live.BillingLive do
 
   alias Fountain.Accounts.Deletion
   alias Fountain.Billing
+  alias Fountain.Exports
 
   @impl true
   def mount(_params, _session, socket) do
@@ -18,6 +19,10 @@ defmodule FountainWeb.Live.BillingLive do
     user = socket.assigns.current_user
     {period_start, period_end} = current_month_range()
     usage = Billing.usage_summary(user.id, period_start, period_end)
+
+    if connected?(socket) do
+      Phoenix.PubSub.subscribe(Fountain.PubSub, Exports.topic(user.id))
+    end
 
     {:ok,
      assign(socket,
@@ -27,7 +32,8 @@ defmodule FountainWeb.Live.BillingLive do
        period_end: period_end,
        stripe_url_loading: false,
        delete_confirmation: "",
-       deleting: false
+       deleting: false,
+       export: Exports.latest_export(user.id)
      )}
   end
 
@@ -45,6 +51,32 @@ defmodule FountainWeb.Live.BillingLive do
          socket
          |> assign(:stripe_url_loading, false)
          |> put_flash(:error, "Unable to reach Stripe. Please try again.")}
+    end
+  end
+
+  @impl true
+  def handle_event("request_export", _params, socket) do
+    user = socket.assigns.current_user
+
+    case Exports.request_export(user, actor: "self", request_ip: socket.assigns[:client_ip]) do
+      {:ok, export} ->
+        {:noreply,
+         socket
+         |> assign(:export, export)
+         |> put_flash(:info, "Export started — the download will appear here when it is ready.")}
+
+      {:error, {:rate_limited, retry_after}} ->
+        minutes = max(div(retry_after + 59, 60), 1)
+
+        {:noreply,
+         put_flash(
+           socket,
+           :error,
+           "You can request one export per hour. Try again in about #{minutes} minute(s)."
+         )}
+
+      {:error, _reason} ->
+        {:noreply, put_flash(socket, :error, "Could not start the export. Please try again.")}
     end
   end
 
@@ -96,6 +128,11 @@ defmodule FountainWeb.Live.BillingLive do
              |> put_flash(:error, "Account deletion failed. Nothing was deleted.")}
         end
     end
+  end
+
+  @impl true
+  def handle_info({:export_updated, _user_id}, socket) do
+    {:noreply, assign(socket, :export, Exports.latest_export(socket.assigns.current_user.id))}
   end
 
   @impl true
@@ -188,6 +225,64 @@ defmodule FountainWeb.Live.BillingLive do
         </dl>
       </div>
 
+      <%!-- Data export --%>
+      <div class="rounded-lg border bg-white p-6 shadow-sm">
+        <h2 class="mb-1 text-lg font-medium">Export your data</h2>
+        <p class="mb-2 text-sm text-gray-600">
+          Download a single JSON file containing your agents, environments, vaults,
+          conversations with their full log output, and your audit trail.
+        </p>
+        <p class="mb-4 text-sm text-gray-600">
+          Environment and vault <strong>secret values are deliberately excluded</strong>
+          — only secret names are listed. Secrets were write-only on the way in and
+          stay that way on the way out.
+        </p>
+
+        <%= if @export do %>
+          <div class="mb-4 rounded-md bg-gray-50 p-4 text-sm" id="export-status">
+            <%= case export_state(@export) do %>
+              <% :pending -> %>
+                <span class="text-gray-700">
+                  Export requested <%= Calendar.strftime(@export.inserted_at, "%Y-%m-%d %H:%M UTC") %>
+                  — generating&hellip; The download will appear here when it is ready.
+                </span>
+              <% :ready -> %>
+                <div class="flex items-center justify-between gap-4">
+                  <span class="text-gray-700">
+                    Export ready (<%= format_bytes(@export.byte_size) %>) — link expires
+                    <%= Calendar.strftime(@export.expires_at, "%Y-%m-%d %H:%M UTC") %>.
+                  </span>
+                  <a
+                    href={~p"/account/exports/#{@export.id}/download"}
+                    class="shrink-0 rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700"
+                  >
+                    Download
+                  </a>
+                </div>
+              <% :expired -> %>
+                <span class="text-gray-500">
+                  Your last export has expired. Request a new one to download your data.
+                </span>
+              <% :failed -> %>
+                <span class="text-red-700">
+                  The last export failed. Please request a new one; contact support if it
+                  keeps failing.
+                </span>
+            <% end %>
+          </div>
+        <% end %>
+
+        <button
+          phx-click="request_export"
+          class="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+        >
+          Request export
+        </button>
+        <p class="mt-2 text-xs text-gray-400">
+          One export per hour. Downloads expire after <%= Exports.ttl_hours() %> hours.
+        </p>
+      </div>
+
       <%!-- Danger zone --%>
       <div class="rounded-lg border border-red-200 bg-white p-6 shadow-sm">
         <h2 class="mb-1 text-lg font-medium text-red-700">Delete account</h2>
@@ -226,6 +321,18 @@ defmodule FountainWeb.Live.BillingLive do
   end
 
   # ─── Private helpers ───────────────────────────────────────────────────────────
+
+  defp export_state(%{status: "pending"}), do: :pending
+  defp export_state(%{status: "failed"}), do: :failed
+
+  defp export_state(%{status: "completed"} = export) do
+    if Exports.expired?(export), do: :expired, else: :ready
+  end
+
+  defp format_bytes(nil), do: "unknown size"
+  defp format_bytes(n) when n < 1024, do: "#{n} B"
+  defp format_bytes(n) when n < 1024 * 1024, do: "#{Float.round(n / 1024, 1)} KB"
+  defp format_bytes(n), do: "#{Float.round(n / (1024 * 1024), 1)} MB"
 
   defp current_month_range do
     now = DateTime.utc_now()

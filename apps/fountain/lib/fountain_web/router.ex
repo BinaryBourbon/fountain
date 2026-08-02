@@ -216,6 +216,9 @@ defmodule FountainWeb.Router do
     # ── Avatar serving — tenant-scoped image endpoint ─────────────────────────────────────────────────────
     get "/agents/:id/avatar", AgentAvatarController, :show
 
+    # ── Account data export download — owner-scoped, expiring artifact (#288) ─────────────────────────────
+    get "/account/exports/:id/download", ExportController, :download
+
     # ── Turn image serving — session-authenticated so <img> tags can load without a bearer token ──────────
     get "/conversations/:conversation_id/turns/:turn_id/images/:position",
         TurnImageController,
