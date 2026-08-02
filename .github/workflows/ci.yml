@@ -194,5 +194,15 @@ jobs:
           probe /health
           probe /health/ready
 
+          # Release tasks must be runnable while the server owns the ports,
+          # and without PHX_SERVER — the shape they actually run in, both
+          # in-pod and via compose exec. expire_legacy_trials used to boot
+          # the entire app from eval and die on eaddrinuse against a running
+          # server; with PHX_SERVER=false the repo had no config at all.
+          # Both regressions fail exactly here.
+          echo "release task runs beside the live server:"
+          PHX_SERVER=false _build/prod/rel/fountain_server/bin/fountain_server \
+            eval 'Fountain.Release.expire_legacy_trials(dry_run: true)'
+
       - name: Validate OpenAPI spec
         run: mix openapi.spec.json --spec FountainWeb.ApiSpec --output /tmp/openapi.json && jq empty /tmp/openapi.json

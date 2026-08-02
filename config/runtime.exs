@@ -297,7 +297,11 @@ if config_env() == :prod do
   end
 end
 
-if config_env() == :prod and server? do
+# Database config is deliberately NOT behind `server?`. Release tasks
+# (`bin/fountain_server eval 'Fountain.Release...'`) run without PHX_SERVER
+# and still need the repo — gating this on `server?` left them with a repo
+# that had no :database at all.
+if config_env() == :prod do
   database_url =
     System.get_env("DATABASE_URL") ||
       raise "environment variable DATABASE_URL is missing."
@@ -329,7 +333,9 @@ if config_env() == :prod and server? do
     # so a MITM between app and database is possible. Set DATABASE_SSL_VERIFY=true
     # with DATABASE_SSL_CA_FILE to actually verify the server.
     ssl_opts: database_ssl_opts
+end
 
+if config_env() == :prod and server? do
   secret_key_base =
     System.get_env("SECRET_KEY_BASE") ||
       raise "environment variable SECRET_KEY_BASE is missing."
