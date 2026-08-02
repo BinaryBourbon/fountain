@@ -15,6 +15,8 @@ defmodule Fountain.Billing.UsageEvent do
   @primary_key {:id, :id, autogenerate: true}
   @foreign_key_type :binary_id
 
+
+  @type t :: %__MODULE__{}
   schema "usage_events" do
     field :user_id, :binary_id
     field :event_type, :string

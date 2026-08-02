@@ -641,10 +641,12 @@ defmodule FountainWeb.ConversationsLive.Show do
   end
 
   defp render_markdown(text) when is_binary(text) do
+    # Both Earmark outcomes carry usable html — the :error tuple still renders,
+    # just with warnings. There is deliberately no catch-all: as_html/2 returns
+    # nothing else, and a defensive clause here was dead code.
     case Earmark.as_html(text, compact_output: true, smartypants: false) do
       {:ok, html, _warnings} -> html
       {:error, html, _warnings} -> html
-      _ -> Phoenix.HTML.html_escape(text) |> Phoenix.HTML.safe_to_string()
     end
   end
 

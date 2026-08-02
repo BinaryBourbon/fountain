@@ -455,7 +455,9 @@ defmodule Fountain.Conversations.ConversationServer do
     :ok
   end
 
-  defp maybe_create_checkpoint_async(_sprite, _), do: :ok
+  # No catch-all clause: callers pass nil or an %Environment{}, both covered
+  # above. A new caller passing anything else should crash loudly here rather
+  # than silently skip checkpointing.
 
   defp checkpoint_creation_enabled? do
     Application.get_env(:fountain, :checkpoint_creation_enabled, true)
@@ -1283,7 +1285,9 @@ defmodule Fountain.Conversations.ConversationServer do
             OpenTelemetry.status(:error, "spawn_failed: #{inspect(reason)}")
           )
 
-          OpenTelemetry.Tracer.end_span(turn_span)
+          # No-arg: end_span/1 takes a timestamp, not a span. turn_span is
+          # the current span here (set above), which is what no-arg ends.
+          OpenTelemetry.Tracer.end_span()
           OpenTelemetry.Tracer.set_current_span(previous_span)
 
           state
@@ -1313,7 +1317,9 @@ defmodule Fountain.Conversations.ConversationServer do
         :ok
     end
 
-    OpenTelemetry.Tracer.end_span(span_ctx)
+    # No-arg: end_span/1 takes a timestamp, not a span. span_ctx was just
+    # made current above, which is what no-arg ends.
+    OpenTelemetry.Tracer.end_span()
   end
 
   defp log_output(state, stream, data) do

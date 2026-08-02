@@ -14,6 +14,8 @@ defmodule Fountain.Audit.Event do
 
   @foreign_key_type :binary_id
 
+
+  @type t :: %__MODULE__{}
   schema "audit_events" do
     field :action, :string
     field :resource_type, :string

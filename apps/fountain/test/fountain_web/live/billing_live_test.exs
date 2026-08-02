@@ -57,7 +57,7 @@ defmodule FountainWeb.BillingLiveTest do
 
       # Second route home if the customer link is ever lost.
       assert params.client_reference_id == user.id
-      assert params.mode == "subscription"
+      assert params.mode == :subscription
     end
 
     test "the created customer is persisted, so a retry reuses it", %{conn: conn} do

@@ -60,3 +60,4 @@ aod.yml
 
 # mkdocs build output
 site/
+priv/plts/

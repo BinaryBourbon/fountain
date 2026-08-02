@@ -30,6 +30,14 @@ upgrade, is in
 
 ### Added
 
+- Dialyzer now gates CI and `mix precommit` (#236). Triage of its 77 findings
+  fixed real bugs: OTel spans were ended by passing the span where a
+  timestamp belongs (silently corrupting recorded spans), Stripe API params
+  used strings where the client's specs say atoms, six schema modules never
+  defined the `t()` their specs referenced, and `upsert_oauth_user`'s spec
+  omitted the registration-refusal atoms — making dialyzer condemn the live
+  controller branch handling them. Three understood warnings are pinned in
+  `.dialyzer_ignore.exs` with reasons
 - Transient Sprites API failures no longer fail provisioning outright:
   idempotent steps retry with bounded exponential backoff, sprite creation
   adopts an already-created sprite after a lost response, and the Sprites

@@ -25,6 +25,8 @@ defmodule Fountain.InferenceCredentials.Credential do
 
   @providers ~w(anthropic_api_key claude_code_oauth_token openai_api_key gemini_api_key)a
 
+
+  @type t :: %__MODULE__{}
   schema "inference_credentials" do
     field :anthropic_api_key_ciphertext, :binary
     field :claude_code_oauth_token_ciphertext, :binary

@@ -95,6 +95,22 @@ jobs:
       - name: Security scan (sobelow)
         run: mix sobelow --config
 
+      # The PLT encodes OTP + deps; rebuilding it cold takes minutes, so it is
+      # cached on the exact beam versions + lockfile. mix.exs pins its path to
+      # priv/plts for this cache. restore-keys deliberately omitted: a PLT from
+      # different versions would be rebuilt anyway.
+      - name: Restore dialyzer PLT cache
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
+        with:
+          path: priv/plts
+          key: ${{ runner.os }}-plt-${{ steps.beam.outputs.otp-version }}-${{ steps.beam.outputs.elixir-version }}-${{ hashFiles('**/mix.lock') }}
+
+      # MIX_ENV=dev on purpose (the job env is test): dialyzer analyzes the
+      # shipped code; the test env would drag test/support and test-only deps
+      # into the analysis and the PLT.
+      - name: Dialyzer
+        run: MIX_ENV=dev mix dialyzer --format github
+
       - name: Set up Go
         uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
         with:

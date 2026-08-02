@@ -50,10 +50,11 @@ defmodule FountainWeb.HelpLive.Show do
   end
 
   defp render_markdown(text) do
+    # Both Earmark outcomes carry usable html; as_html/2 returns nothing else,
+    # so there is deliberately no catch-all.
     case Earmark.as_html(text, compact_output: true, smartypants: false) do
       {:ok, html, _} -> html
       {:error, html, _} -> html
-      _ -> Phoenix.HTML.html_escape(text) |> Phoenix.HTML.safe_to_string()
     end
   end
 
