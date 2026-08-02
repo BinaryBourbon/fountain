@@ -23,6 +23,10 @@ config :fountain, :ueberauth_test_mode, true
 # ExUnit tests don't share counters. Each test runs in its own process.
 config :fountain, :rate_limit_test_isolation, true
 
+# The funnel telemetry poller queries the DB outside any test's SQL Sandbox
+# ownership; keep it off here (Fountain.Funnel is tested directly).
+config :fountain, :funnel_poller_enabled, false
+
 # Fountain.Retry sleeps between attempts; 1ms keeps retry-path tests fast
 # without changing the retry logic under test.
 config :fountain, :retry_base_ms, 1

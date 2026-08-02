@@ -445,6 +445,38 @@ defmodule FountainWeb.AdminLiveTest do
     end
   end
 
+  describe "AdminLive.Index — funnel section" do
+    test "renders stage tiles with counts and conversions", %{conn: conn} do
+      admin = insert_admin()
+      _unverified = insert_user()
+      conn = login_user(conn, admin)
+
+      {:ok, _lv, html} = live(conn, ~p"/admin")
+
+      assert html =~ "Funnel"
+      assert html =~ "Registered"
+      assert html =~ "Verified"
+      assert html =~ "Onboarded"
+      assert html =~ "Activated"
+      assert html =~ "Subscribed"
+      # 2 registered, 1 verified → 50% conversion tile
+      assert html =~ "50% of prev"
+    end
+
+    test "shows the stalled-verified breakdown", %{conn: conn} do
+      admin = insert_admin()
+      stalled = insert_verified_user()
+      insert_agent(user_id: stalled.id)
+      conn = login_user(conn, admin)
+
+      {:ok, _lv, html} = live(conn, ~p"/admin")
+
+      # admin + stalled are both verified with no conversations
+      assert html =~ "2 verified users have never started a conversation"
+      assert html =~ "built an agent: 1"
+    end
+  end
+
   describe "AdminLive.Index — search, filter, sort" do
     # The layout renders the logged-in admin's email in the nav, so negative
     # assertions must target a third user, never the admin.

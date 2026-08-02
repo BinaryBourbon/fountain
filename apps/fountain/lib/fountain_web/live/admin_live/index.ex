@@ -18,6 +18,7 @@ defmodule FountainWeb.AdminLive.Index do
      socket
      |> FountainWeb.Audited.put_client_ip()
      |> assign(:page_title, "Admin")
+     |> assign(:funnel, Fountain.Funnel.summary_admin())
      |> assign(:sandboxes, Conversations.list_sandboxes_admin())
      |> assign(:admin_events, Fountain.Audit.list_recent_admin(25))}
   end
@@ -39,6 +40,7 @@ defmodule FountainWeb.AdminLive.Index do
     {:noreply,
      socket
      |> assign_users()
+     |> assign(:funnel, Fountain.Funnel.summary_admin())
      |> assign(:sandboxes, Conversations.list_sandboxes_admin())
      |> assign(:admin_events, Fountain.Audit.list_recent_admin(25))}
   end
@@ -365,6 +367,40 @@ defmodule FountainWeb.AdminLive.Index do
       </div>
 
       <section class="space-y-3">
+        <h2 class="text-lg font-medium">Funnel</h2>
+        <div class="grid grid-cols-2 sm:grid-cols-5 gap-3">
+          <div
+            :for={stage <- @funnel.stages}
+            class="bg-white rounded shadow border border-zinc-200 px-4 py-3"
+          >
+            <div class="text-xs text-zinc-500">{stage_label(stage.key)}</div>
+            <div class="text-2xl font-semibold tabular-nums">{stage.count}</div>
+            <div class="text-xs text-zinc-500 space-x-2">
+              <span :if={stage.conversion}>{format_pct(stage.conversion)} of prev</span>
+              <span :if={stage.median_hours}>· median {format_hours(stage.median_hours)}</span>
+            </div>
+          </div>
+        </div>
+        <div
+          :if={@funnel.stalled.count > 0}
+          class="bg-amber-50 border border-amber-200 rounded px-4 py-3 text-sm text-amber-900 space-y-1"
+        >
+          <div class="font-medium">
+            {@funnel.stalled.count} verified {if @funnel.stalled.count == 1, do: "user has", else: "users have"} never started a conversation
+          </div>
+          <div class="text-xs">
+            onboarding:
+            <span :for={{state, n} <- Enum.sort(@funnel.stalled.by_onboarding_state)} class="mr-2">
+              {state} ×{n}
+            </span>
+          </div>
+          <div class="text-xs">
+            built an agent: {@funnel.stalled.built_agent} · created an environment: {@funnel.stalled.built_environment} · built nothing: {@funnel.stalled.built_nothing}
+          </div>
+        </div>
+      </section>
+
+      <section class="space-y-3">
         <div class="flex flex-wrap items-center justify-between gap-3">
           <h2 class="text-lg font-medium">Users ({@total_users})</h2>
           <form phx-change="filter" id="user-filters" class="flex flex-wrap items-center gap-2">
@@ -671,6 +707,18 @@ defmodule FountainWeb.AdminLive.Index do
   defp sandbox_status_color("ready"), do: "bg-green-100 text-green-800 border-green-200"
   defp sandbox_status_color("failed"), do: "bg-red-100 text-red-700 border-red-200"
   defp sandbox_status_color(_), do: "bg-zinc-100 text-zinc-500 border-zinc-200"
+
+  defp stage_label(:registered), do: "Registered"
+  defp stage_label(:verified), do: "Verified"
+  defp stage_label(:onboarded), do: "Onboarded"
+  defp stage_label(:activated), do: "Activated"
+  defp stage_label(:subscribed), do: "Subscribed"
+
+  defp format_pct(fraction), do: "#{round(fraction * 100)}%"
+
+  defp format_hours(h) when h < 1, do: "#{round(h * 60)}m"
+  defp format_hours(h) when h < 48, do: "#{Float.round(h * 1.0, 1)}h"
+  defp format_hours(h), do: "#{Float.round(h / 24, 1)}d"
 
   defp format_date(nil), do: ""
   defp format_date(dt), do: Calendar.strftime(dt, "%Y-%m-%d")
