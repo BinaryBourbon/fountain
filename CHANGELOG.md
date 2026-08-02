@@ -30,6 +30,10 @@ upgrade, is in
 
 ### Added
 
+- Transient Sprites API failures no longer fail provisioning outright:
+  idempotent steps retry with bounded exponential backoff, sprite creation
+  adopts an already-created sprite after a lost response, and the Sprites
+  HTTP timeout is explicit and tunable (`SPRITES_TIMEOUT_MS`) (#168)
 - Admin support tooling: subscription status, trial end and a Stripe dashboard
   link per user, trial extension (Stripe-aware), a `comped` status for
   operator-granted free access, per-user 30-day usage, and a sandbox reap

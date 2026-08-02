@@ -20,6 +20,7 @@ defmodule Fountain.Conversations.Provisioning do
 
   alias Fountain.Conversations
   alias Fountain.Environments.Environment
+  alias Fountain.Retry
 
   require Logger
 
@@ -39,11 +40,22 @@ defmodule Fountain.Conversations.Provisioning do
     body = render_env_file(sprite_env)
     fs = Sprites.filesystem(sprite, "/")
 
-    case Sprites.Filesystem.write(fs, @env_file, body) do
+    case Retry.with_backoff(fn -> Sprites.Filesystem.write(fs, @env_file, body) end,
+           label: "env file write"
+         ) do
       :ok ->
         # Ignore chmod errors — we still wrote the file. Defense in depth,
-        # not a hard requirement.
-        Sprites.cmd(sprite, "chmod", ["600", @env_file], timeout: 5_000)
+        # not a hard requirement. Sprites.cmd raises on failure to start, so
+        # "ignore" needs the rescue, not just dropping a return value.
+        try do
+          Retry.with_backoff(
+            fn -> Sprites.cmd(sprite, "chmod", ["600", @env_file], timeout: 5_000) end,
+            label: "env file chmod"
+          )
+        rescue
+          _ -> :ok
+        end
+
         :ok
 
       {:error, _} = err ->
@@ -86,7 +98,12 @@ defmodule Fountain.Conversations.Provisioning do
 
   def create_checkpoint(sprite, %Environment{} = env) do
     Fountain.Telemetry.span([:checkpoint, :create], %{env_id: env.id}, fn ->
-      case Sprites.create_checkpoint(sprite, comment: "aod env #{env.name}") do
+      # Retried: a duplicate checkpoint from a lost-response retry is a
+      # harmless orphan, so the call is idempotent enough.
+      case Retry.with_backoff(
+             fn -> Sprites.create_checkpoint(sprite, comment: "aod env #{env.name}") end,
+             label: "checkpoint create"
+           ) do
         {:ok, stream} ->
           checkpoint_id =
             stream
@@ -131,7 +148,9 @@ defmodule Fountain.Conversations.Provisioning do
       [:checkpoint, :restore],
       %{checkpoint_id: checkpoint_id},
       fn ->
-        case Sprites.restore_checkpoint(sprite, checkpoint_id) do
+        case Retry.with_backoff(fn -> Sprites.restore_checkpoint(sprite, checkpoint_id) end,
+               label: "checkpoint restore"
+             ) do
           {:ok, stream} ->
             try do
               Enum.each(stream, fn _ -> :ok end)
@@ -180,11 +199,20 @@ defmodule Fountain.Conversations.Provisioning do
 
             result =
               Enum.reduce_while(cmds, :ok, fn cmd, _ ->
+                # Retried: apt-get install -y and npm install -g are safe to
+                # re-run. A non-zero exit comes back as {output, code} and is
+                # handled below, not retried — only a failure to reach the
+                # sprite at all (Sprites.cmd raises) is.
                 {output, code} =
-                  Sprites.cmd(sprite, "bash", ["-lc", cmd],
-                    env: sprite_env,
-                    stderr_to_stdout: true,
-                    timeout: 300_000
+                  Retry.with_backoff(
+                    fn ->
+                      Sprites.cmd(sprite, "bash", ["-lc", cmd],
+                        env: sprite_env,
+                        stderr_to_stdout: true,
+                        timeout: 300_000
+                      )
+                    end,
+                    label: "package install"
                   )
 
                 log_output(conv_id, "packages", output)
@@ -264,7 +292,10 @@ defmodule Fountain.Conversations.Provisioning do
         rules = network_policy_rules(hosts)
         publish_stage(conv_id, "network", "started", %{type: "limited", hosts: length(hosts)})
 
-        case Sprites.update_network_policy(sprite, %Sprites.Policy{rules: rules}) do
+        case Retry.with_backoff(
+               fn -> Sprites.update_network_policy(sprite, %Sprites.Policy{rules: rules}) end,
+               label: "network policy"
+             ) do
           :ok ->
             publish_stage(conv_id, "network", "done")
             {:ok, %{outcome: :ok}}

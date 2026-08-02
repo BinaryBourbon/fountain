@@ -76,6 +76,21 @@ config :fountain,
        :sprites_base_url,
        System.get_env("SPRITES_BASE_URL", "https://api.sprites.dev")
 
+# Bounds every HTTP call to the Sprites API. Long-running commands
+# (package installs, clones) pass their own per-call :timeout and are not
+# affected by this.
+sprites_timeout_ms =
+  case Integer.parse(System.get_env("SPRITES_TIMEOUT_MS", "30000")) do
+    {ms, ""} when ms > 0 ->
+      ms
+
+    _ ->
+      raise "SPRITES_TIMEOUT_MS must be a positive integer (milliseconds), got: " <>
+              inspect(System.get_env("SPRITES_TIMEOUT_MS"))
+  end
+
+config :fountain, :sprites_timeout_ms, sprites_timeout_ms
+
 # Two different shapes are needed and they are not interchangeable:
 #
 #   :public_url — absolute, scheme-ful. Used to build links that leave the app

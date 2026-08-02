@@ -256,4 +256,56 @@ defmodule Fountain.Conversations.ProvisioningTest do
                )
     end
   end
+
+  describe "retry behaviour on transient Sprites failures" do
+    test "write_env_file survives one transport failure on the file write" do
+      {:ok, counter} = Agent.start_link(fn -> 0 end)
+
+      stub(Sprites, :filesystem, fn _sprite, _root -> :fake_fs end)
+
+      stub(Sprites.Filesystem, :write, fn :fake_fs, _path, _body ->
+        case Agent.get_and_update(counter, &{&1 + 1, &1 + 1}) do
+          1 -> {:error, :timeout}
+          _ -> :ok
+        end
+      end)
+
+      stub(Sprites, :cmd, fn _sprite, "chmod", _args, _opts -> {"", 0} end)
+
+      assert :ok = Provisioning.write_env_file(%{name: "s"}, [{"A", "1"}])
+      assert Agent.get(counter, & &1) == 2
+    end
+
+    test "write_env_file does not retry a permanent api_error" do
+      {:ok, counter} = Agent.start_link(fn -> 0 end)
+
+      stub(Sprites, :filesystem, fn _sprite, _root -> :fake_fs end)
+
+      stub(Sprites.Filesystem, :write, fn :fake_fs, _path, _body ->
+        Agent.update(counter, &(&1 + 1))
+        {:error, {:api_error, 404, "no such sprite"}}
+      end)
+
+      assert {:error, {:api_error, 404, _}} =
+               Provisioning.write_env_file(%{name: "s"}, [{"A", "1"}])
+
+      assert Agent.get(counter, & &1) == 1
+    end
+
+    test "apply_network_policy retries a 503 and succeeds" do
+      {:ok, counter} = Agent.start_link(fn -> 0 end)
+      env = insert_env(%{"networking_type" => "limited", "networking_config" => %{}})
+      conv = insert_conversation()
+
+      stub(Sprites, :update_network_policy, fn _sprite, _policy ->
+        case Agent.get_and_update(counter, &{&1 + 1, &1 + 1}) do
+          1 -> {:error, {:api_error, 503, "unavailable"}}
+          _ -> :ok
+        end
+      end)
+
+      assert :ok = Provisioning.apply_network_policy(%{name: "s"}, env, conv.id)
+      assert Agent.get(counter, & &1) == 2
+    end
+  end
 end
