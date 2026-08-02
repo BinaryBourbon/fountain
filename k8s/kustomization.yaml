@@ -1,7 +1,18 @@
+# The maintainer's cluster, expressed as an overlay of the portable baseline
+# (#264). ../deploy/k8s carries everything generic — probe philosophy,
+# security posture, resource shape — and this directory carries only what is
+# actually personal: CNPG, Infisical, Traefik, Erlang clustering, hostnames,
+# and the image pin.
+#
+# The pin: k8s/deployment.yaml is now a strategic-merge *patch*, but it keeps
+# its name and its `image: ghcr.io/binarybourbon/fountain:sha-…` line on
+# purpose — pin-image.yml seds that line on the deploy branch, and the
+# atomicity that #231 bought (base + overlay + pin in one deploy-branch
+# commit) holds by construction because all three live in this one tree.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-  - namespace.yaml
+  - ../deploy/k8s
   - serviceaccount.yaml
   # Bucket + credentials for Postgres backups. Ordered before postgres.yaml so
   # the Secret exists before the Cluster starts archiving WAL into it.
@@ -10,13 +21,24 @@ resources:
   - backup-cronjob.yaml
   - postgres.yaml
   - infisicalsecret.yaml
-  - deployment.yaml
-  - service.yaml
+  - service-headless.yaml
   - servicemonitor.yaml
   - prometheusrule.yaml
   - ingressroute.yaml
   - certificate.yaml
-  # Per-app machine identity for the Infisical operator. Encrypted with
-  # the home-cloud age key; Flux's kustomize-controller decrypts on
-  # reconcile via the `decryption` block on this repo's Flux
-  # Kustomization (clusters/home/apps/fountain.yaml in home-cloud).
+
+patches:
+  # The production Deployment: clustering env, Infisical auto-reload, two
+  # replicas, and the image pin. Everything not stated here — probes,
+  # securityContext, resources, strategy — comes from the base.
+  - path: deployment.yaml
+  # Adds the metrics port and the monitoring label the ServiceMonitor selects
+  # on; pins targetPort to 4000 as before.
+  - path: service.yaml
+  # The `name: fountain` label the namespace has always carried.
+  - path: namespace.yaml
+  # The base's ConfigMap is the generic env contract; this deployment
+  # configures via explicit env + the Infisical-materialized Secret instead.
+  # Deleted so an unused config object doesn't sit in the namespace inviting
+  # "which config is real" confusion.
+  - path: delete-configmap.yaml

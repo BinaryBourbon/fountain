@@ -1,0 +1,28 @@
+# Headless service (clusterIP: None) — DNS returns one A record per pod IP
+# instead of a single VIP. libcluster's DNSPoll strategy queries this name
+# (CLUSTER_DNS_QUERY in the Deployment) to discover peer pods and form the
+# Erlang cluster that backs Horde + Phoenix.PubSub. Distribution traffic
+# itself flows pod-IP → pod-IP on epmd (4369) + the pinned dist port (9100),
+# not through this service. publishNotReadyAddresses lets pods find each
+# other during a rollout before they pass readiness, so the cluster forms
+# promptly instead of waiting out the readiness gate.
+apiVersion: v1
+kind: Service
+metadata:
+  name: fountain-headless
+  namespace: fountain
+  labels:
+    app: fountain
+spec:
+  type: ClusterIP
+  clusterIP: None
+  publishNotReadyAddresses: true
+  selector:
+    app: fountain
+  ports:
+    - name: epmd
+      port: 4369
+      targetPort: 4369
+    - name: erldist
+      port: 9100
+      targetPort: 9100

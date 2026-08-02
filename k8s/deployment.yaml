@@ -1,17 +1,21 @@
+# Strategic-merge patch over the baseline Deployment (../deploy/k8s). Only
+# what is personal lives here; probes, securityContext, resources and the
+# rollout strategy come from the base and are deliberately not repeated.
+#
+# This file keeps its name and its image line even though it is now a patch:
+# pin-image.yml seds `ghcr.io/binarybourbon/fountain:sha-…` in
+# k8s/deployment.yaml on the deploy branch. See kustomization.yaml.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: fountain
   namespace: fountain
-  labels:
-    app: fountain
   annotations:
     # When the Infisical operator rotates the `fountain-secrets` Secret
     # the operator restarts this Deployment so the new values take
     # effect. The Phoenix release reads env at boot, not per-request.
     secrets.infisical.com/auto-reload: "true"
 spec:
-  replicas: 2
   # Two replicas for HA. This is only safe because the pods form a real
   # Erlang cluster: libcluster (DNSPoll against the fountain-headless
   # Service) connects the BEAM nodes, which lets Horde route per-conversation
@@ -21,34 +25,17 @@ spec:
   # run as isolated islands and conversation streaming silently breaks for
   # whichever pod didn't spawn the conversation. CNPG remains the single
   # writer — the app tier is the stateless part being scaled here.
-  strategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxSurge: 1
-      maxUnavailable: 0
-  selector:
-    matchLabels:
-      app: fountain
+  replicas: 2
   template:
-    metadata:
-      labels:
-        app: fountain
     spec:
       containers:
         - name: fountain
           # Inert on this branch. Flux tracks `deploy`, not `main`, and the
           # pin-image workflow rewrites this line there — on the tree that was
           # actually built, with the tag built from it. The value below is
-          # whatever was last committed here and is not what runs.
-          #
-          # The split exists because a manifest change and its image used to
-          # reach main in separate commits minutes apart, and Flux applied the
-          # first against the image from before the second. See #231.
+          # whatever was last committed here and is not what runs. See #231.
           image: ghcr.io/binarybourbon/fountain:sha-b1e612b6fdcb844514e67e1a00a8a84bcdec0147
-          imagePullPolicy: IfNotPresent
           ports:
-            - name: http
-              containerPort: 4000
             # Erlang distribution: epmd + the pinned dist port (see
             # ERL_AFLAGS). Informational here, but lets a future
             # NetworkPolicy reference them by name.
@@ -56,10 +43,6 @@ spec:
               containerPort: 4369
             - name: erldist
               containerPort: 9100
-            # Prometheus scrape endpoint (FountainWeb.MetricsPlug), served by a
-            # separate Bandit listener so it never rides the public endpoint.
-            - name: metrics
-              containerPort: 9568
           env:
             # --- Erlang clustering (required for >1 replica) ---
             # Pod IP via the downward API; RELEASE_NODE interpolates it
@@ -104,21 +87,11 @@ spec:
                 secretKeyRef:
                   name: fountain-pg-app
                   key: uri
-            - name: PHX_SERVER
-              value: "true"
-            - name: PORT
-              value: "4000"
-            # Staging host during cutover. Flip to fountain.inevitable.fyi
-            # in the same commit as the Cloudflare record swap. The
-            # Certificate (certificate.yaml) and IngressRoute
-            # (ingressroute.yaml) must move together.
             # PUBLIC_URL is the absolute base for outbound links (verification
             # and reset emails, llms.txt) and for FOUNTAIN_BASE_URL inside every
             # sprite. PHX_HOST is the bare host for the endpoint and
-            # check_origin. FOUNTAIN_DOMAIN used to serve both, which produced
-            # schemeless links; it is kept here only so a rollback to an image
-            # predating the split still boots with the right host, and can be
-            # dropped once the current image is settled.
+            # check_origin. FOUNTAIN_DOMAIN is kept only so a rollback to an
+            # image predating the split still boots with the right host.
             - name: PUBLIC_URL
               value: https://fountain.inevitable.fyi
             - name: PHX_HOST
@@ -133,66 +106,13 @@ spec:
             # OTEL_EXPORTER_OTLP_ENDPOINT once a collector is wired up.
             - name: OTEL_TRACES_EXPORTER
               value: "none"
+          # Replaces the base's list (configMap + secret): this deployment has
+          # no ConfigMap — non-secret config is the explicit env above, and
+          # everything else comes from the Infisical-materialized Secret:
+          #   SECRET_KEY_BASE, MASTER_SECRETS_KEY, SPRITES_TOKEN,
+          #   GITHUB_OAUTH_CLIENT_ID/SECRET, STRIPE_*, RESEND_API_KEY,
+          #   SENTRY_DSN. MASTER_SECRETS_KEY must never rotate casually —
+          #   every envelope-encrypted value in the DB depends on it.
           envFrom:
-            # Materialized by the Infisical operator from the
-            # InfisicalSecret CR (infisicalsecret.yaml). Provides:
-            #   SECRET_KEY_BASE, MASTER_SECRETS_KEY, SPRITES_TOKEN,
-            #   GITHUB_OAUTH_CLIENT_ID, GITHUB_OAUTH_CLIENT_SECRET,
-            #   STRIPE_SECRET_KEY, STRIPE_PUBLISHABLE_KEY,
-            #   STRIPE_WEBHOOK_SECRET, STRIPE_PRICE_ID,
-            #   RESEND_API_KEY
-            # MASTER_SECRETS_KEY MUST carry over verbatim from Render —
-            # rotating it makes every envelope-encrypted vault and
-            # environment value in the DB unreadable.
             - secretRef:
                 name: fountain-secrets
-          securityContext:
-            runAsNonRoot: true
-            runAsUser: 1001
-            readOnlyRootFilesystem: true
-            capabilities:
-              drop: ["ALL"]
-          resources:
-            requests:
-              cpu: 100m
-              memory: 512Mi
-            limits:
-              cpu: 500m
-              memory: 1Gi
-          # Ecto.Migrator is a supervised child that runs before the Endpoint
-          # starts, so a slow migration means no listening socket yet. Without
-          # this, liveness (30s + 3 × 30s) would start restarting the pod
-          # mid-migration and loop. The startup probe holds both other probes
-          # off until the app answers, allowing 30 × 5s = 150s to boot.
-          startupProbe:
-            httpGet:
-              path: /health
-              port: http
-            periodSeconds: 5
-            failureThreshold: 30
-          # Readiness gates traffic: it checks Postgres, so a pod that cannot
-          # serve is pulled from the Service without being killed. Recovery
-          # needs no restart.
-          readinessProbe:
-            httpGet:
-              path: /health/ready
-              port: http
-            periodSeconds: 5
-            # Explicit, because this probe does real work and the default is 1s.
-            # Measured: ~3ms when Postgres is healthy, ~2.9s to answer 503 when
-            # it is stopped. 4s leaves margin over that so kubelet records the
-            # 503 instead of timing out — both count as a failure, but only one
-            # of them is legible afterwards.
-            timeoutSeconds: 4
-            # 6 × 5s ≈ 30s before a pod leaves the Service, so a CNPG failover
-            # does not empty the endpoint list.
-            failureThreshold: 6
-          # Liveness restarts the pod, so it stays static and dependency-free.
-          # Pointing it at /health/ready would restart every pod at once during
-          # a Postgres blip, which does nothing to fix Postgres.
-          livenessProbe:
-            httpGet:
-              path: /health
-              port: http
-            periodSeconds: 30
-            failureThreshold: 3
