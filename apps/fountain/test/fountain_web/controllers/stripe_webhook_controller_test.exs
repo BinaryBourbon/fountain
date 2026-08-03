@@ -68,6 +68,12 @@ defmodule FountainWeb.StripeWebhookControllerTest do
         |> Phoenix.ConnTest.dispatch(FountainWeb.Endpoint, :post, "/api/stripe/webhook", @raw_body)
 
       assert conn.status == 200
+
+      # The 200 alone is vacuous — the controller 200s on every handle_event
+      # outcome (#337). The state change is the assertion that can fail when
+      # the apply path breaks.
+      assert Fountain.Repo.get!(Fountain.Accounts.User, user.id).subscription_status ==
+               "active"
     end
   end
 end

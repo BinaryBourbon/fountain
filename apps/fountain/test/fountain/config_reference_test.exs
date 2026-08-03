@@ -58,4 +58,88 @@ defmodule Fountain.ConfigReferenceTest do
            injects rather than an operator sets — add them to @platform_injected.
            """
   end
+
+  # ── reverse direction (#337) ─────────────────────────────────────────────
+  #
+  # The original test only caught runtime.exs → doc drift. Nothing caught a
+  # documented variable that no longer exists in code, or a compose variable
+  # the app never reads — an operator following either would set a knob wired
+  # to nothing.
+
+  # Documented variables legitimately read outside config/runtime.exs.
+  # Each entry needs a reason; an entry without a real reader is exactly the
+  # rot this test exists to catch.
+  @read_elsewhere %{
+    # The OTel SDK reads its own standard variables directly.
+    "OTEL_TRACES_EXPORTER" => "read by the OTel Erlang SDK",
+    # Set by release tooling; read in Fountain.Application.skip_migrations?/0.
+    "RELEASE_NAME" => "release tooling + Fountain.Application"
+  }
+
+  test "every variable documented in configuration.md is actually read by code" do
+    source = File.read!(Path.join(@repo_root, "config/runtime.exs"))
+    doc = File.read!(Path.join(@repo_root, "docs/configuration.md"))
+
+    documented =
+      Regex.scan(~r/^\| `([A-Z][A-Z0-9_]*)`/m, doc, capture: :all_but_first)
+      |> List.flatten()
+      |> Enum.uniq()
+
+    # Vacuous-pass guard, mirroring the forward test.
+    assert length(documented) > 30,
+           "extracted only #{length(documented)} documented vars — the table format changed"
+
+    dead =
+      Enum.reject(documented, fn var ->
+        String.contains?(source, ~s("#{var}")) or Map.has_key?(@read_elsewhere, var)
+      end)
+
+    assert dead == [],
+           """
+           docs/configuration.md documents variables that config/runtime.exs never reads:
+
+             #{Enum.join(dead, ", ")}
+
+           Delete the row, or — only when a real reader exists outside
+           runtime.exs — add the var to @read_elsewhere with the reader.
+           """
+  end
+
+  # Compose-side keys that are not app env vars: consumed by compose
+  # interpolation or by another service, not by the release.
+  @compose_only ~w()
+
+  test "every env var the compose app service sets is one the app reads" do
+    source = File.read!(Path.join(@repo_root, "config/runtime.exs"))
+    compose = File.read!(Path.join(@repo_root, "docker-compose.yml"))
+
+    # The environment mapping of the `app:` service: keys at 6-space indent
+    # between its `environment:` line and the next 4-space-indented key.
+    [_, app_section] = String.split(compose, ~r/^  app:\n/m, parts: 2)
+    [_, env_and_rest] = String.split(app_section, ~r/^    environment:\n/m, parts: 2)
+    [env_block | _] = String.split(env_and_rest, ~r/^    [a-z]/m, parts: 2)
+
+    keys =
+      Regex.scan(~r/^      ([A-Z][A-Z0-9_]*):/m, env_block, capture: :all_but_first)
+      |> List.flatten()
+      |> Enum.uniq()
+
+    assert length(keys) > 5,
+           "extracted only #{length(keys)} compose env keys — the compose layout changed"
+
+    unread =
+      Enum.reject(keys, fn var ->
+        String.contains?(source, ~s("#{var}")) or var in @compose_only or
+          Map.has_key?(@read_elsewhere, var)
+      end)
+
+    assert unread == [],
+           """
+           docker-compose.yml sets env vars on the app service that the app never reads:
+
+             #{Enum.join(unread, ", ")}
+
+           Remove the key, or add it to @compose_only/@read_elsewhere with a reason.
+           """
+  end
 end

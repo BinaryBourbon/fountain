@@ -999,7 +999,11 @@ defmodule Fountain.Conversations.ConversationServer do
   def handle_info(_msg, state), do: {:noreply, state}
 
   defp schedule_lifecycle_check do
-    Process.send_after(self(), :lifecycle_check, @lifecycle_check_ms)
+    # Interval overridable in tests so the timer wiring itself is testable —
+    # dropping schedule_lifecycle_check() from init/1 used to pass the whole
+    # suite (#337) while silently disabling idle/max-lifetime reclamation.
+    interval = Application.get_env(:fountain, :lifecycle_check_ms, @lifecycle_check_ms)
+    Process.send_after(self(), :lifecycle_check, interval)
   end
 
   defp touch_activity(state), do: %{state | last_activity_at: DateTime.utc_now()}
