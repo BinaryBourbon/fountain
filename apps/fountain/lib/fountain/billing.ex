@@ -248,12 +248,25 @@ defmodule Fountain.Billing do
         trial_param
       )
 
-    case Stripe.Subscription.create(params) do
+    # Idempotent across Oban retries (#400): when the create succeeded but
+    # the local write below failed, the retry re-entered here (the worker's
+    # guard checks stripe_subscription_id, which the failed write never set)
+    # and minted another trialing subscription — up to five per user, all of
+    # them converting and charging if a card was added before trial end. A
+    # stable per-user key makes Stripe return the original subscription for
+    # every retry inside the 24h idempotency window instead.
+    request_opts = [headers: %{"Idempotency-Key" => "trial-subscription-#{user.id}"}]
+
+    case Stripe.Subscription.create(params, request_opts) do
       {:ok, sub} ->
         user
         |> User.billing_changeset(%{
           stripe_subscription_id: sub.id,
-          subscription_status: to_string(sub.status),
+          # The same coercion the webhook path applies (#400): Stripe can
+          # answer with incomplete/unpaid/paused, none of which the
+          # changeset's inclusion list accepts — and that rejected write was
+          # the realistic trigger for the duplicating retries above.
+          subscription_status: coerce_status(to_string(sub.status), nil),
           trial_ends_at: unix_to_datetime(Map.get(sub, :trial_end)),
           subscription_synced_at: DateTime.utc_now() |> DateTime.truncate(:second)
         })

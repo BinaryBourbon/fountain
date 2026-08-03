@@ -130,7 +130,7 @@ defmodule Fountain.TrialExpiryTest do
 
       stub(Stripe.Customer, :create, fn _ -> {:ok, %Stripe.Customer{id: "cus_new"}} end)
 
-      stub(Stripe.Subscription, :create, fn params ->
+      stub(Stripe.Subscription, :create, fn params, _opts ->
         send(test, {:subscription_params, params})
         {:ok, %{id: "sub_new", status: "trialing", trial_end: DateTime.to_unix(ahead(14))}}
       end)
@@ -160,7 +160,7 @@ defmodule Fountain.TrialExpiryTest do
 
       stub(Stripe.Customer, :create, fn _ -> {:ok, %Stripe.Customer{id: "cus_x"}} end)
 
-      stub(Stripe.Subscription, :create, fn params ->
+      stub(Stripe.Subscription, :create, fn params, _opts ->
         send(test, {:params, params})
         {:ok, %{id: "sub_x", status: "trialing", trial_end: DateTime.to_unix(ahead(14))}}
       end)
@@ -179,7 +179,7 @@ defmodule Fountain.TrialExpiryTest do
 
       stub(Stripe.Customer, :create, fn _ -> {:ok, %Stripe.Customer{id: "cus_y"}} end)
 
-      stub(Stripe.Subscription, :create, fn _ ->
+      stub(Stripe.Subscription, :create, fn _, _opts ->
         {:ok, %{id: "sub_y", status: "trialing", trial_end: DateTime.to_unix(stripe_end)}}
       end)
 
@@ -194,7 +194,7 @@ defmodule Fountain.TrialExpiryTest do
       user = insert_verified_user()
 
       stub(Stripe.Customer, :create, fn _ -> {:ok, %Stripe.Customer{id: "cus_partial"}} end)
-      stub(Stripe.Subscription, :create, fn _ -> {:error, :stripe_down} end)
+      stub(Stripe.Subscription, :create, fn _, _opts -> {:error, :stripe_down} end)
 
       assert {:ok, user} = Billing.create_stripe_customer(user)
       assert {:error, :stripe_down} = Billing.start_trial_subscription(user)
