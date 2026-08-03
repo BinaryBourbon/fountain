@@ -13,7 +13,8 @@ defmodule FountainWeb.TurnImageController do
          {:ok, turn_id} <- Ecto.UUID.cast(turn_id),
          turn when not is_nil(turn) <-
            Conversations.get_turn_by_conversation(turn_id, conv_id, user_id),
-         image when not is_nil(image) <- Conversations.get_turn_image(turn.id, position),
+         # Ownership established by the scoped turn lookup above.
+         image when not is_nil(image) <- Conversations._unsafe_get_turn_image(turn.id, position),
          true <- image.media_type in TurnImage.valid_media_types() do
       conn
       |> put_resp_content_type(image.media_type)

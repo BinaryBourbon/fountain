@@ -75,8 +75,8 @@ defmodule Fountain.Audit do
   end
 
   @doc "Most recent administrative actions, newest first. Admin surfaces only."
-  @spec list_recent_admin(pos_integer()) :: [AdminEvent.t()]
-  def list_recent_admin(limit \\ 100) do
+  @spec _unsafe_list_recent_admin(pos_integer()) :: [AdminEvent.t()]
+  def _unsafe_list_recent_admin(limit \\ 100) do
     Repo.all(from e in AdminEvent, order_by: [desc: e.inserted_at, desc: e.id], limit: ^limit)
   end
 

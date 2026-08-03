@@ -91,13 +91,13 @@ defmodule Fountain.Vaults do
 
   # ── secrets ───────────────────────────────────────────────────────────────
 
-  def list_secrets(%Vault{id: vault_id}) do
+  def _unsafe_list_secrets(%Vault{id: vault_id}) do
     Repo.all(
       from s in VaultSecret, where: s.vault_id == ^vault_id, order_by: [asc: s.key]
     )
   end
 
-  def get_secret(vault_id, key) do
+  def _unsafe_get_secret(vault_id, key) do
     Repo.get_by(VaultSecret, vault_id: vault_id, key: key)
   end
 
@@ -106,7 +106,7 @@ defmodule Fountain.Vaults do
   with the supplied per-tenant `dek` before persisting.
   """
   def upsert_secret(%Vault{id: vault_id}, %{"key" => key} = attrs, dek) when is_binary(dek) do
-    case get_secret(vault_id, key) do
+    case _unsafe_get_secret(vault_id, key) do
       nil ->
         %VaultSecret{}
         |> VaultSecret.changeset(Map.put(attrs, "vault_id", vault_id), dek)
@@ -128,7 +128,7 @@ defmodule Fountain.Vaults do
   """
   def decrypted_env(%Vault{} = vault, dek) when is_binary(dek) do
     vault
-    |> list_secrets()
+    |> _unsafe_list_secrets()
     |> Enum.reduce(%{}, fn secret, acc ->
       case VaultSecret.decrypt(secret, dek) do
         {:ok, plain} -> Map.put(acc, secret.key, plain)

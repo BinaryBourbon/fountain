@@ -4,19 +4,23 @@ defmodule Fountain.Conversations.ConversationTreeTest do
   alias Fountain.Conversations
 
   # ---------------------------------------------------------------------------
-  # _unsafe_get_conversation_tree/1
+  # get_conversation_tree/2 — tree shape
+  #
+  # Cross-tenant behavior is covered in conversation_tree_scoping_test.exs;
+  # these tests pin down the shape of the returned tree for the owner.
   # ---------------------------------------------------------------------------
 
-  describe "_unsafe_get_conversation_tree/1" do
+  describe "get_conversation_tree/2 tree shape" do
     test "returns empty list for a non-existent conversation_id" do
-      assert Conversations._unsafe_get_conversation_tree(Ecto.UUID.generate()) == []
+      user = insert_verified_user()
+      assert Conversations.get_conversation_tree(Ecto.UUID.generate(), user.id) == []
     end
 
     test "returns a single-item list for a standalone conversation (no parent, no children)" do
       user = insert_verified_user()
       conv = insert_conversation(user_id: user.id)
 
-      tree = Conversations._unsafe_get_conversation_tree(conv.id)
+      tree = Conversations.get_conversation_tree(conv.id, user.id)
 
       assert length(tree) == 1
       assert hd(tree).id == conv.id
@@ -28,7 +32,7 @@ defmodule Fountain.Conversations.ConversationTreeTest do
       child = insert_conversation(user_id: user.id, parent_conversation_id: root.id)
       grandchild = insert_conversation(user_id: user.id, parent_conversation_id: child.id)
 
-      tree = Conversations._unsafe_get_conversation_tree(grandchild.id)
+      tree = Conversations.get_conversation_tree(grandchild.id, user.id)
       ids = Enum.map(tree, & &1.id) |> Enum.sort()
 
       assert ids == Enum.sort([root.id, child.id, grandchild.id])
@@ -40,7 +44,7 @@ defmodule Fountain.Conversations.ConversationTreeTest do
       child = insert_conversation(user_id: user.id, parent_conversation_id: root.id)
       grandchild = insert_conversation(user_id: user.id, parent_conversation_id: child.id)
 
-      tree = Conversations._unsafe_get_conversation_tree(root.id)
+      tree = Conversations.get_conversation_tree(root.id, user.id)
       ids = Enum.map(tree, & &1.id) |> Enum.sort()
 
       assert ids == Enum.sort([root.id, child.id, grandchild.id])
@@ -52,7 +56,7 @@ defmodule Fountain.Conversations.ConversationTreeTest do
       child = insert_conversation(user_id: user.id, parent_conversation_id: root.id)
       grandchild = insert_conversation(user_id: user.id, parent_conversation_id: child.id)
 
-      tree = Conversations._unsafe_get_conversation_tree(child.id)
+      tree = Conversations.get_conversation_tree(child.id, user.id)
       ids = Enum.map(tree, & &1.id) |> Enum.sort()
 
       assert ids == Enum.sort([root.id, child.id, grandchild.id])
@@ -64,7 +68,7 @@ defmodule Fountain.Conversations.ConversationTreeTest do
       child = insert_conversation(user_id: user.id, parent_conversation_id: root.id)
       _unrelated = insert_conversation(user_id: user.id)
 
-      tree = Conversations._unsafe_get_conversation_tree(child.id)
+      tree = Conversations.get_conversation_tree(child.id, user.id)
       ids = Enum.map(tree, & &1.id)
 
       assert length(ids) == 2
@@ -76,7 +80,7 @@ defmodule Fountain.Conversations.ConversationTreeTest do
       user = insert_verified_user()
       conv = insert_conversation(user_id: user.id)
 
-      [entry] = Conversations._unsafe_get_conversation_tree(conv.id)
+      [entry] = Conversations.get_conversation_tree(conv.id, user.id)
 
       assert Map.has_key?(entry, :id)
       assert Map.has_key?(entry, :source)
@@ -89,7 +93,7 @@ defmodule Fountain.Conversations.ConversationTreeTest do
       root = insert_conversation(user_id: user.id)
       child = insert_conversation(user_id: user.id, parent_conversation_id: root.id)
 
-      tree = Conversations._unsafe_get_conversation_tree(root.id)
+      tree = Conversations.get_conversation_tree(root.id, user.id)
 
       root_entry = Enum.find(tree, fn e -> e.id == root.id end)
       child_entry = Enum.find(tree, fn e -> e.id == child.id end)

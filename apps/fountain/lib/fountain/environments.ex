@@ -99,11 +99,11 @@ defmodule Fountain.Environments do
 
   # ── secrets ───────────────────────────────────────────────────────────────
 
-  def list_secrets(%Environment{id: env_id}) do
+  def _unsafe_list_secrets(%Environment{id: env_id}) do
     Repo.all(from s in Secret, where: s.environment_id == ^env_id, order_by: [asc: s.key])
   end
 
-  def get_secret(env_id, key) do
+  def _unsafe_get_secret(env_id, key) do
     Repo.get_by(Secret, environment_id: env_id, key: key)
   end
 
@@ -113,7 +113,7 @@ defmodule Fountain.Environments do
   """
   def upsert_secret(%Environment{id: env_id}, %{"key" => key} = attrs, dek)
       when is_binary(dek) do
-    case get_secret(env_id, key) do
+    case _unsafe_get_secret(env_id, key) do
       nil ->
         %Secret{}
         |> Secret.changeset(Map.put(attrs, "environment_id", env_id), dek)
@@ -135,7 +135,7 @@ defmodule Fountain.Environments do
   """
   def decrypted_env(%Environment{} = env, dek) when is_binary(dek) do
     env
-    |> list_secrets()
+    |> _unsafe_list_secrets()
     |> Enum.reduce(%{}, fn secret, acc ->
       case Secret.decrypt(secret, dek) do
         {:ok, plain} -> Map.put(acc, secret.key, plain)

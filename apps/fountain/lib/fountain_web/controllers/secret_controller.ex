@@ -24,7 +24,8 @@ defmodule FountainWeb.SecretController do
   def index(conn, %{"environment_id" => env_id}) do
     case Environments.get_environment(env_id, conn.assigns.current_user.id) do
       nil -> {:error, :not_found}
-      env -> render(conn, :index, secrets: Environments.list_secrets(env))
+      # Ownership established by the scoped get_environment above.
+      env -> render(conn, :index, secrets: Environments._unsafe_list_secrets(env))
     end
   end
 
@@ -75,7 +76,8 @@ defmodule FountainWeb.SecretController do
     user = conn.assigns.current_user
 
     with %_{} <- Environments.get_environment(env_id, user.id),
-         %_{} = secret <- Environments.get_secret(env_id, key) do
+         # Ownership established by the scoped get_environment above.
+         %_{} = secret <- Environments._unsafe_get_secret(env_id, key) do
       {:ok, _} = Environments.delete_secret(secret)
       send_resp(conn, :no_content, "")
     else

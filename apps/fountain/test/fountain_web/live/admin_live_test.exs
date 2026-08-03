@@ -147,7 +147,7 @@ defmodule FountainWeb.AdminLiveTest do
       admin = insert_admin()
       _sandbox = insert_sandbox(user_id: admin.id, status: "failed")
       conn = login_user(conn, admin)
-      # failed is excluded by list_sandboxes_admin (status not in ["terminated","failed"])
+      # failed is excluded by _unsafe_list_sandboxes_admin (status not in ["terminated","failed"])
       # so page should show "No active sandboxes"
       {:ok, _lv, html} = live(conn, ~p"/admin")
       assert html =~ "Active sandboxes"
@@ -375,7 +375,7 @@ defmodule FountainWeb.AdminLiveTest do
       assert abs(DateTime.diff(updated.trial_ends_at, expected, :second)) < 60
 
       assert Enum.any?(
-               Fountain.Audit.list_recent_admin(10),
+               Fountain.Audit._unsafe_list_recent_admin(10),
                &(&1.event_type == "admin.trial.extended" and &1.target_user_id == user.id)
              )
     end
@@ -414,7 +414,7 @@ defmodule FountainWeb.AdminLiveTest do
 
       assert Fountain.Repo.reload!(user).subscription_status == "canceled"
 
-      events = Fountain.Audit.list_recent_admin(10)
+      events = Fountain.Audit._unsafe_list_recent_admin(10)
       assert Enum.any?(events, &(&1.event_type == "admin.comp.granted"))
       assert Enum.any?(events, &(&1.event_type == "admin.comp.revoked"))
     end
@@ -438,7 +438,7 @@ defmodule FountainWeb.AdminLiveTest do
       assert reloaded.terminated_at
 
       assert Enum.any?(
-               Fountain.Audit.list_recent_admin(10),
+               Fountain.Audit._unsafe_list_recent_admin(10),
                &(&1.event_type == "admin.sandbox.reaped" and
                    &1.metadata["sandbox_id"] == sandbox.id)
              )
@@ -503,7 +503,7 @@ defmodule FountainWeb.AdminLiveTest do
       refute Fountain.Accounts.suspended?(Fountain.Repo.reload!(target))
       assert html =~ "Suspension lifted"
 
-      events = Fountain.Audit.list_recent_admin(10)
+      events = Fountain.Audit._unsafe_list_recent_admin(10)
       assert Enum.any?(events, &(&1.event_type == "admin.account.suspended"))
       assert Enum.any?(events, &(&1.event_type == "admin.account.unsuspended"))
     end
