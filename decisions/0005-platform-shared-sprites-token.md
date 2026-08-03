@@ -39,3 +39,15 @@ Two mechanisms named above live somewhere other than where this ADR says:
 - **Cap enforcement.** The production path does not call `Fountain.Quotas.check_sandbox_quota!/1`. Sandbox creation goes through `Fountain.Quotas.with_sandbox_reservation/2,3`, which runs the non-raising `check_sandbox_quota/2` together with the sandbox row insert under a per-user advisory lock (closing the check-then-insert race, #330). It is invoked from `Fountain.Conversations.start_conversation/1` and the wake path (`create_fresh_sandbox_and_start`). The raising `check_sandbox_quota!/2` exists but is exercised only by tests.
 
 The decision itself — one platform token, per-tenant concurrency cap as the noisy-neighbor mitigation — is unchanged.
+
+## Addendum — 2026-08-03
+
+The Decision and Consequences still describe the token as "an env-var-only
+secret on Render" with "Render environment-level access control" as a
+mitigation. Render is decommissioned (the platform moved to the home-cloud
+k3s cluster in 2026-08). In practice the token is materialized by the
+Infisical operator into the `fountain-secrets` Kubernetes Secret
+(`k8s/infisicalsecret.yaml`) and reaches the app as an env var via
+`envFrom`; access control is the cluster's RBAC plus Infisical project
+access. It remains env-var-only from the app's perspective — never in the
+DB, never in the UI.

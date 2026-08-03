@@ -120,11 +120,12 @@ whole `limited` feature open.
 
 - **Timeouts.** Every REST call is bounded by `SPRITES_TIMEOUT_MS` (default
   30s); create alone is allowed 120s. Exec commands carry their own bounds:
-  5s for a chmod, 30–120s for runtime probes and setup, 600s for a clone,
+  5s for a chmod, 30–120s for runtime probes and the setup script, 300s for a
+  package install, 600s for a clone,
   unbounded for the turn.
 - **Retries.** Transient failures — 5xx, 429, timeouts, transport errors —
-  are retried three times with exponential backoff and jitter, on the
-  provisioning path only. Other 4xx fail fast: a 401/403 is a token problem,
+  are tried up to three times (two retries) with exponential backoff and
+  jitter, on the provisioning path only. Other 4xx fail fast: a 401/403 is a token problem,
   not weather.
 - **Idempotency is Fountain's job, not the API's.** Sprite names are unique
   per token (`fountain-<tenant-prefix>-<8 hex>`); a 409 on create means the

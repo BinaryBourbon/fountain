@@ -17,7 +17,7 @@ sidecars, and scaling out means running more replicas of the same image.
 | **Phoenix endpoint** | The one public listener: the LiveView UI, the REST API, and SSE streaming, all on the same port |
 | **Conversation server** | One process per active conversation. Owns the sandbox: provisions it, spawns turns in it, streams output back, enforces lifecycle bounds. Holds the decrypted tenant key in memory for the duration. Registered cluster-wide, so exactly one exists per conversation no matter how many replicas run |
 | **Rehydrator** | Runs once at boot. Finds conversations that were live before the restart and restarts their servers, which reattach to the still-running sprite — a deploy does not kill running work |
-| **Oban** | Background jobs (billing syncs, lifecycle emails) and the cron schedule below |
+| **Oban** | Background jobs (billing syncs, lifecycle emails, account exports on the `exports` queue) and the cron schedule below |
 | **Metrics listener** | A second, private HTTP listener on `METRICS_PORT` (default 9568 in production, disabled elsewhere) serving `/metrics` and `/health`. Deliberately separate from the public endpoint, so an ingress rule can never accidentally expose it |
 
 Scheduled work, all times UTC:

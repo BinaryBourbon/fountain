@@ -41,3 +41,26 @@ Validation report: `plan/phase-3-release-validation/validation-report.md`.
 - The success metric is 100 weekly active users by month 6 (2026-11-10).
 - The product-analyst and growth-marketer roles are now available for post-launch measurement and growth experiments.
 - Revisit org/team features (deferred per ADR 0003) once solo-user multi-tenancy is validated.
+
+## Addendum — 2026-08-03
+
+The launch happened and the metric clock started 2026-05-10; the **launch
+checklist above is historical** and must not be followed for any future
+deployment:
+
+- **The platform is not Render.** Production moved to the home-cloud k3s
+  cluster (deployed via Flux; see `k8s/` and `docs/`). There is no Render
+  dashboard to set env vars in and no `preDeployCommand` — migrations run
+  automatically at release boot.
+- **`STRIPE_PUBLISHABLE_KEY` is read by nothing.** It predates the hosted
+  Checkout flow; setting it does nothing.
+- **The webhook event list in step 3 is incomplete.** The handler also
+  processes `checkout.session.completed` (checkout completion / customer
+  adoption) and `customer.subscription.trial_will_end` (trial-ending mail).
+  An endpoint registered with only the three events listed above silently
+  loses both. The authoritative five-event list lives in
+  `docs/integrations/stripe.md`, which is kept current.
+
+Of the post-launch backlog: NC-1 (dark mode), NC-4 and NC-5 are built and
+tested; NC-9 was handled by the `nilify` migration for `usage_events`;
+NC-6 remains open.

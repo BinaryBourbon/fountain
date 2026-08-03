@@ -51,7 +51,8 @@ locked-out account is operator intervention.
 
 What actually sends email today: account verification (24-hour link),
 password reset (1-hour link), and — only with [Stripe](stripe.md) configured
-— the trial-ending reminder three days out. OAuth signups skip verification
+— the four lifecycle emails: the trial-ending reminder three days out,
+trial expired, payment failed, and subscription canceled. OAuth signups skip verification
 entirely, so [GitHub OAuth](github-oauth.md) plus `EMAIL_DELIVERY=none` is a
 coherent minimal setup.
 
