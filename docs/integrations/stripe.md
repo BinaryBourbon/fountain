@@ -68,9 +68,12 @@ STRIPE_SECRET_KEY=sk_test_... mix fountain.verify_lifecycle
 ```
 
 It creates a scratch user and a Test Clock, then walks the whole lifecycle —
-trial → T-3d warning email enqueued → expiry (gate refuses) → paid
-subscription with a test card (gate opens) → cancel at period end (access
-retained) → period end (gate refuses) → re-subscribe (the return path) —
+trial → T-3d warning email enqueued → expiry (gate refuses, trial-expired
+email) → paid subscription with a test card (gate opens) → cancel at period
+end (access retained, `cancel_at_period_end`/`current_period_end` synced) →
+period end (gate refuses, cancellation email, flag cleared) → re-subscribe
+(the return path) → failed renewal on an always-failing test card (real
+dunning: `past_due`, gate refuses, payment-failed email) —
 asserting the **Fountain-side** state at every step. Each fetched Stripe
 state is fed through `Billing.sync_subscription/1`, exactly what the webhook
 controller does after signature verification; webhook *delivery* needs a
