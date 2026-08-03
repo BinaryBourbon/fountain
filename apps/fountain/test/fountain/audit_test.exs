@@ -1,6 +1,8 @@
 defmodule Fountain.AuditTest do
   use Fountain.DataCase, async: true
 
+  import ExUnit.CaptureLog
+
   alias Fountain.Audit
 
   defp valid_attrs(user_id, overrides \\ %{}) do
@@ -147,6 +149,63 @@ defmodule Fountain.AuditTest do
       # Passing a non-enumerable triggers Protocol.UndefinedError inside cast,
       # which is rescued and returns {:error, :exception} with a warning log.
       assert {:error, :exception} = Audit.record(:not_a_map)
+    end
+  end
+
+  describe "record_admin/1 — rejected writes are loud (#451)" do
+    test "an unknown event type is rejected with an error log, not silently" do
+      actor = insert_verified_user()
+
+      log =
+        capture_log(fn ->
+          assert {:error, %Ecto.Changeset{}} =
+                   Audit.record_admin(%{
+                     actor_user_id: actor.id,
+                     target_user_id: nil,
+                     event_type: "admin.not.in.the.allowlist"
+                   })
+        end)
+
+      assert log =~ "REJECTED"
+      assert log =~ "admin.not.in.the.allowlist"
+    end
+
+    test "a rejected write emits the admin_record_rejected telemetry event" do
+      test_pid = self()
+      handler_id = "audit-reject-#{inspect(self())}"
+
+      :telemetry.attach(
+        handler_id,
+        [:fountain, :audit, :admin_record_rejected],
+        fn _event, measurements, metadata, _config ->
+          send(test_pid, {:rejected, measurements, metadata})
+        end,
+        nil
+      )
+
+      on_exit(fn -> :telemetry.detach(handler_id) end)
+
+      capture_log(fn ->
+        Audit.record_admin(%{event_type: "admin.also.unknown"})
+      end)
+
+      assert_receive {:rejected, %{count: 1}, %{event_type: "admin.also.unknown"}}
+    end
+
+    test "a valid write emits nothing and logs nothing" do
+      actor = insert_verified_user()
+
+      log =
+        capture_log(fn ->
+          assert {:ok, _} =
+                   Audit.record_admin(%{
+                     actor_user_id: actor.id,
+                     event_type: "admin.account.suspended",
+                     metadata: %{"email" => "x@example.com"}
+                   })
+        end)
+
+      refute log =~ "REJECTED"
     end
   end
 end
