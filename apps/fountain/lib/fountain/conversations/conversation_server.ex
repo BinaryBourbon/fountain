@@ -829,6 +829,15 @@ defmodule Fountain.Conversations.ConversationServer do
     {:stop, :normal, :ok, state}
   end
 
+  # Catch-all: an unmatched call must not die with a FunctionClauseError at
+  # the callback head — that exception's message embeds the full state
+  # (plaintext secrets included) in the crash report, and format_status/1
+  # cannot redact an exception message (#315).
+  def handle_call(msg, _from, state) do
+    Logger.warning("conv #{state.conversation_id}: unexpected call #{inspect(msg)}")
+    {:reply, {:error, :unknown_call}, state}
+  end
+
   # The prompt a conversation was started for. Ignored if a turn is somehow
   # already running — the cast is queued behind provisioning, so that should not
   # happen, and re-running is the failure this whole mechanism exists to avoid.
@@ -858,6 +867,12 @@ defmodule Fountain.Conversations.ConversationServer do
           {:noreply, state}
       end
     end
+  end
+
+  # Catch-all for the same reason as the handle_call one above (#315).
+  def handle_cast(msg, state) do
+    Logger.warning("conv #{state.conversation_id}: unexpected cast #{inspect(msg)}")
+    {:noreply, state}
   end
 
   @impl true
@@ -1040,6 +1055,43 @@ defmodule Fountain.Conversations.ConversationServer do
 
     :ok
   end
+
+  # Redacts secrets from crash reports and :sys.get_status output (#315). An
+  # unhandled raise in any callback logs `State:` via inspect — without this,
+  # that meant plaintext env secrets, the raw tenant DEK, decrypted BYO
+  # inference credentials, the callback API key, and the platform Sprites
+  # token (inside sprite.client) on stdout and, with SENTRY_DSN set, in a
+  # Sentry event body. Sentry's PlugContext scrubbing never sees process
+  # crash reports, so the redaction has to happen here.
+  #
+  # Key names are kept (values replaced) so crash reports stay debuggable.
+  @impl true
+  def format_status(status) do
+    Map.new(status, fn
+      {:state, %{conversation_id: _} = state} -> {:state, redact_state(state)}
+      other -> other
+    end)
+  end
+
+  defp redact_state(state) do
+    %{
+      state
+      | sprite: redact_sprite(state.sprite),
+        sprite_env: Enum.map(state.sprite_env, fn {k, _v} -> {k, "[REDACTED]"} end),
+        tenant_key: redact(state.tenant_key),
+        inference_credentials: redact_map(state.inference_credentials),
+        callback_token: redact(state.callback_token)
+    }
+  end
+
+  defp redact_sprite(%{client: _} = sprite), do: Map.put(sprite, :client, "[REDACTED]")
+  defp redact_sprite(other), do: other
+
+  defp redact_map(%{} = map), do: Map.new(map, fn {k, _v} -> {k, "[REDACTED]"} end)
+  defp redact_map(other), do: redact(other)
+
+  defp redact(nil), do: nil
+  defp redact(_present), do: "[REDACTED]"
 
   # ── helpers ───────────────────────────────────────────────────────────────
 
