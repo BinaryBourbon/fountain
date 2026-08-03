@@ -94,24 +94,54 @@ defmodule FountainWeb.Telemetry do
 
       # ── Conversations ─────────────────────────────────────────────────────
       # These are the domain events that cost money and wake people up.
-      counter("fountain.provision.stop.count",
-        event_name: [:fountain, :provision, :stop],
-        description: "Sandbox provisions completed"
+      #
+      # The counter hangs off the [:fountain, :stage] event that
+      # Conversations.publish_stage/4 emits — the same funnel that feeds the
+      # client-visible stage stream. Provision/reattach/turn failures are
+      # handled inside the GenServer (rescued, mapped to "failed" stages), so
+      # a span :exception event never fires for them; counting stages is the
+      # only wiring that sees every outcome. Tags are bounded: stage is a
+      # fixed set of pipeline step names, status is
+      # started/done/failed/interrupted.
+      counter("fountain.stage.count",
+        event_name: [:fountain, :stage],
+        tags: [:stage, :status],
+        description: "Conversation stage transitions by stage and status"
       ),
-      counter("fountain.provision.exception.count",
-        event_name: [:fountain, :provision, :exception],
-        description: "Sandbox provisions that failed"
-      ),
-      distribution("fountain.provision.stop.duration",
-        event_name: [:fountain, :provision, :stop],
+      distribution("fountain.fresh_provision.stop.duration",
+        event_name: [:fountain, :fresh_provision, :stop],
         measurement: :duration,
         unit: {:native, :millisecond},
         reporter_options: [buckets: [1000, 5000, 10_000, 30_000, 60_000, 120_000]],
-        description: "How long a sandbox takes to provision"
+        description: "How long a fresh sandbox takes to provision"
       ),
-      counter("fountain.turn.stop.count",
-        event_name: [:fountain, :turn, :stop],
-        description: "Agent turns completed"
+      distribution("fountain.reattach.stop.duration",
+        event_name: [:fountain, :reattach, :stop],
+        measurement: :duration,
+        unit: {:native, :millisecond},
+        reporter_options: [buckets: [1000, 5000, 10_000, 30_000, 60_000, 120_000]],
+        description: "How long a sandbox reattach takes"
+      ),
+
+      # ── Lifecycle sweeps ──────────────────────────────────────────────────
+      counter("fountain.sandbox.reclaimed.count",
+        event_name: [:fountain, :sandbox, :reclaimed],
+        description: "Sandboxes reclaimed by the lifecycle bounds"
+      ),
+      sum("fountain.reaper.run.released",
+        event_name: [:fountain, :reaper, :run],
+        measurement: :released,
+        description: "Sprites released by SandboxReaper runs"
+      ),
+      sum("fountain.reaper.run.expired",
+        event_name: [:fountain, :reaper, :run],
+        measurement: :expired,
+        description: "Sandbox rows expired by SandboxReaper runs"
+      ),
+      sum("fountain.reaper.untracked.count",
+        event_name: [:fountain, :reaper, :untracked],
+        measurement: :count,
+        description: "Untracked sprites found running with no live sandbox row"
       ),
 
       # ── Lifecycle funnel (#282) ───────────────────────────────────────────

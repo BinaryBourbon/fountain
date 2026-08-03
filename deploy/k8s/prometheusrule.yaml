@@ -172,10 +172,13 @@ spec:
         - alert: FountainProvisionFailures
           # Provision calls already retry transient Sprites errors with
           # backoff, so anything counted here failed after retries — users
-          # are seeing conversations that fail to start.
+          # are seeing conversations that fail to start. Counts the "failed"
+          # stage events the server publishes; failures are rescued inside
+          # the GenServer, so no exception metric ever sees them (#310).
+          # Absolute count over 30m rather than a rate: a small instance
+          # never sustains enough traffic for a per-second threshold.
           expr: |
-            sum(rate(fountain_provision_exception_count{namespace="fountain"}[15m])) > 0.05
-          for: 15m
+            sum(increase(fountain_stage_count{namespace="fountain", stage="provision", status="failed"}[30m])) > 2
           labels:
             severity: warning
           annotations:

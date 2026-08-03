@@ -171,7 +171,8 @@ Useful series: `phoenix_router_dispatch_stop_count` (request rate, by route,
 method and status), `phoenix_router_dispatch_stop_duration_bucket` (latency),
 `phoenix_router_dispatch_exception_count` (unhandled errors),
 `fountain_repo_query_queue_time_bucket` (connection-pool saturation),
-`fountain_provision_stop_count` / `_exception_count` (sandbox provisioning).
+`fountain_stage_count{stage="provision", status="done"|"failed"}` (sandbox
+provisioning; `stage="turn"` for agent turns).
 
 ```bash
 kubectl port-forward -n fountain svc/fountain 9568:9568

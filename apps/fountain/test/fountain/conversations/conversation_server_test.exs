@@ -155,6 +155,73 @@ defmodule Fountain.Conversations.ConversationServerTest do
     end
   end
 
+  describe "stage metrics — the producer end of #310" do
+    # These drive the real server and then read the Prometheus scrape, so
+    # they fail if the stage events the metrics subscribe to ever stop being
+    # emitted — the gap the name-list-only test shape could not see.
+    defp scrape_body do
+      # The reporter aggregates synchronously on the telemetry event, but give
+      # the handler a moment before scraping.
+      Process.sleep(50)
+      conn = FountainWeb.MetricsPlug.call(Plug.Test.conn(:get, "/metrics"), [])
+      assert conn.status == 200
+      conn.resp_body
+    end
+
+    defp assert_stage_sample(body, stage, status) do
+      sample =
+        body
+        |> String.split("\n")
+        |> Enum.find(fn line ->
+          String.starts_with?(line, "fountain_stage_count{") and
+            line =~ ~s(stage="#{stage}") and line =~ ~s(status="#{status}")
+        end)
+
+      assert sample, "no fountain_stage_count sample for #{stage}/#{status} in scrape"
+    end
+
+    test "a successful provision lands in the scrape as provision/done", %{conv: conv} do
+      stub_happy_sprite()
+
+      {pid, _ref, :alive} = start_server(conv)
+      GenServer.stop(pid)
+
+      body = scrape_body()
+      assert_stage_sample(body, "provision", "done")
+      # The span around fresh provisioning feeds the duration histogram.
+      assert body =~ "fountain_fresh_provision_stop_duration"
+    end
+
+    test "a failed provision lands in the scrape as provision/failed", %{conv: conv} do
+      stub_happy_sprite()
+      Mimic.stub(Sprites, :create, fn _client, _name -> {:error, :quota_exceeded} end)
+
+      {_pid, ref, _} = start_server(conv)
+      assert_stopped(ref)
+
+      assert_stage_sample(scrape_body(), "provision", "failed")
+    end
+
+    test "a completed turn lands in the scrape as turn/done", %{conv: conv} do
+      stub_happy_sprite()
+      cmd_ref = make_ref()
+
+      Mimic.stub(Sprites, :spawn, fn _s, _cmd, _args, _opts ->
+        {:ok, %{ref: cmd_ref, pid: self()}}
+      end)
+
+      Mimic.stub(Sprites, :write, fn _cmd, _data -> :ok end)
+      Mimic.stub(Sprites, :close_stdin, fn _cmd -> :ok end)
+
+      {pid, _mon, :alive} = start_server(conv, initial_prompt: "count me")
+      send(pid, {:exit, %{ref: cmd_ref}, 0})
+      _ = :sys.get_state(pid)
+      GenServer.stop(pid)
+
+      assert_stage_sample(scrape_body(), "turn", "done")
+    end
+  end
+
   describe "provisioning — failure paths" do
     test "a sprite that cannot be created marks both rows failed", %{conv: conv, sandbox: sandbox} do
       stub_happy_sprite()

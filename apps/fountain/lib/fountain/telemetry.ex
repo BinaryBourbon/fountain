@@ -104,20 +104,32 @@ defmodule Fountain.Telemetry do
   detaches this one.
   """
   def attach_default_logger do
-    events =
-      for stage <- ~w(provision packages clone setup turn reattach)a,
+    # These lists must name events something actually emits — a subscription
+    # to a name that never fires logs nothing and looks identical to healthy
+    # silence (#310). Span names: ConversationServer wraps fresh_provision,
+    # reattach and setup_script; Provisioning wraps packages, network_policy,
+    # clone_repositories and checkpoint create/restore.
+    spans =
+      for stage <-
+            ~w(fresh_provision reattach setup_script packages network_policy clone_repositories)a,
           phase <- ~w(start stop exception)a,
           do: @prefix ++ [stage, phase]
 
+    checkpoint_spans =
+      for op <- ~w(create restore)a,
+          phase <- ~w(start stop exception)a,
+          do: @prefix ++ [:checkpoint, op, phase]
+
     one_shots = [
-      @prefix ++ [:turn, :queued],
-      @prefix ++ [:turn, :interrupted],
-      @prefix ++ [:sandbox, :failed]
+      @prefix ++ [:stage],
+      @prefix ++ [:sandbox, :reclaimed],
+      @prefix ++ [:reaper, :run],
+      @prefix ++ [:reaper, :untracked]
     ]
 
     :telemetry.attach_many(
       "aod-default-logger",
-      events ++ one_shots,
+      spans ++ checkpoint_spans ++ one_shots,
       &__MODULE__.handle/4,
       nil
     )

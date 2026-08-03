@@ -1412,21 +1412,8 @@ defmodule Fountain.Conversations.ConversationServer do
     end
   end
 
-  defp publish_stage(conv_id, stage, state, meta \\ %{}) do
-    event =
-      Conversations.log!(%{
-        conversation_id: conv_id,
-        kind: "stage",
-        stage: stage,
-        state: state,
-        data: Jason.encode!(meta)
-      })
-
-    Phoenix.PubSub.broadcast(
-      Fountain.PubSub,
-      "conv:#{conv_id}",
-      {:log_event, event}
-    )
+  defp publish_stage(conv_id, stage, status, meta \\ %{}) do
+    Conversations.publish_stage(conv_id, stage, status, meta)
   end
 
   # Every turn passes through here, whichever door it came in by — the
