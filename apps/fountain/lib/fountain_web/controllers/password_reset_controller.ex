@@ -40,7 +40,11 @@ defmodule FountainWeb.PasswordResetController do
     user = Accounts.get_user_by_email(email)
 
     if user do
-      token = Phoenix.Token.sign(conn, "password_reset", user.id)
+      # session_version rides inside the token (#325): reset_password/2
+      # bumps it, so a successful reset invalidates every outstanding reset
+      # token for the user — without this, a used link stayed live for the
+      # rest of its hour (shared inbox, forwarded mail, proxy log).
+      token = Phoenix.Token.sign(conn, "password_reset", {user.id, user.session_version})
       Task.async(fn -> UserEmails.deliver_password_reset_email(user, token) end)
     end
 
@@ -58,8 +62,8 @@ defmodule FountainWeb.PasswordResetController do
   ## HTML — render reset form
 
   def reset_form(conn, %{"token" => token}) do
-    case Phoenix.Token.verify(conn, "password_reset", token, max_age: @token_max_age) do
-      {:ok, _user_id} ->
+    case verify_reset_token(conn, token) do
+      {:ok, _user} ->
         render(conn, :reset_form, token: token, error: nil, layout: false)
 
       {:error, :expired} ->
@@ -77,16 +81,9 @@ defmodule FountainWeb.PasswordResetController do
   ## HTML — apply the reset
 
   def reset(conn, %{"token" => token, "password" => password}) do
-    case Phoenix.Token.verify(conn, "password_reset", token, max_age: @token_max_age) do
-      {:ok, user_id} ->
-        case Accounts.get_user(user_id) do
-          nil ->
-            conn
-            |> put_flash(:error, "That reset link is invalid.")
-            |> redirect(to: ~p"/auth/forgot-password")
-
-          user ->
-            case Accounts.reset_password(user, password) do
+    case verify_reset_token(conn, token) do
+      {:ok, user} ->
+        case Accounts.reset_password(user, password) do
               {:ok, _user} ->
                 # Also invalidates every existing session, so this is a
                 # security-relevant event even when the user initiated it.
@@ -113,7 +110,6 @@ defmodule FountainWeb.PasswordResetController do
                   error: password_error || "Could not update password.",
                   layout: false
                 )
-            end
         end
 
       {:error, :expired} ->
@@ -132,5 +128,21 @@ defmodule FountainWeb.PasswordResetController do
     conn
     |> put_status(:unprocessable_entity)
     |> json(%{error: "token and password are required"})
+  end
+
+  # Single-use check (#325): the token carries the session_version it was
+  # issued against; reset_password/2 bumps it, so a token issued before the
+  # last successful reset — including the one just used — no longer matches
+  # and is treated as invalid. Legacy bare-user_id tokens (issued before
+  # this shipped) fail the tuple match and die at most one TTL after deploy.
+  defp verify_reset_token(conn, token) do
+    with {:ok, {user_id, session_version}} <-
+           Phoenix.Token.verify(conn, "password_reset", token, max_age: @token_max_age),
+         %{session_version: ^session_version} = user <- Accounts.get_user(user_id) do
+      {:ok, user}
+    else
+      {:error, :expired} -> {:error, :expired}
+      _ -> {:error, :invalid}
+    end
   end
 end
