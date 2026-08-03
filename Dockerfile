@@ -29,13 +29,19 @@ RUN apt-get update -y \
 RUN mix local.hex --force \
  && mix local.rebar --force
 
-# Umbrella deps live at the root.
+# Umbrella deps live at the root. Copy ONLY what dependency resolution
+# reads — the root mix files, config, and each app's mix.exs — before
+# fetching and compiling deps, so the (expensive, slow-moving) deps layer
+# survives any change to application code. Copying apps/ wholesale here
+# is what used to force a full dep recompile on every commit.
 COPY mix.exs mix.lock ./
 COPY config ./config
-COPY apps ./apps
+COPY apps/fountain/mix.exs ./apps/fountain/mix.exs
 
 RUN mix deps.get --only prod \
  && mix deps.compile
+
+COPY apps ./apps
 
 RUN mix compile \
  && mix release fountain_server

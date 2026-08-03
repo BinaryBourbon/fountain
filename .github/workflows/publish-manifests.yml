@@ -22,6 +22,11 @@ name: publish-manifests
 #         `latest`
 #       → the cluster's OCIRepository reconciles `latest`.
 #
+# Manifest-only pushes (k8s/**, deploy/k8s/**) skip the build entirely and
+# publish directly, pinning the newest ancestor image that exists — the tree
+# changed nothing the image is built from, so "manifests paired with the
+# image they were written against" still holds.
+#
 # Rollback is one command, no git involved:
 #   flux tag artifact oci://ghcr.io/binarybourbon/fountain-manifests:sha-<old> --tag latest
 #
@@ -33,9 +38,21 @@ on:
     workflows: [build]
     types: [completed]
     branches: [main]
-  # Manual escape hatch: republishes from an already-built commit. The
-  # image-existence check below is what makes this safe — a sha whose image
-  # was never built is refused before anything is published.
+  # The manifest fast path: a push touching only the deployed manifests
+  # publishes directly — no image build to wait for. The image pin resolves
+  # to the newest *ancestor* commit whose image exists (see below), which is
+  # exactly the image already running plus this manifest change. Without
+  # this trigger a k8s-only push would never deploy at all: build.yml
+  # paths-ignores k8s/**, and this workflow otherwise only fires when a
+  # build completes.
+  push:
+    branches: [main]
+    paths:
+      - "k8s/**"
+      - "deploy/k8s/**"
+  # Manual escape hatch: republishes from a given commit's tree. The
+  # ancestor-walk image resolution keeps it honest — a tree whose history
+  # contains no built image is refused before anything is published.
   workflow_dispatch:
     inputs:
       sha:
@@ -49,7 +66,7 @@ permissions:
 jobs:
   publish:
     name: Publish the manifest artifact
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -70,19 +87,35 @@ jobs:
 
       - name: Resolve image tag
         id: tag
+        # The manifest tree is SRC_SHA's; the image pin is the newest
+        # first-parent ancestor (SRC_SHA included) whose image actually
+        # exists in the registry. After a build workflow_run that is SRC_SHA
+        # itself — identical to the old behavior. After a manifest-only push
+        # it is the image already running, which is the point: the pushed
+        # tree changed nothing the image is built from. The walk doubles as
+        # the existence guard — no image in the last 50 commits aborts.
         run: |
-          sha="${SRC_SHA}"
-          {
-            echo "sha=${sha}"
-            echo "short=${sha:0:7}"
-            echo "image=ghcr.io/binarybourbon/fountain:sha-${sha}"
-          } >> "$GITHUB_OUTPUT"
+          set -euo pipefail
+          image=""
+          for candidate in $(git rev-list --first-parent -n 50 "${SRC_SHA}"); do
+            if docker manifest inspect \
+                 "ghcr.io/binarybourbon/fountain:sha-${candidate}" > /dev/null 2>&1; then
+              image="ghcr.io/binarybourbon/fountain:sha-${candidate}"
+              break
+            fi
+          done
 
-      - name: Verify the image exists
-        # A no-op after workflow_run (the build just succeeded), but the guard
-        # that keeps workflow_dispatch honest: never publish a manifest whose
-        # image cannot be pulled.
-        run: docker manifest inspect "${{ steps.tag.outputs.image }}" > /dev/null
+          if [ -z "${image}" ]; then
+            echo "no built image found in the 50 commits behind ${SRC_SHA:0:7}; refusing to publish." >&2
+            exit 1
+          fi
+
+          echo "manifest tree ${SRC_SHA:0:7} pins image ${image}"
+          {
+            echo "sha=${SRC_SHA}"
+            echo "short=${SRC_SHA:0:7}"
+            echo "image=${image}"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Pin the image tag in the working tree
         env:
