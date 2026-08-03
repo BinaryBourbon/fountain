@@ -142,4 +142,44 @@ defmodule Fountain.ConfigReferenceTest do
            Remove the key, or add it to @compose_only/@read_elsewhere with a reason.
            """
   end
+
+  # Keys in .env.compose.example consumed by compose interpolation itself
+  # (image tag, published port, sibling services), not passed through the
+  # app service's environment block.
+  @interpolation_only ~w(FOUNTAIN_IMAGE_TAG PORT POSTGRES_PASSWORD)
+
+  test "every variable .env.compose.example advertises is actually passed to the app" do
+    # The other compose test is one-directional by construction: it asserts
+    # every key compose SETS is read, never that every key the example file
+    # ADVERTISES is passed through. That gap is exactly how a documented
+    # variable can be set by an operator and silently ignored.
+    compose = File.read!(Path.join(@repo_root, "docker-compose.yml"))
+    example = File.read!(Path.join(@repo_root, ".env.compose.example"))
+
+    advertised =
+      Regex.scan(~r/^#?\s*([A-Z][A-Z0-9_]*)=/m, example, capture: :all_but_first)
+      |> List.flatten()
+      |> Enum.uniq()
+
+    assert length(advertised) > 5,
+           "extracted only #{length(advertised)} keys from .env.compose.example — its layout changed"
+
+    unpassed =
+      Enum.reject(advertised, fn var ->
+        # Passed through as `VAR: ${VAR...}` (any default), or interpolated
+        # directly by compose.
+        Regex.match?(~r/#{var}:\s*.*\$\{#{var}[:}]/, compose) or
+          var in @interpolation_only
+      end)
+
+    assert unpassed == [],
+           """
+           .env.compose.example advertises variables the compose file never passes to the app:
+
+             #{Enum.join(unpassed, ", ")}
+
+           Add the key to the app service's environment block, or to
+           @interpolation_only with a reason.
+           """
+  end
 end

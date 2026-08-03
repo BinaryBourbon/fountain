@@ -84,6 +84,29 @@ jobs:
             exit 1
           fi
 
+      - name: Require upgrade notes for a minor bump
+        if: ${{ inputs.bump == 'minor' }}
+        env:
+          NEXT: ${{ steps.ver.outputs.next }}
+        run: |
+          set -euo pipefail
+          # Pre-1.0, a minor may break; the changelog header promises such a
+          # release carries an "Upgrade notes" section. The heading-exists
+          # check above cannot see a missing section, which is how the
+          # BILLING_ENABLED flip nearly shipped without one. A minor with
+          # genuinely nothing to note still gets the section, saying so —
+          # explicit beats absent.
+          section="$(awk -v ver="## [${NEXT}]" '
+            index($0, ver) == 1 {on=1; next}
+            on && /^## \[/ {exit}
+            on {print}
+          ' CHANGELOG.md)"
+          if ! grep -q '^### Upgrade notes' <<< "$section"; then
+            echo "The [${NEXT}] section has no \"### Upgrade notes\"." >&2
+            echo "Minor releases may break (pre-1.0); add the section — \"- None.\" is fine when true." >&2
+            exit 1
+          fi
+
       - name: Update mix.exs files
         run: |
           set -euo pipefail

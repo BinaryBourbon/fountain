@@ -16,6 +16,14 @@ upgrade, is in
 
 ## [Unreleased]
 
+### Upgrade notes
+
+- **`BILLING_ENABLED` now defaults to `false`** — the subscription gate is
+  opt-in. An instance that relies on the gate must set `BILLING_ENABLED=true`
+  explicitly before upgrading, or every account gets ungated access (the
+  repo's hosted manifest under `k8s/` already sets it). See the #336 entry
+  under Changed
+
 ### Added
 
 - Point-in-time recovery for the hosted database (#209): continuous WAL
@@ -64,9 +72,7 @@ upgrade, is in
   dead-ended on a GitHub error page); the compose `app` service now has a
   healthcheck against `/health`; `TRUSTED_PROXIES` is documented in the
   `deploy/k8s` baseline; and **`BILLING_ENABLED` now defaults to `false`** —
-  the subscription gate is opt-in. An instance that relies on the gate must
-  set `BILLING_ENABLED=true` explicitly (the repo's hosted manifest under
-  `k8s/` does)
+  the subscription gate is opt-in (breaking; see Upgrade notes above)
 
 ### Removed
 

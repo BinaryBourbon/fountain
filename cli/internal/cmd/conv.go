@@ -485,6 +485,18 @@ func formatOutput(data map[string]any) string {
 	if raw == "" {
 		return ""
 	}
+	// Only turn output is runtime stream-JSON. The setup script and the
+	// provisioning stages (packages, network, clone) log raw text under
+	// their own stage — formatStreamJSONLine returns "" for anything that
+	// is not JSON, so a failing `apt install` or `git clone` produced zero
+	// visible output. Rows predating stage stamping have no stage and are
+	// turn output.
+	if stage, _ := data["stage"].(string); stage != "" && stage != "turn" {
+		if strings.HasSuffix(raw, "\n") {
+			return raw
+		}
+		return raw + "\n"
+	}
 	var b strings.Builder
 	for _, line := range strings.Split(raw, "\n") {
 		if line == "" {

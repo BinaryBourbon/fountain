@@ -81,12 +81,10 @@ under two tags, alongside the tags that track development:
 Releases v0.2.1 and earlier predate image tagging and exist only as `sha-`
 tags.
 
-The compose file reads `FOUNTAIN_IMAGE_TAG` from `.env`, so pinning is one
-line:
-
-```bash
-echo "FOUNTAIN_IMAGE_TAG=v0.3.0" >> .env
-```
+The compose file reads `FOUNTAIN_IMAGE_TAG` from `.env`, and
+`.env.compose.example` ships it set to a pinned release — so the quick start
+above is pinned by construction. Even with the variable unset, the compose
+file falls back to a pinned release rather than `latest`.
 
 Upgrading is editing that value, then `docker compose pull && docker compose
 up -d`. Migrations run automatically at boot — idempotently, under an advisory
