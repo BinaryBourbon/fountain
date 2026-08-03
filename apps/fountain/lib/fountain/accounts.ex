@@ -136,6 +136,15 @@ defmodule Fountain.Accounts do
 
     if user do
       cond do
+        # OAuth-only accounts have no password_hash; verify_pass would raise,
+        # turning POST /auth/login into a 500 that doubles as an
+        # account-existence oracle (#324). Burn the same dummy verify as the
+        # no-user branch so the timing shape stays uniform, and answer
+        # exactly what any bad password gets.
+        is_nil(user.password_hash) ->
+          Bcrypt.no_user_verify()
+          {:error, :wrong_password}
+
         not Bcrypt.verify_pass(password, user.password_hash) ->
           {:error, :wrong_password}
 
