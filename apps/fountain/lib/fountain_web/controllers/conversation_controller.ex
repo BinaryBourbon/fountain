@@ -183,17 +183,12 @@ defmodule FountainWeb.ConversationController do
           {:error, :busy} ->
             {:error, "conversation_busy"}
 
-          # Waking a dormant conversation provisions a fresh sprite, so it is
-          # subject to both the concurrency cap and the subscription gate. Pass
-          # these through to the fallback controller rather than letting them
-          # blow the case clause — an unmatched tuple here is a 500, not a 402.
-          {:error, {:sandbox_quota_exceeded, _}} = err ->
-            err
-
-          {:error, :subscription_required} = err ->
-            err
-
-          {:error, :account_suspended} = err ->
+          # Everything else renders via the FallbackController. This case has
+          # had error shapes threaded through it by hand four times (#212's
+          # 402, then :gone / :no_agent / changeset in #332), and each one it
+          # was missing was a CaseClauseError 500. The fallback owns the
+          # error → status mapping; new shapes land there, not here.
+          {:error, _} = err ->
             err
         end
     end

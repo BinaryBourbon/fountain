@@ -376,6 +376,78 @@ defmodule FountainWeb.ConversationControllerTest do
       assert json_response(conn, 404)
     end
 
+    # The #332 trio: each of these used to blow the hand-maintained case
+    # clause and 500. All three run the real wake path, no stubs.
+
+    test "returns 410 when the conversation is terminated", %{
+      conn: conn,
+      user: user,
+      raw_key: raw_key
+    } do
+      conv = insert_conversation(user_id: user.id, status: "terminated")
+
+      conn =
+        conn
+        |> authed_with_key(raw_key)
+        |> post_json("/api/conversations/#{conv.id}/prompts", %{"prompt" => "hello"})
+
+      assert json_response(conn, 410)["error"] == "conversation_terminated"
+    end
+
+    test "returns 422 when the conversation's agent was deleted", %{
+      conn: conn,
+      user: user,
+      raw_key: raw_key
+    } do
+      conv = insert_conversation(user_id: user.id, status: "idle")
+      assert conv.agent_id == nil
+
+      conn =
+        conn
+        |> authed_with_key(raw_key)
+        |> post_json("/api/conversations/#{conv.id}/prompts", %{"prompt" => "hello"})
+
+      assert json_response(conn, 422)["error"] == "no_agent"
+    end
+
+    test "returns 422 when the wake path surfaces a changeset error", %{
+      conn: conn,
+      user: user,
+      raw_key: raw_key
+    } do
+      conv = insert_conversation(user_id: user.id)
+
+      stub(ConversationServer, :send_prompt, fn _id, _prompt, _images ->
+        {:error, Fountain.Conversations.Sandbox.changeset(%Fountain.Conversations.Sandbox{}, %{})}
+      end)
+
+      conn =
+        conn
+        |> authed_with_key(raw_key)
+        |> post_json("/api/conversations/#{conv.id}/prompts", %{"prompt" => "hello"})
+
+      assert %{"errors" => _} = json_response(conn, 422)
+    end
+
+    test "an unknown refusal atom is a 422, not a CaseClauseError 500", %{
+      conn: conn,
+      user: user,
+      raw_key: raw_key
+    } do
+      conv = insert_conversation(user_id: user.id)
+
+      stub(ConversationServer, :send_prompt, fn _id, _prompt, _images ->
+        {:error, :some_future_refusal}
+      end)
+
+      conn =
+        conn
+        |> authed_with_key(raw_key)
+        |> post_json("/api/conversations/#{conv.id}/prompts", %{"prompt" => "hello"})
+
+      assert json_response(conn, 422)["error"] == "some_future_refusal"
+    end
+
     test "returns 404 when conversation belongs to a different user", %{
       conn: conn,
       raw_key: raw_key
