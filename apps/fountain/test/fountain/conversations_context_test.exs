@@ -2006,4 +2006,62 @@ defmodule Fountain.ConversationsContextTest do
       assert {:error, :not_found} = Conversations._unsafe_reap_sandbox(Ecto.UUID.generate())
     end
   end
+
+  describe "concurrent wake loses cleanly (#330)" do
+    # Two prompts race to wake the same dormant conversation. Both used to
+    # reach create_fresh_sandbox_and_start; the loser's start_child returned
+    # {:error, {:already_started, _}}, the `with` fell through, and its
+    # just-created pending sandbox row sat holding a quota slot until the
+    # reaper's pass an hour later — a user at their cap could lock themselves
+    # out for an hour by double-clicking.
+
+    test "the loser terminates its own sandbox row instead of stranding it" do
+      user = insert_verified_user()
+      agent = insert_agent(user_id: user.id)
+      conv = insert_conversation(user_id: user.id, agent: agent, status: "idle")
+
+      stub(Horde.DynamicSupervisor, :start_child, fn _sup, _spec ->
+        {:error, {:already_started, self()}}
+      end)
+
+      stub(Fountain.Conversations.ConversationServer, :queue_initial_prompt, fn _conv_id, _prompt -> :ok end)
+
+      assert {:ok, _conv} = Conversations.wake_conversation(conv.id, "hi")
+
+      # No slot held: the old sandbox was retired by the wake, and the row the
+      # loser created for itself is terminated, not pending.
+      assert Fountain.Quotas.active_sandbox_count(user.id) == 0
+    end
+
+    test "the loser forwards its prompt to the winner" do
+      user = insert_verified_user()
+      agent = insert_agent(user_id: user.id)
+      conv = insert_conversation(user_id: user.id, agent: agent, status: "idle")
+      test_pid = self()
+
+      stub(Horde.DynamicSupervisor, :start_child, fn _sup, _spec ->
+        {:error, {:already_started, self()}}
+      end)
+
+      stub(Fountain.Conversations.ConversationServer, :queue_initial_prompt, fn conv_id, prompt ->
+        send(test_pid, {:forwarded, conv_id, prompt})
+        :ok
+      end)
+
+      assert {:ok, _} = Conversations.wake_conversation(conv.id, "the racing prompt")
+      assert_received {:forwarded, _conv_id, "the racing prompt"}
+    end
+
+    test "a genuine start failure still surfaces as an error" do
+      user = insert_verified_user()
+      agent = insert_agent(user_id: user.id)
+      conv = insert_conversation(user_id: user.id, agent: agent, status: "idle")
+
+      stub(Horde.DynamicSupervisor, :start_child, fn _sup, _spec ->
+        {:error, :max_children}
+      end)
+
+      assert {:error, :max_children} = Conversations.wake_conversation(conv.id, "hi")
+    end
+  end
 end
