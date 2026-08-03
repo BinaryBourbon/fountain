@@ -273,9 +273,15 @@ config :ueberauth, Ueberauth,
     github: {Ueberauth.Strategy.Github, [default_scope: "user:email"]}
   ]
 
-config :ueberauth, Ueberauth.Strategy.Github.OAuth,
-  client_id: System.get_env("GITHUB_OAUTH_CLIENT_ID"),
-  client_secret: System.get_env("GITHUB_OAUTH_CLIENT_SECRET")
+# Only when the env var is present: an unconditional write here clobbers
+# whatever config/test.exs set with nil, so in CI (no env vars, no .env)
+# github_configured?/0 was false and the button tests failed — while local
+# runs passed because .env supplied the var. Absent stays absent.
+if github_client_id = System.get_env("GITHUB_OAUTH_CLIENT_ID") do
+  config :ueberauth, Ueberauth.Strategy.Github.OAuth,
+    client_id: github_client_id,
+    client_secret: System.get_env("GITHUB_OAUTH_CLIENT_SECRET")
+end
 
 # Stripe (§5.2)
 config :stripity_stripe,
