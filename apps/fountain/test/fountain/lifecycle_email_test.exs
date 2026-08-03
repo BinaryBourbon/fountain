@@ -132,6 +132,26 @@ defmodule Fountain.LifecycleEmailTest do
     end
   end
 
+  describe "webhook transitions that send (#447 additions)" do
+    test "dunning recovery via the subscription event enqueues payment_recovered" do
+      user = user_with_status("past_due")
+
+      assert {:ok, %User{subscription_status: "active"}} =
+               Billing.sync_subscription(
+                 subscription_event(
+                   "customer.subscription.updated",
+                   user.stripe_customer_id,
+                   "active"
+                 )
+               )
+
+      assert_enqueued(
+        worker: LifecycleEmail,
+        args: %{"user_id" => user.id, "email" => "payment_recovered"}
+      )
+    end
+  end
+
   describe "webhook transitions that stay silent" do
     test "a second past_due event in the same dunning cycle does not re-send" do
       # Stripe fires several subscription.updated events per dunning cycle, all
@@ -150,11 +170,10 @@ defmodule Fountain.LifecycleEmailTest do
       refute_enqueued(worker: LifecycleEmail)
     end
 
-    test "recovery and other non-triggering transitions enqueue nothing" do
+    test "non-triggering transitions enqueue nothing" do
+      # past_due → active moved out of this list in #447: dunning recovery
+      # now sends payment_recovered (asserted in the sends describe above).
       for {old, stripe_status} <- [
-            # past_due → active: they fixed the card; congratulating them is
-            # someone else's feature.
-            {"past_due", "active"},
             # trialing → active: they subscribed.
             {"trialing", "active"},
             # active → active: routine sync.
@@ -318,6 +337,50 @@ defmodule Fountain.LifecycleEmailTest do
       assert email.subject =~ "cancelled"
     end
 
+    test "sends action-required to any live account, skips a canceled one (#447)" do
+      for status <- ["trialing", "active", "past_due"] do
+        user = user_with_status(status)
+
+        assert :ok =
+                 perform_job(LifecycleEmail, %{
+                   "user_id" => user.id,
+                   "email" => "payment_action_required"
+                 })
+
+        assert_received {:email, email}
+        assert email.subject =~ "confirm your Fountain payment"
+      end
+
+      canceled = user_with_status("canceled")
+
+      assert :ok =
+               perform_job(LifecycleEmail, %{
+                 "user_id" => canceled.id,
+                 "email" => "payment_action_required"
+               })
+
+      refute_received {:email, _}
+    end
+
+    test "sends payment-recovered only once the account is actually active (#447)" do
+      active = user_with_status("active")
+
+      assert :ok =
+               perform_job(LifecycleEmail, %{"user_id" => active.id, "email" => "payment_recovered"})
+
+      assert_received {:email, email}
+      assert email.subject =~ "Payment received"
+
+      # Still past_due at send time: the recovery hasn't synced, and "you're
+      # all set" while the gate is closed would be a lie.
+      stuck = user_with_status("past_due")
+
+      assert :ok =
+               perform_job(LifecycleEmail, %{"user_id" => stuck.id, "email" => "payment_recovered"})
+
+      refute_received {:email, _}
+    end
+
     test "does not send to someone whose state moved on" do
       # The queue can lag the account. Someone who subscribed after their trial
       # expired, or fixed their card an hour after it bounced, must not then be
@@ -407,6 +470,29 @@ defmodule Fountain.LifecycleEmailTest do
       flat = email.text_body |> String.replace(~r/\s+/, " ")
 
       assert flat =~ "your subscription will be cancelled"
+    end
+
+    test "action required: leads with the fix and says what happens otherwise (#447)" do
+      email =
+        sent(&UserEmails.deliver_payment_action_required_email/1, user_with_status("active"))
+
+      flat = email.text_body |> String.replace(~r/\s+/, " ")
+
+      assert email.subject =~ "Action needed"
+      assert flat =~ "bank is asking for an extra confirmation"
+      assert flat =~ "treated as failed"
+      assert email.html_body =~ "/account/billing"
+      assert email.text_body =~ "/account/billing"
+    end
+
+    test "payment recovered: access is back and nothing was deleted (#447)" do
+      email = sent(&UserEmails.deliver_payment_recovered_email/1, user_with_status("active"))
+      flat = email.text_body |> String.replace(~r/\s+/, " ")
+
+      assert email.subject =~ "Payment received"
+      assert flat =~ "active again"
+      assert flat =~ "nothing was deleted"
+      assert email.html_body =~ "/account/billing"
     end
 
     test "cancellation: no more charges, nothing deleted, and the way back" do

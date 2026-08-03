@@ -782,6 +782,92 @@ defmodule Fountain.Billing do
     end
   end
 
+  @doc false
+  # invoice.payment_failed / invoice.payment_action_required (#447): the
+  # first-class dunning signals. Status is NOT written here — that stays with
+  # `customer.subscription.updated`, which carries the authoritative status —
+  # these events only drive the notification. Both usually arrive in the same
+  # delivery burst as the subscription update, and `Workers.LifecycleEmail`'s
+  # 24 h uniqueness collapses the invoice-driven and transition-driven
+  # enqueues into one email.
+  #
+  # Unknown customers return {:ok, :ignored}, not {:error, :user_not_found}:
+  # a deleted account's trailing invoice events are expected traffic, and
+  # there is no state to repair by redelivering.
+  def sync_subscription(%Stripe.Event{type: type, data: %{object: invoice}})
+      when type in ["invoice.payment_failed", "invoice.payment_action_required"] do
+    customer_id = extract_stripe_id(Map.get(invoice, :customer))
+    subscription_id = extract_stripe_id(Map.get(invoice, :subscription))
+
+    case customer_id && get_user_by_stripe_customer_id(customer_id) do
+      %User{subscription_status: "comped"} ->
+        {:ok, :comped_ignored}
+
+      %User{} = user ->
+        if other_subscription?(user, subscription_id) do
+          {:ok, :other_subscription}
+        else
+          email =
+            case type do
+              "invoice.payment_failed" -> "payment_failed"
+              "invoice.payment_action_required" -> "payment_action_required"
+            end
+
+          enqueue_email(user, email)
+          {:ok, user}
+        end
+
+      _ ->
+        {:ok, :ignored}
+    end
+  end
+
+  @doc false
+  # invoice.paid (#447) drives exactly one thing: dunning recovery. It must
+  # never write status except off `past_due` — Stripe pays a $0 invoice at
+  # trial-subscription creation and one per normal renewal, and applying
+  # those would flip a fresh trialing account straight to active. The
+  # past_due → active write below routes through the same watermark and
+  # subscription-of-record guards as the subscription events, and the
+  # transition enqueues the payment_recovered email via lifecycle_email/2.
+  def sync_subscription(%Stripe.Event{type: "invoice.paid", data: %{object: invoice}} = event) do
+    customer_id = extract_stripe_id(Map.get(invoice, :customer))
+    subscription_id = extract_stripe_id(Map.get(invoice, :subscription))
+    event_created = event_created_at(event)
+
+    case customer_id && get_user_by_stripe_customer_id(customer_id, :for_update) do
+      %User{subscription_status: "comped"} ->
+        {:ok, :comped_ignored}
+
+      %User{subscription_status: "past_due"} = user ->
+        cond do
+          other_subscription?(user, subscription_id) ->
+            {:ok, :other_subscription}
+
+          stale?(user.subscription_synced_at, event_created) ->
+            {:ok, :stale}
+
+          true ->
+            user
+            |> User.billing_changeset(%{
+              subscription_status: "active",
+              subscription_synced_at: event_created || user.subscription_synced_at
+            })
+            |> Repo.update()
+            |> tap(fn
+              {:ok, updated} -> enqueue_lifecycle_email("past_due", updated)
+              _ -> :ok
+            end)
+        end
+
+      %User{} ->
+        {:ok, :ignored}
+
+      _ ->
+        {:ok, :ignored}
+    end
+  end
+
   def sync_subscription(_event), do: {:ok, :ignored}
 
   # ─── Lifecycle emails (#283) ────────────────────────────────────────────────
@@ -801,6 +887,9 @@ defmodule Fountain.Billing do
   defp lifecycle_email(old, "canceled") when old in ["trialing", nil], do: "trial_expired"
   defp lifecycle_email(_old, "canceled"), do: "subscription_canceled"
   defp lifecycle_email(_old, "past_due"), do: "payment_failed"
+  # Dunning recovery (#447): the counterpart to payment_failed. Fires whether
+  # the recovery arrives via customer.subscription.updated or invoice.paid.
+  defp lifecycle_email("past_due", "active"), do: "payment_recovered"
   defp lifecycle_email(_old, _new), do: nil
 
   # Only enqueues; the send is a job (`Workers.LifecycleEmail`). A mail — or
@@ -808,21 +897,22 @@ defmodule Fountain.Billing do
   # Stripe retry the whole event, so this always returns :ok.
   defp enqueue_lifecycle_email(old_status, %User{} = user) do
     case lifecycle_email(old_status, user.subscription_status) do
-      nil ->
+      nil -> :ok
+      email -> enqueue_email(user, email)
+    end
+  end
+
+  defp enqueue_email(%User{} = user, email) do
+    case Fountain.Workers.LifecycleEmail.enqueue(user.id, email) do
+      {:ok, _job} ->
         :ok
 
-      email ->
-        case Fountain.Workers.LifecycleEmail.enqueue(user.id, email) do
-          {:ok, _job} ->
-            :ok
+      {:error, reason} ->
+        Logger.warning(
+          "lifecycle_email: enqueue #{email} for #{user.id} failed: #{inspect(reason)}"
+        )
 
-          {:error, reason} ->
-            Logger.warning(
-              "lifecycle_email: enqueue #{email} for #{user.id} failed: #{inspect(reason)}"
-            )
-
-            :ok
-        end
+        :ok
     end
   end
 

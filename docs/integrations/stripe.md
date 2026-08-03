@@ -17,8 +17,16 @@ no key. Set this up only if you run Fountain commercially.
     - `customer.subscription.updated`
     - `customer.subscription.deleted`
     - `customer.subscription.trial_will_end`
+    - `invoice.payment_failed`
+    - `invoice.payment_action_required`
+    - `invoice.paid`
 
     Its signing secret becomes `STRIPE_WEBHOOK_SECRET`.
+
+    An existing endpoint keeps working without the three `invoice.*` events —
+    dunning state still syncs from the subscription events — but the SCA
+    ("confirm your payment") email never fires and recovery notices depend
+    solely on `customer.subscription.updated`. Add them when upgrading.
 
 Use test-mode keys and a test-mode price everywhere except a production
 instance taking real money.
@@ -43,6 +51,12 @@ instance taking real money.
   and order-safe (stale events are ignored). Transient failures return a 500
   so Stripe redelivers.
 - Comped accounts are never overwritten by Stripe events.
+- `invoice.payment_failed` / `invoice.payment_action_required` drive dunning
+  and SCA emails but never write subscription status — that stays with the
+  subscription events. `invoice.paid` writes status in exactly one case:
+  `past_due → active` (dunning recovery), because Stripe also pays a $0
+  invoice at trial creation and one per normal renewal, which must not touch
+  the account.
 
 ## Verify
 
@@ -73,8 +87,11 @@ email) → paid subscription with a test card (gate opens) → cancel at period
 end (access retained, `cancel_at_period_end`/`current_period_end` synced) →
 period end (gate refuses, cancellation email, flag cleared) → re-subscribe
 (the return path) → failed renewal on an always-failing test card (real
-dunning: `past_due`, gate refuses, payment-failed email) —
-asserting the **Fountain-side** state at every step. Each fetched Stripe
+dunning: `past_due`, gate refuses, payment-failed email, and the real failed
+invoice fed through `invoice.payment_failed`) → dunning recovery (a working
+card pays the open invoice; `invoice.paid` flips `past_due → active`, the
+gate opens, payment-recovered email) — asserting the **Fountain-side** state
+at every step. Each fetched Stripe
 state is fed through `Billing.sync_subscription/1`, exactly what the webhook
 controller does after signature verification; webhook *delivery* needs a
 public endpoint and stays out of scope. Cleanup (clock + scratch user) runs

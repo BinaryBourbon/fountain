@@ -52,6 +52,11 @@ defmodule Mix.Tasks.Fountain.VerifyLifecycle do
     preflight!(key)
     Application.put_env(:stripity_stripe, :api_key, key)
 
+    # Half the checks assert what the gate refuses, and dev defaults
+    # BILLING_ENABLED=false — without this the run dies at "gate refuses
+    # after expiry" for a reason that has nothing to do with the lifecycle.
+    Application.put_env(:fountain, :billing_enabled, true)
+
     state = %{user: nil, clock: nil}
 
     try do
@@ -64,7 +69,8 @@ defmodule Mix.Tasks.Fountain.VerifyLifecycle do
       state = step_cancel_at_period_end(state)
       state = step_period_end(state)
       state = step_resubscribe(state)
-      _state = step_dunning(state)
+      state = step_dunning(state)
+      _state = step_dunning_recovery(state)
 
       info("\n✅  Lifecycle verified end to end.")
     after
@@ -314,7 +320,58 @@ defmodule Mix.Tasks.Fountain.VerifyLifecycle do
       lifecycle_email_enqueued?(user.id, "payment_failed")
     )
 
+    # The invoice-driven dunning signal (#447): feed the real failed invoice
+    # through sync. LifecycleEmail's 24 h uniqueness collapses this with the
+    # transition-driven enqueue above — one dunning cycle, one email.
+    {:ok, %{data: [invoice | _]}} =
+      Stripe.Invoice.list(%{subscription: sub.id, status: :open, limit: 1})
+
+    {:ok, %Fountain.Accounts.User{}} =
+      Billing.sync_subscription(event("invoice.payment_failed", invoice))
+
+    check!(
+      "invoice.payment_failed handled for the subscription of record (#447)",
+      lifecycle_email_enqueued?(user.id, "payment_failed")
+    )
+
     %{state | user: user, clock: clock}
+  end
+
+  # Real dunning recovery (#447): put a working card back, pay the open
+  # invoice through Stripe, and feed the real paid invoice through sync —
+  # past_due → active plus the payment_recovered email, all off invoice.paid
+  # rather than the subscription event.
+  defp step_dunning_recovery(%{user: user} = state) do
+    {:ok, pm} = Stripe.PaymentMethod.attach("pm_card_visa", %{customer: user.stripe_customer_id})
+
+    {:ok, _} =
+      Stripe.Customer.update(user.stripe_customer_id, %{
+        invoice_settings: %{default_payment_method: pm.id}
+      })
+
+    sub = fetch_subscription!(user, :past_due)
+
+    {:ok, %{data: [invoice | _]}} =
+      Stripe.Invoice.list(%{subscription: sub.id, status: :open, limit: 1})
+
+    {:ok, paid} = Stripe.Invoice.pay(invoice.id, %{})
+
+    {:ok, %Fountain.Accounts.User{} = user} =
+      Billing.sync_subscription(event("invoice.paid", paid))
+
+    check!(
+      "invoice.paid recovers past_due → active (#447)",
+      user.subscription_status == "active"
+    )
+
+    check!("gate open after recovery", Billing.check_active(user.id) == :ok)
+
+    check!(
+      "payment-recovered email enqueued (#447)",
+      lifecycle_email_enqueued?(user.id, "payment_recovered")
+    )
+
+    %{state | user: user}
   end
 
   # ── Assertions ─────────────────────────────────────────────────────────────

@@ -8,6 +8,12 @@ defmodule Fountain.Workers.LifecycleEmail do
     a link to update the payment method.
   - `"subscription_canceled"` — the subscription ended (their choice or
     dunning exhaustion). Confirmation, the data-retention story, the way back.
+  - `"payment_action_required"` (#447) — the bank wants SCA/3DS confirmation
+    before the charge goes through. Without it the user's first sign is the
+    dunning email for a failure they could have prevented in one click.
+  - `"payment_recovered"` (#447) — a past_due account paid up. The counterpart
+    to `"payment_failed"`; without it the account silently unlocks and the
+    dunning email stays the last word.
 
   Enqueued from `Billing.sync_subscription/1` on the status *transition*, never
   on the status itself — Stripe fires several `customer.subscription.updated`
@@ -29,7 +35,7 @@ defmodule Fountain.Workers.LifecycleEmail do
 
   alias Fountain.{Accounts, Emails.UserEmails}
 
-  @emails ~w(trial_expired payment_failed subscription_canceled)
+  @emails ~w(trial_expired payment_failed subscription_canceled payment_action_required payment_recovered)
 
   @doc "The email kinds this worker knows how to send."
   def emails, do: @emails
@@ -67,6 +73,17 @@ defmodule Fountain.Workers.LifecycleEmail do
 
   defp maybe_send(%{subscription_status: "canceled"} = user, "subscription_canceled"),
     do: deliver(user, "subscription_canceled", &UserEmails.deliver_subscription_canceled_email/1)
+
+  # An open invoice can want SCA while the account is in any live state — a
+  # renewal on an active account, a retry on a past_due one. Only a canceled
+  # account is past the point where confirming would help.
+  defp maybe_send(%{subscription_status: s} = user, "payment_action_required")
+       when s in ["trialing", "active", "past_due"],
+       do:
+         deliver(user, "payment_action_required", &UserEmails.deliver_payment_action_required_email/1)
+
+  defp maybe_send(%{subscription_status: "active"} = user, "payment_recovered"),
+    do: deliver(user, "payment_recovered", &UserEmails.deliver_payment_recovered_email/1)
 
   defp maybe_send(user, email) do
     Logger.info(
