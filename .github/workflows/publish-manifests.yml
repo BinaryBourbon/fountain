@@ -178,3 +178,25 @@ jobs:
           flux tag artifact "oci://${MANIFESTS}:sha-${SHORT}" --tag latest
 
           echo "manifest artifact published: ${MANIFESTS}:sha-${SHORT} (revision ${SHA}), latest re-tagged"
+
+      - name: Nudge Flux
+        # Tells the cluster's notification-controller the artifact moved, so
+        # the OCIRepository reconciles now instead of on its next 5m poll
+        # (the fountain-artifact-receiver in home-cloud k8s/flux-webhooks/).
+        # Strictly best-effort: a deploy must never fail because a webhook
+        # did — the poll interval remains the fallback. The URL embeds the
+        # receiver's token-derived path; it rotates with
+        # github-webhook-token, so update this secret when that rotates.
+        env:
+          FLUX_WEBHOOK_URL: ${{ secrets.FLUX_WEBHOOK_URL }}
+        run: |
+          if [ -z "${FLUX_WEBHOOK_URL}" ]; then
+            echo "FLUX_WEBHOOK_URL not set; relying on the poll interval."
+            exit 0
+          fi
+
+          if curl -fsS -m 10 -X POST "${FLUX_WEBHOOK_URL}" > /dev/null; then
+            echo "flux nudged — reconcile requested"
+          else
+            echo "webhook ping failed; the 5m poll will pick it up"
+          fi
