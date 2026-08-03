@@ -6,6 +6,7 @@ defmodule Fountain.Agents do
   alias Fountain.Agents.Agent
   alias Fountain.Agents.AgentAvatar
   alias Fountain.Conversations.Conversation
+  alias Fountain.Environments
   alias Fountain.Repo
 
   @doc "WARNING: lookup by id without owner check. Admin/internal use only."
@@ -76,13 +77,35 @@ defmodule Fountain.Agents do
   def create_agent(attrs) do
     %Agent{}
     |> Agent.changeset(attrs)
+    |> validate_environment_owner()
     |> Repo.insert()
   end
 
   def update_agent(%Agent{} = agent, attrs) do
     agent
     |> Agent.changeset(attrs)
+    |> validate_environment_owner()
     |> Repo.update()
+  end
+
+  # An agent may only reference an environment owned by the same tenant —
+  # the environment's secrets and checkpoints materialise inside the
+  # agent's sprite. The error mirrors a nonexistent id so a foreign
+  # environment UUID can't be confirmed by probing.
+  defp validate_environment_owner(changeset) do
+    env_id = Ecto.Changeset.get_change(changeset, :environment_id)
+    user_id = Ecto.Changeset.get_field(changeset, :user_id)
+
+    cond do
+      is_nil(env_id) ->
+        changeset
+
+      is_binary(user_id) && Environments.get_environment(env_id, user_id) ->
+        changeset
+
+      true ->
+        Ecto.Changeset.add_error(changeset, :environment_id, "does not exist")
+    end
   end
 
   def delete_agent(%Agent{} = agent), do: Repo.delete(agent)

@@ -103,6 +103,45 @@ defmodule FountainWeb.AgentControllerTest do
 
       assert json_response(conn, 422)
     end
+
+    test "returns 422 when environment_id belongs to another tenant", %{conn: conn, raw_key: raw_key} do
+      victim = insert_verified_user()
+      victim_env = insert_env(user_id: victim.id)
+
+      payload = %{
+        name: "probe",
+        model: "anthropic/claude-sonnet-4-6",
+        runtime: "claude",
+        environment_id: victim_env.id
+      }
+
+      conn =
+        conn
+        |> authed_with_key(raw_key)
+        |> post_json("/api/agents", payload)
+
+      body = json_response(conn, 422)
+      assert body["errors"]["environment_id"] == ["does not exist"]
+    end
+
+    test "accepts environment_id owned by the caller", %{conn: conn, user: user, raw_key: raw_key} do
+      env = insert_env(user_id: user.id)
+
+      payload = %{
+        name: "with-env",
+        model: "anthropic/claude-sonnet-4-6",
+        runtime: "claude",
+        environment_id: env.id
+      }
+
+      conn =
+        conn
+        |> authed_with_key(raw_key)
+        |> post_json("/api/agents", payload)
+
+      body = json_response(conn, 201)
+      assert body["data"]["environment_id"] == env.id
+    end
   end
 
   describe "PUT /api/agents/:id" do
@@ -135,6 +174,24 @@ defmodule FountainWeb.AgentControllerTest do
       agent = insert_agent(user_id: user.id)
       conn = put_json(conn, "/api/agents/#{agent.id}", %{name: "updated"})
       assert json_response(conn, 401)
+    end
+
+    test "returns 422 when updating environment_id to another tenant's", %{
+      conn: conn,
+      user: user,
+      raw_key: raw_key
+    } do
+      victim = insert_verified_user()
+      victim_env = insert_env(user_id: victim.id)
+      agent = insert_agent(user_id: user.id)
+
+      conn =
+        conn
+        |> authed_with_key(raw_key)
+        |> put_json("/api/agents/#{agent.id}", %{environment_id: victim_env.id})
+
+      body = json_response(conn, 422)
+      assert body["errors"]["environment_id"] == ["does not exist"]
     end
   end
 
