@@ -1445,6 +1445,7 @@ defmodule FountainWeb.ConversationsLive.Show do
   defp stage_icon("clone"), do: "&#129319;"
   defp stage_icon("turn"), do: "&#128172;"
   defp stage_icon("reattach"), do: "&#128268;"
+  defp stage_icon("sandbox"), do: "&#128164;"
   defp stage_icon("terminate"), do: "&#128721;"
   defp stage_icon(_), do: "&bull;"
 

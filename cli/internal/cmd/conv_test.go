@@ -75,6 +75,44 @@ func TestHandleStageEvent(t *testing.T) {
 			terminal: false,
 			wantErr:  nil,
 		},
+		{
+			// After `fountain conv interrupt` from another shell, the stream
+			// used to sit out the full idle timeout and exit 1.
+			name:     "turn interrupted is a clean terminal",
+			data:     map[string]any{"stage": "turn", "state": "interrupted", "data": "{}"},
+			terminal: true,
+			wantErr:  nil,
+		},
+		{
+			// The server stops after publishing this (conversation_server.ex),
+			// so nothing more is coming.
+			name:     "reattach failed is terminal and fails",
+			data:     map[string]any{"stage": "reattach", "state": "failed", "data": `{"reason":"gone"}`},
+			terminal: true,
+			wantErr:  errReattachFailed,
+		},
+		{
+			// The server falls back to cold provisioning after a failed
+			// checkpoint restore — the stream must keep going.
+			name:     "checkpoint restore failed is not terminal (cold provision follows)",
+			data:     map[string]any{"stage": "checkpoint_restore", "state": "failed", "data": "{}"},
+			terminal: false,
+			wantErr:  nil,
+		},
+		{
+			// Idle reclaim means no turn was running: a clean end.
+			name:     "sandbox reclaimed for idleness is a clean terminal",
+			data:     map[string]any{"stage": "sandbox", "state": "done", "data": `{"event":"reclaimed","reason":"idle"}`},
+			terminal: true,
+			wantErr:  nil,
+		},
+		{
+			// A max-lifetime reclaim can cut a running turn short.
+			name:     "sandbox reclaimed at max lifetime fails",
+			data:     map[string]any{"stage": "sandbox", "state": "done", "data": `{"event":"reclaimed","reason":"max_lifetime"}`},
+			terminal: true,
+			wantErr:  errSandboxExpired,
+		},
 	}
 
 	for _, tc := range cases {

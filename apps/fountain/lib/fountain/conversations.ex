@@ -966,7 +966,7 @@ defmodule Fountain.Conversations do
      `runtime_session_id`.
 
   Returns `{:error, :gone}` if the conversation is in a terminal status
-  (`terminated`, `failed`, `completed`) — those don't auto-resume.
+  (`terminated`, `failed`) — those don't auto-resume.
   """
   def wake_conversation(conv_id, initial_prompt \\ nil) do
     with %Conversation{} = conv <- _unsafe_get_conversation(conv_id) || {:error, :not_found},

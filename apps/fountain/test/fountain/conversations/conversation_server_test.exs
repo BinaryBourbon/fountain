@@ -416,6 +416,23 @@ defmodule Fountain.Conversations.ConversationServerTest do
       GenServer.stop(pid)
     end
 
+    test "a spawn that never starts returns the conversation to idle", %{conv: conv} do
+      # The conversation is set to "running" just before the spawn attempt.
+      # Before this reset, a failed spawn marked the turn failed but left the
+      # conversation reporting "running" in the API and UI indefinitely.
+      stub_happy_sprite()
+      Mimic.stub(Sprites, :spawn, fn _s, _cmd, _args, _opts -> {:error, :econnrefused} end)
+
+      {pid, _ref, :alive} = start_server(conv, initial_prompt: "hello")
+      _ = :sys.get_state(pid)
+
+      assert [turn] = Conversations._unsafe_list_turns(conv.id)
+      assert turn.status == "failed"
+      assert Conversations._unsafe_get_conversation!(conv.id).status == "idle"
+
+      GenServer.stop(pid)
+    end
+
     test "stdout is persisted as log events", %{conv: conv} do
       {pid, ref} = start_with_turn(conv)
 

@@ -41,6 +41,8 @@ var errIdleTimeout = errors.New("no output received")
 var (
 	errTurnFailed      = errors.New("turn failed")
 	errProvisionFailed = errors.New("provisioning failed — the sandbox never started")
+	errReattachFailed  = errors.New("reattach failed — the sandbox was marked failed")
+	errSandboxExpired  = errors.New("sandbox hit its max lifetime")
 )
 
 // reconnectBackoff is a variable so tests do not have to sit through real

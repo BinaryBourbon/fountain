@@ -420,8 +420,33 @@ func handleStageEvent(data map[string]any) (bool, error) {
 		fmt.Fprintf(os.Stderr, "▸ provisioning failed — the sandbox never started\n")
 		return true, errProvisionFailed
 
+	case stage == "reattach" && state == "failed":
+		// The server stops after this (conversation_server.ex); no more
+		// events are coming. The conversation itself stays promptable —
+		// the next prompt auto-wakes a fresh sandbox.
+		fmt.Fprintf(os.Stderr, "▸ reattach failed — prompt again to provision a fresh sandbox\n")
+		return true, errReattachFailed
+
 	case stage == "terminate" && state == "done":
 		fmt.Fprintf(os.Stderr, "▸ conversation terminated\n")
+		return true, nil
+
+	case stage == "turn" && state == "interrupted":
+		// Deliberate `fountain conv interrupt` (possibly from another
+		// shell). Clean exit: without this case the stream sat out the
+		// full idle timeout waiting for a turn/done that never comes.
+		fmt.Fprintf(os.Stderr, "▸ turn interrupted\n")
+		return true, nil
+
+	case stage == "sandbox" && state == "done":
+		// The sandbox was reclaimed and the server stopped. An idle
+		// reclaim means no turn was running — a clean end. A max-lifetime
+		// reclaim can cut a running turn short, so it exits non-zero.
+		reason := innerDataString(data, "reason")
+		fmt.Fprintf(os.Stderr, "▸ sandbox reclaimed (%s) — the conversation stays resumable\n", reason)
+		if reason == "max_lifetime" {
+			return true, errSandboxExpired
+		}
 		return true, nil
 	}
 
@@ -430,18 +455,23 @@ func handleStageEvent(data map[string]any) (bool, error) {
 }
 
 // exitCodeFromStageDone digs `data.data.exit_code` out of a turn-done event.
-// The Elixir code looked up the same path; the inner `data` was JSON-encoded,
-// so we accept either a nested map or a JSON string.
 func exitCodeFromStageDone(data map[string]any) string {
+	return innerDataString(data, "exit_code")
+}
+
+// innerDataString digs `data.data.<key>` out of a stage event. The Elixir
+// code JSON-encodes the stage metadata into the inner `data`, so we accept
+// either a nested map or a JSON string.
+func innerDataString(data map[string]any, key string) string {
 	inner := data["data"]
 	if s, ok := inner.(string); ok {
 		var m map[string]any
 		if json.Unmarshal([]byte(s), &m) == nil {
-			return output.ToString(m["exit_code"])
+			return output.ToString(m[key])
 		}
 	}
 	if m, ok := inner.(map[string]any); ok {
-		return output.ToString(m["exit_code"])
+		return output.ToString(m[key])
 	}
 	return ""
 }

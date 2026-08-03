@@ -22,8 +22,8 @@ defmodule Fountain.Conversations.Lifecycle do
   ## Why reclaiming is safe
 
   Only the *sandbox* is torn down. The conversation row stays `idle`, which
-  keeps it resumable — `assert_resumable/1` only refuses `terminated`, `failed`
-  and `completed`. The next prompt goes through `wake_conversation/2`, which
+  keeps it resumable — `assert_resumable/1` only refuses `terminated` and
+  `failed`. The next prompt goes through `wake_conversation/2`, which
   sees a sandbox that is no longer `ready`, provisions a fresh one, and passes
   the persisted `runtime_session_id` so the runtime resumes the same chat.
 

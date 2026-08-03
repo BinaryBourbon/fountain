@@ -1548,6 +1548,16 @@ defmodule Fountain.Conversations.ConversationServer do
             reason: inspect(reason)
           })
 
+          # The conversation was set to "running" just before the spawn
+          # attempt; without this it stays "running" in the API and UI until
+          # some later turn completes, even though nothing is executing. The
+          # :exit and :interrupt handlers both do the same reset.
+          failed_conv = Conversations._unsafe_get_conversation!(state.conversation_id)
+
+          if failed_conv.status == "running" do
+            {:ok, _} = Conversations.update_conversation(failed_conv, %{status: "idle"})
+          end
+
           # Spawn never started; close the span we just opened so it
           # doesn't leak.
           OpenTelemetry.Tracer.set_status(
