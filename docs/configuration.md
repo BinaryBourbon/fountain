@@ -45,6 +45,7 @@ an error message.
 | `SPRITES_TIMEOUT_MS` | `30000` | — | Bounds every HTTP call to the Sprites API. Long-running commands (package installs, clones) set their own per-call timeouts. Boot refuses a non-positive value |
 | `SANDBOX_IDLE_TIMEOUT_MINUTES` | `60` | — | No turn activity for this long and the sandbox is reclaimed — the conversation stays [resumable](self-hosting.md#sandbox-lifetime). `0` disables the bound; boot refuses anything that is not a non-negative integer |
 | `SANDBOX_MAX_LIFETIME_HOURS` | `24` | — | Absolute sandbox age ceiling, regardless of activity. Same `0`-disables and boot-refusal rules |
+| `LOG_OUTPUT_BUDGET_MB` | `50` | — | Durable log volume per conversation. Once a conversation has persisted this much sandbox output, one truncation marker is written and further output is discarded (retention bounds age; this bounds rate). Same `0`-disables and boot-refusal rules |
 
 ## Registration and accounts
 

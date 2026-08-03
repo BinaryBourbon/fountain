@@ -205,6 +205,13 @@ config :fountain,
   sandbox_idle_timeout_minutes: parse_bound.("SANDBOX_IDLE_TIMEOUT_MINUTES", "60"),
   sandbox_max_lifetime_hours: parse_bound.("SANDBOX_MAX_LIFETIME_HOURS", "24")
 
+# Durable log volume per conversation (#331). Retention bounds the age of
+# log_events rows; this bounds the rate — without it a sandbox printing
+# garbage could write tens of GB into the same Postgres volume the app
+# depends on. 0 disables the cap.
+config :fountain,
+  log_output_byte_budget: parse_bound.("LOG_OUTPUT_BUDGET_MB", "50") * 1_000_000
+
 # Accounts that registered and never verified are deleted after this many
 # days (#258) — they cannot log in, so they are rows, not users. 0 disables
 # the sweep. UNVERIFIED_PRUNE_EXEMPT is a comma-separated list of email

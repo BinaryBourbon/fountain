@@ -677,6 +677,20 @@ defmodule Fountain.Conversations do
   # ── log events ──────────────────────────────────────────────────────────────────────────
 
   @doc """
+  Total persisted bytes of `kind: "output"` log data for a conversation.
+  Without tenant scoping — the caller is the conversation's own server,
+  seeding the durable-output budget (#331).
+  """
+  def _unsafe_output_byte_total(conversation_id) do
+    Repo.one(
+      from(l in LogEvent,
+        where: l.conversation_id == ^conversation_id and l.kind == "output",
+        select: coalesce(sum(fragment("octet_length(?)", l.data)), 0)
+      )
+    )
+  end
+
+  @doc """
   Insert a log event. Returns the inserted struct (with integer `:id`,
   used as the SSE event id).
   """
