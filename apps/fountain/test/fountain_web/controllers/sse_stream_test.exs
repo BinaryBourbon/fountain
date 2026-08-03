@@ -243,4 +243,105 @@ defmodule FountainWeb.SseStreamTest do
       Task.shutdown(task, :brutal_kill)
     end
   end
+
+  describe "conversation server death" do
+    # Before the stream monitored the server, every death that skipped the
+    # explicit :terminate_conv path — a crash, a Horde rebalance, a deploy —
+    # left the topic silent while the heartbeat kept the connection alive:
+    # the client received heartbeats forever with no data, no terminal event
+    # and no disconnect to trigger a reconnect.
+    defp fake_server(conv_id) do
+      test_pid = self()
+
+      pid =
+        spawn(fn ->
+          Horde.Registry.register(Fountain.ConversationRegistry, conv_id, nil)
+          send(test_pid, :registered)
+          Process.sleep(:infinity)
+        end)
+
+      assert_receive :registered, 2_000
+      pid
+    end
+
+    test "a crashing server ends the stream with a synthetic failed stage", %{
+      raw_key: key,
+      conv: conv
+    } do
+      # Idle timeout far beyond the await below: only the :DOWN can close it.
+      fast_loop(60_000, 60_000)
+
+      server = fake_server(conv.id)
+      parent = self()
+
+      task =
+        Task.async(fn ->
+          Ecto.Adapters.SQL.Sandbox.allow(Fountain.Repo, parent, self())
+          stream(key, "/api/conversations/#{conv.id}/stream")
+        end)
+
+      # Give the loop time to subscribe and monitor before the kill.
+      Process.sleep(300)
+      Process.exit(server, :kill)
+
+      conn = Task.await(task, 5_000)
+
+      assert conn.status == 200
+      assert conn.resp_body =~ ~s("stage":"server")
+      assert conn.resp_body =~ ~s("state":"failed")
+    end
+
+    test "a clean shutdown reads as the server stage reaching done", %{
+      raw_key: key,
+      conv: conv
+    } do
+      fast_loop(60_000, 60_000)
+
+      server = fake_server(conv.id)
+      parent = self()
+
+      task =
+        Task.async(fn ->
+          Ecto.Adapters.SQL.Sandbox.allow(Fountain.Repo, parent, self())
+          stream(key, "/api/conversations/#{conv.id}/stream")
+        end)
+
+      Process.sleep(300)
+      Process.exit(server, :shutdown)
+
+      conn = Task.await(task, 5_000)
+
+      assert conn.resp_body =~ ~s("stage":"server")
+      assert conn.resp_body =~ ~s("state":"done")
+    end
+
+    test "a synthetic terminal event carries no SSE id, preserving resume", %{
+      raw_key: key,
+      conv: conv
+    } do
+      # Resuming from a synthetic id would skip real events; the reconnect
+      # must replay from the last PERSISTED event the client saw.
+      fast_loop(60_000, 60_000)
+
+      server = fake_server(conv.id)
+      parent = self()
+
+      task =
+        Task.async(fn ->
+          Ecto.Adapters.SQL.Sandbox.allow(Fountain.Repo, parent, self())
+          stream(key, "/api/conversations/#{conv.id}/stream")
+        end)
+
+      Process.sleep(300)
+      Process.exit(server, :kill)
+      conn = Task.await(task, 5_000)
+
+      [chunk] =
+        conn.resp_body
+        |> String.split("\n\n", trim: true)
+        |> Enum.filter(&(&1 =~ ~s("stage":"server")))
+
+      refute chunk =~ ~r/^id: /m
+    end
+  end
 end

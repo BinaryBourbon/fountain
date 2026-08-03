@@ -358,6 +358,22 @@ defmodule FountainWeb.ConversationController do
           Phoenix.PubSub.subscribe(Fountain.PubSub, "conv:#{id}")
         end
 
+        # A ConversationServer that dies without publishing a terminal
+        # stage (a crash, a Horde rebalance, a deploy) would otherwise
+        # leave this stream heartbeating forever with no data and no
+        # reason to reconnect. Monitoring is best-effort: no server just
+        # means an idle/finished conversation being drained from history.
+        # The ref is matched exactly in sse_loop — this process holds other
+        # monitors (DB ownership among them) whose :DOWN messages must not
+        # end the stream.
+        monitor_ref =
+          if wait? do
+            case ConversationServer.whereis(id) do
+              pid when is_pid(pid) -> Process.monitor(pid)
+              _ -> nil
+            end
+          end
+
         conn =
           conn
           |> put_resp_header("content-type", "text/event-stream")
@@ -366,11 +382,11 @@ defmodule FountainWeb.ConversationController do
           |> send_chunked(200)
 
         # Replay buffered events the client missed.
-        {conn, last_id} = replay(conn, id, last_event_id, streams)
+        {status, conn, last_id} = replay(conn, id, last_event_id, streams)
 
-        if wait? do
+        if wait? and status == :ok do
           Process.send_after(self(), :heartbeat, heartbeat_ms())
-          sse_loop(conn, last_id, streams)
+          sse_loop(conn, last_id, streams, monitor_ref)
         else
           # `?wait=false` → close immediately after replay. Useful when
           # the caller already knows the conversation is finished and
@@ -471,13 +487,18 @@ defmodule FountainWeb.ConversationController do
     end
   end
 
+  # Returns `{:ok, conn, last_id}`, or `{:closed, conn, last_id}` when the
+  # client went away mid-replay — a routine disconnect (Ctrl-C on a curl, a
+  # closed tab, an EventSource reconnect against a long backlog), not an
+  # error. This used to `throw` the chunk error with no catch anywhere in
+  # the module, producing a crash report and a Sentry event per disconnect.
   defp replay(conn, conv_id, after_id, streams) do
     conv_id
     |> Conversations._unsafe_list_log_events(after_id, streams: streams)
-    |> Enum.reduce({conn, after_id}, fn ev, {acc_conn, _} ->
+    |> Enum.reduce_while({:ok, conn, after_id}, fn ev, {:ok, acc_conn, last_id} ->
       case write_event(acc_conn, ev) do
-        {:ok, c} -> {c, ev.id}
-        {:error, _} = e -> throw(e)
+        {:ok, c} -> {:cont, {:ok, c, ev.id}}
+        {:error, _} -> {:halt, {:closed, acc_conn, last_id}}
       end
     end)
   end
@@ -494,36 +515,78 @@ defmodule FountainWeb.ConversationController do
 
   defp event_in_streams?(_ev, _streams), do: false
 
-  defp sse_loop(conn, last_id, streams) do
+  defp sse_loop(conn, last_id, streams, monitor_ref) do
     receive do
       {:log_event, %LogEvent{id: ev_id} = ev} when ev_id > last_id ->
         cond do
           not event_in_streams?(ev, streams) ->
-            sse_loop(conn, ev_id, streams)
+            sse_loop(conn, ev_id, streams, monitor_ref)
 
           true ->
             case write_event(conn, ev) do
-              {:ok, conn} -> sse_loop(conn, ev_id, streams)
+              {:ok, conn} -> sse_loop(conn, ev_id, streams, monitor_ref)
               {:error, _} -> conn
             end
         end
 
       {:log_event, _stale} ->
-        sse_loop(conn, last_id, streams)
+        sse_loop(conn, last_id, streams, monitor_ref)
 
       :heartbeat ->
         case Plug.Conn.chunk(conn, ": heartbeat\n\n") do
           {:ok, conn} ->
             Process.send_after(self(), :heartbeat, heartbeat_ms())
-            sse_loop(conn, last_id, streams)
+            sse_loop(conn, last_id, streams, monitor_ref)
 
           {:error, _} ->
             conn
         end
+
+      {:DOWN, ^monitor_ref, :process, _pid, reason} when is_reference(monitor_ref) ->
+        # The conversation server died without publishing a terminal stage.
+        # Say so and close, so the client reconnects (and, if the server was
+        # rehydrated elsewhere, resumes) instead of receiving heartbeats
+        # forever on a topic nothing will publish to again.
+        write_server_down_event(conn, reason)
     after
       idle_timeout_ms() ->
         # Long quiet — exit cleanly so the client reconnects.
         conn
+    end
+  end
+
+  # Synthetic (not persisted, so no SSE id — it must not disturb
+  # Last-Event-ID resume) stage event telling the client why the stream is
+  # closing. Same payload shape as write_event/2. A clean shutdown or Horde
+  # handoff is the stage reaching its end ("done"); anything else is a crash
+  # ("failed") — the stage vocabulary clients already switch on.
+  defp write_server_down_event(conn, reason) do
+    state =
+      case reason do
+        :normal -> "done"
+        :shutdown -> "done"
+        {:shutdown, _} -> "done"
+        _ -> "failed"
+      end
+
+    payload =
+      Jason.encode!(%{
+        kind: "stage",
+        stream: nil,
+        data:
+          Jason.encode!(%{
+            reason: inspect(reason),
+            message: "conversation server exited — reconnect to resume streaming"
+          }),
+        stage: "server",
+        state: state,
+        turn_id: nil,
+        ts: DateTime.utc_now()
+      })
+
+    case Plug.Conn.chunk(conn, "event: stage\ndata: #{payload}\n\n") do
+      {:ok, conn} -> conn
+      {:error, _} -> conn
     end
   end
 

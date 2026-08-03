@@ -44,9 +44,11 @@ defmodule FountainWeb.Schemas do
         runtime: %Schema{type: :string, enum: ~w(claude codex gemini opencode)},
         status: %Schema{
           type: :string,
-          enum: ~w(pending running idle completed failed terminated)
+          enum: ~w(pending running idle failed terminated)
         },
         runtime_session_id: %Schema{type: :string, nullable: true},
+        source: %Schema{type: :string, enum: ~w(ui api agent)},
+        parent_conversation_id: %Schema{type: :string, format: :uuid, nullable: true},
         inserted_at: %Schema{type: :string, format: :"date-time"},
         updated_at: %Schema{type: :string, format: :"date-time"}
       },
