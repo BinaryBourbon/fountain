@@ -30,12 +30,26 @@ spec:
       labels:
         app: fountain
     spec:
+      # ConversationServers trap exits so terminate/2 can revoke each
+      # sprite's callback key on the way down (#322); with many live
+      # conversations that teardown can outrun the 30s default, after which
+      # SIGKILL leaves un-revoked keys and orphaned sprites for the reaper.
+      terminationGracePeriodSeconds: 120
       containers:
         - name: fountain
           # Retagged by kustomization.yaml's images: block — edit the pin
           # there, not here.
           image: ghcr.io/binarybourbon/fountain:v0.3.0
           imagePullPolicy: IfNotPresent
+          lifecycle:
+            # Endpoints propagation is asynchronous: without this pause the
+            # pod stops accepting while kube-proxy/ingress still route to
+            # it, dropping SSE streams mid-conversation. Sleep long enough
+            # for the Endpoints update to reach the dataplane, then let the
+            # BEAM shut down.
+            preStop:
+              exec:
+                command: ["sleep", "5"]
           ports:
             - name: http
               containerPort: 4000

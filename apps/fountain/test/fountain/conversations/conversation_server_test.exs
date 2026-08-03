@@ -416,6 +416,42 @@ defmodule Fountain.Conversations.ConversationServerTest do
       GenServer.stop(pid)
     end
 
+    test "a conversation deleted before provisioning stops the server instead of crash-looping", %{
+      conv: conv
+    } do
+      # This used to raise Ecto.NoResultsError out of
+      # handle_continue(:provision) — unrescued, restart: :transient, so
+      # Horde restarted it straight back into the same raise, burning the
+      # supervisor's SHARED restart budget until it terminated and took
+      # every conversation on the node with it.
+      {:ok, _} = Repo.delete(Repo.get!(Fountain.Conversations.Conversation, conv.id))
+
+      log =
+        ExUnit.CaptureLog.capture_log(fn ->
+          {_pid, ref, settled} = start_server(conv)
+          assert settled == :stopped
+          assert assert_stopped(ref) == :normal
+        end)
+
+      assert log =~ "row missing before provisioning"
+    end
+
+    test "a sandbox deleted before provisioning stops the server instead of crash-looping", %{
+      conv: conv,
+      sandbox: sandbox
+    } do
+      {:ok, _} = Repo.delete(Repo.get!(Fountain.Conversations.Sandbox, sandbox.id))
+
+      log =
+        ExUnit.CaptureLog.capture_log(fn ->
+          {_pid, ref, settled} = start_server(conv)
+          assert settled == :stopped
+          assert assert_stopped(ref) == :normal
+        end)
+
+      assert log =~ "row missing before provisioning"
+    end
+
     test "a spawn that never starts returns the conversation to idle", %{conv: conv} do
       # The conversation is set to "running" just before the spawn attempt.
       # Before this reset, a failed spawn marked the turn failed but left the

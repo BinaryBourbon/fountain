@@ -108,10 +108,11 @@ defmodule Fountain.Telemetry do
     # to a name that never fires logs nothing and looks identical to healthy
     # silence (#310). Span names: ConversationServer wraps fresh_provision,
     # reattach and setup_script; Provisioning wraps packages, network_policy,
-    # clone_repositories and checkpoint create/restore.
+    # clone_repositories and checkpoint create/restore; Rehydrator wraps its
+    # post-boot sweep in rehydrate.
     spans =
       for stage <-
-            ~w(fresh_provision reattach setup_script packages network_policy clone_repositories)a,
+            ~w(fresh_provision reattach setup_script packages network_policy clone_repositories rehydrate)a,
           phase <- ~w(start stop exception)a,
           do: @prefix ++ [stage, phase]
 
