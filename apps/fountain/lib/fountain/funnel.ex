@@ -32,6 +32,8 @@ defmodule Fountain.Funnel do
 
   import Ecto.Query
 
+  require Logger
+
   alias Fountain.Accounts.User
   alias Fountain.Billing.UsageEvent
   alias Fountain.Conversations.Conversation
@@ -127,6 +129,15 @@ defmodule Fountain.Funnel do
       |> Map.put(:stalled_verified, stalled)
 
     :telemetry.execute([:fountain, :funnel], measurements, %{})
+  rescue
+    # A raise here must not escape: telemetry_poller permanently drops a
+    # measurement whose tick raises, so one failure — the boot tick racing
+    # Repo startup, a transient DB blip — would silently kill the funnel
+    # gauges for the node's lifetime (#365). Skip the datapoint instead;
+    # the next 10s tick retries.
+    error ->
+      Logger.warning("funnel telemetry tick skipped: #{Exception.message(error)}")
+      :ok
   end
 
   # Of the verified users with no conversation ever: how far did each get?
