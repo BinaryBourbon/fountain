@@ -73,6 +73,21 @@ defmodule FountainWeb.FallbackController do
     })
   end
 
+  # The ConversationServer did not answer within the call timeout — almost
+  # always a server still inside handle_continue(:provision), whose blocked
+  # mailbox makes every call wait the full 30s and exit (#412). 503 with
+  # Retry-After rather than 500: the conversation is coming up, the request
+  # was fine, and the caller should try again shortly.
+  def call(conn, {:error, :provisioning}) do
+    conn
+    |> put_resp_header("retry-after", "30")
+    |> put_status(:service_unavailable)
+    |> json(%{
+      error: "provisioning",
+      message: "the conversation is still provisioning; retry shortly"
+    })
+  end
+
   # Prompting a terminated conversation. 410 rather than 404: the id was
   # real, the resource is gone for good, and the caller should stop retrying.
   def call(conn, {:error, :gone}) do
