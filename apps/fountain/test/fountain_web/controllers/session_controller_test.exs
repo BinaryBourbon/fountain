@@ -1,5 +1,24 @@
 defmodule FountainWeb.SessionControllerTest do
   use FountainWeb.ConnCase, async: true
+  use Mimic
+
+  describe "GET /auth/login — GitHub button (#336)" do
+    test "renders the button when GitHub OAuth is configured", %{conn: conn} do
+      # config/test.exs sets a fake client id, so the configured path is the
+      # default in the suite.
+      body = conn |> get(~p"/auth/login") |> html_response(200)
+      assert body =~ "Continue with GitHub"
+      assert body =~ ~p"/auth/oauth/github"
+    end
+
+    test "hides the button when GitHub OAuth is not configured", %{conn: conn} do
+      stub(FountainWeb.OAuth, :github_configured?, fn -> false end)
+
+      body = conn |> get(~p"/auth/login") |> html_response(200)
+      refute body =~ "Continue with GitHub"
+      refute body =~ ~p"/auth/oauth/github"
+    end
+  end
 
   describe "GET /login (legacy route removed, #327)" do
     test "no route exists for the legacy admin login", %{conn: conn} do

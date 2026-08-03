@@ -101,6 +101,11 @@ spec:
               value: fountain.inevitable.fyi
             - name: EMAIL_FROM
               value: noreply@updates.inevitable.fyi
+            # The app defaults BILLING_ENABLED to false (#336) so a stock
+            # self-host install never hits ADR 0006's gate with no key. This
+            # hosted instance is the deployment that opts in.
+            - name: BILLING_ENABLED
+              value: "true"
             # Display-only price for the admin billing overview's MRR tile
             # (#286). Matches the live price (price_1TVSgwDbTpLaSfbPV8fLtPT9,
             # $29/mo as of 2026-08-02) — the API only exposes the price *id*,

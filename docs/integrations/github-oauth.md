@@ -22,9 +22,9 @@ The requested scope is `user:email`.
 | `GITHUB_OAUTH_CLIENT_ID` | From the OAuth app |
 | `GITHUB_OAUTH_CLIENT_SECRET` | From the OAuth app |
 
-One honest caveat: the GitHub button renders whether or not these are set.
-Unconfigured, clicking it lands on a GitHub-side error page rather than an
-in-app message.
+The button only renders when `GITHUB_OAUTH_CLIENT_ID` is set — an
+unconfigured instance shows plain email + password auth, with no dead-end
+GitHub button.
 
 ## Behavior worth knowing
 

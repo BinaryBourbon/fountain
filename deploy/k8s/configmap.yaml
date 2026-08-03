@@ -22,6 +22,17 @@ data:
   # REGISTRATION_ALLOWED_EMAIL_DOMAINS: "example.com"
   REGISTRATION_ENABLED: "true"
 
+  # CIDRs stepped over when resolving the client IP from X-Forwarded-For.
+  # The app's built-in default trusts the k3s networks (10.42.0.0/16,
+  # 10.43.0.0/16, loopback) — the maintainer's cluster, not necessarily
+  # yours. Set this to your ingress-controller and pod CIDRs (the example
+  # below is the kubeadm/flannel default). Symptom when wrong: every request
+  # resolves to the ingress pod's IP, so per-IP rate limits collapse into a
+  # single shared bucket and one busy client throttles everyone. Don't go
+  # over-broad either — a range that includes real clients lets them spoof
+  # X-Forwarded-For past rate limiting.
+  # TRUSTED_PROXIES: "10.244.0.0/16, 10.96.0.0/12"
+
   # "none" sends nothing: verify your first account with
   #   kubectl exec -n fountain deploy/fountain -- \
   #     sh -c "PHX_SERVER=false bin/fountain_server eval 'Fountain.Release.verify_email(\"you@example.com\")'"

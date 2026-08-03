@@ -157,9 +157,18 @@ config :sentry,
   send_default_pii: false
 
 # ADR 0006 made the subscription gate a product invariant. For a self-hosted
-# instance it is just a lock on the front door with no key, so it is now
-# config rather than a source patch.
-config :fountain, :billing_enabled, System.get_env("BILLING_ENABLED", "true") != "false"
+# instance it is just a lock on the front door with no key, so it is config
+# rather than a source patch — and off by default (#336): an operator
+# exporting env by hand who never hears of BILLING_ENABLED must not lock
+# themselves out of their own instance. The hosted deployment is the one that
+# opts in (k8s/deployment.yaml sets BILLING_ENABLED=true explicitly).
+#
+# Skipped in :test — the suite pins the gate on in config/test.exs and
+# toggles it per-test through the application env, independent of whatever
+# BILLING_ENABLED happens to be in the developer's shell or .env.
+if config_env() != :test do
+  config :fountain, :billing_enabled, System.get_env("BILLING_ENABLED", "false") != "false"
+end
 
 # Registration was open to the world with no way to close it. A self-hoster
 # exposing an instance had no control over who signed up, and on the hosted
@@ -271,9 +280,15 @@ config :ueberauth, Ueberauth,
     github: {Ueberauth.Strategy.Github, [default_scope: "user:email"]}
   ]
 
-config :ueberauth, Ueberauth.Strategy.Github.OAuth,
-  client_id: System.get_env("GITHUB_OAUTH_CLIENT_ID"),
-  client_secret: System.get_env("GITHUB_OAUTH_CLIENT_SECRET")
+# Only when the env var is present: an unconditional write here clobbers
+# whatever config/test.exs set with nil, so in CI (no env vars, no .env)
+# github_configured?/0 was false and the button tests failed — while local
+# runs passed because .env supplied the var. Absent stays absent.
+if github_client_id = System.get_env("GITHUB_OAUTH_CLIENT_ID") do
+  config :ueberauth, Ueberauth.Strategy.Github.OAuth,
+    client_id: github_client_id,
+    client_secret: System.get_env("GITHUB_OAUTH_CLIENT_SECRET")
+end
 
 # Stripe (§5.2)
 config :stripity_stripe,

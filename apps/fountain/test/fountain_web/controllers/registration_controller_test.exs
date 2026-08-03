@@ -1,10 +1,25 @@
 defmodule FountainWeb.RegistrationControllerTest do
   use FountainWeb.ConnCase, async: true
+  use Mimic
 
   describe "GET /auth/register" do
     test "renders registration form", %{conn: conn} do
       conn = get(conn, ~p"/auth/register")
       assert html_response(conn, 200) =~ "Create your account"
+    end
+
+    test "renders the GitHub button when OAuth is configured (#336)", %{conn: conn} do
+      body = conn |> get(~p"/auth/register") |> html_response(200)
+      assert body =~ "Sign up with GitHub"
+      assert body =~ ~p"/auth/oauth/github"
+    end
+
+    test "hides the GitHub button when OAuth is not configured (#336)", %{conn: conn} do
+      stub(FountainWeb.OAuth, :github_configured?, fn -> false end)
+
+      body = conn |> get(~p"/auth/register") |> html_response(200)
+      refute body =~ "Sign up with GitHub"
+      refute body =~ ~p"/auth/oauth/github"
     end
   end
 
