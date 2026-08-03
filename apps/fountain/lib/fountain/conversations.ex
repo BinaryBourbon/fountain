@@ -142,6 +142,22 @@ defmodule Fountain.Conversations do
 
   defp record_sandbox_usage(was, %Sandbox{status: status} = sandbox)
        when status in @billable_terminal and was not in @billable_terminal do
+    # A sandbox that dies before reaching "ready" never emitted
+    # sandbox_provisioned, but it is about to emit sandbox_terminated with a
+    # duration — so the conversation count and the sandbox minutes on the
+    # billing page would diverge for exactly the accounts where provisioning
+    # is failing. Record the attempt under its own event type so the two
+    # sides can be reconciled.
+    if was != "ready" do
+      Fountain.Billing.record_usage(
+        sandbox.user_id,
+        "sandbox_provision_failed",
+        sandbox.id,
+        "sandbox",
+        %{"sprite_name" => sandbox.sprite_name, "status_before_failure" => was}
+      )
+    end
+
     # `failed` counts too: a sprite that died mid-provision still ran, and was
     # still billed by Sprites. Recording only clean terminations would
     # understate cost precisely when something is going wrong.

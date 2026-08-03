@@ -972,7 +972,10 @@ defmodule Fountain.Billing do
   Returns a usage summary for `user_id` over the given period.
 
   Fields:
-  - `:conversations` — count of `sandbox_provisioned` events
+  - `:conversations` — count of `sandbox_provisioned` plus
+    `sandbox_provision_failed` events. Failed attempts count because they
+    still accrue sandbox minutes; excluding them makes the two numbers
+    diverge for exactly the accounts where provisioning is failing.
   - `:turns` — count of `turn_started` events
   - `:sandbox_minutes` — total wall-clock sandbox time in minutes, derived
     from `duration_ms` metadata on `sandbox_terminated` events
@@ -989,7 +992,8 @@ defmodule Fountain.Billing do
       )
       |> Repo.all()
 
-    conversations = Enum.count(events, &(&1.event_type == "sandbox_provisioned"))
+    conversations =
+      Enum.count(events, &(&1.event_type in ["sandbox_provisioned", "sandbox_provision_failed"]))
     turns = Enum.count(events, &(&1.event_type == "turn_started"))
 
     sandbox_minutes =
@@ -1030,10 +1034,20 @@ defmodule Fountain.Billing do
 
       summary =
         case type do
-          "sandbox_provisioned" -> %{summary | conversations: count}
-          "turn_started" -> %{summary | turns: count}
-          "sandbox_terminated" -> %{summary | sandbox_minutes: to_minutes(duration_ms)}
-          _ -> summary
+          "sandbox_provisioned" ->
+            %{summary | conversations: summary.conversations + count}
+
+          "sandbox_provision_failed" ->
+            %{summary | conversations: summary.conversations + count}
+
+          "turn_started" ->
+            %{summary | turns: count}
+
+          "sandbox_terminated" ->
+            %{summary | sandbox_minutes: to_minutes(duration_ms)}
+
+          _ ->
+            summary
         end
 
       Map.put(acc, user_id, summary)

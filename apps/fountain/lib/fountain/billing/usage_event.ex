@@ -26,7 +26,7 @@ defmodule Fountain.Billing.UsageEvent do
     field :inserted_at, :utc_datetime
   end
 
-  @valid_event_types ~w(sandbox_provisioned turn_started sandbox_terminated)
+  @valid_event_types ~w(sandbox_provisioned sandbox_provision_failed turn_started sandbox_terminated)
 
   def changeset(usage_event, attrs) do
     usage_event
