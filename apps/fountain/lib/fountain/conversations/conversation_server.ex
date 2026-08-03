@@ -85,11 +85,18 @@ defmodule Fountain.Conversations.ConversationServer do
   cluster membership change — which every deploy causes. A prompt in the spec
   therefore re-ran the user's last message on each rollout.
 
+  Takes the pid `start_child` returned, not the conversation id: Horde's
+  registry is a CRDT whose registrations propagate asynchronously, and a cast
+  to a via-name that hasn't resolved yet is a silent no-op — the server
+  provisions, the user's first prompt is simply gone (#367). The pid needs no
+  resolution, works across nodes, and is for exactly the server just started;
+  if that server already died, losing the cast is the right outcome.
+
   A cast rather than a call: it queues behind `handle_continue(:provision)`,
   which can take minutes, and no caller is waiting on the turn to finish.
   """
-  def queue_initial_prompt(conv_id, prompt, images \\ []) do
-    GenServer.cast(via(conv_id), {:initial_prompt, prompt, images})
+  def queue_initial_prompt(pid, prompt, images \\ []) when is_pid(pid) do
+    GenServer.cast(pid, {:initial_prompt, prompt, images})
   end
 
   def interrupt(conv_id) do

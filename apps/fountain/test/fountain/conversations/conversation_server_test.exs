@@ -99,6 +99,32 @@ defmodule Fountain.Conversations.ConversationServerTest do
       assert Conversations._unsafe_list_turns(conv.id) == []
       GenServer.stop(pid)
     end
+
+    test "the prompt reaches a server the Horde registry cannot resolve", %{conv: conv} do
+      # The #367 regression: queue_initial_prompt used to cast through the
+      # Horde registry, and Horde's CRDT registrations propagate
+      # asynchronously — a cast fired right after start_child could hit an
+      # unresolved via-name and vanish. The server provisioned, the user's
+      # first prompt was silently gone. Delivery now targets the pid, which
+      # this harness proves by construction: its servers run outside Horde,
+      # so the registry genuinely cannot resolve them.
+      stub_happy_sprite()
+
+      Mimic.stub(Sprites, :spawn, fn _s, _cmd, _args, _opts ->
+        {:ok, %{ref: make_ref(), pid: self()}}
+      end)
+
+      Mimic.stub(Sprites, :write, fn _cmd, _data -> :ok end)
+      Mimic.stub(Sprites, :close_stdin, fn _cmd -> :ok end)
+
+      {pid, _ref, :alive} = start_server(conv, initial_prompt: "first prompt")
+
+      assert Horde.Registry.lookup(Fountain.ConversationRegistry, conv.id) == []
+      assert [turn] = Conversations._unsafe_list_turns(conv.id)
+      assert turn.prompt == "first prompt"
+
+      GenServer.stop(pid)
+    end
   end
 
   describe "provisioning — tenant isolation" do
