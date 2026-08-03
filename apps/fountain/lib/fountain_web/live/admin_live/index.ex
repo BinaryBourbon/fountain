@@ -2,6 +2,8 @@ defmodule FountainWeb.AdminLive.Index do
   @moduledoc false
   use FountainWeb, :live_view
 
+  import FountainWeb.AdminLive.Helpers
+
   alias Fountain.{Accounts, Billing, Conversations, Quotas}
   alias Fountain.Accounts.Deletion
 
@@ -617,7 +619,9 @@ defmodule FountainWeb.AdminLive.Index do
             </tr>
             <tr :for={u <- @users} class="border-b border-zinc-100 last:border-0 hover:bg-zinc-50">
               <td class="px-4 py-2 font-mono text-xs">
-                {u.email}
+                <.link navigate={~p"/admin/users/#{u.id}"} class="hover:underline">
+                  {u.email}
+                </.link>
                 <span
                   :if={is_nil(u.email_verified_at)}
                   class="ml-1 inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium border bg-zinc-100 text-zinc-500 border-zinc-200"
@@ -794,6 +798,7 @@ defmodule FountainWeb.AdminLive.Index do
           <thead class="text-left text-zinc-500 border-b border-zinc-200">
             <tr>
               <th class="px-4 py-2">ID</th>
+              <th class="px-4 py-2">Owner</th>
               <th class="px-4 py-2">Status</th>
               <th class="px-4 py-2">Conversations</th>
               <th class="px-4 py-2">Started</th>
@@ -803,6 +808,16 @@ defmodule FountainWeb.AdminLive.Index do
           <tbody>
             <tr :for={s <- @sandboxes} class="border-b border-zinc-100 last:border-0">
               <td class="px-4 py-2 text-xs">{String.slice(s.id, 0, 8)}</td>
+              <td class="px-4 py-2 text-xs">
+                <.link
+                  :if={s.user}
+                  navigate={~p"/admin/users/#{s.user.id}"}
+                  class="hover:underline"
+                >
+                  {s.user.email}
+                </.link>
+                <span :if={is_nil(s.user)} class="text-zinc-400">—</span>
+              </td>
               <td class="px-4 py-2">
                 <span class={[
                   "inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium border",
@@ -816,7 +831,7 @@ defmodule FountainWeb.AdminLive.Index do
                 <span :if={s.conversations != []} class="space-x-2">
                   <.link
                     :for={c <- s.conversations}
-                    navigate={~p"/conversations/#{c.id}"}
+                    navigate={~p"/admin/conversations/#{c.id}"}
                     class="hover:underline"
                   >{String.slice(c.id, 0, 8)}</.link>
                 </span>
@@ -872,17 +887,6 @@ defmodule FountainWeb.AdminLive.Index do
     """
   end
 
-  defp subscription_status_color("active"), do: "bg-green-100 text-green-800 border-green-200"
-  defp subscription_status_color("trialing"), do: "bg-blue-100 text-blue-800 border-blue-200"
-  defp subscription_status_color("comped"), do: "bg-purple-100 text-purple-800 border-purple-200"
-  defp subscription_status_color("past_due"), do: "bg-amber-100 text-amber-800 border-amber-200"
-  defp subscription_status_color(_), do: "bg-zinc-100 text-zinc-500 border-zinc-200"
-
-  defp sandbox_status_color("running"), do: "bg-blue-100 text-blue-800 border-blue-200"
-  defp sandbox_status_color("ready"), do: "bg-green-100 text-green-800 border-green-200"
-  defp sandbox_status_color("failed"), do: "bg-red-100 text-red-700 border-red-200"
-  defp sandbox_status_color(_), do: "bg-zinc-100 text-zinc-500 border-zinc-200"
-
   defp stage_label(:registered), do: "Registered"
   defp stage_label(:verified), do: "Verified"
   defp stage_label(:onboarded), do: "Onboarded"
@@ -902,10 +906,4 @@ defmodule FountainWeb.AdminLive.Index do
   defp format_hours(h) when h < 1, do: "#{round(h * 60)}m"
   defp format_hours(h) when h < 48, do: "#{Float.round(h * 1.0, 1)}h"
   defp format_hours(h), do: "#{Float.round(h / 24, 1)}d"
-
-  defp format_date(nil), do: ""
-  defp format_date(dt), do: Calendar.strftime(dt, "%Y-%m-%d")
-
-  defp format_ts(nil), do: ""
-  defp format_ts(dt), do: Calendar.strftime(dt, "%Y-%m-%d %H:%M")
 end

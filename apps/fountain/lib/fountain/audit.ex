@@ -81,6 +81,21 @@ defmodule Fountain.Audit do
   end
 
   @doc """
+  Administrative actions taken against one user, newest first. Admin surfaces
+  only — this is the "what happened to account Y" half of the support story.
+  """
+  @spec _unsafe_list_admin_events_for_target(Ecto.UUID.t(), pos_integer()) :: [AdminEvent.t()]
+  def _unsafe_list_admin_events_for_target(target_user_id, limit \\ 50)
+      when is_binary(target_user_id) do
+    Repo.all(
+      from e in AdminEvent,
+        where: e.target_user_id == ^target_user_id,
+        order_by: [desc: e.inserted_at, desc: e.id],
+        limit: ^limit
+    )
+  end
+
+  @doc """
   List the most recent N events for one tenant, newest first.
 
   System events (`user_id = nil`) are excluded — those belong to admin

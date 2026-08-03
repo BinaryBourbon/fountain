@@ -1,0 +1,92 @@
+defmodule FountainWeb.AdminUserDetailLiveTest do
+  use FountainWeb.ConnCase, async: true
+
+  import Phoenix.LiveViewTest
+  import Ecto.Query
+
+  alias Fountain.Accounts
+  alias Fountain.Audit.AdminEvent
+  alias Fountain.Repo
+
+  defp insert_admin(overrides \\ %{}) do
+    user = insert_verified_user(overrides)
+    {:ok, admin} = Accounts.update_user_role(user, "admin")
+    admin
+  end
+
+  describe "access control" do
+    test "regular user is redirected away", %{conn: conn} do
+      user = insert_verified_user()
+      target = insert_verified_user()
+      conn = login_user(conn, user)
+      assert {:error, {:live_redirect, _}} = live(conn, ~p"/admin/users/#{target.id}")
+    end
+
+    test "unauthenticated user is redirected to login", %{conn: conn} do
+      target = insert_verified_user()
+      assert {:error, {:redirect, %{to: path}}} = live(conn, ~p"/admin/users/#{target.id}")
+      assert path =~ "/auth/login"
+    end
+  end
+
+  describe "detail page" do
+    test "shows another tenant's account, conversations and API-key metadata", %{conn: conn} do
+      admin = insert_admin()
+      target = insert_verified_user()
+      conv = insert_conversation(user_id: target.id)
+      {_key, _raw} = insert_api_key(target, "support-visible-key")
+
+      conn = login_user(conn, admin)
+      {:ok, _lv, html} = live(conn, ~p"/admin/users/#{target.id}")
+
+      assert html =~ target.email
+      assert html =~ String.slice(conv.id, 0, 8)
+      assert html =~ "support-visible-key"
+      # key material never renders — only the prefix column
+      refute html =~ "key_hash"
+    end
+
+    test "shows admin actions taken against the account", %{conn: conn} do
+      admin = insert_admin()
+      target = insert_verified_user()
+
+      {:ok, _} =
+        Fountain.Audit.record_admin(%{
+          actor_user_id: admin.id,
+          target_user_id: target.id,
+          event_type: "admin.account.suspended",
+          metadata: %{"email" => target.email}
+        })
+
+      conn = login_user(conn, admin)
+      {:ok, _lv, html} = live(conn, ~p"/admin/users/#{target.id}")
+
+      assert html =~ "admin.account.suspended"
+    end
+
+    test "records an admin.user.viewed audit event on visit", %{conn: conn} do
+      admin = insert_admin()
+      target = insert_verified_user()
+
+      conn = login_user(conn, admin)
+      {:ok, _lv, _html} = live(conn, ~p"/admin/users/#{target.id}")
+
+      assert [event] =
+               Repo.all(
+                 from e in AdminEvent,
+                   where: e.event_type == "admin.user.viewed" and e.target_user_id == ^target.id
+               )
+
+      assert event.actor_user_id == admin.id
+      assert event.metadata["email"] == target.email
+    end
+
+    test "unknown user id redirects back to /admin with a flash", %{conn: conn} do
+      admin = insert_admin()
+      conn = login_user(conn, admin)
+
+      assert {:error, {:live_redirect, %{to: "/admin"}}} =
+               live(conn, ~p"/admin/users/#{Ecto.UUID.generate()}")
+    end
+  end
+end
