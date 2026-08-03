@@ -1,9 +1,9 @@
 [
   verbose: false,
   private: false,
-  skip: false,
+  skip: true,
   router: "lib/fountain_web/router.ex",
-  exit: "high",
+  exit: "low",
   format: "txt",
   ignore: [],
   ignore_files: []

@@ -275,6 +275,10 @@ defmodule Fountain.Conversations do
   foreign parent link already exists in the data, and picking the boundary node
   degrades to "show the part of the tree you own" instead of returning nothing.
   """
+  # sobelow_skip ["SQL.Query"] — static SQL, values bound as parameters
+  # ($1/$2 UUIDs dumped above); nothing user-controlled is interpolated.
+  # sobelow_skip ["SQL.Query"] — static SQL, values bound as parameters
+  # ($1/$2 UUIDs dumped below); nothing user-controlled is interpolated.
   def get_conversation_tree(conversation_id, user_id) when is_binary(user_id) do
     sql = """
     WITH RECURSIVE
@@ -861,6 +865,8 @@ defmodule Fountain.Conversations do
     end
   end
 
+  # sobelow_skip ["SQL.Query"] — static SQL with a bound $1 UUID parameter.
+  # sobelow_skip ["SQL.Query"] — static SQL with a bound $1 UUID parameter.
   defp get_root_conversation_id(conversation_id) do
     sql = """
     WITH RECURSIVE ancestors(id, parent_conversation_id) AS (

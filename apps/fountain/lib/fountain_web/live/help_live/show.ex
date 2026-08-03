@@ -40,6 +40,8 @@ defmodule FountainWeb.HelpLive.Show do
     end
   end
 
+  # sobelow_skip ["Traversal.FileModule"] — slug is allowlisted against
+  # Fountain.Help.topics() in handle_params before this is called.
   defp load_topic(slug) do
     path = Path.join([:code.priv_dir(:fountain) |> to_string(), "help", slug <> ".md"])
 

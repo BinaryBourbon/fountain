@@ -7,7 +7,12 @@ on:
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  # PRs only (#414): cancelling superseded MAIN runs meant a rapid merge
+  # sequence could strand a code commit un-built — commit A's CI cancelled
+  # by docs-only commit B, whose own HEAD^..HEAD build filter then reported
+  # "nothing image-affecting", so A never produced an image and every check
+  # stayed green. Main runs queue instead of cancelling.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read

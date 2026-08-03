@@ -60,18 +60,23 @@ jobs:
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           ref: ${{ env.SRC_SHA }}
-          # The parent commit, for the diff below.
-          fetch-depth: 2
+          # Full history: the diff below walks ancestry for the newest
+          # commit whose image actually exists.
+          fetch-depth: 0
 
       - name: Skip paths that never affect the OCI image
         id: filter
         # The old push-trigger paths-ignore list (k8s/**, deploy/**, docs/**,
         # decisions/**, **/*.md — deploy/ is the portable self-hosting
-        # manifests, never part of the image), re-implemented as a first-parent
-        # diff. main only moves by PR merges, so HEAD^..HEAD is exactly what
-        # the push brought in. Manifest-only changes still deploy:
-        # publish-manifests.yml triggers directly on k8s/deploy pushes and
-        # pins the newest already-built image.
+        # manifests, never part of the image), re-implemented as a diff from
+        # the newest first-parent ancestor whose image EXISTS in the registry
+        # (#414) — not HEAD^. Diffing one commit back assumed every ancestor
+        # got built; a cancelled CI run plus a docs-only follow-up broke that
+        # assumption, and the follow-up's one-commit diff reported "nothing
+        # image-affecting" while the cancelled commit's code sat un-built.
+        # Same ancestor walk publish-manifests.yml uses for its image pin.
+        # Manifest-only changes still deploy without a build:
+        # publish-manifests.yml triggers directly on k8s/deploy pushes.
         run: |
           set -euo pipefail
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
@@ -79,12 +84,29 @@ jobs:
             echo "build=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          if git diff --name-only HEAD^ HEAD \
+
+          base=""
+          for candidate in $(git rev-list --first-parent -n 50 HEAD~1 2>/dev/null); do
+            if docker manifest inspect \
+                 "ghcr.io/binarybourbon/fountain:sha-${candidate}" > /dev/null 2>&1; then
+              base="${candidate}"
+              break
+            fi
+          done
+
+          if [ -z "${base}" ]; then
+            echo "no built ancestor image found — building unconditionally"
+            echo "build=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "diffing against newest built ancestor ${base:0:7}"
+          if git diff --name-only "${base}" HEAD \
               | grep -qvE '^(k8s|deploy|docs|decisions)/|\.md$'; then
-            echo "image-affecting changes found — building"
+            echo "image-affecting changes since ${base:0:7} — building"
             echo "build=true" >> "$GITHUB_OUTPUT"
           else
-            echo "only ignored paths changed — skipping the build"
+            echo "only ignored paths changed since ${base:0:7} — skipping the build"
             echo "build=false" >> "$GITHUB_OUTPUT"
           fi
 
