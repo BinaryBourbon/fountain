@@ -16,18 +16,6 @@ upgrade, is in
 
 ## [Unreleased]
 
-### Upgrade notes
-
-- Set `PUBLIC_URL` to your external URL, scheme included. It is now separate
-  from `PHX_HOST` and is what generated links, OAuth callbacks, and sandbox
-  callbacks are built from (#204). An `https://` `PUBLIC_URL` also switches on
-  the HTTPS redirect, HSTS, and secure session cookies (#241) — if you
-  terminate TLS in front of Fountain, your proxy must set `X-Forwarded-Proto`.
-- Production now refuses to boot without a mail setting. Configure
-  `RESEND_API_KEY`, `SMTP_HOST`, or explicitly opt out with
-  `EMAIL_DELIVERY=none` (#223).
-- Migrations continue to run automatically at boot; no manual steps.
-
 ### Added
 
 - Point-in-time recovery for the hosted database (#209): continuous WAL
@@ -68,6 +56,30 @@ upgrade, is in
   action (#169). Admin account deletions are now actually audit-recorded —
   the event type was missing from the audit allowlist and failed validation
   silently
+
+### Removed
+
+- SSH repository clones (#228). Implemented and hardened but unreachable —
+  validation has required `https://` since the schema existed, and production
+  confirmed zero use. Private repos are covered by https + token secrets; the
+  implementation stays in git history if demand appears
+
+## [0.3.0] — 2026-08-02
+
+### Upgrade notes
+
+- Set `PUBLIC_URL` to your external URL, scheme included. It is now separate
+  from `PHX_HOST` and is what generated links, OAuth callbacks, and sandbox
+  callbacks are built from (#204). An `https://` `PUBLIC_URL` also switches on
+  the HTTPS redirect, HSTS, and secure session cookies (#241) — if you
+  terminate TLS in front of Fountain, your proxy must set `X-Forwarded-Proto`.
+- Production now refuses to boot without a mail setting. Configure
+  `RESEND_API_KEY`, `SMTP_HOST`, or explicitly opt out with
+  `EMAIL_DELIVERY=none` (#223).
+- Migrations continue to run automatically at boot; no manual steps.
+
+### Added
+
 - Bulk manifest apply — a whole manifest in one request, and the CLI's
   `fountain apply` uses it (#151)
 - Agent-scoped vault allowlists: an agent can be restricted to a named set of
@@ -109,13 +121,6 @@ upgrade, is in
   against its own health probes (#249)
 - Deploys pin the exact built image on a dedicated `deploy` branch so manifest
   and image can never diverge (#250)
-
-### Removed
-
-- SSH repository clones (#228). Implemented and hardened but unreachable —
-  validation has required `https://` since the schema existed, and production
-  confirmed zero use. Private repos are covered by https + token secrets; the
-  implementation stays in git history if demand appears
 
 ### Fixed
 
@@ -194,7 +199,8 @@ upgrade, is in
 - Audit log for state-changing actions (append-only, best-effort)
 - Substitution engine for `${VAR}` / `$$` interpolation in agent configs
 
-[Unreleased]: https://github.com/BinaryBourbon/fountain/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/BinaryBourbon/fountain/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/BinaryBourbon/fountain/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/BinaryBourbon/fountain/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/BinaryBourbon/fountain/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/BinaryBourbon/fountain/releases/tag/v0.1.0
