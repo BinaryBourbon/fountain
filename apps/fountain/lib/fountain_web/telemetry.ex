@@ -138,10 +138,33 @@ defmodule FountainWeb.Telemetry do
         measurement: :expired,
         description: "Sandbox rows expired by SandboxReaper runs"
       ),
-      sum("fountain.reaper.untracked.count",
+      # Untracked is a LEVEL, not a delta: every reaper run re-measures the
+      # full set of sprites alive at sprites.dev with no sandbox row. As a
+      # `sum` it accumulated each hourly observation — a steady 102 leaked
+      # sprites read as 2,448 after a day and climbed forever (#405). As a
+      # `last_value` the exported gauge is the number of sprites currently
+      # leaking money, and it falls when they are cleaned up.
+      # released/expired above stay `sum`: those are per-run deltas.
+      last_value("fountain.reaper.untracked.count",
         event_name: [:fountain, :reaper, :untracked],
         measurement: :count,
-        description: "Untracked sprites found running with no live sandbox row"
+        description: "Untracked sprites currently running with no live sandbox row"
+      ),
+
+      # ── Cost signals (#405) ───────────────────────────────────────────────
+      # Both events fired into nothing before this: the provision watchdog
+      # (#329) declaring a provision wedged — which per #394 may also leak a
+      # sprite — and the durable-output budget (#331) engaging. The emitters
+      # attach conversation_id as metadata; it must never become a tag, or
+      # every conversation mints its own time series.
+      counter("fountain.provision.deadline_exceeded.count",
+        event_name: [:fountain, :provision, :deadline_exceeded],
+        description:
+          "Provisions force-failed by the watchdog deadline; each may leak a sprite (#394)"
+      ),
+      counter("fountain.log_output.capped.count",
+        event_name: [:fountain, :log_output, :capped],
+        description: "Conversations whose durable output hit the byte budget and was dropped"
       ),
 
       # ── Lifecycle funnel (#282) ───────────────────────────────────────────

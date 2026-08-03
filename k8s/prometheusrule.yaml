@@ -316,6 +316,124 @@ spec:
               SPRITES_TOKEN is invalid or rate-limited, the Sprites API is
               unhealthy, or tenants are hitting the concurrency cap.
 
+        - alert: FountainProvisionDeadlineExceeded
+          # The provision watchdog (#329) declared a provision wedged and
+          # force-failed it. Per #394 the accompanying destroy is best-effort,
+          # so each firing may also leak a sprite that keeps billing — this is
+          # a cost signal as much as a UX one. Absolute count, not a rate:
+          # the event is rare by design and any occurrence is worth a look.
+          expr: |
+            sum(increase(fountain_provision_deadline_exceeded_count{namespace="fountain"}[1h])) > 0
+          labels:
+            severity: warning
+          annotations:
+            summary: "A Fountain provision hit the watchdog deadline"
+            description: |
+              {{ $value }} provision(s) in the last hour ran past the watchdog
+              deadline and were force-failed. Each one may have leaked a
+              sprite (#394) — check whether the reaper's untracked count rose
+              on its next run, and why the provision wedged:
+              kubectl logs -n fountain deploy/fountain | grep "provisioning exceeded"
+
+        - alert: FountainSandboxBudgetExceeded
+          # Platform-wide concurrency ceiling (#405). Every tenant's sprites
+          # bill to the single platform SPRITES_TOKEN and the only enforced
+          # cap is per-tenant (default 5), so total concurrent spend is
+          # otherwise `users x 5` with no ceiling. The 50 here is the initial
+          # platform budget — an operator knob, not a law: raise it
+          # deliberately when paying for more concurrency is intended. The
+          # durable fix is a global reservation check in
+          # Quotas.with_sandbox_reservation/3; until that exists this alert
+          # is the only platform-level ceiling.
+          expr: |
+            sum(fountain_sandboxes_count{namespace="fountain", status=~"pending|starting|ready"}) > 50
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Fountain sandbox concurrency is above the platform budget"
+            description: |
+              {{ $value }} sandboxes are pending/starting/ready against a
+              budget of 50, all billing to the one platform SPRITES_TOKEN.
+              Find who is driving it:
+              kubectl exec -n fountain fountain-pg-1 -c postgres -- \
+                psql -U postgres fountain -c "select user_id, count(*) from sandboxes where status in ('pending','starting','ready') group by 1 order by 2 desc limit 10"
+
+        - alert: FountainConversationsAboveBudget
+          # Companion to the sandbox budget above, on the conversation gauge
+          # (#321): a pending/running conversation implies a live sprite, so
+          # in steady state the two track each other. This one still fires
+          # when sandbox rows are wrong — the exact drift SandboxReaper
+          # measures — and shares the same 50 operator knob.
+          expr: |
+            sum(fountain_conversations_count{namespace="fountain", status=~"pending|running"}) > 50
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Fountain has more live conversations than the platform budget"
+            description: |
+              {{ $value }} conversations are pending/running against a budget
+              of 50. If FountainSandboxBudgetExceeded is not also firing, the
+              sandbox rows and reality have diverged — check the reaper log
+              line for released/expired/untracked counts.
+
+    # ── Sprite reaper (#405) ──────────────────────────────────────────────
+    #
+    # SandboxReaper reconciles the sandboxes table against sprites.dev
+    # hourly (crontab :07). Its third pass counts sprites running with no
+    # sandbox row and deliberately never destroys them — so its entire
+    # output is a gauge someone must be looking at, plus these alerts.
+    - name: fountain-reaper
+      interval: 60s
+      rules:
+        - alert: FountainUntrackedSprites
+          # fountain_reaper_untracked_count is the LEVEL of sprites alive at
+          # sprites.dev with no live sandbox row, re-measured every run.
+          # Sustained non-zero is leaked money, not an outage — hence
+          # warning, not critical. 2h means at least two consecutive hourly
+          # runs both saw leaks, which filters the legitimate transients the
+          # reaper moduledoc describes (a sprite created seconds before the
+          # sweep, a developer using the shared token).
+          expr: fountain_reaper_untracked_count{namespace="fountain"} > 0
+          for: 2h
+          labels:
+            severity: warning
+          annotations:
+            summary: "Sprites are running with no sandbox row (leaked spend)"
+            description: |
+              {{ $value }} sprite(s) have been running at sprites.dev with no
+              live sandbox row for over 2h, billing the platform
+              SPRITES_TOKEN. The reaper deliberately never destroys these —
+              absence of a row is not proof of a leak — so a human has to
+              look at the list and clean up. The run log includes a sample of
+              the sprite names:
+              kubectl logs -n fountain deploy/fountain | grep "no sandbox row"
+
+        - alert: FountainReaperSilent
+          # The wedged-reaper canary. fountain_reaper_run_released is emitted
+          # at the end of every hourly run, so the series (re)appears within
+          # about an hour of pod start; absent() for 3h means no run has
+          # completed since boot — crontab dropped, maintenance queue
+          # misconfigured, or every run crashing before the emit. A reaper
+          # that runs and raises is caught by FountainObanJobsRaising /
+          # FountainObanJobsDiscarded instead. An increase()-based staleness
+          # check cannot work here: released/expired are legitimately zero
+          # for weeks at a time, so the counter is flat when healthy.
+          expr: absent(fountain_reaper_run_released{namespace="fountain"})
+          for: 3h
+          labels:
+            severity: warning
+          annotations:
+            summary: "SandboxReaper has not completed a run since boot"
+            description: |
+              No fountain_reaper_run_released series exists, meaning no
+              SandboxReaper run has finished on this pod (it runs hourly at
+              :07). Stuck rows are holding tenant quota and dead sprites are
+              not being destroyed. Check the maintenance queue:
+              kubectl exec -n fountain fountain-pg-1 -c postgres -- \
+                psql -U postgres fountain -c "select id, state, attempt, errors[array_upper(errors,1)] from oban_jobs where worker like '%SandboxReaper%' order by id desc limit 5"
+
     # ── Oban background jobs (#321) ───────────────────────────────────────
     #
     # Oban catches job exceptions internally and reports them only via
