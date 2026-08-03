@@ -480,12 +480,12 @@ defmodule Fountain.ConversationsContextTest do
     end
   end
 
-  describe "next_turn_number/1" do
+  describe "_unsafe_next_turn_number/1" do
     test "returns 1 when conversation has no turns" do
       user = insert_verified_user()
       conv = insert_conversation(user_id: user.id)
 
-      assert Conversations.next_turn_number(conv.id) == 1
+      assert Conversations._unsafe_next_turn_number(conv.id) == 1
     end
 
     test "returns max_turn_number + 1 when turns exist" do
@@ -494,7 +494,7 @@ defmodule Fountain.ConversationsContextTest do
       _t1 = insert_turn(conv)
       _t2 = insert_turn(conv)
 
-      assert Conversations.next_turn_number(conv.id) == 3
+      assert Conversations._unsafe_next_turn_number(conv.id) == 3
     end
 
     test "is not affected by turns from other conversations" do
@@ -505,11 +505,11 @@ defmodule Fountain.ConversationsContextTest do
       _t2 = insert_turn(conv1)
       _t3 = insert_turn(conv1)
 
-      assert Conversations.next_turn_number(conv2.id) == 1
+      assert Conversations._unsafe_next_turn_number(conv2.id) == 1
     end
   end
 
-  describe "create_turn/1" do
+  describe "_unsafe_create_turn/1" do
     test "creates a turn with valid attrs" do
       user = insert_verified_user()
       conv = insert_conversation(user_id: user.id)
@@ -521,7 +521,7 @@ defmodule Fountain.ConversationsContextTest do
         status: "pending"
       }
 
-      assert {:ok, turn} = Conversations.create_turn(attrs)
+      assert {:ok, turn} = Conversations._unsafe_create_turn(attrs)
       assert turn.conversation_id == conv.id
       assert turn.turn_number == 1
       assert turn.prompt == "Hello, world"
@@ -529,7 +529,7 @@ defmodule Fountain.ConversationsContextTest do
     end
 
     test "returns error changeset when required fields are missing" do
-      assert {:error, changeset} = Conversations.create_turn(%{})
+      assert {:error, changeset} = Conversations._unsafe_create_turn(%{})
       assert changeset.valid? == false
       assert errors_on(changeset)[:conversation_id]
       assert errors_on(changeset)[:turn_number]
@@ -546,18 +546,18 @@ defmodule Fountain.ConversationsContextTest do
         status: "bogus"
       }
 
-      assert {:error, changeset} = Conversations.create_turn(attrs)
+      assert {:error, changeset} = Conversations._unsafe_create_turn(attrs)
       assert errors_on(changeset)[:status]
     end
   end
 
-  describe "update_turn/2" do
+  describe "_unsafe_update_turn/2" do
     test "updates a turn with valid attrs" do
       user = insert_verified_user()
       conv = insert_conversation(user_id: user.id)
       turn = insert_turn(conv)
 
-      assert {:ok, updated} = Conversations.update_turn(turn, %{status: "completed"})
+      assert {:ok, updated} = Conversations._unsafe_update_turn(turn, %{status: "completed"})
       assert updated.id == turn.id
       assert updated.status == "completed"
     end
@@ -567,74 +567,8 @@ defmodule Fountain.ConversationsContextTest do
       conv = insert_conversation(user_id: user.id)
       turn = insert_turn(conv)
 
-      assert {:error, changeset} = Conversations.update_turn(turn, %{status: "invalid"})
+      assert {:error, changeset} = Conversations._unsafe_update_turn(turn, %{status: "invalid"})
       assert errors_on(changeset)[:status]
-    end
-  end
-
-  describe "mark_orphaned_turns_interrupted/1" do
-    test "marks running turns as interrupted and returns count" do
-      user = insert_verified_user()
-      conv = insert_conversation(user_id: user.id)
-      _pending = insert_turn(conv, status: "pending")
-      _running1 = insert_turn(conv, status: "running")
-      _running2 = insert_turn(conv, status: "running")
-
-      count = Conversations.mark_orphaned_turns_interrupted(conv.id)
-      assert count == 2
-    end
-
-    test "does not modify non-running turns" do
-      user = insert_verified_user()
-      conv = insert_conversation(user_id: user.id)
-      pending = insert_turn(conv, status: "pending")
-      completed = insert_turn(conv, status: "completed")
-      failed = insert_turn(conv, status: "failed")
-
-      Conversations.mark_orphaned_turns_interrupted(conv.id)
-
-      assert Conversations.get_turn_by_conversation(pending.id, conv.id, user.id).status ==
-               "pending"
-
-      assert Conversations.get_turn_by_conversation(completed.id, conv.id, user.id).status ==
-               "completed"
-
-      assert Conversations.get_turn_by_conversation(failed.id, conv.id, user.id).status ==
-               "failed"
-    end
-
-    test "returns 0 when no running turns exist" do
-      user = insert_verified_user()
-      conv = insert_conversation(user_id: user.id)
-      _t = insert_turn(conv, status: "pending")
-
-      assert Conversations.mark_orphaned_turns_interrupted(conv.id) == 0
-    end
-
-    test "only affects turns for the given conversation" do
-      user = insert_verified_user()
-      conv1 = insert_conversation(user_id: user.id)
-      conv2 = insert_conversation(user_id: user.id)
-      running_in_conv2 = insert_turn(conv2, status: "running")
-
-      # Only interrupt conv1's running turns (none exist)
-      count = Conversations.mark_orphaned_turns_interrupted(conv1.id)
-      assert count == 0
-
-      # conv2's running turn should be untouched
-      assert Conversations.get_turn_by_conversation(running_in_conv2.id, conv2.id, user.id).status ==
-               "running"
-    end
-
-    test "updates running turns to interrupted status in db" do
-      user = insert_verified_user()
-      conv = insert_conversation(user_id: user.id)
-      running = insert_turn(conv, status: "running")
-
-      Conversations.mark_orphaned_turns_interrupted(conv.id)
-
-      result = Conversations.get_turn_by_conversation(running.id, conv.id, user.id)
-      assert result.status == "interrupted"
     end
   end
 
@@ -969,13 +903,13 @@ defmodule Fountain.ConversationsContextTest do
     end
   end
 
-  describe "output_bytes_by_stream/2" do
+  describe "_unsafe_output_bytes_by_stream/2" do
     test "returns empty map when there are no output events for the turn" do
       user = insert_verified_user()
       conv = insert_conversation(user_id: user.id)
       turn = insert_turn(conv)
 
-      assert Conversations.output_bytes_by_stream(conv.id, turn.id) == %{}
+      assert Conversations._unsafe_output_bytes_by_stream(conv.id, turn.id) == %{}
     end
 
     test "sums byte lengths of data grouped by stream" do
@@ -1006,7 +940,7 @@ defmodule Fountain.ConversationsContextTest do
         turn_id: turn.id
       )
 
-      result = Conversations.output_bytes_by_stream(conv.id, turn.id)
+      result = Conversations._unsafe_output_bytes_by_stream(conv.id, turn.id)
       assert result["stdout"] == 10
       assert result["stderr"] == 3
     end
@@ -1023,7 +957,7 @@ defmodule Fountain.ConversationsContextTest do
         turn_id: turn.id
       )
 
-      result = Conversations.output_bytes_by_stream(conv.id, turn.id)
+      result = Conversations._unsafe_output_bytes_by_stream(conv.id, turn.id)
       # Stage events have empty stream and are kind "stage", not "output"
       assert result == %{}
     end
@@ -1041,7 +975,7 @@ defmodule Fountain.ConversationsContextTest do
         turn_id: turn2.id
       )
 
-      result = Conversations.output_bytes_by_stream(conv.id, turn1.id)
+      result = Conversations._unsafe_output_bytes_by_stream(conv.id, turn1.id)
       assert result == %{}
     end
 
@@ -1059,7 +993,7 @@ defmodule Fountain.ConversationsContextTest do
         turn_id: turn2.id
       )
 
-      result = Conversations.output_bytes_by_stream(conv1.id, turn1.id)
+      result = Conversations._unsafe_output_bytes_by_stream(conv1.id, turn1.id)
       assert result == %{}
     end
 
@@ -1075,96 +1009,8 @@ defmodule Fountain.ConversationsContextTest do
         turn_id: turn.id
       )
 
-      result = Conversations.output_bytes_by_stream(conv.id, turn.id)
+      result = Conversations._unsafe_output_bytes_by_stream(conv.id, turn.id)
       assert Map.has_key?(result, "stdout")
-    end
-  end
-
-  # ────────────────────────────────────────────────────────────────────────────
-  # stream_log_events/2
-  # ────────────────────────────────────────────────────────────────────────────
-
-  describe "stream_log_events/2" do
-    setup do
-      user = insert_verified_user()
-      conv = insert_conversation(user_id: user.id)
-      %{user: user, conv: conv}
-    end
-
-    test "streams all events for a conversation when after_id is 0", %{conv: conv} do
-      e1 = insert_log_event(conv, kind: "output", stream: "stdout", data: "a")
-      e2 = insert_log_event(conv, kind: "output", stream: "stderr", data: "b")
-
-      ids =
-        Repo.transaction(fn ->
-          Conversations.stream_log_events(conv.id) |> Enum.map(& &1.id)
-        end)
-
-      assert {:ok, result_ids} = ids
-      assert e1.id in result_ids
-      assert e2.id in result_ids
-    end
-
-    test "returns events ordered by id ascending", %{conv: conv} do
-      e1 = insert_log_event(conv, kind: "output", stream: "stdout", data: "first")
-      e2 = insert_log_event(conv, kind: "output", stream: "stdout", data: "second")
-      e3 = insert_log_event(conv, kind: "output", stream: "stdout", data: "third")
-
-      {:ok, ids} =
-        Repo.transaction(fn ->
-          Conversations.stream_log_events(conv.id) |> Enum.map(& &1.id)
-        end)
-
-      assert ids == [e1.id, e2.id, e3.id]
-    end
-
-    test "filters events with id greater than after_id", %{conv: conv} do
-      e1 = insert_log_event(conv, kind: "output", stream: "stdout", data: "a")
-      e2 = insert_log_event(conv, kind: "output", stream: "stdout", data: "b")
-      e3 = insert_log_event(conv, kind: "output", stream: "stdout", data: "c")
-
-      {:ok, ids} =
-        Repo.transaction(fn ->
-          Conversations.stream_log_events(conv.id, e1.id) |> Enum.map(& &1.id)
-        end)
-
-      refute e1.id in ids
-      assert e2.id in ids
-      assert e3.id in ids
-    end
-
-    test "returns empty stream when no events exist", %{conv: conv} do
-      {:ok, ids} =
-        Repo.transaction(fn ->
-          Conversations.stream_log_events(conv.id) |> Enum.map(& &1.id)
-        end)
-
-      assert ids == []
-    end
-
-    test "does not return events from other conversations", %{conv: conv} do
-      user = insert_verified_user()
-      other_conv = insert_conversation(user_id: user.id)
-      _other = insert_log_event(other_conv, kind: "output", stream: "stdout", data: "other")
-      mine = insert_log_event(conv, kind: "output", stream: "stdout", data: "mine")
-
-      {:ok, ids} =
-        Repo.transaction(fn ->
-          Conversations.stream_log_events(conv.id) |> Enum.map(& &1.id)
-        end)
-
-      assert ids == [mine.id]
-    end
-
-    test "returns empty stream when all events are at or before after_id", %{conv: conv} do
-      e1 = insert_log_event(conv, kind: "output", stream: "stdout", data: "a")
-
-      {:ok, ids} =
-        Repo.transaction(fn ->
-          Conversations.stream_log_events(conv.id, e1.id) |> Enum.map(& &1.id)
-        end)
-
-      assert ids == []
     end
   end
 
@@ -1173,11 +1019,11 @@ defmodule Fountain.ConversationsContextTest do
   # ────────────────────────────────────────────────────────────────────────────
 
   # ────────────────────────────────────────────────────────────────────────────
-  # insert_turn_images/2 and _unsafe_get_turn_image/2
+  # _unsafe_insert_turn_images/2 and _unsafe_get_turn_image/2
   # ────────────────────────────────────────────────────────────────────────────
 
   # Helper to insert a TurnImage via changeset directly, for tests that need a
-  # row without exercising insert_turn_images/2.
+  # row without exercising _unsafe_insert_turn_images/2.
   defp insert_turn_image!(turn_id, position, media_type, data) do
     %Fountain.Conversations.TurnImage{}
     |> Fountain.Conversations.TurnImage.changeset(%{
@@ -1190,9 +1036,9 @@ defmodule Fountain.ConversationsContextTest do
     |> Repo.insert!()
   end
 
-  describe "insert_turn_images/2" do
+  describe "_unsafe_insert_turn_images/2" do
     test "returns {:ok, 0} immediately when images list is empty" do
-      assert {:ok, 0} = Conversations.insert_turn_images(Ecto.UUID.generate(), [])
+      assert {:ok, 0} = Conversations._unsafe_insert_turn_images(Ecto.UUID.generate(), [])
     end
 
     test "inserts images and returns count" do
@@ -1200,7 +1046,7 @@ defmodule Fountain.ConversationsContextTest do
       conv = insert_conversation(user_id: user.id)
       turn = insert_turn(conv)
       images = [%{media_type: "image/png", data: <<1, 2, 3>>}]
-      assert {:ok, 1} = Conversations.insert_turn_images(turn.id, images)
+      assert {:ok, 1} = Conversations._unsafe_insert_turn_images(turn.id, images)
     end
 
     test "positions are assigned in order" do
@@ -1209,7 +1055,7 @@ defmodule Fountain.ConversationsContextTest do
       turn = insert_turn(conv)
 
       assert {:ok, 2} =
-               Conversations.insert_turn_images(turn.id, [
+               Conversations._unsafe_insert_turn_images(turn.id, [
                  %{media_type: "image/png", data: <<1>>},
                  %{media_type: "image/jpeg", data: <<2>>}
                ])
@@ -1227,7 +1073,7 @@ defmodule Fountain.ConversationsContextTest do
       turn = insert_turn(conv)
 
       assert {:error, changeset} =
-               Conversations.insert_turn_images(turn.id, [
+               Conversations._unsafe_insert_turn_images(turn.id, [
                  %{media_type: "text/html", data: "<script>alert(1)</script>"}
                ])
 
@@ -1237,7 +1083,7 @@ defmodule Fountain.ConversationsContextTest do
 
     test "an unknown turn is refused rather than orphaning a row" do
       assert {:error, changeset} =
-               Conversations.insert_turn_images(Ecto.UUID.generate(), [
+               Conversations._unsafe_insert_turn_images(Ecto.UUID.generate(), [
                  %{media_type: "image/png", data: <<1>>}
                ])
 

@@ -110,22 +110,34 @@ defmodule Fountain.Agents do
 
   def delete_agent(%Agent{} = agent), do: Repo.delete(agent)
 
-  @doc "Upload or replace the avatar for an agent."
+  @doc """
+  Upload or replace the avatar for an agent.
+
+  The media type is validated against `Fountain.Images.valid_media_types/0`:
+  it is echoed back verbatim by the avatar endpoint, and LiveView's upload
+  `accept:` list does not constrain it — `accepted?/2` passes an entry whose
+  *filename extension* matches even when the declared MIME type does not, so
+  a crafted client can declare `text/html` with a `.png` name.
+  """
   def upload_avatar(%Agent{} = agent, data, media_type)
       when is_binary(data) and is_binary(media_type) do
-    now = DateTime.utc_now() |> DateTime.truncate(:second)
+    if Fountain.Images.valid_media_type?(media_type) do
+      now = DateTime.utc_now() |> DateTime.truncate(:second)
 
-    Repo.transaction(fn ->
-      Repo.insert!(
-        %AgentAvatar{agent_id: agent.id, data: data, inserted_at: now},
-        on_conflict: {:replace, [:data, :inserted_at]},
-        conflict_target: :agent_id
-      )
+      Repo.transaction(fn ->
+        Repo.insert!(
+          %AgentAvatar{agent_id: agent.id, data: data, inserted_at: now},
+          on_conflict: {:replace, [:data, :inserted_at]},
+          conflict_target: :agent_id
+        )
 
-      agent
-      |> Ecto.Changeset.change(%{avatar_media_type: media_type})
-      |> Repo.update!()
-    end)
+        agent
+        |> Ecto.Changeset.change(%{avatar_media_type: media_type})
+        |> Repo.update!()
+      end)
+    else
+      {:error, :invalid_media_type}
+    end
   end
 
   @doc "Remove the avatar for an agent."

@@ -96,6 +96,32 @@ defmodule FountainWeb.ClientIpTest do
     end
   end
 
+  describe "resolve_address/2 — the LiveView audit path" do
+    # Audited.put_client_ip delegates here. Its previous private copy took
+    # the LEFTMOST x-forwarded-for entry — client-supplied and
+    # attacker-chosen the moment the chain has more than one hop — so
+    # UI-originated audit rows disagreed with API rows on the same request.
+    alias FountainWeb.Plugs.ClientIp
+
+    test "walks from the right, matching the HTTP path" do
+      assert ClientIp.resolve_address(
+               {10, 42, 0, 1},
+               [{"x-forwarded-for", "1.2.3.4, 203.0.113.7"}]
+             ) == {203, 0, 113, 7}
+    end
+
+    test "a direct peer's header is ignored entirely" do
+      assert ClientIp.resolve_address(
+               {198, 51, 100, 9},
+               [{"x-forwarded-for", "1.2.3.4"}]
+             ) == {198, 51, 100, 9}
+    end
+
+    test "no header falls back to the peer" do
+      assert ClientIp.resolve_address({10, 42, 0, 1}, []) == {10, 42, 0, 1}
+    end
+  end
+
   describe "trusted_proxies/0" do
     test "covers the k3s pod and service networks" do
       proxies = Endpoint.trusted_proxies()

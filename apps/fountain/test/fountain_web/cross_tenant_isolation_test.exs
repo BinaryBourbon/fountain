@@ -72,7 +72,7 @@ defmodule FountainWeb.CrossTenantIsolationTest do
       turn = insert_turn(conv)
 
       {:ok, _} =
-        Fountain.Conversations.insert_turn_images(turn.id, [
+        Fountain.Conversations._unsafe_insert_turn_images(turn.id, [
           %{media_type: "image/png", data: <<137, 80, 78, 71>>}
         ])
 
@@ -131,7 +131,7 @@ defmodule FountainWeb.CrossTenantIsolationTest do
 
     test "an image stored with a non-image media type is not served", %{conn: conn} do
       # #203 closed the ingest path, so this row can no longer be written through
-      # insert_turn_images/2 — it is inserted raw here on purpose. Rows written
+      # _unsafe_insert_turn_images/2 — it is inserted raw here on purpose. Rows written
       # before that fix still exist, and defence at serve time is what keeps
       # them from coming back as active content on the app's origin.
       {user_a, _user_b, key_a, _key_b} = two_users()

@@ -99,7 +99,7 @@ defmodule Fountain.UsageMeteringTest do
       conv = insert_conversation(user_id: user.id)
 
       {:ok, turn} =
-        Conversations.create_turn(%{
+        Conversations._unsafe_create_turn(%{
           conversation_id: conv.id,
           turn_number: 1,
           prompt: "hello",
@@ -117,7 +117,7 @@ defmodule Fountain.UsageMeteringTest do
       conv = insert_conversation(user_id: owner.id)
 
       {:ok, _} =
-        Conversations.create_turn(%{
+        Conversations._unsafe_create_turn(%{
           conversation_id: conv.id,
           turn_number: 1,
           prompt: "x",
@@ -139,7 +139,7 @@ defmodule Fountain.UsageMeteringTest do
 
       for n <- 1..3 do
         {:ok, _} =
-          Conversations.create_turn(%{
+          Conversations._unsafe_create_turn(%{
             conversation_id: conv.id,
             turn_number: n,
             prompt: "p#{n}",

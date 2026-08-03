@@ -176,7 +176,7 @@ defmodule Fountain.Factory do
     attrs =
       %{
         conversation_id: conv.id,
-        turn_number: Fountain.Conversations.next_turn_number(conv.id),
+        turn_number: Fountain.Conversations._unsafe_next_turn_number(conv.id),
         prompt: "test prompt",
         status: "pending"
       }

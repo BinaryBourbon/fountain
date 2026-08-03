@@ -70,8 +70,13 @@ defmodule FountainWeb.Endpoint do
   # which is most of the value of auditing the UI in the first place.
   @connect_info [session: @session_options, peer_data: true, x_headers: true]
 
+  # max_frame_size: Phoenix's default is "infinity", and the conversation
+  # page pushes base64 image payloads over this socket. 15 MB fits the
+  # 10 MB decoded image ceiling (PromptImages) at base64's 4/3 expansion
+  # with headroom, while bounding what an authenticated client can make
+  # the server buffer per frame.
   socket "/live", Phoenix.LiveView.Socket,
-    websocket: [connect_info: @connect_info],
+    websocket: [connect_info: @connect_info, max_frame_size: 15_000_000],
     longpoll: [connect_info: @connect_info]
 
   # Serve at "/" the static files from "priv/static" directory.

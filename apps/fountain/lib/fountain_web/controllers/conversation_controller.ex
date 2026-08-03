@@ -396,70 +396,9 @@ defmodule FountainWeb.ConversationController do
     s |> String.split(",", trim: true) |> Enum.map(&String.trim/1)
   end
 
-  @max_image_bytes 10 * 1024 * 1024
-
-  @doc false
-  # Exposed for tests: a body large enough to exercise the size guard through
-  # HTTP is rejected by the body parser first, so the guard itself would
-  # otherwise be untestable.
-  def decode_images_for_test(images), do: decode_images(images)
-
-  # Validates before anything is stored, and returns an error the caller can
-  # turn into a 400. Previously this decoded with `Base.decode64!` and raised a
-  # bare ArgumentError past the size limit — both surfaced as a 500, telling a
-  # client with a malformed request that the server was broken. The media type
-  # was not checked at all, so a client could store an arbitrary one.
-  defp decode_images(nil), do: {:ok, []}
-  defp decode_images([]), do: {:ok, []}
-
-  defp decode_images(images) when is_list(images) do
-    Enum.reduce_while(images, {:ok, []}, fn img, {:ok, acc} ->
-      case decode_image(img) do
-        {:ok, decoded} -> {:cont, {:ok, acc ++ [decoded]}}
-        {:error, _} = err -> {:halt, err}
-      end
-    end)
-  end
-
-  defp decode_images(_), do: {:error, "images must be a list"}
-
-  defp decode_image(img) when is_map(img) do
-    b64 = img["data"] || img[:data]
-    mt = img["media_type"] || img[:media_type]
-
-    with :ok <- validate_media_type(mt),
-         {:ok, data} <- decode_base64(b64),
-         :ok <- validate_size(data) do
-      {:ok, %{media_type: mt, data: data}}
-    end
-  end
-
-  defp decode_image(_), do: {:error, "each image must be an object"}
-
-  defp validate_media_type(mt) do
-    if mt in Fountain.Conversations.TurnImage.valid_media_types() do
-      :ok
-    else
-      {:error,
-       "unsupported image media_type #{inspect(mt)} — must be one of " <>
-         Enum.join(Fountain.Conversations.TurnImage.valid_media_types(), ", ")}
-    end
-  end
-
-  defp decode_base64(b64) when is_binary(b64) do
-    case Base.decode64(b64) do
-      {:ok, data} -> {:ok, data}
-      :error -> {:error, "image data must be base64-encoded"}
-    end
-  end
-
-  defp decode_base64(_), do: {:error, "image data is required"}
-
-  defp validate_size(data) do
-    if byte_size(data) > @max_image_bytes,
-      do: {:error, "image exceeds the 10MB limit"},
-      else: :ok
-  end
+  # Validation, decode and size cap live in FountainWeb.PromptImages so the
+  # LiveView prompt path applies exactly the same checks.
+  defp decode_images(images), do: FountainWeb.PromptImages.decode(images)
 
   defp parse_last_event_id(nil), do: 0
   defp parse_last_event_id(""), do: 0
