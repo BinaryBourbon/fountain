@@ -63,24 +63,7 @@ defmodule FountainWeb.AdminLive.Index do
 
   @impl true
   def handle_event("toggle_admin", %{"id" => id}, socket) do
-    user = Accounts.get_user!(id)
-    new_role = if user.role == "admin", do: "user", else: "admin"
-
-    case Accounts.update_user_role(user, new_role) do
-      {:ok, _} ->
-        Fountain.Audit.record_admin(%{
-          actor_user_id: socket.assigns.current_user.id,
-          target_user_id: user.id,
-          event_type:
-            if(new_role == "admin", do: "admin.role.granted", else: "admin.role.revoked"),
-          metadata: %{"email" => user.email, "from" => user.role, "to" => new_role}
-        })
-
-        {:noreply, socket |> assign_users() |> put_flash(:info, "Role updated")}
-
-      {:error, _} ->
-        {:noreply, put_flash(socket, :error, "Failed to update role")}
-    end
+    with_target_user(socket, id, fn user -> do_toggle_admin(socket, user) end)
   end
 
   # The concurrency cap is the only lever for a noisy or abusive tenant
@@ -89,7 +72,7 @@ defmodule FountainWeb.AdminLive.Index do
   @impl true
   def handle_event("set_sandbox_limit", %{"user_id" => id, "limit" => raw}, socket) do
     with {limit, ""} <- Integer.parse(String.trim(raw)),
-         user = Accounts.get_user!(id),
+         %Accounts.User{} = user <- Accounts.get_user(id),
          {:ok, _} <- Accounts.update_sandbox_limit(user, limit) do
       Fountain.Audit.record_admin(%{
         actor_user_id: socket.assigns.current_user.id,
@@ -104,14 +87,21 @@ defmodule FountainWeb.AdminLive.Index do
 
       {:noreply, socket |> assign_users() |> put_flash(:info, "Sandbox limit updated")}
     else
-      _ -> {:noreply, put_flash(socket, :error, "Limit must be a whole number of 0 or more")}
+      nil ->
+        {:noreply,
+         socket
+         |> assign_users()
+         |> put_flash(:error, "User not found — the account may have been deleted")}
+
+      _ ->
+        {:noreply, put_flash(socket, :error, "Limit must be a whole number of 0 or more")}
     end
   end
 
   @impl true
   def handle_event("extend_trial", %{"user_id" => id, "days" => raw}, socket) do
     with {days, ""} when days > 0 <- Integer.parse(String.trim(raw)),
-         user = Accounts.get_user!(id),
+         %Accounts.User{} = user <- Accounts.get_user(id),
          {:ok, updated} <- Billing.extend_trial(user, days) do
       Fountain.Audit.record_admin(%{
         actor_user_id: socket.assigns.current_user.id,
@@ -138,6 +128,12 @@ defmodule FountainWeb.AdminLive.Index do
       {:error, _} ->
         {:noreply, put_flash(socket, :error, "Could not extend trial — Stripe refused")}
 
+      nil ->
+        {:noreply,
+         socket
+         |> assign_users()
+         |> put_flash(:error, "User not found — the account may have been deleted")}
+
       _ ->
         {:noreply, put_flash(socket, :error, "Days must be a whole number of 1 or more")}
     end
@@ -145,33 +141,7 @@ defmodule FountainWeb.AdminLive.Index do
 
   @impl true
   def handle_event("toggle_comp", %{"id" => id}, socket) do
-    user = Accounts.get_user!(id)
-
-    result =
-      if user.subscription_status == "comped",
-        do: {Billing.revoke_comp(user), "admin.comp.revoked"},
-        else: {Billing.comp_account(user), "admin.comp.granted"}
-
-    case result do
-      {{:ok, updated}, event_type} ->
-        Fountain.Audit.record_admin(%{
-          actor_user_id: socket.assigns.current_user.id,
-          target_user_id: user.id,
-          event_type: event_type,
-          metadata: %{
-            "email" => user.email,
-            "from" => user.subscription_status,
-            "to" => updated.subscription_status
-          }
-        })
-
-        {:noreply,
-         socket |> assign_users() |> put_flash(:info, "Now #{updated.subscription_status}")}
-
-      {{:error, _}, _} ->
-        {:noreply,
-         put_flash(socket, :error, "Could not change comp — Stripe cancellation failed")}
-    end
+    with_target_user(socket, id, fn user -> do_toggle_comp(socket, user) end)
   end
 
   @impl true
@@ -213,43 +183,7 @@ defmodule FountainWeb.AdminLive.Index do
     if id == admin.id do
       {:noreply, put_flash(socket, :error, "You cannot suspend your own account")}
     else
-      user = Accounts.get_user!(id)
-
-      if Accounts.suspended?(user) do
-        case Accounts.unsuspend_user(user) do
-          {:ok, _} ->
-            Fountain.Audit.record_admin(%{
-              actor_user_id: admin.id,
-              target_user_id: user.id,
-              event_type: "admin.account.unsuspended",
-              metadata: %{"email" => user.email}
-            })
-
-            {:noreply, socket |> assign_users() |> put_flash(:info, "Suspension lifted")}
-
-          {:error, _} ->
-            {:noreply, put_flash(socket, :error, "Could not lift the suspension")}
-        end
-      else
-        case Accounts.suspend_user(user) do
-          {:ok, _, reaped} ->
-            Fountain.Audit.record_admin(%{
-              actor_user_id: admin.id,
-              target_user_id: user.id,
-              event_type: "admin.account.suspended",
-              metadata: %{"email" => user.email, "sandboxes_reaped" => reaped}
-            })
-
-            {:noreply,
-             socket
-             |> assign_users()
-             |> assign(:sandboxes, Conversations._unsafe_list_sandboxes_admin())
-             |> put_flash(:info, "Suspended — #{reaped} sandbox(es) reaped")}
-
-          {:error, _} ->
-            {:noreply, put_flash(socket, :error, "Could not suspend the account")}
-        end
-      end
+      with_target_user(socket, id, fn user -> do_toggle_suspend(socket, admin, user) end)
     end
   end
 
@@ -266,37 +200,141 @@ defmodule FountainWeb.AdminLive.Index do
       # feature.
       {:noreply, put_flash(socket, :error, "Use your own account page to delete your account")}
     else
-      user = Accounts.get_user!(id)
+      with_target_user(socket, id, fn user -> do_delete_user(socket, admin, user) end)
+    end
+  end
 
-      case Deletion.delete_user(user,
-             actor: "admin:#{admin.id}",
-             request_ip: socket.assigns[:client_ip]
-           ) do
-        {:ok, _summary} ->
+  # Non-bang lookup for every admin action targeting a user row (#401): the
+  # table is loaded at mount, so acting on a user deleted since (another
+  # admin tab, self-deletion) made get_user! raise and kill the LiveView.
+  defp with_target_user(socket, id, fun) do
+    case Accounts.get_user(id) do
+      nil ->
+        {:noreply,
+         socket
+         |> assign_users()
+         |> put_flash(:error, "User not found — the account may have been deleted")}
+
+      user ->
+        fun.(user)
+    end
+  end
+
+  defp do_toggle_admin(socket, user) do
+    new_role = if user.role == "admin", do: "user", else: "admin"
+
+    case Accounts.update_user_role(user, new_role) do
+      {:ok, _} ->
+        Fountain.Audit.record_admin(%{
+          actor_user_id: socket.assigns.current_user.id,
+          target_user_id: user.id,
+          event_type:
+            if(new_role == "admin", do: "admin.role.granted", else: "admin.role.revoked"),
+          metadata: %{"email" => user.email, "from" => user.role, "to" => new_role}
+        })
+
+        {:noreply, socket |> assign_users() |> put_flash(:info, "Role updated")}
+
+      {:error, _} ->
+        {:noreply, put_flash(socket, :error, "Failed to update role")}
+    end
+  end
+
+  defp do_toggle_comp(socket, user) do
+    result =
+      if user.subscription_status == "comped",
+        do: {Billing.revoke_comp(user), "admin.comp.revoked"},
+        else: {Billing.comp_account(user), "admin.comp.granted"}
+
+    case result do
+      {{:ok, updated}, event_type} ->
+        Fountain.Audit.record_admin(%{
+          actor_user_id: socket.assigns.current_user.id,
+          target_user_id: user.id,
+          event_type: event_type,
+          metadata: %{
+            "email" => user.email,
+            "from" => user.subscription_status,
+            "to" => updated.subscription_status
+          }
+        })
+
+        {:noreply,
+         socket |> assign_users() |> put_flash(:info, "Now #{updated.subscription_status}")}
+
+      {{:error, _}, _} ->
+        {:noreply,
+         put_flash(socket, :error, "Could not change comp — Stripe cancellation failed")}
+    end
+  end
+
+  defp do_toggle_suspend(socket, admin, user) do
+    if Accounts.suspended?(user) do
+      case Accounts.unsuspend_user(user) do
+        {:ok, _} ->
           Fountain.Audit.record_admin(%{
             actor_user_id: admin.id,
             target_user_id: user.id,
-            event_type: "admin.account.deleted",
+            event_type: "admin.account.unsuspended",
             metadata: %{"email" => user.email}
+          })
+
+          {:noreply, socket |> assign_users() |> put_flash(:info, "Suspension lifted")}
+
+        {:error, _} ->
+          {:noreply, put_flash(socket, :error, "Could not lift the suspension")}
+      end
+    else
+      case Accounts.suspend_user(user) do
+        {:ok, _, reaped} ->
+          Fountain.Audit.record_admin(%{
+            actor_user_id: admin.id,
+            target_user_id: user.id,
+            event_type: "admin.account.suspended",
+            metadata: %{"email" => user.email, "sandboxes_reaped" => reaped}
           })
 
           {:noreply,
            socket
            |> assign_users()
            |> assign(:sandboxes, Conversations._unsafe_list_sandboxes_admin())
-           |> put_flash(:info, "Deleted #{user.email}")}
-
-        {:error, {:stripe, _}} ->
-          {:noreply,
-           put_flash(
-             socket,
-             :error,
-             "Could not cancel #{user.email}'s subscription — nothing was deleted"
-           )}
+           |> put_flash(:info, "Suspended — #{reaped} sandbox(es) reaped")}
 
         {:error, _} ->
-          {:noreply, put_flash(socket, :error, "Deletion failed — nothing was deleted")}
+          {:noreply, put_flash(socket, :error, "Could not suspend the account")}
       end
+    end
+  end
+
+  defp do_delete_user(socket, admin, user) do
+    case Deletion.delete_user(user,
+           actor: "admin:#{admin.id}",
+           request_ip: socket.assigns[:client_ip]
+         ) do
+      {:ok, _summary} ->
+        Fountain.Audit.record_admin(%{
+          actor_user_id: admin.id,
+          target_user_id: user.id,
+          event_type: "admin.account.deleted",
+          metadata: %{"email" => user.email}
+        })
+
+        {:noreply,
+         socket
+         |> assign_users()
+         |> assign(:sandboxes, Conversations._unsafe_list_sandboxes_admin())
+         |> put_flash(:info, "Deleted #{user.email}")}
+
+      {:error, {:stripe, _}} ->
+        {:noreply,
+         put_flash(
+           socket,
+           :error,
+           "Could not cancel #{user.email}'s subscription — nothing was deleted"
+         )}
+
+      {:error, _} ->
+        {:noreply, put_flash(socket, :error, "Deletion failed — nothing was deleted")}
     end
   end
 

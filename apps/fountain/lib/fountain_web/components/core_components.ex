@@ -152,8 +152,10 @@ defmodule FountainWeb.CoreComponents do
 
   # ────────────────────────────────────────────────────────────────────────────
   # badge/1
-  # Conversation status values: pending | starting | running | ready |
-  #                              terminated | failed
+  # Renders both status vocabularies (#401 — the old comment labelled the
+  # sandbox set as the conversation one, which is how `idle` got left out):
+  #   conversation: pending | running | idle | failed | terminated
+  #   sandbox:      pending | starting | running | ready | terminated | failed
   # ────────────────────────────────────────────────────────────────────────────
 
   attr :status, :string, required: true
@@ -182,6 +184,11 @@ defmodule FountainWeb.CoreComponents do
   defp badge_bg_class("ready"),
     do: "bg-[var(--status-ready-bg)] text-[var(--status-ready-text)]"
 
+  # The resting state of every healthy conversation between turns — green,
+  # not the unrecognised-value grey it fell into before (#401).
+  defp badge_bg_class("idle"),
+    do: "bg-[var(--status-ready-bg)] text-[var(--status-ready-text)]"
+
   defp badge_bg_class("terminated"),
     do: "bg-[var(--status-terminated-bg)] text-[var(--status-terminated-text)]"
 
@@ -195,6 +202,7 @@ defmodule FountainWeb.CoreComponents do
   defp badge_dot_class("running"), do: "bg-[var(--status-starting-text)] animate-pulse"
   defp badge_dot_class("pending"), do: "bg-[var(--status-pending-text)]"
   defp badge_dot_class("ready"), do: "bg-[var(--status-ready-text)]"
+  defp badge_dot_class("idle"), do: "bg-[var(--status-ready-text)]"
   defp badge_dot_class("terminated"), do: "bg-[var(--status-terminated-text)]"
   defp badge_dot_class("failed"), do: "bg-[var(--status-failed-text)]"
   defp badge_dot_class(_), do: "bg-[var(--color-text-muted)]"

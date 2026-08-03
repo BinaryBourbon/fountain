@@ -65,9 +65,24 @@ defmodule FountainWeb.AgentsLive.Index do
   @impl true
   def handle_event("delete", %{"id" => id}, socket) do
     user_id = socket.assigns.user_id
-    agent = Agents.get_agent!(id, user_id)
-    {:ok, _} = Agents.delete_agent(agent)
 
+    # Non-bang + nil branch (#401): the list is loaded at mount, so a row
+    # deleted from another tab or the API made get_agent! raise and kill
+    # the LiveView on the second click.
+    case Agents.get_agent(id, user_id) do
+      nil ->
+        {:noreply,
+         socket
+         |> assign(:agents, Agents.list_agents_with_counts(user_id, current_filters(socket.assigns)))
+         |> put_flash(:error, "Agent not found — it may already be deleted")}
+
+      agent ->
+        {:ok, _} = Agents.delete_agent(agent)
+        delete_refresh(socket, user_id, agent)
+    end
+  end
+
+  defp delete_refresh(socket, user_id, agent) do
     all_agents = Agents.list_agents_with_counts(user_id, [])
     filters = current_filters(socket.assigns)
 
