@@ -111,6 +111,8 @@ Production is home-cloud Kubernetes, deployed via Flux: the image is built from 
 | `Dockerfile`               | the `FROM hexpm/elixir:<elixir>-erlang-<otp>-...` build-stage base image |
 | `.github/workflows/ci.yml` | `elixir-version` / `otp-version` in the `erlef/setup-beam` step      |
 
+The lockstep is enforced by `apps/fountain/test/fountain/toolchain_lockstep_test.exs` — if the three pins disagree, the test suite goes red.
+
 ## Troubleshooting
 
 - **`role "postgres" does not exist`** — see step 4. Either `docker compose up -d postgres` or create the native role.

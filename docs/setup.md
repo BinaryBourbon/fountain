@@ -26,7 +26,7 @@ cd fountain
 mise install
 ```
 
-Reads `.tool-versions` and installs Erlang/OTP 28 + Elixir 1.19.2. The same pinned versions are used in production.
+Reads `.tool-versions` and installs the pinned Erlang/OTP and Elixir versions. `.tool-versions` pins the *local* toolchain only; production runs the release image built from the repo-root `Dockerfile`, whose base image pins its own Erlang/Elixir (see the production parity reference in `SETUP.md`).
 
 Verify:
 

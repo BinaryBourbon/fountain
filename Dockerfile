@@ -16,7 +16,7 @@
 #     generation here — fail-fast at boot if it's missing rather than
 #     silently invalidate cookie sessions on every restart.
 
-FROM hexpm/elixir:1.19.5-erlang-28.0.1-debian-bookworm-20260505-slim AS build
+FROM hexpm/elixir:1.19.2-erlang-28.3-debian-bookworm-20260505-slim AS build
 
 ENV MIX_ENV=prod
 
