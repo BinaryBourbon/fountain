@@ -34,6 +34,15 @@ const (
 
 var errIdleTimeout = errors.New("no output received")
 
+// Terminal outcomes that must surface as a non-zero exit (#398). Before this,
+// `turn`/`failed`, `provision`/`failed` and a `turn`/`done` with a non-zero
+// exit_code all returned nil from followStream, so `fountain run` in CI
+// reported success for a crashed agent or a sandbox that never came up.
+var (
+	errTurnFailed      = errors.New("turn failed")
+	errProvisionFailed = errors.New("provisioning failed — the sandbox never started")
+)
+
 // reconnectBackoff is a variable so tests do not have to sit through real
 // sleeps to exercise the retry path.
 var reconnectBackoff = func(attempt int) time.Duration {
@@ -63,8 +72,16 @@ func streamIdleTimeout() time.Duration {
 // A disconnect now resumes from the last event id, so output produced while
 // disconnected is replayed rather than lost, and only a terminal event or a
 // genuine timeout ends the loop.
-func followStream(open streamOpener, idle time.Duration, convID string) error {
-	lastEventID := ""
+//
+// lastEventID seeds the first connection. Callers that pass the stream head
+// (see streamHead in conv.go) skip the server's full-history replay — without
+// that, the first `turn`/`done` in the replay of a prior turn ended the
+// stream before the current turn had even started (#398).
+//
+// A terminal event that is not a clean completion (turn failed, provisioning
+// failed, non-zero exit_code) is returned as an error so the process exits
+// non-zero.
+func followStream(open streamOpener, idle time.Duration, convID, lastEventID string) error {
 	failures := 0
 
 	for {
@@ -75,7 +92,9 @@ func followStream(open streamOpener, idle time.Duration, convID string) error {
 
 		switch {
 		case done:
-			return nil
+			// err is nil for a clean completion, or the terminal failure
+			// (errTurnFailed / errProvisionFailed) to propagate.
+			return err
 
 		case errors.Is(err, errIdleTimeout):
 			// Explicit, rather than the old silent success.
@@ -101,7 +120,8 @@ func followStream(open streamOpener, idle time.Duration, convID string) error {
 }
 
 // streamOnce reads one connection to completion. It returns whether a terminal
-// event was seen and the id to resume from if the connection drops.
+// event was seen (with the terminal outcome as err — nil for a clean
+// completion) and the id to resume from if the connection drops.
 func streamOnce(open streamOpener, lastEventID string, idle time.Duration) (bool, string, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -139,8 +159,8 @@ func streamOnce(open streamOpener, lastEventID string, idle time.Duration) (bool
 				if ev.ID > 0 {
 					resumeID = strconv.Itoa(ev.ID)
 				}
-				if handleEvent(ev) {
-					return true, resumeID, nil
+				if terminal, termErr := handleEvent(ev); terminal {
+					return true, resumeID, termErr
 				}
 			}
 		}

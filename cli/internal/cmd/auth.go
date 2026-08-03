@@ -133,24 +133,28 @@ func authLogout() error {
 	return nil
 }
 
+// authMe mirrors FountainWeb.AuthMeController.show/2
+// (apps/fountain/lib/fountain_web/controllers/auth_me_controller.ex): a flat
+// object, no `data` envelope.
+type authMe struct {
+	ID    string `json:"id"`
+	Email string `json:"email"`
+	Role  string `json:"role"`
+}
+
 func authWhoami() error {
 	c := activeClient()
 	profile := credentials.ProfileName(activeOpts())
 
-	var out struct {
-		Data struct {
-			Email string `json:"email"`
-			Role  string `json:"role"`
-		} `json:"data"`
-	}
+	var out authMe
 	if err := c.Get("/auth/me", &out); err != nil {
 		if api.StatusCode(err) == 401 {
 			Fatalf("not authenticated for profile '%s'. Run `fountain auth login --profile %s`.", profile, profile)
 		}
 		Fatal(err.Error())
 	}
-	fmt.Printf("email: %s\n", out.Data.Email)
-	fmt.Printf("role:  %s\n", out.Data.Role)
+	fmt.Printf("email: %s\n", out.Email)
+	fmt.Printf("role:  %s\n", out.Role)
 	return nil
 }
 

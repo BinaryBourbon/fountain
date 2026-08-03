@@ -35,25 +35,44 @@ func init() {
 	rootCmd.AddCommand(keysCmd)
 }
 
+// apiKeyCreated mirrors FountainWeb.ApiKeyJSON.created/1
+// (apps/fountain/lib/fountain_web/controllers/api_key_json.ex): a flat
+// object — no `data` envelope — and the prefix field is `prefix`, not
+// `key_prefix`. Decoding the wrong shape here loses the plaintext key
+// forever, because this response is the only place it ever appears (#398).
+type apiKeyCreated struct {
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Key       string `json:"key"`
+	Prefix    string `json:"prefix"`
+	CreatedAt string `json:"created_at"`
+}
+
+// apiKeySummary mirrors one element of FountainWeb.ApiKeyJSON.index/1, which
+// does wrap the list in a `data` envelope.
+type apiKeySummary struct {
+	ID         string `json:"id"`
+	Name       string `json:"name"`
+	Prefix     string `json:"prefix"`
+	CreatedAt  string `json:"created_at"`
+	LastUsedAt string `json:"last_used_at"`
+}
+
 func keysList() error {
 	c := activeClient()
 	var resp struct {
-		Data []map[string]any `json:"data"`
+		Data []apiKeySummary `json:"data"`
 	}
 	if err := c.Get("/auth/api-keys", &resp); err != nil {
 		Fatal(err.Error())
 	}
 	rows := make([][]string, 0, len(resp.Data))
 	for _, k := range resp.Data {
-		lastUsed := output.ToString(k["last_used_at"])
+		lastUsed := k.LastUsedAt
 		if lastUsed == "" {
 			lastUsed = "never"
 		}
-		rows = append(rows, []string{
-			output.ToString(k["key_prefix"]),
-			output.ToString(k["name"]),
-			lastUsed,
-		})
+		rows = append(rows, []string{k.Prefix, k.Name, lastUsed})
 	}
 	output.Table([]string{"prefix", "name", "last_used"}, rows)
 	return nil
@@ -61,25 +80,22 @@ func keysList() error {
 
 func keysCreate(name string) error {
 	c := activeClient()
-	var resp struct {
-		Data map[string]any `json:"data"`
-	}
+	var resp apiKeyCreated
 	if err := c.Post("/auth/api-keys", map[string]string{"name": name}, &resp); err != nil {
 		Fatal(err.Error())
 	}
-	key := output.ToString(resp.Data["key"])
-	if key == "" {
-		Fatalf("unexpected response: %v", resp.Data)
+	if resp.Key == "" {
+		Fatalf("unexpected response: no key field (id=%q name=%q)", resp.ID, resp.Name)
 	}
 	fmt.Println()
 	fmt.Println("╭────────────────────────────────────────────────────────────────╮")
 	fmt.Println("│  Save this key — it will not be shown again.                  │")
 	fmt.Println("╰────────────────────────────────────────────────────────────────╯")
 	fmt.Println()
-	fmt.Println(key)
+	fmt.Println(resp.Key)
 	fmt.Println()
-	fmt.Printf("Name:   %s\n", output.ToString(resp.Data["name"]))
-	fmt.Printf("Prefix: %s\n", output.ToString(resp.Data["key_prefix"]))
+	fmt.Printf("Name:   %s\n", resp.Name)
+	fmt.Printf("Prefix: %s\n", resp.Prefix)
 	fmt.Println()
 	return nil
 }

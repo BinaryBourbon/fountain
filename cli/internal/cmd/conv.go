@@ -9,7 +9,9 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/BinaryBourbon/fountain/cli/internal/api"
 	"github.com/BinaryBourbon/fountain/cli/internal/output"
@@ -163,7 +165,15 @@ func spriteLabel(v any) string {
 // ── streaming ──────────────────────────────────────────────────────────
 
 func convStream(id string) error {
-	return followUntilIdle(id)
+	// Seed the follow with the current stream head. Starting from zero
+	// replayed the entire history, and the first `turn`/`done` in that replay
+	// — always a prior turn's on any conversation with a completed turn —
+	// ended the command immediately (#398).
+	head, err := streamHead(activeClient(), id)
+	if err != nil {
+		Fatal(err.Error())
+	}
+	return followUntilIdle(id, head)
 }
 
 func convPrompt(cmd *cobra.Command, id string) error {
@@ -184,11 +194,21 @@ func convPrompt(cmd *cobra.Command, id string) error {
 		})
 	}
 	c := activeClient()
+	// Learn the stream head BEFORE queueing the prompt: every event of the new
+	// turn is then guaranteed to arrive after `head`, so the terminal
+	// `turn`/`done` we stop on is the turn we just sent, not a replayed one
+	// from the conversation's history (#398). POST /prompts returns only
+	// {status: "queued"} — no turn id — so this ordering is what scopes the
+	// follow to the right turn.
+	head, err := streamHead(c, id)
+	if err != nil {
+		Fatal(err.Error())
+	}
 	body := map[string]any{"prompt": prompt, "images": images}
 	if err := c.Post("/conversations/"+id+"/prompts", body, nil); err != nil {
 		Fatal(err.Error())
 	}
-	return followUntilIdle(id)
+	return followUntilIdle(id, head)
 }
 
 func guessMediaType(path string) string {
@@ -263,14 +283,61 @@ func runAgent(cmd *cobra.Command, target string) error {
 	}
 	convID := output.ToString(resp.Data["id"])
 	fmt.Fprintf(os.Stderr, "▸ conversation %s\n", convID)
-	return followUntilIdle(convID)
+	// Fresh conversation: there is no history to skip, and draining first
+	// could miss provisioning events emitted between create and follow.
+	return followUntilIdle(convID, "")
 }
 
 // ── stream loop ─────────────────────────────────────────────────────────
 
+// streamHead drains the conversation's buffered events with `?wait=false`
+// (the server replays history and closes immediately — conversation_controller.ex)
+// and returns the id of the last buffered event, or "" when there is none.
+// Seeding the live follow with it skips the full-history replay.
+func streamHead(c *api.Client, convID string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	req, err := c.NewStreamRequest(ctx, "/conversations/"+convID+"/stream?wait=false", "")
+	if err != nil {
+		return "", err
+	}
+	resp, err := (&http.Client{}).Do(req)
+	if err != nil {
+		return "", fmt.Errorf("drain stream: %w", err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("drain stream: %w", err)
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", fmt.Errorf("drain stream HTTP %d: %s", resp.StatusCode, body)
+	}
+	return lastEventIDIn(string(body)), nil
+}
+
+// lastEventIDIn returns the highest event id in a fully-drained SSE body, or
+// "" when no event carries an id. The trailing blank line is appended so the
+// final event parses even if the body did not end with one.
+func lastEventIDIn(body string) string {
+	events, _ := sse.Feed(body + "\n\n")
+	last := 0
+	for _, ev := range events {
+		if ev.ID > last {
+			last = ev.ID
+		}
+	}
+	if last == 0 {
+		return ""
+	}
+	return strconv.Itoa(last)
+}
+
 // followUntilIdle streams conv `id` until the turn reaches a terminal state,
 // reconnecting across server-side idle disconnects. See stream.go.
-func followUntilIdle(convID string) error {
+// lastEventID seeds the first connection (empty means from the beginning).
+func followUntilIdle(convID, lastEventID string) error {
 	c := activeClient()
 
 	open := func(ctx context.Context, lastEventID string) (io.ReadCloser, error) {
@@ -296,51 +363,70 @@ func followUntilIdle(convID string) error {
 		return resp.Body, nil
 	}
 
-	return followStream(open, streamIdleTimeout(), convID)
+	return followStream(open, streamIdleTimeout(), convID, lastEventID)
 }
 
-// handleEvent prints output and returns true when the turn is done.
-func handleEvent(ev sse.Event) bool {
+// handleEvent prints output and reports whether the event is terminal for the
+// stream. A non-nil error is the terminal outcome to exit non-zero with; nil
+// with terminal=true is a clean completion.
+func handleEvent(ev sse.Event) (bool, error) {
 	switch ev.Event {
 	case "stage":
 		data, ok := ev.Data.(map[string]any)
 		if !ok {
-			return false
+			return false, nil
 		}
-		stage, _ := data["stage"].(string)
-		state, _ := data["state"].(string)
-		if stage == "turn" && state == "done" {
-			exit := exitCodeFromStageDone(data)
-			fmt.Fprintf(os.Stderr, "▸ turn done (exit_code=%s)\n", exit)
-			return true
-		}
-		// Terminal states where no turn will ever complete. Without these the
-		// stream would reconnect and wait out the idle timeout for a turn that
-		// is never coming.
-		if stage == "turn" && state == "failed" {
-			fmt.Fprintf(os.Stderr, "▸ turn failed\n")
-			return true
-		}
-		if stage == "provision" && state == "failed" {
-			fmt.Fprintf(os.Stderr, "▸ provisioning failed — the sandbox never started\n")
-			return true
-		}
-		if stage == "terminate" && state == "done" {
-			fmt.Fprintf(os.Stderr, "▸ conversation terminated\n")
-			return true
-		}
-		fmt.Fprintf(os.Stderr, "▸ %s: %s\n", stage, state)
+		return handleStageEvent(data)
 	case "output":
 		data, ok := ev.Data.(map[string]any)
 		if !ok {
-			return false
+			return false, nil
 		}
 		text := formatOutput(data)
 		if text != "" {
 			fmt.Print(text)
 		}
 	}
-	return false
+	return false, nil
+}
+
+// handleStageEvent decides whether a stage event ends the stream, and how.
+// Failure terminals return an error so the CLI exits non-zero — before #398
+// they all exited 0, so `fountain run` in CI reported success for a crashed
+// agent or a sandbox that never provisioned.
+func handleStageEvent(data map[string]any) (bool, error) {
+	stage, _ := data["stage"].(string)
+	state, _ := data["state"].(string)
+
+	switch {
+	case stage == "turn" && state == "done":
+		exit := exitCodeFromStageDone(data)
+		fmt.Fprintf(os.Stderr, "▸ turn done (exit_code=%s)\n", exit)
+		// The server publishes `turn`/`done` even when the command failed;
+		// the exit_code is the verdict (conversation_server.ex).
+		if exit != "" && exit != "0" {
+			return true, fmt.Errorf("%w: exit_code=%s", errTurnFailed, exit)
+		}
+		return true, nil
+
+	// Terminal states where no turn will ever complete. Without these the
+	// stream would reconnect and wait out the idle timeout for a turn that
+	// is never coming.
+	case stage == "turn" && state == "failed":
+		fmt.Fprintf(os.Stderr, "▸ turn failed\n")
+		return true, errTurnFailed
+
+	case stage == "provision" && state == "failed":
+		fmt.Fprintf(os.Stderr, "▸ provisioning failed — the sandbox never started\n")
+		return true, errProvisionFailed
+
+	case stage == "terminate" && state == "done":
+		fmt.Fprintf(os.Stderr, "▸ conversation terminated\n")
+		return true, nil
+	}
+
+	fmt.Fprintf(os.Stderr, "▸ %s: %s\n", stage, state)
+	return false, nil
 }
 
 // exitCodeFromStageDone digs `data.data.exit_code` out of a turn-done event.
