@@ -1,27 +1,20 @@
 # Nightly logical backup of the Fountain database to the private
 # `fountain-backups` Garage bucket.
 #
-# WHY THIS RATHER THAN CNPG'S OWN BACKUPS
+# WHY THIS EXISTS ALONGSIDE CNPG'S PITR BACKUPS
 #
-# CNPG's in-tree `spec.backup.barmanObjectStore` is the obvious answer and is
-# NOT usable on this cluster today. The operator is 1.29.1, and as of 1.26 the
-# barman-cloud tooling was moved out of the operand images into a separate
-# CNPG-I plugin. Verified directly: `ghcr.io/cloudnative-pg/postgresql:18.4-
-# standard-trixie` contains no `barman-cloud-*` binaries and no Python at all,
-# and no barman-cloud plugin or ObjectStore CRD is installed in the cluster.
-# Configuring barmanObjectStore in that state produces a Cluster that looks
-# backed up and archives nothing.
+# The cluster also runs continuous WAL archiving plus a nightly 02:47 base
+# backup through the barman-cloud CNPG-I plugin (objectstore.yaml +
+# scheduledbackup.yaml) — that path owns point-in-time recovery. This job is
+# kept anyway, deliberately, for mechanism diversity: a plain `pg_dump` is
+# restorable with nothing but a Postgres client — no operator, no plugin, no
+# barman tooling — and the 2026-07 restore proved the value of never trusting
+# a single backup path. The database is ~155MB, so a nightly full dump is
+# cheap insurance.
 #
-# So this is a deliberate interim: a plain `pg_dump` on a schedule, entirely
-# self-contained in this repo, giving a real restorable artifact today. The
-# database is ~155MB, so a nightly full dump is cheap.
-#
-# WHAT IT DOES NOT GIVE YOU
-#
-# No point-in-time recovery — recovery granularity is 24 hours, back to the
-# last nightly dump. PITR needs continuous WAL archiving, which needs the
-# barman-cloud plugin installed cluster-wide (a home-cloud repo change, since
-# it affects every CNPG cluster there). Tracked separately.
+# Recovery granularity here is 24 hours, back to the last nightly dump. Use
+# the barman/PITR path when minutes matter; use this one when the operator
+# stack itself is the problem.
 #
 # RESTORE
 #
