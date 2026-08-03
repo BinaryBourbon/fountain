@@ -21,8 +21,14 @@ defmodule FountainWeb.Router do
   # plugs would be one forgotten line away from an unauthenticated endpoint.
   pipeline :api do
     plug FountainWeb.Plugs.PutApiSpec, module: FountainWeb.ApiSpec
-    plug FountainWeb.Plugs.TenantAPIAuth
+    # RateLimit BEFORE TenantAPIAuth (#316): auth halts on failure, so with
+    # the old order the limiter only ever saw authenticated requests —
+    # unauthenticated callers got unlimited attempts, each costing a SHA-256
+    # plus an indexed api_keys lookup. This was the one auth surface without
+    # a pre-auth limit; session login, registration, password reset and
+    # POST /api/auth/token all have one.
     plug FountainWeb.Plugs.RateLimit, bucket: "api", max: 600
+    plug FountainWeb.Plugs.TenantAPIAuth
     plug FountainWeb.Plugs.Audit
   end
 
