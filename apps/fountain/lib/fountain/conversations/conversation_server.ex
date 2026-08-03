@@ -227,16 +227,17 @@ defmodule Fountain.Conversations.ConversationServer do
           if sandbox.status in ["pending", "starting"] do
             Logger.error(
               "conv #{conv_id}: provisioning exceeded #{deadline_ms}ms; " <>
-                "killing the stuck server and failing the sandbox"
+                "failing the sandbox and killing the stuck server"
             )
 
-            # :kill, not :shutdown — a trapped exit would just queue behind
-            # the stuck callback. terminate/2 does not run; the row updates
-            # below free the quota slot, expires_at bounds the un-revoked
-            # callback key, and the reaper reclaims the sprite.
-            Process.exit(server, :kill)
-
-            publish_stage(conv_id, "provision", "failed", %{reason: "provision deadline exceeded"})
+            # Rows BEFORE the kill (#394). The server is restart: :transient
+            # and :killed is an abnormal exit, so a kill-first ordering let
+            # Horde restart it into handle_continue(:provision) while the row
+            # still said pending — and the restart re-provisioned a second
+            # billable sprite, then kept streaming into it while this stale
+            # struct's late "failed" write made the row lie about it. With
+            # the terminal status committed first, a restarted server stops
+            # at the terminal-status guard in :provision.
             {:ok, _} = Conversations.update_sandbox(sandbox, %{status: "failed"})
 
             case Conversations._unsafe_get_conversation(conv_id) do
@@ -245,6 +246,22 @@ defmodule Fountain.Conversations.ConversationServer do
 
               _ ->
                 :ok
+            end
+
+            publish_stage(conv_id, "provision", "failed", %{reason: "provision deadline exceeded"})
+
+            # Prefer supervisor termination over Process.exit: it removes the
+            # child, so no restart happens at all, and it bounds the wait —
+            # the server traps exits and is stuck in a callback, so the
+            # :shutdown signal queues until the child-spec shutdown timeout
+            # expires and the supervisor escalates to :kill. terminate/2
+            # still does not run for the stuck server; expires_at bounds the
+            # un-revoked callback key, and the reaper reclaims the sprite.
+            # The fallback covers a server not running under the supervisor
+            # (tests) or one that died in the meantime.
+            case Horde.DynamicSupervisor.terminate_child(Fountain.ConversationSupervisor, server) do
+              :ok -> :ok
+              {:error, _} -> Process.exit(server, :kill)
             end
 
             :telemetry.execute([:fountain, :provision, :deadline_exceeded], %{count: 1}, %{
