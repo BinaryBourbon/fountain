@@ -41,6 +41,14 @@ spec:
       parameters:
         barmanObjectName: fountain-backups
 
+  # Exports the cnpg_* instance metrics (base-backup timestamps, WAL archive
+  # status) to the cluster Prometheus — the fountain-pitr alert group in
+  # prometheusrule.yaml is built on these series. Unlike the plugins block
+  # above, this only creates a PodMonitor; it does not change the pod spec,
+  # so enabling it does NOT roll the postgres pod.
+  monitoring:
+    enablePodMonitor: true
+
   imageName: ghcr.io/cloudnative-pg/postgresql:18.4-standard-trixie
 
   bootstrap:

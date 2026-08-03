@@ -93,6 +93,137 @@ spec:
               fountain-pg-backup is suspended, so no backups are being taken.
               This is fine during maintenance and dangerous if forgotten.
 
+    # ── PITR (CNPG barman-cloud) ──────────────────────────────────────────
+    #
+    # The group above watches the pg_dump CronJob. This one watches the
+    # other backup mechanism: continuous WAL archiving plus the nightly
+    # 02:47 base backup through the barman-cloud plugin (objectstore.yaml +
+    # scheduledbackup.yaml). None of the kube_cronjob_*/kube_job_* metrics
+    # see any of it — CNPG's ScheduledBackup is a CRD, not a CronJob — so
+    # these use the cnpg_* metrics the instance pod exports, scraped via
+    # the PodMonitor that `monitoring.enablePodMonitor: true` in
+    # postgres.yaml creates.
+    - name: fountain-pitr
+      interval: 60s
+      rules:
+        - alert: FountainPitrBaseBackupStale
+          # last_available_backup_timestamp is seconds since epoch of the
+          # newest completed base backup. The ScheduledBackup fires nightly
+          # at 02:47; 26h allows one slow or late run before shouting.
+          # Guarded on > 0 because before the first-ever backup the metric
+          # is exported as 0, not absent — time() - 0 would fire this with
+          # a nonsense age. FountainPitrBaseBackupNeverSucceeded owns that
+          # case.
+          expr: |
+            (
+              time() - cnpg_collector_last_available_backup_timestamp{namespace="fountain"}
+                > 26 * 3600
+            )
+              and
+            cnpg_collector_last_available_backup_timestamp{namespace="fountain"} > 0
+          for: 10m
+          labels:
+            severity: critical
+          annotations:
+            summary: "CNPG base backup for fountain-pg is over 26h old"
+            description: |
+              The newest barman base backup is {{ $value | humanizeDuration }}
+              old. WAL archiving may still be running, but recovery time grows
+              with every hour of WAL replayed since the last base — and if the
+              plugin is broken the WAL stream is probably rotting too.
+
+              Check: kubectl get backups -n fountain --sort-by=.metadata.creationTimestamp | tail
+                     kubectl get scheduledbackup -n fountain fountain-pg-base
+              Logs:  kubectl logs -n fountain fountain-pg-1 -c plugin-barman-cloud
+              The 03:17 pg_dump path is independent of this one and still
+              covers 24h-granularity recovery while this is broken.
+
+        - alert: FountainPitrBaseBackupNeverSucceeded
+          # Before the first successful base backup the timestamp is 0, so
+          # the staleness alert above deliberately ignores it. Mirrors
+          # FountainBackupNeverSucceeded: either the ScheduledBackup was
+          # just created, or every backup so far has failed — both mean
+          # there is no base to replay WAL against, i.e. no PITR at all.
+          expr: |
+            cnpg_collector_last_available_backup_timestamp{namespace="fountain"} == 0
+          for: 26h
+          labels:
+            severity: critical
+          annotations:
+            summary: "CNPG has never completed a base backup for fountain-pg"
+            description: |
+              WAL may be archiving, but without a base backup to replay it
+              against there is no point-in-time recovery. Check that the
+              ScheduledBackup exists and its Backups are completing:
+              kubectl get scheduledbackup,backups -n fountain
+
+        - alert: FountainPitrBackupFailed
+          # A failure timestamp newer than the newest good backup means the
+          # most recent attempt failed. Clears on its own once a later
+          # backup succeeds.
+          expr: |
+            cnpg_collector_last_failed_backup_timestamp{namespace="fountain"}
+              >
+            cnpg_collector_last_available_backup_timestamp{namespace="fountain"}
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "The most recent CNPG base backup for fountain-pg failed"
+            description: |
+              The last base backup attempt failed; the newest restorable base
+              is one night older than it should be. One failure is not yet
+              data loss — FountainPitrBaseBackupStale escalates if it keeps
+              happening.
+              Check: kubectl get backups -n fountain --sort-by=.metadata.creationTimestamp | tail
+              Logs:  kubectl logs -n fountain fountain-pg-1 -c plugin-barman-cloud
+
+        - alert: FountainPitrWalArchivingFailing
+          # cnpg_collector_pg_wal_archive_status counts WAL segments in
+          # pg_wal/archive_status: value="ready" is waiting to be archived,
+          # value="done" is archived. Postgres archives serially and retries
+          # a failing segment forever, so a ready count that stays elevated
+          # means the archiver is failing and the PITR window has stopped
+          # advancing. Left failing long enough, unarchivable WAL also
+          # cannot be recycled and eventually fills the 10Gi volume.
+          expr: |
+            cnpg_collector_pg_wal_archive_status{namespace="fountain", value="ready"} > 2
+          for: 30m
+          labels:
+            severity: warning
+          annotations:
+            summary: "WAL archiving for fountain-pg is falling behind"
+            description: |
+              {{ $value }} WAL segments are stuck waiting to be archived to
+              s3://fountain-backups/barman/. PITR only reaches the last
+              archived segment, so the recoverable window is no longer
+              advancing. Likely causes: Garage unreachable, rotated
+              credentials, or the bucket at its 5GiB quota.
+
+              Check: kubectl exec -n fountain fountain-pg-1 -c postgres -- \
+                       psql -c 'select * from pg_stat_archiver'
+              Logs:  kubectl logs -n fountain fountain-pg-1 -c plugin-barman-cloud
+
+        - alert: FountainPitrMetricsAbsent
+          # None of the alerts above can fire on a metric that is not being
+          # scraped at all — this is the watcher's watcher. It fires if the
+          # cnpg_* series vanish: PodMonitor deleted, selector drift in
+          # kube-prometheus-stack, or the instance exporter broken. Scoped
+          # to one representative series; they come from the same exporter.
+          expr: |
+            absent(cnpg_collector_last_available_backup_timestamp{namespace="fountain"})
+          for: 1h
+          labels:
+            severity: warning
+          annotations:
+            summary: "CNPG backup metrics for fountain-pg are not being scraped"
+            description: |
+              cnpg_collector_last_available_backup_timestamp has been absent
+              for an hour, so every PITR alert is blind. Check that the
+              PodMonitor exists and Prometheus has the target:
+              kubectl get podmonitor -n fountain
+              then look for fountain-pg under Status > Targets in Prometheus.
+
     # ── Application health ────────────────────────────────────────────────
     - name: fountain-app
       interval: 30s
@@ -127,8 +258,8 @@ spec:
             summary: "Over 5% of Fountain responses are 5xx"
             description: |
               {{ $value | humanizePercentage }} of responses over the last 5
-              minutes were server errors. There is no error tracking yet, so the
-              detail is in the pod logs (Loki: {namespace="fountain"}).
+              minutes were server errors. Detail is in Sentry; the raw request
+              logs are in Loki ({namespace="fountain"}).
 
         - alert: FountainUnhandledExceptions
           expr: |
@@ -139,8 +270,8 @@ spec:
           annotations:
             summary: "Fountain is raising unhandled exceptions"
             description: |
-              Exceptions escaping the router on {{ $labels.route }}. Until error
-              tracking lands these have no stack traces anywhere but the logs.
+              Exceptions escaping the router on {{ $labels.route }}. Stack
+              traces are in Sentry; the logs have the raw output.
 
         - alert: FountainDatabasePoolSaturated
           # queue_time is time spent waiting for a connection. It climbs when the
