@@ -112,19 +112,19 @@ defmodule Fountain.EnvironmentsTest do
       {:ok, _} = Environments.upsert_secret(env, %{"key" => "API_KEY", "value" => "first"}, dek)
       {:ok, _} = Environments.upsert_secret(env, %{"key" => "API_KEY", "value" => "second"}, dek)
 
-      secrets = Environments.list_secrets(env)
+      secrets = Environments._unsafe_list_secrets(env)
       assert length(secrets) == 1
     end
   end
 
-  describe "list_secrets/1" do
+  describe "_unsafe_list_secrets/1" do
     test "returns all secrets for an environment" do
       user = insert_verified_user()
       env = insert_env(user_id: user.id)
       insert_secret(env, key: "FOO")
       insert_secret(env, key: "BAR")
 
-      secrets = Environments.list_secrets(env)
+      secrets = Environments._unsafe_list_secrets(env)
       assert length(secrets) == 2
     end
 
@@ -132,7 +132,7 @@ defmodule Fountain.EnvironmentsTest do
       user = insert_verified_user()
       env = insert_env(user_id: user.id)
 
-      assert Environments.list_secrets(env) == []
+      assert Environments._unsafe_list_secrets(env) == []
     end
   end
 
@@ -143,7 +143,7 @@ defmodule Fountain.EnvironmentsTest do
       secret = insert_secret(env, key: "TO_DELETE")
 
       assert {:ok, _} = Environments.delete_secret(secret)
-      assert Environments.list_secrets(env) == []
+      assert Environments._unsafe_list_secrets(env) == []
     end
   end
 
@@ -253,14 +253,14 @@ defmodule Fountain.EnvironmentsTest do
     end
   end
 
-  describe "get_secret/2" do
+  describe "_unsafe_get_secret/2" do
     test "returns the secret when env_id and key match" do
       user = insert_verified_user()
       env = insert_env(user_id: user.id)
       {:ok, dek} = Fountain.Crypto.load_tenant_key(user.id)
       {:ok, secret} = Environments.upsert_secret(env, %{"key" => "MY_KEY", "value" => "val"}, dek)
 
-      result = Environments.get_secret(env.id, "MY_KEY")
+      result = Environments._unsafe_get_secret(env.id, "MY_KEY")
       assert result != nil
       assert result.id == secret.id
       assert result.key == "MY_KEY"
@@ -270,11 +270,11 @@ defmodule Fountain.EnvironmentsTest do
       user = insert_verified_user()
       env = insert_env(user_id: user.id)
 
-      assert Environments.get_secret(env.id, "MISSING_KEY") == nil
+      assert Environments._unsafe_get_secret(env.id, "MISSING_KEY") == nil
     end
 
     test "returns nil when env_id does not exist" do
-      assert Environments.get_secret(Ecto.UUID.generate(), "ANY_KEY") == nil
+      assert Environments._unsafe_get_secret(Ecto.UUID.generate(), "ANY_KEY") == nil
     end
   end
 end

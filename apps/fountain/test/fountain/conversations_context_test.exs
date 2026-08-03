@@ -9,43 +9,6 @@ defmodule Fountain.ConversationsContextTest do
   # Sandboxes
   # ────────────────────────────────────────────────────────────────────────────
 
-  describe "_unsafe_list_sandboxes/0" do
-    test "returns an empty list when no sandboxes exist" do
-      assert Conversations._unsafe_list_sandboxes() == []
-    end
-
-    test "returns all sandboxes" do
-      user = insert_verified_user()
-      s1 = insert_sandbox(user_id: user.id)
-      s2 = insert_sandbox(user_id: user.id)
-
-      ids = Conversations._unsafe_list_sandboxes() |> Enum.map(& &1.id)
-      assert s1.id in ids
-      assert s2.id in ids
-    end
-
-    test "returns sandboxes ordered by inserted_at descending" do
-      user = insert_verified_user()
-      s1 = insert_sandbox(user_id: user.id)
-      s2 = insert_sandbox(user_id: user.id)
-
-      [first | _] = Conversations._unsafe_list_sandboxes()
-      # Most recently inserted is first
-      assert first.id == s2.id || first.inserted_at >= s1.inserted_at
-    end
-
-    test "returns sandboxes across different users" do
-      user1 = insert_verified_user()
-      user2 = insert_verified_user()
-      s1 = insert_sandbox(user_id: user1.id)
-      s2 = insert_sandbox(user_id: user2.id)
-
-      ids = Conversations._unsafe_list_sandboxes() |> Enum.map(& &1.id)
-      assert s1.id in ids
-      assert s2.id in ids
-    end
-  end
-
   describe "_unsafe_get_sandbox/1" do
     test "returns the sandbox when it exists" do
       user = insert_verified_user()
@@ -481,13 +444,13 @@ defmodule Fountain.ConversationsContextTest do
     end
   end
 
-  describe "get_turn_by_conversation/2" do
-    test "returns the turn when turn_id and conversation_id match" do
+  describe "get_turn_by_conversation/3" do
+    test "returns the turn when turn_id, conversation_id and user_id match" do
       user = insert_verified_user()
       conv = insert_conversation(user_id: user.id)
       turn = insert_turn(conv)
 
-      result = Conversations.get_turn_by_conversation(turn.id, conv.id)
+      result = Conversations.get_turn_by_conversation(turn.id, conv.id, user.id)
       assert result.id == turn.id
     end
 
@@ -495,7 +458,7 @@ defmodule Fountain.ConversationsContextTest do
       user = insert_verified_user()
       conv = insert_conversation(user_id: user.id)
 
-      assert Conversations.get_turn_by_conversation(Ecto.UUID.generate(), conv.id) == nil
+      assert Conversations.get_turn_by_conversation(Ecto.UUID.generate(), conv.id, user.id) == nil
     end
 
     test "returns nil when turn belongs to a different conversation" do
@@ -504,7 +467,16 @@ defmodule Fountain.ConversationsContextTest do
       conv2 = insert_conversation(user_id: user.id)
       turn = insert_turn(conv1)
 
-      assert Conversations.get_turn_by_conversation(turn.id, conv2.id) == nil
+      assert Conversations.get_turn_by_conversation(turn.id, conv2.id, user.id) == nil
+    end
+
+    test "returns nil when the conversation belongs to a different user" do
+      owner = insert_verified_user()
+      other = insert_verified_user()
+      conv = insert_conversation(user_id: owner.id)
+      turn = insert_turn(conv)
+
+      assert Conversations.get_turn_by_conversation(turn.id, conv.id, other.id) == nil
     end
   end
 
@@ -621,9 +593,14 @@ defmodule Fountain.ConversationsContextTest do
 
       Conversations.mark_orphaned_turns_interrupted(conv.id)
 
-      assert Conversations.get_turn_by_conversation(pending.id, conv.id).status == "pending"
-      assert Conversations.get_turn_by_conversation(completed.id, conv.id).status == "completed"
-      assert Conversations.get_turn_by_conversation(failed.id, conv.id).status == "failed"
+      assert Conversations.get_turn_by_conversation(pending.id, conv.id, user.id).status ==
+               "pending"
+
+      assert Conversations.get_turn_by_conversation(completed.id, conv.id, user.id).status ==
+               "completed"
+
+      assert Conversations.get_turn_by_conversation(failed.id, conv.id, user.id).status ==
+               "failed"
     end
 
     test "returns 0 when no running turns exist" do
@@ -645,7 +622,7 @@ defmodule Fountain.ConversationsContextTest do
       assert count == 0
 
       # conv2's running turn should be untouched
-      assert Conversations.get_turn_by_conversation(running_in_conv2.id, conv2.id).status ==
+      assert Conversations.get_turn_by_conversation(running_in_conv2.id, conv2.id, user.id).status ==
                "running"
     end
 
@@ -656,7 +633,7 @@ defmodule Fountain.ConversationsContextTest do
 
       Conversations.mark_orphaned_turns_interrupted(conv.id)
 
-      result = Conversations.get_turn_by_conversation(running.id, conv.id)
+      result = Conversations.get_turn_by_conversation(running.id, conv.id, user.id)
       assert result.status == "interrupted"
     end
   end
@@ -838,17 +815,17 @@ defmodule Fountain.ConversationsContextTest do
   end
 
   # ────────────────────────────────────────────────────────────────────────────
-  # list_sandboxes_admin/0
+  # _unsafe_list_sandboxes_admin/0
   # ────────────────────────────────────────────────────────────────────────────
 
-  describe "list_sandboxes_admin/0" do
+  describe "_unsafe_list_sandboxes_admin/0" do
     test "returns sandboxes with pending and ready statuses" do
       user = insert_verified_user()
       pending = insert_sandbox(user_id: user.id)
       ready = insert_sandbox(user_id: user.id)
       {:ok, _} = Conversations.update_sandbox(ready, %{status: "ready"})
 
-      ids = Conversations.list_sandboxes_admin() |> Enum.map(& &1.id)
+      ids = Conversations._unsafe_list_sandboxes_admin() |> Enum.map(& &1.id)
       assert pending.id in ids
       assert ready.id in ids
     end
@@ -858,7 +835,7 @@ defmodule Fountain.ConversationsContextTest do
       sandbox = insert_sandbox(user_id: user.id)
       {:ok, _} = Conversations.update_sandbox(sandbox, %{status: "terminated"})
 
-      ids = Conversations.list_sandboxes_admin() |> Enum.map(& &1.id)
+      ids = Conversations._unsafe_list_sandboxes_admin() |> Enum.map(& &1.id)
       refute sandbox.id in ids
     end
 
@@ -867,7 +844,7 @@ defmodule Fountain.ConversationsContextTest do
       sandbox = insert_sandbox(user_id: user.id)
       {:ok, _} = Conversations.update_sandbox(sandbox, %{status: "failed"})
 
-      ids = Conversations.list_sandboxes_admin() |> Enum.map(& &1.id)
+      ids = Conversations._unsafe_list_sandboxes_admin() |> Enum.map(& &1.id)
       refute sandbox.id in ids
     end
 
@@ -877,7 +854,7 @@ defmodule Fountain.ConversationsContextTest do
       terminated = insert_sandbox(user_id: user.id)
       {:ok, _} = Conversations.update_sandbox(terminated, %{status: "terminated"})
 
-      ids = Conversations.list_sandboxes_admin() |> Enum.map(& &1.id)
+      ids = Conversations._unsafe_list_sandboxes_admin() |> Enum.map(& &1.id)
       assert active.id in ids
       refute terminated.id in ids
     end
@@ -886,7 +863,7 @@ defmodule Fountain.ConversationsContextTest do
       user = insert_verified_user()
       _sandbox = insert_sandbox(user_id: user.id)
 
-      results = Conversations.list_sandboxes_admin()
+      results = Conversations._unsafe_list_sandboxes_admin()
       assert results != []
       result = Enum.find(results, &(&1.user_id == user.id))
       assert result.user.id == user.id
@@ -897,7 +874,7 @@ defmodule Fountain.ConversationsContextTest do
       sandbox = insert_sandbox(user_id: user.id)
       _conv = insert_conversation(user_id: user.id, sandbox_id: sandbox.id)
 
-      results = Conversations.list_sandboxes_admin()
+      results = Conversations._unsafe_list_sandboxes_admin()
       result = Enum.find(results, &(&1.id == sandbox.id))
       assert is_list(result.conversations)
     end
@@ -910,7 +887,7 @@ defmodule Fountain.ConversationsContextTest do
       {:ok, _} = Conversations.update_sandbox(s2, %{status: "failed"})
 
       # All sandboxes in this test's db partition are terminal
-      results = Conversations.list_sandboxes_admin()
+      results = Conversations._unsafe_list_sandboxes_admin()
       ids = Enum.map(results, & &1.id)
       refute s1.id in ids
       refute s2.id in ids
@@ -1196,71 +1173,7 @@ defmodule Fountain.ConversationsContextTest do
   # ────────────────────────────────────────────────────────────────────────────
 
   # ────────────────────────────────────────────────────────────────────────────
-  # _unsafe_get_conversation_tree/1
-  # ────────────────────────────────────────────────────────────────────────────
-
-  describe "_unsafe_get_conversation_tree/1" do
-    test "returns empty list when conversation id does not exist" do
-      assert Conversations._unsafe_get_conversation_tree(Ecto.UUID.generate()) == []
-    end
-
-    test "returns single-element tree for a root conversation with no children" do
-      user = insert_verified_user()
-      conv = insert_conversation(user_id: user.id)
-
-      tree = Conversations._unsafe_get_conversation_tree(conv.id)
-      assert length(tree) == 1
-      [node] = tree
-      assert node.id == conv.id
-      assert node.parent_id == nil
-    end
-
-    test "returned node contains :id, :source, :status, :parent_id keys" do
-      user = insert_verified_user()
-      conv = insert_conversation(user_id: user.id)
-
-      [node] = Conversations._unsafe_get_conversation_tree(conv.id)
-      assert Map.has_key?(node, :id)
-      assert Map.has_key?(node, :source)
-      assert Map.has_key?(node, :status)
-      assert Map.has_key?(node, :parent_id)
-    end
-
-    test "includes parent and child when called with child id" do
-      user = insert_verified_user()
-      parent = insert_conversation(user_id: user.id)
-      child = insert_conversation(user_id: user.id, parent_conversation_id: parent.id)
-
-      tree = Conversations._unsafe_get_conversation_tree(child.id)
-      ids = Enum.map(tree, & &1.id)
-      assert parent.id in ids
-      assert child.id in ids
-    end
-
-    test "child node has parent_id set to the parent conversation id" do
-      user = insert_verified_user()
-      parent = insert_conversation(user_id: user.id)
-      child = insert_conversation(user_id: user.id, parent_conversation_id: parent.id)
-
-      tree = Conversations._unsafe_get_conversation_tree(child.id)
-      child_node = Enum.find(tree, &(&1.id == child.id))
-      assert child_node.parent_id == parent.id
-    end
-
-    test "includes parent when called with parent id and child exists" do
-      user = insert_verified_user()
-      parent = insert_conversation(user_id: user.id)
-      child = insert_conversation(user_id: user.id, parent_conversation_id: parent.id)
-
-      tree = Conversations._unsafe_get_conversation_tree(parent.id)
-      ids = Enum.map(tree, & &1.id)
-      assert parent.id in ids
-      assert child.id in ids
-    end
-  end
-
-  # ────────────────────────────────────────────────────────────────────────────
-  # insert_turn_images/2 and get_turn_image/2
+  # insert_turn_images/2 and _unsafe_get_turn_image/2
   # ────────────────────────────────────────────────────────────────────────────
 
   # Helper to insert a TurnImage via changeset directly, for tests that need a
@@ -1301,8 +1214,8 @@ defmodule Fountain.ConversationsContextTest do
                  %{media_type: "image/jpeg", data: <<2>>}
                ])
 
-      assert Conversations.get_turn_image(turn.id, 0).media_type == "image/png"
-      assert Conversations.get_turn_image(turn.id, 1).media_type == "image/jpeg"
+      assert Conversations._unsafe_get_turn_image(turn.id, 0).media_type == "image/png"
+      assert Conversations._unsafe_get_turn_image(turn.id, 1).media_type == "image/jpeg"
     end
 
     test "a disallowed media type is refused instead of stored" do
@@ -1319,7 +1232,7 @@ defmodule Fountain.ConversationsContextTest do
                ])
 
       assert {"is invalid", _} = changeset.errors[:media_type]
-      assert Conversations.get_turn_image(turn.id, 0) == nil
+      assert Conversations._unsafe_get_turn_image(turn.id, 0) == nil
     end
 
     test "an unknown turn is refused rather than orphaning a row" do
@@ -1332,7 +1245,7 @@ defmodule Fountain.ConversationsContextTest do
     end
   end
 
-  describe "get_turn_image/2" do
+  describe "_unsafe_get_turn_image/2" do
     test "returns the TurnImage when turn_id and position match" do
       user = insert_verified_user()
       conv = insert_conversation(user_id: user.id)
@@ -1340,7 +1253,7 @@ defmodule Fountain.ConversationsContextTest do
 
       insert_turn_image!(turn.id, 0, "image/png", <<7, 8, 9>>)
 
-      result = Conversations.get_turn_image(turn.id, 0)
+      result = Conversations._unsafe_get_turn_image(turn.id, 0)
       assert result != nil
       assert result.turn_id == turn.id
       assert result.position == 0
@@ -1352,11 +1265,11 @@ defmodule Fountain.ConversationsContextTest do
       conv = insert_conversation(user_id: user.id)
       turn = insert_turn(conv)
 
-      assert Conversations.get_turn_image(turn.id, 99) == nil
+      assert Conversations._unsafe_get_turn_image(turn.id, 99) == nil
     end
 
     test "returns nil when turn_id does not exist" do
-      assert Conversations.get_turn_image(Ecto.UUID.generate(), 0) == nil
+      assert Conversations._unsafe_get_turn_image(Ecto.UUID.generate(), 0) == nil
     end
 
     test "returns nil when position belongs to a different turn" do
@@ -1368,7 +1281,7 @@ defmodule Fountain.ConversationsContextTest do
       insert_turn_image!(turn1.id, 0, "image/png", <<1>>)
 
       # turn1 has an image at position 0, but turn2 does not
-      assert Conversations.get_turn_image(turn2.id, 0) == nil
+      assert Conversations._unsafe_get_turn_image(turn2.id, 0) == nil
     end
   end
 
@@ -1727,52 +1640,10 @@ defmodule Fountain.ConversationsContextTest do
   end
 
   # ────────────────────────────────────────────────────────────────────────────
-  # list_turns_with_images/1
+  # _unsafe_list_turns/1 — image preloads
   # ────────────────────────────────────────────────────────────────────────────
 
-  describe "list_turns_with_images/1" do
-    test "returns empty list when conversation has no turns" do
-      user = insert_verified_user()
-      conv = insert_conversation(user_id: user.id)
-
-      assert Conversations.list_turns_with_images(conv.id) == []
-    end
-
-    test "returns all turns for the conversation" do
-      user = insert_verified_user()
-      conv = insert_conversation(user_id: user.id)
-      t1 = insert_turn(conv)
-      t2 = insert_turn(conv)
-
-      ids = Conversations.list_turns_with_images(conv.id) |> Enum.map(& &1.id)
-      assert t1.id in ids
-      assert t2.id in ids
-    end
-
-    test "orders turns by turn_number ascending" do
-      user = insert_verified_user()
-      conv = insert_conversation(user_id: user.id)
-      t1 = insert_turn(conv)
-      t2 = insert_turn(conv)
-
-      [first, second] = Conversations.list_turns_with_images(conv.id)
-      assert first.turn_number < second.turn_number
-      assert first.id == t1.id
-      assert second.id == t2.id
-    end
-
-    test "does not return turns from other conversations" do
-      user = insert_verified_user()
-      conv1 = insert_conversation(user_id: user.id)
-      conv2 = insert_conversation(user_id: user.id)
-      t1 = insert_turn(conv1)
-      _t2 = insert_turn(conv2)
-
-      results = Conversations.list_turns_with_images(conv1.id)
-      assert length(results) == 1
-      assert hd(results).id == t1.id
-    end
-
+  describe "_unsafe_list_turns/1 image preloads" do
     test "preloads images association on each turn" do
       user = insert_verified_user()
       conv = insert_conversation(user_id: user.id)
@@ -1788,7 +1659,7 @@ defmodule Fountain.ConversationsContextTest do
       |> Ecto.Changeset.put_change(:inserted_at, DateTime.utc_now() |> DateTime.truncate(:second))
       |> Repo.insert!()
 
-      [loaded_turn] = Conversations.list_turns_with_images(conv.id)
+      [loaded_turn] = Conversations._unsafe_list_turns(conv.id)
       assert length(loaded_turn.images) == 1
       [img] = loaded_turn.images
       assert img.media_type == "image/png"
@@ -1800,7 +1671,7 @@ defmodule Fountain.ConversationsContextTest do
       conv = insert_conversation(user_id: user.id)
       _turn = insert_turn(conv)
 
-      [loaded_turn] = Conversations.list_turns_with_images(conv.id)
+      [loaded_turn] = Conversations._unsafe_list_turns(conv.id)
       assert loaded_turn.images == []
     end
 
@@ -1827,7 +1698,7 @@ defmodule Fountain.ConversationsContextTest do
         |> Repo.insert!()
       end
 
-      [loaded_turn] = Conversations.list_turns_with_images(conv.id)
+      [loaded_turn] = Conversations._unsafe_list_turns(conv.id)
       positions = Enum.map(loaded_turn.images, & &1.position)
       assert positions == Enum.sort(positions)
     end

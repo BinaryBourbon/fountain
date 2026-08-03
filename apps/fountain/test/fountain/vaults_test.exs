@@ -100,19 +100,19 @@ defmodule Fountain.VaultsTest do
       {:ok, _} = Vaults.upsert_secret(vault, %{"key" => "TOKEN", "value" => "first"}, dek)
       {:ok, _} = Vaults.upsert_secret(vault, %{"key" => "TOKEN", "value" => "second"}, dek)
 
-      secrets = Vaults.list_secrets(vault)
+      secrets = Vaults._unsafe_list_secrets(vault)
       assert length(secrets) == 1
     end
   end
 
-  describe "list_secrets/1" do
+  describe "_unsafe_list_secrets/1" do
     test "returns all secrets for a vault" do
       user = insert_verified_user()
       vault = insert_vault(user_id: user.id)
       insert_vault_secret(vault, key: "FOO")
       insert_vault_secret(vault, key: "BAR")
 
-      secrets = Vaults.list_secrets(vault)
+      secrets = Vaults._unsafe_list_secrets(vault)
       assert length(secrets) == 2
     end
 
@@ -120,7 +120,7 @@ defmodule Fountain.VaultsTest do
       user = insert_verified_user()
       vault = insert_vault(user_id: user.id)
 
-      assert Vaults.list_secrets(vault) == []
+      assert Vaults._unsafe_list_secrets(vault) == []
     end
   end
 
@@ -131,17 +131,17 @@ defmodule Fountain.VaultsTest do
       secret = insert_vault_secret(vault, key: "TO_DELETE")
 
       assert {:ok, _} = Vaults.delete_secret(secret)
-      assert Vaults.list_secrets(vault) == []
+      assert Vaults._unsafe_list_secrets(vault) == []
     end
   end
 
-  describe "get_secret/2" do
+  describe "_unsafe_get_secret/2" do
     test "returns the secret for the given vault_id and key" do
       user = insert_verified_user()
       vault = insert_vault(user_id: user.id)
       insert_vault_secret(vault, key: "MY_SECRET")
 
-      result = Vaults.get_secret(vault.id, "MY_SECRET")
+      result = Vaults._unsafe_get_secret(vault.id, "MY_SECRET")
       assert result != nil
       assert result.key == "MY_SECRET"
       assert result.vault_id == vault.id
@@ -151,7 +151,7 @@ defmodule Fountain.VaultsTest do
       user = insert_verified_user()
       vault = insert_vault(user_id: user.id)
 
-      assert Vaults.get_secret(vault.id, "NONEXISTENT") == nil
+      assert Vaults._unsafe_get_secret(vault.id, "NONEXISTENT") == nil
     end
 
     test "returns nil when the vault_id does not match" do
@@ -160,7 +160,7 @@ defmodule Fountain.VaultsTest do
       vault_b = insert_vault(user_id: user.id)
       insert_vault_secret(vault_a, key: "ONLY_IN_A")
 
-      assert Vaults.get_secret(vault_b.id, "ONLY_IN_A") == nil
+      assert Vaults._unsafe_get_secret(vault_b.id, "ONLY_IN_A") == nil
     end
   end
 
@@ -289,7 +289,7 @@ defmodule Fountain.VaultsTest do
         Vaults.upsert_secret(vault, %{"key" => "DECRYPT_ME", "value" => "plaintext_value"}, dek)
 
       # Load the raw secret (with ciphertext) to test decrypt directly
-      [raw_secret] = Vaults.list_secrets(vault)
+      [raw_secret] = Vaults._unsafe_list_secrets(vault)
       assert {:ok, "plaintext_value"} = Fountain.Vaults.VaultSecret.decrypt(raw_secret, dek)
     end
 

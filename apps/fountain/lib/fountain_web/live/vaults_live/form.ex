@@ -38,7 +38,8 @@ defmodule FountainWeb.VaultsLive.Form do
   end
 
   defp secrets_for(%Vault{id: nil}), do: []
-  defp secrets_for(vault), do: Vaults.list_secrets(vault)
+  # Vault is loaded via the tenant-scoped get_vault!/2 in load/2.
+  defp secrets_for(vault), do: Vaults._unsafe_list_secrets(vault)
 
   @impl true
   def handle_event("validate", %{"vault" => params}, socket) do

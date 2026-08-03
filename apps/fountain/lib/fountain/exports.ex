@@ -321,7 +321,9 @@ defmodule Fountain.Exports do
         "repositories" => env.repositories,
         "metadata" => env.metadata,
         # Names only — values are write-only by design.
-        "secret_keys" => env |> Environments.list_secrets() |> Enum.map(& &1.key) |> Enum.sort(),
+        # Env comes from the tenant-scoped list_environments above.
+        "secret_keys" =>
+          env |> Environments._unsafe_list_secrets() |> Enum.map(& &1.key) |> Enum.sort(),
         "created_at" => env.inserted_at,
         "updated_at" => env.updated_at
       }
@@ -338,7 +340,8 @@ defmodule Fountain.Exports do
         "description" => vault.description,
         "metadata" => vault.metadata,
         # Names only — values are write-only by design.
-        "secret_keys" => vault |> Vaults.list_secrets() |> Enum.map(& &1.key) |> Enum.sort(),
+        # Vault comes from the tenant-scoped list_vaults above.
+        "secret_keys" => vault |> Vaults._unsafe_list_secrets() |> Enum.map(& &1.key) |> Enum.sort(),
         "created_at" => vault.inserted_at,
         "updated_at" => vault.updated_at
       }

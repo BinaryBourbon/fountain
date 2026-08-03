@@ -20,8 +20,8 @@ defmodule FountainWeb.AdminLive.Index do
      |> assign(:page_title, "Admin")
      |> assign(:funnel, Fountain.Funnel.summary_admin())
      |> assign(:billing_overview, Billing.overview_admin())
-     |> assign(:sandboxes, Conversations.list_sandboxes_admin())
-     |> assign(:admin_events, Fountain.Audit.list_recent_admin(25))}
+     |> assign(:sandboxes, Conversations._unsafe_list_sandboxes_admin())
+     |> assign(:admin_events, Fountain.Audit._unsafe_list_recent_admin(25))}
   end
 
   # Filter/sort/page state lives in the URL, so the 10s refresh, admin
@@ -43,8 +43,8 @@ defmodule FountainWeb.AdminLive.Index do
      |> assign_users()
      |> assign(:funnel, Fountain.Funnel.summary_admin())
      |> assign(:billing_overview, Billing.overview_admin())
-     |> assign(:sandboxes, Conversations.list_sandboxes_admin())
-     |> assign(:admin_events, Fountain.Audit.list_recent_admin(25))}
+     |> assign(:sandboxes, Conversations._unsafe_list_sandboxes_admin())
+     |> assign(:admin_events, Fountain.Audit._unsafe_list_recent_admin(25))}
   end
 
   @impl true
@@ -194,7 +194,7 @@ defmodule FountainWeb.AdminLive.Index do
 
         {:noreply,
          socket
-         |> assign(:sandboxes, Conversations.list_sandboxes_admin())
+         |> assign(:sandboxes, Conversations._unsafe_list_sandboxes_admin())
          |> assign_users()
          |> put_flash(:info, msg)}
 
@@ -243,7 +243,7 @@ defmodule FountainWeb.AdminLive.Index do
             {:noreply,
              socket
              |> assign_users()
-             |> assign(:sandboxes, Conversations.list_sandboxes_admin())
+             |> assign(:sandboxes, Conversations._unsafe_list_sandboxes_admin())
              |> put_flash(:info, "Suspended — #{reaped} sandbox(es) reaped")}
 
           {:error, _} ->
@@ -283,7 +283,7 @@ defmodule FountainWeb.AdminLive.Index do
           {:noreply,
            socket
            |> assign_users()
-           |> assign(:sandboxes, Conversations.list_sandboxes_admin())
+           |> assign(:sandboxes, Conversations._unsafe_list_sandboxes_admin())
            |> put_flash(:info, "Deleted #{user.email}")}
 
         {:error, {:stripe, _}} ->

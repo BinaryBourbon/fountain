@@ -32,12 +32,8 @@ defmodule Fountain.Conversations do
 
   # ── sandboxes ──────────────────────────────────────────────────────────────────────────
 
-  def _unsafe_list_sandboxes do
-    Repo.all(from s in Sandbox, order_by: [desc: s.inserted_at])
-  end
-
   @doc "List active sandboxes across all tenants (admin use only)."
-  def list_sandboxes_admin do
+  def _unsafe_list_sandboxes_admin do
     alias Fountain.Accounts.User
 
     Repo.all(
@@ -326,46 +322,6 @@ defmodule Fountain.Conversations do
     end
   end
 
-  @doc """
-  WARNING: walks the spawn tree across all tenants. Admin/internal use only —
-  user-facing callers must use `get_conversation_tree/2`.
-  """
-  def _unsafe_get_conversation_tree(conversation_id) do
-    sql = """
-    WITH RECURSIVE
-    ancestors(id, parent_conversation_id) AS (
-      SELECT id, parent_conversation_id FROM conversations WHERE id = $1
-      UNION ALL
-      SELECT c.id, c.parent_conversation_id FROM conversations c
-      INNER JOIN ancestors a ON c.id = a.parent_conversation_id
-    ),
-    root_row AS (
-      SELECT id FROM ancestors WHERE parent_conversation_id IS NULL LIMIT 1
-    ),
-    tree(id, source, status, parent_id) AS (
-      SELECT c.id, c.source, c.status, c.parent_conversation_id
-      FROM conversations c, root_row r WHERE c.id = r.id
-      UNION ALL
-      SELECT c.id, c.source, c.status, c.parent_conversation_id
-      FROM conversations c
-      INNER JOIN tree t ON c.parent_conversation_id = t.id
-    )
-    SELECT id, source, status, parent_id FROM tree
-    """
-
-    {:ok, uuid} = Ecto.UUID.dump(conversation_id)
-    %{rows: rows} = Repo.query!(sql, [uuid])
-
-    Enum.map(rows, fn [id, source, status, parent_id] ->
-      %{
-        id: load_uuid!(id),
-        source: source,
-        status: status,
-        parent_id: load_uuid(parent_id)
-      }
-    end)
-  end
-
   defp load_uuid!(bin) when is_binary(bin) do
     {:ok, str} = Ecto.UUID.load(bin)
     str
@@ -536,25 +492,6 @@ defmodule Fountain.Conversations do
     )
   end
 
-  def list_turns_with_images(conversation_id) do
-    Repo.all(
-      from t in Turn,
-        where: t.conversation_id == ^conversation_id,
-        order_by: [asc: t.turn_number],
-        preload: [images: ^from(i in TurnImage, order_by: [asc: i.position])]
-    )
-  end
-
-  @doc """
-  Fetch a turn by conversation without tenant scoping.
-
-  Prefer `get_turn_by_conversation/3` anywhere the caller is reachable from a
-  user-facing surface.
-  """
-  def get_turn_by_conversation(turn_id, conversation_id) do
-    Repo.get_by(Turn, id: turn_id, conversation_id: conversation_id)
-  end
-
   @doc """
   Fetch a turn by conversation, scoped to the owning user.
 
@@ -610,7 +547,7 @@ defmodule Fountain.Conversations do
     end)
   end
 
-  def get_turn_image(turn_id, position) do
+  def _unsafe_get_turn_image(turn_id, position) do
     Repo.get_by(TurnImage, turn_id: turn_id, position: position)
   end
 

@@ -26,7 +26,8 @@ defmodule FountainWeb.VaultSecretController do
 
     case Vaults.get_vault(vault_id, user.id) do
       nil -> {:error, :not_found}
-      vault -> render(conn, :index, secrets: Vaults.list_secrets(vault))
+      # Ownership established by the scoped get_vault above.
+      vault -> render(conn, :index, secrets: Vaults._unsafe_list_secrets(vault))
     end
   end
 
@@ -79,7 +80,8 @@ defmodule FountainWeb.VaultSecretController do
     user = conn.assigns.current_user
 
     with %_{} <- Vaults.get_vault(vault_id, user.id),
-         %_{} = secret <- Vaults.get_secret(vault_id, key) do
+         # Ownership established by the scoped get_vault above.
+         %_{} = secret <- Vaults._unsafe_get_secret(vault_id, key) do
       {:ok, _} = Vaults.delete_secret(secret)
       send_resp(conn, :no_content, "")
     else

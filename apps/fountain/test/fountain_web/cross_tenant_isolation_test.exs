@@ -298,7 +298,7 @@ defmodule FountainWeb.CrossTenantIsolationTest do
       })
       |> json_response(404)
 
-      assert Fountain.Environments.list_secrets(env_a) == []
+      assert Fountain.Environments._unsafe_list_secrets(env_a) == []
     end
   end
 
@@ -341,7 +341,7 @@ defmodule FountainWeb.CrossTenantIsolationTest do
       })
       |> json_response(404)
 
-      assert Vaults.list_secrets(vault_a) == []
+      assert Vaults._unsafe_list_secrets(vault_a) == []
     end
 
     test "DELETE /api/vaults/:vault_id/secrets/:id returns 404 and does not delete",

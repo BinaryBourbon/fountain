@@ -60,7 +60,8 @@ defmodule FountainWeb.EnvironmentsLive.Form do
   end
 
   defp secrets_for(%Environment{id: nil}), do: []
-  defp secrets_for(env), do: Environments.list_secrets(env)
+  # Env is loaded via the tenant-scoped lookup in load/2.
+  defp secrets_for(env), do: Environments._unsafe_list_secrets(env)
 
   @impl true
   def handle_event("validate", %{"env" => params}, socket) do
