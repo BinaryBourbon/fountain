@@ -34,7 +34,7 @@ defmodule Fountain.Workers.StripeCustomerSyncTrialTest do
 
     stub(Stripe.Customer, :create, fn _ -> {:ok, %Stripe.Customer{id: "cus_e2e"}} end)
 
-    stub(Stripe.Subscription, :create, fn params ->
+    stub(Stripe.Subscription, :create, fn params, _opts ->
       send(test, {:sub_params, params})
       {:ok, %{id: "sub_e2e", status: "trialing", trial_end: params.trial_end}}
     end)
