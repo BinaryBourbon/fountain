@@ -25,28 +25,23 @@ defmodule Fountain.OpsGauges do
   @oban_states ~w(available scheduled executing retryable discarded)
 
   def emit_telemetry do
-    emit_status_counts(
-      [:fountain, :conversations],
-      Fountain.Conversations.Conversation,
-      Fountain.Conversations.Conversation.statuses()
-    )
+    # Guarded because telemetry_poller permanently drops a measurement
+    # whose tick fails in any class — see Fountain.TelemetryTick (#365, #395).
+    Fountain.TelemetryTick.run("ops gauges", fn ->
+      emit_status_counts(
+        [:fountain, :conversations],
+        Fountain.Conversations.Conversation,
+        Fountain.Conversations.Conversation.statuses()
+      )
 
-    emit_status_counts(
-      [:fountain, :sandboxes],
-      Fountain.Conversations.Sandbox,
-      Fountain.Conversations.Sandbox.statuses()
-    )
+      emit_status_counts(
+        [:fountain, :sandboxes],
+        Fountain.Conversations.Sandbox,
+        Fountain.Conversations.Sandbox.statuses()
+      )
 
-    emit_oban_depths()
-    :ok
-  rescue
-    # A raise here must not escape: telemetry_poller permanently drops a
-    # measurement whose tick raises (#365), so one boot-race or DB blip
-    # would silently kill these gauges for the node's lifetime. Skip the
-    # datapoint; the next tick retries.
-    error ->
-      Logger.warning("ops gauges tick skipped: #{Exception.message(error)}")
-      :ok
+      emit_oban_depths()
+    end)
   end
 
   defp emit_status_counts(event, schema, statuses) do

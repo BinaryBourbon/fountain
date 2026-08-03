@@ -121,23 +121,18 @@ defmodule Fountain.Funnel do
   """
   @spec emit_telemetry() :: :ok
   def emit_telemetry do
-    %{stages: stages, stalled: %{count: stalled}} = summary_admin()
+    # Guarded because telemetry_poller permanently drops a measurement
+    # whose tick fails in any class — see Fountain.TelemetryTick (#365, #395).
+    Fountain.TelemetryTick.run("funnel telemetry", fn ->
+      %{stages: stages, stalled: %{count: stalled}} = summary_admin()
 
-    measurements =
-      stages
-      |> Map.new(fn %{key: key, count: count} -> {key, count} end)
-      |> Map.put(:stalled_verified, stalled)
+      measurements =
+        stages
+        |> Map.new(fn %{key: key, count: count} -> {key, count} end)
+        |> Map.put(:stalled_verified, stalled)
 
-    :telemetry.execute([:fountain, :funnel], measurements, %{})
-  rescue
-    # A raise here must not escape: telemetry_poller permanently drops a
-    # measurement whose tick raises, so one failure — the boot tick racing
-    # Repo startup, a transient DB blip — would silently kill the funnel
-    # gauges for the node's lifetime (#365). Skip the datapoint instead;
-    # the next 10s tick retries.
-    error ->
-      Logger.warning("funnel telemetry tick skipped: #{Exception.message(error)}")
-      :ok
+      :telemetry.execute([:fountain, :funnel], measurements, %{})
+    end)
   end
 
   # Of the verified users with no conversation ever: how far did each get?
