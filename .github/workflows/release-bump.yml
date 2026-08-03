@@ -70,6 +70,20 @@ jobs:
             exit 1
           fi
 
+      - name: Require a changelog section for the new version
+        env:
+          NEXT: ${{ steps.ver.outputs.next }}
+        run: |
+          set -euo pipefail
+          # v0.3.0 shipped with its upgrade notes stranded under
+          # [Unreleased] (#318). Refuse to tag until CHANGELOG.md has a
+          # heading for the version being released.
+          if ! grep -qF "## [${NEXT}]" CHANGELOG.md; then
+            echo "CHANGELOG.md has no \"## [${NEXT}]\" section." >&2
+            echo "Roll the [Unreleased] entries into a dated [${NEXT}] section before running the release bump." >&2
+            exit 1
+          fi
+
       - name: Update mix.exs files
         run: |
           set -euo pipefail
