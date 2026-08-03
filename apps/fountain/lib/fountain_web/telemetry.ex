@@ -108,6 +108,13 @@ defmodule FountainWeb.Telemetry do
         tags: [:stage, :status],
         description: "Conversation stage transitions by stage and status"
       ),
+      # Any non-zero value here means a privilege-trail row was silently
+      # dropped (#451) — alert-worthy, not informational.
+      counter("fountain.audit.admin_record_rejected.count",
+        event_name: [:fountain, :audit, :admin_record_rejected],
+        tags: [:event_type],
+        description: "Admin audit events rejected at write time (lost trail rows)"
+      ),
       distribution("fountain.fresh_provision.stop.duration",
         event_name: [:fountain, :fresh_provision, :stop],
         measurement: :duration,

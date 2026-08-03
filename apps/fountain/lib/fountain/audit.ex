@@ -13,6 +13,8 @@ defmodule Fountain.Audit do
 
   import Ecto.Query
 
+  require Logger
+
   alias Fountain.Audit.AdminEvent
   alias Fountain.Audit.Event
   alias Fountain.Repo
@@ -66,12 +68,37 @@ defmodule Fountain.Audit do
       |> Map.put_new(:metadata, %{})
       |> Map.put_new(:inserted_at, DateTime.utc_now() |> DateTime.truncate(:second))
 
-    %AdminEvent{} |> AdminEvent.changeset(attrs) |> Repo.insert()
+    case %AdminEvent{} |> AdminEvent.changeset(attrs) |> Repo.insert() do
+      {:ok, _} = ok ->
+        ok
+
+      {:error, changeset} = err ->
+        # Callers ignore this return by design (best-effort), so a rejected
+        # write — usually an event type missing from the AdminEvent allowlist
+        # — silently erased its privilege-trail row. Twice, before #451. Log
+        # at error and count it so the drop is visible and alertable.
+        admin_record_lost(attrs, changeset.errors)
+        err
+    end
   rescue
     e ->
-      require Logger
-      Logger.warning("audit: admin record failed: #{inspect(e)}")
+      admin_record_lost(attrs, e)
       {:error, :exception}
+  end
+
+  defp admin_record_lost(attrs, reason) do
+    event_type = to_string(attrs[:event_type] || "unknown")
+
+    Logger.error(
+      "audit: admin event REJECTED, no privilege-trail row written " <>
+        "(event_type=#{event_type}): #{inspect(reason)}"
+    )
+
+    :telemetry.execute(
+      [:fountain, :audit, :admin_record_rejected],
+      %{count: 1},
+      %{event_type: event_type}
+    )
   end
 
   @doc "Most recent administrative actions, newest first. Admin surfaces only."

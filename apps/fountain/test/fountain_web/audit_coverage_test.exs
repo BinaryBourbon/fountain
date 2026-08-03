@@ -209,6 +209,37 @@ defmodule FountainWeb.AuditCoverageTest do
     end
   end
 
+  describe "the AdminEvent allowlist matches the code (#451)" do
+    test "every admin.* event type used in lib/ is in the allowlist" do
+      # The allowlist is a closed validate_inclusion, and record_admin is
+      # best-effort — an event type shipped without being added here is
+      # rejected at write time and the privilege trail silently loses the
+      # row. That happened twice before #451. This scan turns the mistake
+      # into a test failure at development time.
+      #
+      # The regex catches the dominant call-site shape (a string literal
+      # under an event_type: key). Types built dynamically (e.g. the
+      # role-grant if/else) are not caught here, but their branches are
+      # string literals matched elsewhere in the same expression.
+      used =
+        Path.wildcard("lib/**/*.ex")
+        |> Enum.flat_map(fn file ->
+          ~r/"(admin\.[a-z_]+(?:\.[a-z_]+)+)"/
+          |> Regex.scan(File.read!(file))
+          |> Enum.map(fn [_, type] -> type end)
+        end)
+        |> Enum.uniq()
+
+      assert used != [], "expected to find admin.* event types in lib/ — did call sites move?"
+
+      missing = used -- AdminEvent.event_types()
+
+      assert missing == [],
+             "admin event types used in code but missing from the AdminEvent allowlist — " <>
+               "these writes would be rejected and the trail rows lost: #{inspect(missing)}"
+    end
+  end
+
   describe "API key lifecycle through the UI" do
     test "creation and revocation are both recorded", %{conn: conn} do
       user = insert_verified_user()
