@@ -93,6 +93,60 @@ defmodule Fountain.UsageMeteringTest do
     end
   end
 
+  describe "sandbox_provision_failed" do
+    test "a sandbox that dies before ready records the attempt" do
+      user = insert_verified_user()
+      sandbox = insert_sandbox(user_id: user.id, status: "starting")
+
+      {:ok, _} = Conversations.update_sandbox(sandbox, %{status: "failed"})
+
+      assert [event] = events_for(user.id, "sandbox_provision_failed")
+      assert event.resource_id == sandbox.id
+      assert event.metadata["status_before_failure"] == "starting"
+      # The terminated event is still emitted — the sprite ran and was billed.
+      assert [_] = events_for(user.id, "sandbox_terminated")
+    end
+
+    test "is not emitted when the sandbox had reached ready" do
+      user = insert_verified_user()
+      sandbox = insert_sandbox(user_id: user.id, status: "pending")
+
+      {:ok, ready} = Conversations.update_sandbox(sandbox, %{status: "ready"})
+
+      {:ok, _} =
+        Conversations.update_sandbox(ready, %{
+          status: "failed",
+          terminated_at: DateTime.utc_now() |> DateTime.truncate(:second)
+        })
+
+      assert events_for(user.id, "sandbox_provision_failed") == []
+    end
+
+    test "keeps the two billing-page numbers in agreement when provisioning fails" do
+      # Before this event existed, a sandbox that died during provisioning
+      # contributed sandbox minutes but no conversation, so the billing page
+      # diverged for exactly the accounts where something was going wrong.
+      user = insert_verified_user()
+      sandbox = insert_sandbox(user_id: user.id, status: "starting")
+
+      {:ok, _} =
+        Conversations.update_sandbox(sandbox, %{
+          status: "failed",
+          terminated_at: DateTime.utc_now() |> DateTime.truncate(:second)
+        })
+
+      summary =
+        Billing.usage_summary(
+          user.id,
+          DateTime.utc_now() |> DateTime.add(-3600, :second),
+          DateTime.utc_now() |> DateTime.add(3600, :second)
+        )
+
+      assert summary.conversations == 1
+      assert length(events_for(user.id, "sandbox_terminated")) == 1
+    end
+  end
+
   describe "turn_started" do
     test "is emitted when a turn is created" do
       user = insert_verified_user()

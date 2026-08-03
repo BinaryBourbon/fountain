@@ -108,6 +108,7 @@ defmodule Fountain.Accounts.User do
       :current_period_end
     ])
     |> validate_inclusion(:subscription_status, @subscription_statuses)
+    |> unique_constraint(:stripe_customer_id)
   end
 
   @doc "Changeset for updating theme preference (light | dark | system)."

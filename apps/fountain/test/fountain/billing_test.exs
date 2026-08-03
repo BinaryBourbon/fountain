@@ -60,6 +60,15 @@ defmodule Fountain.BillingTest do
       assert summary.turns == 0
     end
 
+    test "counts sandbox_provision_failed events as conversations too", %{user: user} do
+      insert_event(user, "sandbox_provisioned", ~U[2026-05-10 12:00:00Z])
+      insert_event(user, "sandbox_provision_failed", ~U[2026-05-11 12:00:00Z])
+
+      summary = Billing.usage_summary(user.id, @period_start, @period_end)
+
+      assert summary.conversations == 2
+    end
+
     test "counts turn_started events as turns", %{user: user} do
       insert_event(user, "turn_started", ~U[2026-05-10 12:00:00Z])
       insert_event(user, "turn_started", ~U[2026-05-10 12:05:00Z])
@@ -851,6 +860,32 @@ defmodule Fountain.BillingTest do
       assert summaries[a.id] == %{conversations: 1, turns: 2, sandbox_minutes: 2.0}
       assert summaries[b.id] == %{conversations: 0, turns: 1, sandbox_minutes: 0.0}
       refute Map.has_key?(summaries, quiet.id)
+    end
+
+    test "failed provisioning attempts count as conversations" do
+      a = insert_verified_user()
+
+      {:ok, _} = Billing.record_usage(a.id, "sandbox_provisioned", nil, nil)
+      {:ok, _} = Billing.record_usage(a.id, "sandbox_provision_failed", nil, nil)
+
+      now = DateTime.utc_now()
+      summaries = Billing.usage_summaries(DateTime.add(now, -1, :day), DateTime.add(now, 1, :day))
+
+      assert summaries[a.id].conversations == 2
+    end
+  end
+
+  describe "attach_stripe_customer/2" do
+    test "a customer id cannot be attached to two users" do
+      # Two users sharing a stripe_customer_id would make the webhook lookup
+      # raise Ecto.MultipleResultsError, 500ing every delivery for that
+      # customer through Stripe's whole retry window.
+      u1 = insert_verified_user()
+      u2 = insert_verified_user()
+
+      assert {:ok, _} = Billing.attach_stripe_customer(u1, "cus_dup")
+      assert {:error, changeset} = Billing.attach_stripe_customer(u2, "cus_dup")
+      assert "has already been taken" in errors_on(changeset).stripe_customer_id
     end
   end
 end
