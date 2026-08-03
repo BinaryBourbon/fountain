@@ -4,6 +4,8 @@ defmodule FountainWeb.AgentAvatarController do
 
   alias Fountain.Agents
 
+  # sobelow_skip ["XSS.SendResp", "XSS.ContentType"] — bytes and media type
+  # come from the tenant-scoped agent row, validated at upload.
   def show(conn, %{"id" => id}) do
     user_id = conn.assigns.current_user.id
 

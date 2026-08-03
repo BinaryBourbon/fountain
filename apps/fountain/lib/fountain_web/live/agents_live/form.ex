@@ -329,6 +329,8 @@ defmodule FountainWeb.AgentsLive.Form do
     end
   end
 
+  # sobelow_skip ["Traversal.FileModule"] — path is the Phoenix-managed
+  # upload tempfile, not client-supplied.
   defp maybe_set_avatar(socket, agent) do
     uploaded =
       consume_uploaded_entries(socket, :avatar, fn %{path: path}, entry ->

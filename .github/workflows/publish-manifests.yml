@@ -64,8 +64,64 @@ permissions:
   contents: read
 
 jobs:
+  # Nothing deployed unvalidated (#414): before this job existed, the
+  # manifest fast path pushed the live Deployment, the CNPG cluster and the
+  # PrometheusRule straight to the artifact Flux reconciles, with no check
+  # of any kind — a typo'd manifest was applied to prod by the reconciler.
+  validate:
+    name: Validate the manifests
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    env:
+      SRC_SHA: ${{ github.event.workflow_run.head_sha || inputs.sha || github.sha }}
+
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: ${{ env.SRC_SHA }}
+
+      - name: kustomize build + kubeconform (k8s/ and deploy/k8s/)
+        run: |
+          set -euo pipefail
+          KUBECONFORM_VERSION=v0.7.0
+          curl -sSfL \
+            "https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz" \
+            | tar xz kubeconform
+
+          for dir in k8s deploy/k8s; do
+            echo "── ${dir}"
+            kubectl kustomize "${dir}" > "/tmp/${dir//\//-}.yaml"
+            # The CRDs catalog covers PrometheusRule, ServiceMonitor, CNPG,
+            # Infisical et al; -strict rejects unknown fields, which is the
+            # class of typo that survives YAML parsing.
+            ./kubeconform -strict -summary \
+              -schema-location default \
+              -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' \
+              "/tmp/${dir//\//-}.yaml"
+          done
+
+      - name: promtool check rules (PrometheusRule alert expressions)
+        run: |
+          set -euo pipefail
+          PROM_VERSION=3.5.0
+          curl -sSfL \
+            "https://github.com/prometheus/prometheus/releases/download/v${PROM_VERSION}/prometheus-${PROM_VERSION}.linux-amd64.tar.gz" \
+            | tar xz --strip-components=1 "prometheus-${PROM_VERSION}.linux-amd64/promtool"
+
+          # promtool reads a bare rules file; the PrometheusRule wraps the
+          # groups under spec.groups.
+          for f in k8s/prometheusrule.yaml deploy/k8s/prometheusrule.yaml; do
+            echo "── ${f}"
+            python3 -c "import yaml; yaml.safe_dump(yaml.safe_load(open('${f}'))['spec'], open('/tmp/rules.yaml', 'w'))"
+            ./promtool check rules /tmp/rules.yaml
+          done
+
   publish:
     name: Publish the manifest artifact
+    needs: validate
     if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10

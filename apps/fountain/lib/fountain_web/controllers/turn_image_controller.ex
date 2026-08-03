@@ -5,6 +5,9 @@ defmodule FountainWeb.TurnImageController do
   alias Fountain.Conversations
   alias Fountain.Conversations.TurnImage
 
+  # sobelow_skip ["XSS.SendResp", "XSS.ContentType"] — media type is checked
+  # against TurnImage.valid_media_types/0 and the response pins nosniff +
+  # a sandboxing CSP precisely because the bytes are client-originated.
   def show(conn, %{"conversation_id" => conv_id, "turn_id" => turn_id, "position" => pos_str}) do
     user_id = conn.assigns.current_user.id
 

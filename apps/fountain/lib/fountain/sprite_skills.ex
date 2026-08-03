@@ -73,6 +73,10 @@ defmodule Fountain.SpriteSkills do
     end)
   end
 
+  # sobelow_skip ["Traversal.FileModule"] — fixed path assembled from
+  # priv_dir and a module attribute; no user input.
+  # sobelow_skip ["Traversal.FileModule"] — fixed path assembled from
+  # priv_dir and a module attribute; no user input.
   defp fountain_inline_skill do
     %{
       "name" => @fountain_skill_name,

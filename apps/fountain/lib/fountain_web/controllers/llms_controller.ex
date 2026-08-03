@@ -112,6 +112,8 @@ defmodule FountainWeb.LlmsController do
 
   ## ─── File reads ───────────────────────────────────────────────────────────
 
+  # sobelow_skip ["Traversal.FileModule"] — slug comes from the compile-time
+  # Fountain.Help.topics() list, never from the request.
   defp read_help(slug) do
     path = Path.join([priv_dir(), "help", slug <> ".md"])
 
@@ -121,6 +123,7 @@ defmodule FountainWeb.LlmsController do
     end
   end
 
+  # sobelow_skip ["Traversal.FileModule"] — fixed priv path, no user input.
   defp read_skill do
     path = Path.join([priv_dir(), "external_skills", "fountain", "SKILL.md"])
 
