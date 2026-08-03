@@ -96,6 +96,9 @@ defmodule FountainWeb.DashboardLive.Index do
     color =
       case assigns.status do
         "ready" -> "bg-green-100 text-green-800 border-green-200"
+        # The resting state of every healthy conversation — it fell to the
+        # unrecognised-value grey before (#401).
+        "idle" -> "bg-green-100 text-green-800 border-green-200"
         "running" -> "bg-blue-100 text-blue-800 border-blue-200"
         "pending" -> "bg-zinc-100 text-zinc-600 border-zinc-200"
         "starting" -> "bg-blue-50 text-blue-600 border-blue-200"

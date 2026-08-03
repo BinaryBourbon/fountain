@@ -28,13 +28,24 @@ defmodule FountainWeb.VaultsLive.Index do
 
   @impl true
   def handle_event("delete", %{"id" => id}, socket) do
-    vault = Vaults.get_vault!(id, socket.assigns.user_id)
-    {:ok, _} = Vaults.delete_vault(vault)
+    # Non-bang + nil branch (#401): the list is loaded at mount, so a row
+    # deleted from another tab or the API made get_vault! raise and kill
+    # the LiveView on the second click.
+    case Vaults.get_vault(id, socket.assigns.user_id) do
+      nil ->
+        {:noreply,
+         socket
+         |> assign(:vaults, load_vaults(socket.assigns.user_id, socket.assigns.filter_search))
+         |> put_flash(:error, "Vault not found — it may already be deleted")}
 
-    {:noreply,
-     socket
-     |> assign(:vaults, load_vaults(socket.assigns.user_id, socket.assigns.filter_search))
-     |> put_flash(:info, "Deleted #{vault.name}")}
+      vault ->
+        {:ok, _} = Vaults.delete_vault(vault)
+
+        {:noreply,
+         socket
+         |> assign(:vaults, load_vaults(socket.assigns.user_id, socket.assigns.filter_search))
+         |> put_flash(:info, "Deleted #{vault.name}")}
+    end
   end
 
   defp load_vaults(user_id, search) do

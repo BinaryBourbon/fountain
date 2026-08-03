@@ -28,13 +28,24 @@ defmodule FountainWeb.EnvironmentsLive.Index do
 
   @impl true
   def handle_event("delete", %{"id" => id}, socket) do
-    env = Environments.get_environment!(id, socket.assigns.user_id)
-    {:ok, _} = Environments.delete_environment(env)
+    # Non-bang + nil branch (#401): the list is loaded at mount, so a row
+    # deleted from another tab or the API made get_environment! raise and
+    # kill the LiveView on the second click.
+    case Environments.get_environment(id, socket.assigns.user_id) do
+      nil ->
+        {:noreply,
+         socket
+         |> assign(:envs, load_envs(socket.assigns.user_id, socket.assigns.filter_search))
+         |> put_flash(:error, "Environment not found — it may already be deleted")}
 
-    {:noreply,
-     socket
-     |> assign(:envs, load_envs(socket.assigns.user_id, socket.assigns.filter_search))
-     |> put_flash(:info, "Deleted #{env.name}")}
+      env ->
+        {:ok, _} = Environments.delete_environment(env)
+
+        {:noreply,
+         socket
+         |> assign(:envs, load_envs(socket.assigns.user_id, socket.assigns.filter_search))
+         |> put_flash(:info, "Deleted #{env.name}")}
+    end
   end
 
   defp load_envs(user_id, search) do

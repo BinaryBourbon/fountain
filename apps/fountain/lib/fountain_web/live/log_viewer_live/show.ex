@@ -17,10 +17,12 @@ defmodule FountainWeb.LogViewerLive.Show do
 
     if conversation do
       if connected?(socket) do
-        Phoenix.PubSub.subscribe(
-          Fountain.PubSub,
-          "conv:#{user.id}:#{conversation.id}"
-        )
+        # "conv:<conversation_id>" — the topic every publisher uses
+        # (publish_stage, ConversationServer, Provisioning). This subscribed
+        # to "conv:<user>:<conv>", which nothing publishes on, so the page
+        # was a static snapshot while claiming live updates (#401).
+        # Ownership is already established by get_conversation!/2 above.
+        Phoenix.PubSub.subscribe(Fountain.PubSub, "conv:#{conversation.id}")
       end
 
       logs = Conversations._unsafe_list_log_events(conversation.id)
@@ -43,10 +45,9 @@ defmodule FountainWeb.LogViewerLive.Show do
     {:noreply, update(socket, :logs, fn logs -> logs ++ [event] end)}
   end
 
-  def handle_info({:conversation_updated, conv}, socket) do
-    {:noreply, assign(socket, :conversation, conv)}
-  end
-
+  # No {:conversation_updated, _} clause: nothing anywhere broadcasts that
+  # message — it was aspirational (#401). Status changes arrive as stage
+  # log events, which the clause above appends.
   def handle_info(_msg, socket), do: {:noreply, socket}
 
   @impl true

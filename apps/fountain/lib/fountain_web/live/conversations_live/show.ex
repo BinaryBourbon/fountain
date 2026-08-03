@@ -110,8 +110,22 @@ defmodule FountainWeb.ConversationsLive.Show do
           socket.assigns.turns_by_id
         end
 
+      # Stage events are exactly when the server rewrites conversation.status,
+      # and everything in the header (badge, Interrupt/Terminate visibility)
+      # keys off @conv — which was loaded once at mount and never again, so
+      # the page showed "pending" through a whole run and kept Interrupt
+      # rendered after the turn ended (#401).
+      conv =
+        if ev.kind == "stage" do
+          Conversations.get_conversation(socket.assigns.conv.id, socket.assigns.current_user.id) ||
+            socket.assigns.conv
+        else
+          socket.assigns.conv
+        end
+
       {:noreply,
        socket
+       |> assign(:conv, conv)
        |> assign(:events, events)
        |> assign(:turns_by_id, turns_by_id)}
     else
@@ -168,6 +182,28 @@ defmodule FountainWeb.ConversationsLive.Show do
       {:error, :no_agent} ->
         {:noreply, put_flash(socket, :error, "Conversation has no agent — can't resume")}
 
+      # The on_mount hook gates at mount only, so a socket that connected
+      # while the subscription was active survives a mid-session lapse (#401).
+      # Same handling ConversationsLive.New already has.
+      {:error, :subscription_required} ->
+        {:noreply,
+         socket
+         |> put_flash(:error, "An active subscription is required to send a prompt.")
+         |> push_navigate(to: ~p"/account/billing")}
+
+      {:error, {:sandbox_quota_exceeded, %{count: count, limit: limit}}} ->
+        {:noreply,
+         put_flash(
+           socket,
+           :error,
+           "You have #{count} of #{limit} concurrent sandboxes in use. " <>
+             "Terminate a conversation before starting another."
+         )}
+
+      {:error, :provisioning} ->
+        {:noreply,
+         put_flash(socket, :error, "The conversation is still provisioning — try again shortly.")}
+
       {:error, reason} ->
         {:noreply, put_flash(socket, :error, "Couldn't send: #{inspect(reason)}")}
     end
@@ -201,12 +237,24 @@ defmodule FountainWeb.ConversationsLive.Show do
   end
 
   def handle_event("delete", _, socket) do
-    {:ok, _} = Conversations.delete_conversation(socket.assigns.conv)
+    # Re-fetch instead of deleting the mount-time struct: a row already
+    # deleted from another tab or the API raised StaleEntryError and killed
+    # the LiveView (#401). Already-gone means the user got what they wanted.
+    case Conversations.get_conversation(socket.assigns.conv.id, socket.assigns.current_user.id) do
+      nil ->
+        {:noreply,
+         socket
+         |> put_flash(:info, "Conversation already deleted")
+         |> push_navigate(to: ~p"/conversations")}
 
-    {:noreply,
-     socket
-     |> put_flash(:info, "Conversation deleted")
-     |> push_navigate(to: ~p"/conversations")}
+      conv ->
+        {:ok, _} = Conversations.delete_conversation(conv)
+
+        {:noreply,
+         socket
+         |> put_flash(:info, "Conversation deleted")
+         |> push_navigate(to: ~p"/conversations")}
+    end
   end
 
   def handle_event("update_prompt", %{"prompt" => p}, socket) do
