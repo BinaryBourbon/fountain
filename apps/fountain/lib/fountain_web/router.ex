@@ -94,16 +94,6 @@ defmodule FountainWeb.Router do
     get "/", MarketingController, :home
   end
 
-  # Legacy single-tenant admin login (kept for ops runbook compat)
-  scope "/", FountainWeb do
-    pipe_through :browser
-
-    get "/login", SessionController, :legacy_new
-    post "/login", SessionController, :legacy_create
-    post "/logout", SessionController, :legacy_delete
-    get "/logout", SessionController, :legacy_delete
-  end
-
   # Multi-tenant auth routes (no session auth required)
   scope "/auth", FountainWeb do
     pipe_through :browser
