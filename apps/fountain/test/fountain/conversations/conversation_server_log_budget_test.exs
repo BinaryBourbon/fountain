@@ -69,14 +69,38 @@ defmodule Fountain.Conversations.ConversationServerLogBudgetTest do
     send(pid, {:stdout, %{ref: cmd_ref}, String.duplicate("b", 90)})
     _ = :sys.get_state(pid)
 
-    # The seed a fresh server for this conversation would start from: the
-    # DB total, not zero — which is what makes the budget per-conversation
-    # rather than per-BEAM-lifetime.
+    # Close the turn so the second wake below finds nothing running, then
+    # stop the first server entirely.
+    send(pid, {:exit, %{ref: cmd_ref}, 0})
+    _ = :sys.get_state(pid)
+    GenServer.stop(pid)
+
     assert Conversations._unsafe_output_byte_total(conv.id) == 90
 
-    # And the in-flight counter agrees with the durable one.
-    assert :sys.get_state(pid).output_bytes == 90
-    GenServer.stop(pid)
+    # Second server, same conversation. The sandbox is "ready" now, so this
+    # wake goes down the reattach path — stub its two extra calls. The new
+    # server has persisted nothing itself; only a seed read from the DB can
+    # make a 20-byte chunk cross the 100-byte budget. A seed of zero (the
+    # per-BEAM-lifetime bug this pins against) would let it straight through.
+    Mimic.stub(Sprites, :get_sprite, fn _client, _name -> {:ok, %{}} end)
+
+    Mimic.stub(Sprites, :sprite, fn _client, _name ->
+      %{name: "test-sprite", id: "sprite_test-sprite"}
+    end)
+
+    {pid2, cmd_ref2, _ref2} = start_with_turn(conv)
+
+    send(pid2, {:stdout, %{ref: cmd_ref2}, String.duplicate("c", 20)})
+    _ = :sys.get_state(pid2)
+
+    data = Enum.map(output_events(conv.id), & &1.data)
+    refute Enum.any?(data, &(&1 =~ "cccc")), "the over-budget chunk must be dropped, not persisted"
+    assert Enum.any?(data, &(&1 =~ "durable log budget"))
+
+    # The counter seeded from the DB (90) and the capped chunk never counted.
+    assert :sys.get_state(pid2).output_bytes == 90
+
+    GenServer.stop(pid2)
   end
 
   test "a 0 budget disables the cap" do

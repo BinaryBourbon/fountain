@@ -57,7 +57,14 @@ defmodule FountainWeb.AuditCoverageTest do
       |> element("form[phx-submit='add_secret']")
       |> render_submit(%{"secret" => %{"key" => "K", "value" => "super-secret-value"}})
 
-      for event <- events_for(user.id) do
+      events = events_for(user.id)
+
+      # Guard the guard: if vault-secret auditing disappeared entirely this
+      # list would be empty and the refute below would vacuously pass over
+      # nothing (#406). The write above must have produced its record.
+      assert Enum.any?(events, &(&1.action == "vault.secret.write"))
+
+      for event <- events do
         refute inspect(event.metadata) =~ "super-secret-value"
       end
     end

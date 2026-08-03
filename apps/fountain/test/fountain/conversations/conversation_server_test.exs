@@ -119,6 +119,10 @@ defmodule Fountain.Conversations.ConversationServerTest do
 
       {pid, _ref, :alive} = start_server(conv, initial_prompt: "first prompt")
 
+      # Guards the premise, not the fix: the harness must keep its servers
+      # out of Horde, or the turn assertion below stops demonstrating
+      # anything about registry-independent delivery. It can only fail if
+      # the harness changes (#406 item 11).
       assert Horde.Registry.lookup(Fountain.ConversationRegistry, conv.id) == []
       assert [turn] = Conversations._unsafe_list_turns(conv.id)
       assert turn.prompt == "first prompt"
@@ -182,9 +186,11 @@ defmodule Fountain.Conversations.ConversationServerTest do
   end
 
   describe "stage metrics — the producer end of #310" do
-    # These drive the real server and then read the Prometheus scrape, so
-    # they fail if the stage events the metrics subscribe to ever stop being
-    # emitted — the gap the name-list-only test shape could not see.
+    # These drive the real server and read the Prometheus scrape before and
+    # after. The reporter is node-global and cumulative and other tests in
+    # this file emit the very same events, so "a sample exists" is satisfied
+    # before these tests even run (#406) — only the delta across this test's
+    # own action is evidence the action emitted.
     defp scrape_body do
       # The reporter aggregates synchronously on the telemetry event, but give
       # the handler a moment before scraping.
@@ -194,38 +200,71 @@ defmodule Fountain.Conversations.ConversationServerTest do
       conn.resp_body
     end
 
-    defp assert_stage_sample(body, stage, status) do
-      sample =
-        body
-        |> String.split("\n")
-        |> Enum.find(fn line ->
-          String.starts_with?(line, "fountain_stage_count{") and
-            line =~ ~s(stage="#{stage}") and line =~ ~s(status="#{status}")
-        end)
+    # Current value of the {stage, status} counter series, 0 when absent.
+    # stage and status are the metric's only tags, so at most one line matches.
+    defp stage_count(body, stage, status) do
+      body
+      |> String.split("\n")
+      |> Enum.find_value(0, fn line ->
+        if String.starts_with?(line, "fountain_stage_count{") and
+             line =~ ~s(stage="#{stage}") and line =~ ~s(status="#{status}") do
+          {value, ""} = line |> String.split(" ") |> List.last() |> Integer.parse()
+          value
+        end
+      end)
+    end
 
-      assert sample, "no fountain_stage_count sample for #{stage}/#{status} in scrape"
+    # Total observations recorded by a histogram (its _count line), 0 when absent.
+    defp histogram_count(body, prefix) do
+      body
+      |> String.split("\n")
+      |> Enum.filter(fn line ->
+        String.starts_with?(line, prefix) and line =~ "_count"
+      end)
+      |> Enum.map(fn line ->
+        {value, ""} = line |> String.split(" ") |> List.last() |> Integer.parse()
+        value
+      end)
+      |> Enum.sum()
     end
 
     test "a successful provision lands in the scrape as provision/done", %{conv: conv} do
       stub_happy_sprite()
+      before_body = scrape_body()
 
       {pid, _ref, :alive} = start_server(conv)
       GenServer.stop(pid)
 
-      body = scrape_body()
-      assert_stage_sample(body, "provision", "done")
+      after_body = scrape_body()
+
+      # Exactly this provision — and a *successful* one: done moved, failed
+      # did not.
+      assert stage_count(after_body, "provision", "done") ==
+               stage_count(before_body, "provision", "done") + 1
+
+      assert stage_count(after_body, "provision", "failed") ==
+               stage_count(before_body, "provision", "failed")
+
       # The span around fresh provisioning feeds the duration histogram.
-      assert body =~ "fountain_fresh_provision_stop_duration"
+      assert histogram_count(after_body, "fountain_fresh_provision_stop_duration") ==
+               histogram_count(before_body, "fountain_fresh_provision_stop_duration") + 1
     end
 
     test "a failed provision lands in the scrape as provision/failed", %{conv: conv} do
       stub_happy_sprite()
       Mimic.stub(Sprites, :create, fn _client, _name -> {:error, :quota_exceeded} end)
+      before_body = scrape_body()
 
       {_pid, ref, _} = start_server(conv)
       assert_stopped(ref)
 
-      assert_stage_sample(scrape_body(), "provision", "failed")
+      after_body = scrape_body()
+
+      assert stage_count(after_body, "provision", "failed") ==
+               stage_count(before_body, "provision", "failed") + 1
+
+      assert stage_count(after_body, "provision", "done") ==
+               stage_count(before_body, "provision", "done")
     end
 
     test "a completed turn lands in the scrape as turn/done", %{conv: conv} do
@@ -239,12 +278,17 @@ defmodule Fountain.Conversations.ConversationServerTest do
       Mimic.stub(Sprites, :write, fn _cmd, _data -> :ok end)
       Mimic.stub(Sprites, :close_stdin, fn _cmd -> :ok end)
 
+      before_body = scrape_body()
+
       {pid, _mon, :alive} = start_server(conv, initial_prompt: "count me")
       send(pid, {:exit, %{ref: cmd_ref}, 0})
       _ = :sys.get_state(pid)
       GenServer.stop(pid)
 
-      assert_stage_sample(scrape_body(), "turn", "done")
+      after_body = scrape_body()
+
+      assert stage_count(after_body, "turn", "done") ==
+               stage_count(before_body, "turn", "done") + 1
     end
   end
 

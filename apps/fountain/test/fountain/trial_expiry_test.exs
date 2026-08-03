@@ -126,6 +126,14 @@ defmodule Fountain.TrialExpiryTest do
   describe "starting a trial" do
     test "creates a real Stripe subscription, not just a customer" do
       user = insert_verified_user()
+
+      # A distinctive anchor. Registration stamps now+14d, which is the same
+      # unix second the #351 regression (a fresh 14-day window restarting the
+      # clock) would produce — asserting against that proves nothing. 9 days
+      # can only appear in the params by reading the stamped date.
+      anchor = ahead(9)
+      {:ok, user} = user |> User.billing_changeset(%{trial_ends_at: anchor}) |> Repo.update()
+
       test = self()
 
       stub(Stripe.Customer, :create, fn _ -> {:ok, %Stripe.Customer{id: "cus_new"}} end)
@@ -142,13 +150,30 @@ defmodule Fountain.TrialExpiryTest do
       assert params.customer == "cus_new"
       # Anchored to the trial end registration stamped — not a fresh 14-day
       # window that would restart the clock at verification time (#351).
-      assert params.trial_end == DateTime.to_unix(user.trial_ends_at)
+      assert params.trial_end == DateTime.to_unix(anchor)
+      refute Map.has_key?(params, :trial_period_days)
       assert [%{price: "price_test"}] = params.items
 
       assert updated.stripe_customer_id == "cus_new"
       assert updated.stripe_subscription_id == "sub_new"
       assert updated.subscription_status == "trialing"
       assert updated.trial_ends_at
+    end
+
+    test "an already-elapsed local trial does not open a live Stripe trial" do
+      # The other half of the anchoring logic: Stripe rejects a past
+      # trial_end, and opening a fresh window here would re-grant time the
+      # local clock already took away. The clock side of the gate covers
+      # these accounts instead.
+      user = insert_verified_user()
+      {:ok, user} = user |> User.billing_changeset(%{trial_ends_at: ago(1)}) |> Repo.update()
+
+      stub(Stripe.Customer, :create, fn _ -> {:ok, %Stripe.Customer{id: "cus_late"}} end)
+      reject(&Stripe.Subscription.create/1)
+
+      assert {:ok, user} = Billing.create_stripe_customer(user)
+      assert {:ok, updated} = Billing.start_trial_subscription(user)
+      refute updated.stripe_subscription_id
     end
 
     test "cancels rather than invoicing when the trial ends with no card" do

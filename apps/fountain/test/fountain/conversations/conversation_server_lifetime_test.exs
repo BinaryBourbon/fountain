@@ -191,27 +191,35 @@ defmodule Fountain.Conversations.ConversationServerLifetimeTest do
   end
 
   describe "before a sprite exists" do
-    test "nothing is reclaimed while provisioning is still in flight" do
-      # sandbox_started_at is nil until the sprite is up. Reclaiming here would
-      # fight the provisioner; the reaper's stuck-row pass owns this case.
-      {conv, _sandbox} = aged_conversation(60 * 24)
+    test "nothing is reclaimed while sandbox_started_at is unset" do
+      # sandbox_started_at is nil until the sprite is up. Reclaiming in that
+      # window would fight the provisioner; the reaper's stuck-row pass owns
+      # it. The harness cannot hold a server mid-provision (handle_continue
+      # blocks the mailbox until it settles), so: settle the server, then
+      # clear sandbox_started_at to reproduce the in-flight state and age
+      # last_activity_at past the (tight) bounds. Only the nil guard in
+      # :lifecycle_check keeps this server alive.
+      {conv, sandbox} = aged_conversation(60 * 24)
       stub_reattach()
-      stub(Sprites, :get_sprite, fn _client, _name -> {:error, :not_found} end)
 
       with_bounds([sandbox_idle_timeout_minutes: 1, sandbox_max_lifetime_hours: 1], fn ->
-        {pid, ref, settled} = start_server(conv)
+        {pid, _ref, :alive} = start_server(conv)
 
-        if settled == :alive do
-          assert %{sandbox_started_at: nil} = :sys.get_state(pid)
-          send(pid, :lifecycle_check)
-          assert is_map(:sys.get_state(pid))
-          GenServer.stop(pid)
-        else
-          # A provision failure stops the server on its own, which is fine —
-          # the point is that the lifecycle check did not do it.
-          assert_stopped(ref)
-        end
+        :sys.replace_state(pid, fn state ->
+          %{
+            state
+            | sandbox_started_at: nil,
+              last_activity_at: DateTime.add(DateTime.utc_now(), -7200, :second)
+          }
+        end)
+
+        send(pid, :lifecycle_check)
+        # Alive, untouched, and started_at still unset after the tick.
+        assert %{sandbox_started_at: nil} = :sys.get_state(pid)
+        GenServer.stop(pid)
       end)
+
+      assert Fountain.Repo.reload(sandbox).status == "ready"
     end
   end
 

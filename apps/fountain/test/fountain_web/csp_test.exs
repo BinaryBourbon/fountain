@@ -14,7 +14,12 @@ defmodule FountainWeb.CSPTest do
     assert csp =~ "base-uri 'self'"
   end
 
-  test "API responses are not affected", %{conn: conn} do
+  # The CSP plug lives in the :browser pipeline only, so today nothing on an
+  # API path *could* set the header — this cannot catch #323 regressing.
+  # What it pins is scope: if the policy ever migrates to the Endpoint or an
+  # API pipeline, where it would ride along on every JSON/SSE response, this
+  # is the test that notices.
+  test "the policy stays scoped to browser responses — API paths carry none", %{conn: conn} do
     conn = get(conn, ~p"/health")
     assert get_resp_header(conn, "content-security-policy") == []
   end

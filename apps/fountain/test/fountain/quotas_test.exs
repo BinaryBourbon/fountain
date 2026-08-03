@@ -51,8 +51,13 @@ defmodule Fountain.QuotasTest do
   end
 
   describe "sandbox_limit/1" do
+    # Both literals below are deliberate: comparing against
+    # Quotas.default_limit() would compare the function under test to its
+    # own module attribute and pass for any value (#406).
+
     test "defaults to 5" do
-      assert Quotas.sandbox_limit(insert_verified_user().id) == Quotas.default_limit()
+      # Pins the schema/migration column default a fresh user gets.
+      assert Quotas.sandbox_limit(insert_verified_user().id) == 5
     end
 
     test "reflects an admin-adjusted cap" do
@@ -63,7 +68,9 @@ defmodule Fountain.QuotasTest do
     end
 
     test "an unknown user falls back to the default rather than being unlimited" do
-      assert Quotas.sandbox_limit(Ecto.UUID.generate()) == Quotas.default_limit()
+      # A missing row makes Repo.one/1 return nil, which is the only way to
+      # reach the @default_limit fallback — the column itself is NOT NULL.
+      assert Quotas.sandbox_limit(Ecto.UUID.generate()) == 5
     end
   end
 
