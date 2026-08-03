@@ -50,8 +50,14 @@ services:
       # this instance by anything other than localhost.
       PUBLIC_URL: ${PUBLIC_URL:-http://localhost:4000}
 
-      SECRET_KEY_BASE: ${SECRET_KEY_BASE:?set SECRET_KEY_BASE in .env — see .env.compose.example}
-      MASTER_SECRETS_KEY: ${MASTER_SECRETS_KEY:?set MASTER_SECRETS_KEY in .env — see .env.compose.example}
+      # Required, but enforced by the app at boot (config/runtime.exs raises
+      # a descriptive error for either one missing or empty) rather than by a
+      # compose `:?` marker: compose interpolates this whole file at load
+      # time regardless of which service is targeted, so a hard requirement
+      # here made even `docker compose up -d postgres` — the documented
+      # database-only dev path — abort on a fresh clone (#392).
+      SECRET_KEY_BASE: ${SECRET_KEY_BASE:-}
+      MASTER_SECRETS_KEY: ${MASTER_SECRETS_KEY:-}
 
       # Conversations need a Sprites token. The app boots without one; every
       # attempt to start a conversation then fails.

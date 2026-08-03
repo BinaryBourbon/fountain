@@ -226,3 +226,22 @@ jobs:
 
       - name: Validate OpenAPI spec
         run: mix openapi.spec.json --spec FountainWeb.ApiSpec --output /tmp/openapi.json && jq empty /tmp/openapi.json
+
+  compose-fresh-clone:
+    name: Compose fresh-clone check
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+
+      # Regression guard for #392: compose interpolates the entire file at
+      # load time regardless of which service a command targets, so a
+      # `:?`-required variable anywhere in it aborted even the documented
+      # database-only dev path (`docker compose up -d postgres`) on a fresh
+      # clone with no .env. This is the same load step that command runs.
+      - name: docker compose config with no .env and no secrets in the environment
+        run: env -u SECRET_KEY_BASE -u MASTER_SECRETS_KEY docker compose config --quiet
