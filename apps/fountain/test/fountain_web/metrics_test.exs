@@ -122,6 +122,9 @@ defmodule FountainWeb.MetricsTest do
         [:fountain, :sandbox, :reclaimed],
         [:fountain, :reaper, :run],
         [:fountain, :reaper, :untracked],
+        # Audit.record_admin/1 rejection path (#451) — exercised by
+        # Fountain.AuditTest's rejected-write telemetry test
+        [:fountain, :audit, :admin_record_rejected],
         # ConversationServer: provision watchdog (#329) and durable-output
         # budget (#331) — the two cost signals #405 gave subscribers
         [:fountain, :provision, :deadline_exceeded],
