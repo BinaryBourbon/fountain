@@ -127,6 +127,14 @@ defmodule Fountain.Conversations.ConversationServer do
 
   @impl true
   def init(args) do
+    # Without trap_exit, terminate/2 only runs on {:stop, …} or a raise — a
+    # Horde rebalance or application shutdown (i.e. every deploy) sends an
+    # exit signal and skips it, so the callback-token revoke never fired on
+    # the most common teardown there is (#322). Trapping makes OTP call
+    # terminate/2 on supervisor shutdown, bounded by the child shutdown
+    # timeout.
+    Process.flag(:trap_exit, true)
+
     state = %{
       conversation_id: Keyword.fetch!(args, :conversation_id),
       sandbox_id: Keyword.fetch!(args, :sandbox_id),
@@ -979,6 +987,15 @@ defmodule Fountain.Conversations.ConversationServer do
     end
   end
 
+  # trap_exit is on (see init/1), so exit signals from linked processes
+  # arrive here instead of killing the server outright. Preserve the
+  # pre-trap semantics: a linked crash still takes the server down (through
+  # terminate/2, which is the point), a :normal exit is ignored. Exits from
+  # the parent supervisor never reach this clause — OTP intercepts those
+  # and calls terminate/2 directly.
+  def handle_info({:EXIT, _from, :normal}, state), do: {:noreply, state}
+  def handle_info({:EXIT, _from, reason}, state), do: {:stop, reason, state}
+
   def handle_info(_msg, state), do: {:noreply, state}
 
   defp schedule_lifecycle_check do
@@ -1030,14 +1047,17 @@ defmodule Fountain.Conversations.ConversationServer do
   end
 
   # Best-effort revoke of the per-conversation API key when this server
-  # exits — covers both clean termination (`:terminate_conv`) and crash
-  # paths that hit `{:stop, :normal, state}` after a provision failure.
-  # If the BEAM crashes hard the row in `api_keys` is left behind, but it is no
-  # longer dangerous: `callback_api_key_opts/0` sets an `expires_at`, so an
-  # un-revoked key stops authenticating on its own, and RetentionPruner deletes
-  # the row later. It used to live forever, which is what made a sweeper
-  # necessary — see SandboxReaper for the sprite half, which does not
-  # self-heal.
+  # exits — clean termination (`:terminate_conv`), crash paths that hit
+  # `{:stop, :normal, state}`, and (because init/1 traps exits, #322)
+  # supervisor shutdown on deploys and Horde rebalances.
+  # If the BEAM crashes hard (SIGKILL — untrappable) the row in `api_keys`
+  # is left behind, but it is no longer dangerous: `callback_api_key_opts/0`
+  # sets an `expires_at`, so an un-revoked key stops authenticating on its
+  # own, and rotation-on-reattach revokes it if the conversation ever
+  # resumes. Note RetentionPruner only deletes rows whose `revoked_at` is
+  # set — an un-revoked orphan goes inert at expiry but its row stays until
+  # something revokes it. See SandboxReaper for the sprite half, which does
+  # not self-heal.
   @impl true
   def terminate(_reason, state) do
     Fountain.Conversations.Redaction.delete(state.conversation_id)
