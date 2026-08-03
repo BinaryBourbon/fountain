@@ -85,8 +85,10 @@ defmodule FountainWeb.ConversationsLive.NewSubmitTest do
     end
 
     test "redirects to the new conversation on success", %{lv: lv, agent: agent} do
+      # A real (inert) pid: since #367 the initial prompt is cast to the pid
+      # start_child returned, so the stand-in must satisfy the is_pid guard.
       stub(Horde.DynamicSupervisor, :start_child, fn _supervisor, _child_spec ->
-        {:ok, :test_pid}
+        {:ok, spawn(fn -> Process.sleep(:infinity) end)}
       end)
 
       params = %{"agent_id" => agent.id, "prompt" => "hello", "vault_id" => ""}

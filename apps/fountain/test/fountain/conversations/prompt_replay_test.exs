@@ -41,7 +41,9 @@ defmodule Fountain.Conversations.PromptReplayTest do
     # Capture what would be handed to Horde, and do not actually start anything.
     stub(Horde.DynamicSupervisor, :start_child, fn _sup, spec ->
       send(test, {:child_spec, spec})
-      {:ok, spawn(fn -> Process.sleep(:infinity) end)}
+      pid = spawn(fn -> Process.sleep(:infinity) end)
+      send(test, {:started_pid, pid})
+      {:ok, pid}
     end)
 
     stub(Conversations.ConversationServer, :queue_initial_prompt, fn id, prompt, images ->
@@ -77,11 +79,15 @@ defmodule Fountain.Conversations.PromptReplayTest do
     end
 
     test "delivers the prompt out of band instead", %{conv: conv} do
-      # It must still arrive — the fix is about how, not whether.
+      # It must still arrive — the fix is about how, not whether. And it goes
+      # to the pid start_child returned, not through the registry: a cast to
+      # a not-yet-propagated via-name is a silent no-op that eats the first
+      # prompt (#367).
       {:ok, _} = Conversations.wake_conversation(conv.id, "run the migration")
 
-      assert_received {:queued_prompt, conv_id, "run the migration", _}
-      assert conv_id == conv.id
+      assert_received {:started_pid, started_pid}
+      assert_received {:queued_prompt, target, "run the migration", _}
+      assert target == started_pid
     end
 
     test "waking without a prompt queues nothing", %{conv: conv} do

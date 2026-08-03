@@ -821,10 +821,10 @@ defmodule Fountain.Conversations do
         )
 
       case start_result do
-        {:ok, _pid} ->
+        {:ok, pid} ->
           if is_binary(attrs["prompt"]) and attrs["prompt"] != "" do
             ConversationServer.queue_initial_prompt(
-              conv.id,
+              pid,
               attrs["prompt"],
               attrs["images"] || []
             )
@@ -1025,7 +1025,7 @@ defmodule Fountain.Conversations do
   # provisioning finishes; if provisioning fails the server stops and the cast
   # dies with it, which is the right outcome — no turn on a failed provision.
   defp start_conversation_server(conv, sandbox_id, runtime_module, initial_prompt) do
-    with {:ok, _pid} <-
+    with {:ok, pid} <-
            Horde.DynamicSupervisor.start_child(
              Fountain.ConversationSupervisor,
              {ConversationServer,
@@ -1036,7 +1036,7 @@ defmodule Fountain.Conversations do
               ]}
            ) do
       if is_binary(initial_prompt) and initial_prompt != "" do
-        ConversationServer.queue_initial_prompt(conv.id, initial_prompt)
+        ConversationServer.queue_initial_prompt(pid, initial_prompt)
       end
 
       {:ok, _unsafe_get_conversation!(conv.id)}
@@ -1068,7 +1068,7 @@ defmodule Fountain.Conversations do
         {:ok, _} = ok ->
           ok
 
-        {:error, {:already_started, _pid}} ->
+        {:error, {:already_started, winner_pid}} ->
           # Lost a concurrent wake of the same conversation. The winner's
           # server is running against its own sandbox; this one's just-created
           # row would otherwise sit pending — holding a quota slot — until the
@@ -1079,7 +1079,7 @@ defmodule Fountain.Conversations do
           _ = mark_old_sandbox_terminated(new_sandbox.id)
 
           if is_binary(initial_prompt) and initial_prompt != "" do
-            ConversationServer.queue_initial_prompt(conv.id, initial_prompt)
+            ConversationServer.queue_initial_prompt(winner_pid, initial_prompt)
           end
 
           {:ok, _unsafe_get_conversation!(conv.id)}

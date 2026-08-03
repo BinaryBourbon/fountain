@@ -110,12 +110,20 @@ defmodule Fountain.ConversationServerCase do
 
     # The prompt is delivered out of band, exactly as production does it: it is
     # not a start_link argument, because Horde replays a stored child spec on
-    # every redistribution and would re-run the prompt on each deploy. Cast to
-    # the pid rather than through the registry, since this harness starts the
-    # server outside Horde.
+    # every redistribution and would re-run the prompt on each deploy. Since
+    # #367 the public API delivers to the pid, so this harness — whose servers
+    # are outside Horde and invisible to the registry — exercises the exact
+    # production path.
     case Keyword.get(opts, :initial_prompt) do
-      nil -> :ok
-      prompt -> GenServer.cast(pid, {:initial_prompt, prompt, Keyword.get(opts, :images, [])})
+      nil ->
+        :ok
+
+      prompt ->
+        Fountain.Conversations.ConversationServer.queue_initial_prompt(
+          pid,
+          prompt,
+          Keyword.get(opts, :images, [])
+        )
     end
 
     # handle_continue(:provision) runs before any call is answered, so a
