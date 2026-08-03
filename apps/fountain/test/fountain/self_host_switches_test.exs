@@ -82,6 +82,42 @@ defmodule Fountain.SelfHostSwitchesTest do
     end
   end
 
+  describe "BILLING_ENABLED=false silences the Stripe sync (#335)" do
+    # Every signup enqueued a StripeCustomerSync that 401ed through all five
+    # attempts — dead Oban jobs and error noise a self-hoster has no way to
+    # know are benign.
+
+    test "enqueue is a no-op" do
+      user = insert_verified_user()
+
+      with_env([billing_enabled: false], fn ->
+        assert {:ok, :billing_disabled} = Fountain.Workers.StripeCustomerSync.enqueue(user)
+
+        refute_enqueued(worker: Fountain.Workers.StripeCustomerSync)
+      end)
+    end
+
+    test "an already-queued job completes without touching Stripe" do
+      # The flag can flip off with jobs still in the queue.
+      user = insert_verified_user()
+      Mimic.reject(&Stripe.Customer.create/1)
+
+      with_env([billing_enabled: false], fn ->
+        assert :ok =
+                 perform_job(Fountain.Workers.StripeCustomerSync, %{user_id: user.id})
+      end)
+
+      refute Fountain.Repo.reload(user).stripe_customer_id
+    end
+
+    test "enqueue still works when billing is on" do
+      user = insert_verified_user()
+
+      assert {:ok, %Oban.Job{}} = Fountain.Workers.StripeCustomerSync.enqueue(user)
+      assert_enqueued(worker: Fountain.Workers.StripeCustomerSync)
+    end
+  end
+
   describe "REGISTRATION_ENABLED" do
     test "registration is open by default" do
       assert :ok = Accounts.registration_allowed?("someone@example.com")

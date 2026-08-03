@@ -24,6 +24,20 @@ defmodule Fountain.Workers.StripeCustomerSync do
 
   @impl Oban.Worker
   def perform(%Oban.Job{args: %{"user_id" => user_id}}) do
+    if Billing.enabled?() do
+      sync_user(user_id)
+    else
+      # A billing-disabled instance has no Stripe to sync against. Without
+      # this, every signup enqueued a job that 401ed through all five
+      # attempts — harmless (the gate is off and trial_ends_at is stamped at
+      # registration) but indistinguishable from a real failure in the logs
+      # of a self-hosted instance (#335). Belt to enqueue/1's braces: jobs
+      # already queued when the flag flips off also land here.
+      :ok
+    end
+  end
+
+  defp sync_user(user_id) do
     case Accounts.get_user(user_id) do
       nil ->
         # The account was deleted between enqueue and execution. Nothing to do,
@@ -46,13 +60,23 @@ defmodule Fountain.Workers.StripeCustomerSync do
     end
   end
 
-  @doc "Enqueue customer creation for `user`."
+  @doc """
+  Enqueue customer creation for `user`.
+
+  A no-op when billing is disabled — a self-hosted instance without Stripe
+  must not accumulate a dead job per signup. `perform/1` carries the same
+  guard for jobs that were already queued when the flag changed.
+  """
   def enqueue(%Accounts.User{id: id}), do: enqueue(id)
 
   def enqueue(user_id) when is_binary(user_id) do
-    %{user_id: user_id}
-    |> new()
-    |> Oban.insert()
+    if Billing.enabled?() do
+      %{user_id: user_id}
+      |> new()
+      |> Oban.insert()
+    else
+      {:ok, :billing_disabled}
+    end
   end
 
   # The customer and the trial subscription, in that order. Split because
