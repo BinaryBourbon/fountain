@@ -86,6 +86,51 @@ defmodule FountainWeb.BillingLiveTest do
     end
   end
 
+  describe "comped accounts (#399)" do
+    defp comped_user do
+      user = insert_verified_user()
+
+      {:ok, user} =
+        user
+        |> Fountain.Accounts.User.billing_changeset(%{subscription_status: "comped"})
+        |> Fountain.Repo.update()
+
+      user
+    end
+
+    test "are told the account is comped instead of being offered Checkout", %{conn: conn} do
+      # comp_account/1 cancels every live subscription, so pre-#399 the
+      # routing below read a comped account as a fresh customer, offered
+      # Upgrade, charged them through Checkout — and the webhook adoption
+      # then ignored the subscription entirely.
+      {:ok, _lv, html} = live(login_user(conn, comped_user()), ~p"/account/billing")
+
+      assert html =~ "This account is comped"
+      refute html =~ ~s(phx-click="manage_subscription")
+    end
+
+    test "a hand-sent manage_subscription event is refused before Stripe", %{conn: conn} do
+      test_pid = self()
+
+      stub(Stripe.Checkout.Session, :create, fn _ ->
+        send(test_pid, :checkout_reached)
+        {:ok, %{url: "https://checkout.test"}}
+      end)
+
+      stub(Stripe.BillingPortal.Session, :create, fn _ ->
+        send(test_pid, :portal_reached)
+        {:ok, %{url: "https://portal.test"}}
+      end)
+
+      {:ok, lv, _html} = live(login_user(conn, comped_user()), ~p"/account/billing")
+      html = render_click(lv, "manage_subscription", %{})
+
+      assert html =~ "nothing to pay"
+      refute_received :checkout_reached
+      refute_received :portal_reached
+    end
+  end
+
   describe "upgrade with no existing Stripe customer" do
     test "creates the customer first and never passes customer_email", %{conn: conn} do
       user = insert_verified_user()

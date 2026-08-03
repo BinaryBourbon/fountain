@@ -50,6 +50,12 @@ defmodule FountainWeb.Live.BillingLive do
       {:ok, url} ->
         {:noreply, redirect(socket, external: url)}
 
+      {:error, :comped} ->
+        {:noreply,
+         socket
+         |> assign(:stripe_url_loading, false)
+         |> put_flash(:info, "This account is comped — there is nothing to pay.")}
+
       {:error, _reason} ->
         {:noreply,
          socket
@@ -246,17 +252,28 @@ defmodule FountainWeb.Live.BillingLive do
         </dl>
 
         <div class="mt-6 flex items-center gap-4">
-          <button
-            phx-click="manage_subscription"
-            disabled={@stripe_url_loading}
-            class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            <%= if @current_user.subscription_status in ~w(active past_due) do %>
-              Manage Subscription
-            <% else %>
-              Upgrade
-            <% end %>
-          </button>
+          <%!-- A comped account must not be offered Checkout (#399):
+               comp_account/1 cancels the live subscriptions, so the routing
+               below reads the account as a fresh customer, Checkout charges
+               them, and the webhook adoption ignores the subscription — a
+               paying customer the app knows nothing about. --%>
+          <%= if @current_user.subscription_status == "comped" do %>
+            <span class="text-sm text-zinc-600">
+              This account is comped — no payment needed.
+            </span>
+          <% else %>
+            <button
+              phx-click="manage_subscription"
+              disabled={@stripe_url_loading}
+              class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <%= if @current_user.subscription_status in ~w(active past_due) do %>
+                Manage Subscription
+              <% else %>
+                Upgrade
+              <% end %>
+            </button>
+          <% end %>
           <%!-- Invoices live in the portal. Manage Subscription already leads
                there for active/past_due; every other status with a Stripe
                customer (canceled above all — they paid, they need receipts)
@@ -423,6 +440,11 @@ defmodule FountainWeb.Live.BillingLive do
     {period_start, period_end}
   end
 
+  # Refused outright rather than relying on the button being hidden (#399):
+  # a stale socket or a hand-sent event must not open Checkout for an
+  # account whose subscriptions comp_account/1 deliberately cancelled.
+  defp build_stripe_url(%{subscription_status: "comped"}), do: {:error, :comped}
+
   defp build_stripe_url(user) do
     return_url = FountainWeb.Endpoint.url() <> ~p"/account/billing"
 
@@ -524,6 +546,7 @@ defmodule FountainWeb.Live.BillingLive do
   defp format_status("canceled"), do: "Canceled"
   defp format_status(s), do: String.capitalize(s || "Unknown")
 
+  defp status_badge_class("comped"), do: "bg-purple-100 text-purple-800"
   defp status_badge_class("trialing"), do: "bg-blue-100 text-blue-800"
   defp status_badge_class("active"), do: "bg-green-100 text-green-800"
   defp status_badge_class("past_due"), do: "bg-red-100 text-red-800"
