@@ -71,7 +71,7 @@ defmodule Fountain.Umbrella.MixProject do
         "compile --warnings-as-errors",
         "deps.unlock --unused",
         "format --check-formatted",
-        "credo --strict --mute-exit-status",
+        "credo --strict",
         &dialyzer_in_dev/1,
         &sobelow_in_app/1,
         "test"
