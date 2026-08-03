@@ -169,7 +169,7 @@ defmodule Fountain.TrialExpiryTest do
       {:ok, user} = user |> User.billing_changeset(%{trial_ends_at: ago(1)}) |> Repo.update()
 
       stub(Stripe.Customer, :create, fn _ -> {:ok, %Stripe.Customer{id: "cus_late"}} end)
-      reject(&Stripe.Subscription.create/1)
+      reject(&Stripe.Subscription.create/2)
 
       assert {:ok, user} = Billing.create_stripe_customer(user)
       assert {:ok, updated} = Billing.start_trial_subscription(user)
@@ -233,7 +233,7 @@ defmodule Fountain.TrialExpiryTest do
       user = insert_verified_user()
 
       stub(Stripe.Customer, :create, fn _ -> {:ok, %Stripe.Customer{id: "cus_selfhost"}} end)
-      reject(&Stripe.Subscription.create/1)
+      reject(&Stripe.Subscription.create/2)
 
       assert {:ok, user} = Billing.create_stripe_customer(user)
       assert {:ok, updated} = Billing.start_trial_subscription(user)
@@ -246,7 +246,7 @@ defmodule Fountain.TrialExpiryTest do
       # would be wrong, so starting the trial is a separate call.
       user = insert_verified_user()
       stub(Stripe.Customer, :create, fn _ -> {:ok, %Stripe.Customer{id: "cus_checkout"}} end)
-      reject(&Stripe.Subscription.create/1)
+      reject(&Stripe.Subscription.create/2)
 
       assert {:ok, _} = Billing.create_stripe_customer(user)
     end
