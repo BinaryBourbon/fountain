@@ -7,8 +7,9 @@ defmodule Fountain.Emails.UserEmails do
   - Welcome (once, on the verification transition, from `Workers.WelcomeEmail`)
   - Password reset (1 h token)
   - Trial ending (3 days out, from Stripe's trial_will_end)
-  - Trial expired / payment failed / subscription cancelled
-    (from `Workers.LifecycleEmail`, enqueued on webhook status transitions)
+  - Trial expired / payment failed / payment action required / payment
+    recovered / subscription cancelled (from `Workers.LifecycleEmail`,
+    enqueued on webhook status transitions and `invoice.*` events)
   """
 
   import Swoosh.Email
@@ -159,6 +160,45 @@ defmodule Fountain.Emails.UserEmails do
     |> subject("Payment failed for your Fountain subscription")
     |> html_body(payment_failed_html(billing_url))
     |> text_body(payment_failed_text(billing_url))
+    |> Mailer.deliver()
+  end
+
+  @doc """
+  The bank wants confirmation before the charge goes through (#447).
+
+  Driven by Stripe's `invoice.payment_action_required` — an SCA/3DS challenge
+  on a renewal. This is the one dunning-adjacent email where the user can
+  still prevent the failure, so it leads with the action, not the problem.
+  """
+  @spec deliver_payment_action_required_email(User.t()) :: {:ok, term()} | {:error, term()}
+  def deliver_payment_action_required_email(%User{} = user) do
+    billing_url = "#{Fountain.PublicUrl.base()}/account/billing"
+
+    new()
+    |> from(from_address())
+    |> to({user.email, user.email})
+    |> subject("Action needed: confirm your Fountain payment")
+    |> html_body(payment_action_required_html(billing_url))
+    |> text_body(payment_action_required_text(billing_url))
+    |> Mailer.deliver()
+  end
+
+  @doc """
+  Dunning recovered (#447): a past_due account's payment went through.
+
+  The counterpart to `deliver_payment_failed_email/1`. Without it the account
+  silently unlocks and the failure notice stays the last thing we ever said.
+  """
+  @spec deliver_payment_recovered_email(User.t()) :: {:ok, term()} | {:error, term()}
+  def deliver_payment_recovered_email(%User{} = user) do
+    billing_url = "#{Fountain.PublicUrl.base()}/account/billing"
+
+    new()
+    |> from(from_address())
+    |> to({user.email, user.email})
+    |> subject("Payment received — your Fountain subscription is active")
+    |> html_body(payment_recovered_html(billing_url))
+    |> text_body(payment_recovered_text(billing_url))
     |> Mailer.deliver()
   end
 
@@ -394,6 +434,88 @@ defmodule Fountain.Emails.UserEmails do
     payment succeeds.
 
     If the retries keep failing, your subscription will be cancelled.
+    """
+  end
+
+  defp payment_action_required_html(billing_url) do
+    """
+    <!DOCTYPE html>
+    <html>
+    <body style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 24px;">
+      <h2>Confirm your Fountain payment</h2>
+      <p>
+        Your bank is asking for an extra confirmation before it will approve
+        your latest Fountain payment. Until then the charge stays pending.
+      </p>
+      <p style="margin: 32px 0;">
+        <a href="#{billing_url}"
+           style="background: #18181b; color: #fff; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-size: 14px;">
+          Confirm payment
+        </a>
+      </p>
+      <p style="color: #71717a; font-size: 13px;">
+        Or copy this link into your browser:<br/>
+        <a href="#{billing_url}" style="color: #3b82f6;">#{billing_url}</a>
+      </p>
+      <p style="color: #71717a; font-size: 13px;">
+        If the payment is not confirmed, it will be treated as failed and
+        retried — you'll hear from us again if that happens.
+      </p>
+    </body>
+    </html>
+    """
+  end
+
+  defp payment_action_required_text(billing_url) do
+    """
+    Confirm your Fountain payment
+
+    Your bank is asking for an extra confirmation before it will approve your
+    latest Fountain payment. Until then the charge stays pending. Confirm it
+    here:
+
+    #{billing_url}
+
+    If the payment is not confirmed, it will be treated as failed and retried
+    — you'll hear from us again if that happens.
+    """
+  end
+
+  defp payment_recovered_html(billing_url) do
+    """
+    <!DOCTYPE html>
+    <html>
+    <body style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 24px;">
+      <h2>Payment received — you're all set</h2>
+      <p>
+        Your payment went through and your Fountain subscription is active
+        again. Starting new conversations works as normal, and nothing was
+        deleted while the payment was outstanding.
+      </p>
+      <p style="margin: 32px 0;">
+        <a href="#{billing_url}"
+           style="background: #18181b; color: #fff; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-size: 14px;">
+          View billing
+        </a>
+      </p>
+      <p style="color: #71717a; font-size: 13px;">
+        Or copy this link into your browser:<br/>
+        <a href="#{billing_url}" style="color: #3b82f6;">#{billing_url}</a>
+      </p>
+    </body>
+    </html>
+    """
+  end
+
+  defp payment_recovered_text(billing_url) do
+    """
+    Payment received — you're all set
+
+    Your payment went through and your Fountain subscription is active again.
+    Starting new conversations works as normal, and nothing was deleted while
+    the payment was outstanding.
+
+    #{billing_url}
     """
   end
 

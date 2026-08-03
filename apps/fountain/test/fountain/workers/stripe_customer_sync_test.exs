@@ -30,7 +30,19 @@ defmodule Fountain.Workers.StripeCustomerSyncTest do
       user = insert_verified_user()
       {:ok, _} = Fountain.Billing.attach_stripe_customer(user, "cus_existing")
 
-      # No stub: a call to Stripe would fail the test.
+      # Customer.create flunks if called — that is the property under test.
+      # Subscription.create is stubbed benignly instead of left bare: several
+      # async test files put_env :stripe_price_id globally, and when one
+      # overlaps this test the trial-subscription branch legitimately fires —
+      # previously with no stub, so it hit real Stripe and 401ed (flake).
+      stub(Stripe.Customer, :create, fn _ ->
+        flunk("a rerun must not create a second Stripe customer")
+      end)
+
+      stub(Stripe.Subscription, :create, fn _ ->
+        {:ok, %Stripe.Subscription{id: "sub_benign", status: "trialing"}}
+      end)
+
       assert :ok = perform_job(StripeCustomerSync, %{user_id: user.id})
       assert Repo.get(User, user.id).stripe_customer_id == "cus_existing"
     end

@@ -888,4 +888,143 @@ defmodule Fountain.BillingTest do
       assert "has already been taken" in errors_on(changeset).stripe_customer_id
     end
   end
+
+  # ── invoice.* events (#447) ────────────────────────────────────────────────
+
+  defp invoice_user(status, opts \\ []) do
+    user = insert_verified_user()
+
+    Repo.update!(
+      Ecto.Changeset.change(user,
+        stripe_customer_id: "cus_inv#{System.unique_integer([:positive])}",
+        stripe_subscription_id: Keyword.get(opts, :sub_id, "sub_of_record"),
+        subscription_status: status,
+        subscription_synced_at: Keyword.get(opts, :synced_at)
+      )
+    )
+  end
+
+  defp invoice_event(type, user, opts \\ []) do
+    %Stripe.Event{
+      type: type,
+      created: Keyword.get(opts, :created),
+      data: %{
+        object: %{
+          customer: user.stripe_customer_id,
+          subscription: Keyword.get(opts, :subscription, user.stripe_subscription_id)
+        }
+      }
+    }
+  end
+
+  describe "invoice.* events (#447)" do
+    alias Fountain.Workers.LifecycleEmail
+
+    test "invoice.payment_failed enqueues the dunning email without touching status" do
+      user = invoice_user("active")
+
+      assert {:ok, %Fountain.Accounts.User{}} =
+               Billing.sync_subscription(invoice_event("invoice.payment_failed", user))
+
+      # status stays with the subscription events
+      assert Repo.reload(user).subscription_status == "active"
+
+      assert_enqueued(
+        worker: LifecycleEmail,
+        args: %{"user_id" => user.id, "email" => "payment_failed"}
+      )
+    end
+
+    test "invoice.payment_action_required enqueues the SCA email" do
+      user = invoice_user("active")
+
+      assert {:ok, %Fountain.Accounts.User{}} =
+               Billing.sync_subscription(invoice_event("invoice.payment_action_required", user))
+
+      assert_enqueued(
+        worker: LifecycleEmail,
+        args: %{"user_id" => user.id, "email" => "payment_action_required"}
+      )
+    end
+
+    test "an invoice for another subscription never reaches the account" do
+      user = invoice_user("past_due")
+
+      assert {:ok, :other_subscription} =
+               Billing.sync_subscription(
+                 invoice_event("invoice.payment_failed", user, subscription: "sub_other")
+               )
+
+      refute_enqueued(worker: LifecycleEmail)
+    end
+
+    test "an unknown customer is ignored, not an error — deleted accounts trail invoices" do
+      event = %Stripe.Event{
+        type: "invoice.payment_failed",
+        data: %{object: %{customer: "cus_gone_forever", subscription: "sub_x"}}
+      }
+
+      assert {:ok, :ignored} = Billing.sync_subscription(event)
+    end
+
+    test "a comped account is never touched by invoice events" do
+      user = invoice_user("comped")
+
+      assert {:ok, :comped_ignored} =
+               Billing.sync_subscription(invoice_event("invoice.payment_failed", user))
+
+      assert {:ok, :comped_ignored} =
+               Billing.sync_subscription(invoice_event("invoice.paid", user))
+
+      refute_enqueued(worker: LifecycleEmail)
+    end
+
+    test "invoice.paid recovers past_due → active and advances the watermark" do
+      ts = 1_800_000_000
+      user = invoice_user("past_due")
+
+      assert {:ok, updated} =
+               Billing.sync_subscription(invoice_event("invoice.paid", user, created: ts))
+
+      assert updated.subscription_status == "active"
+      assert updated.subscription_synced_at == DateTime.from_unix!(ts)
+
+      assert_enqueued(
+        worker: LifecycleEmail,
+        args: %{"user_id" => user.id, "email" => "payment_recovered"}
+      )
+    end
+
+    test "invoice.paid off any state but past_due is a no-op — the $0 trial invoice" do
+      # Stripe pays a $0 invoice the moment a trial subscription is created;
+      # applying it would flip a fresh trialing account straight to active.
+      user = invoice_user("trialing")
+
+      assert {:ok, :ignored} = Billing.sync_subscription(invoice_event("invoice.paid", user))
+      assert Repo.reload(user).subscription_status == "trialing"
+      refute_enqueued(worker: LifecycleEmail)
+    end
+
+    test "a stale invoice.paid cannot move the account" do
+      synced = ~U[2026-08-01 00:00:00Z]
+      user = invoice_user("past_due", synced_at: synced)
+      old_ts = DateTime.to_unix(synced) - 3600
+
+      assert {:ok, :stale} =
+               Billing.sync_subscription(invoice_event("invoice.paid", user, created: old_ts))
+
+      assert Repo.reload(user).subscription_status == "past_due"
+    end
+
+    test "invoice.paid for another subscription is ignored even off past_due" do
+      user = invoice_user("past_due")
+
+      assert {:ok, :other_subscription} =
+               Billing.sync_subscription(
+                 invoice_event("invoice.paid", user, subscription: "sub_other")
+               )
+
+      assert Repo.reload(user).subscription_status == "past_due"
+    end
+  end
 end

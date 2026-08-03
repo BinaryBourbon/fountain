@@ -45,6 +45,22 @@ defmodule Fountain.StripeWebhookIdempotencyTest do
       assert Repo.reload(user).subscription_status == "active"
     end
 
+    test "an invoice event id is claimed once — one redelivery, one dunning email (#447)" do
+      _user = user_with_customer("cus_inv_claim")
+
+      event = %Stripe.Event{
+        id: "evt_inv_claim_1",
+        type: "invoice.payment_failed",
+        created: now_unix(),
+        data: %{object: %{customer: "cus_inv_claim", subscription: nil}}
+      }
+
+      assert {:ok, %Fountain.Accounts.User{}} = Billing.handle_event(event)
+      assert {:ok, :duplicate} = Billing.handle_event(event)
+
+      assert [_only_one] = all_enqueued(worker: Fountain.Workers.LifecycleEmail)
+    end
+
     test "a redelivered activation cannot resurrect a cancelled account" do
       # The scenario that motivates this: Stripe retries an older event after a
       # newer one has already been applied.
