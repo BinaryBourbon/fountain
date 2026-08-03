@@ -49,14 +49,9 @@ defmodule FountainWeb.HelpLive.Show do
     end
   end
 
-  defp render_markdown(text) do
-    # Both Earmark outcomes carry usable html; as_html/2 returns nothing else,
-    # so there is deliberately no catch-all.
-    case Earmark.as_html(text, compact_output: true, smartypants: false) do
-      {:ok, html, _} -> html
-      {:error, html, _} -> html
-    end
-  end
+  # Help topics are repo-controlled markdown, but rendering through the same
+  # sanitizing pipeline as agent output keeps one code path (#323).
+  defp render_markdown(text), do: FountainWeb.Markdown.to_html(text)
 
   @impl true
   def render(assigns) do

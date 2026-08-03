@@ -30,6 +30,27 @@ defmodule FountainWeb.Router do
     plug :accepts, ["json"]
   end
 
+  # As tight as the current asset setup allows: the root layout runs Tailwind
+  # and Phoenix/LiveView/d3 off CDNs and carries large inline scripts and
+  # onclick handlers, so script-src needs 'unsafe-inline' plus the two CDN
+  # hosts (a nonce scheme can't cover inline event handlers). That means this
+  # CSP does NOT block javascript: URLs — FountainWeb.Markdown filters those
+  # at render time (#323). What it does pin down: no framing, no <object>,
+  # no off-origin form posts, fetch/websocket restricted to self + the LV
+  # socket, images to self + the data: URLs the image picker and avatars use.
+  @csp [
+         "default-src 'self'",
+         "base-uri 'self'",
+         "frame-ancestors 'self'",
+         "form-action 'self'",
+         "object-src 'none'",
+         "img-src 'self' data:",
+         "style-src 'self' 'unsafe-inline'",
+         "script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com https://cdn.jsdelivr.net",
+         "connect-src 'self' ws: wss:"
+       ]
+       |> Enum.join("; ")
+
   # Base browser pipeline — session, flash, CSRF, secure headers
   pipeline :browser do
     plug :accepts, ["html"]
@@ -37,7 +58,7 @@ defmodule FountainWeb.Router do
     plug :fetch_live_flash
     plug :put_root_layout, html: {FountainWeb.Layouts, :root}
     plug :protect_from_forgery
-    plug :put_secure_browser_headers
+    plug :put_secure_browser_headers, %{"content-security-policy" => @csp}
   end
 
   # Public browser routes (login, register, verify) — no auth check

@@ -640,17 +640,10 @@ defmodule FountainWeb.ConversationsLive.Show do
     """
   end
 
-  defp render_markdown(text) when is_binary(text) do
-    # Both Earmark outcomes carry usable html — the :error tuple still renders,
-    # just with warnings. There is deliberately no catch-all: as_html/2 returns
-    # nothing else, and a defensive clause here was dead code.
-    case Earmark.as_html(text, compact_output: true, smartypants: false) do
-      {:ok, html, _warnings} -> html
-      {:error, html, _warnings} -> html
-    end
-  end
-
-  defp render_markdown(_), do: ""
+  # Agent output is untrusted by construction (sandboxed code, prompt
+  # injection) — FountainWeb.Markdown strips javascript:-style URL schemes
+  # that survive Earmark's HTML escaping (#323).
+  defp render_markdown(text), do: FountainWeb.Markdown.to_html(text)
 
   defp format_chat_time(nil), do: ""
 
