@@ -316,7 +316,7 @@ defmodule FountainWeb.Live.BillingLive do
 
       <%!-- Data export --%>
       <div class="rounded-lg border bg-white p-6 shadow-sm">
-        <h2 class="mb-1 text-lg font-medium">Export your data</h2>
+        <h2 class="mb-1 text-lg font-medium" id="export">Export your data</h2>
         <p class="mb-2 text-sm text-gray-600">
           Download a single JSON file containing your agents, environments, vaults,
           conversations with their full log output, and your audit trail.
@@ -381,6 +381,11 @@ defmodule FountainWeb.Live.BillingLive do
           Secrets are encrypted with a key held only for your account; deleting the
           account destroys that key, so they cannot be recovered afterwards by anyone.
           <strong>This cannot be undone.</strong>
+        </p>
+        <p class="mb-4 text-sm text-gray-600" id="delete-export-nudge">
+          Want a copy of your data first?
+          <a href="#export" class="underline">Request an export above</a>
+          before deleting — nothing can be recovered afterwards.
         </p>
 
         <form phx-submit="delete_account" class="space-y-3">

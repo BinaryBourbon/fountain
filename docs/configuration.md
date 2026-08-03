@@ -72,6 +72,7 @@ signup with no visible error. See [Email](self-hosting.md#email).
 | `SMTP_TLS` | `always` | — | STARTTLS by default; `never` for a relay on a trusted network that does not offer it |
 | `EMAIL_DELIVERY` | — | one of three | `none` deliberately disables email. Password-and-email accounts then cannot verify themselves; use `Fountain.Release.verify_email/1` |
 | `EMAIL_FROM` | `noreply@updates.inevitable.fyi` | — | The From address. Change it — the default is the hosted instance's sending domain |
+| `SUPPORT_EMAIL` | — | — | Where "contact support" in account emails (suspension, deletion) points. Unset, the copy names no address |
 
 ## Authentication
 

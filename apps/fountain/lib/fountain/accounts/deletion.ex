@@ -96,6 +96,16 @@ defmodule Fountain.Accounts.Deletion do
       case Repo.delete(user) do
         {:ok, _} ->
           Logger.info("account deleted: #{user.id} (#{sprites} sprite(s) destroyed)")
+
+          # Confirmation to the departing user (#450). Gated on verification,
+          # which covers the UnverifiedAccountPruner path for free — an
+          # address that never proved it was theirs gets no mail from us,
+          # whoever triggered the deletion. The job carries the address
+          # itself; the row is already gone.
+          if user.email_verified_at do
+            Fountain.Workers.AccountEmail.enqueue_deleted(user.email)
+          end
+
           {:ok, %{user_id: user.id, sprites_destroyed: sprites}}
 
         {:error, reason} ->

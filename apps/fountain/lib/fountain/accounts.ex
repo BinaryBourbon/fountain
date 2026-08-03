@@ -652,6 +652,12 @@ defmodule Fountain.Accounts do
            |> User.invalidate_sessions_changeset()
            |> Repo.update() do
       reaped = Fountain.Conversations._unsafe_reap_all_for_user(user.id)
+
+      # Best-effort notification (#450): before this the user's only signal
+      # was "account currently unavailable" at their next login attempt. The
+      # worker re-checks state and verification at send time.
+      Fountain.Workers.AccountEmail.enqueue_suspended(updated)
+
       {:ok, updated, reaped}
     end
   end
@@ -662,7 +668,10 @@ defmodule Fountain.Accounts do
   """
   @spec unsuspend_user(User.t()) :: {:ok, User.t()} | {:error, Ecto.Changeset.t()}
   def unsuspend_user(%User{} = user) do
-    user |> Ecto.Changeset.change(suspended_at: nil) |> Repo.update()
+    with {:ok, updated} <- user |> Ecto.Changeset.change(suspended_at: nil) |> Repo.update() do
+      Fountain.Workers.AccountEmail.enqueue_unsuspended(updated)
+      {:ok, updated}
+    end
   end
 
   @doc "Whether the account is currently suspended."

@@ -223,6 +223,57 @@ defmodule Fountain.Emails.UserEmails do
     |> Mailer.deliver()
   end
 
+  @doc """
+  Tell a user their account was suspended (#450).
+
+  Before this the only signal was a generic "account currently unavailable"
+  at the next login attempt — no explanation, no route to appeal. Deliberately
+  does not say *why*: the reason lives in the admin audit trail, and an email
+  template can't know it. Points at support instead.
+  """
+  @spec deliver_account_suspended_email(User.t()) :: {:ok, term()} | {:error, term()}
+  def deliver_account_suspended_email(%User{} = user) do
+    new()
+    |> from(from_address())
+    |> to({user.email, user.email})
+    |> subject("Your Fountain account has been suspended")
+    |> html_body(account_suspended_html())
+    |> text_body(account_suspended_text())
+    |> Mailer.deliver()
+  end
+
+  @doc "The counterpart: the suspension was lifted; sign in again (#450)."
+  @spec deliver_account_unsuspended_email(User.t()) :: {:ok, term()} | {:error, term()}
+  def deliver_account_unsuspended_email(%User{} = user) do
+    login_url = "#{Fountain.PublicUrl.base()}/auth/login"
+
+    new()
+    |> from(from_address())
+    |> to({user.email, user.email})
+    |> subject("Your Fountain account is available again")
+    |> html_body(account_unsuspended_html(login_url))
+    |> text_body(account_unsuspended_text(login_url))
+    |> Mailer.deliver()
+  end
+
+  @doc """
+  Confirm an account deletion (#450).
+
+  Takes a raw address, not a `User` — by send time the row is gone. Honest
+  about the two things that survive: Stripe keeps the invoices (financial
+  records), and backups age out on their own schedule.
+  """
+  @spec deliver_account_deleted_email(String.t()) :: {:ok, term()} | {:error, term()}
+  def deliver_account_deleted_email(email) when is_binary(email) do
+    new()
+    |> from(from_address())
+    |> to({email, email})
+    |> subject("Your Fountain account has been deleted")
+    |> html_body(account_deleted_html())
+    |> text_body(account_deleted_text())
+    |> Mailer.deliver()
+  end
+
   ## Private helpers
 
   # "in 3 days" reads better than a timestamp, but a date is unambiguous across
@@ -574,6 +625,130 @@ defmodule Fountain.Emails.UserEmails do
   defp from_address do
     addr = Application.get_env(:fountain, :email_from, "noreply@updates.inevitable.fyi")
     {addr, addr}
+  end
+
+  # "contact us at x@y" when SUPPORT_EMAIL is configured; a from-address that
+  # starts with noreply@ makes "reply to this email" a lie, so without it the
+  # copy stays vague rather than pointing somewhere replies go to die.
+  defp support_phrase do
+    case Application.get_env(:fountain, :support_email) do
+      addr when is_binary(addr) and addr != "" -> "contact us at #{addr}"
+      _ -> "contact support"
+    end
+  end
+
+  defp account_suspended_html do
+    """
+    <!DOCTYPE html>
+    <html>
+    <body style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 24px;">
+      <h2>Your Fountain account has been suspended</h2>
+      <p>
+        Your account has been suspended: existing sessions are signed out, API
+        keys stop working, and running conversations have been stopped.
+      </p>
+      <p>
+        <strong>Nothing is deleted.</strong> Your agents, environments, vaults and
+        conversation history stay exactly as they are, and your subscription is
+        not changed by a suspension.
+      </p>
+      <p style="color: #71717a; font-size: 13px;">
+        If you believe this is an error, #{support_phrase()}.
+      </p>
+    </body>
+    </html>
+    """
+  end
+
+  defp account_suspended_text do
+    """
+    Your Fountain account has been suspended
+
+    Your account has been suspended: existing sessions are signed out, API
+    keys stop working, and running conversations have been stopped.
+
+    Nothing is deleted. Your agents, environments, vaults and conversation
+    history stay exactly as they are, and your subscription is not changed by
+    a suspension.
+
+    If you believe this is an error, #{support_phrase()}.
+    """
+  end
+
+  defp account_unsuspended_html(login_url) do
+    """
+    <!DOCTYPE html>
+    <html>
+    <body style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 24px;">
+      <h2>Your Fountain account is available again</h2>
+      <p>
+        The suspension on your account has been lifted. Sign in to pick up
+        where you left off — everything is as you left it.
+      </p>
+      <p style="margin: 32px 0;">
+        <a href="#{login_url}"
+           style="background: #18181b; color: #fff; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-size: 14px;">
+          Sign in
+        </a>
+      </p>
+      <p style="color: #71717a; font-size: 13px;">
+        Or copy this link into your browser:<br/>
+        <a href="#{login_url}" style="color: #3b82f6;">#{login_url}</a>
+      </p>
+    </body>
+    </html>
+    """
+  end
+
+  defp account_unsuspended_text(login_url) do
+    """
+    Your Fountain account is available again
+
+    The suspension on your account has been lifted. Sign in to pick up where
+    you left off — everything is as you left it:
+
+    #{login_url}
+    """
+  end
+
+  defp account_deleted_html do
+    """
+    <!DOCTYPE html>
+    <html>
+    <body style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 24px;">
+      <h2>Your Fountain account has been deleted</h2>
+      <p>
+        This confirms your Fountain account and its data — agents,
+        environments, vaults, conversations and stored secrets — have been
+        permanently deleted. Any subscription was cancelled first; you will
+        not be charged again.
+      </p>
+      <p style="color: #71717a; font-size: 13px;">
+        Past invoices remain available from Stripe, as financial records.
+        Database backups that predate the deletion age out on their own
+        retention schedule.
+      </p>
+      <p style="color: #71717a; font-size: 13px;">
+        If you did not request this, #{support_phrase()} immediately.
+      </p>
+    </body>
+    </html>
+    """
+  end
+
+  defp account_deleted_text do
+    """
+    Your Fountain account has been deleted
+
+    This confirms your Fountain account and its data — agents, environments,
+    vaults, conversations and stored secrets — have been permanently deleted.
+    Any subscription was cancelled first; you will not be charged again.
+
+    Past invoices remain available from Stripe, as financial records. Database
+    backups that predate the deletion age out on their own retention schedule.
+
+    If you did not request this, #{support_phrase()} immediately.
+    """
   end
 
   defp verification_html(url) do
