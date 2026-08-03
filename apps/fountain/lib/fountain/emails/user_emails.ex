@@ -3,7 +3,8 @@ defmodule Fountain.Emails.UserEmails do
   Swoosh email templates for user-facing transactional emails.
 
   Sends:
-  - Email verification (24 h token)
+  - Email verification (24 h token, from `Workers.VerificationEmail`)
+  - Welcome (once, on the verification transition, from `Workers.WelcomeEmail`)
   - Password reset (1 h token)
   - Trial ending (3 days out, from Stripe's trial_will_end)
   - Trial expired / payment failed / subscription cancelled
@@ -33,6 +34,37 @@ defmodule Fountain.Emails.UserEmails do
     |> subject("Verify your Fountain account")
     |> html_body(verification_html(verify_url))
     |> text_body(verification_text(verify_url))
+    |> Mailer.deliver()
+  end
+
+  @doc """
+  Welcome a just-verified user (#449).
+
+  The first email that isn't a chore: everything before it is a verification
+  link and everything after it is billing. Says what to do next (the
+  onboarding wizard) and, for trialing accounts, when the trial ends — the
+  same phrasing `deliver_trial_ending_email/2` will use later, so the two
+  emails agree on the date.
+  """
+  @spec deliver_welcome_email(User.t()) :: {:ok, term()} | {:error, term()}
+  def deliver_welcome_email(%User{} = user) do
+    base_url = Fountain.PublicUrl.base()
+
+    start_url =
+      if user.onboarding_completed_at do
+        base_url
+      else
+        "#{base_url}/onboarding/step_1"
+      end
+
+    trial_text = welcome_trial_phrase(user)
+
+    new()
+    |> from(from_address())
+    |> to({user.email, user.email})
+    |> subject("Welcome to Fountain")
+    |> html_body(welcome_html(start_url, trial_text))
+    |> text_body(welcome_text(start_url, trial_text))
     |> Mailer.deliver()
   end
 
@@ -166,6 +198,51 @@ defmodule Fountain.Emails.UserEmails do
       1 -> "tomorrow (#{date})"
       d -> "in #{d} days (#{date})"
     end
+  end
+
+  defp welcome_trial_phrase(%User{subscription_status: "trialing", trial_ends_at: %DateTime{} = at}),
+    do: "Your free trial ends #{ends_at_phrase(at)} — no card needed until then."
+
+  defp welcome_trial_phrase(_user), do: nil
+
+  defp welcome_html(start_url, trial_text) do
+    """
+    <!DOCTYPE html>
+    <html>
+    <body style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 24px;">
+      <h2>Welcome to Fountain</h2>
+      <p>
+        Your account is verified and ready. Set up an agent, give it an
+        environment, and start a conversation — it runs in an isolated sandbox
+        and streams back live.
+      </p>
+      <p style="margin: 32px 0;">
+        <a href="#{start_url}"
+           style="background: #18181b; color: #fff; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-size: 14px;">
+          Get started
+        </a>
+      </p>
+      #{if trial_text, do: "<p>#{trial_text}</p>", else: ""}
+      <p style="color: #71717a; font-size: 13px;">
+        Or copy this link into your browser:<br/>
+        <a href="#{start_url}" style="color: #3b82f6;">#{start_url}</a>
+      </p>
+    </body>
+    </html>
+    """
+  end
+
+  defp welcome_text(start_url, trial_text) do
+    """
+    Welcome to Fountain
+
+    Your account is verified and ready. Set up an agent, give it an
+    environment, and start a conversation — it runs in an isolated sandbox
+    and streams back live:
+
+    #{start_url}
+    #{if trial_text, do: "\n#{trial_text}\n", else: ""}
+    """
   end
 
   defp trial_ending_html(billing_url, when_text) do

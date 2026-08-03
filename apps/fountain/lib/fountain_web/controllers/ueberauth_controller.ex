@@ -82,6 +82,10 @@ defmodule FountainWeb.UeberauthController do
         # this every GitHub signup had no Stripe customer and no trial_ends_at.
         Fountain.Workers.StripeCustomerSync.enqueue(user)
 
+        # Same reasoning for the welcome email (#449): an OAuth signup is
+        # created verified, so this is its verification transition.
+        Fountain.Workers.WelcomeEmail.enqueue(user)
+
         conn
         |> configure_session(renew: true)
         |> put_session(:user_id, user.id)

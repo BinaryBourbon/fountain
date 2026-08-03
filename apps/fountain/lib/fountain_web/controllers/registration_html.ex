@@ -90,9 +90,47 @@ defmodule FountainWeb.RegistrationHTML do
         </p>
         <p class="text-xs text-zinc-400">
           Didn't receive it? Check your spam folder or
-          <a href="/auth/resend-verification" class="underline">resend the email</a>.
+          <a href={~p"/auth/resend-verification"} class="underline">resend the email</a>.
         </p>
       </div>
+    </div>
+    """
+  end
+
+  def resend_form(assigns) do
+    ~H"""
+    <div class="min-h-screen flex items-center justify-center bg-zinc-50 text-zinc-900 font-sans">
+      <form
+        method="post"
+        action={~p"/auth/resend-verification"}
+        class="w-full max-w-sm bg-white rounded-lg shadow p-8 space-y-4"
+      >
+        <input type="hidden" name="_csrf_token" value={get_csrf_token()} />
+        <div>
+          <h1 class="text-xl font-semibold">Resend verification email</h1>
+          <p class="text-sm text-zinc-500">
+            Enter your email and we'll send a fresh verification link. Links
+            expire after 24 hours.
+          </p>
+        </div>
+        <input
+          type="email"
+          name="email"
+          placeholder="you@example.com"
+          autocomplete="email"
+          autofocus
+          class="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-400"
+        />
+        <button
+          type="submit"
+          class="w-full rounded-md bg-zinc-900 text-white py-2 text-sm font-medium hover:bg-zinc-800"
+        >
+          Send verification link
+        </button>
+        <p class="text-center text-sm text-zinc-400">
+          <a href={~p"/auth/login"} class="underline">Back to sign in</a>
+        </p>
+      </form>
     </div>
     """
   end

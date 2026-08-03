@@ -48,6 +48,10 @@ defmodule FountainWeb.EmailVerificationController do
                 # leaving an account with no customer id.
                 Fountain.Workers.StripeCustomerSync.enqueue(verified_user)
 
+                # Only on this branch, never the already-verified one below —
+                # the welcome fires on the verification transition (#449).
+                Fountain.Workers.WelcomeEmail.enqueue(verified_user)
+
                 conn
                 |> log_in_user(verified_user)
                 |> redirect(to: ~p"/onboarding/step_1")

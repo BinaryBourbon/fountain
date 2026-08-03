@@ -133,6 +133,9 @@ defmodule FountainWeb.Router do
     post "/register", RegistrationController, :create
     get "/check-email", RegistrationController, :check_email
 
+    get "/resend-verification", RegistrationController, :resend_form
+    post "/resend-verification", RegistrationController, :resend
+
     get "/forgot-password", PasswordResetController, :forgot_form
     get "/reset/:token", PasswordResetController, :reset_form
     post "/reset", PasswordResetController, :reset
@@ -155,6 +158,7 @@ defmodule FountainWeb.Router do
 
     post "/token", AuthTokenController, :create
     post "/register", RegistrationController, :api_create
+    post "/resend-verification", RegistrationController, :api_resend
     post "/forgot", PasswordResetController, :api_forgot
   end
 
