@@ -274,6 +274,43 @@ defmodule Fountain.Emails.UserEmails do
     |> Mailer.deliver()
   end
 
+  @doc """
+  The email-change confirmation, sent to the NEW address (#448).
+
+  Clicking the link is what performs the change; until then nothing happens,
+  and the copy says so — the recipient may never have heard of Fountain.
+  """
+  @spec deliver_email_change_confirmation(String.t(), String.t()) ::
+          {:ok, term()} | {:error, term()}
+  def deliver_email_change_confirmation(new_email, token) when is_binary(new_email) do
+    confirm_url = "#{Fountain.PublicUrl.base()}/account/email/confirm/#{token}"
+
+    new()
+    |> from(from_address())
+    |> to({new_email, new_email})
+    |> subject("Confirm your new Fountain email address")
+    |> html_body(email_change_html(confirm_url))
+    |> text_body(email_change_text(confirm_url))
+    |> Mailer.deliver()
+  end
+
+  @doc """
+  Tell the OLD address its account's email changed (#448). This is the
+  account-takeover tripwire: the old address can no longer sign in, so the
+  copy points at support rather than at a login form.
+  """
+  @spec deliver_email_changed_notice(String.t(), String.t()) ::
+          {:ok, term()} | {:error, term()}
+  def deliver_email_changed_notice(old_email, new_email) do
+    new()
+    |> from(from_address())
+    |> to({old_email, old_email})
+    |> subject("Your Fountain email address was changed")
+    |> html_body(email_changed_notice_html(new_email))
+    |> text_body(email_changed_notice_text(new_email))
+    |> Mailer.deliver()
+  end
+
   ## Private helpers
 
   # "in 3 days" reads better than a timestamp, but a date is unambiguous across
@@ -619,6 +656,83 @@ defmodule Fountain.Emails.UserEmails do
 
     If you meant to cancel, you do not need to do anything. Thanks for giving
     Fountain a try.
+    """
+  end
+
+  defp email_change_html(url) do
+    """
+    <!DOCTYPE html>
+    <html>
+    <body style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 24px;">
+      <h2>Confirm your new Fountain email address</h2>
+      <p>
+        A Fountain account asked to change its email address to this one.
+        Click the button below to confirm — the change only happens when you
+        do. The link expires in 24 hours.
+      </p>
+      <p style="margin: 32px 0;">
+        <a href="#{url}"
+           style="background: #18181b; color: #fff; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-size: 14px;">
+          Confirm new address
+        </a>
+      </p>
+      <p style="color: #71717a; font-size: 13px;">
+        Or copy this link into your browser:<br/>
+        <a href="#{url}" style="color: #3b82f6;">#{url}</a>
+      </p>
+      <p style="color: #71717a; font-size: 13px;">
+        If you didn't request this, you can safely ignore this email — nothing
+        changes unless the link is clicked.
+      </p>
+    </body>
+    </html>
+    """
+  end
+
+  defp email_change_text(url) do
+    """
+    Confirm your new Fountain email address
+
+    A Fountain account asked to change its email address to this one. Open
+    the link below to confirm — the change only happens when you do. The link
+    expires in 24 hours.
+
+    #{url}
+
+    If you didn't request this, you can safely ignore this email — nothing
+    changes unless the link is clicked.
+    """
+  end
+
+  defp email_changed_notice_html(new_email) do
+    """
+    <!DOCTYPE html>
+    <html>
+    <body style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 24px;">
+      <h2>Your Fountain email address was changed</h2>
+      <p>
+        The email address on your Fountain account was changed to
+        <strong>#{new_email}</strong>. This address can no longer be used to
+        sign in.
+      </p>
+      <p style="color: #71717a; font-size: 13px;">
+        If you made this change, no action is needed. If you did not,
+        #{support_phrase()} immediately — do not wait.
+      </p>
+    </body>
+    </html>
+    """
+  end
+
+  defp email_changed_notice_text(new_email) do
+    """
+    Your Fountain email address was changed
+
+    The email address on your Fountain account was changed to #{new_email}.
+    This address can no longer be used to sign in.
+
+    If you made this change, no action is needed. If you did not,
+    #{support_phrase()} immediately — do not wait.
     """
   end
 

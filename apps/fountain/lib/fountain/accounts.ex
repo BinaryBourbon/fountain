@@ -181,6 +181,129 @@ defmodule Fountain.Accounts do
     |> Repo.update()
   end
 
+  # ── credential management (#448) ─────────────────────────────────────────
+
+  @email_change_salt "email_change"
+  @email_change_max_age 86_400
+
+  @doc """
+  Change a logged-in user's password (#448).
+
+  Requires the current password — a stolen session must not be enough to set
+  a new one. Delegates to `reset_password/2`, so `session_version` bumps and
+  every other session dies; the calling controller re-issues the current
+  session from the updated user. OAuth-only accounts (nil `password_hash`)
+  are refused — they set a first password through the reset flow.
+  """
+  @spec change_password(User.t(), String.t(), String.t()) ::
+          {:ok, User.t()} | {:error, :no_password | :invalid_current_password | Ecto.Changeset.t()}
+  def change_password(%User{password_hash: nil}, _current, _new), do: {:error, :no_password}
+
+  def change_password(%User{} = user, current, new) when is_binary(current) and is_binary(new) do
+    if Bcrypt.verify_pass(current, user.password_hash) do
+      reset_password(user, new)
+    else
+      {:error, :invalid_current_password}
+    end
+  end
+
+  @doc """
+  Start a verified email change (#448): the address only changes when a link
+  sent to the NEW address is clicked (`apply_email_change/1`).
+
+  Requires the current password — same session-theft reasoning as
+  `change_password/3`, and doubly so here because controlling the address
+  controls password recovery. Whether the new address is free is never
+  revealed: the confirmation is enqueued only when it is, and the caller
+  shows the same response either way.
+  """
+  @spec request_email_change(User.t(), String.t(), String.t()) ::
+          :ok | {:error, :no_password | :invalid_current_password | :invalid_email | :same_email}
+  def request_email_change(%User{password_hash: nil}, _new_email, _current),
+    do: {:error, :no_password}
+
+  def request_email_change(%User{} = user, new_email, current) when is_binary(current) do
+    new_email = new_email |> to_string() |> String.trim() |> String.downcase()
+
+    cond do
+      not Bcrypt.verify_pass(current, user.password_hash) ->
+        {:error, :invalid_current_password}
+
+      not (new_email =~ ~r/^[^\s@]+@[^\s@]+$/) ->
+        {:error, :invalid_email}
+
+      new_email == user.email ->
+        {:error, :same_email}
+
+      true ->
+        if is_nil(get_user_by_email(new_email)) do
+          Fountain.Workers.EmailChangeEmail.enqueue_confirmation(user, new_email)
+        end
+
+        :ok
+    end
+  end
+
+  @doc """
+  Token for the email-change confirmation link. Carries the target address and
+  the `session_version` it was issued against, so a password change (or
+  suspension, or a completed change) in the meantime invalidates it.
+  """
+  @spec email_change_token(User.t(), String.t()) :: String.t()
+  def email_change_token(%User{} = user, new_email) do
+    Phoenix.Token.sign(
+      FountainWeb.Endpoint,
+      @email_change_salt,
+      {user.id, new_email, user.session_version}
+    )
+  end
+
+  @doc """
+  Complete an email change from a confirmation token.
+
+  Clicking the link is proof of control of the new address, so
+  `email_verified_at` is stamped fresh. `session_version` bumps — the change
+  is security-relevant and every outstanding session (and any other
+  outstanding email-change token) must die with it. The old address is
+  notified after the write.
+
+  Returns `{:ok, user, old_email}`, or `{:error, :expired | :invalid |
+  :email_taken}`.
+  """
+  @spec apply_email_change(String.t()) ::
+          {:ok, User.t(), String.t()} | {:error, :expired | :invalid | :email_taken}
+  def apply_email_change(token) when is_binary(token) do
+    with {:ok, {user_id, new_email, session_version}} <-
+           Phoenix.Token.verify(FountainWeb.Endpoint, @email_change_salt, token,
+             max_age: @email_change_max_age
+           ),
+         %User{session_version: ^session_version} = user <- get_user(user_id) do
+      old_email = user.email
+      now = DateTime.utc_now() |> DateTime.truncate(:second)
+
+      result =
+        user
+        |> Ecto.Changeset.change(email: new_email, email_verified_at: now)
+        |> Ecto.Changeset.unique_constraint(:email)
+        |> User.invalidate_sessions_changeset()
+        |> Repo.update()
+
+      case result do
+        {:ok, updated} ->
+          Fountain.Workers.EmailChangeEmail.enqueue_notice(old_email, new_email)
+          {:ok, updated, old_email}
+
+        {:error, %Ecto.Changeset{errors: errors}} ->
+          if Keyword.has_key?(errors, :email),
+            do: {:error, :email_taken},
+            else: {:error, :invalid}
+      end
+    else
+      {:error, :expired} -> {:error, :expired}
+      _ -> {:error, :invalid}
+    end
+  end
+
   @doc """
   Mark onboarding as completed by setting `onboarding_completed_at` to now.
   """

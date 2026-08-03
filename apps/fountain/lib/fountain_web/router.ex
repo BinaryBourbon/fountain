@@ -151,6 +151,13 @@ defmodule FountainWeb.Router do
     get "/confirm/:token", EmailVerificationController, :confirm
   end
 
+  # Email-change confirmation (#448) — public like /users/confirm: the link
+  # lands from an inbox, possibly in a browser with no session.
+  scope "/account", FountainWeb do
+    pipe_through :browser
+    get "/email/confirm/:token", AccountSecurityController, :confirm_email_change
+  end
+
   ## ─── Public JSON auth endpoints ───────────────────────────────────────────────────────────────────────
 
   scope "/api/auth", FountainWeb do
@@ -240,6 +247,12 @@ defmodule FountainWeb.Router do
     # ── Account data export download — owner-scoped, expiring artifact (#288) ─────────────────────────────
     get "/account/exports/:id/download", ExportController, :download
 
+    # ── Credential management (#448) — controller POSTs so the session can be
+    # re-issued after a password change and RateLimit applies; the page they
+    # POST from is AccountSecurityLive below ─────────────────────────────────
+    post "/account/security/password", AccountSecurityController, :change_password
+    post "/account/security/email", AccountSecurityController, :request_email_change
+
     # ── Turn image serving — session-authenticated so <img> tags can load without a bearer token ──────────
     get "/conversations/:conversation_id/turns/:turn_id/images/:position",
         TurnImageController,
@@ -289,6 +302,9 @@ defmodule FountainWeb.Router do
 
       # ── BYO inference credentials (ADR 0008) ───────────────────────────────────────────────
       live "/account/inference-credentials", InferenceCredentialsLive.Index, :index
+
+      # ── Credential management (#448) ───────────────────────────────────────────────────────
+      live "/account/security", AccountSecurityLive, :index
     end
 
     live_session :admin,

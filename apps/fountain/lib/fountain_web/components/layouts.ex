@@ -81,7 +81,7 @@ defmodule FountainWeb.Layouts do
 
     footer_open =
       Enum.any?(
-        ["/api-keys", "/account/billing", "/audit", "/help", "/admin"],
+        ["/api-keys", "/account/billing", "/account/security", "/audit", "/help", "/admin"],
         &String.starts_with?(assigns[:current_path] || "", &1)
       )
 
@@ -296,6 +296,7 @@ defmodule FountainWeb.Layouts do
               <div class="px-2 pt-0.5 pb-2 space-y-0.5 border-t border-[var(--color-border)]">
                 <.nav_link href={~p"/api-keys"} label="API Keys" current={@current_path} />
                 <.nav_link href={~p"/account/billing"} label="Billing" current={@current_path} />
+                <.nav_link href={~p"/account/security"} label="Security" current={@current_path} />
                 <.nav_link href={~p"/audit"} label="Audit log" current={@current_path} />
                 <.nav_link href={~p"/help"} label="Help" current={@current_path} />
                 <.nav_link
