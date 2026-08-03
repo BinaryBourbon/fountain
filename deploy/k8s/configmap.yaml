@@ -33,3 +33,7 @@ data:
   # DATABASE_SSL_VERIFY / DATABASE_SSL_CA_FILE upgrade encryption to actual
   # verification — see the self-hosting guide.
   DATABASE_SSL: "true"
+
+  # Trace export is off by default — nothing leaves the instance. To ship
+  # traces to a collector, set OTEL_EXPORTER_OTLP_ENDPOINT (and
+  # OTEL_EXPORTER_OTLP_HEADERS if it needs auth); see docs/configuration.md.

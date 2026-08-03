@@ -477,6 +477,19 @@ if config_env() == :prod and server? do
   #
   # For Honeycomb specifically you can also set HONEYCOMB_API_KEY and the
   # exporter config below will wire it up automatically.
+  #
+  # OFF unless an export target is explicitly configured (#317): the exporter
+  # used to default to :otlp aimed at api.honeycomb.io, so a self-hoster who
+  # set none of these got continuous rejected span batches against a
+  # third-party vendor plus exporter noise in the logs. The SDK still honours
+  # OTEL_TRACES_EXPORTER itself (with higher precedence than this), so
+  # export can be forced on or off either way.
+  otel_configured? =
+    Enum.any?(
+      ~w(OTEL_EXPORTER_OTLP_ENDPOINT HONEYCOMB_ENDPOINT HONEYCOMB_API_KEY),
+      &System.get_env/1
+    )
+
   otel_endpoint =
     System.get_env("OTEL_EXPORTER_OTLP_ENDPOINT") ||
       System.get_env("HONEYCOMB_ENDPOINT", "https://api.honeycomb.io")
@@ -507,7 +520,7 @@ if config_env() == :prod and server? do
 
   config :opentelemetry,
     span_processor: :batch,
-    traces_exporter: :otlp,
+    traces_exporter: if(otel_configured?, do: :otlp, else: :none),
     resource: [
       {"service.name", System.get_env("OTEL_SERVICE_NAME", "fountain")},
       {"deployment.environment", System.get_env("FLY_APP_NAME", "prod")}
