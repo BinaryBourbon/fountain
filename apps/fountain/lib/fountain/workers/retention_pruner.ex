@@ -24,6 +24,12 @@ defmodule Fountain.Workers.RetentionPruner do
   history, and `turn_images` is deliberately absent — those rows are owned by
   their turn and go when the conversation does.
 
+  `admin_audit_events` is also absent, **on purpose** (#452): it is the
+  privilege trail — who suspended, comped, deleted or looked at whose account
+  — and it only gains a row per manual admin action, so it stays small for
+  years. Unbounded retention is the decision, not an oversight; do not "fix"
+  it by adding a window here without revisiting that decision.
+
   Every window is configurable, and setting one to `nil` disables pruning for
   that table entirely.
   """
@@ -36,6 +42,8 @@ defmodule Fountain.Workers.RetentionPruner do
 
   alias Fountain.Repo
 
+  # admin_audit_events is deliberately NOT here — unbounded privilege trail,
+  # see the moduledoc (#452) before adding it.
   @defaults [
     log_events: 90,
     audit_events: 365,

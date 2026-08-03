@@ -2,6 +2,9 @@ defmodule Fountain.Exports do
   @moduledoc """
   Self-serve account data export — the other half of leave-ability (#288).
 
+  The export posture (export-then-delete, secrets excluded, rate limit, TTL)
+  is recorded in ADR 0009 (`decisions/0009-account-deletion-and-export.md`).
+
   Deletion is self-serve (`Fountain.Accounts.Deletion`); this makes the exit
   story export-then-delete rather than delete-and-trust. A user requests an
   export from the account page, `Fountain.Workers.AccountExport` builds one
