@@ -73,6 +73,7 @@ defmodule Fountain.Umbrella.MixProject do
         "format --check-formatted",
         "credo --strict --mute-exit-status",
         &dialyzer_in_dev/1,
+        &sobelow_in_app/1,
         "test"
       ]
     ]
@@ -87,6 +88,16 @@ defmodule Fountain.Umbrella.MixProject do
     case Mix.shell().cmd("mix dialyzer", env: [{"MIX_ENV", "dev"}]) do
       0 -> :ok
       status -> Mix.raise("mix dialyzer failed with exit status #{status}")
+    end
+  end
+
+  # Runs from apps/fountain because sobelow at the umbrella root detects no
+  # Phoenix app, scans nothing, and exits 0 — a gate that passes because it
+  # scanned nothing looks identical to a gate that passed (#311).
+  defp sobelow_in_app(_args) do
+    case Mix.shell().cmd("mix sobelow --config", cd: "apps/fountain") do
+      0 -> :ok
+      status -> Mix.raise("mix sobelow failed with exit status #{status}")
     end
   end
 end
