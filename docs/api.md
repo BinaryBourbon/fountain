@@ -119,8 +119,10 @@ GET    /api/conversations/:id/stream       # SSE log stream (?streams=stdout,std
 |---|---|
 | `400` | Invalid request body |
 | `401` | Missing or invalid auth |
+| `402` | Active subscription required (`subscription_required`, includes `upgrade_url`) |
 | `403` | Wrong tenant |
 | `404` | Not found |
+| `410` | Conversation terminated (`conversation_terminated`) — stop retrying |
 | `422` | Validation error |
 | `429` | Rate limited |
 | `500` | Internal error |
