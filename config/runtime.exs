@@ -291,9 +291,28 @@ if github_client_id = System.get_env("GITHUB_OAUTH_CLIENT_ID") do
 end
 
 # Stripe (§5.2)
-config :stripity_stripe,
-  api_key: System.get_env("STRIPE_SECRET_KEY"),
-  webhook_secret: System.get_env("STRIPE_WEBHOOK_SECRET")
+config :stripity_stripe, api_key: System.get_env("STRIPE_SECRET_KEY")
+
+# Absent stays absent, and "" counts as absent (#390). An unconditional write
+# would clobber the secret config/test.exs pins with nil, and a blank value
+# must never reach signature verification — Stripe.Webhook.construct_event
+# happily HMACs with an empty key, so the webhook controller fails closed
+# when this is unset. A billing-enabled prod instance without the secret
+# cannot process any subscription event, so refuse to boot rather than let
+# every webhook 400 quietly.
+case System.get_env("STRIPE_WEBHOOK_SECRET") do
+  blank when blank in [nil, ""] ->
+    if config_env() == :prod and System.get_env("BILLING_ENABLED", "false") != "false" do
+      raise """
+      BILLING_ENABLED is set but STRIPE_WEBHOOK_SECRET is empty or unset.
+      Set it to the signing secret of your Stripe webhook endpoint
+      (Stripe dashboard → Developers → Webhooks).
+      """
+    end
+
+  secret ->
+    config :stripity_stripe, webhook_secret: secret
+end
 
 # Stripe Price ID for the subscription tier surfaced by Checkout.
 # Set per environment (test-mode price in dev, live-mode price in prod).
