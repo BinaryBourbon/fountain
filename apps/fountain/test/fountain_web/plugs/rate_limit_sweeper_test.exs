@@ -26,14 +26,28 @@ defmodule FountainWeb.Plugs.RateLimit.SweeperTest do
   test "eviction is invisible to limiting: a swept row behaves like a reset one" do
     RateLimit.ensure_table()
     opts = %{bucket: unique_bucket(), max: 2, window_ms: 60_000}
-    key = {opts.bucket, "203.0.113.9"}
+    stale_key = {opts.bucket, "203.0.113.9"}
+    fresh_key = {opts.bucket, "203.0.113.11"}
+    now = System.system_time(:millisecond)
 
-    # Full bucket whose window is long over.
-    :ets.insert(RateLimit.table(), {key, System.system_time(:millisecond) - :timer.hours(3), 2})
+    # A full bucket whose window is long over, and one still inside it.
+    :ets.insert(RateLimit.table(), {stale_key, now - :timer.hours(3), 2})
+    :ets.insert(RateLimit.table(), {fresh_key, now, 2})
+
     RateLimit.evict_expired(:timer.hours(2))
 
-    # Same outcome an expired-but-present row gets: the window restarts.
-    assert RateLimit.bump(key, opts) == :ok
+    # bump/2 answers :ok for a swept row and an expired-but-present row
+    # alike, so it cannot distinguish a working sweep from a no-op — the
+    # membership check is what proves the row was actually removed.
+    assert :ets.lookup(RateLimit.table(), stale_key) == []
+
+    # And the sweep left live limiting state alone: a full bucket inside its
+    # window still limits, so eviction was selective rather than a purge.
+    assert {:limited, _} = RateLimit.bump(fresh_key, opts)
+
+    # The swept row gets the same outcome an expired-but-present one does:
+    # the window restarts.
+    assert RateLimit.bump(stale_key, opts) == :ok
   end
 
   test "the sweeper process is in the supervision tree and sweeps on tick" do

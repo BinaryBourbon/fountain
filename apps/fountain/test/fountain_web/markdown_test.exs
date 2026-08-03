@@ -28,6 +28,23 @@ defmodule FountainWeb.MarkdownTest do
       html = Markdown.to_html("![i](https://x.com/i.png)")
       assert html =~ ~s(src="https://x.com/i.png")
     end
+
+    # safe_url?/2 is an allowlist, so normalization is only *observable* in
+    # the allow direction: JAVASCRIPT: is off the allowlist with or without
+    # the downcase, but HTTPS: is on it only because of the downcase. These
+    # are the tests that fail if normalize/1 loses a step (#406).
+
+    test "case-folding is for the check only: uppercase safe schemes keep their href" do
+      assert Markdown.to_html("[x](HTTPS://x.com)") =~ ~s(href="HTTPS://x.com")
+      assert Markdown.to_html("[x](MailTo:a@b.c)") =~ ~s(href="MailTo:a@b.c")
+    end
+
+    test "whitespace stripping is for the check only: a ref-encoded tab inside a safe scheme keeps the href" do
+      # Browsers strip tabs anywhere in a URL, so an href of ht&#9;tps://…
+      # is a live https link and must survive. Without the strip the scheme
+      # normalizes to "ht\ttps" — off the allowlist — and a safe link dies.
+      assert Markdown.to_html("[x](ht&#9;tps://x.com)") =~ "href"
+    end
   end
 
   describe "to_html/1 — unsafe URLs are dropped" do
@@ -55,6 +72,11 @@ defmodule FountainWeb.MarkdownTest do
     end
 
     test "embedded whitespace cannot split the scheme" do
+      # Deny-direction: these are dropped with or without the whitespace
+      # strip ("java\tscript" is off the allowlist either way). The second
+      # line pins char-ref decoding: undecoded, "&#9;javascript" contains
+      # "#" and would be classified relative — and *kept*. The strip itself
+      # is pinned by the allow-direction test above.
       refute Markdown.to_html("[x](java\tscript:alert(1))") =~ "href"
       refute Markdown.to_html("[x](&#9;javascript:alert(1))") =~ "href"
     end

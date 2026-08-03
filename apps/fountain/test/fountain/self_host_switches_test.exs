@@ -15,6 +15,41 @@ defmodule Fountain.SelfHostSwitchesTest do
 
   alias Fountain.{Accounts, Billing}
 
+  @runtime_exs Path.expand("../../../../config/runtime.exs", __DIR__)
+
+  # The minimum a :prod evaluation of runtime.exs demands (the same set
+  # otel_config_test.exs uses).
+  @required_release_env %{
+    "PHX_SERVER" => "true",
+    "SECRET_KEY_BASE" => String.duplicate("a", 64),
+    "DATABASE_URL" => "postgres://u:p@localhost/db",
+    "RESEND_API_KEY" => "re_test_key",
+    "PUBLIC_URL" => "https://fountain.example.com"
+  }
+
+  @switch_vars ~w(BILLING_ENABLED REGISTRATION_ENABLED REGISTRATION_ALLOWED_EMAIL_DOMAINS STRIPE_WEBHOOK_SECRET)
+
+  defp read_prod_config(extra) do
+    previous = System.get_env()
+
+    try do
+      for k <- @switch_vars, do: System.delete_env(k)
+
+      @required_release_env
+      |> Map.put(
+        "MASTER_SECRETS_KEY",
+        Base.url_encode64(:crypto.strong_rand_bytes(32), padding: false)
+      )
+      |> Map.merge(extra)
+      |> System.put_env()
+
+      Config.Reader.read!(@runtime_exs, env: :prod)
+    after
+      System.put_env(previous)
+      for k <- @switch_vars, not Map.has_key?(previous, k), do: System.delete_env(k)
+    end
+  end
+
   defp with_env(pairs, fun) do
     previous = Enum.map(pairs, fn {k, _} -> {k, Application.get_env(:fountain, k)} end)
     Enum.each(pairs, fn {k, v} -> Application.put_env(:fountain, k, v) end)
@@ -35,6 +70,55 @@ defmodule Fountain.SelfHostSwitchesTest do
       |> Fountain.Repo.update()
 
     user
+  end
+
+  describe "the env-var side, read the way the release config provider does" do
+    # runtime.exs skips the BILLING_ENABLED mapping under :test (the suite
+    # pins :billing_enabled in config/test.exs), and the domain-list tests
+    # below inject the parsed application env directly — so without these,
+    # nothing fails if the runtime.exs default flips or the parsing breaks.
+
+    test "BILLING_ENABLED defaults off — a bare self-host must not lock itself out (#336)" do
+      cfg = read_prod_config(%{})
+      assert cfg[:fountain][:billing_enabled] == false
+    end
+
+    test "BILLING_ENABLED=true opts the hosted deployment in" do
+      # Billing on requires the webhook secret at boot (#416), so supply one.
+      cfg =
+        read_prod_config(%{
+          "BILLING_ENABLED" => "true",
+          "STRIPE_WEBHOOK_SECRET" => "whsec_test"
+        })
+
+      assert cfg[:fountain][:billing_enabled] == true
+    end
+
+    test "REGISTRATION_ALLOWED_EMAIL_DOMAINS is split, trimmed and downcased" do
+      cfg =
+        read_prod_config(%{
+          "REGISTRATION_ALLOWED_EMAIL_DOMAINS" => "Example.com, BETA.org ,gamma.io,"
+        })
+
+      assert cfg[:fountain][:registration_allowed_email_domains] ==
+               ["example.com", "beta.org", "gamma.io"]
+    end
+
+    test "unset or empty REGISTRATION_ALLOWED_EMAIL_DOMAINS means no domain filter" do
+      assert read_prod_config(%{})[:fountain][:registration_allowed_email_domains] == []
+
+      assert read_prod_config(%{"REGISTRATION_ALLOWED_EMAIL_DOMAINS" => ""})[:fountain][
+               :registration_allowed_email_domains
+             ] == []
+    end
+
+    test "REGISTRATION_ENABLED=false closes signup at the config level" do
+      assert read_prod_config(%{"REGISTRATION_ENABLED" => "false"})[:fountain][
+               :registration_enabled
+             ] == false
+
+      assert read_prod_config(%{})[:fountain][:registration_enabled] == true
+    end
   end
 
   describe "BILLING_ENABLED" do
