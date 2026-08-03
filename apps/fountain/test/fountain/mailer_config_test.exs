@@ -133,6 +133,69 @@ defmodule Fountain.MailerConfigTest do
     end
   end
 
+  describe "compose-style empty strings (#396)" do
+    # docker-compose.yml passes optional vars as `${VAR:-}`, which interpolates
+    # to an empty *string* — the variable is set, not absent — and "" is truthy
+    # in Elixir. These tests therefore SET the variables to "" rather than
+    # deleting them; deleting is the case every other test already covers and
+    # is exactly how this bug survived.
+    test "a blank RESEND_API_KEY does not select the Resend adapter", %{base: base} do
+      # The stock compose file: EMAIL_DELIVERY=none plus every mail var blank.
+      # The opt-out branch must be reachable, not shadowed by Resend.
+      config =
+        base
+        |> Map.merge(%{
+          "RESEND_API_KEY" => "",
+          "SMTP_HOST" => "",
+          "SMTP_USERNAME" => "",
+          "SMTP_PASSWORD" => "",
+          "EMAIL_DELIVERY" => "none"
+        })
+        |> read_prod()
+
+      assert config == nil or config[:adapter] == Swoosh.Adapters.Local
+    end
+
+    test "a blank RESEND_API_KEY does not shadow a configured SMTP host", %{base: base} do
+      config =
+        base
+        |> Map.merge(%{"RESEND_API_KEY" => "", "SMTP_HOST" => "smtp.example.com"})
+        |> read_prod()
+
+      assert config[:adapter] == Swoosh.Adapters.SMTP
+      assert config[:relay] == "smtp.example.com"
+    end
+
+    test "a blank SMTP_USERNAME skips auth", %{base: base} do
+      # `${SMTP_USERNAME:-}` against an unauthenticated relay must not force
+      # auth: :always with an empty username.
+      config =
+        base
+        |> Map.merge(%{"SMTP_HOST" => "relay.internal", "SMTP_USERNAME" => ""})
+        |> read_prod()
+
+      assert config[:auth] == :never
+      assert config[:username] == nil
+    end
+
+    test "all-blank mail vars still refuse to boot", %{base: base} do
+      # Blank must behave exactly like unset: with no EMAIL_DELIVERY opt-out,
+      # the actionable raise fires rather than Resend being selected with "".
+      for k <- @mail_vars, do: System.delete_env(k)
+
+      base
+      |> Map.merge(%{"RESEND_API_KEY" => "", "SMTP_HOST" => "", "SMTP_USERNAME" => ""})
+      |> System.put_env()
+
+      error =
+        assert_raise RuntimeError, fn ->
+          Config.Reader.read!(@runtime_exs, env: :prod)
+        end
+
+      assert error.message =~ "No mail delivery is configured"
+    end
+  end
+
   describe "EMAIL_DELIVERY=none" do
     test "boots without configuring an adapter", %{base: base} do
       # Deliberate opt-out for an OAuth-only or evaluation instance. It must be
