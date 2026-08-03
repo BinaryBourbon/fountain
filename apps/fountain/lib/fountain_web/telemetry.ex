@@ -178,6 +178,48 @@ defmodule FountainWeb.Telemetry do
         description: "Verified users who never started a conversation"
       ),
 
+      # ── Ops gauges (#321) ─────────────────────────────────────────────────
+      # Polled from Fountain.OpsGauges.emit_telemetry/0; zeros emitted for
+      # every known status so the series exist from boot.
+      last_value("fountain.conversations.count",
+        event_name: [:fountain, :conversations],
+        measurement: :count,
+        tags: [:status],
+        description: "Conversations by status"
+      ),
+      last_value("fountain.sandboxes.count",
+        event_name: [:fountain, :sandboxes],
+        measurement: :count,
+        tags: [:status],
+        description: "Sandbox rows by status"
+      ),
+      last_value("fountain.oban_queue.depth",
+        event_name: [:fountain, :oban_queue],
+        measurement: :depth,
+        tags: [:queue, :state],
+        description: "Oban jobs by queue and state (non-terminal states + discarded)"
+      ),
+
+      # ── Oban job outcomes (#321) ──────────────────────────────────────────
+      # Oban catches job exceptions internally and reports them only via
+      # telemetry, so neither the Sentry LoggerHandler nor any crash report
+      # reliably sees a failing RetentionPruner or SandboxReaper. These hang
+      # directly off Oban's own events — no poller involved.
+      counter("fountain.oban_job.stop.count",
+        event_name: [:oban, :job, :stop],
+        measurement: :duration,
+        tags: [:queue, :state],
+        tag_values: &oban_job_tags/1,
+        description: "Completed Oban job executions by queue and result state"
+      ),
+      counter("fountain.oban_job.exception.count",
+        event_name: [:oban, :job, :exception],
+        measurement: :duration,
+        tags: [:queue, :worker],
+        tag_values: &oban_job_tags/1,
+        description: "Oban job executions that raised, by queue and worker"
+      ),
+
       # ── VM ────────────────────────────────────────────────────────────────
       last_value("vm.memory.total", unit: {:byte, :kilobyte}),
       last_value("vm.total_run_queue_lengths.total"),
@@ -198,6 +240,17 @@ defmodule FountainWeb.Telemetry do
 
   defp exception_tags(meta) do
     %{route: meta[:route] || "unmatched", kind: meta[:kind]}
+  end
+
+  # Worker cardinality is bounded by the workers defined in this repo; the
+  # queue set by config. `state` is present on :stop (:success, :failure,
+  # :snoozed, …) and absent on :exception, where the worker is the signal.
+  defp oban_job_tags(meta) do
+    %{
+      queue: meta.job.queue,
+      worker: meta.job.worker,
+      state: Map.get(meta, :state, "exception")
+    }
   end
 
   def metrics do
@@ -265,12 +318,15 @@ defmodule FountainWeb.Telemetry do
   end
 
   defp periodic_measurements do
-    # Funnel stage gauges (#282). Full-table pass over users every tick —
-    # cheap at current scale; Fountain.Funnel's moduledoc says when to
-    # revisit. Off in test: the poller's Repo calls would race the
-    # SQL Sandbox's connection ownership.
+    # Funnel stage gauges (#282) and ops gauges (#321). Full-table passes
+    # every tick — cheap at current scale. Off in test: the poller's Repo
+    # calls would race the SQL Sandbox's connection ownership (the modules
+    # are exercised directly by tests instead).
     if Application.get_env(:fountain, :funnel_poller_enabled, true) do
-      [{Fountain.Funnel, :emit_telemetry, []}]
+      [
+        {Fountain.Funnel, :emit_telemetry, []},
+        {Fountain.OpsGauges, :emit_telemetry, []}
+      ]
     else
       []
     end

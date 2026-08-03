@@ -95,6 +95,14 @@ defmodule FountainWeb.MetricsTest do
         [:fountain, :sandbox, :reclaimed],
         [:fountain, :reaper, :run],
         [:fountain, :reaper, :untracked],
+        # Fountain.OpsGauges.emit_telemetry/0 (#321) — exercised directly by
+        # Fountain.OpsGaugesTest since the poller is off in test
+        [:fountain, :conversations],
+        [:fountain, :sandboxes],
+        [:fountain, :oban_queue],
+        # Emitted by Oban itself around every job execution
+        [:oban, :job, :stop],
+        [:oban, :job, :exception],
         # Library-emitted
         [:phoenix, :router_dispatch, :stop],
         [:phoenix, :router_dispatch, :exception],
@@ -148,6 +156,44 @@ defmodule FountainWeb.MetricsTest do
       # conv_id is metadata, never a label — one series per conversation
       # would eat Prometheus.
       refute body =~ "conv_id="
+    end
+
+    test "ops gauges and Oban events land in the scrape (#321)" do
+      :telemetry.execute([:fountain, :conversations], %{count: 3}, %{status: "idle"})
+      :telemetry.execute([:fountain, :oban_queue], %{depth: 2}, %{
+        queue: "maintenance",
+        state: "available"
+      })
+
+      job = %Oban.Job{queue: "maintenance", worker: "Fountain.Workers.SandboxReaper"}
+      :telemetry.execute([:oban, :job, :stop], %{duration: 1_000}, %{job: job, state: :success})
+
+      :telemetry.execute([:oban, :job, :exception], %{duration: 1_000}, %{
+        job: job,
+        kind: :error,
+        reason: %RuntimeError{message: "boom"},
+        stacktrace: []
+      })
+
+      Process.sleep(50)
+      {200, body} = scrape()
+
+      assert Regex.match?(~r/fountain_conversations_count\{[^}]*status="idle"[^}]*\} 3/, body)
+
+      assert Regex.match?(
+               ~r/fountain_oban_queue_depth\{[^}]*queue="maintenance"[^}]*state="available"[^}]*\} 2/,
+               body
+             )
+
+      assert Regex.match?(
+               ~r/fountain_oban_job_stop_count\{[^}]*queue="maintenance"[^}]*state="success"[^}]*\}/,
+               body
+             )
+
+      assert Regex.match?(
+               ~r/fountain_oban_job_exception_count\{[^}]*worker="Fountain.Workers.SandboxReaper"[^}]*\}/,
+               body
+             )
     end
 
     test "route tags are the matched pattern, not the raw path", %{conn: conn} do
