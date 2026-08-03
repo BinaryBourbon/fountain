@@ -188,3 +188,172 @@ spec:
               or rate-limited, the Sprites API unhealthy, or tenants at their
               concurrency cap. Triage:
               https://binarybourbon.github.io/fountain/operations/#sprites-errors
+
+        - alert: FountainProvisionDeadlineExceeded
+          # The provision watchdog (#329) declared a provision wedged and
+          # force-failed it. The accompanying sprite destroy is best-effort
+          # (#394), so each firing may also leak a sprite that keeps billing
+          # your SPRITES_TOKEN — a cost signal as much as a UX one. Absolute
+          # count, not a rate: the event is rare by design.
+          expr: |
+            sum(increase(fountain_provision_deadline_exceeded_count{namespace="fountain"}[1h])) > 0
+          labels:
+            severity: warning
+          annotations:
+            summary: "A Fountain provision hit the watchdog deadline"
+            description: |
+              {{ $value }} provision(s) in the last hour ran past the watchdog
+              deadline and were force-failed. Each may have leaked a sprite —
+              check whether the reaper's untracked count rises on its next
+              run, and grep the app logs for "provisioning exceeded".
+
+        - alert: FountainSandboxBudgetExceeded
+          # Instance-wide concurrency ceiling (#405). Every sprite bills to
+          # your single SPRITES_TOKEN and the only enforced cap is per-tenant
+          # (default 5), so total concurrent spend is otherwise
+          # `users x cap` with no ceiling. 50 is a starter budget — an
+          # operator knob, not a law: size it to what you are willing to pay
+          # for.
+          expr: |
+            sum(fountain_sandboxes_count{namespace="fountain", status=~"pending|starting|ready"}) > 50
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Fountain sandbox concurrency is above the instance budget"
+            description: |
+              {{ $value }} sandboxes are pending/starting/ready, all billing
+              your SPRITES_TOKEN. Find who is driving it (psql into your
+              database):
+              select user_id, count(*) from sandboxes
+                where status in ('pending','starting','ready')
+                group by 1 order by 2 desc limit 10;
+
+        - alert: FountainConversationsAboveBudget
+          # Companion to the sandbox budget, on the conversation gauge: a
+          # pending/running conversation implies a live sprite, so in steady
+          # state the two track each other. This one still fires when the
+          # sandbox rows are wrong — the drift SandboxReaper measures — and
+          # shares the same 50 knob.
+          expr: |
+            sum(fountain_conversations_count{namespace="fountain", status=~"pending|running"}) > 50
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Fountain has more live conversations than the instance budget"
+            description: |
+              {{ $value }} conversations are pending/running against a budget
+              of 50. If FountainSandboxBudgetExceeded is not also firing, the
+              sandbox rows and reality have diverged — check the reaper log
+              line for released/expired/untracked counts.
+
+    # ── Sprite reaper (#405) ──────────────────────────────────────────────
+    #
+    # SandboxReaper reconciles the sandboxes table against the Sprites API
+    # hourly. Its third pass counts sprites running with no sandbox row and
+    # deliberately never destroys them — so its output is a gauge someone
+    # must be looking at, plus these alerts.
+    - name: fountain-reaper
+      interval: 60s
+      rules:
+        - alert: FountainUntrackedSprites
+          # The LEVEL of sprites alive with no live sandbox row, re-measured
+          # every run. Sustained non-zero is leaked money, not an outage —
+          # hence warning. 2h means two consecutive hourly runs both saw
+          # leaks, filtering legitimate transients (a sprite created seconds
+          # before the sweep, a developer using the shared token).
+          expr: fountain_reaper_untracked_count{namespace="fountain"} > 0
+          for: 2h
+          labels:
+            severity: warning
+          annotations:
+            summary: "Sprites are running with no sandbox row (leaked spend)"
+            description: |
+              {{ $value }} sprite(s) have been running with no live sandbox
+              row for over 2h, billing your SPRITES_TOKEN. The reaper
+              deliberately never destroys these — a human has to look. The
+              run log includes a sample of the sprite names: grep the app
+              logs for "no sandbox row".
+
+        - alert: FountainReaperSilent
+          # The wedged-reaper canary. fountain_reaper_run_released is emitted
+          # at the end of every hourly run; absent() for 3h means no run has
+          # completed since boot. A reaper that runs and raises is caught by
+          # the Oban alerts below instead. An increase()-based staleness
+          # check cannot work here: the counter is legitimately flat for
+          # weeks when healthy.
+          expr: absent(fountain_reaper_run_released{namespace="fountain"})
+          for: 3h
+          labels:
+            severity: warning
+          annotations:
+            summary: "SandboxReaper has not completed a run since boot"
+            description: |
+              No SandboxReaper run has finished on this pod (it runs hourly).
+              Stuck rows are holding tenant quota and dead sprites are not
+              being destroyed. Inspect the job (psql into your database):
+              select id, state, attempt, errors[array_upper(errors,1)]
+                from oban_jobs where worker like '%SandboxReaper%'
+                order by id desc limit 5;
+
+    # ── Oban background jobs ──────────────────────────────────────────────
+    #
+    # Oban catches job exceptions internally and reports them only via
+    # telemetry — no process crashes, so no crash report ever sees a failing
+    # nightly RetentionPruner or hourly SandboxReaper. These watch the
+    # metrics the app exports from Oban's own events.
+    - name: fountain-oban
+      interval: 60s
+      rules:
+        - alert: FountainObanJobsRaising
+          # Every raising execution counts, including retries — the early
+          # signal, while Oban is still retrying and the job might yet
+          # succeed.
+          expr: |
+            sum by (queue, worker) (increase(fountain_oban_job_exception_count{namespace="fountain"}[1h])) > 0
+          labels:
+            severity: warning
+          annotations:
+            summary: "Oban jobs are raising in {{ $labels.queue }} ({{ $labels.worker }})"
+            description: |
+              {{ $value }} raising execution(s) in the last hour. Oban retries
+              with backoff, so this may self-heal — but a persistently raising
+              maintenance job means reaping/pruning/metering is not happening.
+              Check the job row's errors array (psql into your database):
+              select id, worker, state, attempt, errors[array_upper(errors,1)]
+                from oban_jobs order by id desc limit 5;
+
+        - alert: FountainObanJobsDiscarded
+          # A discarded job exhausted every retry and failed permanently.
+          # delta on the gauge rather than a static > 0: discarded rows sit
+          # for 7 days until Oban's pruner removes them, and an alert that
+          # stays red for a week trains people to ignore it.
+          expr: |
+            delta(fountain_oban_queue_depth{namespace="fountain", state="discarded"}[2h]) > 0
+          labels:
+            severity: critical
+          annotations:
+            summary: "An Oban job in {{ $labels.queue }} was discarded (all retries exhausted)"
+            description: |
+              The scheduled work this job represents did not happen — for the
+              maintenance queue that means reaping, retention or metering
+              silently stopped. Inspect and re-run (psql into your database):
+              select id, worker, errors[array_upper(errors,1)]
+                from oban_jobs where state='discarded' order by id desc limit 5;
+
+        - alert: FountainObanQueueBacklog
+          # available = runnable now but not picked up. A sustained backlog
+          # means concurrency is saturated or a worker is wedged.
+          expr: |
+            fountain_oban_queue_depth{namespace="fountain", state="available"} > 25
+          for: 30m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Oban queue {{ $labels.queue }} has a sustained backlog"
+            description: |
+              {{ $value }} jobs runnable-but-waiting for 30m. Check whether
+              the queue's workers are wedged (executing depth pinned at its
+              concurrency limit) or something is enqueueing faster than the
+              queue drains.

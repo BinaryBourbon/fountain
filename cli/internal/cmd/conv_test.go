@@ -131,6 +131,41 @@ func TestHandleStageEvent(t *testing.T) {
 	}
 }
 
+// Only turn output is runtime stream-JSON; setup and provisioning stages log
+// raw text. Routing everything through the JSON formatter made a failing
+// `apt install` or `git clone` produce zero visible output.
+func TestFormatOutputByStage(t *testing.T) {
+	setup := map[string]any{
+		"stream": "stdout",
+		"stage":  "setup",
+		"data":   "E: Unable to locate package libweird",
+	}
+	if got := formatOutput(setup); got != "E: Unable to locate package libweird\n" {
+		t.Errorf("setup-stage output was not passed through verbatim: %q", got)
+	}
+
+	packages := map[string]any{
+		"stream": "stdout",
+		"stage":  "packages",
+		"data":   "installing 3 packages\n",
+	}
+	if got := formatOutput(packages); got != "installing 3 packages\n" {
+		t.Errorf("packages-stage output was not passed through: %q", got)
+	}
+
+	// Turn output that is not valid stream-JSON still renders as before
+	// (formatStreamJSONLine owns that behaviour); the key property is that
+	// the raw-text passthrough does NOT apply to the turn stage.
+	turn := map[string]any{
+		"stream": "stdout",
+		"stage":  "turn",
+		"data":   `{"type":"unknown"}`,
+	}
+	if got := formatOutput(turn); got == `{"type":"unknown"}`+"\n" {
+		t.Errorf("turn-stage output must go through the stream-JSON formatter, got passthrough: %q", got)
+	}
+}
+
 // lastEventIDIn extracts the stream head from a `?wait=false` drain, which is
 // what lets conv prompt / conv stream skip the history replay (#398).
 func TestLastEventIDIn(t *testing.T) {

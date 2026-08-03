@@ -11,6 +11,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/BinaryBourbon/fountain/cli/internal/config"
@@ -27,7 +29,65 @@ func (e *HTTPError) Error() string {
 	if e.Body == nil {
 		return fmt.Sprintf("http %d", e.Status)
 	}
+	// The server writes genuinely actionable messages ("You have 3 of 3
+	// concurrent sandboxes in use. ..."); a raw Go map dump buries them.
+	// Prefer message, then error, flatten nested validation errors, and
+	// append upgrade_url when the server offers one.
+	if body, ok := e.Body.(map[string]any); ok {
+		var b strings.Builder
+		fmt.Fprintf(&b, "http %d", e.Status)
+		switch {
+		case toString(body["message"]) != "":
+			fmt.Fprintf(&b, ": %s", toString(body["message"]))
+		case toString(body["error"]) != "":
+			fmt.Fprintf(&b, ": %s", toString(body["error"]))
+		}
+		if errs, ok := body["errors"].(map[string]any); ok && len(errs) > 0 {
+			fmt.Fprintf(&b, ": %s", flattenErrors(errs))
+		}
+		if u := toString(body["upgrade_url"]); u != "" {
+			fmt.Fprintf(&b, " (upgrade: %s)", u)
+		}
+		if s := b.String(); s != fmt.Sprintf("http %d", e.Status) {
+			return s
+		}
+	}
 	return fmt.Sprintf("http %d: %v", e.Status, e.Body)
+}
+
+func toString(v any) string {
+	s, _ := v.(string)
+	return s
+}
+
+// flattenErrors renders the nested field → messages shape Ecto's
+// traverse_errors produces: {"name": ["can't be blank"]} → `name: can't be
+// blank`, recursing into nested maps with dotted paths.
+func flattenErrors(errs map[string]any) string {
+	keys := make([]string, 0, len(errs))
+	for k := range errs {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	parts := make([]string, 0, len(keys))
+	for _, k := range keys {
+		switch v := errs[k].(type) {
+		case []any:
+			msgs := make([]string, 0, len(v))
+			for _, m := range v {
+				msgs = append(msgs, fmt.Sprintf("%v", m))
+			}
+			parts = append(parts, fmt.Sprintf("%s: %s", k, strings.Join(msgs, ", ")))
+		case map[string]any:
+			for _, nested := range strings.Split(flattenErrors(v), "; ") {
+				parts = append(parts, fmt.Sprintf("%s.%s", k, nested))
+			}
+		default:
+			parts = append(parts, fmt.Sprintf("%s: %v", k, v))
+		}
+	}
+	return strings.Join(parts, "; ")
 }
 
 // Client wraps the HTTP client and credential resolution.

@@ -13,12 +13,16 @@ import (
 
 func init() {
 	keysCmd := &cobra.Command{Use: "keys", Short: "Manage Fountain API keys"}
+	listCmd := &cobra.Command{
+		Use:   "list",
+		Short: "List API keys",
+		RunE:  func(cmd *cobra.Command, args []string) error { return keysList(cmd) },
+	}
+	// Every other list command takes --json; docs/cli.md promises it
+	// generally.
+	listCmd.Flags().Bool("json", false, "output JSON")
 	keysCmd.AddCommand(
-		&cobra.Command{
-			Use:   "list",
-			Short: "List API keys",
-			RunE:  func(cmd *cobra.Command, args []string) error { return keysList() },
-		},
+		listCmd,
 		&cobra.Command{
 			Use:   "create <name>",
 			Short: "Create a new API key",
@@ -58,13 +62,17 @@ type apiKeySummary struct {
 	LastUsedAt string `json:"last_used_at"`
 }
 
-func keysList() error {
+func keysList(cmd *cobra.Command) error {
+	jsonOut, _ := cmd.Flags().GetBool("json")
 	c := activeClient()
 	var resp struct {
 		Data []apiKeySummary `json:"data"`
 	}
 	if err := c.Get("/auth/api-keys", &resp); err != nil {
 		Fatal(err.Error())
+	}
+	if jsonOut {
+		return output.PrintJSON(resp.Data)
 	}
 	rows := make([][]string, 0, len(resp.Data))
 	for _, k := range resp.Data {

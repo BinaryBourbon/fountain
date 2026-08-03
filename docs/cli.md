@@ -129,16 +129,46 @@ fountain apply -f dir/ --var REGION=eu-west-1 # ${VAR} substitution, repeatable
 Apply is idempotent — create if new, update if changed. Supported kinds:
 `Environment`, `Vault`, `Agent`.
 
+`--var`/`${VAR}` substitution applies to `spec.secrets` values only — a
+`${VAR}` anywhere else in the document (a `setup_script`, a name) is
+transmitted literally.
+
 The CLI compiles every document into a single manifest and sends it to
 `POST /api/apply` in one request; the server reconciles environments, then
 vaults, then agents, and resolves agent `environment:` name references —
 including environments that already exist on the server. Against older servers
 without `/api/apply`, the CLI falls back to per-resource calls.
 
+### Secret references
+
+`spec.secrets` values can reference a secret manager instead of holding
+plaintext — this is what makes manifests committable to git. A value starting
+with one of these schemes is resolved client-side at apply time by shelling
+out to the manager's own CLI (which must be installed and authenticated):
+
+| Scheme | Manager | Resolved with |
+|---|---|---|
+| `op://vault/item/field` | 1Password | `op read` |
+| `bws://<secret-uuid>` | Bitwarden Secrets Manager | the `bws` CLI |
+| `infisical://<project?>/<env>/<path?>/<name>` | Infisical | the `infisical` CLI |
+
+```yaml
+kind: Vault
+metadata: { name: prod-tokens }
+spec:
+  secrets:
+    GITHUB_TOKEN: op://Private/github/token
+    STRIPE_KEY: bws://8f0a3c1e-...
+```
+
+Resolution failures (and empty values, which nearly always mean "secret not
+found") fail the apply for that document rather than writing an empty secret.
+Only `spec.secrets` values are resolved; the schemes are inert anywhere else.
+
 ## API keys
 
 ```bash
-fountain keys list
+fountain keys list [--json]
 fountain keys create <name>     # prints the key once; it is not recoverable
 fountain keys revoke <id>
 ```
@@ -154,12 +184,12 @@ fountain agent list --json | jq '.[].name'
 ## Configuration
 
 `~/.fountain/credentials` is an INI-style file written by `fountain auth login`,
-with one section per profile:
+with one section per profile (values are written double-quoted):
 
 ```ini
 [default]
-api_key = ftn_...
-base_url = https://fountain.inevitable.fyi
+api_key = "ftn_..."
+base_url = "https://fountain.inevitable.fyi"
 ```
 
 The file is written `0600` and the directory `0700`.

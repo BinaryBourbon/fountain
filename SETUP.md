@@ -8,8 +8,8 @@ Bootstrap a fresh machine (laptop, ephemeral VM, codespace) to run, test, and de
 | ---------- | ------------------------------------------------------------------- | ----------------------------------------------------------------------- |
 | `mise`     | Pins Elixir/Erlang to the exact versions in `.tool-versions`.       | `brew install mise` (macOS) · `curl https://mise.run \| sh` (Linux/WSL) |
 | `gh`       | GitHub CLI for cloning and PRs.                                     | `brew install gh && gh auth login`                                      |
-| `psql`     | Client for the dev/test Postgres.                                   | Comes with `brew install postgresql@16` (or any 14+).                   |
-| Docker *or* native Postgres 14+ | One way to host the dev/test database.                  | `brew install --cask orbstack` (or Docker Desktop), or `brew install postgresql@16 && brew services start postgresql@16`. |
+| `psql`     | Client for the dev/test Postgres.                                   | Comes with `brew install postgresql@16`. Match the server major (16): an older `pg_dump` refuses a newer server, which is the backup drill.                   |
+| Docker *or* native Postgres 16 | One way to host the dev/test database.                  | `brew install --cask orbstack` (or Docker Desktop), or `brew install postgresql@16 && brew services start postgresql@16`. |
 
 After installing `mise`, [activate it in your shell](https://mise.jdx.dev/getting-started.html#activate-mise):
 
