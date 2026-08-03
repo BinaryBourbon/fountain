@@ -41,7 +41,13 @@ defmodule FountainWeb.SessionHTML do
               autocomplete="current-password"
               class="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-400"
             />
-            <div class="text-right mt-1">
+            <div class="flex justify-between mt-1">
+              <a
+                href={~p"/auth/resend-verification"}
+                class="text-xs text-zinc-400 hover:underline"
+              >
+                Resend verification email
+              </a>
               <a href={~p"/auth/forgot-password"} class="text-xs text-zinc-400 hover:underline">
                 Forgot password?
               </a>

@@ -1,9 +1,11 @@
 defmodule FountainWeb.EmailVerificationControllerTest do
   use FountainWeb.ConnCase, async: true
+  use Oban.Testing, repo: Fountain.Repo
   use Mimic
 
   alias Fountain.Accounts
   alias Fountain.Repo
+  alias Fountain.Workers.WelcomeEmail
 
   describe "GET /users/confirm/:token" do
     test "verifies email, sets session, and redirects to onboarding for new user", %{conn: conn} do
@@ -19,6 +21,18 @@ defmodule FountainWeb.EmailVerificationControllerTest do
       # User should be verified in DB
       updated = Accounts.get_user!(user.id)
       refute is_nil(updated.email_verified_at)
+
+      # The welcome email rides the verification transition (#449)
+      assert_enqueued(worker: WelcomeEmail, args: %{user_id: user.id})
+    end
+
+    test "does not enqueue a welcome email for an already-verified user (#449)", %{conn: conn} do
+      user = insert_verified_user()
+
+      token = Phoenix.Token.sign(FountainWeb.Endpoint, "email_verification", user.id)
+      get(conn, ~p"/users/confirm/#{token}")
+
+      refute_enqueued(worker: WelcomeEmail)
     end
 
     test "redirects already-verified user without onboarding_completed_at to onboarding", %{conn: conn} do
