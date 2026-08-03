@@ -81,6 +81,28 @@ defmodule FountainWeb.MetricsTest do
       assert [:fountain, :fresh_provision, :stop, :duration] in names
     end
 
+    test "reaper untracked is a last_value; released/expired stay sums (#405)" do
+      # Untracked is a LEVEL — the current count of leaked sprites, re-measured
+      # every reaper run. Declared as a `sum` it accumulated each hourly
+      # observation: a steady 102 read as 2,448 after a day, uninterpretable
+      # by any dashboard or alert.
+      by_name = Map.new(AppTelemetry.prometheus_metrics(), &{&1.name, &1})
+
+      untracked = by_name[[:fountain, :reaper, :untracked, :count]]
+      assert untracked, "fountain.reaper.untracked.count is no longer declared"
+
+      assert untracked.__struct__ == Telemetry.Metrics.LastValue,
+             "untracked is a level, not a delta; as #{inspect(untracked.__struct__)} " <>
+               "it accumulates forever instead of tracking the current leak count"
+
+      # released/expired are per-run deltas — those are correct as sums.
+      for measurement <- [:released, :expired] do
+        metric = by_name[[:fountain, :reaper, :run, measurement]]
+        assert metric, "fountain.reaper.run.#{measurement} is no longer declared"
+        assert metric.__struct__ == Telemetry.Metrics.Sum
+      end
+    end
+
     test "every subscribed fountain event has a live producer" do
       # The class of bug behind #310: metrics subscribed to event names that
       # nothing emits, passing every name-list assertion while the scrape
@@ -95,6 +117,10 @@ defmodule FountainWeb.MetricsTest do
         [:fountain, :sandbox, :reclaimed],
         [:fountain, :reaper, :run],
         [:fountain, :reaper, :untracked],
+        # ConversationServer: provision watchdog (#329) and durable-output
+        # budget (#331) — the two cost signals #405 gave subscribers
+        [:fountain, :provision, :deadline_exceeded],
+        [:fountain, :log_output, :capped],
         # Fountain.OpsGauges.emit_telemetry/0 (#321) — exercised directly by
         # Fountain.OpsGaugesTest since the poller is off in test
         [:fountain, :conversations],
@@ -160,6 +186,7 @@ defmodule FountainWeb.MetricsTest do
 
     test "ops gauges and Oban events land in the scrape (#321)" do
       :telemetry.execute([:fountain, :conversations], %{count: 3}, %{status: "idle"})
+
       :telemetry.execute([:fountain, :oban_queue], %{depth: 2}, %{
         queue: "maintenance",
         state: "available"
@@ -194,6 +221,63 @@ defmodule FountainWeb.MetricsTest do
                ~r/fountain_oban_job_exception_count\{[^}]*worker="Fountain.Workers.SandboxReaper"[^}]*\}/,
                body
              )
+    end
+
+    test "untracked scrapes as a gauge that falls when the level drops (#405)" do
+      # The sum-vs-level bug: as a `sum`, 102 followed by 3 scrapes as 105 and
+      # climbs forever; as a `last_value` it scrapes as the current level.
+      # Values are distinctive so a concurrent reaper test (which emits 2)
+      # is distinguishable in a failure message.
+      :telemetry.execute([:fountain, :reaper, :untracked], %{count: 102}, %{})
+      Process.sleep(50)
+      {200, body} = scrape()
+
+      assert body =~ ~r/^fountain_reaper_untracked_count 102$/m
+      assert body =~ ~r/^# TYPE fountain_reaper_untracked_count gauge$/m
+
+      :telemetry.execute([:fountain, :reaper, :untracked], %{count: 3}, %{})
+      Process.sleep(50)
+      {200, body} = scrape()
+
+      assert body =~ ~r/^fountain_reaper_untracked_count 3$/m
+      refute body =~ ~r/^fountain_reaper_untracked_count 105$/m
+    end
+
+    test "cost-signal counters increment on their events (#405)" do
+      deadline = ~r/^fountain_provision_deadline_exceeded_count (\d+)$/m
+      capped = ~r/^fountain_log_output_capped_count (\d+)$/m
+
+      emit_both = fn ->
+        # Measurements/metadata mirror the emitters in conversation_server.ex.
+        :telemetry.execute([:fountain, :provision, :deadline_exceeded], %{count: 1}, %{
+          conversation_id: Ecto.UUID.generate()
+        })
+
+        :telemetry.execute([:fountain, :log_output, :capped], %{count: 1}, %{
+          conversation_id: Ecto.UUID.generate()
+        })
+      end
+
+      emit_both.()
+      Process.sleep(50)
+      {200, body} = scrape()
+
+      assert [_, deadline_before] = Regex.run(deadline, body)
+      assert [_, capped_before] = Regex.run(capped, body)
+
+      emit_both.()
+      Process.sleep(50)
+      {200, body} = scrape()
+
+      assert [_, deadline_after] = Regex.run(deadline, body)
+      assert [_, capped_after] = Regex.run(capped, body)
+
+      assert String.to_integer(deadline_after) == String.to_integer(deadline_before) + 1
+      assert String.to_integer(capped_after) == String.to_integer(capped_before) + 1
+
+      # conversation_id is metadata, never a label — one series per
+      # conversation would eat Prometheus.
+      refute body =~ "conversation_id="
     end
 
     test "route tags are the matched pattern, not the raw path", %{conn: conn} do
