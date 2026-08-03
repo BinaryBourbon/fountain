@@ -166,7 +166,10 @@ defmodule Fountain.Billing do
 
   `trial_ends_at` comes from the subscription's `trial_end` rather than being
   computed locally, so the database agrees with the thing that will actually do
-  the charging.
+  the charging. In the other direction, the subscription is *anchored* to the
+  trial end registration already stamped — creating it at verification time
+  must not restart the clock — and is not created at all when that date has
+  already passed.
 
   A missing `STRIPE_PRICE_ID` is not an error: a self-hosted instance has no
   price and no Stripe. It falls back to recording a local trial end so the
@@ -193,13 +196,43 @@ defmodule Fountain.Billing do
   end
 
   defp create_trial_subscription(user, price_id) do
-    params = %{
-      customer: user.stripe_customer_id,
-      items: [%{price: price_id}],
-      trial_period_days: @trial_days,
-      trial_settings: %{end_behavior: %{missing_payment_method: :cancel}},
-      metadata: %{"user_id" => user.id}
-    }
+    case trial_end_param(user.trial_ends_at) do
+      :expired ->
+        # The locally-stamped clock has already ended this trial; opening a
+        # live Stripe trial now would re-grant time the account no longer has,
+        # and Stripe rejects a past trial_end anyway. The clock side of the
+        # gate covers these accounts.
+        {:ok, user}
+
+      trial_param ->
+        do_create_trial_subscription(user, price_id, trial_param)
+    end
+  end
+
+  # Anchor the subscription to the trial end registration already stamped, so
+  # a subscription created at verification time (or backfilled later) does not
+  # restart the clock. Only an account with no local date gets a fresh window.
+  defp trial_end_param(nil), do: %{trial_period_days: @trial_days}
+
+  defp trial_end_param(%DateTime{} = ends_at) do
+    if DateTime.compare(ends_at, DateTime.add(DateTime.utc_now(), 300, :second)) == :gt do
+      %{trial_end: DateTime.to_unix(ends_at)}
+    else
+      :expired
+    end
+  end
+
+  defp do_create_trial_subscription(user, price_id, trial_param) do
+    params =
+      Map.merge(
+        %{
+          customer: user.stripe_customer_id,
+          items: [%{price: price_id}],
+          trial_settings: %{end_behavior: %{missing_payment_method: :cancel}},
+          metadata: %{"user_id" => user.id}
+        },
+        trial_param
+      )
 
     case Stripe.Subscription.create(params) do
       {:ok, sub} ->
@@ -216,6 +249,11 @@ defmodule Fountain.Billing do
         {:error, reason}
     end
   end
+
+  # A date that is already set stands: the worker re-runs on every OAuth login,
+  # and re-stamping +14d from "now" would quietly extend a self-host trial on
+  # each one.
+  defp record_local_trial(%User{trial_ends_at: %DateTime{}} = user), do: {:ok, user}
 
   defp record_local_trial(user) do
     user

@@ -127,7 +127,9 @@ defmodule Fountain.TrialExpiryTest do
 
       assert_received {:subscription_params, params}
       assert params.customer == "cus_new"
-      assert params.trial_period_days == 14
+      # Anchored to the trial end registration stamped — not a fresh 14-day
+      # window that would restart the clock at verification time (#351).
+      assert params.trial_end == DateTime.to_unix(user.trial_ends_at)
       assert [%{price: "price_test"}] = params.items
 
       assert updated.stripe_customer_id == "cus_new"
