@@ -45,13 +45,16 @@ env = config_env()
 # alone — gating it on `server?` too would hand that public key to every prod
 # process started without PHX_SERVER=true (release eval tasks, migrations, seeds,
 # a remote console), and any of those can create a tenant DEK.
+# "" counts as missing (#392): docker-compose.yml passes `${VAR:-}` defaults,
+# which deliver a present-but-empty variable, and .env.example ships the key
+# present but blank. Both must hit the raise, not the decode branch.
 master_secrets_key =
   case {System.get_env("MASTER_SECRETS_KEY"), env} do
-    {nil, :prod} ->
+    {blank, :prod} when blank in [nil, ""] ->
       raise "environment variable MASTER_SECRETS_KEY is missing (32 bytes, url-safe base64, no padding). " <>
               "Generate: openssl rand 32 | base64 | tr '+/' '-_' | tr -d '='"
 
-    {nil, _} ->
+    {blank, _} when blank in [nil, ""] ->
       :crypto.hash(:sha256, "fountain:dev:master_secrets_key")
 
     {encoded, _} ->
@@ -420,9 +423,16 @@ if config_env() == :prod do
 end
 
 if config_env() == :prod and server? do
+  # "" counts as missing (#392): the compose file passes `${SECRET_KEY_BASE:-}`,
+  # and an empty string must not sail past an `||` guard into the endpoint.
   secret_key_base =
-    System.get_env("SECRET_KEY_BASE") ||
-      raise "environment variable SECRET_KEY_BASE is missing."
+    case System.get_env("SECRET_KEY_BASE") do
+      blank when blank in [nil, ""] ->
+        raise "environment variable SECRET_KEY_BASE is missing."
+
+      value ->
+        value
+    end
 
   host = phx_host
 
