@@ -68,7 +68,19 @@ master_secrets_key =
   end
 
 config :fountain, :master_secrets_key, master_secrets_key
-config :fountain, :sprites_token, System.get_env("SPRITES_TOKEN")
+
+# "" counts as unset (#396): docker-compose.yml passes `${SPRITES_TOKEN:-}`,
+# which delivers a present-but-empty variable, and .env.compose.example ships
+# the key blank. Stored verbatim, "" is truthy, so SpritesClient.get!/0's
+# `|| raise "SPRITES_TOKEN is not set"` never fired and the operator got an
+# opaque 401 from sprites.dev instead of the message written for this case.
+sprites_token =
+  case System.get_env("SPRITES_TOKEN") do
+    blank when blank in [nil, ""] -> nil
+    token -> token
+  end
+
+config :fountain, :sprites_token, sprites_token
 
 # SpritesClient has read :sprites_base_url from application env since it was
 # written, but nothing ever set it — so the default was the only value, and
@@ -350,21 +362,47 @@ config :fountain, :stripe_price_monthly_cents, stripe_price_monthly_cents
 if config_env() == :prod do
   config :fountain, :email_from, System.get_env("EMAIL_FROM", "noreply@updates.inevitable.fyi")
 
-  cond do
-    api_key = System.get_env("RESEND_API_KEY") ->
-      config :fountain, Fountain.Mailer, adapter: Swoosh.Adapters.Resend, api_key: api_key
+  # "" counts as unset for the adapter choice (#396): docker-compose.yml passes
+  # `${RESEND_API_KEY:-}` / `${SMTP_HOST:-}` / `${SMTP_USERNAME:-}`, which
+  # deliver present-but-empty variables — and "" is truthy, so a blank
+  # RESEND_API_KEY selected the Resend adapter, made the EMAIL_DELIVERY=none
+  # and SMTP branches unreachable under compose, and POSTed every verification
+  # email (recipient address + signed URL) to api.resend.com to be 401'd.
+  # A blank SMTP_USERNAME likewise forced `auth: :always` with an empty
+  # username against unauthenticated relays.
+  resend_api_key =
+    case System.get_env("RESEND_API_KEY") do
+      blank when blank in [nil, ""] -> nil
+      key -> key
+    end
 
-    smtp_host = System.get_env("SMTP_HOST") ->
+  smtp_host =
+    case System.get_env("SMTP_HOST") do
+      blank when blank in [nil, ""] -> nil
+      host -> host
+    end
+
+  smtp_username =
+    case System.get_env("SMTP_USERNAME") do
+      blank when blank in [nil, ""] -> nil
+      username -> username
+    end
+
+  cond do
+    resend_api_key ->
+      config :fountain, Fountain.Mailer, adapter: Swoosh.Adapters.Resend, api_key: resend_api_key
+
+    smtp_host ->
       config :fountain, Fountain.Mailer,
         adapter: Swoosh.Adapters.SMTP,
         relay: smtp_host,
         port: String.to_integer(System.get_env("SMTP_PORT", "587")),
-        username: System.get_env("SMTP_USERNAME"),
+        username: smtp_username,
         password: System.get_env("SMTP_PASSWORD"),
         # STARTTLS by default; set SMTP_TLS=never for a relay on a trusted
         # network that does not offer it.
         tls: String.to_atom(System.get_env("SMTP_TLS", "always")),
-        auth: if(System.get_env("SMTP_USERNAME"), do: :always, else: :never),
+        auth: if(smtp_username, do: :always, else: :never),
         retries: 2
 
     System.get_env("EMAIL_DELIVERY") == "none" ->
