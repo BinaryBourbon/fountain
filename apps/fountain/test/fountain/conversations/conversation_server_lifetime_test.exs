@@ -2,9 +2,11 @@ defmodule Fountain.Conversations.ConversationServerLifetimeTest do
   @moduledoc """
   A live ConversationServer reclaiming its own sandbox.
 
-  The bound is checked on a one-minute timer, so these send `:lifecycle_check`
-  directly rather than waiting for it — the timer's only job is to call the
-  same code path.
+  The bound is checked on a one-minute timer. Most tests send
+  `:lifecycle_check` directly to exercise the check itself; the "timer is
+  actually wired" test shrinks the interval and waits for a real tick, so
+  dropping `schedule_lifecycle_check()` from `init/1` fails a test instead
+  of silently disabling reclamation (#337).
   """
 
   use Fountain.ConversationServerCase
@@ -71,6 +73,27 @@ defmodule Fountain.Conversations.ConversationServerLifetimeTest do
       end)
 
       assert_received :destroyed
+      assert Fountain.Repo.reload(sandbox).status == "terminated"
+    end
+
+    test "the timer is actually wired: reclamation fires with no manual tick" do
+      {conv, sandbox} = aged_conversation(180)
+      stub_reattach()
+
+      Application.put_env(:fountain, :lifecycle_check_ms, 50)
+      on_exit(fn -> Application.delete_env(:fountain, :lifecycle_check_ms) end)
+
+      with_bounds([sandbox_idle_timeout_minutes: 60, sandbox_max_lifetime_hours: 24], fn ->
+        {pid, ref, :alive} = start_server(conv)
+
+        :sys.replace_state(pid, fn state ->
+          %{state | last_activity_at: DateTime.add(DateTime.utc_now(), -7200, :second)}
+        end)
+
+        # No send(pid, :lifecycle_check) — the scheduled tick must do it.
+        assert :normal = assert_stopped(ref, 5_000)
+      end)
+
       assert Fountain.Repo.reload(sandbox).status == "terminated"
     end
 
