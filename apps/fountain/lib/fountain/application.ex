@@ -30,6 +30,7 @@ defmodule Fountain.Application do
          repos: Application.fetch_env!(:fountain, :ecto_repos), skip: skip_migrations?()},
         {DNSCluster, query: Application.get_env(:fountain, :dns_cluster_query) || :ignore},
         {Phoenix.PubSub, name: Fountain.PubSub},
+        FountainWeb.Plugs.RateLimit.Sweeper,
         Fountain.Conversations.Redaction,
         {Oban, Application.fetch_env!(:fountain, Oban)}
       ] ++
