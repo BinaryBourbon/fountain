@@ -120,9 +120,11 @@ defmodule FountainWeb.Endpoint do
 
   # Attaches request context (method, path, scrubbed headers/params) to any
   # Sentry event reported while this request is being handled. Sentry's
-  # default scrubbers drop auth headers, cookies and password-shaped params.
-  # A no-op while SENTRY_DSN is unset.
-  plug Sentry.PlugContext
+  # default scrubbers drop auth headers and cookies, but its body scrubber
+  # is a three-name denylist that let the secret-write endpoints' plaintext
+  # values through (#402) — so the body goes through FountainWeb.SentryScrubber,
+  # which keeps parameter shape only. A no-op while SENTRY_DSN is unset.
+  plug Sentry.PlugContext, body_scrubber: {FountainWeb.SentryScrubber, :scrub_body}
 
   plug Plug.MethodOverride
   plug Plug.Head
