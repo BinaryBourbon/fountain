@@ -384,6 +384,47 @@ defmodule Fountain.Conversations.ConversationServerTest do
       GenServer.stop(pid)
     end
 
+    test "a dropped sprite WebSocket fails the turn and frees the conversation (#413)", %{
+      conv: conv
+    } do
+      # Sprites.Command sends {:error, %{ref: ...}, reason} when the socket
+      # drops mid-run, then stops. Pre-#413 the handler logged and kept
+      # current_command set, so the turn stayed "running" forever, every
+      # prompt got {:error, :busy}, and both reclaim paths were suppressed —
+      # the sprite billed until max_lifetime.
+      {pid, ref} = start_with_turn(conv)
+
+      send(pid, {:error, %{ref: ref}, :closed})
+      _ = :sys.get_state(pid)
+
+      assert [turn] = Conversations._unsafe_list_turns(conv.id)
+      assert turn.status == "failed"
+      refute is_nil(turn.ended_at)
+      assert Conversations._unsafe_get_conversation!(conv.id).status == "idle"
+
+      # The recovery the user actually needs: prompting again works.
+      assert :ok = GenServer.call(pid, {:send_prompt, "again", []})
+      assert length(Conversations._unsafe_list_turns(conv.id)) == 2
+
+      GenServer.stop(pid)
+    end
+
+    test "an error for a stale command ref does not touch the current turn", %{conv: conv} do
+      {pid, ref} = start_with_turn(conv)
+
+      send(pid, {:error, %{ref: make_ref()}, :closed})
+      _ = :sys.get_state(pid)
+
+      # Still mid-turn: the running turn is untouched and busy is still busy.
+      assert [turn] = Conversations._unsafe_list_turns(conv.id)
+      assert turn.status == "running"
+      assert {:error, :busy} = GenServer.call(pid, {:send_prompt, "second", []})
+
+      send(pid, {:exit, %{ref: ref}, 0})
+      _ = :sys.get_state(pid)
+      GenServer.stop(pid)
+    end
+
     test "prompting while a turn is running is refused rather than queued", %{conv: conv} do
       {pid, _ref} = start_with_turn(conv)
 

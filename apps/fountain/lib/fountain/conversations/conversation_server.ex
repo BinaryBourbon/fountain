@@ -1054,6 +1054,48 @@ defmodule Fountain.Conversations.ConversationServer do
      }}
   end
 
+  # An error naming the CURRENT command is terminal for the turn (#413):
+  # Sprites.Command sends it when the WebSocket to the sprite drops mid-run,
+  # then stops — and since the command process is neither linked nor
+  # monitored, this message is the only signal there will ever be. Ignoring
+  # it left current_command set forever: every prompt answered {:error,
+  # :busy}, idle reclaim was suppressed (busy? true), the reaper skipped the
+  # sandbox (server alive), and the sprite billed until max_lifetime. Fail
+  # the turn and return to idle, exactly like a non-zero :exit.
+  def handle_info({:error, %{ref: ref}, reason}, %{current_command_ref: ref} = state)
+      when not is_nil(ref) do
+    Logger.error("sprite command error mid-turn: #{inspect(reason)} — failing the turn")
+
+    {:ok, turn} =
+      Conversations.update_turn(state.current_turn, %{
+        status: "failed",
+        ended_at: now()
+      })
+
+    publish_stage(state.conversation_id, "turn", "failed", %{
+      turn_id: turn.id,
+      turn_number: turn.turn_number,
+      reason: "sprite connection lost: #{inspect(reason)}"
+    })
+
+    Fountain.Runtimes.Claude.StreamTracer.finalize(state.stream_tracer)
+    end_turn_span(state.current_turn_span, :error, %{"error" => inspect(reason)})
+
+    conv = Conversations._unsafe_get_conversation!(state.conversation_id)
+    {:ok, _} = Conversations.update_conversation(conv, %{status: "idle"})
+
+    {:noreply,
+     %{
+       touch_activity(state)
+       | current_command: nil,
+         current_command_ref: nil,
+         current_turn: nil,
+         current_turn_span: nil,
+         stream_tracer: nil
+     }}
+  end
+
+  # A stale ref — an error from a command already superseded or finished.
   def handle_info({:error, _ref, reason}, state) do
     Logger.error("sprite command error: #{inspect(reason)}")
     {:noreply, state}
