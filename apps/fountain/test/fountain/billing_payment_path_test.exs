@@ -346,6 +346,57 @@ defmodule Fountain.BillingPaymentPathTest do
     end
   end
 
+  describe "comped checkout backstop (#399)" do
+    test "a completed checkout records the subscription id without un-comping" do
+      # The page-level fix stops Checkout being offered; this is the backstop
+      # for a session opened before the comp (or a stale tab): the customer
+      # IS being charged, so the app must at least hold the reference —
+      # pre-#399 the adoption dropped it, making the subscription invisible
+      # to the MRR tile and to revoke_comp.
+      user = insert_verified_user()
+      {:ok, user} = Billing.attach_stripe_customer(user, "cus_comped_bs")
+
+      {:ok, user} =
+        user
+        |> User.billing_changeset(%{subscription_status: "comped"})
+        |> Repo.update()
+
+      test_pid = self()
+
+      stub(Stripe.Subscription, :list, fn _ ->
+        send(test_pid, :list_called)
+        {:ok, %{data: [], has_more: false}}
+      end)
+
+      event = %Stripe.Event{
+        id: "evt_comped_bs",
+        type: "checkout.session.completed",
+        created: DateTime.utc_now() |> DateTime.to_unix(),
+        data: %{
+          object: %{
+            customer: "cus_comped_bs",
+            subscription: "sub_comped_paid",
+            client_reference_id: user.id
+          }
+        }
+      }
+
+      log =
+        ExUnit.CaptureLog.capture_log(fn ->
+          assert {:ok, %User{}} = Billing.handle_event(event)
+        end)
+
+      reloaded = Repo.reload(user)
+      assert reloaded.subscription_status == "comped"
+      assert reloaded.stripe_subscription_id == "sub_comped_paid"
+      assert log =~ "comped user #{user.id} completed checkout"
+
+      # Comped accounts skip the cancellation sweep — comp_account already
+      # cancelled everything, and a webhook must not touch the rest.
+      refute_received :list_called
+    end
+  end
+
   describe "OAuth signups" do
     test "get a Stripe customer and a trial end date" do
       # The email+password path creates the customer after verification. OAuth

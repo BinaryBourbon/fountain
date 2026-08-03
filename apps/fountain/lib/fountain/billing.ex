@@ -852,8 +852,35 @@ defmodule Fountain.Billing do
   # ordering guard: without it, any older event for the adopted subscription
   # that straggled in afterwards was treated as fresh and could move the
   # account backwards. Never moves the watermark backwards itself.
-  defp adopt_subscription(%User{subscription_status: "comped"} = user, _sub_id, _event_created),
-    do: {:ok, user}
+  # A webhook must never silently un-comp an account, so status is left
+  # alone. But if a checkout DID complete for a comped account (#399 — the
+  # billing page used to offer it), the customer is now being charged for a
+  # subscription the app held no reference to: invisible to the MRR tile,
+  # and revoke_comp/1 would lock out someone actively paying. Record the id
+  # as a backstop and log loudly so an operator refunds or revokes the comp
+  # deliberately.
+  defp adopt_subscription(
+         %User{subscription_status: "comped"} = user,
+         subscription_id,
+         event_created
+       ) do
+    if is_binary(subscription_id) and subscription_id != user.stripe_subscription_id do
+      Logger.error(
+        "[billing] comped user #{user.id} completed checkout for subscription " <>
+          "#{subscription_id}; recording the id without changing status — " <>
+          "they are being charged, investigate (refund or revoke the comp)"
+      )
+
+      user
+      |> User.billing_changeset(%{
+        stripe_subscription_id: subscription_id,
+        subscription_synced_at: latest(event_created, user.subscription_synced_at)
+      })
+      |> Repo.update()
+    else
+      {:ok, user}
+    end
+  end
 
   defp adopt_subscription(%User{stripe_subscription_id: sub_id} = user, sub_id, _event_created),
     do: {:ok, user}
