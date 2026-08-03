@@ -121,6 +121,9 @@ Only needed for more than one replica — see
 | `HONEYCOMB_ENDPOINT` | `https://api.honeycomb.io` | — | Honeycomb shortcut for the endpoint above |
 | `HONEYCOMB_API_KEY` | — | — | Honeycomb shortcut: adds the `x-honeycomb-team` header |
 
-Trace export is configured only in production while serving. The OTel SDK also
-honours its own standard variables — the hosted deployment sets
-`OTEL_TRACES_EXPORTER=none` to disable export without a collector.
+Trace export is configured only in production while serving, and is **off by
+default**: spans are exported only when `OTEL_EXPORTER_OTLP_ENDPOINT`,
+`HONEYCOMB_ENDPOINT` or `HONEYCOMB_API_KEY` is explicitly set. The OTel SDK
+also honours its own standard variables, which take precedence — set
+`OTEL_TRACES_EXPORTER=otlp` or `=none` to force export on or off regardless
+of the above.
