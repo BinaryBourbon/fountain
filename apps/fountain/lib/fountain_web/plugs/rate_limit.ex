@@ -52,6 +52,20 @@ defmodule FountainWeb.Plugs.RateLimit do
     end
   end
 
+  @doc """
+  Delete rows whose window started more than `max_age_ms` ago.
+
+  A row older than its bucket's window no longer affects any decision —
+  `bump/2` resets it on the next hit — so eviction is invisible to
+  limiting behavior as long as `max_age_ms` is at least the longest
+  window configured anywhere. Returns the number of rows deleted.
+  """
+  def evict_expired(max_age_ms) do
+    ensure_table()
+    cutoff = System.system_time(:millisecond) - max_age_ms
+    :ets.select_delete(@table, [{{:_, :"$1", :_}, [{:<, :"$1", cutoff}], [true]}])
+  end
+
   def init(opts) do
     %{
       bucket: Keyword.fetch!(opts, :bucket),
