@@ -21,8 +21,8 @@ Concretely:
 - `render.yaml` declares a managed Postgres database, exposes `DATABASE_URL` to the web service, and removes the persistent disk that SQLite required.
 - Ecto repo configured for `Ecto.Adapters.Postgres`.
 - Schema definitions use `jsonb` for `metadata` columns (`usage_events`, `admin_audit_events`), `binary_id` (UUID) for primary keys, and `bigint` for the append-only event PKs.
-- All new tables use UUID v7 (separate decision, OQ-1c) — the time-ordering benefit is realized on Postgres B-tree indexes specifically.
-- Backups: rely on Render's managed Postgres daily backups + PITR. No Litestream needed; OQ-9b is N/A.
+- All new tables use UUID v7 (separate decision, OQ-1c) — the time-ordering benefit is realized on Postgres B-tree indexes specifically. *(**Never built** — primary keys are UUIDv4; see Addendum 2026-08-02.)*
+- Backups: rely on Render's managed Postgres daily backups + PITR. No Litestream needed; OQ-9b is N/A. *(Superseded — see Addendum 2026-08-02.)*
 
 ## Consequences
 
@@ -37,3 +37,10 @@ Concretely:
 - **SQLite + Litestream at launch, Postgres cutover later.** The original engineering-plan default. Rejected: pushes a known migration into a future sprint, requires Litestream tuning the operator hasn't done before, and saves only the cost of a managed Postgres line item — not enough to justify the future-toil debt.
 - **SQLite at launch, no Litestream, accept the backup gap.** Rejected: Render persistent disks are not cross-AZ replicated; a disk failure would lose data between snapshots. Unacceptable for a paid product (G2 chose a hard billing gate, ADR 0006).
 - **Postgres-compatible managed serverless (Neon, Supabase) instead of Render-managed Postgres.** Rejected for launch: adds a vendor relationship and egress considerations that aren't justified before there's evidence Render's managed Postgres is the bottleneck. Easy to revisit if it becomes one.
+
+## Addendum — 2026-08-02
+
+Two claims above no longer match (or never matched) the code:
+
+- **UUID v7 was never built.** Every schema uses `@primary_key {:id, :binary_id, autogenerate: true}` (e.g. `apps/fountain/lib/fountain/accounts/user.ex`), which generates `Ecto.UUID` values — **UUIDv4**. No v7 library is in the dependency tree. The B-tree time-ordering benefit claimed above therefore does not exist. If time-ordered ids become necessary, that is a new decision (and a migration), not something this ADR delivered.
+- **Backups are no longer Render's.** Production Postgres is CloudNativePG on the home-cloud Kubernetes cluster; backups are handled by `k8s/backup-cronjob.yaml`, `k8s/objectstore.yaml`, and `k8s/scheduledbackup.yaml`. The "Render managed backups + PITR" line is superseded. The core decision (Postgres from day one, no SQLite path) stands and is unaffected.
