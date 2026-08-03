@@ -125,6 +125,26 @@ defmodule FountainWeb.AdminLiveTest do
       assert html =~ "ready"
     end
 
+    test "shows the sandbox owner and links conversations to the admin view (#446)", %{
+      conn: conn
+    } do
+      admin = insert_admin()
+      owner = insert_verified_user()
+      sandbox = insert_sandbox(user_id: owner.id, status: "ready")
+      conv = insert_conversation(user_id: owner.id, sandbox: sandbox)
+
+      conn = login_user(conn, admin)
+      {:ok, _lv, html} = live(conn, ~p"/admin")
+
+      # owner column, linking to the user detail page
+      assert html =~ owner.email
+      assert html =~ ~p"/admin/users/#{owner.id}"
+      # conversation link resolves through the admin read path, not the
+      # tenant-scoped show (which 404s for other tenants' conversations)
+      assert html =~ ~p"/admin/conversations/#{conv.id}"
+      refute html =~ ~s{href="/conversations/#{conv.id}"}
+    end
+
     test "does not show terminated sandboxes", %{conn: conn} do
       admin = insert_admin()
       terminated = insert_sandbox(user_id: admin.id, status: "terminated")

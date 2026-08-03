@@ -297,6 +297,8 @@ defmodule FountainWeb.Router do
         {FountainWeb.Live.Hooks, :require_admin}
       ] do
       live "/admin", AdminLive.Index, :index
+      live "/admin/users/:id", AdminLive.UserDetail, :show
+      live "/admin/conversations/:id", AdminLive.ConversationDetail, :show
     end
   end
 

@@ -50,6 +50,56 @@ defmodule Fountain.Conversations do
   def _unsafe_get_sandbox!(id), do: Repo.get!(Sandbox, id)
 
   @doc """
+  Load any tenant's conversation for the admin support view (#446).
+
+  Returns the conversation with owner/agent/sandbox preloaded plus turn and
+  log-event **counts** — deliberately not the turns or log events themselves.
+  The admin surface renders metadata only (status, timing, exit codes); prompt
+  and output content stay tenant-private. `_unsafe_list_turn_summaries_admin/1`
+  carries the same rule.
+  """
+  def _unsafe_get_conversation_admin(id) do
+    case Repo.get(Conversation, id) do
+      nil ->
+        nil
+
+      conv ->
+        conv = Repo.preload(conv, [:user, :agent, :sandbox])
+
+        turn_count =
+          Repo.aggregate(from(t in Turn, where: t.conversation_id == ^id), :count)
+
+        log_event_count =
+          Repo.aggregate(from(le in LogEvent, where: le.conversation_id == ^id), :count)
+
+        %{conversation: conv, turn_count: turn_count, log_event_count: log_event_count}
+    end
+  end
+
+  @doc """
+  Turn metadata for the admin support view: numbers, statuses, exit codes and
+  timing — never `prompt`. The select list is the privacy boundary; keep
+  content columns out of it.
+  """
+  def _unsafe_list_turn_summaries_admin(conversation_id, limit \\ 100) do
+    Repo.all(
+      from t in Turn,
+        where: t.conversation_id == ^conversation_id,
+        order_by: [desc: t.turn_number],
+        limit: ^limit,
+        select: %{
+          id: t.id,
+          turn_number: t.turn_number,
+          status: t.status,
+          exit_code: t.exit_code,
+          started_at: t.started_at,
+          ended_at: t.ended_at,
+          inserted_at: t.inserted_at
+        }
+    )
+  end
+
+  @doc """
   Support teardown of any tenant's sandbox, from the admin panel.
 
   A conversation with a live `ConversationServer` is terminated through the
