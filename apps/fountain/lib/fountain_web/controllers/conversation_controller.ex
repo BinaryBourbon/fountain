@@ -217,6 +217,8 @@ defmodule FountainWeb.ConversationController do
         case ConversationServer.terminate(id) do
           :ok -> send_resp(conn, :no_content, "")
           {:error, :not_running} -> {:error, :not_found}
+          # :provisioning and future shapes render via the FallbackController.
+          {:error, _} = err -> err
         end
     end
   end
@@ -248,6 +250,10 @@ defmodule FountainWeb.ConversationController do
 
           {:error, :idle} ->
             conn |> put_status(:conflict) |> json(%{error: "no_turn_running"})
+
+          # :provisioning and future shapes render via the FallbackController.
+          {:error, _} = err ->
+            err
         end
     end
   end

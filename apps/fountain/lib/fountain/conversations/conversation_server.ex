@@ -73,8 +73,30 @@ defmodule Fountain.Conversations.ConversationServer do
         end
 
       pid ->
-        GenServer.call(pid, {:send_prompt, prompt, images}, 30_000)
+        call_server(pid, {:send_prompt, prompt, images})
     end
+  end
+
+  # Every public entry point calls through here so a GenServer.call exit
+  # cannot escape to the caller (#412). The realistic exit is :timeout: a
+  # handle_continue(:provision) blocks the mailbox for up to the provision
+  # deadline, so any call issued during provisioning waits 30s and then
+  # *exits* — which none of the seven controller/LiveView call sites caught,
+  # turning prompt/interrupt/terminate into 500s and making
+  # delete_conversation/1 return before its Repo.delete. :noproc and
+  # shutdown-shaped exits are the server dying between whereis and call.
+  defp call_server(pid, msg) do
+    GenServer.call(
+      pid,
+      msg,
+      Application.get_env(:fountain, :conversation_call_timeout_ms, 30_000)
+    )
+  catch
+    :exit, {:timeout, _} -> {:error, :provisioning}
+    :exit, {:noproc, _} -> {:error, :not_running}
+    :exit, {:normal, _} -> {:error, :not_running}
+    :exit, {:shutdown, _} -> {:error, :not_running}
+    :exit, {{:shutdown, _}, _} -> {:error, :not_running}
   end
 
   @doc """
@@ -102,7 +124,7 @@ defmodule Fountain.Conversations.ConversationServer do
   def interrupt(conv_id) do
     case whereis(conv_id) do
       nil -> {:error, :not_running}
-      pid -> GenServer.call(pid, :interrupt, 30_000)
+      pid -> call_server(pid, :interrupt)
     end
   end
 
@@ -134,7 +156,7 @@ defmodule Fountain.Conversations.ConversationServer do
         end
 
       pid ->
-        GenServer.call(pid, :terminate_conv, 30_000)
+        call_server(pid, :terminate_conv)
     end
   end
 
