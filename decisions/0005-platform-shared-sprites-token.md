@@ -30,3 +30,12 @@ Fountain holds a single **platform-level `SPRITES_TOKEN`** that is used to provi
 
 - **BYO Sprites token per tenant** — Rejected at launch. Adds a required setup step that breaks self-serve onboarding; tenants would need to create and manage their own Sprites accounts before using Fountain.
 - **Per-tenant Sprites sub-accounts** — Rejected. Not a feature the Sprites API currently supports.
+
+## Addendum — 2026-08-02
+
+Two mechanisms named above live somewhere other than where this ADR says:
+
+- **Token read location.** `ConversationServer` does not read the token, and nothing calls `Application.fetch_env!(:fountain, :sprites_token)`. Access is centralized in `Fountain.SpritesClient.get!/0` (`apps/fountain/lib/fountain/sprites_client.ex`), which reads `Application.get_env(:fountain, :sprites_token)` and raises explicitly ("SPRITES_TOKEN is not set") when absent. All Sprites API callers go through that client.
+- **Cap enforcement.** The production path does not call `Fountain.Quotas.check_sandbox_quota!/1`. Sandbox creation goes through `Fountain.Quotas.with_sandbox_reservation/2,3`, which runs the non-raising `check_sandbox_quota/2` together with the sandbox row insert under a per-user advisory lock (closing the check-then-insert race, #330). It is invoked from `Fountain.Conversations.start_conversation/1` and the wake path (`create_fresh_sandbox_and_start`). The raising `check_sandbox_quota!/2` exists but is exercised only by tests.
+
+The decision itself — one platform token, per-tenant concurrency cap as the noisy-neighbor mitigation — is unchanged.

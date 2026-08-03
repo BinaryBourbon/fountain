@@ -22,7 +22,7 @@ Gate enforcement, via `Fountain.Billing.assert_active!(user)`:
 
 Plan management uses Stripe Checkout (new subscriptions) and Stripe Customer Portal (existing subscriptions, payment method updates, cancellation). Webhook endpoint `POST /api/stripe/webhook` is signature-verified via `Stripe.Webhook.construct_event/3`.
 
-Usage period (OQ-5c): **calendar month in the user's selected timezone** (default UTC). `BillingLive` aggregates `usage_events` for the current calendar month.
+Usage period (OQ-5c): **calendar month in the user's selected timezone** (default UTC). `BillingLive` aggregates `usage_events` for the current calendar month. *(Per-user timezone was **never built** — the period is calendar-month **UTC**, hardcoded; see Addendum 2026-08-02.)*
 
 Pricing tier shape (Free / Pro / etc.) is **not** decided here — that's growth/marketing's call before launch. This ADR commits to the gate mechanism, not the price points.
 
@@ -43,3 +43,13 @@ Pricing tier shape (Free / Pro / etc.) is **not** decided here — that's growth
 - **Soft warn at launch (track usage, surface warnings, no enforcement).** Rejected: same cost problem as the stub, plus a worse story for "we never said this was free." A hard gate with a generous trial is more honest.
 - **Paddle or Lemon Squeezy as merchant-of-record (handles tax/VAT globally).** Rejected for launch: Stripe has materially better Elixir tooling and a faster path to a working Checkout flow. International tax compliance is a real concern but addressable post-launch (Stripe Tax, or a provider switch if Stripe Tax proves inadequate). Don't trade ship velocity for problems that don't exist yet.
 - **Lifetime / one-time payment instead of subscription.** Rejected: incompatible with a per-conversation cost model where Fountain pays Sprites continuously. Subscription matches the cost shape.
+
+## Addendum — 2026-08-02
+
+Five points where this ADR has drifted from (or never matched) the code:
+
+- **Enforcement sites.** There is no billing check in `ConversationServer.init/1` — there never was. The gate's backstops are `Fountain.Conversations.start_conversation/1` and the wake path (both reuse and fresh-sandbox arms call `Fountain.Billing.check_active/1` alongside the suspension check), plus a per-turn gate inside `ConversationServer` (`turn_gate/1`, added for #313 so a live sandbox doesn't outlive its subscription), and the `:require_active_subscription` LiveView hook. `assert_active!/1` still exists; the pipeline call sites use the non-raising `check_active/1`.
+- **Allowed statuses.** The code allows `~w(trialing active comped)` (`apps/fountain/lib/fountain/billing.ex`), not `[:trialing, :active]`. `comped` is operator-granted free access, set only from the admin panel.
+- **`past_due` cannot view past conversations.** `/conversations`, `/conversations/new`, and `/conversations/:id` sit inside the `:active_subscription` live_session in the router, so a `past_due` user is redirected to billing. What remains reachable is the log viewer (`/conversations/:id/logs`) plus dashboard, resource, onboarding, and billing/settings routes in the `:authenticated` live_session. The "read-only window" as described above is narrower in practice.
+- **Usage period timezone was never built.** There is no user timezone field; `BillingLive.current_month_range/0` computes the calendar month in UTC, hardcoded. Per-user timezone selection remains unbuilt; if it matters, it is a new piece of work, not something this ADR delivered.
+- **The gate is now conditional.** `BILLING_ENABLED` (default `"true"`, `config/runtime.exs`) feeds `Fountain.Billing.enabled?/0`; setting it to `false` disables the gate entirely. This exists for self-hosted instances, where the gate is a lock on the front door with no key. The "hard gate" decision stands for the hosted product, but it is now config, not an invariant of the source.
