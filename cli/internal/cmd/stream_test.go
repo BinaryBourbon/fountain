@@ -74,7 +74,7 @@ func TestReconnectsAfterServerClosesIdleStream(t *testing.T) {
 		stage(2, "turn", "done"),
 	}}
 
-	if err := followStream(f.open, time.Second, "conv-1"); err != nil {
+	if err := followStream(f.open, time.Second, "conv-1", ""); err != nil {
 		t.Fatalf("expected clean completion, got %v", err)
 	}
 	if f.opens() != 2 {
@@ -88,7 +88,7 @@ func TestResumesFromLastEventID(t *testing.T) {
 		stage(8, "turn", "done"),
 	}}
 
-	if err := followStream(f.open, time.Second, "conv-1"); err != nil {
+	if err := followStream(f.open, time.Second, "conv-1", ""); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -109,7 +109,7 @@ func TestResumesFromLastEventID(t *testing.T) {
 func TestStopsOnTurnDone(t *testing.T) {
 	f := &fakeStream{bodies: []string{stage(1, "turn", "done")}}
 
-	if err := followStream(f.open, time.Second, "conv-1"); err != nil {
+	if err := followStream(f.open, time.Second, "conv-1", ""); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if f.opens() != 1 {
@@ -117,23 +117,73 @@ func TestStopsOnTurnDone(t *testing.T) {
 	}
 }
 
+// The initial Last-Event-ID seed (from streamHead's ?wait=false drain) must
+// reach the very first connection — an empty seed makes the server replay the
+// whole history, whose first `turn`/`done` ended `conv prompt` before the
+// just-queued turn had started (#398).
+func TestSeedsInitialLastEventID(t *testing.T) {
+	f := &fakeStream{bodies: []string{stage(43, "turn", "done")}}
+
+	if err := followStream(f.open, time.Second, "conv-1", "42"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	got := f.resumeIDs()
+	if len(got) != 1 || got[0] != "42" {
+		t.Fatalf("first open should carry the seeded Last-Event-ID, got %v", got)
+	}
+}
+
 // A failed provision means no turn is ever coming. Reconnecting would just wait
-// out the idle timeout.
-func TestStopsOnProvisionFailed(t *testing.T) {
+// out the idle timeout — and the failure must exit non-zero (#398).
+func TestStopsOnProvisionFailedWithError(t *testing.T) {
 	f := &fakeStream{bodies: []string{stage(1, "provision", "failed")}}
 
-	if err := followStream(f.open, time.Second, "conv-1"); err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	err := followStream(f.open, time.Second, "conv-1", "")
+	if !errors.Is(err, errProvisionFailed) {
+		t.Fatalf("expected errProvisionFailed, got %v", err)
 	}
 	if f.opens() != 1 {
 		t.Fatalf("expected to stop on provision failure, opened %d times", f.opens())
 	}
 }
 
+// `turn`/`failed` previously returned nil all the way up, so a crashed agent
+// exited 0 (#398).
+func TestTurnFailedIsAnError(t *testing.T) {
+	f := &fakeStream{bodies: []string{stage(1, "turn", "failed")}}
+
+	err := followStream(f.open, time.Second, "conv-1", "")
+	if !errors.Is(err, errTurnFailed) {
+		t.Fatalf("expected errTurnFailed, got %v", err)
+	}
+	if f.opens() != 1 {
+		t.Fatalf("expected to stop on turn failure, opened %d times", f.opens())
+	}
+}
+
+// `turn`/`done` with a non-zero exit_code is a failed run: the server publishes
+// `done` either way and puts the verdict in the payload (conversation_server.ex
+// publish_stage of "turn"/"done"). The payload below is the exact wire shape
+// write_event renders: the inner `data` is a JSON-encoded string.
+func TestTurnDoneWithNonZeroExitCodeIsAnError(t *testing.T) {
+	body := "id: 9\nevent: stage\ndata: " +
+		`{"kind":"stage","stream":null,"data":"{\"exit_code\":2,\"turn_id\":\"t-1\",\"turn_number\":3}","stage":"turn","state":"done","turn_id":null,"ts":"2026-08-03T10:00:00"}` +
+		"\n\n"
+	f := &fakeStream{bodies: []string{body}}
+
+	err := followStream(f.open, time.Second, "conv-1", "")
+	if !errors.Is(err, errTurnFailed) {
+		t.Fatalf("expected errTurnFailed for exit_code=2, got %v", err)
+	}
+	if err == nil || !strings.Contains(err.Error(), "exit_code=2") {
+		t.Errorf("error should carry the exit code, got %v", err)
+	}
+}
+
 func TestStopsOnTerminated(t *testing.T) {
 	f := &fakeStream{bodies: []string{stage(1, "terminate", "done")}}
 
-	if err := followStream(f.open, time.Second, "conv-1"); err != nil {
+	if err := followStream(f.open, time.Second, "conv-1", ""); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if f.opens() != 1 {
@@ -148,7 +198,7 @@ func TestIdleTimeoutIsAnErrorNotSilentSuccess(t *testing.T) {
 	blocked := &blockingStream{released: make(chan struct{})}
 	defer close(blocked.released)
 
-	err := followStream(blocked.open, 100*time.Millisecond, "conv-42")
+	err := followStream(blocked.open, 100*time.Millisecond, "conv-42", "")
 	if err == nil {
 		t.Fatal("an idle stream must not report success")
 	}
@@ -171,7 +221,7 @@ func TestGivesUpAfterRepeatedOpenFailures(t *testing.T) {
 	noBackoff(t)
 	f := &fakeStream{failNext: 99, openErr: errors.New("connection refused")}
 
-	err := followStream(f.open, time.Second, "conv-1")
+	err := followStream(f.open, time.Second, "conv-1", "")
 	if err == nil {
 		t.Fatal("expected an error once reconnects are exhausted")
 	}
@@ -191,7 +241,7 @@ func TestRecoversFromATransientOpenFailure(t *testing.T) {
 		bodies:   []string{stage(1, "turn", "done")},
 	}
 
-	if err := followStream(f.open, time.Second, "conv-1"); err != nil {
+	if err := followStream(f.open, time.Second, "conv-1", ""); err != nil {
 		t.Fatalf("a single transient failure should not be fatal, got %v", err)
 	}
 }
