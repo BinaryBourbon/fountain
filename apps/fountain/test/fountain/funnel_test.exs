@@ -173,5 +173,37 @@ defmodule Fountain.FunnelTest do
       assert Map.has_key?(measurements, :onboarded)
       assert Map.has_key?(measurements, :subscribed)
     end
+
+    test "a tick that cannot reach the database logs and returns :ok instead of raising" do
+      # telemetry_poller permanently drops a measurement whose tick raises,
+      # so the boot tick racing Repo startup used to kill the funnel gauges
+      # for the node's lifetime (#365). Reproduce that exact failure by
+      # pointing this process's dynamic repo at a name that isn't started.
+      ref = make_ref()
+      test_pid = self()
+
+      :telemetry.attach(
+        "funnel-fail-test-#{inspect(ref)}",
+        [:fountain, :funnel],
+        fn _event, measurements, _meta, _config -> send(test_pid, {ref, measurements}) end,
+        nil
+      )
+
+      on_exit(fn -> :telemetry.detach("funnel-fail-test-#{inspect(ref)}") end)
+
+      log =
+        ExUnit.CaptureLog.capture_log(fn ->
+          Fountain.Repo.put_dynamic_repo(:repo_that_is_not_started)
+
+          try do
+            assert Funnel.emit_telemetry() == :ok
+          after
+            Fountain.Repo.put_dynamic_repo(Fountain.Repo)
+          end
+        end)
+
+      assert log =~ "funnel telemetry tick skipped"
+      refute_received {^ref, _measurements}
+    end
   end
 end
