@@ -362,6 +362,11 @@ config :fountain, :stripe_price_monthly_cents, stripe_price_monthly_cents
 if config_env() == :prod do
   config :fountain, :email_from, System.get_env("EMAIL_FROM", "noreply@updates.inevitable.fyi")
 
+  # Optional (#450): where "contact support" in account emails points. Unset,
+  # the copy stays vague — EMAIL_FROM is usually a noreply@ address, so
+  # "reply to this email" would point somewhere replies go to die.
+  config :fountain, :support_email, System.get_env("SUPPORT_EMAIL")
+
   # "" counts as unset for the adapter choice (#396): docker-compose.yml passes
   # `${RESEND_API_KEY:-}` / `${SMTP_HOST:-}` / `${SMTP_USERNAME:-}`, which
   # deliver present-but-empty variables — and "" is truthy, so a blank

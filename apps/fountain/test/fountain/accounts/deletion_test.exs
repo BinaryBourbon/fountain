@@ -36,6 +36,29 @@ defmodule Fountain.Accounts.DeletionTest do
     user
   end
 
+  describe "deletion confirmation email (#450)" do
+    test "a verified account's deletion enqueues the confirmation, carrying the address" do
+      user = insert_verified_user()
+
+      capture_log(fn -> assert {:ok, _} = Deletion.delete_user(user) end)
+
+      assert_enqueued(
+        worker: Fountain.Workers.AccountEmail,
+        args: %{kind: "deleted", email: user.email}
+      )
+    end
+
+    test "an unverified account gets no confirmation — covers the pruner path" do
+      # An address that never proved it was theirs gets no mail from us,
+      # whoever triggered the deletion (UnverifiedAccountPruner included).
+      user = insert_user()
+
+      capture_log(fn -> assert {:ok, _} = Deletion.delete_user(user) end)
+
+      refute_enqueued(worker: Fountain.Workers.AccountEmail)
+    end
+  end
+
   describe "what is removed" do
     test "the user and everything cascading from them" do
       user = insert_verified_user()
