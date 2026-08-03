@@ -125,6 +125,13 @@ jobs:
           sed -i -E \
             "s|ghcr\.io/binarybourbon/fountain:sha-[0-9a-f]+|${IMAGE}|" \
             k8s/deployment.yaml
+          # sed exits 0 whether or not the pattern matched, so verify the pin
+          # actually landed — if deployment.yaml's image line ever stops
+          # matching the regex, the old tag would otherwise ship silently.
+          grep -qF "${IMAGE}" k8s/deployment.yaml || {
+            echo "image pin substitution failed: ${IMAGE} not found in k8s/deployment.yaml" >&2
+            exit 1
+          }
           git diff --stat k8s/deployment.yaml
 
       - name: Setup flux CLI
