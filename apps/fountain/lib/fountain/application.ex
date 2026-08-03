@@ -47,7 +47,19 @@ defmodule Fountain.Application do
              name: Fountain.ConversationSupervisor,
              strategy: :one_for_one,
              distribution_strategy: Horde.UniformDistribution,
-             members: :auto
+             members: :auto,
+             # Explicit, and sized to the fleet: the default (3 restarts in
+             # 5s) is a budget SHARED by every ConversationServer on the
+             # node — one child that crashes deterministically on start
+             # exhausts it in under a second, and exceeding it terminates
+             # this supervisor and with it every running conversation here.
+             # 100/10s tolerates a correlated transient burst (a Sprites
+             # outage failing many provisions at once) while still stopping
+             # a genuine infinite loop. The known deterministic crash paths
+             # (rows deleted before handle_continue(:provision)) are also
+             # guarded in the server itself.
+             max_restarts: 100,
+             max_seconds: 10
            ]},
           FountainWeb.Endpoint
         ]

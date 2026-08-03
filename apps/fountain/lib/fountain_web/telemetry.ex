@@ -150,6 +150,23 @@ defmodule FountainWeb.Telemetry do
         measurement: :count,
         description: "Untracked sprites currently running with no live sandbox row"
       ),
+      # The rehydrator sweep runs once per boot in an unsupervised Task; a
+      # crash reaches Sentry via the LoggerHandler, but a sweep that is
+      # SKIPPED (leader election) or finds work and starts nothing was
+      # invisible — and conversations not resumed after a deploy are exactly
+      # what it exists to prevent. last_value: one observation per boot.
+      # `:telemetry.span/3` carries the sweep's `{result, extra}` map as stop
+      # METADATA, not measurements — hence the measurement functions.
+      last_value("fountain.rehydrate.stop.candidates",
+        event_name: [:fountain, :rehydrate, :stop],
+        measurement: fn _measurements, metadata -> metadata[:candidates] || 0 end,
+        description: "Resumable conversations the last rehydrator sweep found"
+      ),
+      last_value("fountain.rehydrate.stop.started",
+        event_name: [:fountain, :rehydrate, :stop],
+        measurement: fn _measurements, metadata -> metadata[:started] || 0 end,
+        description: "ConversationServers the last rehydrator sweep started"
+      ),
 
       # ── Cost signals (#405) ───────────────────────────────────────────────
       # Both events fired into nothing before this: the provision watchdog

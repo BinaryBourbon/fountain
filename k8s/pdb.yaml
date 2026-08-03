@@ -1,0 +1,16 @@
+# Keeps at least one replica serving through voluntary disruptions — node
+# drains, cluster upgrades. Without it a drain can evict both replicas at
+# once: the Deployment's maxUnavailable: 0 governs rollouts only, not
+# evictions.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: fountain
+  namespace: fountain
+  labels:
+    app: fountain
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: fountain

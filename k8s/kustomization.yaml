@@ -32,6 +32,9 @@ resources:
   - prometheusrule.yaml
   - ingressroute.yaml
   - certificate.yaml
+  # Two replicas: a node drain must not take both at once (maxUnavailable: 0
+  # governs rollouts, not evictions).
+  - pdb.yaml
 
 patches:
   # The production Deployment: clustering env, Infisical auto-reload, two

@@ -113,6 +113,11 @@ defmodule FountainWeb.MetricsTest do
         # Fountain.Telemetry.span/3 callers
         [:fountain, :fresh_provision, :stop],
         [:fountain, :reattach, :stop],
+        # Rehydrator.sweep/0 wraps its post-boot sweep in this span; the
+        # candidates/started numbers ride the stop event's METADATA (a
+        # 2-tuple span return), which is why the metrics use measurement
+        # functions.
+        [:fountain, :rehydrate, :stop],
         # :telemetry.execute call sites
         [:fountain, :sandbox, :reclaimed],
         [:fountain, :reaper, :run],

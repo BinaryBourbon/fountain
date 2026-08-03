@@ -204,6 +204,13 @@ defmodule Fountain.Conversations.ConversationServer do
       # GenServer is alive. Rotated on every fresh provision/reattach;
       # revoked in terminate/2.
       callback_token: nil,
+      # The id of the key THIS server minted. Revocation acts only on this
+      # id, never on whatever the conversation row currently points at:
+      # duplicate servers exist (Horde CRDT merges mass-terminate losers,
+      # registry lag starts seconds-apart doubles — #367), and a server
+      # that revokes the row's key can be revoking the credential the
+      # SURVIVING server's sprite is actively using.
+      callback_api_key_id: nil,
       # Sandbox lifetime bookkeeping. `started_at` is set once the sprite
       # exists; `last_activity_at` moves on every turn start and end. See
       # Fountain.Conversations.Lifecycle for what the bounds are and why
@@ -296,9 +303,36 @@ defmodule Fountain.Conversations.ConversationServer do
 
   @impl true
   def handle_continue(:provision, state) do
-    conv = Conversations._unsafe_get_conversation!(state.conversation_id)
-    sandbox = Conversations._unsafe_get_sandbox!(state.sandbox_id)
-    agent = if conv.agent_id, do: Agents._unsafe_get_agent!(conv.agent_id), else: nil
+    conv = Conversations._unsafe_get_conversation(state.conversation_id)
+    sandbox = state.sandbox_id && Conversations._unsafe_get_sandbox(state.sandbox_id)
+
+    if is_nil(conv) or is_nil(sandbox) do
+      # A conversation or sandbox deleted between start_child and this
+      # continue used to raise Ecto.NoResultsError — unrescued, in a
+      # restart: :transient child, so the supervisor restarted it straight
+      # back into the same raise. That burns the supervisor's SHARED
+      # restart budget, and exhausting it terminates every conversation on
+      # the node. A server whose rows are gone has nothing to provision.
+      Logger.warning(
+        "conv #{state.conversation_id}: row missing before provisioning " <>
+          "(conversation_gone=#{is_nil(conv)}, sandbox_gone=#{is_nil(sandbox)}); stopping"
+      )
+
+      {:stop, :normal, state}
+    else
+      provision_with_rows(state, conv, sandbox)
+    end
+  end
+
+  defp provision_with_rows(state, conv, sandbox) do
+    # Non-bang for the same reason as the rows above: a deleted agent must
+    # not crash-loop the server. Provisioning proceeds without it, exactly
+    # as for a conversation created with no agent.
+    agent = conv.agent_id && Agents._unsafe_get_agent(conv.agent_id)
+
+    if conv.agent_id && is_nil(agent) do
+      Logger.warning("conv #{conv.id}: agent #{conv.agent_id} is gone; provisioning without it")
+    end
 
     # Scoped by the conversation's owner even though create/update_agent
     # already validates ownership: a cross-tenant environment_id that
@@ -1211,23 +1245,29 @@ defmodule Fountain.Conversations.ConversationServer do
   # exits — clean termination (`:terminate_conv`), crash paths that hit
   # `{:stop, :normal, state}`, and (because init/1 traps exits, #322)
   # supervisor shutdown on deploys and Horde rebalances.
+  #
+  # Revokes only the key THIS server minted, and only while the
+  # conversation row still points at it. Reading the row's id at call time
+  # made a dying duplicate (Horde's CRDT merge mass-terminates losers)
+  # revoke the SURVIVING server's live credential — its sprite then 401'd
+  # on every callback and sub-agent spawn, surfaced nowhere. If the row has
+  # moved past our key, a successor owns the live credential and ours is
+  # already dead or inert.
+  #
   # If the BEAM crashes hard (SIGKILL — untrappable) the row in `api_keys`
-  # is left behind, but it is no longer dangerous: `callback_api_key_opts/0`
+  # is left behind, but it is not dangerous: `callback_api_key_opts/0`
   # sets an `expires_at`, so an un-revoked key stops authenticating on its
-  # own, and rotation-on-reattach revokes it if the conversation ever
-  # resumes. Note RetentionPruner only deletes rows whose `revoked_at` is
-  # set — an un-revoked orphan goes inert at expiry but its row stays until
-  # something revokes it. See SandboxReaper for the sprite half, which does
-  # not self-heal.
+  # own, and RetentionPruner deletes long-expired rows. See SandboxReaper
+  # for the sprite half, which does not self-heal.
   @impl true
   def terminate(_reason, state) do
     Fountain.Conversations.Redaction.delete(state.conversation_id)
 
-    if state.conversation_id do
+    if state.conversation_id && state.callback_api_key_id do
       case Conversations._unsafe_get_conversation(state.conversation_id) do
-        %Conversation{user_id: user_id, callback_api_key_id: id}
-        when is_binary(user_id) and is_binary(id) ->
-          _ = Accounts.revoke_api_key(user_id, id)
+        %Conversation{user_id: user_id, callback_api_key_id: row_id}
+        when is_binary(user_id) and row_id == state.callback_api_key_id ->
+          _ = Accounts.revoke_api_key(user_id, state.callback_api_key_id)
 
         _ ->
           :ok
@@ -1344,12 +1384,20 @@ defmodule Fountain.Conversations.ConversationServer do
   end
 
   # Issue a fresh per-conversation API key scoped to the conversation
-  # owner, revoking any prior one. The plaintext is only kept in
+  # owner, revoking the one THIS server previously minted (a re-provision
+  # or reattach within one server life). The plaintext is only kept in
   # `state.callback_token` — the durable record is a hash in `api_keys`,
   # which we can't reverse, so we rotate on every fresh provision /
   # reattach instead of trying to recover the old plaintext.
+  #
+  # Deliberately NOT revoking `conv.callback_api_key_id` when it isn't
+  # ours: with duplicate servers (registry lag, #367), the row's id can be
+  # the live credential of the other server's sprite — revoking it 401s
+  # every callback and sub-agent spawn there, surfaced nowhere. A
+  # predecessor's un-revoked key goes inert at its `expires_at` and its
+  # row is pruned by RetentionPruner.
   defp rotate_callback_api_key(state, %Conversation{} = conv) do
-    if id = conv.callback_api_key_id do
+    if id = state.callback_api_key_id do
       _ = Accounts.revoke_api_key(conv.user_id, id)
     end
 
@@ -1360,7 +1408,7 @@ defmodule Fountain.Conversations.ConversationServer do
          ) do
       {:ok, {%Accounts.ApiKey{id: key_id}, raw}} ->
         {:ok, conv} = Conversations.update_conversation(conv, %{callback_api_key_id: key_id})
-        {%{state | callback_token: raw}, conv}
+        {%{state | callback_token: raw, callback_api_key_id: key_id}, conv}
 
       {:error, cs} ->
         Logger.warning(

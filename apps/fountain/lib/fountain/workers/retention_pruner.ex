@@ -46,7 +46,9 @@ defmodule Fountain.Workers.RetentionPruner do
 
   @impl Oban.Worker
   def perform(_job) do
-    results = Enum.map(@defaults, fn {table, _} -> {table, prune(table)} end)
+    results =
+      Enum.map(@defaults, fn {table, _} -> {table, prune(table)} end) ++
+        [{:exports, Fountain.Exports.purge_expired()}]
 
     deleted = results |> Enum.map(&elem(&1, 1)) |> Enum.sum()
 
@@ -104,11 +106,21 @@ defmodule Fountain.Workers.RetentionPruner do
   end
 
   defp do_prune(:revoked_api_keys, cutoff) do
-    # Only revoked keys. An active key is never pruned no matter how old, since
-    # deleting one would silently break whoever is holding it.
+    # Revoked keys past the window, plus keys whose own expires_at is that
+    # far in the past. A key that is neither revoked nor expiring is never
+    # pruned no matter how old — deleting one would silently break whoever
+    # is holding it. The expires_at leg exists because every hard kill
+    # (SIGKILL on the pod, the provision watchdog) leaves an un-revoked
+    # sprite callback key behind: inert at expiry (auth enforces
+    # expires_at), but its row otherwise accumulated forever in the table
+    # every authenticated request looks up against.
     delete_where(
       "api_keys",
-      dynamic([r], not is_nil(r.revoked_at) and r.revoked_at < ^cutoff)
+      dynamic(
+        [r],
+        (not is_nil(r.revoked_at) and r.revoked_at < ^cutoff) or
+          (not is_nil(r.expires_at) and r.expires_at < ^cutoff)
+      )
     )
   end
 
