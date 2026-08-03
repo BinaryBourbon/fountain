@@ -57,6 +57,17 @@ upgrade, is in
   the event type was missing from the audit allowlist and failed validation
   silently
 
+### Changed
+
+- Self-host first-run papercuts (#336): the GitHub sign-in button only renders
+  when `GITHUB_OAUTH_CLIENT_ID` is configured (clicking it unconfigured
+  dead-ended on a GitHub error page); the compose `app` service now has a
+  healthcheck against `/health`; `TRUSTED_PROXIES` is documented in the
+  `deploy/k8s` baseline; and **`BILLING_ENABLED` now defaults to `false`** —
+  the subscription gate is opt-in. An instance that relies on the gate must
+  set `BILLING_ENABLED=true` explicitly (the repo's hosted manifest under
+  `k8s/` does)
+
 ### Removed
 
 - SSH repository clones (#228). Implemented and hardened but unreachable —

@@ -18,6 +18,18 @@ config :fountain, :checkpoint_creation_enabled, false
 # directly without triggering a real OAuth network round-trip.
 config :fountain, :ueberauth_test_mode, true
 
+# A fake client id so FountainWeb.OAuth.github_configured?/0 is true and the
+# "Continue with GitHub" button renders in tests (#336). Inert: the test mode
+# above means no real OAuth round-trip ever happens.
+config :ueberauth, Ueberauth.Strategy.Github.OAuth,
+  client_id: "test-github-client-id",
+  client_secret: "test-github-client-secret"
+
+# The runtime BILLING_ENABLED switch defaults to off (#336) but is not applied
+# in :test (see config/runtime.exs) — the suite pins the gate on here and
+# toggles it per-test via the application env.
+config :fountain, :billing_enabled, true
+
 # Key rate limit buckets by calling process PID instead of IP, so async
 # ExUnit tests don't share counters. Each test runs in its own process.
 config :fountain, :rate_limit_test_isolation, true

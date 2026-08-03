@@ -76,14 +76,14 @@ signup with no visible error. See [Email](self-hosting.md#email).
 
 | Variable | Default | Required | Effect |
 |---|---|---|---|
-| `GITHUB_OAUTH_CLIENT_ID` | — | — | Enables the GitHub sign-in button. Unset, email + password auth still works |
+| `GITHUB_OAUTH_CLIENT_ID` | — | — | Enables the GitHub sign-in button; unset, the button is hidden and email + password auth still works |
 | `GITHUB_OAUTH_CLIENT_SECRET` | — | — | |
 
 ## Billing
 
 | Variable | Default | Required | Effect |
 |---|---|---|---|
-| `BILLING_ENABLED` | `true` | — | The subscription gate. On a self-hosted instance it is a lock with no key — set `false` unless you run Fountain commercially with Stripe configured |
+| `BILLING_ENABLED` | `false` | — | The subscription gate. Off by default — on a self-hosted instance it is a lock with no key. Set `true` only if you run Fountain commercially with Stripe configured |
 | `STRIPE_SECRET_KEY` | — | for billing | Stripe API key |
 | `STRIPE_WEBHOOK_SECRET` | — | for billing | Verifies `POST /api/stripe/webhook` signatures |
 | `STRIPE_PRICE_ID` | — | for checkout | The subscription price surfaced by Checkout. Unset with billing enabled, signups get a purely local 14-day trial and a logged warning |

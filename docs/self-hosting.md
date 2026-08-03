@@ -185,8 +185,9 @@ re-provisioning wait, not lost work.
 
 ## Billing
 
-The compose file sets `BILLING_ENABLED=false`. The subscription gate exists for
-the hosted service; on your own instance it is a lock with no key. Leave it off
+Billing is off by default (`BILLING_ENABLED=false`; the compose file also pins
+it). The subscription gate exists for the hosted service; on your own instance
+it is a lock with no key. Leave it off
 unless you are running Fountain commercially and have configured Stripe — the
 [Stripe integration guide](integrations/stripe.md) covers that setup.
 

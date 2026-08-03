@@ -66,6 +66,12 @@ supported once a newer version's migrations have run — restore from a backup.
   restart the app tier); readiness checks the database and gates traffic; the
   startup probe allows 150s for boot-time migrations. Reasons are inline in
   `deployment.yaml`.
+- **Client IPs / rate limiting**: set `TRUSTED_PROXIES` in the ConfigMap to
+  your ingress-controller and pod CIDRs. The app's built-in default trusts the
+  k3s networks (`10.42.0.0/16`, `10.43.0.0/16`); on a cluster with different
+  CIDRs the `X-Forwarded-For` chain is never stepped over, every request
+  resolves to the ingress pod's IP, and per-IP rate limits collapse into one
+  shared bucket. See the commented entry in `configmap.yaml`.
 - **Metrics**: Prometheus format on port 9568 (`metrics`). Scrape in-cluster;
   never expose it. `prometheusrule.yaml` ships generic alerts (commented out
   of `kustomization.yaml`; needs the PrometheusRule CRD), and

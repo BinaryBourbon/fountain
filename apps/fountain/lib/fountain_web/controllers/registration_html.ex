@@ -54,13 +54,14 @@ defmodule FountainWeb.RegistrationHTML do
           </button>
         </form>
 
-        <div class="relative flex items-center">
+        <div :if={FountainWeb.OAuth.github_configured?()} class="relative flex items-center">
           <div class="flex-grow border-t border-zinc-200"></div>
           <span class="mx-3 text-xs text-zinc-400">or</span>
           <div class="flex-grow border-t border-zinc-200"></div>
         </div>
 
         <a
+          :if={FountainWeb.OAuth.github_configured?()}
           href={~p"/auth/oauth/github"}
           class="flex items-center justify-center gap-2 w-full rounded-md border border-zinc-300 bg-white py-2 text-sm font-medium hover:bg-zinc-50"
         >

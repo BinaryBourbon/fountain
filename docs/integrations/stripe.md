@@ -1,9 +1,9 @@
 # Stripe
 
-**Optional.** The subscription gate exists for the hosted service; the compose
-file ships `BILLING_ENABLED=false`, and that is the right setting for most
-self-hosted instances — a gate with no checkout behind it is a lock with no
-key. Set this up only if you run Fountain commercially.
+**Optional.** The subscription gate exists for the hosted service; billing is
+off by default (`BILLING_ENABLED=false`), and that is the right setting for
+most self-hosted instances — a gate with no checkout behind it is a lock with
+no key. Set this up only if you run Fountain commercially.
 
 ## Provider side
 
@@ -27,7 +27,7 @@ instance taking real money.
 
 | Variable | Effect |
 |---|---|
-| `BILLING_ENABLED` | `true` (the default) enforces the subscription gate on conversations |
+| `BILLING_ENABLED` | `false` by default; `true` enforces the subscription gate on conversations |
 | `STRIPE_SECRET_KEY` | API key |
 | `STRIPE_WEBHOOK_SECRET` | Verifies webhook signatures; a bad signature is rejected with a 400 |
 | `STRIPE_PRICE_ID` | The price surfaced by Checkout. Unset with billing enabled, signups get a purely local 14-day trial and a logged warning — and Checkout is broken |

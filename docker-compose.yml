@@ -57,8 +57,9 @@ services:
       # attempt to start a conversation then fails.
       SPRITES_TOKEN: ${SPRITES_TOKEN:-}
 
-      # Off by default here: the subscription gate is meaningful for the hosted
-      # service and is a lock with no key on a self-hosted instance.
+      # Off by default (the app's own default since #336, pinned here too):
+      # the subscription gate is meaningful for the hosted service and is a
+      # lock with no key on a self-hosted instance.
       BILLING_ENABLED: ${BILLING_ENABLED:-false}
 
       # No mail by default, so a first run needs nothing external. Verify your
@@ -81,6 +82,19 @@ services:
       # There is no OTLP collector in a default compose setup, and without this
       # the exporter retries per span and floods the logs.
       OTEL_TRACES_EXPORTER: "none"
+    healthcheck:
+      # Probes the documented /health endpoint, so `docker compose ps` flags a
+      # hung-but-running app instead of reporting it healthy forever. The
+      # runtime image (debian slim) ships neither curl nor wget, so this does
+      # the HTTP round-trip with bash's /dev/tcp — bash, printf and grep are
+      # all in the base image.
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/4000 && printf 'GET /health HTTP/1.1\\r\\nHost: 127.0.0.1\\r\\nConnection: close\\r\\n\\r\\n' >&3 && head -n1 <&3 | grep -q ' 200 '"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      # Boot runs migrations before the endpoint listens; don't count failures
+      # against the container while that is still happening.
+      start_period: 40s
     restart: unless-stopped
 
   # Nightly pg_dump into the backup_data volume, pruned after
