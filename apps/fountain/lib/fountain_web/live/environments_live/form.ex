@@ -11,19 +11,22 @@ defmodule FountainWeb.EnvironmentsLive.Form do
   def mount(params, _session, socket) do
     user_id = socket.assigns.current_user.id
     {env, action} = load(params, user_id)
-    {:ok, dek} = Crypto.load_tenant_key(user_id)
 
+    # No DEK in assigns (#391): LiveView crash reports dump the channel
+    # state — assigns included — to the logger and Sentry, and the tenant
+    # DEK decrypts every secret the tenant owns. add_secret loads it per
+    # write instead. Same reason the secret form below is uncontrolled:
+    # the in-flight plaintext must not live in assigns either.
     {:ok,
      socket
      |> assign(:page_title, page_title(action))
      |> assign(:user_id, user_id)
-     |> assign(:tenant_key, dek)
      |> assign(:action, action)
      |> assign(:env, env)
      |> assign(:form, env_to_form(env))
      |> assign(:errors, %{})
      |> assign(:secrets, secrets_for(env))
-     |> assign(:new_secret, %{"key" => "", "value" => ""})
+     |> assign(:secret_form_version, 0)
      |> assign(:repositories, env.repositories || [])
      |> assign(:env_vars, env_to_env_var_list(env.env_vars || %{}))
      |> assign(:packages, env_to_packages_strings(env.packages || %{}))
@@ -157,31 +160,27 @@ defmodule FountainWeb.EnvironmentsLive.Form do
     end
   end
 
-  def handle_event("validate_secret", %{"secret" => params}, socket) do
-    {:noreply, assign(socket, :new_secret, params)}
-  end
-
   def handle_event("add_secret", %{"secret" => %{"key" => k, "value" => v}}, socket)
       when k != "" and v != "" do
-    case Environments.upsert_secret(
-           socket.assigns.env,
-           %{"key" => k, "value" => v},
-           socket.assigns.tenant_key
-         ) do
-      {:ok, _} ->
-        FountainWeb.Audited.from_socket(socket, "environment.secret.write", "secret",
-          resource_id: socket.assigns.env.id,
-          metadata: %{"key" => k}
-        )
+    with {:ok, dek} <- Crypto.load_tenant_key(socket.assigns.user_id),
+         {:ok, _} <-
+           Environments.upsert_secret(socket.assigns.env, %{"key" => k, "value" => v}, dek) do
+      FountainWeb.Audited.from_socket(socket, "environment.secret.write", "secret",
+        resource_id: socket.assigns.env.id,
+        metadata: %{"key" => k}
+      )
 
-        {:noreply,
-         socket
-         |> assign(:secrets, secrets_for(socket.assigns.env))
-         |> assign(:new_secret, %{"key" => "", "value" => ""})
-         |> put_flash(:info, "Secret saved")}
-
-      {:error, cs} ->
+      {:noreply,
+       socket
+       |> assign(:secrets, secrets_for(socket.assigns.env))
+       |> update(:secret_form_version, &(&1 + 1))
+       |> put_flash(:info, "Secret saved")}
+    else
+      {:error, %Ecto.Changeset{} = cs} ->
         {:noreply, put_flash(socket, :error, secret_error(cs))}
+
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, "Could not load encryption key: #{inspect(reason)}")}
     end
   end
 
@@ -563,11 +562,19 @@ defmodule FountainWeb.EnvironmentsLive.Form do
           </tbody>
         </table>
 
-        <form phx-change="validate_secret" phx-submit="add_secret" class="flex flex-col sm:flex-row gap-2">
-          <input type="text" name="secret[key]" value={@new_secret["key"]} placeholder="KEY"
+        <%!-- Uncontrolled on purpose (#391): no phx-change, no value bindings,
+              so the plaintext never round-trips per keystroke or sits in
+              assigns. The versioned id replaces the DOM node after a
+              successful save, which is what clears the fields. --%>
+        <form
+          id={"env-secret-form-#{@secret_form_version}"}
+          phx-submit="add_secret"
+          class="flex flex-col sm:flex-row gap-2"
+        >
+          <input type="text" name="secret[key]" placeholder="KEY"
             pattern="[A-Z][A-Z0-9_]*"
             class="flex-1 rounded border border-zinc-300 px-3 py-2 text-sm font-mono"/>
-          <input type="password" name="secret[value]" value={@new_secret["value"]} placeholder="value"
+          <input type="password" name="secret[value]" placeholder="value"
             class="flex-[2] rounded border border-zinc-300 px-3 py-2 text-sm font-mono"/>
           <.btn type="submit">Add secret</.btn>
         </form>
