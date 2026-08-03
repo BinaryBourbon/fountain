@@ -2,6 +2,10 @@ defmodule Fountain.Accounts.Deletion do
   @moduledoc """
   Closing an account and removing the tenant's data.
 
+  The decisions here — ordering, crypto-shred scope and its backup boundary,
+  Stripe customer retention, no soft-delete — are recorded in ADR 0009
+  (`decisions/0009-account-deletion-and-export.md`). Change them there first.
+
   There was no deletion path at all — no self-serve, no admin, no context
   function — so a departing user's only options were to stop using the service
   while continuing to be billed, or to ask an operator to edit the database.
