@@ -536,20 +536,66 @@ defmodule Fountain.Billing do
            User.t() | :ignored | :duplicate | :stale | :comped_ignored | :other_subscription}
           | {:error, term()}
   def handle_event(%Stripe.Event{id: id, type: type} = event) when is_binary(id) do
-    Repo.transaction(fn ->
-      if claim_event(id, type) == :claimed do
-        case sync_subscription(event) do
-          {:ok, result} -> result
-          {:error, reason} -> Repo.rollback(reason)
+    # Stripe side effects run BEFORE the claim transaction opens (#393):
+    # holding a DB transaction — and, since #393, a row lock on the user —
+    # across a third-party HTTP call is what made the sync race window wide
+    # enough to hit, and it pins a pool connection for the duration.
+    # Cancellation is idempotent (already-cancelled subscriptions are
+    # filtered out on the retry), so a failure here leaves the event
+    # unclaimed for Stripe redelivery, exactly as the rollback used to.
+    with :ok <- prepare_event(event) do
+      Repo.transaction(fn ->
+        if claim_event(id, type) == :claimed do
+          case sync_subscription(event) do
+            {:ok, result} -> result
+            {:error, reason} -> Repo.rollback(reason)
+          end
+        else
+          :duplicate
         end
-      else
-        :duplicate
-      end
-    end)
+      end)
+    end
   end
 
   # No id (hand-built events in tests) — nothing to dedupe against.
-  def handle_event(%Stripe.Event{} = event), do: sync_subscription(event)
+  def handle_event(%Stripe.Event{} = event) do
+    with :ok <- prepare_event(event), do: sync_subscription(event)
+  end
+
+  # checkout.session.completed is the one event whose apply has a Stripe side
+  # effect: cancelling every other live subscription on the customer. The
+  # short-circuits mirror adopt_subscription/3's — no user (sync will report
+  # :user_not_found), comped, or the subscription already adopted (a
+  # redelivery) mean no cancellations either.
+  defp prepare_event(%Stripe.Event{type: "checkout.session.completed", data: %{object: session}}) do
+    customer_id = extract_stripe_id(Map.get(session, :customer))
+    subscription_id = extract_stripe_id(Map.get(session, :subscription))
+    user_id = Map.get(session, :client_reference_id)
+
+    user =
+      get_user_by_stripe_customer_id(customer_id) ||
+        (is_binary(user_id) && Repo.get(User, user_id)) || nil
+
+    cond do
+      is_nil(customer_id) or is_nil(subscription_id) ->
+        :ok
+
+      is_nil(user) ->
+        :ok
+
+      user.subscription_status == "comped" ->
+        :ok
+
+      user.stripe_subscription_id == subscription_id ->
+        :ok
+
+      true ->
+        with {:ok, _cancelled} <- cancel_other_subscriptions(customer_id, subscription_id),
+             do: :ok
+    end
+  end
+
+  defp prepare_event(_event), do: :ok
 
   # Atomic claim: the unique primary key is what makes concurrent deliveries of
   # the same event resolve to exactly one winner.
@@ -580,30 +626,36 @@ defmodule Fountain.Billing do
   returns `{:ok, :other_subscription}` without touching the account. The
   subscription of record is set at trial creation
   (`start_trial_subscription/1`) and replaced when a Checkout completes
-  (`checkout.session.completed` adopts the new subscription and cancels every
-  other live one on the customer).
+  (`checkout.session.completed` adopts the new subscription; `handle_event/1`
+  cancels every other live one on the customer before the claim transaction
+  opens, so no Stripe call runs inside it).
+
+  Reads the user row `FOR UPDATE` so the ownership and ordering guards are
+  evaluated against the same snapshot the write commits against (#393).
 
   All other event types return `{:ok, :ignored}` without touching the DB.
   """
   @spec sync_subscription(Stripe.Event.t()) ::
           {:ok, User.t() | :ignored | :stale | :comped_ignored | :other_subscription}
           | {:error, term()}
-  def sync_subscription(%Stripe.Event{
-        type: "checkout.session.completed",
-        data: %{object: session}
-      }) do
+  def sync_subscription(
+        %Stripe.Event{
+          type: "checkout.session.completed",
+          data: %{object: session}
+        } = event
+      ) do
     customer_id = extract_stripe_id(Map.get(session, :customer))
     subscription_id = extract_stripe_id(Map.get(session, :subscription))
     user_id = Map.get(session, :client_reference_id)
 
     user =
-      get_user_by_stripe_customer_id(customer_id) ||
-        (is_binary(user_id) && Repo.get(User, user_id)) || nil
+      get_user_by_stripe_customer_id(customer_id, :for_update) ||
+        get_user_for_update(user_id)
 
     cond do
       is_nil(customer_id) -> {:ok, :ignored}
       is_nil(user) -> {:error, :user_not_found}
-      true -> complete_checkout(user, customer_id, subscription_id)
+      true -> complete_checkout(user, customer_id, subscription_id, event_created_at(event))
     end
   end
 
@@ -669,7 +721,7 @@ defmodule Fountain.Billing do
 
     event_created = event_created_at(event)
 
-    case get_user_by_stripe_customer_id(customer_id) do
+    case get_user_by_stripe_customer_id(customer_id, :for_update) do
       nil ->
         {:error, :user_not_found}
 
@@ -763,7 +815,7 @@ defmodule Fountain.Billing do
 
   # A session with no subscription (payment mode, or an old-style session) only
   # backfills the customer link, exactly as before.
-  defp complete_checkout(%User{} = user, customer_id, nil) do
+  defp complete_checkout(%User{} = user, customer_id, nil, _event_created) do
     if user.stripe_customer_id == customer_id do
       {:ok, :ignored}
     else
@@ -771,7 +823,7 @@ defmodule Fountain.Billing do
     end
   end
 
-  defp complete_checkout(%User{} = user, customer_id, subscription_id) do
+  defp complete_checkout(%User{} = user, customer_id, subscription_id, event_created) do
     linked =
       if user.stripe_customer_id == customer_id do
         {:ok, user}
@@ -779,7 +831,7 @@ defmodule Fountain.Billing do
         attach_stripe_customer(user, customer_id)
       end
 
-    with {:ok, user} <- linked, do: adopt_subscription(user, subscription_id)
+    with {:ok, user} <- linked, do: adopt_subscription(user, subscription_id, event_created)
   end
 
   # Checkout in subscription mode always creates a *new* subscription, so a
@@ -787,32 +839,40 @@ defmodule Fountain.Billing do
   # Left alone, that subscription either dies at trial end — and its deletion
   # webhook locks out a now-paying customer — or converts and double-bills
   # them. Adopt the checkout's subscription as the account's subscription of
-  # record and cancel every other live one.
+  # record; the other live subscriptions were cancelled by prepare_event/1
+  # before the claim transaction opened (a failed cancellation never reaches
+  # this point — the webhook answers 500 and Stripe redelivers an unclaimed
+  # event).
   #
   # The status write is the optimistic copy the new subscription's own webhook
   # will confirm — necessary because that webhook may have already arrived and
   # been ignored for carrying an unrecorded subscription id.
   #
-  # A failed Stripe call surfaces as an error so the webhook answers 500 and
-  # Stripe redelivers; handle_event/1 rolls the claim (and the writes here)
-  # back, and already-cancelled subscriptions are skipped on the retry.
-  defp adopt_subscription(%User{subscription_status: "comped"} = user, _subscription_id),
+  # The watermark stamp (#393) makes the adoption participate in the stale?/2
+  # ordering guard: without it, any older event for the adopted subscription
+  # that straggled in afterwards was treated as fresh and could move the
+  # account backwards. Never moves the watermark backwards itself.
+  defp adopt_subscription(%User{subscription_status: "comped"} = user, _sub_id, _event_created),
     do: {:ok, user}
 
-  defp adopt_subscription(%User{stripe_subscription_id: sub_id} = user, sub_id), do: {:ok, user}
+  defp adopt_subscription(%User{stripe_subscription_id: sub_id} = user, sub_id, _event_created),
+    do: {:ok, user}
 
-  defp adopt_subscription(%User{} = user, subscription_id) do
-    with {:ok, _cancelled} <- cancel_other_subscriptions(user, subscription_id) do
-      user
-      |> User.billing_changeset(%{
-        stripe_subscription_id: subscription_id,
-        subscription_status: "active"
-      })
-      |> Repo.update()
-    end
+  defp adopt_subscription(%User{} = user, subscription_id, event_created) do
+    user
+    |> User.billing_changeset(%{
+      stripe_subscription_id: subscription_id,
+      subscription_status: "active",
+      subscription_synced_at: latest(event_created, user.subscription_synced_at)
+    })
+    |> Repo.update()
   end
 
-  defp cancel_other_subscriptions(%User{stripe_customer_id: customer_id}, keep_sub_id) do
+  defp latest(nil, b), do: b
+  defp latest(a, nil), do: a
+  defp latest(a, b), do: if(DateTime.compare(a, b) == :lt, do: b, else: a)
+
+  defp cancel_other_subscriptions(customer_id, keep_sub_id) when is_binary(customer_id) do
     case Stripe.Subscription.list(%{customer: customer_id, status: :all, limit: 100}) do
       {:ok, %{data: subs} = list} ->
         if Map.get(list, :has_more, false) do
@@ -1085,6 +1145,27 @@ defmodule Fountain.Billing do
   defp get_user_by_stripe_customer_id(customer_id) when is_binary(customer_id) do
     Repo.get_by(User, stripe_customer_id: customer_id)
   end
+
+  # FOR UPDATE (#393): the webhook sync paths evaluate their ownership
+  # (other_subscription?/2) and ordering (stale?/2) guards on this read and
+  # write afterwards. Unlocked, a concurrent sync for the same user — e.g.
+  # the customer.subscription.deleted that a mid-upgrade cancellation
+  # triggers — could pass the guards against a snapshot another transaction
+  # was about to make stale, and the #309 lockout came back as a race. The
+  # lock makes a concurrent sync wait here and re-evaluate against the
+  # committed row. Outside a transaction (bare sync_subscription/1 calls in
+  # tests) the lock is released at statement end and changes nothing.
+  defp get_user_by_stripe_customer_id(nil, _lock_mode), do: nil
+
+  defp get_user_by_stripe_customer_id(customer_id, :for_update) when is_binary(customer_id) do
+    Repo.one(from(u in User, where: u.stripe_customer_id == ^customer_id, lock: "FOR UPDATE"))
+  end
+
+  defp get_user_for_update(user_id) when is_binary(user_id) do
+    Repo.one(from(u in User, where: u.id == ^user_id, lock: "FOR UPDATE"))
+  end
+
+  defp get_user_for_update(_), do: nil
 
   # Stripe returns related objects (customer, subscription) as either a plain
   # string id or an expanded object, depending on the event and API version.
