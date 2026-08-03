@@ -105,7 +105,8 @@ defmodule FountainWeb.AuditCoverageTest do
 
     test "a password reset is recorded" do
       user = insert_verified_user()
-      token = Phoenix.Token.sign(FountainWeb.Endpoint, "password_reset", user.id)
+      token =
+        Phoenix.Token.sign(FountainWeb.Endpoint, "password_reset", {user.id, user.session_version})
 
       build_conn()
       |> post(~p"/auth/reset", %{"token" => token, "password" => "new-password-123"})
