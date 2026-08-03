@@ -137,7 +137,7 @@ If no specific record exists, you're done.
 curl -sSf https://fountain.inevitable.fyi/health   # expect 200
 
 # Login flow validates GitHub OAuth callback (still pointing at
-# fountain.inevitable.fyi/auth/github/callback — unchanged from Render)
+# fountain.inevitable.fyi/auth/oauth/github/callback — unchanged from Render)
 open https://fountain.inevitable.fyi/auth/login
 
 # Once logged in, open an agent and run a turn — exercises the
@@ -149,7 +149,7 @@ open https://fountain.inevitable.fyi/auth/login
 ### 9. Verify Stripe webhooks
 
 The Stripe webhook URL doesn't change (still
-`https://fountain.inevitable.fyi/billing/webhook`), so webhooks delivered
+`https://fountain.inevitable.fyi/api/stripe/webhook`), so webhooks delivered
 during the cutover window will retry into the new env automatically.
 Check the Stripe dashboard → Webhooks → recent deliveries for any 5xx
 during the window.

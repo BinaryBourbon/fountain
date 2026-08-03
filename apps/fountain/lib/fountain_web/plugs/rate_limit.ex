@@ -1,8 +1,9 @@
 defmodule FountainWeb.Plugs.RateLimit do
   @moduledoc """
-  Lightweight ETS-based fixed-window rate limiter. Single-tenant, so the
-  intent isn't anti-abuse multitenancy — it's anti-runaway: stop a buggy
-  client from spamming sprite spawns or saturating the BEAM.
+  Lightweight ETS-based fixed-window rate limiter. Fountain is multi-tenant;
+  per-IP limiting is a coarse abuse control, not a per-tenant quota — the
+  goal is to stop a buggy or hostile client from spamming sprite spawns or
+  saturating the BEAM, not to meter individual tenants.
 
   Buckets are per-IP. The ETS table is created in `Fountain.Application`
   startup. Returns 429 + `Retry-After` (seconds) when the bucket is full.
@@ -28,6 +29,8 @@ defmodule FountainWeb.Plugs.RateLimit do
 
   import Plug.Conn
 
+  # Table name inherited from an earlier project; renaming it is a behavior
+  # change (persistent named table), so it stays.
   @table :aod_rate_limit
 
   def table, do: @table

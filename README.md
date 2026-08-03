@@ -122,7 +122,7 @@ After that, telling Claude “spin up a researcher agent on Fountain and have it
 
 ## Bootstrap a workstation
 
-See [`SETUP.md`](SETUP.md) for the full local bootstrap (mise + Postgres + deps). The toolchain version is pinned in `.tool-versions` and mirrored in `render.yaml`, so a fresh laptop or ephemeral VM gets the same Erlang/Elixir as production.
+See [`SETUP.md`](SETUP.md) for the full local bootstrap (mise + Postgres + deps). The local toolchain is pinned in `.tool-versions` (via mise), so a fresh laptop or ephemeral VM gets the same Erlang/Elixir as everyone else. Production runs a release image built from the repo-root `Dockerfile` and deployed to home-cloud Kubernetes via Flux (manifests in `k8s/`); the Dockerfile's `hexpm/elixir` base image pins the production toolchain, so a toolchain bump must update both `.tool-versions` and the Dockerfile — see the parity reference in `SETUP.md`.
 
 ## Contributing
 

@@ -36,7 +36,7 @@ cd fountain
 mise install
 ```
 
-This reads `.tool-versions` and installs the pinned Erlang/OTP and Elixir versions (~5 min on first run, cached after). The same `.tool-versions` is what Render uses in production, so dev and prod stay in lockstep.
+This reads `.tool-versions` and installs the pinned Erlang/OTP and Elixir versions (~5 min on first run, cached after). `.tool-versions` pins the *local* toolchain only; production runs the release image built from the repo-root `Dockerfile`, whose base image pins its own Erlang/Elixir (see [Production parity reference](#production-parity-reference)).
 
 Verify:
 
@@ -103,16 +103,17 @@ mix test         # full suite
 
 ## Production parity reference
 
-`render.yaml` and `.tool-versions` are kept aligned. If you bump the toolchain, change both:
+Production is home-cloud Kubernetes, deployed via Flux: the image is built from the repo-root `Dockerfile` and the manifests live in `k8s/`. The Erlang/Elixir toolchain is pinned in three places, and a toolchain bump must update all of them:
 
-| Where           | Erlang/OTP | Elixir        |
-| --------------- | ---------- | ------------- |
-| `.tool-versions`| `28.3`     | `1.19.2-otp-28` |
-| `render.yaml`   | `28.3`     | `1.19.2`      |
+| Where                      | What pins the toolchain                                              |
+| -------------------------- | -------------------------------------------------------------------- |
+| `.tool-versions`           | `erlang` / `elixir` lines (local dev via mise)                       |
+| `Dockerfile`               | the `FROM hexpm/elixir:<elixir>-erlang-<otp>-...` build-stage base image |
+| `.github/workflows/ci.yml` | `elixir-version` / `otp-version` in the `erlef/setup-beam` step      |
 
 ## Troubleshooting
 
 - **`role "postgres" does not exist`** — see step 4. Either `docker compose up -d postgres` or create the native role.
 - **Compile warnings about `OpentelemetryPhoenix` / `OpentelemetryEcto`** — these deps are `:prod`-only; `apply/3` is used to defer symbol resolution. If you see warnings, you're probably on stale `_build`; `rm -rf _build deps && mix deps.get && mix compile` to reset.
 - **mise installs Erlang from source and it's slow** — that's normal on first run. Subsequent installs (and ephemeral machines that share a mise cache) reuse the build.
-- **Tests fail with `rate_limited` errors** — `FountainWeb.Plugs.RateLimit` shares an ETS table across the suite; run `mix test --seed 0` or isolate the failing file.
+- **Tests fail with `rate_limited` errors** — shouldn't happen: `config/test.exs` sets `rate_limit_test_isolation: true`, which keys `FountainWeb.Plugs.RateLimit` buckets by the calling test process instead of a shared IP. If you see this, check that the flag is still set in `config/test.exs` (it's a correctness guard — don't remove it) and that your test isn't issuing enough requests from one process to legitimately exceed a bucket's limit.
