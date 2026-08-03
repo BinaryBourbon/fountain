@@ -30,6 +30,11 @@ config :ueberauth, Ueberauth.Strategy.Github.OAuth,
 # toggles it per-test via the application env.
 config :fountain, :billing_enabled, true
 
+# A known webhook secret so StripeWebhookController's fail-closed secret
+# resolution (#390) succeeds; signature-path tests sign payloads with the
+# value they read back from this key, exercising the real construct_event.
+config :stripity_stripe, webhook_secret: "whsec_test_signing_secret"
+
 # Key rate limit buckets by calling process PID instead of IP, so async
 # ExUnit tests don't share counters. Each test runs in its own process.
 config :fountain, :rate_limit_test_isolation, true

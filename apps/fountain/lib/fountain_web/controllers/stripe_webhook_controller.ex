@@ -10,6 +10,11 @@ defmodule FountainWeb.StripeWebhookController do
   returned only on signature verification failure; Stripe uses this to detect
   misconfigured webhook secrets.
 
+  When no webhook secret is configured (nil or empty), every request is
+  rejected with 400 instead of being verified against an empty HMAC key (#390).
+  Signature verification is this route's only authentication, so a missing
+  secret must fail closed.
+
   The raw request body is read from `conn.assigns[:raw_body]`, which is populated
   by `FountainWeb.CachingBodyReader` before `Plug.Parsers` consumes it.
   """
@@ -21,9 +26,26 @@ defmodule FountainWeb.StripeWebhookController do
   require Logger
 
   def create(conn, _params) do
+    case webhook_secret() do
+      {:ok, secret} ->
+        verify_and_process(conn, secret)
+
+      :error ->
+        # Fail closed. `Stripe.Webhook.construct_event/3` computes a plain
+        # HMAC with whatever secret it is given — an empty string verifies
+        # "successfully" against a signature anyone can forge, turning this
+        # unauthenticated route into write access to subscription state.
+        Logger.error(
+          "[stripe_webhook] Rejecting webhook: STRIPE_WEBHOOK_SECRET is not configured"
+        )
+
+        send_resp(conn, 400, "Webhook secret not configured")
+    end
+  end
+
+  defp verify_and_process(conn, secret) do
     raw_body = conn.assigns[:raw_body] || ""
     sig_header = conn |> get_req_header("stripe-signature") |> List.first()
-    secret = webhook_secret()
 
     case Stripe.Webhook.construct_event(raw_body, sig_header, secret) do
       {:ok, event} ->
@@ -73,8 +95,14 @@ defmodule FountainWeb.StripeWebhookController do
       :retry
   end
 
+  # Single source of truth: config/runtime.exs writes STRIPE_WEBHOOK_SECRET
+  # to `:stripity_stripe, :webhook_secret`. (A previous version read
+  # `:fountain, :stripe_webhook_secret` — a key nothing sets — and fell back
+  # to `System.get_env(..., "")`, so an unset var meant verifying against "".)
   defp webhook_secret do
-    Application.get_env(:fountain, :stripe_webhook_secret) ||
-      System.get_env("STRIPE_WEBHOOK_SECRET", "")
+    case Application.get_env(:stripity_stripe, :webhook_secret) do
+      secret when is_binary(secret) and secret != "" -> {:ok, secret}
+      _ -> :error
+    end
   end
 end
