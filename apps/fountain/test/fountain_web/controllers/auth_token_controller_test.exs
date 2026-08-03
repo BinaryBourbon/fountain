@@ -14,6 +14,24 @@ defmodule FountainWeb.AuthTokenControllerTest do
       assert String.starts_with?(prefix, "ftn_")
     end
 
+    test "returns 403 with a machine-readable reason for an unverified account", %{conn: conn} do
+      # The chain this closes (#314): register → token → create agent →
+      # provision sprites, without ever touching an inbox. Verification was
+      # enforced in the browser hooks only; the API surface that mints
+      # full-scope keys must apply the same gate.
+      user =
+        insert_user(%{
+          "email" => "unverified#{System.unique_integer()}@example.com",
+          "password" => "password123"
+        })
+
+      refute user.email_verified_at
+
+      conn = post_json(conn, "/api/auth/token", %{email: user.email, password: "password123"})
+
+      assert %{"reason" => "email_unverified"} = json_response(conn, 403)
+    end
+
     test "returns 401 on wrong password", %{conn: conn} do
       user = insert_verified_user(%{"email" => "login#{System.unique_integer()}@example.com", "password" => "password123"})
 
