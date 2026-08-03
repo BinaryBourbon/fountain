@@ -315,3 +315,64 @@ spec:
               that fail to start. Most likely causes: the platform
               SPRITES_TOKEN is invalid or rate-limited, the Sprites API is
               unhealthy, or tenants are hitting the concurrency cap.
+
+    # ── Oban background jobs (#321) ───────────────────────────────────────
+    #
+    # Oban catches job exceptions internally and reports them only via
+    # telemetry — no process crashes, so neither Sentry's LoggerHandler nor
+    # any crash report sees a failing nightly RetentionPruner or hourly
+    # SandboxReaper. These watch the metrics the app exports from Oban's
+    # own events (fountain_oban_job_*) and the polled queue-depth gauge.
+    - name: fountain-oban
+      interval: 60s
+      rules:
+        - alert: FountainObanJobsRaising
+          # Every raising execution counts, including retries — the early
+          # signal, while Oban is still retrying and the job might yet
+          # succeed. Worker is in the labels so the page says which job.
+          expr: |
+            sum by (queue, worker) (increase(fountain_oban_job_exception_count{namespace="fountain"}[1h])) > 0
+          labels:
+            severity: warning
+          annotations:
+            summary: "Oban jobs are raising in {{ $labels.queue }} ({{ $labels.worker }})"
+            description: |
+              {{ $value }} raising execution(s) in the last hour. Oban retries
+              with backoff, so this may self-heal — but a persistently raising
+              maintenance job means reaping/pruning/metering is not happening.
+              Detail is in Sentry only if the worker reports it explicitly;
+              check the job row's errors array:
+              kubectl exec -n fountain fountain-pg-1 -c postgres -- \
+                psql -U postgres fountain -c "select id, worker, state, attempt, errors[array_upper(errors,1)] from oban_jobs where queue='{{ $labels.queue }}' order by id desc limit 5"
+        - alert: FountainObanJobsDiscarded
+          # A discarded job exhausted every retry and failed permanently.
+          # delta on the gauge rather than a static > 0: discarded rows sit
+          # for 7 days until Oban's Pruner removes them, and an alert that
+          # stays red for a week after one bad job trains people to ignore it.
+          expr: |
+            delta(fountain_oban_queue_depth{namespace="fountain", state="discarded"}[2h]) > 0
+          labels:
+            severity: critical
+          annotations:
+            summary: "An Oban job in {{ $labels.queue }} was discarded (all retries exhausted)"
+            description: |
+              The scheduled work this job represents did not happen — for the
+              maintenance queue that means reaping, retention or metering
+              silently stopped. Inspect and re-run:
+              kubectl exec -n fountain fountain-pg-1 -c postgres -- \
+                psql -U postgres fountain -c "select id, worker, errors[array_upper(errors,1)] from oban_jobs where state='discarded' order by id desc limit 5"
+        - alert: FountainObanQueueBacklog
+          # available = runnable now but not picked up. A sustained backlog
+          # means concurrency is saturated or a worker is wedged.
+          expr: |
+            fountain_oban_queue_depth{namespace="fountain", state="available"} > 25
+          for: 30m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Oban queue {{ $labels.queue }} has a sustained backlog"
+            description: |
+              {{ $value }} jobs runnable-but-waiting for 30m. Check whether
+              the queue's workers are wedged (executing depth pinned at its
+              concurrency limit) or something is enqueueing faster than the
+              queue drains.

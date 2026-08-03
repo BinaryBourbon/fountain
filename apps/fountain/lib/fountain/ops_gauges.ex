@@ -1,0 +1,88 @@
+defmodule Fountain.OpsGauges do
+  @moduledoc """
+  Periodic conversation / sandbox / Oban gauges (#321).
+
+  Runs from the telemetry poller every 10s. Emits one datapoint per known
+  status — including zeros — so every series exists from boot: an alert on
+  `depth > N` needs the series to come back down to 0 on recovery rather
+  than disappear, and a dashboard panel that only materializes during an
+  incident is a panel nobody trusts.
+
+  Oban states are the non-terminal ones plus `discarded`: `completed` and
+  `cancelled` rows are unbounded history (Oban's Pruner owns them) and their
+  count is not a queue-health signal. `discarded` is — a job that exhausted
+  its retries failed permanently, and before this existed a nightly
+  RetentionPruner or hourly SandboxReaper failure was invisible: Oban
+  catches job exceptions internally, so nothing crashed and nothing paged.
+  """
+
+  import Ecto.Query
+
+  require Logger
+
+  alias Fountain.Repo
+
+  @oban_states ~w(available scheduled executing retryable discarded)
+
+  def emit_telemetry do
+    emit_status_counts(
+      [:fountain, :conversations],
+      Fountain.Conversations.Conversation,
+      Fountain.Conversations.Conversation.statuses()
+    )
+
+    emit_status_counts(
+      [:fountain, :sandboxes],
+      Fountain.Conversations.Sandbox,
+      Fountain.Conversations.Sandbox.statuses()
+    )
+
+    emit_oban_depths()
+    :ok
+  rescue
+    # A raise here must not escape: telemetry_poller permanently drops a
+    # measurement whose tick raises (#365), so one boot-race or DB blip
+    # would silently kill these gauges for the node's lifetime. Skip the
+    # datapoint; the next tick retries.
+    error ->
+      Logger.warning("ops gauges tick skipped: #{Exception.message(error)}")
+      :ok
+  end
+
+  defp emit_status_counts(event, schema, statuses) do
+    counts =
+      Repo.all(from(r in schema, group_by: r.status, select: {r.status, count(r.id)}))
+      |> Map.new()
+
+    for status <- statuses do
+      :telemetry.execute(event, %{count: Map.get(counts, status, 0)}, %{status: status})
+    end
+  end
+
+  defp emit_oban_depths do
+    counts =
+      Repo.all(
+        from(j in Oban.Job,
+          where: j.state in @oban_states,
+          group_by: [j.queue, j.state],
+          select: {{j.queue, j.state}, count(j.id)}
+        )
+      )
+      |> Map.new()
+
+    for queue <- known_queues(), state <- @oban_states do
+      :telemetry.execute(
+        [:fountain, :oban_queue],
+        %{depth: Map.get(counts, {queue, state}, 0)},
+        %{queue: queue, state: state}
+      )
+    end
+  end
+
+  defp known_queues do
+    :fountain
+    |> Application.fetch_env!(Oban)
+    |> Keyword.get(:queues, [])
+    |> Enum.map(fn {queue, _conc} -> to_string(queue) end)
+  end
+end
