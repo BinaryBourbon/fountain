@@ -49,6 +49,14 @@ defmodule FountainWeb.FallbackController do
     |> json(%{error: "subscription_required", upgrade_url: "/account/billing"})
   end
 
+  # Operator suspension (#287). 403 rather than 402: there is nothing the
+  # caller can buy their way out of.
+  def call(conn, {:error, :account_suspended}) do
+    conn
+    |> put_status(:forbidden)
+    |> json(%{error: "account_suspended"})
+  end
+
   # Per-tenant sandbox concurrency cap (ADR 0005). 429 rather than 402: this is
   # a rate/concurrency condition the caller can clear by terminating a
   # conversation, not a billing state they have to resolve by paying.

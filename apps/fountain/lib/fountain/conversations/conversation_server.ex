@@ -743,8 +743,15 @@ defmodule Fountain.Conversations.ConversationServer do
       {:reply, {:error, :busy}, state}
     else
       conv = Conversations._unsafe_get_conversation!(state.conversation_id)
-      agent = if conv.agent_id, do: Agents._unsafe_get_agent!(conv.agent_id)
-      {:reply, :ok, kick_turn(state, prompt, agent, images)}
+
+      case turn_gate(conv.user_id) do
+        :ok ->
+          agent = if conv.agent_id, do: Agents._unsafe_get_agent!(conv.agent_id)
+          {:reply, :ok, kick_turn(state, prompt, agent, images)}
+
+        {:error, _} = err ->
+          {:reply, err, state}
+      end
     end
   end
 
@@ -819,8 +826,21 @@ defmodule Fountain.Conversations.ConversationServer do
       {:noreply, state}
     else
       conv = Conversations._unsafe_get_conversation!(state.conversation_id)
-      agent = if conv.agent_id, do: Agents._unsafe_get_agent!(conv.agent_id)
-      {:noreply, kick_turn(state, prompt, agent, images)}
+
+      case turn_gate(conv.user_id) do
+        :ok ->
+          agent = if conv.agent_id, do: Agents._unsafe_get_agent!(conv.agent_id)
+          {:noreply, kick_turn(state, prompt, agent, images)}
+
+        {:error, reason} ->
+          # No caller to reply to — the wake door reports the same refusal
+          # synchronously; this backstop only has to not run the turn.
+          Logger.info(
+            "conv #{state.conversation_id}: dropping initial prompt (#{inspect(reason)})"
+          )
+
+          {:noreply, state}
+      end
     end
   end
 
@@ -1391,6 +1411,19 @@ defmodule Fountain.Conversations.ConversationServer do
       "conv:#{conv_id}",
       {:log_event, event}
     )
+  end
+
+  # Every turn passes through here, whichever door it came in by — the
+  # controller/LiveView call above, or the queued initial prompt a wake
+  # delivers as a cast. The provisioning gates cover fresh sprites only; a
+  # live server (or the reuse arm of a wake) outlives the subscription state
+  # it was started under, and each turn resets the idle clock, so an expired
+  # trial or failed card otherwise bought up to the 24h max lifetime of
+  # continued service per live sandbox (#313). Suspension is the same shape.
+  defp turn_gate(user_id) do
+    with :ok <- Fountain.Accounts.check_not_suspended(user_id) do
+      Fountain.Billing.check_active(user_id)
+    end
   end
 
   defp now, do: DateTime.utc_now() |> DateTime.truncate(:second)

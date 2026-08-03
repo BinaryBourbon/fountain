@@ -106,6 +106,108 @@ defmodule Fountain.BillingGateTest do
     end
   end
 
+  describe "wake_conversation/2 — the reuse arm (#313)" do
+    # The fresh arm above provisions and was gated; the reuse arm reattaches
+    # to a live sprite, provisions nothing, and skipped every check — a
+    # canceled user could restart a server against their still-warm sandbox
+    # and keep prompting.
+
+    defp reusable_conversation(user) do
+      agent = insert_agent(user_id: user.id)
+      sandbox = insert_sandbox(user_id: user.id, status: "ready")
+      insert_conversation(user_id: user.id, agent: agent, sandbox: sandbox, status: "idle")
+    end
+
+    defp stub_sprite_alive do
+      stub(Fountain.SpritesClient, :get!, fn -> :fake_client end)
+      stub(Sprites, :get_sprite, fn _client, _name -> {:ok, %{name: "alive"}} end)
+    end
+
+    test "is refused for a canceled subscription without starting a server" do
+      user = user_with_status("canceled")
+      conv = reusable_conversation(user)
+      stub_sprite_alive()
+      reject(&Horde.DynamicSupervisor.start_child/2)
+
+      assert {:error, :subscription_required} = Conversations.wake_conversation(conv.id, "hi")
+    end
+
+    test "is refused for a suspended account" do
+      user = user_with_status("active")
+      {:ok, _, _} = Fountain.Accounts.suspend_user(user)
+      conv = reusable_conversation(user)
+      stub_sprite_alive()
+      reject(&Horde.DynamicSupervisor.start_child/2)
+
+      assert {:error, :account_suspended} = Conversations.wake_conversation(conv.id, "hi")
+    end
+
+    test "an active subscription still reattaches" do
+      user = user_with_status("active")
+      conv = reusable_conversation(user)
+      stub_sprite_alive()
+      stub(Horde.DynamicSupervisor, :start_child, fn _s, _spec -> {:ok, spawn(fn -> :ok end)} end)
+
+      assert {:ok, _} = Conversations.wake_conversation(conv.id, "hi")
+    end
+  end
+
+  describe "the per-turn gate on a live server (#313)" do
+    # A live ConversationServer outlives the subscription state it started
+    # under, and each turn resets the idle clock — so a trial that expired at
+    # minute 1 bought up to 24h of gated service. The server re-checks on
+    # every prompt; these drive the callbacks directly with the minimal state
+    # the guarded branch touches.
+
+    alias Fountain.Conversations.ConversationServer
+
+    defp live_server_state(conv) do
+      %{current_command: nil, conversation_id: conv.id}
+    end
+
+    test "send_prompt on a live server is refused after cancellation" do
+      user = user_with_status("canceled")
+      agent = insert_agent(user_id: user.id)
+      conv = insert_conversation(user_id: user.id, agent: agent, status: "running")
+
+      assert {:reply, {:error, :subscription_required}, state} =
+               ConversationServer.handle_call(
+                 {:send_prompt, "hi", []},
+                 {self(), make_ref()},
+                 live_server_state(conv)
+               )
+
+      assert state.current_command == nil
+    end
+
+    test "send_prompt on a live server is refused after suspension" do
+      user = user_with_status("active")
+      {:ok, _, _} = Fountain.Accounts.suspend_user(user)
+      agent = insert_agent(user_id: user.id)
+      conv = insert_conversation(user_id: user.id, agent: agent, status: "running")
+
+      assert {:reply, {:error, :account_suspended}, _state} =
+               ConversationServer.handle_call(
+                 {:send_prompt, "hi", []},
+                 {self(), make_ref()},
+                 live_server_state(conv)
+               )
+    end
+
+    test "a queued initial prompt is dropped, not run, for a gated account" do
+      # The wake door reports the refusal synchronously; the cast is the
+      # backstop and only has to not start a turn.
+      user = user_with_status("past_due")
+      agent = insert_agent(user_id: user.id)
+      conv = insert_conversation(user_id: user.id, agent: agent, status: "idle")
+
+      state = live_server_state(conv)
+
+      assert {:noreply, ^state} =
+               ConversationServer.handle_cast({:initial_prompt, "hi", []}, state)
+    end
+  end
+
   describe "gate ordering" do
     test "billing is reported before quota" do
       # A cancelled tenant sitting at their sandbox cap should be told to fix
