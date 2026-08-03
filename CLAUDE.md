@@ -9,7 +9,7 @@ mise install                        # pin Erlang/OTP 28 + Elixir 1.19.2
 mix deps.get
 mix setup                           # dev DB: create + migrate
 MIX_ENV=test mix ecto.create && MIX_ENV=test mix ecto.migrate
-mix test                            # full suite (~200 tests)
+mix test                            # full suite (~1,850 tests)
 mix precommit                       # the core CI checks, locally
 ```
 
@@ -61,13 +61,28 @@ Agents._unsafe_get_agent(id)
 Conversations._unsafe_get_sandbox(id)
 ```
 
-Functions prefixed `_unsafe_` bypass tenant scoping. **Never call them from user-facing code.** They exist for admin views and internal tooling only.
+Functions prefixed `_unsafe_` bypass tenant scoping. **Never call one as the
+first fetch in a user-facing request** — ownership must already be
+established on that request before an `_unsafe_` call is legitimate.
 
 The prefix goes on *every* unscoped function, including ones whose callers
 happen to check ownership first — the reader of a call site should not have to
-go and find out. A legitimate caller is an admin surface behind `require_admin`,
-a system-level sweep like the rehydrator or `SandboxReaper`, or a GenServer that
-has already established ownership.
+go and find out. The legitimate callers are:
+
+- an admin surface behind `require_admin`;
+- a system-level sweep like the rehydrator or `SandboxReaper`;
+- a GenServer that has already established ownership;
+- **a user-facing call site directly after a tenant-scoped parent fetch** —
+  the dominant pattern since #383:
+
+  ```elixir
+  # CORRECT — ownership established by the scoped get_vault above
+  vault = Vaults.get_vault(vault_id, user.id)
+  secrets = Vaults._unsafe_list_secrets(vault)
+  ```
+
+  The scoped fetch and the `_unsafe_` child call must be adjacent and in the
+  same function, with a comment saying which fetch established ownership.
 
 ## Envelope encryption
 
@@ -144,7 +159,7 @@ The `UeberAuthController` skips `plug Ueberauth` when `ueberauth_test_mode: true
 11. Release boot check — builds a prod release, probes `/health` and `/health/ready`, runs a release task beside the live server
 12. `mix openapi.spec.json` + `jq empty` (OpenAPI spec validates)
 
-Run `mix precommit` locally before pushing — it covers the core gate (compile with warnings-as-errors, unused deps, format, `credo --strict`, dialyzer, tests). CI additionally runs sobelow, hex.audit, the Go CLI checks, the release boot check, and OpenAPI validation.
+Run `mix precommit` locally before pushing — it covers the core gate (compile with warnings-as-errors, unused deps, format, `credo --strict`, sobelow, dialyzer, tests). CI additionally runs hex.audit, the Go CLI checks, the release boot check, and OpenAPI validation.
 
 ## Test patterns
 
@@ -185,7 +200,7 @@ Mimic is available. Prefer integration tests through real changesets over heavy 
 
 ## Things NOT to do
 
-- **Don't call `_unsafe_*` from user-facing code.** These skip tenant scoping.
+- **Don't reach for `_unsafe_*` without established ownership.** These skip tenant scoping; the legitimate caller shapes (including the scoped-parent-fetch-then-`_unsafe_`-child pattern) are in the tenant isolation section above.
 - **Don't lower the test pool size below 20.** Pool exhaustion causes flaky timeouts.
 - **Don't remove `:ueberauth_test_mode` or `:rate_limit_test_isolation` from `config/test.exs`.** They're correctness guards, not performance flags.
 - **Don't push directly to `main`.** All changes go through PRs; the CI gate must pass.

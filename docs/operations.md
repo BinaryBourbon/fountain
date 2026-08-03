@@ -147,8 +147,9 @@ Work down the chain:
 ## Sprites errors
 
 What the retries already cover: transient Sprites failures (5xx, 429,
-timeouts) on the provisioning path are retried three times with exponential
-backoff, each call bounded by `SPRITES_TIMEOUT_MS` (default 30s). You only
+timeouts) on the provisioning path are tried up to three times (two retries)
+with exponential backoff, each call bounded by `SPRITES_TIMEOUT_MS` (default
+30s). You only
 see a failure after that has been exhausted.
 
 What a 4xx means — these are deliberately **not** retried:

@@ -87,9 +87,12 @@ above is pinned by construction. Even with the variable unset, the compose
 file falls back to a pinned release rather than `latest`.
 
 Upgrading is editing that value, then `docker compose pull && docker compose
-up -d`. Migrations run automatically at boot — idempotently, under an advisory
-lock — so rolling replicas do not race each other, and there are no manual
-migration steps unless a release's upgrade notes say otherwise. Downgrading is
+up -d`. Migrations run automatically at boot — idempotently, serialized by a
+lock on the `schema_migrations` table (Ecto's default) — so rolling replicas
+do not race each other, and there are no manual migration steps unless a
+release's upgrade notes say otherwise. (A migration that builds an index
+concurrently opts out of that lock by design; such migrations are written to
+be safe to re-run.) Downgrading is
 not supported once a newer version's migrations have run; restore from a
 backup instead.
 

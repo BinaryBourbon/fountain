@@ -101,7 +101,11 @@ curl -sN https://fountain.inevitable.fyi/api/conversations/$CONV_ID/stream \
   -H "Authorization: Bearer $TOKEN"
 ```
 
-Each SSE event is a JSON object: `{"kind":"output","stream":"stdout","data":"...","inserted_at":"..."}`.
+Each SSE event is a JSON object:
+`{"kind":"output","stream":"stdout","data":"...","stage":"turn","state":null,"turn_id":"...","ts":"..."}`
+— the timestamp key on the wire is `ts`, and `stage`/`state`/`turn_id` let a
+client group output under its owning stage without inferring it from event
+interleaving.
 
 ### Explore the full API
 
