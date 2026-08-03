@@ -37,22 +37,6 @@ defmodule FountainWeb.ConnCase do
     {:ok, conn: Phoenix.ConnTest.build_conn()}
   end
 
-  @doc """
-  Sets the bearer auth header so `:authed_api` and `:authed_browser`
-  pipelines accept the request.
-  """
-  def authed(conn) do
-    token = Application.fetch_env!(:fountain, :admin_token)
-    Plug.Conn.put_req_header(conn, "authorization", "Bearer " <> token)
-  end
-
-  @doc "Sets the session :admin flag for browser/LiveView tests (legacy single-tenant)."
-  def login(conn) do
-    conn
-    |> Phoenix.ConnTest.init_test_session(%{})
-    |> Plug.Conn.put_session(:admin, true)
-  end
-
   @doc "Sets a multi-tenant session for the given user (browser tests)."
   def login_user(conn, user) do
     conn

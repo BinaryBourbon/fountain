@@ -11,7 +11,6 @@ config :fountain, FountainWeb.Endpoint,
   secret_key_base: "c4S1HEBb+LhhInAgMbEJdXVBSKK65S7Mk9oeXrPTn65slnwVQU5zFqCT3p2wqWaR",
   server: false
 
-config :fountain, :admin_token, "test-admin-token-for-tests"
 config :fountain, :skip_rehydrate, true
 config :fountain, :checkpoint_creation_enabled, false
 

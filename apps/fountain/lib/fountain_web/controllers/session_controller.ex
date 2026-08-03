@@ -6,9 +6,6 @@ defmodule FountainWeb.SessionController do
     GET  /auth/login   — render login form
     POST /auth/login   — authenticate, set session cookie
     GET  /auth/logout  — clear session, redirect to login
-
-  Legacy single-tenant admin token routes are preserved at /login and /logout
-  for backward compatibility with the operations runbook.
   """
 
   use FountainWeb, :controller
@@ -22,12 +19,6 @@ defmodule FountainWeb.SessionController do
   plug FountainWeb.Plugs.RateLimit,
        [bucket: "auth_token", max: 10, window_ms: 3_600_000]
        when action in [:create]
-
-  # The legacy admin form brute-forces a single shared secret, so it gets a
-  # tighter budget than a per-account login.
-  plug FountainWeb.Plugs.RateLimit,
-       [bucket: "admin_login", max: 5, window_ms: 3_600_000]
-       when action in [:legacy_create]
 
   ## Multi-tenant email/password login
 
@@ -83,33 +74,6 @@ defmodule FountainWeb.SessionController do
     else
       redirect(conn, to: ~p"/auth/login")
     end
-  end
-
-  ## Legacy single-tenant admin token (kept for ops runbook compat)
-
-  def legacy_new(conn, _params) do
-    render(conn, :legacy_new, error: nil, layout: false)
-  end
-
-  def legacy_create(conn, %{"token" => token}) do
-    expected = Application.fetch_env!(:fountain, :admin_token)
-
-    if Plug.Crypto.secure_compare(token, expected) do
-      conn
-      |> configure_session(renew: true)
-      |> put_session(:admin, true)
-      |> redirect(to: ~p"/conversations")
-    else
-      conn
-      |> put_status(:unauthorized)
-      |> render(:legacy_new, error: "Invalid token", layout: false)
-    end
-  end
-
-  def legacy_delete(conn, _) do
-    conn
-    |> configure_session(drop: true)
-    |> redirect(to: ~p"/login")
   end
 
   ## Private
