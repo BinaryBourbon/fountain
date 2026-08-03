@@ -109,20 +109,23 @@ defmodule Fountain.ConfigReferenceTest do
   # interpolation or by another service, not by the release.
   @compose_only ~w()
 
-  test "every env var the compose app service sets is one the app reads" do
-    source = File.read!(Path.join(@repo_root, "config/runtime.exs"))
-    compose = File.read!(Path.join(@repo_root, "docker-compose.yml"))
-
-    # The environment mapping of the `app:` service: keys at 6-space indent
-    # between its `environment:` line and the next 4-space-indented key.
+  # The environment mapping of the `app:` service: keys at 6-space indent
+  # between its `environment:` line and the next 4-space-indented key.
+  defp compose_app_env_keys(compose) do
     [_, app_section] = String.split(compose, ~r/^  app:\n/m, parts: 2)
     [_, env_and_rest] = String.split(app_section, ~r/^    environment:\n/m, parts: 2)
     [env_block | _] = String.split(env_and_rest, ~r/^    [a-z]/m, parts: 2)
 
-    keys =
-      Regex.scan(~r/^      ([A-Z][A-Z0-9_]*):/m, env_block, capture: :all_but_first)
-      |> List.flatten()
-      |> Enum.uniq()
+    Regex.scan(~r/^      ([A-Z][A-Z0-9_]*):/m, env_block, capture: :all_but_first)
+    |> List.flatten()
+    |> Enum.uniq()
+  end
+
+  test "every env var the compose app service sets is one the app reads" do
+    source = File.read!(Path.join(@repo_root, "config/runtime.exs"))
+    compose = File.read!(Path.join(@repo_root, "docker-compose.yml"))
+
+    keys = compose_app_env_keys(compose)
 
     assert length(keys) > 5,
            "extracted only #{length(keys)} compose env keys — the compose layout changed"
@@ -140,6 +143,59 @@ defmodule Fountain.ConfigReferenceTest do
              #{Enum.join(unread, ", ")}
 
            Remove the key, or add it to @compose_only/@read_elsewhere with a reason.
+           """
+  end
+
+  # ── advertised → passed through (#397) ───────────────────────────────────
+  #
+  # The compose `environment:` block is a closed allowlist: only the keys it
+  # names reach the container. The test above is one-directional by
+  # construction — it checks every key compose *sets* is read, never that
+  # every variable the example file *advertises* is passed through. That gap
+  # is how SPRITES_BASE_URL, CHECK_ORIGIN_EXTRA, the sandbox bounds and
+  # REGISTRATION_ALLOWED_EMAIL_DOMAINS shipped in .env.compose.example while
+  # silently doing nothing.
+
+  # Consumed by compose interpolation itself, never by the app process:
+  #   FOUNTAIN_IMAGE_TAG — the app image tag (`image:` line)
+  #   POSTGRES_PASSWORD  — postgres/backup services and the DATABASE_URL
+  #                        interpolation; the app only sees the composed URL
+  #   PORT               — the host side of the port mapping; the container
+  #                        side is pinned to 4000
+  @interpolation_only ~w(FOUNTAIN_IMAGE_TAG POSTGRES_PASSWORD PORT)
+
+  test "every variable advertised in .env.compose.example reaches the app service" do
+    example = File.read!(Path.join(@repo_root, ".env.compose.example"))
+    compose = File.read!(Path.join(@repo_root, "docker-compose.yml"))
+
+    # A key is "advertised" when a line offers it for the operator to set:
+    # either active (`KEY=`) or commented out as an example (`# KEY=value`).
+    advertised =
+      Regex.scan(~r/^(?:# )?([A-Z][A-Z0-9_]*)=/m, example, capture: :all_but_first)
+      |> List.flatten()
+      |> Enum.uniq()
+
+    # Vacuous-pass guard, mirroring the other tests in this file.
+    assert length(advertised) > 10,
+           "extracted only #{length(advertised)} advertised keys — the example format changed"
+
+    passed = compose_app_env_keys(compose)
+
+    dropped =
+      Enum.reject(advertised, fn var ->
+        var in passed or var in @interpolation_only
+      end)
+
+    assert dropped == [],
+           """
+           .env.compose.example advertises variables the compose app service never passes through:
+
+             #{Enum.join(dropped, ", ")}
+
+           Setting them in .env silently does nothing. Add each to the app
+           service's environment: block (as ${VAR:-} or with the app's own
+           default), or — only for keys compose itself consumes during
+           interpolation — add them to @interpolation_only with a reason.
            """
   end
 end

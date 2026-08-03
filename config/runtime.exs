@@ -160,8 +160,17 @@ config :fountain, :metrics_port, metrics_port
 # error tracker running on the same cluster as the app is down exactly when
 # it is needed. The sentry package is API-compatible with GlitchTip, so
 # pointing SENTRY_DSN at one later is the whole migration.
+#
+# "" counts as unset (#397): the compose file passes `${SENTRY_DSN:-}`, and a
+# blank string is not a DSN the SDK should be asked to parse.
+sentry_dsn =
+  case System.get_env("SENTRY_DSN") do
+    blank when blank in [nil, ""] -> nil
+    dsn -> dsn
+  end
+
 config :sentry,
-  dsn: System.get_env("SENTRY_DSN"),
+  dsn: sentry_dsn,
   environment_name: System.get_env("SENTRY_ENVIRONMENT", to_string(env)),
   # Correlates events with deploys: "this started with sha-…". Set by the
   # image build; nil locally, which the SDK accepts.
@@ -255,10 +264,18 @@ config :fountain,
 # Only widen this to cover addresses that are genuinely proxies — anything
 # trusted here is stepped over, so an over-broad list lets a client spoof its
 # way past rate limiting.
-if proxies = System.get_env("TRUSTED_PROXIES") do
-  config :fountain,
-         :trusted_proxies,
-         proxies |> String.split(",", trim: true) |> Enum.map(&String.trim/1)
+#
+# "" counts as unset (#397): the compose file passes `${TRUSTED_PROXIES:-}`,
+# and a blank value must leave the built-in default in place rather than
+# replacing it with an empty list.
+case System.get_env("TRUSTED_PROXIES") do
+  blank when blank in [nil, ""] ->
+    :ok
+
+  proxies ->
+    config :fountain,
+           :trusted_proxies,
+           proxies |> String.split(",", trim: true) |> Enum.map(&String.trim/1)
 end
 
 # Inference credentials are per-user (BYO, ADR 0008) and live in the
@@ -453,8 +470,18 @@ if config_env() == :prod do
   # verify_none is the historical behaviour. DATABASE_SSL_VERIFY=true turns on
   # real certificate verification, using an explicit CA bundle when given and
   # the OS trust store otherwise — no extra dependency, and OTP loads it.
+  #
+  # A blank CA file counts as unset (#397): the compose file passes
+  # `${DATABASE_SSL_CA_FILE:-}`, and verify_peer with `cacertfile: ''` would
+  # reject every certificate instead of falling back to the OS trust store.
+  database_ssl_ca_file =
+    case System.get_env("DATABASE_SSL_CA_FILE") do
+      blank when blank in [nil, ""] -> nil
+      path -> path
+    end
+
   database_ssl_opts =
-    case {System.get_env("DATABASE_SSL_VERIFY"), System.get_env("DATABASE_SSL_CA_FILE")} do
+    case {System.get_env("DATABASE_SSL_VERIFY"), database_ssl_ca_file} do
       {"true", nil} ->
         [verify: :verify_peer, cacerts: :public_key.cacerts_get(), depth: 3]
 

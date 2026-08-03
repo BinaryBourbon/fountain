@@ -44,11 +44,25 @@ services:
       # A stock postgres image does not serve TLS, and this was hardcoded on —
       # which is why a compose setup could not have worked before.
       DATABASE_SSL: "false"
+      # Only meaningful against an external Postgres that serves TLS (which
+      # also means editing DATABASE_URL and DATABASE_SSL above): verify its
+      # certificate instead of the default encrypted-but-unauthenticated mode.
+      DATABASE_SSL_VERIFY: ${DATABASE_SSL_VERIFY:-}
+      DATABASE_SSL_CA_FILE: ${DATABASE_SSL_CA_FILE:-}
 
       # Absolute and scheme-ful: it builds the links in verification emails and
       # is handed to every sprite as FOUNTAIN_BASE_URL. Change it if you reach
       # this instance by anything other than localhost.
       PUBLIC_URL: ${PUBLIC_URL:-http://localhost:4000}
+
+      # Extra origins allowed to open a LiveView websocket, comma-separated.
+      # The PUBLIC_URL host is always allowed.
+      CHECK_ORIGIN_EXTRA: ${CHECK_ORIGIN_EXTRA:-}
+
+      # Behind a reverse proxy, set this to the proxy's address range before
+      # exposing the instance — otherwise per-IP rate limits collapse into a
+      # single bucket keyed on the proxy's address.
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
 
       # Required, but enforced by the app at boot (config/runtime.exs raises
       # a descriptive error for either one missing or empty) rather than by a
@@ -62,6 +76,16 @@ services:
       # Conversations need a Sprites token. The app boots without one; every
       # attempt to start a conversation then fails.
       SPRITES_TOKEN: ${SPRITES_TOKEN:-}
+      # Point at a different Sprites endpoint (#189). The fallback mirrors the
+      # app's own default — an unset ${VAR:-} interpolates to "", and a blank
+      # base URL is not a usable endpoint.
+      SPRITES_BASE_URL: ${SPRITES_BASE_URL:-https://api.sprites.dev}
+
+      # Sandbox lifetime bounds; 0 disables one. The fallbacks mirror the
+      # app's own defaults and are spelled out because the app refuses to
+      # boot on a non-integer, and an unset ${VAR:-} interpolates to "".
+      SANDBOX_IDLE_TIMEOUT_MINUTES: ${SANDBOX_IDLE_TIMEOUT_MINUTES:-60}
+      SANDBOX_MAX_LIFETIME_HOURS: ${SANDBOX_MAX_LIFETIME_HOURS:-24}
 
       # Off by default (the app's own default since #336, pinned here too):
       # the subscription gate is meaningful for the hosted service and is a
@@ -84,6 +108,11 @@ services:
       # Open by default so the first account can be created. Close it once
       # yours exists.
       REGISTRATION_ENABLED: ${REGISTRATION_ENABLED:-true}
+      # Comma-separated. Empty means any domain may register.
+      REGISTRATION_ALLOWED_EMAIL_DOMAINS: ${REGISTRATION_ALLOWED_EMAIL_DOMAINS:-}
+
+      # Error tracking. Off unless set — nothing leaves the instance.
+      SENTRY_DSN: ${SENTRY_DSN:-}
 
       # There is no OTLP collector in a default compose setup, and without this
       # the exporter retries per span and floods the logs.
