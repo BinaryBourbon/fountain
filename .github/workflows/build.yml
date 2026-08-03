@@ -2,17 +2,25 @@
 # ghcr.io/binarybourbon/fountain on every push to main. Multi-arch
 # (amd64 + arm64) — home-cloud k3s nodes are arm64 Apple Silicon Lima
 # VMs, single-arch amd64 images fail at pull with
-# "no match for platform".
+# "no match for platform"; amd64 stays for self-hosters.
+#
+# Each architecture builds NATIVELY (arm64 on the free ubuntu-24.04-arm
+# runners) and pushes by digest; a merge job stitches the digests into one
+# multi-arch manifest. The previous single-runner QEMU build spent ~22
+# minutes emulating the arm64 Erlang compile; native + the registry-backed
+# BuildKit cache below brings a warm code-change build to single-digit
+# minutes. The `build` workflow name and its completion event are load-
+# bearing: publish-manifests.yml listens for them.
 name: build
 
 on:
   workflow_dispatch:
   push:
     branches: [main]
-    # These paths never affect the OCI image, so skip the (multi-arch,
-    # ~slow) build when a commit touches only them. A manifest-only change
-    # still reaches the cluster: publish-manifests.yml can be dispatched to
-    # republish the artifact from an already-built commit.
+    # These paths never affect the OCI image, so skip the build when a
+    # commit touches only them. Manifest-only changes still deploy:
+    # publish-manifests.yml triggers directly on k8s/deploy pushes and
+    # pins the newest already-built image.
     paths-ignore:
       - "k8s/**"
       # The portable self-hosting manifests — never part of the image.
@@ -33,17 +41,27 @@ permissions:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    name: Build ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     permissions:
       contents: read
       packages: write
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - arch: amd64
+            platform: linux/amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            platform: linux/arm64
+            # Free for public repos; the cluster's own architecture, so the
+            # image that matters most is the one built natively.
+            runner: ubuntu-24.04-arm
     steps:
       - name: Checkout
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
 
       - name: Set up Buildx
         uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
@@ -55,18 +73,77 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push
+      - name: Build and push by digest
+        id: build
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
           file: ./Dockerfile
-          platforms: linux/amd64,linux/arm64
-          push: true
+          platforms: ${{ matrix.platform }}
           build-args: |
             BUILD_SHA=${{ github.sha }}
-          tags: |
-            ${{ env.IMAGE }}:latest
-            ${{ env.IMAGE }}:sha-${{ github.sha }}
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
+          # Digest-only push; the merge job below owns the tags. Provenance
+          # off so each push is exactly one image manifest — attestation
+          # manifests would confuse the imagetools merge.
+          outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
+          provenance: false
+          # Layer cache in the registry, one ref per arch so the two builds
+          # never thrash each other. mode=max also caches the build stage —
+          # that's the deps.compile layer, which is the whole point.
+          cache-from: type=registry,ref=${{ env.IMAGE }}:buildcache-${{ matrix.arch }}
+          cache-to: type=registry,ref=${{ env.IMAGE }}:buildcache-${{ matrix.arch }},mode=max
+
+      - name: Export digest
+        run: |
+          mkdir -p "${RUNNER_TEMP}/digests"
+          digest="${{ steps.build.outputs.digest }}"
+          touch "${RUNNER_TEMP}/digests/${digest#sha256:}"
+
+      - name: Upload digest
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: digest-${{ matrix.arch }}
+          path: ${{ runner.temp }}/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  merge:
+    name: Merge the multi-arch manifest
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Download digests
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          path: ${{ runner.temp }}/digests
+          pattern: digest-*
+          merge-multiple: true
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create and push the manifest list
+        working-directory: ${{ runner.temp }}/digests
+        env:
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          docker buildx imagetools create \
+            --tag "${IMAGE}:latest" \
+            --tag "${IMAGE}:sha-${SHA}" \
+            $(printf "${IMAGE}@sha256:%s " *)
+          docker buildx imagetools inspect "${IMAGE}:sha-${SHA}"
