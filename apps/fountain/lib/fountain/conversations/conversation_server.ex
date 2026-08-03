@@ -180,7 +180,13 @@ defmodule Fountain.Conversations.ConversationServer do
       # Fountain.Conversations.Lifecycle for what the bounds are and why
       # reclaiming a sandbox does not end the conversation.
       sandbox_started_at: nil,
-      last_activity_at: DateTime.utc_now()
+      last_activity_at: DateTime.utc_now(),
+      # Durable-output budget bookkeeping (#331). `output_bytes` is loaded
+      # lazily from the DB on the first output of this server's lifetime, so
+      # the budget is cumulative per conversation across wakes rather than
+      # per BEAM lifetime.
+      output_bytes: nil,
+      output_capped: false
     }
 
     schedule_lifecycle_check()
@@ -1493,7 +1499,60 @@ defmodule Fountain.Conversations.ConversationServer do
     OpenTelemetry.Tracer.end_span()
   end
 
+  # Persist + broadcast one chunk of sandbox output, subject to the
+  # per-conversation byte budget (#331). log_events is unbounded per row
+  # count and lives on the same Postgres volume the app depends on, so a
+  # `while true; do base64 /dev/urandom; done` sandbox was an availability
+  # risk, not just a storage bill — retention (#217) bounds age, not rate.
+  # Once the budget is exceeded, one truncation marker is persisted and
+  # every later chunk is dropped. Dropped rather than broadcast-only:
+  # consumers key ordering off the DB-assigned event id, and an unbounded
+  # broadcast stream would still let a hostile sandbox saturate PubSub.
   defp log_output(state, stream, data) do
+    state = ensure_output_bytes(state)
+    budget = output_byte_budget()
+
+    cond do
+      state.output_capped ->
+        state
+
+      budget > 0 and state.output_bytes + byte_size(data) > budget ->
+        Logger.warning(
+          "conv #{state.conversation_id}: durable output budget " <>
+            "(#{budget} bytes) reached; dropping further sandbox output"
+        )
+
+        :telemetry.execute([:fountain, :log_output, :capped], %{count: 1}, %{
+          conversation_id: state.conversation_id
+        })
+
+        persist_output(state, "stderr", cap_marker(budget))
+        %{state | output_capped: true}
+
+      true ->
+        persist_output(state, stream, data)
+        %{state | output_bytes: state.output_bytes + byte_size(data)}
+    end
+  end
+
+  defp cap_marker(budget) do
+    "\n[fountain] This conversation reached its durable log budget of " <>
+      "#{div(budget, 1_000_000)} MB. Further sandbox output is discarded — " <>
+      "the turn keeps running, and stage events still appear.\n"
+  end
+
+  defp ensure_output_bytes(%{output_bytes: nil} = state) do
+    %{state | output_bytes: Conversations._unsafe_output_byte_total(state.conversation_id)}
+  end
+
+  defp ensure_output_bytes(state), do: state
+
+  # 0 disables the cap.
+  defp output_byte_budget do
+    Application.get_env(:fountain, :log_output_byte_budget, 50_000_000)
+  end
+
+  defp persist_output(state, stream, data) do
     # Tag this output with the stage that's active right now. The
     # runtime CLI is always spawned inside a `turn` so all stdout /
     # stderr from it gets `stage: "turn"`. Any operator on the
@@ -1536,13 +1595,12 @@ defmodule Fountain.Conversations.ConversationServer do
     cond do
       skip == 0 ->
         log_output(state, stream, data)
-        state
 
       skip >= size ->
         put_in(state.replay_skip[stream], skip - size)
 
       true ->
-        log_output(state, stream, binary_part(data, skip, size - skip))
+        state = log_output(state, stream, binary_part(data, skip, size - skip))
         put_in(state.replay_skip[stream], 0)
     end
   end
