@@ -177,9 +177,25 @@ defmodule Fountain.Conversations.ConversationServer do
     sandbox = Conversations._unsafe_get_sandbox!(state.sandbox_id)
     agent = if conv.agent_id, do: Agents._unsafe_get_agent!(conv.agent_id), else: nil
 
+    # Scoped by the conversation's owner even though create/update_agent
+    # already validates ownership: a cross-tenant environment_id that
+    # predates that check (or slips in through a future path) must not
+    # materialise another tenant's secrets or checkpoint here.
     env =
-      if agent && agent.environment_id,
-        do: Environments._unsafe_get_environment(agent.environment_id)
+      if agent && agent.environment_id do
+        case Environments.get_environment(agent.environment_id, conv.user_id) do
+          nil ->
+            Logger.warning(
+              "Agent #{agent.id} references environment #{agent.environment_id} " <>
+                "not owned by user #{conv.user_id}; provisioning without it"
+            )
+
+            nil
+
+          env ->
+            env
+        end
+      end
 
     vault = if conv.vault_id, do: Vaults._unsafe_get_vault(conv.vault_id)
 

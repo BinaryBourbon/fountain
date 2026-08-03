@@ -101,6 +101,60 @@ defmodule Fountain.Conversations.ConversationServerTest do
     end
   end
 
+  describe "provisioning — tenant isolation" do
+    test "a cross-tenant environment_id on the agent is not materialised" do
+      attacker = insert_verified_user()
+      victim = insert_verified_user()
+      victim_env = insert_env(user_id: victim.id, checkpoint_id: "cp_victim")
+
+      # A legacy row from before create_agent validated environment ownership,
+      # inserted through the bare changeset the context no longer exposes to
+      # cross-tenant ids. The server must refuse to load it.
+      {:ok, agent} =
+        %Fountain.Agents.Agent{}
+        |> Fountain.Agents.Agent.changeset(%{
+          "name" => "legacy-cross-tenant",
+          "model" => "anthropic/claude-sonnet-4-6",
+          "runtime" => "claude",
+          "user_id" => attacker.id,
+          "environment_id" => victim_env.id
+        })
+        |> Repo.insert()
+
+      sandbox = insert_sandbox(user_id: attacker.id, status: "pending")
+
+      conv =
+        insert_conversation(
+          user_id: attacker.id,
+          agent: agent,
+          sandbox_id: sandbox.id,
+          status: "pending"
+        )
+
+      stub_happy_sprite()
+      test_pid = self()
+
+      Mimic.stub(Fountain.Conversations.Provisioning, :restore_checkpoint, fn _s, id ->
+        send(test_pid, {:restore_checkpoint, id})
+        {:ok, :restored}
+      end)
+
+      log =
+        ExUnit.CaptureLog.capture_log(fn ->
+          {pid, _ref, :alive} = start_server(conv)
+
+          # The victim's checkpoint must never be restored into the
+          # attacker's sprite; the conversation still provisions, just
+          # without the foreign environment.
+          refute_received {:restore_checkpoint, _}
+          assert Conversations._unsafe_get_sandbox!(sandbox.id).status == "ready"
+          GenServer.stop(pid)
+        end)
+
+      assert log =~ "not owned by user #{attacker.id}"
+    end
+  end
+
   describe "provisioning — failure paths" do
     test "a sprite that cannot be created marks both rows failed", %{conv: conv, sandbox: sandbox} do
       stub_happy_sprite()

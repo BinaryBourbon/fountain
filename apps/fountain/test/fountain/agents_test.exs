@@ -17,6 +17,33 @@ defmodule Fountain.AgentsTest do
       assert {:error, changeset} = Agents.create_agent(%{})
       assert changeset.errors != []
     end
+
+    test "accepts an environment owned by the same user" do
+      user = insert_verified_user()
+      env = insert_env(user_id: user.id)
+      attrs = agent_attrs(user_id: user.id, environment_id: env.id)
+
+      assert {:ok, agent} = Agents.create_agent(attrs)
+      assert agent.environment_id == env.id
+    end
+
+    test "rejects another tenant's environment" do
+      attacker = insert_verified_user()
+      victim = insert_verified_user()
+      victim_env = insert_env(user_id: victim.id)
+      attrs = agent_attrs(user_id: attacker.id, environment_id: victim_env.id)
+
+      assert {:error, changeset} = Agents.create_agent(attrs)
+      assert %{environment_id: ["does not exist"]} = errors_on(changeset)
+    end
+
+    test "rejects a nonexistent environment with the same error as a foreign one" do
+      user = insert_verified_user()
+      attrs = agent_attrs(user_id: user.id, environment_id: Ecto.UUID.generate())
+
+      assert {:error, changeset} = Agents.create_agent(attrs)
+      assert %{environment_id: ["does not exist"]} = errors_on(changeset)
+    end
   end
 
   describe "get_agent/2" do
@@ -114,6 +141,25 @@ defmodule Fountain.AgentsTest do
 
       assert {:error, changeset} = Agents.update_agent(agent, %{"name" => nil})
       assert changeset.errors != []
+    end
+
+    test "accepts switching to an environment owned by the same user" do
+      user = insert_verified_user()
+      env = insert_env(user_id: user.id)
+      agent = insert_agent(user_id: user.id)
+
+      assert {:ok, updated} = Agents.update_agent(agent, %{"environment_id" => env.id})
+      assert updated.environment_id == env.id
+    end
+
+    test "rejects switching to another tenant's environment" do
+      attacker = insert_verified_user()
+      victim = insert_verified_user()
+      victim_env = insert_env(user_id: victim.id)
+      agent = insert_agent(user_id: attacker.id)
+
+      assert {:error, changeset} = Agents.update_agent(agent, %{"environment_id" => victim_env.id})
+      assert %{environment_id: ["does not exist"]} = errors_on(changeset)
     end
   end
 
