@@ -54,10 +54,23 @@ defmodule FountainWeb.Plugs.ClientIp do
   defp normalize(ip), do: ip
 
   defp resolve(conn) do
-    if from_trusted_proxy?(conn.remote_ip) do
-      RemoteIp.from(conn.req_headers, headers: @headers, proxies: proxies()) || conn.remote_ip
+    resolve_address(conn.remote_ip, conn.req_headers)
+  end
+
+  @doc """
+  The full resolution rule, for callers that hold a peer address and headers
+  rather than a `Plug.Conn` — the LiveView mount path in `FountainWeb.Audited`.
+
+  One implementation on purpose: an earlier copy in `Audited` reparsed
+  `x-forwarded-for` itself and took the LEFTMOST entry — client-supplied and
+  attacker-chosen the moment a proxy hop stops rewriting the header — while
+  this path walks from the right and returns the first non-proxy address.
+  """
+  def resolve_address(peer_ip, headers) do
+    if from_trusted_proxy?(peer_ip) do
+      RemoteIp.from(headers, headers: @headers, proxies: proxies()) || peer_ip
     else
-      conn.remote_ip
+      peer_ip
     end
   end
 

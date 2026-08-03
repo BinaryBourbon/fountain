@@ -703,7 +703,7 @@ defmodule Fountain.Conversations.ConversationServer do
         # Count the bytes we already persisted for this turn so the
         # stdout/stderr handlers can drop the replayed prefix.
         replay_skip =
-          Conversations.output_bytes_by_stream(state.conversation_id, running_turn.id)
+          Conversations._unsafe_output_bytes_by_stream(state.conversation_id, running_turn.id)
 
         publish_stage(state.conversation_id, "reattach", "done", %{
           outcome: "session_attached",
@@ -733,7 +733,7 @@ defmodule Fountain.Conversations.ConversationServer do
 
   defp mark_orphan(state, running_turn, why) do
     {:ok, _} =
-      Conversations.update_turn(running_turn, %{
+      Conversations._unsafe_update_turn(running_turn, %{
         status: "interrupted",
         ended_at: DateTime.utc_now() |> DateTime.truncate(:second)
       })
@@ -910,7 +910,7 @@ defmodule Fountain.Conversations.ConversationServer do
     end
 
     {:ok, _turn} =
-      Conversations.update_turn(state.current_turn, %{
+      Conversations._unsafe_update_turn(state.current_turn, %{
         status: "interrupted",
         ended_at: now()
       })
@@ -1040,7 +1040,7 @@ defmodule Fountain.Conversations.ConversationServer do
     turn = state.current_turn
 
     {:ok, turn} =
-      Conversations.update_turn(turn, %{
+      Conversations._unsafe_update_turn(turn, %{
         status: if(code == 0, do: "completed", else: "failed"),
         exit_code: code,
         ended_at: now()
@@ -1089,7 +1089,7 @@ defmodule Fountain.Conversations.ConversationServer do
     Logger.error("sprite command error mid-turn: #{inspect(reason)} — failing the turn")
 
     {:ok, turn} =
-      Conversations.update_turn(state.current_turn, %{
+      Conversations._unsafe_update_turn(state.current_turn, %{
         status: "failed",
         ended_at: now()
       })
@@ -1374,10 +1374,10 @@ defmodule Fountain.Conversations.ConversationServer do
   defp kick_turn(state, prompt, agent, images) do
     state = touch_activity(state)
     conv = Conversations._unsafe_get_conversation!(state.conversation_id)
-    turn_number = Conversations.next_turn_number(state.conversation_id)
+    turn_number = Conversations._unsafe_next_turn_number(state.conversation_id)
 
     {:ok, turn} =
-      Conversations.create_turn(%{
+      Conversations._unsafe_create_turn(%{
         conversation_id: conv.id,
         turn_number: turn_number,
         prompt: prompt,
@@ -1388,7 +1388,7 @@ defmodule Fountain.Conversations.ConversationServer do
     # Store images. A rejected image must not take the turn down with it: this
     # used to hard-match {:ok, _}, which is why validation could not be added to
     # the insert path without crashing the server mid-turn.
-    case Conversations.insert_turn_images(turn.id, images) do
+    case Conversations._unsafe_insert_turn_images(turn.id, images) do
       {:ok, _count} ->
         :ok
 
@@ -1538,7 +1538,7 @@ defmodule Fountain.Conversations.ConversationServer do
           Logger.error("spawn failed: #{inspect(reason)}")
 
           {:ok, _} =
-            Conversations.update_turn(turn, %{
+            Conversations._unsafe_update_turn(turn, %{
               status: "failed",
               ended_at: now()
             })

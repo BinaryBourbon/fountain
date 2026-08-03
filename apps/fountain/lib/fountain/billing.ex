@@ -1172,7 +1172,7 @@ defmodule Fountain.Billing do
   on a conversation's critical path should use `record_usage/5`, which cannot
   fail the operation it is measuring.
 
-  Emitted from `Conversations.update_sandbox/2` and `Conversations.create_turn/1`
+  Emitted from `Conversations.update_sandbox/2` and `Conversations._unsafe_create_turn/1`
   rather than from `ConversationServer`, so every path that provisions, runs or
   tears down a sandbox is counted — including the wake path and the
   terminate-when-the-server-is-already-dead path.

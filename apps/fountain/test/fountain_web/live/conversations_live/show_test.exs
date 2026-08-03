@@ -65,6 +65,53 @@ defmodule FountainWeb.ConversationsLive.ShowTest do
     end
   end
 
+  describe "send_prompt image validation" do
+    setup do
+      user = insert_verified_user()
+      conversation = insert_conversation(user_id: user.id)
+      %{user: user, conversation: conversation}
+    end
+
+    test "malformed base64 flashes an error instead of crashing the LiveView", %{
+      conn: conn,
+      user: user,
+      conversation: conversation
+    } do
+      # This path used to Base.decode64! the client payload, so malformed
+      # input took the whole LiveView process down — and crash reports log
+      # socket assigns.
+      conn = login_user(conn, user)
+      {:ok, view, _html} = live(conn, ~p"/conversations/#{conversation.id}")
+
+      render_hook(view, "images_selected", %{
+        "images" => [%{"data" => "not base64 !!!", "media_type" => "image/png"}]
+      })
+
+      html = render_hook(view, "send_prompt", %{"prompt" => "hi"})
+
+      assert html =~ "base64"
+      assert Process.alive?(view.pid)
+    end
+
+    test "a disallowed media type is refused like the API refuses it", %{
+      conn: conn,
+      user: user,
+      conversation: conversation
+    } do
+      conn = login_user(conn, user)
+      {:ok, view, _html} = live(conn, ~p"/conversations/#{conversation.id}")
+
+      render_hook(view, "images_selected", %{
+        "images" => [%{"data" => Base.encode64("x"), "media_type" => "text/html"}]
+      })
+
+      html = render_hook(view, "send_prompt", %{"prompt" => "hi"})
+
+      assert html =~ "unsupported image media_type"
+      assert Process.alive?(view.pid)
+    end
+  end
+
   describe "toggle_stream persists visible_streams" do
     setup do
       user = insert_verified_user()

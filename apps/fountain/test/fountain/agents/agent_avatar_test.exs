@@ -21,6 +21,20 @@ defmodule Fountain.Agents.AgentAvatarTest do
       avatar = Agents.get_avatar(replaced)
       assert avatar.data == "second"
     end
+
+    test "rejects a media type outside the image allowlist" do
+      # The stored media type is echoed into Content-Type at serve time, and
+      # LiveView's upload accept: list passes an entry whose filename
+      # extension matches even when the declared MIME type does not — so
+      # without this check a crafted client stores text/html and gets it
+      # served as active content from the app's own origin.
+      agent = insert_agent()
+
+      assert {:error, :invalid_media_type} =
+               Agents.upload_avatar(agent, "<script>alert(1)</script>", "text/html")
+
+      assert Agents.get_avatar(agent) == nil
+    end
   end
 
   describe "delete_avatar/1" do

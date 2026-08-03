@@ -7,16 +7,15 @@ defmodule Fountain.Conversations.TurnImage do
   @primary_key {:id, :binary_id, autogenerate: true}
   @foreign_key_type :binary_id
 
-  @valid_media_types ~w(image/png image/jpeg image/gif image/webp)
-
   @doc """
   Media types this endpoint is willing to store or serve.
 
   Read at serve time as well as in `changeset/2`: rows reach this table via
-  `Conversations.insert_turn_images/2`, which uses `Repo.insert_all` against a
-  raw table name and therefore never runs the changeset.
+  `Conversations._unsafe_insert_turn_images/2`, which uses `Repo.insert_all` against a
+  raw table name and therefore never runs the changeset. The list itself
+  lives in `Fountain.Images` so the avatar path validates the same one.
   """
-  def valid_media_types, do: @valid_media_types
+  def valid_media_types, do: Fountain.Images.valid_media_types()
 
   schema "turn_images" do
     field :position, :integer
@@ -30,7 +29,7 @@ defmodule Fountain.Conversations.TurnImage do
     image
     |> cast(attrs, [:position, :media_type, :data, :turn_id, :inserted_at])
     |> validate_required([:position, :media_type, :data, :turn_id])
-    |> validate_inclusion(:media_type, @valid_media_types)
+    |> validate_inclusion(:media_type, Fountain.Images.valid_media_types())
     |> validate_number(:position, greater_than_or_equal_to: 0)
     |> unique_constraint([:turn_id, :position])
     # Without this a missing turn raises Ecto.ConstraintError instead of

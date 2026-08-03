@@ -84,27 +84,14 @@ defmodule FountainWeb.Audited do
 
     case peer do
       %{address: address} ->
-        if FountainWeb.Plugs.ClientIp.from_trusted_proxy?(address) do
-          forwarded_ip(headers) || format_ip(address)
-        else
-          format_ip(address)
-        end
-
-      _ ->
-        nil
-    end
-  end
-
-  defp forwarded_ip(headers) do
-    headers
-    |> Enum.find(fn {name, _} -> String.downcase(name) == "x-forwarded-for" end)
-    |> case do
-      {_, value} ->
-        value
-        |> String.split(",")
-        |> Enum.map(&String.trim/1)
-        |> Enum.reject(&(&1 == ""))
-        |> List.first()
+        # Delegates the whole rule — peer gate AND header walk — to the HTTP
+        # path's implementation. A previous copy here parsed x-forwarded-for
+        # itself and took the leftmost (client-supplied) entry, so UI audit
+        # rows and API audit rows disagreed whenever the chain had more than
+        # one hop.
+        address
+        |> FountainWeb.Plugs.ClientIp.resolve_address(headers)
+        |> format_ip()
 
       _ ->
         nil

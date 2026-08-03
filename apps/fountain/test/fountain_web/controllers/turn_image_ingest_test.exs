@@ -17,7 +17,7 @@ defmodule FountainWeb.TurnImageIngestTest do
   So the assertions below accept either 4xx where the spec layer gets there
   first, and pin 400 exactly where the controller is the only thing checking.
   The context-level guard that makes all of this defence in depth rather than a
-  single boundary is in `Conversations.insert_turn_images/2`.
+  single boundary is in `Conversations._unsafe_insert_turn_images/2`.
   """
 
   use FountainWeb.ConnCase, async: true
@@ -115,7 +115,7 @@ defmodule FountainWeb.TurnImageIngestTest do
       big = :binary.copy(<<0>>, 10 * 1024 * 1024 + 1)
 
       assert {:error, msg} =
-               FountainWeb.ConversationController.decode_images_for_test([
+               FountainWeb.PromptImages.decode([
                  %{"media_type" => "image/png", "data" => Base.encode64(big)}
                ])
 

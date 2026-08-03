@@ -530,7 +530,7 @@ defmodule Fountain.Conversations do
     )
   end
 
-  def insert_turn_images(_turn_id, []), do: {:ok, 0}
+  def _unsafe_insert_turn_images(_turn_id, []), do: {:ok, 0}
 
   @doc """
   Store a turn's images.
@@ -545,7 +545,7 @@ defmodule Fountain.Conversations do
   Returns `{:ok, count}` or `{:error, changeset}`. Both are handled by the
   caller; a rejected image must not take a turn down with it.
   """
-  def insert_turn_images(turn_id, images) do
+  def _unsafe_insert_turn_images(turn_id, images) do
     now = DateTime.utc_now() |> DateTime.truncate(:second)
 
     images
@@ -571,7 +571,7 @@ defmodule Fountain.Conversations do
     Repo.get_by(TurnImage, turn_id: turn_id, position: position)
   end
 
-  def next_turn_number(conversation_id) do
+  def _unsafe_next_turn_number(conversation_id) do
     last =
       Repo.one(
         from t in Turn,
@@ -582,7 +582,7 @@ defmodule Fountain.Conversations do
     (last || 0) + 1
   end
 
-  def create_turn(attrs) do
+  def _unsafe_create_turn(attrs) do
     with {:ok, turn} <- %Turn{} |> Turn.changeset(attrs) |> Repo.insert() do
       record_turn_usage(turn)
       {:ok, turn}
@@ -605,30 +605,10 @@ defmodule Fountain.Conversations do
     end
   end
 
-  def update_turn(%Turn{} = turn, attrs) do
+  def _unsafe_update_turn(%Turn{} = turn, attrs) do
     turn
     |> Turn.changeset(attrs)
     |> Repo.update()
-  end
-
-  @doc """
-  Mark any `running` turns for the given conversation as `interrupted`.
-  Used during reattach: a BEAM restart orphaned whatever turn was in
-  flight, and we can't know its outcome — mark it so the user gets a
-  clear signal instead of a permanently-stuck status.
-  """
-  def mark_orphaned_turns_interrupted(conversation_id) do
-    now = DateTime.utc_now() |> DateTime.truncate(:second)
-
-    {n, _} =
-      Repo.update_all(
-        from(t in Turn,
-          where: t.conversation_id == ^conversation_id and t.status == "running"
-        ),
-        set: [status: "interrupted", ended_at: now]
-      )
-
-    n
   end
 
   # ── log events ──────────────────────────────────────────────────────────────────────────
@@ -707,18 +687,6 @@ defmodule Fountain.Conversations do
     event
   end
 
-  @doc """
-  Stream persisted log events for a conversation, ordered by id.
-  Optionally start after a given event id (for SSE Last-Event-ID resume).
-  """
-  def stream_log_events(conversation_id, after_id \\ 0) do
-    from(e in LogEvent,
-      where: e.conversation_id == ^conversation_id and e.id > ^after_id,
-      order_by: [asc: e.id]
-    )
-    |> Repo.stream(max_rows: 100)
-  end
-
   def _unsafe_list_log_events(conversation_id, after_id \\ 0, opts \\ []) do
     base =
       from e in LogEvent,
@@ -764,7 +732,7 @@ defmodule Fountain.Conversations do
   Used by ConversationServer on reattach to know how many bytes of
   replayed output to skip before persisting fresh, post-disconnect data.
   """
-  def output_bytes_by_stream(conversation_id, turn_id) do
+  def _unsafe_output_bytes_by_stream(conversation_id, turn_id) do
     from(e in LogEvent,
       where:
         e.conversation_id == ^conversation_id and

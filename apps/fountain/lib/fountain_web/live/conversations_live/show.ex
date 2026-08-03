@@ -153,59 +153,16 @@ defmodule FountainWeb.ConversationsLive.Show do
         %{"data" => img["data"], "media_type" => img["media_type"]}
       end)
 
-    decoded_images =
-      Enum.map(images, fn %{"data" => b64, "media_type" => mt} ->
-        %{media_type: mt, data: Base.decode64!(b64)}
-      end)
+    # Same validation as the API path (media-type allowlist, non-raising
+    # base64, 10MB cap). This used to Base.decode64! whatever the client
+    # sent, so malformed input crashed the LiveView process — and crash
+    # reports log socket assigns.
+    case FountainWeb.PromptImages.decode(images) do
+      {:error, message} ->
+        {:noreply, put_flash(socket, :error, message)}
 
-    case ConversationServer.send_prompt(socket.assigns.conv.id, p, decoded_images) do
-      :ok ->
-        # Refetch the conversation — wake-from-cold flips sandbox + status.
-        conv = Conversations.get_conversation!(socket.assigns.conv.id, socket.assigns.current_user.id)
-
-        {:noreply,
-         socket
-         |> assign(:conv, conv)
-         |> assign(:prompt, "")
-         |> assign(:pending_images, [])
-         |> put_flash(:info, "Queued")}
-
-      {:error, :busy} ->
-        {:noreply, put_flash(socket, :error, "A turn is already running")}
-
-      {:error, :gone} ->
-        {:noreply, put_flash(socket, :error, "Conversation is terminated and can't be resumed")}
-
-      {:error, :not_running} ->
-        {:noreply, put_flash(socket, :error, "Conversation is no longer running")}
-
-      {:error, :no_agent} ->
-        {:noreply, put_flash(socket, :error, "Conversation has no agent — can't resume")}
-
-      # The on_mount hook gates at mount only, so a socket that connected
-      # while the subscription was active survives a mid-session lapse (#401).
-      # Same handling ConversationsLive.New already has.
-      {:error, :subscription_required} ->
-        {:noreply,
-         socket
-         |> put_flash(:error, "An active subscription is required to send a prompt.")
-         |> push_navigate(to: ~p"/account/billing")}
-
-      {:error, {:sandbox_quota_exceeded, %{count: count, limit: limit}}} ->
-        {:noreply,
-         put_flash(
-           socket,
-           :error,
-           "You have #{count} of #{limit} concurrent sandboxes in use. " <>
-             "Terminate a conversation before starting another."
-         )}
-
-      {:error, :provisioning} ->
-        {:noreply,
-         put_flash(socket, :error, "The conversation is still provisioning — try again shortly.")}
-
-      {:error, reason} ->
-        {:noreply, put_flash(socket, :error, "Couldn't send: #{inspect(reason)}")}
+      {:ok, decoded_images} ->
+        send_decoded_prompt(socket, p, decoded_images)
     end
   end
 
@@ -1436,6 +1393,58 @@ defmodule FountainWeb.ConversationsLive.Show do
   defp truncate(s, _), do: s
 
   # ── stage row helpers ───────────────────────────────────────────────────────
+
+  defp send_decoded_prompt(socket, p, decoded_images) do
+    case ConversationServer.send_prompt(socket.assigns.conv.id, p, decoded_images) do
+      :ok ->
+        # Refetch the conversation — wake-from-cold flips sandbox + status.
+        conv = Conversations.get_conversation!(socket.assigns.conv.id, socket.assigns.current_user.id)
+
+        {:noreply,
+         socket
+         |> assign(:conv, conv)
+         |> assign(:prompt, "")
+         |> assign(:pending_images, [])
+         |> put_flash(:info, "Queued")}
+
+      {:error, :busy} ->
+        {:noreply, put_flash(socket, :error, "A turn is already running")}
+
+      {:error, :gone} ->
+        {:noreply, put_flash(socket, :error, "Conversation is terminated and can't be resumed")}
+
+      {:error, :not_running} ->
+        {:noreply, put_flash(socket, :error, "Conversation is no longer running")}
+
+      {:error, :no_agent} ->
+        {:noreply, put_flash(socket, :error, "Conversation has no agent — can't resume")}
+
+      # The on_mount hook gates at mount only, so a socket that connected
+      # while the subscription was active survives a mid-session lapse (#401).
+      # Same handling ConversationsLive.New already has.
+      {:error, :subscription_required} ->
+        {:noreply,
+         socket
+         |> put_flash(:error, "An active subscription is required to send a prompt.")
+         |> push_navigate(to: ~p"/account/billing")}
+
+      {:error, {:sandbox_quota_exceeded, %{count: count, limit: limit}}} ->
+        {:noreply,
+         put_flash(
+           socket,
+           :error,
+           "You have #{count} of #{limit} concurrent sandboxes in use. " <>
+             "Terminate a conversation before starting another."
+         )}
+
+      {:error, :provisioning} ->
+        {:noreply,
+         put_flash(socket, :error, "The conversation is still provisioning — try again shortly.")}
+
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, "Couldn't send: #{inspect(reason)}")}
+    end
+  end
 
   defp stage_icon("provision"), do: "&#10024;"
   defp stage_icon("checkpoint_restore"), do: "&#128230;"
