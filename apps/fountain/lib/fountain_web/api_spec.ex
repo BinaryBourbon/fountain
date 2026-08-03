@@ -16,13 +16,17 @@ defmodule FountainWeb.ApiSpec do
     %OpenApi{
       servers: [Server.from_endpoint(Endpoint)],
       info: %Info{
-        title: "Agent on Demand",
+        title: "Fountain",
         version: @app_version,
         description: """
-        HTTP API for Agent on Demand. The same surface backs the LiveView UI
-        and the `aod` CLI; if it's not here, it doesn't exist yet.
+        HTTP API for Fountain. The same surface backs the LiveView UI and the
+        `fountain` CLI (`brew install BinaryBourbon/tap/fountain`); if it's not
+        here, it doesn't exist yet.
 
-        All `/api/*` endpoints require a bearer token (`ADMIN_TOKEN`).
+        All `/api/*` endpoints require a per-user API key (`ftn_...`) passed as
+        a bearer token. Mint one at `POST /api/auth/api-keys` (or exchange
+        email + password at `POST /api/auth/token`); keys carry scopes and an
+        expiry.
         """
       },
       paths: Paths.from_router(Router),
@@ -31,7 +35,9 @@ defmodule FountainWeb.ApiSpec do
           "bearer" => %SecurityScheme{
             type: "http",
             scheme: "bearer",
-            description: "ADMIN_TOKEN configured at boot."
+            description:
+              "Per-user API key (`ftn_...`), minted at `POST /api/auth/api-keys` " <>
+                "or exchanged at `POST /api/auth/token`. Keys carry scopes and an expiry."
           }
         }
       },
