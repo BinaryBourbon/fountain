@@ -164,7 +164,8 @@ while sign-in, dashboards, configuration and past logs keep serving. The
 readiness probe deliberately excludes Sprites — a third party's uptime does
 not belong on the serving path — so do not expect pods to go NotReady over
 it. If you scrape metrics, provisioning failures show as
-`fountain_provision_exception_count`.
+`fountain_stage_count{stage="provision", status="failed"}` (and completions
+as `status="done"`).
 
 ---
 

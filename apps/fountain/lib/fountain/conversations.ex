@@ -705,6 +705,38 @@ defmodule Fountain.Conversations do
   defp redact_attrs(attrs), do: attrs
 
   @doc """
+  Record a stage transition: persist the log event, broadcast it to the
+  conversation's PubSub topic, and emit a `[:fountain, :stage]` telemetry
+  event.
+
+  Every operationally meaningful outcome flows through here — provision
+  done/failed, reattach, turn done/failed — so the Prometheus stage counter
+  (and the alert on it) cannot drift from what clients see on the stream.
+  `stage` and `status` are the metric's only tags; both value sets are small
+  and fixed. `conv_id` stays in metadata and must never become a tag.
+  """
+  def publish_stage(conv_id, stage, status, meta \\ %{}) do
+    event =
+      log!(%{
+        conversation_id: conv_id,
+        kind: "stage",
+        stage: stage,
+        state: status,
+        data: Jason.encode!(meta)
+      })
+
+    Fountain.Telemetry.event(
+      [:stage],
+      %{stage: stage, status: status, conv_id: conv_id},
+      %{count: 1}
+    )
+
+    Phoenix.PubSub.broadcast(Fountain.PubSub, "conv:#{conv_id}", {:log_event, event})
+
+    event
+  end
+
+  @doc """
   Stream persisted log events for a conversation, ordered by id.
   Optionally start after a given event id (for SSE Last-Event-ID resume).
   """

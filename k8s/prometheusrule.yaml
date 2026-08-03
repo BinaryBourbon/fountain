@@ -166,15 +166,21 @@ spec:
       interval: 60s
       rules:
         - alert: FountainProvisionFailures
+          # Counts the "failed" stage events ConversationServer publishes —
+          # every failure path funnels through them, including ones rescued
+          # inside the GenServer that no exception metric ever sees (#310).
+          # Absolute count, not a rate: at current traffic a per-second rate
+          # threshold would need ~45 failures per window to fire, which is
+          # "hear it from users first" territory. Three failures in 30m is
+          # already a broken Sprites token or outage.
           expr: |
-            sum(rate(fountain_provision_exception_count{namespace="fountain"}[15m])) > 0.05
-          for: 15m
+            sum(increase(fountain_stage_count{namespace="fountain", stage="provision", status="failed"}[30m])) > 2
           labels:
             severity: warning
           annotations:
             summary: "Fountain sandbox provisioning is failing"
             description: |
-              Provisions are erroring. Users see conversations that fail to start.
-              Most likely causes: the Sprites API is unhealthy, the platform
-              SPRITES_TOKEN is invalid or rate-limited, or tenants are hitting the
-              concurrency cap. There are no retries on the provisioning path.
+              Provisions are failing after retries. Users see conversations
+              that fail to start. Most likely causes: the platform
+              SPRITES_TOKEN is invalid or rate-limited, the Sprites API is
+              unhealthy, or tenants are hitting the concurrency cap.

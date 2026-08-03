@@ -448,17 +448,8 @@ defmodule Fountain.Conversations.Provisioning do
   @doc false
   def shell_quote(s), do: "'" <> String.replace(s, "'", "'\\''") <> "'"
 
-  defp publish_stage(conv_id, stage, state, meta \\ %{}) do
-    Conversations.log!(%{
-      conversation_id: conv_id,
-      kind: "stage",
-      stage: stage,
-      state: state,
-      data: Jason.encode!(meta)
-    })
-    |> tap(fn ev ->
-      Phoenix.PubSub.broadcast(Fountain.PubSub, "conv:#{conv_id}", {:log_event, ev})
-    end)
+  defp publish_stage(conv_id, stage, status, meta \\ %{}) do
+    Conversations.publish_stage(conv_id, stage, status, meta)
   end
 
   # Stamp the output with the stage that was active when it was emitted

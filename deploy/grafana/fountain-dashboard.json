@@ -90,7 +90,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(rate(fountain_provision_exception_count{namespace=\"fountain\"}[15m])) or vector(0)"
+          "expr": "sum(rate(fountain_stage_count{namespace=\"fountain\", stage=\"provision\", status=\"failed\"}[15m])) or vector(0)"
         }
       ]
     },
@@ -117,7 +117,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(increase(fountain_turn_stop_count{namespace=\"fountain\"}[1h])) or vector(0)"
+          "expr": "sum(increase(fountain_stage_count{namespace=\"fountain\", stage=\"turn\", status=\"done\"}[1h])) or vector(0)"
         }
       ]
     },
@@ -130,7 +130,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(increase(fountain_provision_stop_count{namespace=\"fountain\"}[1h])) or vector(0)"
+          "expr": "sum(increase(fountain_stage_count{namespace=\"fountain\", stage=\"provision\", status=\"done\"}[1h])) or vector(0)"
         }
       ]
     },
@@ -208,17 +208,17 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(rate(fountain_provision_stop_count{namespace=\"fountain\"}[15m]))",
+          "expr": "sum(rate(fountain_stage_count{namespace=\"fountain\", stage=\"provision\", status=\"done\"}[15m]))",
           "legendFormat": "completed /s"
         },
         {
           "refId": "B",
-          "expr": "sum(rate(fountain_provision_exception_count{namespace=\"fountain\"}[15m]))",
+          "expr": "sum(rate(fountain_stage_count{namespace=\"fountain\", stage=\"provision\", status=\"failed\"}[15m]))",
           "legendFormat": "failed /s"
         },
         {
           "refId": "C",
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(fountain_provision_stop_duration_bucket{namespace=\"fountain\"}[30m]))) / 1000",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(fountain_fresh_provision_stop_duration_bucket{namespace=\"fountain\"}[30m]))) / 1000",
           "legendFormat": "p95 duration (s)"
         }
       ]

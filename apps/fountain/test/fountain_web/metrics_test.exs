@@ -77,7 +77,38 @@ defmodule FountainWeb.MetricsTest do
       assert [:phoenix, :router_dispatch, :stop, :duration] in names
       assert [:phoenix, :router_dispatch, :exception, :count] in names
       assert [:fountain, :repo, :query, :queue_time] in names
-      assert [:fountain, :provision, :exception, :count] in names
+      assert [:fountain, :stage, :count] in names
+      assert [:fountain, :fresh_provision, :stop, :duration] in names
+    end
+
+    test "every subscribed fountain event has a live producer" do
+      # The class of bug behind #310: metrics subscribed to event names that
+      # nothing emits, passing every name-list assertion while the scrape
+      # stays empty forever. Pin each custom event to the code that fires it.
+      emitted = [
+        # Conversations.publish_stage/4
+        [:fountain, :stage],
+        # Fountain.Telemetry.span/3 callers
+        [:fountain, :fresh_provision, :stop],
+        [:fountain, :reattach, :stop],
+        # :telemetry.execute call sites
+        [:fountain, :sandbox, :reclaimed],
+        [:fountain, :reaper, :run],
+        [:fountain, :reaper, :untracked],
+        # Library-emitted
+        [:phoenix, :router_dispatch, :stop],
+        [:phoenix, :router_dispatch, :exception],
+        [:fountain, :repo, :query],
+        [:fountain, :funnel],
+        [:vm, :memory],
+        [:vm, :total_run_queue_lengths]
+      ]
+
+      for metric <- AppTelemetry.prometheus_metrics() do
+        assert metric.event_name in emitted,
+               "#{inspect(metric.name)} subscribes to #{inspect(metric.event_name)}, " <>
+                 "which no known code path emits — this is how #310 happened"
+      end
     end
   end
 
@@ -94,6 +125,29 @@ defmodule FountainWeb.MetricsTest do
       {200, body} = scrape()
 
       assert body =~ "phoenix_router_dispatch_stop_duration"
+    end
+
+    test "a stage event lands in the scrape with stage and status labels" do
+      # The subscription side of the stage counter. The producer side —
+      # ConversationServer actually publishing these stages — is asserted in
+      # conversation_server_test.exs against a real provision.
+      Fountain.Telemetry.event(
+        [:stage],
+        %{stage: "provision", status: "failed", conv_id: Ecto.UUID.generate()},
+        %{count: 1}
+      )
+
+      Process.sleep(50)
+      {200, body} = scrape()
+
+      assert Regex.match?(
+               ~r/fountain_stage_count\{[^}]*stage="provision"[^}]*status="failed"[^}]*\}/,
+               body
+             )
+
+      # conv_id is metadata, never a label — one series per conversation
+      # would eat Prometheus.
+      refute body =~ "conv_id="
     end
 
     test "route tags are the matched pattern, not the raw path", %{conn: conn} do
