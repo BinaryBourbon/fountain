@@ -10,7 +10,7 @@ mix deps.get
 mix setup                           # dev DB: create + migrate
 MIX_ENV=test mix ecto.create && MIX_ENV=test mix ecto.migrate
 mix test                            # full suite (~200 tests)
-mix precommit                       # same checks CI runs
+mix precommit                       # the core CI checks, locally
 ```
 
 See [SETUP.md](SETUP.md) for full workstation bootstrap (Postgres, OAuth keys, etc.).
@@ -103,10 +103,10 @@ Environments.upsert_secret(env, %{"key" => "TOKEN", "value" => "plaintext"}, dek
 | Hook | Unauthenticated | Authenticated but ineligible |
 |---|---|---|
 | `require_authenticated_user` | `redirect` to `/auth/login` | — |
-| `require_active_subscription` | `redirect` to `/auth/login` | `push_navigate` to `/billing` |
+| `require_active_subscription` | `redirect` to `/auth/login` (via `require_authenticated_user`, which must run first) | `redirect` to `/account/billing` |
 | `require_admin` | `redirect` to `/auth/login` | `push_navigate` to `/dashboard` |
 
-The distinction matters in tests: `{:redirect, _}` vs `{:live_redirect, _}`.
+The distinction matters in tests: plain `redirect` yields `{:redirect, _}` (login and billing redirects), while `push_navigate` yields `{:live_redirect, _}` (the non-admin case in `require_admin`).
 
 ## Rate limiter
 
@@ -131,13 +131,20 @@ The `UeberAuthController` skips `plug Ueberauth` when `ueberauth_test_mode: true
 
 `.github/workflows/ci.yml` runs on every push to `main` and all PRs:
 
-1. `mix format --check-formatted`
-2. `mix compile --warnings-as-errors`
-3. `mix credo`
-4. `mix ecto.create && mix ecto.migrate`
-5. `mix test`
+1. `mix deps.unlock --unused` (fails if `mix.lock` has unused entries)
+2. `mix format --check-formatted`
+3. `mix compile --warnings-as-errors`
+4. `mix credo --strict`
+5. `mix hex.audit` (non-blocking — visible in the log, doesn't fail the build)
+6. `mix sobelow --config` (security scan)
+7. `MIX_ENV=dev mix dialyzer`
+8. Go CLI checks: `go test ./...` and `go vet ./...` in `cli/`
+9. `mix ecto.create && mix ecto.migrate`
+10. `mix coveralls` (the test suite, with coverage)
+11. Release boot check — builds a prod release, probes `/health` and `/health/ready`, runs a release task beside the live server
+12. `mix openapi.spec.json` + `jq empty` (OpenAPI spec validates)
 
-Run `mix precommit` locally before pushing — it's the same sequence.
+Run `mix precommit` locally before pushing — it covers the core gate (compile with warnings-as-errors, unused deps, format, `credo --strict`, dialyzer, tests). CI additionally runs sobelow, hex.audit, the Go CLI checks, the release boot check, and OpenAPI validation.
 
 ## Test patterns
 

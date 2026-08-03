@@ -31,7 +31,7 @@ DELETE /api/auth/api-keys/:id      # revoke a key
 
 ## Rate limiting
 
-Requests are rate-limited per API key (or IP for unauthenticated requests). On limit hit: `429 Too Many Requests` with `Retry-After` header.
+Requests are rate-limited per client IP (authenticated or not — the limiter does not key by API key). On limit hit: `429 Too Many Requests` with `Retry-After` header.
 
 ## Agents
 

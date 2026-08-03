@@ -79,7 +79,7 @@ reaper logs one summary line per run:
 
 ```bash
 kubectl logs -n fountain -l app=fountain --since=2h | grep 'reaper:'
-# reaper: released=0 destroyed=2 untracked=102 live=114
+# reaper: released=0 expired=0 destroyed=2 untracked=102 live=114
 ```
 
 ---
