@@ -41,7 +41,7 @@ defmodule FountainWeb.VaultsLive.Form do
   end
 
   defp secrets_for(%Vault{id: nil}), do: []
-  # Vault is loaded via the tenant-scoped get_vault!/2 in load/2.
+  # Ownership: vault is loaded via the tenant-scoped get_vault!/2 in load/2.
   defp secrets_for(vault), do: Vaults._unsafe_list_secrets(vault)
 
   @impl true

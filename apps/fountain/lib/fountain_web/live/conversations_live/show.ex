@@ -32,6 +32,7 @@ defmodule FountainWeb.ConversationsLive.Show do
           Conversations.mark_read(id, user_id)
         end
 
+        # Ownership: established by the scoped get_conversation in mount above.
         events = Conversations._unsafe_list_log_events(id) |> annotate_durations()
 
         {:ok,
@@ -50,6 +51,8 @@ defmodule FountainWeb.ConversationsLive.Show do
   end
 
   defp load_turns(conv_id) do
+    # Ownership: only called from mount/handle_info after the scoped
+    # get_conversation.
     Conversations._unsafe_list_turns(conv_id)
     |> Enum.map(fn t ->
       image_count = length(t.images || [])

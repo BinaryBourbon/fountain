@@ -63,7 +63,7 @@ defmodule FountainWeb.EnvironmentsLive.Form do
   end
 
   defp secrets_for(%Environment{id: nil}), do: []
-  # Env is loaded via the tenant-scoped lookup in load/2.
+  # Ownership: env is loaded via the tenant-scoped lookup in load/2.
   defp secrets_for(env), do: Environments._unsafe_list_secrets(env)
 
   @impl true

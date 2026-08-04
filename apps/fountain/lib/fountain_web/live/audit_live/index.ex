@@ -25,6 +25,8 @@ defmodule FountainWeb.AuditLive.Index do
     {:noreply, assign(socket, :events, events)}
   end
 
+  # Ownership: the function head is the admin gate — same predicate as
+  # require_admin; every other user hits the tenant-scoped clause below.
   defp load_events(%{role: "admin"}), do: Audit._unsafe_list_recent(200)
   defp load_events(%{id: id}), do: Audit.list_recent_for_user(id, 200)
 

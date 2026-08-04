@@ -41,7 +41,7 @@
       # If you create your own checks, you must specify the source files for
       # them here, so they can be loaded by Credo before running the analysis.
       #
-      requires: [],
+      requires: ["credo/checks/"],
       #
       # If you want to enforce a style guide and need a more traditional linting
       # experience, you can change `strict` to `true` below:
@@ -66,6 +66,29 @@
       #
       checks: %{
         enabled: [
+          #
+          ## Project checks
+          #
+          # Replaces the manual `_unsafe_` call-site sweeps (#328/#383):
+          # every remote `Mod._unsafe_*` call needs a nearby `# ownership:`
+          # comment. Exemptions are the caller shapes from CLAUDE.md's
+          # tenant isolation section where ownership is structural, plus
+          # tests (which create their own data).
+          {Fountain.Credo.Check.UnsafeCallOwnership,
+           [
+             exempt_paths: [
+               # admin surface: whole directory behind the router's :admin
+               # live_session (require_admin)
+               "lib/fountain_web/live/admin_live/",
+               # GenServer: ownership established at init/rehydrate
+               "lib/fountain/conversations/conversation_server.ex",
+               # system-level sweeps, run with no user in scope
+               "lib/fountain/conversations/rehydrator.ex",
+               "lib/fountain/workers/",
+               "/test/"
+             ]
+           ]},
+
           #
           ## Consistency Checks
           #
