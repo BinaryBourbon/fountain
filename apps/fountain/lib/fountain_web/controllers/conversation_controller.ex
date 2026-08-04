@@ -61,6 +61,7 @@ defmodule FountainWeb.ConversationController do
         {:error, :not_found}
 
       _ ->
+        # Ownership: established by the scoped get_conversation above.
         render(conn, :turns, turns: Conversations._unsafe_list_turns(id))
     end
   end
@@ -432,6 +433,7 @@ defmodule FountainWeb.ConversationController do
   # error. This used to `throw` the chunk error with no catch anywhere in
   # the module, producing a crash report and a Sentry event per disconnect.
   defp replay(conn, conv_id, after_id, streams) do
+    # Ownership: only called from stream/2, after its scoped get_conversation.
     conv_id
     |> Conversations._unsafe_list_log_events(after_id, streams: streams)
     |> Enum.reduce_while({:ok, conn, after_id}, fn ev, {:ok, acc_conn, last_id} ->

@@ -1003,6 +1003,9 @@ defmodule Fountain.Conversations do
   (`terminated`, `failed`) — those don't auto-resume.
   """
   def wake_conversation(conv_id, initial_prompt \\ nil) do
+    # Ownership: called from ConversationServer (which established ownership
+    # before starting) and the boot-time rehydrator sweep. The agent fetched
+    # below is the conversation's own agent_id, same tenant by construction.
     with %Conversation{} = conv <- _unsafe_get_conversation(conv_id) || {:error, :not_found},
          :ok <- assert_resumable(conv),
          %Agents.Agent{} = agent <-

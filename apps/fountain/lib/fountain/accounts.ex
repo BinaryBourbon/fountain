@@ -774,6 +774,9 @@ defmodule Fountain.Accounts do
            |> Ecto.Changeset.change(suspended_at: now)
            |> User.invalidate_sessions_changeset()
            |> Repo.update() do
+      # Ownership: admin/system suspension flow — the %User{} being acted on
+      # IS the tenant whose sandboxes are reaped; there is no requesting user
+      # to scope by.
       reaped = Fountain.Conversations._unsafe_reap_all_for_user(user.id)
 
       # Best-effort notification (#450): before this the user's only signal
