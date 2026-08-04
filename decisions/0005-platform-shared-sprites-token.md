@@ -51,3 +51,13 @@ Infisical operator into the `fountain-secrets` Kubernetes Secret
 `envFrom`; access control is the cluster's RBAC plus Infisical project
 access. It remains env-var-only from the app's perspective — never in the
 DB, never in the UI.
+
+## Addendum — 2026-08-04
+
+The "never stored in the DB, never surfaced in the admin UI" clause is
+superseded by [0010](0010-db-backed-instance-settings.md): the token becomes a
+DB-backed instance setting — encrypted under a platform DEK wrapped by
+`MASTER_SECRETS_KEY`, write-only in the admin UI, env var as fallback — so
+rotation stops requiring a deploy. (Not yet built as of 2026-08-04; 0010
+tracks status.) The core decision here — one platform token, per-tenant
+concurrency cap as the noisy-neighbor mitigation — is unchanged.
