@@ -67,9 +67,12 @@ jobs:
         with:
           path: _build
           key: ${{ runner.os }}-build-${{ steps.beam.outputs.otp-version }}-${{ steps.beam.outputs.elixir-version }}-${{ hashFiles('**/mix.lock') }}
+          # No bare "-build-" fallback: BEAM bytecode compiled by a different
+          # OTP/Elixir is rebuilt from scratch anyway, and a cross-version
+          # restore has produced subtle staleness — the same hazard the PLT
+          # cache below avoids by omitting restore-keys entirely.
           restore-keys: |
             ${{ runner.os }}-build-${{ steps.beam.outputs.otp-version }}-${{ steps.beam.outputs.elixir-version }}-
-            ${{ runner.os }}-build-
 
       - name: Install dependencies
         run: mix deps.get
@@ -135,6 +138,19 @@ jobs:
       - name: CLI vet
         working-directory: cli
         run: go vet ./...
+
+      # `gofmt -l` prints offending files and exits 0, so the failure has to
+      # come from the emptiness check — print the list first so the log says
+      # which files to run gofmt on.
+      - name: CLI gofmt
+        working-directory: cli
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "gofmt needed on:" >&2
+            echo "$unformatted" >&2
+            exit 1
+          fi
 
       - name: Set up database
         run: mix ecto.create --quiet && mix ecto.migrate --quiet

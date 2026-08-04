@@ -69,7 +69,7 @@ defmodule Fountain.Umbrella.MixProject do
       "ecto.reset": ["cmd --app fountain mix ecto.reset"],
       precommit: [
         "compile --warnings-as-errors",
-        "deps.unlock --unused",
+        &deps_unlock_unused_changes_nothing/1,
         "format --check-formatted",
         "credo --strict",
         &dialyzer_in_dev/1,
@@ -77,6 +77,26 @@ defmodule Fountain.Umbrella.MixProject do
         "test"
       ]
     ]
+  end
+
+  # Parity with CI's `mix deps.unlock --unused && git diff --exit-code
+  # mix.lock`. The bare "deps.unlock --unused" step silently rewrote the
+  # lockfile and passed, while CI failed the same commit on the diff check.
+  # Compared against the pre-run file rather than git HEAD so an
+  # uncommitted-but-legitimate lockfile edit (a dep added this branch) does
+  # not trip it — only changes deps.unlock itself makes.
+  defp deps_unlock_unused_changes_nothing(_args) do
+    before = File.read!("mix.lock")
+    Mix.Task.run("deps.unlock", ["--unused"])
+
+    if File.read!("mix.lock") != before do
+      Mix.raise(
+        "mix.lock listed unused dependencies (deps.unlock --unused just pruned them). " <>
+          "Commit the updated mix.lock — CI fails this via `git diff --exit-code mix.lock`."
+      )
+    end
+
+    :ok
   end
 
   # MIX_ENV=dev on purpose (precommit itself runs in :test): dialyzer analyzes
