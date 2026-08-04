@@ -11,6 +11,7 @@ defmodule Fountain.MixProject do
       lockfile: "../../mix.lock",
       elixir: "~> 1.18",
       elixirc_paths: elixirc_paths(Mix.env()),
+      test_paths: ["test", "../../ee/test"],
       start_permanent: Mix.env() == :prod,
       aliases: aliases(),
       deps: deps(),
@@ -27,8 +28,13 @@ defmodule Fountain.MixProject do
     ]
   end
 
-  defp elixirc_paths(:test), do: ["lib", "test/support"]
-  defp elixirc_paths(_), do: ["lib"]
+  # ee/ is the top-level EE directory (billing + transactional email); it
+  # compiles into this app. Mix requires external dirs as absolute paths and
+  # silently skips missing ones, so build contexts must include ee/ (see
+  # Dockerfile and decisions/0010).
+  @ee_lib Path.expand("../../ee/lib", __DIR__)
+  defp elixirc_paths(:test), do: ["lib", @ee_lib, "test/support"]
+  defp elixirc_paths(_), do: ["lib", @ee_lib]
 
   defp deps do
     [

@@ -26,6 +26,7 @@
           "src/",
           "test/",
           "web/",
+          "ee/",
           "apps/*/lib/",
           "apps/*/src/",
           "apps/*/test/",
