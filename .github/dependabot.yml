@@ -1,0 +1,34 @@
+# SHA-pinned actions never move on their own, and the two git-ref mix deps
+# (dialyxir, if any others appear) sit outside `mix hex.audit` — dependabot is
+# the only thing that will ever propose bumping any of these (#435).
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
+
+  - package-ecosystem: mix
+    directory: /
+    schedule:
+      interval: weekly
+    # Security + patch/minor noise control: one PR per week at most per group.
+    groups:
+      hex-deps:
+        update-types: [minor, patch]
+
+  - package-ecosystem: gomod
+    directory: /cli
+    schedule:
+      interval: weekly
+    groups:
+      go-deps:
+        update-types: [minor, patch]
+
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
