@@ -15,6 +15,10 @@ Mimic.copy(Horde.DynamicSupervisor)
 Mimic.copy(Req)
 
 # Stripe modules — needed by billing tests and webhook controller tests.
+# Billing itself is copied so the webhook controller's :retry/500 arm can be
+# driven with an injected transient failure — there is no real Stripe outage
+# to reproduce in a test.
+Mimic.copy(Fountain.Billing)
 Mimic.copy(Stripe.Webhook)
 Mimic.copy(Stripe.Customer)
 Mimic.copy(Stripe.BillingPortal.Session)

@@ -98,6 +98,73 @@ defmodule FountainWeb.StripeWebhookControllerTest do
       assert Fountain.Repo.get!(Fountain.Accounts.User, user.id).subscription_status ==
                "active"
     end
+
+    # The :retry/500 arm (#337 gave every outcome a 200; #414 flagged that the
+    # 500 path had no controller test). 500 is the only thing that makes
+    # Stripe redeliver, so these are the tests that fail if someone
+    # "simplifies" the controller back to always-200.
+    @tag capture_log: true
+    test "returns 500 so Stripe redelivers when processing fails transiently", %{conn: conn} do
+      event = %Stripe.Event{
+        id: "evt_retry_test",
+        type: "customer.subscription.updated",
+        data: %{object: %{status: "active", customer: "cus_x", trial_end: nil}}
+      }
+
+      stub(Stripe.Webhook, :construct_event, fn _body, _sig, _secret -> {:ok, event} end)
+      stub(Fountain.Billing, :handle_event, fn _event -> {:error, :database_unavailable} end)
+
+      conn =
+        conn
+        |> Plug.Conn.put_req_header("content-type", "application/json")
+        |> Plug.Conn.put_req_header("stripe-signature", "t=1,v1=validhash")
+        |> Phoenix.ConnTest.dispatch(FountainWeb.Endpoint, :post, "/api/stripe/webhook", @raw_body)
+
+      assert conn.status == 500
+    end
+
+    @tag capture_log: true
+    test "returns 500 when processing raises (rescue funnels into :retry)", %{conn: conn} do
+      event = %Stripe.Event{
+        id: "evt_raise_test",
+        type: "customer.subscription.updated",
+        data: %{object: %{status: "active", customer: "cus_x", trial_end: nil}}
+      }
+
+      stub(Stripe.Webhook, :construct_event, fn _body, _sig, _secret -> {:ok, event} end)
+      stub(Fountain.Billing, :handle_event, fn _event -> raise "boom mid-processing" end)
+
+      conn =
+        conn
+        |> Plug.Conn.put_req_header("content-type", "application/json")
+        |> Plug.Conn.put_req_header("stripe-signature", "t=1,v1=validhash")
+        |> Phoenix.ConnTest.dispatch(FountainWeb.Endpoint, :post, "/api/stripe/webhook", @raw_body)
+
+      assert conn.status == 500
+    end
+
+    @tag capture_log: true
+    test "still acks with 200 when the customer is unknown — retrying cannot fix it",
+         %{conn: conn} do
+      # The one error branch that deliberately answers 200: user_not_found.
+      # Kept next to the 500 tests so the asymmetry is visible in one place.
+      event = %Stripe.Event{
+        id: "evt_unknown_customer",
+        type: "customer.subscription.updated",
+        data: %{object: %{status: "active", customer: "cus_nobody", trial_end: nil}}
+      }
+
+      stub(Stripe.Webhook, :construct_event, fn _body, _sig, _secret -> {:ok, event} end)
+      stub(Fountain.Billing, :handle_event, fn _event -> {:error, :user_not_found} end)
+
+      conn =
+        conn
+        |> Plug.Conn.put_req_header("content-type", "application/json")
+        |> Plug.Conn.put_req_header("stripe-signature", "t=1,v1=validhash")
+        |> Phoenix.ConnTest.dispatch(FountainWeb.Endpoint, :post, "/api/stripe/webhook", @raw_body)
+
+      assert conn.status == 200
+    end
   end
 
   describe "POST /api/stripe/webhook — real signature verification (no stub)" do

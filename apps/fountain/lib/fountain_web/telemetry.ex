@@ -364,18 +364,25 @@ defmodule FountainWeb.Telemetry do
     ]
   end
 
-  defp periodic_measurements do
-    # Funnel stage gauges (#282) and ops gauges (#321). Full-table passes
-    # every tick — cheap at current scale. Off in test: the poller's Repo
-    # calls would race the SQL Sandbox's connection ownership (the modules
-    # are exercised directly by tests instead).
-    if Application.get_env(:fountain, :funnel_poller_enabled, true) do
-      [
-        {Fountain.Funnel, :emit_telemetry, []},
-        {Fountain.OpsGauges, :emit_telemetry, []}
-      ]
-    else
-      []
-    end
+  # Funnel stage gauges (#282) and ops gauges (#321). Full-table passes
+  # every tick — cheap at current scale. Off in test: the poller's Repo
+  # calls would race the SQL Sandbox's connection ownership (the modules
+  # are exercised directly by tests instead).
+  #
+  # Public (with the flag as an argument) so telemetry_test can assert the
+  # poller wiring: every MFA here must exist, or telemetry_poller crashes at
+  # boot in the only environment where the list is non-empty — production.
+  @doc false
+  def periodic_measurements(
+        enabled? \\ Application.get_env(:fountain, :funnel_poller_enabled, true)
+      )
+
+  def periodic_measurements(true) do
+    [
+      {Fountain.Funnel, :emit_telemetry, []},
+      {Fountain.OpsGauges, :emit_telemetry, []}
+    ]
   end
+
+  def periodic_measurements(false), do: []
 end
