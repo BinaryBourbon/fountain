@@ -54,7 +54,7 @@ defmodule Fountain.MixProject do
       {:sprites, github: "ravi-hq/sprites-ex", ref: "c2a96426331f0e367455e838fea4ab4154032215"},
       {:open_api_spex, "~> 3.21"},
       {:libcluster, "~> 3.4"},
-      {:horde, "~> 0.9.0"},
+      {:horde, "~> 0.10.0"},
       # The opentelemetry_* family depends on complex Erlang/rebar3 cross-dep includes
       # (otel_sampler.hrl, grpcbox, chatterbox). They compile correctly in CI
       # (Alpine/musl OTP) but fail with rebar3 bare compile in some dev environments.
