@@ -76,7 +76,11 @@ defmodule Fountain.Workers.StripeCustomerSyncTrialTest do
       |> Repo.update()
 
     stub(Stripe.Customer, :create, fn _ -> {:ok, %Stripe.Customer{id: "cus_late"}} end)
+    # Both arities: billing calls create/2 — a /1-only reject watches an
+    # arity nothing calls, and the real call would fall through to live
+    # Stripe instead of tripping the tripwire.
     reject(&Stripe.Subscription.create/1)
+    reject(&Stripe.Subscription.create/2)
 
     assert :ok = perform_job(StripeCustomerSync, %{user_id: user.id})
     assert Repo.get(User, user.id).stripe_subscription_id == nil
