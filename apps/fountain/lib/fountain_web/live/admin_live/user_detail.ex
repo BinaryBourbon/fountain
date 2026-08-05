@@ -40,6 +40,7 @@ defmodule FountainWeb.AdminLive.UserDetail do
         {:ok,
          socket
          |> assign(:page_title, "Admin · #{user.email}")
+         |> assign(:billing_enabled, Fountain.Billing.enabled?())
          |> load_user(user)}
     end
   end
@@ -89,10 +90,13 @@ defmodule FountainWeb.AdminLive.UserDetail do
           ]}>
             {@user.role}
           </span>
-          <span class={[
-            "inline-flex items-center rounded px-1.5 py-0.5 font-medium border",
-            subscription_status_color(@user.subscription_status)
-          ]}>
+          <span
+            :if={@billing_enabled}
+            class={[
+              "inline-flex items-center rounded px-1.5 py-0.5 font-medium border",
+              subscription_status_color(@user.subscription_status)
+            ]}
+          >
             {@user.subscription_status}
           </span>
           <span
@@ -108,7 +112,7 @@ defmodule FountainWeb.AdminLive.UserDetail do
             suspended since {format_ts(@user.suspended_at)}
           </span>
           <a
-            :if={@user.stripe_customer_id not in [nil, ""]}
+            :if={@billing_enabled and @user.stripe_customer_id not in [nil, ""]}
             href={"https://dashboard.stripe.com/customers/#{@user.stripe_customer_id}"}
             target="_blank"
             rel="noopener"
@@ -128,7 +132,7 @@ defmodule FountainWeb.AdminLive.UserDetail do
             last active {if @last_activity_at, do: format_date(@last_activity_at), else: "—"}
           </div>
         </div>
-        <div class="bg-white rounded shadow border border-zinc-200 px-4 py-3">
+        <div :if={@billing_enabled} class="bg-white rounded shadow border border-zinc-200 px-4 py-3">
           <div class="text-xs text-zinc-500">Trial / period</div>
           <div class="text-sm font-medium">
             {cond do
@@ -144,6 +148,15 @@ defmodule FountainWeb.AdminLive.UserDetail do
           </div>
           <div class="text-xs text-zinc-500">
             onboarding {@user.onboarding_state}
+          </div>
+        </div>
+        <div :if={not @billing_enabled} class="bg-white rounded shadow border border-zinc-200 px-4 py-3">
+          <div class="text-xs text-zinc-500">Onboarding</div>
+          <div class="text-sm font-medium">{@user.onboarding_state}</div>
+          <div class="text-xs text-zinc-500">
+            {if @user.onboarding_completed_at,
+              do: "completed #{format_date(@user.onboarding_completed_at)}",
+              else: "not completed"}
           </div>
         </div>
         <div class="bg-white rounded shadow border border-zinc-200 px-4 py-3">

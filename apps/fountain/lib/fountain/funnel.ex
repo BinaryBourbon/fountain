@@ -80,7 +80,15 @@ defmodule Fountain.Funnel do
     verified = Enum.filter(users, & &1.verified_at)
     onboarded = Enum.filter(users, & &1.onboarded_at)
     activated = Enum.filter(users, &Map.has_key?(first_activity, &1.id))
-    subscribed = Enum.filter(users, &(&1.subscription_status in @subscribed_statuses))
+
+    # With billing disabled there is nothing to subscribe to; statuses are nil
+    # for accounts registered that way (#480), but pre-disable residue must not
+    # count either. The stage stays in the list at 0 so the telemetry gauge
+    # keeps its shape — the admin panel hides the tile (#481).
+    subscribed =
+      if Fountain.Billing.enabled?(),
+        do: Enum.filter(users, &(&1.subscription_status in @subscribed_statuses)),
+        else: []
 
     stages = [
       %{key: :registered, count: length(registered), conversion: nil, median_hours: nil},
