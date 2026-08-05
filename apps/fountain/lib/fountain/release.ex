@@ -112,20 +112,29 @@ defmodule Fountain.Release do
   end
 
   @doc """
-  Gives existing trialing accounts a trial end date.
+  Gives accounts without a trial clock a status and a trial end date.
 
-  159 production accounts are `trialing` with `trial_ends_at` set to nil, some
-  since 2026-05-10, because a trial end was only ever recorded for users who got
-  as far as Stripe customer creation. The gate treats nil as "no expiry", so
-  those accounts stay active until this is run.
+  Two cohorts land here, both of which the gate would otherwise handle badly
+  after billing is (re-)enabled:
 
-  That is deliberate. Cutting off people who have been using the product free
-  for months is a business decision with a support cost, not something a deploy
-  should do silently at 3am. Run it when you have decided.
+  - **Legacy trialing accounts** — `trialing` with `trial_ends_at` nil. 159
+    production accounts were in this state, some since 2026-05-10, because a
+    trial end was only ever recorded for users who got as far as Stripe
+    customer creation. The gate treats nil as "no expiry" for pre-cutoff
+    accounts, so they stay active until this is run.
+  - **Accounts registered while billing was disabled** — `subscription_status`
+    nil, no trial end (#480). Enabling billing on such an instance leaves them
+    failing *closed* at the gate; this task is the documented way to start
+    their trials.
 
-  (Queried 2026-08-02: the cohort turned out to be one internal test account
-  plus 158 signups that never verified their email and so have never been able
-  to log in — nobody real loses access when this runs.)
+  Not running it automatically is deliberate. Cutting off (or starting a paid
+  clock for) people who have been using the product free is a business decision
+  with a support cost, not something a deploy should do silently at 3am. Run it
+  when you have decided.
+
+  (Queried 2026-08-02: the legacy cohort turned out to be one internal test
+  account plus 158 signups that never verified their email and so have never
+  been able to log in — nobody real loses access when this runs.)
 
       # See who would be affected, change nothing:
       bin/fountain_server eval 'Fountain.Release.expire_legacy_trials(dry_run: true)'
@@ -153,16 +162,22 @@ defmodule Fountain.Release do
 
     query =
       from u in Fountain.Accounts.User,
-        where: u.subscription_status == "trialing" and is_nil(u.trial_ends_at)
+        where:
+          (u.subscription_status == "trialing" and is_nil(u.trial_ends_at)) or
+            is_nil(u.subscription_status)
 
     count = Fountain.Repo.aggregate(query, :count)
 
     if dry_run? do
-      IO.puts("#{count} trialing account(s) have no trial end.")
+      IO.puts("#{count} account(s) have no trial clock (trialing/nil or nil status).")
       IO.puts("Running without dry_run: would set trial_ends_at to #{ends_at} (#{days} days).")
       {:ok, count}
     else
-      {updated, _} = Fountain.Repo.update_all(query, set: [trial_ends_at: ends_at])
+      {updated, _} =
+        Fountain.Repo.update_all(query,
+          set: [subscription_status: "trialing", trial_ends_at: ends_at]
+        )
+
       IO.puts("Set trial_ends_at to #{ends_at} on #{updated} account(s).")
       {:ok, updated}
     end

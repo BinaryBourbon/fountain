@@ -679,8 +679,19 @@ defmodule Fountain.Accounts do
   # exactly how 159 production accounts got there. Stripe's `trial_end`
   # overwrites this with the authoritative value as soon as the subscription
   # exists; until then the local date is a floor, not a guess nobody checks.
+  #
+  # None of which applies when billing is disabled (#480): there is no trial to
+  # expire and no status to display, and stamping one anyway is exactly the
+  # residue a community operator then sees in the admin list, /api/auth/me and
+  # exports. Both fields stay nil. Enabling billing later leaves these accounts
+  # failing closed at the gate until the documented backfill runs —
+  # Fountain.Release.expire_legacy_trials/1 starts their trial clocks.
   defp put_trial_end(changeset) do
-    Ecto.Changeset.put_change(changeset, :trial_ends_at, Fountain.Billing.trial_end_from_now())
+    if Fountain.Billing.enabled?() do
+      Ecto.Changeset.put_change(changeset, :trial_ends_at, Fountain.Billing.trial_end_from_now())
+    else
+      Ecto.Changeset.put_change(changeset, :subscription_status, nil)
+    end
   end
 
   defp create_user_data_key(user_id) do
