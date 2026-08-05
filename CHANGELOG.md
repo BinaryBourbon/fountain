@@ -31,6 +31,19 @@ upgrade, is in
   in another tab or on a phone — with no second login. It cannot be camped on:
   a verified user hitting it is sent where they were going (#533)
 
+- **The `/api/auth/*` endpoints are now in the OpenAPI spec.** They never
+  were: the spec is generated from the router, and a controller that does
+  not declare operations is skipped in silence — so the published spec
+  described every resource endpoint but not the one thing a client needs
+  first, which is how to get a bearer token. `/api/docs` opened on a surface
+  whose front door was invisible, and generated clients had to hand-roll
+  authentication. All thirteen auth routes are documented now, with the seven
+  public ones (`token`, `register`, `resend-verification`, `verify`, `forgot`,
+  `reset`, `email/confirm`) declaring `security: []` so a generated client
+  will actually call them without a credential it cannot yet have. A test
+  walks the router and fails on any `/api/` route without an operation, so
+  the gap cannot silently re-open (#571)
+
 - **Secrets written through the API now leave the same audit trail as
   secrets written through the UI.** `POST/DELETE /api/environments/:id/secrets`,
   the vault equivalents, and the secret half of `POST /api/apply` recorded

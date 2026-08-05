@@ -7,7 +7,10 @@ The authoritative, always-current reference is the served OpenAPI spec:
 - `GET /api/openapi.json` - OpenAPI 3.1 spec, generated from the code (public, no auth)
 - `GET /api/docs` - Swagger UI over the same spec
 
-The endpoint listings below are a convenience summary of that spec.
+The endpoint listings below are a convenience summary of that spec. Every
+`/api/` endpoint is in it, including the auth surface — a test walks the router
+and fails if a route is added without one, so a generated client covers the
+whole API and not just the parts someone remembered to document.
 
 ## Authentication
 

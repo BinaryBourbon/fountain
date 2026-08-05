@@ -19,9 +19,11 @@ defmodule FountainWeb.RegistrationController do
   """
 
   use FountainWeb, :controller
+  use OpenApiSpex.ControllerSpecs
 
   alias Fountain.Accounts
   alias Fountain.Workers.VerificationEmail
+  alias FountainWeb.Schemas
 
   plug FountainWeb.Plugs.RateLimit,
        [bucket: "registration", max: 5, window_ms: 3_600_000]
@@ -30,6 +32,17 @@ defmodule FountainWeb.RegistrationController do
   plug FountainWeb.Plugs.RateLimit,
        [bucket: "resend_verification", max: 5, window_ms: 3_600_000]
        when action in [:resend, :api_resend]
+
+  tags(["Auth"])
+
+  # The HTML actions serve `/auth/*`, not the API. Declared `false` so
+  # `Paths.from_router/1` skips them instead of warning about a missing spec
+  # (same treatment as AgentAvatarController's raw-bytes :show).
+  operation(:new, false)
+  operation(:check_email, false)
+  operation(:create, false)
+  operation(:resend_form, false)
+  operation(:resend, false)
 
   ## HTML path
 
@@ -96,6 +109,25 @@ defmodule FountainWeb.RegistrationController do
 
   ## JSON path
 
+  operation(:api_create,
+    summary: "Register an account",
+    description:
+      "Creates the account and sends the verification email. The account " <>
+        "cannot mint an API key until it is verified, so a headless bootstrap " <>
+        "is register → `POST /api/auth/verify` with the emailed token → " <>
+        "`POST /api/auth/token`. Rate-limited to 5 per IP per hour. On an " <>
+        "instance with open registration disabled this answers 403 with a " <>
+        "reason code.",
+    security: [],
+    request_body: {"Credentials", "application/json", Schemas.RegisterRequest, required: true},
+    responses: [
+      created: {"Account created", "application/json", Schemas.RegisterResponse},
+      forbidden: {"Registration refused", "application/json", Schemas.AuthError},
+      unprocessable_entity:
+        {"Missing fields or validation errors", "application/json", Schemas.ChangesetError}
+    ]
+  )
+
   def api_create(conn, %{"email" => _, "password" => _} = params) do
     case Accounts.register_user(params) do
       {:ok, %{email_verified_at: %DateTime{}} = user} ->
@@ -134,6 +166,20 @@ defmodule FountainWeb.RegistrationController do
     |> put_status(:unprocessable_entity)
     |> json(%{error: "email and password are required"})
   end
+
+  operation(:api_resend,
+    summary: "Resend the verification email",
+    description:
+      "Always 200 with the same message whether the address is unknown, " <>
+        "unverified, or already verified — this endpoint is not an account " <>
+        "oracle. Rate-limited to 5 per IP per hour in its own bucket, so " <>
+        "retrying resend does not burn the registration budget.",
+    security: [],
+    request_body: {"Address to resend to", "application/json", Schemas.EmailRequest},
+    responses: [
+      ok: {"Accepted", "application/json", Schemas.MessageResponse}
+    ]
+  )
 
   def api_resend(conn, params) do
     maybe_resend(params["email"])
