@@ -66,6 +66,31 @@ defmodule FountainWeb.Audited do
   end
 
   @doc """
+  The `:actor` / `:request_ip` pair for a context function that audits itself.
+
+      Accounts.create_api_key(user.id, name, Audited.attribution(conn))
+
+  `from_conn/4` and `from_socket/4` record on behalf of a web surface. This is
+  for the other direction: the mutation is audited inside the context (so UI,
+  API and system callers are covered alike) and the caller supplies only what
+  the context cannot know — who was on the other end of the request.
+
+  Pass overrides where the connection cannot reveal the actor. `POST
+  /api/auth/token` runs on the `:api_public` pipeline, so nothing has assigned
+  `:current_user` yet and derivation would report `"system"` for what is
+  plainly a CLI sign-in — the same caveat `from_conn/4` carries for login.
+  """
+  def attribution(conn_or_socket, overrides \\ [])
+
+  def attribution(%Plug.Conn{} = conn, overrides) do
+    Keyword.merge([actor: conn_actor(conn), request_ip: format_ip(conn.remote_ip)], overrides)
+  end
+
+  def attribution(%Phoenix.LiveView.Socket{} = socket, overrides) do
+    Keyword.merge([actor: "ui", request_ip: socket.assigns[:client_ip]], overrides)
+  end
+
+  @doc """
   Resolve the client address for a LiveView socket at mount.
 
   `get_connect_info/2` is only callable during mount, so the result is stashed

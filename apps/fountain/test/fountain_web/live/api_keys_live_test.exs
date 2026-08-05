@@ -125,7 +125,9 @@ defmodule FountainWeb.ApiKeysLiveErrorTest do
     test "create_key shows flash error when Accounts.create_api_key returns error", %{conn: conn} do
       user = insert_verified_user()
 
-      stub(Accounts, :create_api_key, fn _user_id, _label ->
+      # Arity 3: the LiveView passes `Audited.attribution/1` through so the
+      # context can attribute the mint it audits (#542).
+      stub(Accounts, :create_api_key, fn _user_id, _label, _opts ->
         cs =
           %Fountain.Accounts.ApiKey{}
           |> Ecto.Changeset.change()

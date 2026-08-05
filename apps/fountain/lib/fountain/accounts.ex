@@ -23,6 +23,7 @@ defmodule Fountain.Accounts do
   require Logger
   alias Fountain.Repo
   alias Fountain.Accounts.{User, ApiKey, UserDataKey, OauthIdentity}
+  alias Fountain.Audit
   alias Fountain.Crypto
 
   ## Users
@@ -552,6 +553,22 @@ defmodule Fountain.Accounts do
   The raw key is `"ftn_" <> 64 hex chars`. It is returned once and never stored.
   Only the SHA-256 hash and the first 8-character prefix are persisted.
 
+  Minting is audited here rather than by each caller. There are four ways to
+  get a key — the settings LiveView, `POST /api/auth/api-keys`, `POST
+  /api/auth/token` and the per-conversation callback rotation — and only the
+  first two used to leave a trail. `/api/auth/token` sits on `:api_public`, so
+  the pipeline's audit plug never saw it: the one path that exchanges a
+  password for a full-scope key was the only one that minted silently (#542).
+
+  Options:
+
+    * `:scopes` — defaults to `["full"]`
+    * `:expires_at` — defaults to no expiry
+    * `:actor` — who minted it, for the audit trail. Defaults to `"self"`;
+      pass `FountainWeb.Audited.attribution/2` from a web surface, or a
+      `"system:<worker>"` string from a background one.
+    * `:request_ip` — passed through to the audit event.
+
   Returns `{:ok, {%ApiKey{}, raw_key_string}}` or `{:error, changeset}`.
   """
   @spec create_api_key(binary(), String.t(), keyword()) ::
@@ -572,8 +589,29 @@ defmodule Fountain.Accounts do
     })
     |> Repo.insert()
     |> case do
-      {:ok, key} -> {:ok, {key, raw}}
-      {:error, cs} -> {:error, cs}
+      {:ok, key} ->
+        Audit.record(%{
+          user_id: user_id,
+          action: "api_key.created",
+          resource_type: "api_key",
+          resource_id: key.id,
+          actor: Keyword.get(opts, :actor, "self"),
+          request_ip: Keyword.get(opts, :request_ip),
+          # Name, scopes and prefix identify *which* key without being the
+          # key: the prefix is already stored in the clear and is what the
+          # settings UI shows, so it is the handle a reader can match a
+          # trail row against a listed key by.
+          metadata: %{
+            "name" => key.name,
+            "scopes" => key.scopes,
+            "key_prefix" => key.key_prefix
+          }
+        })
+
+        {:ok, {key, raw}}
+
+      {:error, cs} ->
+        {:error, cs}
     end
   end
 
