@@ -144,8 +144,28 @@ defmodule Fountain.Accounts do
       |> Repo.update()
 
     with {:ok, verified} <- result do
-      {:ok, maybe_bootstrap_first_admin(verified)}
+      verified = maybe_bootstrap_first_admin(verified)
+      broadcast_verification(verified)
+      {:ok, verified}
     end
+  end
+
+  @doc """
+  PubSub topic carrying a user's verification transition.
+
+  `FountainWeb.VerifyPendingLive` subscribes to it so the waiting page in one
+  tab advances the moment the emailed link is clicked in another (#533).
+  """
+  def verification_topic(user_id), do: "user_verification:#{user_id}"
+
+  # After the first-admin bootstrap, so a subscriber that re-reads the user
+  # sees the settled role and not a half-applied verification.
+  defp broadcast_verification(%User{} = user) do
+    Phoenix.PubSub.broadcast(
+      Fountain.PubSub,
+      verification_topic(user.id),
+      {:email_verified, user.id}
+    )
   end
 
   # Advisory lock key for the first-admin bootstrap. Any stable bigint works;

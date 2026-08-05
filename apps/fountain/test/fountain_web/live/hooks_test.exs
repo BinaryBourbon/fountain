@@ -35,18 +35,57 @@ defmodule FountainWeb.Live.HooksTest do
   # ── :require_authenticated_user ─────────────────────────────────────────────
 
   describe ":require_authenticated_user hook" do
-    test "redirects unverified user to /auth/login with flash error", %{conn: conn} do
+    test "redirects unverified user to the waiting page, not the login form", %{conn: conn} do
       user = insert_user()
       # user has no email_verified_at — do NOT call verify_email
       conn = login_user(conn, user)
 
       assert {:error, {:redirect, %{to: path}}} = live(conn, ~p"/dashboard")
-      assert path =~ "/auth/login"
+      assert path == "/auth/verify-pending"
     end
 
     test "redirects unauthenticated user (no session) to /auth/login", %{conn: conn} do
       # No login — session has no user_id, so current_user is nil
       assert {:error, {:redirect, %{to: path}}} = live(conn, ~p"/dashboard")
+      assert path =~ "/auth/login"
+    end
+  end
+
+  # ── :require_pending_verification ───────────────────────────────────────────
+
+  describe ":require_pending_verification hook" do
+    test "lets an unverified user through to the waiting page", %{conn: conn} do
+      user = insert_user()
+      conn = login_user(conn, user)
+
+      {:ok, _lv, html} = live(conn, ~p"/auth/verify-pending")
+      assert html =~ "Check your email"
+    end
+
+    test "bounces a verified user to onboarding so the page can't be camped on", %{conn: conn} do
+      user = insert_verified_user()
+      conn = login_user(conn, user)
+
+      assert {:error, {:redirect, %{to: path}}} = live(conn, ~p"/auth/verify-pending")
+      assert path == "/onboarding/step_1"
+    end
+
+    test "sends a verified, onboarded user to the conversation list", %{conn: conn} do
+      user = insert_verified_user()
+
+      {:ok, user} =
+        user
+        |> Ecto.Changeset.change(onboarding_completed_at: DateTime.utc_now(:second))
+        |> Repo.update()
+
+      conn = login_user(conn, user)
+
+      assert {:error, {:redirect, %{to: path}}} = live(conn, ~p"/auth/verify-pending")
+      assert path == "/conversations"
+    end
+
+    test "redirects an unauthenticated visitor to login", %{conn: conn} do
+      assert {:error, {:redirect, %{to: path}}} = live(conn, ~p"/auth/verify-pending")
       assert path =~ "/auth/login"
     end
   end
@@ -249,6 +288,49 @@ defmodule FountainWeb.Live.HooksTest do
         FountainWeb.Live.Hooks.on_mount(:require_admin, %{}, %{}, minimal_socket())
 
       assert socket.redirected == {:redirect, %{status: 302, to: "/auth/login"}}
+    end
+
+    test ":require_pending_verification halts with login redirect when current_user is nil" do
+      {:halt, socket} =
+        FountainWeb.Live.Hooks.on_mount(
+          :require_pending_verification,
+          %{},
+          %{},
+          minimal_socket()
+        )
+
+      assert socket.redirected == {:redirect, %{status: 302, to: "/auth/login"}}
+    end
+
+    # VerifyPendingLive re-checks in mount/3 as well, so going through the
+    # router cannot tell the two guards apart. Called directly, this pins the
+    # hook itself: the live_session must reject a verified user on its own.
+    test ":require_pending_verification halts for a user who is already verified" do
+      user = insert_verified_user()
+
+      socket =
+        struct(Phoenix.LiveView.Socket, %{
+          endpoint: FountainWeb.Endpoint,
+          assigns: %{__changed__: %{}, current_user: user}
+        })
+
+      {:halt, socket} =
+        FountainWeb.Live.Hooks.on_mount(:require_pending_verification, %{}, %{}, socket)
+
+      assert socket.redirected == {:redirect, %{status: 302, to: "/onboarding/step_1"}}
+    end
+
+    test ":require_pending_verification continues for a user who is not verified" do
+      user = insert_user()
+
+      socket =
+        struct(Phoenix.LiveView.Socket, %{
+          endpoint: FountainWeb.Endpoint,
+          assigns: %{__changed__: %{}, current_user: user}
+        })
+
+      assert {:cont, _socket} =
+               FountainWeb.Live.Hooks.on_mount(:require_pending_verification, %{}, %{}, socket)
     end
   end
 end
