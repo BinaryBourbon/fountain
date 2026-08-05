@@ -166,6 +166,24 @@ defmodule FountainWeb.Router do
     get "/confirm/:token", EmailVerificationController, :confirm
   end
 
+  # ── Unverified waiting room (#533) ────────────────────────────────────────────────────────────────
+  # Deliberately NOT behind :browser_authenticated. That plug now redirects
+  # unverified sessions here, so routing this page through it would make it
+  # redirect to itself. :require_pending_verification is the whole gate: it
+  # sends a session-less visitor to login, tolerates an unverified session —
+  # the only gate in the app that does — and bounces a verified one out so the
+  # page cannot be camped on. layout: false because the app chrome reads
+  # sidebar assigns only :require_authenticated_user sets.
+  scope "/", FountainWeb do
+    pipe_through :browser
+
+    live_session :verify_pending,
+      layout: false,
+      on_mount: [{FountainWeb.Live.Hooks, :require_pending_verification}] do
+      live "/auth/verify-pending", VerifyPendingLive, :index
+    end
+  end
+
   # Email-change confirmation (#448) — public like /users/confirm: the link
   # lands from an inbox, possibly in a browser with no session.
   scope "/account", FountainWeb do
@@ -370,18 +388,6 @@ defmodule FountainWeb.Router do
     get "/conversations/:conversation_id/turns/:turn_id/images/:position",
         TurnImageController,
         :show
-
-    # ── Unverified waiting room (#533) ──────────────────────────────────────────────────────
-    # Its own live_session because :require_pending_verification is the only
-    # gate that *tolerates* an unverified session — and bounces verified users
-    # out, so the page cannot be camped on. layout: false: the app chrome reads
-    # the sidebar assigns that only :require_authenticated_user sets, and an
-    # unverified account has nothing to show in it anyway.
-    live_session :verify_pending,
-      layout: false,
-      on_mount: [{FountainWeb.Live.Hooks, :require_pending_verification}] do
-      live "/auth/verify-pending", VerifyPendingLive, :index
-    end
 
     # ── Phase-3-billing: starting a conversation requires an active subscription ────────────
     # :require_active_subscription runs after :require_authenticated_user and

@@ -18,6 +18,20 @@ upgrade, is in
 
 ### Fixed
 
+- **Email verification is now enforced where identity is established, not at
+  each door.** #533 moved unverified logins onto a waiting page but left the
+  check inside the LiveView hook, so it held only because every entry point
+  remembered it — four of them on the API side alone. Two consequences were
+  real: every controller route in the session pipeline (theme, avatars, export
+  downloads, turn images, the credential POSTs) was reachable by an unverified
+  session, and the bearer-token plug never checked verification at all, so a
+  key minted before #314 closed `POST /api/auth/token` would still work
+  forever. `TenantSessionAuth` now redirects such sessions to
+  `/auth/verify-pending`, and `authenticate_api_key/1` refuses with 403
+  `email_unverified` — the same status and reason the token endpoint gives
+  when refusing to mint for that account. No key is affected in practice:
+  across 163 unverified accounts, zero API keys have ever been issued (#533)
+
 - **An unverified login no longer looks like a failed one.** Signing in with
   the right password but an unverified address issued a perfectly good session
   and then bounced it to `/auth/login` with "Please verify your email address"

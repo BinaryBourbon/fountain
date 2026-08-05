@@ -118,6 +118,14 @@ defmodule FountainWeb.Live.Hooks do
       is_nil(user) ->
         {:halt, redirect(socket, to: ~p"/auth/login")}
 
+      # Not reachable today — the router always pairs this hook after
+      # :require_authenticated_user, which already refused. Checked anyway
+      # because this hook mounts current_user itself, so it is a complete
+      # gate on paper, and a future live_session using it alone would
+      # otherwise admit an unverified admin (#533).
+      is_nil(user.email_verified_at) ->
+        {:halt, redirect(socket, to: ~p"/auth/verify-pending")}
+
       user.role != "admin" ->
         {:halt, push_navigate(socket, to: ~p"/dashboard")}
 
