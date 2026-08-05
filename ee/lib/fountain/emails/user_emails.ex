@@ -328,8 +328,11 @@ defmodule Fountain.Emails.UserEmails do
     end
   end
 
-  defp welcome_trial_phrase(%User{subscription_status: "trialing", trial_ends_at: %DateTime{} = at}),
-    do: "Your free trial ends #{ends_at_phrase(at)} — no card needed until then."
+  defp welcome_trial_phrase(%User{
+         subscription_status: "trialing",
+         trial_ends_at: %DateTime{} = at
+       }),
+       do: "Your free trial ends #{ends_at_phrase(at)} — no card needed until then."
 
   defp welcome_trial_phrase(_user), do: nil
 

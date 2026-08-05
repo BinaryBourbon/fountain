@@ -80,7 +80,11 @@ defmodule Fountain.Workers.LifecycleEmail do
   defp maybe_send(%{subscription_status: s} = user, "payment_action_required")
        when s in ["trialing", "active", "past_due"],
        do:
-         deliver(user, "payment_action_required", &UserEmails.deliver_payment_action_required_email/1)
+         deliver(
+           user,
+           "payment_action_required",
+           &UserEmails.deliver_payment_action_required_email/1
+         )
 
   defp maybe_send(%{subscription_status: "active"} = user, "payment_recovered"),
     do: deliver(user, "payment_recovered", &UserEmails.deliver_payment_recovered_email/1)
@@ -99,7 +103,9 @@ defmodule Fountain.Workers.LifecycleEmail do
         :ok
 
       {:error, reason} ->
-        Logger.warning("lifecycle_email: #{email} delivery failed for #{user.id}: #{inspect(reason)}")
+        Logger.warning(
+          "lifecycle_email: #{email} delivery failed for #{user.id}: #{inspect(reason)}"
+        )
 
         {:error, reason}
     end

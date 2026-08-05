@@ -83,7 +83,14 @@ defmodule Fountain.BillingWebhookSyncRaceTest do
 
       {:ok, _} =
         Billing.handle_event(
-          sub_event("evt_lr", "customer.subscription.updated", "cus_lock_read", "sub_lr", "active", now_unix())
+          sub_event(
+            "evt_lr",
+            "customer.subscription.updated",
+            "cus_lock_read",
+            "sub_lr",
+            "active",
+            now_unix()
+          )
         )
 
       assert_received {:locked_query, query}
@@ -98,7 +105,9 @@ defmodule Fountain.BillingWebhookSyncRaceTest do
       stub(Stripe.Subscription, :list, fn _ -> {:ok, %{data: [], has_more: false}} end)
 
       {:ok, _} =
-        Billing.handle_event(checkout_event("evt_lc", "cus_lock_co", "sub_lc_new", user.id, now_unix()))
+        Billing.handle_event(
+          checkout_event("evt_lc", "cus_lock_co", "sub_lc_new", user.id, now_unix())
+        )
 
       assert_received {:locked_query, _}
 
@@ -121,7 +130,9 @@ defmodule Fountain.BillingWebhookSyncRaceTest do
       stub(Stripe.Subscription, :list, fn _ -> {:ok, %{data: [], has_more: false}} end)
 
       t0 = now_unix()
-      {:ok, updated} = Billing.handle_event(checkout_event("evt_wm", "cus_wm", "sub_wm_new", user.id, t0))
+
+      {:ok, updated} =
+        Billing.handle_event(checkout_event("evt_wm", "cus_wm", "sub_wm_new", user.id, t0))
 
       assert updated.subscription_synced_at ==
                t0 |> DateTime.from_unix!() |> DateTime.truncate(:second)
@@ -165,12 +176,21 @@ defmodule Fountain.BillingWebhookSyncRaceTest do
       # A lifecycle event stamps the watermark at t0...
       {:ok, _} =
         Billing.handle_event(
-          sub_event("evt_wm3_a", "customer.subscription.updated", "cus_wm3", "sub_wm3_old", "trialing", t0)
+          sub_event(
+            "evt_wm3_a",
+            "customer.subscription.updated",
+            "cus_wm3",
+            "sub_wm3_old",
+            "trialing",
+            t0
+          )
         )
 
       # ...then a checkout whose event timestamp is older must keep it at t0.
       {:ok, updated} =
-        Billing.handle_event(checkout_event("evt_wm3_b", "cus_wm3", "sub_wm3_new", user.id, t0 - 120))
+        Billing.handle_event(
+          checkout_event("evt_wm3_b", "cus_wm3", "sub_wm3_new", user.id, t0 - 120)
+        )
 
       assert updated.subscription_synced_at ==
                t0 |> DateTime.from_unix!() |> DateTime.truncate(:second)
@@ -186,7 +206,9 @@ defmodule Fountain.BillingWebhookSyncRaceTest do
       # here reports the transaction state of the sync path itself.
       expect(Stripe.Subscription, :list, fn _ ->
         send(test_pid, {:list_in_txn, Repo.in_transaction?()})
-        {:ok, %{data: [%Stripe.Subscription{id: "sub_notxn_old", status: "trialing"}], has_more: false}}
+
+        {:ok,
+         %{data: [%Stripe.Subscription{id: "sub_notxn_old", status: "trialing"}], has_more: false}}
       end)
 
       expect(Stripe.Subscription, :cancel, fn id ->
@@ -220,7 +242,8 @@ defmodule Fountain.BillingWebhookSyncRaceTest do
       assert reloaded.stripe_subscription_id == "sub_fail_old"
 
       stub(Stripe.Subscription, :list, fn _ ->
-        {:ok, %{data: [%Stripe.Subscription{id: "sub_fail_old", status: "trialing"}], has_more: false}}
+        {:ok,
+         %{data: [%Stripe.Subscription{id: "sub_fail_old", status: "trialing"}], has_more: false}}
       end)
 
       stub(Stripe.Subscription, :cancel, fn id ->

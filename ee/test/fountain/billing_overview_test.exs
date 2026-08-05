@@ -52,9 +52,23 @@ defmodule Fountain.BillingOverviewTest do
 
   describe "overview_admin/1 — conversions this month" do
     test "counts checkout.session.completed since the start of the month" do
-      insert_stripe_event!("evt_this_month", "checkout.session.completed", ~U[2026-08-03 09:00:00Z])
-      insert_stripe_event!("evt_last_month", "checkout.session.completed", ~U[2026-07-31 23:00:00Z])
-      insert_stripe_event!("evt_other_type", "customer.subscription.updated", ~U[2026-08-04 09:00:00Z])
+      insert_stripe_event!(
+        "evt_this_month",
+        "checkout.session.completed",
+        ~U[2026-08-03 09:00:00Z]
+      )
+
+      insert_stripe_event!(
+        "evt_last_month",
+        "checkout.session.completed",
+        ~U[2026-07-31 23:00:00Z]
+      )
+
+      insert_stripe_event!(
+        "evt_other_type",
+        "customer.subscription.updated",
+        ~U[2026-08-04 09:00:00Z]
+      )
 
       assert %{conversions_this_month: 1} = Billing.overview_admin(now: @now)
     end

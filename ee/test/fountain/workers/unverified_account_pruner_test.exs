@@ -51,7 +51,14 @@ defmodule Fountain.Workers.UnverifiedAccountPrunerTest do
   test "an exempt substring protects an account, case-insensitively" do
     Application.put_env(:fountain, :unverified_prune_exempt, ["jhgaylor"])
 
-    exempt = backdate(insert_user(%{"email" => "JHGaylor+bot-test-#{System.unique_integer([:positive])}@example.com"}), 45)
+    exempt =
+      backdate(
+        insert_user(%{
+          "email" => "JHGaylor+bot-test-#{System.unique_integer([:positive])}@example.com"
+        }),
+        45
+      )
+
     doomed = backdate(insert_user(), 45)
 
     assert :ok = UnverifiedAccountPruner.perform(%Oban.Job{})

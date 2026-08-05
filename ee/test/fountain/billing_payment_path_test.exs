@@ -189,7 +189,8 @@ defmodule Fountain.BillingPaymentPathTest do
       user = trialing_user_on("cus_locked", "sub_trial2")
 
       stub(Stripe.Subscription, :list, fn _ ->
-        {:ok, %{data: [%Stripe.Subscription{id: "sub_trial2", status: "trialing"}], has_more: false}}
+        {:ok,
+         %{data: [%Stripe.Subscription{id: "sub_trial2", status: "trialing"}], has_more: false}}
       end)
 
       stub(Stripe.Subscription, :cancel, fn id ->
@@ -333,7 +334,8 @@ defmodule Fountain.BillingPaymentPathTest do
       assert reloaded.stripe_subscription_id == "sub_trial3"
 
       stub(Stripe.Subscription, :list, fn _ ->
-        {:ok, %{data: [%Stripe.Subscription{id: "sub_trial3", status: "trialing"}], has_more: false}}
+        {:ok,
+         %{data: [%Stripe.Subscription{id: "sub_trial3", status: "trialing"}], has_more: false}}
       end)
 
       stub(Stripe.Subscription, :cancel, fn id ->

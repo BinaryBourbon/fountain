@@ -35,7 +35,9 @@ defmodule FountainWeb.EmailVerificationControllerTest do
       refute_enqueued(worker: WelcomeEmail)
     end
 
-    test "redirects already-verified user without onboarding_completed_at to onboarding", %{conn: conn} do
+    test "redirects already-verified user without onboarding_completed_at to onboarding", %{
+      conn: conn
+    } do
       user = insert_verified_user()
       assert is_nil(user.onboarding_completed_at)
 
@@ -46,12 +48,18 @@ defmodule FountainWeb.EmailVerificationControllerTest do
       assert get_session(conn, :user_id) == user.id
     end
 
-    test "redirects already-verified user with onboarding_completed_at to dashboard", %{conn: conn} do
+    test "redirects already-verified user with onboarding_completed_at to dashboard", %{
+      conn: conn
+    } do
       user = insert_verified_user()
       now = DateTime.utc_now() |> DateTime.truncate(:second)
-      {:ok, user_with_onboarding} = Repo.update(Ecto.Changeset.change(user, onboarding_completed_at: now))
 
-      token = Phoenix.Token.sign(FountainWeb.Endpoint, "email_verification", user_with_onboarding.id)
+      {:ok, user_with_onboarding} =
+        Repo.update(Ecto.Changeset.change(user, onboarding_completed_at: now))
+
+      token =
+        Phoenix.Token.sign(FountainWeb.Endpoint, "email_verification", user_with_onboarding.id)
+
       conn = get(conn, ~p"/users/confirm/#{token}")
 
       assert redirected_to(conn) == ~p"/"
@@ -73,7 +81,11 @@ defmodule FountainWeb.EmailVerificationControllerTest do
       # Sign the token as if it were issued 2 days ago (> 24h max_age).
       # Phoenix.Token.sign/4 accepts `signed_at:` in seconds.
       two_days_ago = System.system_time(:second) - 2 * 24 * 60 * 60
-      token = Phoenix.Token.sign(FountainWeb.Endpoint, "email_verification", user.id, signed_at: two_days_ago)
+
+      token =
+        Phoenix.Token.sign(FountainWeb.Endpoint, "email_verification", user.id,
+          signed_at: two_days_ago
+        )
 
       conn = get(conn, ~p"/users/confirm/#{token}")
 
@@ -96,6 +108,7 @@ defmodule FountainWeb.EmailVerificationControllerTest do
           %Fountain.Accounts.User{}
           |> Ecto.Changeset.change()
           |> Ecto.Changeset.add_error(:email, "simulated failure")
+
         {:error, changeset}
       end)
 

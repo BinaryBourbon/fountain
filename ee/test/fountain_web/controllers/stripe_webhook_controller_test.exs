@@ -43,7 +43,12 @@ defmodule FountainWeb.StripeWebhookControllerTest do
         conn
         |> Plug.Conn.put_req_header("content-type", "application/json")
         |> Plug.Conn.put_req_header("stripe-signature", "t=1,v1=badsig")
-        |> Phoenix.ConnTest.dispatch(FountainWeb.Endpoint, :post, "/api/stripe/webhook", @raw_body)
+        |> Phoenix.ConnTest.dispatch(
+          FountainWeb.Endpoint,
+          :post,
+          "/api/stripe/webhook",
+          @raw_body
+        )
 
       assert conn.status == 400
     end
@@ -65,7 +70,12 @@ defmodule FountainWeb.StripeWebhookControllerTest do
         conn
         |> Plug.Conn.put_req_header("content-type", "application/json")
         |> Plug.Conn.put_req_header("stripe-signature", "t=1,v1=validhash")
-        |> Phoenix.ConnTest.dispatch(FountainWeb.Endpoint, :post, "/api/stripe/webhook", @raw_body)
+        |> Phoenix.ConnTest.dispatch(
+          FountainWeb.Endpoint,
+          :post,
+          "/api/stripe/webhook",
+          @raw_body
+        )
 
       assert conn.status == 200
     end
@@ -73,7 +83,9 @@ defmodule FountainWeb.StripeWebhookControllerTest do
     test "returns 200 and sync_subscription succeeds when customer matches a real user",
          %{conn: conn} do
       user = insert_verified_user()
-      user = Fountain.Repo.update!(Ecto.Changeset.change(user, stripe_customer_id: "cus_success_test"))
+
+      user =
+        Fountain.Repo.update!(Ecto.Changeset.change(user, stripe_customer_id: "cus_success_test"))
 
       event = %Stripe.Event{
         type: "customer.subscription.updated",
@@ -88,7 +100,12 @@ defmodule FountainWeb.StripeWebhookControllerTest do
         conn
         |> Plug.Conn.put_req_header("content-type", "application/json")
         |> Plug.Conn.put_req_header("stripe-signature", "t=1,v1=validhash")
-        |> Phoenix.ConnTest.dispatch(FountainWeb.Endpoint, :post, "/api/stripe/webhook", @raw_body)
+        |> Phoenix.ConnTest.dispatch(
+          FountainWeb.Endpoint,
+          :post,
+          "/api/stripe/webhook",
+          @raw_body
+        )
 
       assert conn.status == 200
 
@@ -118,7 +135,12 @@ defmodule FountainWeb.StripeWebhookControllerTest do
         conn
         |> Plug.Conn.put_req_header("content-type", "application/json")
         |> Plug.Conn.put_req_header("stripe-signature", "t=1,v1=validhash")
-        |> Phoenix.ConnTest.dispatch(FountainWeb.Endpoint, :post, "/api/stripe/webhook", @raw_body)
+        |> Phoenix.ConnTest.dispatch(
+          FountainWeb.Endpoint,
+          :post,
+          "/api/stripe/webhook",
+          @raw_body
+        )
 
       assert conn.status == 500
     end
@@ -138,7 +160,12 @@ defmodule FountainWeb.StripeWebhookControllerTest do
         conn
         |> Plug.Conn.put_req_header("content-type", "application/json")
         |> Plug.Conn.put_req_header("stripe-signature", "t=1,v1=validhash")
-        |> Phoenix.ConnTest.dispatch(FountainWeb.Endpoint, :post, "/api/stripe/webhook", @raw_body)
+        |> Phoenix.ConnTest.dispatch(
+          FountainWeb.Endpoint,
+          :post,
+          "/api/stripe/webhook",
+          @raw_body
+        )
 
       assert conn.status == 500
     end
@@ -161,7 +188,12 @@ defmodule FountainWeb.StripeWebhookControllerTest do
         conn
         |> Plug.Conn.put_req_header("content-type", "application/json")
         |> Plug.Conn.put_req_header("stripe-signature", "t=1,v1=validhash")
-        |> Phoenix.ConnTest.dispatch(FountainWeb.Endpoint, :post, "/api/stripe/webhook", @raw_body)
+        |> Phoenix.ConnTest.dispatch(
+          FountainWeb.Endpoint,
+          :post,
+          "/api/stripe/webhook",
+          @raw_body
+        )
 
       assert conn.status == 200
     end

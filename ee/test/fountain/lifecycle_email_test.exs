@@ -366,7 +366,10 @@ defmodule Fountain.LifecycleEmailTest do
       active = user_with_status("active")
 
       assert :ok =
-               perform_job(LifecycleEmail, %{"user_id" => active.id, "email" => "payment_recovered"})
+               perform_job(LifecycleEmail, %{
+                 "user_id" => active.id,
+                 "email" => "payment_recovered"
+               })
 
       assert_received {:email, email}
       assert email.subject =~ "Payment received"
@@ -376,7 +379,10 @@ defmodule Fountain.LifecycleEmailTest do
       stuck = user_with_status("past_due")
 
       assert :ok =
-               perform_job(LifecycleEmail, %{"user_id" => stuck.id, "email" => "payment_recovered"})
+               perform_job(LifecycleEmail, %{
+                 "user_id" => stuck.id,
+                 "email" => "payment_recovered"
+               })
 
       refute_received {:email, _}
     end
