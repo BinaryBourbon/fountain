@@ -209,7 +209,10 @@ POST   /api/conversations/:id/terminate    # end the conversation and sandbox
 GET    /api/conversations/:id/turns
 GET    /api/conversations/:id/events       # log events as JSON (?streams=  ?after=  ?limit=)
 GET    /api/conversations/:id/stream       # SSE log stream (?streams=stdout,stderr,stage  ?wait=false)
+GET    /api/conversations/:id/turns/:turn_id/images/:position   # image bytes
 ```
+
+Turns carry `image_count`; the image endpoint takes a zero-based `position` into that count and returns the raw bytes with the stored media type. Anything that does not resolve — unknown conversation, a turn from a different conversation, an absent position, a stored media type that is not an image — is a `404`, so it is not a probe for ids.
 
 Conversation objects carry `title`, `turn_count`, `last_active_at`, `last_read_at` and a computed `unread` alongside the lifecycle fields. `unread` is true when `last_active_at` is later than `last_read_at` (and for a conversation never read); `POST /api/conversations/:id/read` clears it.
 

@@ -284,21 +284,30 @@ defmodule FountainWeb.Router do
       get "/events", ConversationController, :events, as: :events
       post "/read", ConversationController, :read, as: :read
       get "/tree", ConversationController, :tree, as: :tree
-      get "/turns/:turn_id/images/:position", TurnImageController, :show, as: :turn_image
     end
   end
 
-  # Avatar bytes over a bearer token (#528). Outside the :accepts_json scope
-  # for the same reason the SSE route is: a client fetching an image sends
+  # Image bytes over a bearer token. Outside the :accepts_json scope for the
+  # same reason the SSE route is: a client fetching an image sends
   # `Accept: image/*`, which `plug :accepts, ["json"]` would refuse with 406
   # before the action ran. The JSON responses on the write paths are explicit,
   # so nothing here depends on negotiation.
+  #
+  # Avatars (#528) were written here from the start. Turn images were not —
+  # they sat in the :accepts_json conversations scope and 406'd on
+  # `Accept: image/png` until #578 moved them here, which is also what let
+  # them be specced: one action per route, so `:api_show` can carry an
+  # operation without dragging the browser route into the spec with it.
   scope "/api", FountainWeb do
     pipe_through :api
 
     get "/agents/:id/avatar", AgentAvatarController, :api_show
     put "/agents/:id/avatar", AgentAvatarController, :api_update
     delete "/agents/:id/avatar", AgentAvatarController, :api_delete
+
+    get "/conversations/:conversation_id/turns/:turn_id/images/:position",
+        TurnImageController,
+        :api_show
   end
 
   # Server-sent events. Same auth chain as the rest of /api, minus content

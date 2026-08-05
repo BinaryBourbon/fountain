@@ -1,14 +1,71 @@
 defmodule FountainWeb.TurnImageController do
-  @moduledoc false
+  @moduledoc """
+  Images attached to a turn, for the browser session
+  (`GET /conversations/:conversation_id/turns/:turn_id/images/:position`) and
+  for bearer tokens (`/api/conversations/...`, #578).
+
+  Both routes used to be one `:show` action, which caused two problems. The
+  bearer route sat inside the `:accepts_json` pipeline, so
+  `plug :accepts, ["json"]` refused `Accept: image/png` with 406 *before* the
+  action ran — an endpoint returning PNG bytes worked only if the caller did
+  not ask for an image. And a single action behind two routes cannot be given
+  an OpenAPI operation without also emitting the session-authenticated browser
+  route into the spec as a bearer endpoint, so turn images were in no spec at
+  all while `Turn.image_count` advertised them.
+
+  Split the way #528 split `AgentAvatarController`: `:show` for the browser,
+  `:api_show` for bearer tokens, one private serve path so the guards cannot
+  drift between them.
+  """
   use FountainWeb, :controller
+  use OpenApiSpex.ControllerSpecs
 
   alias Fountain.Conversations
   alias Fountain.Conversations.TurnImage
+  alias FountainWeb.Schemas
+
+  tags(["Conversations"])
+
+  # Browser route: session-authenticated so <img> tags load without a token.
+  operation(:show, false)
+
+  def show(conn, %{"conversation_id" => conv_id, "turn_id" => turn_id, "position" => pos}) do
+    serve_image(conn, conv_id, turn_id, pos)
+  end
+
+  operation(:api_show,
+    summary: "Fetch an image attached to a turn",
+    description:
+      "The image bytes, with the stored media type. `position` is the " <>
+        "zero-based index into the turn's images; `image_count` on the turn " <>
+        "(from `GET /api/conversations/{id}/turns`) says how many there are. " <>
+        "404 covers every miss — unknown conversation, a turn belonging to a " <>
+        "different conversation, an absent position, and a stored media type " <>
+        "that is not an image — so this is not a probe for ids.",
+    parameters: [
+      conversation_id: [in: :path, type: :string, required: true],
+      turn_id: [in: :path, type: :string, required: true],
+      position: [
+        in: :path,
+        type: :integer,
+        required: true,
+        description: "Zero-based index into the turn's images."
+      ]
+    ],
+    responses: [
+      ok: {"Image bytes", "image/*", %OpenApiSpex.Schema{type: :string, format: :binary}},
+      not_found: {"No such image", "application/json", Schemas.Error}
+    ]
+  )
+
+  def api_show(conn, %{"conversation_id" => conv_id, "turn_id" => turn_id, "position" => pos}) do
+    serve_image(conn, conv_id, turn_id, pos)
+  end
 
   # sobelow_skip ["XSS.SendResp", "XSS.ContentType"] — media type is checked
   # against TurnImage.valid_media_types/0 and the response pins nosniff +
   # a sandboxing CSP precisely because the bytes are client-originated.
-  def show(conn, %{"conversation_id" => conv_id, "turn_id" => turn_id, "position" => pos_str}) do
+  defp serve_image(conn, conv_id, turn_id, pos_str) do
     user_id = conn.assigns.current_user.id
 
     with {position, ""} <- Integer.parse(pos_str),

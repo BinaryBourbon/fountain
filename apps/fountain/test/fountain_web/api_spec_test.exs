@@ -54,11 +54,7 @@ defmodule FountainWeb.ApiSpecTest do
       {"/api/stripe/webhook", :post},
       # A browser-session route that happens to live under /api/ — CSRF-
       # protected, session-authenticated, and driven by the theme toggle.
-      {"/api/settings/theme", :patch},
-      # Raw image bytes. The one action serves both the bearer route and the
-      # browser route, so it cannot be specced without splitting it the way
-      # #528 split AgentAvatarController into :show and :api_show.
-      {"/api/conversations/{conversation_id}/turns/{turn_id}/images/{position}", :get}
+      {"/api/settings/theme", :patch}
     ]
 
     setup do
