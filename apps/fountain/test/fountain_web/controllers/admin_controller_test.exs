@@ -9,7 +9,13 @@ defmodule FountainWeb.AdminControllerTest do
   as a clicked one.
   """
 
-  use FountainWeb.ConnCase, async: true
+  # async: false — the "billing actions when billing is disabled" block below
+  # flips `:billing_enabled`, which is application env and therefore global to
+  # the VM, not to this test. Run async, it made every concurrent test that
+  # reads `Billing.enabled?/0` see `false` for the duration, which is how
+  # AdminUserDetailLiveTest's `#invoices` section intermittently vanished
+  # (#576). Every other module that mutates this env is already async: false.
+  use FountainWeb.ConnCase, async: false
 
   alias Fountain.Accounts
   alias Fountain.Audit.AdminEvent
