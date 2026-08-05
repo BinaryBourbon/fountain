@@ -19,7 +19,12 @@ defmodule FountainWeb.AccountSecurityController do
 
   plug FountainWeb.Plugs.RateLimit,
        [bucket: "account_security", max: 10, window_ms: 3_600_000]
-       when action in [:change_password, :request_email_change]
+       when action in [
+              :change_password,
+              :request_email_change,
+              :api_change_password,
+              :api_request_email_change
+            ]
 
   def change_password(conn, %{"current_password" => current, "new_password" => new}) do
     user = conn.assigns.current_user
@@ -116,6 +121,132 @@ defmodule FountainWeb.AccountSecurityController do
     conn
     |> put_flash(:error, "New email and current password are required.")
     |> redirect(to: ~p"/account/security")
+  end
+
+  @doc """
+  Change the password over JSON (#521).
+
+  Requires the current password, exactly like the browser path: a stolen
+  bearer token must not be enough to set a new one.
+
+  ## What this does and does not invalidate
+
+  `change_password/3` bumps `session_version`, which kills every browser
+  session. It does **not** revoke API keys — those are separate credentials
+  with their own hashes and expiries, and always have been. This endpoint
+  keeps that behaviour rather than quietly diverging from the browser path,
+  and says so in the response: a caller rotating a password because
+  something leaked has to revoke keys explicitly at
+  `DELETE /api/auth/api-keys/:id`.
+
+  Behind the `full`-scope gate: the per-conversation token a sandbox holds
+  must not be able to rotate the account password.
+  """
+  def api_change_password(conn, %{"current_password" => current, "new_password" => new}) do
+    user = conn.assigns.current_user
+
+    case Accounts.change_password(user, current, new) do
+      {:ok, updated} ->
+        FountainWeb.Audited.from_conn(conn, "auth.password.changed", "user",
+          user_id: updated.id,
+          resource_id: updated.id
+        )
+
+        json(conn, %{
+          message: "Password updated. Browser sessions have been signed out.",
+          sessions_invalidated: true,
+          api_keys_revoked: false
+        })
+
+      {:error, :invalid_current_password} ->
+        credential_error(conn, :forbidden, "invalid_current_password", "Current password is incorrect.")
+
+      {:error, :no_password} ->
+        credential_error(
+          conn,
+          :unprocessable_entity,
+          "no_password",
+          "This account signs in with GitHub and has no password. Use the reset flow to set one."
+        )
+
+      {:error, %Ecto.Changeset{} = changeset} ->
+        conn
+        |> put_status(:unprocessable_entity)
+        |> put_view(FountainWeb.ChangesetJSON)
+        |> render(:error, changeset: changeset)
+    end
+  end
+
+  def api_change_password(conn, _params) do
+    conn
+    |> put_status(:unprocessable_entity)
+    |> json(%{error: "current_password and new_password are required"})
+  end
+
+  @doc """
+  Start an email change over JSON (#521). Sends the confirmation link; the
+  address only changes when the token comes back to
+  `POST /api/auth/email/confirm`.
+  """
+  def api_request_email_change(conn, %{"new_email" => new_email, "current_password" => current}) do
+    user = conn.assigns.current_user
+
+    case Accounts.request_email_change(user, new_email, current) do
+      :ok ->
+        FountainWeb.Audited.from_conn(conn, "auth.email.change_requested", "user",
+          user_id: user.id,
+          resource_id: user.id,
+          metadata: %{"new_email" => String.downcase(String.trim(new_email))}
+        )
+
+        # Same response whether or not the address was free — this endpoint
+        # must not be an availability oracle, the same rule the browser path
+        # follows.
+        json(conn, %{
+          message:
+            "If that address is available, a confirmation link is on its way to it. " <>
+              "Your email only changes when that link is used."
+        })
+
+      {:error, :invalid_current_password} ->
+        credential_error(conn, :forbidden, "invalid_current_password", "Current password is incorrect.")
+
+      {:error, :no_password} ->
+        credential_error(
+          conn,
+          :unprocessable_entity,
+          "no_password",
+          "This account signs in with GitHub and has no password."
+        )
+
+      {:error, :invalid_email} ->
+        credential_error(
+          conn,
+          :unprocessable_entity,
+          "invalid_email",
+          "That doesn't look like an email address."
+        )
+
+      {:error, :same_email} ->
+        credential_error(
+          conn,
+          :unprocessable_entity,
+          "same_email",
+          "That is already your email address."
+        )
+    end
+  end
+
+  def api_request_email_change(conn, _params) do
+    conn
+    |> put_status(:unprocessable_entity)
+    |> json(%{error: "new_email and current_password are required"})
+  end
+
+  defp credential_error(conn, status, error, message) do
+    conn
+    |> put_status(status)
+    |> json(%{error: error, message: message})
   end
 
   @doc """

@@ -30,6 +30,17 @@ upgrade, is in
 
 ### Added
 
+- **Password and email changes work over a bearer token**:
+  `POST /api/auth/password` and `POST /api/auth/email`. Both existed only as
+  browser POSTs with session auth and CSRF, so an API-driven account could
+  never rotate its own credentials. Both still require the current password —
+  a stolen bearer token must not be enough — and sit behind the `full`-scope
+  gate so a sandbox's per-conversation token cannot rotate the account
+  password. A password change signs out browser sessions but does not revoke
+  API keys, which is what it has always done; the response now says so
+  (`sessions_invalidated`, `api_keys_revoked`) instead of leaving a caller
+  rotating a leaked password to find out later (#521)
+
 - **The auth email flows can be finished over the API.** An API consumer
   could start every one of them — register, resend-verification, forgot —
   and finish none: confirmation and reset were browser routes, so account
