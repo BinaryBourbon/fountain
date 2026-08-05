@@ -13,7 +13,7 @@ defmodule Fountain.TrialEndingEmailTest do
   use Mimic
 
   alias Fountain.Accounts.User
-  alias Fountain.{Billing, Emails.UserEmails}
+  alias Fountain.{Billing, Emails.BillingEmails}
   alias Fountain.Workers.TrialEndingEmail
 
   setup :set_mimic_global
@@ -136,7 +136,7 @@ defmodule Fountain.TrialEndingEmailTest do
     end
 
     defp sent_email(user, ends_at) do
-      UserEmails.deliver_trial_ending_email(user, ends_at)
+      BillingEmails.deliver_trial_ending_email(user, ends_at)
       assert_received {:email, email}
       email
     end

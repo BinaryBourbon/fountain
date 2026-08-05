@@ -5,7 +5,7 @@
   "skip_files": [
     "lib/fountain/application.ex",
     "lib/fountain/repo.ex",
-    "ee/lib/fountain/mailer.ex",
+    "lib/fountain/mailer.ex",
     "lib/fountain/release.ex",
     "lib/fountain/telemetry.ex",
     "lib/fountain/sprite_skills.ex",

@@ -33,7 +33,7 @@ defmodule Fountain.Workers.LifecycleEmail do
 
   require Logger
 
-  alias Fountain.{Accounts, Emails.UserEmails}
+  alias Fountain.{Accounts, Emails.BillingEmails}
 
   @emails ~w(trial_expired payment_failed subscription_canceled payment_action_required payment_recovered)
 
@@ -66,13 +66,14 @@ defmodule Fountain.Workers.LifecycleEmail do
   # lag the account: someone who subscribed after their trial expired, or fixed
   # their card an hour after it bounced, must not then be told the opposite.
   defp maybe_send(%{subscription_status: "canceled"} = user, "trial_expired"),
-    do: deliver(user, "trial_expired", &UserEmails.deliver_trial_expired_email/1)
+    do: deliver(user, "trial_expired", &BillingEmails.deliver_trial_expired_email/1)
 
   defp maybe_send(%{subscription_status: "past_due"} = user, "payment_failed"),
-    do: deliver(user, "payment_failed", &UserEmails.deliver_payment_failed_email/1)
+    do: deliver(user, "payment_failed", &BillingEmails.deliver_payment_failed_email/1)
 
   defp maybe_send(%{subscription_status: "canceled"} = user, "subscription_canceled"),
-    do: deliver(user, "subscription_canceled", &UserEmails.deliver_subscription_canceled_email/1)
+    do:
+      deliver(user, "subscription_canceled", &BillingEmails.deliver_subscription_canceled_email/1)
 
   # An open invoice can want SCA while the account is in any live state — a
   # renewal on an active account, a retry on a past_due one. Only a canceled
@@ -83,11 +84,11 @@ defmodule Fountain.Workers.LifecycleEmail do
          deliver(
            user,
            "payment_action_required",
-           &UserEmails.deliver_payment_action_required_email/1
+           &BillingEmails.deliver_payment_action_required_email/1
          )
 
   defp maybe_send(%{subscription_status: "active"} = user, "payment_recovered"),
-    do: deliver(user, "payment_recovered", &UserEmails.deliver_payment_recovered_email/1)
+    do: deliver(user, "payment_recovered", &BillingEmails.deliver_payment_recovered_email/1)
 
   defp maybe_send(user, email) do
     Logger.info(
