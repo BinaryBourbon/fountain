@@ -28,6 +28,22 @@ upgrade, is in
   `.delete`) events the LiveView forms do, carrying the key, never the
   value, and attributed to `api` or `sprite` as appropriate (#530)
 
+### Added
+
+- **Inference credentials can be set over the API**, so an account can be
+  bootstrapped without ever opening a browser: `GET/PUT/DELETE
+  /api/account/inference-credentials[/:provider]`. A conversation cannot run
+  without one of these, and until now `put_credential` had exactly two
+  callers — the settings LiveView and the onboarding wizard — which made a
+  headless `register → configure → run` flow impossible. `PUT` runs the same
+  provider ping the settings page does and reports the outcomes distinctly
+  (422 rejected, 504 timed out, 502 unreachable) so a client knows whether to
+  re-type or retry; `validate: false` stores without the ping. Values stay
+  write-only, and the endpoints need a `full`-scoped key — a leaked
+  per-conversation sprite token must not be able to swap the keys the account
+  runs on. Both surfaces now emit `inference_credential.write` / `.delete`
+  audit events (#518)
+
 ## [0.5.2] — 2026-08-05
 
 ### Fixed

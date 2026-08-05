@@ -29,6 +29,31 @@ DELETE /api/auth/api-keys/:id      # revoke a key
 
 **Session cookie:** Obtained via OAuth at `/auth/oauth/:provider` or email/password login. Used by the web UI.
 
+## Inference credentials
+
+Conversations run on your own provider tokens (BYO — Fountain never sees your inference traffic), so a new account cannot start a conversation until at least one is set.
+
+```
+GET    /api/account/inference-credentials             # per-provider set/not-set
+PUT    /api/account/inference-credentials/:provider   # {"value": "...", "validate": true}
+DELETE /api/account/inference-credentials/:provider   # clear
+```
+
+Providers: `anthropic_api_key`, `claude_code_oauth_token`, `openai_api_key`, `gemini_api_key`.
+
+`PUT` pings the provider to check the credential before storing it. The outcomes are distinguishable so a client knows whether to re-type or retry:
+
+| Status | Meaning |
+|---|---|
+| `200` | Stored (encrypted under your tenant key) |
+| `422` | `invalid` — the provider rejected it (`provider_status` carries the upstream code); or a blank value; or an unknown provider |
+| `502` | `network` — the provider was unreachable from this instance |
+| `504` | `timeout` — the provider did not answer in time |
+
+Send `{"validate": false}` to store a credential without the ping.
+
+Values are **write-only** — these endpoints report only whether a provider is set. They require a `full`-scoped key: the per-conversation token a sandbox holds cannot read or replace the account's credentials.
+
 ## Rate limiting
 
 Requests are rate-limited per client IP (authenticated or not — the limiter does not key by API key). On limit hit: `429 Too Many Requests` with `Retry-After` header.

@@ -87,6 +87,14 @@ defmodule FountainWeb.Router do
     plug FountainWeb.Plugs.RequireKeyManagement
   end
 
+  # Layered on top of :api for account-level writes. Same rule as
+  # :require_key_management, wider remit: a leaked per-conversation sprite token
+  # must not be able to replace the tenant's inference credentials any more than
+  # it can mint a second API key.
+  pipeline :require_full_scope do
+    plug FountainWeb.Plugs.RequireFullScope
+  end
+
   ## ─── Public routes ────────────────────────────────────────────────────────────────────
 
   scope "/", FountainWeb do
@@ -196,6 +204,17 @@ defmodule FountainWeb.Router do
     get "/api-keys", ApiKeyController, :index
     post "/api-keys", ApiKeyController, :create
     delete "/api-keys/:id", ApiKeyController, :delete
+  end
+
+  # Account-level configuration. Inference credentials are what a conversation
+  # actually runs on, so a sprite token replacing them is the same class of
+  # escalation as minting an API key — hence the full-scope gate (#518).
+  scope "/api/account", FountainWeb do
+    pipe_through [:accepts_json, :api, :require_full_scope]
+
+    get "/inference-credentials", InferenceCredentialController, :index
+    put "/inference-credentials/:provider", InferenceCredentialController, :update
+    delete "/inference-credentials/:provider", InferenceCredentialController, :delete
   end
 
   scope "/api", FountainWeb do
