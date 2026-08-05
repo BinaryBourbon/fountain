@@ -20,8 +20,9 @@ defmodule FountainWeb.AdminLive.Index do
      socket
      |> FountainWeb.Audited.put_client_ip()
      |> assign(:page_title, "Admin")
+     |> assign(:billing_enabled, Billing.enabled?())
      |> assign(:funnel, Fountain.Funnel.summary_admin())
-     |> assign(:billing_overview, Billing.overview_admin())
+     |> assign_billing_overview()
      |> assign(:sandboxes, Conversations._unsafe_list_sandboxes_admin())
      |> assign(:admin_events, Fountain.Audit._unsafe_list_recent_admin(25))}
   end
@@ -44,9 +45,19 @@ defmodule FountainWeb.AdminLive.Index do
      socket
      |> assign_users()
      |> assign(:funnel, Fountain.Funnel.summary_admin())
-     |> assign(:billing_overview, Billing.overview_admin())
+     |> assign_billing_overview()
      |> assign(:sandboxes, Conversations._unsafe_list_sandboxes_admin())
      |> assign(:admin_events, Fountain.Audit._unsafe_list_recent_admin(25))}
+  end
+
+  # overview_admin/0 runs real queries (MRR, status counts, webhook events);
+  # on a billing-disabled instance nothing renders them, so don't run them.
+  defp assign_billing_overview(socket) do
+    if socket.assigns.billing_enabled do
+      assign(socket, :billing_overview, Billing.overview_admin())
+    else
+      assign(socket, :billing_overview, nil)
+    end
   end
 
   @impl true
@@ -98,6 +109,14 @@ defmodule FountainWeb.AdminLive.Index do
       _ ->
         {:noreply, put_flash(socket, :error, "Limit must be a whole number of 0 or more")}
     end
+  end
+
+  # The buttons are hidden when billing is disabled, but events can still be
+  # sent by hand (#399's lesson) — and both actions talk to Stripe.
+  @impl true
+  def handle_event(event, _params, %{assigns: %{billing_enabled: false}} = socket)
+      when event in ~w(extend_trial toggle_comp) do
+    {:noreply, put_flash(socket, :error, "Billing is disabled on this instance")}
   end
 
   @impl true
@@ -463,6 +482,7 @@ defmodule FountainWeb.AdminLive.Index do
         <div class="grid grid-cols-2 sm:grid-cols-5 gap-3">
           <div
             :for={stage <- @funnel.stages}
+            :if={stage.key != :subscribed or @billing_enabled}
             class="bg-white rounded shadow border border-zinc-200 px-4 py-3"
           >
             <div class="text-xs text-zinc-500">{stage_label(stage.key)}</div>
@@ -492,7 +512,7 @@ defmodule FountainWeb.AdminLive.Index do
         </div>
       </section>
 
-      <section class="space-y-3">
+      <section :if={@billing_enabled} class="space-y-3">
         <h2 class="text-lg font-medium">Billing</h2>
         <div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
           <div class="bg-white rounded shadow border border-zinc-200 px-4 py-3">
@@ -569,7 +589,11 @@ defmodule FountainWeb.AdminLive.Index do
               autocomplete="off"
               class="w-48 rounded border border-zinc-200 px-2 py-1 text-xs"
             />
-            <select name="status" class="rounded border border-zinc-200 px-1 py-1 text-xs">
+            <select
+              :if={@billing_enabled}
+              name="status"
+              class="rounded border border-zinc-200 px-1 py-1 text-xs"
+            >
               <option value="">any status</option>
               <option :for={s <- ~w(trialing active past_due canceled comped)} value={s} selected={@filters.status == s}>
                 {s}
@@ -594,7 +618,7 @@ defmodule FountainWeb.AdminLive.Index do
                 <.sort_header label="Email" col="email" filters={@filters} />
               </th>
               <th class="px-4 py-2">Role</th>
-              <th class="px-4 py-2">
+              <th :if={@billing_enabled} class="px-4 py-2">
                 <.sort_header label="Billing" col="trial_end" filters={@filters} />
               </th>
               <th class="px-4 py-2" title="Last 30 days: conversations / turns / sandbox minutes">
@@ -613,7 +637,10 @@ defmodule FountainWeb.AdminLive.Index do
           </thead>
           <tbody>
             <tr :if={@users == []}>
-              <td colspan="9" class="px-4 py-6 text-center text-sm text-zinc-500">
+              <td
+                colspan={if @billing_enabled, do: "9", else: "8"}
+                class="px-4 py-6 text-center text-sm text-zinc-500"
+              >
                 No users match.
               </td>
             </tr>
@@ -647,7 +674,7 @@ defmodule FountainWeb.AdminLive.Index do
                   {u.role}
                 </span>
               </td>
-              <td class="px-4 py-2">
+              <td :if={@billing_enabled} class="px-4 py-2">
                 <div class="space-y-1">
                   <div class="flex items-center gap-2">
                     <span class={[
