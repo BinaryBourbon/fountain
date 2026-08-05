@@ -260,30 +260,35 @@ defmodule FountainWeb.Router do
         TurnImageController,
         :show
 
-    # ── Phase-3-billing: conversation routes require an active subscription ─────────────────
+    # ── Phase-3-billing: starting a conversation requires an active subscription ────────────
     # :require_active_subscription runs after :require_authenticated_user and
-    # redirects to /account/billing on SubscriptionRequiredError.
+    # redirects to /account/billing on SubscriptionRequiredError. Only /new
+    # lives here since #505 — viewing moved to :authenticated below.
     live_session :active_subscription,
       on_mount: [
         {FountainWeb.Live.Hooks, :require_authenticated_user},
         {FountainWeb.Live.Hooks, :require_active_subscription}
       ] do
-      live "/conversations", ConversationsLive.Index, :index
       live "/conversations/new", ConversationsLive.New, :new
-      live "/conversations/:id", ConversationsLive.Show, :show
     end
 
     # ── Read-only and settings routes — no subscription gate ──────────────────────────────────
     # Users can reach these routes even when past_due / canceled so they can
-    # view past logs, manage resources, complete onboarding, and update payment
-    # details. See decisions/0006-hard-stripe-billing-gate-at-launch.md.
+    # view past conversations and logs, manage resources, complete onboarding,
+    # and update payment details. Conversation list/detail moved here in #505
+    # (the ADR 0006 read-only promise): the gate protects spend, so the
+    # spend-creating events inside ConversationsLive.Show are guarded
+    # per-event via @subscription_active instead of gating the whole view.
     live_session :authenticated,
       on_mount: [
-        {FountainWeb.Live.Hooks, :require_authenticated_user}
+        {FountainWeb.Live.Hooks, :require_authenticated_user},
+        {FountainWeb.Live.Hooks, :assign_subscription_state}
       ] do
       live "/dashboard", DashboardLive.Index, :index
       live "/onboarding", OnboardingLive.Wizard, :index
       live "/onboarding/:step", OnboardingLive.Wizard, :show
+      live "/conversations", ConversationsLive.Index, :index
+      live "/conversations/:id", ConversationsLive.Show, :show
       live "/conversations/:id/logs", LogViewerLive.Show, :show
       live "/agents", AgentsLive.Index, :index
       live "/agents/new", AgentsLive.Form, :new

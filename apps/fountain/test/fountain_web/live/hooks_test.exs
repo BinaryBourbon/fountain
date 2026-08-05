@@ -54,19 +54,21 @@ defmodule FountainWeb.Live.HooksTest do
   # ── :require_active_subscription ────────────────────────────────────────────
 
   describe ":require_active_subscription hook" do
+    # Since #505 only /conversations/new is router-gated — viewing moved to
+    # the :authenticated live_session, tested below.
     test "allows access for a user with trialing subscription", %{conn: conn} do
       user = insert_verified_user()
       # default subscription_status is "trialing"
       conn = login_user(conn, user)
-      {:ok, _lv, html} = live(conn, ~p"/conversations")
-      assert html =~ ~r/conversations/i
+      {:ok, _lv, html} = live(conn, ~p"/conversations/new")
+      assert html =~ ~r/conversation/i
     end
 
     test "redirects canceled user to /account/billing", %{conn: conn} do
       user = insert_canceled_user()
       conn = login_user(conn, user)
 
-      assert {:error, {:redirect, %{to: path}}} = live(conn, ~p"/conversations")
+      assert {:error, {:redirect, %{to: path}}} = live(conn, ~p"/conversations/new")
       assert path == "/account/billing"
     end
 
@@ -74,8 +76,38 @@ defmodule FountainWeb.Live.HooksTest do
       user = insert_past_due_user()
       conn = login_user(conn, user)
 
-      assert {:error, {:redirect, %{to: path}}} = live(conn, ~p"/conversations")
+      assert {:error, {:redirect, %{to: path}}} = live(conn, ~p"/conversations/new")
       assert path == "/account/billing"
+    end
+  end
+
+  # ── :assign_subscription_state — read-only conversation access (#505) ───────
+
+  describe ":assign_subscription_state hook" do
+    test "past_due user can view the conversation list", %{conn: conn} do
+      user = insert_past_due_user()
+      insert_conversation(user_id: user.id)
+      conn = login_user(conn, user)
+
+      {:ok, _lv, html} = live(conn, ~p"/conversations")
+      assert html =~ ~r/conversations/i
+    end
+
+    test "canceled user can view the conversation list", %{conn: conn} do
+      user = insert_canceled_user()
+      conn = login_user(conn, user)
+
+      {:ok, _lv, html} = live(conn, ~p"/conversations")
+      assert html =~ ~r/conversations/i
+    end
+
+    test "past_due user can open a conversation", %{conn: conn} do
+      user = insert_past_due_user()
+      conversation = insert_conversation(user_id: user.id)
+      conn = login_user(conn, user)
+
+      {:ok, _lv, html} = live(conn, ~p"/conversations/#{conversation.id}")
+      assert html =~ conversation.id
     end
   end
 
