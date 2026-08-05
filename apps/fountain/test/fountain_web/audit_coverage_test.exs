@@ -85,6 +85,134 @@ defmodule FountainWeb.AuditCoverageTest do
     end
   end
 
+  describe "secret writes through the API (#530)" do
+    setup do
+      user = insert_verified_user()
+      {_rec, key} = insert_api_key(user)
+      {:ok, user: user, key: key}
+    end
+
+    test "an environment secret write and delete are recorded", %{
+      conn: conn,
+      user: user,
+      key: key
+    } do
+      env = insert_env(user_id: user.id)
+
+      conn
+      |> authed_with_key(key)
+      |> post_json("/api/environments/#{env.id}/secrets", %{"key" => "DB_URL", "value" => "pg://x"})
+      |> json_response(201)
+
+      write = find_action(user.id, "environment.secret.write")
+      assert write, "writing a secret through the API must be audited like the UI does"
+      assert write.actor == "api"
+      assert write.resource_id == env.id
+      assert write.metadata["key"] == "DB_URL"
+
+      build_conn()
+      |> authed_with_key(key)
+      |> delete("/api/environments/#{env.id}/secrets/DB_URL")
+      |> response(204)
+
+      delete_event = find_action(user.id, "environment.secret.delete")
+      assert delete_event
+      assert delete_event.resource_id == env.id
+      assert delete_event.metadata["key"] == "DB_URL"
+    end
+
+    test "a vault secret write and delete are recorded", %{conn: conn, user: user, key: key} do
+      vault = insert_vault(user_id: user.id)
+
+      conn
+      |> authed_with_key(key)
+      |> post_json("/api/vaults/#{vault.id}/secrets", %{"key" => "TOKEN", "value" => "s3cret"})
+      |> json_response(201)
+
+      write = find_action(user.id, "vault.secret.write")
+      assert write
+      assert write.resource_id == vault.id
+      assert write.metadata["key"] == "TOKEN"
+
+      build_conn()
+      |> authed_with_key(key)
+      |> delete("/api/vaults/#{vault.id}/secrets/TOKEN")
+      |> response(204)
+
+      assert find_action(user.id, "vault.secret.delete")
+    end
+
+    test "a sprite token's secret write is attributed to the sandbox", %{conn: conn, user: user} do
+      # The whole point of the semantic event: "the agent wrote this secret" and
+      # "the account owner wrote this secret" must be distinguishable.
+      {_rec, sprite_key} = insert_sprite_api_key(user)
+      vault = insert_vault(user_id: user.id)
+
+      conn
+      |> authed_with_key(sprite_key)
+      |> post_json("/api/vaults/#{vault.id}/secrets", %{"key" => "K", "value" => "v"})
+      |> json_response(201)
+
+      write = find_action(user.id, "vault.secret.write")
+      assert write.actor == "sprite"
+    end
+
+    test "the secret value never reaches the audit log", %{conn: conn, user: user, key: key} do
+      env = insert_env(user_id: user.id)
+
+      conn
+      |> authed_with_key(key)
+      |> post_json("/api/environments/#{env.id}/secrets", %{
+        "key" => "K",
+        "value" => "super-secret-value"
+      })
+      |> json_response(201)
+
+      events = events_for(user.id)
+
+      # Guard the guard (#406): an empty list would make the refute vacuous.
+      assert Enum.any?(events, &(&1.action == "environment.secret.write"))
+
+      for event <- events do
+        refute inspect(event.metadata) =~ "super-secret-value"
+      end
+    end
+
+    test "secrets written by a manifest apply are recorded per key", %{
+      conn: conn,
+      user: user,
+      key: key
+    } do
+      conn
+      |> authed_with_key(key)
+      |> post_json("/api/apply", %{
+        "resources" => [
+          %{
+            "kind" => "Environment",
+            "name" => "prod",
+            "spec" => %{"secrets" => %{"A" => "1", "B" => "2"}}
+          },
+          %{
+            "kind" => "Vault",
+            "name" => "creds",
+            "spec" => %{"secrets" => %{"C" => "3"}}
+          }
+        ]
+      })
+      |> json_response(200)
+
+      env_writes =
+        Enum.filter(events_for(user.id), &(&1.action == "environment.secret.write"))
+
+      assert Enum.map(env_writes, & &1.metadata["key"]) |> Enum.sort() == ["A", "B"]
+      assert Enum.all?(env_writes, &(&1.metadata["via"] == "apply"))
+      assert Enum.all?(env_writes, &(&1.resource_id != nil))
+
+      vault_write = find_action(user.id, "vault.secret.write")
+      assert vault_write.metadata["key"] == "C"
+    end
+  end
+
   describe "authentication events" do
     test "a successful login is recorded", %{conn: conn} do
       user = insert_verified_user(%{"password" => "password12345"})

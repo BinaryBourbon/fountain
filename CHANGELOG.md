@@ -14,6 +14,20 @@ upgrade, is in
 
 ---
 
+## [Unreleased]
+
+### Fixed
+
+- **Secrets written through the API now leave the same audit trail as
+  secrets written through the UI.** `POST/DELETE /api/environments/:id/secrets`,
+  the vault equivalents, and the secret half of `POST /api/apply` recorded
+  only the generic request row — so the trail could answer "who wrote a
+  secret" only for people who used a browser, and the account export's
+  `audit_trail` under-reported API-driven secret activity. All three paths
+  now emit the same `environment.secret.write` / `vault.secret.write` (and
+  `.delete`) events the LiveView forms do, carrying the key, never the
+  value, and attributed to `api` or `sprite` as appropriate (#530)
+
 ## [0.5.2] — 2026-08-05
 
 ### Fixed
