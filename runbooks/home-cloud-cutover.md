@@ -182,7 +182,9 @@ can be debugged at leisure.
 - [ ] Delete the Render Postgres: `render databases delete fountain-db`
 - [ ] Remove `render.yaml` and `.github/workflows/deploy.yml` (the
       Render deploy-hook trigger) from the fountain repo.
-- [ ] Optionally remove `fly.toml` if it's no longer relevant.
+- [x] Optionally remove `fly.toml` if it's no longer relevant. (Removed
+      2026-08-05 along with `PREREQUISITES.md` — it was an undocumented
+      third deploy path with the hosted instance's domains baked in.)
 - [ ] Rotate credentials exposed during the migration (see the
       original migration transcript — Stripe live keys, GitHub OAuth,
       Resend, Sprites, MASTER_SECRETS_KEY, the magpie admin client

@@ -16,6 +16,18 @@ upgrade, is in
 
 ## [Unreleased]
 
+### Changed
+
+- The README no longer contradicts the licence story: it said nothing lived
+  in `ee/` and that ee code would not be MIT — both false since #472. It now
+  states what `ee/` holds (billing + growth mail) and that it is MIT today,
+  a future-licence option only (decisions/0010). API examples run against
+  `$FOUNTAIN_URL` instead of the hosted instance's domain, and the
+  orchestrator "bus repo" framing moved out of the front door. Removed
+  `PREREQUISITES.md` (stale instructions for the predecessor AoD stack) and
+  `fly.toml` (an undocumented third deploy path with the hosted domains
+  baked in) (#490)
+
 ### Fixed
 
 - The self-host quick start pinned `v0.3.0` — an image from before the
