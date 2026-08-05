@@ -100,12 +100,12 @@ jobs:
         continue-on-error: true
         run: mix hex.audit
 
-      # working-directory matters: at the umbrella root sobelow detects no
+      # Not plain `mix sobelow`: at the umbrella root sobelow detects no
       # Phoenix app, scans nothing, and exits 0 — indistinguishable from a
-      # pass. Reported by two audits (#194, #311) before it was fixed.
+      # pass (#194, #311). The script scans a merged tree so ee/lib web
+      # modules are covered too (decisions/0010).
       - name: Security scan (sobelow)
-        working-directory: apps/fountain
-        run: mix sobelow --config
+        run: scripts/sobelow.sh
 
       # The PLT encodes OTP + deps; rebuilding it cold takes minutes, so it is
       # cached on the exact beam versions + lockfile. mix.exs pins its path to

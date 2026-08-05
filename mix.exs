@@ -111,13 +111,15 @@ defmodule Fountain.Umbrella.MixProject do
     end
   end
 
-  # Runs from apps/fountain because sobelow at the umbrella root detects no
-  # Phoenix app, scans nothing, and exits 0 — a gate that passes because it
-  # scanned nothing looks identical to a gate that passed (#311).
+  # Not plain `mix sobelow`: at the umbrella root sobelow detects no Phoenix
+  # app, scans nothing, and exits 0 — a gate that passes because it scanned
+  # nothing looks identical to a gate that passed (#311). The script also
+  # overlays ee/lib into the scan tree, which sobelow cannot reach from
+  # apps/fountain on its own (decisions/0010).
   defp sobelow_in_app(_args) do
-    case Mix.shell().cmd("mix sobelow --config", cd: "apps/fountain") do
+    case Mix.shell().cmd("scripts/sobelow.sh") do
       0 -> :ok
-      status -> Mix.raise("mix sobelow failed with exit status #{status}")
+      status -> Mix.raise("sobelow failed with exit status #{status}")
     end
   end
 end
