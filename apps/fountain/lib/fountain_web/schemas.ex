@@ -795,6 +795,75 @@ defmodule FountainWeb.Schemas do
     })
   end
 
+  defmodule InferenceCredentialStatus do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "InferenceCredentialStatus",
+      description:
+        "Whether a provider credential is set for the tenant. Values are " <>
+          "write-only — the API never returns a credential, truncated or otherwise.",
+      type: :object,
+      properties: %{
+        provider: %Schema{
+          type: :string,
+          enum: ~w(anthropic_api_key claude_code_oauth_token openai_api_key gemini_api_key)
+        },
+        set: %Schema{type: :boolean}
+      },
+      required: [:provider, :set]
+    })
+  end
+
+  defmodule InferenceCredentialResponse do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "InferenceCredentialResponse",
+      type: :object,
+      properties: %{data: InferenceCredentialStatus},
+      required: [:data]
+    })
+  end
+
+  defmodule InferenceCredentialListResponse do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "InferenceCredentialListResponse",
+      type: :object,
+      properties: %{data: %Schema{type: :array, items: InferenceCredentialStatus}},
+      required: [:data]
+    })
+  end
+
+  defmodule InferenceCredentialRequest do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "InferenceCredentialRequest",
+      type: :object,
+      properties: %{
+        value: %Schema{
+          type: :string,
+          description: "The provider token (write-only)."
+        },
+        validate: %Schema{
+          type: :boolean,
+          default: true,
+          description:
+            "Ping the provider to check the credential before storing it. " <>
+              "false stores it unchecked."
+        }
+      },
+      required: [:value]
+    })
+  end
+
   defmodule HealthResponse do
     @moduledoc false
     require OpenApiSpex

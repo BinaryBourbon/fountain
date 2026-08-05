@@ -12,38 +12,18 @@ defmodule FountainWeb.Plugs.RequireKeyManagement do
   Sandboxes run untrusted code by design, so that path has to be closed at the
   boundary rather than trusted not to be walked.
 
+  The rule itself now lives in `FountainWeb.Plugs.RequireFullScope`, which other
+  account-level writes reuse; this plug is the key-management wording of it.
+
   Session-authenticated browser routes never reach this plug; it guards the
   bearer-token API pipeline only.
   """
 
-  import Plug.Conn
-  import Phoenix.Controller, only: [json: 2]
+  alias FountainWeb.Plugs.RequireFullScope
 
-  alias Fountain.Accounts.ApiKey
+  @error "This API key is not permitted to manage API keys"
 
   def init(opts), do: opts
 
-  def call(%{assigns: %{current_api_key: %ApiKey{} = key}} = conn, _opts) do
-    if ApiKey.may_manage_keys?(key) do
-      conn
-    else
-      conn
-      |> put_status(:forbidden)
-      |> json(%{
-        error: "This API key is not permitted to manage API keys",
-        reason: "insufficient_scope",
-        required_scope: "full"
-      })
-      |> halt()
-    end
-  end
-
-  # No key on the connection means this ran outside the bearer-token pipeline.
-  # Fail closed rather than assume the caller is privileged.
-  def call(conn, _opts) do
-    conn
-    |> put_status(:forbidden)
-    |> json(%{error: "API key scope could not be determined", reason: "insufficient_scope"})
-    |> halt()
-  end
+  def call(conn, _opts), do: RequireFullScope.call(conn, error: @error)
 end

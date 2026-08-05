@@ -93,6 +93,8 @@ defmodule FountainWeb.InferenceCredentialsLive.Index do
       {:ok, dek} ->
         case InferenceCredentials.put_credential(socket.assigns.user_id, dek, provider, nil) do
           {:ok, _} ->
+            audit(socket, "inference_credential.delete", provider)
+
             {:noreply,
              socket
              |> assign(:status, InferenceCredentials.status_for_user(socket.assigns.user_id))
@@ -118,6 +120,8 @@ defmodule FountainWeb.InferenceCredentialsLive.Index do
     with {:ok, dek} <- load_dek(socket.assigns.user_id),
          {:ok, _cred} <-
            InferenceCredentials.put_credential(socket.assigns.user_id, dek, provider, value) do
+      audit(socket, "inference_credential.write", provider)
+
       {:noreply,
        socket
        |> assign(:status, InferenceCredentials.status_for_user(socket.assigns.user_id))
@@ -136,6 +140,16 @@ defmodule FountainWeb.InferenceCredentialsLive.Index do
 
   defp load_dek(user_id) do
     Crypto.load_tenant_key(user_id)
+  end
+
+  # The provider name is the whole payload — the credential itself must never
+  # reach a second table. Matches the events the API controller emits (#518),
+  # so the trail reads the same whichever surface set the credential.
+  defp audit(socket, action, provider) do
+    FountainWeb.Audited.from_socket(socket, action, "inference_credential",
+      resource_id: Atom.to_string(provider),
+      metadata: %{"provider" => Atom.to_string(provider)}
+    )
   end
 
   defp put_provider_message(socket, provider, kind, msg) do
