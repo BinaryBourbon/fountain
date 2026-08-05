@@ -86,7 +86,7 @@ defmodule FountainWeb.AdminLive.Index do
   def handle_event("set_sandbox_limit", %{"user_id" => id, "limit" => raw}, socket) do
     with {limit, ""} <- Integer.parse(String.trim(raw)),
          %Accounts.User{} = user <- Accounts.get_user(id),
-         {:ok, _} <- Accounts.update_sandbox_limit(user, limit) do
+         {:ok, _} <- Accounts.update_sandbox_limit(user, limit, actor: "admin") do
       Fountain.Audit.record_admin(%{
         actor_user_id: socket.assigns.current_user.id,
         target_user_id: user.id,
@@ -252,7 +252,7 @@ defmodule FountainWeb.AdminLive.Index do
   defp do_toggle_admin(socket, user) do
     new_role = if user.role == "admin", do: "user", else: "admin"
 
-    case Accounts.update_user_role(user, new_role) do
+    case Accounts.update_user_role(user, new_role, actor: "admin") do
       {:ok, _} ->
         Fountain.Audit.record_admin(%{
           actor_user_id: socket.assigns.current_user.id,
@@ -342,7 +342,7 @@ defmodule FountainWeb.AdminLive.Index do
 
   defp do_toggle_suspend(socket, admin, user) do
     if Accounts.suspended?(user) do
-      case Accounts.unsuspend_user(user) do
+      case Accounts.unsuspend_user(user, actor: "admin") do
         {:ok, _} ->
           Fountain.Audit.record_admin(%{
             actor_user_id: admin.id,
@@ -357,7 +357,7 @@ defmodule FountainWeb.AdminLive.Index do
           {:noreply, put_flash(socket, :error, "Could not lift the suspension")}
       end
     else
-      case Accounts.suspend_user(user) do
+      case Accounts.suspend_user(user, actor: "admin") do
         {:ok, _, reaped} ->
           Fountain.Audit.record_admin(%{
             actor_user_id: admin.id,

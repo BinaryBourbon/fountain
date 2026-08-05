@@ -17,6 +17,26 @@ defmodule FountainWeb.Plugs.Audit do
   Read methods (GET) are not audited — they're noisy and rarely
   interesting. Failures (4xx/5xx) are still recorded so we can see
   rejected attempts.
+
+  ## Why this stays, now that contexts audit themselves
+
+  #540 moved semantic auditing into the context functions, which means an API
+  mutation now writes two rows: `agent.updated` from `Agents.update_agent/3`,
+  and `PUT /api/agents/:id` + status from here. That looked like something to
+  clean up, and the decision was to keep both — they answer different
+  questions:
+
+    * the context event says **what changed** — a semantic action, the fields
+      that moved, the resource;
+    * this plug says **what was attempted** — verb, path, and the status code,
+      including for requests that were refused. A 403 on a route whose context
+      never ran leaves no semantic event at all, and a run of them is the
+      signal you actually want.
+
+  Scoping this down to "only routes whose context does not audit yet" was the
+  alternative, and it was rejected: that list would be a second place to
+  remember, one forgotten entry away from a silently unaudited route — the
+  exact failure mode #540 existed to remove.
   """
 
   import Plug.Conn

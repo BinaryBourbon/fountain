@@ -650,8 +650,10 @@ defmodule Fountain.Accounts do
 
   Returns `{:ok, api_key}` or `{:error, :not_found}`.
   """
-  @spec revoke_api_key(binary(), binary()) :: {:ok, ApiKey.t()} | {:error, :not_found}
-  def revoke_api_key(user_id, key_id) when is_binary(user_id) and is_binary(key_id) do
+  @spec revoke_api_key(binary(), binary(), keyword()) ::
+          {:ok, ApiKey.t()} | {:error, :not_found}
+  def revoke_api_key(user_id, key_id, opts \\ [])
+      when is_binary(user_id) and is_binary(key_id) do
     case Repo.get_by(ApiKey, id: key_id, user_id: user_id) do
       nil ->
         {:error, :not_found}
@@ -660,6 +662,9 @@ defmodule Fountain.Accounts do
         key
         |> Ecto.Changeset.change(revoked_at: DateTime.utc_now() |> DateTime.truncate(:second))
         |> Repo.update()
+        |> audited_account("api_key.revoked", "api_key", opts, fn revoked ->
+          %{"name" => revoked.name, "key_prefix" => revoked.key_prefix}
+        end)
     end
   end
 
@@ -914,8 +919,13 @@ defmodule Fountain.Accounts do
   end
 
   @doc "Update a user's role. Role must be 'admin' or 'user'."
-  def update_user_role(%User{} = user, role) when role in ~w(admin user) do
-    user |> Ecto.Changeset.change(role: role) |> Repo.update()
+  def update_user_role(%User{} = user, role, opts \\ []) when role in ~w(admin user) do
+    user
+    |> Ecto.Changeset.change(role: role)
+    |> Repo.update()
+    |> audited_account("account.role_changed", "user", opts, fn updated ->
+      %{"from" => user.role, "to" => updated.role}
+    end)
   end
 
   @doc """
@@ -925,10 +935,13 @@ defmodule Fountain.Accounts do
   makes it unusable in the two situations it exists for: raising it for a
   trusted tenant, and dropping it to zero during abuse.
   """
-  def update_sandbox_limit(%User{} = user, limit) do
+  def update_sandbox_limit(%User{} = user, limit, opts \\ []) do
     user
     |> User.sandbox_limit_changeset(%{max_concurrent_sandboxes: limit})
     |> Repo.update()
+    |> audited_account("account.sandbox_limit_changed", "user", opts, fn updated ->
+      %{"from" => user.max_concurrent_sandboxes, "to" => updated.max_concurrent_sandboxes}
+    end)
   end
 
   @doc false
@@ -957,8 +970,9 @@ defmodule Fountain.Accounts do
 
   Returns `{:ok, user, reaped_count}`.
   """
-  @spec suspend_user(User.t()) :: {:ok, User.t(), non_neg_integer()} | {:error, Ecto.Changeset.t()}
-  def suspend_user(%User{} = user) do
+  @spec suspend_user(User.t(), keyword()) ::
+          {:ok, User.t(), non_neg_integer()} | {:error, Ecto.Changeset.t()}
+  def suspend_user(%User{} = user, opts \\ []) do
     now = DateTime.utc_now() |> DateTime.truncate(:second)
 
     with {:ok, updated} <-
@@ -976,6 +990,10 @@ defmodule Fountain.Accounts do
       # worker re-checks state and verification at send time.
       Fountain.Workers.AccountEmail.enqueue_suspended(updated)
 
+      record_account_event(updated, "account.suspended", "user", opts, %{
+        "sandboxes_reaped" => reaped
+      })
+
       {:ok, updated, reaped}
     end
   end
@@ -984,12 +1002,48 @@ defmodule Fountain.Accounts do
   Lift a suspension. Sessions stay invalidated (the user logs in again);
   nothing is re-provisioned.
   """
-  @spec unsuspend_user(User.t()) :: {:ok, User.t()} | {:error, Ecto.Changeset.t()}
-  def unsuspend_user(%User{} = user) do
+  @spec unsuspend_user(User.t(), keyword()) :: {:ok, User.t()} | {:error, Ecto.Changeset.t()}
+  def unsuspend_user(%User{} = user, opts \\ []) do
     with {:ok, updated} <- user |> Ecto.Changeset.change(suspended_at: nil) |> Repo.update() do
       Fountain.Workers.AccountEmail.enqueue_unsuspended(updated)
+      record_account_event(updated, "account.unsuspended", "user", opts, %{})
       {:ok, updated}
     end
+  end
+
+  # Shared by the account-level mutations above. Each of these used to depend
+  # on its caller remembering: the admin LiveView recorded through
+  # `record_admin/1`, the API surface recorded through the pipeline plug, and
+  # anything else recorded nothing (#552). The context records the tenant-facing
+  # event; the admin surfaces still add their own `admin_audit_events` row on
+  # top, because those carry an actor AND a target, which `audit_events` cannot
+  # express.
+  defp audited_account({:ok, record} = ok, action, resource_type, opts, metadata_fun) do
+    Audit.record(%{
+      user_id: Map.get(record, :user_id) || Map.get(record, :id),
+      action: action,
+      resource_type: resource_type,
+      resource_id: record.id,
+      actor: Keyword.get(opts, :actor, "self"),
+      request_ip: Keyword.get(opts, :request_ip),
+      metadata: metadata_fun.(record)
+    })
+
+    ok
+  end
+
+  defp audited_account(other, _action, _resource_type, _opts, _metadata_fun), do: other
+
+  defp record_account_event(%User{} = user, action, resource_type, opts, metadata) do
+    Audit.record(%{
+      user_id: user.id,
+      action: action,
+      resource_type: resource_type,
+      resource_id: user.id,
+      actor: Keyword.get(opts, :actor, "self"),
+      request_ip: Keyword.get(opts, :request_ip),
+      metadata: metadata
+    })
   end
 
   @doc "Whether the account is currently suspended."

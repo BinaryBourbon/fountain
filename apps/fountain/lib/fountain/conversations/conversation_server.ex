@@ -1332,7 +1332,9 @@ defmodule Fountain.Conversations.ConversationServer do
       case Conversations._unsafe_get_conversation(state.conversation_id) do
         %Conversation{user_id: user_id, callback_api_key_id: row_id}
         when is_binary(user_id) and row_id == state.callback_api_key_id ->
-          _ = Accounts.revoke_api_key(user_id, state.callback_api_key_id)
+          _ = Accounts.revoke_api_key(user_id, state.callback_api_key_id,
+            actor: "system:conversation_server"
+          )
 
         _ ->
           :ok
@@ -1468,7 +1470,7 @@ defmodule Fountain.Conversations.ConversationServer do
   # row is pruned by RetentionPruner.
   defp rotate_callback_api_key(state, %Conversation{} = conv) do
     if id = state.callback_api_key_id do
-      _ = Accounts.revoke_api_key(conv.user_id, id)
+      _ = Accounts.revoke_api_key(conv.user_id, id, actor: "system:conversation_server")
     end
 
     case Accounts.create_api_key(

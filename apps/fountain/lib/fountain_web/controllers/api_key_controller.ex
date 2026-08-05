@@ -95,7 +95,7 @@ defmodule FountainWeb.ApiKeyController do
   def delete(conn, %{"id" => id}) do
     user = conn.assigns.current_user
 
-    case Accounts.revoke_api_key(user.id, id) do
+    case Accounts.revoke_api_key(user.id, id, Audited.attribution(conn)) do
       {:ok, _key} ->
         send_resp(conn, :no_content, "")
 

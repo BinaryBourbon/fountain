@@ -144,7 +144,47 @@ The `UeberAuthController` skips `plug Ueberauth` when `ueberauth_test_mode: true
 
 ## Audit logging
 
-`Fountain.Audit.record/1` is best-effort — it rescues exceptions and returns `{:error, :exception}` rather than raising. Use `record!/1` only where a failure should propagate. Never wrap `record/1` in a way that makes it blocking for the user.
+**Mutations audit in the context, not the caller.** A function that changes
+tenant-owned state records its own event, so the UI, the API, background
+workers and any future surface are covered by construction rather than by each
+caller remembering. This is the rule the #540 campaign established after
+finding seven contexts with no audit calls at all and coverage that depended on
+which door a request came through.
+
+```elixir
+# CORRECT — the context records; the caller supplies only attribution
+def create_agent(attrs, opts \\ []) do
+  %Agent{} |> Agent.changeset(attrs) |> Repo.insert() |> audited("agent.created", opts)
+end
+
+# at the call site
+Agents.create_agent(attrs, Audited.attribution(conn))     # or (socket)
+Agents.create_agent(attrs, actor: "system:my_worker")     # background caller
+```
+
+`FountainWeb.Audited.attribution/2` returns the `:actor` / `:request_ip` pair
+for a `%Plug.Conn{}` or a LiveView socket. Pass an override where the
+connection cannot reveal the actor — at registration and at
+`POST /api/auth/token` there is no session yet, so derivation would report
+`"system"` for a plainly-human action.
+
+Three rules that are easy to get wrong:
+
+- **Never audit inside a transaction.** `record/1` is best-effort *by rescuing*,
+  and that does not survive a transaction — a failed insert aborts the enclosing
+  one, so a lost audit row would take the mutation with it. Record outside.
+- **Never record values.** Update events name the fields that changed
+  (`Audit.changed_fields/1`); secret, credential and prompt events record keys,
+  sizes and providers. The trail is not a second copy of tenant data.
+- **Only record what happened.** A rejected changeset or a no-op sync records
+  nothing; a trail that logs attempts as changes is worse than no trail.
+
+`apps/fountain/test/fountain/audit_guardrail_test.exs` enforces this: add a
+context mutation and the guardrail fails until it audits, or until you add it
+to the documented exclusion list with a reason.
+
+`Fountain.Audit.record!/1` is deliberately test-only — see its docstring. Never
+wrap `record/1` in a way that makes it blocking for the user.
 
 ## CI pipeline
 

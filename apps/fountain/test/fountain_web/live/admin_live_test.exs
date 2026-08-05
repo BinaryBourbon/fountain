@@ -776,7 +776,9 @@ defmodule FountainWeb.AdminLiveErrorTest do
       conn = login_user(conn, admin)
       {:ok, lv, _html} = live(conn, ~p"/admin")
 
-      stub(Accounts, :update_user_role, fn _user, _role ->
+      # Arity 3: the admin surface passes actor: "admin" through so the
+      # context can attribute the event it now records itself (#552).
+      stub(Accounts, :update_user_role, fn _user, _role, _opts ->
         {:error, %Ecto.Changeset{}}
       end)
 
