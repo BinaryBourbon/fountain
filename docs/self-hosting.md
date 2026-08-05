@@ -192,6 +192,20 @@ it is a lock with no key. Leave it off
 unless you are running Fountain commercially and have configured Stripe — the
 [Stripe integration guide](integrations/stripe.md) covers that setup.
 
+With billing disabled, accounts carry no subscription status and no trial
+clock — nothing billing-shaped appears in the UI, the admin panel, or the API.
+If you later enable billing on an existing instance, those accounts have no
+trial to measure and **fail closed** at the subscription gate. Start their
+trial clocks explicitly with the release task:
+
+```bash
+# See who would be affected, change nothing:
+bin/fountain_server eval 'Fountain.Release.expire_legacy_trials(dry_run: true)'
+
+# Mark them trialing with 14 days from now:
+bin/fountain_server eval 'Fountain.Release.expire_legacy_trials(days: 14)'
+```
+
 ## Putting it on the internet
 
 The compose file publishes port 4000 with no TLS. Terminate TLS in front of it
