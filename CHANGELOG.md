@@ -18,6 +18,17 @@ upgrade, is in
 
 ### Fixed
 
+- **Your subscription changing state is in your own audit trail now.** The
+  billing context recorded nothing, so an account could move from active to
+  cancelled, or from trialing to gated, and the person it happened to saw only
+  the result. Admin-initiated changes did land in the privilege trail, but the
+  page users actually read never showed that table. Every transition —
+  Stripe-driven, operator-driven, or decided by the trial sweeper — now
+  records both ends of the change plus which of those three moved it, because
+  "cancelled" means something different depending on who did it. A sync that
+  reasserts the status an account already had records nothing, so the real
+  transitions stay findable (#550)
+
 - **Starting, prompting, interrupting, stopping and deleting a conversation
   are audited from the browser too.** Like resource CRUD, these were recorded
   through `/api` and silent through the UI — where conversations are actually

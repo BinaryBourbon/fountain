@@ -32,6 +32,7 @@ defmodule Fountain.Billing do
   require Logger
 
   alias Fountain.Accounts.User
+  alias Fountain.Audit
   alias Fountain.Billing.UsageEvent
   alias Fountain.Repo
 
@@ -271,6 +272,7 @@ defmodule Fountain.Billing do
           subscription_synced_at: DateTime.utc_now() |> DateTime.truncate(:second)
         })
         |> Repo.update()
+        |> audit_billing(user, "billing.trial.started", "stripe")
 
       {:error, reason} ->
         {:error, reason}
@@ -286,6 +288,65 @@ defmodule Fountain.Billing do
     user
     |> User.billing_changeset(%{trial_ends_at: trial_end_from_now()})
     |> Repo.update()
+    |> audit_billing(user, "billing.trial.started", "local")
+  end
+
+  # ── audit ─────────────────────────────────────────────────────────────────
+  #
+  # Subscription state changed under the tenant with nothing to explain it:
+  # this module had zero `Audit.record` calls, so an account could go from
+  # `active` to `canceled` and the person it happened to saw only the result
+  # (#550). Admin-initiated billing changes landed in `admin_audit_events`,
+  # which the tenant-facing `/audit` never reads.
+  #
+  # `source` is the point. "Your subscription was cancelled" means something
+  # different depending on whether Stripe said so, an operator did it, or a
+  # sweeper decided a trial had run out, and the status column cannot tell
+  # those apart.
+  #
+  # Only real transitions are recorded — a sync that reasserts the status the
+  # account already had is not news, and the webhook path re-syncs constantly.
+
+  defp audit_billing(result, before, action, source, extra \\ %{})
+
+  defp audit_billing({:ok, %User{} = updated} = ok, %User{} = before, action, source, extra) do
+    record_billing_transition(before, updated, action, source, extra)
+    ok
+  end
+
+  defp audit_billing(%User{} = updated, %User{} = before, action, source, extra) do
+    record_billing_transition(before, updated, action, source, extra)
+    updated
+  end
+
+  defp audit_billing(other, _before, _action, _source, _extra), do: other
+
+  defp record_billing_transition(%User{} = before, %User{} = updated, action, source, extra) do
+    changed? =
+      before.subscription_status != updated.subscription_status or
+        before.trial_ends_at != updated.trial_ends_at or
+        before.stripe_customer_id != updated.stripe_customer_id or
+        before.cancel_at_period_end != updated.cancel_at_period_end
+
+    if changed? do
+      Audit.record(%{
+        user_id: updated.id,
+        action: action,
+        resource_type: "subscription",
+        resource_id: updated.stripe_subscription_id,
+        actor: "system:#{source}",
+        metadata:
+          Map.merge(
+            %{
+              "source" => source,
+              "from_status" => before.subscription_status,
+              "to_status" => updated.subscription_status,
+              "cancel_at_period_end" => updated.cancel_at_period_end
+            },
+            extra
+          )
+      })
+    end
   end
 
   @doc false
@@ -349,6 +410,7 @@ defmodule Fountain.Billing do
         subscription_synced_at: DateTime.truncate(now, :second)
       })
       |> Repo.update()
+      |> audit_billing(user, "billing.trial.extended", "admin", %{"days" => days})
     end
   end
 
@@ -488,6 +550,7 @@ defmodule Fountain.Billing do
             )
             |> Repo.update!()
             |> tap(&enqueue_lifecycle_email(user.subscription_status, &1))
+            |> audit_billing(user, "billing.trial.expired", "trial_sweeper")
 
           _ ->
             Repo.rollback(:not_trialing)
@@ -563,6 +626,7 @@ defmodule Fountain.Billing do
           |> User.billing_changeset(attrs)
           |> Repo.update!()
           |> tap(&enqueue_lifecycle_email(user.subscription_status, &1))
+          |> audit_billing(user, "billing.subscription.resynced", "admin")
       end
     end)
   end
@@ -609,6 +673,7 @@ defmodule Fountain.Billing do
       user
       |> User.billing_changeset(%{subscription_status: "comped"})
       |> Repo.update()
+      |> audit_billing(user, "billing.comped", "admin")
     end
   end
 
@@ -621,6 +686,7 @@ defmodule Fountain.Billing do
     user
     |> User.billing_changeset(%{subscription_status: "canceled"})
     |> Repo.update()
+    |> audit_billing(user, "billing.comp_revoked", "admin")
   end
 
   def revoke_comp(%User{}), do: {:error, :not_comped}
@@ -1154,6 +1220,9 @@ defmodule Fountain.Billing do
               {:ok, updated} -> enqueue_lifecycle_email(user.subscription_status, updated)
               _ -> :ok
             end)
+            |> audit_billing(user, "billing.subscription.synced", "webhook", %{
+              "event_type" => type
+            })
         end
     end
   end
@@ -1234,6 +1303,7 @@ defmodule Fountain.Billing do
               {:ok, updated} -> enqueue_lifecycle_email("past_due", updated)
               _ -> :ok
             end)
+            |> audit_billing(user, "billing.payment.recovered", "webhook")
         end
 
       %User{} ->
