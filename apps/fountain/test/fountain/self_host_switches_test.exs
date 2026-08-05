@@ -27,7 +27,7 @@ defmodule Fountain.SelfHostSwitchesTest do
     "PUBLIC_URL" => "https://fountain.example.com"
   }
 
-  @switch_vars ~w(BILLING_ENABLED REGISTRATION_ENABLED REGISTRATION_ALLOWED_EMAIL_DOMAINS STRIPE_WEBHOOK_SECRET)
+  @switch_vars ~w(BILLING_ENABLED REGISTRATION_ENABLED REGISTRATION_ALLOWED_EMAIL_DOMAINS STRIPE_WEBHOOK_SECRET EMAIL_DELIVERY FIRST_USER_ADMIN)
 
   defp read_prod_config(extra) do
     previous = System.get_env()
@@ -110,6 +110,33 @@ defmodule Fountain.SelfHostSwitchesTest do
       assert read_prod_config(%{"REGISTRATION_ALLOWED_EMAIL_DOMAINS" => ""})[:fountain][
                :registration_allowed_email_domains
              ] == []
+    end
+
+    test "EMAIL_DELIVERY=none turns :email_enabled off (ADR 0011)" do
+      # The blank RESEND_API_KEY matters: compose delivers present-but-empty
+      # vars, and "" must not select the Resend adapter over the opt-out (#396).
+      {cfg, _stderr} =
+        ExUnit.CaptureIO.with_io(:stderr, fn ->
+          read_prod_config(%{"RESEND_API_KEY" => "", "EMAIL_DELIVERY" => "none"})
+        end)
+
+      assert cfg[:fountain][:email_enabled] == false
+    end
+
+    test "a configured mailer leaves :email_enabled at its default (true)" do
+      # runtime.exs must not touch the flag on the happy path — config.exs
+      # owns the default.
+      cfg = read_prod_config(%{})
+      assert cfg[:fountain][:email_enabled] == nil
+    end
+
+    test "FIRST_USER_ADMIN defaults off — nobody gets admin for registering first" do
+      assert read_prod_config(%{})[:fountain][:first_user_admin] == false
+    end
+
+    test "FIRST_USER_ADMIN=true opts a self-host in" do
+      assert read_prod_config(%{"FIRST_USER_ADMIN" => "true"})[:fountain][:first_user_admin] ==
+               true
     end
 
     test "REGISTRATION_ENABLED=false closes signup at the config level" do

@@ -82,11 +82,9 @@ services:
       # lock with no key on a self-hosted instance.
       BILLING_ENABLED: ${BILLING_ENABLED:-false}
 
-      # No mail by default, so a first run needs nothing external. Verify your
-      # account with:
-      #   docker compose exec app bin/fountain_server eval \
-      #     'Fountain.Release.verify_email("you@example.com")'
-      # Set RESEND_API_KEY or SMTP_HOST to send real mail instead.
+      # No mail by default, so a first run needs nothing external. Accounts
+      # self-verify at registration in this mode (ADR 0011); set
+      # RESEND_API_KEY or SMTP_HOST to send real mail instead.
       EMAIL_DELIVERY: ${EMAIL_DELIVERY:-none}
       RESEND_API_KEY: ${RESEND_API_KEY:-}
       SMTP_HOST: ${SMTP_HOST:-}
@@ -98,6 +96,11 @@ services:
       # Open by default so the first account can be created. Close it once
       # yours exists.
       REGISTRATION_ENABLED: ${REGISTRATION_ENABLED:-true}
+
+      # Compose is the single-operator quickstart, so the first account to
+      # verify becomes the admin (ADR 0011) — register before exposing the
+      # instance, or set this to false and use Fountain.Release.promote_admin/1.
+      FIRST_USER_ADMIN: ${FIRST_USER_ADMIN:-true}
 
       # There is no OTLP collector in a default compose setup, and without this
       # the exporter retries per span and floods the logs.

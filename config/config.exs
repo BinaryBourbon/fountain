@@ -70,6 +70,17 @@ config :phoenix, :json_library, Jason
 # Swoosh mailer
 config :fountain, Fountain.Mailer, adapter: Swoosh.Adapters.Local
 
+# Whether this instance can deliver email at all. Flipped to false only by
+# EMAIL_DELIVERY=none in runtime.exs; registration auto-verifies accounts when
+# it is false, because a verification link that cannot be delivered gates
+# nothing.
+config :fountain, :email_enabled, true
+
+# Self-host bootstrap (ADR 0011): when true, the first account to become
+# verified on an instance with no admin is promoted to admin. Off everywhere
+# unless FIRST_USER_ADMIN=true is set at boot.
+config :fountain, :first_user_admin, false
+
 # Ueberauth — GitHub OAuth strategy.
 # `base_path` matches the router prefix in router.ex (`/auth/oauth/:provider`);
 # without it the plug ignores the requests and the controller's :request

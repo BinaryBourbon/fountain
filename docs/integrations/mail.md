@@ -34,14 +34,11 @@ order.
 | `EMAIL_DELIVERY=none` | Disables email with a stderr notice at boot |
 
 For an OAuth-only instance, or while evaluating. Accounts created with email
-+ password then cannot verify themselves — an operator does it:
++ password self-verify at registration — a verification link that can never
+be delivered gates nothing (ADR 0011).
 
-```bash
-bin/fountain_server eval 'Fountain.Release.verify_email("you@example.com")'
-```
-
-Password reset is also dead in this mode; the only route back into a
-locked-out account is operator intervention.
+Password reset is dead in this mode; the only route back into a locked-out
+account is operator intervention.
 
 ## In every mode
 

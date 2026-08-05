@@ -43,6 +43,14 @@ defmodule FountainWeb.RegistrationController do
 
   def create(conn, %{"user" => user_params}) do
     case Accounts.register_user(user_params) do
+      # EMAIL_DELIVERY=none: the account self-verified at registration, so
+      # "check your email" would send the user to wait for a mail that never
+      # comes — the exact dead end auto-verification exists to remove.
+      {:ok, %{email_verified_at: %DateTime{}}} ->
+        conn
+        |> put_flash(:info, "Account created! You can sign in now.")
+        |> redirect(to: ~p"/auth/login")
+
       {:ok, user} ->
         VerificationEmail.enqueue(user)
 
@@ -90,6 +98,14 @@ defmodule FountainWeb.RegistrationController do
 
   def api_create(conn, %{"email" => _, "password" => _} = params) do
     case Accounts.register_user(params) do
+      {:ok, %{email_verified_at: %DateTime{}} = user} ->
+        conn
+        |> put_status(:created)
+        |> json(%{
+          user_id: user.id,
+          message: "Account created. You can sign in now."
+        })
+
       {:ok, user} ->
         VerificationEmail.enqueue(user)
 
