@@ -14,6 +14,7 @@ defmodule Fountain.InferenceCredentials do
 
   import Ecto.Query
 
+  alias Fountain.Audit
   alias Fountain.Crypto
   alias Fountain.InferenceCredentials.Credential
   alias Fountain.Repo
@@ -66,11 +67,21 @@ defmodule Fountain.InferenceCredentials do
   - `value` is a plaintext string (will be encrypted with `dek`).
   - To clear, pass `nil` or an empty string.
 
+  Audited as `inference_credential.write` or `.delete`. These are BYO
+  inference keys — secret material on par with environment and vault secrets,
+  which have audited since #530. The settings LiveView and the API controller
+  each recorded their own event, and the onboarding wizard, saving the same
+  credential through the same function, recorded nothing (#546). Recording
+  here removes the third caller's gap and the chance of a fourth.
+
+  `opts` carries `:actor` / `:request_ip`, from
+  `FountainWeb.Audited.attribution/2` on a web surface.
+
   Returns `{:ok, credential}` (the updated row) or `{:error, changeset}`.
   """
-  @spec put_credential(binary(), binary(), atom(), String.t() | nil) ::
+  @spec put_credential(binary(), binary(), atom(), String.t() | nil, keyword()) ::
           {:ok, Credential.t()} | {:error, Ecto.Changeset.t()}
-  def put_credential(user_id, dek, provider, value)
+  def put_credential(user_id, dek, provider, value, opts \\ [])
       when is_binary(user_id) and is_binary(dek) and provider in @providers do
     ct_field = ciphertext_field(provider)
 
@@ -88,7 +99,29 @@ defmodule Fountain.InferenceCredentials do
     existing
     |> Credential.changeset(attrs)
     |> Repo.insert_or_update()
+    |> audited(user_id, provider, ciphertext, opts)
   end
+
+  # The provider name is the whole payload. The credential must never reach a
+  # second table — the same rule the secret-write events follow, and the
+  # reason those record a key and not a value.
+  defp audited({:ok, _cred} = ok, user_id, provider, ciphertext, opts) do
+    action = if is_nil(ciphertext), do: "inference_credential.delete", else: "inference_credential.write"
+
+    Audit.record(%{
+      user_id: user_id,
+      action: action,
+      resource_type: "inference_credential",
+      resource_id: Atom.to_string(provider),
+      actor: Keyword.get(opts, :actor, "self"),
+      request_ip: Keyword.get(opts, :request_ip),
+      metadata: %{"provider" => Atom.to_string(provider)}
+    })
+
+    ok
+  end
+
+  defp audited(other, _user_id, _provider, _ciphertext, _opts), do: other
 
   @doc """
   Returns `true` if the user has at least one provider set.

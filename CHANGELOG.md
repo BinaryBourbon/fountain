@@ -18,6 +18,15 @@ upgrade, is in
 
 ### Fixed
 
+- **Saving an inference credential during onboarding is audited like saving
+  one anywhere else.** BYO provider keys are secret material on par with
+  environment and vault secrets, and the settings page and API already
+  recorded every write — but the onboarding wizard, saving the same
+  credential through the same code, recorded nothing. The recording moved
+  into the context, so all three surfaces share it and a fourth cannot
+  quietly miss it. The provider name is still the whole payload; the
+  credential never reaches the trail (#546)
+
 - **Signing up and signing out are in your audit trail.** Registration was
   recorded only for OAuth signups; the browser form and
   `POST /api/auth/register` both created accounts silently, the latter because

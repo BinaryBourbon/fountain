@@ -68,7 +68,7 @@ defmodule FountainWeb.OnboardingLive.Wizard do
     else
       case Validator.validate(provider, value) do
         :ok ->
-          case persist_credential(socket.assigns.user_id, provider, value) do
+          case persist_credential(socket, provider, value) do
             {:ok, _} ->
               {:noreply,
                socket
@@ -178,9 +178,21 @@ defmodule FountainWeb.OnboardingLive.Wizard do
     {:noreply, socket |> assign(:user, user) |> push_navigate(to: ~p"/onboarding/#{next_step}")}
   end
 
-  defp persist_credential(user_id, provider, value) do
+  # Takes the socket rather than a bare user_id so the credential save made
+  # during onboarding is attributed like every other one. This was the surface
+  # #546 found unaudited: the same context function, reached through a third
+  # door that nobody had added a recording call to.
+  defp persist_credential(socket, provider, value) do
+    user_id = socket.assigns.user_id
+
     with {:ok, dek} <- Crypto.load_tenant_key(user_id) do
-      InferenceCredentials.put_credential(user_id, dek, provider, value)
+      InferenceCredentials.put_credential(
+        user_id,
+        dek,
+        provider,
+        value,
+        FountainWeb.Audited.attribution(socket)
+      )
     end
   end
 
