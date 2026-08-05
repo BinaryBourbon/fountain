@@ -45,7 +45,14 @@ defmodule Fountain.ExportsTest do
         args: %{export_id: export.id, user_id: user.id}
       )
 
-      assert [event] = Audit.list_recent_for_user(user.id, 10)
+      # Filtered rather than matched as the whole trail: since #544 every
+      # account opens with an `account.registered` row, so "the only event" is
+      # no longer a thing a fresh user has.
+      assert [event] =
+               user.id
+               |> Audit.list_recent_for_user(10)
+               |> Enum.filter(&(&1.action == "account.export_requested"))
+
       assert event.action == "account.export_requested"
       assert event.resource_id == export.id
       assert event.actor == "self"

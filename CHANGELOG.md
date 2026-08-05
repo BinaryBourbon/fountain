@@ -18,6 +18,14 @@ upgrade, is in
 
 ### Fixed
 
+- **Signing up and signing out are in your audit trail.** Registration was
+  recorded only for OAuth signups; the browser form and
+  `POST /api/auth/register` both created accounts silently, the latter because
+  it runs on a public pipeline with no audit plug. Logins were recorded and
+  logouts were not, so the trail showed sessions opening and never closing. An
+  account's trail now opens with its own creation, which also means a brand
+  new account no longer shows an empty audit page (#544)
+
 - **Creating, changing or deleting an agent, environment or vault is audited
   from the browser too.** These mutations were recorded when driven through
   `/api`, because a blanket plug on that pipeline caught every write, and

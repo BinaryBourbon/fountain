@@ -89,15 +89,42 @@ defmodule Fountain.Accounts do
 
   Returns `{:ok, user}`, `{:error, changeset}`, or `{:error, reason}` when
   registration is closed or the email domain is not allowed.
+
+  Audited as `account.registered`. Recorded here rather than in the two
+  controllers because `POST /api/auth/register` sits on `:api_public`, which
+  carries no audit plug — so the JSON signup door left no record at all, while
+  the OAuth variant recorded `auth.oauth.signup` and the browser form recorded
+  nothing (#544). `opts` carries `:actor` / `:request_ip`, from
+  `FountainWeb.Audited.attribution/2` on a web surface.
   """
-  @spec register_user(map()) :: {:ok, User.t()} | {:error, Ecto.Changeset.t() | atom()}
-  def register_user(attrs) do
+  @spec register_user(map(), keyword()) ::
+          {:ok, User.t()} | {:error, Ecto.Changeset.t() | atom()}
+  def register_user(attrs, opts \\ []) do
     email = attrs["email"] || attrs[:email]
 
     with :ok <- registration_allowed?(email) do
-      do_register_user(attrs)
+      # Outside `do_register_user/1`, whose body is a transaction: a failed
+      # audit insert inside one aborts the enclosing transaction, so recording
+      # in there could roll back the very registration it is describing.
+      attrs |> do_register_user() |> audited_registration(opts)
     end
   end
+
+  defp audited_registration({:ok, %User{} = user} = ok, opts) do
+    Audit.record(%{
+      user_id: user.id,
+      action: "account.registered",
+      resource_type: "user",
+      resource_id: user.id,
+      actor: Keyword.get(opts, :actor, "self"),
+      request_ip: Keyword.get(opts, :request_ip),
+      metadata: %{"email" => user.email}
+    })
+
+    ok
+  end
+
+  defp audited_registration(other, _opts), do: other
 
   defp do_register_user(attrs) do
     Repo.transaction(fn ->

@@ -37,6 +37,19 @@ defmodule FountainWeb.AuditControllerTest do
     conn |> authed_with_key(key) |> get("/api/audit" <> query) |> json_response(200)
   end
 
+  # Follows next_cursor until the server says there is no more, returning every
+  # id seen in order plus the final page (for its has_more).
+  defp page_to_end(conn, key, page, acc \\ []) do
+    acc = acc ++ Enum.map(page["data"], & &1["id"])
+
+    if page["meta"]["has_more"] do
+      next = list(conn, key, "?limit=2&before=#{page["meta"]["next_cursor"]}")
+      page_to_end(conn, key, next, acc)
+    else
+      {acc, page}
+    end
+  end
+
   describe "GET /api/audit" do
     test "returns the tenant's events newest first with the columns the UI shows", %{
       conn: conn,
@@ -143,21 +156,17 @@ defmodule FountainWeb.AuditControllerTest do
       assert length(page1["data"]) == 2
       assert page1["meta"]["has_more"]
 
-      page2 = list(conn, key, "?limit=2&before=#{page1["meta"]["next_cursor"]}")
-      page3 = list(conn, key, "?limit=2&before=#{page2["meta"]["next_cursor"]}")
+      # Paged to exhaustion rather than a fixed number of pages: the trail is
+      # no longer just what this test recorded. `insert_api_key` in the setup
+      # audits its mint (#542) and creating the user audits the registration
+      # (#544), so hardcoding a page count makes this test a hostage to every
+      # future addition to the campaign.
+      {ids, last_page} = page_to_end(conn, key, page1)
 
-      ids =
-        (page1["data"] ++ page2["data"] ++ page3["data"])
-        |> Enum.map(& &1["id"])
-
-      # Every event in the trail, newest first, no repeats across pages.
-      # Counted rather than hardcoded: the setup's own `insert_api_key` mints
-      # through `Accounts.create_api_key`, which audits itself since #542, so
-      # the trail is the five recorded above plus that mint.
       assert length(ids) == length(Audit.list_recent_for_user(user.id, 100))
       assert ids == Enum.uniq(ids)
       assert ids == Enum.sort(ids, :desc)
-      refute page3["meta"]["has_more"]
+      refute last_page["meta"]["has_more"]
     end
 
     test "the limit is capped", %{conn: conn, user: user, key: key} do
