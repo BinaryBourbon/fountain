@@ -570,6 +570,25 @@ defmodule FountainWeb.AdminLiveTest do
       # recent webhook events listed
       assert html =~ "evt_admin_test"
       assert html =~ "checkout.session.completed"
+      # no failures → the quiet all-clear, not the red alert (#501)
+      assert html =~ "No unresolved webhook failures"
+    end
+
+    test "unresolved webhook failures render as a red alert (#501)", %{conn: conn} do
+      admin = insert_admin()
+
+      Fountain.Billing.record_webhook_failure(
+        %Stripe.Event{id: "evt_admin_fail", type: "invoice.paid"},
+        :database_unavailable
+      )
+
+      conn = login_user(conn, admin)
+      {:ok, _lv, html} = live(conn, ~p"/admin")
+
+      assert html =~ "webhook event is failing"
+      assert html =~ "evt_admin_fail"
+      assert html =~ "database_unavailable"
+      refute html =~ "No unresolved webhook failures"
     end
   end
 

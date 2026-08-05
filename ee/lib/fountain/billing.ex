@@ -737,6 +737,81 @@ defmodule Fountain.Billing do
 
   defp prepare_event(_event), do: :ok
 
+  @doc """
+  Best-effort record of a webhook processing failure (#501).
+
+  A failed apply rolls the `stripe_events` claim back by design, so without
+  this a failing event leaves zero DB trace — the failure exists only in
+  Stripe's dashboard and our logs, and subscription state silently lags
+  reality. One row per event id: a retried delivery bumps `failure_count`
+  and `last_failed_at` (and un-resolves a previously resolved row) rather
+  than accumulating a row per attempt across Stripe's three days of retries.
+
+  Best-effort on the same contract as `record_usage/5`: recording the
+  failure must never change the webhook response.
+  """
+  @spec record_webhook_failure(Stripe.Event.t(), term()) :: :ok | :error
+  def record_webhook_failure(%Stripe.Event{id: id, type: type}, reason) when is_binary(id) do
+    now = DateTime.utc_now() |> DateTime.truncate(:second)
+    error = reason |> inspect() |> String.slice(0, 500)
+
+    Repo.insert_all(
+      "stripe_webhook_failures",
+      [
+        %{
+          event_id: id,
+          event_type: type,
+          error: error,
+          failure_count: 1,
+          first_failed_at: now,
+          last_failed_at: now
+        }
+      ],
+      on_conflict: [
+        set: [error: error, last_failed_at: now, resolved_at: nil],
+        inc: [failure_count: 1]
+      ],
+      conflict_target: :event_id
+    )
+
+    :ok
+  rescue
+    e ->
+      Logger.error(
+        "webhook failure record failed for #{inspect(reason)}: #{Exception.message(e)}"
+      )
+
+      :error
+  end
+
+  def record_webhook_failure(_event, _reason), do: :ok
+
+  @doc """
+  Marks a previously recorded webhook failure resolved — called when a later
+  delivery of the same event processes successfully (or dedupes/goes stale,
+  which means the event no longer needs applying). Best-effort, like
+  `record_webhook_failure/2`.
+  """
+  @spec resolve_webhook_failure(String.t() | nil) :: :ok
+  def resolve_webhook_failure(event_id) when is_binary(event_id) do
+    now = DateTime.utc_now() |> DateTime.truncate(:second)
+
+    Repo.update_all(
+      from(f in "stripe_webhook_failures",
+        where: f.event_id == ^event_id and is_nil(f.resolved_at)
+      ),
+      set: [resolved_at: now]
+    )
+
+    :ok
+  rescue
+    e ->
+      Logger.error("webhook failure resolve failed for #{event_id}: #{Exception.message(e)}")
+      :ok
+  end
+
+  def resolve_webhook_failure(_), do: :ok
+
   # Atomic claim: the unique primary key is what makes concurrent deliveries of
   # the same event resolve to exactly one winner.
   defp claim_event(id, type) do
@@ -1296,11 +1371,14 @@ defmodule Fountain.Billing do
     not revenue. Honesty note: this breaks the day there is a second price;
     the config is a single amount on purpose so that day is loud.
   - `recent_events` — the last processed webhook events, newest first.
-    Failures are not listed because failed deliveries are never claimed —
-    they exist only in Stripe's dashboard and our logs today.
+  - `failed_events` — unresolved webhook processing failures, most recently
+    failed first (#501). Failed deliveries are never claimed (the claim rolls
+    back with the failed apply), so these come from `stripe_webhook_failures`,
+    written by the controller outside the rolled-back transaction.
 
   Options: `:price_cents` overrides the configured price (tests), `:now`
-  pins the clock, `:event_limit` caps `recent_events` (default 10).
+  pins the clock, `:event_limit` caps `recent_events`/`failed_events`
+  (default 10).
   """
   @spec overview_admin(keyword()) :: map()
   def overview_admin(opts \\ []) do
@@ -1347,6 +1425,21 @@ defmodule Fountain.Billing do
           select: %{id: e.id, type: e.type, inserted_at: e.inserted_at}
       )
 
+    failed_events =
+      Repo.all(
+        from f in "stripe_webhook_failures",
+          where: is_nil(f.resolved_at),
+          order_by: [desc: f.last_failed_at],
+          limit: ^event_limit,
+          select: %{
+            event_id: f.event_id,
+            event_type: f.event_type,
+            error: f.error,
+            failure_count: f.failure_count,
+            last_failed_at: f.last_failed_at
+          }
+      )
+
     active = Map.get(status_counts, "active", 0)
 
     %{
@@ -1354,7 +1447,8 @@ defmodule Fountain.Billing do
       trials_ending_7d: trials_ending_7d,
       conversions_this_month: conversions_this_month,
       mrr_cents: price_cents && active * price_cents,
-      recent_events: recent_events
+      recent_events: recent_events,
+      failed_events: failed_events
     }
   end
 

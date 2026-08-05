@@ -557,6 +557,36 @@ defmodule FountainWeb.AdminLive.Index do
             <span class="tabular-nums">{Map.get(@billing_overview.status_counts, status, 0)}</span>
           </.link>
         </div>
+        <div
+          :if={@billing_overview.failed_events != []}
+          class="bg-red-50 border border-red-200 rounded px-4 py-3 text-sm space-y-2"
+        >
+          <div class="font-medium text-red-900">
+            {length(@billing_overview.failed_events)} webhook {if length(@billing_overview.failed_events) == 1,
+              do: "event is",
+              else: "events are"} failing — subscription state may lag Stripe
+          </div>
+          <table class="w-full text-sm bg-white rounded border border-red-100 font-mono">
+            <tbody>
+              <tr
+                :for={f <- @billing_overview.failed_events}
+                class="border-b border-red-50 last:border-0"
+              >
+                <td class="px-3 py-1.5 text-xs text-zinc-500 whitespace-nowrap">
+                  {format_ts(f.last_failed_at)}
+                </td>
+                <td class="px-3 py-1.5 text-xs">{f.event_type}</td>
+                <td class="px-3 py-1.5 text-xs text-zinc-400">{f.event_id}</td>
+                <td class="px-3 py-1.5 text-xs text-red-700" title={f.error}>
+                  ×{f.failure_count} · {String.slice(f.error, 0, 80)}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div :if={@billing_overview.failed_events == []} class="text-xs text-zinc-400">
+          No unresolved webhook failures.
+        </div>
         <details class="text-sm">
           <summary class="cursor-pointer text-zinc-500 hover:text-zinc-900">
             Recent webhook events ({length(@billing_overview.recent_events)})

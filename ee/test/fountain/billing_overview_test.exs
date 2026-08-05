@@ -108,4 +108,51 @@ defmodule Fountain.BillingOverviewTest do
       refute is_nil(hd(events).inserted_at)
     end
   end
+
+  describe "overview_admin/1 — failed events (#501)" do
+    defp fail_event!(event) do
+      Billing.record_webhook_failure(event, :database_unavailable)
+    end
+
+    test "lists unresolved failures, most recently failed first" do
+      fail_event!(%Stripe.Event{id: "evt_fail_a", type: "customer.subscription.updated"})
+      fail_event!(%Stripe.Event{id: "evt_fail_b", type: "invoice.paid"})
+
+      %{failed_events: failed} = Billing.overview_admin(now: @now)
+
+      assert Enum.map(failed, & &1.event_id) |> Enum.sort() == ["evt_fail_a", "evt_fail_b"]
+      assert [%{error: error, failure_count: 1} | _] = failed
+      assert error =~ "database_unavailable"
+    end
+
+    test "a repeated failure is one row with a bumped count, not a row per retry" do
+      event = %Stripe.Event{id: "evt_fail_retry", type: "customer.subscription.updated"}
+      fail_event!(event)
+      fail_event!(event)
+      fail_event!(event)
+
+      %{failed_events: failed} = Billing.overview_admin(now: @now)
+
+      assert [%{event_id: "evt_fail_retry", failure_count: 3}] = failed
+    end
+
+    test "a resolved failure disappears; a new failure un-resolves it" do
+      event = %Stripe.Event{id: "evt_fail_resolve", type: "customer.subscription.updated"}
+      fail_event!(event)
+
+      :ok = Billing.resolve_webhook_failure("evt_fail_resolve")
+      assert %{failed_events: []} = Billing.overview_admin(now: @now)
+
+      fail_event!(event)
+
+      assert %{failed_events: [%{event_id: "evt_fail_resolve"}]} =
+               Billing.overview_admin(now: @now)
+    end
+
+    test "an event with no id records nothing rather than raising" do
+      assert :ok = Billing.record_webhook_failure(%Stripe.Event{id: nil, type: "x"}, :boom)
+      assert :ok = Billing.resolve_webhook_failure(nil)
+      assert %{failed_events: []} = Billing.overview_admin(now: @now)
+    end
+  end
 end
