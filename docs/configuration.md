@@ -53,7 +53,7 @@ an error message.
 |---|---|---|---|
 | `REGISTRATION_ENABLED` | `true` | — | `false` closes signup entirely. An open instance on the public internet will be found |
 | `REGISTRATION_ALLOWED_EMAIL_DOMAINS` | any | — | Comma-separated list; signups outside these domains are refused. Empty means no restriction |
-| `UNVERIFIED_PRUNE_AFTER_DAYS` | `30` | — | Accounts that never verified their email are deleted after this many days — they cannot log in, so they are rows, not users. `0` disables the sweep |
+| `UNVERIFIED_PRUNE_AFTER_DAYS` | `30` | — | Accounts that never verified their email are deleted after this many days — they can sign in but reach nothing, so they are rows, not users. `0` disables the sweep |
 | `UNVERIFIED_PRUNE_EXEMPT` | — | — | Comma-separated email substrings never pruned (operator or test accounts that deliberately stay unverified) |
 | `FIRST_USER_ADMIN` | `false` | — | `true`: while the instance has no admin, the first account to become verified is promoted to admin, audit-recorded (ADR 0011). Leave off on a multi-tenant deployment — it hands admin to whoever verifies first |
 
