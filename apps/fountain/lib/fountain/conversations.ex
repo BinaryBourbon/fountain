@@ -737,6 +737,16 @@ defmodule Fountain.Conversations do
     event
   end
 
+  @doc """
+  List a conversation's log events after `after_id`, oldest first.
+
+  Options:
+
+    * `:streams` — allow-list of `"stdout"` / `"stderr"` / `"stage"`
+    * `:limit` — cap the number of rows returned. A log feed is unbounded
+      in principle (a chatty agent writes tens of thousands of rows), so
+      the JSON read-model paginates rather than materialising all of it.
+  """
   def _unsafe_list_log_events(conversation_id, after_id \\ 0, opts \\ []) do
     base =
       from e in LogEvent,
@@ -745,8 +755,14 @@ defmodule Fountain.Conversations do
 
     base
     |> apply_streams_filter(Keyword.get(opts, :streams))
+    |> apply_limit(Keyword.get(opts, :limit))
     |> Repo.all()
   end
+
+  defp apply_limit(query, nil), do: query
+
+  defp apply_limit(query, limit) when is_integer(limit) and limit > 0,
+    do: from(e in query, limit: ^limit)
 
   # `streams` is a list of allowed stream identifiers. We accept the
   # three values that show up in log_events: `"stdout"`, `"stderr"`, and

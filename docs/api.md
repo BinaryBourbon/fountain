@@ -131,8 +131,18 @@ POST   /api/conversations/:id/prompts      # follow-up turn
 POST   /api/conversations/:id/interrupt    # stop the running turn
 POST   /api/conversations/:id/terminate    # end the conversation and sandbox
 GET    /api/conversations/:id/turns
+GET    /api/conversations/:id/events       # log events as JSON (?streams=  ?after=  ?limit=)
 GET    /api/conversations/:id/stream       # SSE log stream (?streams=stdout,stderr,stage  ?wait=false)
 ```
+
+`/events` is the read-model for the log feed and `/stream` is the tail. The JSON endpoint returns the same rows the stream sends — `kind`, `stream`, `data`, `stage`, `state`, `duration_ms`, `turn_id`, `ts` — plus each event's `id`, oldest first:
+
+```json
+{"data": [{"id": 41, "kind": "output", "stream": "stdout", "data": "...", "ts": "..."}],
+ "meta": {"limit": 100, "has_more": true, "next_cursor": 41}}
+```
+
+Page by passing the previous response's `meta.next_cursor` as `after`; keep going while `meta.has_more` is true. `limit` defaults to 100 and caps at 1000. The `id` is the same value the SSE route uses as `Last-Event-ID`, so a client can drain history as JSON and then attach the stream from where it left off.
 
 ## Error responses
 
