@@ -27,10 +27,11 @@ fountain/                  umbrella root
       test/fountain/       context unit tests (async: true, DataCase)
       test/fountain_web/   controller/LiveView integration tests
       test/support/        DataCase, ConnCase, factory.ex
-  ee/                      billing + ALL transactional email, compiled into the
-    lib/fountain/          same :fountain app via elixirc_paths/test_paths.
-    lib/fountain_web/      Future-license boundary (MIT today) — see
-    test/                  decisions/0010. Module names unchanged by the move.
+  ee/                      billing + growth email (welcome/trial/payment),
+    lib/fountain/          compiled into the same :fountain app via
+    lib/fountain_web/      elixirc_paths/test_paths. Possible-license boundary
+    test/                  (MIT today) — decisions/0010 + its addendum.
+                           Account email + Mailer are core (#475/#476).
   config/
     config.exs             shared config
     dev.exs                dev overrides
