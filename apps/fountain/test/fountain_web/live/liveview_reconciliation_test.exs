@@ -131,7 +131,7 @@ defmodule FountainWeb.LiveviewReconciliationTest do
 
       {:ok, view, _html} = live(conn, ~p"/conversations/#{conv.id}")
 
-      stub(Fountain.Conversations.ConversationServer, :send_prompt, fn _id, _p, _i ->
+      stub(Fountain.Conversations.ConversationServer, :send_prompt, fn _id, _p, _i, _opts ->
         {:error, :subscription_required}
       end)
 

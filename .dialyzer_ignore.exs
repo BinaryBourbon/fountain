@@ -16,5 +16,5 @@
   # position for the synthesized boolean pattern), so 1 is the tightest pin
   # available; the exact_compare arm carries a real {line, column}.
   {"lib/fountain/conversations/conversation_server.ex", :pattern_match, 1},
-  {"lib/fountain/conversations/conversation_server.ex", :exact_compare, {1341, 64}}
+  {"lib/fountain/conversations/conversation_server.ex", :exact_compare, {1404, 64}}
 ]

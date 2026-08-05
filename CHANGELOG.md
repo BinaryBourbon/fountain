@@ -18,6 +18,16 @@ upgrade, is in
 
 ### Fixed
 
+- **Starting, prompting, interrupting, stopping and deleting a conversation
+  are audited from the browser too.** Like resource CRUD, these were recorded
+  through `/api` and silent through the UI — where conversations are actually
+  driven. They are also the spend-relevant actions in the product, since every
+  conversation runs a sandbox, so the trail matters for a billing question as
+  much as a security one. Prompt events record the byte size and image count
+  and never the text: the trail says a prompt happened, not what it said. A
+  conversation ended by sandbox reclamation is attributed to the reaper, so
+  "why did my agent stop" has an answer that is not "no idea" (#545)
+
 - **The audit trail can now account for its own shrinkage, and background
   workers no longer change your data anonymously.** The retention pruner
   deletes `audit_events` among other tables, so the trail could get shorter

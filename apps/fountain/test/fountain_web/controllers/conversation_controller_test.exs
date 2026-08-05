@@ -129,7 +129,7 @@ defmodule FountainWeb.ConversationControllerTest do
       # It was the one provisioning path with no billing check at all.
       conv = insert_conversation(user_id: user.id)
 
-      stub(ConversationServer, :send_prompt, fn _id, _prompt, _images ->
+      stub(ConversationServer, :send_prompt, fn _id, _prompt, _images, _opts ->
         {:error, :subscription_required}
       end)
 
@@ -215,7 +215,7 @@ defmodule FountainWeb.ConversationControllerTest do
       conv = insert_conversation(user_id: user.id)
       for _ <- 1..5, do: insert_sandbox(user_id: user.id, status: "ready")
 
-      stub(ConversationServer, :send_prompt, fn _id, _prompt, _images ->
+      stub(ConversationServer, :send_prompt, fn _id, _prompt, _images, _opts ->
         {:error, {:sandbox_quota_exceeded, %{count: 5, limit: 5}}}
       end)
 
@@ -324,7 +324,7 @@ defmodule FountainWeb.ConversationControllerTest do
   describe "POST /api/conversations/:conversation_id/prompts" do
     test "returns 200 with status queued on success", %{conn: conn, user: user, raw_key: raw_key} do
       conv = insert_conversation(user_id: user.id)
-      stub(ConversationServer, :send_prompt, fn _id, _prompt, _images -> :ok end)
+      stub(ConversationServer, :send_prompt, fn _id, _prompt, _images, _opts -> :ok end)
 
       conn =
         conn
@@ -341,7 +341,7 @@ defmodule FountainWeb.ConversationControllerTest do
     } do
       conv = insert_conversation(user_id: user.id)
 
-      stub(ConversationServer, :send_prompt, fn _id, _prompt, _images ->
+      stub(ConversationServer, :send_prompt, fn _id, _prompt, _images, _opts ->
         {:error, :not_running}
       end)
 
@@ -355,7 +355,7 @@ defmodule FountainWeb.ConversationControllerTest do
 
     test "returns 400 when conversation is busy", %{conn: conn, user: user, raw_key: raw_key} do
       conv = insert_conversation(user_id: user.id)
-      stub(ConversationServer, :send_prompt, fn _id, _prompt, _images -> {:error, :busy} end)
+      stub(ConversationServer, :send_prompt, fn _id, _prompt, _images, _opts -> {:error, :busy} end)
 
       conn =
         conn
@@ -417,7 +417,7 @@ defmodule FountainWeb.ConversationControllerTest do
     } do
       conv = insert_conversation(user_id: user.id)
 
-      stub(ConversationServer, :send_prompt, fn _id, _prompt, _images ->
+      stub(ConversationServer, :send_prompt, fn _id, _prompt, _images, _opts ->
         {:error, Fountain.Conversations.Sandbox.changeset(%Fountain.Conversations.Sandbox{}, %{})}
       end)
 
@@ -436,7 +436,7 @@ defmodule FountainWeb.ConversationControllerTest do
     } do
       conv = insert_conversation(user_id: user.id)
 
-      stub(ConversationServer, :send_prompt, fn _id, _prompt, _images ->
+      stub(ConversationServer, :send_prompt, fn _id, _prompt, _images, _opts ->
         {:error, :some_future_refusal}
       end)
 
@@ -467,7 +467,7 @@ defmodule FountainWeb.ConversationControllerTest do
   describe "POST /api/conversations/:conversation_id/terminate" do
     test "returns 204 on success", %{conn: conn, user: user, raw_key: raw_key} do
       conv = insert_conversation(user_id: user.id)
-      stub(ConversationServer, :terminate, fn _id -> :ok end)
+      stub(ConversationServer, :terminate_conversation, fn _id, _opts -> :ok end)
 
       conn =
         conn
@@ -483,7 +483,7 @@ defmodule FountainWeb.ConversationControllerTest do
       raw_key: raw_key
     } do
       conv = insert_conversation(user_id: user.id)
-      stub(ConversationServer, :terminate, fn _id -> {:error, :not_running} end)
+      stub(ConversationServer, :terminate_conversation, fn _id, _opts -> {:error, :not_running} end)
 
       conn =
         conn
@@ -508,7 +508,7 @@ defmodule FountainWeb.ConversationControllerTest do
   describe "POST /api/conversations/:conversation_id/interrupt" do
     test "returns 204 on success", %{conn: conn, user: user, raw_key: raw_key} do
       conv = insert_conversation(user_id: user.id)
-      stub(ConversationServer, :interrupt, fn _id -> :ok end)
+      stub(ConversationServer, :interrupt, fn _id, _opts -> :ok end)
 
       conn =
         conn
@@ -524,7 +524,7 @@ defmodule FountainWeb.ConversationControllerTest do
       raw_key: raw_key
     } do
       conv = insert_conversation(user_id: user.id)
-      stub(ConversationServer, :interrupt, fn _id -> {:error, :not_running} end)
+      stub(ConversationServer, :interrupt, fn _id, _opts -> {:error, :not_running} end)
 
       conn =
         conn
@@ -540,7 +540,7 @@ defmodule FountainWeb.ConversationControllerTest do
       raw_key: raw_key
     } do
       conv = insert_conversation(user_id: user.id)
-      stub(ConversationServer, :interrupt, fn _id -> {:error, :idle} end)
+      stub(ConversationServer, :interrupt, fn _id, _opts -> {:error, :idle} end)
 
       conn =
         conn

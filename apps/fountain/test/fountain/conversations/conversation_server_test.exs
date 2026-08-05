@@ -608,20 +608,20 @@ defmodule Fountain.Conversations.ConversationServerTest do
     test "still marks the conversation and sandbox terminated", %{conv: conv, sandbox: sandbox} do
       # After a BEAM restart the GenServer is gone but the rows remain, and a
       # user still needs to be able to clean up.
-      assert :ok = ConversationServer.terminate(conv.id)
+      assert :ok = ConversationServer.terminate_conversation(conv.id)
 
       assert Conversations._unsafe_get_conversation!(conv.id).status == "terminated"
       assert Conversations._unsafe_get_sandbox!(sandbox.id).status == "terminated"
     end
 
     test "reports not_running for an unknown conversation" do
-      assert {:error, :not_running} = ConversationServer.terminate(Ecto.UUID.generate())
+      assert {:error, :not_running} = ConversationServer.terminate_conversation(Ecto.UUID.generate())
     end
 
     test "does not resurrect an already-failed sandbox", %{conv: conv, sandbox: sandbox} do
       {:ok, _} = Conversations.update_sandbox(sandbox, %{status: "failed"})
 
-      assert :ok = ConversationServer.terminate(conv.id)
+      assert :ok = ConversationServer.terminate_conversation(conv.id)
       assert Conversations._unsafe_get_sandbox!(sandbox.id).status == "failed"
     end
   end

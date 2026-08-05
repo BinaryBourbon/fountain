@@ -154,7 +154,10 @@ defmodule Fountain.Accounts.Deletion do
 
     Enum.each(conv_ids, fn id ->
       try do
-        ConversationServer.terminate(id)
+        # No per-conversation row: `account.deleted` already says everything
+        # went away, and the user_id these would carry is nilified moments
+        # later anyway — they would be orphans describing a cascade.
+        ConversationServer.terminate_conversation(id, audit: false)
       catch
         kind, reason ->
           Logger.warning("account deletion: terminate #{id} failed: #{inspect({kind, reason})}")

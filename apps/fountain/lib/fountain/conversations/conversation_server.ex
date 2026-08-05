@@ -62,19 +62,30 @@ defmodule Fountain.Conversations.ConversationServer do
   and queue this prompt as the first turn of the new sandbox. claude
   `--resume` preserves the chat via the persisted runtime_session_id.
   """
-  def send_prompt(conv_id, prompt, images \\ []) do
-    case whereis(conv_id) do
-      nil ->
-        case Conversations.wake_conversation(conv_id, prompt) do
-          {:ok, _conv} -> :ok
-          {:error, :gone} -> {:error, :gone}
-          {:error, :not_found} -> {:error, :not_running}
-          {:error, _} = err -> err
-        end
+  def send_prompt(conv_id, prompt, images \\ [], opts \\ []) do
+    result =
+      case whereis(conv_id) do
+        nil ->
+          case Conversations.wake_conversation(conv_id, prompt) do
+            {:ok, _conv} -> :ok
+            {:error, :gone} -> {:error, :gone}
+            {:error, :not_found} -> {:error, :not_running}
+            {:error, _} = err -> err
+          end
 
-      pid ->
-        call_server(pid, {:send_prompt, prompt, images})
-    end
+        pid ->
+          call_server(pid, {:send_prompt, prompt, images})
+      end
+
+    # Size and image count, never the text. A prompt is the tenant's content —
+    # frequently the most sensitive thing in the system — and #545 is explicit
+    # that the trail records that a prompt happened, not what it said.
+    audit_lifecycle(conv_id, "conversation.prompted", result, opts, %{
+      "prompt_bytes" => byte_size(prompt),
+      "image_count" => length(images)
+    })
+
+    result
   end
 
   # Every public entry point calls through here so a GenServer.call exit
@@ -121,43 +132,95 @@ defmodule Fountain.Conversations.ConversationServer do
     GenServer.cast(pid, {:initial_prompt, prompt, images})
   end
 
-  def interrupt(conv_id) do
-    case whereis(conv_id) do
-      nil -> {:error, :not_running}
-      pid -> call_server(pid, :interrupt)
-    end
+  def interrupt(conv_id, opts \\ []) do
+    result =
+      case whereis(conv_id) do
+        nil -> {:error, :not_running}
+        pid -> call_server(pid, :interrupt)
+      end
+
+    audit_lifecycle(conv_id, "conversation.interrupted", result, opts)
+    result
   end
 
   @doc """
   Terminate the conversation. If the GenServer is alive, it tears down the
   sprite. If not, just mark the DB rows terminated so the user can still
   clean up dead conversations after a server restart.
+
+  Named `terminate_conversation` rather than `terminate`: taking `opts` for
+  audit attribution (#545) would have made this `terminate/2`, which is the
+  OTP callback below. Two different meanings under one name in one module was
+  already a readability trap — `ConversationServer.terminate/1` (stop this
+  tenant's conversation) and `terminate/2` (OTP teardown) are unrelated — so
+  the client half gets the unambiguous name.
   """
-  def terminate(conv_id) do
-    case whereis(conv_id) do
-      nil ->
-        case Conversations._unsafe_get_conversation(conv_id) do
-          nil ->
-            {:error, :not_running}
+  def terminate_conversation(conv_id, opts \\ []) do
+    result =
+      case whereis(conv_id) do
+        nil ->
+          case Conversations._unsafe_get_conversation(conv_id) do
+            nil ->
+              {:error, :not_running}
 
-          conv ->
-            now = DateTime.utc_now() |> DateTime.truncate(:second)
-            {:ok, _} = Conversations.update_conversation(conv, %{status: "terminated"})
+            conv ->
+              now = DateTime.utc_now() |> DateTime.truncate(:second)
+              {:ok, _} = Conversations.update_conversation(conv, %{status: "terminated"})
 
-            if conv.sandbox_id do
-              sb = Conversations._unsafe_get_sandbox!(conv.sandbox_id)
+              if conv.sandbox_id do
+                sb = Conversations._unsafe_get_sandbox!(conv.sandbox_id)
 
-              if sb.status not in ["terminated", "failed"] do
-                Conversations.update_sandbox(sb, %{status: "terminated", terminated_at: now})
+                if sb.status not in ["terminated", "failed"] do
+                  Conversations.update_sandbox(sb, %{status: "terminated", terminated_at: now})
+                end
               end
-            end
 
-            :ok
-        end
+              :ok
+          end
 
-      pid ->
-        call_server(pid, :terminate_conv)
+        pid ->
+          call_server(pid, :terminate_conv)
+      end
+
+    audit_lifecycle(conv_id, "conversation.terminated", result, opts)
+    result
+  end
+
+  # Records a lifecycle action against the conversation's owner.
+  #
+  # Only on success: an attempt against a conversation that is not running
+  # changed nothing, and a trail that logged it would show terminations that
+  # never happened.
+  #
+  # `audit: false` suppresses the row where a caller's own higher-level event
+  # already describes the action — `delete_conversation/2` and account
+  # deletion both cascade through `terminate/2`, and neither is a second thing
+  # the user asked for.
+  #
+  # The `_unsafe_` read is legitimate here under the rule in CLAUDE.md: these
+  # are GenServer client functions, reached only after a tenant-scoped fetch
+  # established ownership at the controller or LiveView, and the read exists
+  # solely to attribute the event to that same owner.
+  defp audit_lifecycle(conv_id, action, result, opts, metadata \\ %{}) do
+    if Keyword.get(opts, :audit, true) and result == :ok do
+      case Conversations._unsafe_get_conversation(conv_id) do
+        nil ->
+          :ok
+
+        conv ->
+          Fountain.Audit.record(%{
+            user_id: conv.user_id,
+            action: action,
+            resource_type: "conversation",
+            resource_id: conv_id,
+            actor: Keyword.get(opts, :actor, "self"),
+            request_ip: Keyword.get(opts, :request_ip),
+            metadata: metadata
+          })
+      end
     end
+
+    :ok
   end
 
   # ── GenServer ─────────────────────────────────────────────────────────────
