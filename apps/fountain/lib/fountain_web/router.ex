@@ -229,6 +229,12 @@ defmodule FountainWeb.Router do
   scope "/api/account", FountainWeb do
     pipe_through [:accepts_json, :api, :require_full_scope]
 
+    # Billing self-serve (#524). The controller lives in ee/ with the rest of
+    # billing; the route has to be here, like the Stripe webhook above.
+    get "/billing", BillingApiController, :show
+    post "/billing/portal", BillingApiController, :portal
+    post "/billing/checkout", BillingApiController, :checkout
+
     # Export and deletion (#523). Deletion is irreversible and takes the
     # tenant key with it, so it wants the strongest credential the account has.
     post "/exports", AccountDataController, :create_export

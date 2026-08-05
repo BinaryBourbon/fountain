@@ -64,6 +64,18 @@ POST   /api/account/onboarding/complete  # idempotent
 
 An account configured entirely through the API never passes through the browser wizard, so nothing marks it onboarded and a later browser visit re-enters that wizard. Completing it over the API closes the loop. `GET /api/auth/me` also carries `email_verified`, `onboarding_state` and `onboarding_completed`.
 
+### Billing
+
+```
+GET    /api/account/billing           # status, trial/period dates, current-month usage
+POST   /api/account/billing/portal    # Stripe Billing Portal URL
+POST   /api/account/billing/checkout  # Stripe Checkout URL
+```
+
+Stripe requires a browser to finish, so the URL is the deliverable — mint it here, open it there. Return URLs are server-chosen; a caller-supplied one would be an open redirect.
+
+`checkout` refuses with `409 subscription_exists` when Stripe already holds a live subscription (Checkout on top of one creates a duplicate) — use the portal instead. Both refuse a comped account with `422`, and answer `502` rather than guessing when Stripe is unreachable. On an instance with billing disabled all three are `404` with `"billing": "disabled"`.
+
 ### Data export and deletion
 
 ```

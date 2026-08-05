@@ -928,6 +928,72 @@ defmodule FountainWeb.Schemas do
     })
   end
 
+  defmodule BillingResponse do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "BillingResponse",
+      type: :object,
+      properties: %{
+        data: %Schema{
+          type: :object,
+          properties: %{
+            status: %Schema{
+              type: :string,
+              enum: ~w(trialing active past_due canceled comped),
+              nullable: true
+            },
+            trial_ends_at: %Schema{type: :string, format: :"date-time", nullable: true},
+            current_period_end: %Schema{type: :string, format: :"date-time", nullable: true},
+            cancel_at_period_end: %Schema{
+              type: :boolean,
+              description: "Access continues until current_period_end."
+            },
+            has_stripe_customer: %Schema{type: :boolean},
+            period: %Schema{
+              type: :object,
+              description: "The window the usage numbers cover (current calendar month).",
+              properties: %{
+                start: %Schema{type: :string, format: :"date-time"},
+                end: %Schema{type: :string, format: :"date-time"}
+              }
+            },
+            usage: %Schema{
+              type: :object,
+              properties: %{
+                conversations: %Schema{type: :integer},
+                turns: %Schema{type: :integer},
+                sandbox_minutes: %Schema{type: :number}
+              }
+            }
+          },
+          required: [:status, :usage]
+        }
+      },
+      required: [:data]
+    })
+  end
+
+  defmodule StripeUrlResponse do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "StripeUrlResponse",
+      description: "A Stripe-hosted URL to open in a browser. Single-use and short-lived.",
+      type: :object,
+      properties: %{
+        data: %Schema{
+          type: :object,
+          properties: %{url: %Schema{type: :string, format: :uri}},
+          required: [:url]
+        }
+      },
+      required: [:data]
+    })
+  end
+
   defmodule Export do
     @moduledoc false
     require OpenApiSpex
