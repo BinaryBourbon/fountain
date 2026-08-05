@@ -130,8 +130,14 @@ defmodule FountainWeb.InferenceCredentialController do
 
     with {:ok, provider} <- parse_provider(provider_str),
          {:ok, dek} <- load_dek(user.id),
-         {:ok, _cred} <- InferenceCredentials.put_credential(user.id, dek, provider, nil) do
-      audit(conn, "inference_credential.delete", provider)
+         {:ok, _cred} <-
+           InferenceCredentials.put_credential(
+             user.id,
+             dek,
+             provider,
+             nil,
+             Audited.attribution(conn)
+           ) do
       send_resp(conn, :no_content, "")
     end
   end
@@ -140,9 +146,14 @@ defmodule FountainWeb.InferenceCredentialController do
 
   defp persist(conn, user, provider, value) do
     with {:ok, dek} <- load_dek(user.id),
-         {:ok, _cred} <- InferenceCredentials.put_credential(user.id, dek, provider, value) do
-      audit(conn, "inference_credential.write", provider)
-
+         {:ok, _cred} <-
+           InferenceCredentials.put_credential(
+             user.id,
+             dek,
+             provider,
+             value,
+             Audited.attribution(conn)
+           ) do
       render(conn, :show,
         provider: provider,
         status: InferenceCredentials.status_for_user(user.id)
@@ -176,15 +187,6 @@ defmodule FountainWeb.InferenceCredentialController do
       {:ok, dek} -> {:ok, dek}
       {:error, _reason} -> {:error, :tenant_key_unavailable}
     end
-  end
-
-  defp audit(conn, action, provider) do
-    # The provider name is the whole payload — the credential itself must never
-    # reach a second table.
-    Audited.from_conn(conn, action, "inference_credential",
-      resource_id: Atom.to_string(provider),
-      metadata: %{"provider" => Atom.to_string(provider)}
-    )
   end
 
   defp to_trimmed_string(value) when is_binary(value), do: String.trim(value)
