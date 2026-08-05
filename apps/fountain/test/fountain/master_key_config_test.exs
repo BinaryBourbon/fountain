@@ -33,7 +33,14 @@ defmodule Fountain.MasterKeyConfigTest do
     on_exit(fn ->
       System.put_env(previous)
 
-      for k <- ~w(MASTER_SECRETS_KEY PHX_SERVER EMAIL_FROM PUBLIC_URL),
+      # Every key this setup writes must be listed: put_env(previous) restores
+      # old values but cannot delete keys that were never set before this
+      # module ran. RESEND_API_KEY was missing from this list, so it leaked
+      # into the rest of the suite and made ComposePassthroughConfigTest's
+      # prod boot raise on the EMAIL_FROM guard — but only when this module
+      # drew the earlier seed slot, the same class of flake the #256 comment
+      # above describes.
+      for k <- ~w(MASTER_SECRETS_KEY PHX_SERVER EMAIL_FROM PUBLIC_URL RESEND_API_KEY DATABASE_URL),
           not Map.has_key?(previous, k),
           do: System.delete_env(k)
     end)
