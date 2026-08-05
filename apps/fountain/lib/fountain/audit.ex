@@ -152,8 +152,33 @@ defmodule Fountain.Audit do
   """
   @spec list_for_user(Ecto.UUID.t(), keyword()) :: [Event.t()]
   def list_for_user(user_id, opts \\ []) when is_binary(user_id) do
-    from(e in Event,
-      where: e.user_id == ^user_id,
+    from(e in Event, where: e.user_id == ^user_id)
+    |> recent_query(opts)
+    |> Repo.all()
+  end
+
+  @doc """
+  The distinct `resource_type` values present in one tenant's trail, sorted.
+
+  Populates the resource-type filter on `/audit` — a select of what is
+  actually there beats a free-text box the user has to guess into.
+  """
+  @spec list_resource_types_for_user(Ecto.UUID.t()) :: [String.t()]
+  def list_resource_types_for_user(user_id) when is_binary(user_id) do
+    Repo.all(
+      from e in Event,
+        where: e.user_id == ^user_id and not is_nil(e.resource_type),
+        distinct: true,
+        order_by: e.resource_type,
+        select: e.resource_type
+    )
+  end
+
+  # Ordering, page size and the five filters, shared by the tenant-scoped and
+  # unscoped listings so the two cannot drift — the browser trail and
+  # GET /api/audit answer the same question the same way.
+  defp recent_query(query, opts) do
+    from(e in query,
       order_by: [desc: e.inserted_at, desc: e.id],
       limit: ^Keyword.get(opts, :limit, 200)
     )
@@ -162,7 +187,6 @@ defmodule Fountain.Audit do
     |> filter_resource_type(Keyword.get(opts, :resource_type))
     |> filter_since(Keyword.get(opts, :since))
     |> filter_until(Keyword.get(opts, :until))
-    |> Repo.all()
   end
 
   defp filter_before_id(query, nil), do: query
@@ -211,7 +235,41 @@ defmodule Fountain.Audit do
   """
   @spec _unsafe_list_recent(pos_integer()) :: [Event.t()]
   def _unsafe_list_recent(limit \\ 200) do
-    Repo.all(from e in Event, order_by: [desc: e.inserted_at, desc: e.id], limit: ^limit)
+    _unsafe_list_events(limit: limit)
+  end
+
+  @doc """
+  Unscoped, with the same options as `list_for_user/2`.
+
+  The admin half of `/audit`: an admin sees every tenant's events and needs
+  the same filters a tenant has over their own, or the cross-tenant view is
+  strictly worse than the scoped one.
+
+  Reserved for admin/system surfaces. Anything user-facing must use
+  `list_for_user/2` instead.
+  """
+  @spec _unsafe_list_events(keyword()) :: [Event.t()]
+  def _unsafe_list_events(opts \\ []) do
+    Event
+    |> recent_query(opts)
+    |> Repo.all()
+  end
+
+  @doc """
+  Unscoped `list_resource_types_for_user/1` — every tenant's resource types.
+
+  Reserved for admin surfaces; populates the `/audit` filter for an admin,
+  who is looking at the whole system's trail.
+  """
+  @spec _unsafe_list_resource_types() :: [String.t()]
+  def _unsafe_list_resource_types do
+    Repo.all(
+      from e in Event,
+        where: not is_nil(e.resource_type),
+        distinct: true,
+        order_by: e.resource_type,
+        select: e.resource_type
+    )
   end
 
   @doc """

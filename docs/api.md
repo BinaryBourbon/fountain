@@ -265,6 +265,8 @@ Page backwards with `meta.next_cursor` as `before`; `limit` defaults to 100 and 
 
 Only this tenant's events are visible.
 
+The `/audit` page in the browser takes the same `action_prefix`, `resource_type`, `since` and `until` filters (as `?action=`, `?resource=`, `?since=`, `?until=`) and runs them through the same query, so a filtered view is a shareable link. It shows the newest 200 matches and does not page — use this endpoint to walk the whole trail.
+
 ## Error responses
 
 ```json
