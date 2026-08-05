@@ -49,11 +49,21 @@ services:
       # A stock postgres image does not serve TLS, and this was hardcoded on —
       # which is why a compose setup could not have worked before.
       DATABASE_SSL: "false"
+      # Only meaningful against an external Postgres that serves TLS (which
+      # also means editing DATABASE_URL and DATABASE_SSL above): verify its
+      # certificate instead of the default encrypted-but-unauthenticated mode.
+      DATABASE_SSL_VERIFY: ${DATABASE_SSL_VERIFY:-}
+      DATABASE_SSL_CA_FILE: ${DATABASE_SSL_CA_FILE:-}
 
       # Absolute and scheme-ful: it builds the links in verification emails and
       # is handed to every sprite as FOUNTAIN_BASE_URL. Change it if you reach
       # this instance by anything other than localhost.
       PUBLIC_URL: ${PUBLIC_URL:-http://localhost:4000}
+
+      # Behind a reverse proxy, set this to the proxy's address range before
+      # exposing the instance — otherwise per-IP rate limits collapse into a
+      # single bucket keyed on the proxy's address.
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
 
       # Required, but enforced by the app at boot (config/runtime.exs raises
       # a descriptive error for either one missing or empty) rather than by a
@@ -99,6 +109,9 @@ services:
       # Open by default so the first account can be created. Close it once
       # yours exists.
       REGISTRATION_ENABLED: ${REGISTRATION_ENABLED:-true}
+
+      # Error tracking. Off unless set — nothing leaves the instance.
+      SENTRY_DSN: ${SENTRY_DSN:-}
 
       # Compose is the single-operator quickstart, so the first account to
       # verify becomes the admin (ADR 0011) — register before exposing the

@@ -1,0 +1,116 @@
+defmodule Fountain.ComposePassthroughConfigTest do
+  @moduledoc """
+  Evaluates `config/runtime.exs` the way the release config provider does,
+  pinning the blank-string behaviour of the variables #497 newly passes
+  through the compose `environment:` block as `${VAR:-}`.
+
+  Compose interpolates an unset `${VAR:-}` to an empty *string* — the
+  variable arrives set, not absent — so every default here must survive `""`.
+  These tests SET the variables to `""` rather than deleting them; deleting
+  is how the #396 predecessors of these bugs went unnoticed.
+  """
+
+  # Mutates process env, so it must not run alongside anything else.
+  use ExUnit.Case, async: false
+
+  @runtime_exs Path.expand("../../../../config/runtime.exs", __DIR__)
+
+  @vars ~w(TRUSTED_PROXIES SENTRY_DSN DATABASE_SSL_VERIFY DATABASE_SSL_CA_FILE)
+
+  @base %{
+    "PHX_SERVER" => "true",
+    "SECRET_KEY_BASE" => String.duplicate("a", 64),
+    "DATABASE_URL" => "postgres://u:p@localhost/db",
+    "EMAIL_DELIVERY" => "none",
+    "PUBLIC_URL" => "https://fountain.example.com"
+  }
+
+  setup do
+    previous = System.get_env()
+    key = Base.url_encode64(:crypto.strong_rand_bytes(32), padding: false)
+
+    on_exit(fn ->
+      System.put_env(previous)
+
+      for k <- @vars ++ ["MASTER_SECRETS_KEY"],
+          not Map.has_key?(previous, k),
+          do: System.delete_env(k)
+    end)
+
+    {:ok, base: Map.put(@base, "MASTER_SECRETS_KEY", key)}
+  end
+
+  defp read_prod(env) do
+    for k <- @vars, do: System.delete_env(k)
+    System.put_env(env)
+    Config.Reader.read!(@runtime_exs, env: :prod)
+  end
+
+  describe "TRUSTED_PROXIES" do
+    test "blank leaves the built-in default in place", %{base: base} do
+      # An empty list here would override the endpoint's default CIDRs — a
+      # blank value must mean "not configured", not "trust nothing".
+      cfg = read_prod(Map.put(base, "TRUSTED_PROXIES", ""))
+
+      refute Keyword.has_key?(cfg[:fountain], :trusted_proxies)
+    end
+
+    test "a real list is split and trimmed", %{base: base} do
+      cfg = read_prod(Map.put(base, "TRUSTED_PROXIES", "10.0.0.0/8, 172.16.0.0/12"))
+
+      assert cfg[:fountain][:trusted_proxies] == ["10.0.0.0/8", "172.16.0.0/12"]
+    end
+  end
+
+  describe "SENTRY_DSN" do
+    test "blank stays nil rather than handing the SDK an empty DSN", %{base: base} do
+      cfg = read_prod(Map.put(base, "SENTRY_DSN", ""))
+
+      assert cfg[:sentry][:dsn] == nil
+    end
+
+    test "a real DSN is stored verbatim", %{base: base} do
+      cfg = read_prod(Map.put(base, "SENTRY_DSN", "https://k@o0.ingest.sentry.io/1"))
+
+      assert cfg[:sentry][:dsn] == "https://k@o0.ingest.sentry.io/1"
+    end
+  end
+
+  describe "DATABASE_SSL_VERIFY / DATABASE_SSL_CA_FILE" do
+    test "verify with a blank CA file falls back to the OS trust store", %{base: base} do
+      # verify_peer with `cacertfile: ''` would reject every certificate.
+      cfg =
+        base
+        |> Map.merge(%{"DATABASE_SSL_VERIFY" => "true", "DATABASE_SSL_CA_FILE" => ""})
+        |> read_prod()
+
+      opts = cfg[:fountain][Fountain.Repo][:ssl_opts]
+      assert opts[:verify] == :verify_peer
+      assert is_list(opts[:cacerts])
+      refute Keyword.has_key?(opts, :cacertfile)
+    end
+
+    test "verify with an explicit CA file uses it", %{base: base} do
+      cfg =
+        base
+        |> Map.merge(%{
+          "DATABASE_SSL_VERIFY" => "true",
+          "DATABASE_SSL_CA_FILE" => "/etc/ssl/certs/rds.pem"
+        })
+        |> read_prod()
+
+      opts = cfg[:fountain][Fountain.Repo][:ssl_opts]
+      assert opts[:verify] == :verify_peer
+      assert opts[:cacertfile] == ~c"/etc/ssl/certs/rds.pem"
+    end
+
+    test "a blank DATABASE_SSL_VERIFY keeps the historical verify_none", %{base: base} do
+      cfg =
+        base
+        |> Map.merge(%{"DATABASE_SSL_VERIFY" => "", "DATABASE_SSL_CA_FILE" => ""})
+        |> read_prod()
+
+      assert cfg[:fountain][Fountain.Repo][:ssl_opts] == [verify: :verify_none]
+    end
+  end
+end
