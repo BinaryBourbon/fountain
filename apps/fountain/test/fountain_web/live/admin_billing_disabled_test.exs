@@ -51,6 +51,7 @@ defmodule FountainWeb.AdminBillingDisabledTest do
         refute html =~ "sort=trial_end"
         refute html =~ ~s(phx-submit="extend_trial")
         refute html =~ ~s(phx-click="toggle_comp")
+        refute html =~ ~s(phx-click="resync_stripe")
         refute html =~ "dashboard.stripe.com"
       end)
     end
@@ -86,6 +87,9 @@ defmodule FountainWeb.AdminBillingDisabledTest do
         assert html =~ "Billing is disabled on this instance"
 
         html = render_click(lv, "toggle_comp", %{"id" => target.id})
+        assert html =~ "Billing is disabled on this instance"
+
+        html = render_click(lv, "resync_stripe", %{"id" => target.id})
         assert html =~ "Billing is disabled on this instance"
       end)
     end

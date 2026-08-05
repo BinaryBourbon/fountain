@@ -506,6 +506,68 @@ defmodule Fountain.Billing do
   defp unix_field(_), do: nil
 
   @doc """
+  Admin repair for webhook drift (#502): re-reads the subscription of record
+  from Stripe and applies what Stripe says, writing the same fields the
+  webhook path writes.
+
+  `subscription_synced_at` is stamped with the read time, so a delayed older
+  webhook event arriving after the resync is dropped by `sync_subscription/1`'s
+  ordering guard instead of undoing the repair.
+
+  Comped accounts are refused — a comp is an operator decision Stripe does not
+  override, same guard as webhook sync. A user with no subscription of record
+  has nothing to re-read; `Workers.StripeCustomerSync` is enqueued instead,
+  which creates whichever of customer/trial subscription is missing.
+  """
+  @spec resync_from_stripe(User.t()) ::
+          {:ok, User.t() | :sync_enqueued} | {:error, term()}
+  def resync_from_stripe(%User{subscription_status: "comped"}), do: {:error, :comped}
+
+  def resync_from_stripe(%User{stripe_subscription_id: sub_id} = user)
+      when is_binary(sub_id) and sub_id != "" do
+    case Stripe.Subscription.retrieve(sub_id) do
+      {:ok, %Stripe.Subscription{} = sub} -> apply_resync(user, sub)
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  def resync_from_stripe(%User{} = user) do
+    case Fountain.Workers.StripeCustomerSync.enqueue(user) do
+      {:ok, _} -> {:ok, :sync_enqueued}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  # The Stripe read happens outside the transaction (it must not hold a row
+  # lock); the recheck under lock keeps the comp guard honest against an
+  # operator comping the account between read and write.
+  defp apply_resync(%User{id: user_id}, %Stripe.Subscription{} = sub) do
+    attrs = %{
+      subscription_status: coerce_status(sub.status, "admin_resync"),
+      trial_ends_at: unix_field(Map.get(sub, :trial_end)),
+      current_period_end: unix_field(Map.get(sub, :current_period_end)),
+      cancel_at_period_end: Map.get(sub, :cancel_at_period_end) == true,
+      subscription_synced_at: DateTime.utc_now() |> DateTime.truncate(:second)
+    }
+
+    Repo.transaction(fn ->
+      case get_user_for_update(user_id) do
+        nil ->
+          Repo.rollback(:user_not_found)
+
+        %User{subscription_status: "comped"} ->
+          Repo.rollback(:comped)
+
+        %User{} = user ->
+          user
+          |> User.billing_changeset(attrs)
+          |> Repo.update!()
+          |> tap(&enqueue_lifecycle_email(user.subscription_status, &1))
+      end
+    end)
+  end
+
+  @doc """
   Marks an account comped: free access granted by an operator, indefinitely.
 
   Any live Stripe subscription is cancelled first — a comped account must not

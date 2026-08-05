@@ -767,4 +767,56 @@ defmodule FountainWeb.AdminLiveErrorTest do
       assert html =~ "Failed to update role"
     end
   end
+
+  describe "AdminLive.Index — resync_stripe (#502)" do
+    test "adopts Stripe's state and records an audit event", %{conn: conn} do
+      admin = insert_admin()
+
+      user =
+        Fountain.Repo.update!(
+          Ecto.Changeset.change(insert_verified_user(),
+            subscription_status: "past_due",
+            stripe_customer_id: "cus_lv_resync",
+            stripe_subscription_id: "sub_lv_resync"
+          )
+        )
+
+      result =
+        {:ok, %Stripe.Subscription{id: "sub_lv_resync", status: "active", trial_end: nil}}
+
+      stub(Stripe.Subscription, :retrieve, fn "sub_lv_resync" -> result end)
+      stub(Stripe.Subscription, :retrieve, fn "sub_lv_resync", _opts -> result end)
+
+      conn = login_user(conn, admin)
+      {:ok, lv, _html} = live(conn, ~p"/admin")
+
+      html =
+        lv
+        |> element("button[phx-value-id='#{user.id}'][phx-click='resync_stripe']")
+        |> render_click()
+
+      assert html =~ "Resynced from Stripe"
+      assert Fountain.Repo.reload!(user).subscription_status == "active"
+
+      assert Enum.any?(
+               Fountain.Audit._unsafe_list_recent_admin(10),
+               &(&1.event_type == "admin.stripe.resynced" and &1.target_user_id == user.id)
+             )
+    end
+
+    test "a user with no subscription of record gets a customer sync enqueued", %{conn: conn} do
+      admin = insert_admin()
+      user = insert_verified_user()
+
+      conn = login_user(conn, admin)
+      {:ok, lv, _html} = live(conn, ~p"/admin")
+
+      html =
+        lv
+        |> element("button[phx-value-id='#{user.id}'][phx-click='resync_stripe']")
+        |> render_click()
+
+      assert html =~ "customer sync enqueued"
+    end
+  end
 end

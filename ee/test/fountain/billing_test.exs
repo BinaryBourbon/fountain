@@ -567,6 +567,104 @@ defmodule Fountain.BillingTest do
     end
   end
 
+  describe "resync_from_stripe/1 (#502)" do
+    # stripity_stripe's functions carry a default opts arg, and Mimic stubs
+    # are arity-specific — stub both arities or the miss silently falls
+    # through to the live client (#474).
+    defp stub_retrieve(sub_id, result) do
+      stub(Stripe.Subscription, :retrieve, fn ^sub_id -> result end)
+      stub(Stripe.Subscription, :retrieve, fn ^sub_id, _opts -> result end)
+    end
+
+    test "adopts what Stripe says for a drifted account" do
+      period_end =
+        DateTime.utc_now() |> DateTime.add(30, :day) |> DateTime.truncate(:second)
+
+      user =
+        billing_state(insert_verified_user(),
+          subscription_status: "past_due",
+          stripe_customer_id: "cus_resync",
+          stripe_subscription_id: "sub_resync"
+        )
+
+      stub_retrieve(
+        "sub_resync",
+        {:ok,
+         %Stripe.Subscription{
+           id: "sub_resync",
+           status: "active",
+           trial_end: nil,
+           current_period_end: DateTime.to_unix(period_end),
+           cancel_at_period_end: false
+         }}
+      )
+
+      assert {:ok, updated} = Billing.resync_from_stripe(user)
+      assert updated.subscription_status == "active"
+      assert updated.current_period_end == period_end
+      assert updated.subscription_synced_at
+    end
+
+    test "a webhook event older than the resync is dropped as stale" do
+      user =
+        billing_state(insert_verified_user(),
+          subscription_status: "past_due",
+          stripe_customer_id: "cus_resync_stale",
+          stripe_subscription_id: "sub_resync_stale"
+        )
+
+      stub_retrieve(
+        "sub_resync_stale",
+        {:ok, %Stripe.Subscription{id: "sub_resync_stale", status: "active", trial_end: nil}}
+      )
+
+      assert {:ok, _} = Billing.resync_from_stripe(user)
+
+      # A delayed delivery from before the repair must not undo it.
+      old_event = %Stripe.Event{
+        type: "customer.subscription.updated",
+        created: DateTime.to_unix(DateTime.utc_now()) - 3600,
+        data: %{
+          object: %{
+            id: "sub_resync_stale",
+            customer: "cus_resync_stale",
+            status: "canceled",
+            trial_end: nil
+          }
+        }
+      }
+
+      assert {:ok, :stale} = Billing.sync_subscription(old_event)
+      assert Repo.reload!(user).subscription_status == "active"
+    end
+
+    test "comped accounts are refused without touching Stripe" do
+      user = user_with_status("comped")
+      assert {:error, :comped} = Billing.resync_from_stripe(user)
+      assert Repo.reload!(user).subscription_status == "comped"
+    end
+
+    test "no subscription of record enqueues StripeCustomerSync instead" do
+      user = insert_verified_user()
+
+      assert {:ok, :sync_enqueued} = Billing.resync_from_stripe(user)
+      assert_enqueued(worker: Fountain.Workers.StripeCustomerSync, args: %{user_id: user.id})
+    end
+
+    test "a Stripe error is returned and the account is untouched" do
+      user =
+        billing_state(insert_verified_user(),
+          subscription_status: "past_due",
+          stripe_subscription_id: "sub_resync_err"
+        )
+
+      stub_retrieve("sub_resync_err", {:error, %Stripe.ApiErrors{message: "nope"}})
+
+      assert {:error, %Stripe.ApiErrors{}} = Billing.resync_from_stripe(user)
+      assert Repo.reload!(user).subscription_status == "past_due"
+    end
+  end
+
   describe "sync_subscription/1 — coerce_status catch-all" do
     setup do
       user = insert_verified_user()
