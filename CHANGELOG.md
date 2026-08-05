@@ -30,6 +30,16 @@ upgrade, is in
 
 ### Added
 
+- **A conversation's log events are readable as JSON**, not only as an SSE
+  stream: `GET /api/conversations/:id/events`, cursor-paginated
+  (`?after=`, `?limit=`) with the same `?streams=` filter the stream takes.
+  Draining history with `?wait=false` still returned `text/event-stream`, so
+  anything fetching, archiving or analysing a conversation's output had to
+  implement an event-stream parser for what is a paginated list read. Rows
+  carry the same fields the stream sends plus each event's `id` — the same
+  value the stream uses as `Last-Event-ID`, so a client can page through
+  history and then attach the tail exactly where it stopped (#519)
+
 - **Inference credentials can be set over the API**, so an account can be
   bootstrapped without ever opening a browser: `GET/PUT/DELETE
   /api/account/inference-credentials[/:provider]`. A conversation cannot run

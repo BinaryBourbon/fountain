@@ -66,6 +66,93 @@ defmodule FountainWeb.ConversationController do
     end
   end
 
+  @default_event_limit 100
+  @max_event_limit 1000
+
+  operation(:events,
+    summary: "List a conversation's log events",
+    description:
+      "The read-model behind the SSE stream. Same rows, same fields, as JSON — " <>
+        "fetching or archiving a conversation's output no longer requires an SSE " <>
+        "parser. Oldest first, cursor-paginated: pass the previous page's " <>
+        "`meta.next_cursor` as `after`. SSE remains the tail/follow mechanism.",
+    parameters: [
+      conversation_id: [in: :path, type: :string, required: true],
+      streams: [
+        in: :query,
+        type: :string,
+        required: false,
+        description:
+          "Comma-separated allow-list of `stdout`, `stderr`, `stage`. " <>
+            "Same semantics as the SSE route; omitted means everything."
+      ],
+      after: [
+        in: :query,
+        type: :integer,
+        required: false,
+        description: "Return events with an id greater than this. Defaults to 0."
+      ],
+      limit: [
+        in: :query,
+        type: :integer,
+        required: false,
+        description: "Page size, 1..#{@max_event_limit}. Defaults to #{@default_event_limit}."
+      ]
+    ],
+    responses: [
+      ok: {"Log events", "application/json", Schemas.LogEventListResponse},
+      not_found: {"Not found", "application/json", Schemas.Error}
+    ]
+  )
+
+  def events(conn, %{"conversation_id" => id} = params) do
+    user = conn.assigns.current_user
+
+    case Conversations.get_conversation(id, user.id) do
+      nil ->
+        {:error, :not_found}
+
+      _ ->
+        limit = parse_limit(params["limit"])
+        after_id = parse_after(params["after"])
+        streams = parse_streams_param(params["streams"])
+
+        # Ownership: established by the scoped get_conversation above.
+        # One extra row decides has_more without a second count query.
+        events =
+          Conversations._unsafe_list_log_events(id, after_id,
+            streams: streams,
+            limit: limit + 1
+          )
+
+        {page, has_more?} = split_page(events, limit)
+
+        render(conn, :events, events: page, has_more: has_more?, limit: limit)
+    end
+  end
+
+  defp split_page(events, limit) do
+    case Enum.split(events, limit) do
+      {page, []} -> {page, false}
+      {page, _extra} -> {page, true}
+    end
+  end
+
+  defp parse_limit(nil), do: @default_event_limit
+  defp parse_limit(n) when is_integer(n), do: n |> max(1) |> min(@max_event_limit)
+
+  defp parse_limit(s) when is_binary(s) do
+    case Integer.parse(s) do
+      {n, _} -> parse_limit(n)
+      :error -> @default_event_limit
+    end
+  end
+
+  defp parse_after(nil), do: 0
+  defp parse_after(n) when is_integer(n) and n > 0, do: n
+  defp parse_after(n) when is_integer(n), do: 0
+  defp parse_after(s) when is_binary(s), do: s |> parse_last_event_id() |> max(0)
+
   operation(:create,
     summary: "Start a conversation",
     description:

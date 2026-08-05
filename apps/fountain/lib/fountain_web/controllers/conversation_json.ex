@@ -1,10 +1,24 @@
 defmodule FountainWeb.ConversationJSON do
   @moduledoc false
-  alias Fountain.Conversations.{Conversation, Sandbox, Turn}
+  alias Fountain.Conversations.{Conversation, LogEvent, Sandbox, Turn}
 
   def index(%{conversations: convs}), do: %{data: Enum.map(convs, &data/1)}
   def show(%{conversation: conv}), do: %{data: data(conv)}
   def turns(%{turns: turns}), do: %{data: Enum.map(turns, &turn_data/1)}
+
+  def events(%{events: events, has_more: has_more?, limit: limit}) do
+    %{
+      data: Enum.map(events, &log_event_data/1),
+      meta: %{
+        limit: limit,
+        has_more: has_more?,
+        # The id to pass back as `after`. nil on an empty page — there is
+        # nothing to resume from, and echoing the request's cursor would
+        # invite a client to loop on it.
+        next_cursor: events |> List.last() |> event_id()
+      }
+    }
+  end
 
   def data(%Conversation{} = c) do
     %{
@@ -32,6 +46,26 @@ defmodule FountainWeb.ConversationJSON do
   end
 
   defp sandbox_data(_), do: nil
+
+  # Field-for-field the SSE payload, plus `id` (the pagination cursor and the
+  # SSE `Last-Event-ID`) and `duration_ms`, which stage events carry and the
+  # UI's timeline reads.
+  defp log_event_data(%LogEvent{} = e) do
+    %{
+      id: e.id,
+      kind: e.kind,
+      stream: e.stream,
+      data: e.data,
+      stage: e.stage,
+      state: e.state,
+      duration_ms: e.duration_ms,
+      turn_id: e.turn_id,
+      ts: e.inserted_at
+    }
+  end
+
+  defp event_id(%LogEvent{id: id}), do: id
+  defp event_id(nil), do: nil
 
   defp turn_data(%Turn{} = t) do
     %{

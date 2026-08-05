@@ -795,6 +795,67 @@ defmodule FountainWeb.Schemas do
     })
   end
 
+  defmodule LogEvent do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "LogEvent",
+      description:
+        "One line of a conversation's log feed: runtime output or a lifecycle " <>
+          "stage transition. Same fields the SSE stream sends, plus `id`.",
+      type: :object,
+      properties: %{
+        id: %Schema{
+          type: :integer,
+          description: "Monotonic id. Pagination cursor here, `Last-Event-ID` on the SSE route."
+        },
+        kind: %Schema{type: :string, enum: ~w(output stage)},
+        stream: %Schema{
+          type: :string,
+          description: "`stdout` / `stderr` for output events; empty for stage events."
+        },
+        data: %Schema{
+          type: :string,
+          description: "Output text, or JSON-encoded metadata for stage events."
+        },
+        stage: %Schema{type: :string, description: "Lifecycle stage name (stage events)."},
+        state: %Schema{type: :string, enum: ~w(started done failed interrupted), nullable: true},
+        duration_ms: %Schema{type: :integer, nullable: true},
+        turn_id: %Schema{type: :string, format: :uuid, nullable: true},
+        ts: %Schema{type: :string, format: :"date-time"}
+      },
+      required: [:id, :kind, :ts]
+    })
+  end
+
+  defmodule LogEventListResponse do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "LogEventListResponse",
+      type: :object,
+      properties: %{
+        data: %Schema{type: :array, items: LogEvent},
+        meta: %Schema{
+          type: :object,
+          properties: %{
+            limit: %Schema{type: :integer},
+            has_more: %Schema{type: :boolean},
+            next_cursor: %Schema{
+              type: :integer,
+              nullable: true,
+              description: "Pass as `after` to fetch the next page. null when the page is empty."
+            }
+          },
+          required: [:limit, :has_more]
+        }
+      },
+      required: [:data, :meta]
+    })
+  end
+
   defmodule InferenceCredentialStatus do
     @moduledoc false
     require OpenApiSpex

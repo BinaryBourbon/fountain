@@ -238,6 +238,8 @@ defmodule FountainWeb.Router do
       post "/interrupt", ConversationController, :interrupt, as: :interrupt
       post "/terminate", ConversationController, :terminate, as: :terminate
       get "/turns", ConversationController, :turns, as: :turns
+      # The JSON read-model for the log feed; /stream below is the tail (#519).
+      get "/events", ConversationController, :events, as: :events
       get "/turns/:turn_id/images/:position", TurnImageController, :show, as: :turn_image
     end
   end
