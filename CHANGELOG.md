@@ -14,9 +14,55 @@ upgrade, is in
 
 ---
 
-## [Unreleased]
+## [0.5.0] — 2026-08-05
+
+### Upgrade notes
+
+- **Set `PUBLIC_URL` before upgrading.** Production now refuses to boot
+  without it (or the deprecated `FOUNTAIN_DOMAIN`) — see below. The compose
+  file and the `deploy/k8s` baseline already set it; anything hand-rolled
+  from older docs may not.
+- **With a real mail provider (Resend/SMTP), set `EMAIL_FROM`.** Also a boot
+  requirement now. Instances on `EMAIL_DELIVERY=none` are unaffected.
+- On billing-disabled instances, account export and deletion moved from
+  `/account/billing` to `/account`, and accounts no longer carry
+  trial/subscription state. If you later enable billing, the documented
+  `expire_legacy_trials` release task is still the way to start trial clocks
+  for pre-existing accounts.
+
+### Added
+
+- **`/terms` and `/privacy` render your legal identity, not the project's.**
+  Set `LEGAL_ENTITY`, `LEGAL_CONTACT_EMAIL`, `LEGAL_JURISDICTION` and
+  `LEGAL_EFFECTIVE_DATE` — all four or none; partially set refuses to boot.
+  Unset, the pages are hidden and their links removed from signup and the
+  footer, instead of rendering placeholder terms nobody agreed to
+  (#506, #517, #534)
+
+- Admin billing operations for the hosted service: Stripe webhook failures
+  are persisted and surfaced on `/admin` instead of vanishing into logs
+  (#501, #516); a user's subscription state can be force-resynced from
+  Stripe (#502, #515); `/admin/users/:id` shows a read-only view of the
+  user's Stripe invoices (#502, #539); dropped usage events emit telemetry
+  (#503, #514); and a daily sweeper backstops stale `trialing` rows whose
+  webhooks never arrived (#504, #512)
+
+- The marketing homepage renders its price from `STRIPE_PRICE_MONTHLY_CENTS`
+  instead of hardcoding the hosted instance's number (#500, #508)
 
 ### Changed
+
+- **A billing-disabled instance no longer shows billing anywhere.** The
+  Billing nav item, the admin dashboard's trial tiles, `trialing`
+  filters/sorts and per-user trial controls all render only when
+  `BILLING_ENABLED=true`; the core `/account` page owns export and account
+  deletion (#479, #481, #491, #494). Accounts on billing-disabled instances
+  are no longer stamped `trialing` at registration, and `/api/auth/me`
+  reports `subscription_status: null` (#480, #496)
+
+- Subscribers whose state is `past_due` or `canceled` keep read-only access
+  to their conversations instead of a hard gate — they can read what they
+  already ran, not start new work (#505, #538)
 
 - **Two silent misconfigurations now refuse to boot in prod with actionable
   errors.** `PUBLIC_URL` is required (or the deprecated `FOUNTAIN_DOMAIN`) —
@@ -50,6 +96,29 @@ upgrade, is in
   sit at `v0.4.1`, the release workflow bumps them inside every release
   commit, and a test fails any PR where a pin drifts from the released
   version. (#489)
+
+- **The compose quick start no longer crash-loops on a fresh machine.**
+  Compose interpolates unset `${VAR:-}` passthroughs to present-but-empty
+  strings, and three reads in `runtime.exs` didn't survive that: the sandbox
+  lifetime bounds hit the refusal written for typos (`Integer.parse("")`),
+  `SENTRY_DSN=""` was handed to the Sentry SDK, which refuses to start, and
+  `SPRITES_BASE_URL=""` displaced the default API endpoint so every
+  conversation would fail at provision. Blank now means "not configured" and
+  gets the default; a non-blank typo still refuses to boot. Found by running
+  the fresh-machine walkthrough (#513) exactly as the docs write it
+  (#497, #509, #541)
+
+- Three documented variables were silently ignored under compose — set in
+  `.env`, never passed to the app: `TRUSTED_PROXIES` (per-IP rate limits
+  collapsed into one bucket behind a proxy), `SENTRY_DSN`, and
+  `DATABASE_SSL_VERIFY`/`DATABASE_SSL_CA_FILE`. All pass through now
+  (#397, #509)
+
+- The CLI's built-in default `base_url` is the hosted instance, so on a
+  self-hosted deployment the first unconfigured command sent the freshly
+  minted API key to the hosted domain. The docs now call this out and lead
+  with `FOUNTAIN_BASE_URL=... fountain auth login`, which records the URL in
+  the saved profile (#510)
 
 ## [0.4.1] — 2026-08-05
 
@@ -723,7 +792,8 @@ upgrade, is in
 - Audit log for state-changing actions (append-only, best-effort)
 - Substitution engine for `${VAR}` / `$$` interpolation in agent configs
 
-[Unreleased]: https://github.com/BinaryBourbon/fountain/compare/v0.4.0...HEAD
+[0.5.0]: https://github.com/BinaryBourbon/fountain/compare/v0.4.1...v0.5.0
+[0.4.1]: https://github.com/BinaryBourbon/fountain/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/BinaryBourbon/fountain/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/BinaryBourbon/fountain/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/BinaryBourbon/fountain/compare/v0.2.0...v0.2.1
