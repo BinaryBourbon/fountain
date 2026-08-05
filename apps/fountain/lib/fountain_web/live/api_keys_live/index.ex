@@ -19,13 +19,15 @@ defmodule FountainWeb.ApiKeysLive.Index do
 
   @impl true
   def handle_event("create_key", %{"label" => label}, socket) do
-    case Accounts.create_api_key(socket.assigns.user_id, label) do
+    # `create_api_key/3` records `api_key.created` itself now, so the
+    # `from_socket` call that used to live here would be a second row for one
+    # mint. All this surface still owes the trail is who was on the socket.
+    case Accounts.create_api_key(
+           socket.assigns.user_id,
+           label,
+           FountainWeb.Audited.attribution(socket)
+         ) do
       {:ok, {key, raw_token}} ->
-        FountainWeb.Audited.from_socket(socket, "api_key.created", "api_key",
-          resource_id: key.id,
-          metadata: %{"name" => key.name, "scopes" => key.scopes}
-        )
-
         {:noreply,
          socket
          |> assign(:keys, Accounts.list_api_keys(socket.assigns.user_id))

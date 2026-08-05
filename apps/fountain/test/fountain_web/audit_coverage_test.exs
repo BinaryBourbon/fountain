@@ -27,6 +27,10 @@ defmodule FountainWeb.AuditCoverageTest do
     Enum.find(events_for(user_id), &(&1.action == action))
   end
 
+  defp created_events(user_id) do
+    Enum.filter(events_for(user_id), &(&1.action == "api_key.created"))
+  end
+
   describe "secret writes through the UI" do
     test "a vault secret write is recorded", %{conn: conn} do
       user = insert_verified_user()
@@ -383,6 +387,114 @@ defmodule FountainWeb.AuditCoverageTest do
       render_click(lv, "revoke", %{"id" => key_id})
 
       assert find_action(user.id, "api_key.revoked")
+    end
+  end
+
+  describe "API key minting is audited wherever it happens (#542)" do
+    test "POST /api/auth/token records the mint", %{conn: conn} do
+      # The gap this closes: the route lives on `:api_public`, which has no
+      # audit plug, so the one path that trades a password for a full-scope
+      # key was the only one of the four that minted with no trail.
+      user =
+        insert_verified_user(%{
+          "email" => "cli#{System.unique_integer([:positive])}@example.com",
+          "password" => "password123"
+        })
+
+      conn = post_json(conn, "/api/auth/token", %{email: user.email, password: "password123"})
+      %{"key_id" => key_id, "prefix" => prefix} = json_response(conn, 201)
+
+      assert [event] = created_events(user.id)
+      assert event.user_id == user.id
+      assert event.resource_type == "api_key"
+      assert event.resource_id == key_id
+      assert event.actor == "api"
+      assert event.metadata["scopes"] == ["full"]
+      assert event.metadata["key_prefix"] == prefix
+    end
+
+    test "POST /api/auth/token never records the key itself", %{conn: conn} do
+      user =
+        insert_verified_user(%{
+          "email" => "cli#{System.unique_integer([:positive])}@example.com",
+          "password" => "password123"
+        })
+
+      conn = post_json(conn, "/api/auth/token", %{email: user.email, password: "password123"})
+      %{"api_key" => raw_key} = json_response(conn, 201)
+
+      events = events_for(user.id)
+
+      # Guard the guard (#406): with no mint event at all the refute below
+      # would pass over an empty list and prove nothing.
+      assert Enum.any?(events, &(&1.action == "api_key.created"))
+
+      # The 8-character prefix is in the trail by design; the other 64
+      # characters are the credential and must not follow it into a second
+      # table.
+      for event <- events do
+        refute inspect(event) =~ raw_key
+      end
+    end
+
+    test "a rejected credential mints nothing and records nothing", %{conn: conn} do
+      user =
+        insert_verified_user(%{
+          "email" => "cli#{System.unique_integer([:positive])}@example.com",
+          "password" => "password123"
+        })
+
+      conn = post_json(conn, "/api/auth/token", %{email: user.email, password: "wrongpassword"})
+      assert json_response(conn, 401)
+
+      assert created_events(user.id) == []
+    end
+
+    test "POST /api/auth/api-keys records a semantic event, not just the request", %{conn: conn} do
+      user = insert_verified_user()
+      {_record, raw_key} = insert_api_key(user, "bootstrap")
+
+      # The factory mints through the same context function, so the bootstrap
+      # key is itself audited — this asserts on the one the request adds.
+      before = created_events(user.id)
+
+      conn
+      |> authed_with_key(raw_key)
+      |> post_json("/api/auth/api-keys", %{name: "CI pipeline"})
+      |> json_response(201)
+
+      assert [event] = created_events(user.id) -- before
+      assert event.actor == "api"
+      assert event.metadata["name"] == "CI pipeline"
+    end
+
+    test "one mint through the UI writes one row, not two", %{conn: conn} do
+      # `create_api_key/3` audits itself now; the LiveView's own `from_socket`
+      # call had to go with it or every UI mint would land twice.
+      user = insert_verified_user()
+
+      {:ok, lv, _html} = live(login_user(conn, user), ~p"/api-keys")
+      render_submit(lv, "create_key", %{"label" => "ci-deploy"})
+
+      assert [event] = created_events(user.id)
+      assert event.actor == "ui"
+      assert event.request_ip
+    end
+
+    test "a sprite callback key is attributed to the server, not the owner" do
+      user = insert_verified_user()
+
+      {:ok, {key, _raw}} =
+        Fountain.Accounts.create_api_key(
+          user.id,
+          "sprite:abc123",
+          Fountain.Conversations.ConversationServer.callback_api_key_opts()
+        )
+
+      assert [event] = created_events(user.id)
+      assert event.resource_id == key.id
+      assert event.actor == "system:conversation_server"
+      assert event.metadata["scopes"] == ["sprite"]
     end
   end
 end

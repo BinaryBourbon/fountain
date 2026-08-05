@@ -10,6 +10,7 @@ defmodule FountainWeb.AuthTokenController do
   use OpenApiSpex.ControllerSpecs
 
   alias Fountain.Accounts
+  alias FountainWeb.Audited
   alias FountainWeb.Schemas
 
   plug FountainWeb.Plugs.RateLimit,
@@ -57,7 +58,11 @@ defmodule FountainWeb.AuthTokenController do
       {:ok, user} ->
         name = "CLI login \u2014 #{DateTime.utc_now() |> DateTime.to_date()}"
 
-        {:ok, {api_key, raw_key}} = Accounts.create_api_key(user.id, name)
+        # `:api_public` has no auth plug, so nothing has assigned
+        # `:current_user` here and derivation would call this sign-in
+        # `"system"`. It is a CLI exchanging a password for a key.
+        {:ok, {api_key, raw_key}} =
+          Accounts.create_api_key(user.id, name, Audited.attribution(conn, actor: "api"))
 
         conn
         |> put_status(:created)

@@ -61,7 +61,9 @@ defmodule FountainWeb.ApiKeyControllerTest do
       user = insert_verified_user()
       {_record, raw_key} = insert_api_key(user)
 
-      stub(Fountain.Accounts, :create_api_key, fn _user_id, _name ->
+      # Arity 3: the controller passes `Audited.attribution/1` through so the
+      # context can attribute the mint it audits (#542).
+      stub(Fountain.Accounts, :create_api_key, fn _user_id, _name, _opts ->
         cs = %Ecto.Changeset{valid?: false, errors: [name: {"has already been taken", []}]}
         {:error, cs}
       end)

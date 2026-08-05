@@ -150,8 +150,11 @@ defmodule FountainWeb.AuditControllerTest do
         (page1["data"] ++ page2["data"] ++ page3["data"])
         |> Enum.map(& &1["id"])
 
-      # Five distinct events, newest first, no repeats across pages.
-      assert length(ids) == 5
+      # Every event in the trail, newest first, no repeats across pages.
+      # Counted rather than hardcoded: the setup's own `insert_api_key` mints
+      # through `Accounts.create_api_key`, which audits itself since #542, so
+      # the trail is the five recorded above plus that mint.
+      assert length(ids) == length(Audit.list_recent_for_user(user.id, 100))
       assert ids == Enum.uniq(ids)
       assert ids == Enum.sort(ids, :desc)
       refute page3["meta"]["has_more"]

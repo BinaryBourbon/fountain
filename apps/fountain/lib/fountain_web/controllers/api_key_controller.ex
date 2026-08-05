@@ -11,6 +11,7 @@ defmodule FountainWeb.ApiKeyController do
   use OpenApiSpex.ControllerSpecs
 
   alias Fountain.Accounts
+  alias FountainWeb.Audited
   alias FountainWeb.Schemas
 
   tags(["Auth"])
@@ -54,7 +55,7 @@ defmodule FountainWeb.ApiKeyController do
   def create(conn, %{"name" => name}) when is_binary(name) and name != "" do
     user = conn.assigns.current_user
 
-    case Accounts.create_api_key(user.id, name) do
+    case Accounts.create_api_key(user.id, name, Audited.attribution(conn)) do
       {:ok, {key_record, raw_key}} ->
         conn
         |> put_status(:created)

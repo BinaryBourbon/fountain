@@ -1379,7 +1379,12 @@ defmodule Fountain.Conversations.ConversationServer do
       expires_at:
         DateTime.utc_now()
         |> DateTime.add(callback_key_ttl_seconds(), :second)
-        |> DateTime.truncate(:second)
+        |> DateTime.truncate(:second),
+      # Minting a sprite credential is exactly the event the trail is for, and
+      # this is the one mint the account owner did not ask for by hand. Low
+      # volume by construction: rotation happens on fresh provision and on
+      # wake, not per turn.
+      actor: "system:conversation_server"
     ]
   end
 
