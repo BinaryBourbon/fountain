@@ -11,6 +11,7 @@ defmodule FountainWeb.VaultJSON do
       name: v.name,
       description: v.description,
       metadata: v.metadata,
+      secret_count: v.secret_count,
       inserted_at: v.inserted_at,
       updated_at: v.updated_at
     }

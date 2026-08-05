@@ -33,6 +33,12 @@ defmodule Fountain.Environments.Environment do
     # Free-form caller bookkeeping. Deliberately NOT a warm-start field:
     # changing it must not invalidate the provisioning checkpoint.
     field :metadata, :map, default: %{}
+
+    # Populated by the *_with_counts reads — not persisted. "Is this
+    # environment in use / safe to delete" is the question these answer.
+    field :secret_count, :integer, virtual: true, default: 0
+    field :agent_count, :integer, virtual: true, default: 0
+
     belongs_to :user, User
     has_many :secrets, Secret
     timestamps(type: :utc_datetime)

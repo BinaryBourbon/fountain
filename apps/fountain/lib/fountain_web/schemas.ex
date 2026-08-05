@@ -331,6 +331,10 @@ defmodule FountainWeb.Schemas do
               "a non-empty list is an allowlist. Vault values override the agent's " <>
               "environment on key collision, so this scopes who can override reviewed config."
         },
+        conversation_count: %Schema{
+          type: :integer,
+          description: "Conversations started from this agent."
+        },
         inserted_at: %Schema{type: :string, format: :"date-time"},
         updated_at: %Schema{type: :string, format: :"date-time"}
       },
@@ -544,6 +548,11 @@ defmodule FountainWeb.Schemas do
         },
         repositories: %Schema{type: :array, items: Repository},
         metadata: %Schema{type: :object, additionalProperties: true},
+        secret_count: %Schema{type: :integer, description: "Secrets stored on this environment."},
+        agent_count: %Schema{
+          type: :integer,
+          description: "Agents referencing this environment — 0 means safe to delete."
+        },
         inserted_at: %Schema{type: :string, format: :"date-time"},
         updated_at: %Schema{type: :string, format: :"date-time"}
       },
@@ -725,6 +734,7 @@ defmodule FountainWeb.Schemas do
         name: %Schema{type: :string},
         description: %Schema{type: :string},
         metadata: %Schema{type: :object, additionalProperties: true},
+        secret_count: %Schema{type: :integer, description: "Secrets stored in this vault."},
         inserted_at: %Schema{type: :string, format: :"date-time"},
         updated_at: %Schema{type: :string, format: :"date-time"}
       },

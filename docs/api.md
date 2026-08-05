@@ -68,6 +68,8 @@ PUT    /api/agents/:id
 DELETE /api/agents/:id
 ```
 
+Agent objects carry `conversation_count`; environments carry `secret_count` and `agent_count`; vaults carry `secret_count`. They are on both the list and single-resource reads, so "is this environment in use / safe to delete" is one request.
+
 ## Environments
 
 ```

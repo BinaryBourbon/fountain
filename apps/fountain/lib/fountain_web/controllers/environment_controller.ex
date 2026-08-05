@@ -22,7 +22,7 @@ defmodule FountainWeb.EnvironmentController do
 
   def index(conn, _params) do
     user = conn.assigns.current_user
-    render(conn, :index, environments: Environments.list_environments(user.id))
+    render(conn, :index, environments: Environments.list_environments_with_counts(user.id))
   end
 
   operation(:show,
@@ -37,7 +37,7 @@ defmodule FountainWeb.EnvironmentController do
   def show(conn, %{"id" => id}) do
     user = conn.assigns.current_user
 
-    case Environments.get_environment(id, user.id) do
+    case Environments.get_environment_with_counts(id, user.id) do
       nil -> {:error, :not_found}
       env -> render(conn, :show, environment: env)
     end
@@ -59,7 +59,7 @@ defmodule FountainWeb.EnvironmentController do
     with {:ok, %Environment{} = env} <- Environments.create_environment(attrs) do
       conn
       |> put_status(:created)
-      |> render(:show, environment: env)
+      |> render(:show, environment: Environments.get_environment_with_counts(env.id, user.id))
     end
   end
 
@@ -86,7 +86,9 @@ defmodule FountainWeb.EnvironmentController do
 
       env ->
         with {:ok, env} <- Environments.update_environment(env, attrs) do
-          render(conn, :show, environment: env)
+          # Re-read for the counts: a response that advertises secret_count and
+          # agent_count must not report the struct defaults after a write.
+          render(conn, :show, environment: Environments.get_environment_with_counts(env.id, user.id))
         end
     end
   end

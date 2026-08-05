@@ -22,7 +22,7 @@ defmodule FountainWeb.VaultController do
 
   def index(conn, _params) do
     user = conn.assigns.current_user
-    render(conn, :index, vaults: Vaults.list_vaults(user.id))
+    render(conn, :index, vaults: Vaults.list_vaults_with_counts(user.id))
   end
 
   operation(:show,
@@ -37,7 +37,7 @@ defmodule FountainWeb.VaultController do
   def show(conn, %{"id" => id}) do
     user = conn.assigns.current_user
 
-    case Vaults.get_vault(id, user.id) do
+    case Vaults.get_vault_with_counts(id, user.id) do
       nil -> {:error, :not_found}
       vault -> render(conn, :show, vault: vault)
     end
@@ -59,7 +59,7 @@ defmodule FountainWeb.VaultController do
     with {:ok, %Vault{} = vault} <- Vaults.create_vault(attrs) do
       conn
       |> put_status(:created)
-      |> render(:show, vault: vault)
+      |> render(:show, vault: Vaults.get_vault_with_counts(vault.id, user.id))
     end
   end
 
@@ -85,7 +85,9 @@ defmodule FountainWeb.VaultController do
 
       vault ->
         with {:ok, vault} <- Vaults.update_vault(vault, attrs) do
-          render(conn, :show, vault: vault)
+          # Re-read for the counts: a response that advertises secret_count
+          # must not report the struct default after a write.
+          render(conn, :show, vault: Vaults.get_vault_with_counts(vault.id, user.id))
         end
     end
   end

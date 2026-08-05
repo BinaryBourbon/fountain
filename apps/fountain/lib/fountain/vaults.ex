@@ -65,6 +65,20 @@ defmodule Fountain.Vaults do
     Repo.get_by(Vault, id: id, user_id: user_id)
   end
 
+  @doc """
+  Scoped fetch plus the `secret_count` the list read-model carries.
+  """
+  def get_vault_with_counts(id, user_id) when is_binary(user_id) do
+    case get_vault(id, user_id) do
+      nil ->
+        nil
+
+      vault ->
+        count = Repo.aggregate(from(s in VaultSecret, where: s.vault_id == ^vault.id), :count)
+        %{vault | secret_count: count}
+    end
+  end
+
   @doc "Get vault scoped to user. Raises Ecto.NoResultsError on wrong owner."
   def get_vault!(id, user_id) when is_binary(user_id) do
     Repo.get_by!(Vault, id: id, user_id: user_id)

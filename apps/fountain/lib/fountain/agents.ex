@@ -23,6 +23,29 @@ defmodule Fountain.Agents do
     end
   end
 
+  @doc """
+  Scoped fetch plus the `conversation_count` the list read-model carries.
+
+  Separate from `get_agent/2`, which is on the conversation-start path and
+  does not need the count. Serving the struct default (0) from a read that
+  advertises the field would report "no conversations" for a busy agent.
+  """
+  def get_agent_with_counts(id, user_id) when is_binary(user_id) do
+    case get_agent(id, user_id) do
+      nil ->
+        nil
+
+      agent ->
+        count =
+          Repo.aggregate(
+            from(c in Conversation, where: c.user_id == ^user_id and c.agent_id == ^agent.id),
+            :count
+          )
+
+        %{agent | conversation_count: count}
+    end
+  end
+
   @doc "Get agent scoped to user. Raises Ecto.NoResultsError if wrong owner."
   def get_agent!(id, user_id) when is_binary(user_id) do
     Repo.get_by!(Agent, id: id, user_id: user_id) |> Repo.preload(:environment)
