@@ -16,7 +16,14 @@ upgrade, is in
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+- The self-host quick start pinned `v0.3.0` — an image from before the
+  in-app first-login flow (#478), so following the docs verbatim dead-ended
+  signup under `EMAIL_DELIVERY=none`. The compose and `deploy/k8s` pins now
+  sit at `v0.4.1`, the release workflow bumps them inside every release
+  commit, and a test fails any PR where a pin drifts from the released
+  version. (#489)
 
 ## [0.4.1] — 2026-08-05
 
