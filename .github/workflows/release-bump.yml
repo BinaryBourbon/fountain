@@ -118,6 +118,28 @@ jobs:
           sed -i -E "s/version: \"${current}\"/version: \"${next}\"/" apps/fountain/mix.exs
           git diff --stat
 
+      - name: Update self-host image pins
+        run: |
+          set -euo pipefail
+          current='v${{ steps.ver.outputs.current }}'
+          next='${{ steps.ver.outputs.tag }}'
+          # The quick-start pins sat at v0.3.0 through two releases, handing
+          # newcomers an image from before the in-app first-login flow
+          # (#478). Bump them in the release commit so the tag's own tree
+          # pins the tag. ReleasePinTest keeps this list and the files in
+          # lockstep between releases.
+          pins='docker-compose.yml .env.compose.example deploy/k8s/kustomization.yaml deploy/k8s/deployment.yaml'
+          for f in ${pins}; do
+            sed -i "s/${current}/${next}/g" "$f"
+            # sed exits 0 whether or not it matched; a pin that no longer
+            # matches ${current} must abort the release, not ship stale.
+            if ! grep -qF "${next}" "$f" || grep -qF "${current}" "$f"; then
+              echo "pin bump failed in ${f}: expected ${current} -> ${next}" >&2
+              exit 1
+            fi
+          done
+          git diff --stat
+
       - name: Commit, tag, push
         env:
           TAG: ${{ steps.ver.outputs.tag }}
@@ -126,7 +148,9 @@ jobs:
           set -euo pipefail
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add mix.exs apps/fountain/mix.exs
+          git add mix.exs apps/fountain/mix.exs \
+            docker-compose.yml .env.compose.example \
+            deploy/k8s/kustomization.yaml deploy/k8s/deployment.yaml
           # [skip ci] keeps this commit from re-triggering CI on main.
           # release.yml is dispatched explicitly in the next step.
           git commit -m "chore(release): ${TAG} [skip ci]"
