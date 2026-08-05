@@ -12,6 +12,8 @@ defmodule Fountain.UsageMeteringTest do
 
   use Fountain.DataCase, async: true
 
+  import ExUnit.CaptureLog
+
   alias Fountain.{Billing, Conversations}
   alias Fountain.Billing.UsageEvent
   alias Fountain.Repo
@@ -245,6 +247,57 @@ defmodule Fountain.UsageMeteringTest do
 
       assert {:error, :invalid} =
                Billing.record_usage(user.id, "not_a_real_event", nil, nil, %{})
+    end
+
+    test "a dropped event emits the usage.dropped telemetry event (#503)" do
+      # The swallow contract makes a metering outage indistinguishable from
+      # zero usage; this counter is the signal that says "broken, not idle".
+      user = insert_verified_user()
+      test_pid = self()
+      handler_id = "usage-dropped-#{inspect(self())}"
+
+      :telemetry.attach(
+        handler_id,
+        [:fountain, :usage, :dropped],
+        fn _event, measurements, metadata, _config ->
+          send(test_pid, {:dropped, measurements, metadata})
+        end,
+        nil
+      )
+
+      on_exit(fn -> :telemetry.detach(handler_id) end)
+
+      capture_log(fn ->
+        Billing.record_usage(user.id, "not_a_real_event", nil, nil, %{})
+      end)
+
+      assert_receive {:dropped, %{count: 1}, %{event_type: "not_a_real_event", kind: "rejected"}}
+    end
+
+    test "a raise inside emit is swallowed and counted as dropped" do
+      user = insert_verified_user()
+      test_pid = self()
+      handler_id = "usage-raise-#{inspect(self())}"
+
+      :telemetry.attach(
+        handler_id,
+        [:fountain, :usage, :dropped],
+        fn _event, measurements, metadata, _config ->
+          send(test_pid, {:dropped, measurements, metadata})
+        end,
+        nil
+      )
+
+      on_exit(fn -> :telemetry.detach(handler_id) end)
+
+      # Metadata that Jason can't encode makes Repo.insert raise, which is as
+      # close to a real infrastructure failure as a unit test can get.
+      capture_log(fn ->
+        assert {:error, :exception} =
+                 Billing.record_usage(user.id, "turn_started", nil, nil, %{bad: self()})
+      end)
+
+      assert_receive {:dropped, %{count: 1}, %{event_type: "turn_started", kind: "exception"}}
     end
 
     test "a metering failure does not fail the operation being measured" do

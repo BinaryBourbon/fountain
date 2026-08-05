@@ -1365,9 +1365,10 @@ defmodule Fountain.Billing do
 
   Metering is bookkeeping: it must never be able to fail a conversation. A bad
   changeset, a dropped connection or an unexpected raise is logged and swallowed,
-  the same contract `Fountain.Audit.record/1` uses. The cost is that a silent
-  metering outage looks like zero usage — worth an alert once there is anything
-  to bill.
+  the same contract `Fountain.Audit.record/1` uses. Because the swallow makes a
+  metering outage look like zero usage, every drop also emits
+  `[:fountain, :usage, :dropped]` — any non-zero count on that counter means
+  billing data is being lost (#503).
   """
   @spec record_usage(binary(), String.t(), binary() | nil, String.t() | nil, map()) ::
           {:ok, UsageEvent.t()} | {:error, term()}
@@ -1377,13 +1378,23 @@ defmodule Fountain.Billing do
         ok
 
       {:error, %Ecto.Changeset{} = cs} ->
-        Logger.warning("usage: #{event_type} rejected: #{inspect(cs.errors)}")
+        usage_dropped(event_type, "rejected", cs.errors)
         {:error, :invalid}
     end
   rescue
     e ->
-      Logger.warning("usage: #{event_type} failed: #{Exception.message(e)}")
+      usage_dropped(event_type, "exception", Exception.message(e))
       {:error, :exception}
+  end
+
+  defp usage_dropped(event_type, kind, reason) do
+    Logger.warning("usage: #{event_type} #{kind}, event dropped: #{inspect(reason)}")
+
+    :telemetry.execute(
+      [:fountain, :usage, :dropped],
+      %{count: 1},
+      %{event_type: event_type, kind: kind}
+    )
   end
 
   @doc """
