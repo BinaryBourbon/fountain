@@ -213,6 +213,16 @@ defmodule FountainWeb.Router do
     delete "/api-keys/:id", ApiKeyController, :delete
   end
 
+  # Credential changes (#521) — same gate, same reason: a conversation-scoped
+  # sprite token must not be able to rotate the account password or start an
+  # email change. Both require the current password on top of the bearer token.
+  scope "/api/auth", FountainWeb do
+    pipe_through [:accepts_json, :api, :require_full_scope]
+
+    post "/password", AccountSecurityController, :api_change_password
+    post "/email", AccountSecurityController, :api_request_email_change
+  end
+
   # Account-level configuration. Inference credentials are what a conversation
   # actually runs on, so a sprite token replacing them is the same class of
   # escalation as minting an API key — hence the full-scope gate (#518).

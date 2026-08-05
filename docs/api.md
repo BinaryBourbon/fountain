@@ -42,6 +42,17 @@ The verification and reset emails keep linking to the browser pages; these endpo
 
 Completing a reset or an email change bumps `session_version`, which signs out every existing session.
 
+**Credential changes** (bearer token **plus** the current password; `full`-scoped keys only):
+
+```
+POST   /api/auth/password          # {current_password, new_password}
+POST   /api/auth/email             # {new_email, current_password} — sends a confirmation link
+```
+
+Changing the password signs out browser sessions (`session_version` bumps) but does **not** revoke API keys — they are separate credentials with their own expiries. The response says so explicitly (`sessions_invalidated`, `api_keys_revoked`); if you are rotating because something leaked, revoke keys yourself with `DELETE /api/auth/api-keys/:id`.
+
+The email endpoint answers identically whether or not the address is free — it is not an availability oracle — and the address only changes when the emailed token is submitted to `POST /api/auth/email/confirm`.
+
 **Session cookie:** Obtained via OAuth at `/auth/oauth/:provider` or email/password login. Used by the web UI.
 
 ## Inference credentials
