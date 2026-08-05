@@ -320,6 +320,26 @@ defmodule FountainWeb.Live.HooksTest do
       assert socket.redirected == {:redirect, %{status: 302, to: "/onboarding/step_1"}}
     end
 
+    # The router pairs :require_admin after :require_authenticated_user, so
+    # this branch is unreachable through it. Called directly, because the hook
+    # mounts current_user itself and is therefore a gate in its own right.
+    test ":require_admin halts an unverified admin" do
+      user = insert_user(%{role: "admin"})
+      # Pinned: verification is checked before role, so this test would pass on
+      # a plain user too if the factory ever stopped honouring :role.
+      assert user.role == "admin"
+
+      socket =
+        struct(Phoenix.LiveView.Socket, %{
+          endpoint: FountainWeb.Endpoint,
+          assigns: %{__changed__: %{}, current_user: user}
+        })
+
+      {:halt, socket} = FountainWeb.Live.Hooks.on_mount(:require_admin, %{}, %{}, socket)
+
+      assert socket.redirected == {:redirect, %{status: 302, to: "/auth/verify-pending"}}
+    end
+
     test ":require_pending_verification continues for a user who is not verified" do
       user = insert_user()
 

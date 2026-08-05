@@ -16,6 +16,19 @@ defmodule FountainWeb.Plugs.TenantSessionAuthTest do
       assert conn.assigns.current_user.id == user.id
     end
 
+    test "redirects an unverified session to the waiting page, not login", %{conn: conn} do
+      user = insert_user()
+
+      conn =
+        conn
+        |> login_user(user)
+        |> TenantSessionAuth.call([])
+
+      assert conn.halted
+      assert Phoenix.ConnTest.redirected_to(conn) == "/auth/verify-pending"
+      refute conn.assigns[:current_user]
+    end
+
     test "redirects to /auth/login when session is absent", %{conn: conn} do
       conn =
         conn

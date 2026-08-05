@@ -26,6 +26,34 @@ defmodule FountainWeb.VerifyPendingLiveTest do
 
       assert lv |> element("a[href='/auth/logout']") |> has_element?()
     end
+
+    # The trap this route is shaped around: TenantSessionAuth sends unverified
+    # sessions here, so routing this page through that pipeline would make it
+    # redirect to itself forever. It is deliberately outside :browser_authenticated.
+    test "does not redirect to itself", %{conn: conn} do
+      assert {:ok, _lv, _html} = live(conn, ~p"/auth/verify-pending")
+    end
+
+    # Logout has to stay reachable without verification or the escape hatch
+    # above is decorative.
+    test "signing out works without being verified", %{conn: conn} do
+      conn = get(conn, ~p"/auth/logout")
+      assert redirected_to(conn) == "/auth/login"
+
+      # Asserted by replaying the dropped cookie rather than reading
+      # get_session/2, which still shows the old value — configure_session
+      # drop only takes effect when the response is written.
+      next = conn |> recycle() |> get(~p"/auth/verify-pending")
+      assert redirected_to(next) == "/auth/login"
+    end
+  end
+
+  describe "the controller pipeline" do
+    test "an unverified session is turned away from a session-authenticated route", %{conn: conn} do
+      conn = patch(conn, ~p"/api/settings/theme", %{"theme" => "dark"})
+
+      assert redirected_to(conn) == "/auth/verify-pending"
+    end
   end
 
   describe "auto-advance" do

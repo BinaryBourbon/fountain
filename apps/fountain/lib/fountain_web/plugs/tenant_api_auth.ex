@@ -13,6 +13,10 @@ defmodule FountainWeb.Plugs.TenantAPIAuth do
 
       {"error": "API key has been revoked", "reason": "api_key_revoked"}
       {"error": "Invalid or missing API key", "reason": "api_key_invalid"}
+
+  An unverified account is refused with 403 and `email_unverified` (#533) —
+  the one non-401 here, because the key itself is fine and the account, not
+  the credential, is what needs fixing.
   """
 
   import Plug.Conn
@@ -44,6 +48,19 @@ defmodule FountainWeb.Plugs.TenantAPIAuth do
       # account exists; the response still doesn't say why it's unusable.
       {:error, :suspended} ->
         unauthorized(conn, "This account is currently unavailable", "account_unavailable")
+
+      # 403, and named: same status and same `reason` as POST /api/auth/token
+      # refusing to mint for this account, so a CLI holding a stale key reads
+      # the same answer it would get from asking for a new one. Nothing is
+      # leaked by being specific — the holder owns the key.
+      {:error, :unverified} ->
+        conn
+        |> put_status(:forbidden)
+        |> json(%{
+          error: "Verify your email address before using the API",
+          reason: "email_unverified"
+        })
+        |> halt()
 
       _ ->
         unauthorized(conn, "Invalid or missing API key", "api_key_invalid")

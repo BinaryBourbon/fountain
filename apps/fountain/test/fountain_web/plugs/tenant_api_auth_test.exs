@@ -66,6 +66,41 @@ defmodule FountainWeb.Plugs.TenantAPIAuthTest do
       assert body["reason"] == "api_key_revoked"
     end
 
+    # Every minting path refuses an unverified account, so a key in this state
+    # can only be a legacy one — minted before #314 closed
+    # `POST /api/auth/token`. insert_api_key/1 goes straight to the context,
+    # which is exactly how those keys came to exist.
+    test "returns 403 with email_unverified for a key held by an unverified account", %{
+      conn: conn
+    } do
+      user = insert_user()
+      {_record, raw_key} = insert_api_key(user)
+
+      conn =
+        conn
+        |> authed_with_key(raw_key)
+        |> TenantAPIAuth.call([])
+
+      assert conn.halted
+      assert conn.status == 403
+      body = Jason.decode!(conn.resp_body)
+      assert body["reason"] == "email_unverified"
+    end
+
+    test "the same key works once the account verifies", %{conn: conn} do
+      user = insert_user()
+      {_record, raw_key} = insert_api_key(user)
+      {:ok, _verified} = Fountain.Accounts.verify_email(user)
+
+      conn =
+        conn
+        |> authed_with_key(raw_key)
+        |> TenantAPIAuth.call([])
+
+      refute conn.halted
+      assert conn.assigns.current_user.id == user.id
+    end
+
     test "cross-tenant key does not authenticate another user", %{conn: conn} do
       user_a = insert_verified_user()
       user_b = insert_verified_user()

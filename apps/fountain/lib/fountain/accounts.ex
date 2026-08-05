@@ -611,7 +611,7 @@ defmodule Fountain.Accounts do
   401.
   """
   @spec get_user_by_api_key(String.t()) ::
-          {:ok, User.t()} | {:error, :revoked | :expired | :not_found}
+          {:ok, User.t()} | {:error, :revoked | :expired | :suspended | :unverified | :not_found}
   def get_user_by_api_key(raw_key) when is_binary(raw_key) do
     case authenticate_api_key(raw_key) do
       {:ok, user, _key} -> {:ok, user}
@@ -627,10 +627,11 @@ defmodule Fountain.Accounts do
   human who owns the tenant.
 
   Returns `{:ok, user, api_key}`, or
-  `{:error, :revoked | :expired | :suspended | :not_found}`.
+  `{:error, :revoked | :expired | :suspended | :unverified | :not_found}`.
   """
   @spec authenticate_api_key(String.t()) ::
-          {:ok, User.t(), ApiKey.t()} | {:error, :revoked | :expired | :suspended | :not_found}
+          {:ok, User.t(), ApiKey.t()}
+          | {:error, :revoked | :expired | :suspended | :unverified | :not_found}
   def authenticate_api_key(raw_key) when is_binary(raw_key) do
     key_hash = hash_key(raw_key)
 
@@ -651,6 +652,13 @@ defmodule Fountain.Accounts do
         cond do
           ApiKey.expired?(key) -> {:error, :expired}
           suspended?(key.user) -> {:error, :suspended}
+          # Asserted here rather than only where keys are minted (#533). Every
+          # minting path already refuses an unverified account, so this changes
+          # nothing for a key issued today — but that made four call sites the
+          # invariant depended on, and a fifth would have reopened the gap in
+          # silence. Keys predating #314, when `POST /api/auth/token` would mint
+          # for an unverified account, stop working here: that is the point.
+          is_nil(key.user.email_verified_at) -> {:error, :unverified}
           true -> {:ok, key.user, key}
         end
     end
