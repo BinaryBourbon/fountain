@@ -2,11 +2,17 @@
 
 Fountain is built to be consumed by AI coding tools. Every instance exposes machine-readable discovery endpoints so any agentic IDE can learn the full API from a single fetch.
 
+The examples below run against your own instance — point `FOUNTAIN_URL` at it:
+
+```bash
+FOUNTAIN_URL=http://localhost:4000
+```
+
 ## Drop-in skill for Claude Code
 
 ```bash
 mkdir -p ~/.claude/skills/fountain
-curl -fsSL https://fountain.inevitable.fyi/skill > ~/.claude/skills/fountain/SKILL.md
+curl -fsSL $FOUNTAIN_URL/skill > ~/.claude/skills/fountain/SKILL.md
 ```
 
 After that, telling Claude "spin up a researcher agent on Fountain and have it audit the auth module" Just Works.
@@ -20,14 +26,8 @@ After that, telling Claude "spin up a researcher agent on Fountain and have it a
 | `/skill` | Claude Code / Cursor skill file | IDE skills |
 
 ```bash
-curl https://fountain.inevitable.fyi/llms.txt
-curl https://fountain.inevitable.fyi/llms-full.txt
-```
-
-## Self-hosted instances
-
-```bash
-curl -fsSL https://your-fountain.example.com/skill > ~/.claude/skills/fountain/SKILL.md
+curl $FOUNTAIN_URL/llms.txt
+curl $FOUNTAIN_URL/llms-full.txt
 ```
 
 ## MCP server (coming soon)
@@ -42,7 +42,7 @@ Fountain will ship a first-party MCP server exposing all four primitives as tool
       "args": ["-y", "@fountain/mcp-server"],
       "env": {
         "FOUNTAIN_API_KEY": "ftn_your_api_key",
-        "FOUNTAIN_BASE_URL": "https://fountain.inevitable.fyi"
+        "FOUNTAIN_BASE_URL": "https://your-fountain.example.com"
       }
     }
   }
