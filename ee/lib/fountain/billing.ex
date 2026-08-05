@@ -545,8 +545,7 @@ defmodule Fountain.Billing do
   Returns `{:ok, :duplicate}` for an event already seen.
   """
   @spec handle_event(Stripe.Event.t()) ::
-          {:ok,
-           User.t() | :ignored | :duplicate | :stale | :comped_ignored | :other_subscription}
+          {:ok, User.t() | :ignored | :duplicate | :stale | :comped_ignored | :other_subscription}
           | {:error, term()}
   def handle_event(%Stripe.Event{id: id, type: type} = event) when is_binary(id) do
     # Stripe side effects run BEFORE the claim transaction opens (#393):
@@ -1084,6 +1083,7 @@ defmodule Fountain.Billing do
 
     conversations =
       Enum.count(events, &(&1.event_type in ["sandbox_provisioned", "sandbox_provision_failed"]))
+
     turns = Enum.count(events, &(&1.event_type == "turn_started"))
 
     sandbox_minutes =
@@ -1184,7 +1184,10 @@ defmodule Fountain.Billing do
     event_limit = Keyword.get(opts, :event_limit, 10)
 
     status_counts =
-      from(u in User, group_by: u.subscription_status, select: {u.subscription_status, count(u.id)})
+      from(u in User,
+        group_by: u.subscription_status,
+        select: {u.subscription_status, count(u.id)}
+      )
       |> Repo.all()
       |> Map.new()
 

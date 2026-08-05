@@ -22,12 +22,15 @@ fountain/                  umbrella root
   apps/
     fountain/              core business logic (Elixir OTP app)
       lib/fountain/        contexts: Accounts, Agents, Environments, Vaults,
-      |                              Conversations, Billing, Crypto, Audit,
-      |                              Substitution
+      |                              Conversations, Crypto, Audit, Substitution
       lib/fountain_web/    Phoenix: controllers, LiveView, plugs, router
       test/fountain/       context unit tests (async: true, DataCase)
       test/fountain_web/   controller/LiveView integration tests
       test/support/        DataCase, ConnCase, factory.ex
+  ee/                      billing + ALL transactional email, compiled into the
+    lib/fountain/          same :fountain app via elixirc_paths/test_paths.
+    lib/fountain_web/      Future-license boundary (MIT today) — see
+    test/                  decisions/0010. Module names unchanged by the move.
   config/
     config.exs             shared config
     dev.exs                dev overrides
@@ -162,6 +165,10 @@ The `UeberAuthController` skips `plug Ueberauth` when `ueberauth_test_mode: true
 Run `mix precommit` locally before pushing — it covers the core gate (compile with warnings-as-errors, unused deps, format, `credo --strict`, sobelow, dialyzer, tests). CI additionally runs hex.audit, the Go CLI checks, the release boot check, and OpenAPI validation.
 
 ## Test patterns
+
+`mix test` at the umbrella root runs core and `ee/test` together. To run a
+single ee file by path, run from `apps/fountain` (`mix test ../../ee/test/...`)
+or pass an absolute path — root-relative `ee/...` paths don't resolve.
 
 ### Database tests
 

@@ -133,7 +133,8 @@ defmodule Mix.Tasks.Fountain.VerifyLifecycle do
         metadata: %{"user_id" => user.id, "purpose" => "lifecycle-verify"}
       })
 
-    {:ok, user} = user |> User.billing_changeset(%{stripe_customer_id: customer.id}) |> Repo.update()
+    {:ok, user} =
+      user |> User.billing_changeset(%{stripe_customer_id: customer.id}) |> Repo.update()
 
     info("✓ test clock #{clock.id} + customer #{customer.id}")
     %{state | user: user}

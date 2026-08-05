@@ -1,0 +1,82 @@
+# 0010 — Top-level `ee/` directory boundary for billing and transactional email
+
+**Status:** Accepted (documents the file move built in the PR that adds this
+ADR; the license change and the core/ee seam are explicitly **not yet built**
+— see "Not done yet" below)
+
+## Context
+
+Fountain is MIT-licensed end to end. Billing (the Stripe integration) and
+transactional email are hosted-SaaS concerns that we intend to license
+differently from the core product in the future. Nothing in the repo marked
+that boundary: billing was a core context like any other, and every
+transactional email lived in one shared module. Before a license split is
+possible, the code has to live behind a directory line that a LICENSE file
+can apply to.
+
+## Decision
+
+**A top-level `ee/` directory, compiled into the same `:fountain` OTP app.**
+GitLab-style: `ee/lib` and `ee/test` are appended to `apps/fountain`'s
+`elixirc_paths` and `test_paths`. There is no second umbrella app, no
+behaviour indirection, and no conditional compilation.
+
+**Scope:** all of billing (context, usage-event schema, Stripe webhook
+controller, billing LiveView, billing Oban workers, `fountain.verify_lifecycle`)
+and **all** transactional email (`Fountain.Mailer`, `Fountain.Emails.UserEmails`,
+every email Oban worker, the unverified-account pruner, the email verification
+controller) — not just the signup-verification flow.
+
+**Module names change nowhere.** Only file paths moved. This is the central
+risk control: Oban cron/queue config, `Mimic.copy` lists, the router, and
+`config :fountain, Fountain.Mailer` all reference modules by name and were
+untouched.
+
+**This pass is move-only.** Core code keeps calling `Fountain.Billing`,
+`Fountain.Emails.UserEmails`, etc. directly (conversation gates, registration
+enqueues, admin pages, funnel stages). That is permitted and expected while
+everything is one app under one license.
+
+Two placement calls worth recording:
+
+- `FountainWeb.CachingBodyReader` **stays core** even though its only consumer
+  is Stripe signature verification: it is compile-time-wired into
+  `endpoint.ex` as `Plug.Parsers`' body reader, and it is generic raw-body
+  infrastructure. Moving it would make a future core-only build fail at the
+  endpoint.
+- `FountainWeb.Live.BillingLive` **moved wholesale** even though it also hosts
+  the account export/deletion UI (core functionality). Splitting it meant
+  route/template surgery — behavior-change risk this pass deliberately avoids.
+  The handlers already delegate to core `Fountain.Exports` /
+  `Fountain.Accounts.Deletion`, so the later split is mechanical.
+
+## Not done yet (deliberately)
+
+Per the repo rule that ADRs must not describe unbuilt behavior as existing:
+
+- **The license change.** `ee/LICENSE` is today a byte-for-byte copy of the
+  root MIT license. Public docs (`README.md`, `docs/self-hosting.md`) still
+  say "Fountain is MIT licensed" and are still correct.
+- **Dependency-inversion seams / core-only build.** Core does not compile
+  without `ee/`; billing gates have no always-allow default; there is no
+  community-build CI job.
+- **BillingLive export/deletion extraction** (the impurity above).
+- **Sobelow coverage of ee web modules.** Sobelow scans from `apps/fountain`,
+  so the moved controllers/LiveView left its scope. Every moved file was
+  scanned pre-move and content is unchanged; the gap applies only to future
+  edits of ee web files.
+
+## Consequences
+
+- **The Dockerfile must `COPY ee ./ee`.** Mix silently skips missing
+  `elixirc_paths` directories, so a build context without `ee/` produces a
+  release that compiles and boots but is missing billing/email modules and
+  fails at runtime. The release boot check and docker build are the guards.
+- `mix test <path>` for ee files resolves only from `apps/fountain`
+  (`mix test ../../ee/test/...`) or with an absolute path; root-relative
+  paths do not match.
+- ExCoveralls reports ee modules with absolute paths (its `Path.relative_to`
+  is against the app cwd). Cosmetic; `coveralls.json` skip regexes are
+  unanchored and still match.
+- Historical ADRs (notably 0006) reference pre-move file paths; they describe
+  the state at their time and are not rewritten.

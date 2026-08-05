@@ -47,7 +47,9 @@ defmodule Fountain.TrialSubscriptionIdempotencyTest do
     # The retry shape: the local write failed, the worker re-enters, and the
     # SAME key must reach Stripe so it returns the original subscription
     # rather than minting a second one.
-    {:ok, user} = Repo.reload(user) |> User.billing_changeset(%{stripe_subscription_id: nil}) |> Repo.update()
+    {:ok, user} =
+      Repo.reload(user) |> User.billing_changeset(%{stripe_subscription_id: nil}) |> Repo.update()
+
     {:ok, _} = Billing.start_trial_subscription(user)
 
     assert_received {:idempotency_key, key1}
