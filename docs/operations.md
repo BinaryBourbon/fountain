@@ -120,9 +120,11 @@ Failure modes that are real:
 
 Work down the chain:
 
-1. **Did the verification email go anywhere?** Login is refused until the
-   email is verified, and an instance with `EMAIL_DELIVERY=none` sends
-   nothing — that is the compose default. Verify by hand:
+1. **Did the verification email go anywhere?** Note the symptom: the password
+   is accepted and the session is real, but it never leaves the "check your
+   email" page, so this reads as a broken app rather than a refused login. An
+   instance with `EMAIL_DELIVERY=none` sends nothing — that is the compose
+   default. Verify by hand:
 
     ```bash
     docker compose exec app bin/fountain_server eval \

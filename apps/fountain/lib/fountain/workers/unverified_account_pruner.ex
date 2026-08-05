@@ -2,8 +2,9 @@ defmodule Fountain.Workers.UnverifiedAccountPruner do
   @moduledoc """
   Deletes accounts that registered and never verified their email (#258).
 
-  Unverified accounts cannot log in — `require_authenticated_user` halts them —
-  so after the grace period they are rows, not users. They are not free rows
+  An unverified account can authenticate but reaches nothing: the session is
+  held on `/auth/verify-pending`, and the API refuses to mint or accept a key
+  (#533). So after the grace period they are rows, not users. They are not free rows
   either: each carries a wrapped DEK, they distort every metric that counts
   `users`, and 158 of them were briefly mistaken for a 159-person legacy trial
   cohort (see `Fountain.Release.expire_legacy_trials/1`). The steady inflow is
