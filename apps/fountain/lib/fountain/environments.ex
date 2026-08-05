@@ -73,6 +73,29 @@ defmodule Fountain.Environments do
     Repo.get_by(Environment, id: id, user_id: user_id)
   end
 
+  @doc """
+  Scoped fetch plus the counts the list read-model carries — how many secrets
+  the environment holds and how many agents reference it. The second is the
+  "is this safe to delete" answer, which callers otherwise N+1 client-side.
+  """
+  def get_environment_with_counts(id, user_id) when is_binary(user_id) do
+    case get_environment(id, user_id) do
+      nil ->
+        nil
+
+      env ->
+        secret_count = Repo.aggregate(from(s in Secret, where: s.environment_id == ^env.id), :count)
+
+        agent_count =
+          Repo.aggregate(
+            from(a in Agent, where: a.user_id == ^user_id and a.environment_id == ^env.id),
+            :count
+          )
+
+        %{env | secret_count: secret_count, agent_count: agent_count}
+    end
+  end
+
   @doc "Get environment scoped to user. Raises Ecto.NoResultsError on wrong owner."
   def get_environment!(id, user_id) when is_binary(user_id) do
     Repo.get_by!(Environment, id: id, user_id: user_id)

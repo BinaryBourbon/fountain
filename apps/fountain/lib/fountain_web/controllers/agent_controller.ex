@@ -58,7 +58,7 @@ defmodule FountainWeb.AgentController do
   # behaviour only ever worked in the LiveView.
   def index(conn, params) do
     user = conn.assigns.current_user
-    render(conn, :index, agents: Agents.list_agents(user.id, agent_filters(params)))
+    render(conn, :index, agents: Agents.list_agents_with_counts(user.id, agent_filters(params)))
   end
 
   defp agent_filters(params) do
@@ -95,7 +95,7 @@ defmodule FountainWeb.AgentController do
   def show(conn, %{"id" => id}) do
     user = conn.assigns.current_user
 
-    case Agents.get_agent(id, user.id) do
+    case Agents.get_agent_with_counts(id, user.id) do
       nil -> {:error, :not_found}
       agent -> render(conn, :show, agent: agent)
     end
@@ -119,7 +119,7 @@ defmodule FountainWeb.AgentController do
     with {:ok, %Agent{} = agent} <- Agents.create_agent(attrs) do
       conn
       |> put_status(:created)
-      |> render(:show, agent: Agents.get_agent!(agent.id, user.id))
+      |> render(:show, agent: Agents.get_agent_with_counts(agent.id, user.id))
     end
   end
 
@@ -146,7 +146,7 @@ defmodule FountainWeb.AgentController do
 
       agent ->
         with {:ok, agent} <- Agents.update_agent(agent, attrs) do
-          render(conn, :show, agent: Agents.get_agent!(agent.id, user.id))
+          render(conn, :show, agent: Agents.get_agent_with_counts(agent.id, user.id))
         end
     end
   end

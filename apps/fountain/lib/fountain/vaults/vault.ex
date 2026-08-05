@@ -12,6 +12,10 @@ defmodule Fountain.Vaults.Vault do
     field :name, :string
     field :description, :string, default: ""
     field :metadata, :map, default: %{}
+
+    # Populated by the *_with_counts reads — not persisted.
+    field :secret_count, :integer, virtual: true, default: 0
+
     belongs_to :user, User
     has_many :secrets, VaultSecret
     timestamps(type: :utc_datetime)

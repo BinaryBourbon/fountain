@@ -30,6 +30,13 @@ upgrade, is in
 
 ### Added
 
+- **Usage counts are in the resource read-model**: agents carry
+  `conversation_count`, environments `secret_count` and `agent_count`, vaults
+  `secret_count` — on the list *and* single-resource reads, so "is this
+  environment in use / safe to delete" is one request instead of an N+1 the
+  client assembles. The counting queries already existed for the UI and had
+  no controller caller (#529)
+
 - **The conversation read-model the UI has is now the one the API serves.**
   Conversation JSON gained `title`, `turn_count`, `last_active_at`,
   `last_read_at` and a computed `unread`; `GET /api/conversations` takes

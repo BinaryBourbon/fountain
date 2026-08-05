@@ -16,6 +16,8 @@ defmodule FountainWeb.EnvironmentJSON do
       networking_config: env.networking_config,
       repositories: env.repositories,
       metadata: env.metadata,
+      secret_count: env.secret_count,
+      agent_count: env.agent_count,
       inserted_at: env.inserted_at,
       updated_at: env.updated_at
     }
