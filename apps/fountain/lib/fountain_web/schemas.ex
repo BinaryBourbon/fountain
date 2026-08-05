@@ -335,6 +335,14 @@ defmodule FountainWeb.Schemas do
           type: :integer,
           description: "Conversations started from this agent."
         },
+        avatar_media_type: %Schema{
+          type: :string,
+          nullable: true,
+          enum: ~w(image/png image/jpeg image/gif image/webp),
+          description:
+            "Set when the agent has an avatar; fetch the bytes at " <>
+              "`GET /api/agents/:id/avatar`. Null means no avatar."
+        },
         inserted_at: %Schema{type: :string, format: :"date-time"},
         updated_at: %Schema{type: :string, format: :"date-time"}
       },
@@ -917,6 +925,27 @@ defmodule FountainWeb.Schemas do
         }
       },
       required: [:data, :meta]
+    })
+  end
+
+  defmodule AvatarRequest do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "AvatarRequest",
+      description:
+        "JSON form of an avatar upload. The raw-bytes form sends the image " <>
+          "directly with an image content-type instead.",
+      type: :object,
+      properties: %{
+        data: %Schema{type: :string, description: "Base64-encoded image bytes."},
+        media_type: %Schema{
+          type: :string,
+          enum: ~w(image/png image/jpeg image/gif image/webp)
+        }
+      },
+      required: [:data, :media_type]
     })
   end
 

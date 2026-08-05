@@ -30,6 +30,18 @@ upgrade, is in
 
 ### Added
 
+- **Agent avatars have an API**: `GET/PUT/DELETE /api/agents/:id/avatar`, and
+  `avatar_media_type` is serialized on the agent so a client can tell one
+  exists. Upload and delete lived only in the agents LiveView, and even
+  *reading* the bytes required a session — while turn images next door
+  already had both a session route and a bearer route, so `fountain apply`
+  shipping an avatar file had nowhere to send it. Uploads take raw bytes with
+  an image content-type or the same base64 JSON shape prompt images use, cap
+  at 5 MB, and are refused with 415 for anything that is not one of the four
+  accepted image types — the ingest half of the rule that keeps
+  client-declared `text/html` from ever being servable from the app's own
+  origin (#528)
+
 - **Onboarding can be completed over the API** —
   `POST /api/account/onboarding/complete`, with `GET /api/account/onboarding`
   and new `onboarding_state` / `onboarding_completed` / `email_verified`
