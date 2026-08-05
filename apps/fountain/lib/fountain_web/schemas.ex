@@ -1647,4 +1647,333 @@ defmodule FountainWeb.Schemas do
       required: [:errors]
     })
   end
+
+  ## ─── Auth (#571) ───────────────────────────────────────────────────────────
+  #
+  # The `/api/auth/*` surface. Errors here carry a machine-readable `error`
+  # alongside the prose `message`, which the resource endpoints' plain
+  # `Schemas.Error` does not — a client retrying a reset needs to tell
+  # `expired` from `invalid_token` without parsing English.
+
+  defmodule AuthError do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "AuthError",
+      description: "An auth failure with a stable reason code.",
+      type: :object,
+      properties: %{
+        error: %Schema{
+          type: :string,
+          description: "Reason code, e.g. `expired`, `invalid_token`, `invalid_current_password`.",
+          example: "invalid_token"
+        },
+        message: %Schema{type: :string, description: "Human-readable detail."}
+      },
+      required: [:error]
+    })
+  end
+
+  defmodule MessageResponse do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "MessageResponse",
+      type: :object,
+      properties: %{message: %Schema{type: :string}},
+      required: [:message]
+    })
+  end
+
+  defmodule AuthTokenRequest do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "AuthTokenRequest",
+      type: :object,
+      properties: %{
+        email: %Schema{type: :string, format: :email},
+        password: %Schema{type: :string, format: :password}
+      },
+      required: [:email, :password]
+    })
+  end
+
+  defmodule AuthTokenResponse do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "AuthTokenResponse",
+      description: "A freshly minted full-scope key. `api_key` is shown once and never again.",
+      type: :object,
+      properties: %{
+        api_key: %Schema{type: :string, example: "ftn_live_..."},
+        key_id: %Schema{type: :string, format: :uuid},
+        prefix: %Schema{
+          type: :string,
+          description: "Leading characters of the key, the only part stored in the clear."
+        }
+      },
+      required: [:api_key, :key_id, :prefix]
+    })
+  end
+
+  defmodule AuthMeResponse do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "AuthMeResponse",
+      description: "Identity of the account the bearer token belongs to.",
+      type: :object,
+      properties: %{
+        id: %Schema{type: :string, format: :uuid},
+        email: %Schema{type: :string, format: :email},
+        role: %Schema{type: :string, enum: ~w(user admin)},
+        email_verified: %Schema{type: :boolean},
+        onboarding_state: %Schema{
+          type: :string,
+          nullable: true,
+          description: "Wizard position. Only `completed` means anything to an API client."
+        },
+        onboarding_completed: %Schema{type: :boolean},
+        subscription_status: %Schema{
+          type: :string,
+          nullable: true,
+          description: "Always null when billing is disabled on the instance (#480)."
+        }
+      },
+      required: [:id, :email, :role, :email_verified]
+    })
+  end
+
+  defmodule ApiKey do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "ApiKey",
+      description: "Key metadata. Never the key itself, and never its hash.",
+      type: :object,
+      properties: %{
+        id: %Schema{type: :string, format: :uuid},
+        name: %Schema{type: :string},
+        prefix: %Schema{type: :string},
+        created_at: %Schema{type: :string, format: :"date-time"},
+        last_used_at: %Schema{type: :string, format: :"date-time", nullable: true},
+        scopes: %Schema{
+          type: :array,
+          items: %Schema{type: :string},
+          description:
+            "`full` for a key a person minted; `sprite:<conversation_id>` for the " <>
+              "auto-issued token a sandbox holds."
+        },
+        expires_at: %Schema{type: :string, format: :"date-time", nullable: true}
+      },
+      required: [:id, :name, :prefix, :created_at]
+    })
+  end
+
+  defmodule ApiKeyListResponse do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "ApiKeyListResponse",
+      type: :object,
+      # ApiKey is referenced by the implicit alias the nested defmodule above
+      # created; it only exists after that definition, hence the ordering.
+      properties: %{data: %Schema{type: :array, items: ApiKey}},
+      required: [:data]
+    })
+  end
+
+  defmodule ApiKeyRequest do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "ApiKeyRequest",
+      type: :object,
+      properties: %{
+        name: %Schema{type: :string, minLength: 1, description: "What this key is for."}
+      },
+      required: [:name]
+    })
+  end
+
+  defmodule ApiKeyCreatedResponse do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "ApiKeyCreatedResponse",
+      description: "The one and only response that carries key material.",
+      type: :object,
+      properties: %{
+        id: %Schema{type: :string, format: :uuid},
+        name: %Schema{type: :string},
+        key: %Schema{type: :string, description: "Plaintext key. Not recoverable afterwards."},
+        prefix: %Schema{type: :string},
+        created_at: %Schema{type: :string, format: :"date-time"}
+      },
+      required: [:id, :name, :key, :prefix]
+    })
+  end
+
+  defmodule RegisterRequest do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "RegisterRequest",
+      type: :object,
+      properties: %{
+        email: %Schema{type: :string, format: :email},
+        password: %Schema{type: :string, format: :password}
+      },
+      required: [:email, :password]
+    })
+  end
+
+  defmodule RegisterResponse do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "RegisterResponse",
+      type: :object,
+      properties: %{
+        user_id: %Schema{type: :string, format: :uuid},
+        message: %Schema{type: :string}
+      },
+      required: [:user_id, :message]
+    })
+  end
+
+  defmodule EmailRequest do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "EmailRequest",
+      type: :object,
+      properties: %{email: %Schema{type: :string, format: :email}},
+      required: [:email]
+    })
+  end
+
+  defmodule TokenRequest do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "TokenRequest",
+      description: "A token lifted out of an emailed link.",
+      type: :object,
+      properties: %{token: %Schema{type: :string}},
+      required: [:token]
+    })
+  end
+
+  defmodule VerifyEmailResponse do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "VerifyEmailResponse",
+      type: :object,
+      properties: %{
+        user_id: %Schema{type: :string, format: :uuid},
+        email_verified: %Schema{type: :boolean},
+        message: %Schema{type: :string}
+      },
+      required: [:user_id, :email_verified, :message]
+    })
+  end
+
+  defmodule PasswordResetRequest do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "PasswordResetRequest",
+      type: :object,
+      properties: %{
+        token: %Schema{type: :string, description: "From the reset email."},
+        password: %Schema{type: :string, format: :password}
+      },
+      required: [:token, :password]
+    })
+  end
+
+  defmodule PasswordChangeRequest do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "PasswordChangeRequest",
+      type: :object,
+      properties: %{
+        current_password: %Schema{type: :string, format: :password},
+        new_password: %Schema{type: :string, format: :password}
+      },
+      required: [:current_password, :new_password]
+    })
+  end
+
+  defmodule PasswordChangeResponse do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "PasswordChangeResponse",
+      type: :object,
+      properties: %{
+        message: %Schema{type: :string},
+        sessions_invalidated: %Schema{type: :boolean},
+        api_keys_revoked: %Schema{
+          type: :boolean,
+          description:
+            "Always false. API keys are separate credentials with their own " <>
+              "expiries; revoke them yourself at `DELETE /api/auth/api-keys/{id}`."
+        }
+      },
+      required: [:message, :sessions_invalidated, :api_keys_revoked]
+    })
+  end
+
+  defmodule EmailChangeRequest do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "EmailChangeRequest",
+      type: :object,
+      properties: %{
+        new_email: %Schema{type: :string, format: :email},
+        current_password: %Schema{type: :string, format: :password}
+      },
+      required: [:new_email, :current_password]
+    })
+  end
+
+  defmodule EmailChangedResponse do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "EmailChangedResponse",
+      type: :object,
+      properties: %{
+        email: %Schema{type: :string, format: :email, description: "The new address."},
+        message: %Schema{type: :string}
+      },
+      required: [:email, :message]
+    })
+  end
 end

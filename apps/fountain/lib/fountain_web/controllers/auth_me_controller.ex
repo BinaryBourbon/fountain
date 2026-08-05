@@ -7,6 +7,22 @@ defmodule FountainWeb.AuthMeController do
   """
 
   use FountainWeb, :controller
+  use OpenApiSpex.ControllerSpecs
+
+  alias FountainWeb.Schemas
+
+  tags(["Auth"])
+
+  operation(:show,
+    summary: "Identity of the authenticated account",
+    description:
+      "What the presented bearer token resolves to. `fountain auth whoami` " <>
+        "calls this to show which account a key belongs to.",
+    responses: [
+      ok: {"The account", "application/json", Schemas.AuthMeResponse},
+      unauthorized: {"Missing or invalid key", "application/json", Schemas.Error}
+    ]
+  )
 
   def show(conn, _params) do
     user = conn.assigns.current_user

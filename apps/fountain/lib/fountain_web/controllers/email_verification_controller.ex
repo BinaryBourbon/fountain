@@ -19,11 +19,18 @@ defmodule FountainWeb.EmailVerificationController do
   """
 
   use FountainWeb, :controller
+  use OpenApiSpex.ControllerSpecs
 
   alias Fountain.Accounts
+  alias FountainWeb.Schemas
 
   # 24 hours in seconds
   @token_max_age 86_400
+
+  tags(["Auth"])
+
+  # `GET /users/confirm/:token` — the emailed browser link, not an API route.
+  operation(:confirm, false)
 
   def confirm(conn, %{"token" => token}) do
     case Phoenix.Token.verify(conn, "email_verification", token, max_age: @token_max_age) do
@@ -90,6 +97,21 @@ defmodule FountainWeb.EmailVerificationController do
   No session is issued: an API client wants a key, which it mints at
   `POST /api/auth/token` once the account is live.
   """
+  operation(:api_verify,
+    summary: "Activate an account from a verification token",
+    description:
+      "Idempotent: an already-verified account is a 200, which is what a CLI " <>
+        "retrying a request needs. No session is issued — mint a key at " <>
+        "`POST /api/auth/token` once the account is live. Tokens last 24 hours.",
+    security: [],
+    request_body: {"The emailed token", "application/json", Schemas.TokenRequest, required: true},
+    responses: [
+      ok: {"Verified (or already verified)", "application/json", Schemas.VerifyEmailResponse},
+      unprocessable_entity:
+        {"`expired`, `invalid_token`, or a missing token", "application/json", Schemas.AuthError}
+    ]
+  )
+
   def api_verify(conn, %{"token" => token}) do
     case Phoenix.Token.verify(conn, "email_verification", token, max_age: @token_max_age) do
       {:ok, user_id} -> verify_user(conn, Accounts.get_user(user_id))

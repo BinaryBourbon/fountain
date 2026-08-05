@@ -7,12 +7,37 @@ defmodule FountainWeb.AuthTokenController do
   """
 
   use FountainWeb, :controller
+  use OpenApiSpex.ControllerSpecs
 
   alias Fountain.Accounts
+  alias FountainWeb.Schemas
 
   plug FountainWeb.Plugs.RateLimit,
        [bucket: "auth_token", max: 10, window_ms: 3_600_000]
        when action in [:create]
+
+  tags(["Auth"])
+
+  operation(:create,
+    summary: "Exchange email and password for an API key",
+    description:
+      "The front door: every other `/api/*` endpoint needs the bearer token " <>
+        "this returns. Each call mints a **new** full-scope key rather than " <>
+        "returning an existing one, so a client that calls it on every run " <>
+        "accumulates keys — store the result. The account must be verified; " <>
+        "an unverified one is refused with 403 and `reason: email_unverified`. " <>
+        "Rate-limited to 10 attempts per IP per hour.",
+    # Overrides the spec-wide bearer requirement: this endpoint cannot require
+    # the credential it exists to issue.
+    security: [],
+    request_body: {"Credentials", "application/json", Schemas.AuthTokenRequest, required: true},
+    responses: [
+      created: {"A new API key", "application/json", Schemas.AuthTokenResponse},
+      unauthorized: {"Invalid email or password", "application/json", Schemas.Error},
+      forbidden: {"Email not verified", "application/json", Schemas.AuthError},
+      unprocessable_entity: {"Missing email or password", "application/json", Schemas.Error}
+    ]
+  )
 
   def create(conn, %{"email" => email, "password" => password})
       when is_binary(email) and is_binary(password) do

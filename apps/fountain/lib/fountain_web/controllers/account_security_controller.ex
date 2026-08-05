@@ -14,8 +14,10 @@ defmodule FountainWeb.AccountSecurityController do
   """
 
   use FountainWeb, :controller
+  use OpenApiSpex.ControllerSpecs
 
   alias Fountain.Accounts
+  alias FountainWeb.Schemas
 
   plug FountainWeb.Plugs.RateLimit,
        [bucket: "account_security", max: 10, window_ms: 3_600_000]
@@ -25,6 +27,13 @@ defmodule FountainWeb.AccountSecurityController do
               :api_change_password,
               :api_request_email_change
             ]
+
+  tags(["Auth"])
+
+  # Browser form POSTs and the emailed confirmation link — not API routes.
+  operation(:change_password, false)
+  operation(:request_email_change, false)
+  operation(:confirm_email_change, false)
 
   def change_password(conn, %{"current_password" => current, "new_password" => new}) do
     user = conn.assigns.current_user
@@ -142,6 +151,30 @@ defmodule FountainWeb.AccountSecurityController do
   Behind the `full`-scope gate: the per-conversation token a sandbox holds
   must not be able to rotate the account password.
   """
+  operation(:api_change_password,
+    summary: "Change the account password",
+    description:
+      "Needs the current password on top of the bearer token, and `full` " <>
+        "scope — a sandbox's per-conversation token must not be able to " <>
+        "rotate the account password. Browser sessions are signed out; API " <>
+        "keys are **not** revoked, which the response states outright " <>
+        "(`api_keys_revoked: false`). If you are rotating because something " <>
+        "leaked, revoke keys yourself at `DELETE /api/auth/api-keys/{id}`.",
+    request_body:
+      {"Current and new password", "application/json", Schemas.PasswordChangeRequest,
+       required: true},
+    responses: [
+      ok: {"Password changed", "application/json", Schemas.PasswordChangeResponse},
+      unauthorized: {"Missing or invalid key", "application/json", Schemas.Error},
+      forbidden:
+        {"`invalid_current_password`, or a key without full scope", "application/json",
+         Schemas.AuthError},
+      unprocessable_entity:
+        {"`no_password` (OAuth-only account), missing fields, or a password that fails validation",
+         "application/json", Schemas.AuthError}
+    ]
+  )
+
   def api_change_password(conn, %{"current_password" => current, "new_password" => new}) do
     user = conn.assigns.current_user
 
@@ -188,6 +221,28 @@ defmodule FountainWeb.AccountSecurityController do
   address only changes when the token comes back to
   `POST /api/auth/email/confirm`.
   """
+  operation(:api_request_email_change,
+    summary: "Start an email change",
+    description:
+      "Sends a confirmation link to the new address; the address only changes " <>
+        "when that token comes back to `POST /api/auth/email/confirm`. The " <>
+        "response is identical whether or not the address was free — this is " <>
+        "not an availability oracle. Requires the current password and `full` scope.",
+    request_body:
+      {"New address and current password", "application/json", Schemas.EmailChangeRequest,
+       required: true},
+    responses: [
+      ok: {"Confirmation link sent (if the address was available)", "application/json", Schemas.MessageResponse},
+      unauthorized: {"Missing or invalid key", "application/json", Schemas.Error},
+      forbidden:
+        {"`invalid_current_password`, or a key without full scope", "application/json",
+         Schemas.AuthError},
+      unprocessable_entity:
+        {"`no_password`, `invalid_email`, `same_email`, or missing fields", "application/json",
+         Schemas.AuthError}
+    ]
+  )
+
   def api_request_email_change(conn, %{"new_email" => new_email, "current_password" => current}) do
     user = conn.assigns.current_user
 
@@ -253,6 +308,24 @@ defmodule FountainWeb.AccountSecurityController do
   JSON completion of the email change (#522). Same token as the emailed
   browser link; no session is touched, because an API client has none.
   """
+  operation(:api_confirm_email_change,
+    summary: "Complete a pending email change",
+    description:
+      "Public: the token arrives in an inbox, and the caller may hold no " <>
+        "credential for the account at all. Applying it bumps " <>
+        "`session_version`, so every session and every API key session for " <>
+        "the account is dead afterwards — the response says so rather than " <>
+        "letting the caller discover it as a mystery 401.",
+    security: [],
+    request_body: {"The emailed token", "application/json", Schemas.TokenRequest, required: true},
+    responses: [
+      ok: {"Email changed", "application/json", Schemas.EmailChangedResponse},
+      unprocessable_entity:
+        {"`email_taken`, `expired`, `invalid_token`, or a missing token", "application/json",
+         Schemas.AuthError}
+    ]
+  )
+
   def api_confirm_email_change(conn, %{"token" => token}) do
     case Accounts.apply_email_change(token) do
       {:ok, updated, old_email} ->

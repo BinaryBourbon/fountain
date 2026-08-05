@@ -14,9 +14,11 @@ defmodule FountainWeb.PasswordResetController do
   """
 
   use FountainWeb, :controller
+  use OpenApiSpex.ControllerSpecs
 
   alias Fountain.Accounts
   alias Fountain.Emails.UserEmails
+  alias FountainWeb.Schemas
 
   # 1 hour TTL for reset tokens
   @token_max_age 3_600
@@ -32,6 +34,13 @@ defmodule FountainWeb.PasswordResetController do
        [bucket: "password_reset_submit", max: 10, window_ms: 3_600_000]
        when action in [:reset, :api_reset]
 
+  tags(["Auth"])
+
+  # `/auth/*` HTML actions — see RegistrationController for why these are false.
+  operation(:forgot_form, false)
+  operation(:reset_form, false)
+  operation(:reset, false)
+
   ## HTML — "forgot password" form
 
   def forgot_form(conn, _params) do
@@ -39,6 +48,20 @@ defmodule FountainWeb.PasswordResetController do
   end
 
   ## API — request a reset email
+
+  operation(:api_forgot,
+    summary: "Request a password-reset email",
+    description:
+      "Always 200 with the same message, registered address or not — this is " <>
+        "not an enumeration oracle. Rate-limited to 5 per IP per hour. The " <>
+        "emailed link points at the browser page; the token in it also works " <>
+        "at `POST /api/auth/reset`.",
+    security: [],
+    request_body: {"Address to reset", "application/json", Schemas.EmailRequest},
+    responses: [
+      ok: {"Accepted", "application/json", Schemas.MessageResponse}
+    ]
+  )
 
   def api_forgot(conn, %{"email" => email}) do
     # Always return 200 to prevent email enumeration
@@ -65,6 +88,24 @@ defmodule FountainWeb.PasswordResetController do
   end
 
   ## API — apply the reset
+
+  operation(:api_reset,
+    summary: "Set a new password from a reset token",
+    description:
+      "Takes the token out of the reset email, so a CLI can prompt for it " <>
+        "instead of opening a browser. A successful reset bumps " <>
+        "`session_version`: every browser session dies, and so does every " <>
+        "other outstanding reset token for the account. Rate-limited to 10 " <>
+        "per IP per hour.",
+    security: [],
+    request_body: {"Token and new password", "application/json", Schemas.PasswordResetRequest, required: true},
+    responses: [
+      ok: {"Password updated", "application/json", Schemas.MessageResponse},
+      unprocessable_entity:
+        {"`expired`, `invalid_token`, missing fields, or a password that fails validation",
+         "application/json", Schemas.AuthError}
+    ]
+  )
 
   def api_reset(conn, %{"token" => token, "password" => password}) do
     case verify_reset_token(conn, token) do
