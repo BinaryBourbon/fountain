@@ -30,6 +30,14 @@ upgrade, is in
 
 ### Added
 
+- **Onboarding can be completed over the API** —
+  `POST /api/account/onboarding/complete`, with `GET /api/account/onboarding`
+  and new `onboarding_state` / `onboarding_completed` / `email_verified`
+  fields on `GET /api/auth/me`. `complete_onboarding/1` had exactly one
+  caller, the wizard LiveView, so an account configured entirely through the
+  API stayed permanently un-onboarded and a later browser visit dropped the
+  user into a wizard they had no reason to see (#525)
+
 - **`GET /api/audit`** serves the account's own audit trail — tenant-scoped,
   newest first, cursor-paginated, with filters the `/audit` LiveView does not
   have yet (`action_prefix`, `resource_type`, `since`, `until`). Programmatic
