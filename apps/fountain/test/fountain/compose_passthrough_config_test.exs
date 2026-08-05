@@ -1,8 +1,10 @@
 defmodule Fountain.ComposePassthroughConfigTest do
   @moduledoc """
   Evaluates `config/runtime.exs` the way the release config provider does,
-  pinning the blank-string behaviour of the variables #497 newly passes
-  through the compose `environment:` block as `${VAR:-}`.
+  pinning the blank-string behaviour of the variables the compose
+  `environment:` block passes through as `${VAR:-}` (#497, and the #513
+  fresh-machine walkthrough, which caught the sandbox bounds crash-looping
+  boot and SPRITES_BASE_URL going blank).
 
   Compose interpolates an unset `${VAR:-}` to an empty *string* — the
   variable arrives set, not absent — so every default here must survive `""`.
@@ -15,7 +17,8 @@ defmodule Fountain.ComposePassthroughConfigTest do
 
   @runtime_exs Path.expand("../../../../config/runtime.exs", __DIR__)
 
-  @vars ~w(TRUSTED_PROXIES SENTRY_DSN DATABASE_SSL_VERIFY DATABASE_SSL_CA_FILE)
+  @vars ~w(TRUSTED_PROXIES SENTRY_DSN DATABASE_SSL_VERIFY DATABASE_SSL_CA_FILE
+           SANDBOX_IDLE_TIMEOUT_MINUTES SANDBOX_MAX_LIFETIME_HOURS SPRITES_BASE_URL)
 
   # Not under test here, but they change what the prod boot requires (a
   # configured mail provider demands EMAIL_FROM). Cleared before every read
@@ -116,6 +119,53 @@ defmodule Fountain.ComposePassthroughConfigTest do
         |> read_prod()
 
       assert cfg[:fountain][Fountain.Repo][:ssl_opts] == [verify: :verify_none]
+    end
+  end
+
+  describe "sandbox lifetime bounds" do
+    test "blank falls back to the defaults instead of refusing to boot", %{base: base} do
+      # This was the first thing `docker compose up` hit on a fresh machine
+      # (#513): both bounds arrive as "", Integer.parse("") fails, and the
+      # raise meant for typos crash-looped the quick start.
+      cfg =
+        base
+        |> Map.merge(%{"SANDBOX_IDLE_TIMEOUT_MINUTES" => "", "SANDBOX_MAX_LIFETIME_HOURS" => ""})
+        |> read_prod()
+
+      assert cfg[:fountain][:sandbox_idle_timeout_minutes] == 60
+      assert cfg[:fountain][:sandbox_max_lifetime_hours] == 24
+    end
+
+    test "a real value is parsed", %{base: base} do
+      cfg =
+        base
+        |> Map.merge(%{"SANDBOX_IDLE_TIMEOUT_MINUTES" => "0", "SANDBOX_MAX_LIFETIME_HOURS" => "72"})
+        |> read_prod()
+
+      assert cfg[:fountain][:sandbox_idle_timeout_minutes] == 0
+      assert cfg[:fountain][:sandbox_max_lifetime_hours] == 72
+    end
+
+    test "a non-blank garbage value still refuses to boot", %{base: base} do
+      # The refusal exists so a typo cannot silently disable the bound — only
+      # blank means "not configured".
+      assert_raise RuntimeError, ~r/SANDBOX_IDLE_TIMEOUT_MINUTES/, fn ->
+        read_prod(Map.put(base, "SANDBOX_IDLE_TIMEOUT_MINUTES", "6O"))
+      end
+    end
+  end
+
+  describe "SPRITES_BASE_URL" do
+    test "blank keeps the hosted default rather than an empty base URL", %{base: base} do
+      cfg = read_prod(Map.put(base, "SPRITES_BASE_URL", ""))
+
+      assert cfg[:fountain][:sprites_base_url] == "https://api.sprites.dev"
+    end
+
+    test "a real endpoint is stored verbatim", %{base: base} do
+      cfg = read_prod(Map.put(base, "SPRITES_BASE_URL", "https://sprites.internal.example.com"))
+
+      assert cfg[:fountain][:sprites_base_url] == "https://sprites.internal.example.com"
     end
   end
 end

@@ -87,9 +87,18 @@ config :fountain, :sprites_token, sprites_token
 # pointing an instance at a different sandbox backend meant editing config and
 # rebuilding. Wiring it does not make Sprites self-hostable (see #189), it just
 # stops the endpoint being baked into the release.
-config :fountain,
-       :sprites_base_url,
-       System.get_env("SPRITES_BASE_URL", "https://api.sprites.dev")
+#
+# "" counts as unset (#513): the compose file passes `${SPRITES_BASE_URL:-}`,
+# and `System.get_env/2` only applies its default when the variable is absent
+# — a present-but-empty value would become the API base URL and every Sprites
+# call would fail.
+sprites_base_url =
+  case System.get_env("SPRITES_BASE_URL") do
+    blank when blank in [nil, ""] -> "https://api.sprites.dev"
+    url -> url
+  end
+
+config :fountain, :sprites_base_url, sprites_base_url
 
 # Bounds every HTTP call to the Sprites API. Long-running commands
 # (package installs, clones) pass their own per-call :timeout and are not
@@ -314,8 +323,18 @@ end
 # Refused at boot rather than ignored: a typo here would otherwise silently
 # disable the bound, and an operator who set a limit deserves to find out that
 # it did not take effect now rather than from a bill.
+# "" counts as unset (#513): the compose file passes `${VAR:-}`, which
+# delivers a present-but-empty variable — that is "not configured", not a
+# typo, so it gets the default instead of the refusal below. The refusal
+# still applies to anything non-blank that fails to parse.
 parse_bound = fn var, default ->
-  case System.get_env(var, default) |> Integer.parse() do
+  value =
+    case System.get_env(var) do
+      blank when blank in [nil, ""] -> default
+      set -> set
+    end
+
+  case Integer.parse(value) do
     {n, ""} when n >= 0 ->
       n
 
