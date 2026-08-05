@@ -128,6 +128,7 @@ defmodule FountainWeb.AdminBillingDisabledTest do
         refute html =~ "trialing"
         refute html =~ "Trial / period"
         refute html =~ "dashboard.stripe.com"
+        refute html =~ "Invoices"
         assert html =~ "Onboarding"
         assert html =~ user.email
       end)

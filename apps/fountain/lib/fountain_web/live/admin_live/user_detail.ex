@@ -5,8 +5,9 @@ defmodule FountainWeb.AdminLive.UserDetail do
   comp, delete, role) stay on `/admin` next to their confirmations.
 
   Shows account/billing state, resource counts, conversations, API-key
-  metadata (never key material), the user's own audit trail, and every admin
-  action taken against them. Each visit records an `admin.user.viewed` admin
+  metadata (never key material), Stripe invoices (billing-enabled instances,
+  fetched live, #502), the user's own audit trail, and every admin action
+  taken against them. Each visit records an `admin.user.viewed` admin
   audit event: cross-tenant reads are privileged actions and get the same
   trail as cross-tenant writes.
   """
@@ -37,11 +38,27 @@ defmodule FountainWeb.AdminLive.UserDetail do
           })
         end
 
+        billing_enabled = Fountain.Billing.enabled?()
+
+        # Invoices come from a live Stripe call; loading them here would hold
+        # the mount (and the page) hostage to Stripe latency, so the fetch is
+        # deferred to handle_info and the section renders a loading state.
+        if connected?(socket) and billing_enabled, do: send(self(), :load_invoices)
+
         {:ok,
          socket
          |> assign(:page_title, "Admin · #{user.email}")
-         |> assign(:billing_enabled, Fountain.Billing.enabled?())
+         |> assign(:billing_enabled, billing_enabled)
+         |> assign(:invoices, :loading)
          |> load_user(user)}
+    end
+  end
+
+  @impl true
+  def handle_info(:load_invoices, socket) do
+    case Fountain.Billing.list_invoices(socket.assigns.user) do
+      {:ok, invoices} -> {:noreply, assign(socket, :invoices, invoices)}
+      {:error, _reason} -> {:noreply, assign(socket, :invoices, :error)}
     end
   end
 
@@ -252,6 +269,65 @@ defmodule FountainWeb.AdminLive.UserDetail do
                 <span :if={is_nil(k.revoked_at) and is_nil(k.expires_at)} class="text-zinc-500">
                   active
                 </span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section :if={@billing_enabled} id="invoices" class="space-y-3">
+        <h2 class="text-lg font-medium">Invoices</h2>
+        <div :if={@invoices == :loading} class="text-sm text-zinc-500">Loading from Stripe…</div>
+        <div :if={@invoices == :error} class="text-sm text-amber-700">
+          Couldn't load invoices from Stripe — check the
+          <a
+            :if={@user.stripe_customer_id not in [nil, ""]}
+            href={"https://dashboard.stripe.com/customers/#{@user.stripe_customer_id}"}
+            target="_blank"
+            rel="noopener"
+            class="underline"
+          >
+            Stripe dashboard
+          </a> directly.
+        </div>
+        <div :if={@invoices == []} class="text-sm text-zinc-500">None.</div>
+        <table
+          :if={is_list(@invoices) and @invoices != []}
+          class="w-full text-sm bg-white rounded shadow border border-zinc-200"
+        >
+          <thead class="text-left text-zinc-500 border-b border-zinc-200">
+            <tr>
+              <th class="px-4 py-2">Invoice</th>
+              <th class="px-4 py-2">Status</th>
+              <th class="px-4 py-2">Total</th>
+              <th class="px-4 py-2">Created</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr :for={inv <- @invoices} class="border-b border-zinc-100 last:border-0">
+              <td class="px-4 py-2 text-xs">
+                <a
+                  href={"https://dashboard.stripe.com/invoices/#{inv.id}"}
+                  target="_blank"
+                  rel="noopener"
+                  class="font-mono hover:underline"
+                >
+                  {inv.number || inv.id}
+                </a>
+              </td>
+              <td class="px-4 py-2">
+                <span class={[
+                  "inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium border",
+                  invoice_status_color(inv.status)
+                ]}>
+                  {inv.status}
+                </span>
+              </td>
+              <td class="px-4 py-2 text-xs tabular-nums">
+                {format_money(inv.total, inv.currency)}
+              </td>
+              <td class="px-4 py-2 text-xs text-zinc-500">
+                {inv.created |> DateTime.from_unix!() |> format_date()}
               </td>
             </tr>
           </tbody>
