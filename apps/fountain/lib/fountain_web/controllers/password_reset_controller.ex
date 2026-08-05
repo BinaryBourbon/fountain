@@ -3,9 +3,14 @@ defmodule FountainWeb.PasswordResetController do
   Password reset flow.
 
   POST /api/auth/forgot          — request a reset email (rate-limited, always 200)
+  POST /api/auth/reset           — apply the reset over JSON (#522)
   GET  /auth/reset/:token        — render the new-password form
   POST /auth/reset               — apply the reset, invalidate sessions
   GET  /auth/forgot-password     — render the "forgot password" request form
+
+  The API and browser completions accept the same token: the emailed link
+  keeps pointing at the browser route, and a CLI can prompt for the token
+  out of that URL rather than shelling out to a browser.
   """
 
   use FountainWeb, :controller
@@ -25,7 +30,7 @@ defmodule FountainWeb.PasswordResetController do
   # endpoint that does bcrypt work on every call is a cheap way to burn CPU.
   plug FountainWeb.Plugs.RateLimit,
        [bucket: "password_reset_submit", max: 10, window_ms: 3_600_000]
-       when action in [:reset]
+       when action in [:reset, :api_reset]
 
   ## HTML — "forgot password" form
 
@@ -57,6 +62,54 @@ defmodule FountainWeb.PasswordResetController do
     conn
     |> put_status(:ok)
     |> json(%{message: "If that address is registered, a reset email is on its way."})
+  end
+
+  ## API — apply the reset
+
+  def api_reset(conn, %{"token" => token, "password" => password}) do
+    case verify_reset_token(conn, token) do
+      {:ok, user} ->
+        apply_api_reset(conn, user, password)
+
+      {:error, :expired} ->
+        reset_token_error(conn, "expired", "This reset link has expired. Request a new one.")
+
+      {:error, _} ->
+        reset_token_error(conn, "invalid_token", "This reset link is invalid.")
+    end
+  end
+
+  def api_reset(conn, _params) do
+    conn
+    |> put_status(:unprocessable_entity)
+    |> json(%{error: "token and password are required"})
+  end
+
+  defp apply_api_reset(conn, user, password) do
+    case Accounts.reset_password(user, password) do
+      {:ok, _user} ->
+        # session_version is bumped, so every session and every other
+        # outstanding reset token dies here too — the same security-relevant
+        # event the browser path records.
+        FountainWeb.Audited.from_conn(conn, "auth.password.reset", "user",
+          user_id: user.id,
+          resource_id: user.id
+        )
+
+        json(conn, %{message: "Password updated. Sign in with your new password."})
+
+      {:error, changeset} ->
+        conn
+        |> put_status(:unprocessable_entity)
+        |> put_view(FountainWeb.ChangesetJSON)
+        |> render(:error, changeset: changeset)
+    end
+  end
+
+  defp reset_token_error(conn, error, message) do
+    conn
+    |> put_status(:unprocessable_entity)
+    |> json(%{error: error, message: message})
   end
 
   ## HTML — render reset form

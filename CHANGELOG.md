@@ -30,6 +30,18 @@ upgrade, is in
 
 ### Added
 
+- **The auth email flows can be finished over the API.** An API consumer
+  could start every one of them — register, resend-verification, forgot —
+  and finish none: confirmation and reset were browser routes, so account
+  activation required a browser round-trip. `POST /api/auth/verify`,
+  `POST /api/auth/reset` and `POST /api/auth/email/confirm` accept the same
+  tokens the emailed links carry, so a CLI can prompt "paste the code from
+  your email". The links themselves still point at the browser pages.
+  `verify` is idempotent and issues no session — an API client mints a key
+  at `POST /api/auth/token` once the account is live — and every flow keeps
+  the browser path's rate limits, single-use token semantics and audit
+  events (#522)
+
 - **Usage counts are in the resource read-model**: agents carry
   `conversation_count`, environments `secret_count` and `agent_count`, vaults
   `secret_count` — on the list *and* single-resource reads, so "is this

@@ -118,6 +118,50 @@ defmodule FountainWeb.AccountSecurityController do
     |> redirect(to: ~p"/account/security")
   end
 
+  @doc """
+  JSON completion of the email change (#522). Same token as the emailed
+  browser link; no session is touched, because an API client has none.
+  """
+  def api_confirm_email_change(conn, %{"token" => token}) do
+    case Accounts.apply_email_change(token) do
+      {:ok, updated, old_email} ->
+        FountainWeb.Audited.from_conn(conn, "auth.email.changed", "user",
+          user_id: updated.id,
+          resource_id: updated.id,
+          metadata: %{"from" => old_email, "to" => updated.email}
+        )
+
+        # apply_email_change bumps session_version, so every session and API
+        # key session for this account is dead — say so rather than let the
+        # caller discover it as a mystery 401.
+        json(conn, %{
+          email: updated.email,
+          message: "Email updated. Existing sessions have been signed out."
+        })
+
+      {:error, :email_taken} ->
+        email_change_error(conn, "email_taken", "That address is already in use.")
+
+      {:error, :expired} ->
+        email_change_error(conn, "expired", "This confirmation link has expired.")
+
+      {:error, _} ->
+        email_change_error(conn, "invalid_token", "This confirmation link is invalid.")
+    end
+  end
+
+  def api_confirm_email_change(conn, _params) do
+    conn
+    |> put_status(:unprocessable_entity)
+    |> json(%{error: "token is required"})
+  end
+
+  defp email_change_error(conn, error, message) do
+    conn
+    |> put_status(:unprocessable_entity)
+    |> json(%{error: error, message: message})
+  end
+
   def confirm_email_change(conn, %{"token" => token}) do
     case Accounts.apply_email_change(token) do
       {:ok, updated, old_email} ->

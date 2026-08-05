@@ -27,6 +27,21 @@ POST   /api/auth/api-keys          # create a key (plaintext returned once)
 DELETE /api/auth/api-keys/:id      # revoke a key
 ```
 
+**Registration and account recovery** (no auth — the emailed token authenticates the completion):
+
+```
+POST   /api/auth/register          # {email, password}
+POST   /api/auth/resend-verification
+POST   /api/auth/verify            # {token} -> activate the account
+POST   /api/auth/forgot            # {email} — always 200, never reveals whether it exists
+POST   /api/auth/reset             # {token, password}
+POST   /api/auth/email/confirm     # {token} — completes a pending email change
+```
+
+The verification and reset emails keep linking to the browser pages; these endpoints accept the same tokens, so a CLI can prompt "paste the code from your email" and never open a browser. `verify` is idempotent (an already-verified account is a 200) and issues no session — mint a key at `POST /api/auth/token` once the account is live. Token failures are `422` with `error` of `invalid_token` or `expired`.
+
+Completing a reset or an email change bumps `session_version`, which signs out every existing session.
+
 **Session cookie:** Obtained via OAuth at `/auth/oauth/:provider` or email/password login. Used by the web UI.
 
 ## Inference credentials
