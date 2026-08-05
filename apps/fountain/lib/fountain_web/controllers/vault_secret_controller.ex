@@ -4,7 +4,7 @@ defmodule FountainWeb.VaultSecretController do
   use OpenApiSpex.ControllerSpecs
 
   alias Fountain.{Crypto, Vaults}
-  alias FountainWeb.Schemas
+  alias FountainWeb.{Audited, Schemas}
 
   action_fallback FountainWeb.FallbackController
 
@@ -57,6 +57,13 @@ defmodule FountainWeb.VaultSecretController do
         {:ok, dek} = Crypto.load_tenant_key(user.id)
 
         with {:ok, secret} <- Vaults.upsert_secret(vault, attrs, dek) do
+          # Same event the LiveView form emits (vaults_live/form.ex), so the
+          # trail reads identically whichever surface wrote the secret.
+          Audited.from_conn(conn, "vault.secret.write", "vault_secret",
+            resource_id: vault.id,
+            metadata: %{"key" => secret.key}
+          )
+
           conn
           |> put_status(:created)
           |> render(:show, secret: secret)
@@ -83,6 +90,12 @@ defmodule FountainWeb.VaultSecretController do
          # Ownership established by the scoped get_vault above.
          %_{} = secret <- Vaults._unsafe_get_secret(vault_id, key) do
       {:ok, _} = Vaults.delete_secret(secret)
+
+      Audited.from_conn(conn, "vault.secret.delete", "vault_secret",
+        resource_id: vault_id,
+        metadata: %{"key" => secret.key}
+      )
+
       send_resp(conn, :no_content, "")
     else
       _ -> {:error, :not_found}

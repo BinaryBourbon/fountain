@@ -29,8 +29,10 @@ defmodule Fountain.Manifest do
   Returns `{:ok, results}` with one result map per resource in apply order
   (environments, vaults, agents, then any malformed entries). Each result
   holds `:kind`, `:name`, an `:action` of `:created` / `:updated` / `:error`,
-  changeset-style `:errors` when the action is `:error`, and a `:secrets`
-  list with the per-key upsert outcome. Secret values are never echoed back.
+  changeset-style `:errors` when the action is `:error`, a `:secrets`
+  list with the per-key upsert outcome, and the reconciled record's `:id`
+  (nil for errors and for kinds that carry no secrets). Secret values are
+  never echoed back.
   """
   def apply_manifest(user_id, resources) when is_binary(user_id) and is_list(resources) do
     {valid, invalid} = Enum.split_with(resources, &valid_resource?/1)
@@ -72,7 +74,7 @@ defmodule Fountain.Manifest do
     case outcome do
       {action, {:ok, env}} ->
         secret_results = upsert_secrets(secrets, &Environments.upsert_secret(env, &1, dek))
-        {result("Environment", name, action, nil, secret_results), env}
+        {result("Environment", name, action, nil, secret_results, env.id), env}
 
       {_action, {:error, changeset}} ->
         {result("Environment", name, :error, changeset_errors(changeset), []), nil}
@@ -91,7 +93,7 @@ defmodule Fountain.Manifest do
     case outcome do
       {action, {:ok, vault}} ->
         secret_results = upsert_secrets(secrets, &Vaults.upsert_secret(vault, &1, dek))
-        result("Vault", name, action, nil, secret_results)
+        result("Vault", name, action, nil, secret_results, vault.id)
 
       {_action, {:error, changeset}} ->
         result("Vault", name, :error, changeset_errors(changeset), [])
@@ -207,8 +209,11 @@ defmodule Fountain.Manifest do
 
   defp split_spec(_res, name), do: {%{"name" => name}, %{}}
 
-  defp result(kind, name, action, errors, secrets) do
-    %{kind: kind, name: name, action: action, errors: errors, secrets: secrets}
+  # `id` is the reconciled record's id when there is one. It is not serialized
+  # in the API response; callers use it to attribute the secret writes this
+  # manifest performed to a concrete resource in the audit trail (#530).
+  defp result(kind, name, action, errors, secrets, id \\ nil) do
+    %{kind: kind, name: name, action: action, errors: errors, secrets: secrets, id: id}
   end
 
   defp invalid_result(res) do

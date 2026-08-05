@@ -4,7 +4,7 @@ defmodule FountainWeb.SecretController do
   use OpenApiSpex.ControllerSpecs
 
   alias Fountain.{Crypto, Environments}
-  alias FountainWeb.Schemas
+  alias FountainWeb.{Audited, Schemas}
 
   action_fallback FountainWeb.FallbackController
 
@@ -53,6 +53,13 @@ defmodule FountainWeb.SecretController do
         {:ok, dek} = Crypto.load_tenant_key(conn.assigns.current_user.id)
 
         with {:ok, secret} <- Environments.upsert_secret(env, attrs, dek) do
+          # Same event the LiveView form emits (environments_live/form.ex), so
+          # the trail reads identically whichever surface wrote the secret.
+          Audited.from_conn(conn, "environment.secret.write", "secret",
+            resource_id: env.id,
+            metadata: %{"key" => secret.key}
+          )
+
           conn
           |> put_status(:created)
           |> render(:show, secret: secret)
@@ -79,6 +86,12 @@ defmodule FountainWeb.SecretController do
          # Ownership established by the scoped get_environment above.
          %_{} = secret <- Environments._unsafe_get_secret(env_id, key) do
       {:ok, _} = Environments.delete_secret(secret)
+
+      Audited.from_conn(conn, "environment.secret.delete", "secret",
+        resource_id: env_id,
+        metadata: %{"key" => secret.key}
+      )
+
       send_resp(conn, :no_content, "")
     else
       _ -> {:error, :not_found}
