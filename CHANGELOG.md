@@ -18,6 +18,47 @@ upgrade, is in
 
 Nothing yet.
 
+## [0.4.1] — 2026-08-05
+
+### Upgrade notes
+
+- Nothing breaking, and both new switches default off in the application. One
+  default changed in the bundled compose file only: `docker-compose.yml` now
+  sets `FIRST_USER_ADMIN=true` (see Added). If your compose instance
+  deliberately has no admin, set `FIRST_USER_ADMIN=false` in `.env` before
+  upgrading — otherwise the next account to become verified while no admin
+  exists is promoted
+
+### Added
+
+- Self-host first login happens in-app (ADR 0011, #478). Under
+  `EMAIL_DELIVERY=none`, accounts now self-verify at registration — a
+  verification link that can never be delivered gates nothing — and the
+  registration responses say "you can sign in now" instead of pointing at an
+  inbox that will stay empty. With the new `FIRST_USER_ADMIN=true` (default
+  off; the compose quickstart sets it), the first account to become verified
+  on an instance with no admin is promoted, audit-recorded as
+  `admin.role.granted` with a nil actor and `via: "first_user_admin"`. The
+  grant fires on verification, not registration, so it always lands on a
+  login-capable account, and concurrent first verifications are serialized so
+  exactly one can win. `Fountain.Release.verify_email/1` and
+  `promote_admin/1` remain as escape hatches for broken mail providers and
+  lock-out recovery
+
+### Changed
+
+- Billing and all transactional email moved under a top-level `ee/` directory
+  (#472), still compiled into the same application and still MIT — a
+  future-license boundary, not a license change (decisions/0010). Module
+  names are unchanged; a fork that deletes `ee/` loses billing and email, not
+  auth or conversations
+
+### Security
+
+- The sobelow scan now covers web modules under `ee/lib` via a merged-tree
+  script (#473), so the `ee/` move could not silently drop controllers out of
+  the security scan's reach
+
 ## [0.4.0] — 2026-08-04
 
 ### Upgrade notes
