@@ -56,6 +56,18 @@ upgrade, is in
 
 ### Added
 
+- **The `/audit` page has the filters the API got in #526.** `GET /api/audit`
+  could narrow the trail by action prefix, resource type and time window; the
+  page could not, so the API was strictly better than the UI at the one thing
+  the UI is for — "show me every `vault.` event since Tuesday" was a curl away
+  and impossible in a browser, where you scrolled 200 rows and hoped. The
+  page now takes the same four filters through the same query, with the
+  resource-type list built from what is actually in your trail. Filter state
+  lives in the URL, so a filtered view is a link you can send someone and it
+  survives the 5s refresh. Admins get the filters over the cross-tenant view
+  too — previously the person seeing the most events could filter the least
+  (#572)
+
 - **`/api/admin/*` makes operator tasks scriptable** — list and inspect
   accounts with the filters the admin UI has, set the sandbox cap, extend a
   trial, comp, suspend, resync from Stripe, delete an account, list and reap

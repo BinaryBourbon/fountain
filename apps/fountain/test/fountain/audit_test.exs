@@ -144,6 +144,100 @@ defmodule Fountain.AuditTest do
     end
   end
 
+  # #572: the admin half of /audit is the unscoped listing, and it had no
+  # filters at all — so an admin, who sees the most events, could filter the
+  # least. These share one query builder with list_for_user/2 so the two
+  # cannot drift.
+  describe "_unsafe_list_events/1 — cross-tenant with filters" do
+    test "spans tenants and includes system events" do
+      user1 = insert_verified_user()
+      user2 = insert_verified_user()
+      Audit.record!(valid_attrs(user1.id, %{action: "vault.secret.write"}))
+      Audit.record!(valid_attrs(user2.id, %{action: "vault.secret.write"}))
+      Audit.record!(valid_attrs(nil, %{action: "vault.secret.write"}))
+
+      events = Audit._unsafe_list_events(action_prefix: "vault.")
+      user_ids = Enum.map(events, & &1.user_id)
+
+      assert user1.id in user_ids
+      assert user2.id in user_ids
+      assert nil in user_ids
+    end
+
+    test "action_prefix narrows to matching actions" do
+      user = insert_verified_user()
+      Audit.record!(valid_attrs(user.id, %{action: "vault.secret.write"}))
+      Audit.record!(valid_attrs(user.id, %{action: "agent.created"}))
+
+      actions = Audit._unsafe_list_events(action_prefix: "vault.") |> Enum.map(& &1.action)
+
+      assert "vault.secret.write" in actions
+      refute "agent.created" in actions
+    end
+
+    test "action_prefix treats LIKE metacharacters as literals" do
+      user = insert_verified_user()
+      Audit.record!(valid_attrs(user.id, %{action: "vault.secret.write"}))
+
+      # Unescaped, "%" would match the entire trail.
+      assert Audit._unsafe_list_events(action_prefix: "%") == []
+    end
+
+    test "resource_type is an exact match" do
+      user = insert_verified_user()
+      Audit.record!(valid_attrs(user.id, %{resource_type: "vault_secret"}))
+      Audit.record!(valid_attrs(user.id, %{resource_type: "agent"}))
+
+      types = Audit._unsafe_list_events(resource_type: "vault_secret") |> Enum.map(& &1.resource_type)
+
+      assert types == ["vault_secret"]
+    end
+
+    test "since and until bound the window inclusively" do
+      user = insert_verified_user()
+      now = DateTime.utc_now() |> DateTime.truncate(:second)
+      old = DateTime.add(now, -3600, :second)
+
+      Audit.record!(valid_attrs(user.id, %{action: "old.event", inserted_at: old}))
+      Audit.record!(valid_attrs(user.id, %{action: "new.event", inserted_at: now}))
+
+      recent = Audit._unsafe_list_events(since: DateTime.add(now, -60, :second))
+      assert Enum.map(recent, & &1.action) == ["new.event"]
+
+      earlier = Audit._unsafe_list_events(until: DateTime.add(now, -60, :second))
+      assert Enum.map(earlier, & &1.action) == ["old.event"]
+
+      # Inclusive on both ends: the boundary timestamp itself matches.
+      assert Enum.any?(Audit._unsafe_list_events(since: now), &(&1.action == "new.event"))
+      assert Enum.any?(Audit._unsafe_list_events(until: old), &(&1.action == "old.event"))
+    end
+  end
+
+  describe "resource-type listings (#572)" do
+    test "the tenant's list is distinct, sorted, and excludes other tenants" do
+      user = insert_verified_user()
+      other = insert_verified_user()
+
+      Audit.record!(valid_attrs(user.id, %{resource_type: "vault"}))
+      Audit.record!(valid_attrs(user.id, %{resource_type: "vault"}))
+      Audit.record!(valid_attrs(user.id, %{resource_type: "agent"}))
+      Audit.record!(valid_attrs(other.id, %{resource_type: "environment"}))
+
+      assert Audit.list_resource_types_for_user(user.id) == ["agent", "vault"]
+    end
+
+    test "the unscoped list spans tenants" do
+      user = insert_verified_user()
+      other = insert_verified_user()
+      Audit.record!(valid_attrs(user.id, %{resource_type: "vault"}))
+      Audit.record!(valid_attrs(other.id, %{resource_type: "environment"}))
+
+      types = Audit._unsafe_list_resource_types()
+      assert "vault" in types
+      assert "environment" in types
+    end
+  end
+
   describe "record/1 — exception rescue" do
     test "returns {:error, :exception} when attrs cause a runtime exception" do
       # Passing a non-enumerable triggers Protocol.UndefinedError inside cast,
