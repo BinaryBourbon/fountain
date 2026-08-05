@@ -49,6 +49,7 @@ defmodule Fountain.Audit.AdminEvent do
     admin.account.unsuspended
     admin.user.viewed
     admin.conversation.viewed
+    admin.stripe.resynced
   )
 
   def event_types, do: @event_types

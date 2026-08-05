@@ -112,10 +112,10 @@ defmodule FountainWeb.AdminLive.Index do
   end
 
   # The buttons are hidden when billing is disabled, but events can still be
-  # sent by hand (#399's lesson) — and both actions talk to Stripe.
+  # sent by hand (#399's lesson) — and all of these actions talk to Stripe.
   @impl true
   def handle_event(event, _params, %{assigns: %{billing_enabled: false}} = socket)
-      when event in ~w(extend_trial toggle_comp) do
+      when event in ~w(extend_trial toggle_comp resync_stripe) do
     {:noreply, put_flash(socket, :error, "Billing is disabled on this instance")}
   end
 
@@ -163,6 +163,14 @@ defmodule FountainWeb.AdminLive.Index do
   @impl true
   def handle_event("toggle_comp", %{"id" => id}, socket) do
     with_target_user(socket, id, fn user -> do_toggle_comp(socket, user) end)
+  end
+
+  # The in-app remedy for webhook drift (#502): re-read the subscription of
+  # record from Stripe and adopt what it says, without a Stripe dashboard
+  # round-trip.
+  @impl true
+  def handle_event("resync_stripe", %{"id" => id}, socket) do
+    with_target_user(socket, id, fn user -> do_resync_stripe(socket, user) end)
   end
 
   @impl true
@@ -286,6 +294,49 @@ defmodule FountainWeb.AdminLive.Index do
       {{:error, _}, _} ->
         {:noreply,
          put_flash(socket, :error, "Could not change comp — Stripe cancellation failed")}
+    end
+  end
+
+  defp do_resync_stripe(socket, user) do
+    case Billing.resync_from_stripe(user) do
+      {:ok, %Accounts.User{} = updated} ->
+        Fountain.Audit.record_admin(%{
+          actor_user_id: socket.assigns.current_user.id,
+          target_user_id: user.id,
+          event_type: "admin.stripe.resynced",
+          metadata: %{
+            "email" => user.email,
+            "from" => user.subscription_status,
+            "to" => updated.subscription_status
+          }
+        })
+
+        {:noreply,
+         socket
+         |> assign_users()
+         |> put_flash(:info, "Resynced from Stripe — status #{updated.subscription_status}")}
+
+      {:ok, :sync_enqueued} ->
+        Fountain.Audit.record_admin(%{
+          actor_user_id: socket.assigns.current_user.id,
+          target_user_id: user.id,
+          event_type: "admin.stripe.resynced",
+          metadata: %{"email" => user.email, "outcome" => "customer_sync_enqueued"}
+        })
+
+        {:noreply,
+         put_flash(
+           socket,
+           :info,
+           "No subscription on record — customer sync enqueued, check back shortly"
+         )}
+
+      {:error, :comped} ->
+        {:noreply,
+         put_flash(socket, :error, "Account is comped — Stripe does not drive its status")}
+
+      {:error, _} ->
+        {:noreply, put_flash(socket, :error, "Could not resync — Stripe refused the read")}
     end
   end
 
@@ -727,6 +778,15 @@ defmodule FountainWeb.AdminLive.Index do
                       class="text-xs text-zinc-500 hover:text-zinc-900 underline"
                     >
                       {if u.subscription_status == "comped", do: "revoke comp", else: "comp"}
+                    </button>
+                    <button
+                      :if={u.subscription_status != "comped"}
+                      phx-click="resync_stripe"
+                      phx-value-id={u.id}
+                      title="Re-read subscription state from Stripe — repairs webhook drift"
+                      class="text-xs text-zinc-500 hover:text-zinc-900 underline"
+                    >
+                      resync
                     </button>
                   </div>
                 </div>
