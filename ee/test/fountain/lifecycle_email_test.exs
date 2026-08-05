@@ -14,7 +14,7 @@ defmodule Fountain.LifecycleEmailTest do
   use Mimic
 
   alias Fountain.Accounts.User
-  alias Fountain.{Billing, Emails.UserEmails}
+  alias Fountain.{Billing, Emails.BillingEmails}
   alias Fountain.Workers.LifecycleEmail
 
   setup :set_mimic_global
@@ -451,7 +451,7 @@ defmodule Fountain.LifecycleEmailTest do
     end
 
     test "trial expired: checkout link and the retention story, in both parts" do
-      email = sent(&UserEmails.deliver_trial_expired_email/1, user_with_status("canceled"))
+      email = sent(&BillingEmails.deliver_trial_expired_email/1, user_with_status("canceled"))
 
       assert email.html_body =~ "/account/billing"
       assert email.text_body =~ "/account/billing"
@@ -461,7 +461,7 @@ defmodule Fountain.LifecycleEmailTest do
     end
 
     test "payment failed: says we retry, and where to fix the card" do
-      email = sent(&UserEmails.deliver_payment_failed_email/1, user_with_status("past_due"))
+      email = sent(&BillingEmails.deliver_payment_failed_email/1, user_with_status("past_due"))
       flat = email.text_body |> String.replace(~r/\s+/, " ")
 
       assert email.subject =~ "Payment failed"
@@ -472,7 +472,7 @@ defmodule Fountain.LifecycleEmailTest do
     end
 
     test "payment failed: warns what happens if the retries keep failing" do
-      email = sent(&UserEmails.deliver_payment_failed_email/1, user_with_status("past_due"))
+      email = sent(&BillingEmails.deliver_payment_failed_email/1, user_with_status("past_due"))
       flat = email.text_body |> String.replace(~r/\s+/, " ")
 
       assert flat =~ "your subscription will be cancelled"
@@ -480,7 +480,7 @@ defmodule Fountain.LifecycleEmailTest do
 
     test "action required: leads with the fix and says what happens otherwise (#447)" do
       email =
-        sent(&UserEmails.deliver_payment_action_required_email/1, user_with_status("active"))
+        sent(&BillingEmails.deliver_payment_action_required_email/1, user_with_status("active"))
 
       flat = email.text_body |> String.replace(~r/\s+/, " ")
 
@@ -492,7 +492,7 @@ defmodule Fountain.LifecycleEmailTest do
     end
 
     test "payment recovered: access is back and nothing was deleted (#447)" do
-      email = sent(&UserEmails.deliver_payment_recovered_email/1, user_with_status("active"))
+      email = sent(&BillingEmails.deliver_payment_recovered_email/1, user_with_status("active"))
       flat = email.text_body |> String.replace(~r/\s+/, " ")
 
       assert email.subject =~ "Payment received"
@@ -503,7 +503,7 @@ defmodule Fountain.LifecycleEmailTest do
 
     test "cancellation: no more charges, nothing deleted, and the way back" do
       email =
-        sent(&UserEmails.deliver_subscription_canceled_email/1, user_with_status("canceled"))
+        sent(&BillingEmails.deliver_subscription_canceled_email/1, user_with_status("canceled"))
 
       flat = email.text_body |> String.replace(~r/\s+/, " ")
 

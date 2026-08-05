@@ -20,7 +20,7 @@ defmodule Fountain.Workers.TrialEndingEmail do
 
   require Logger
 
-  alias Fountain.{Accounts, Emails.UserEmails}
+  alias Fountain.{Accounts, Emails.BillingEmails}
 
   @spec enqueue(String.t(), DateTime.t() | nil) :: {:ok, Oban.Job.t()} | {:error, term()}
   def enqueue(user_id, trial_ends_at) when is_binary(user_id) do
@@ -50,7 +50,7 @@ defmodule Fountain.Workers.TrialEndingEmail do
   # event fires three days out; if they subscribed in the meantime, telling them
   # their trial is ending is both wrong and alarming.
   defp maybe_send(%{subscription_status: "trialing"} = user, ends_at) do
-    case UserEmails.deliver_trial_ending_email(user, ends_at) do
+    case BillingEmails.deliver_trial_ending_email(user, ends_at) do
       {:ok, _} ->
         :ok
 
