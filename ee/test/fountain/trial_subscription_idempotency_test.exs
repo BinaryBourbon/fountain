@@ -1,5 +1,10 @@
 defmodule Fountain.TrialSubscriptionIdempotencyTest do
-  use Fountain.DataCase, async: true
+  # async: false because the setup sets `:stripe_price_id`, which is global —
+  # same reason as stripe_customer_sync_trial_test.exs. As async: true this
+  # flaked in CI (PR #539): another test's teardown removed the price
+  # mid-test, start_trial_subscription took the no-price local-trial fallback,
+  # and the assertion saw stripe_subscription_id nil.
+  use Fountain.DataCase, async: false
   use Mimic
 
   alias Fountain.{Billing, Repo}
@@ -12,8 +17,15 @@ defmodule Fountain.TrialSubscriptionIdempotencyTest do
   # set — each retry minting another trialing subscription.
 
   setup do
+    previous = Application.get_env(:fountain, :stripe_price_id)
     Application.put_env(:fountain, :stripe_price_id, "price_trial_test")
-    on_exit(fn -> Application.delete_env(:fountain, :stripe_price_id) end)
+
+    on_exit(fn ->
+      case previous do
+        nil -> Application.delete_env(:fountain, :stripe_price_id)
+        value -> Application.put_env(:fountain, :stripe_price_id, value)
+      end
+    end)
 
     user = insert_verified_user()
     {:ok, user} = Billing.attach_stripe_customer(user, "cus_trial_idem")
