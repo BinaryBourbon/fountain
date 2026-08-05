@@ -30,6 +30,21 @@ upgrade, is in
 
 ### Added
 
+- **`/api/admin/*` makes operator tasks scriptable** — list and inspect
+  accounts with the filters the admin UI has, set the sandbox cap, extend a
+  trial, comp, suspend, resync from Stripe, delete an account, list and reap
+  sandboxes, and read both the cross-tenant audit trail and the privilege
+  trail. Every one of these was AdminLive-only, so a bulk trial extension or
+  a suspension from an incident runbook meant a human clicking. The surface
+  needs three things at once: an authenticated key, `full` scope (a
+  sandbox's per-conversation token is not an operator credential even when
+  the account is an admin) and the admin role. Refusals mirror the UI — no
+  self-suspend, no self-delete, billing actions refused when billing is
+  disabled — plus one the UI has no need for: you cannot revoke your own
+  admin role, which over an API is a lockout one scripted typo away. Actions
+  record the same `admin.*` privilege-trail events, so a curl'd suspension
+  is as visible as a clicked one (#527)
+
 - **Billing is self-serve over the API**: `GET /api/account/billing` for
   status, trial and period dates and the current month's usage, plus
   `POST /api/account/billing/portal` and `.../checkout` to mint Stripe URLs.

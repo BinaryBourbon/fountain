@@ -928,6 +928,254 @@ defmodule FountainWeb.Schemas do
     })
   end
 
+  defmodule AdminUser do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "AdminUser",
+      description: "An account as the operator surface sees it. Metadata only.",
+      type: :object,
+      properties: %{
+        id: %Schema{type: :string, format: :uuid},
+        email: %Schema{type: :string},
+        role: %Schema{type: :string, enum: ~w(admin user)},
+        email_verified: %Schema{type: :boolean},
+        email_verified_at: %Schema{type: :string, format: :"date-time", nullable: true},
+        suspended: %Schema{type: :boolean},
+        suspended_at: %Schema{type: :string, format: :"date-time", nullable: true},
+        subscription_status: %Schema{type: :string, nullable: true},
+        trial_ends_at: %Schema{type: :string, format: :"date-time", nullable: true},
+        current_period_end: %Schema{type: :string, format: :"date-time", nullable: true},
+        cancel_at_period_end: %Schema{type: :boolean, nullable: true},
+        has_stripe_customer: %Schema{type: :boolean},
+        max_concurrent_sandboxes: %Schema{type: :integer, nullable: true},
+        active_sandboxes: %Schema{type: :integer},
+        onboarding_completed_at: %Schema{type: :string, format: :"date-time", nullable: true},
+        last_activity_at: %Schema{type: :string, format: :"date-time", nullable: true},
+        inserted_at: %Schema{type: :string, format: :"date-time"}
+      },
+      required: [:id, :email, :role]
+    })
+  end
+
+  defmodule AdminUserResponse do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "AdminUserResponse",
+      type: :object,
+      properties: %{data: AdminUser},
+      required: [:data]
+    })
+  end
+
+  defmodule AdminUserListResponse do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "AdminUserListResponse",
+      type: :object,
+      properties: %{
+        data: %Schema{type: :array, items: AdminUser},
+        meta: %Schema{
+          type: :object,
+          properties: %{
+            page: %Schema{type: :integer},
+            per_page: %Schema{type: :integer},
+            total: %Schema{type: :integer}
+          },
+          required: [:page, :per_page, :total]
+        }
+      },
+      required: [:data, :meta]
+    })
+  end
+
+  defmodule AdminRoleRequest do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "AdminRoleRequest",
+      type: :object,
+      properties: %{role: %Schema{type: :string, enum: ~w(admin user)}},
+      required: [:role]
+    })
+  end
+
+  defmodule AdminSandboxLimitRequest do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "AdminSandboxLimitRequest",
+      type: :object,
+      properties: %{
+        limit: %Schema{type: :integer, minimum: 0, description: "Concurrent sandbox cap."}
+      },
+      required: [:limit]
+    })
+  end
+
+  defmodule AdminExtendTrialRequest do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "AdminExtendTrialRequest",
+      type: :object,
+      properties: %{days: %Schema{type: :integer, minimum: 1}},
+      required: [:days]
+    })
+  end
+
+  defmodule AdminCompRequest do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "AdminCompRequest",
+      type: :object,
+      properties: %{comped: %Schema{type: :boolean}},
+      required: [:comped]
+    })
+  end
+
+  defmodule AdminSuspendRequest do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "AdminSuspendRequest",
+      type: :object,
+      properties: %{suspended: %Schema{type: :boolean}},
+      required: [:suspended]
+    })
+  end
+
+  defmodule AdminResyncResponse do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "AdminResyncResponse",
+      type: :object,
+      properties: %{
+        data: %Schema{
+          type: :object,
+          properties: %{
+            outcome: %Schema{type: :string, enum: ~w(resynced customer_sync_enqueued)},
+            subscription_status: %Schema{type: :string, nullable: true}
+          },
+          required: [:outcome]
+        }
+      },
+      required: [:data]
+    })
+  end
+
+  defmodule AdminSandbox do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "AdminSandbox",
+      description: "A live sandbox, cross-tenant. Metadata only — never contents.",
+      type: :object,
+      properties: %{
+        id: %Schema{type: :string, format: :uuid},
+        sprite_name: %Schema{type: :string},
+        status: %Schema{type: :string},
+        user_id: %Schema{type: :string, format: :uuid, nullable: true},
+        user_email: %Schema{type: :string, nullable: true},
+        conversation_count: %Schema{type: :integer},
+        inserted_at: %Schema{type: :string, format: :"date-time"},
+        updated_at: %Schema{type: :string, format: :"date-time"}
+      },
+      required: [:id, :status]
+    })
+  end
+
+  defmodule AdminSandboxListResponse do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "AdminSandboxListResponse",
+      type: :object,
+      properties: %{data: %Schema{type: :array, items: AdminSandbox}},
+      required: [:data]
+    })
+  end
+
+  defmodule AdminReapResponse do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "AdminReapResponse",
+      type: :object,
+      properties: %{
+        data: %Schema{
+          type: :object,
+          properties: %{
+            sandbox_id: %Schema{type: :string, format: :uuid},
+            outcome: %Schema{type: :string, enum: ~w(terminated released already_terminal)}
+          },
+          required: [:outcome]
+        }
+      },
+      required: [:data]
+    })
+  end
+
+  defmodule AdminAuditListResponse do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "AdminAuditListResponse",
+      description: "Cross-tenant audit events; each carries the tenant it belongs to.",
+      type: :object,
+      # Fully qualified: AuditEvent is defined further down this file, and the
+      # implicit alias a nested defmodule creates only exists after it.
+      properties: %{data: %Schema{type: :array, items: FountainWeb.Schemas.AuditEvent}},
+      required: [:data]
+    })
+  end
+
+  defmodule AdminEventListResponse do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "AdminEventListResponse",
+      description: "The privilege trail: who did what to whom.",
+      type: :object,
+      properties: %{
+        data: %Schema{
+          type: :array,
+          items: %Schema{
+            type: :object,
+            properties: %{
+              id: %Schema{type: :integer},
+              inserted_at: %Schema{type: :string, format: :"date-time"},
+              event_type: %Schema{type: :string, example: "admin.account.suspended"},
+              actor_user_id: %Schema{type: :string, format: :uuid, nullable: true},
+              target_user_id: %Schema{type: :string, format: :uuid, nullable: true},
+              metadata: %Schema{type: :object, additionalProperties: true}
+            },
+            required: [:event_type]
+          }
+        }
+      },
+      required: [:data]
+    })
+  end
+
   defmodule BillingResponse do
     @moduledoc false
     require OpenApiSpex
