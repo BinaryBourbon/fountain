@@ -14,6 +14,21 @@ upgrade, is in
 
 ---
 
+## [0.5.1] — 2026-08-05
+
+### Fixed
+
+- **The compose quick start still crash-looped on v0.5.0 — actually fixed
+  now, verified by booting the built image through compose.** The #497/#541
+  blank guards protect the config value, but the Sentry SDK also reads the
+  `SENTRY_DSN` env var itself: `Sentry.Config.put_config/2` re-validates a
+  partial keyword with no `:dsn` entry and `fill_in_from_env` injects the
+  raw env value into it — and `Sentry.Application.start` calls `put_config`
+  at boot, so the compose-supplied `SENTRY_DSN=""` crashed the `:sentry`
+  application regardless of the config. A blank `SENTRY_DSN` is now deleted
+  from the environment during config, before any application starts, so the
+  SDK never sees it. Instances with a real DSN are unaffected (#513, #561)
+
 ## [0.5.0] — 2026-08-05
 
 ### Upgrade notes
@@ -792,6 +807,7 @@ upgrade, is in
 - Audit log for state-changing actions (append-only, best-effort)
 - Substitution engine for `${VAR}` / `$$` interpolation in agent configs
 
+[0.5.1]: https://github.com/BinaryBourbon/fountain/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/BinaryBourbon/fountain/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/BinaryBourbon/fountain/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/BinaryBourbon/fountain/compare/v0.3.0...v0.4.0

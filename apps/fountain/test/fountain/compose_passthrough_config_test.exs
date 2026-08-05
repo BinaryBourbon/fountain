@@ -75,6 +75,12 @@ defmodule Fountain.ComposePassthroughConfigTest do
       cfg = read_prod(Map.put(base, "SENTRY_DSN", ""))
 
       assert cfg[:sentry][:dsn] == nil
+
+      # The config value alone is not the contract: the SDK re-reads the env
+      # var itself (Sentry.Config.put_config/2 validates a partial keyword
+      # and fill_in_from_env put_news the raw value in), so a blank variable
+      # must be deleted, not merely mapped to a nil config (#513).
+      assert System.get_env("SENTRY_DSN") == nil
     end
 
     test "a real DSN is stored verbatim", %{base: base} do

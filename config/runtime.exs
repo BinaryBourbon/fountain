@@ -193,10 +193,23 @@ config :fountain, :metrics_port, metrics_port
 #
 # "" counts as unset (#497): the compose file passes `${SENTRY_DSN:-}`, and a
 # blank string is not a DSN the SDK should be asked to parse.
+#
+# Guarding the config value alone is NOT enough (#513 re-run): the SDK reads
+# the SENTRY_DSN env var itself. `Sentry.Config.put_config/2` re-validates a
+# partial keyword that has no :dsn entry, `fill_in_from_env` then
+# `Keyword.put_new`s the raw env value into it — and Sentry.Application.start
+# calls put_config at boot, so a blank SENTRY_DSN crashes the :sentry app no
+# matter what `config :sentry, dsn:` says. Config providers run in the
+# release VM before any application starts, so deleting the blank variable
+# here is what actually keeps it away from the SDK.
 sentry_dsn =
   case System.get_env("SENTRY_DSN") do
-    blank when blank in [nil, ""] -> nil
-    dsn -> dsn
+    blank when blank in [nil, ""] ->
+      System.delete_env("SENTRY_DSN")
+      nil
+
+    dsn ->
+      dsn
   end
 
 config :sentry,
