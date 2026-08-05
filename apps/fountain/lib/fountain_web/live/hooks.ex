@@ -27,6 +27,10 @@ defmodule FountainWeb.Live.Hooks do
   - `:require_admin` — halts if current_user is absent or not an admin.
     Unauthenticated users are redirected to login (HTTP redirect). Authenticated
     non-admin users are redirected to /dashboard (live redirect).
+  - `:assign_subscription_state` — never halts; assigns `@subscription_active`
+    so read-only-capable views (#505: conversation list/detail) can render for
+    past_due/canceled users while disabling what would spend. Must run after
+    `:require_authenticated_user`.
   """
 
   import Phoenix.LiveView
@@ -77,6 +81,11 @@ defmodule FountainWeb.Live.Hooks do
          )
          |> redirect(to: ~p"/account/billing")}
     end
+  end
+
+  def on_mount(:assign_subscription_state, _params, _session, socket) do
+    active = Billing.check_active(socket.assigns.current_user) == :ok
+    {:cont, assign(socket, :subscription_active, active)}
   end
 
   def on_mount(:require_admin, _params, session, socket) do

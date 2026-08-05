@@ -3,6 +3,8 @@ defmodule FountainWeb.ConversationsLive.ShowTest do
 
   import Phoenix.LiveViewTest
 
+  alias Fountain.Conversations
+
   describe "view_mode loaded from database" do
     setup do
       user = insert_verified_user()
@@ -109,6 +111,93 @@ defmodule FountainWeb.ConversationsLive.ShowTest do
 
       assert html =~ "unsupported image media_type"
       assert Process.alive?(view.pid)
+    end
+  end
+
+  describe "read-only for lapsed subscriptions (#505)" do
+    setup do
+      user =
+        insert_verified_user()
+        |> Fountain.Accounts.User.billing_changeset(%{subscription_status: "past_due"})
+        |> Fountain.Repo.update!()
+
+      conversation = insert_conversation(user_id: user.id)
+      %{user: user, conversation: conversation}
+    end
+
+    test "the conversation renders with a banner and no composer", %{
+      conn: conn,
+      user: user,
+      conversation: conversation
+    } do
+      conn = login_user(conn, user)
+      {:ok, _view, html} = live(conn, ~p"/conversations/#{conversation.id}")
+
+      assert html =~ "Read-only"
+      assert html =~ "/account/billing"
+      refute html =~ ~s(phx-submit="send_prompt")
+    end
+
+    test "hand-sent spend events are refused before reaching the runtime", %{
+      conn: conn,
+      user: user,
+      conversation: conversation
+    } do
+      # The composer is hidden, but events can still be sent by hand (#399's
+      # lesson) — each spend event must be blocked server-side.
+      conn = login_user(conn, user)
+      {:ok, view, _html} = live(conn, ~p"/conversations/#{conversation.id}")
+
+      for {event, params} <- [
+            {"send_prompt", %{"prompt" => "hi"}},
+            {"update_prompt", %{"prompt" => "hi"}},
+            {"images_selected", %{"images" => []}}
+          ] do
+        html = render_hook(view, event, params)
+        assert html =~ "read-only", "#{event} was not refused"
+      end
+
+      assert Conversations._unsafe_list_turns(conversation.id) == []
+    end
+
+    test "terminate still reaches its handler — stopping spend stays allowed", %{
+      conn: conn,
+      user: user,
+      conversation: conversation
+    } do
+      conn = login_user(conn, user)
+      {:ok, view, _html} = live(conn, ~p"/conversations/#{conversation.id}")
+
+      # Reaching the real handler (which terminates via the server-already-dead
+      # path here) is the proof the event was not blocked by the subscription
+      # guard — a lapsed user must be able to stop a running sprite.
+      html = render_hook(view, "terminate", %{})
+      assert html =~ "Terminated"
+    end
+
+    test "delete still works — removing data is not consumption", %{
+      conn: conn,
+      user: user,
+      conversation: conversation
+    } do
+      conn = login_user(conn, user)
+      {:ok, view, _html} = live(conn, ~p"/conversations/#{conversation.id}")
+
+      render_hook(view, "delete", %{})
+
+      assert_redirect(view, "/conversations")
+      assert Conversations.get_conversation(conversation.id, user.id) == nil
+    end
+
+    test "an active user still gets the composer and no banner", %{conn: conn} do
+      user = insert_verified_user()
+      conversation = insert_conversation(user_id: user.id)
+      conn = login_user(conn, user)
+
+      {:ok, _view, html} = live(conn, ~p"/conversations/#{conversation.id}")
+
+      assert html =~ ~s(phx-submit="send_prompt")
+      refute html =~ "Read-only"
     end
   end
 

@@ -81,3 +81,28 @@ a billing gate.
 The remaining `past_due` drift — ADR promised read access to past
 conversations, code delivers log-view-only — is an open decision tracked in
 #505, not resolved here.
+
+## Addendum — 2026-08-05: read-only access widened to match the promise (#505)
+
+Decision (Jake, 2026-08-05): the original read-only window is the intent —
+a card decline must not hide the user's data. The code now matches it:
+
+- `/conversations` and `/conversations/:id` moved from the
+  `:active_subscription` live_session to `:authenticated`, so `past_due` and
+  `canceled` users can list and view their conversations. Only
+  `/conversations/new` remains router-gated.
+- Inside `ConversationsLive.Show`, the gate moved to the events that create
+  spend: `send_prompt`, `update_prompt`, and `images_selected` are refused
+  (flash, no effect) when the subscription is inactive, and the composer is
+  replaced by a read-only banner linking to billing. This is the same
+  "gate protects spend, not features" invariant as the addendum above.
+- `terminate` and `interrupt` stay available to lapsed users deliberately:
+  they *stop* spend, and blocking a lapsed user from ending a running sprite
+  would protect spend in reverse. `delete` stays available too — removing
+  data is not consumption (consistent with ADR 0009).
+- The API surface is unchanged: conversation start/wake/turn processing
+  remain gated by `Billing.check_active/1`; conversation *reads* over the API
+  were and are governed by the addendum above, not this one.
+
+This closes the third bullet of the 2026-08-02 addendum ("`past_due` cannot
+view past conversations") — that drift no longer exists.

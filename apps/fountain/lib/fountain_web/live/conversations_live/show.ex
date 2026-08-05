@@ -145,7 +145,25 @@ defmodule FountainWeb.ConversationsLive.Show do
   @impl true
   def handle_info(_msg, socket), do: {:noreply, socket}
 
+  # The read-only contract for past_due/canceled (#505, ADR 0006): viewing is
+  # open, so the gate moved from the router to the events that create spend.
+  # The composer is hidden in the template, but events can still be sent by
+  # hand (#399's lesson). terminate/interrupt stay allowed — they STOP spend,
+  # and blocking a lapsed user from ending a running sprite would protect
+  # spend in reverse. delete stays allowed — removing data isn't consumption.
+  @spend_events ~w(send_prompt update_prompt images_selected)
+
   @impl true
+  def handle_event(event, _params, %{assigns: %{subscription_active: false}} = socket)
+      when event in @spend_events do
+    {:noreply,
+     put_flash(
+       socket,
+       :error,
+       "Your subscription is inactive — this conversation is read-only. Update billing to send prompts."
+     )}
+  end
+
   def handle_event("images_selected", %{"images" => images}, socket) do
     {:noreply, assign(socket, :pending_images, images)}
   end
@@ -397,7 +415,19 @@ defmodule FountainWeb.ConversationsLive.Show do
           </div>
       <% end %>
 
-      <form phx-submit="send_prompt" phx-change="update_prompt" class="bg-white rounded shadow border border-zinc-200 p-4 space-y-3">
+      <div
+        :if={!@subscription_active}
+        class="bg-amber-50 border border-amber-200 rounded px-4 py-3 text-sm text-amber-900"
+      >
+        <span class="font-medium">Read-only:</span>
+        your subscription is inactive, so you can view this conversation and stop
+        running work but not send prompts.
+        <.link navigate={~p"/account/billing"} class="underline font-medium">
+          Update billing
+        </.link>
+      </div>
+
+      <form :if={@subscription_active} phx-submit="send_prompt" phx-change="update_prompt" class="bg-white rounded shadow border border-zinc-200 p-4 space-y-3">
         <.input id="prompt" name="prompt" type="textarea" rows="3"
           value={@prompt} placeholder="Send another prompt…" phx-hook="SubmitOnCmdEnter"/>
         <div :if={@pending_images != []} class="flex flex-wrap gap-2">
