@@ -99,6 +99,17 @@ backup instead.
 The CLI and the server are cut from the same tag, so matching versions are the
 tested pairing.
 
+The CLI's built-in default `base_url` is the hosted instance
+(`https://fountain.inevitable.fyi`), not yours. Point it at your instance
+before exporting an API key — otherwise the first unconfigured command sends
+that key to the hosted domain:
+
+```bash
+FOUNTAIN_BASE_URL=https://your-fountain.example.com fountain auth login
+```
+
+`auth login` records the URL in the saved profile, so this is a one-time step.
+
 ## Back up `MASTER_SECRETS_KEY`
 
 Every environment and vault secret is encrypted with a per-tenant key that is

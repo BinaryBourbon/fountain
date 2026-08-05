@@ -210,3 +210,8 @@ FOUNTAIN_API_KEY=ftn_... FOUNTAIN_BASE_URL=https://other.example.com fountain ag
 Resolution order for both the key and the URL is: environment variable, then the
 active profile in the credentials file, then — for the URL only — the built-in
 default `https://fountain.inevitable.fyi`.
+
+**Self-hosting?** That built-in default is the hosted instance, not yours. Run
+`fountain auth login` with `FOUNTAIN_BASE_URL` pointed at your instance before
+anything else: an unconfigured CLI with `FOUNTAIN_API_KEY` exported sends that
+key to `fountain.inevitable.fyi`. Configure the URL before the key.
