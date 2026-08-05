@@ -81,7 +81,7 @@ defmodule FountainWeb.Layouts do
 
     footer_open =
       Enum.any?(
-        ["/api-keys", "/account/billing", "/account/security", "/audit", "/help", "/admin"],
+        ["/api-keys", "/account", "/audit", "/help", "/admin"],
         &String.starts_with?(assigns[:current_path] || "", &1)
       )
 
@@ -294,8 +294,14 @@ defmodule FountainWeb.Layouts do
                 </svg>
               </summary>
               <div class="px-2 pt-0.5 pb-2 space-y-0.5 border-t border-[var(--color-border)]">
+                <.nav_link href={~p"/account"} label="Account" current={@current_path} exact />
                 <.nav_link href={~p"/api-keys"} label="API Keys" current={@current_path} />
-                <.nav_link href={~p"/account/billing"} label="Billing" current={@current_path} />
+                <.nav_link
+                  :if={Fountain.Billing.enabled?()}
+                  href={~p"/account/billing"}
+                  label="Billing"
+                  current={@current_path}
+                />
                 <.nav_link href={~p"/account/security"} label="Security" current={@current_path} />
                 <.nav_link href={~p"/audit"} label="Audit log" current={@current_path} />
                 <.nav_link href={~p"/help"} label="Help" current={@current_path} />
@@ -404,11 +410,18 @@ defmodule FountainWeb.Layouts do
   attr :href, :string, required: true
   attr :label, :string, required: true
   attr :current, :string, default: ""
+  # Highlight only on an exact path match — for links like /account whose
+  # href is a prefix of sibling pages (/account/billing, /account/security).
+  attr :exact, :boolean, default: false
 
   defp nav_link(assigns) do
     active =
-      (String.starts_with?(assigns.current || "", assigns.href) and assigns.href != "/") or
+      if assigns.exact do
         assigns.current == assigns.href
+      else
+        (String.starts_with?(assigns.current || "", assigns.href) and assigns.href != "/") or
+          assigns.current == assigns.href
+      end
 
     assigns = assign(assigns, active: active, link_attrs: [href: assigns.href])
 

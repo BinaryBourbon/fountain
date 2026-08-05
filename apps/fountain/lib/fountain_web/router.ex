@@ -297,7 +297,10 @@ defmodule FountainWeb.Router do
       live "/help", HelpLive.Show, :index
       live "/help/:topic", HelpLive.Show, :show
 
-      # ── Phase-3-billing: account/billing ─────────────────────────────────────────────────────
+      # ── Account page: data export + deletion (#479) ────────────────────────────────────────
+      live "/account", Live.AccountLive, :index
+
+      # ── Phase-3-billing: account/billing. Redirects to /account when billing is disabled ────
       live "/account/billing", Live.BillingLive, :index
 
       # ── BYO inference credentials (ADR 0008) ───────────────────────────────────────────────

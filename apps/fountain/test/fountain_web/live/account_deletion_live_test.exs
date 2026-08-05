@@ -27,11 +27,11 @@ defmodule FountainWeb.AccountDeletionLiveTest do
     :ok
   end
 
-  describe "self-serve, on /account/billing" do
+  describe "self-serve, on /account" do
     test "typing the account's email deletes it", %{conn: conn} do
       user = insert_verified_user()
 
-      {:ok, lv, html} = live(login_user(conn, user), ~p"/account/billing")
+      {:ok, lv, html} = live(login_user(conn, user), ~p"/account")
       assert html =~ "Delete account"
       # The export nudge sits in the danger zone and anchors to the export
       # section above it (#450).
@@ -55,7 +55,7 @@ defmodule FountainWeb.AccountDeletionLiveTest do
     test "the wrong email deletes nothing", %{conn: conn} do
       user = insert_verified_user()
 
-      {:ok, lv, _html} = live(login_user(conn, user), ~p"/account/billing")
+      {:ok, lv, _html} = live(login_user(conn, user), ~p"/account")
 
       html = render_submit(lv, "delete_account", %{"email" => "someone-else@example.com"})
 
@@ -66,7 +66,7 @@ defmodule FountainWeb.AccountDeletionLiveTest do
     test "an empty confirmation deletes nothing", %{conn: conn} do
       user = insert_verified_user()
 
-      {:ok, lv, _html} = live(login_user(conn, user), ~p"/account/billing")
+      {:ok, lv, _html} = live(login_user(conn, user), ~p"/account")
       render_submit(lv, "delete_account", %{"email" => ""})
 
       assert Repo.get(User, user.id)
@@ -82,7 +82,7 @@ defmodule FountainWeb.AccountDeletionLiveTest do
 
       stub(Stripe.Subscription, :list, fn _ -> {:error, :down} end)
 
-      {:ok, lv, _html} = live(login_user(conn, user), ~p"/account/billing")
+      {:ok, lv, _html} = live(login_user(conn, user), ~p"/account")
 
       html =
         with_log(fn -> render_submit(lv, "delete_account", %{"email" => user.email}) end)

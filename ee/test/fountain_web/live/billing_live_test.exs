@@ -46,9 +46,10 @@ defmodule FountainWeb.BillingLiveTest do
     user
   end
 
-  describe "billing disabled (#335)" do
-    # A self-hosted instance shows a trial countdown and an Upgrade button
-    # whose only possible outcome is "Unable to reach Stripe".
+  describe "billing disabled (#335, #479)" do
+    # A self-hosted instance must never see this page — not even a degraded
+    # version of it. Old bookmarks land on the core account page, which owns
+    # export and deletion since #479.
 
     defp with_billing_disabled(fun) do
       previous = Application.get_env(:fountain, :billing_enabled)
@@ -61,28 +62,22 @@ defmodule FountainWeb.BillingLiveTest do
       end
     end
 
-    test "no upgrade affordance, no trial countdown, a plain explanation", %{conn: conn} do
+    test "the page redirects to /account", %{conn: conn} do
       user = insert_verified_user()
 
       with_billing_disabled(fn ->
-        {:ok, _lv, html} = live(login_user(conn, user), ~p"/account/billing")
-
-        assert html =~ "Billing is disabled on this instance"
-        refute html =~ "Upgrade"
-        refute html =~ "Manage Subscription"
-        refute html =~ "Trial"
+        assert {:error, {:redirect, %{to: "/account"}}} =
+                 live(login_user(conn, user), ~p"/account/billing")
       end)
     end
 
-    test "usage and the danger zone are still there", %{conn: conn} do
+    test "with billing enabled the page renders instead of redirecting", %{conn: conn} do
       user = insert_verified_user()
 
-      with_billing_disabled(fn ->
-        {:ok, _lv, html} = live(login_user(conn, user), ~p"/account/billing")
+      {:ok, _lv, html} = live(login_user(conn, user), ~p"/account/billing")
 
-        assert html =~ "Usage This Month"
-        assert html =~ "Delete account"
-      end)
+      assert html =~ "Subscription"
+      assert html =~ "Usage This Month"
     end
   end
 
