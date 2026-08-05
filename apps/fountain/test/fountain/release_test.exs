@@ -49,6 +49,24 @@ defmodule Fountain.ReleaseTest do
       assert Repo.reload!(already_dated).trial_ends_at == ~U[2027-01-01 00:00:00Z]
       assert is_nil(Repo.reload!(active).trial_ends_at)
     end
+
+    test "starts a trial for accounts registered while billing was disabled (#480)" do
+      # Those accounts have no status at all; after enabling billing they fail
+      # closed at the gate until this runs.
+      community = put_billing(insert_user(), nil, nil)
+      active = put_billing(insert_user(), "active", nil)
+
+      capture_io(fn ->
+        assert {:ok, count} = Release.expire_legacy_trials(days: 14)
+        assert count >= 1
+      end)
+
+      reloaded = Repo.reload!(community)
+      assert reloaded.subscription_status == "trialing"
+      assert %DateTime{} = reloaded.trial_ends_at
+
+      assert Repo.reload!(active).subscription_status == "active"
+    end
   end
 
   describe "verify_email/1" do

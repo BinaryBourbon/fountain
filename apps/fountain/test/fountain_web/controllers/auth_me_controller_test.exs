@@ -1,5 +1,17 @@
 defmodule FountainWeb.AuthMeControllerTest do
-  use FountainWeb.ConnCase, async: true
+  # async: false for the billing-disabled tests, which flip global app env.
+  use FountainWeb.ConnCase, async: false
+
+  defp with_billing_disabled(fun) do
+    previous = Application.get_env(:fountain, :billing_enabled)
+    Application.put_env(:fountain, :billing_enabled, false)
+
+    try do
+      fun.()
+    after
+      Application.put_env(:fountain, :billing_enabled, previous)
+    end
+  end
 
   describe "GET /api/auth/me" do
     test "returns user identity for an authenticated request", %{conn: conn} do
@@ -48,6 +60,25 @@ defmodule FountainWeb.AuthMeControllerTest do
         |> get("/api/auth/me")
 
       assert %{"role" => "admin"} = json_response(conn, 200)
+    end
+
+    test "subscription_status is null when billing is disabled — key kept for shape compat (#480)",
+         %{conn: conn} do
+      # Residue case on purpose: even an account that still carries a status
+      # from before the flag flipped must not leak it to API consumers.
+      user = insert_verified_user()
+      {_key_record, raw_key} = insert_api_key(user)
+
+      with_billing_disabled(fn ->
+        conn =
+          conn
+          |> authed_with_key(raw_key)
+          |> get("/api/auth/me")
+
+        body = json_response(conn, 200)
+        assert Map.has_key?(body, "subscription_status")
+        assert body["subscription_status"] == nil
+      end)
     end
 
     test "email in response is downcased", %{conn: conn} do
