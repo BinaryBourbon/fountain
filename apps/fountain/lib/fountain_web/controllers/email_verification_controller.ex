@@ -1,9 +1,16 @@
 defmodule FountainWeb.EmailVerificationController do
   @moduledoc """
-  Handles the email verification link: GET /users/confirm/:token
+  Handles the email verification link: GET /users/confirm/:token, and its
+  JSON twin POST /api/auth/verify.
 
   Validates a Phoenix.Token (24 h TTL), marks the user verified, sets
-  the session cookie, and redirects to onboarding or dashboard.
+  the session cookie (browser route only), and redirects to onboarding or
+  dashboard.
+
+  The API route exists so account activation does not require a browser
+  (#522): the emailed link keeps pointing at the browser route, and a CLI
+  prompts for the token from that URL. Both routes accept the same token —
+  there is one verification secret, not two.
 
   After a successful verification, a Stripe Customer record is created
   via the `Fountain.Workers.StripeCustomerSync` job so that
@@ -73,6 +80,71 @@ defmodule FountainWeb.EmailVerificationController do
         |> put_flash(:error, "This verification link is invalid.")
         |> redirect(to: ~p"/auth/login")
     end
+  end
+
+  @doc """
+  JSON completion of the same flow. Returns 200 on success (and on an
+  already-verified account, which is the idempotent case a CLI retrying a
+  request needs), 422 on an expired or invalid token.
+
+  No session is issued: an API client wants a key, which it mints at
+  `POST /api/auth/token` once the account is live.
+  """
+  def api_verify(conn, %{"token" => token}) do
+    case Phoenix.Token.verify(conn, "email_verification", token, max_age: @token_max_age) do
+      {:ok, user_id} -> verify_user(conn, Accounts.get_user(user_id))
+      {:error, :expired} -> token_error(conn, "expired", "This verification link has expired.")
+      {:error, _} -> token_error(conn, "invalid_token", "This verification link is invalid.")
+    end
+  end
+
+  def api_verify(conn, _params) do
+    conn
+    |> put_status(:unprocessable_entity)
+    |> json(%{error: "token is required"})
+  end
+
+  defp verify_user(conn, nil),
+    do: token_error(conn, "invalid_token", "This verification link is invalid.")
+
+  defp verify_user(conn, %{email_verified_at: %DateTime{}} = user) do
+    json(conn, %{
+      user_id: user.id,
+      email_verified: true,
+      message: "Your email is already verified."
+    })
+  end
+
+  defp verify_user(conn, user) do
+    case Accounts.verify_email(user) do
+      {:ok, verified} ->
+        FountainWeb.Audited.from_conn(conn, "auth.email.verified", "user",
+          user_id: verified.id,
+          resource_id: verified.id
+        )
+
+        # Same follow-on work the browser route does — the account must not
+        # end up in a different state depending on which surface finished it.
+        Fountain.Workers.StripeCustomerSync.enqueue(verified)
+        Fountain.Workers.WelcomeEmail.enqueue(verified)
+
+        json(conn, %{
+          user_id: verified.id,
+          email_verified: true,
+          message: "Email verified. You can sign in now."
+        })
+
+      {:error, _changeset} ->
+        conn
+        |> put_status(:unprocessable_entity)
+        |> json(%{error: "verification_failed"})
+    end
+  end
+
+  defp token_error(conn, error, message) do
+    conn
+    |> put_status(:unprocessable_entity)
+    |> json(%{error: error, message: message})
   end
 
   ## Helpers

@@ -177,6 +177,13 @@ defmodule FountainWeb.Router do
     post "/register", RegistrationController, :api_create
     post "/resend-verification", RegistrationController, :api_resend
     post "/forgot", PasswordResetController, :api_forgot
+
+    # Completions (#522). Authenticated by the emailed token itself, so an
+    # account can be activated and a password reset without a browser. The
+    # links in the mail keep pointing at the browser routes above.
+    post "/verify", EmailVerificationController, :api_verify
+    post "/reset", PasswordResetController, :api_reset
+    post "/email/confirm", AccountSecurityController, :api_confirm_email_change
   end
 
   ## ─── Stripe webhook (phase-3-billing) ───────────────────────────────────────────────────────────────────
