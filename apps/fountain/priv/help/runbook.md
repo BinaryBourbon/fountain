@@ -109,7 +109,7 @@ As of 2026-08-01 the untracked set is 102 sprites named `aod-*`, all `cold`, cre
 
 ## Account deletion / erasure request
 
-Users close their own account at **/account/billing → Delete account**, typing their email to confirm. For someone locked out, or a request that arrived by email, use **/admin → Delete** on their row.
+Users close their own account at **/account → Delete account**, typing their email to confirm. For someone locked out, or a request that arrived by email, use **/admin → Delete** on their row.
 
 Both run `Fountain.Accounts.Deletion.delete_user/2`, in this order:
 
