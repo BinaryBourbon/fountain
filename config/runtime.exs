@@ -203,6 +203,16 @@ allowed_signup_domains =
 
 config :fountain, :registration_allowed_email_domains, allowed_signup_domains
 
+# Self-host first-admin bootstrap (ADR 0011): the first account to become
+# verified on an instance with no admin is promoted to admin, so standing up
+# an instance needs no release-task shenanigans. Opt-in: on a multi-tenant
+# deployment this would hand the instance to whoever registers first.
+# Skipped in :test — config/test.exs pins it off and tests toggle it through
+# the application env, independent of the developer's shell.
+if config_env() != :test do
+  config :fountain, :first_user_admin, System.get_env("FIRST_USER_ADMIN", "false") == "true"
+end
+
 # Sandbox lifetime bounds. Either set to 0 disables that bound; an operator who
 # wants sandboxes to live until explicitly terminated sets both to 0 and gets
 # the pre-#167 behaviour back. Reclaiming a sandbox does not end its
@@ -412,19 +422,20 @@ if config_env() == :prod do
 
     System.get_env("EMAIL_DELIVERY") == "none" ->
       # Explicit opt-out, for an instance that only uses OAuth sign-in or is
-      # being evaluated. Accounts created with email + password cannot verify
-      # themselves in this mode; see Fountain.Release.verify_email/1.
+      # being evaluated. Email verification gates nothing when the link can
+      # never be delivered, so registration auto-verifies accounts in this
+      # mode (:email_enabled below) instead of dead-ending them.
       # IO.puts rather than IO.warn: a stacktrace here points at config code and
       # tells the operator nothing.
+      config :fountain, :email_enabled, false
+
       IO.puts(:stderr, """
 
       [fountain] EMAIL_DELIVERY=none — email is disabled.
 
-      Verification and password-reset emails will not be delivered. Accounts
-      created with email + password cannot complete signup unless an operator
-      verifies them:
-
-          bin/fountain_server eval 'Fountain.Release.verify_email("you@example.com")'
+      Accounts self-verify at registration, but password-reset and all other
+      account email cannot be delivered — a forgotten password is not
+      recoverable in this mode. Prefer OAuth sign-in, or configure SMTP.
       """)
 
     true ->
@@ -439,9 +450,8 @@ if config_env() == :prod do
           SMTP_USERNAME=... SMTP_PASSWORD=...
         EMAIL_DELIVERY=none                deliberately disable email
 
-      With EMAIL_DELIVERY=none, verify the first account manually:
-
-          bin/fountain_server eval 'Fountain.Release.verify_email("you@example.com")'
+      With EMAIL_DELIVERY=none, accounts self-verify at registration, but
+      password-reset email cannot be delivered.
       """
   end
 end

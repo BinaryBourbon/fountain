@@ -21,10 +21,14 @@ defmodule Fountain.Release do
   @doc """
   Mark an account's email verified, without sending anything.
 
-  The escape hatch for `EMAIL_DELIVERY=none`, and for an instance whose mail
-  provider is misconfigured. Login is refused while `email_verified_at` is nil,
-  so without this a self-hoster with no working mail has no route to a usable
-  first account other than editing the database by hand.
+  The escape hatch for an instance whose mail provider is misconfigured or
+  broken — login is refused while `email_verified_at` is nil. Under
+  `EMAIL_DELIVERY=none` this is no longer part of first login: registration
+  auto-verifies accounts there (ADR 0011). It remains for accounts created
+  before mail broke, or before that mode was set.
+
+  Verification runs the first-admin bootstrap like any other route: with
+  `FIRST_USER_ADMIN=true` and no admin yet, the account comes back promoted.
 
       bin/fountain_server eval 'Fountain.Release.verify_email("you@example.com")'
   """
@@ -54,10 +58,12 @@ defmodule Fountain.Release do
   @doc """
   Grant an account the admin role, audit-recorded.
 
-  The first-admin bootstrap. Both deploy guides used to end with raw SQL
-  (`UPDATE users SET role = 'admin' ...`) — the only step in the self-deploy
-  path that required editing the production database by hand. Symmetrical
-  with `verify_email/1`.
+  The manual first-admin bootstrap. Both deploy guides used to end with raw
+  SQL (`UPDATE users SET role = 'admin' ...`) — the only step in the
+  self-deploy path that required editing the production database by hand.
+  Since ADR 0011 the recommended path is `FIRST_USER_ADMIN=true`, which
+  promotes the first verified account in-app; this task remains for instances
+  that keep that switch off, and for lock-out recovery.
 
   Recorded as `admin.role.granted` with a nil actor (system-originated), so a
   promotion through this task is as visible in the admin audit trail as one

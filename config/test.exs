@@ -55,6 +55,11 @@ config :phoenix, sort_verified_routes_query_params: true
 config :fountain, Fountain.Mailer, adapter: Swoosh.Adapters.Test
 config :swoosh, :api_client, false
 
+# Pinned so a developer's shell (EMAIL_DELIVERY / FIRST_USER_ADMIN) can't
+# change suite behavior; tests toggle these through the application env.
+config :fountain, :email_enabled, true
+config :fountain, :first_user_admin, false
+
 # Point excoveralls at the repo-root coveralls.json regardless of which
 # app directory Mix happens to have as cwd when the settings are loaded.
 config :excoveralls, config_file: Path.expand("../coveralls.json", __DIR__)
