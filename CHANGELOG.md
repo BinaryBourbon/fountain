@@ -30,6 +30,19 @@ upgrade, is in
 
 ### Added
 
+- **Account data export and account deletion are driveable over the API** —
+  `POST/GET /api/account/exports`, `GET /api/account/exports/:id/download`
+  and `DELETE /api/account`. These are the closest things Fountain has to
+  GDPR flows and both were browser-only. Export keeps its one-per-hour limit
+  (429 with `Retry-After`) and, since the API has no PubSub, reports progress
+  by polling instead of pushing; the download is the same owner-scoped,
+  expiring, audited artifact the session route serves. Deletion is
+  irreversible and takes the tenant encryption key with it, so it requires
+  both a typed `{"confirm": "<account email>"}` body — the API equivalent of
+  the UI's typed-email gate — and a `full`-scoped key, which keeps a
+  sandbox's per-conversation token from destroying the account it is running
+  inside (#523)
+
 - **Agent avatars have an API**: `GET/PUT/DELETE /api/agents/:id/avatar`, and
   `avatar_media_type` is serialized on the agent so a client can tell one
   exists. Upload and delete lived only in the agents LiveView, and even
