@@ -130,12 +130,77 @@ defmodule Fountain.Audit do
   """
   @spec list_recent_for_user(Ecto.UUID.t(), pos_integer()) :: [Event.t()]
   def list_recent_for_user(user_id, limit \\ 200) when is_binary(user_id) do
-    Repo.all(
-      from e in Event,
-        where: e.user_id == ^user_id,
-        order_by: [desc: e.inserted_at, desc: e.id],
-        limit: ^limit
+    list_for_user(user_id, limit: limit)
+  end
+
+  @doc """
+  Tenant-scoped events, newest first, with filters and a cursor.
+
+  Options:
+
+    * `:limit` — page size (default 200)
+    * `:before_id` — only events with a smaller id; the cursor for paging
+      back through history, since the order is newest-first
+    * `:action_prefix` — e.g. `"vault."` for everything vault-related.
+      LIKE metacharacters in the value are escaped, so a prefix of `%` is a
+      literal `%` and not "match everything"
+    * `:resource_type` — exact match
+    * `:since` / `:until` — `DateTime` bounds on `inserted_at`, inclusive
+
+  Unknown options are ignored. The trail is append-only, so paging by id is
+  stable: nothing is inserted behind the cursor.
+  """
+  @spec list_for_user(Ecto.UUID.t(), keyword()) :: [Event.t()]
+  def list_for_user(user_id, opts \\ []) when is_binary(user_id) do
+    from(e in Event,
+      where: e.user_id == ^user_id,
+      order_by: [desc: e.inserted_at, desc: e.id],
+      limit: ^Keyword.get(opts, :limit, 200)
     )
+    |> filter_before_id(Keyword.get(opts, :before_id))
+    |> filter_action_prefix(Keyword.get(opts, :action_prefix))
+    |> filter_resource_type(Keyword.get(opts, :resource_type))
+    |> filter_since(Keyword.get(opts, :since))
+    |> filter_until(Keyword.get(opts, :until))
+    |> Repo.all()
+  end
+
+  defp filter_before_id(query, nil), do: query
+
+  defp filter_before_id(query, id) when is_integer(id),
+    do: from(e in query, where: e.id < ^id)
+
+  defp filter_action_prefix(query, nil), do: query
+  defp filter_action_prefix(query, ""), do: query
+
+  defp filter_action_prefix(query, prefix) when is_binary(prefix) do
+    from(e in query, where: like(e.action, ^(escape_like(prefix) <> "%")))
+  end
+
+  defp filter_resource_type(query, nil), do: query
+  defp filter_resource_type(query, ""), do: query
+
+  defp filter_resource_type(query, type) when is_binary(type),
+    do: from(e in query, where: e.resource_type == ^type)
+
+  defp filter_since(query, nil), do: query
+
+  defp filter_since(query, %DateTime{} = since),
+    do: from(e in query, where: e.inserted_at >= ^since)
+
+  defp filter_until(query, nil), do: query
+
+  defp filter_until(query, %DateTime{} = until),
+    do: from(e in query, where: e.inserted_at <= ^until)
+
+  # A caller-supplied prefix is a literal, not a pattern: without this,
+  # `?action_prefix=%` would match the whole trail and `_` would be a
+  # single-character wildcard.
+  defp escape_like(value) do
+    value
+    |> String.replace("\\", "\\\\")
+    |> String.replace("%", "\\%")
+    |> String.replace("_", "\\_")
   end
 
   @doc """

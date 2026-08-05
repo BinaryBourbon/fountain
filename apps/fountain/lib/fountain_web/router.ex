@@ -237,6 +237,9 @@ defmodule FountainWeb.Router do
   scope "/api", FountainWeb do
     pipe_through [:accepts_json, :api]
 
+    # The tenant's own trail (#526). Cross-tenant listing is an admin concern.
+    get "/audit", AuditController, :index
+
     resources "/environments", EnvironmentController, except: [:new, :edit] do
       resources "/secrets", SecretController, only: [:index, :create, :delete]
     end

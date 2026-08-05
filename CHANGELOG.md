@@ -30,6 +30,15 @@ upgrade, is in
 
 ### Added
 
+- **`GET /api/audit`** serves the account's own audit trail — tenant-scoped,
+  newest first, cursor-paginated, with filters the `/audit` LiveView does not
+  have yet (`action_prefix`, `resource_type`, `since`, `until`). Programmatic
+  access previously meant scraping a LiveView or requesting a whole account
+  export, which is a poor fit for shipping events to a SIEM or an archive.
+  `action_prefix` is matched as a literal, so a `%` filters to nothing rather
+  than returning the entire trail, and a malformed `since`/`until` is a 400
+  rather than a silently unfiltered response (#526)
+
 - **Password and email changes work over a bearer token**:
   `POST /api/auth/password` and `POST /api/auth/email`. Both existed only as
   browser POSTs with session auth and CSRF, so an API-driven account could

@@ -185,6 +185,18 @@ Since sub-conversations are created over the API (`X-Fountain-Parent-Conversatio
 
 Page by passing the previous response's `meta.next_cursor` as `after`; keep going while `meta.has_more` is true. `limit` defaults to 100 and caps at 1000. The `id` is the same value the SSE route uses as `Last-Event-ID`, so a client can drain history as JSON and then attach the stream from where it left off.
 
+## Audit
+
+```
+GET    /api/audit    # ?limit= ?before= ?action_prefix= ?resource_type= ?since= ?until=
+```
+
+The account's own append-only trail, newest first: `id`, `inserted_at`, `actor`, `action`, `resource_type`, `resource_id`, `metadata`, `request_ip`. `actor` distinguishes `ui` (browser session), `api` (a bearer key), `sprite` (the per-conversation token a sandbox holds) and `system`.
+
+Page backwards with `meta.next_cursor` as `before`; `limit` defaults to 100 and caps at 500. `action_prefix` matches a family of actions (`vault.`) and is treated as a literal, not a LIKE pattern. `since` / `until` take ISO 8601 timestamps and are refused with `400` if malformed rather than silently ignored.
+
+Only this tenant's events are visible.
+
 ## Error responses
 
 ```json

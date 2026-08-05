@@ -920,6 +920,61 @@ defmodule FountainWeb.Schemas do
     })
   end
 
+  defmodule AuditEvent do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "AuditEvent",
+      description: "One entry in the account's append-only audit trail.",
+      type: :object,
+      properties: %{
+        id: %Schema{type: :integer, description: "Cursor for `before`."},
+        inserted_at: %Schema{type: :string, format: :"date-time"},
+        actor: %Schema{
+          type: :string,
+          nullable: true,
+          description:
+            "Which surface acted: `ui` (browser session), `api` (bearer key), " <>
+              "`sprite` (a per-conversation token held by a sandbox), `system`."
+        },
+        action: %Schema{type: :string, example: "vault.secret.write"},
+        resource_type: %Schema{type: :string, nullable: true},
+        resource_id: %Schema{type: :string, nullable: true},
+        metadata: %Schema{type: :object, additionalProperties: true},
+        request_ip: %Schema{type: :string, nullable: true}
+      },
+      required: [:id, :action, :inserted_at]
+    })
+  end
+
+  defmodule AuditEventListResponse do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "AuditEventListResponse",
+      type: :object,
+      properties: %{
+        data: %Schema{type: :array, items: AuditEvent},
+        meta: %Schema{
+          type: :object,
+          properties: %{
+            limit: %Schema{type: :integer},
+            has_more: %Schema{type: :boolean},
+            next_cursor: %Schema{
+              type: :integer,
+              nullable: true,
+              description: "Pass as `before` for the next (older) page."
+            }
+          },
+          required: [:limit, :has_more]
+        }
+      },
+      required: [:data, :meta]
+    })
+  end
+
   defmodule InferenceCredentialStatus do
     @moduledoc false
     require OpenApiSpex
