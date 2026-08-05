@@ -53,3 +53,31 @@ Five points where this ADR has drifted from (or never matched) the code:
 - **`past_due` cannot view past conversations.** `/conversations`, `/conversations/new`, and `/conversations/:id` sit inside the `:active_subscription` live_session in the router, so a `past_due` user is redirected to billing. What remains reachable is the log viewer (`/conversations/:id/logs`) plus dashboard, resource, onboarding, and billing/settings routes in the `:authenticated` live_session. The "read-only window" as described above is narrower in practice.
 - **Usage period timezone was never built.** There is no user timezone field; `BillingLive.current_month_range/0` computes the calendar month in UTC, hardcoded. Per-user timezone selection remains unbuilt; if it matters, it is a new piece of work, not something this ADR delivered.
 - **The gate is now conditional — and opt-in.** `BILLING_ENABLED` (`config/runtime.exs`) feeds `Fountain.Billing.enabled?/0`. It defaulted to `"true"` until #336 flipped it: the default is now `"false"`, because on a self-hosted instance the gate is a lock on the front door with no key, and the operator most likely to miss the variable is exactly the one it locks out. The hosted deployment opts in explicitly (`k8s/deployment.yaml` sets `BILLING_ENABLED=true`). The "hard gate" decision stands for the hosted product, but it is now config, not an invariant of the source.
+
+
+## Addendum — 2026-08-05: the gate's scope outside conversations is deliberate
+
+The 2026-08-05 billing review (#500) flagged that the API surface outside
+conversations is not billing-gated: a canceled user with a still-valid API key
+can list, create, update, and delete agents, environments, vaults, and
+secrets. Only conversation start, wake, and per-turn processing call
+`Billing.check_active/1`.
+
+Decision (2026-08-05): that is the invariant, not an accident of where the
+checks landed. **The gate protects spend, not features.** Every conversation
+consumes sprite cost on the shared Sprites account (ADR 0005), so the
+conversation lifecycle is the enforced boundary. Configuration CRUD costs
+nothing to serve, and leaving it open means an expired user can still reach
+and manage their own data (consistent with ADR 0009 — payment state never
+holds data hostage) and a returning subscriber's configs are intact when they
+reactivate.
+
+Accordingly, the Decision section's "Blocked when canceled — POST to write
+endpoints returns 402" is scoped to the sprite-cost surfaces. It was never
+enforced on config CRUD and will not be. If abuse appears (say, canceled
+accounts using vaults as free encrypted storage), the answer is a quota, not
+a billing gate.
+
+The remaining `past_due` drift — ADR promised read access to past
+conversations, code delivers log-view-only — is an open decision tracked in
+#505, not resolved here.
