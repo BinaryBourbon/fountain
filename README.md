@@ -1,8 +1,6 @@
 # Fountain
 
-A multi-tenant API and UI for managing agents, repos, secrets, and conversations. It's for people who want to create sandboxed coding agent instances with preconfigured sets of env vars, MCP servers, skills, repos, and packages. Users treat Fountain as a building block for their own workflows, but also use the UI to get started and to debug. It exists because running Claude instances with worktrees locally — and shuffling MCP configurations and skill setups by hand — is painful. `jhgaylor/aod-ex` already does this for a single tenant, but it targets a different user; Fountain takes that core and rebuilds around multi-tenant use.
-
-This repo is the bus for the [`captain-picard`](https://github.com/jhgaylor/aod-specs) Agent on Demand orchestrator. See `OPERATING_MODEL.md` for how the team operates and `ROADMAP.md` for what's open.
+A multi-tenant API and UI for managing agents, repos, secrets, and conversations. It's for people who want to create sandboxed coding agent instances with preconfigured sets of env vars, MCP servers, skills, repos, and packages. Users treat Fountain as a building block for their own workflows, but also use the UI to get started and to debug. It exists because running Claude instances with worktrees locally — and shuffling MCP configurations and skill setups by hand — is painful.
 
 ## Self-hosting
 
@@ -12,6 +10,9 @@ Run your own instance: [docs/self-hosting.md](docs/self-hosting.md).
 cp .env.compose.example .env   # then fill in the generated keys
 docker compose up -d
 ```
+
+Prefer Kubernetes? A portable baseline — plain manifests, `kubectl apply -k`,
+no operators assumed — lives in [`deploy/k8s/`](deploy/k8s/).
 
 ## Three surfaces
 
@@ -50,11 +51,18 @@ fountain apply -f agent-specs
 
 ## Use the API directly
 
+The examples below run against your own instance — point `FOUNTAIN_URL` at it
+(`http://localhost:4000` for the compose quick start):
+
+```sh
+FOUNTAIN_URL=http://localhost:4000
+```
+
 ### Authenticate
 
 ```sh
 # Get a session token (email + password)
-TOKEN=$(curl -sX POST https://fountain.inevitable.fyi/api/auth/token \
+TOKEN=$(curl -sX POST $FOUNTAIN_URL/api/auth/token \
   -H 'Content-Type: application/json' \
   -d '{"email":"you@example.com","password":"..."}'  | jq -r .token)
 
@@ -67,19 +75,19 @@ TOKEN=ftn_your_api_key
 
 ```sh
 # Create an environment
-curl -sX POST https://fountain.inevitable.fyi/api/environments \
+curl -sX POST $FOUNTAIN_URL/api/environments \
   -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' \
   -d '{"name":"python-data","networking_type":"unrestricted"}'
 
 # Upsert a secret
-curl -sX POST https://fountain.inevitable.fyi/api/environments/$ENV_ID/secrets \
+curl -sX POST $FOUNTAIN_URL/api/environments/$ENV_ID/secrets \
   -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' \
   -d '{"key":"OPENAI_API_KEY","value":"sk-..."}'
 
 # Create an agent
-curl -sX POST https://fountain.inevitable.fyi/api/agents \
+curl -sX POST $FOUNTAIN_URL/api/agents \
   -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' \
   -d '{"name":"researcher","model":"anthropic/claude-sonnet-4-6","runtime":"claude","environment_id":"$ENV_ID"}'
@@ -89,7 +97,7 @@ curl -sX POST https://fountain.inevitable.fyi/api/agents \
 
 ```sh
 # Start a conversation
-CONV=$(curl -sX POST https://fountain.inevitable.fyi/api/conversations \
+CONV=$(curl -sX POST $FOUNTAIN_URL/api/conversations \
   -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' \
   -d "{\"agent_id\":\"$AGENT_ID\",\"prompt\":\"Audit the auth module for security issues\"}")
@@ -97,7 +105,7 @@ CONV=$(curl -sX POST https://fountain.inevitable.fyi/api/conversations \
 CONV_ID=$(echo $CONV | jq -r .id)
 
 # Stream log events (SSE)
-curl -sN https://fountain.inevitable.fyi/api/conversations/$CONV_ID/stream \
+curl -sN $FOUNTAIN_URL/api/conversations/$CONV_ID/stream \
   -H "Authorization: Bearer $TOKEN"
 ```
 
@@ -109,33 +117,38 @@ interleaving.
 
 ### Explore the full API
 
-Interactive Swagger UI: `https://fountain.inevitable.fyi/api/docs`
+Interactive Swagger UI: `$FOUNTAIN_URL/api/docs`
 
-OpenAPI spec: `https://fountain.inevitable.fyi/api/openapi.json`
+OpenAPI spec: `$FOUNTAIN_URL/api/openapi.json`
 
 ## Point an LLM at Fountain
 
-Every Fountain instance serves a plain-text [`/llms.txt`](https://fountain.inevitable.fyi/llms.txt), a bundled [`/llms-full.txt`](https://fountain.inevitable.fyi/llms-full.txt), and a drop-in [`/skill`](https://fountain.inevitable.fyi/skill) so any agentic IDE (Claude Code, Cursor, Continue, Aider, ...) can learn the API from one fetch:
+Every Fountain instance serves a plain-text `/llms.txt`, a bundled `/llms-full.txt`, and a drop-in `/skill` so any agentic IDE (Claude Code, Cursor, Continue, Aider, ...) can learn the API from one fetch:
 
 ```sh
 mkdir -p ~/.claude/skills/fountain
-curl -fsSL https://fountain.inevitable.fyi/skill > ~/.claude/skills/fountain/SKILL.md
+curl -fsSL $FOUNTAIN_URL/skill > ~/.claude/skills/fountain/SKILL.md
 ```
 
 After that, telling Claude “spin up a researcher agent on Fountain and have it audit the auth module” Just Works — the skill describes the four primitives (Environment / Vault / Agent / Conversation), the CLI commands, the API endpoints, the SSE format, and the per-runtime result filters.
 
 ## Bootstrap a workstation
 
-See [`SETUP.md`](SETUP.md) for the full local bootstrap (mise + Postgres + deps). The local toolchain is pinned in `.tool-versions` (via mise), so a fresh laptop or ephemeral VM gets the same Erlang/Elixir as everyone else. Production runs a release image built from the repo-root `Dockerfile` and deployed to home-cloud Kubernetes via Flux (manifests in `k8s/`); the Dockerfile's `hexpm/elixir` base image pins the production toolchain, so a toolchain bump must update both `.tool-versions` and the Dockerfile — see the parity reference in `SETUP.md`.
+See [`SETUP.md`](SETUP.md) for the full local bootstrap (mise + Postgres + deps). The local toolchain is pinned in `.tool-versions` (via mise), so a fresh laptop or ephemeral VM gets the same Erlang/Elixir as everyone else. Production images build from the repo-root `Dockerfile`, whose `hexpm/elixir` base pins the production toolchain — a toolchain bump must update both `.tool-versions` and the Dockerfile; see the parity reference in `SETUP.md`.
 
 ## Contributing
 
-See [`CLAUDE.md`](CLAUDE.md) for architecture, test patterns, tenant isolation contract, and things to avoid. See [`OPERATING_MODEL.md`](OPERATING_MODEL.md) for how the team operates.
+See [`CLAUDE.md`](CLAUDE.md) for architecture, test patterns, the tenant isolation contract, and things to avoid. Architecturally significant choices are recorded as ADRs in [`decisions/`](decisions/). The maintainer runs an agent-team workflow on this repo — [`OPERATING_MODEL.md`](OPERATING_MODEL.md) and [`ROADMAP.md`](ROADMAP.md) document it, but you don't need either to contribute.
 
 ## Licence
 
 Fountain is [MIT licensed](LICENSE). Use it, run it, modify it, host it.
 
-If a directory named `ee/` appears in this repository later, the code in it is
-**not** covered by that licence and will carry its own — the MIT grant above
-applies to everything outside `ee/`. Nothing lives there today.
+That includes [`ee/`](ee/): the Stripe billing surface and billing-adjacent
+growth email live there under [their own licence file](ee/LICENSE) —
+**today a byte-for-byte copy of the root MIT licence**. The directory
+boundary preserves the option of licensing that code differently someday; it
+is an option, not a plan of record, and nothing a community instance needs
+(auth, account email, conversations) lives behind it. See
+[`decisions/0010-ee-directory-boundary.md`](decisions/0010-ee-directory-boundary.md)
+and [`ee/README.md`](ee/README.md).

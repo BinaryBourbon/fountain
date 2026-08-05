@@ -124,5 +124,4 @@ Substitute the actual values from the interview into the example.
 - **Don't write real ADRs.** `decisions/0001-template.md` stays untouched — it's the template, not a decision. Real ADRs accumulate as the team works.
 - **Don't create `plan/`.** The orchestrator creates that on first dispatch.
 - **Don't customize the captain-picard agent prompt.** That lives in `aod-specs/agents/teams/captain-picard/captain-picard.yml`. If the team's process diverges from what the agent expects, change `OPERATING_MODEL.md` here, not the agent.
-- **Don't edit or delete `PREREQUISITES.md`.** That's a survives-the-bootstrap reference for one-time aod-specs setup; it's product-agnostic and stays put across every bootstrap.
 - **Don't make up vault details.** If the user can't tell you the owner or vault name confidently, leave plausible placeholders and tell them to fix before running captain-picard.
