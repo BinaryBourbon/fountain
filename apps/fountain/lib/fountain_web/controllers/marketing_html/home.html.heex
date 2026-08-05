@@ -20,7 +20,12 @@
       Sign in
     </a>
   </div>
-  <p class="text-xs text-[var(--color-text-muted)]">Free 14-day trial — then $29/mo per team. Cancel anytime.</p>
+  <p :if={monthly_price()} class="text-xs text-[var(--color-text-muted)]">
+    Free 14-day trial — then {monthly_price()}/mo per team. Cancel anytime.
+  </p>
+  <p :if={!monthly_price()} class="text-xs text-[var(--color-text-muted)]">
+    Free 14-day trial. Cancel anytime.
+  </p>
 </section>
 
 <%!-- Problem --%>
@@ -147,5 +152,10 @@
   >
     Get started free
   </a>
-  <p class="mt-4 text-sm text-[var(--color-text-muted)]">$29/mo per team after trial. Cancel anytime. No lock-in.</p>
+  <p :if={monthly_price()} class="mt-4 text-sm text-[var(--color-text-muted)]">
+    {monthly_price()}/mo per team after trial. Cancel anytime. No lock-in.
+  </p>
+  <p :if={!monthly_price()} class="mt-4 text-sm text-[var(--color-text-muted)]">
+    Cancel anytime. No lock-in.
+  </p>
 </section>
