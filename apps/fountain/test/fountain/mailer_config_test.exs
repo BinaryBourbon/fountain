@@ -22,10 +22,12 @@ defmodule Fountain.MailerConfigTest do
   @base %{
     "PHX_SERVER" => "true",
     "SECRET_KEY_BASE" => String.duplicate("a", 64),
-    "DATABASE_URL" => "postgres://u:p@localhost/db"
+    "DATABASE_URL" => "postgres://u:p@localhost/db",
+    "PUBLIC_URL" => "https://fountain.example.com",
+    "EMAIL_FROM" => "noreply@fountain.example.com"
   }
 
-  @mail_vars ~w(RESEND_API_KEY SMTP_HOST SMTP_PORT SMTP_USERNAME SMTP_PASSWORD SMTP_TLS EMAIL_DELIVERY)
+  @mail_vars ~w(RESEND_API_KEY SMTP_HOST SMTP_PORT SMTP_USERNAME SMTP_PASSWORD SMTP_TLS EMAIL_DELIVERY EMAIL_FROM)
 
   setup do
     previous = System.get_env()
@@ -46,6 +48,12 @@ defmodule Fountain.MailerConfigTest do
     for k <- @mail_vars, do: System.delete_env(k)
     System.put_env(env)
     Config.Reader.read!(@runtime_exs, env: :prod)[:fountain][Fountain.Mailer]
+  end
+
+  defp read_prod_full(env) do
+    for k <- @mail_vars, do: System.delete_env(k)
+    System.put_env(env)
+    Config.Reader.read!(@runtime_exs, env: :prod)[:fountain]
   end
 
   describe "with nothing configured" do
@@ -206,6 +214,59 @@ defmodule Fountain.MailerConfigTest do
 
       # No prod override, so the base Local adapter from config.exs stands.
       assert config == nil or config[:adapter] == Swoosh.Adapters.Local
+    end
+  end
+
+  describe "EMAIL_FROM" do
+    # The old default was the hosted instance's sending domain: a self-hoster
+    # who configured a provider but not EMAIL_FROM sent mail as someone
+    # else's domain — rejected by any provider checking SPF/DKIM, and wrong
+    # even where it wasn't.
+    test "prod refuses to boot with a provider configured and no EMAIL_FROM", %{base: base} do
+      env = base |> Map.delete("EMAIL_FROM") |> Map.put("RESEND_API_KEY", "re_live_abc")
+
+      for k <- @mail_vars, do: System.delete_env(k)
+      System.put_env(env)
+
+      error =
+        assert_raise RuntimeError, fn ->
+          Config.Reader.read!(@runtime_exs, env: :prod)
+        end
+
+      assert error.message =~ "EMAIL_FROM"
+      assert error.message =~ "SPF/DKIM"
+    end
+
+    test "a blank EMAIL_FROM counts as unset with SMTP configured", %{base: base} do
+      # `${EMAIL_FROM:-}` under compose delivers "", not absence.
+      env =
+        base
+        |> Map.merge(%{"EMAIL_FROM" => "", "SMTP_HOST" => "smtp.example.com"})
+
+      for k <- @mail_vars, do: System.delete_env(k)
+      System.put_env(env)
+
+      assert_raise RuntimeError, ~r/EMAIL_FROM/, fn ->
+        Config.Reader.read!(@runtime_exs, env: :prod)
+      end
+    end
+
+    test "is used verbatim when set", %{base: base} do
+      config = read_prod_full(Map.put(base, "RESEND_API_KEY", "re_live_abc"))
+
+      assert config[:email_from] == "noreply@fountain.example.com"
+    end
+
+    test "falls back to a neutral placeholder when mail is off", %{base: base} do
+      # Nothing is ever sent in this mode; the placeholder must not be a real
+      # domain someone owns.
+      config =
+        base
+        |> Map.delete("EMAIL_FROM")
+        |> Map.put("EMAIL_DELIVERY", "none")
+        |> read_prod_full()
+
+      assert config[:email_from] == "noreply@localhost"
     end
   end
 end

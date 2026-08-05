@@ -18,8 +18,10 @@ defmodule Fountain.RuntimeConfigTest do
     "SECRET_KEY_BASE" => String.duplicate("a", 64),
     "DATABASE_URL" => "postgres://u:p@localhost/db",
     # Prod now refuses to boot with no mail delivery configured, so every
-    # prod-config evaluation needs one.
-    "RESEND_API_KEY" => "re_test_key"
+    # prod-config evaluation needs one — and a configured provider requires
+    # EMAIL_FROM.
+    "RESEND_API_KEY" => "re_test_key",
+    "EMAIL_FROM" => "noreply@fountain.example.com"
   }
 
   setup do
@@ -99,5 +101,49 @@ defmodule Fountain.RuntimeConfigTest do
     cfg = read_prod_config(Map.put(base, "PUBLIC_URL", "https://fountain.example.com"))
 
     assert "//fountain.example.com" in cfg[FountainWeb.Endpoint][:check_origin]
+  end
+
+  describe "PUBLIC_URL is required in prod" do
+    # The old fallback was http://localhost:4000 — and unlike a missing
+    # secret, nothing crashed: the instance ran and silently put localhost
+    # links in every verification email and every sprite's FOUNTAIN_BASE_URL.
+    test "prod refuses to boot with neither PUBLIC_URL nor FOUNTAIN_DOMAIN", %{base: base} do
+      for k <- ~w(PUBLIC_URL PHX_HOST FOUNTAIN_DOMAIN SMTP_HOST EMAIL_DELIVERY),
+          do: System.delete_env(k)
+
+      System.put_env(base)
+
+      error =
+        assert_raise RuntimeError, fn ->
+          Config.Reader.read!(@runtime_exs, env: :prod)
+        end
+
+      # Actionable: name the variable, the consequence, and the shape.
+      assert error.message =~ "PUBLIC_URL"
+      assert error.message =~ "localhost:4000"
+      assert error.message =~ "https://fountain.example.com"
+    end
+
+    test "a blank PUBLIC_URL counts as unset", %{base: base} do
+      # Compose-style `${VAR:-}` interpolation delivers "", not absence.
+      for k <- ~w(PUBLIC_URL PHX_HOST FOUNTAIN_DOMAIN SMTP_HOST EMAIL_DELIVERY),
+          do: System.delete_env(k)
+
+      System.put_env(Map.put(base, "PUBLIC_URL", ""))
+
+      assert_raise RuntimeError, ~r/PUBLIC_URL/, fn ->
+        Config.Reader.read!(@runtime_exs, env: :prod)
+      end
+    end
+
+    test "dev keeps the localhost default", %{base: base} do
+      for k <- ~w(PUBLIC_URL PHX_HOST FOUNTAIN_DOMAIN SMTP_HOST EMAIL_DELIVERY),
+          do: System.delete_env(k)
+
+      System.put_env(base)
+      cfg = Config.Reader.read!(@runtime_exs, env: :dev)[:fountain]
+
+      assert cfg[:public_url] == "http://localhost:4000"
+    end
   end
 end

@@ -19,6 +19,7 @@ defmodule Fountain.OtelConfigTest do
     "SECRET_KEY_BASE" => String.duplicate("a", 64),
     "DATABASE_URL" => "postgres://u:p@localhost/db",
     "RESEND_API_KEY" => "re_test_key",
+    "EMAIL_FROM" => "noreply@fountain.example.com",
     "PUBLIC_URL" => "https://fountain.example.com"
   }
 

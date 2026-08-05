@@ -18,6 +18,20 @@ upgrade, is in
 
 ### Changed
 
+- **Two silent misconfigurations now refuse to boot in prod with actionable
+  errors.** `PUBLIC_URL` is required (or the deprecated `FOUNTAIN_DOMAIN`) —
+  the old `http://localhost:4000` fallback meant a prod instance ran fine
+  while every verification/reset link and every sprite's `FOUNTAIN_BASE_URL`
+  silently pointed at localhost. And `EMAIL_FROM` is required whenever a
+  real delivery provider (Resend/SMTP) is configured — the old default was
+  the hosted instance's sending domain, so an instance that didn't set it
+  sent mail as someone else's domain, which providers checking SPF/DKIM
+  reject anyway. With `EMAIL_DELIVERY=none`, `EMAIL_FROM` stays optional
+  (nothing is sent) and falls back to a neutral `noreply@localhost`. The
+  compose quick start and `deploy/k8s` baseline already set `PUBLIC_URL`,
+  and instances that took the mail integration guide's advice to change
+  `EMAIL_FROM` are unaffected (#495)
+
 - The README no longer contradicts the licence story: it said nothing lived
   in `ee/` and that ee code would not be MIT — both false since #472. It now
   states what `ee/` holds (billing + growth mail) and that it is MIT today,
