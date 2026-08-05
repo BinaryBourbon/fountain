@@ -17,6 +17,11 @@ defmodule Fountain.ComposePassthroughConfigTest do
 
   @vars ~w(TRUSTED_PROXIES SENTRY_DSN DATABASE_SSL_VERIFY DATABASE_SSL_CA_FILE)
 
+  # Not under test here, but they change what the prod boot requires (a
+  # configured mail provider demands EMAIL_FROM). Cleared before every read
+  # so a leak from an earlier env-mutating module can't fail these cases.
+  @mail_vars ~w(RESEND_API_KEY SMTP_HOST EMAIL_FROM)
+
   @base %{
     "PHX_SERVER" => "true",
     "SECRET_KEY_BASE" => String.duplicate("a", 64),
@@ -32,7 +37,7 @@ defmodule Fountain.ComposePassthroughConfigTest do
     on_exit(fn ->
       System.put_env(previous)
 
-      for k <- @vars ++ ["MASTER_SECRETS_KEY"],
+      for k <- @vars ++ @mail_vars ++ ["MASTER_SECRETS_KEY"],
           not Map.has_key?(previous, k),
           do: System.delete_env(k)
     end)
@@ -41,7 +46,7 @@ defmodule Fountain.ComposePassthroughConfigTest do
   end
 
   defp read_prod(env) do
-    for k <- @vars, do: System.delete_env(k)
+    for k <- @vars ++ @mail_vars, do: System.delete_env(k)
     System.put_env(env)
     Config.Reader.read!(@runtime_exs, env: :prod)
   end
