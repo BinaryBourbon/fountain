@@ -28,6 +28,31 @@ defmodule FountainWeb.AccountDeletionLiveTest do
   end
 
   describe "self-serve, on /account" do
+    test "billing disabled: the deletion warning does not mention a subscription", %{conn: conn} do
+      # There is no subscription to cancel on a billing-disabled instance —
+      # the last billing reference the #513 walkthrough sweep found.
+      previous = Application.get_env(:fountain, :billing_enabled)
+      Application.put_env(:fountain, :billing_enabled, false)
+      on_exit(fn -> Application.put_env(:fountain, :billing_enabled, previous) end)
+
+      user = insert_verified_user()
+      {:ok, _lv, html} = live(login_user(conn, user), ~p"/account")
+
+      assert html =~ "Destroys every running sandbox"
+      refute html =~ "subscription"
+    end
+
+    test "billing enabled: the deletion warning covers the subscription", %{conn: conn} do
+      previous = Application.get_env(:fountain, :billing_enabled)
+      Application.put_env(:fountain, :billing_enabled, true)
+      on_exit(fn -> Application.put_env(:fountain, :billing_enabled, previous) end)
+
+      user = insert_verified_user()
+      {:ok, _lv, html} = live(login_user(conn, user), ~p"/account")
+
+      assert html =~ "Cancels your subscription"
+    end
+
     test "typing the account's email deletes it", %{conn: conn} do
       user = insert_verified_user()
 
