@@ -91,7 +91,10 @@ services:
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_USERNAME: ${SMTP_USERNAME:-}
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
-      EMAIL_FROM: ${EMAIL_FROM:-noreply@localhost}
+      # Deliberately blank, not defaulted: with real mail configured the app
+      # refuses to boot until EMAIL_FROM names an address on a domain your
+      # provider is verified for. With EMAIL_DELIVERY=none it is unused.
+      EMAIL_FROM: ${EMAIL_FROM:-}
 
       # Open by default so the first account can be created. Close it once
       # yours exists.

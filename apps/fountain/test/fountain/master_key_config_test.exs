@@ -18,8 +18,11 @@ defmodule Fountain.MasterKeyConfigTest do
     previous = System.get_env()
 
     # Prod refuses to boot with no mail delivery configured; these cases are
-    # about the master key, so give them one.
+    # about the master key, so give them one — with the EMAIL_FROM and
+    # PUBLIC_URL a configured provider and a prod boot now require.
     System.put_env("RESEND_API_KEY", "re_test_key")
+    System.put_env("EMAIL_FROM", "noreply@fountain.example.com")
+    System.put_env("PUBLIC_URL", "https://fountain.example.com")
 
     # Prod requires a database URL regardless of PHX_SERVER since #256 (release
     # eval tasks need the repo). Without this the test only passed when a
@@ -30,7 +33,7 @@ defmodule Fountain.MasterKeyConfigTest do
     on_exit(fn ->
       System.put_env(previous)
 
-      for k <- ~w(MASTER_SECRETS_KEY PHX_SERVER),
+      for k <- ~w(MASTER_SECRETS_KEY PHX_SERVER EMAIL_FROM PUBLIC_URL),
           not Map.has_key?(previous, k),
           do: System.delete_env(k)
     end)

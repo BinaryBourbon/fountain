@@ -15,7 +15,8 @@ defmodule Fountain.SentryConfigTest do
     "PHX_SERVER" => "true",
     "SECRET_KEY_BASE" => String.duplicate("a", 64),
     "DATABASE_URL" => "postgres://u:p@localhost/db",
-    "EMAIL_DELIVERY" => "none"
+    "EMAIL_DELIVERY" => "none",
+    "PUBLIC_URL" => "https://fountain.example.com"
   }
 
   @vars ~w(SENTRY_DSN SENTRY_ENVIRONMENT FOUNTAIN_BUILD_SHA)

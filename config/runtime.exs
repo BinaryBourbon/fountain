@@ -123,11 +123,32 @@ config :fountain, :sprites_timeout_ms, sprites_timeout_ms
 # deployments keep booting and get correct links without an env change.
 default_scheme = if env == :prod, do: "https", else: "http"
 
-public_url =
-  Fountain.PublicUrl.absolute(
-    System.get_env("PUBLIC_URL") || System.get_env("FOUNTAIN_DOMAIN"),
-    default_scheme
-  )
+public_url_env =
+  case String.trim(System.get_env("PUBLIC_URL") || System.get_env("FOUNTAIN_DOMAIN") || "") do
+    "" -> nil
+    value -> value
+  end
+
+# In prod the fallback would be http://localhost:4000 — and unlike a missing
+# secret, nothing crashes: the instance runs, and every verification/reset
+# link and every sprite's FOUNTAIN_BASE_URL silently points at localhost.
+# Same treatment mail got: refuse to boot and say what to set. Dev and test
+# keep the localhost default. Compose always passes PUBLIC_URL
+# (`${PUBLIC_URL:-http://localhost:4000}`), so the quick start is unaffected.
+if env == :prod and is_nil(public_url_env) do
+  raise """
+  PUBLIC_URL is not set.
+
+  It is the absolute base URL users reach this instance at. Without it,
+  every link that leaves the app — verification and password-reset emails,
+  llms.txt — and every sprite's FOUNTAIN_BASE_URL would silently point at
+  http://localhost:4000. Set it, scheme included:
+
+    PUBLIC_URL=https://fountain.example.com
+  """
+end
+
+public_url = Fountain.PublicUrl.absolute(public_url_env, default_scheme)
 
 phx_host =
   case System.get_env("PHX_HOST") do
@@ -370,7 +391,17 @@ config :fountain, :stripe_price_monthly_cents, stripe_price_monthly_cents
 # actually implemented, so operators were told to set SMTP_* variables that did
 # nothing.
 if config_env() == :prod do
-  config :fountain, :email_from, System.get_env("EMAIL_FROM", "noreply@updates.inevitable.fyi")
+  # No default: the old fallback was the hosted instance's sending domain, so
+  # a self-hoster who configured a provider but not EMAIL_FROM sent mail as
+  # someone else's domain — rejected by any provider checking SPF/DKIM, and
+  # wrong even where it wasn't. Required when a real adapter is selected
+  # (enforced after the adapter choice below); with mail off it is only a
+  # placeholder in headers that are never sent.
+  email_from =
+    case System.get_env("EMAIL_FROM") do
+      blank when blank in [nil, ""] -> nil
+      from -> from
+    end
 
   # Optional (#450): where "contact support" in account emails points. Unset,
   # the copy stays vague — EMAIL_FROM is usually a noreply@ address, so
@@ -454,6 +485,20 @@ if config_env() == :prod do
       password-reset email cannot be delivered.
       """
   end
+
+  if (resend_api_key || smtp_host) && is_nil(email_from) do
+    raise """
+    Mail delivery is configured but EMAIL_FROM is not set.
+
+    Every provider that checks SPF/DKIM would reject mail sent from a domain
+    you don't control, so there is no usable default. Set it to an address on
+    a domain your provider is verified for:
+
+      EMAIL_FROM=noreply@fountain.example.com
+    """
+  end
+
+  config :fountain, :email_from, email_from || "noreply@localhost"
 end
 
 # Database config is deliberately NOT behind `server?`. Release tasks

@@ -231,7 +231,10 @@ defmodule Fountain.Emails.UserEmails do
   # and support-contact policy rather than duplicating it.
   @doc false
   def from_address do
-    addr = Application.get_env(:fountain, :email_from, "noreply@updates.inevitable.fyi")
+    # The fallback only ever renders in dev/test (the Local mailbox) and under
+    # EMAIL_DELIVERY=none, where nothing is sent: prod refuses to boot with a
+    # real adapter and no EMAIL_FROM (config/runtime.exs).
+    addr = Application.get_env(:fountain, :email_from, "noreply@localhost")
     {addr, addr}
   end
 

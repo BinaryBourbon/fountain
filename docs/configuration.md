@@ -21,7 +21,7 @@ an error message.
 | `DATABASE_URL` | — | prod | Postgres connection string. Boot fails without it |
 | `SECRET_KEY_BASE` | — | prod (serving) | Signs and encrypts session cookies and tokens. Generate: `openssl rand -base64 48` |
 | `MASTER_SECRETS_KEY` | — | prod | Wraps every tenant's data-encryption key ([the secrets model](architecture.md#the-secrets-model)). 32 bytes, url-safe base64, no padding: `openssl rand 32 \| base64 \| tr '+/' '-_' \| tr -d '='`. **Lose it and every stored secret is unrecoverable.** Boot refuses a malformed value |
-| `PUBLIC_URL` | `http://localhost:4000` | effectively, prod | The externally visible base URL, scheme included. Builds every link that leaves the app (verification and reset emails, `llms.txt`) and is passed to every sandbox as `FOUNTAIN_BASE_URL`. An `https://` value also switches on HTTPS redirection, HSTS, and the secure cookie flag — all derived from the scheme |
+| `PUBLIC_URL` | — | prod | The externally visible base URL, scheme included. A prod instance refuses to boot without it (or the deprecated `FOUNTAIN_DOMAIN`) — the old `http://localhost:4000` fallback silently put localhost links in every verification email. Builds every link that leaves the app (verification and reset emails, `llms.txt`) and is passed to every sandbox as `FOUNTAIN_BASE_URL`. An `https://` value also switches on HTTPS redirection, HSTS, and the secure cookie flag — all derived from the scheme |
 | `PHX_HOST` | host of `PUBLIC_URL` | — | Bare host for the endpoint URL and the LiveView origin check. Set only if it differs from `PUBLIC_URL`'s host |
 | `FOUNTAIN_DOMAIN` | — | deprecated | The old combined variable; still honoured as a fallback for both of the above. Prefer `PUBLIC_URL` / `PHX_HOST` |
 | `PHX_SERVER` | `true` in the shipped image | — | `1`/`true`/`yes` starts the web listener. Release tasks run with `PHX_SERVER=false … eval '…'` to boot the app without binding the port |
@@ -72,7 +72,7 @@ signup with no visible error. See [Email](self-hosting.md#email).
 | `SMTP_PASSWORD` | — | — | |
 | `SMTP_TLS` | `always` | — | STARTTLS by default; `never` for a relay on a trusted network that does not offer it |
 | `EMAIL_DELIVERY` | — | one of three | `none` deliberately disables email. Accounts then self-verify at registration (ADR 0011), but password-reset email cannot be delivered, so a forgotten password is unrecoverable in this mode |
-| `EMAIL_FROM` | `noreply@updates.inevitable.fyi` | — | The From address. Change it — the default is the hosted instance's sending domain |
+| `EMAIL_FROM` | — | when mail is on | The From address. Required whenever a real delivery provider is configured — a prod instance refuses to boot without it, since mail from an unverified domain is rejected anyway. Unused under `EMAIL_DELIVERY=none` |
 | `SUPPORT_EMAIL` | — | — | Where "contact support" in account emails (suspension, deletion) points. Unset, the copy names no address |
 
 ## Authentication

@@ -44,7 +44,7 @@ account is operator intervention.
 
 | Variable | Default | Effect |
 |---|---|---|
-| `EMAIL_FROM` | `noreply@updates.inevitable.fyi` | The From address. **Change it** — the default is the hosted instance's sending domain, which will not be verified for yours |
+| `EMAIL_FROM` | — (required) | The From address, on a domain your provider is verified for. Required with any real delivery provider — the app refuses to boot without it rather than sending mail your provider will reject |
 
 What actually sends email today: account verification (24-hour link),
 password reset (1-hour link), and — only with [Stripe](stripe.md) configured
