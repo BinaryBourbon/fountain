@@ -55,6 +55,7 @@ an error message.
 | `REGISTRATION_ALLOWED_EMAIL_DOMAINS` | any | — | Comma-separated list; signups outside these domains are refused. Empty means no restriction |
 | `UNVERIFIED_PRUNE_AFTER_DAYS` | `30` | — | Accounts that never verified their email are deleted after this many days — they cannot log in, so they are rows, not users. `0` disables the sweep |
 | `UNVERIFIED_PRUNE_EXEMPT` | — | — | Comma-separated email substrings never pruned (operator or test accounts that deliberately stay unverified) |
+| `FIRST_USER_ADMIN` | `false` | — | `true`: while the instance has no admin, the first account to become verified is promoted to admin, audit-recorded (ADR 0011). Leave off on a multi-tenant deployment — it hands admin to whoever verifies first |
 
 ## Email
 
@@ -70,7 +71,7 @@ signup with no visible error. See [Email](self-hosting.md#email).
 | `SMTP_USERNAME` | — | — | Omit entirely for an unauthenticated relay |
 | `SMTP_PASSWORD` | — | — | |
 | `SMTP_TLS` | `always` | — | STARTTLS by default; `never` for a relay on a trusted network that does not offer it |
-| `EMAIL_DELIVERY` | — | one of three | `none` deliberately disables email. Password-and-email accounts then cannot verify themselves; use `Fountain.Release.verify_email/1` |
+| `EMAIL_DELIVERY` | — | one of three | `none` deliberately disables email. Accounts then self-verify at registration (ADR 0011), but password-reset email cannot be delivered, so a forgotten password is unrecoverable in this mode |
 | `EMAIL_FROM` | `noreply@updates.inevitable.fyi` | — | The From address. Change it — the default is the hosted instance's sending domain |
 | `SUPPORT_EMAIL` | — | — | Where "contact support" in account emails (suspension, deletion) points. Unset, the copy names no address |
 

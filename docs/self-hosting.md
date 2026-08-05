@@ -38,23 +38,23 @@ This page explains the variables that shape a deployment as they come up; the
 complete list — including the deploy-level ones the compose file never
 mentions — is the [configuration reference](configuration.md).
 
-Then open <http://localhost:4000> and register. With the default
-`EMAIL_DELIVERY=none` nothing is sent, so verify your own account:
+Then open <http://localhost:4000> and register — that's the whole first
+login. With the compose defaults (`EMAIL_DELIVERY=none`,
+`FIRST_USER_ADMIN=true`) your account self-verifies at registration and,
+being the first, is promoted to admin, recorded in the admin audit trail
+like any other role grant (ADR 0011).
 
-```bash
-docker compose exec app bin/fountain_server eval \
-  'Fountain.Release.verify_email("you@example.com")'
-```
-
-Sign in, and close registration so nobody else can join:
+Then close registration so nobody else can join:
 
 ```bash
 echo "REGISTRATION_ENABLED=false" >> .env
 docker compose up -d
 ```
 
-Make yourself the admin — recorded in the admin audit trail like any other
-role grant:
+Register **before** exposing the instance to a network you don't trust:
+while no admin exists, the first verified account gets the role. Prefer the
+manual path? Set `FIRST_USER_ADMIN=false` and use `Fountain.Release`
+tasks — see [operations](operations.md):
 
 ```bash
 docker compose exec app bin/fountain_server eval \
@@ -159,7 +159,7 @@ Pick one:
 |---|---|
 | `RESEND_API_KEY` | Delivery via Resend |
 | `SMTP_HOST` (+ `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`) | Any SMTP server. Port defaults to 587 with STARTTLS; omit the username for an unauthenticated relay |
-| `EMAIL_DELIVERY=none` | No email. Verify accounts with `Fountain.Release.verify_email/1` |
+| `EMAIL_DELIVERY=none` | No email. Accounts self-verify at registration (ADR 0011) |
 
 Password reset also needs working mail. With `EMAIL_DELIVERY=none` the only
 route back into a locked-out account is the database. Provider-side setup —

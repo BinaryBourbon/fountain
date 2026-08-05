@@ -64,7 +64,9 @@ defmodule Fountain.MailerConfigTest do
       assert error.message =~ "RESEND_API_KEY"
       assert error.message =~ "SMTP_HOST"
       assert error.message =~ "EMAIL_DELIVERY=none"
-      assert error.message =~ "Fountain.Release.verify_email"
+      # Since ADR 0011 the opt-out self-verifies accounts; the message must
+      # say so rather than send operators to a release task.
+      assert error.message =~ "self-verify"
     end
   end
 
