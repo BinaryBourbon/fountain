@@ -18,6 +18,18 @@ upgrade, is in
 
 ### Fixed
 
+- **Minting an API key always leaves an audit trail now, whichever door you
+  came through.** There are four ways to get a key, and `POST /api/auth/token`
+  — the one that exchanges a password for a full-scope key, and the most
+  attack-relevant of them — was the only one that minted silently, because it
+  runs on a public pipeline that carries no audit plug. Anyone auditing "who
+  issued a key and when" saw the UI and `POST /api/auth/api-keys` but not the
+  CLI login door. The audit moves into `Accounts.create_api_key/3`, which
+  every mint already goes through, so UI, API, CLI and the per-conversation
+  callback rotation are covered by construction and a future surface gets it
+  for free. Events carry the key's name, scopes and public prefix — enough to
+  match a trail row to a listed key — and never the key (#542)
+
 - **Email verification is now enforced where identity is established, not at
   each door.** #533 moved unverified logins onto a waiting page but left the
   check inside the LiveView hook, so it held only because every entry point
