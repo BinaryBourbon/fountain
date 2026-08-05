@@ -31,6 +31,17 @@ upgrade, is in
   in another tab or on a phone — with no second login. It cannot be camped on:
   a verified user hitting it is sent where they were going (#533)
 
+- **Fetching a turn image over the API no longer fails when you ask for an
+  image.** `GET /api/conversations/:id/turns/:turn_id/images/:position`
+  returns PNG or JPEG bytes, but sat behind a JSON-only content-negotiation
+  pipeline, so a client sending `Accept: image/png` — the natural header for
+  the request — got `406 Not Acceptable` before the endpoint ran. It worked
+  only if you asked for `*/*`, which is why browsers never hit it. The
+  endpoint was also in no spec at all, while the `Turn` schema advertised
+  `image_count`: the API told you two images existed and documented no way to
+  reach them. Both fixed, and the endpoint is now in `/api/openapi.json` and
+  `docs/api.md` (#578)
+
 - **The `/api/auth/*` endpoints are now in the OpenAPI spec.** They never
   were: the spec is generated from the router, and a controller that does
   not declare operations is skipped in silence — so the published spec
