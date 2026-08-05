@@ -568,6 +568,31 @@ defmodule Fountain.Billing do
   end
 
   @doc """
+  Read-only invoice history for the admin user detail page (#502), fetched
+  live from Stripe — nothing is stored locally, so this can never drift from
+  the billing system of record the way webhook-derived state can.
+
+  Refused before Stripe when billing is disabled (#399), and a user with no
+  Stripe customer has no invoices to fetch — `{:ok, []}` without a call.
+  """
+  @spec list_invoices(User.t()) :: {:ok, [Stripe.Invoice.t()]} | {:error, term()}
+  def list_invoices(%User{} = user) do
+    cond do
+      not enabled?() ->
+        {:error, :billing_disabled}
+
+      user.stripe_customer_id in [nil, ""] ->
+        {:ok, []}
+
+      true ->
+        case Stripe.Invoice.list(%{customer: user.stripe_customer_id, limit: 20}) do
+          {:ok, %Stripe.List{data: invoices}} -> {:ok, invoices}
+          {:error, reason} -> {:error, reason}
+        end
+    end
+  end
+
+  @doc """
   Marks an account comped: free access granted by an operator, indefinitely.
 
   Any live Stripe subscription is cancelled first — a comped account must not
