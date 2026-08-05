@@ -269,6 +269,19 @@ defmodule FountainWeb.Router do
     end
   end
 
+  # Avatar bytes over a bearer token (#528). Outside the :accepts_json scope
+  # for the same reason the SSE route is: a client fetching an image sends
+  # `Accept: image/*`, which `plug :accepts, ["json"]` would refuse with 406
+  # before the action ran. The JSON responses on the write paths are explicit,
+  # so nothing here depends on negotiation.
+  scope "/api", FountainWeb do
+    pipe_through :api
+
+    get "/agents/:id/avatar", AgentAvatarController, :api_show
+    put "/agents/:id/avatar", AgentAvatarController, :api_update
+    delete "/agents/:id/avatar", AgentAvatarController, :api_delete
+  end
+
   # Server-sent events. Same auth chain as the rest of /api, minus content
   # negotiation — see the `:api` pipeline. The action sets its own
   # `text/event-stream` content-type and its error paths go through

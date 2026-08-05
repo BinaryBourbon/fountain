@@ -103,6 +103,14 @@ PUT    /api/agents/:id
 DELETE /api/agents/:id
 ```
 
+```
+GET    /api/agents/:id/avatar   # image bytes (bearer token)
+PUT    /api/agents/:id/avatar   # raw bytes with an image content-type, or {"data": base64, "media_type": ...}
+DELETE /api/agents/:id/avatar
+```
+
+Avatars accept `image/png`, `image/jpeg`, `image/gif`, `image/webp`, up to 5 MB. The agent object carries `avatar_media_type` (null when there is none). Anything else is refused with `415`; an oversized upload with `413`. Bytes are served with `nosniff` and a sandboxing CSP, and the media type is re-validated at serve time.
+
 Agent objects carry `conversation_count`; environments carry `secret_count` and `agent_count`; vaults carry `secret_count`. They are on both the list and single-resource reads, so "is this environment in use / safe to delete" is one request.
 
 ## Environments
