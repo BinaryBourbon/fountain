@@ -725,6 +725,93 @@ defmodule Fountain.Billing do
   def ensure_stripe_customer(%User{} = user), do: create_stripe_customer(user)
 
   @doc """
+  Mint a Stripe Billing Portal session URL for `user`, returning `{:ok, url}`.
+
+  Refuses a comped account: there is nothing to manage and nothing to pay.
+  Refuses an account with no Stripe customer — the portal is per-customer, and
+  a user who has never been one has no portal to visit.
+  """
+  @spec portal_url(User.t(), String.t()) :: {:ok, String.t()} | {:error, term()}
+  def portal_url(%User{subscription_status: "comped"}, _return_url), do: {:error, :comped}
+
+  def portal_url(%User{stripe_customer_id: id}, _return_url) when id in [nil, ""],
+    do: {:error, :no_customer}
+
+  def portal_url(%User{stripe_customer_id: customer_id}, return_url) do
+    case Stripe.BillingPortal.Session.create(%{customer: customer_id, return_url: return_url}) do
+      {:ok, session} -> {:ok, session.url}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  @doc """
+  Mint a Stripe Checkout session URL for `user`, returning `{:ok, url}`.
+
+  Creates the Stripe Customer first when the user has none: passing
+  `customer_email` instead makes Stripe mint its own Customer whose id we never
+  learn, so the resulting webhook matches no user and the card is charged
+  without the account ever activating.
+
+  Refuses a comped account. Callers must check `has_live_subscription?/1`
+  first — Checkout opened on top of a live subscription creates a second,
+  duplicate one.
+  """
+  @spec checkout_url(User.t(), String.t()) :: {:ok, String.t()} | {:error, term()}
+  def checkout_url(%User{subscription_status: "comped"}, _return_url), do: {:error, :comped}
+
+  def checkout_url(%User{} = user, return_url) do
+    with {:ok, user} <- ensure_stripe_customer(user) do
+      params = %{
+        mode: :subscription,
+        line_items: [%{price: Application.get_env(:fountain, :stripe_price_id, ""), quantity: 1}],
+        success_url: return_url <> "?checkout=success",
+        cancel_url: return_url,
+        customer: user.stripe_customer_id,
+        # Second route back to the user if the customer link is ever lost —
+        # checkout.session.completed carries this through.
+        client_reference_id: user.id,
+        # Show the "Add promotion code" link; without the flag it is hidden.
+        allow_promotion_codes: true
+      }
+
+      case Stripe.Checkout.Session.create(params) do
+        {:ok, session} -> {:ok, session.url}
+        {:error, reason} -> {:error, reason}
+      end
+    end
+  end
+
+  @doc """
+  The Stripe URL a "manage my subscription" action should send `user` to:
+  the Portal when they already have something live to manage, Checkout when
+  they do not.
+
+  An existing customer may hold a live subscription even when the local status
+  says otherwise — a cancel-at-period-end stays `active` in Stripe until the
+  period ends, and a lost webhook leaves the same mismatch — so the lookup is
+  what keeps Checkout from opening a duplicate subscription on top.
+  """
+  @spec manage_url(User.t(), String.t()) :: {:ok, String.t()} | {:error, term()}
+  def manage_url(%User{subscription_status: "comped"}, _return_url), do: {:error, :comped}
+
+  def manage_url(%User{} = user, return_url) do
+    cond do
+      user.subscription_status in ~w(active past_due) and user.stripe_customer_id ->
+        portal_url(user, return_url)
+
+      user.stripe_customer_id in [nil, ""] ->
+        checkout_url(user, return_url)
+
+      true ->
+        case has_live_subscription?(user) do
+          {:ok, true} -> portal_url(user, return_url)
+          {:ok, false} -> checkout_url(user, return_url)
+          {:error, _} = error -> error
+        end
+    end
+  end
+
+  @doc """
   Attach a Stripe customer id to a user that has none.
 
   Used to repair the accounts created before Checkout guaranteed a customer:

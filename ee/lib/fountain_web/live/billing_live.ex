@@ -68,7 +68,7 @@ defmodule FountainWeb.Live.BillingLive do
     socket = assign(socket, :stripe_url_loading, true)
     return_url = FountainWeb.Endpoint.url() <> ~p"/account/billing"
 
-    case user.stripe_customer_id && portal_url(user.stripe_customer_id, return_url) do
+    case user.stripe_customer_id && Billing.portal_url(user, return_url) do
       {:ok, url} ->
         {:noreply, redirect(socket, external: url)}
 
@@ -241,77 +241,11 @@ defmodule FountainWeb.Live.BillingLive do
   # Refused outright rather than relying on the button being hidden (#399):
   # a stale socket or a hand-sent event must not open Checkout for an
   # account whose subscriptions comp_account/1 deliberately cancelled.
-  defp build_stripe_url(%{subscription_status: "comped"}), do: {:error, :comped}
+  # Both surfaces mint the same URLs under the same rules, so the rules live in
+  # the context (#524) rather than in a copy per surface.
+  defp build_stripe_url(user), do: Billing.manage_url(user, billing_return_url())
 
-  defp build_stripe_url(user) do
-    return_url = FountainWeb.Endpoint.url() <> ~p"/account/billing"
-
-    if user.subscription_status in ~w(active past_due) and user.stripe_customer_id do
-      portal_url(user.stripe_customer_id, return_url)
-    else
-      checkout_or_portal(user, return_url)
-    end
-  end
-
-  # An existing customer may still hold a live subscription even when our local
-  # status says otherwise — most notably one cancelled at period end, which
-  # Stripe keeps "active" until the period actually ends (and a lost webhook
-  # leaves the same mismatch). Checkout would open a second, duplicate
-  # subscription on top of it, so those users go to the Portal, where the
-  # existing subscription can be renewed instead. A fresh customer has no
-  # subscriptions to duplicate, so no lookup is needed.
-  defp checkout_or_portal(%{stripe_customer_id: id} = user, return_url)
-       when is_binary(id) and id != "" do
-    case Billing.has_live_subscription?(user) do
-      {:ok, true} -> portal_url(id, return_url)
-      {:ok, false} -> checkout_url(user, return_url)
-      {:error, _} = error -> error
-    end
-  end
-
-  defp checkout_or_portal(user, return_url) do
-    # Never fall back to `customer_email`. That makes Stripe mint its own
-    # Customer whose id we never learn, so the subscription webhook matches no
-    # user: the card is charged and the account is never activated. Creating
-    # the Customer first means the id is always ours.
-    with {:ok, user} <- Billing.ensure_stripe_customer(user) do
-      checkout_url(user, return_url)
-    end
-  end
-
-  defp portal_url(customer_id, return_url) do
-    case Stripe.BillingPortal.Session.create(%{
-           customer: customer_id,
-           return_url: return_url
-         }) do
-      {:ok, session} -> {:ok, session.url}
-      error -> error
-    end
-  end
-
-  defp checkout_url(user, return_url) do
-    price_id = Application.get_env(:fountain, :stripe_price_id, "")
-
-    params = %{
-      mode: :subscription,
-      line_items: [%{price: price_id, quantity: 1}],
-      success_url: return_url <> "?checkout=success",
-      cancel_url: return_url,
-      customer: user.stripe_customer_id,
-      # Second route back to the user if the customer link is ever lost —
-      # checkout.session.completed carries this through.
-      client_reference_id: user.id,
-      # Show "Add promotion code" link on the Checkout page. Promotion codes
-      # are user-facing redeemable strings tied to coupons created in the
-      # Stripe dashboard. Without this flag, the field is hidden by default.
-      allow_promotion_codes: true
-    }
-
-    case Stripe.Checkout.Session.create(params) do
-      {:ok, session} -> {:ok, session.url}
-      error -> error
-    end
-  end
+  defp billing_return_url, do: FountainWeb.Endpoint.url() <> ~p"/account/billing"
 
   # Only an active subscription can be pending cancellation; once `.deleted`
   # lands the status is canceled and the flag is cleared by the sync.

@@ -103,6 +103,15 @@ defmodule FountainWeb.FallbackController do
     |> json(%{error: "no_agent", message: "the conversation's agent has been deleted"})
   end
 
+  # Billing is off on this instance (#524). 404 rather than 402/403: the
+  # endpoint does not exist here, and the UI likewise redirects away from the
+  # billing page entirely.
+  def call(conn, {:error, :billing_disabled}) do
+    conn
+    |> put_status(:not_found)
+    |> json(%{error: "billing_disabled", billing: "disabled"})
+  end
+
   def call(conn, {:error, reason}) when is_binary(reason) do
     conn
     |> put_status(:bad_request)

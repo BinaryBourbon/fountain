@@ -30,6 +30,19 @@ upgrade, is in
 
 ### Added
 
+- **Billing is self-serve over the API**: `GET /api/account/billing` for
+  status, trial and period dates and the current month's usage, plus
+  `POST /api/account/billing/portal` and `.../checkout` to mint Stripe URLs.
+  All user-facing billing lived in `BillingLive`, so a CLI user who hit the
+  subscription gate got a 402 with no programmatic way out, and an expiring
+  trial was invisible — `/api/auth/me` carried `subscription_status` and
+  nothing else. Checkout refuses with 409 when Stripe already holds a live
+  subscription instead of quietly minting a duplicate, and refuses outright
+  when Stripe cannot be asked. With billing disabled the endpoints are 404
+  with `billing: "disabled"`, matching the UI's redirect. The URL-minting
+  rules moved into the billing context so the LiveView and the API cannot
+  drift; everything stays in `ee/` (#524)
+
 - **Account data export and account deletion are driveable over the API** —
   `POST/GET /api/account/exports`, `GET /api/account/exports/:id/download`
   and `DELETE /api/account`. These are the closest things Fountain has to
