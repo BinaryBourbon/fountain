@@ -362,6 +362,18 @@ defmodule FountainWeb.Router do
         TurnImageController,
         :show
 
+    # ── Unverified waiting room (#533) ──────────────────────────────────────────────────────
+    # Its own live_session because :require_pending_verification is the only
+    # gate that *tolerates* an unverified session — and bounces verified users
+    # out, so the page cannot be camped on. layout: false: the app chrome reads
+    # the sidebar assigns that only :require_authenticated_user sets, and an
+    # unverified account has nothing to show in it anyway.
+    live_session :verify_pending,
+      layout: false,
+      on_mount: [{FountainWeb.Live.Hooks, :require_pending_verification}] do
+      live "/auth/verify-pending", VerifyPendingLive, :index
+    end
+
     # ── Phase-3-billing: starting a conversation requires an active subscription ────────────
     # :require_active_subscription runs after :require_authenticated_user and
     # redirects to /account/billing on SubscriptionRequiredError. Only /new

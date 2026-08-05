@@ -18,6 +18,19 @@ upgrade, is in
 
 ### Fixed
 
+- **An unverified login no longer looks like a failed one.** Signing in with
+  the right password but an unverified address issued a perfectly good session
+  and then bounced it to `/auth/login` with "Please verify your email address"
+  — so the user landed back on the form they had just used successfully, with
+  nothing to say their session was fine and the resend path nowhere in sight.
+  Worse, re-entering the password never helped: the verification link logs you
+  in by itself. Those sessions now land on `/auth/verify-pending`, a page that
+  names the address the link went to, offers a resend (same five-an-hour
+  budget, keyed by account rather than IP) and a sign-out for anyone who typed
+  the wrong address, and advances on its own the moment verification lands —
+  in another tab or on a phone — with no second login. It cannot be camped on:
+  a verified user hitting it is sent where they were going (#533)
+
 - **Secrets written through the API now leave the same audit trail as
   secrets written through the UI.** `POST/DELETE /api/environments/:id/secrets`,
   the vault equivalents, and the secret half of `POST /api/apply` recorded
