@@ -92,6 +92,17 @@ signup with no visible error. See [Email](self-hosting.md#email).
 | `STRIPE_PRICE_ID` | — | for checkout | The subscription price surfaced by Checkout. Unset with billing enabled, signups get a purely local 14-day trial and a logged warning |
 | `STRIPE_PRICE_MONTHLY_CENTS` | — | no | Monthly price in cents (e.g. `2900`), display-only: feeds the admin billing overview's MRR tile. Unset, the tile shows a placeholder instead of a fabricated number |
 
+## Legal pages
+
+The identity rendered on `/terms` and `/privacy` — the operator's, not the Fountain project's. Set all four or none: a partial set refuses to boot. With none set, the pages return 404 and their links disappear from signup and the footer — unless billing is enabled, in which case the pages stay up with loud `{{...}}` placeholders until you configure them (an instance charging money should publish terms).
+
+| Variable | Default | Required | Effect |
+|---|---|---|---|
+| `LEGAL_ENTITY` | — | no | The legal entity operating this instance (e.g. `Example Corp Inc.`) |
+| `LEGAL_CONTACT_EMAIL` | — | no | Contact address shown on both pages |
+| `LEGAL_JURISDICTION` | — | no | Governing law / venue (e.g. `the State of Delaware, USA`) |
+| `LEGAL_EFFECTIVE_DATE` | — | no | The "Last updated" date on both pages |
+
 ## Proxies and origins
 
 | Variable | Default | Required | Effect |

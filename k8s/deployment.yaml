@@ -106,6 +106,10 @@ spec:
             # hosted instance is the deployment that opts in.
             - name: BILLING_ENABLED
               value: "true"
+            # TODO(#500): before billing launch, set LEGAL_ENTITY,
+            # LEGAL_CONTACT_EMAIL, LEGAL_JURISDICTION, LEGAL_EFFECTIVE_DATE
+            # (#517) — until then /terms and /privacy render loud
+            # {{COMPANY_LEGAL_NAME}} placeholders and boot logs a warning.
             # Display-only price for the admin billing overview's MRR tile
             # (#286). Matches the live price (price_1TVSgwDbTpLaSfbPV8fLtPT9,
             # $29/mo as of 2026-08-02) — the API only exposes the price *id*,

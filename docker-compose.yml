@@ -110,6 +110,13 @@ services:
       # yours exists.
       REGISTRATION_ENABLED: ${REGISTRATION_ENABLED:-true}
 
+      # Legal identity for /terms and /privacy (#517). Empty means unset:
+      # the pages are hidden rather than rendering someone else's terms.
+      LEGAL_ENTITY: ${LEGAL_ENTITY:-}
+      LEGAL_CONTACT_EMAIL: ${LEGAL_CONTACT_EMAIL:-}
+      LEGAL_JURISDICTION: ${LEGAL_JURISDICTION:-}
+      LEGAL_EFFECTIVE_DATE: ${LEGAL_EFFECTIVE_DATE:-}
+
       # Error tracking. Off unless set — nothing leaves the instance.
       SENTRY_DSN: ${SENTRY_DSN:-}
 
