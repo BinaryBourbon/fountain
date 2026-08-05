@@ -95,6 +95,11 @@ defmodule FountainWeb.Router do
     plug FountainWeb.Plugs.RequireFullScope
   end
 
+  # Layered on top of :api + :require_full_scope for the operator surface.
+  pipeline :require_admin_api do
+    plug FountainWeb.Plugs.RequireAdminApi
+  end
+
   ## ─── Public routes ────────────────────────────────────────────────────────────────────
 
   scope "/", FountainWeb do
@@ -306,6 +311,30 @@ defmodule FountainWeb.Router do
 
     get "/conversations/:conversation_id/stream", ConversationController, :stream,
       as: :conversation_stream
+  end
+
+  # Operator surface (#527). Three gates in order: :api authenticates the key,
+  # :require_full_scope keeps a sandbox's per-conversation token out, and
+  # :require_admin_api demands the role — the bearer-token analogue of
+  # Live.Hooks.require_admin.
+  scope "/api/admin", FountainWeb do
+    pipe_through [:accepts_json, :api, :require_full_scope, :require_admin_api]
+
+    get "/users", AdminController, :index_users
+    get "/users/:id", AdminController, :show_user
+    post "/users/:id/role", AdminController, :set_role
+    post "/users/:id/sandbox-limit", AdminController, :set_sandbox_limit
+    post "/users/:id/extend-trial", AdminController, :extend_trial
+    post "/users/:id/comp", AdminController, :set_comp
+    post "/users/:id/suspend", AdminController, :set_suspended
+    post "/users/:id/resync-stripe", AdminController, :resync_stripe
+    delete "/users/:id", AdminController, :delete_user
+
+    get "/sandboxes", AdminController, :index_sandboxes
+    post "/sandboxes/:id/reap", AdminController, :reap_sandbox
+
+    get "/audit", AdminController, :index_audit
+    get "/events", AdminController, :index_admin_events
   end
 
   ## ─── Authenticated browser / LiveView routes ──────────────────────────────────────────────────────────────────

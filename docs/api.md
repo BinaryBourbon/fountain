@@ -228,6 +228,28 @@ Since sub-conversations are created over the API (`X-Fountain-Parent-Conversatio
 
 Page by passing the previous response's `meta.next_cursor` as `after`; keep going while `meta.has_more` is true. `limit` defaults to 100 and caps at 1000. The `id` is the same value the SSE route uses as `Last-Event-ID`, so a client can drain history as JSON and then attach the stream from where it left off.
 
+## Admin
+
+For operator accounts (`role: "admin"`) holding a `full`-scoped key. Every action mirrors the admin UI, including its refusals, and records the same privilege-trail event.
+
+```
+GET    /api/admin/users                     # ?q= ?status= ?role= ?verified= ?sort= ?dir= ?page= ?per_page=
+GET    /api/admin/users/:id
+POST   /api/admin/users/:id/role            # {"role": "admin"|"user"}
+POST   /api/admin/users/:id/sandbox-limit   # {"limit": n}
+POST   /api/admin/users/:id/extend-trial    # {"days": n}
+POST   /api/admin/users/:id/comp            # {"comped": true|false}
+POST   /api/admin/users/:id/suspend         # {"suspended": true|false}
+POST   /api/admin/users/:id/resync-stripe
+DELETE /api/admin/users/:id
+GET    /api/admin/sandboxes
+POST   /api/admin/sandboxes/:id/reap
+GET    /api/admin/audit                     # cross-tenant audit events
+GET    /api/admin/events                    # the privilege trail: who did what to whom
+```
+
+Refusals: you cannot suspend, delete, or change the role of your own account (use another admin, or `DELETE /api/account` for self-deletion). Billing actions — extend-trial, comp, resync-stripe — are `404` with `"billing": "disabled"` on an instance without billing. Cross-tenant reads are metadata only; prompt and output content never cross a tenant boundary, whatever the role.
+
 ## Audit
 
 ```
