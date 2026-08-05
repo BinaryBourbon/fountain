@@ -229,6 +229,14 @@ defmodule FountainWeb.Router do
   scope "/api/account", FountainWeb do
     pipe_through [:accepts_json, :api, :require_full_scope]
 
+    # Export and deletion (#523). Deletion is irreversible and takes the
+    # tenant key with it, so it wants the strongest credential the account has.
+    post "/exports", AccountDataController, :create_export
+    get "/exports", AccountDataController, :index_exports
+    get "/exports/:id", AccountDataController, :show_export
+    get "/exports/:id/download", AccountDataController, :download_export
+    delete "/", AccountDataController, :delete_account
+
     get "/onboarding", OnboardingController, :show
     post "/onboarding/complete", OnboardingController, :complete
 

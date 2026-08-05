@@ -64,6 +64,20 @@ POST   /api/account/onboarding/complete  # idempotent
 
 An account configured entirely through the API never passes through the browser wizard, so nothing marks it onboarded and a later browser visit re-enters that wizard. Completing it over the API closes the loop. `GET /api/auth/me` also carries `email_verified`, `onboarding_state` and `onboarding_completed`.
 
+### Data export and deletion
+
+```
+POST   /api/account/exports              # 202 with a pending export; 429 + Retry-After inside the hour
+GET    /api/account/exports              # status (zero- or one-element list)
+GET    /api/account/exports/:id
+GET    /api/account/exports/:id/download # gzipped JSON
+DELETE /api/account                      # {"confirm": "<your account email>"} — irreversible
+```
+
+Exports build asynchronously; the API has no PubSub, so poll `GET /api/account/exports` until `downloadable` is true. At most one export exists per account and one request per hour.
+
+Deleting the account cancels billing, destroys sandboxes and removes every resource **and the tenant encryption key**. It requires the confirmation body — the API equivalent of the UI's typed-email gate — and a `full`-scoped key.
+
 ## Inference credentials
 
 Conversations run on your own provider tokens (BYO — Fountain never sees your inference traffic), so a new account cannot start a conversation until at least one is set.

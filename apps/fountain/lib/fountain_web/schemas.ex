@@ -928,6 +928,90 @@ defmodule FountainWeb.Schemas do
     })
   end
 
+  defmodule Export do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "Export",
+      description:
+        "An account data export. Built asynchronously; the payload is fetched " <>
+          "from the download endpoint, never embedded here.",
+      type: :object,
+      properties: %{
+        id: %Schema{type: :string, format: :uuid},
+        status: %Schema{type: :string, enum: ~w(pending completed failed)},
+        byte_size: %Schema{type: :integer, nullable: true, description: "Uncompressed size."},
+        error: %Schema{type: :string, nullable: true},
+        expires_at: %Schema{type: :string, format: :"date-time", nullable: true},
+        downloadable: %Schema{
+          type: :boolean,
+          description: "Completed and not yet expired — the only state the download serves."
+        },
+        inserted_at: %Schema{type: :string, format: :"date-time"},
+        updated_at: %Schema{type: :string, format: :"date-time"}
+      },
+      required: [:id, :status]
+    })
+  end
+
+  defmodule ExportResponse do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "ExportResponse",
+      type: :object,
+      properties: %{data: Export},
+      required: [:data]
+    })
+  end
+
+  defmodule ExportListResponse do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "ExportListResponse",
+      type: :object,
+      properties: %{data: %Schema{type: :array, items: Export}},
+      required: [:data]
+    })
+  end
+
+  defmodule AccountDeleteRequest do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "AccountDeleteRequest",
+      type: :object,
+      properties: %{
+        confirm: %Schema{
+          type: :string,
+          description: "The account's own email address, exactly."
+        }
+      },
+      required: [:confirm]
+    })
+  end
+
+  defmodule AccountDeletedResponse do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "AccountDeletedResponse",
+      type: :object,
+      properties: %{
+        deleted: %Schema{type: :boolean},
+        user_id: %Schema{type: :string, format: :uuid},
+        sprites_destroyed: %Schema{type: :integer}
+      },
+      required: [:deleted]
+    })
+  end
+
   defmodule AvatarRequest do
     @moduledoc false
     require OpenApiSpex
