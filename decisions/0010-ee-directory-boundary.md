@@ -61,10 +61,11 @@ Per the repo rule that ADRs must not describe unbuilt behavior as existing:
   without `ee/`; billing gates have no always-allow default; there is no
   community-build CI job.
 - **BillingLive export/deletion extraction** (the impurity above).
-- **Sobelow coverage of ee web modules.** Sobelow scans from `apps/fountain`,
-  so the moved controllers/LiveView left its scope. Every moved file was
-  scanned pre-move and content is unchanged; the gap applies only to future
-  edits of ee web files.
+- ~~**Sobelow coverage of ee web modules.**~~ Closed in the follow-up PR:
+  `scripts/sobelow.sh` (used by `mix precommit` and CI) assembles a temporary
+  merged tree — core `lib` with `ee/lib` overlaid — and scans that, restoring
+  the exact pre-move scan. The script fails on any core/ee path collision
+  rather than letting one file shadow the other.
 
 ## Consequences
 
