@@ -2,7 +2,9 @@
 
 **Status:** Accepted (documents the file move built in the PR that adds this
 ADR; the license change and the core/ee seam are explicitly **not yet built**
-— see "Not done yet" below)
+— see "Not done yet" below). **Scope narrowed by the 2026-08-05 addendum at
+the bottom: account email returned to core; ee/ is billing + billing-adjacent
+growth mail.**
 
 ## Context
 
@@ -81,3 +83,32 @@ Per the repo rule that ADRs must not describe unbuilt behavior as existing:
   unanchored and still match.
 - Historical ADRs (notably 0006) reference pre-move file paths; they describe
   the state at their time and are not rewritten.
+
+## Addendum — 2026-08-05: scope narrowed to billing + growth mail (#475/#476)
+
+The original scope put **all** transactional email in ee/. The retrospective
+the same day settled two product positions that changed the calculus: Fountain
+ships a **single image** (no separate community/ee artifacts planned), and a
+community instance must never depend on ee/ for anything it actually needs.
+Password reset living behind a possible future ee license failed that test.
+
+What moved back to core (#475, #476):
+
+- `Fountain.Mailer` and the account templates in `Fountain.Emails.UserEmails`:
+  verification, password reset, suspended/unsuspended, deleted, email-change
+  confirmation/notice.
+- `EmailVerificationController` and the `verification_email`,
+  `email_change_email`, `account_email`, `unverified_account_pruner` workers.
+
+What ee/ holds now: the Stripe billing surface, and billing-adjacent/growth
+mail — `Fountain.Emails.BillingEmails` (welcome, trial ending/expired, the
+four payment-lifecycle emails, subscription canceled) with the
+`welcome_email`, `trial_ending_email`, `lifecycle_email`,
+`stripe_customer_sync` workers. `BillingEmails` borrows the now-public
+`UserEmails.from_address/0` / `support_phrase/0` so the mail surface keeps
+one sender and one support-contact policy.
+
+One framing correction, per the same retrospective: this boundary
+**preserves the option** of licensing ee/ differently; it is not a plan of
+record. Everything remains MIT until an explicit license decision says
+otherwise.
