@@ -463,28 +463,7 @@ defmodule Fountain.Conversations do
   def list_conversations(user_id, opts \\ []) when is_binary(user_id) do
     roots_only = Keyword.get(opts, :roots_only, false)
 
-    last_log_at =
-      from le in LogEvent,
-        where: le.kind == "output",
-        group_by: le.conversation_id,
-        select: %{conversation_id: le.conversation_id, last_at: max(le.inserted_at)}
-
-    base =
-      from c in Conversation,
-        as: :conv,
-        where: c.user_id == ^user_id,
-        left_join: ll in subquery(last_log_at),
-        on: ll.conversation_id == c.id,
-        order_by: [desc: c.updated_at, desc: c.id],
-        select: %{
-          c
-          | last_active_at:
-              fragment(
-                "COALESCE(? AT TIME ZONE 'UTC', ? AT TIME ZONE 'UTC')",
-                ll.last_at,
-                c.inserted_at
-              )
-        }
+    base = from(c in annotated_query(user_id), order_by: [desc: c.updated_at, desc: c.id])
 
     query =
       if roots_only do
@@ -496,6 +475,75 @@ defmodule Fountain.Conversations do
     Repo.all(query)
     |> Repo.preload([:agent, turns: first_turn_query()])
   end
+
+  @doc """
+  Scoped fetch that also populates the read-model annotations —
+  `turn_count` and `last_active_at` — which `get_conversation/2` leaves at
+  their defaults.
+
+  Separate from `get_conversation/2` on purpose: that one is on the hot path
+  of every prompt and interrupt, and does not need two extra joins to answer
+  "does this conversation exist and is it yours".
+  """
+  def get_conversation_with_activity(id, user_id) when is_binary(user_id) do
+    case Repo.one(from(c in annotated_query(user_id), where: c.id == ^id)) do
+      nil -> nil
+      conv -> Repo.preload(conv, [:sandbox, :agent, :vault])
+    end
+  end
+
+  # The conversation list read-model: turn counts and last activity, both as
+  # LEFT JOINed subqueries so the result stays a plain list of structs and no
+  # caller N+1s.
+  #
+  # Only `kind: "output"` log events count toward `last_active_at` — stage
+  # events (reconnects, sandbox lifecycle) would otherwise produce false
+  # unread indicators.
+  defp annotated_query(user_id) do
+    turn_counts =
+      from t in Turn,
+        group_by: t.conversation_id,
+        select: %{conversation_id: t.conversation_id, count: count(t.id)}
+
+    last_log_at =
+      from le in LogEvent,
+        where: le.kind == "output",
+        group_by: le.conversation_id,
+        select: %{conversation_id: le.conversation_id, last_at: max(le.inserted_at)}
+
+    from c in Conversation,
+      as: :conv,
+      where: c.user_id == ^user_id,
+      left_join: tc in subquery(turn_counts),
+      on: tc.conversation_id == c.id,
+      left_join: ll in subquery(last_log_at),
+      on: ll.conversation_id == c.id,
+      select: %{
+        c
+        | turn_count: fragment("COALESCE(?, 0)", tc.count),
+          last_active_at:
+            fragment(
+              "COALESCE(? AT TIME ZONE 'UTC', ? AT TIME ZONE 'UTC')",
+              ll.last_at,
+              c.inserted_at
+            )
+      }
+  end
+
+  @doc """
+  Whether a conversation has activity the owner has not seen.
+
+  Unread until read at least once; read conversations go unread again when
+  output arrives after the last read. Lived in three copies across the nav,
+  the index and (implicitly) the API — one definition, so they cannot drift.
+  """
+  def unread?(%{last_read_at: nil, last_active_at: _}), do: true
+  def unread?(%{last_read_at: _, last_active_at: nil}), do: false
+
+  def unread?(%{last_read_at: read_at, last_active_at: active_at}),
+    do: DateTime.compare(active_at, read_at) == :gt
+
+  def unread?(_), do: false
 
   def create_conversation(attrs) do
     %Conversation{}

@@ -30,6 +30,18 @@ upgrade, is in
 
 ### Added
 
+- **The conversation read-model the UI has is now the one the API serves.**
+  Conversation JSON gained `title`, `turn_count`, `last_active_at`,
+  `last_read_at` and a computed `unread`; `GET /api/conversations` takes
+  `?roots_only=true` (the context supported it, no caller passed it);
+  `POST /api/conversations/:id/read` marks one read; and
+  `GET /api/conversations/:id/tree` returns the whole spawn tree —
+  ancestors and descendants — so an agent that fanned out can enumerate its
+  own sub-conversations instead of keeping client-side bookkeeping.
+  `GET /api/conversations/:id` now reports real counts rather than the
+  struct defaults. The unread rule had three copies in the web layer and now
+  has one, in the context (#520)
+
 - **A conversation's log events are readable as JSON**, not only as an SSE
   stream: `GET /api/conversations/:id/events`, cursor-paginated
   (`?after=`, `?limit=`) with the same `?streams=` filter the stream takes.

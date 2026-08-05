@@ -123,10 +123,12 @@ Resources are upserted by name in a fixed order (environments, then vaults, then
 Conversations are multi-turn: create one with an initial prompt, then keep prompting it.
 
 ```
-GET    /api/conversations
+GET    /api/conversations                  # list (?roots_only=true hides sub-conversations)
 POST   /api/conversations                  # start (agent_id; optional vault_id, prompt, images)
 GET    /api/conversations/:id
 DELETE /api/conversations/:id
+POST   /api/conversations/:id/read         # clear unread state
+GET    /api/conversations/:id/tree         # the whole spawn tree this conversation belongs to
 POST   /api/conversations/:id/prompts      # follow-up turn
 POST   /api/conversations/:id/interrupt    # stop the running turn
 POST   /api/conversations/:id/terminate    # end the conversation and sandbox
@@ -134,6 +136,17 @@ GET    /api/conversations/:id/turns
 GET    /api/conversations/:id/events       # log events as JSON (?streams=  ?after=  ?limit=)
 GET    /api/conversations/:id/stream       # SSE log stream (?streams=stdout,stderr,stage  ?wait=false)
 ```
+
+Conversation objects carry `title`, `turn_count`, `last_active_at`, `last_read_at` and a computed `unread` alongside the lifecycle fields. `unread` is true when `last_active_at` is later than `last_read_at` (and for a conversation never read); `POST /api/conversations/:id/read` clears it.
+
+`/tree` returns every conversation in the same spawn tree — ancestors and descendants, flat, each with a `parent_id`:
+
+```json
+{"data": [{"id": "…", "source": "ui", "status": "idle", "parent_id": null},
+          {"id": "…", "source": "agent", "status": "running", "parent_id": "…"}]}
+```
+
+Since sub-conversations are created over the API (`X-Fountain-Parent-Conversation-Id`), this is how an agent that fanned out enumerates what it started without keeping its own bookkeeping.
 
 `/events` is the read-model for the log feed and `/stream` is the tail. The JSON endpoint returns the same rows the stream sends — `kind`, `stream`, `data`, `stage`, `state`, `duration_ms`, `turn_id`, `ts` — plus each event's `id`, oldest first:
 
