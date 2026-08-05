@@ -6,6 +6,7 @@ defmodule FountainWeb.AuditLiveTest do
 
   use FountainWeb.ConnCase, async: true
 
+  import Ecto.Query, only: [from: 2]
   import Phoenix.LiveViewTest
 
   alias Fountain.Audit
@@ -176,8 +177,14 @@ defmodule FountainWeb.AuditLiveTest do
     end
 
     test "an empty trail says 'no events yet', not 'no matches'", %{conn: conn} do
-      # A fresh user with nothing recorded — and no filters applied.
-      conn = login_user(conn, insert_verified_user())
+      # Emptied explicitly, because since #544 a fresh account is not empty —
+      # registration is itself the first row in every trail. The state this
+      # branch renders is now reached one way in production: an old account
+      # whose events have all aged out of the retention window.
+      user = insert_verified_user()
+      Fountain.Repo.delete_all(from(e in Fountain.Audit.Event, where: e.user_id == ^user.id))
+
+      conn = login_user(conn, user)
       {:ok, _lv, html} = live(conn, ~p"/audit")
 
       assert html =~ "No events yet"

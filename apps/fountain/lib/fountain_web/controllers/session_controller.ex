@@ -62,6 +62,24 @@ defmodule FountainWeb.SessionController do
   end
 
   def delete(conn, params) do
+    # Read before the drop, and off the session rather than assigns: this route
+    # is on the plain `:browser` pipeline, so nothing has loaded a
+    # `current_user`. A login trail with no logouts cannot reconstruct a
+    # session, which is most of what the trail is for (#544).
+    #
+    # Skipped for the post-deletion redirect below — the account is already
+    # gone, and `audit_events.user_id` is nilified with it, so the row would
+    # be an orphan claiming a user who no longer exists. `account.deleted`
+    # already covers that path.
+    user_id = get_session(conn, :user_id)
+
+    if user_id && params["deleted"] != "1" do
+      FountainWeb.Audited.from_conn(conn, "auth.logout", "session",
+        user_id: user_id,
+        actor: "ui"
+      )
+    end
+
     conn = configure_session(conn, drop: true)
 
     # Account deletion redirects here to drop the session, since a LiveView

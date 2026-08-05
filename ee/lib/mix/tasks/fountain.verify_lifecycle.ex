@@ -112,7 +112,12 @@ defmodule Mix.Tasks.Fountain.VerifyLifecycle do
     suffix = System.system_time(:second)
     email = "lifecycle-verify-#{suffix}@example.com"
 
-    {:ok, user} = Accounts.register_user(%{"email" => email, "password" => "scratch-#{suffix}!"})
+    {:ok, user} =
+      Accounts.register_user(
+        %{"email" => email, "password" => "scratch-#{suffix}!"},
+        actor: "system:verify_lifecycle"
+      )
+
     {:ok, user} = Accounts.verify_email(user)
     remember(%{state | user: user})
 

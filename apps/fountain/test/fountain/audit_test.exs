@@ -69,9 +69,15 @@ defmodule Fountain.AuditTest do
       user_a = insert_verified_user()
       user_b = insert_verified_user()
 
-      Audit.record(valid_attrs(user_a.id))
+      event = Audit.record!(valid_attrs(user_a.id))
 
-      assert Audit.list_recent_for_user(user_b.id) == []
+      # Since #544 registration itself audits, so B's trail is not empty — it
+      # holds B's own `account.registered` and nothing else. The property under
+      # test is that A's event is not in it.
+      b_ids = user_b.id |> Audit.list_recent_for_user() |> Enum.map(& &1.id)
+
+      refute event.id in b_ids
+      assert Audit.list_recent_for_user(user_b.id) |> Enum.map(& &1.action) == ["account.registered"]
     end
 
     test "respects limit" do
@@ -201,11 +207,17 @@ defmodule Fountain.AuditTest do
       Audit.record!(valid_attrs(user.id, %{action: "old.event", inserted_at: old}))
       Audit.record!(valid_attrs(user.id, %{action: "new.event", inserted_at: now}))
 
+      # `_unsafe_list_events/1` is cross-tenant, and since #544 creating the
+      # user above puts an `account.registered` in that window too. Narrowed
+      # to the two events this test planted — the property is which side of
+      # the bound each lands on, not what else exists.
+      planted = &Enum.filter(&1, fn e -> e.action in ["old.event", "new.event"] end)
+
       recent = Audit._unsafe_list_events(since: DateTime.add(now, -60, :second))
-      assert Enum.map(recent, & &1.action) == ["new.event"]
+      assert recent |> planted.() |> Enum.map(& &1.action) == ["new.event"]
 
       earlier = Audit._unsafe_list_events(until: DateTime.add(now, -60, :second))
-      assert Enum.map(earlier, & &1.action) == ["old.event"]
+      assert earlier |> planted.() |> Enum.map(& &1.action) == ["old.event"]
 
       # Inclusive on both ends: the boundary timestamp itself matches.
       assert Enum.any?(Audit._unsafe_list_events(since: now), &(&1.action == "new.event"))
@@ -223,7 +235,11 @@ defmodule Fountain.AuditTest do
       Audit.record!(valid_attrs(user.id, %{resource_type: "agent"}))
       Audit.record!(valid_attrs(other.id, %{resource_type: "environment"}))
 
-      assert Audit.list_resource_types_for_user(user.id) == ["agent", "vault"]
+      # "user" comes from the tenant's own `account.registered` row (#544) —
+      # registration is the first thing in every trail. The properties under
+      # test are distinctness, sort order, and the absence of the other
+      # tenant's "environment".
+      assert Audit.list_resource_types_for_user(user.id) == ["agent", "user", "vault"]
     end
 
     test "the unscoped list spans tenants" do
