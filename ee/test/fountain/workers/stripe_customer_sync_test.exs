@@ -27,16 +27,29 @@ defmodule Fountain.Workers.StripeCustomerSyncTest do
     end
 
     test "is idempotent — a rerun does not mint a second customer" do
+      # price_id set on purpose: several async test files put_env
+      # :stripe_price_id globally, and whenever one overlapped this test the
+      # trial-subscription branch fired here too. That configuration used to be
+      # the flaky one (twice: first with no Subscription.create stub at all,
+      # then with a stub at arity 1 while billing calls create/2 — either way
+      # the call fell through to real Stripe and 401ed). Forcing the branch on
+      # makes the once-flaky configuration the deterministic one; the priceless
+      # branch is covered in stripe_customer_sync_trial_test.exs.
+      Application.put_env(:fountain, :stripe_price_id, "price_sync_idem")
+      on_exit(fn -> Application.delete_env(:fountain, :stripe_price_id) end)
       user = insert_verified_user()
       {:ok, _} = Fountain.Billing.attach_stripe_customer(user, "cus_existing")
 
       # Customer.create flunks if called — that is the property under test.
-      # Subscription.create is stubbed benignly instead of left bare: several
-      # async test files put_env :stripe_price_id globally, and when one
-      # overlaps this test the trial-subscription branch legitimately fires —
-      # previously with no stub, so it hit real Stripe and 401ed (flake).
       stub(Stripe.Customer, :create, fn _ ->
         flunk("a rerun must not create a second Stripe customer")
+      end)
+
+      # Both arities: billing calls create/2 (params, idempotency-key opts);
+      # /1 exists via the default arg and is stubbed so an arity change in
+      # billing can never fall through to real Stripe again.
+      stub(Stripe.Subscription, :create, fn _, _ ->
+        {:ok, %Stripe.Subscription{id: "sub_benign", status: "trialing"}}
       end)
 
       stub(Stripe.Subscription, :create, fn _ ->
