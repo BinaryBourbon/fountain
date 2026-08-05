@@ -55,6 +55,15 @@ The email endpoint answers identically whether or not the address is free — it
 
 **Session cookie:** Obtained via OAuth at `/auth/oauth/:provider` or email/password login. Used by the web UI.
 
+## Account state
+
+```
+GET    /api/account/onboarding           # {state, completed, completed_at}
+POST   /api/account/onboarding/complete  # idempotent
+```
+
+An account configured entirely through the API never passes through the browser wizard, so nothing marks it onboarded and a later browser visit re-enters that wizard. Completing it over the API closes the loop. `GET /api/auth/me` also carries `email_verified`, `onboarding_state` and `onboarding_completed`.
+
 ## Inference credentials
 
 Conversations run on your own provider tokens (BYO — Fountain never sees your inference traffic), so a new account cannot start a conversation until at least one is set.

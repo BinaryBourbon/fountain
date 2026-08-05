@@ -229,6 +229,9 @@ defmodule FountainWeb.Router do
   scope "/api/account", FountainWeb do
     pipe_through [:accepts_json, :api, :require_full_scope]
 
+    get "/onboarding", OnboardingController, :show
+    post "/onboarding/complete", OnboardingController, :complete
+
     get "/inference-credentials", InferenceCredentialController, :index
     put "/inference-credentials/:provider", InferenceCredentialController, :update
     delete "/inference-credentials/:provider", InferenceCredentialController, :delete

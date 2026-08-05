@@ -920,6 +920,33 @@ defmodule FountainWeb.Schemas do
     })
   end
 
+  defmodule OnboardingResponse do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "OnboardingResponse",
+      type: :object,
+      properties: %{
+        data: %Schema{
+          type: :object,
+          properties: %{
+            state: %Schema{
+              type: :string,
+              nullable: true,
+              enum: ~w(step_1 step_2 step_3 step_4 completed),
+              description: "Wizard position. Only `completed` means anything to an API client."
+            },
+            completed: %Schema{type: :boolean},
+            completed_at: %Schema{type: :string, format: :"date-time", nullable: true}
+          },
+          required: [:completed]
+        }
+      },
+      required: [:data]
+    })
+  end
+
   defmodule AuditEvent do
     @moduledoc false
     require OpenApiSpex
