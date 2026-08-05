@@ -37,6 +37,11 @@ defmodule FountainWeb.Schemas do
       type: :object,
       properties: %{
         id: %Schema{type: :string, format: :uuid},
+        title: %Schema{
+          type: :string,
+          nullable: true,
+          description: "Generated from the first turn; null until one exists."
+        },
         sandbox_id: %Schema{type: :string, format: :uuid, nullable: true},
         sandbox: %Schema{oneOf: [Sandbox], nullable: true},
         agent_id: %Schema{type: :string, format: :uuid, nullable: true},
@@ -49,10 +54,59 @@ defmodule FountainWeb.Schemas do
         runtime_session_id: %Schema{type: :string, nullable: true},
         source: %Schema{type: :string, enum: ~w(ui api agent)},
         parent_conversation_id: %Schema{type: :string, format: :uuid, nullable: true},
+        turn_count: %Schema{type: :integer},
+        last_active_at: %Schema{
+          type: :string,
+          format: :"date-time",
+          nullable: true,
+          description:
+            "Most recent runtime output, falling back to creation time. Stage " <>
+              "events (reconnects, sandbox lifecycle) do not count."
+        },
+        last_read_at: %Schema{
+          type: :string,
+          format: :"date-time",
+          nullable: true,
+          description: "Set by `POST /api/conversations/:id/read`. Null if never read."
+        },
+        unread: %Schema{
+          type: :boolean,
+          description: "last_active_at is later than last_read_at (true if never read)."
+        },
         inserted_at: %Schema{type: :string, format: :"date-time"},
         updated_at: %Schema{type: :string, format: :"date-time"}
       },
       required: [:id, :runtime, :status]
+    })
+  end
+
+  defmodule ConversationTreeNode do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "ConversationTreeNode",
+      description: "One conversation in a spawn tree, flat with a parent pointer.",
+      type: :object,
+      properties: %{
+        id: %Schema{type: :string, format: :uuid},
+        source: %Schema{type: :string, enum: ~w(ui api agent)},
+        status: %Schema{type: :string, enum: ~w(pending running idle failed terminated)},
+        parent_id: %Schema{type: :string, format: :uuid, nullable: true}
+      },
+      required: [:id]
+    })
+  end
+
+  defmodule ConversationTreeResponse do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "ConversationTreeResponse",
+      type: :object,
+      properties: %{data: %Schema{type: :array, items: ConversationTreeNode}},
+      required: [:data]
     })
   end
 

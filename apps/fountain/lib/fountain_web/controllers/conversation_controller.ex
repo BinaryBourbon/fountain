@@ -16,14 +16,77 @@ defmodule FountainWeb.ConversationController do
 
   operation(:index,
     summary: "List conversations",
+    parameters: [
+      roots_only: [
+        in: :query,
+        type: :boolean,
+        required: false,
+        description:
+          "Exclude sub-conversations (those with a `parent_conversation_id`), " <>
+            "leaving only top-level sessions. Defaults to false."
+      ]
+    ],
     responses: [
       ok: {"Conversations", "application/json", Schemas.ConversationListResponse}
     ]
   )
 
-  def index(conn, _params) do
+  def index(conn, params) do
     user = conn.assigns.current_user
-    render(conn, :index, conversations: Conversations.list_conversations(user.id))
+    roots_only = parse_bool_param(params["roots_only"], false)
+
+    render(conn, :index,
+      conversations: Conversations.list_conversations(user.id, roots_only: roots_only)
+    )
+  end
+
+  operation(:read,
+    summary: "Mark a conversation read",
+    description:
+      "Sets the conversation's `last_read_at` to now, which is what clears its " <>
+        "unread state. Idempotent.",
+    parameters: [conversation_id: [in: :path, type: :string, required: true]],
+    responses: [
+      no_content: "Marked read",
+      not_found: {"Not found", "application/json", Schemas.Error}
+    ]
+  )
+
+  def read(conn, %{"conversation_id" => id}) do
+    user = conn.assigns.current_user
+
+    case Conversations.get_conversation(id, user.id) do
+      nil ->
+        {:error, :not_found}
+
+      _conv ->
+        :ok = Conversations.mark_read(id, user.id)
+        send_resp(conn, :no_content, "")
+    end
+  end
+
+  operation(:tree,
+    summary: "Get the conversation's spawn tree",
+    description:
+      "Every conversation in the same spawn tree — ancestors and descendants of " <>
+        "this one — as flat `{id, source, status, parent_id}` entries. The API is " <>
+        "how sub-conversations get created (`X-Fountain-Parent-Conversation-Id`), " <>
+        "so this is how an agent that fanned out enumerates what it started " <>
+        "without client-side bookkeeping.",
+    parameters: [conversation_id: [in: :path, type: :string, required: true]],
+    responses: [
+      ok: {"Conversation tree", "application/json", Schemas.ConversationTreeResponse},
+      not_found: {"Not found", "application/json", Schemas.Error}
+    ]
+  )
+
+  def tree(conn, %{"conversation_id" => id}) do
+    user = conn.assigns.current_user
+
+    case Conversations.get_conversation(id, user.id) do
+      nil -> {:error, :not_found}
+      _conv -> render(conn, :tree, nodes: Conversations.get_conversation_tree(id, user.id))
+    end
   end
 
   operation(:show,
@@ -38,7 +101,10 @@ defmodule FountainWeb.ConversationController do
   def show(conn, %{"id" => id}) do
     user = conn.assigns.current_user
 
-    case Conversations.get_conversation(id, user.id) do
+    # The annotated variant: a `show` that reported turn_count 0 and a null
+    # last_active_at, as the plain fetch would, is worse than not serving
+    # the fields at all.
+    case Conversations.get_conversation_with_activity(id, user.id) do
       nil -> {:error, :not_found}
       conv -> render(conn, :show, conversation: conv)
     end

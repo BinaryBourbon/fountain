@@ -20,9 +20,12 @@ defmodule FountainWeb.ConversationJSON do
     }
   end
 
+  def tree(%{nodes: nodes}), do: %{data: Enum.map(nodes, &tree_node/1)}
+
   def data(%Conversation{} = c) do
     %{
       id: c.id,
+      title: c.title,
       sandbox_id: c.sandbox_id,
       sandbox: sandbox_data(c.sandbox),
       agent_id: c.agent_id,
@@ -32,9 +35,19 @@ defmodule FountainWeb.ConversationJSON do
       runtime_session_id: c.runtime_session_id,
       source: c.source,
       parent_conversation_id: c.parent_conversation_id,
+      turn_count: c.turn_count,
+      last_active_at: c.last_active_at,
+      last_read_at: c.last_read_at,
+      # Served rather than left to each client: the rule has three cases and
+      # the nil ones are easy to get backwards.
+      unread: Fountain.Conversations.unread?(c),
       inserted_at: c.inserted_at,
       updated_at: c.updated_at
     }
+  end
+
+  defp tree_node(%{id: id, source: source, status: status, parent_id: parent_id}) do
+    %{id: id, source: source, status: status, parent_id: parent_id}
   end
 
   defp sandbox_data(%Sandbox{} = s) do

@@ -582,14 +582,7 @@ defmodule FountainWeb.Layouts do
   # time the user viewed it. Stage events (reconnects, lifecycle) are already
   # excluded from last_active_at by the query layer, so this comparison is
   # reconnect-safe.
-  defp unread_conv?(%{last_read_at: nil, last_active_at: _}), do: true
-  defp unread_conv?(%{last_read_at: _, last_active_at: nil}), do: false
-
-  defp unread_conv?(%{last_read_at: read_at, last_active_at: active_at}) do
-    DateTime.compare(active_at, read_at) == :gt
-  end
-
-  defp unread_conv?(_), do: false
+  defp unread_conv?(conv), do: Fountain.Conversations.unread?(conv)
 
   # Returns {initials, tailwind_classes} for a role chip.
   # Known roles use the curated @role_styles map.
