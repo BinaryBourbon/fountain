@@ -100,7 +100,7 @@ defmodule FountainWeb.VaultsLive.Form do
 
   defp save(%{assigns: %{action: :new}} = socket, attrs) do
     attrs = Map.put(attrs, "user_id", socket.assigns.user_id)
-    case Vaults.create_vault(attrs) do
+    case Vaults.create_vault(attrs, FountainWeb.Audited.attribution(socket)) do
       {:ok, vault} ->
         {:noreply,
          socket
@@ -113,7 +113,7 @@ defmodule FountainWeb.VaultsLive.Form do
   end
 
   defp save(%{assigns: %{action: :edit, vault: vault}} = socket, attrs) do
-    case Vaults.update_vault(vault, attrs) do
+    case Vaults.update_vault(vault, attrs, FountainWeb.Audited.attribution(socket)) do
       {:ok, _vault} ->
         {:noreply, socket |> put_flash(:info, "Vault updated") |> push_navigate(to: ~p"/vaults")}
 

@@ -125,7 +125,7 @@ defmodule FountainWeb.OnboardingLive.Wizard do
   def handle_event("create_env", %{"env" => params}, socket) do
     attrs = Map.put(params, "user_id", socket.assigns.user_id)
 
-    case Environments.create_environment(attrs) do
+    case Environments.create_environment(attrs, FountainWeb.Audited.attribution(socket)) do
       {:ok, _env} -> advance(socket, "step_3")
       {:error, cs} -> {:noreply, assign(socket, :env_errors, changeset_errors(cs))}
     end
@@ -150,7 +150,7 @@ defmodule FountainWeb.OnboardingLive.Wizard do
       |> Map.put("system", Map.get(params, "system_prompt", ""))
       |> Map.delete("system_prompt")
 
-    case Agents.create_agent(attrs) do
+    case Agents.create_agent(attrs, FountainWeb.Audited.attribution(socket)) do
       {:ok, _agent} -> advance(socket, "step_4")
       {:error, cs} -> {:noreply, assign(socket, :agent_errors, changeset_errors(cs))}
     end

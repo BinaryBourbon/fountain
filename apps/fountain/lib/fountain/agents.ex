@@ -5,6 +5,7 @@ defmodule Fountain.Agents do
 
   alias Fountain.Agents.Agent
   alias Fountain.Agents.AgentAvatar
+  alias Fountain.Audit
   alias Fountain.Conversations.Conversation
   alias Fountain.Environments
   alias Fountain.Repo
@@ -97,18 +98,32 @@ defmodule Fountain.Agents do
     Repo.get_by(Agent, name: name, user_id: user_id)
   end
 
-  def create_agent(attrs) do
+  @doc """
+  Create an agent.
+
+  `opts` carries the audit attribution — `:actor` and `:request_ip`, from
+  `FountainWeb.Audited.attribution/2` on a web surface. Recording here rather
+  than at each caller is what makes the UI, the API, the onboarding wizard and
+  manifest apply all leave the same trail (#543).
+  """
+  def create_agent(attrs, opts \\ []) do
     %Agent{}
     |> Agent.changeset(attrs)
     |> validate_environment_owner()
     |> Repo.insert()
+    |> audited("agent.created", opts)
   end
 
-  def update_agent(%Agent{} = agent, attrs) do
-    agent
-    |> Agent.changeset(attrs)
-    |> validate_environment_owner()
+  @doc "Update an agent. See `create_agent/2` for `opts`."
+  def update_agent(%Agent{} = agent, attrs, opts \\ []) do
+    changeset =
+      agent
+      |> Agent.changeset(attrs)
+      |> validate_environment_owner()
+
+    changeset
     |> Repo.update()
+    |> audited("agent.updated", merge_metadata(opts, Audit.changed_fields(changeset)))
   end
 
   # An agent may only reference an environment owned by the same tenant —
@@ -131,7 +146,9 @@ defmodule Fountain.Agents do
     end
   end
 
-  def delete_agent(%Agent{} = agent), do: Repo.delete(agent)
+  @doc "Delete an agent. See `create_agent/2` for `opts`."
+  def delete_agent(%Agent{} = agent, opts \\ []),
+    do: agent |> Repo.delete() |> audited("agent.deleted", opts)
 
   @doc """
   Upload or replace the avatar for an agent.
@@ -142,7 +159,7 @@ defmodule Fountain.Agents do
   *filename extension* matches even when the declared MIME type does not, so
   a crafted client can declare `text/html` with a `.png` name.
   """
-  def upload_avatar(%Agent{} = agent, data, media_type)
+  def upload_avatar(%Agent{} = agent, data, media_type, opts \\ [])
       when is_binary(data) and is_binary(media_type) do
     if Fountain.Images.valid_media_type?(media_type) do
       now = DateTime.utc_now() |> DateTime.truncate(:second)
@@ -158,13 +175,18 @@ defmodule Fountain.Agents do
         |> Ecto.Changeset.change(%{avatar_media_type: media_type})
         |> Repo.update!()
       end)
+      # Outside the transaction on purpose. `Audit.record/1` is best-effort by
+      # rescuing, but that guarantee does not hold inside a transaction: a
+      # failed insert there aborts the enclosing one, so a lost audit row
+      # would take the avatar write with it.
+      |> audited("agent.avatar.set", merge_metadata(opts, %{"media_type" => media_type}))
     else
       {:error, :invalid_media_type}
     end
   end
 
-  @doc "Remove the avatar for an agent."
-  def delete_avatar(%Agent{} = agent) do
+  @doc "Remove the avatar for an agent. See `create_agent/2` for `opts`."
+  def delete_avatar(%Agent{} = agent, opts \\ []) do
     Repo.transaction(fn ->
       Repo.delete_all(from(av in AgentAvatar, where: av.agent_id == ^agent.id))
 
@@ -172,6 +194,21 @@ defmodule Fountain.Agents do
       |> Ecto.Changeset.change(%{avatar_media_type: nil})
       |> Repo.update!()
     end)
+    |> audited("agent.avatar.removed", opts)
+  end
+
+  # Audits a successful mutation and passes the result through untouched, so a
+  # context function stays a one-liner and the failure case cannot accidentally
+  # record a change that did not happen.
+  defp audited({:ok, %Agent{} = agent} = ok, action, opts) do
+    Audit.record_resource(action, "agent", agent, opts)
+    ok
+  end
+
+  defp audited(other, _action, _opts), do: other
+
+  defp merge_metadata(opts, extra) do
+    Keyword.update(opts, :metadata, extra, &Map.merge(&1, extra))
   end
 
   @doc "Fetch the raw avatar blob for an agent. Returns nil if none uploaded."

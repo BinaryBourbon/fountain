@@ -5,6 +5,7 @@ defmodule FountainWeb.AgentController do
 
   alias Fountain.Agents
   alias Fountain.Agents.Agent
+  alias FountainWeb.Audited
   alias FountainWeb.Schemas
 
   action_fallback FountainWeb.FallbackController
@@ -116,7 +117,7 @@ defmodule FountainWeb.AgentController do
     # client-supplied user_id to prevent owner spoofing.
     attrs = Map.put(params, "user_id", user.id)
 
-    with {:ok, %Agent{} = agent} <- Agents.create_agent(attrs) do
+    with {:ok, %Agent{} = agent} <- Agents.create_agent(attrs, Audited.attribution(conn)) do
       conn
       |> put_status(:created)
       |> render(:show, agent: Agents.get_agent_with_counts(agent.id, user.id))
@@ -145,7 +146,7 @@ defmodule FountainWeb.AgentController do
         {:error, :not_found}
 
       agent ->
-        with {:ok, agent} <- Agents.update_agent(agent, attrs) do
+        with {:ok, agent} <- Agents.update_agent(agent, attrs, Audited.attribution(conn)) do
           render(conn, :show, agent: Agents.get_agent_with_counts(agent.id, user.id))
         end
     end
@@ -168,7 +169,7 @@ defmodule FountainWeb.AgentController do
         {:error, :not_found}
 
       agent ->
-        {:ok, _} = Agents.delete_agent(agent)
+        {:ok, _} = Agents.delete_agent(agent, Audited.attribution(conn))
         send_resp(conn, :no_content, "")
     end
   end

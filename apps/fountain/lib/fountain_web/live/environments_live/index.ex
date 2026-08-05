@@ -39,7 +39,7 @@ defmodule FountainWeb.EnvironmentsLive.Index do
          |> put_flash(:error, "Environment not found — it may already be deleted")}
 
       env ->
-        {:ok, _} = Environments.delete_environment(env)
+        {:ok, _} = Environments.delete_environment(env, FountainWeb.Audited.attribution(socket))
 
         {:noreply,
          socket

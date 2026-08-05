@@ -209,7 +209,7 @@ defmodule FountainWeb.EnvironmentsLive.Form do
   defp save(%{assigns: %{action: :new}} = socket, attrs) do
     attrs = Map.put(attrs, "user_id", socket.assigns.user_id)
 
-    case Environments.create_environment(attrs) do
+    case Environments.create_environment(attrs, FountainWeb.Audited.attribution(socket)) do
       {:ok, env} ->
         {:noreply,
          socket
@@ -222,7 +222,7 @@ defmodule FountainWeb.EnvironmentsLive.Form do
   end
 
   defp save(%{assigns: %{action: :edit, env: env}} = socket, attrs) do
-    case Environments.update_environment(env, attrs) do
+    case Environments.update_environment(env, attrs, FountainWeb.Audited.attribution(socket)) do
       {:ok, _env} ->
         {:noreply,
          socket

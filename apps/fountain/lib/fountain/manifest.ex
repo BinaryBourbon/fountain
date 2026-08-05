@@ -34,7 +34,8 @@ defmodule Fountain.Manifest do
   (nil for errors and for kinds that carry no secrets). Secret values are
   never echoed back.
   """
-  def apply_manifest(user_id, resources) when is_binary(user_id) and is_list(resources) do
+  def apply_manifest(user_id, resources, opts \\ [])
+      when is_binary(user_id) and is_list(resources) do
     {valid, invalid} = Enum.split_with(resources, &valid_resource?/1)
     groups = Enum.group_by(valid, & &1["kind"])
     envs = Map.get(groups, "Environment", [])
@@ -45,7 +46,7 @@ defmodule Fountain.Manifest do
 
     {env_results, env_id_by_name} =
       Enum.map_reduce(envs, %{}, fn res, acc ->
-        case apply_environment(user_id, res, dek) do
+        case apply_environment(user_id, res, dek, opts) do
           {result, nil} -> {result, acc}
           {result, env} -> {result, Map.put(acc, env.name, env.id)}
         end
@@ -53,8 +54,8 @@ defmodule Fountain.Manifest do
 
     results =
       env_results ++
-        Enum.map(vaults, &apply_vault(user_id, &1, dek)) ++
-        Enum.map(agents, &apply_agent(user_id, &1, env_id_by_name)) ++
+        Enum.map(vaults, &apply_vault(user_id, &1, dek, opts)) ++
+        Enum.map(agents, &apply_agent(user_id, &1, env_id_by_name, opts)) ++
         Enum.map(invalid, &invalid_result/1)
 
     {:ok, results}
@@ -62,13 +63,17 @@ defmodule Fountain.Manifest do
 
   # ── per-kind reconciliation ───────────────────────────────────────────────
 
-  defp apply_environment(user_id, %{"name" => name} = res, dek) do
+  defp apply_environment(user_id, %{"name" => name} = res, dek, opts) do
     {attrs, secrets} = split_spec(res, name)
 
     outcome =
       case Environments.get_environment_by_name(name, user_id) do
-        nil -> {:created, Environments.create_environment(Map.put(attrs, "user_id", user_id))}
-        env -> {:updated, Environments.update_environment(env, attrs)}
+        nil ->
+          {:created,
+           Environments.create_environment(Map.put(attrs, "user_id", user_id), opts)}
+
+        env ->
+          {:updated, Environments.update_environment(env, attrs, opts)}
       end
 
     case outcome do
@@ -81,13 +86,13 @@ defmodule Fountain.Manifest do
     end
   end
 
-  defp apply_vault(user_id, %{"name" => name} = res, dek) do
+  defp apply_vault(user_id, %{"name" => name} = res, dek, opts) do
     {attrs, secrets} = split_spec(res, name)
 
     outcome =
       case Vaults.get_vault_by_name(name, user_id) do
-        nil -> {:created, Vaults.create_vault(Map.put(attrs, "user_id", user_id))}
-        vault -> {:updated, Vaults.update_vault(vault, attrs)}
+        nil -> {:created, Vaults.create_vault(Map.put(attrs, "user_id", user_id), opts)}
+        vault -> {:updated, Vaults.update_vault(vault, attrs, opts)}
       end
 
     case outcome do
@@ -100,7 +105,7 @@ defmodule Fountain.Manifest do
     end
   end
 
-  defp apply_agent(user_id, %{"name" => name} = res, env_id_by_name) do
+  defp apply_agent(user_id, %{"name" => name} = res, env_id_by_name, opts) do
     {attrs, _secrets} = split_spec(res, name)
     {env_ref, attrs} = Map.pop(attrs, "environment")
 
@@ -110,8 +115,8 @@ defmodule Fountain.Manifest do
 
         outcome =
           case Agents.get_agent_by_name(name, user_id) do
-            nil -> {:created, Agents.create_agent(Map.put(attrs, "user_id", user_id))}
-            agent -> {:updated, Agents.update_agent(agent, attrs)}
+            nil -> {:created, Agents.create_agent(Map.put(attrs, "user_id", user_id), opts)}
+            agent -> {:updated, Agents.update_agent(agent, attrs, opts)}
           end
 
         case outcome do
