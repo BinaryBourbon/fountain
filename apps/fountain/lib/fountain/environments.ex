@@ -4,6 +4,7 @@ defmodule Fountain.Environments do
   import Ecto.Query, only: [from: 2]
 
   alias Fountain.Agents.Agent
+  alias Fountain.Audit
   alias Fountain.Environments.{Environment, Secret}
   alias Fountain.Repo
 
@@ -106,19 +107,55 @@ defmodule Fountain.Environments do
     Repo.get_by(Environment, name: name, user_id: user_id)
   end
 
-  def create_environment(attrs) do
+  @doc """
+  Create an environment.
+
+  `opts` carries the audit attribution — `:actor` and `:request_ip`, from
+  `FountainWeb.Audited.attribution/2` on a web surface. Recording here rather
+  than at each caller is what makes the UI, the API, the onboarding wizard and
+  manifest apply all leave the same trail (#543).
+  """
+  def create_environment(attrs, opts \\ []) do
     %Environment{}
     |> Environment.changeset(attrs)
     |> Repo.insert()
+    |> audited("environment.created", opts)
   end
 
-  def update_environment(%Environment{} = env, attrs) do
-    env
-    |> Environment.changeset(attrs)
+  @doc """
+  Update an environment. See `create_environment/2` for `opts`.
+
+  The checkpoint writers in `ConversationServer` and `Provisioning` come
+  through here too, with a `system:` actor. Those rows are worth keeping: a
+  checkpoint pointer moving under the tenant is exactly what someone
+  debugging a cold provision needs to see, and the changed-field list says
+  plainly that nothing the tenant configured was touched.
+  """
+  def update_environment(%Environment{} = env, attrs, opts \\ []) do
+    changeset = Environment.changeset(env, attrs)
+
+    changeset
     |> Repo.update()
+    |> audited("environment.updated", merge_metadata(opts, Audit.changed_fields(changeset)))
   end
 
-  def delete_environment(%Environment{} = env), do: Repo.delete(env)
+  @doc "Delete an environment. See `create_environment/2` for `opts`."
+  def delete_environment(%Environment{} = env, opts \\ []),
+    do: env |> Repo.delete() |> audited("environment.deleted", opts)
+
+  # See the note in `Fountain.Agents.audited/3`: this runs outside any
+  # enclosing transaction, because best-effort audit recording is only
+  # best-effort outside one.
+  defp audited({:ok, %Environment{} = env} = ok, action, opts) do
+    Audit.record_resource(action, "environment", env, opts)
+    ok
+  end
+
+  defp audited(other, _action, _opts), do: other
+
+  defp merge_metadata(opts, extra) do
+    Keyword.update(opts, :metadata, extra, &Map.merge(&1, extra))
+  end
 
   # ── secrets ───────────────────────────────────────────────────────────────
 

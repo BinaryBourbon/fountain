@@ -111,9 +111,11 @@ defmodule Fountain.Conversations.Provisioning do
 
           if is_binary(checkpoint_id) and checkpoint_id != "" do
             {:ok, _} =
-              Fountain.Environments.update_environment(env, %{
-                "checkpoint_id" => checkpoint_id
-              })
+              Fountain.Environments.update_environment(
+                env,
+                %{"checkpoint_id" => checkpoint_id},
+                actor: "system:provisioning"
+              )
 
             {{:ok, checkpoint_id}, %{outcome: :ok, checkpoint_id: checkpoint_id}}
           else

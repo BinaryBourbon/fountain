@@ -77,7 +77,7 @@ defmodule FountainWeb.AgentsLive.Index do
          |> put_flash(:error, "Agent not found — it may already be deleted")}
 
       agent ->
-        {:ok, _} = Agents.delete_agent(agent)
+        {:ok, _} = Agents.delete_agent(agent, FountainWeb.Audited.attribution(socket))
         delete_refresh(socket, user_id, agent)
     end
   end

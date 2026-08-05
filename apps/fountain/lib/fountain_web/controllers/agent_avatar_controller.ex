@@ -17,6 +17,7 @@ defmodule FountainWeb.AgentAvatarController do
   use OpenApiSpex.ControllerSpecs
 
   alias Fountain.{Agents, Images}
+  alias FountainWeb.Audited
   alias FountainWeb.Schemas
 
   action_fallback FountainWeb.FallbackController
@@ -78,7 +79,7 @@ defmodule FountainWeb.AgentAvatarController do
 
     with %_{} = agent <- fetch_agent(id, user.id),
          {:ok, data, media_type, conn} <- read_image(conn, params),
-         {:ok, _} <- Agents.upload_avatar(agent, data, media_type) do
+         {:ok, _} <- Agents.upload_avatar(agent, data, media_type, Audited.attribution(conn)) do
       # The agent is what the caller cares about after the write — it now
       # carries avatar_media_type, which is how a client knows one exists.
       #
@@ -130,7 +131,7 @@ defmodule FountainWeb.AgentAvatarController do
       agent ->
         # Idempotent: clearing an absent avatar is a no-op, not a 404. The
         # resource being addressed is the agent, and it exists.
-        {:ok, _} = Agents.delete_avatar(agent)
+        {:ok, _} = Agents.delete_avatar(agent, Audited.attribution(conn))
         send_resp(conn, :no_content, "")
     end
   end

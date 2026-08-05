@@ -601,7 +601,9 @@ defmodule Fountain.Conversations.ConversationServer do
         })
 
         # Clear the stale checkpoint so future runs don't keep retrying.
-        Fountain.Environments.update_environment(env, %{"checkpoint_id" => nil})
+        Fountain.Environments.update_environment(env, %{"checkpoint_id" => nil},
+          actor: "system:conversation_server"
+        )
         :cold
     end
   end

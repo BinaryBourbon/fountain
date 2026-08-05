@@ -39,7 +39,7 @@ defmodule FountainWeb.VaultsLive.Index do
          |> put_flash(:error, "Vault not found — it may already be deleted")}
 
       vault ->
-        {:ok, _} = Vaults.delete_vault(vault)
+        {:ok, _} = Vaults.delete_vault(vault, FountainWeb.Audited.attribution(socket))
 
         {:noreply,
          socket

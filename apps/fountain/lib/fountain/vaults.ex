@@ -7,6 +7,7 @@ defmodule Fountain.Vaults do
 
   import Ecto.Query, only: [from: 2]
 
+  alias Fountain.Audit
   alias Fountain.Repo
   alias Fountain.Vaults.{Vault, VaultSecret}
 
@@ -89,19 +90,53 @@ defmodule Fountain.Vaults do
     Repo.get_by(Vault, name: name, user_id: user_id)
   end
 
-  def create_vault(attrs) do
+  @doc """
+  Create a vault.
+
+  `opts` carries the audit attribution — `:actor` and `:request_ip`, from
+  `FountainWeb.Audited.attribution/2` on a web surface. Recording here rather
+  than at each caller is what makes the UI, the API and manifest apply all
+  leave the same trail (#543).
+  """
+  def create_vault(attrs, opts \\ []) do
     %Vault{}
     |> Vault.changeset(attrs)
     |> Repo.insert()
+    |> audited("vault.created", opts)
   end
 
-  def update_vault(%Vault{} = vault, attrs) do
-    vault
-    |> Vault.changeset(attrs)
+  @doc "Update a vault. See `create_vault/2` for `opts`."
+  def update_vault(%Vault{} = vault, attrs, opts \\ []) do
+    changeset = Vault.changeset(vault, attrs)
+
+    changeset
     |> Repo.update()
+    |> audited("vault.updated", merge_metadata(opts, Audit.changed_fields(changeset)))
   end
 
-  def delete_vault(%Vault{} = vault), do: Repo.delete(vault)
+  @doc """
+  Delete a vault. See `create_vault/2` for `opts`.
+
+  The secrets inside go with it by cascade, and the trail already carries a
+  `vault.secret.write` for each one that was ever set — so a single
+  `vault.deleted` row is enough to explain their disappearance.
+  """
+  def delete_vault(%Vault{} = vault, opts \\ []),
+    do: vault |> Repo.delete() |> audited("vault.deleted", opts)
+
+  # See the note in `Fountain.Agents.audited/3`: this runs outside any
+  # enclosing transaction, because best-effort audit recording is only
+  # best-effort outside one.
+  defp audited({:ok, %Vault{} = vault} = ok, action, opts) do
+    Audit.record_resource(action, "vault", vault, opts)
+    ok
+  end
+
+  defp audited(other, _action, _opts), do: other
+
+  defp merge_metadata(opts, extra) do
+    Keyword.update(opts, :metadata, extra, &Map.merge(&1, extra))
+  end
 
   # ── secrets ───────────────────────────────────────────────────────────────
 

@@ -31,7 +31,7 @@ defmodule FountainWeb.ApplyController do
   def create(conn, %{"resources" => resources}) do
     user = conn.assigns.current_user
 
-    with {:ok, results} <- Manifest.apply_manifest(user.id, resources) do
+    with {:ok, results} <- Manifest.apply_manifest(user.id, resources, Audited.attribution(conn)) do
       audit_secret_writes(conn, results)
       render(conn, :create, results: results)
     end

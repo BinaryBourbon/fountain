@@ -5,6 +5,7 @@ defmodule FountainWeb.EnvironmentController do
 
   alias Fountain.Environments
   alias Fountain.Environments.Environment
+  alias FountainWeb.Audited
   alias FountainWeb.Schemas
 
   action_fallback FountainWeb.FallbackController
@@ -56,7 +57,7 @@ defmodule FountainWeb.EnvironmentController do
     user = conn.assigns.current_user
     attrs = Map.put(params, "user_id", user.id)
 
-    with {:ok, %Environment{} = env} <- Environments.create_environment(attrs) do
+    with {:ok, %Environment{} = env} <- Environments.create_environment(attrs, Audited.attribution(conn)) do
       conn
       |> put_status(:created)
       |> render(:show, environment: Environments.get_environment_with_counts(env.id, user.id))
@@ -85,7 +86,7 @@ defmodule FountainWeb.EnvironmentController do
         {:error, :not_found}
 
       env ->
-        with {:ok, env} <- Environments.update_environment(env, attrs) do
+        with {:ok, env} <- Environments.update_environment(env, attrs, Audited.attribution(conn)) do
           # Re-read for the counts: a response that advertises secret_count and
           # agent_count must not report the struct defaults after a write.
           render(conn, :show, environment: Environments.get_environment_with_counts(env.id, user.id))
@@ -110,7 +111,7 @@ defmodule FountainWeb.EnvironmentController do
         {:error, :not_found}
 
       env ->
-        {:ok, _} = Environments.delete_environment(env)
+        {:ok, _} = Environments.delete_environment(env, Audited.attribution(conn))
         send_resp(conn, :no_content, "")
     end
   end

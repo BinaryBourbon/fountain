@@ -55,6 +55,52 @@ defmodule Fountain.Audit do
   end
 
   @doc """
+  Record a mutation of an owned resource, from inside the context that made it.
+
+      Audit.record_resource("agent.created", "agent", agent, opts)
+
+  Auditing used to depend on which door a mutation came through: the `:api`
+  pipeline plug covered every write, and the browser surface covered whatever
+  its LiveView remembered to record. Resource CRUD landed on the wrong side of
+  that — audited via `/api`, silent via the UI (#543). Recording inside the
+  context covers UI, API, the onboarding wizard, manifest apply and any future
+  caller from one place.
+
+  The resource supplies `user_id`, `id` and `name`; the caller supplies
+  `:actor` and `:request_ip` (see `FountainWeb.Audited.attribution/2`) and any
+  extra `:metadata`. Values are never recorded — only which fields moved — so
+  this cannot become a second copy of anything a resource holds.
+  """
+  @spec record_resource(String.t(), String.t(), struct(), keyword()) ::
+          {:ok, Event.t()} | {:error, term()}
+  def record_resource(action, resource_type, resource, opts \\ []) do
+    record(%{
+      user_id: Map.get(resource, :user_id),
+      action: action,
+      resource_type: resource_type,
+      resource_id: Map.get(resource, :id),
+      actor: Keyword.get(opts, :actor, "self"),
+      request_ip: Keyword.get(opts, :request_ip),
+      metadata:
+        %{"name" => Map.get(resource, :name)}
+        |> Map.merge(Keyword.get(opts, :metadata, %{}))
+    })
+  end
+
+  @doc """
+  The names of the fields a changeset actually moves, sorted, as metadata.
+
+  "What changed" is the whole value of an update event — an `agent.updated`
+  row that does not say which fields moved is barely more than a timestamp.
+  Names only: field *values* are the tenant's data, and the audit trail is
+  not a place to keep a second copy of it.
+  """
+  @spec changed_fields(Ecto.Changeset.t()) :: map()
+  def changed_fields(%Ecto.Changeset{changes: changes}) do
+    %{"changed" => changes |> Map.keys() |> Enum.map(&to_string/1) |> Enum.sort()}
+  end
+
+  @doc """
   Record an administrative action taken against another user.
 
   Separate from `record/1` because these need both an actor and a target, which

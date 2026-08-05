@@ -5,6 +5,7 @@ defmodule FountainWeb.VaultController do
 
   alias Fountain.Vaults
   alias Fountain.Vaults.Vault
+  alias FountainWeb.Audited
   alias FountainWeb.Schemas
 
   action_fallback FountainWeb.FallbackController
@@ -56,7 +57,7 @@ defmodule FountainWeb.VaultController do
     user = conn.assigns.current_user
     attrs = Map.put(params, "user_id", user.id)
 
-    with {:ok, %Vault{} = vault} <- Vaults.create_vault(attrs) do
+    with {:ok, %Vault{} = vault} <- Vaults.create_vault(attrs, Audited.attribution(conn)) do
       conn
       |> put_status(:created)
       |> render(:show, vault: Vaults.get_vault_with_counts(vault.id, user.id))
@@ -84,7 +85,7 @@ defmodule FountainWeb.VaultController do
         {:error, :not_found}
 
       vault ->
-        with {:ok, vault} <- Vaults.update_vault(vault, attrs) do
+        with {:ok, vault} <- Vaults.update_vault(vault, attrs, Audited.attribution(conn)) do
           # Re-read for the counts: a response that advertises secret_count
           # must not report the struct default after a write.
           render(conn, :show, vault: Vaults.get_vault_with_counts(vault.id, user.id))
@@ -109,7 +110,7 @@ defmodule FountainWeb.VaultController do
         {:error, :not_found}
 
       vault ->
-        {:ok, _} = Vaults.delete_vault(vault)
+        {:ok, _} = Vaults.delete_vault(vault, Audited.attribution(conn))
         send_resp(conn, :no_content, "")
     end
   end

@@ -151,7 +151,7 @@ defmodule FountainWeb.AgentsLive.Form do
     agent = socket.assigns.agent
 
     if agent.id do
-      Agents.delete_avatar(agent)
+      Agents.delete_avatar(agent, FountainWeb.Audited.attribution(socket))
       {:noreply, assign(socket, :agent, %{agent | avatar_media_type: nil})}
     else
       {:noreply, socket}
@@ -300,7 +300,7 @@ defmodule FountainWeb.AgentsLive.Form do
   end
 
   defp save(%{assigns: %{action: :new}} = socket, attrs) do
-    case Agents.create_agent(attrs) do
+    case Agents.create_agent(attrs, FountainWeb.Audited.attribution(socket)) do
       {:ok, agent} ->
         maybe_set_avatar(socket, agent)
 
@@ -315,7 +315,7 @@ defmodule FountainWeb.AgentsLive.Form do
   end
 
   defp save(%{assigns: %{action: :edit, agent: existing}} = socket, attrs) do
-    case Agents.update_agent(existing, attrs) do
+    case Agents.update_agent(existing, attrs, FountainWeb.Audited.attribution(socket)) do
       {:ok, saved} ->
         maybe_set_avatar(socket, saved)
 
@@ -335,14 +335,14 @@ defmodule FountainWeb.AgentsLive.Form do
     uploaded =
       consume_uploaded_entries(socket, :avatar, fn %{path: path}, entry ->
         data = File.read!(path)
-        Agents.upload_avatar(agent, data, entry.client_type)
+        Agents.upload_avatar(agent, data, entry.client_type, FountainWeb.Audited.attribution(socket))
         {:ok, :uploaded}
       end)
 
     if uploaded == [] do
       case socket.assigns.generated_avatar_data do
         nil -> :ok
-        data -> Agents.upload_avatar(agent, data, "image/png")
+        data -> Agents.upload_avatar(agent, data, "image/png", FountainWeb.Audited.attribution(socket))
       end
     end
   end

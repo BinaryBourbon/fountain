@@ -18,6 +18,17 @@ upgrade, is in
 
 ### Fixed
 
+- **Creating, changing or deleting an agent, environment or vault is audited
+  from the browser too.** These mutations were recorded when driven through
+  `/api`, because a blanket plug on that pipeline caught every write, and
+  recorded nothing at all when driven through the UI — the inverse of the
+  secrets gap fixed earlier, and backwards for the surface where most of this
+  work actually happens. Someone reviewing their own trail saw an account
+  where resources appeared and vanished with no explanation. The audit moves
+  into the context functions, so the UI, the API, the onboarding wizard and
+  `fountain apply` all leave the same record, and update events name the
+  fields that moved — never their values (#543)
+
 - **Minting an API key always leaves an audit trail now, whichever door you
   came through.** There are four ways to get a key, and `POST /api/auth/token`
   — the one that exchanges a password for a full-scope key, and the most
