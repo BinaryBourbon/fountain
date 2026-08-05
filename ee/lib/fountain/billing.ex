@@ -378,6 +378,134 @@ defmodule Fountain.Billing do
   end
 
   @doc """
+  Expires `trialing` accounts whose trial end passed more than `:grace_hours`
+  ago and whose status never moved (#504).
+
+  Stripe normally ends trials itself — the signup subscription carries
+  `missing_payment_method: "cancel"` and the cancellation webhook flips the
+  status. This sweep is the backstop for when that signal never lands: a
+  missed webhook, or a local-only trial that has no subscription at all (no
+  `STRIPE_PRICE_ID`). Access is already denied at read time the moment the
+  clock passes (`check_active/1`); what a stale row corrupts is recorded
+  status — admin counts, status-based queries — and the trial-expired email,
+  which only fires on a status transition.
+
+  For an account with a Stripe subscription the truth is in Stripe, so the
+  sweep retrieves the live subscription and applies its status through the
+  same changeset-and-lifecycle-email path webhooks use — a trial extended in
+  Stripe's dashboard updates the local clock rather than being cancelled. The
+  retrieve happens before the row lock is taken (third-party HTTP must not
+  run inside the transaction — see `BillingWebhookSyncRaceTest`), and the row
+  is re-checked under lock so a concurrent conversion is never overwritten.
+  Accounts with no subscription are flipped to `canceled` directly.
+
+  The grace window (default 48h) gives Stripe's webhook and its retries the
+  first shot; rows with a nil `trial_ends_at` are left alone — legacy
+  accounts are deliberately grandfathered and newer nil rows already fail
+  closed at read time.
+
+  Returns counts: `:expired` (local trials cancelled), `:synced` (status
+  adopted from Stripe), `:extended` (Stripe still trialing; clock repaired),
+  `:skipped` (Stripe error or concurrent change — retried next run).
+  """
+  @spec expire_stale_trials(keyword()) :: %{
+          expired: non_neg_integer(),
+          synced: non_neg_integer(),
+          extended: non_neg_integer(),
+          skipped: non_neg_integer()
+        }
+  def expire_stale_trials(opts \\ []) do
+    now = Keyword.get(opts, :now, DateTime.utc_now())
+    grace_hours = Keyword.get(opts, :grace_hours, 48)
+    batch = Keyword.get(opts, :batch, 100)
+    cutoff = DateTime.add(now, -grace_hours * 3600, :second)
+
+    stale =
+      Repo.all(
+        from(u in User,
+          where: u.subscription_status == "trialing",
+          where: u.trial_ends_at < ^cutoff,
+          order_by: [asc: u.trial_ends_at],
+          limit: ^batch
+        )
+      )
+
+    Enum.reduce(stale, %{expired: 0, synced: 0, extended: 0, skipped: 0}, fn user, acc ->
+      Map.update!(acc, sweep_stale_trial(user, now), &(&1 + 1))
+    end)
+  end
+
+  defp sweep_stale_trial(%User{stripe_subscription_id: sub_id} = user, now)
+       when is_binary(sub_id) and sub_id != "" do
+    case Stripe.Subscription.retrieve(sub_id) do
+      {:ok, %Stripe.Subscription{status: "trialing"} = sub} ->
+        # Stripe still says trialing — the local clock is behind (a trial
+        # extended in the dashboard). Adopt Stripe's end; don't cancel.
+        apply_trial_sweep(
+          user,
+          %{trial_ends_at: unix_field(Map.get(sub, :trial_end))},
+          now,
+          :extended
+        )
+
+      {:ok, %Stripe.Subscription{} = sub} ->
+        apply_trial_sweep(
+          user,
+          %{
+            subscription_status: coerce_status(sub.status, "trial_sweep"),
+            trial_ends_at: unix_field(Map.get(sub, :trial_end)),
+            current_period_end: unix_field(Map.get(sub, :current_period_end))
+          },
+          now,
+          :synced
+        )
+
+      {:error, reason} ->
+        Logger.warning(
+          "trial sweep: Stripe retrieve failed for #{user.id} (#{sub_id}): #{inspect(reason)}"
+        )
+
+        :skipped
+    end
+  end
+
+  defp sweep_stale_trial(%User{} = user, now) do
+    # No subscription (local trial): nothing else will ever flip this row.
+    apply_trial_sweep(user, %{subscription_status: "canceled"}, now, :expired)
+  end
+
+  # The attrs were decided outside the transaction (the Stripe read must not
+  # hold a row lock); the recheck under lock makes them safe to apply — a row
+  # that converted, was comped, or was deleted in the meantime is left alone.
+  defp apply_trial_sweep(%User{id: user_id}, attrs, now, tally) do
+    result =
+      Repo.transaction(fn ->
+        case get_user_for_update(user_id) do
+          %User{subscription_status: "trialing"} = user ->
+            user
+            |> User.billing_changeset(
+              Map.put(attrs, :subscription_synced_at, DateTime.truncate(now, :second))
+            )
+            |> Repo.update!()
+            |> tap(&enqueue_lifecycle_email(user.subscription_status, &1))
+
+          _ ->
+            Repo.rollback(:not_trialing)
+        end
+      end)
+
+    case result do
+      {:ok, _user} -> tally
+      {:error, :not_trialing} -> :skipped
+    end
+  end
+
+  defp unix_field(ts) when is_integer(ts),
+    do: DateTime.from_unix!(ts) |> DateTime.truncate(:second)
+
+  defp unix_field(_), do: nil
+
+  @doc """
   Marks an account comped: free access granted by an operator, indefinitely.
 
   Any live Stripe subscription is cancelled first — a comped account must not

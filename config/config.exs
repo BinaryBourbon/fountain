@@ -24,7 +24,12 @@ config :fountain, Oban,
        {"7 * * * *", Fountain.Workers.SandboxReaper},
        # 05:41 UTC — after the 03:17 backup and the 04:23 retention prune, so
        # a backup always captures the accounts before the sweep removes them.
-       {"41 5 * * *", Fountain.Workers.UnverifiedAccountPruner}
+       {"41 5 * * *", Fountain.Workers.UnverifiedAccountPruner},
+       # 06:53 UTC — backstop for trials Stripe never closed out (#504). The
+       # 48h grace inside the sweep means Stripe's webhook retries always get
+       # the first shot; daily is fast enough for a backstop. The worker
+       # no-ops when billing is disabled.
+       {"53 6 * * *", Fountain.Workers.TrialSweeper}
      ]}
   ]
 
