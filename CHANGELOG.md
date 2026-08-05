@@ -14,6 +14,16 @@ upgrade, is in
 
 ---
 
+## [0.5.2] — 2026-08-05
+
+### Fixed
+
+- The account-deletion warning on `/account` opened with "Cancels your
+  subscription" on instances where billing is disabled and no subscription
+  exists — the last billing reference the #513 fresh-machine sweep found on
+  any surface. The clause now renders only when `BILLING_ENABLED=true`
+  (#513, #569)
+
 ## [0.5.1] — 2026-08-05
 
 ### Fixed
@@ -807,6 +817,7 @@ upgrade, is in
 - Audit log for state-changing actions (append-only, best-effort)
 - Substitution engine for `${VAR}` / `$$` interpolation in agent configs
 
+[0.5.2]: https://github.com/BinaryBourbon/fountain/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/BinaryBourbon/fountain/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/BinaryBourbon/fountain/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/BinaryBourbon/fountain/compare/v0.4.0...v0.4.1
