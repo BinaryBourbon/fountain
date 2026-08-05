@@ -182,6 +182,23 @@ defmodule Fountain.Release do
           set: [subscription_status: "trialing", trial_ends_at: ends_at]
         )
 
+      # One summary row, not one per account: a bulk backfill is a single
+      # operator action. Without it the only trace of an operator moving every
+      # account's billing clock was stdout on whichever shell ran it — and the
+      # promote-admin task beside this one has recorded since it was written
+      # (#551).
+      Fountain.Audit.record(%{
+        user_id: nil,
+        action: "release.trials_backfilled",
+        resource_type: "release_task",
+        actor: "system:release_task",
+        metadata: %{
+          "accounts_updated" => updated,
+          "trial_ends_at" => DateTime.to_iso8601(ends_at),
+          "days" => days
+        }
+      })
+
       IO.puts("Set trial_ends_at to #{ends_at} on #{updated} account(s).")
       {:ok, updated}
     end

@@ -9,6 +9,39 @@ defmodule Fountain.Audit do
   Logging is best-effort: a log failure must never break the operation
   it's recording. Use `record!/1` only when you can tolerate raising;
   default to `record/1`.
+
+  Best-effort means *rescuing*, which does not survive a transaction: a failed
+  insert inside one aborts the enclosing transaction. Call this outside the
+  transaction whose work you are recording — `Accounts.Deletion`,
+  `Agents.upload_avatar/4` and `Accounts.register_user/2` all do.
+
+  ## Where events come from
+
+  Mutations audit **inside the context function**, not at each caller, so the
+  UI, the API, background workers and any future surface are covered by
+  construction rather than by remembering. Callers pass only what a context
+  cannot know about its caller — `:actor` and `:request_ip`, from
+  `FountainWeb.Audited.attribution/2` on a web surface, or a
+  `"system:<worker>"` string from a background one.
+
+  ## Deliberately not audited
+
+  High-volume machine state is not audit material, and recording it would bury
+  the events that are. These are decisions, not oversights (#551):
+
+    * `ConversationServer`'s per-turn state-machine writes — turn started,
+      output chunk, turn ended. The conversation's own log events already hold
+      this, at the right granularity.
+    * `Accounts.touch_api_key/1` — a last-used stamp on every authenticated
+      request. The key's *creation* and *revocation* are audited; its use is
+      what the request log is for.
+    * `Conversations.mark_read/2` and theme/preference updates — reading and
+      display settings are not state changes anyone audits.
+
+  Two system paths record a **summary per run** rather than per row, for the
+  same reason: `Workers.RetentionPruner` (which deletes `audit_events`, so the
+  trail must be able to account for its own shrinkage) and the trial-backfill
+  release task.
   """
 
   import Ecto.Query

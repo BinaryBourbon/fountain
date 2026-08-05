@@ -110,6 +110,8 @@ defmodule Fountain.Workers.SandboxReaper do
     |> Repo.preload(:conversations)
     |> Enum.reject(&server_alive?/1)
     |> Enum.map(fn sandbox ->
+      was = sandbox.status
+
       {:ok, _} =
         Conversations.update_sandbox(sandbox, %{
           status: "failed",
@@ -121,6 +123,11 @@ defmodule Fountain.Workers.SandboxReaper do
           "after #{@stuck_after_minutes}m in #{sandbox.status}"
       )
 
+      record_reap(sandbox, "sandbox.released_stuck", %{
+        "previous_status" => was,
+        "stuck_after_minutes" => @stuck_after_minutes
+      })
+
       sandbox
     end)
     |> length()
@@ -129,6 +136,22 @@ defmodule Fountain.Workers.SandboxReaper do
   # A live ConversationServer means provisioning is still in flight somewhere in
   # the cluster, however long it has taken. Horde's registry is cluster-wide, so
   # this is not just a local check.
+  # A sandbox the tenant did not stop, ending for a reason only the reaper
+  # knows. Attributed to the worker so "my agent's sandbox vanished" has an
+  # answer in the tenant's own trail rather than only in the server log —
+  # `admin.sandbox.reaped` covered the admin-clicked path and nothing covered
+  # this one (#551).
+  defp record_reap(%Sandbox{} = sandbox, action, metadata) do
+    Fountain.Audit.record(%{
+      user_id: sandbox.user_id,
+      action: action,
+      resource_type: "sandbox",
+      resource_id: sandbox.id,
+      actor: "system:sandbox_reaper",
+      metadata: Map.put(metadata, "sprite_name", sandbox.sprite_name)
+    })
+  end
+
   defp server_alive?(%Sandbox{conversations: conversations}) do
     Enum.any?(conversations, fn conv -> ConversationServer.whereis(conv.id) != nil end)
   end
@@ -204,6 +227,8 @@ defmodule Fountain.Workers.SandboxReaper do
       "reaper: expired abandoned sandbox #{sandbox.id} (#{sandbox.sprite_name}) — " <>
         "ready with no live server past its lifetime bound"
     )
+
+    record_reap(sandbox, "sandbox.expired", %{"reason" => "past lifetime bound"})
 
     # The conversation is deliberately left alone. It stays resumable, and the
     # next prompt provisions a fresh sandbox with the same runtime session.
