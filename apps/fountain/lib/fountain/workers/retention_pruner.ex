@@ -69,7 +69,40 @@ defmodule Fountain.Workers.RetentionPruner do
       Logger.info("retention: pruned #{deleted} rows (#{detail})")
     end
 
+    record_run(results, deleted)
+
     :ok
+  end
+
+  # One summary row per run, not one per deleted row — the point is that the
+  # trail can account for its own shrinkage, and per-row events would be the
+  # thing being pruned.
+  #
+  # Written *after* the pruning, deliberately: a row written first would sit
+  # inside the same transaction-less pass that deletes `audit_events`, and on a
+  # run where the window had been shortened it could delete the record of
+  # itself. Written after, this run's summary is always newer than its own
+  # cutoff.
+  #
+  # `user_id: nil` — this is a system event spanning every tenant, so it
+  # belongs to the admin views (`_unsafe_list_recent/1`) rather than to any one
+  # trail. A zero-deletion run records nothing: it is the deletions that need
+  # accounting for, and a daily row saying "removed nothing" would bury them.
+  defp record_run(_results, 0), do: :ok
+
+  defp record_run(results, deleted) do
+    counts =
+      results
+      |> Enum.reject(&(elem(&1, 1) == 0))
+      |> Map.new(fn {table, n} -> {to_string(table), n} end)
+
+    Fountain.Audit.record(%{
+      user_id: nil,
+      action: "retention.pruned",
+      resource_type: "retention_run",
+      actor: "system:retention_pruner",
+      metadata: Map.put(counts, "total", deleted)
+    })
   end
 
   @doc "Retention window in days for `table`, or nil when disabled."

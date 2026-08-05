@@ -18,6 +18,17 @@ upgrade, is in
 
 ### Fixed
 
+- **The audit trail can now account for its own shrinkage, and background
+  workers no longer change your data anonymously.** The retention pruner
+  deletes `audit_events` among other tables, so the trail could get shorter
+  with nothing to say when or by how much; it now records one summary per run
+  with per-table counts, written after the pruning so a shortened window
+  cannot delete the record of the deletion. The sandbox reaper's expiries and
+  stuck-sandbox releases, an export completing, failing or aging out, and the
+  bulk trial backfill in the release task all record too, each attributed to
+  the worker that did it. Previously "my sandbox vanished" and "I asked for my
+  data and never heard back" had answers only in the server log (#551)
+
 - **Saving an inference credential during onboarding is audited like saving
   one anywhere else.** BYO provider keys are secret material on par with
   environment and vault secrets, and the settings page and API already

@@ -210,8 +210,12 @@ defmodule Fountain.Exports do
     })
     |> Repo.update()
     |> tap(fn
-      {:ok, updated} -> broadcast(updated.user_id)
-      _ -> :ok
+      {:ok, updated} ->
+        broadcast(updated.user_id)
+        record_transition(updated, "account.export_completed", %{"bytes" => raw_bytes})
+
+      _ ->
+        :ok
     end)
   end
 
@@ -221,19 +225,60 @@ defmodule Fountain.Exports do
     |> Export.changeset(%{status: "failed", error: String.slice(inspect(reason), 0, 250)})
     |> Repo.update()
     |> tap(fn
-      {:ok, updated} -> broadcast(updated.user_id)
-      _ -> :ok
+      {:ok, updated} ->
+        broadcast(updated.user_id)
+        # The reason is already truncated to 250 chars on the row itself.
+        record_transition(updated, "account.export_failed", %{"error" => updated.error})
+
+      _ ->
+        :ok
     end)
+  end
+
+  # The request and the download were audited; the outcome in between was not,
+  # so a trail could show a user asking for their data and never show whether
+  # the export succeeded, failed, or quietly expired before they fetched it
+  # (#551). The worker is the actor — nobody asked for these transitions.
+  defp record_transition(%Export{} = export, action, metadata) do
+    Audit.record(%{
+      user_id: export.user_id,
+      action: action,
+      resource_type: "export",
+      resource_id: export.id,
+      actor: "system:account_export",
+      metadata: metadata
+    })
   end
 
   @doc "Delete exports past their expiry. Returns the number deleted."
   def purge_expired do
     now = DateTime.utc_now()
 
+    # Read the owners before deleting: an expiry is the user's artifact going
+    # away, so it belongs in their trail, and after the delete nothing links
+    # the rows to anybody.
+    expiring =
+      Repo.all(
+        from e in Export,
+          where: not is_nil(e.expires_at) and e.expires_at <= ^now,
+          select: {e.id, e.user_id}
+      )
+
     {count, _} =
       Repo.delete_all(
         from e in Export, where: not is_nil(e.expires_at) and e.expires_at <= ^now
       )
+
+    Enum.each(expiring, fn {id, user_id} ->
+      Audit.record(%{
+        user_id: user_id,
+        action: "account.export_expired",
+        resource_type: "export",
+        resource_id: id,
+        actor: "system:retention_pruner",
+        metadata: %{}
+      })
+    end)
 
     count
   end
