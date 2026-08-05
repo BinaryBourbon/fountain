@@ -15,7 +15,11 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
       POSTGRES_DB: fountain
     ports:
-      - "5432:5432"
+      # Host-side convenience only (psql, and the database-only dev path) —
+      # the app reaches Postgres over the compose network. Parameterised
+      # because a machine evaluating Fountain usually already runs its own
+      # Postgres on 5432 (#549).
+      - "${POSTGRES_HOST_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:

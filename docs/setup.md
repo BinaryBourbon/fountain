@@ -51,7 +51,7 @@ mix local.rebar --force
 docker compose up -d postgres
 ```
 
-Brings up Postgres 16 on `localhost:5432`. Stop with `docker compose down`; data persists in the `postgres_data` volume.
+Brings up Postgres 16 on `localhost:5432` (already running your own Postgres? set `POSTGRES_HOST_PORT` in `.env` to publish elsewhere). Stop with `docker compose down`; data persists in the `postgres_data` volume.
 
 **Option B - Native Postgres:**
 

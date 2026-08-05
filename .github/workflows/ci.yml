@@ -266,3 +266,65 @@ jobs:
       # clone with no .env. This is the same load step that command runs.
       - name: docker compose config with no .env and no secrets in the environment
         run: env -u SECRET_KEY_BASE -u MASTER_SECRETS_KEY docker compose config --quiet
+
+  # docker-compose.yml and .env.compose.example evolve on main while the
+  # image they run stays pinned to a released tag. Every other check pairs
+  # main's config with main's code — ComposePassthroughConfigTest evaluates
+  # main's runtime.exs, the release boot check boots a fresh build. The
+  # pairing a fresh `git clone && docker compose up` actually gets — current
+  # compose file, *pinned* image — was exercised by nothing, and both #513
+  # boot failures shipped through exactly that gap (#548). So this job runs
+  # the documented quick start verbatim against the pin and asks the app
+  # what the walkthrough asks.
+  compose-pinned-image-boot:
+    name: Compose boots the pinned image
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v5
+
+      # The exact commands the quick start documents (cp, the two openssl
+      # lines, up) rather than a synthetic env — the job exists to run what
+      # a fresh user runs, so any divergence here would defeat it. The
+      # appended keys shadow the blank ones from the example file; that
+      # last-value-wins reliance is part of the documented flow under test.
+      - name: Run the documented quick start
+        run: |
+          set -euo pipefail
+          cp .env.compose.example .env
+          echo "SECRET_KEY_BASE=$(openssl rand -base64 48 | tr -d '\n')" >> .env
+          echo "MASTER_SECRETS_KEY=$(openssl rand 32 | base64 | tr '+/' '-_' | tr -d '=\n')" >> .env
+          docker compose up -d
+
+      - name: Probe /health and /health/ready
+        run: |
+          set -euo pipefail
+          probe() {
+            # Boot runs migrations before the endpoint listens, so tolerate
+            # refused connections while waiting — but a non-200 answer is a
+            # verdict, not a retry.
+            for _ in $(seq 1 60); do
+              code=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:4000$1") || code=000
+              if [ "$code" = "200" ]; then
+                echo "  $1 -> 200"
+                return 0
+              fi
+              if [ "$code" != "000" ]; then
+                echo "  $1 -> $code (expected 200)" >&2
+                return 1
+              fi
+              sleep 2
+            done
+            echo "  $1 never answered" >&2
+            return 1
+          }
+          probe /health
+          probe /health/ready
+
+      - name: Dump container logs
+        if: failure()
+        run: docker compose logs --timestamps
