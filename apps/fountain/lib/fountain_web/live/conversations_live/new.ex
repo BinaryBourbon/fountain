@@ -33,7 +33,7 @@ defmodule FountainWeb.ConversationsLive.New do
     params = Map.put(params, "source", "ui")
     params = Map.put(params, "user_id", socket.assigns.user_id)
 
-    case Conversations.start_conversation(params) do
+    case Conversations.start_conversation(params, FountainWeb.Audited.attribution(socket)) do
       {:ok, conv} ->
         {:noreply,
          socket

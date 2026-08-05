@@ -381,7 +381,7 @@ defmodule Fountain.ConversationsContextTest do
       user = insert_verified_user()
       conv = insert_conversation(user_id: user.id)
 
-      # ConversationServer.terminate/1 will return an error since the server
+      # ConversationServer.terminate_conversation/2 will return an error since the server
       # isn't running in tests, but delete_conversation proceeds with Repo.delete
       assert {:ok, _deleted} = Conversations.delete_conversation(conv)
       assert Conversations.get_conversation(conv.id, user.id) == nil

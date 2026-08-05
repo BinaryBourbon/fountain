@@ -10,6 +10,7 @@ defmodule Fountain.Conversations do
 
   require Logger
 
+  alias Fountain.Audit
   alias Fountain.Conversations.{Conversation, LogEvent, Sandbox, Turn, TurnImage}
   alias Fountain.Repo
 
@@ -128,7 +129,10 @@ defmodule Fountain.Conversations do
           {:ok, _} = update_sandbox(sandbox, %{status: "terminated", terminated_at: now})
           {:ok, :released}
         else
-          Enum.each(live, &ConversationServer.terminate(&1.id))
+          # A reclaimed sandbox took the tenant's conversations down with it,
+          # which is worth a row each — this is the one termination they did
+          # not ask for. #551 covers the reaper that calls this.
+          Enum.each(live, &ConversationServer.terminate_conversation(&1.id, actor: "system:sandbox_reaper"))
           {:ok, :terminated}
         end
     end
@@ -163,7 +167,7 @@ defmodule Fountain.Conversations do
 
   Every sandbox status change in the system goes through here — fresh
   provisioning, the wake path, and the terminate-when-the-server-is-already-dead
-  path in `ConversationServer.terminate/1`. Metering at this choke point means a
+  path in `ConversationServer.terminate_conversation/2`. Metering at this choke point means a
   new caller cannot forget to record usage, which is how `Billing.emit/5` ended
   up with no call sites at all despite being documented, schema'd and tested.
   """
@@ -566,10 +570,28 @@ defmodule Fountain.Conversations do
   if alive), then delete the conversation row. Cascades to turns and log
   events via the FK.
   """
-  def delete_conversation(%Conversation{id: id, user_id: user_id} = conv) do
-    _ = Fountain.Conversations.ConversationServer.terminate(id)
+  def delete_conversation(%Conversation{id: id, user_id: user_id} = conv, opts \\ []) do
+    # `audit: false` on the cascade: this terminate is an implementation
+    # detail of deleting, not a second thing the user asked for, and the
+    # `conversation.deleted` below already accounts for the sandbox going
+    # away. Without it every delete would read as terminate-then-delete.
+    _ = Fountain.Conversations.ConversationServer.terminate_conversation(id, audit: false)
     result = Repo.delete(conv)
-    if match?({:ok, _}, result), do: broadcast_sidebar_update(user_id)
+
+    if match?({:ok, _}, result) do
+      broadcast_sidebar_update(user_id)
+
+      Audit.record(%{
+        user_id: user_id,
+        action: "conversation.deleted",
+        resource_type: "conversation",
+        resource_id: id,
+        actor: Keyword.get(opts, :actor, "self"),
+        request_ip: Keyword.get(opts, :request_ip),
+        metadata: %{"title" => conv.title}
+      })
+    end
+
     result
   end
 
@@ -878,7 +900,7 @@ defmodule Fountain.Conversations do
     - `source`                — optional; one of "ui", "api", "agent" (default "api")
     - `parent_conversation_id` — optional; UUID of the conversation that spawned this one
   """
-  def start_conversation(%{"agent_id" => agent_id, "user_id" => user_id} = attrs)
+  def start_conversation(%{"agent_id" => agent_id, "user_id" => user_id} = attrs, opts \\ [])
       when is_binary(user_id) do
     with %Agents.Agent{} = agent <- Agents.get_agent(agent_id, user_id) || {:error, :not_found},
          {:ok, runtime_module} <- Fountain.Runtimes.for_runtime(agent.runtime),
@@ -910,6 +932,29 @@ defmodule Fountain.Conversations do
              source: attrs["source"] || "api",
              parent_conversation_id: parent_id
            }) do
+      # Recorded here rather than in either branch below: both of them return
+      # {:ok, conv}. The row exists and the sandbox reservation is spent even
+      # when the server fails to start, so "a conversation was created" is
+      # true either way, and a trail that only logged the happy path would
+      # under-report exactly the runs someone is trying to explain.
+      #
+      # The prompt is described, never quoted — see `send_prompt/4`.
+      Audit.record(%{
+        user_id: user_id,
+        action: "conversation.created",
+        resource_type: "conversation",
+        resource_id: conv.id,
+        actor: Keyword.get(opts, :actor, "self"),
+        request_ip: Keyword.get(opts, :request_ip),
+        metadata: %{
+          "agent_id" => agent.id,
+          "agent_name" => agent.name,
+          "source" => conv.source,
+          "with_prompt" => is_binary(attrs["prompt"]) and attrs["prompt"] != "",
+          "parent_conversation_id" => parent_id
+        }
+      })
+
       # No prompt in the child spec — see start_conversation_server/4.
       start_result =
         Horde.DynamicSupervisor.start_child(

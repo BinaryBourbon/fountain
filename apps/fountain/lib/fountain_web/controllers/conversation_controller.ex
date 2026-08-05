@@ -6,6 +6,7 @@ defmodule FountainWeb.ConversationController do
   alias Fountain.Billing
   alias Fountain.Conversations
   alias Fountain.Conversations.{ConversationServer, LogEvent}
+  alias FountainWeb.Audited
   alias FountainWeb.Schemas
 
   action_fallback FountainWeb.FallbackController
@@ -266,7 +267,7 @@ defmodule FountainWeb.ConversationController do
       |> Map.put("user_id", user.id)
 
     with :ok <- gate_subscription(user),
-         {:ok, conv} <- Conversations.start_conversation(params) do
+         {:ok, conv} <- Conversations.start_conversation(params, Audited.attribution(conn)) do
       conn
       |> put_status(:created)
       |> render(:show, conversation: conv)
@@ -327,7 +328,7 @@ defmodule FountainWeb.ConversationController do
         {:error, :not_found}
 
       _ ->
-        case ConversationServer.send_prompt(id, prompt, images) do
+        case ConversationServer.send_prompt(id, prompt, images, Audited.attribution(conn)) do
           :ok ->
             json(conn, %{status: "queued"})
 
@@ -368,7 +369,7 @@ defmodule FountainWeb.ConversationController do
         {:error, :not_found}
 
       _ ->
-        case ConversationServer.terminate(id) do
+        case ConversationServer.terminate_conversation(id, Audited.attribution(conn)) do
           :ok -> send_resp(conn, :no_content, "")
           {:error, :not_running} -> {:error, :not_found}
           # :provisioning and future shapes render via the FallbackController.
@@ -395,7 +396,7 @@ defmodule FountainWeb.ConversationController do
         {:error, :not_found}
 
       _ ->
-        case ConversationServer.interrupt(id) do
+        case ConversationServer.interrupt(id, Audited.attribution(conn)) do
           :ok ->
             send_resp(conn, :no_content, "")
 
@@ -432,7 +433,7 @@ defmodule FountainWeb.ConversationController do
         {:error, :not_found}
 
       conv ->
-        {:ok, _} = Conversations.delete_conversation(conv)
+        {:ok, _} = Conversations.delete_conversation(conv, Audited.attribution(conn))
         send_resp(conn, :no_content, "")
     end
   end

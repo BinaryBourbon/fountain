@@ -190,7 +190,7 @@ defmodule FountainWeb.ConversationsLive.Show do
   def handle_event("send_prompt", _, socket), do: {:noreply, socket}
 
   def handle_event("terminate", _, socket) do
-    case ConversationServer.terminate(socket.assigns.conv.id) do
+    case ConversationServer.terminate_conversation(socket.assigns.conv.id, FountainWeb.Audited.attribution(socket)) do
       :ok ->
         conv = Conversations.get_conversation!(socket.assigns.conv.id, socket.assigns.current_user.id)
         {:noreply, socket |> assign(:conv, conv) |> put_flash(:info, "Terminated")}
@@ -201,7 +201,7 @@ defmodule FountainWeb.ConversationsLive.Show do
   end
 
   def handle_event("interrupt", _, socket) do
-    case ConversationServer.interrupt(socket.assigns.conv.id) do
+    case ConversationServer.interrupt(socket.assigns.conv.id, FountainWeb.Audited.attribution(socket)) do
       :ok ->
         conv = Conversations.get_conversation!(socket.assigns.conv.id, socket.assigns.current_user.id)
         {:noreply, socket |> assign(:conv, conv) |> put_flash(:info, "Interrupted")}
@@ -226,7 +226,7 @@ defmodule FountainWeb.ConversationsLive.Show do
          |> push_navigate(to: ~p"/conversations")}
 
       conv ->
-        {:ok, _} = Conversations.delete_conversation(conv)
+        {:ok, _} = Conversations.delete_conversation(conv, FountainWeb.Audited.attribution(socket))
 
         {:noreply,
          socket
@@ -1428,7 +1428,7 @@ defmodule FountainWeb.ConversationsLive.Show do
   # ── stage row helpers ───────────────────────────────────────────────────────
 
   defp send_decoded_prompt(socket, p, decoded_images) do
-    case ConversationServer.send_prompt(socket.assigns.conv.id, p, decoded_images) do
+    case ConversationServer.send_prompt(socket.assigns.conv.id, p, decoded_images, FountainWeb.Audited.attribution(socket)) do
       :ok ->
         # Refetch the conversation — wake-from-cold flips sandbox + status.
         conv = Conversations.get_conversation!(socket.assigns.conv.id, socket.assigns.current_user.id)
