@@ -115,10 +115,12 @@ defmodule FountainWeb.Router do
 
   ## ─── Public browser routes ────────────────────────────────────────────────────────────────────────
 
-  # Marketing landing page — public, shows auth-aware nav for logged-in users
+  # Marketing landing page + legal pages — public, auth-aware nav for logged-in users
   scope "/", FountainWeb do
     pipe_through [:browser, :browser_optional_auth]
     get "/", MarketingController, :home
+    get "/terms", MarketingController, :terms
+    get "/privacy", MarketingController, :privacy
   end
 
   # Multi-tenant auth routes (no session auth required)
