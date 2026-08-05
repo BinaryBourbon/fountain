@@ -1,6 +1,7 @@
 defmodule FountainWeb.StripeWebhookControllerTest do
   use FountainWeb.ConnCase, async: true
 
+  import Ecto.Query
   import Mimic
 
   setup :verify_on_exit!
@@ -196,6 +197,83 @@ defmodule FountainWeb.StripeWebhookControllerTest do
         )
 
       assert conn.status == 200
+    end
+  end
+
+  describe "POST /api/stripe/webhook — failure persistence (#501)" do
+    defp failure_row(event_id) do
+      Fountain.Repo.one(
+        from f in "stripe_webhook_failures",
+          where: f.event_id == ^event_id,
+          select: %{
+            type: f.event_type,
+            error: f.error,
+            count: f.failure_count,
+            resolved_at: f.resolved_at
+          }
+      )
+    end
+
+    defp post_stubbed(conn, event) do
+      stub(Stripe.Webhook, :construct_event, fn _body, _sig, _secret -> {:ok, event} end)
+
+      conn
+      |> Plug.Conn.put_req_header("content-type", "application/json")
+      |> Plug.Conn.put_req_header("stripe-signature", "t=1,v1=validhash")
+      |> Phoenix.ConnTest.dispatch(FountainWeb.Endpoint, :post, "/api/stripe/webhook", @raw_body)
+    end
+
+    @tag capture_log: true
+    test "a transient failure persists a row; a retried failure bumps the count", %{conn: conn} do
+      event = %Stripe.Event{
+        id: "evt_fail_persist",
+        type: "customer.subscription.updated",
+        data: %{object: %{status: "active", customer: "cus_x", trial_end: nil}}
+      }
+
+      stub(Fountain.Billing, :handle_event, fn _event -> {:error, :database_unavailable} end)
+
+      assert post_stubbed(conn, event).status == 500
+
+      row = failure_row("evt_fail_persist")
+      assert %{count: 1, resolved_at: nil, type: "customer.subscription.updated"} = row
+      assert row.error =~ "database_unavailable"
+
+      assert post_stubbed(conn, event).status == 500
+      assert %{count: 2, resolved_at: nil} = failure_row("evt_fail_persist")
+    end
+
+    @tag capture_log: true
+    test "an unknown customer is acked to Stripe but recorded — the event is gone for good",
+         %{conn: conn} do
+      event = %Stripe.Event{
+        id: "evt_fail_nobody",
+        type: "customer.subscription.updated",
+        data: %{object: %{status: "active", customer: "cus_nobody", trial_end: nil}}
+      }
+
+      assert post_stubbed(conn, event).status == 200
+
+      row = failure_row("evt_fail_nobody")
+      assert %{count: 1, resolved_at: nil} = row
+      assert row.error =~ "user_not_found"
+    end
+
+    @tag capture_log: true
+    test "a later successful delivery marks the failure resolved", %{conn: conn} do
+      event = %Stripe.Event{
+        id: "evt_fail_recovers",
+        type: "customer.subscription.updated",
+        data: %{object: %{status: "active", customer: "cus_x", trial_end: nil}}
+      }
+
+      stub(Fountain.Billing, :handle_event, fn _event -> {:error, :database_unavailable} end)
+      assert post_stubbed(conn, event).status == 500
+      assert %{resolved_at: nil} = failure_row("evt_fail_recovers")
+
+      stub(Fountain.Billing, :handle_event, fn _event -> {:ok, :ignored} end)
+      assert post_stubbed(conn, event).status == 200
+      refute failure_row("evt_fail_recovers").resolved_at == nil
     end
   end
 

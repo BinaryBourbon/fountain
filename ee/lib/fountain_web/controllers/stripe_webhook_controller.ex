@@ -5,10 +5,13 @@ defmodule FountainWeb.StripeWebhookController do
   Verifies the `Stripe-Signature` header using `Stripe.Webhook.construct_event/3`,
   then dispatches to `Fountain.Billing.sync_subscription/1`.
 
-  Per Stripe's guidelines the endpoint always returns 200 to Stripe, even on
-  processing errors (which are logged and monitored via telemetry). A 400 is
-  returned only on signature verification failure; Stripe uses this to detect
-  misconfigured webhook secrets.
+  Transient processing errors answer 500 so Stripe redelivers; permanent ones
+  (unknown customer) answer 200 so Stripe stops. Both are logged and persisted
+  to `stripe_webhook_failures` (#501) — written here, outside the claim
+  transaction that a failed apply rolls back — and surfaced on the admin
+  billing overview. A later successful delivery of the same event marks its
+  failure row resolved. A 400 is returned only on signature verification
+  failure; Stripe uses this to detect misconfigured webhook secrets.
 
   When no webhook secret is configured (nil or empty), every request is
   rejected with 400 instead of being verified against an empty HMAC key (#390).
@@ -70,28 +73,36 @@ defmodule FountainWeb.StripeWebhookController do
     case Billing.handle_event(event) do
       {:ok, :duplicate} ->
         Logger.info("[stripe_webhook] Ignoring duplicate delivery of #{event.id}")
+        Billing.resolve_webhook_failure(event.id)
         :ok
 
       {:ok, :stale} ->
         Logger.info("[stripe_webhook] Ignoring out-of-order event #{event.id}")
+        Billing.resolve_webhook_failure(event.id)
         :ok
 
       {:ok, _} ->
+        Billing.resolve_webhook_failure(event.id)
         :ok
 
       # Retrying cannot fix an event whose customer we do not recognise, so
       # acknowledge it rather than making Stripe redeliver for three days.
+      # Recorded as a failure all the same: the event is gone for good, and
+      # that is exactly what an operator needs to see (#501).
       {:error, :user_not_found} ->
         Logger.error("[stripe_webhook] No user for event #{event.id} (#{event.type})")
+        Billing.record_webhook_failure(event, :user_not_found)
         :ok
 
       {:error, reason} ->
         Logger.error("[stripe_webhook] Event processing error: #{inspect(reason)}")
+        Billing.record_webhook_failure(event, reason)
         :retry
     end
   rescue
     e ->
       Logger.error("[stripe_webhook] Unhandled error: #{Exception.message(e)}")
+      Billing.record_webhook_failure(event, e)
       :retry
   end
 
