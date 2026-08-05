@@ -30,6 +30,16 @@ config :ueberauth, Ueberauth.Strategy.Github.OAuth,
 # toggles it per-test via the application env.
 config :fountain, :billing_enabled, true
 
+# Legal identity pinned (LEGAL_* env vars are not read in :test — see
+# config/runtime.exs) so the developer's shell can't change suite behavior;
+# unpublished-page tests set :legal to nil through the application env.
+config :fountain, :legal, %{
+  entity: "Test Legal Entity LLC",
+  contact_email: "legal@example.com",
+  jurisdiction: "the State of Testing",
+  updated: "2026-01-01"
+}
+
 # A known webhook secret so StripeWebhookController's fail-closed secret
 # resolution (#390) succeeds; signature-path tests sign payloads with the
 # value they read back from this key, exercising the real construct_event.

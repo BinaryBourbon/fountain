@@ -2,25 +2,30 @@ defmodule FountainWeb.MarketingController do
   @moduledoc false
   use FountainWeb, :controller
 
-  # Placeholders for the legal pages, kept in one place so filling them is a
-  # single edit. They must be replaced with real values before charging
-  # customers — a page that says {{COMPANY_LEGAL_NAME}} is deliberately loud.
-  @legal %{
-    entity: "{{COMPANY_LEGAL_NAME}}",
-    contact_email: "{{CONTACT_EMAIL}}",
-    jurisdiction: "{{JURISDICTION}}",
-    updated: "{{EFFECTIVE_DATE}}"
-  }
-
   def home(conn, _params) do
     render(conn, :home, layout: {FountainWeb.Layouts, :marketing})
   end
 
   def terms(conn, _params) do
-    render(conn, :terms, layout: {FountainWeb.Layouts, :marketing}, legal: @legal)
+    render_legal(conn, :terms)
   end
 
   def privacy(conn, _params) do
-    render(conn, :privacy, layout: {FountainWeb.Layouts, :marketing}, legal: @legal)
+    render_legal(conn, :privacy)
+  end
+
+  # The legal identity is the operator's, set via LEGAL_* env vars (#517) —
+  # see Fountain.Legal for the unconfigured behaviour (neutral 404 on a
+  # billing-disabled instance, loud placeholders on a billing-enabled one).
+  defp render_legal(conn, page) do
+    case Fountain.Legal.content() do
+      nil ->
+        conn
+        |> put_status(:not_found)
+        |> render(:legal_unpublished, layout: {FountainWeb.Layouts, :marketing})
+
+      legal ->
+        render(conn, page, layout: {FountainWeb.Layouts, :marketing}, legal: legal)
+    end
   end
 end

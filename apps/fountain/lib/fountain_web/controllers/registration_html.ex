@@ -71,7 +71,7 @@ defmodule FountainWeb.RegistrationHTML do
           Sign up with GitHub
         </a>
 
-        <p class="text-xs text-zinc-400 text-center">
+        <p :if={Fountain.Legal.published?()} class="text-xs text-zinc-400 text-center">
           By signing up you agree to our
           <a href={~p"/terms"} class="underline">terms of service</a>
           and <a href={~p"/privacy"} class="underline">privacy policy</a>.

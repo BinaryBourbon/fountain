@@ -215,6 +215,69 @@ if config_env() != :test do
   config :fountain, :billing_enabled, System.get_env("BILLING_ENABLED", "false") != "false"
 end
 
+# The legal identity /terms and /privacy render (#517). Instance config, not
+# source: a self-hosted operator must never serve the upstream project's legal
+# terms, and the hosted instance's real entity does not belong in the repo.
+# All four or none — a partial set is a typo, and a terms page with a real
+# entity but a blank jurisdiction is broken legal copy, so refuse to boot
+# rather than render it. Unset entirely, the pages are hidden (billing off)
+# or keep #506's loud {{...}} placeholders (billing on) — see Fountain.Legal.
+# Skipped in :test — config/test.exs pins values so the developer's shell
+# cannot leak into the suite.
+if config_env() != :test do
+  legal_vars = [
+    "LEGAL_ENTITY",
+    "LEGAL_CONTACT_EMAIL",
+    "LEGAL_JURISDICTION",
+    "LEGAL_EFFECTIVE_DATE"
+  ]
+
+  legal_values =
+    Map.new(legal_vars, fn var ->
+      case System.get_env(var) do
+        blank when blank in [nil, ""] -> {var, nil}
+        value -> {var, String.trim(value)}
+      end
+    end)
+
+  case Enum.split_with(legal_vars, &legal_values[&1]) do
+    {_set, []} ->
+      config :fountain, :legal, %{
+        entity: legal_values["LEGAL_ENTITY"],
+        contact_email: legal_values["LEGAL_CONTACT_EMAIL"],
+        jurisdiction: legal_values["LEGAL_JURISDICTION"],
+        updated: legal_values["LEGAL_EFFECTIVE_DATE"]
+      }
+
+    {[], _unset} ->
+      config :fountain, :legal, nil
+
+      # A billing-enabled instance is charging money with no published terms.
+      # Warn hard rather than refuse to boot: /terms and /privacy keep serving
+      # the loud {{COMPANY_LEGAL_NAME}} placeholders, which is the visible
+      # enforcement, and a raise here would take down a running deployment
+      # over copy rather than correctness.
+      if env == :prod and System.get_env("BILLING_ENABLED", "false") != "false" do
+        IO.puts(:stderr, """
+
+        WARNING: BILLING_ENABLED is set but no legal identity is configured.
+        /terms and /privacy are rendering {{COMPANY_LEGAL_NAME}} placeholders
+        to your paying users. Set LEGAL_ENTITY, LEGAL_CONTACT_EMAIL,
+        LEGAL_JURISDICTION, and LEGAL_EFFECTIVE_DATE.
+        """)
+      end
+
+    {set, unset} ->
+      raise """
+      Legal identity is partially configured: #{Enum.join(set, ", ")} set,
+      but #{Enum.join(unset, ", ")} missing. /terms and /privacy need all
+      four (entity, contact email, jurisdiction, effective date) to render
+      coherent legal copy — set the missing ones, or unset all four to leave
+      the pages unpublished.
+      """
+  end
+end
+
 # Registration was open to the world with no way to close it. A self-hoster
 # exposing an instance had no control over who signed up, and on the hosted
 # side every signup consumes the platform Sprites token.
