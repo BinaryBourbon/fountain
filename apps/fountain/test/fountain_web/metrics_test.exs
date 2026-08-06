@@ -163,9 +163,11 @@ defmodule FountainWeb.MetricsTest do
         # 2-tuple span return), which is why the metrics use measurement
         # functions.
         [:fountain, :rehydrate, :stop],
-        # ConversationServer's terminal turn paths (#536) — exercised by
+        # ConversationServer's terminal turn paths (#536) and its stdout
+        # handler (#535) — both exercised by
         # conversation_server_turn_metrics_test.exs against a real server
         [:fountain, :turn, :completed],
+        [:fountain, :turn, :first_output],
         # :telemetry.execute call sites
         [:fountain, :sandbox, :reclaimed],
         [:fountain, :reaper, :run],
@@ -394,6 +396,30 @@ defmodule FountainWeb.MetricsTest do
       assert body =~ ~s(#{series},le="60000"} 1)
       assert body =~ ~s(#{series},le="30000"} 0)
 
+      refute body =~ "conv_id="
+    end
+
+    test "time to first token scrapes tagged by runtime (#535)" do
+      # Distinct runtime for the same reason as the turn-duration test: the
+      # reporter is global and the ConversationServer tests feed claude.
+      Fountain.Telemetry.event(
+        [:turn, :first_output],
+        %{runtime: "gemini", conv_id: Ecto.UUID.generate()},
+        %{elapsed_ms: 1_500}
+      )
+
+      Process.sleep(50)
+      {200, body} = scrape()
+
+      series = ~s(fountain_turn_first_output_elapsed_ms_bucket{runtime="gemini")
+
+      # 1.5s is above the 1s boundary and below 2.5s.
+      assert body =~ ~s(#{series},le="2500"} 1)
+      assert body =~ ~s(#{series},le="1000"} 0)
+
+      # No status tag here: a turn reports first output once, before any
+      # outcome is known.
+      refute body =~ ~s(fountain_turn_first_output_elapsed_ms_bucket{runtime="gemini",status)
       refute body =~ "conv_id="
     end
 
