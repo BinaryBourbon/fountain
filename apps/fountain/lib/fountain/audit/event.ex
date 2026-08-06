@@ -39,5 +39,9 @@ defmodule Fountain.Audit.Event do
       :user_id
     ])
     |> validate_required([:action, :resource_type, :inserted_at])
+    # Without this the FK violation raises, and `Audit.record/1`'s rescue turns
+    # a recoverable case into a lost row. It is recoverable because `user_id`
+    # is nullable and `on_delete: :nilify_all` — see `Audit.record/1` (#590).
+    |> foreign_key_constraint(:user_id)
   end
 end
