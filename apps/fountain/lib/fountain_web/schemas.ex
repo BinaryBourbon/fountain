@@ -9,93 +9,66 @@ defmodule FountainWeb.Schemas do
 
   defmodule Sandbox do
     @moduledoc false
-    require OpenApiSpex
 
-    OpenApiSpex.schema(%{
+    use FountainWeb.DerivedSchema,
+      source: Fountain.Conversations.Sandbox,
       title: "Sandbox",
       description: "One sprite lifespan owned by a conversation.",
-      type: :object,
-      properties: %{
-        id: %Schema{type: :string, format: :uuid},
-        sprite_name: %Schema{type: :string},
-        status: %Schema{
-          type: :string,
-          enum: ~w(pending starting ready terminated failed)
-        }
-      },
+      expose: [:id, :sprite_name, {:status, enum: :statuses}],
       required: [:id, :sprite_name, :status]
-    })
   end
 
   defmodule Conversation do
     @moduledoc false
-    require OpenApiSpex
-
-    OpenApiSpex.schema(%{
+    use FountainWeb.DerivedSchema,
+      source: Fountain.Conversations.Conversation,
       title: "Conversation",
       description: "One chat with one agent inside one sandbox.",
-      type: :object,
-      properties: %{
-        id: %Schema{type: :string, format: :uuid},
-        title: %Schema{
-          type: :string,
-          nullable: true,
-          description: "Generated from the first turn; null until one exists."
-        },
-        sandbox_id: %Schema{type: :string, format: :uuid, nullable: true},
-        sandbox: %Schema{oneOf: [Sandbox], nullable: true},
-        agent_id: %Schema{type: :string, format: :uuid, nullable: true},
-        vault_id: %Schema{type: :string, format: :uuid, nullable: true},
-        runtime: %Schema{type: :string, enum: ~w(claude codex gemini opencode)},
-        status: %Schema{
-          type: :string,
-          enum: ~w(pending running idle failed terminated)
-        },
-        runtime_session_id: %Schema{type: :string, nullable: true},
-        source: %Schema{type: :string, enum: ~w(ui api agent)},
-        parent_conversation_id: %Schema{type: :string, format: :uuid, nullable: true},
-        turn_count: %Schema{type: :integer},
-        last_active_at: %Schema{
-          type: :string,
-          format: :"date-time",
-          nullable: true,
-          description:
-            "Most recent runtime output, falling back to creation time. Stage " <>
-              "events (reconnects, sandbox lifecycle) do not count."
-        },
-        last_read_at: %Schema{
-          type: :string,
-          format: :"date-time",
-          nullable: true,
-          description: "Set by `POST /api/conversations/:id/read`. Null if never read."
-        },
+      expose: [
+        :id,
+        {:title, nullable: true, doc: "Generated from the first turn; null until one exists."},
+        {:sandbox_id, nullable: true},
+        {:sandbox, schema: %Schema{oneOf: [Sandbox], nullable: true}},
+        {:agent_id, nullable: true},
+        {:vault_id, nullable: true},
+        # The runtime vocabulary belongs to Agent — a conversation copies it
+        # at spawn and the column carries no inclusion validation of its own.
+        {:runtime, enum: {Fountain.Agents.Agent, :runtimes}},
+        {:status, enum: :statuses},
+        {:runtime_session_id, nullable: true},
+        {:source, enum: :sources},
+        {:parent_conversation_id, nullable: true},
+        :turn_count,
+        {:last_active_at,
+         nullable: true,
+         doc:
+           "Most recent runtime output, falling back to creation time. Stage " <>
+             "events (reconnects, sandbox lifecycle) do not count."},
+        {:last_read_at,
+         nullable: true, doc: "Set by `POST /api/conversations/:id/read`. Null if never read."},
+        :inserted_at,
+        :updated_at
+      ],
+      extra: %{
         unread: %Schema{
           type: :boolean,
           description: "last_active_at is later than last_read_at (true if never read)."
-        },
-        inserted_at: %Schema{type: :string, format: :"date-time"},
-        updated_at: %Schema{type: :string, format: :"date-time"}
+        }
       },
       required: [:id, :runtime, :status]
-    })
   end
 
   defmodule ConversationTreeNode do
     @moduledoc false
-    require OpenApiSpex
 
-    OpenApiSpex.schema(%{
+    use FountainWeb.DerivedSchema,
+      source: Fountain.Conversations.Conversation,
       title: "ConversationTreeNode",
       description: "One conversation in a spawn tree, flat with a parent pointer.",
-      type: :object,
-      properties: %{
-        id: %Schema{type: :string, format: :uuid},
-        source: %Schema{type: :string, enum: ~w(ui api agent)},
-        status: %Schema{type: :string, enum: ~w(pending running idle failed terminated)},
-        parent_id: %Schema{type: :string, format: :uuid, nullable: true}
-      },
+      expose: [:id, {:source, enum: :sources}, {:status, enum: :statuses}],
+      # `parent_id` on the wire, `parent_conversation_id` in the column.
+      extra: %{parent_id: %Schema{type: :string, format: :uuid, nullable: true}},
       required: [:id]
-    })
   end
 
   defmodule ConversationTreeResponse do
@@ -151,7 +124,7 @@ defmodule FountainWeb.Schemas do
         },
         media_type: %Schema{
           type: :string,
-          enum: ~w(image/png image/jpeg image/gif image/webp),
+          enum: Fountain.Images.valid_media_types(),
           description: "MIME type of the image."
         }
       },
@@ -226,31 +199,27 @@ defmodule FountainWeb.Schemas do
 
   defmodule Turn do
     @moduledoc false
-    require OpenApiSpex
-
-    OpenApiSpex.schema(%{
+    use FountainWeb.DerivedSchema,
+      source: Fountain.Conversations.Turn,
       title: "Turn",
       description: "One prompt → exit_code cycle within a conversation.",
-      type: :object,
-      properties: %{
-        id: %Schema{type: :string, format: :uuid},
-        turn_number: %Schema{type: :integer},
-        prompt: %Schema{type: :string},
-        status: %Schema{
-          type: :string,
-          enum: ~w(pending running completed failed interrupted)
-        },
-        exit_code: %Schema{type: :integer, nullable: true},
-        started_at: %Schema{type: :string, format: :"date-time", nullable: true},
-        ended_at: %Schema{type: :string, format: :"date-time", nullable: true},
-        inserted_at: %Schema{type: :string, format: :"date-time"},
+      expose: [
+        :id,
+        :turn_number,
+        :prompt,
+        {:status, enum: :statuses},
+        {:exit_code, nullable: true},
+        {:started_at, nullable: true},
+        {:ended_at, nullable: true},
+        :inserted_at
+      ],
+      extra: %{
         image_count: %Schema{
           type: :integer,
           description: "Number of images attached to this turn."
         }
       },
       required: [:id, :turn_number, :prompt, :status]
-    })
   end
 
   defmodule TurnListResponse do
@@ -283,7 +252,7 @@ defmodule FountainWeb.Schemas do
           description: "Canonical provider/model_id (e.g. anthropic/claude-sonnet-4-6).",
           pattern: "^[a-z0-9_-]+/[a-z0-9._-]+$"
         },
-        runtime: %Schema{type: :string, enum: ~w(claude codex gemini opencode)},
+        runtime: %Schema{type: :string, enum: Fountain.Agents.Agent.runtimes()},
         environment_id: %Schema{type: :string, format: :uuid, nullable: true},
         skills: %Schema{
           type: :array,
@@ -338,7 +307,7 @@ defmodule FountainWeb.Schemas do
         avatar_media_type: %Schema{
           type: :string,
           nullable: true,
-          enum: ~w(image/png image/jpeg image/gif image/webp),
+          enum: Fountain.Images.valid_media_types(),
           description:
             "Set when the agent has an avatar; fetch the bytes at " <>
               "`GET /api/agents/:id/avatar`. Null means no avatar."
@@ -389,7 +358,7 @@ defmodule FountainWeb.Schemas do
           type: :string,
           pattern: "^[a-z0-9_-]+/[a-z0-9._-]+$"
         },
-        runtime: %Schema{type: :string, enum: ~w(claude codex gemini opencode)},
+        runtime: %Schema{type: :string, enum: Fountain.Agents.Agent.runtimes()},
         environment_id: %Schema{type: :string, format: :uuid, nullable: true},
         skills: %Schema{
           type: :array,
@@ -456,7 +425,7 @@ defmodule FountainWeb.Schemas do
         description: %Schema{type: :string},
         system: %Schema{type: :string},
         model: %Schema{type: :string, pattern: "^[a-z0-9_-]+/[a-z0-9._-]+$"},
-        runtime: %Schema{type: :string, enum: ~w(claude codex gemini opencode)},
+        runtime: %Schema{type: :string, enum: Fountain.Agents.Agent.runtimes()},
         environment_id: %Schema{type: :string, format: :uuid, nullable: true},
         skills: %Schema{
           type: :array,
@@ -524,48 +493,39 @@ defmodule FountainWeb.Schemas do
 
   defmodule Environment do
     @moduledoc false
-    require OpenApiSpex
-
-    OpenApiSpex.schema(%{
+    use FountainWeb.DerivedSchema,
+      source: Fountain.Environments.Environment,
       title: "Environment",
       description: "A reusable sandbox environment: packages, env vars, repos, networking.",
-      type: :object,
-      properties: %{
-        id: %Schema{type: :string, format: :uuid},
-        name: %Schema{type: :string},
-        packages: %Schema{type: :object, additionalProperties: true},
-        env_vars: %Schema{type: :object, additionalProperties: %Schema{type: :string}},
-        setup_script: %Schema{type: :string},
-        networking_type: %Schema{type: :string, enum: ~w(unrestricted limited)},
-        networking_config: %Schema{
-          type: :object,
-          description:
-            "Refines networking_type: limited. allowed_hosts is the only key " <>
-              "honored today; unknown keys are ignored. Under limited, egress is " <>
-              "restricted to the allowlisted domains. With no allowed_hosts (or an " <>
-              "empty list), the sandbox denies all egress by default — this is a " <>
-              "deny-all, not an allow-all.",
-          properties: %{
-            allowed_hosts: %Schema{
-              type: :array,
-              items: %Schema{type: :string},
-              description: "Domains the sandbox may reach when networking_type is limited."
-            }
-          },
-          additionalProperties: true
-        },
-        repositories: %Schema{type: :array, items: Repository},
-        metadata: %Schema{type: :object, additionalProperties: true},
-        secret_count: %Schema{type: :integer, description: "Secrets stored on this environment."},
-        agent_count: %Schema{
-          type: :integer,
-          description: "Agents referencing this environment — 0 means safe to delete."
-        },
-        inserted_at: %Schema{type: :string, format: :"date-time"},
-        updated_at: %Schema{type: :string, format: :"date-time"}
-      },
+      expose: [
+        :id,
+        :name,
+        :packages,
+        {:env_vars, additional_properties: %Schema{type: :string}},
+        :setup_script,
+        {:networking_type, enum: :networking},
+        {:networking_config,
+         doc:
+           "Refines networking_type: limited. allowed_hosts is the only key " <>
+             "honored today; unknown keys are ignored. Under limited, egress is " <>
+             "restricted to the allowlisted domains. With no allowed_hosts (or an " <>
+             "empty list), the sandbox denies all egress by default — this is a " <>
+             "deny-all, not an allow-all.",
+         properties: %{
+           allowed_hosts: %Schema{
+             type: :array,
+             items: %Schema{type: :string},
+             description: "Domains the sandbox may reach when networking_type is limited."
+           }
+         }},
+        {:repositories, items: Repository},
+        :metadata,
+        {:secret_count, doc: "Secrets stored on this environment."},
+        {:agent_count, doc: "Agents referencing this environment — 0 means safe to delete."},
+        :inserted_at,
+        :updated_at
+      ],
       required: [:id, :name]
-    })
   end
 
   defmodule EnvironmentResponse do
@@ -604,7 +564,10 @@ defmodule FountainWeb.Schemas do
         packages: %Schema{type: :object, additionalProperties: true},
         env_vars: %Schema{type: :object, additionalProperties: %Schema{type: :string}},
         setup_script: %Schema{type: :string},
-        networking_type: %Schema{type: :string, enum: ~w(unrestricted limited)},
+        networking_type: %Schema{
+          type: :string,
+          enum: Fountain.Environments.Environment.networking()
+        },
         networking_config: %Schema{
           type: :object,
           description:
@@ -645,7 +608,10 @@ defmodule FountainWeb.Schemas do
         packages: %Schema{type: :object, additionalProperties: true},
         env_vars: %Schema{type: :object, additionalProperties: %Schema{type: :string}},
         setup_script: %Schema{type: :string},
-        networking_type: %Schema{type: :string, enum: ~w(unrestricted limited)},
+        networking_type: %Schema{
+          type: :string,
+          enum: Fountain.Environments.Environment.networking()
+        },
         networking_config: %Schema{
           type: :object,
           description:
@@ -671,21 +637,12 @@ defmodule FountainWeb.Schemas do
 
   defmodule Secret do
     @moduledoc false
-    require OpenApiSpex
-
-    OpenApiSpex.schema(%{
+    use FountainWeb.DerivedSchema,
+      source: Fountain.Environments.Secret,
       title: "Secret",
       description: "A named secret. Values are write-only — the API never returns them.",
-      type: :object,
-      properties: %{
-        id: %Schema{type: :string, format: :uuid},
-        key: %Schema{type: :string},
-        environment_id: %Schema{type: :string, format: :uuid},
-        inserted_at: %Schema{type: :string, format: :"date-time"},
-        updated_at: %Schema{type: :string, format: :"date-time"}
-      },
+      expose: [:id, :key, :environment_id, :inserted_at, :updated_at],
       required: [:id, :key, :environment_id]
-    })
   end
 
   defmodule SecretResponse do
@@ -729,25 +686,22 @@ defmodule FountainWeb.Schemas do
 
   defmodule Vault do
     @moduledoc false
-    require OpenApiSpex
-
-    OpenApiSpex.schema(%{
+    use FountainWeb.DerivedSchema,
+      source: Fountain.Vaults.Vault,
       title: "Vault",
       description:
         "A free-floating bag of env-var overrides selected at conversation creation. " <>
           "Vault values override an environment's baseline secrets when the same key is set on both.",
-      type: :object,
-      properties: %{
-        id: %Schema{type: :string, format: :uuid},
-        name: %Schema{type: :string},
-        description: %Schema{type: :string},
-        metadata: %Schema{type: :object, additionalProperties: true},
-        secret_count: %Schema{type: :integer, description: "Secrets stored in this vault."},
-        inserted_at: %Schema{type: :string, format: :"date-time"},
-        updated_at: %Schema{type: :string, format: :"date-time"}
-      },
+      expose: [
+        :id,
+        :name,
+        :description,
+        :metadata,
+        {:secret_count, doc: "Secrets stored in this vault."},
+        :inserted_at,
+        :updated_at
+      ],
       required: [:id, :name]
-    })
   end
 
   defmodule VaultResponse do
@@ -810,22 +764,13 @@ defmodule FountainWeb.Schemas do
 
   defmodule VaultSecret do
     @moduledoc false
-    require OpenApiSpex
-
-    OpenApiSpex.schema(%{
+    use FountainWeb.DerivedSchema,
+      source: Fountain.Vaults.VaultSecret,
       title: "VaultSecret",
       description:
         "A named secret in a vault. Values are write-only — the API never returns them.",
-      type: :object,
-      properties: %{
-        id: %Schema{type: :string, format: :uuid},
-        key: %Schema{type: :string},
-        vault_id: %Schema{type: :string, format: :uuid},
-        inserted_at: %Schema{type: :string, format: :"date-time"},
-        updated_at: %Schema{type: :string, format: :"date-time"}
-      },
+      expose: [:id, :key, :vault_id, :inserted_at, :updated_at],
       required: [:id, :key, :vault_id]
-    })
   end
 
   defmodule VaultSecretResponse do
@@ -869,36 +814,27 @@ defmodule FountainWeb.Schemas do
 
   defmodule LogEvent do
     @moduledoc false
-    require OpenApiSpex
-
-    OpenApiSpex.schema(%{
+    use FountainWeb.DerivedSchema,
+      source: Fountain.Conversations.LogEvent,
       title: "LogEvent",
       description:
         "One line of a conversation's log feed: runtime output or a lifecycle " <>
           "stage transition. Same fields the SSE stream sends, plus `id`.",
-      type: :object,
-      properties: %{
-        id: %Schema{
-          type: :integer,
-          description: "Monotonic id. Pagination cursor here, `Last-Event-ID` on the SSE route."
-        },
-        kind: %Schema{type: :string, enum: ~w(output stage)},
-        stream: %Schema{
-          type: :string,
-          description: "`stdout` / `stderr` for output events; empty for stage events."
-        },
-        data: %Schema{
-          type: :string,
-          description: "Output text, or JSON-encoded metadata for stage events."
-        },
-        stage: %Schema{type: :string, description: "Lifecycle stage name (stage events)."},
-        state: %Schema{type: :string, enum: ~w(started done failed interrupted), nullable: true},
-        duration_ms: %Schema{type: :integer, nullable: true},
-        turn_id: %Schema{type: :string, format: :uuid, nullable: true},
-        ts: %Schema{type: :string, format: :"date-time"}
-      },
+      expose: [
+        {:id, doc: "Monotonic id. Pagination cursor here, `Last-Event-ID` on the SSE route."},
+        {:kind, enum: :kinds},
+        # No enum, deliberately: stage events carry "" here, so the honest
+        # list would be ["stdout", "stderr", ""]. See LogEvent.streams/0.
+        {:stream, doc: "`stdout` / `stderr` for output events; empty for stage events."},
+        {:data, doc: "Output text, or JSON-encoded metadata for stage events."},
+        {:stage, doc: "Lifecycle stage name (stage events)."},
+        {:state, enum: :states, nullable: true},
+        {:duration_ms, nullable: true},
+        {:turn_id, nullable: true}
+      ],
+      # `ts` on the wire, `inserted_at` in the column.
+      extra: %{ts: %Schema{type: :string, format: :"date-time"}},
       required: [:id, :kind, :ts]
-    })
   end
 
   defmodule LogEventListResponse do
@@ -930,33 +866,35 @@ defmodule FountainWeb.Schemas do
 
   defmodule AdminUser do
     @moduledoc false
-    require OpenApiSpex
-
-    OpenApiSpex.schema(%{
+    use FountainWeb.DerivedSchema,
+      source: Fountain.Accounts.User,
       title: "AdminUser",
       description: "An account as the operator surface sees it. Metadata only.",
-      type: :object,
-      properties: %{
-        id: %Schema{type: :string, format: :uuid},
-        email: %Schema{type: :string},
-        role: %Schema{type: :string, enum: ~w(admin user)},
+      expose: [
+        :id,
+        :email,
+        {:role, enum: :roles},
+        {:email_verified_at, nullable: true},
+        {:suspended_at, nullable: true},
+        # No enum, unlike BillingResponse.data.status: this surface also
+        # renders accounts that predate the billing columns.
+        {:subscription_status, nullable: true},
+        {:trial_ends_at, nullable: true},
+        {:current_period_end, nullable: true},
+        {:cancel_at_period_end, nullable: true},
+        {:max_concurrent_sandboxes, nullable: true},
+        {:onboarding_completed_at, nullable: true},
+        :inserted_at
+      ],
+      # Computed by the admin JSON view rather than stored.
+      extra: %{
         email_verified: %Schema{type: :boolean},
-        email_verified_at: %Schema{type: :string, format: :"date-time", nullable: true},
         suspended: %Schema{type: :boolean},
-        suspended_at: %Schema{type: :string, format: :"date-time", nullable: true},
-        subscription_status: %Schema{type: :string, nullable: true},
-        trial_ends_at: %Schema{type: :string, format: :"date-time", nullable: true},
-        current_period_end: %Schema{type: :string, format: :"date-time", nullable: true},
-        cancel_at_period_end: %Schema{type: :boolean, nullable: true},
         has_stripe_customer: %Schema{type: :boolean},
-        max_concurrent_sandboxes: %Schema{type: :integer, nullable: true},
         active_sandboxes: %Schema{type: :integer},
-        onboarding_completed_at: %Schema{type: :string, format: :"date-time", nullable: true},
-        last_activity_at: %Schema{type: :string, format: :"date-time", nullable: true},
-        inserted_at: %Schema{type: :string, format: :"date-time"}
+        last_activity_at: %Schema{type: :string, format: :"date-time", nullable: true}
       },
       required: [:id, :email, :role]
-    })
   end
 
   defmodule AdminUserResponse do
@@ -1001,7 +939,7 @@ defmodule FountainWeb.Schemas do
     OpenApiSpex.schema(%{
       title: "AdminRoleRequest",
       type: :object,
-      properties: %{role: %Schema{type: :string, enum: ~w(admin user)}},
+      properties: %{role: %Schema{type: :string, enum: Fountain.Accounts.User.roles()}},
       required: [:role]
     })
   end
@@ -1079,24 +1017,25 @@ defmodule FountainWeb.Schemas do
 
   defmodule AdminSandbox do
     @moduledoc false
-    require OpenApiSpex
-
-    OpenApiSpex.schema(%{
+    use FountainWeb.DerivedSchema,
+      source: Fountain.Conversations.Sandbox,
       title: "AdminSandbox",
       description: "A live sandbox, cross-tenant. Metadata only — never contents.",
-      type: :object,
-      properties: %{
-        id: %Schema{type: :string, format: :uuid},
-        sprite_name: %Schema{type: :string},
-        status: %Schema{type: :string},
-        user_id: %Schema{type: :string, format: :uuid, nullable: true},
+      expose: [
+        :id,
+        :sprite_name,
+        # Intentionally unconstrained here, unlike Schemas.Sandbox: this list
+        # is cross-tenant and includes rows written before the status set settled.
+        :status,
+        {:user_id, nullable: true},
+        :inserted_at,
+        :updated_at
+      ],
+      extra: %{
         user_email: %Schema{type: :string, nullable: true},
-        conversation_count: %Schema{type: :integer},
-        inserted_at: %Schema{type: :string, format: :"date-time"},
-        updated_at: %Schema{type: :string, format: :"date-time"}
+        conversation_count: %Schema{type: :integer}
       },
       required: [:id, :status]
-    })
   end
 
   defmodule AdminSandboxListResponse do
@@ -1189,7 +1128,7 @@ defmodule FountainWeb.Schemas do
           properties: %{
             status: %Schema{
               type: :string,
-              enum: ~w(trialing active past_due canceled comped),
+              enum: Fountain.Accounts.User.subscription_statuses(),
               nullable: true
             },
             trial_ends_at: %Schema{type: :string, format: :"date-time", nullable: true},
@@ -1244,29 +1183,28 @@ defmodule FountainWeb.Schemas do
 
   defmodule Export do
     @moduledoc false
-    require OpenApiSpex
-
-    OpenApiSpex.schema(%{
+    use FountainWeb.DerivedSchema,
+      source: Fountain.Exports.Export,
       title: "Export",
       description:
         "An account data export. Built asynchronously; the payload is fetched " <>
           "from the download endpoint, never embedded here.",
-      type: :object,
-      properties: %{
-        id: %Schema{type: :string, format: :uuid},
-        status: %Schema{type: :string, enum: ~w(pending completed failed)},
-        byte_size: %Schema{type: :integer, nullable: true, description: "Uncompressed size."},
-        error: %Schema{type: :string, nullable: true},
-        expires_at: %Schema{type: :string, format: :"date-time", nullable: true},
+      expose: [
+        :id,
+        {:status, enum: :statuses},
+        {:byte_size, nullable: true, doc: "Uncompressed size."},
+        {:error, nullable: true},
+        {:expires_at, nullable: true},
+        :inserted_at,
+        :updated_at
+      ],
+      extra: %{
         downloadable: %Schema{
           type: :boolean,
           description: "Completed and not yet expired — the only state the download serves."
-        },
-        inserted_at: %Schema{type: :string, format: :"date-time"},
-        updated_at: %Schema{type: :string, format: :"date-time"}
+        }
       },
       required: [:id, :status]
-    })
   end
 
   defmodule ExportResponse do
@@ -1340,7 +1278,7 @@ defmodule FountainWeb.Schemas do
         data: %Schema{type: :string, description: "Base64-encoded image bytes."},
         media_type: %Schema{
           type: :string,
-          enum: ~w(image/png image/jpeg image/gif image/webp)
+          enum: Fountain.Images.valid_media_types()
         }
       },
       required: [:data, :media_type]
@@ -1361,7 +1299,7 @@ defmodule FountainWeb.Schemas do
             state: %Schema{
               type: :string,
               nullable: true,
-              enum: ~w(step_1 step_2 step_3 step_4 completed),
+              enum: Fountain.Accounts.onboarding_states(),
               description: "Wizard position. Only `completed` means anything to an API client."
             },
             completed: %Schema{type: :boolean},
@@ -1376,30 +1314,25 @@ defmodule FountainWeb.Schemas do
 
   defmodule AuditEvent do
     @moduledoc false
-    require OpenApiSpex
-
-    OpenApiSpex.schema(%{
+    use FountainWeb.DerivedSchema,
+      source: Fountain.Audit.Event,
       title: "AuditEvent",
       description: "One entry in the account's append-only audit trail.",
-      type: :object,
-      properties: %{
-        id: %Schema{type: :integer, description: "Cursor for `before`."},
-        inserted_at: %Schema{type: :string, format: :"date-time"},
-        actor: %Schema{
-          type: :string,
-          nullable: true,
-          description:
-            "Which surface acted: `ui` (browser session), `api` (bearer key), " <>
-              "`sprite` (a per-conversation token held by a sandbox), `system`."
-        },
-        action: %Schema{type: :string, example: "vault.secret.write"},
-        resource_type: %Schema{type: :string, nullable: true},
-        resource_id: %Schema{type: :string, nullable: true},
-        metadata: %Schema{type: :object, additionalProperties: true},
-        request_ip: %Schema{type: :string, nullable: true}
-      },
+      expose: [
+        {:id, doc: "Cursor for `before`."},
+        :inserted_at,
+        {:actor,
+         nullable: true,
+         doc:
+           "Which surface acted: `ui` (browser session), `api` (bearer key), " <>
+             "`sprite` (a per-conversation token held by a sandbox), `system`."},
+        {:action, example: "vault.secret.write"},
+        {:resource_type, nullable: true},
+        {:resource_id, nullable: true},
+        :metadata,
+        {:request_ip, nullable: true}
+      ],
       required: [:id, :action, :inserted_at]
-    })
   end
 
   defmodule AuditEventListResponse do
@@ -1433,6 +1366,10 @@ defmodule FountainWeb.Schemas do
     @moduledoc false
     require OpenApiSpex
 
+    # Not derived: `Credential` is one row per tenant with a ciphertext column
+    # per provider, so there is no `provider` field to derive from. This schema
+    # is a projection over providers/0 — which is still where the vocabulary
+    # lives, so the list is read rather than restated.
     OpenApiSpex.schema(%{
       title: "InferenceCredentialStatus",
       description:
@@ -1442,7 +1379,7 @@ defmodule FountainWeb.Schemas do
       properties: %{
         provider: %Schema{
           type: :string,
-          enum: ~w(anthropic_api_key claude_code_oauth_token openai_api_key gemini_api_key)
+          enum: Enum.map(Fountain.InferenceCredentials.Credential.providers(), &Atom.to_string/1)
         },
         set: %Schema{type: :boolean}
       },
@@ -1555,7 +1492,7 @@ defmodule FountainWeb.Schemas do
           "name via `environment`; the server resolves it to `environment_id`.",
       type: :object,
       properties: %{
-        kind: %Schema{type: :string, enum: ["Environment", "Vault", "Agent"]},
+        kind: %Schema{type: :string, enum: Fountain.Manifest.kinds()},
         name: %Schema{type: :string, minLength: 1, maxLength: 200},
         spec: %Schema{type: :object, additionalProperties: true}
       },
@@ -1666,7 +1603,8 @@ defmodule FountainWeb.Schemas do
       properties: %{
         error: %Schema{
           type: :string,
-          description: "Reason code, e.g. `expired`, `invalid_token`, `invalid_current_password`.",
+          description:
+            "Reason code, e.g. `expired`, `invalid_token`, `invalid_current_password`.",
           example: "invalid_token"
         },
         message: %Schema{type: :string, description: "Human-readable detail."}
@@ -1733,7 +1671,7 @@ defmodule FountainWeb.Schemas do
       properties: %{
         id: %Schema{type: :string, format: :uuid},
         email: %Schema{type: :string, format: :email},
-        role: %Schema{type: :string, enum: ~w(user admin)},
+        role: %Schema{type: :string, enum: Fountain.Accounts.User.roles()},
         email_verified: %Schema{type: :boolean},
         onboarding_state: %Schema{
           type: :string,
@@ -1753,29 +1691,27 @@ defmodule FountainWeb.Schemas do
 
   defmodule ApiKey do
     @moduledoc false
-    require OpenApiSpex
-
-    OpenApiSpex.schema(%{
+    use FountainWeb.DerivedSchema,
+      source: Fountain.Accounts.ApiKey,
       title: "ApiKey",
       description: "Key metadata. Never the key itself, and never its hash.",
-      type: :object,
-      properties: %{
-        id: %Schema{type: :string, format: :uuid},
-        name: %Schema{type: :string},
+      expose: [
+        :id,
+        :name,
+        {:last_used_at, nullable: true},
+        {:scopes,
+         doc:
+           "`full` for a key a person minted; `sprite:<conversation_id>` for the " <>
+             "auto-issued token a sandbox holds."},
+        {:expires_at, nullable: true}
+      ],
+      # Renames: `prefix` from key_prefix, `created_at` from inserted_at.
+      # key_hash is absent by construction — only listed fields are emitted.
+      extra: %{
         prefix: %Schema{type: :string},
-        created_at: %Schema{type: :string, format: :"date-time"},
-        last_used_at: %Schema{type: :string, format: :"date-time", nullable: true},
-        scopes: %Schema{
-          type: :array,
-          items: %Schema{type: :string},
-          description:
-            "`full` for a key a person minted; `sprite:<conversation_id>` for the " <>
-              "auto-issued token a sandbox holds."
-        },
-        expires_at: %Schema{type: :string, format: :"date-time", nullable: true}
+        created_at: %Schema{type: :string, format: :"date-time"}
       },
       required: [:id, :name, :prefix, :created_at]
-    })
   end
 
   defmodule ApiKeyListResponse do
