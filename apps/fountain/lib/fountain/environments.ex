@@ -170,13 +170,19 @@ defmodule Fountain.Environments do
   @doc """
   Insert or update an environment secret. The plaintext `attrs["value"]` is
   encrypted with the supplied per-tenant `dek` before persisting.
+
+  Audited as `environment.secret.write`. Recorded here rather than by each
+  caller: five surfaces wrote this same event independently — both LiveView
+  forms, both API controllers, and `fountain apply` — and a sixth would have
+  been one forgotten call from silence (#593). The key is recorded, never the
+  value; that is the whole point of a write-only secret.
   """
-  def upsert_secret(%Environment{id: env_id}, %{"key" => key} = attrs, dek)
+  def upsert_secret(%Environment{} = env, %{"key" => key} = attrs, dek, opts \\ [])
       when is_binary(dek) do
-    case _unsafe_get_secret(env_id, key) do
+    case _unsafe_get_secret(env.id, key) do
       nil ->
         %Secret{}
-        |> Secret.changeset(Map.put(attrs, "environment_id", env_id), dek)
+        |> Secret.changeset(Map.put(attrs, "environment_id", env.id), dek)
         |> Repo.insert()
 
       existing ->
@@ -184,9 +190,41 @@ defmodule Fountain.Environments do
         |> Secret.changeset(attrs, dek)
         |> Repo.update()
     end
+    |> audited_secret(env, key, "environment.secret.write", opts)
   end
 
-  def delete_secret(%Secret{} = secret), do: Repo.delete(secret)
+  @doc """
+  Delete an environment secret.
+
+  Takes the owning environment as well as the secret: `secrets` carries no
+  `user_id`, so without it the audit event could not be attributed without a
+  second query — and every call site already has the environment in hand.
+  """
+  def delete_secret(%Environment{} = env, %Secret{} = secret, opts \\ []) do
+    secret
+    |> Repo.delete()
+    |> audited_secret(env, secret.key, "environment.secret.delete", opts)
+  end
+
+  # `resource_id` is the environment, not the secret row: a deleted secret's id
+  # points at nothing, and "which environment" is the question a reader of the
+  # trail is actually asking. Matches the shape the five call sites emitted
+  # before this moved, so existing trails stay readable.
+  defp audited_secret({:ok, _} = ok, %Environment{} = env, key, action, opts) do
+    Audit.record(%{
+      user_id: env.user_id,
+      action: action,
+      resource_type: "secret",
+      resource_id: env.id,
+      actor: Keyword.get(opts, :actor, "self"),
+      request_ip: Keyword.get(opts, :request_ip),
+      metadata: Map.merge(%{"key" => key}, Keyword.get(opts, :metadata, %{}))
+    })
+
+    ok
+  end
+
+  defp audited_secret(other, _env, _key, _action, _opts), do: other
 
   @doc """
   Returns a flat map `%{"KEY" => "plaintext"}` of all decrypted secrets

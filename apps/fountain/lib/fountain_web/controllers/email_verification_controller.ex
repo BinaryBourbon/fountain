@@ -49,13 +49,8 @@ defmodule FountainWeb.EmailVerificationController do
             |> redirect(to: destination(user))
 
           user ->
-            case Accounts.verify_email(user) do
+            case Accounts.verify_email(user, FountainWeb.Audited.attribution(conn)) do
               {:ok, verified_user} ->
-                FountainWeb.Audited.from_conn(conn, "auth.email.verified", "user",
-                  user_id: verified_user.id,
-                  resource_id: verified_user.id
-                )
-
                 # Durable job rather than a linked Task: this used to be a bare
                 # Task.async with no await, so it could be killed when the
                 # request process finished and a Stripe error vanished silently,
@@ -138,13 +133,8 @@ defmodule FountainWeb.EmailVerificationController do
   end
 
   defp verify_user(conn, user) do
-    case Accounts.verify_email(user) do
+    case Accounts.verify_email(user, FountainWeb.Audited.attribution(conn)) do
       {:ok, verified} ->
-        FountainWeb.Audited.from_conn(conn, "auth.email.verified", "user",
-          user_id: verified.id,
-          resource_id: verified.id
-        )
-
         # Same follow-on work the browser route does — the account must not
         # end up in a different state depending on which surface finished it.
         Fountain.Workers.StripeCustomerSync.enqueue(verified)

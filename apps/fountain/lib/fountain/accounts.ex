@@ -162,14 +162,15 @@ defmodule Fountain.Accounts do
 
   Returns `{:ok, user}` or `{:error, changeset}`.
   """
-  @spec verify_email(User.t()) :: {:ok, User.t()} | {:error, Ecto.Changeset.t()}
-  def verify_email(%User{} = user) do
+  @spec verify_email(User.t(), keyword()) :: {:ok, User.t()} | {:error, Ecto.Changeset.t()}
+  def verify_email(%User{} = user, opts \\ []) do
     result =
       user
       |> Ecto.Changeset.change(
         email_verified_at: DateTime.utc_now() |> DateTime.truncate(:second)
       )
       |> Repo.update()
+      |> audited_account("auth.email.verified", "user", opts, fn _ -> %{} end)
 
     with {:ok, verified} <- result do
       verified = maybe_bootstrap_first_admin(verified)
@@ -305,13 +306,22 @@ defmodule Fountain.Accounts do
 
   Returns `{:ok, user}` or `{:error, changeset}`.
   """
-  @spec reset_password(User.t(), String.t()) ::
+  @spec reset_password(User.t(), String.t(), keyword()) ::
           {:ok, User.t()} | {:error, Ecto.Changeset.t()}
-  def reset_password(%User{} = user, new_password) when is_binary(new_password) do
+  def reset_password(%User{} = user, new_password, opts \\ []) when is_binary(new_password) do
+    set_password(user, new_password, "auth.password.reset", opts)
+  end
+
+  # Shared by the reset and change paths, which write the same columns but are
+  # not the same event: a reset is someone who could not get in proving control
+  # of the mailbox, a change is someone already signed in. Both were recorded
+  # by their controllers — four call sites for two events (#593).
+  defp set_password(%User{} = user, new_password, action, opts) do
     user
     |> User.password_reset_changeset(%{password: new_password})
     |> User.invalidate_sessions_changeset()
     |> Repo.update()
+    |> audited_account(action, "user", opts, fn _ -> %{} end)
   end
 
   # ── credential management (#448) ─────────────────────────────────────────
@@ -328,13 +338,17 @@ defmodule Fountain.Accounts do
   session from the updated user. OAuth-only accounts (nil `password_hash`)
   are refused — they set a first password through the reset flow.
   """
-  @spec change_password(User.t(), String.t(), String.t()) ::
+  @spec change_password(User.t(), String.t(), String.t(), keyword()) ::
           {:ok, User.t()} | {:error, :no_password | :invalid_current_password | Ecto.Changeset.t()}
-  def change_password(%User{password_hash: nil}, _current, _new), do: {:error, :no_password}
+  def change_password(user, current, new, opts \\ [])
 
-  def change_password(%User{} = user, current, new) when is_binary(current) and is_binary(new) do
+  def change_password(%User{password_hash: nil}, _current, _new, _opts), do: {:error, :no_password}
+
+  def change_password(%User{} = user, current, new, opts)
+      when is_binary(current) and is_binary(new) do
     if Bcrypt.verify_pass(current, user.password_hash) do
-      reset_password(user, new)
+      # Not `reset_password/3`: the columns are the same but the event is not.
+      set_password(user, new, "auth.password.changed", opts)
     else
       {:error, :invalid_current_password}
     end

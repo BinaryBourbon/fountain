@@ -61,6 +61,14 @@ defmodule Fountain.Manifest do
     {:ok, results}
   end
 
+  # Keeps the `via: apply` marker the ApplyController used to attach when it
+  # audited these itself. It is the one thing distinguishing a secret written
+  # by `fountain apply` from the same key written through a form, and worth
+  # keeping now that the context emits the event (#593).
+  defp secret_opts(opts) do
+    Keyword.update(opts, :metadata, %{"via" => "apply"}, &Map.put(&1, "via", "apply"))
+  end
+
   # ── per-kind reconciliation ───────────────────────────────────────────────
 
   defp apply_environment(user_id, %{"name" => name} = res, dek, opts) do
@@ -78,7 +86,8 @@ defmodule Fountain.Manifest do
 
     case outcome do
       {action, {:ok, env}} ->
-        secret_results = upsert_secrets(secrets, &Environments.upsert_secret(env, &1, dek))
+        secret_results =
+          upsert_secrets(secrets, &Environments.upsert_secret(env, &1, dek, secret_opts(opts)))
         {result("Environment", name, action, nil, secret_results, env.id), env}
 
       {_action, {:error, changeset}} ->
@@ -97,7 +106,8 @@ defmodule Fountain.Manifest do
 
     case outcome do
       {action, {:ok, vault}} ->
-        secret_results = upsert_secrets(secrets, &Vaults.upsert_secret(vault, &1, dek))
+        secret_results =
+          upsert_secrets(secrets, &Vaults.upsert_secret(vault, &1, dek, secret_opts(opts)))
         result("Vault", name, action, nil, secret_results, vault.id)
 
       {_action, {:error, changeset}} ->

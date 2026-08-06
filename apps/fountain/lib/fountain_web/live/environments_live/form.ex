@@ -164,12 +164,12 @@ defmodule FountainWeb.EnvironmentsLive.Form do
       when k != "" and v != "" do
     with {:ok, dek} <- Crypto.load_tenant_key(socket.assigns.user_id),
          {:ok, _} <-
-           Environments.upsert_secret(socket.assigns.env, %{"key" => k, "value" => v}, dek) do
-      FountainWeb.Audited.from_socket(socket, "environment.secret.write", "secret",
-        resource_id: socket.assigns.env.id,
-        metadata: %{"key" => k}
-      )
-
+           Environments.upsert_secret(
+             socket.assigns.env,
+             %{"key" => k, "value" => v},
+             dek,
+             FountainWeb.Audited.attribution(socket)
+           ) do
       {:noreply,
        socket
        |> assign(:secrets, secrets_for(socket.assigns.env))
@@ -190,12 +190,7 @@ defmodule FountainWeb.EnvironmentsLive.Form do
     secret = Enum.find(socket.assigns.secrets, &(&1.id == id))
 
     if secret do
-      Environments.delete_secret(secret)
-
-      FountainWeb.Audited.from_socket(socket, "environment.secret.delete", "secret",
-        resource_id: socket.assigns.env.id,
-        metadata: %{"key" => secret.key}
-      )
+      Environments.delete_secret(socket.assigns.env, secret, FountainWeb.Audited.attribution(socket))
 
       {:noreply,
        socket

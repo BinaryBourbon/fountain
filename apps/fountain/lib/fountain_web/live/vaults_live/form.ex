@@ -56,12 +56,13 @@ defmodule FountainWeb.VaultsLive.Form do
   def handle_event("add_secret", %{"secret" => %{"key" => k, "value" => v}}, socket)
       when k != "" and v != "" do
     with {:ok, dek} <- Crypto.load_tenant_key(socket.assigns.user_id),
-         {:ok, _} <- Vaults.upsert_secret(socket.assigns.vault, %{"key" => k, "value" => v}, dek) do
-      FountainWeb.Audited.from_socket(socket, "vault.secret.write", "vault_secret",
-        resource_id: socket.assigns.vault.id,
-        metadata: %{"key" => k}
-      )
-
+         {:ok, _} <-
+           Vaults.upsert_secret(
+             socket.assigns.vault,
+             %{"key" => k, "value" => v},
+             dek,
+             FountainWeb.Audited.attribution(socket)
+           ) do
       {:noreply,
        socket
        |> assign(:secrets, secrets_for(socket.assigns.vault))
@@ -82,12 +83,7 @@ defmodule FountainWeb.VaultsLive.Form do
     secret = Enum.find(socket.assigns.secrets, &(&1.id == id))
 
     if secret do
-      Vaults.delete_secret(secret)
-
-      FountainWeb.Audited.from_socket(socket, "vault.secret.delete", "vault_secret",
-        resource_id: socket.assigns.vault.id,
-        metadata: %{"key" => secret.key}
-      )
+      Vaults.delete_secret(socket.assigns.vault, secret, FountainWeb.Audited.attribution(socket))
 
       {:noreply,
        socket

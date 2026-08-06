@@ -18,6 +18,15 @@ upgrade, is in
 
 ### Fixed
 
+- **Secret and credential events are recorded in one place instead of five.**
+  Writing an environment or vault secret was audited identically by both
+  LiveView forms, both API endpoints and `fountain apply` — five copies of the
+  same event that had to agree, on the most sensitive data in the system, with
+  a sixth surface one forgotten call from silence. Password resets, password
+  changes and email verification had the same shape across two controllers
+  each. All of them now record inside the context, so every surface present
+  and future leaves the same trail, and the guardrail test covers them (#593)
+
 - **Suspending an account, changing its role or cap, and revoking a key are in
   the affected account's own audit trail.** These recorded only into the
   admin privilege trail, which the page a user actually reads never shows — so

@@ -136,13 +136,13 @@ defmodule Fountain.EnvironmentsTest do
     end
   end
 
-  describe "delete_secret/1" do
+  describe "delete_secret/3" do
     test "deletes the secret" do
       user = insert_verified_user()
       env = insert_env(user_id: user.id)
       secret = insert_secret(env, key: "TO_DELETE")
 
-      assert {:ok, _} = Environments.delete_secret(secret)
+      assert {:ok, _} = Environments.delete_secret(env, secret)
       assert Environments._unsafe_list_secrets(env) == []
     end
   end
