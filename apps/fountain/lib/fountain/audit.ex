@@ -81,6 +81,20 @@ defmodule Fountain.Audit do
       {:error, :exception}
   end
 
+  @doc """
+  Record and raise on failure.
+
+  **Deliberately unused in `lib/`** (#552). Every production call site wants
+  `record/1`: a logging failure must never break the operation being logged,
+  and there is no mutation in this system where losing the audit row is worse
+  than failing the mutation itself — account deletion included, which
+  denormalises the identifying fields into `metadata` precisely so its event
+  stands alone.
+
+  It stays because the test suite uses it to seed trails, where a silently
+  dropped row would make the assertion below it vacuous. Reach for it in a
+  test; do not reach for it in `lib/`.
+  """
   @spec record!(attrs()) :: Event.t()
   def record!(attrs) do
     {:ok, event} = record(attrs)

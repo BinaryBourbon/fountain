@@ -91,7 +91,7 @@ defmodule Fountain.Release do
         {:ok, user}
 
       user ->
-        case Fountain.Accounts.update_user_role(user, "admin") do
+        case Fountain.Accounts.update_user_role(user, "admin", actor: "system:release_task") do
           {:ok, promoted} ->
             Fountain.Audit.record_admin(%{
               actor_user_id: nil,

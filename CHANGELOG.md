@@ -18,6 +18,15 @@ upgrade, is in
 
 ### Fixed
 
+- **Suspending an account, changing its role or cap, and revoking a key are in
+  the affected account's own audit trail.** These recorded only into the
+  admin privilege trail, which the page a user actually reads never shows — so
+  from their side the account changed state with no explanation. They record
+  in the context now, like every other mutation, and the admin surfaces still
+  write their own privilege row on top. A test enumerates every context
+  mutation that must audit, so the next one to be added fails loudly instead
+  of silently joining the gap list (#552)
+
 - **Your subscription changing state is in your own audit trail now.** The
   billing context recorded nothing, so an account could move from active to
   cancelled, or from trialing to gated, and the person it happened to saw only

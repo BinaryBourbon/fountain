@@ -176,7 +176,7 @@ defmodule FountainWeb.AdminController do
     admin = conn.assigns.current_user
 
     with_user(conn, id, fn user ->
-      case Accounts.update_sandbox_limit(user, limit) do
+      case Accounts.update_sandbox_limit(user, limit, actor: "admin") do
         {:ok, updated} ->
           record_admin(admin, user, "admin.sandbox_limit.changed", %{
             "email" => user.email,
@@ -416,7 +416,7 @@ defmodule FountainWeb.AdminController do
   ## ── action bodies ────────────────────────────────────────────────────────
 
   defp apply_role(conn, admin, user, role) do
-    case Accounts.update_user_role(user, role) do
+    case Accounts.update_user_role(user, role, actor: "admin") do
       {:ok, updated} ->
         record_admin(
           admin,
@@ -492,7 +492,7 @@ defmodule FountainWeb.AdminController do
     if Accounts.suspended?(user) do
       render_user(conn, user)
     else
-      case Accounts.suspend_user(user) do
+      case Accounts.suspend_user(user, actor: "admin") do
         {:ok, updated, reaped} ->
           record_admin(admin, user, "admin.account.suspended", %{
             "email" => user.email,
@@ -509,7 +509,7 @@ defmodule FountainWeb.AdminController do
 
   defp apply_suspend(conn, admin, user, false) do
     if Accounts.suspended?(user) do
-      case Accounts.unsuspend_user(user) do
+      case Accounts.unsuspend_user(user, actor: "admin") do
         {:ok, updated} ->
           record_admin(admin, user, "admin.account.unsuspended", %{"email" => user.email})
           render_user(conn, updated)

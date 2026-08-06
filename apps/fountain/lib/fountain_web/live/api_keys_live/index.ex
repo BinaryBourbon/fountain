@@ -43,13 +43,15 @@ defmodule FountainWeb.ApiKeysLive.Index do
   end
 
   def handle_event("revoke", %{"id" => id}, socket) do
-    case Accounts.revoke_api_key(socket.assigns.user_id, id) do
-      {:ok, revoked} ->
-        FountainWeb.Audited.from_socket(socket, "api_key.revoked", "api_key",
-          resource_id: id,
-          metadata: %{"name" => revoked.name}
-        )
-
+    # `revoke_api_key/3` records `api_key.revoked` itself now (#552), the same
+    # move the mint made in #542 — so this surface owes the trail only who was
+    # on the socket, and its own `from_socket` call had to go with it.
+    case Accounts.revoke_api_key(
+           socket.assigns.user_id,
+           id,
+           FountainWeb.Audited.attribution(socket)
+         ) do
+      {:ok, _revoked} ->
         {:noreply,
          socket
          |> assign(:keys, Accounts.list_api_keys(socket.assigns.user_id))
