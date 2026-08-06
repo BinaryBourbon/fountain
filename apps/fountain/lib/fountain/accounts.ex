@@ -26,6 +26,13 @@ defmodule Fountain.Accounts do
   alias Fountain.Audit
   alias Fountain.Crypto
 
+  # The onboarding wizard's states, in order. An attribute rather than an
+  # inline literal so `advance_onboarding/2` can guard on it and the OpenAPI
+  # schema can be checked against it — see the enum guardrail test.
+  @onboarding_states ~w(step_1 step_2 step_3 step_4 completed)
+
+  def onboarding_states, do: @onboarding_states
+
   ## Users
 
   @doc "Look up a user by (downcased) email. Returns `nil` if not found."
@@ -475,7 +482,7 @@ defmodule Fountain.Accounts do
   @spec advance_onboarding(User.t(), String.t()) ::
           {:ok, User.t()} | {:error, Ecto.Changeset.t()}
   def advance_onboarding(%User{} = user, state)
-      when state in ~w(step_1 step_2 step_3 step_4 completed) do
+      when state in @onboarding_states do
     now = DateTime.utc_now() |> DateTime.truncate(:second)
 
     changes =
