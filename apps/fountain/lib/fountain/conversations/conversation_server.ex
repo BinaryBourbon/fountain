@@ -1400,6 +1400,22 @@ defmodule Fountain.Conversations.ConversationServer do
     )
   end
 
+  # The `x != ""` guards here defend against operator configuration, not against
+  # types. Dialyzer proves them always-true from today's success typings —
+  # `PublicUrl.base/0` cannot currently return `""` — and flags both the
+  # comparison (`exact_compare`) and the `if`'s consequently-dead else branch
+  # (`pattern_match`). The guards stay: a future config path that yields an
+  # empty base or token must produce no callback env, not a sprite told to call
+  # back to `""`.
+  #
+  # Suppressed here rather than in `.dialyzer_ignore.exs` because that file
+  # pins by `{line, column}`, and this function sits near the bottom of a
+  # 1400-line module: the pin moved three times during #540 alone, each time
+  # failing the build with a misleading "Unnecessary Skips: 1" that reads like
+  # a stale suppression rather than "you added lines above". A function-scoped
+  # attribute travels with the code it describes and is narrower than the
+  # file-wide alternative.
+  @dialyzer {:nowarn_function, fountain_callback_env: 1}
   defp fountain_callback_env(token) do
     base = Fountain.PublicUrl.base()
 
