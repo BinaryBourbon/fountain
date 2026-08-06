@@ -101,9 +101,11 @@ defmodule FountainWeb.EmailVerificationControllerTest do
     test "redirects with error when verify_email returns an error changeset", %{conn: conn} do
       user = insert_user()
 
-      # Stub Accounts.verify_email/1 to simulate a DB-level failure so that
-      # line 53 (the {:error, _changeset} branch) is exercised.
-      stub(Accounts, :verify_email, fn _user ->
+      # Stub Accounts.verify_email/2 to simulate a DB-level failure so that
+      # the {:error, _changeset} branch is exercised. Arity 2 since #593: the
+      # controller passes attribution through so the context can record
+      # `auth.email.verified` itself.
+      stub(Accounts, :verify_email, fn _user, _opts ->
         changeset =
           %Fountain.Accounts.User{}
           |> Ecto.Changeset.change()

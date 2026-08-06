@@ -52,14 +52,8 @@ defmodule FountainWeb.SecretController do
         attrs = Map.take(params, ["key", "value"])
         {:ok, dek} = Crypto.load_tenant_key(conn.assigns.current_user.id)
 
-        with {:ok, secret} <- Environments.upsert_secret(env, attrs, dek) do
-          # Same event the LiveView form emits (environments_live/form.ex), so
-          # the trail reads identically whichever surface wrote the secret.
-          Audited.from_conn(conn, "environment.secret.write", "secret",
-            resource_id: env.id,
-            metadata: %{"key" => secret.key}
-          )
-
+        with {:ok, secret} <-
+               Environments.upsert_secret(env, attrs, dek, Audited.attribution(conn)) do
           conn
           |> put_status(:created)
           |> render(:show, secret: secret)
@@ -82,15 +76,10 @@ defmodule FountainWeb.SecretController do
   def delete(conn, %{"environment_id" => env_id, "id" => key}) do
     user = conn.assigns.current_user
 
-    with %_{} <- Environments.get_environment(env_id, user.id),
+    with %_{} = env <- Environments.get_environment(env_id, user.id),
          # Ownership established by the scoped get_environment above.
          %_{} = secret <- Environments._unsafe_get_secret(env_id, key) do
-      {:ok, _} = Environments.delete_secret(secret)
-
-      Audited.from_conn(conn, "environment.secret.delete", "secret",
-        resource_id: env_id,
-        metadata: %{"key" => secret.key}
-      )
+      {:ok, _} = Environments.delete_secret(env, secret, Audited.attribution(conn))
 
       send_resp(conn, :no_content, "")
     else

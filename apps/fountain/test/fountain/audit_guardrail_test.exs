@@ -47,7 +47,19 @@ defmodule Fountain.AuditGuardrailTest do
     {"role change", &__MODULE__.do_role_change/1, "account.role_changed"},
     {"sandbox limit change", &__MODULE__.do_limit_change/1, "account.sandbox_limit_changed"},
     {"suspend", &__MODULE__.do_suspend/1, "account.suspended"},
-    {"unsuspend", &__MODULE__.do_unsuspend/1, "account.unsuspended"}
+    {"unsuspend", &__MODULE__.do_unsuspend/1, "account.unsuspended"},
+    # Secrets and credentials (#593). These had five and four call sites
+    # respectively before the recording moved into the context; the entries
+    # below are what stops a sixth from being silent.
+    {"environment secret write", &__MODULE__.do_env_secret_write/1,
+     "environment.secret.write"},
+    {"environment secret delete", &__MODULE__.do_env_secret_delete/1,
+     "environment.secret.delete"},
+    {"vault secret write", &__MODULE__.do_vault_secret_write/1, "vault.secret.write"},
+    {"vault secret delete", &__MODULE__.do_vault_secret_delete/1, "vault.secret.delete"},
+    {"password reset", &__MODULE__.do_password_reset/1, "auth.password.reset"},
+    {"password change", &__MODULE__.do_password_change/1, "auth.password.changed"},
+    {"email verification", &__MODULE__.do_verify_email/1, "auth.email.verified"}
   ]
 
   # Documented non-coverage. Mirrors the `Fountain.Audit` moduledoc; if the two
@@ -186,4 +198,39 @@ defmodule Fountain.AuditGuardrailTest do
     {:ok, suspended, _} = Fountain.Accounts.suspend_user(user)
     {:ok, _} = Fountain.Accounts.unsuspend_user(suspended)
   end
+
+  defp dek!(user_id) do
+    {:ok, dek} = Fountain.Crypto.load_tenant_key(user_id)
+    dek
+  end
+
+  def do_env_secret_write(user) do
+    env = insert_env(user_id: user.id)
+    {:ok, _} = Environments.upsert_secret(env, %{"key" => "K", "value" => "v"}, dek!(user.id))
+  end
+
+  def do_env_secret_delete(user) do
+    env = insert_env(user_id: user.id)
+    secret = insert_secret(env, %{"key" => "GONE"})
+    {:ok, _} = Environments.delete_secret(env, secret)
+  end
+
+  def do_vault_secret_write(user) do
+    vault = insert_vault(user_id: user.id)
+    {:ok, _} = Vaults.upsert_secret(vault, %{"key" => "K", "value" => "v"}, dek!(user.id))
+  end
+
+  def do_vault_secret_delete(user) do
+    vault = insert_vault(user_id: user.id)
+    secret = insert_vault_secret(vault, %{"key" => "GONE"})
+    {:ok, _} = Vaults.delete_secret(vault, secret)
+  end
+
+  def do_password_reset(user), do: {:ok, _} = Fountain.Accounts.reset_password(user, "newpass123")
+
+  def do_password_change(user) do
+    {:ok, _} = Fountain.Accounts.change_password(user, "password123", "newpass123")
+  end
+
+  def do_verify_email(user), do: {:ok, _} = Fountain.Accounts.verify_email(user)
 end

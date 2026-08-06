@@ -154,11 +154,12 @@ defmodule Fountain.Vaults do
   Insert or update a vault secret. The plaintext `attrs["value"]` is encrypted
   with the supplied per-tenant `dek` before persisting.
   """
-  def upsert_secret(%Vault{id: vault_id}, %{"key" => key} = attrs, dek) when is_binary(dek) do
-    case _unsafe_get_secret(vault_id, key) do
+  def upsert_secret(%Vault{} = vault, %{"key" => key} = attrs, dek, opts \\ [])
+      when is_binary(dek) do
+    case _unsafe_get_secret(vault.id, key) do
       nil ->
         %VaultSecret{}
-        |> VaultSecret.changeset(Map.put(attrs, "vault_id", vault_id), dek)
+        |> VaultSecret.changeset(Map.put(attrs, "vault_id", vault.id), dek)
         |> Repo.insert()
 
       existing ->
@@ -166,9 +167,38 @@ defmodule Fountain.Vaults do
         |> VaultSecret.changeset(attrs, dek)
         |> Repo.update()
     end
+    |> audited_secret(vault, key, "vault.secret.write", opts)
   end
 
-  def delete_secret(%VaultSecret{} = secret), do: Repo.delete(secret)
+  @doc """
+  Delete a vault secret.
+
+  Takes the owning vault as well as the secret — see
+  `Fountain.Environments.delete_secret/3` for why.
+  """
+  def delete_secret(%Vault{} = vault, %VaultSecret{} = secret, opts \\ []) do
+    secret
+    |> Repo.delete()
+    |> audited_secret(vault, secret.key, "vault.secret.delete", opts)
+  end
+
+  # See the note on `Fountain.Environments.audited_secret/5`: the vault is the
+  # resource, the key is the whole payload, the value never appears.
+  defp audited_secret({:ok, _} = ok, %Vault{} = vault, key, action, opts) do
+    Audit.record(%{
+      user_id: vault.user_id,
+      action: action,
+      resource_type: "vault_secret",
+      resource_id: vault.id,
+      actor: Keyword.get(opts, :actor, "self"),
+      request_ip: Keyword.get(opts, :request_ip),
+      metadata: Map.merge(%{"key" => key}, Keyword.get(opts, :metadata, %{}))
+    })
+
+    ok
+  end
+
+  defp audited_secret(other, _vault, _key, _action, _opts), do: other
 
   @doc """
   Returns a flat map `%{"KEY" => "plaintext"}` of all decrypted secrets

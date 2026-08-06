@@ -124,13 +124,13 @@ defmodule Fountain.VaultsTest do
     end
   end
 
-  describe "delete_secret/1" do
+  describe "delete_secret/3" do
     test "deletes the secret" do
       user = insert_verified_user()
       vault = insert_vault(user_id: user.id)
       secret = insert_vault_secret(vault, key: "TO_DELETE")
 
-      assert {:ok, _} = Vaults.delete_secret(secret)
+      assert {:ok, _} = Vaults.delete_secret(vault, secret)
       assert Vaults._unsafe_list_secrets(vault) == []
     end
   end

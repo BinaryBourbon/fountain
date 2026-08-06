@@ -127,16 +127,11 @@ defmodule FountainWeb.PasswordResetController do
   end
 
   defp apply_api_reset(conn, user, password) do
-    case Accounts.reset_password(user, password) do
+    case Accounts.reset_password(user, password, FountainWeb.Audited.attribution(conn)) do
       {:ok, _user} ->
         # session_version is bumped, so every session and every other
         # outstanding reset token dies here too — the same security-relevant
         # event the browser path records.
-        FountainWeb.Audited.from_conn(conn, "auth.password.reset", "user",
-          user_id: user.id,
-          resource_id: user.id
-        )
-
         json(conn, %{message: "Password updated. Sign in with your new password."})
 
       {:error, changeset} ->
@@ -177,15 +172,10 @@ defmodule FountainWeb.PasswordResetController do
   def reset(conn, %{"token" => token, "password" => password}) do
     case verify_reset_token(conn, token) do
       {:ok, user} ->
-        case Accounts.reset_password(user, password) do
+        case Accounts.reset_password(user, password, FountainWeb.Audited.attribution(conn)) do
               {:ok, _user} ->
                 # Also invalidates every existing session, so this is a
                 # security-relevant event even when the user initiated it.
-                FountainWeb.Audited.from_conn(conn, "auth.password.reset", "user",
-                  user_id: user.id,
-                  resource_id: user.id
-                )
-
                 conn
                 |> configure_session(drop: true)
                 |> put_flash(:info, "Password updated. Please sign in with your new password.")

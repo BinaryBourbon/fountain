@@ -38,13 +38,8 @@ defmodule FountainWeb.AccountSecurityController do
   def change_password(conn, %{"current_password" => current, "new_password" => new}) do
     user = conn.assigns.current_user
 
-    case Accounts.change_password(user, current, new) do
+    case Accounts.change_password(user, current, new, FountainWeb.Audited.attribution(conn)) do
       {:ok, updated} ->
-        FountainWeb.Audited.from_conn(conn, "auth.password.changed", "user",
-          user_id: updated.id,
-          resource_id: updated.id
-        )
-
         conn
         # Re-issue this session against the bumped session_version: the
         # change kills every OTHER session, not the one that made it.
@@ -178,13 +173,8 @@ defmodule FountainWeb.AccountSecurityController do
   def api_change_password(conn, %{"current_password" => current, "new_password" => new}) do
     user = conn.assigns.current_user
 
-    case Accounts.change_password(user, current, new) do
-      {:ok, updated} ->
-        FountainWeb.Audited.from_conn(conn, "auth.password.changed", "user",
-          user_id: updated.id,
-          resource_id: updated.id
-        )
-
+    case Accounts.change_password(user, current, new, FountainWeb.Audited.attribution(conn)) do
+      {:ok, _updated} ->
         json(conn, %{
           message: "Password updated. Browser sessions have been signed out.",
           sessions_invalidated: true,

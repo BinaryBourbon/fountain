@@ -77,7 +77,11 @@ defmodule Fountain.AuditTest do
       b_ids = user_b.id |> Audit.list_recent_for_user() |> Enum.map(& &1.id)
 
       refute event.id in b_ids
-      assert Audit.list_recent_for_user(user_b.id) |> Enum.map(& &1.action) == ["account.registered"]
+      # Registration and the verification that `insert_verified_user` performs
+      # are both audited in the context now (#544, #593), so a fresh verified
+      # account opens with two events rather than one.
+      assert Audit.list_recent_for_user(user_b.id) |> Enum.map(& &1.action) ==
+               ["auth.email.verified", "account.registered"]
     end
 
     test "respects limit" do

@@ -56,14 +56,7 @@ defmodule FountainWeb.VaultSecretController do
         attrs = Map.take(params, ["key", "value"])
         {:ok, dek} = Crypto.load_tenant_key(user.id)
 
-        with {:ok, secret} <- Vaults.upsert_secret(vault, attrs, dek) do
-          # Same event the LiveView form emits (vaults_live/form.ex), so the
-          # trail reads identically whichever surface wrote the secret.
-          Audited.from_conn(conn, "vault.secret.write", "vault_secret",
-            resource_id: vault.id,
-            metadata: %{"key" => secret.key}
-          )
-
+        with {:ok, secret} <- Vaults.upsert_secret(vault, attrs, dek, Audited.attribution(conn)) do
           conn
           |> put_status(:created)
           |> render(:show, secret: secret)
@@ -86,15 +79,10 @@ defmodule FountainWeb.VaultSecretController do
   def delete(conn, %{"vault_id" => vault_id, "id" => key}) do
     user = conn.assigns.current_user
 
-    with %_{} <- Vaults.get_vault(vault_id, user.id),
+    with %_{} = vault <- Vaults.get_vault(vault_id, user.id),
          # Ownership established by the scoped get_vault above.
          %_{} = secret <- Vaults._unsafe_get_secret(vault_id, key) do
-      {:ok, _} = Vaults.delete_secret(secret)
-
-      Audited.from_conn(conn, "vault.secret.delete", "vault_secret",
-        resource_id: vault_id,
-        metadata: %{"key" => secret.key}
-      )
+      {:ok, _} = Vaults.delete_secret(vault, secret, Audited.attribution(conn))
 
       send_resp(conn, :no_content, "")
     else
