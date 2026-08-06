@@ -3,9 +3,10 @@ defmodule FountainWeb.DerivedSchema do
   Build an OpenAPI schema from the Ecto schema it describes (issue #599).
 
   `FountainWeb.Schemas` restated the domain model by hand: field names,
-  types, `format: :uuid`, `date-time`, and twelve enum lists copied verbatim
-  from an Ecto schema. All of that is already declared once, in the schema
-  module, so this derives it instead.
+  types, `format: :uuid`, and `date-time`, all of which are already declared
+  once in the schema module. This derives them instead, so a renamed or
+  retyped column fails the build rather than publishing a spec that no longer
+  describes the response.
 
       defmodule Turn do
         use FountainWeb.DerivedSchema,
@@ -40,12 +41,28 @@ defmodule FountainWeb.DerivedSchema do
     * **descriptions** — `doc:` carries knowledge that exists nowhere else
       and must survive derivation. Losing it would make the spec worse.
 
+  ## Why enums are NOT derived
+
+  `enum:` takes a literal list. Reading it from `Conversation.statuses/0`
+  was tried and reverted, because it quietly removed the check that
+  motivated #599 in the first place.
+
+  With the list read from the domain module, adding a status makes the
+  published spec grow a value on its own, and
+  `FountainWeb.SchemaEnumGuardrailTest` compares that value against itself
+  and passes. Measured on the branch that did it: the same injected drift
+  that fails loudly with literal enums produced a green suite and a silently
+  expanded API contract.
+
+  So the duplication here is deliberate. Duplication was never the problem —
+  *undetected divergence* was, and the guardrail test covers that at a
+  fraction of the cost. Enum membership is a contract decision that should
+  cost someone a deliberate edit; a column's type is not.
+
   ## Field options
 
-    * `enum: :statuses` — call `source.statuses/0` for the values. This is
-      the point of the exercise: the list stays in the Ecto schema.
-    * `enum: {Module, :fun}` — when the list belongs to another module, e.g.
-      a conversation's runtime vocabulary is owned by `Agent`.
+    * `enum: ~w(a b c)` — a literal list, checked against the domain list by
+      the guardrail test. See "Why enums are NOT derived" above.
     * `nullable: true`
     * `doc: "..."` — the property description.
     * `pattern: "..."`, `format: :uuid`, `example: ...`
@@ -105,7 +122,7 @@ defmodule FountainWeb.DerivedSchema do
   defp property(source, name, field_opts) do
     case Keyword.fetch(field_opts, :schema) do
       {:ok, %Schema{} = override} -> override
-      :error -> source |> derive_type!(name) |> decorate(source, field_opts)
+      :error -> source |> derive_type!(name) |> decorate(field_opts)
     end
   end
 
@@ -151,9 +168,9 @@ defmodule FountainWeb.DerivedSchema do
   defp type_schema(_), do: nil
 
   # Order matters only for readability; each clause sets an independent field.
-  defp decorate(%Schema{} = schema, source, field_opts) do
+  defp decorate(%Schema{} = schema, field_opts) do
     Enum.reduce(field_opts, schema, fn
-      {:enum, ref}, acc -> %{acc | enum: enum_values(source, ref)}
+      {:enum, values}, acc -> %{acc | enum: enum_literal!(values)}
       {:nullable, value}, acc -> %{acc | nullable: value}
       {:doc, text}, acc -> %{acc | description: text}
       {:pattern, p}, acc -> %{acc | pattern: p}
@@ -167,10 +184,14 @@ defmodule FountainWeb.DerivedSchema do
     end)
   end
 
-  defp enum_values(source, fun) when is_atom(fun), do: enum_values(source, {source, fun})
+  # A literal list, never a call into the domain module — see the moduledoc.
+  defp enum_literal!(values) when is_list(values), do: values
 
-  defp enum_values(_source, {mod, fun}) do
-    mod |> apply(fun, []) |> Enum.map(&to_string/1)
+  defp enum_literal!(other) do
+    raise ArgumentError,
+          "enum: takes a literal list of values, got #{inspect(other)}. " <>
+            "Reading the list from the domain module would make " <>
+            "FountainWeb.SchemaEnumGuardrailTest compare it against itself."
   end
 
   defp maybe_put(map, _key, nil), do: map

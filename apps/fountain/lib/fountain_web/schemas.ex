@@ -14,7 +14,7 @@ defmodule FountainWeb.Schemas do
       source: Fountain.Conversations.Sandbox,
       title: "Sandbox",
       description: "One sprite lifespan owned by a conversation.",
-      expose: [:id, :sprite_name, {:status, enum: :statuses}],
+      expose: [:id, :sprite_name, {:status, enum: ~w(pending starting ready terminated failed)}],
       required: [:id, :sprite_name, :status]
   end
 
@@ -33,10 +33,10 @@ defmodule FountainWeb.Schemas do
         {:vault_id, nullable: true},
         # The runtime vocabulary belongs to Agent — a conversation copies it
         # at spawn and the column carries no inclusion validation of its own.
-        {:runtime, enum: {Fountain.Agents.Agent, :runtimes}},
-        {:status, enum: :statuses},
+        {:runtime, enum: ~w(claude codex gemini opencode)},
+        {:status, enum: ~w(pending running idle failed terminated)},
         {:runtime_session_id, nullable: true},
-        {:source, enum: :sources},
+        {:source, enum: ~w(ui api agent)},
         {:parent_conversation_id, nullable: true},
         :turn_count,
         {:last_active_at,
@@ -65,7 +65,11 @@ defmodule FountainWeb.Schemas do
       source: Fountain.Conversations.Conversation,
       title: "ConversationTreeNode",
       description: "One conversation in a spawn tree, flat with a parent pointer.",
-      expose: [:id, {:source, enum: :sources}, {:status, enum: :statuses}],
+      expose: [
+        :id,
+        {:source, enum: ~w(ui api agent)},
+        {:status, enum: ~w(pending running idle failed terminated)}
+      ],
       # `parent_id` on the wire, `parent_conversation_id` in the column.
       extra: %{parent_id: %Schema{type: :string, format: :uuid, nullable: true}},
       required: [:id]
@@ -124,7 +128,7 @@ defmodule FountainWeb.Schemas do
         },
         media_type: %Schema{
           type: :string,
-          enum: Fountain.Images.valid_media_types(),
+          enum: ~w(image/png image/jpeg image/gif image/webp),
           description: "MIME type of the image."
         }
       },
@@ -207,7 +211,7 @@ defmodule FountainWeb.Schemas do
         :id,
         :turn_number,
         :prompt,
-        {:status, enum: :statuses},
+        {:status, enum: ~w(pending running completed failed interrupted)},
         {:exit_code, nullable: true},
         {:started_at, nullable: true},
         {:ended_at, nullable: true},
@@ -252,7 +256,7 @@ defmodule FountainWeb.Schemas do
           description: "Canonical provider/model_id (e.g. anthropic/claude-sonnet-4-6).",
           pattern: "^[a-z0-9_-]+/[a-z0-9._-]+$"
         },
-        runtime: %Schema{type: :string, enum: Fountain.Agents.Agent.runtimes()},
+        runtime: %Schema{type: :string, enum: ~w(claude codex gemini opencode)},
         environment_id: %Schema{type: :string, format: :uuid, nullable: true},
         skills: %Schema{
           type: :array,
@@ -307,7 +311,7 @@ defmodule FountainWeb.Schemas do
         avatar_media_type: %Schema{
           type: :string,
           nullable: true,
-          enum: Fountain.Images.valid_media_types(),
+          enum: ~w(image/png image/jpeg image/gif image/webp),
           description:
             "Set when the agent has an avatar; fetch the bytes at " <>
               "`GET /api/agents/:id/avatar`. Null means no avatar."
@@ -358,7 +362,7 @@ defmodule FountainWeb.Schemas do
           type: :string,
           pattern: "^[a-z0-9_-]+/[a-z0-9._-]+$"
         },
-        runtime: %Schema{type: :string, enum: Fountain.Agents.Agent.runtimes()},
+        runtime: %Schema{type: :string, enum: ~w(claude codex gemini opencode)},
         environment_id: %Schema{type: :string, format: :uuid, nullable: true},
         skills: %Schema{
           type: :array,
@@ -425,7 +429,7 @@ defmodule FountainWeb.Schemas do
         description: %Schema{type: :string},
         system: %Schema{type: :string},
         model: %Schema{type: :string, pattern: "^[a-z0-9_-]+/[a-z0-9._-]+$"},
-        runtime: %Schema{type: :string, enum: Fountain.Agents.Agent.runtimes()},
+        runtime: %Schema{type: :string, enum: ~w(claude codex gemini opencode)},
         environment_id: %Schema{type: :string, format: :uuid, nullable: true},
         skills: %Schema{
           type: :array,
@@ -503,7 +507,7 @@ defmodule FountainWeb.Schemas do
         :packages,
         {:env_vars, additional_properties: %Schema{type: :string}},
         :setup_script,
-        {:networking_type, enum: :networking},
+        {:networking_type, enum: ~w(unrestricted limited)},
         {:networking_config,
          doc:
            "Refines networking_type: limited. allowed_hosts is the only key " <>
@@ -566,7 +570,7 @@ defmodule FountainWeb.Schemas do
         setup_script: %Schema{type: :string},
         networking_type: %Schema{
           type: :string,
-          enum: Fountain.Environments.Environment.networking()
+          enum: ~w(unrestricted limited)
         },
         networking_config: %Schema{
           type: :object,
@@ -610,7 +614,7 @@ defmodule FountainWeb.Schemas do
         setup_script: %Schema{type: :string},
         networking_type: %Schema{
           type: :string,
-          enum: Fountain.Environments.Environment.networking()
+          enum: ~w(unrestricted limited)
         },
         networking_config: %Schema{
           type: :object,
@@ -822,13 +826,13 @@ defmodule FountainWeb.Schemas do
           "stage transition. Same fields the SSE stream sends, plus `id`.",
       expose: [
         {:id, doc: "Monotonic id. Pagination cursor here, `Last-Event-ID` on the SSE route."},
-        {:kind, enum: :kinds},
+        {:kind, enum: ~w(output stage)},
         # No enum, deliberately: stage events carry "" here, so the honest
         # list would be ["stdout", "stderr", ""]. See LogEvent.streams/0.
         {:stream, doc: "`stdout` / `stderr` for output events; empty for stage events."},
         {:data, doc: "Output text, or JSON-encoded metadata for stage events."},
         {:stage, doc: "Lifecycle stage name (stage events)."},
-        {:state, enum: :states, nullable: true},
+        {:state, enum: ~w(started done failed interrupted), nullable: true},
         {:duration_ms, nullable: true},
         {:turn_id, nullable: true}
       ],
@@ -873,7 +877,7 @@ defmodule FountainWeb.Schemas do
       expose: [
         :id,
         :email,
-        {:role, enum: :roles},
+        {:role, enum: ~w(admin user)},
         {:email_verified_at, nullable: true},
         {:suspended_at, nullable: true},
         # No enum, unlike BillingResponse.data.status: this surface also
@@ -939,7 +943,7 @@ defmodule FountainWeb.Schemas do
     OpenApiSpex.schema(%{
       title: "AdminRoleRequest",
       type: :object,
-      properties: %{role: %Schema{type: :string, enum: Fountain.Accounts.User.roles()}},
+      properties: %{role: %Schema{type: :string, enum: ~w(admin user)}},
       required: [:role]
     })
   end
@@ -1128,7 +1132,7 @@ defmodule FountainWeb.Schemas do
           properties: %{
             status: %Schema{
               type: :string,
-              enum: Fountain.Accounts.User.subscription_statuses(),
+              enum: ~w(trialing active past_due canceled comped),
               nullable: true
             },
             trial_ends_at: %Schema{type: :string, format: :"date-time", nullable: true},
@@ -1191,7 +1195,7 @@ defmodule FountainWeb.Schemas do
           "from the download endpoint, never embedded here.",
       expose: [
         :id,
-        {:status, enum: :statuses},
+        {:status, enum: ~w(pending completed failed)},
         {:byte_size, nullable: true, doc: "Uncompressed size."},
         {:error, nullable: true},
         {:expires_at, nullable: true},
@@ -1278,7 +1282,7 @@ defmodule FountainWeb.Schemas do
         data: %Schema{type: :string, description: "Base64-encoded image bytes."},
         media_type: %Schema{
           type: :string,
-          enum: Fountain.Images.valid_media_types()
+          enum: ~w(image/png image/jpeg image/gif image/webp)
         }
       },
       required: [:data, :media_type]
@@ -1299,7 +1303,7 @@ defmodule FountainWeb.Schemas do
             state: %Schema{
               type: :string,
               nullable: true,
-              enum: Fountain.Accounts.onboarding_states(),
+              enum: ~w(step_1 step_2 step_3 step_4 completed),
               description: "Wizard position. Only `completed` means anything to an API client."
             },
             completed: %Schema{type: :boolean},
@@ -1379,7 +1383,7 @@ defmodule FountainWeb.Schemas do
       properties: %{
         provider: %Schema{
           type: :string,
-          enum: Enum.map(Fountain.InferenceCredentials.Credential.providers(), &Atom.to_string/1)
+          enum: ~w(anthropic_api_key claude_code_oauth_token openai_api_key gemini_api_key)
         },
         set: %Schema{type: :boolean}
       },
@@ -1492,7 +1496,7 @@ defmodule FountainWeb.Schemas do
           "name via `environment`; the server resolves it to `environment_id`.",
       type: :object,
       properties: %{
-        kind: %Schema{type: :string, enum: Fountain.Manifest.kinds()},
+        kind: %Schema{type: :string, enum: ["Environment", "Vault", "Agent"]},
         name: %Schema{type: :string, minLength: 1, maxLength: 200},
         spec: %Schema{type: :object, additionalProperties: true}
       },
@@ -1671,7 +1675,7 @@ defmodule FountainWeb.Schemas do
       properties: %{
         id: %Schema{type: :string, format: :uuid},
         email: %Schema{type: :string, format: :email},
-        role: %Schema{type: :string, enum: Fountain.Accounts.User.roles()},
+        role: %Schema{type: :string, enum: ~w(user admin)},
         email_verified: %Schema{type: :boolean},
         onboarding_state: %Schema{
           type: :string,

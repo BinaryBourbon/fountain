@@ -60,29 +60,30 @@ defmodule FountainWeb.DerivedSchemaTest do
     end
   end
 
-  describe "enums" do
-    test "an atom names a function on the source module" do
-      assert %{status: %Schema{enum: enum}} =
-               props(source: Conversation, expose: [{:status, enum: :statuses}])
-
-      assert enum == Conversation.statuses()
+  # Enums are deliberately NOT derived — see the moduledoc. Reading the list
+  # from the domain module makes SchemaEnumGuardrailTest compare it against
+  # itself, so a status added to the schema expands the published contract
+  # with nothing failing. These pin that decision in place.
+  describe "enums stay literal" do
+    test "a literal list is carried onto the derived type" do
+      assert %{status: %Schema{type: :string, enum: ~w(a b)}} =
+               props(source: Conversation, expose: [{:status, enum: ~w(a b)}])
     end
 
-    test "a {module, function} pair reads a list another module owns" do
-      assert %{runtime: %Schema{enum: enum}} =
-               props(source: Conversation, expose: [{:runtime, enum: {Agent, :runtimes}}])
-
-      assert enum == Agent.runtimes()
+    test "a function reference is refused, naming the guardrail it would defeat" do
+      assert_raise ArgumentError, ~r/literal list.*compare it against itself/s, fn ->
+        DerivedSchema.build(
+          source: Conversation,
+          title: "T",
+          expose: [{:status, enum: {Conversation, :statuses}}]
+        )
+      end
     end
 
-    test "atom-valued domain lists are stringified for the wire" do
-      providers = Fountain.InferenceCredentials.Credential.providers()
-      assert Enum.all?(providers, &is_atom/1)
-
-      assert %{role: %Schema{enum: enum}} =
-               props(source: User, expose: [{:role, enum: :roles}])
-
-      assert Enum.all?(enum, &is_binary/1)
+    test "a bare accessor atom is refused too" do
+      assert_raise ArgumentError, ~r/literal list/, fn ->
+        DerivedSchema.build(source: User, title: "T", expose: [{:role, enum: :roles}])
+      end
     end
   end
 
