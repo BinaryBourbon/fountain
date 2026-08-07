@@ -148,17 +148,25 @@ defmodule Fountain.Runtimes.Codex do
                env: sprite_env
              ) do
           {:ok, command} ->
-            :ok = Sprites.write(command, key <> "\n")
-            :ok = Sprites.close_stdin(command)
+            # Same exposure as #603: `codex login` exiting before it reads the
+            # key — a missing binary, a bad flag — would otherwise exit whoever
+            # is provisioning, rather than returning an error they can report.
+            case Fountain.SpriteStdin.write(command, key <> "\n") do
+              :ok ->
+                :ok = Sprites.close_stdin(command)
 
-            receive do
-              {:exit, %{ref: ref}, 0} when ref == command.ref ->
-                :ok
+                receive do
+                  {:exit, %{ref: ref}, 0} when ref == command.ref ->
+                    :ok
 
-              {:exit, %{ref: ref}, code} when ref == command.ref ->
-                {:error, {:codex_login_exit, code}}
-            after
-              30_000 -> {:error, :codex_login_timeout}
+                  {:exit, %{ref: ref}, code} when ref == command.ref ->
+                    {:error, {:codex_login_exit, code}}
+                after
+                  30_000 -> {:error, :codex_login_timeout}
+                end
+
+              {:error, reason} ->
+                {:error, {:codex_login_write, reason}}
             end
 
           err ->
