@@ -16,6 +16,36 @@ upgrade, is in
 
 ## [Unreleased]
 
+## [0.7.0] — 2026-08-07
+
+### Upgrade notes
+
+- **No migrations, and no new required configuration.** An instance on
+  v0.6.x upgrades by taking the new image.
+- **`agent.model` now takes effect on the `claude`, `codex` and `gemini`
+  runtimes, where it was previously ignored.** Those three built
+  model-agnostic argv, so an agent configured for
+  `anthropic/claude-haiku-4-5` ran whatever the CLI defaulted to. After this
+  release it runs the model it says it runs — which is the point of the
+  field, but it means an existing agent can start using a different model,
+  with different cost and latency, without its config having changed. Check
+  the model on agents you did not deliberately set (#553)
+- **An agent whose provider cannot be reached by its runtime is now rejected
+  on write.** `anthropic` for `claude`, `openai` for `codex`, `google` for
+  `gemini`; `opencode` is unconstrained as the only multi-provider
+  front-end. Previously such a pairing saved cleanly and did nothing; now it
+  would ship a model flag the CLI cannot serve, so the changeset refuses it.
+  **Existing rows are not migrated or validated** — the check runs on write,
+  so a stored mismatch surfaces the next time that agent is edited, not at
+  upgrade. Across production, all 45 agents were already `claude`/`anthropic`
+  with model ids the CLI accepts (#553, #554)
+- **Audit rows written from here on use a converged actor vocabulary.** Email
+  verification records `ui` or `api` rather than the bare `system` it derived
+  before a session exists, and operator-driven billing transitions record
+  `admin` rather than `system:admin`. Rows already written keep their old
+  spelling, so anything you query or alert on by actor needs to accept both
+  (#604)
+
 ### Added
 
 - **The agent form suggests models, and a misspelled provider is caught at
@@ -44,7 +74,33 @@ upgrade, is in
   [the guide](https://binarybourbon.github.io/fountain/self-hosting/#running-migrations-in-a-job)
   and `deploy/k8s/README.md` say so and carry the manifest (#610)
 
+### Changed
+
+- **The audit trail's actor vocabulary is closed, and the rules behind it are
+  now a decision rather than a habit.** `decisions/0013-audit-trail.md`
+  records what the #540 campaign settled — mutations audit inside the context,
+  never inside a transaction, never recording values — and fixes the call
+  sites that had drifted from it. The members are `self`, `ui`, `api`,
+  `sprite`, `admin`, `admin:<operator_id>` and `system:<worker>`; a bare
+  `system` is now a defect signal rather than a value, since the only routes
+  that produced it — email verification, which runs before a session exists —
+  are always a person whose surface the call site knows. Operator-driven
+  billing transitions record `admin` instead of claiming to be unattended as
+  `system:admin`. A guard test fails the build on an actor outside the set,
+  or on an ADR that has stopped naming one (#604)
+
 ### Fixed
+
+- **`agent.model` is honored on the `claude`, `codex` and `gemini` runtimes.**
+  The field is required, format-validated and front-and-centre in the agent
+  form, but only `opencode` ever read it — the other three built
+  model-agnostic argv, so an agent set to a cheaper or larger model silently
+  ran the CLI's default with no error and no signal the setting did nothing.
+  All three CLIs do take a model flag, each wanting the bare id rather than
+  the canonical `provider/model_id`; that translation now lives in one place,
+  and `opencode` keeps receiving the prefixed string it uses to pick an API
+  key. See the upgrade notes — an agent that was quietly running a default
+  will change model on upgrade (#553)
 
 - **Two replicas booting together against an empty database no longer race
   each other into a restart.** Ecto's default migration lock is a row lock on
@@ -1273,6 +1329,7 @@ upgrade, is in
 - Audit log for state-changing actions (append-only, best-effort)
 - Substitution engine for `${VAR}` / `$$` interpolation in agent configs
 
+[0.7.0]: https://github.com/BinaryBourbon/fountain/compare/v0.6.1...v0.7.0
 [0.6.1]: https://github.com/BinaryBourbon/fountain/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/BinaryBourbon/fountain/compare/v0.5.2...v0.6.0
 [0.5.2]: https://github.com/BinaryBourbon/fountain/compare/v0.5.1...v0.5.2
