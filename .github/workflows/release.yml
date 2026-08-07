@@ -161,14 +161,30 @@ jobs:
     # built ([skip ci] + GITHUB_TOKEN suppression), and the mix.exs version
     # baked into the image is surfaced in-app — it must match the tag.
     #
-    # Tags: vX.Y.Z is immutable; vX.Y moves to the newest patch in its line.
-    # :latest continues to track main via build.yml and is not touched here.
-    name: Publish versioned server image
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # Each architecture builds NATIVELY and pushes by digest; image-manifest
+    # below stitches the digests into one multi-arch manifest and owns the
+    # tags. This is build.yml's shape, and it is here for the same reason: a
+    # single runner with QEMU spent 22.5 of a release's 23.1 minutes emulating
+    # the arm64 Erlang compile. build.yml migrated off it and this job was
+    # left behind, so the only slow build left in the repo was the one that
+    # runs least often and blocks the release.
+    name: Build versioned server image (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
     permissions:
       contents: read
       packages: write
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - arch: amd64
+            platform: linux/amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            platform: linux/arm64
+            # Free for public repos; the cluster's own architecture.
+            runner: ubuntu-24.04-arm
 
     steps:
       - name: Resolve tag
@@ -201,8 +217,98 @@ jobs:
         id: sha
         run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
+      - name: Login to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push by digest
+        id: build
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        env:
+          # v6 uploads a .dockerbuild build-record artifact by default. Nothing
+          # consumes it, and its presence broke the release job, whose
+          # download-all step failed on it after 5 retries — twice.
+          DOCKER_BUILD_RECORD_UPLOAD: "false"
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: ${{ matrix.platform }}
+          build-args: |
+            BUILD_SHA=${{ steps.sha.outputs.sha }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ steps.sha.outputs.sha }}
+            org.opencontainers.image.version=${{ steps.tag.outputs.version }}
+          # Digest-only push; image-manifest owns the tags. Provenance off so
+          # each push is exactly one image manifest — attestation manifests
+          # would confuse the imagetools merge.
+          outputs: type=image,name=ghcr.io/binarybourbon/fountain,push-by-digest=true,name-canonical=true,push=true
+          provenance: false
+          # Read build.yml's cache, write nothing back. The layers above
+          # `COPY mix.exs` hit; the deps.compile layer below it cannot,
+          # because release-bump's commit exists precisely to change the
+          # version in mix.exs. Writing mode=max back would replace main's
+          # cache with the version-bump variant, so the next build.yml run
+          # would miss the same layer — a release must not degrade the cache
+          # every subsequent main build depends on.
+          cache-from: type=registry,ref=ghcr.io/binarybourbon/fountain:buildcache-${{ matrix.arch }}
+
+      - name: Export digest
+        run: |
+          mkdir -p "${RUNNER_TEMP}/digests"
+          digest="${{ steps.build.outputs.digest }}"
+          touch "${RUNNER_TEMP}/digests/${digest#sha256:}"
+
+      - name: Upload digest
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: image-digest-${{ matrix.arch }}
+          path: ${{ runner.temp }}/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  image-manifest:
+    # Tags: vX.Y.Z is immutable; vX.Y moves to the newest patch in its line.
+    # :latest continues to track main via build.yml and is not touched here.
+    name: Publish versioned server image
+    needs: image
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Resolve tag
+        id: tag
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            tag="${{ github.event.inputs.tag }}"
+          else
+            tag="${GITHUB_REF#refs/tags/}"
+          fi
+          if ! echo "${tag}" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "'${tag}' is not a vX.Y.Z tag" >&2
+            exit 1
+          fi
+          {
+            echo "tag=${tag}"
+            echo "minor=${tag%.*}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Download digests
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          path: ${{ runner.temp }}/digests
+          pattern: image-digest-*
+          merge-multiple: true
 
       - name: Set up Buildx
         uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
@@ -214,35 +320,37 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+      - name: Create and push the manifest list
+        working-directory: ${{ runner.temp }}/digests
         env:
-          # v6 uploads a .dockerbuild build-record artifact by default. Nothing
-          # consumes it, and its presence broke the release job, whose
-          # download-all step failed on it after 5 retries — twice.
-          DOCKER_BUILD_RECORD_UPLOAD: "false"
-        with:
-          context: .
-          file: ./Dockerfile
-          platforms: linux/amd64,linux/arm64
-          push: true
-          build-args: |
-            BUILD_SHA=${{ steps.sha.outputs.sha }}
-          tags: |
-            ghcr.io/binarybourbon/fountain:${{ steps.tag.outputs.tag }}
-            ghcr.io/binarybourbon/fountain:${{ steps.tag.outputs.minor }}
-          labels: |
-            org.opencontainers.image.source=https://github.com/${{ github.repository }}
-            org.opencontainers.image.revision=${{ steps.sha.outputs.sha }}
-            org.opencontainers.image.version=${{ steps.tag.outputs.version }}
+          IMAGE: ghcr.io/binarybourbon/fountain
+          TAG: ${{ steps.tag.outputs.tag }}
+          MINOR: ${{ steps.tag.outputs.minor }}
+        run: |
+          set -euo pipefail
+          # One digest file per arch. Anything else means a build job pushed
+          # something unexpected, and a manifest built from it would publish
+          # a release image nobody checked.
+          digests=(*)
+          if [ "${#digests[@]}" -ne 2 ]; then
+            echo "expected 2 digests (amd64 + arm64), found ${#digests[@]}: ${digests[*]}" >&2
+            exit 1
+          fi
+          docker buildx imagetools create \
+            --tag "${IMAGE}:${TAG}" \
+            --tag "${IMAGE}:${MINOR}" \
+            $(printf "${IMAGE}@sha256:%s " *)
+          docker buildx imagetools inspect "${IMAGE}:${TAG}"
 
   release:
     name: Create GitHub Release
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    # image is a needs so a release is never published without its image —
-    # the release page is what tells a self-hoster the tag exists to pin.
-    needs: [build, openapi, image]
+    # image-manifest is a needs so a release is never published without its
+    # image — the release page is what tells a self-hoster the tag exists to
+    # pin. Depending on the manifest job rather than the per-arch builds: two
+    # pushed digests with no manifest list on the tag is not a published image.
+    needs: [build, openapi, image-manifest]
     permissions:
       contents: write
 
@@ -302,10 +410,15 @@ jobs:
           echo "tag=${tag}" >> "$GITHUB_OUTPUT"
           echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
 
+      # By name, for the reason the release job above states: this run also
+      # uploads artifacts the tap does not want (the per-arch image digests),
+      # and a download-all is one stray artifact away from failing a step
+      # that only ever needed the four binaries.
       - name: Download build artifacts
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           path: artifacts
+          pattern: fountain-*
 
       - name: Compute SHA256s
         id: sha
