@@ -3,6 +3,8 @@ defmodule FountainWeb.AgentsLive.IndexTest do
 
   import Phoenix.LiveViewTest
 
+  alias Fountain.Runtimes.Model
+
   describe "index" do
     test "renders agent list for authenticated user", %{conn: conn} do
       user = insert_verified_user()
@@ -69,6 +71,57 @@ defmodule FountainWeb.AgentsLive.IndexTest do
     test "redirects unauthenticated user to login", %{conn: conn} do
       assert {:error, {:redirect, %{to: path}}} = live(conn, ~p"/agents/new")
       assert path =~ "/auth/login"
+    end
+
+    # #554: the model field was a bare text input, so nothing in the UI said
+    # what a valid value looked like until the sprite failed at spawn time.
+    test "model field offers the curated models for the selected runtime", %{conn: conn} do
+      user = insert_verified_user()
+      conn = login_user(conn, user)
+
+      {:ok, view, html} = live(conn, ~p"/agents/new")
+
+      assert html =~ ~s(list="model-options")
+
+      for model <- Model.suggestions("claude") do
+        assert has_element?(view, ~s(datalist#model-options option[value="#{model}"]))
+      end
+
+      # Switching runtime re-scopes the list — codex can't reach an
+      # anthropic/ model, and the changeset rejects one.
+      html = render_change(view, "validate", %{"agent" => %{"runtime" => "codex"}})
+      assert html =~ "openai/gpt-5-codex"
+      refute html =~ "anthropic/claude-opus-5"
+    end
+
+    test "an unlisted model id is flagged as pass-through, not as an error", %{conn: conn} do
+      user = insert_verified_user()
+      conn = login_user(conn, user)
+
+      {:ok, view, _html} = live(conn, ~p"/agents/new")
+
+      listed =
+        render_change(view, "validate", %{
+          "agent" => %{"runtime" => "claude", "model" => "anthropic/claude-opus-5"}
+        })
+
+      refute listed =~ "passed to the runtime as-is"
+
+      unlisted =
+        render_change(view, "validate", %{
+          "agent" => %{"runtime" => "claude", "model" => "anthropic/claude-opus-99"}
+        })
+
+      assert unlisted =~ "passed to the runtime as-is"
+
+      # A bad provider is a real error, not a pass-through — stay quiet and
+      # let the changeset speak on submit.
+      bad_provider =
+        render_change(view, "validate", %{
+          "agent" => %{"runtime" => "opencode", "model" => "anthopic/claude-opus-5"}
+        })
+
+      refute bad_provider =~ "passed to the runtime as-is"
     end
   end
 

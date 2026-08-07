@@ -18,6 +18,11 @@ defmodule Fountain.Runtimes.Model do
   Before #553 those three runtimes ignored the field entirely, so an
   `openai/gpt-5` agent on the claude runtime looked configured and quietly
   ran whatever the CLI defaulted to.
+
+  This module also owns the curated model catalog (`suggestions/1`,
+  `providers/0`) that the agent form offers and the changeset validates the
+  provider half against — see the comment on `@catalog` for what is gated and
+  what deliberately is not.
   """
 
   @provider_by_runtime %{
@@ -25,6 +30,68 @@ defmodule Fountain.Runtimes.Model do
     "codex" => "openai",
     "gemini" => "google"
   }
+
+  # Curated, deliberately short suggestion list — newest first per provider.
+  #
+  # The *model id* half is never gated on this list: a model released after the
+  # last deploy has to be usable the day it ships, so an unrecognised id is
+  # accepted and passed to the CLI verbatim (the form says so; see #554). The
+  # *provider* half is gated, because the set is not open — Fountain can only
+  # export credentials for these three (`InferenceCredentials.Credential` has a
+  # column per provider, and `OpenCode.default_env/2` maps exactly these three
+  # prefixes). A typo like `anthopic/...` used to reach the sprite with no
+  # inference credentials at all and fail as an auth error in the conversation
+  # log; `Agent.changeset/2` now rejects it at write time.
+  @catalog %{
+    "anthropic" => ~w(
+      claude-opus-5
+      claude-sonnet-5
+      claude-opus-4-8
+      claude-sonnet-4-6
+      claude-haiku-4-5
+    ),
+    "openai" => ~w(gpt-5-codex gpt-5),
+    "google" => ~w(gemini-2.5-pro gemini-2.5-flash)
+  }
+
+  # Stable order for the UI: the single-provider runtimes in the order they
+  # appear in @provider_by_runtime, so an opencode datalist reads the same way
+  # every render.
+  @provider_order ~w(anthropic openai google)
+
+  @doc "Providers Fountain can export inference credentials for, in display order."
+  def providers, do: @provider_order
+
+  @doc "Whether `provider` is one Fountain can export credentials for."
+  def known_provider?(provider), do: provider in @provider_order
+
+  @doc """
+  Suggested canonical `provider/model_id` strings for a runtime — the
+  runtime's own provider for claude / codex / gemini, every provider for
+  opencode (and for an unrecognised runtime, which the changeset rejects
+  separately).
+
+  These are suggestions, not an allowlist. `Agent.changeset/2` accepts any
+  model id under a known provider.
+  """
+  def suggestions(runtime) do
+    case provider_for_runtime(runtime) do
+      nil -> Enum.flat_map(@provider_order, &suggestions_for_provider/1)
+      provider -> suggestions_for_provider(provider)
+    end
+  end
+
+  @doc "Whether a canonical model string is one of the curated suggestions."
+  def known?(model) do
+    case split(model) do
+      {nil, nil} -> false
+      {provider, id} -> id in Map.get(@catalog, provider, [])
+    end
+  end
+
+  defp suggestions_for_provider(provider) do
+    @catalog |> Map.fetch!(provider) |> Enum.map(&"#{provider}/#{&1}")
+  end
 
   @doc """
   The single provider a runtime's CLI can reach, or `nil` for a

@@ -243,7 +243,10 @@ defmodule FountainWeb.Schemas do
           description:
             "Canonical provider/model_id (e.g. anthropic/claude-sonnet-4-6). The " <>
               "provider must match the runtime — anthropic for claude, openai for " <>
-              "codex, google for gemini; opencode accepts any provider.",
+              "codex, google for gemini; opencode accepts any of the three. Other " <>
+              "providers are rejected: Fountain has no credentials to export for " <>
+              "them. The model id is not checked against a list, so a newly " <>
+              "released model works without a Fountain release.",
           pattern: "^[a-z0-9_-]+/[a-z0-9._-]+$"
         },
         runtime: %Schema{type: :string, enum: ~w(claude codex gemini opencode)},

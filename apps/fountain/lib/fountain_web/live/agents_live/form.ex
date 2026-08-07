@@ -4,6 +4,7 @@ defmodule FountainWeb.AgentsLive.Form do
 
   alias Fountain.{Agents, AvatarGenerator, Environments}
   alias Fountain.Agents.Agent
+  alias Fountain.Runtimes.Model
 
   @impl true
   def mount(params, _session, socket) do
@@ -93,6 +94,17 @@ defmodule FountainWeb.AgentsLive.Form do
   defp model_placeholder("codex"), do: "openai/gpt-5-codex"
   defp model_placeholder("gemini"), do: "google/gemini-2.5-pro"
   defp model_placeholder(_runtime), do: "anthropic/claude-sonnet-4-6"
+
+  # A model id off the curated list is legitimate — new models ship between
+  # deploys — so say it will be used rather than flagging it as wrong. Stay
+  # quiet while the value is unparseable or the provider is unknown: those are
+  # real errors and `error_msg` says so on submit.
+  defp unknown_model?(model) do
+    case Model.split(model) do
+      {nil, nil} -> false
+      {provider, _id} -> Model.known_provider?(provider) and not Model.known?(model)
+    end
+  end
 
   @impl true
   def handle_event("validate", %{"agent" => params}, socket) do
@@ -544,10 +556,20 @@ defmodule FountainWeb.AgentsLive.Form do
             label="Model"
             value={@form["model"]}
             placeholder={model_placeholder(@form["runtime"])}
+            list="model-options"
             required
           />
+          <datalist id="model-options">
+            <option :for={m <- Model.suggestions(@form["runtime"])} value={m}></option>
+          </datalist>
         </div>
         <.error_msg field="model" errors={@errors} />
+        <p
+          :if={not Map.has_key?(@errors, "model") and unknown_model?(@form["model"])}
+          class="text-zinc-500 text-xs"
+        >
+          Not one of the models Fountain lists — it will be passed to the runtime as-is.
+        </p>
 
         <div class="space-y-1">
           <label class="block text-sm font-medium text-zinc-700">Environment</label>

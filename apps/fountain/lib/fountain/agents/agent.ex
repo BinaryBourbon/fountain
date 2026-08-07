@@ -69,17 +69,40 @@ defmodule Fountain.Agents.Agent do
   # Reject a mismatched prefix here rather than shipping `gpt-5` to
   # `claude --model`: before #553 those runtimes ignored the field
   # entirely, so `openai/gpt-5` on a claude agent looked configured and
-  # silently ran the CLI's own default. opencode is multi-provider and
-  # takes any prefix, so it is unconstrained.
+  # silently ran the CLI's own default.
+  #
+  # opencode takes any *known* prefix. It is multi-provider but not
+  # open-ended: it reads the prefix to pick which API key to export, and
+  # Fountain only holds three (`InferenceCredentials.Credential`). A
+  # misspelled provider used to fall through to no credentials at all and
+  # fail as an auth error inside the sprite, so reject it here too (#554).
+  #
+  # The model id itself is never checked — a model released since the last
+  # deploy has to work the day it ships.
   defp validate_model_provider(changeset) do
-    runtime = get_field(changeset, :runtime)
+    case Model.provider(get_field(changeset, :model)) do
+      nil -> changeset
+      actual -> validate_provider(changeset, actual, get_field(changeset, :runtime))
+    end
+  end
 
-    with expected when is_binary(expected) <- Model.provider_for_runtime(runtime),
-         actual when is_binary(actual) <- Model.provider(get_field(changeset, :model)),
-         true <- actual != expected do
-      add_error(changeset, :model, "#{runtime} runtime requires a #{expected}/ model")
+  defp validate_provider(changeset, actual, runtime) do
+    case Model.provider_for_runtime(runtime) do
+      nil -> validate_known_provider(changeset, actual)
+      ^actual -> changeset
+      expected -> add_error(changeset, :model, "#{runtime} runtime requires a #{expected}/ model")
+    end
+  end
+
+  defp validate_known_provider(changeset, provider) do
+    if Model.known_provider?(provider) do
+      changeset
     else
-      _ -> changeset
+      add_error(
+        changeset,
+        :model,
+        "unknown provider \"#{provider}\" — must be one of: #{Enum.join(Model.providers(), ", ")}"
+      )
     end
   end
 

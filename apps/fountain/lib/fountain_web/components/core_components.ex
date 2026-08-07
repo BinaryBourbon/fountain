@@ -596,7 +596,9 @@ defmodule FountainWeb.CoreComponents do
   attr :type, :string, default: "text"
   attr :value, :string, default: ""
   attr :placeholder, :string, default: nil
-  attr :rest, :global, include: ~w(autofocus required disabled rows pattern phx-hook)
+  # `list` is an <input>-specific attribute, not one of Phoenix's HTML globals,
+  # so it has to be opted in for a datalist to attach.
+  attr :rest, :global, include: ~w(autofocus required disabled rows pattern phx-hook list)
 
   def input(assigns) do
     ~H"""

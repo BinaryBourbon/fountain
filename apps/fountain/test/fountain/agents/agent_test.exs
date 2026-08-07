@@ -93,11 +93,38 @@ defmodule Fountain.Agents.AgentTest do
       assert "gemini runtime requires a google/ model" in errors_on(changeset).model
     end
 
-    test "opencode accepts any provider — it is the multi-provider runtime" do
+    test "opencode accepts any known provider — it is the multi-provider runtime" do
       for model <- ~w(anthropic/claude-sonnet-4-6 openai/gpt-5 google/gemini-2.5-pro) do
         attrs = Map.merge(@valid_attrs, %{runtime: "opencode", model: model})
         assert Agent.changeset(%Agent{}, attrs).valid?
       end
+    end
+
+    # #554: opencode reads the prefix to pick which API key to export and
+    # falls through to none for an unrecognised one, so a typo used to reach
+    # the sprite with no inference credentials and fail as an auth error.
+    test "opencode rejects a provider Fountain holds no credentials for" do
+      attrs = Map.merge(@valid_attrs, %{runtime: "opencode", model: "anthopic/claude-sonnet-4-6"})
+      changeset = Agent.changeset(%Agent{}, attrs)
+      refute changeset.valid?
+
+      expected = ~s(unknown provider "anthopic" — must be one of: anthropic, openai, google)
+      assert expected in errors_on(changeset).model
+    end
+
+    test "a single-provider runtime reports the runtime mismatch, not the unknown provider" do
+      changeset = Agent.changeset(%Agent{}, Map.put(@valid_attrs, :model, "anthopic/claude"))
+      refute changeset.valid?
+      assert errors_on(changeset).model == ["claude runtime requires a anthropic/ model"]
+    end
+
+    # The model id is deliberately unchecked: a model released after this
+    # deploy has to be usable the day it ships.
+    test "an unrecognised model id under a known provider is accepted" do
+      changeset =
+        Agent.changeset(%Agent{}, Map.put(@valid_attrs, :model, "anthropic/claude-opus-99"))
+
+      assert changeset.valid?
     end
 
     test "a runtime change alone is validated against the stored model" do
