@@ -1,12 +1,14 @@
 defmodule Fountain.Conversations.ConversationServerTurnMetricsTest do
   @moduledoc """
-  Producer side of the turn-duration metric (#536).
+  Producer side of the turn metrics — duration (#536) and time to first
+  token (#535).
 
-  `FountainWeb.Telemetry` declares a histogram over
-  `[:fountain, :turn, :completed]`; a metric subscribed to an event nobody
-  emits scrapes empty forever and looks exactly like a healthy quiet system
-  (#310). These pin that ConversationServer actually fires it, on every path
-  that ends a turn, with the tags the histogram reads.
+  `FountainWeb.Telemetry` declares histograms over
+  `[:fountain, :turn, :completed]` and `[:fountain, :turn, :first_output]`;
+  a metric subscribed to an event nobody emits scrapes empty forever and
+  looks exactly like a healthy quiet system (#310). These pin that
+  ConversationServer actually fires them, on every path that ends a turn and
+  on the first byte out of the sandbox, with the tags the histograms read.
   """
 
   use Fountain.ConversationServerCase
@@ -28,18 +30,22 @@ defmodule Fountain.Conversations.ConversationServerTurnMetricsTest do
     {:ok, conv: conv}
   end
 
-  # Forward turn-completed events to the test process for the duration of
-  # one test. Handler ids are per-test so parallel modules can't collide —
-  # these are async: false, but the handler table is global either way.
-  defp capture_turn_completed do
+  # Forward turn metric events to the test process for the duration of one
+  # test. Handler ids are per-test so parallel modules can't collide — these
+  # are async: false, but the handler table is global either way.
+  defp capture_turn_completed, do: capture([:fountain, :turn, :completed], :turn_completed)
+
+  defp capture_first_output, do: capture([:fountain, :turn, :first_output], :first_output)
+
+  defp capture(event, tag) do
     test_pid = self()
-    handler_id = "turn-metrics-#{inspect(test_pid)}"
+    handler_id = "turn-metrics-#{tag}-#{inspect(test_pid)}"
 
     :telemetry.attach(
       handler_id,
-      [:fountain, :turn, :completed],
+      event,
       fn _event, measurements, metadata, _config ->
-        send(test_pid, {:turn_completed, measurements, metadata})
+        send(test_pid, {tag, measurements, metadata})
       end,
       nil
     )
@@ -153,6 +159,96 @@ defmodule Fountain.Conversations.ConversationServerTurnMetricsTest do
 
       assert_received {:turn_completed, _, _}
       refute_received {:turn_completed, _, _}
+
+      GenServer.stop(pid)
+    end
+  end
+
+  describe "[:fountain, :turn, :first_output]" do
+    test "the first stdout chunk reports elapsed time tagged by runtime", %{conv: conv} do
+      capture_first_output()
+      {pid, ref} = start_with_turn(conv)
+
+      send(pid, {:stdout, %{ref: ref}, "thinking..."})
+      _ = :sys.get_state(pid)
+
+      assert_received {:first_output, measurements, metadata}
+      assert metadata.runtime == "claude"
+      assert metadata.conv_id == conv.id
+      assert is_integer(measurements.elapsed_ms)
+      assert measurements.elapsed_ms >= 0
+      assert measurements.elapsed_ms < 60_000
+
+      GenServer.stop(pid)
+    end
+
+    test "only the first chunk reports — the rest of the stream is free", %{conv: conv} do
+      # A streaming turn produces thousands of chunks. Emitting on each
+      # would make TTFT indistinguishable from "time to last token" and put
+      # a telemetry dispatch on every byte of the hot path.
+      capture_first_output()
+      {pid, ref} = start_with_turn(conv)
+
+      send(pid, {:stdout, %{ref: ref}, "first"})
+      send(pid, {:stdout, %{ref: ref}, "second"})
+      send(pid, {:stdout, %{ref: ref}, "third"})
+      _ = :sys.get_state(pid)
+
+      assert_received {:first_output, _, _}
+      refute_received {:first_output, _, _}
+
+      GenServer.stop(pid)
+    end
+
+    test "each turn reports its own first output", %{conv: conv} do
+      # The flag lives with the turn's stamp and is dropped with it, so turn
+      # 2 measures turn 2. A flag that survived the turn would leave every
+      # conversation contributing exactly one sample, forever.
+      capture_first_output()
+      {pid, ref} = start_with_turn(conv)
+
+      send(pid, {:stdout, %{ref: ref}, "turn one output"})
+      send(pid, {:exit, %{ref: ref}, 0})
+      _ = :sys.get_state(pid)
+      assert_received {:first_output, _, _}
+
+      assert :ok = GenServer.call(pid, {:send_prompt, "again", []})
+      send(pid, {:stdout, %{ref: ref}, "turn two output"})
+      _ = :sys.get_state(pid)
+      assert_received {:first_output, _, _}
+
+      GenServer.stop(pid)
+    end
+
+    test "a turn with no output before it exits reports nothing", %{conv: conv} do
+      # Nothing to measure — the sandbox never spoke. A zero here would read
+      # as an instant first token, which is the opposite of what happened.
+      capture_first_output()
+      {pid, ref} = start_with_turn(conv)
+
+      send(pid, {:exit, %{ref: ref}, 1})
+      _ = :sys.get_state(pid)
+
+      refute_received {:first_output, _, _}
+
+      GenServer.stop(pid)
+    end
+
+    test "stderr alone does not count as first output", %{conv: conv} do
+      # The metric is first *output*, and every runtime's actual answer comes
+      # down stdout; a warning on stderr at startup would otherwise report a
+      # TTFT of a few milliseconds for a turn that hadn't started yet.
+      capture_first_output()
+      {pid, ref} = start_with_turn(conv)
+
+      send(pid, {:stderr, %{ref: ref}, "npm notice: new version available"})
+      _ = :sys.get_state(pid)
+
+      refute_received {:first_output, _, _}
+
+      send(pid, {:stdout, %{ref: ref}, "hello"})
+      _ = :sys.get_state(pid)
+      assert_received {:first_output, _, _}
 
       GenServer.stop(pid)
     end

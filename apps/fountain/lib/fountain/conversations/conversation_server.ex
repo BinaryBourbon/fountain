@@ -249,12 +249,12 @@ defmodule Fountain.Conversations.ConversationServer do
       # OTel span context for the in-flight turn (started in kick_turn,
       # ended in the :exit / :interrupt handlers).
       current_turn_span: nil,
-      # Aggregate-metric bookkeeping for the in-flight turn (#536):
-      # `%{started_mono: ms, runtime: "claude"}`, set once the turn's
-      # command is spawned and dropped on every terminal path. nil
-      # whenever no turn is running. Monotonic rather than the turn row's
-      # timestamps because `now/0` truncates to the second, which rounds a
-      # sub-second turn to a duration of zero.
+      # Aggregate-metric bookkeeping for the in-flight turn (#536, #535):
+      # `%{started_mono: ms, runtime: "claude", first_output?: bool}`, set
+      # once the turn's command is spawned and dropped on every terminal
+      # path. nil whenever no turn is running. Monotonic rather than the
+      # turn row's timestamps because `now/0` truncates to the second,
+      # which rounds a sub-second turn to a duration of zero.
       turn_metrics: nil,
       # Stream tracer for parsing Claude's stream-json stdout into OTel
       # child spans and events. nil for non-Claude runtimes.
@@ -1114,6 +1114,7 @@ defmodule Fountain.Conversations.ConversationServer do
 
   @impl true
   def handle_info({:stdout, %{ref: ref}, data}, %{current_command_ref: ref} = state) do
+    state = maybe_emit_first_output(state)
     new_state = log_with_replay_skip(state, "stdout", data)
 
     # Feed non-replayed bytes into the stream tracer (Claude only).
@@ -1695,7 +1696,11 @@ defmodule Fountain.Conversations.ConversationServer do
               current_turn: turn,
               runtime_session_id: runtime_session_id,
               current_turn_span: turn_span,
-              turn_metrics: %{started_mono: turn_started_mono, runtime: conv.runtime},
+              turn_metrics: %{
+                started_mono: turn_started_mono,
+                runtime: conv.runtime,
+                first_output?: false
+              },
               stream_tracer: stream_tracer
           }
 
@@ -1757,6 +1762,37 @@ defmodule Fountain.Conversations.ConversationServer do
   # (completed/failed/interrupted). conv_id rides along as metadata — it is
   # what makes the JSON log line actionable, and as a tag it would mint a
   # time series per conversation.
+  # Time to first token (#535): the gap a user actually feels between
+  # hitting enter and seeing the agent do something. Provision time and
+  # turn duration are both trended; a regression that delays *first
+  # output* — slow runtime startup inside the sprite, model latency,
+  # stdin plumbing — sat between them, visible only per-trace in
+  # Honeycomb, only for Claude, and only with OTLP export configured.
+  #
+  # One-shot per turn: the first stdout chunk wins and the flag is set,
+  # so the whole rest of a streaming turn costs one map update.
+  #
+  # First *bytes*, not first parsed token. Only Claude emits structured
+  # stream-json; measuring bytes keeps this identical for codex, gemini
+  # and opencode. It does mean a runtime that greets on stdout before
+  # calling a model reports its own startup — which is still the number
+  # the user is waiting on.
+  defp maybe_emit_first_output(%{turn_metrics: %{first_output?: false} = metrics} = state) do
+    Fountain.Telemetry.event(
+      [:turn, :first_output],
+      %{runtime: metrics.runtime, conv_id: state.conversation_id},
+      %{elapsed_ms: System.monotonic_time(:millisecond) - metrics.started_mono}
+    )
+
+    %{state | turn_metrics: %{metrics | first_output?: true}}
+  end
+
+  # No turn running, or this turn already reported. Also the reattach case:
+  # turn_metrics is nil there, so the replayed output a resumed session
+  # opens with can't be mistaken for a first token (its real one arrived in
+  # a previous BEAM lifetime).
+  defp maybe_emit_first_output(state), do: state
+
   defp emit_turn_completed(%{turn_metrics: nil}, _status), do: :ok
 
   defp emit_turn_completed(%{turn_metrics: metrics} = state, status) do

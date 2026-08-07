@@ -159,6 +159,25 @@ defmodule FountainWeb.Telemetry do
         ],
         description: "Turn duration by runtime and terminal status"
       ),
+      # Time to first token (#535) — the latency between hitting enter and
+      # seeing the agent do something, which is the one a user actually
+      # feels. Turn duration above says how long the whole thing took; this
+      # says how long it took to start.
+      #
+      # Buckets are much tighter than the turn ones on purpose: past ~30s of
+      # silence the user has already concluded it's broken, so resolution
+      # below that is where the signal is.
+      #
+      # Runtime-agnostic — ConversationServer measures the first stdout
+      # bytes, not parsed tokens, so claude/codex/gemini/opencode are all
+      # comparable here.
+      distribution("fountain.turn.first_output.elapsed_ms",
+        event_name: [:fountain, :turn, :first_output],
+        measurement: :elapsed_ms,
+        tags: [:runtime],
+        reporter_options: [buckets: [250, 500, 1000, 2500, 5000, 10_000, 30_000, 60_000]],
+        description: "Time from turn start to the sandbox's first output byte"
+      ),
 
       # ── Provisioning sub-steps (#537) ─────────────────────────────────────
       # The two spans above answer "did provisioning get slower"; these answer
