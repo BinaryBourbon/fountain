@@ -83,6 +83,11 @@ USER fountain
 
 ENTRYPOINT ["/usr/bin/tini", "--"]
 # Migrations run on every boot. Idempotent (Ecto.Migrator skips
-# already-applied versions) so safe under rolling updates; the readiness
-# probe gates traffic until migrate + start completes.
-CMD ["/bin/sh", "-c", "/app/bin/fountain_server eval 'Fountain.Release.migrate()' && exec /app/bin/fountain_server start"]
+# already-applied versions) and serialized by a Postgres advisory lock, so
+# safe under rolling updates; the readiness probe gates traffic until
+# migrate + start completes.
+#
+# MIGRATE_ON_BOOT=false turns this into a plain start, for a deployment that
+# runs `bin/migrate` once in a Job instead (#610). `bin/migrate` ignores the
+# switch — it is the Job's entrypoint.
+CMD ["/bin/sh", "-c", "/app/bin/fountain_server eval 'Fountain.Release.migrate_on_boot()' && exec /app/bin/fountain_server start"]

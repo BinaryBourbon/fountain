@@ -13,6 +13,43 @@ defmodule Fountain.Release do
     end
   end
 
+  @doc """
+  The boot-time half of `migrate/0`: migrates unless `MIGRATE_ON_BOOT=false`.
+
+  This is what the image's `CMD` runs, and the only migration path the switch
+  gates. `migrate/0` itself — and `bin/migrate`, which is what a migrations
+  Job runs — always migrates, because an explicit request to migrate should
+  never be silently skipped by an environment variable meant for pods that
+  only serve.
+
+  Skipping is not a no-op boot: the release still starts, and if migrations
+  have not in fact been run the app will fail on the first query against a
+  missing column. That is the trade a deployment makes when it moves
+  migrations into a Job — the Job is what must be ordered before the rollout.
+  """
+  def migrate_on_boot do
+    load_app()
+
+    if migrate_on_boot?() do
+      migrate()
+    else
+      IO.puts("MIGRATE_ON_BOOT=false — skipping migrations at boot.")
+      :skipped
+    end
+  end
+
+  @doc """
+  Whether this node should migrate as it boots.
+
+  Read from application env (set by `config/runtime.exs` from
+  `MIGRATE_ON_BOOT`) rather than from `System.get_env/1` directly, so the two
+  boot paths that migrate — this task and the `Ecto.Migrator` child in
+  `Fountain.Application` — decide from one value.
+  """
+  def migrate_on_boot? do
+    Application.get_env(@app, :migrate_on_boot, true)
+  end
+
   def rollback(repo, version) do
     load_app()
     {:ok, _, _} = Ecto.Migrator.with_repo(repo, &Ecto.Migrator.run(&1, :down, to: version))

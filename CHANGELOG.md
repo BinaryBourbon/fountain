@@ -16,6 +16,33 @@ upgrade, is in
 
 ## [Unreleased]
 
+### Added
+
+- **`MIGRATE_ON_BOOT=false` — run migrations somewhere other than at boot.**
+  The release migrates before it serves, on every replica, which is right for
+  the single-replica shape it ships as and rules out the standard Kubernetes
+  shape: migrations once in a Job, app pods that only serve. The switch turns
+  the boot-time migration off — both the paths that did it, the image's `CMD`
+  and the `Ecto.Migrator` child in the supervision tree — and leaves
+  `bin/migrate` untouched, since that is what the Job runs. Default unchanged:
+  an instance that sets nothing migrates exactly as before. Nothing checks
+  that the Job ran, so ordering it before the rollout is the operator's job;
+  [the guide](https://binarybourbon.github.io/fountain/self-hosting/#running-migrations-in-a-job)
+  and `deploy/k8s/README.md` say so and carry the manifest (#610)
+
+### Fixed
+
+- **Two replicas booting together against an empty database no longer race
+  each other into a restart.** Ecto's default migration lock is a row lock on
+  `schema_migrations` — which cannot serialize the creation of
+  `schema_migrations` itself, the one moment on a virgin database when both
+  replicas are inside `Ecto.Migrator` at once. The loser died on the type's
+  unique index (`pg_type_typname_nsp_index`), Kubernetes restarted it, and the
+  retry succeeded: a benign `RESTARTS 1` that reads exactly like a crash loop
+  on a first deploy. The lock is now a Postgres advisory lock, taken before
+  anything touches the table. Only ever observed at two or more replicas on a
+  brand-new database (#610)
+
 ## [0.6.1] — 2026-08-07
 
 ### Fixed

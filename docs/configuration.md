@@ -35,6 +35,7 @@ an error message.
 | `DATABASE_SSL_VERIFY` | off | — | Unset, the connection is encrypted but the server certificate is **not** verified. `true` verifies it, against the OS trust store unless a CA file is given |
 | `DATABASE_SSL_CA_FILE` | OS trust store | — | CA bundle used when `DATABASE_SSL_VERIFY=true` |
 | `POOL_SIZE` | `10` | — | Database connection pool size |
+| `MIGRATE_ON_BOOT` | `true` | — | Whether a booting release runs pending migrations before it serves. `false` (also `0`, `no`) makes the pod only serve, for the deployment that runs migrations once in a Job — see [migrations in a Job](self-hosting.md#running-migrations-in-a-job). `bin/migrate` always migrates, whatever this is set to. **Nothing checks that the Job ran**: a pod that skips migrations against an un-migrated database boots and then fails on the first query |
 
 ## Sandboxes
 

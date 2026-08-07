@@ -94,9 +94,20 @@ defmodule Fountain.Application do
     :ok
   end
 
-  defp skip_migrations?() do
-    # By default, sqlite migrations are run when using a release
-    System.get_env("RELEASE_NAME") == nil
+  # Migrations run at boot in a release and nowhere else — dev and test manage
+  # their own schema through mix, and RELEASE_NAME is how a release announces
+  # itself.
+  #
+  # MIGRATE_ON_BOOT=false opts a release out (#610), for the deployment that
+  # runs migrations once in a Job and lets its pods only serve. This gate and
+  # the image's CMD (`Fountain.Release.migrate_on_boot/0`) read the one
+  # switch, so turning it off leaves no path here that migrates — the switch
+  # would be a decoration if it closed only one of the two.
+  #
+  # Public for the test that pins that pairing; not part of the app's API.
+  @doc false
+  def skip_migrations? do
+    System.get_env("RELEASE_NAME") == nil or not Fountain.Release.migrate_on_boot?()
   end
 
   # Tests opt out via config; everything else (mix phx.server, releases,

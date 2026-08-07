@@ -60,6 +60,47 @@ pre-1.0 minor bumps may carry **Upgrade notes** in the
 run at boot, idempotently, under an advisory lock. Downgrades are not
 supported once a newer version's migrations have run — restore from a backup.
 
+## Migrations in a Job
+
+Pods migrate at boot by default, which is fine at any replica count — the
+lock is a Postgres advisory lock, taken before `schema_migrations` exists, so
+a cold start of several replicas against an empty database does not race.
+
+If you want the other shape — migrations as an explicit, reviewable step, app
+pods that only serve — set `MIGRATE_ON_BOOT: "false"` in the ConfigMap and run
+the migration entrypoint as a Job. `bin/migrate` ignores the switch; it is
+what you run *to* migrate.
+
+```yaml
+apiVersion: batch/v1
+kind: Job
+metadata:
+  # Version the name. A completed Job's pod template is immutable, so
+  # re-applying under the same name after a tag bump fails instead of
+  # migrating — and a failure that looks like a no-op is the bad kind.
+  name: fountain-migrate-v0-6-1
+  namespace: fountain
+spec:
+  backoffLimit: 3
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: migrate
+          image: ghcr.io/binarybourbon/fountain:v0.6.1 # match the Deployment
+          command: ["/app/bin/migrate"]
+          envFrom:
+            - configMapRef:
+                name: fountain-config
+            - secretRef:
+                name: fountain-secrets
+```
+
+Run it to completion **before** the rollout that needs it. Nothing in the app
+checks that you did: a pod with `MIGRATE_ON_BOOT=false` boots against an
+un-migrated database without complaint and fails on the first query that
+needs the new column.
+
 ## Operational notes
 
 - **Probes**: liveness checks only the process (a Postgres blip must not

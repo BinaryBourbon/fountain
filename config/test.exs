@@ -65,10 +65,12 @@ config :phoenix, sort_verified_routes_query_params: true
 config :fountain, Fountain.Mailer, adapter: Swoosh.Adapters.Test
 config :swoosh, :api_client, false
 
-# Pinned so a developer's shell (EMAIL_DELIVERY / FIRST_USER_ADMIN) can't
-# change suite behavior; tests toggle these through the application env.
+# Pinned so a developer's shell (EMAIL_DELIVERY / FIRST_USER_ADMIN /
+# MIGRATE_ON_BOOT) can't change suite behavior; tests toggle these through
+# the application env.
 config :fountain, :email_enabled, true
 config :fountain, :first_user_admin, false
+config :fountain, :migrate_on_boot, true
 
 # Jobs are asserted with Oban.Testing rather than executed as a side effect.
 config :fountain, Oban, testing: :manual

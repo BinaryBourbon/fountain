@@ -88,11 +88,13 @@ file falls back to a pinned release rather than `latest`.
 
 Upgrading is editing that value, then `docker compose pull && docker compose
 up -d`. Migrations run automatically at boot — idempotently, serialized by a
-lock on the `schema_migrations` table (Ecto's default) — so rolling replicas
-do not race each other, and there are no manual migration steps unless a
-release's upgrade notes say otherwise. (A migration that builds an index
-concurrently opts out of that lock by design; such migrations are written to
-be safe to re-run.) Downgrading is
+Postgres advisory lock — so rolling replicas do not race each other, and there
+are no manual migration steps unless a release's upgrade notes say otherwise.
+(A migration that builds an index concurrently opts out of that lock by
+design; such migrations are written to be safe to re-run. And if you have
+moved migrations into a Job with `MIGRATE_ON_BOOT=false`, running the Job is
+the upgrade step — see [Running migrations in a
+Job](#running-migrations-in-a-job).) Downgrading is
 not supported once a newer version's migrations have run; restore from a
 backup instead.
 
@@ -135,6 +137,35 @@ DATABASE_SSL_VERIFY=true
 # optional, otherwise the OS trust store is used
 DATABASE_SSL_CA_FILE=/etc/ssl/certs/rds-ca.pem
 ```
+
+### Running migrations in a Job
+
+Migrating at boot is right for one replica and is not the only shape. Set
+`MIGRATE_ON_BOOT=false` and the release starts without migrating; run the
+migration entrypoint yourself, once, before the new version serves:
+
+```bash
+bin/migrate     # in the image; equivalent to
+                # bin/fountain_server eval 'Fountain.Release.migrate()'
+```
+
+`bin/migrate` ignores `MIGRATE_ON_BOOT` — it is the thing you run *to*
+migrate. In Kubernetes that is a Job ordered before the rollout;
+[`deploy/k8s/README.md`](https://github.com/BinaryBourbon/fountain/blob/main/deploy/k8s/README.md)
+has the manifest.
+
+Worth knowing before you turn it off:
+
+- **Nothing verifies the Job ran.** A pod with the switch off boots happily
+  against an un-migrated database and fails on the first query that needs the
+  new column. Ordering the Job ahead of the rollout is your job, not the
+  app's.
+- **You do not need this to run several replicas.** Boot migrations are
+  serialized by a Postgres advisory lock — taken before `schema_migrations`
+  is touched, so even the first boot against an empty database does not race.
+- **What it buys you** is migrations as an explicitly reviewable step, app
+  pods that can run with a database role that cannot `ALTER`, and faster pod
+  starts on scale-up.
 
 ### Backups
 
