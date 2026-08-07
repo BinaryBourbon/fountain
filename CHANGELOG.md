@@ -16,6 +16,8 @@ upgrade, is in
 
 ## [Unreleased]
 
+## [0.6.1] — 2026-08-07
+
 ### Fixed
 
 - **A turn that fails before it starts now says why.** When a runtime exits
@@ -39,7 +41,8 @@ upgrade, is in
   tab advances when the link is clicked in another, and the release VM starts
   the Repo and nothing else on purpose; it is now skipped when there is
   nobody to hear it. The web paths are unchanged, and `promote_admin/1` was
-  never affected (#609)
+  never affected. Regression in v0.6.0; v0.4.1 and earlier are unaffected
+  (#609, #614)
 
 ## [0.6.0] — 2026-08-06
 
@@ -1229,6 +1232,8 @@ upgrade, is in
 - Audit log for state-changing actions (append-only, best-effort)
 - Substitution engine for `${VAR}` / `$$` interpolation in agent configs
 
+[0.6.1]: https://github.com/BinaryBourbon/fountain/compare/v0.6.0...v0.6.1
+[0.6.0]: https://github.com/BinaryBourbon/fountain/compare/v0.5.2...v0.6.0
 [0.5.2]: https://github.com/BinaryBourbon/fountain/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/BinaryBourbon/fountain/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/BinaryBourbon/fountain/compare/v0.4.1...v0.5.0
