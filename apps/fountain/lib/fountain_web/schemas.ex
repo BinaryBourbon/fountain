@@ -5,6 +5,8 @@ defmodule FountainWeb.Schemas do
   `Schemas.Agent`).
   """
 
+  import FountainWeb.SchemaWrappers, only: [list_response: 2, item_response: 2]
+
   alias OpenApiSpex.Schema
 
   defmodule Sandbox do
@@ -98,43 +100,11 @@ defmodule FountainWeb.Schemas do
     })
   end
 
-  defmodule ConversationTreeResponse do
-    @moduledoc false
-    require OpenApiSpex
+  list_response(ConversationTreeResponse, of: ConversationTreeNode)
 
-    OpenApiSpex.schema(%{
-      title: "ConversationTreeResponse",
-      type: :object,
-      properties: %{data: %Schema{type: :array, items: ConversationTreeNode}},
-      required: [:data]
-    })
-  end
+  item_response(ConversationResponse, of: Conversation)
 
-  defmodule ConversationResponse do
-    @moduledoc false
-    require OpenApiSpex
-
-    OpenApiSpex.schema(%{
-      title: "ConversationResponse",
-      type: :object,
-      properties: %{data: Conversation},
-      required: [:data]
-    })
-  end
-
-  defmodule ConversationListResponse do
-    @moduledoc false
-    require OpenApiSpex
-
-    OpenApiSpex.schema(%{
-      title: "ConversationListResponse",
-      type: :object,
-      properties: %{
-        data: %Schema{type: :array, items: Conversation}
-      },
-      required: [:data]
-    })
-  end
+  list_response(ConversationListResponse, of: Conversation)
 
   defmodule ImageInput do
     @moduledoc false
@@ -253,17 +223,7 @@ defmodule FountainWeb.Schemas do
     })
   end
 
-  defmodule TurnListResponse do
-    @moduledoc false
-    require OpenApiSpex
-
-    OpenApiSpex.schema(%{
-      title: "TurnListResponse",
-      type: :object,
-      properties: %{data: %Schema{type: :array, items: Turn}},
-      required: [:data]
-    })
-  end
+  list_response(TurnListResponse, of: Turn)
 
   defmodule Agent do
     @moduledoc false
@@ -350,29 +310,9 @@ defmodule FountainWeb.Schemas do
     })
   end
 
-  defmodule AgentResponse do
-    @moduledoc false
-    require OpenApiSpex
+  item_response(AgentResponse, of: Agent)
 
-    OpenApiSpex.schema(%{
-      title: "AgentResponse",
-      type: :object,
-      properties: %{data: Agent},
-      required: [:data]
-    })
-  end
-
-  defmodule AgentListResponse do
-    @moduledoc false
-    require OpenApiSpex
-
-    OpenApiSpex.schema(%{
-      title: "AgentListResponse",
-      type: :object,
-      properties: %{data: %Schema{type: :array, items: Agent}},
-      required: [:data]
-    })
-  end
+  list_response(AgentListResponse, of: Agent)
 
   defmodule AgentRequest do
     @moduledoc false
@@ -568,29 +508,9 @@ defmodule FountainWeb.Schemas do
     })
   end
 
-  defmodule EnvironmentResponse do
-    @moduledoc false
-    require OpenApiSpex
+  item_response(EnvironmentResponse, of: Environment)
 
-    OpenApiSpex.schema(%{
-      title: "EnvironmentResponse",
-      type: :object,
-      properties: %{data: Environment},
-      required: [:data]
-    })
-  end
-
-  defmodule EnvironmentListResponse do
-    @moduledoc false
-    require OpenApiSpex
-
-    OpenApiSpex.schema(%{
-      title: "EnvironmentListResponse",
-      type: :object,
-      properties: %{data: %Schema{type: :array, items: Environment}},
-      required: [:data]
-    })
-  end
+  list_response(EnvironmentListResponse, of: Environment)
 
   defmodule EnvironmentRequest do
     @moduledoc false
@@ -688,29 +608,9 @@ defmodule FountainWeb.Schemas do
     })
   end
 
-  defmodule SecretResponse do
-    @moduledoc false
-    require OpenApiSpex
+  item_response(SecretResponse, of: Secret)
 
-    OpenApiSpex.schema(%{
-      title: "SecretResponse",
-      type: :object,
-      properties: %{data: Secret},
-      required: [:data]
-    })
-  end
-
-  defmodule SecretListResponse do
-    @moduledoc false
-    require OpenApiSpex
-
-    OpenApiSpex.schema(%{
-      title: "SecretListResponse",
-      type: :object,
-      properties: %{data: %Schema{type: :array, items: Secret}},
-      required: [:data]
-    })
-  end
+  list_response(SecretListResponse, of: Secret)
 
   defmodule SecretRequest do
     @moduledoc false
@@ -750,29 +650,9 @@ defmodule FountainWeb.Schemas do
     })
   end
 
-  defmodule VaultResponse do
-    @moduledoc false
-    require OpenApiSpex
+  item_response(VaultResponse, of: Vault)
 
-    OpenApiSpex.schema(%{
-      title: "VaultResponse",
-      type: :object,
-      properties: %{data: Vault},
-      required: [:data]
-    })
-  end
-
-  defmodule VaultListResponse do
-    @moduledoc false
-    require OpenApiSpex
-
-    OpenApiSpex.schema(%{
-      title: "VaultListResponse",
-      type: :object,
-      properties: %{data: %Schema{type: :array, items: Vault}},
-      required: [:data]
-    })
-  end
+  list_response(VaultListResponse, of: Vault)
 
   defmodule VaultRequest do
     @moduledoc false
@@ -828,29 +708,9 @@ defmodule FountainWeb.Schemas do
     })
   end
 
-  defmodule VaultSecretResponse do
-    @moduledoc false
-    require OpenApiSpex
+  item_response(VaultSecretResponse, of: VaultSecret)
 
-    OpenApiSpex.schema(%{
-      title: "VaultSecretResponse",
-      type: :object,
-      properties: %{data: VaultSecret},
-      required: [:data]
-    })
-  end
-
-  defmodule VaultSecretListResponse do
-    @moduledoc false
-    require OpenApiSpex
-
-    OpenApiSpex.schema(%{
-      title: "VaultSecretListResponse",
-      type: :object,
-      properties: %{data: %Schema{type: :array, items: VaultSecret}},
-      required: [:data]
-    })
-  end
+  list_response(VaultSecretListResponse, of: VaultSecret)
 
   defmodule VaultSecretRequest do
     @moduledoc false
@@ -959,17 +819,7 @@ defmodule FountainWeb.Schemas do
     })
   end
 
-  defmodule AdminUserResponse do
-    @moduledoc false
-    require OpenApiSpex
-
-    OpenApiSpex.schema(%{
-      title: "AdminUserResponse",
-      type: :object,
-      properties: %{data: AdminUser},
-      required: [:data]
-    })
-  end
+  item_response(AdminUserResponse, of: AdminUser)
 
   defmodule AdminUserListResponse do
     @moduledoc false
@@ -1099,17 +949,7 @@ defmodule FountainWeb.Schemas do
     })
   end
 
-  defmodule AdminSandboxListResponse do
-    @moduledoc false
-    require OpenApiSpex
-
-    OpenApiSpex.schema(%{
-      title: "AdminSandboxListResponse",
-      type: :object,
-      properties: %{data: %Schema{type: :array, items: AdminSandbox}},
-      required: [:data]
-    })
-  end
+  list_response(AdminSandboxListResponse, of: AdminSandbox)
 
   defmodule AdminReapResponse do
     @moduledoc false
@@ -1132,20 +972,12 @@ defmodule FountainWeb.Schemas do
     })
   end
 
-  defmodule AdminAuditListResponse do
-    @moduledoc false
-    require OpenApiSpex
-
-    OpenApiSpex.schema(%{
-      title: "AdminAuditListResponse",
-      description: "Cross-tenant audit events; each carries the tenant it belongs to.",
-      type: :object,
-      # Fully qualified: AuditEvent is defined further down this file, and the
-      # implicit alias a nested defmodule creates only exists after it.
-      properties: %{data: %Schema{type: :array, items: FountainWeb.Schemas.AuditEvent}},
-      required: [:data]
-    })
-  end
+  # Fully qualified: AuditEvent is defined further down this file, and the
+  # implicit alias a nested defmodule creates only exists after it.
+  list_response(AdminAuditListResponse,
+    of: FountainWeb.Schemas.AuditEvent,
+    description: "Cross-tenant audit events; each carries the tenant it belongs to."
+  )
 
   defmodule AdminEventListResponse do
     @moduledoc false
@@ -1269,29 +1101,9 @@ defmodule FountainWeb.Schemas do
     })
   end
 
-  defmodule ExportResponse do
-    @moduledoc false
-    require OpenApiSpex
+  item_response(ExportResponse, of: Export)
 
-    OpenApiSpex.schema(%{
-      title: "ExportResponse",
-      type: :object,
-      properties: %{data: Export},
-      required: [:data]
-    })
-  end
-
-  defmodule ExportListResponse do
-    @moduledoc false
-    require OpenApiSpex
-
-    OpenApiSpex.schema(%{
-      title: "ExportListResponse",
-      type: :object,
-      properties: %{data: %Schema{type: :array, items: Export}},
-      required: [:data]
-    })
-  end
+  list_response(ExportListResponse, of: Export)
 
   defmodule AccountDeleteRequest do
     @moduledoc false
@@ -1450,29 +1262,9 @@ defmodule FountainWeb.Schemas do
     })
   end
 
-  defmodule InferenceCredentialResponse do
-    @moduledoc false
-    require OpenApiSpex
+  item_response(InferenceCredentialResponse, of: InferenceCredentialStatus)
 
-    OpenApiSpex.schema(%{
-      title: "InferenceCredentialResponse",
-      type: :object,
-      properties: %{data: InferenceCredentialStatus},
-      required: [:data]
-    })
-  end
-
-  defmodule InferenceCredentialListResponse do
-    @moduledoc false
-    require OpenApiSpex
-
-    OpenApiSpex.schema(%{
-      title: "InferenceCredentialListResponse",
-      type: :object,
-      properties: %{data: %Schema{type: :array, items: InferenceCredentialStatus}},
-      required: [:data]
-    })
-  end
+  list_response(InferenceCredentialListResponse, of: InferenceCredentialStatus)
 
   defmodule InferenceCredentialRequest do
     @moduledoc false
@@ -1666,7 +1458,8 @@ defmodule FountainWeb.Schemas do
       properties: %{
         error: %Schema{
           type: :string,
-          description: "Reason code, e.g. `expired`, `invalid_token`, `invalid_current_password`.",
+          description:
+            "Reason code, e.g. `expired`, `invalid_token`, `invalid_current_password`.",
           example: "invalid_token"
         },
         message: %Schema{type: :string, description: "Human-readable detail."}
@@ -1778,19 +1571,9 @@ defmodule FountainWeb.Schemas do
     })
   end
 
-  defmodule ApiKeyListResponse do
-    @moduledoc false
-    require OpenApiSpex
-
-    OpenApiSpex.schema(%{
-      title: "ApiKeyListResponse",
-      type: :object,
-      # ApiKey is referenced by the implicit alias the nested defmodule above
-      # created; it only exists after that definition, hence the ordering.
-      properties: %{data: %Schema{type: :array, items: ApiKey}},
-      required: [:data]
-    })
-  end
+  # ApiKey is referenced by the implicit alias the nested defmodule above
+  # created; it only exists after that definition, hence the ordering.
+  list_response(ApiKeyListResponse, of: ApiKey)
 
   defmodule ApiKeyRequest do
     @moduledoc false
