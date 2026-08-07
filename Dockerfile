@@ -34,7 +34,13 @@ RUN mix local.hex --force \
 # fetching and compiling deps, so the (expensive, slow-moving) deps layer
 # survives any change to application code. Copying apps/ wholesale here
 # is what used to force a full dep recompile on every commit.
-COPY mix.exs mix.lock ./
+#
+# coverage.exs is part of that set, not test-only config: both mix.exs
+# files read it with Code.eval_file to build `test_coverage`, which runs
+# while Mix loads the project — before any task, in every MIX_ENV. Leave
+# it out and `mix deps.get` dies on Code.LoadError (#620 moved the
+# settings into this file and the prod image stopped building).
+COPY mix.exs mix.lock coverage.exs ./
 COPY config ./config
 COPY apps/fountain/mix.exs ./apps/fountain/mix.exs
 
