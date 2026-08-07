@@ -59,8 +59,12 @@ An **Agent** is a named, re-runnable configuration for an AI coding assistant:
 - **`model`** - `provider/model-id` (e.g. `anthropic/claude-sonnet-4-6`), passed
   to the runtime's CLI. The provider must match the runtime: `anthropic` for
   `claude`, `openai` for `codex`, `google` for `gemini`. `opencode` is
-  multi-provider and takes any prefix — it also uses the prefix to pick which
-  API key to export.
+  multi-provider and takes any of the three — it uses the prefix to pick which
+  API key to export. A provider outside that set is rejected at write time:
+  there is no credential for it, so the sandbox would have started with no
+  inference key at all. The model id itself is *not* checked against a list —
+  the agent form suggests current models, but anything you type is passed to
+  the CLI as-is, so a model released since your Fountain version still works.
 - **`runtime`** - one of `claude`, `codex`, `gemini`, `opencode`
 - **`environment`** - optional Environment to attach
 - **`system`** / **`description`** - system prompt and human-readable description

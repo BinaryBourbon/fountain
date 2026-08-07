@@ -18,6 +18,20 @@ upgrade, is in
 
 ### Added
 
+- **The agent form suggests models, and a misspelled provider is caught at
+  save time.** `agent.model` was format-checked and nothing more, so
+  `anthopic/claude-sonnet-4-6` saved cleanly and then failed inside the
+  sandbox: `opencode` reads the prefix to decide which API key to export and
+  falls through to none for an unrecognised one, so the run started with no
+  inference credentials at all and died as an auth error in the conversation
+  log. The provider is now validated on write against the three Fountain
+  actually holds credentials for — `anthropic`, `openai`, `google` — and the
+  model field offers a `<datalist>` of current models, scoped to the selected
+  runtime so it can't lead you into the runtime/provider mismatch #553 added.
+  The **model id is deliberately still unchecked**: type anything and it is
+  passed to the CLI as-is (the form says so), so a model released after your
+  Fountain version works without waiting for a release (#554)
+
 - **`MIGRATE_ON_BOOT=false` — run migrations somewhere other than at boot.**
   The release migrates before it serves, on every replica, which is right for
   the single-replica shape it ships as and rules out the standard Kubernetes
