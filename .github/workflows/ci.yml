@@ -17,6 +17,18 @@ concurrency:
 permissions:
   contents: read
 
+# Two Elixir jobs, not one. The test suite is ~4m30s of the ~6m50s a PR used
+# to take, and every other gate — format, credo, sobelow, dialyzer, the Go CLI
+# checks, the release boot probe — was queued behind or ahead of it in the same
+# job while sharing nothing with it but the checkout. Splitting them puts the
+# suite alone on the critical path (~5m20s) with the rest running beside it
+# (~2m15s).
+#
+# What this does NOT fix: the suite itself is 252s of which 112s is the
+# `async: false` tail, which ExUnit runs serially on one core after the async
+# phase drains. No runner size crosses that floor — only splitting the suite
+# across machines (`mix test --partition`) does, and that needs the 85%
+# coverage gate to learn how to merge partial results first. Tracked separately.
 jobs:
   test:
     name: Build and Test
@@ -54,25 +66,101 @@ jobs:
           elixir-version: "1.19.2"
           otp-version: "28.3"
 
+      # Cache keys carry the job name. The two Elixir jobs build different
+      # trees — this one only ever compiles :test, while `checks` additionally
+      # builds :dev for dialyzer and :prod for the release — and a shared key
+      # would have them racing to save mutually incomplete archives under it,
+      # winner decided by whichever finished first. Same reasoning as the
+      # deliberately-narrow restore-keys below: a cache whose contents depend
+      # on who got there first is the failure mode being avoided.
       - name: Restore deps cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
         with:
           path: deps
-          key: ${{ runner.os }}-mix-${{ hashFiles('**/mix.lock') }}
+          key: ${{ runner.os }}-mix-test-${{ hashFiles('**/mix.lock') }}
           restore-keys: |
-            ${{ runner.os }}-mix-
+            ${{ runner.os }}-mix-test-
 
       - name: Restore build cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
         with:
           path: _build
-          key: ${{ runner.os }}-build-${{ steps.beam.outputs.otp-version }}-${{ steps.beam.outputs.elixir-version }}-${{ hashFiles('**/mix.lock') }}
+          key: ${{ runner.os }}-build-test-${{ steps.beam.outputs.otp-version }}-${{ steps.beam.outputs.elixir-version }}-${{ hashFiles('**/mix.lock') }}
           # No bare "-build-" fallback: BEAM bytecode compiled by a different
           # OTP/Elixir is rebuilt from scratch anyway, and a cross-version
           # restore has produced subtle staleness — the same hazard the PLT
-          # cache below avoids by omitting restore-keys entirely.
+          # cache in `checks` avoids by omitting restore-keys entirely.
           restore-keys: |
-            ${{ runner.os }}-build-${{ steps.beam.outputs.otp-version }}-${{ steps.beam.outputs.elixir-version }}-
+            ${{ runner.os }}-build-test-${{ steps.beam.outputs.otp-version }}-${{ steps.beam.outputs.elixir-version }}-
+
+      - name: Install dependencies
+        run: mix deps.get
+
+      - name: Set up database
+        run: mix ecto.create --quiet && mix ecto.migrate --quiet
+
+      # Coverage instrumentation is free here — measured at 128.8s with cover
+      # against 128.6s without, on the same machine. Running the suite bare on
+      # PRs and gating coverage elsewhere would buy nothing and cost the gate.
+      - name: Run tests with coverage
+        run: mix coveralls
+
+  checks:
+    name: Static analysis and release checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    permissions:
+      contents: read
+
+    # Postgres is here for the release boot check alone: /health/ready calls
+    # Fountain.Health.database/0, and the release task that runs after it
+    # queries users. Both need a migrated fountain_test to answer honestly.
+    services:
+      postgres:
+        image: postgres:16@sha256:287eced1f33b59ed265ed13a60d3680dd7646d70c4dc0e785f59a470ebc03eeb
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: fountain_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      MIX_ENV: test
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v5
+
+      - name: Set up Elixir
+        id: beam
+        uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124 # v1.24.1
+        with:
+          elixir-version: "1.19.2"
+          otp-version: "28.3"
+
+      # Job-scoped keys — see the note in `test`.
+      - name: Restore deps cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
+        with:
+          path: deps
+          key: ${{ runner.os }}-mix-checks-${{ hashFiles('**/mix.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-mix-checks-
+
+      - name: Restore build cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
+        with:
+          path: _build
+          key: ${{ runner.os }}-build-checks-${{ steps.beam.outputs.otp-version }}-${{ steps.beam.outputs.elixir-version }}-${{ hashFiles('**/mix.lock') }}
+          # No bare "-build-" fallback, for the reason given in `test`.
+          restore-keys: |
+            ${{ runner.os }}-build-checks-${{ steps.beam.outputs.otp-version }}-${{ steps.beam.outputs.elixir-version }}-
 
       - name: Install dependencies
         run: mix deps.get
@@ -152,11 +240,10 @@ jobs:
             exit 1
           fi
 
+      # For the release boot check below, not for a test suite — this job runs
+      # none. /health/ready and expire_legacy_trials both read the database.
       - name: Set up database
         run: mix ecto.create --quiet && mix ecto.migrate --quiet
-
-      - name: Run tests with coverage
-        run: mix coveralls
 
       # Builds a release and runs its config providers. Config.Reader tests
       # validate config *values*; only a real boot catches a key that may not be
