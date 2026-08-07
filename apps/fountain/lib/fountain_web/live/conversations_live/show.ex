@@ -545,13 +545,14 @@ defmodule FountainWeb.ConversationsLive.Show do
           </label>
           <div class="flex items-center gap-3">
             <span class="text-xs text-zinc-400">
-              <kbd class="px-1 py-0.5 bg-zinc-100 border border-zinc-200 rounded text-[10px] font-mono">
-                &#8984;
-              </kbd>
-              <kbd class="px-1 py-0.5 bg-zinc-100 border border-zinc-200 rounded text-[10px] font-mono">
-                Enter
-              </kbd>
-              to send
+              <kbd
+                class="px-1 py-0.5 bg-zinc-100 border border-zinc-200 rounded text-[10px] font-mono"
+                phx-no-format
+              >&#8984;</kbd>
+              <kbd
+                class="px-1 py-0.5 bg-zinc-100 border border-zinc-200 rounded text-[10px] font-mono"
+                phx-no-format
+              >Enter</kbd> to send
             </span>
             <.btn type="submit" phx-disable-with="Sending…">Send</.btn>
           </div>

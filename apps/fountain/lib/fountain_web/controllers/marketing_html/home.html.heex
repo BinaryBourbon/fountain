@@ -44,11 +44,10 @@
       <li class="flex items-start gap-3">
         <span class="mt-2 size-1.5 rounded-full bg-[var(--color-brand)] flex-shrink-0"></span>
         <span>
-          API keys expire mid-sprint with no single source of truth — the wrong
-          <code class="text-[var(--color-code-text)] bg-[var(--color-code-bg)] rounded px-1 py-0.5 text-sm">
-            .env
-          </code>
-          silently breaks the agent.
+          API keys expire mid-sprint with no single source of truth — the wrong <code
+            class="text-[var(--color-code-text)] bg-[var(--color-code-bg)] rounded px-1 py-0.5 text-sm"
+            phx-no-format
+          >.env</code> silently breaks the agent.
         </span>
       </li>
       <li class="flex items-start gap-3">
@@ -135,11 +134,10 @@
         Debug in seconds, not sessions
       </h3>
       <p class="text-sm text-[var(--color-text-secondary)] leading-relaxed">
-        Every conversation's stdout, stderr, and lifecycle events stream live in the dashboard. No
-        <code class="text-[var(--color-code-text)] bg-[var(--color-code-bg)] rounded px-1 py-0.5 text-xs">
-          curl -N
-        </code>
-        to a raw SSE endpoint, no log pipeline to stand up. Click a conversation and see exactly what happened.
+        Every conversation's stdout, stderr, and lifecycle events stream live in the dashboard. No <code
+          class="text-[var(--color-code-text)] bg-[var(--color-code-bg)] rounded px-1 py-0.5 text-xs"
+          phx-no-format
+        >curl -N</code> to a raw SSE endpoint, no log pipeline to stand up. Click a conversation and see exactly what happened.
       </p>
     </div>
 
@@ -159,11 +157,10 @@
         Script it, click it, or pipe it to CI
       </h3>
       <p class="text-sm text-[var(--color-text-secondary)] leading-relaxed">
-        REST API for automation, a LiveView dashboard for hands-on work, and an
-        <code class="text-[var(--color-code-text)] bg-[var(--color-code-bg)] rounded px-1 py-0.5 text-xs">
-          aod
-        </code>
-        CLI for pipelines — all reading and writing the same Environments, Agents, and Conversations. Pick the interface that fits the job.
+        REST API for automation, a LiveView dashboard for hands-on work, and an <code
+          class="text-[var(--color-code-text)] bg-[var(--color-code-bg)] rounded px-1 py-0.5 text-xs"
+          phx-no-format
+        >aod</code> CLI for pipelines — all reading and writing the same Environments, Agents, and Conversations. Pick the interface that fits the job.
       </p>
     </div>
   </div>
@@ -175,11 +172,10 @@
     <div class="grid sm:grid-cols-2 gap-10">
       <figure>
         <blockquote class="text-[var(--color-text-primary)] leading-relaxed mb-4">
-          "We were maintaining three separate
-          <code class="text-[var(--color-code-text)] bg-[var(--color-code-bg)] rounded px-1 py-0.5 text-sm">
-            .env
-          </code>
-          files and a shared Notion doc to keep our agent configs in sync. Fountain replaced all of it. Onboarding the last two engineers took ten minutes each."
+          "We were maintaining three separate <code
+            class="text-[var(--color-code-text)] bg-[var(--color-code-bg)] rounded px-1 py-0.5 text-sm"
+            phx-no-format
+          >.env</code> files and a shared Notion doc to keep our agent configs in sync. Fountain replaced all of it. Onboarding the last two engineers took ten minutes each."
         </blockquote>
         <figcaption class="text-sm text-[var(--color-text-muted)] font-medium">
           — Engineering lead, early access customer
@@ -187,11 +183,10 @@
       </figure>
       <figure>
         <blockquote class="text-[var(--color-text-primary)] leading-relaxed mb-4">
-          "I evaluated Fountain on a Friday afternoon and had a shared environment running for the whole team before dinner. The Vaults alone killed our 'which
-          <code class="text-[var(--color-code-text)] bg-[var(--color-code-bg)] rounded px-1 py-0.5 text-sm">
-            .env
-          </code>
-          is current?' Slack thread."
+          "I evaluated Fountain on a Friday afternoon and had a shared environment running for the whole team before dinner. The Vaults alone killed our 'which <code
+            class="text-[var(--color-code-text)] bg-[var(--color-code-bg)] rounded px-1 py-0.5 text-sm"
+            phx-no-format
+          >.env</code> is current?' Slack thread."
         </blockquote>
         <figcaption class="text-sm text-[var(--color-text-muted)] font-medium">
           — Developer, early access customer

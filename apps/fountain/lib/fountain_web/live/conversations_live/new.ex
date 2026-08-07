@@ -138,13 +138,14 @@ defmodule FountainWeb.ConversationsLive.New do
             <.btn_secondary>Cancel</.btn_secondary>
           </.link>
           <span class="text-xs text-zinc-400 ml-1">
-            or
-            <kbd class="px-1 py-0.5 bg-zinc-100 border border-zinc-200 rounded text-[10px] font-mono">
-              &#8984;
-            </kbd>
-            <kbd class="px-1 py-0.5 bg-zinc-100 border border-zinc-200 rounded text-[10px] font-mono">
-              Enter
-            </kbd>
+            or <kbd
+              class="px-1 py-0.5 bg-zinc-100 border border-zinc-200 rounded text-[10px] font-mono"
+              phx-no-format
+            >&#8984;</kbd>
+            <kbd
+              class="px-1 py-0.5 bg-zinc-100 border border-zinc-200 rounded text-[10px] font-mono"
+              phx-no-format
+            >Enter</kbd>
           </span>
         </div>
       </form>
