@@ -18,6 +18,18 @@ upgrade, is in
 
 ### Fixed
 
+- **A runtime that dies at startup now fails its turn instead of orphaning
+  it.** Writing the prompt to a command whose process had already stopped —
+  what happens when the runtime exits before reading stdin, from a bad flag, a
+  missing binary or an OOM kill — exited the conversation's own server rather
+  than returning an error. The supervisor restarted it, the restart found the
+  sandbox already `ready` and so reattached, and the turn was left hanging
+  behind a `list_sessions` error that named nothing real. The turn now ends
+  `failed` and the conversation returns to idle, ready for another prompt.
+  Healthy runtimes never took this path — the claude runtime blocks on stdin —
+  but fast-exiting ones did, and against a one-shot exec it was close to a
+  coin flip (#603)
+
 - **Deleting your account no longer leaves a hole in the record of it.** The
   request that deleted the account was itself audited on the way out — after
   the account row was gone — so the write referenced a user that no longer

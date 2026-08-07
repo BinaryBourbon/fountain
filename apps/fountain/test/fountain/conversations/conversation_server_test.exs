@@ -469,6 +469,35 @@ defmodule Fountain.Conversations.ConversationServerTest do
       GenServer.stop(pid)
     end
 
+    test "a runtime that exits before the prompt is written fails the turn (#603)", %{conv: conv} do
+      # The real Sprites.write/2 against a real command process that stops
+      # :normal on the write, which is what Sprites.Command does the moment the
+      # runtime's exit frame arrives. Nothing about this path is stubbed.
+      #
+      # The GenServer.call inside Sprites.write used to exit THIS server, and
+      # the supervisor's restart then found the sandbox already "ready", took
+      # the reattach branch, and orphaned the turn behind a list_sessions error
+      # that named nothing real. Against spritzer's one-shot exec that lost
+      # roughly half of all turns.
+      stub_happy_sprite()
+      dead_on_write = spawn(fn -> receive(do: (_ -> exit(:normal))) end)
+
+      Mimic.stub(Sprites, :spawn, fn _s, _cmd, _args, _opts ->
+        {:ok, %Sprites.Command{ref: make_ref(), pid: dead_on_write, tty_mode: false}}
+      end)
+
+      # :alive is the regression: the prompt is delivered before this returns.
+      {pid, _ref, :alive} = start_server(conv, initial_prompt: "hello")
+      _ = :sys.get_state(pid)
+
+      assert [turn] = Conversations._unsafe_list_turns(conv.id)
+      assert turn.status == "failed"
+      refute is_nil(turn.ended_at)
+      assert Conversations._unsafe_get_conversation!(conv.id).status == "idle"
+
+      GenServer.stop(pid)
+    end
+
     test "stdout is persisted as log events", %{conv: conv} do
       {pid, ref} = start_with_turn(conv)
 

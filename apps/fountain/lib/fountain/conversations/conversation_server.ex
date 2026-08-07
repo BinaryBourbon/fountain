@@ -21,6 +21,7 @@ defmodule Fountain.Conversations.ConversationServer do
     Environments,
     InferenceCredentials,
     SpritesClient,
+    SpriteStdin,
     Substitution,
     Vaults
   }
@@ -1677,69 +1678,55 @@ defmodule Fountain.Conversations.ConversationServer do
 
       case Sprites.spawn(state.sprite, cmd, args, spawn_opts) do
         {:ok, command} ->
-          if use_stdin? do
-            :ok = Sprites.write(command, prompt <> prompt_suffix)
-            :ok = Sprites.close_stdin(command)
-          end
-
-          # Start a stream tracer for Claude (stream-json → OTel child spans).
-          # Other runtimes produce unstructured output; tracer stays nil.
-          stream_tracer =
-            if state.runtime_module == Fountain.Runtimes.Claude do
-              Fountain.Runtimes.Claude.StreamTracer.new(turn_span)
+          # SpriteStdin.write/2 rather than Sprites.write/2: the latter exits
+          # its caller when the runtime has already gone, and this process
+          # being mid-turn is exactly what turned that into an orphaned turn
+          # (#603). See `Fountain.SpriteStdin` for the whole chain.
+          stdin_result =
+            if use_stdin? do
+              case SpriteStdin.write(command, prompt <> prompt_suffix) do
+                :ok -> Sprites.close_stdin(command)
+                {:error, reason} -> {:error, reason}
+              end
+            else
+              :ok
             end
 
-          %{
-            state
-            | current_command: command,
-              current_command_ref: command.ref,
-              current_turn: turn,
-              runtime_session_id: runtime_session_id,
-              current_turn_span: turn_span,
-              turn_metrics: %{
-                started_mono: turn_started_mono,
-                runtime: conv.runtime,
-                first_output?: false
-              },
-              stream_tracer: stream_tracer
-          }
+          case stdin_result do
+            :ok ->
+              # Start a stream tracer for Claude (stream-json → OTel child spans).
+              # Other runtimes produce unstructured output; tracer stays nil.
+              stream_tracer =
+                if state.runtime_module == Fountain.Runtimes.Claude do
+                  Fountain.Runtimes.Claude.StreamTracer.new(turn_span)
+                end
 
-        {:error, reason} ->
-          Logger.error("spawn failed: #{inspect(reason)}")
+              %{
+                state
+                | current_command: command,
+                  current_command_ref: command.ref,
+                  current_turn: turn,
+                  runtime_session_id: runtime_session_id,
+                  current_turn_span: turn_span,
+                  turn_metrics: %{
+                    started_mono: turn_started_mono,
+                    runtime: conv.runtime,
+                    first_output?: false
+                  },
+                  stream_tracer: stream_tracer
+              }
 
-          {:ok, _} =
-            Conversations._unsafe_update_turn(turn, %{
-              status: "failed",
-              ended_at: now()
-            })
-
-          publish_stage(state.conversation_id, "turn", "failed", %{
-            turn_id: turn.id,
-            reason: inspect(reason)
-          })
-
-          # The conversation was set to "running" just before the spawn
-          # attempt; without this it stays "running" in the API and UI until
-          # some later turn completes, even though nothing is executing. The
-          # :exit and :interrupt handlers both do the same reset.
-          failed_conv = Conversations._unsafe_get_conversation!(state.conversation_id)
-
-          if failed_conv.status == "running" do
-            {:ok, _} = Conversations.update_conversation(failed_conv, %{status: "idle"})
+            {:error, reason} ->
+              # The runtime exited before it read the prompt, so nothing is
+              # running and no output will ever arrive: a spawn-level failure
+              # in every way that matters. The turn ends `failed` naming the
+              # reason instead of the server dying and its restart orphaning
+              # the turn behind a reattach.
+              fail_turn_before_start(state, turn, reason, "prompt write failed")
           end
 
-          # Spawn never started; close the span we just opened so it
-          # doesn't leak.
-          OpenTelemetry.Tracer.set_status(
-            OpenTelemetry.status(:error, "spawn_failed: #{inspect(reason)}")
-          )
-
-          # No-arg: end_span/1 takes a timestamp, not a span. turn_span is
-          # the current span here (set above), which is what no-arg ends.
-          OpenTelemetry.Tracer.end_span()
-          OpenTelemetry.Tracer.set_current_span(previous_span)
-
-          state
+        {:error, reason} ->
+          fail_turn_before_start(state, turn, reason, "spawn failed")
       end
     after
       # The successful path keeps the span open until :exit; the error
@@ -1747,6 +1734,49 @@ defmodule Fountain.Conversations.ConversationServer do
       # caller's previous current-span here.
       OpenTelemetry.Tracer.set_current_span(previous_span)
     end
+  end
+
+  # A turn that never produced a single byte of output: either the spawn
+  # itself failed, or the runtime exited before the prompt reached its stdin
+  # (#603). Both leave nothing running, so both end the same way — the turn
+  # `failed` with the reason, a `turn`/`failed` stage event, and the
+  # conversation back to "idle".
+  #
+  # Called only from inside kick_turn's try block, which restores the caller's
+  # previous current-span in its `after`; the span this ends is the turn span
+  # kick_turn opened a few lines above the call.
+  defp fail_turn_before_start(state, turn, reason, what) do
+    Logger.error("#{what}: #{inspect(reason)}")
+
+    {:ok, _} =
+      Conversations._unsafe_update_turn(turn, %{
+        status: "failed",
+        ended_at: now()
+      })
+
+    publish_stage(state.conversation_id, "turn", "failed", %{
+      turn_id: turn.id,
+      reason: inspect(reason)
+    })
+
+    # The conversation was set to "running" just before the spawn attempt;
+    # without this it stays "running" in the API and UI until some later turn
+    # completes, even though nothing is executing. The :exit and :interrupt
+    # handlers both do the same reset.
+    failed_conv = Conversations._unsafe_get_conversation!(state.conversation_id)
+
+    if failed_conv.status == "running" do
+      {:ok, _} = Conversations.update_conversation(failed_conv, %{status: "idle"})
+    end
+
+    # The turn never started; close the span we just opened so it doesn't leak.
+    OpenTelemetry.Tracer.set_status(OpenTelemetry.status(:error, "#{what}: #{inspect(reason)}"))
+
+    # No-arg: end_span/1 takes a timestamp, not a span. turn_span is the
+    # current span here (kick_turn made it current), which is what no-arg ends.
+    OpenTelemetry.Tracer.end_span()
+
+    state
   end
 
   # Emit the aggregate turn-duration event (#536). Called from every path
