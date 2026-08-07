@@ -54,6 +54,9 @@ defmodule Fountain.Accounts.User do
     timestamps(type: :utc_datetime)
   end
 
+  def roles, do: @roles
+  def subscription_statuses, do: @subscription_statuses
+
   @doc "Changeset for new user registration (email + password path)."
   def registration_changeset(user, attrs) do
     user

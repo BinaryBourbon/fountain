@@ -19,6 +19,8 @@ defmodule Fountain.Manifest do
 
   @kinds ~w(Environment Vault Agent)
 
+  def kinds, do: @kinds
+
   # Ownership/identity fields are never taken from a manifest spec; secrets
   # are split out and written through the envelope-encryption path instead.
   @stripped_keys ~w(id user_id created_by secrets)
