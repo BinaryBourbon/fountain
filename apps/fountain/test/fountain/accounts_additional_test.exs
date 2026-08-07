@@ -228,6 +228,7 @@ defmodule Fountain.AccountsAdditionalTest do
       # Back-date user1 so ordering is deterministic even when both inserts
       # happen within the same timestamp tick
       earlier = DateTime.add(DateTime.utc_now(), -5, :second) |> DateTime.truncate(:second)
+
       Repo.update_all(from(u in Fountain.Accounts.User, where: u.id == ^user1.id),
         set: [inserted_at: earlier]
       )
@@ -273,7 +274,8 @@ defmodule Fountain.AccountsAdditionalTest do
     end
 
     test "returns {:error, :not_found} when no user exists with that email" do
-      assert {:error, :not_found} = Accounts.authenticate_user("nobody@nowhere.test", "anypassword")
+      assert {:error, :not_found} =
+               Accounts.authenticate_user("nobody@nowhere.test", "anypassword")
     end
   end
 
@@ -281,7 +283,12 @@ defmodule Fountain.AccountsAdditionalTest do
 
   describe "verify_email/1" do
     test "sets email_verified_at to a non-nil datetime" do
-      {:ok, user} = Fountain.Accounts.register_user(%{"email" => "unverified#{System.unique_integer([:positive])}@example.com", "password" => "password123"})
+      {:ok, user} =
+        Fountain.Accounts.register_user(%{
+          "email" => "unverified#{System.unique_integer([:positive])}@example.com",
+          "password" => "password123"
+        })
+
       assert is_nil(user.email_verified_at)
 
       assert {:ok, verified} = Accounts.verify_email(user)
@@ -357,7 +364,10 @@ defmodule Fountain.AccountsAdditionalTest do
   describe "register_user/1" do
     test "returns {:ok, user} with valid attrs" do
       email = "reg_#{System.unique_integer([:positive])}@example.com"
-      assert {:ok, user} = Accounts.register_user(%{"email" => email, "password" => "password123"})
+
+      assert {:ok, user} =
+               Accounts.register_user(%{"email" => email, "password" => "password123"})
+
       assert user.email == email
     end
 
@@ -370,13 +380,19 @@ defmodule Fountain.AccountsAdditionalTest do
     test "returns {:error, changeset} on duplicate email" do
       email = "dup_#{System.unique_integer([:positive])}@example.com"
       {:ok, _} = Accounts.register_user(%{"email" => email, "password" => "password123"})
-      assert {:error, changeset} = Accounts.register_user(%{"email" => email, "password" => "password123"})
+
+      assert {:error, changeset} =
+               Accounts.register_user(%{"email" => email, "password" => "password123"})
+
       assert changeset.errors != []
     end
 
     test "returns {:error, changeset} when password is too short" do
       email = "short_#{System.unique_integer([:positive])}@example.com"
-      assert {:error, changeset} = Accounts.register_user(%{"email" => email, "password" => "short"})
+
+      assert {:error, changeset} =
+               Accounts.register_user(%{"email" => email, "password" => "short"})
+
       assert changeset.errors[:password] != nil
     end
   end
@@ -418,7 +434,9 @@ defmodule Fountain.AccountsAdditionalTest do
 
       # Second call reuses existing identity
       assert {:ok, user, :existing} =
-               Accounts.upsert_oauth_user("github", provider_uid, %{"email" => existing_user.email})
+               Accounts.upsert_oauth_user("github", provider_uid, %{
+                 "email" => existing_user.email
+               })
 
       assert user.id == existing_user.id
     end

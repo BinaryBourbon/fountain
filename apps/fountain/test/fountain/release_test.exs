@@ -82,7 +82,8 @@ defmodule Fountain.ReleaseTest do
 
     test "returns not_found for an unknown email" do
       capture_io(:stderr, fn ->
-        assert {:error, :not_found} = Release.verify_email("nobody-#{System.unique_integer([:positive])}@example.com")
+        assert {:error, :not_found} =
+                 Release.verify_email("nobody-#{System.unique_integer([:positive])}@example.com")
       end)
     end
   end

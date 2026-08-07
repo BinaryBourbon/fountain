@@ -30,7 +30,9 @@ defmodule FountainWeb.SchemasTest do
     documented = conversation_schema().properties |> Map.keys() |> MapSet.new()
 
     missing = MapSet.difference(emitted, documented)
-    assert MapSet.size(missing) == 0, "emitted but undocumented: #{inspect(MapSet.to_list(missing))}"
+
+    assert MapSet.size(missing) == 0,
+           "emitted but undocumented: #{inspect(MapSet.to_list(missing))}"
   end
 
   # #571 brought the API-key views into the spec. Same drift guard: the
@@ -46,7 +48,9 @@ defmodule FountainWeb.SchemasTest do
         FountainWeb.Schemas.ApiKey.schema().properties |> Map.keys() |> MapSet.new()
 
       missing = MapSet.difference(emitted |> Map.keys() |> MapSet.new(), documented)
-      assert MapSet.size(missing) == 0, "emitted but undocumented: #{inspect(MapSet.to_list(missing))}"
+
+      assert MapSet.size(missing) == 0,
+             "emitted but undocumented: #{inspect(MapSet.to_list(missing))}"
     end
 
     test "the listing schema has no field that could carry key material" do
@@ -59,10 +63,14 @@ defmodule FountainWeb.SchemasTest do
       emitted = FountainWeb.ApiKeyJSON.created(%{key: api_key(), raw_key: "ftn_abc_secret"})
 
       documented =
-        FountainWeb.Schemas.ApiKeyCreatedResponse.schema().properties |> Map.keys() |> MapSet.new()
+        FountainWeb.Schemas.ApiKeyCreatedResponse.schema().properties
+        |> Map.keys()
+        |> MapSet.new()
 
       missing = MapSet.difference(emitted |> Map.keys() |> MapSet.new(), documented)
-      assert MapSet.size(missing) == 0, "emitted but undocumented: #{inspect(MapSet.to_list(missing))}"
+
+      assert MapSet.size(missing) == 0,
+             "emitted but undocumented: #{inspect(MapSet.to_list(missing))}"
     end
   end
 end

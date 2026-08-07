@@ -132,7 +132,11 @@ defmodule Fountain.Conversations do
           # A reclaimed sandbox took the tenant's conversations down with it,
           # which is worth a row each — this is the one termination they did
           # not ask for. #551 covers the reaper that calls this.
-          Enum.each(live, &ConversationServer.terminate_conversation(&1.id, actor: "system:sandbox_reaper"))
+          Enum.each(
+            live,
+            &ConversationServer.terminate_conversation(&1.id, actor: "system:sandbox_reaper")
+          )
+
           {:ok, :terminated}
         end
     end
@@ -1205,14 +1209,18 @@ defmodule Fountain.Conversations do
          :ok <- Fountain.Billing.check_active(conv.user_id),
          # Same reservation as start_conversation/1 — see the note there (#330).
          {:ok, new_sandbox} <-
-           Fountain.Quotas.with_sandbox_reservation(conv.user_id, [exclude: conv.sandbox_id], fn ->
-             create_sandbox(%{
-               environment_id: agent.environment_id,
-               sprite_name: "fountain-#{tenant_prefix(conv.user_id)}-#{short_id()}",
-               status: "pending",
-               user_id: conv.user_id
-             })
-           end),
+           Fountain.Quotas.with_sandbox_reservation(
+             conv.user_id,
+             [exclude: conv.sandbox_id],
+             fn ->
+               create_sandbox(%{
+                 environment_id: agent.environment_id,
+                 sprite_name: "fountain-#{tenant_prefix(conv.user_id)}-#{short_id()}",
+                 status: "pending",
+                 user_id: conv.user_id
+               })
+             end
+           ),
          _ <- mark_old_sandbox_terminated(conv.sandbox_id),
          {:ok, conv} <-
            update_conversation(conv, %{sandbox_id: new_sandbox.id, status: "pending"}) do

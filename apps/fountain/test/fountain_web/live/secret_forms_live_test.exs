@@ -39,7 +39,8 @@ defmodule FountainWeb.SecretFormsLiveTest do
       {:ok, view, _html} = live(conn, ~p"/environments/#{env.id}/edit")
       refute_in_state(view, dek)
 
-      html = render_submit(view, "add_secret", %{"secret" => %{"key" => "TOKEN", "value" => value}})
+      html =
+        render_submit(view, "add_secret", %{"secret" => %{"key" => "TOKEN", "value" => value}})
 
       assert html =~ "Secret saved"
       refute_in_state(view, dek)
@@ -51,7 +52,8 @@ defmodule FountainWeb.SecretFormsLiveTest do
       {:ok, view, html} = live(conn, ~p"/environments/#{env.id}/edit")
       assert html =~ "env-secret-form-0"
 
-      html = render_submit(view, "add_secret", %{"secret" => %{"key" => "TOKEN", "value" => "v1"}})
+      html =
+        render_submit(view, "add_secret", %{"secret" => %{"key" => "TOKEN", "value" => "v1"}})
 
       assert html =~ "TOKEN"
       # The versioned form id is the reset mechanism for the uncontrolled
@@ -96,7 +98,8 @@ defmodule FountainWeb.SecretFormsLiveTest do
       {:ok, view, _html} = live(conn, ~p"/vaults/#{vault.id}/edit")
       refute_in_state(view, dek)
 
-      html = render_submit(view, "add_secret", %{"secret" => %{"key" => "TOKEN", "value" => value}})
+      html =
+        render_submit(view, "add_secret", %{"secret" => %{"key" => "TOKEN", "value" => value}})
 
       assert html =~ "Secret saved"
       refute_in_state(view, dek)
@@ -108,7 +111,8 @@ defmodule FountainWeb.SecretFormsLiveTest do
       {:ok, view, html} = live(conn, ~p"/vaults/#{vault.id}/edit")
       assert html =~ "vault-secret-form-0"
 
-      html = render_submit(view, "add_secret", %{"secret" => %{"key" => "TOKEN", "value" => "v1"}})
+      html =
+        render_submit(view, "add_secret", %{"secret" => %{"key" => "TOKEN", "value" => "v1"}})
 
       assert html =~ "TOKEN"
       assert html =~ "vault-secret-form-1"

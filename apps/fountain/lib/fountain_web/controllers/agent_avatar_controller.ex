@@ -86,7 +86,10 @@ defmodule FountainWeb.AgentAvatarController do
       # Rendered explicitly rather than through `render/3`: this scope has no
       # `plug :accepts` (the GET below serves image bytes and would 406 on
       # `Accept: image/*`), so there is no negotiated format to render into.
-      json(conn, FountainWeb.AgentJSON.show(%{agent: Agents.get_agent_with_counts(agent.id, user.id)}))
+      json(
+        conn,
+        FountainWeb.AgentJSON.show(%{agent: Agents.get_agent_with_counts(agent.id, user.id)})
+      )
     else
       nil ->
         {:error, :not_found}

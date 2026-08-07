@@ -191,7 +191,8 @@ defmodule FountainWeb.EnvironmentsLive.Index do
       "bg-[var(--color-bg-2)] text-[var(--color-text-secondary)] border border-[var(--color-border)]"
 
   defp stat_badge_class(_type, 0),
-    do: "bg-[var(--color-bg-2)] text-[var(--color-text-muted)] border border-[var(--color-border)]"
+    do:
+      "bg-[var(--color-bg-2)] text-[var(--color-text-muted)] border border-[var(--color-border)]"
 
   defp stat_badge_class(:secrets, _),
     do:

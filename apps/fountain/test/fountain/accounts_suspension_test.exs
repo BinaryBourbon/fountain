@@ -52,7 +52,8 @@ defmodule Fountain.AccountsSuspensionTest do
       user = insert_verified_user()
       {:ok, _, _} = Accounts.suspend_user(user)
 
-      assert {:error, :wrong_password} = Accounts.authenticate_user(user.email, "not-the-password")
+      assert {:error, :wrong_password} =
+               Accounts.authenticate_user(user.email, "not-the-password")
     end
   end
 
@@ -113,5 +114,4 @@ defmodule Fountain.AccountsSuspensionTest do
       assert synced.suspended_at
     end
   end
-
 end

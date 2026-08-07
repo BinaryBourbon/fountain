@@ -191,7 +191,11 @@ defmodule FountainWeb.ApiKeyScopeTest do
       user = insert_verified_user()
 
       {:ok, {_rec, raw}} =
-        Accounts.create_api_key(user.id, "sprite:test", ConversationServer.callback_api_key_opts())
+        Accounts.create_api_key(
+          user.id,
+          "sprite:test",
+          ConversationServer.callback_api_key_opts()
+        )
 
       conn =
         conn

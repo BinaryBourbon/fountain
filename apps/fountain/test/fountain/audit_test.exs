@@ -54,8 +54,11 @@ defmodule Fountain.AuditTest do
       user = insert_verified_user()
       resource_id = Ecto.UUID.generate()
 
-      {:ok, first} = Audit.record(valid_attrs(user.id, %{resource_id: resource_id, action: "first"}))
-      {:ok, second} = Audit.record(valid_attrs(user.id, %{resource_id: resource_id, action: "second"}))
+      {:ok, first} =
+        Audit.record(valid_attrs(user.id, %{resource_id: resource_id, action: "first"}))
+
+      {:ok, second} =
+        Audit.record(valid_attrs(user.id, %{resource_id: resource_id, action: "second"}))
 
       events = Audit.list_recent_for_user(user.id)
       ids = Enum.map(events, & &1.id)
@@ -198,7 +201,8 @@ defmodule Fountain.AuditTest do
       Audit.record!(valid_attrs(user.id, %{resource_type: "vault_secret"}))
       Audit.record!(valid_attrs(user.id, %{resource_type: "agent"}))
 
-      types = Audit._unsafe_list_events(resource_type: "vault_secret") |> Enum.map(& &1.resource_type)
+      types =
+        Audit._unsafe_list_events(resource_type: "vault_secret") |> Enum.map(& &1.resource_type)
 
       assert types == ["vault_secret"]
     end

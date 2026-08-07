@@ -30,15 +30,22 @@ defmodule Fountain.InferenceCredentialsTest do
     end
 
     test "returns the row after a put", %{user: user, dek: dek} do
-      {:ok, _} = InferenceCredentials.put_credential(user.id, dek, :anthropic_api_key, "sk-ant-test")
+      {:ok, _} =
+        InferenceCredentials.put_credential(user.id, dek, :anthropic_api_key, "sk-ant-test")
+
       assert %Credential{} = InferenceCredentials.get_for_user(user.id)
     end
   end
 
   describe "put_credential/4" do
-    test "creates a row on first put and stores ciphertext (not plaintext)", %{user: user, dek: dek} do
+    test "creates a row on first put and stores ciphertext (not plaintext)", %{
+      user: user,
+      dek: dek
+    } do
       plaintext = "sk-ant-very-secret"
-      {:ok, cred} = InferenceCredentials.put_credential(user.id, dek, :anthropic_api_key, plaintext)
+
+      {:ok, cred} =
+        InferenceCredentials.put_credential(user.id, dek, :anthropic_api_key, plaintext)
 
       assert is_binary(cred.anthropic_api_key_ciphertext)
       refute cred.anthropic_api_key_ciphertext == plaintext
@@ -139,6 +146,7 @@ defmodule Fountain.InferenceCredentialsTest do
   describe "status_for_user/1" do
     test "all false for a user with no credentials", %{user: user} do
       status = InferenceCredentials.status_for_user(user.id)
+
       assert status == %{
                anthropic_api_key: false,
                claude_code_oauth_token: false,
@@ -161,7 +169,8 @@ defmodule Fountain.InferenceCredentialsTest do
 
   describe "tenant scoping" do
     test "one user's credentials are not visible to another", %{user: user, dek: dek} do
-      {:ok, _} = InferenceCredentials.put_credential(user.id, dek, :anthropic_api_key, "sk-ant-secret")
+      {:ok, _} =
+        InferenceCredentials.put_credential(user.id, dek, :anthropic_api_key, "sk-ant-secret")
 
       other = insert_user()
       {:ok, other_dek} = Crypto.load_tenant_key(other.id)

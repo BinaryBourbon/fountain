@@ -1741,7 +1741,10 @@ defmodule Fountain.ConversationsContextTest do
         {:error, {:already_started, self()}}
       end)
 
-      stub(Fountain.Conversations.ConversationServer, :queue_initial_prompt, fn _conv_id, _prompt -> :ok end)
+      stub(Fountain.Conversations.ConversationServer, :queue_initial_prompt, fn _conv_id,
+                                                                                _prompt ->
+        :ok
+      end)
 
       assert {:ok, _conv} = Conversations.wake_conversation(conv.id, "hi")
 

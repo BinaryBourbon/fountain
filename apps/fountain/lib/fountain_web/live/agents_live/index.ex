@@ -73,7 +73,10 @@ defmodule FountainWeb.AgentsLive.Index do
       nil ->
         {:noreply,
          socket
-         |> assign(:agents, Agents.list_agents_with_counts(user_id, current_filters(socket.assigns)))
+         |> assign(
+           :agents,
+           Agents.list_agents_with_counts(user_id, current_filters(socket.assigns))
+         )
          |> put_flash(:error, "Agent not found — it may already be deleted")}
 
       agent ->

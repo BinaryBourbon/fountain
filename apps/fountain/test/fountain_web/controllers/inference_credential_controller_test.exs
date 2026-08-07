@@ -253,7 +253,9 @@ defmodule FountainWeb.InferenceCredentialControllerTest do
       body =
         conn
         |> authed_with_key(sprite_key)
-        |> put_json("/api/account/inference-credentials/anthropic_api_key", %{"value" => "sk-evil"})
+        |> put_json("/api/account/inference-credentials/anthropic_api_key", %{
+          "value" => "sk-evil"
+        })
         |> json_response(403)
 
       assert body["reason"] == "insufficient_scope"

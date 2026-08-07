@@ -24,11 +24,14 @@ defmodule Fountain.AccountsCredentialTest do
     test "changes the password and invalidates other sessions" do
       user = insert_verified_user(%{"password" => "old-password-123"})
 
-      assert {:ok, updated} = Accounts.change_password(user, "old-password-123", "new-password-456")
+      assert {:ok, updated} =
+               Accounts.change_password(user, "old-password-123", "new-password-456")
 
       assert updated.session_version > user.session_version
       assert {:ok, _} = Accounts.authenticate_user(user.email, "new-password-456")
-      assert {:error, :wrong_password} = Accounts.authenticate_user(user.email, "old-password-123")
+
+      assert {:error, :wrong_password} =
+               Accounts.authenticate_user(user.email, "old-password-123")
     end
 
     test "refuses a wrong current password without touching anything" do

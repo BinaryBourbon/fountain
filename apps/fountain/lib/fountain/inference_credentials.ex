@@ -106,7 +106,8 @@ defmodule Fountain.InferenceCredentials do
   # second table — the same rule the secret-write events follow, and the
   # reason those record a key and not a value.
   defp audited({:ok, _cred} = ok, user_id, provider, ciphertext, opts) do
-    action = if is_nil(ciphertext), do: "inference_credential.delete", else: "inference_credential.write"
+    action =
+      if is_nil(ciphertext), do: "inference_credential.delete", else: "inference_credential.write"
 
     Audit.record(%{
       user_id: user_id,

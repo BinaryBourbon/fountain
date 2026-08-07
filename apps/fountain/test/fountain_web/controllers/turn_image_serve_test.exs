@@ -29,7 +29,12 @@ defmodule FountainWeb.TurnImageServeTest do
         %{media_type: "image/png", data: @png}
       ])
 
-    %{conn: conn, user: user, key: raw_key, path: "/conversations/#{conv.id}/turns/#{turn.id}/images/0"}
+    %{
+      conn: conn,
+      user: user,
+      key: raw_key,
+      path: "/conversations/#{conv.id}/turns/#{turn.id}/images/0"
+    }
   end
 
   describe "bearer route — Accept negotiation" do

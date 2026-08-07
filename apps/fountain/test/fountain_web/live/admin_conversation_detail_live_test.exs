@@ -71,9 +71,7 @@ defmodule FountainWeb.AdminConversationDetailLiveTest do
       {:ok, _lv, _html} = live(conn, ~p"/admin/conversations/#{conv.id}")
 
       assert [event] =
-               Repo.all(
-                 from e in AdminEvent, where: e.event_type == "admin.conversation.viewed"
-               )
+               Repo.all(from e in AdminEvent, where: e.event_type == "admin.conversation.viewed")
 
       assert event.actor_user_id == admin.id
       assert event.target_user_id == target.id

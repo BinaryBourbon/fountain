@@ -4,7 +4,11 @@ defmodule FountainWeb.AuthTokenControllerTest do
 
   describe "POST /api/auth/token" do
     test "returns 201 with api_key on valid credentials", %{conn: conn} do
-      user = insert_verified_user(%{"email" => "login#{System.unique_integer()}@example.com", "password" => "password123"})
+      user =
+        insert_verified_user(%{
+          "email" => "login#{System.unique_integer()}@example.com",
+          "password" => "password123"
+        })
 
       conn = post_json(conn, "/api/auth/token", %{email: user.email, password: "password123"})
 
@@ -33,7 +37,11 @@ defmodule FountainWeb.AuthTokenControllerTest do
     end
 
     test "returns 401 on wrong password", %{conn: conn} do
-      user = insert_verified_user(%{"email" => "login#{System.unique_integer()}@example.com", "password" => "password123"})
+      user =
+        insert_verified_user(%{
+          "email" => "login#{System.unique_integer()}@example.com",
+          "password" => "password123"
+        })
 
       conn = post_json(conn, "/api/auth/token", %{email: user.email, password: "wrongpassword"})
 
@@ -41,13 +49,18 @@ defmodule FountainWeb.AuthTokenControllerTest do
     end
 
     test "returns 401 on unknown email", %{conn: conn} do
-      conn = post_json(conn, "/api/auth/token", %{email: "nobody@example.com", password: "password123"})
+      conn =
+        post_json(conn, "/api/auth/token", %{email: "nobody@example.com", password: "password123"})
 
       assert %{"error" => "Invalid email or password"} = json_response(conn, 401)
     end
 
     test "api_key from response can authenticate GET /api/auth/me", %{conn: conn} do
-      user = insert_verified_user(%{"email" => "login#{System.unique_integer()}@example.com", "password" => "password123"})
+      user =
+        insert_verified_user(%{
+          "email" => "login#{System.unique_integer()}@example.com",
+          "password" => "password123"
+        })
 
       %{"api_key" => raw_key} =
         conn

@@ -85,7 +85,8 @@ defmodule Fountain.Environments do
         nil
 
       env ->
-        secret_count = Repo.aggregate(from(s in Secret, where: s.environment_id == ^env.id), :count)
+        secret_count =
+          Repo.aggregate(from(s in Secret, where: s.environment_id == ^env.id), :count)
 
         agent_count =
           Repo.aggregate(

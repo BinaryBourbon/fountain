@@ -97,7 +97,8 @@ defmodule FountainWeb.OnboardingControllerTest do
       |> post("/api/account/onboarding/complete")
       |> json_response(200)
 
-      after_body = build_conn() |> authed_with_key(key) |> get("/api/auth/me") |> json_response(200)
+      after_body =
+        build_conn() |> authed_with_key(key) |> get("/api/auth/me") |> json_response(200)
 
       assert after_body["onboarding_completed"] == true
       assert after_body["onboarding_state"] == "completed"

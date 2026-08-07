@@ -13,14 +13,23 @@ defmodule Fountain.AccountsPreferencesTest do
     end
 
     test "accepts valid conversation_visible_streams subsets" do
-      for streams <- [[], ["stdout"], ["stderr"], ["stage"], ["stdout", "stderr"], ["stdout", "stderr", "stage"]] do
+      for streams <- [
+            [],
+            ["stdout"],
+            ["stderr"],
+            ["stage"],
+            ["stdout", "stderr"],
+            ["stdout", "stderr", "stage"]
+          ] do
         cs = User.preferences_changeset(%User{}, %{conversation_visible_streams: streams})
         assert cs.valid?, "expected #{inspect(streams)} to be valid"
       end
     end
 
     test "rejects invalid stream values" do
-      cs = User.preferences_changeset(%User{}, %{conversation_visible_streams: ["stdout", "invalid"]})
+      cs =
+        User.preferences_changeset(%User{}, %{conversation_visible_streams: ["stdout", "invalid"]})
+
       refute cs.valid?
       assert cs.errors[:conversation_visible_streams] != nil
     end
@@ -51,7 +60,10 @@ defmodule Fountain.AccountsPreferencesTest do
 
     test "persists conversation_visible_streams", %{user: user} do
       streams = ["stdout", "stage"]
-      assert {:ok, updated} = Accounts.update_preferences(user, %{conversation_visible_streams: streams})
+
+      assert {:ok, updated} =
+               Accounts.update_preferences(user, %{conversation_visible_streams: streams})
+
       assert updated.conversation_visible_streams == streams
 
       reloaded = Accounts.get_user!(user.id)
@@ -59,12 +71,16 @@ defmodule Fountain.AccountsPreferencesTest do
     end
 
     test "persists empty visible_streams list", %{user: user} do
-      assert {:ok, updated} = Accounts.update_preferences(user, %{conversation_visible_streams: []})
+      assert {:ok, updated} =
+               Accounts.update_preferences(user, %{conversation_visible_streams: []})
+
       assert updated.conversation_visible_streams == []
     end
 
     test "returns error changeset for invalid streams", %{user: user} do
-      assert {:error, changeset} = Accounts.update_preferences(user, %{conversation_visible_streams: ["bad"]})
+      assert {:error, changeset} =
+               Accounts.update_preferences(user, %{conversation_visible_streams: ["bad"]})
+
       assert changeset.errors[:conversation_visible_streams] != nil
     end
 
@@ -112,7 +128,9 @@ defmodule Fountain.AccountsPreferencesTest do
     end
 
     test "returns error changeset for invalid view mode", %{user: user} do
-      assert {:error, changeset} = Accounts.update_preferences(user, %{conversation_view_mode: "invalid"})
+      assert {:error, changeset} =
+               Accounts.update_preferences(user, %{conversation_view_mode: "invalid"})
+
       assert changeset.errors[:conversation_view_mode] != nil
     end
   end

@@ -92,7 +92,14 @@ defmodule FountainWeb.LogViewerLiveTest do
     test "stage event kind renders [stage:X:Y] format", %{conn: conn} do
       user = insert_verified_user()
       conv = insert_conversation(user_id: user.id)
-      insert_log_event(conv, kind: "stage", stream: "", stage: "provision", state: "started", data: "")
+
+      insert_log_event(conv,
+        kind: "stage",
+        stream: "",
+        stage: "provision",
+        state: "started",
+        data: ""
+      )
 
       conn = login_user(conn, user)
       {:ok, _lv, html} = live(conn, ~p"/conversations/#{conv.id}/logs")

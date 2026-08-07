@@ -44,7 +44,13 @@ defmodule FountainWeb.PasswordResetControllerTest do
   describe "GET /auth/reset/:token" do
     test "renders reset form for valid token", %{conn: conn} do
       user = insert_verified_user()
-      token = Phoenix.Token.sign(FountainWeb.Endpoint, "password_reset", {user.id, user.session_version})
+
+      token =
+        Phoenix.Token.sign(
+          FountainWeb.Endpoint,
+          "password_reset",
+          {user.id, user.session_version}
+        )
 
       conn = get(conn, ~p"/auth/reset/#{token}")
       assert html_response(conn, 200) =~ "new password"
@@ -57,7 +63,9 @@ defmodule FountainWeb.PasswordResetControllerTest do
 
     test "redirects with error when reset token has expired", %{conn: conn} do
       user = insert_verified_user()
-      expired_token = Phoenix.Token.sign(
+
+      expired_token =
+        Phoenix.Token.sign(
           FountainWeb.Endpoint,
           "password_reset",
           {user.id, user.session_version},
@@ -73,7 +81,13 @@ defmodule FountainWeb.PasswordResetControllerTest do
     test "updates password and drops session", %{conn: conn} do
       user = insert_verified_user()
       old_hash = Accounts.get_user!(user.id).password_hash
-      token = Phoenix.Token.sign(FountainWeb.Endpoint, "password_reset", {user.id, user.session_version})
+
+      token =
+        Phoenix.Token.sign(
+          FountainWeb.Endpoint,
+          "password_reset",
+          {user.id, user.session_version}
+        )
 
       conn = post(conn, ~p"/auth/reset", %{"token" => token, "password" => "newpassword123"})
       assert redirected_to(conn) == ~p"/auth/login"
@@ -86,14 +100,22 @@ defmodule FountainWeb.PasswordResetControllerTest do
 
     test "re-renders form with error on short password", %{conn: conn} do
       user = insert_verified_user()
-      token = Phoenix.Token.sign(FountainWeb.Endpoint, "password_reset", {user.id, user.session_version})
+
+      token =
+        Phoenix.Token.sign(
+          FountainWeb.Endpoint,
+          "password_reset",
+          {user.id, user.session_version}
+        )
 
       conn = post(conn, ~p"/auth/reset", %{"token" => token, "password" => "short"})
       assert html_response(conn, 422) =~ "new password"
     end
 
     test "redirects with error for invalid token", %{conn: conn} do
-      conn = post(conn, ~p"/auth/reset", %{"token" => "badtoken", "password" => "validpassword123"})
+      conn =
+        post(conn, ~p"/auth/reset", %{"token" => "badtoken", "password" => "validpassword123"})
+
       assert redirected_to(conn) == ~p"/auth/forgot-password"
     end
 
@@ -108,14 +130,18 @@ defmodule FountainWeb.PasswordResetControllerTest do
 
     test "redirects with error when reset token has expired", %{conn: conn} do
       user = insert_verified_user()
-      expired_token = Phoenix.Token.sign(
+
+      expired_token =
+        Phoenix.Token.sign(
           FountainWeb.Endpoint,
           "password_reset",
           {user.id, user.session_version},
           signed_at: 0
         )
 
-      conn = post(conn, ~p"/auth/reset", %{"token" => expired_token, "password" => "newpassword123"})
+      conn =
+        post(conn, ~p"/auth/reset", %{"token" => expired_token, "password" => "newpassword123"})
+
       assert redirected_to(conn) == ~p"/auth/forgot-password"
     end
 
@@ -124,7 +150,13 @@ defmodule FountainWeb.PasswordResetControllerTest do
     # forwarded mail, proxy log) could re-reset the password.
     test "a token cannot be replayed after a successful reset", %{conn: conn} do
       user = insert_verified_user()
-      token = Phoenix.Token.sign(FountainWeb.Endpoint, "password_reset", {user.id, user.session_version})
+
+      token =
+        Phoenix.Token.sign(
+          FountainWeb.Endpoint,
+          "password_reset",
+          {user.id, user.session_version}
+        )
 
       conn1 = post(conn, ~p"/auth/reset", %{"token" => token, "password" => "newpassword123"})
       assert redirected_to(conn1) == ~p"/auth/login"
@@ -142,15 +174,28 @@ defmodule FountainWeb.PasswordResetControllerTest do
 
     test "any token issued before the last successful reset is dead", %{conn: conn} do
       user = insert_verified_user()
-      sign = fn -> Phoenix.Token.sign(FountainWeb.Endpoint, "password_reset", {user.id, user.session_version}) end
+
+      sign = fn ->
+        Phoenix.Token.sign(
+          FountainWeb.Endpoint,
+          "password_reset",
+          {user.id, user.session_version}
+        )
+      end
+
       earlier_token = sign.()
       used_token = sign.()
 
       assert redirected_to(
-               post(conn, ~p"/auth/reset", %{"token" => used_token, "password" => "newpassword123"})
+               post(conn, ~p"/auth/reset", %{
+                 "token" => used_token,
+                 "password" => "newpassword123"
+               })
              ) == ~p"/auth/login"
 
-      conn = post(conn, ~p"/auth/reset", %{"token" => earlier_token, "password" => "otherpass123"})
+      conn =
+        post(conn, ~p"/auth/reset", %{"token" => earlier_token, "password" => "otherpass123"})
+
       assert redirected_to(conn) == ~p"/auth/forgot-password"
     end
 

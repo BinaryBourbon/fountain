@@ -41,7 +41,9 @@ defmodule Fountain.RuntimeConfigTest do
   end
 
   defp read_prod_config(env) do
-    for k <- ~w(PUBLIC_URL PHX_HOST FOUNTAIN_DOMAIN SMTP_HOST EMAIL_DELIVERY), do: System.delete_env(k)
+    for k <- ~w(PUBLIC_URL PHX_HOST FOUNTAIN_DOMAIN SMTP_HOST EMAIL_DELIVERY),
+        do: System.delete_env(k)
+
     System.put_env(env)
     Config.Reader.read!(@runtime_exs, env: :prod)[:fountain]
   end

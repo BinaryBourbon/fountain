@@ -57,7 +57,8 @@ defmodule FountainWeb.EnvironmentController do
     user = conn.assigns.current_user
     attrs = Map.put(params, "user_id", user.id)
 
-    with {:ok, %Environment{} = env} <- Environments.create_environment(attrs, Audited.attribution(conn)) do
+    with {:ok, %Environment{} = env} <-
+           Environments.create_environment(attrs, Audited.attribution(conn)) do
       conn
       |> put_status(:created)
       |> render(:show, environment: Environments.get_environment_with_counts(env.id, user.id))
@@ -89,7 +90,9 @@ defmodule FountainWeb.EnvironmentController do
         with {:ok, env} <- Environments.update_environment(env, attrs, Audited.attribution(conn)) do
           # Re-read for the counts: a response that advertises secret_count and
           # agent_count must not report the struct defaults after a write.
-          render(conn, :show, environment: Environments.get_environment_with_counts(env.id, user.id))
+          render(conn, :show,
+            environment: Environments.get_environment_with_counts(env.id, user.id)
+          )
         end
     end
   end

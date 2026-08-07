@@ -30,7 +30,10 @@ defmodule FountainWeb.FallbackController do
   def call(conn, {:error, :vault_not_allowed}) do
     conn
     |> put_status(:unprocessable_entity)
-    |> json(%{error: "vault_not_allowed", message: "vault is not in the agent's allowed_vault_ids"})
+    |> json(%{
+      error: "vault_not_allowed",
+      message: "vault is not in the agent's allowed_vault_ids"
+    })
   end
 
   # An unknown or cross-tenant parent conversation. 404 rather than 403 so the

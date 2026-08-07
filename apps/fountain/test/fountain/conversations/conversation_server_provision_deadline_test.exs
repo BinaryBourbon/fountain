@@ -15,8 +15,12 @@ defmodule Fountain.Conversations.ConversationServerProvisionDeadlineTest do
 
   defp wait_until(fun, tries \\ 50) do
     cond do
-      fun.() -> :ok
-      tries == 0 -> flunk("condition never became true")
+      fun.() ->
+        :ok
+
+      tries == 0 ->
+        flunk("condition never became true")
+
       true ->
         Process.sleep(100)
         wait_until(fun, tries - 1)

@@ -19,7 +19,10 @@ defmodule FountainWeb.ConversationsLive.Show do
 
     case conv do
       nil ->
-        {:ok, socket |> put_flash(:error, "Conversation not found") |> push_navigate(to: ~p"/conversations")}
+        {:ok,
+         socket
+         |> put_flash(:error, "Conversation not found")
+         |> push_navigate(to: ~p"/conversations")}
 
       conv ->
         graph = Conversations.get_conversation_tree(id, socket.assigns.current_user.id)
@@ -41,7 +44,10 @@ defmodule FountainWeb.ConversationsLive.Show do
          |> assign(:conv, conv)
          |> assign(:events, events)
          |> assign(:turns_by_id, load_turns(id))
-         |> assign(:visible_streams, MapSet.new(initial_visible_streams(socket.assigns.current_user)))
+         |> assign(
+           :visible_streams,
+           MapSet.new(initial_visible_streams(socket.assigns.current_user))
+         )
          |> assign(:view_mode, initial_view_mode(socket.assigns.current_user))
          |> assign(:prompt, "")
          |> assign(:pending_images, [])
@@ -139,7 +145,13 @@ defmodule FountainWeb.ConversationsLive.Show do
   @impl true
   def handle_info({:graph_updated}, socket) do
     id = socket.assigns.conv.id
-    {:noreply, assign(socket, :graph, Conversations.get_conversation_tree(id, socket.assigns.current_user.id))}
+
+    {:noreply,
+     assign(
+       socket,
+       :graph,
+       Conversations.get_conversation_tree(id, socket.assigns.current_user.id)
+     )}
   end
 
   @impl true
@@ -190,9 +202,14 @@ defmodule FountainWeb.ConversationsLive.Show do
   def handle_event("send_prompt", _, socket), do: {:noreply, socket}
 
   def handle_event("terminate", _, socket) do
-    case ConversationServer.terminate_conversation(socket.assigns.conv.id, FountainWeb.Audited.attribution(socket)) do
+    case ConversationServer.terminate_conversation(
+           socket.assigns.conv.id,
+           FountainWeb.Audited.attribution(socket)
+         ) do
       :ok ->
-        conv = Conversations.get_conversation!(socket.assigns.conv.id, socket.assigns.current_user.id)
+        conv =
+          Conversations.get_conversation!(socket.assigns.conv.id, socket.assigns.current_user.id)
+
         {:noreply, socket |> assign(:conv, conv) |> put_flash(:info, "Terminated")}
 
       _ ->
@@ -201,9 +218,14 @@ defmodule FountainWeb.ConversationsLive.Show do
   end
 
   def handle_event("interrupt", _, socket) do
-    case ConversationServer.interrupt(socket.assigns.conv.id, FountainWeb.Audited.attribution(socket)) do
+    case ConversationServer.interrupt(
+           socket.assigns.conv.id,
+           FountainWeb.Audited.attribution(socket)
+         ) do
       :ok ->
-        conv = Conversations.get_conversation!(socket.assigns.conv.id, socket.assigns.current_user.id)
+        conv =
+          Conversations.get_conversation!(socket.assigns.conv.id, socket.assigns.current_user.id)
+
         {:noreply, socket |> assign(:conv, conv) |> put_flash(:info, "Interrupted")}
 
       {:error, :idle} ->
@@ -226,7 +248,8 @@ defmodule FountainWeb.ConversationsLive.Show do
          |> push_navigate(to: ~p"/conversations")}
 
       conv ->
-        {:ok, _} = Conversations.delete_conversation(conv, FountainWeb.Audited.attribution(socket))
+        {:ok, _} =
+          Conversations.delete_conversation(conv, FountainWeb.Audited.attribution(socket))
 
         {:noreply,
          socket
@@ -1428,10 +1451,16 @@ defmodule FountainWeb.ConversationsLive.Show do
   # ── stage row helpers ───────────────────────────────────────────────────────
 
   defp send_decoded_prompt(socket, p, decoded_images) do
-    case ConversationServer.send_prompt(socket.assigns.conv.id, p, decoded_images, FountainWeb.Audited.attribution(socket)) do
+    case ConversationServer.send_prompt(
+           socket.assigns.conv.id,
+           p,
+           decoded_images,
+           FountainWeb.Audited.attribution(socket)
+         ) do
       :ok ->
         # Refetch the conversation — wake-from-cold flips sandbox + status.
-        conv = Conversations.get_conversation!(socket.assigns.conv.id, socket.assigns.current_user.id)
+        conv =
+          Conversations.get_conversation!(socket.assigns.conv.id, socket.assigns.current_user.id)
 
         {:noreply,
          socket

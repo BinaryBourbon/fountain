@@ -675,6 +675,7 @@ defmodule Fountain.Conversations.ConversationServer do
         Fountain.Environments.update_environment(env, %{"checkpoint_id" => nil},
           actor: "system:conversation_server"
         )
+
         :cold
     end
   end
@@ -1355,9 +1356,10 @@ defmodule Fountain.Conversations.ConversationServer do
       case Conversations._unsafe_get_conversation(state.conversation_id) do
         %Conversation{user_id: user_id, callback_api_key_id: row_id}
         when is_binary(user_id) and row_id == state.callback_api_key_id ->
-          _ = Accounts.revoke_api_key(user_id, state.callback_api_key_id,
-            actor: "system:conversation_server"
-          )
+          _ =
+            Accounts.revoke_api_key(user_id, state.callback_api_key_id,
+              actor: "system:conversation_server"
+            )
 
         _ ->
           :ok

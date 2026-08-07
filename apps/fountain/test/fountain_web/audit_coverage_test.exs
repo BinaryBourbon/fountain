@@ -105,7 +105,10 @@ defmodule FountainWeb.AuditCoverageTest do
 
       conn
       |> authed_with_key(key)
-      |> post_json("/api/environments/#{env.id}/secrets", %{"key" => "DB_URL", "value" => "pg://x"})
+      |> post_json("/api/environments/#{env.id}/secrets", %{
+        "key" => "DB_URL",
+        "value" => "pg://x"
+      })
       |> json_response(201)
 
       write = find_action(user.id, "environment.secret.write")
@@ -244,8 +247,13 @@ defmodule FountainWeb.AuditCoverageTest do
 
     test "a password reset is recorded" do
       user = insert_verified_user()
+
       token =
-        Phoenix.Token.sign(FountainWeb.Endpoint, "password_reset", {user.id, user.session_version})
+        Phoenix.Token.sign(
+          FountainWeb.Endpoint,
+          "password_reset",
+          {user.id, user.session_version}
+        )
 
       build_conn()
       |> post(~p"/auth/reset", %{"token" => token, "password" => "new-password-123"})

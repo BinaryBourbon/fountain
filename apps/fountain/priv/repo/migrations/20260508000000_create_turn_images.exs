@@ -5,8 +5,7 @@ defmodule Fountain.Repo.Migrations.CreateTurnImages do
     create table(:turn_images, primary_key: false) do
       add :id, :binary_id, primary_key: true
 
-      add :turn_id, references(:turns, type: :binary_id, on_delete: :delete_all),
-        null: false
+      add :turn_id, references(:turns, type: :binary_id, on_delete: :delete_all), null: false
 
       add :position, :integer, null: false
       add :media_type, :string, null: false

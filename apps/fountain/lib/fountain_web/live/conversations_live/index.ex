@@ -36,7 +36,10 @@ defmodule FountainWeb.ConversationsLive.Index do
         {:noreply, put_flash(socket, :error, "Not found")}
 
       _ ->
-        case Fountain.Conversations.ConversationServer.terminate_conversation(id, FountainWeb.Audited.attribution(socket)) do
+        case Fountain.Conversations.ConversationServer.terminate_conversation(
+               id,
+               FountainWeb.Audited.attribution(socket)
+             ) do
           :ok -> {:noreply, socket |> put_flash(:info, "Terminated") |> load_data()}
           _ -> {:noreply, put_flash(socket, :error, "Not running")}
         end
@@ -51,7 +54,9 @@ defmodule FountainWeb.ConversationsLive.Index do
         {:noreply, put_flash(socket, :error, "Not found")}
 
       conv ->
-        {:ok, _} = Conversations.delete_conversation(conv, FountainWeb.Audited.attribution(socket))
+        {:ok, _} =
+          Conversations.delete_conversation(conv, FountainWeb.Audited.attribution(socket))
+
         {:noreply, socket |> put_flash(:info, "Deleted") |> load_data()}
     end
   end
@@ -241,8 +246,12 @@ defmodule FountainWeb.ConversationsLive.Index do
 
   defp first_prompt(conv) do
     case conv.turns do
-      %Ecto.Association.NotLoaded{} -> nil
-      [] -> nil
+      %Ecto.Association.NotLoaded{} ->
+        nil
+
+      [] ->
+        nil
+
       [%{prompt: prompt} | _] ->
         prompt |> String.trim() |> String.replace(~r/\s+/, " ")
     end

@@ -108,8 +108,7 @@ defmodule Fountain.Funnel do
         key: :activated,
         count: length(activated),
         conversion: ratio(length(activated), length(onboarded)),
-        median_hours:
-          median_hours(activated, & &1.onboarded_at, &Map.get(first_activity, &1.id))
+        median_hours: median_hours(activated, & &1.onboarded_at, &Map.get(first_activity, &1.id))
       },
       %{
         key: :subscribed,

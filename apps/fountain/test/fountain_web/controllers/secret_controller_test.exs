@@ -8,7 +8,11 @@ defmodule FountainWeb.SecretControllerTest do
   end
 
   describe "GET /api/environments/:environment_id/secrets" do
-    test "returns 200 with a list of secrets for the environment", %{conn: conn, user: user, raw_key: raw_key} do
+    test "returns 200 with a list of secrets for the environment", %{
+      conn: conn,
+      user: user,
+      raw_key: raw_key
+    } do
       env = insert_env(user_id: user.id)
       secret = insert_secret(env, key: "MY_KEY")
 
@@ -57,7 +61,10 @@ defmodule FountainWeb.SecretControllerTest do
       conn =
         conn
         |> authed_with_key(raw_key)
-        |> post_json("/api/environments/#{other_env.id}/secrets", %{key: "DB_PASSWORD", value: "s3cr3t"})
+        |> post_json("/api/environments/#{other_env.id}/secrets", %{
+          key: "DB_PASSWORD",
+          value: "s3cr3t"
+        })
 
       assert json_response(conn, 404)
     end
@@ -89,7 +96,11 @@ defmodule FountainWeb.SecretControllerTest do
       assert json_response(conn, 404)
     end
 
-    test "returns 404 when the secret key does not exist", %{conn: conn, user: user, raw_key: raw_key} do
+    test "returns 404 when the secret key does not exist", %{
+      conn: conn,
+      user: user,
+      raw_key: raw_key
+    } do
       env = insert_env(user_id: user.id)
 
       conn =

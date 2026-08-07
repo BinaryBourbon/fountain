@@ -172,7 +172,8 @@ defmodule FountainWeb.AdminController do
     ]
   )
 
-  def set_sandbox_limit(conn, %{"id" => id, "limit" => limit}) when is_integer(limit) and limit >= 0 do
+  def set_sandbox_limit(conn, %{"id" => id, "limit" => limit})
+      when is_integer(limit) and limit >= 0 do
     admin = conn.assigns.current_user
 
     with_user(conn, id, fn user ->

@@ -127,7 +127,12 @@ defmodule Fountain.Conversations.ConversationAuditTest do
       sandbox = insert_sandbox(user_id: user.id, status: "ready")
 
       conv =
-        insert_conversation(user_id: user.id, agent: agent, sandbox_id: sandbox.id, title: "notes")
+        insert_conversation(
+          user_id: user.id,
+          agent: agent,
+          sandbox_id: sandbox.id,
+          title: "notes"
+        )
 
       {:ok, _} = Conversations.delete_conversation(conv, actor: "ui")
 

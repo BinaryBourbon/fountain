@@ -133,12 +133,18 @@ defmodule FountainWeb.ConversationEventsControllerTest do
     } do
       insert_log_event(conv)
 
-      assert conn |> get_events(key, conv, "?limit=0") |> json_response(200) |> get_in([
+      assert conn
+             |> get_events(key, conv, "?limit=0")
+             |> json_response(200)
+             |> get_in([
                "meta",
                "limit"
              ]) == 1
 
-      assert conn |> get_events(key, conv, "?limit=-5") |> json_response(200) |> get_in([
+      assert conn
+             |> get_events(key, conv, "?limit=-5")
+             |> json_response(200)
+             |> get_in([
                "meta",
                "limit"
              ]) == 1

@@ -96,6 +96,7 @@ defmodule FountainWeb.VaultsLive.Form do
 
   defp save(%{assigns: %{action: :new}} = socket, attrs) do
     attrs = Map.put(attrs, "user_id", socket.assigns.user_id)
+
     case Vaults.create_vault(attrs, FountainWeb.Audited.attribution(socket)) do
       {:ok, vault} ->
         {:noreply,

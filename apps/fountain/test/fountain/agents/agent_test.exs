@@ -62,7 +62,9 @@ defmodule Fountain.Agents.AgentTest do
     end
 
     test "provider/model_id with dots passes" do
-      changeset = Agent.changeset(%Agent{}, Map.put(@valid_attrs, :model, "anthropic/claude-3.5-sonnet"))
+      changeset =
+        Agent.changeset(%Agent{}, Map.put(@valid_attrs, :model, "anthropic/claude-3.5-sonnet"))
+
       assert changeset.valid?
     end
 
@@ -86,7 +88,9 @@ defmodule Fountain.Agents.AgentTest do
     end
 
     test "name of 200 characters passes" do
-      changeset = Agent.changeset(%Agent{}, Map.put(@valid_attrs, :name, String.duplicate("a", 200)))
+      changeset =
+        Agent.changeset(%Agent{}, Map.put(@valid_attrs, :name, String.duplicate("a", 200)))
+
       assert changeset.valid?
     end
 
@@ -97,7 +101,9 @@ defmodule Fountain.Agents.AgentTest do
     end
 
     test "name of 201 characters fails" do
-      changeset = Agent.changeset(%Agent{}, Map.put(@valid_attrs, :name, String.duplicate("a", 201)))
+      changeset =
+        Agent.changeset(%Agent{}, Map.put(@valid_attrs, :name, String.duplicate("a", 201)))
+
       refute changeset.valid?
       assert errors_on(changeset).name != []
     end
@@ -165,7 +171,11 @@ defmodule Fountain.Agents.AgentTest do
       skills = [%{"content" => "x"}]
       changeset = Agent.changeset(%Agent{}, Map.put(@valid_attrs, :skills, skills))
       refute changeset.valid?
-      assert Enum.any?(errors_on(changeset).skills, &String.contains?(&1, "inline skills require a name"))
+
+      assert Enum.any?(
+               errors_on(changeset).skills,
+               &String.contains?(&1, "inline skills require a name")
+             )
     end
 
     test "non-map skill entry fails" do

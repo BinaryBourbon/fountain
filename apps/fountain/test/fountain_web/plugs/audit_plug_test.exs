@@ -40,7 +40,12 @@ defmodule FountainWeb.Plugs.AuditTest do
       user = insert_verified_user()
 
       conn
-      |> Map.merge(%{method: "POST", request_path: "/api/conversations", path_info: ["api", "conversations"], params: %{}})
+      |> Map.merge(%{
+        method: "POST",
+        request_path: "/api/conversations",
+        path_info: ["api", "conversations"],
+        params: %{}
+      })
       |> Map.put(:remote_ip, {127, 0, 0, 1})
       |> Plug.Conn.assign(:current_user, user)
       |> Audit.call([])
@@ -54,7 +59,12 @@ defmodule FountainWeb.Plugs.AuditTest do
       id = Ecto.UUID.generate()
 
       conn
-      |> Map.merge(%{method: "PUT", request_path: "/api/agents/#{id}", path_info: ["api", "agents", id], params: %{}})
+      |> Map.merge(%{
+        method: "PUT",
+        request_path: "/api/agents/#{id}",
+        path_info: ["api", "agents", id],
+        params: %{}
+      })
       |> Map.put(:remote_ip, {127, 0, 0, 1})
       |> Plug.Conn.assign(:current_user, user)
       |> Audit.call([])
@@ -68,7 +78,12 @@ defmodule FountainWeb.Plugs.AuditTest do
       id = Ecto.UUID.generate()
 
       conn
-      |> Map.merge(%{method: "PATCH", request_path: "/api/agents/#{id}", path_info: ["api", "agents", id], params: %{}})
+      |> Map.merge(%{
+        method: "PATCH",
+        request_path: "/api/agents/#{id}",
+        path_info: ["api", "agents", id],
+        params: %{}
+      })
       |> Map.put(:remote_ip, {127, 0, 0, 1})
       |> Plug.Conn.assign(:current_user, user)
       |> Audit.call([])
@@ -82,7 +97,12 @@ defmodule FountainWeb.Plugs.AuditTest do
       id = Ecto.UUID.generate()
 
       conn
-      |> Map.merge(%{method: "DELETE", request_path: "/api/agents/#{id}", path_info: ["api", "agents", id], params: %{}})
+      |> Map.merge(%{
+        method: "DELETE",
+        request_path: "/api/agents/#{id}",
+        path_info: ["api", "agents", id],
+        params: %{}
+      })
       |> Map.put(:remote_ip, {127, 0, 0, 1})
       |> Plug.Conn.assign(:current_user, user)
       |> Audit.call([])
@@ -232,7 +252,12 @@ defmodule FountainWeb.Plugs.AuditTest do
       user = insert_verified_user()
 
       conn
-      |> Map.merge(%{method: "POST", request_path: "/api/conversations", path_info: ["api", "conversations"], params: %{}})
+      |> Map.merge(%{
+        method: "POST",
+        request_path: "/api/conversations",
+        path_info: ["api", "conversations"],
+        params: %{}
+      })
       |> Map.put(:remote_ip, nil)
       |> Plug.Conn.assign(:current_user, user)
       |> Audit.call([])
@@ -245,7 +270,12 @@ defmodule FountainWeb.Plugs.AuditTest do
       user = insert_verified_user()
 
       conn
-      |> Map.merge(%{method: "POST", request_path: "/api/conversations", path_info: ["api", "conversations"], params: %{}})
+      |> Map.merge(%{
+        method: "POST",
+        request_path: "/api/conversations",
+        path_info: ["api", "conversations"],
+        params: %{}
+      })
       |> Map.put(:remote_ip, "192.168.1.1")
       |> Plug.Conn.assign(:current_user, user)
       |> Audit.call([])

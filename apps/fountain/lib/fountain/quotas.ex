@@ -98,7 +98,9 @@ defmodule Fountain.Quotas do
   `Sprites.create/2`, so guarding row creation guards sprite creation.
   """
   @spec check_sandbox_quota(binary(), keyword()) ::
-          :ok | {:error, {:sandbox_quota_exceeded, %{count: non_neg_integer(), limit: non_neg_integer()}}}
+          :ok
+          | {:error,
+             {:sandbox_quota_exceeded, %{count: non_neg_integer(), limit: non_neg_integer()}}}
   def check_sandbox_quota(user_id, opts \\ []) when is_binary(user_id) do
     limit = sandbox_limit(user_id)
     count = active_sandbox_count(user_id, opts)

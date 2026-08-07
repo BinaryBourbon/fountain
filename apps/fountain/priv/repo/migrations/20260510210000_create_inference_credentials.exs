@@ -5,8 +5,7 @@ defmodule Fountain.Repo.Migrations.CreateInferenceCredentials do
     create table(:inference_credentials, primary_key: false) do
       add :id, :binary_id, primary_key: true
 
-      add :user_id, references(:users, type: :binary_id, on_delete: :delete_all),
-        null: false
+      add :user_id, references(:users, type: :binary_id, on_delete: :delete_all), null: false
 
       # Each ciphertext is encrypted with the user's per-tenant DEK.
       # Nullable: a user may have set zero, one, or many providers.

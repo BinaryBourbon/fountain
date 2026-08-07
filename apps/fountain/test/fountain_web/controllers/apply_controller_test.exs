@@ -57,7 +57,10 @@ defmodule FountainWeb.ApplyControllerTest do
 
       {:ok, dek} = Crypto.load_tenant_key(user.id)
       assert Environments.decrypted_env(env, dek) == %{"TOKEN" => "t0"}
-      assert Vaults.decrypted_env(Vaults.get_vault_by_name("alice", user.id), dek) == %{"GH" => "ghp_x"}
+
+      assert Vaults.decrypted_env(Vaults.get_vault_by_name("alice", user.id), dek) == %{
+               "GH" => "ghp_x"
+             }
     end
 
     test "never echoes secret values back", %{conn: conn, raw_key: raw_key} do
@@ -79,6 +82,7 @@ defmodule FountainWeb.ApplyControllerTest do
       }
 
       auth = fn conn -> authed_with_key(conn, raw_key) end
+
       assert %{"data" => %{"results" => [%{"action" => "created"}]}} =
                conn |> auth.() |> post_json(~p"/api/apply", payload) |> json_response(200)
 

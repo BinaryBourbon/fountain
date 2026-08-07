@@ -21,6 +21,7 @@ defmodule FountainWeb.CoreComponents do
   attr :variant, :string, default: "primary", values: ~w(primary secondary danger ghost)
   attr :loading, :boolean, default: false
   attr :class, :string, default: ""
+
   attr :rest, :global,
     include: ~w(disabled form name value phx-click phx-disable-with phx-value-id data-confirm)
 
@@ -345,8 +346,7 @@ defmodule FountainWeb.CoreComponents do
   end
 
   defp flash_class(:info),
-    do:
-      "bg-[var(--color-info-bg)] border-[var(--color-info)] text-[var(--color-info-text)]"
+    do: "bg-[var(--color-info-bg)] border-[var(--color-info)] text-[var(--color-info-text)]"
 
   defp flash_class(:success),
     do:
@@ -357,8 +357,7 @@ defmodule FountainWeb.CoreComponents do
       "bg-[var(--color-warning-bg)] border-[var(--color-warning)] text-[var(--color-warning-text)]"
 
   defp flash_class(:error),
-    do:
-      "bg-[var(--color-error-bg)] border-[var(--color-error)] text-[var(--color-error-text)]"
+    do: "bg-[var(--color-error-bg)] border-[var(--color-error)] text-[var(--color-error-text)]"
 
   defp flash_icon(:info),
     do:

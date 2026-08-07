@@ -37,7 +37,11 @@ defmodule FountainWeb.EnvironmentControllerTest do
   end
 
   describe "GET /api/environments/:id" do
-    test "returns 200 with the environment for the authenticated user", %{conn: conn, user: user, raw_key: raw_key} do
+    test "returns 200 with the environment for the authenticated user", %{
+      conn: conn,
+      user: user,
+      raw_key: raw_key
+    } do
       env = insert_env(user_id: user.id)
 
       conn = conn |> authed_with_key(raw_key) |> get("/api/environments/#{env.id}")
@@ -47,7 +51,10 @@ defmodule FountainWeb.EnvironmentControllerTest do
       assert body["data"]["name"] == env.name
     end
 
-    test "returns 404 when the environment belongs to a different user", %{conn: conn, raw_key: raw_key} do
+    test "returns 404 when the environment belongs to a different user", %{
+      conn: conn,
+      raw_key: raw_key
+    } do
       other_user = insert_verified_user()
       other_env = insert_env(user_id: other_user.id)
 
@@ -110,7 +117,10 @@ defmodule FountainWeb.EnvironmentControllerTest do
       assert body["data"]["id"] == env.id
     end
 
-    test "returns 404 when the environment belongs to a different user", %{conn: conn, raw_key: raw_key} do
+    test "returns 404 when the environment belongs to a different user", %{
+      conn: conn,
+      raw_key: raw_key
+    } do
       other_user = insert_verified_user()
       other_env = insert_env(user_id: other_user.id)
 
@@ -149,7 +159,10 @@ defmodule FountainWeb.EnvironmentControllerTest do
       assert conn.status == 204
     end
 
-    test "returns 404 when the environment belongs to a different user", %{conn: conn, raw_key: raw_key} do
+    test "returns 404 when the environment belongs to a different user", %{
+      conn: conn,
+      raw_key: raw_key
+    } do
       other_user = insert_verified_user()
       other_env = insert_env(user_id: other_user.id)
 

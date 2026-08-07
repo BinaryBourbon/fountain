@@ -389,7 +389,8 @@ defmodule FountainWeb.MetricsTest do
       Process.sleep(50)
       {200, body} = scrape()
 
-      series = ~s(fountain_turn_completed_duration_ms_bucket{runtime="opencode",status="completed")
+      series =
+        ~s(fountain_turn_completed_duration_ms_bucket{runtime="opencode",status="completed")
 
       # 42s lands above the 30s boundary and below 60s. A duration handed over
       # in seconds or in native units lands in a different bucket entirely.
