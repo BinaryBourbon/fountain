@@ -45,6 +45,7 @@ defmodule Fountain.Environments.Environment do
   end
 
   def warm_start_fields, do: @warm_start_fields
+  def networking, do: @networking
 
   def changeset(env, attrs) do
     env

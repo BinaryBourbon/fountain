@@ -71,14 +71,52 @@ defmodule Fountain.Audit do
       |> Map.put_new(:inserted_at, DateTime.utc_now() |> DateTime.truncate(:second))
 
     case %Event{} |> Event.changeset(attrs) |> Repo.insert() do
-      {:ok, _} = ok -> ok
-      {:error, _} = err -> err
+      {:ok, _} = ok ->
+        ok
+
+      {:error, changeset} = err ->
+        if user_gone?(changeset), do: record_unattributed(attrs), else: err
     end
   rescue
     e ->
       require Logger
       Logger.warning("audit: record failed: #{inspect(e)}")
       {:error, :exception}
+  end
+
+  # The account was deleted between the action and this write, so `user_id`
+  # references a row that no longer exists.
+  #
+  # The row is kept, attributed to nobody, because that is where it was headed
+  # regardless: `audit_events.user_id` is `on_delete: :nilify_all`, so an
+  # insert that had landed a moment earlier would have been accepted and then
+  # nilified by the same cascade. Losing it is a race, not a policy — and the
+  # trail of a deletion is the last thing that should have a hole in it (#590).
+  #
+  # The id is deliberately NOT denormalised into `metadata`. Nilifying is what
+  # makes a deleted account stop naming anybody (ADR 0009); putting the id back
+  # would defeat that on every self-deleting path. `Accounts.Deletion` does
+  # denormalise, for one row, as a documented exception — this is not that.
+  defp record_unattributed(attrs) do
+    Logger.info(
+      "audit: #{attrs[:action]} recorded unattributed — the account was deleted " <>
+        "before the event could be written"
+    )
+
+    case %Event{} |> Event.changeset(Map.put(attrs, :user_id, nil)) |> Repo.insert() do
+      {:ok, _} = ok -> ok
+      {:error, _} = err -> err
+    end
+  end
+
+  # Ecto reports this as `constraint: :foreign` (not `:foreign_key`), and only
+  # for `:user_id` — a failure on any other field is a real error and must
+  # still surface rather than being rewritten into a system event.
+  defp user_gone?(%Ecto.Changeset{errors: errors}) do
+    Enum.any?(errors, fn
+      {:user_id, {_msg, opts}} -> Keyword.get(opts, :constraint) == :foreign
+      _ -> false
+    end)
   end
 
   @doc """

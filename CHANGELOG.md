@@ -18,6 +18,16 @@ upgrade, is in
 
 ### Fixed
 
+- **Deleting your account no longer leaves a hole in the record of it.** The
+  request that deleted the account was itself audited on the way out — after
+  the account row was gone — so the write referenced a user that no longer
+  existed, was refused by the database, and was dropped. The account-deletion
+  event itself was never affected, but the request beside it vanished. That
+  row is now kept, attributed to nobody, which is where it was headed anyway:
+  a deleted account's audit rows are anonymised rather than removed, so an
+  insert landing a moment earlier would have ended up in exactly the same
+  state. Nothing about what a deletion erases has changed (#590)
+
 - **Secret and credential events are recorded in one place instead of five.**
   Writing an environment or vault secret was audited identically by both
   LiveView forms, both API endpoints and `fountain apply` — five copies of the

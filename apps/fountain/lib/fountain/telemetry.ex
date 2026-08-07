@@ -110,6 +110,11 @@ defmodule Fountain.Telemetry do
     # reattach and setup_script; Provisioning wraps packages, network_policy,
     # clone_repositories and checkpoint create/restore; Rehydrator wraps its
     # post-boot sweep in rehydrate.
+    #
+    # Every provisioning span here also has a `distribution(...)` in
+    # FountainWeb.Telemetry.prometheus_metrics/0 (#537). A new span wants both
+    # — this list to make it visible in the logs, that one to make it
+    # trendable — and metrics_test pins the pairing.
     spans =
       for stage <-
             ~w(fresh_provision reattach setup_script packages network_policy clone_repositories rehydrate)a,
