@@ -4,7 +4,7 @@ defmodule Fountain.MixProject do
   def project do
     [
       app: :fountain,
-      version: "0.6.1",
+      version: "0.7.0",
       build_path: "../../_build",
       config_path: "../../config/config.exs",
       deps_path: "../../deps",
