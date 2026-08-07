@@ -65,7 +65,9 @@ defmodule FountainWeb.EnvironmentsLive.Index do
     <div class="space-y-4">
       <div class="flex items-center justify-between">
         <h1 class="text-2xl font-semibold">Environments</h1>
-        <.link navigate={~p"/environments/new"}><.btn>+ New environment</.btn></.link>
+        <.link navigate={~p"/environments/new"}>
+          <.btn>+ New environment</.btn>
+        </.link>
       </div>
 
       <%!-- Search bar --%>
@@ -86,7 +88,9 @@ defmodule FountainWeb.EnvironmentsLive.Index do
         class="rounded-lg p-10 text-center bg-[var(--color-bg-1)] border border-dashed border-[var(--color-border)]"
       >
         <p class="text-sm text-[var(--color-text-muted)]">No environments yet.</p>
-        <p class="text-xs mt-1 text-[var(--color-text-secondary)]">Create one to configure packages, secrets, and a setup script for your agents.</p>
+        <p class="text-xs mt-1 text-[var(--color-text-secondary)]">
+          Create one to configure packages, secrets, and a setup script for your agents.
+        </p>
       </div>
 
       <%!-- Empty state — search returned nothing --%>
@@ -106,10 +110,18 @@ defmodule FountainWeb.EnvironmentsLive.Index do
       >
         <thead class="border-b border-[var(--color-border)]">
           <tr>
-            <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">Name</th>
-            <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">Network</th>
-            <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">Setup</th>
-            <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">Stats</th>
+            <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
+              Name
+            </th>
+            <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
+              Network
+            </th>
+            <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
+              Setup
+            </th>
+            <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
+              Stats
+            </th>
             <th class="px-4 py-3"></th>
           </tr>
         </thead>
@@ -120,7 +132,10 @@ defmodule FountainWeb.EnvironmentsLive.Index do
           >
             <td class="px-4 py-3 font-medium text-[var(--color-text-primary)]">{e.name}</td>
             <td class="px-4 py-3">
-              <span class={["inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-semibold", networking_badge_class(e.networking_type)]}>
+              <span class={[
+                "inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-semibold",
+                networking_badge_class(e.networking_type)
+              ]}>
                 <span class="w-1.5 h-1.5 rounded-full" style="background:currentColor;"></span>
                 {e.networking_type}
               </span>
@@ -130,29 +145,45 @@ defmodule FountainWeb.EnvironmentsLive.Index do
                 :if={e.setup_script != ""}
                 class="font-mono text-xs block truncate max-w-xs text-[var(--color-text-muted)]"
                 title={e.setup_script}
-              >{truncate(e.setup_script, 48)}</span>
+              >
+                {truncate(e.setup_script, 48)}
+              </span>
               <span :if={e.setup_script == ""} class="text-[var(--color-text-muted)]">&#8212;</span>
             </td>
             <td class="px-4 py-3">
               <div class="flex items-center gap-1.5 flex-wrap">
                 <span
-                  class={["inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium", stat_badge_class(:secrets, e.secret_count)]}
+                  class={[
+                    "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium",
+                    stat_badge_class(:secrets, e.secret_count)
+                  ]}
                   title={"#{e.secret_count} secrets"}
-                >&#128273; {e.secret_count}</span>
+                >
+                  &#128273; {e.secret_count}
+                </span>
                 <span
-                  class={["inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium", stat_badge_class(:agents, e.agent_count)]}
+                  class={[
+                    "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium",
+                    stat_badge_class(:agents, e.agent_count)
+                  ]}
                   title={"#{e.agent_count} agents"}
-                >&#9889; {e.agent_count}</span>
+                >
+                  &#9889; {e.agent_count}
+                </span>
                 <span
                   :if={map_size(e.packages) > 0}
                   class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-[var(--color-bg-2)] text-[var(--color-brand)] border border-[var(--color-brand)]"
                   title={"#{map_size(e.packages)} packages"}
-                >&#128230; {map_size(e.packages)}</span>
+                >
+                  &#128230; {map_size(e.packages)}
+                </span>
                 <span
                   :if={length(e.repositories) > 0}
                   class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-[var(--color-info-bg)] text-[var(--color-info-text)] border border-[var(--color-info)]"
                   title={"#{length(e.repositories)} repos"}
-                >&#9322; {length(e.repositories)}</span>
+                >
+                  &#9322; {length(e.repositories)}
+                </span>
               </div>
             </td>
             <td class="px-4 py-3 text-right">
@@ -165,7 +196,9 @@ defmodule FountainWeb.EnvironmentsLive.Index do
                   phx-click="delete"
                   phx-value-id={e.id}
                   data-confirm="Delete environment?"
-                >Delete</button>
+                >
+                  Delete
+                </button>
               </div>
             </td>
           </tr>

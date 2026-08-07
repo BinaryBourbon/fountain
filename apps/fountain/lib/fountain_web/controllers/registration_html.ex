@@ -72,8 +72,7 @@ defmodule FountainWeb.RegistrationHTML do
         </a>
 
         <p :if={Fountain.Legal.published?()} class="text-xs text-zinc-400 text-center">
-          By signing up you agree to our
-          <a href={~p"/terms"} class="underline">terms of service</a>
+          By signing up you agree to our <a href={~p"/terms"} class="underline">terms of service</a>
           and <a href={~p"/privacy"} class="underline">privacy policy</a>.
         </p>
       </div>
@@ -91,8 +90,10 @@ defmodule FountainWeb.RegistrationHTML do
           Click the link to activate your account.
         </p>
         <p class="text-xs text-zinc-400">
-          Didn't receive it? Check your spam folder or
-          <a href={~p"/auth/resend-verification"} class="underline">resend the email</a>.
+          Didn't receive it? Check your spam folder or <a
+            href={~p"/auth/resend-verification"}
+            class="underline"
+          >resend the email</a>.
         </p>
       </div>
     </div>

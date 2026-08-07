@@ -27,35 +27,47 @@ defmodule FountainWeb.DashboardLive.Index do
   def render(assigns) do
     ~H"""
     <div class="space-y-6">
-      <div :if={@show_onboarding_banner}
-        class="rounded bg-green-50 border border-green-200 px-4 py-3 flex items-center justify-between">
+      <div
+        :if={@show_onboarding_banner}
+        class="rounded bg-green-50 border border-green-200 px-4 py-3 flex items-center justify-between"
+      >
         <span class="text-sm text-green-800">
           You're up and running. Explore Environments, Agents, and Vaults in the sidebar.
         </span>
-        <button phx-click="dismiss_banner"
-          class="text-green-600 hover:text-green-800 text-xs underline ml-4">
+        <button
+          phx-click="dismiss_banner"
+          class="text-green-600 hover:text-green-800 text-xs underline ml-4"
+        >
           Dismiss
         </button>
       </div>
 
       <div class="flex items-center justify-between">
         <h1 class="text-2xl font-semibold">Dashboard</h1>
-        <.link navigate={~p"/conversations/new"}><.btn>+ New conversation</.btn></.link>
+        <.link navigate={~p"/conversations/new"}>
+          <.btn>+ New conversation</.btn>
+        </.link>
       </div>
 
       <div class="grid grid-cols-3 gap-4">
-        <.link navigate={~p"/conversations"}
-          class="rounded border border-zinc-200 bg-white shadow p-4 hover:bg-zinc-50 block">
+        <.link
+          navigate={~p"/conversations"}
+          class="rounded border border-zinc-200 bg-white shadow p-4 hover:bg-zinc-50 block"
+        >
           <p class="text-xs text-zinc-500 uppercase tracking-wide">Recent conversations</p>
           <p class="text-2xl font-semibold mt-1">{length(@recent_conversations)}</p>
         </.link>
-        <.link navigate={~p"/agents"}
-          class="rounded border border-zinc-200 bg-white shadow p-4 hover:bg-zinc-50 block">
+        <.link
+          navigate={~p"/agents"}
+          class="rounded border border-zinc-200 bg-white shadow p-4 hover:bg-zinc-50 block"
+        >
           <p class="text-xs text-zinc-500 uppercase tracking-wide">Agents</p>
           <p class="text-2xl font-semibold mt-1">{@agent_count}</p>
         </.link>
-        <.link navigate={~p"/environments"}
-          class="rounded border border-zinc-200 bg-white shadow p-4 hover:bg-zinc-50 block">
+        <.link
+          navigate={~p"/environments"}
+          class="rounded border border-zinc-200 bg-white shadow p-4 hover:bg-zinc-50 block"
+        >
           <p class="text-xs text-zinc-500 uppercase tracking-wide">Environments</p>
           <p class="text-2xl font-semibold mt-1">→</p>
         </.link>
@@ -65,8 +77,10 @@ defmodule FountainWeb.DashboardLive.Index do
         <h2 class="text-lg font-medium mb-2">Recent conversations</h2>
         <table class="w-full text-sm bg-white rounded shadow border border-zinc-200">
           <tbody>
-            <tr :for={c <- @recent_conversations}
-              class="border-b border-zinc-100 last:border-0 hover:bg-zinc-50">
+            <tr
+              :for={c <- @recent_conversations}
+              class="border-b border-zinc-100 last:border-0 hover:bg-zinc-50"
+            >
               <td class="px-4 py-2">
                 <.link navigate={~p"/conversations/#{c.id}"} class="font-medium hover:underline">
                   {if c.agent, do: c.agent.name, else: "(no agent)"}
@@ -79,8 +93,10 @@ defmodule FountainWeb.DashboardLive.Index do
         </table>
       </div>
 
-      <div :if={@recent_conversations == []}
-        class="rounded border border-dashed border-zinc-300 p-8 text-center text-zinc-500 space-y-2">
+      <div
+        :if={@recent_conversations == []}
+        class="rounded border border-dashed border-zinc-300 p-8 text-center text-zinc-500 space-y-2"
+      >
         <p>No conversations yet.</p>
         <.link navigate={~p"/conversations/new"} class="text-zinc-900 underline">
           Start your first conversation

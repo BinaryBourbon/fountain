@@ -137,8 +137,10 @@ defmodule FountainWeb.ConversationsLive.Index do
             class={[
               "px-3 py-1 rounded text-sm font-mono border",
               if(@roots_only,
-                do: "bg-[var(--color-bg-2)] text-[var(--color-text-primary)] border-[var(--color-border)]",
-                else: "text-[var(--color-text-muted)] border-[var(--color-border)] hover:text-[var(--color-text-secondary)]"
+                do:
+                  "bg-[var(--color-bg-2)] text-[var(--color-text-primary)] border-[var(--color-border)]",
+                else:
+                  "text-[var(--color-text-muted)] border-[var(--color-border)] hover:text-[var(--color-text-secondary)]"
               )
             ]}
           >
@@ -173,15 +175,22 @@ defmodule FountainWeb.ConversationsLive.Index do
                 <div class="font-medium truncate" title={first_prompt(c) || c.title}>{c.title}</div>
               <% else %>
                 <%= case first_prompt(c) do %>
-                  <% nil -> %><span class="text-[var(--color-text-muted)]">—</span>
-                  <% prompt -> %><div class="line-clamp-3 text-[var(--color-text-muted)]" title={prompt}>{prompt}</div>
+                  <% nil -> %>
+                    <span class="text-[var(--color-text-muted)]">—</span>
+                  <% prompt -> %>
+                    <div class="line-clamp-3 text-[var(--color-text-muted)]" title={prompt}>
+                      {prompt}
+                    </div>
                 <% end %>
               <% end %>
             </div>
           </div>
         </:col>
         <:col :let={c} label="Agent">
-          <.link navigate={~p"/conversations/#{c.id}"} class="block truncate text-[var(--color-text-primary)] hover:underline font-medium">
+          <.link
+            navigate={~p"/conversations/#{c.id}"}
+            class="block truncate text-[var(--color-text-primary)] hover:underline font-medium"
+          >
             {agent_name(@agents_by_id, c.agent_id)}
           </.link>
           <div class="text-xs text-[var(--color-text-muted)] font-mono">{short(c.id)}</div>
@@ -203,14 +212,16 @@ defmodule FountainWeb.ConversationsLive.Index do
               variant="danger"
               phx-click="terminate"
               phx-value-id={c.id}
-              data-confirm="Terminate this conversation?">
+              data-confirm="Terminate this conversation?"
+            >
               Terminate
             </.button>
             <.button
               variant="secondary"
               phx-click="delete"
               phx-value-id={c.id}
-              data-confirm="Delete this conversation and all its turns? This cannot be undone.">
+              data-confirm="Delete this conversation and all its turns? This cannot be undone."
+            >
               Delete
             </.button>
           </div>

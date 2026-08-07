@@ -338,16 +338,20 @@ defmodule FountainWeb.ConversationsLive.Show do
         <div>
           <div class="text-sm text-zinc-500 font-mono">{@conv.id}</div>
           <div class="text-2xl font-semibold flex items-center gap-3">
-            Conversation
-            <.status_badge status={@conv.status} />
+            Conversation <.status_badge status={@conv.status} />
           </div>
           <div class="text-sm text-zinc-500">runtime: {@conv.runtime}</div>
           <div :if={@conv.sandbox} class="text-sm text-zinc-500 font-mono">
             sprite: {@conv.sandbox.sprite_name}
-            <span class="text-zinc-400">({String.slice(@conv.sandbox.id, 0, 8)} &middot; {@conv.sandbox.status})</span>
+            <span class="text-zinc-400">
+              ({String.slice(@conv.sandbox.id, 0, 8)} &middot; {@conv.sandbox.status})
+            </span>
           </div>
           <div :if={@conv.vault} class="text-sm text-zinc-500">
-            vault: <.link navigate={~p"/vaults/#{@conv.vault.id}/edit"} class="font-medium underline">{@conv.vault.name}</.link>
+            vault:
+            <.link navigate={~p"/vaults/#{@conv.vault.id}/edit"} class="font-medium underline">
+              {@conv.vault.name}
+            </.link>
           </div>
           <div class="text-sm text-zinc-500 flex items-center gap-1.5">
             source: <.source_badge source={@conv.source} />
@@ -363,16 +367,24 @@ defmodule FountainWeb.ConversationsLive.Show do
           </div>
         </div>
         <div class="flex gap-2">
-          <.btn_secondary :if={@conv.status == "running"}
-            phx-click="interrupt" data-confirm="Stop the running turn?">
+          <.btn_secondary
+            :if={@conv.status == "running"}
+            phx-click="interrupt"
+            data-confirm="Stop the running turn?"
+          >
             Interrupt
           </.btn_secondary>
-          <.btn_danger :if={@conv.status not in ["terminated", "failed"]}
-            phx-click="terminate" data-confirm="Terminate this conversation?">
+          <.btn_danger
+            :if={@conv.status not in ["terminated", "failed"]}
+            phx-click="terminate"
+            data-confirm="Terminate this conversation?"
+          >
             Terminate
           </.btn_danger>
-          <.btn_secondary phx-click="delete"
-            data-confirm="Delete this conversation and all its turns? This cannot be undone.">
+          <.btn_secondary
+            phx-click="delete"
+            data-confirm="Delete this conversation and all its turns? This cannot be undone."
+          >
             Delete
           </.btn_secondary>
         </div>
@@ -396,8 +408,16 @@ defmodule FountainWeb.ConversationsLive.Show do
         <div class={["flex items-center gap-2", @view_mode == :chat && "invisible"]}>
           <span class="text-zinc-500">show:</span>
           <.stream_pill name="stage" label="stage" active={MapSet.member?(@visible_streams, "stage")} />
-          <.stream_pill name="stdout" label="stdout" active={MapSet.member?(@visible_streams, "stdout")} />
-          <.stream_pill name="stderr" label="stderr" active={MapSet.member?(@visible_streams, "stderr")} />
+          <.stream_pill
+            name="stdout"
+            label="stdout"
+            active={MapSet.member?(@visible_streams, "stdout")}
+          />
+          <.stream_pill
+            name="stderr"
+            label="stderr"
+            active={MapSet.member?(@visible_streams, "stderr")}
+          />
         </div>
         <div
           id="view-mode-persist"
@@ -413,26 +433,40 @@ defmodule FountainWeb.ConversationsLive.Show do
 
       <%= case @view_mode do %>
         <% :chat -> %>
-          <div class="bg-gradient-to-b from-zinc-50 to-white rounded-lg shadow-sm border border-zinc-200 p-6 h-[60vh] overflow-y-auto"
-            id="log-stream" phx-hook="ScrollBottom">
-            <.chat_view turns={@turns_by_id} events={@events} conv={@conv}/>
-            <div :if={map_size(@turns_by_id) == 0} class="text-zinc-400 text-sm italic">Waiting for the first turn…</div>
+          <div
+            class="bg-gradient-to-b from-zinc-50 to-white rounded-lg shadow-sm border border-zinc-200 p-6 h-[60vh] overflow-y-auto"
+            id="log-stream"
+            phx-hook="ScrollBottom"
+          >
+            <.chat_view turns={@turns_by_id} events={@events} conv={@conv} />
+            <div :if={map_size(@turns_by_id) == 0} class="text-zinc-400 text-sm italic">
+              Waiting for the first turn…
+            </div>
           </div>
-
         <% :raw -> %>
-          <div class="bg-zinc-900 text-zinc-100 rounded shadow p-4 h-[60vh] overflow-y-auto font-mono text-xs"
-            id="log-stream" phx-hook="ScrollBottom">
+          <div
+            class="bg-zinc-900 text-zinc-100 rounded shadow p-4 h-[60vh] overflow-y-auto font-mono text-xs"
+            id="log-stream"
+            phx-hook="ScrollBottom"
+          >
             <%= for ev <- @events, event_visible?(ev, @visible_streams) do %>
-              <.raw_event_line event={ev}/>
+              <.raw_event_line event={ev} />
             <% end %>
             <div :if={@events == []} class="text-zinc-500">Waiting for output…</div>
           </div>
-
         <% _ -> %>
-          <div class="bg-zinc-900 text-zinc-100 rounded shadow p-4 h-[60vh] overflow-y-auto font-mono text-xs space-y-1"
-            id="log-stream" phx-hook="ScrollBottom">
+          <div
+            class="bg-zinc-900 text-zinc-100 rounded shadow p-4 h-[60vh] overflow-y-auto font-mono text-xs space-y-1"
+            id="log-stream"
+            phx-hook="ScrollBottom"
+          >
             <%= for node <- group_into_sections(@events, @visible_streams, @view_mode) do %>
-              <.tree_node node={node} runtime={@conv.runtime} view_mode={@view_mode} turns={@turns_by_id}/>
+              <.tree_node
+                node={node}
+                runtime={@conv.runtime}
+                view_mode={@view_mode}
+                turns={@turns_by_id}
+              />
             <% end %>
             <div :if={@events == []} class="text-zinc-500">Waiting for output…</div>
           </div>
@@ -450,30 +484,75 @@ defmodule FountainWeb.ConversationsLive.Show do
         </.link>
       </div>
 
-      <form :if={@subscription_active} phx-submit="send_prompt" phx-change="update_prompt" class="bg-white rounded shadow border border-zinc-200 p-4 space-y-3">
-        <.input id="prompt" name="prompt" type="textarea" rows="3"
-          value={@prompt} placeholder="Send another prompt…" phx-hook="SubmitOnCmdEnter"/>
+      <form
+        :if={@subscription_active}
+        phx-submit="send_prompt"
+        phx-change="update_prompt"
+        class="bg-white rounded shadow border border-zinc-200 p-4 space-y-3"
+      >
+        <.input
+          id="prompt"
+          name="prompt"
+          type="textarea"
+          rows="3"
+          value={@prompt}
+          placeholder="Send another prompt…"
+          phx-hook="SubmitOnCmdEnter"
+        />
         <div :if={@pending_images != []} class="flex flex-wrap gap-2">
           <%= for img <- @pending_images do %>
             <div class="relative group">
-              <img src={img["url"]} class="h-16 w-16 object-cover rounded border border-zinc-200 cursor-pointer"
-                onclick={"window.open('#{img["url"]}', '_blank')"} />
-              <span class="absolute -top-1 -right-1 hidden group-hover:flex bg-zinc-800 text-white text-[9px] rounded px-1">{img["name"]}</span>
+              <img
+                src={img["url"]}
+                class="h-16 w-16 object-cover rounded border border-zinc-200 cursor-pointer"
+                onclick={"window.open('#{img["url"]}', '_blank')"}
+              />
+              <span class="absolute -top-1 -right-1 hidden group-hover:flex bg-zinc-800 text-white text-[9px] rounded px-1">
+                {img["name"]}
+              </span>
             </div>
           <% end %>
         </div>
         <div class="flex justify-between items-center gap-3">
           <label class="cursor-pointer flex items-center gap-1 text-xs text-zinc-500 hover:text-zinc-700">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              class="h-4 w-4"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2 2v12a2 2 0 002 2z"
+              />
             </svg>
-            <span>{if @pending_images == [], do: "Attach images", else: "#{length(@pending_images)} image(s)"}</span>
-            <input type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple class="hidden"
-              id="image-picker" phx-hook="ImagePicker" />
+            <span>
+              {if @pending_images == [],
+                do: "Attach images",
+                else: "#{length(@pending_images)} image(s)"}
+            </span>
+            <input
+              type="file"
+              accept="image/png,image/jpeg,image/gif,image/webp"
+              multiple
+              class="hidden"
+              id="image-picker"
+              phx-hook="ImagePicker"
+            />
           </label>
           <div class="flex items-center gap-3">
-            <span class="text-xs text-zinc-400"><kbd class="px-1 py-0.5 bg-zinc-100 border border-zinc-200 rounded text-[10px] font-mono">&#8984;</kbd> <kbd class="px-1 py-0.5 bg-zinc-100 border border-zinc-200 rounded text-[10px] font-mono">Enter</kbd> to send</span>
+            <span class="text-xs text-zinc-400">
+              <kbd class="px-1 py-0.5 bg-zinc-100 border border-zinc-200 rounded text-[10px] font-mono">
+                &#8984;
+              </kbd>
+              <kbd class="px-1 py-0.5 bg-zinc-100 border border-zinc-200 rounded text-[10px] font-mono">
+                Enter
+              </kbd>
+              to send
+            </span>
             <.btn type="submit" phx-disable-with="Sending…">Send</.btn>
           </div>
         </div>
@@ -525,19 +604,25 @@ defmodule FountainWeb.ConversationsLive.Show do
 
   defp source_badge(%{source: "ui"} = assigns) do
     ~H"""
-    <span class="inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium bg-blue-100 text-blue-700">ui</span>
+    <span class="inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium bg-blue-100 text-blue-700">
+      ui
+    </span>
     """
   end
 
   defp source_badge(%{source: "agent"} = assigns) do
     ~H"""
-    <span class="inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium bg-amber-100 text-amber-700">agent</span>
+    <span class="inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium bg-amber-100 text-amber-700">
+      agent
+    </span>
     """
   end
 
   defp source_badge(assigns) do
     ~H"""
-    <span class="inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium bg-zinc-100 text-zinc-600">{@source}</span>
+    <span class="inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium bg-zinc-100 text-zinc-600">
+      {@source}
+    </span>
     """
   end
 
@@ -558,7 +643,7 @@ defmodule FountainWeb.ConversationsLive.Show do
     ~H"""
     <div class="space-y-6">
       <%= for turn <- @ordered_turns do %>
-        <.chat_turn turn={turn} events={Map.get(@events_by_turn, turn.id, [])} conv={@conv}/>
+        <.chat_turn turn={turn} events={Map.get(@events_by_turn, turn.id, [])} conv={@conv} />
       <% end %>
     </div>
     """
@@ -601,8 +686,10 @@ defmodule FountainWeb.ConversationsLive.Show do
         <div :if={@image_count > 0} class="flex flex-wrap gap-2 mb-2">
           <%= for pos <- 0..(@image_count - 1) do %>
             <a href={"/conversations/#{@conv.id}/turns/#{@turn.id}/images/#{pos}"} target="_blank">
-              <img src={"/conversations/#{@conv.id}/turns/#{@turn.id}/images/#{pos}"}
-                class="max-w-[300px] max-h-[200px] object-contain rounded border border-blue-400/30" />
+              <img
+                src={"/conversations/#{@conv.id}/turns/#{@turn.id}/images/#{pos}"}
+                class="max-w-[300px] max-h-[200px] object-contain rounded border border-blue-400/30"
+              />
             </a>
           <% end %>
         </div>
@@ -634,9 +721,9 @@ defmodule FountainWeb.ConversationsLive.Show do
         muted
       >
         <div class="flex items-center gap-1.5">
-          <span class="size-1.5 rounded-full bg-zinc-400 animate-pulse"/>
-          <span class="size-1.5 rounded-full bg-zinc-400 animate-pulse [animation-delay:200ms]"/>
-          <span class="size-1.5 rounded-full bg-zinc-400 animate-pulse [animation-delay:400ms]"/>
+          <span class="size-1.5 rounded-full bg-zinc-400 animate-pulse" />
+          <span class="size-1.5 rounded-full bg-zinc-400 animate-pulse [animation-delay:200ms]" />
+          <span class="size-1.5 rounded-full bg-zinc-400 animate-pulse [animation-delay:400ms]" />
         </div>
       </.chat_message>
 
@@ -684,7 +771,9 @@ defmodule FountainWeb.ConversationsLive.Show do
       ]}>
         <div class="flex items-baseline gap-2 px-1">
           <span class="text-xs font-medium text-zinc-700">{@name}</span>
-          <span :if={@timestamp} class="text-[10px] text-zinc-400 font-mono">{format_chat_time(@timestamp)}</span>
+          <span :if={@timestamp} class="text-[10px] text-zinc-400 font-mono">
+            {format_chat_time(@timestamp)}
+          </span>
         </div>
         <div class={[
           "rounded-2xl px-4 py-2.5 text-sm shadow-sm",
@@ -881,7 +970,7 @@ defmodule FountainWeb.ConversationsLive.Show do
 
   defp tree_node(%{node: %{kind: :event}} = assigns) do
     ~H"""
-    <.event_line event={@node.event} runtime={@runtime} view_mode={@view_mode}/>
+    <.event_line event={@node.event} runtime={@runtime} view_mode={@view_mode} />
     """
   end
 
@@ -962,13 +1051,13 @@ defmodule FountainWeb.ConversationsLive.Show do
           <% :cards -> %>
             <div class="space-y-1">
               <%= for block <- turn_blocks(@node.children, @runtime) do %>
-                <.block_row block={block} stream="stdout"/>
+                <.block_row block={block} stream="stdout" />
               <% end %>
             </div>
           <% _ -> %>
             <div class="space-y-1">
               <%= for child <- @node.children do %>
-                <.tree_node node={child} runtime={@runtime} view_mode={@view_mode} turns={@turns}/>
+                <.tree_node node={child} runtime={@runtime} view_mode={@view_mode} turns={@turns} />
               <% end %>
             </div>
         <% end %>
@@ -1096,17 +1185,29 @@ defmodule FountainWeb.ConversationsLive.Show do
         <span class="text-zinc-400">&#128295;</span>
         <span class="font-semibold">{@block.name}</span>
         <span :if={@block[:summary]} class="text-zinc-500 truncate flex-1">{@block.summary}</span>
-        <span :if={@block[:result] && @block.result.error?} class="text-rose-300 text-[10px] shrink-0">error</span>
-        <span :if={@block[:result] && not @block.result.error?} class="text-emerald-400 text-[10px] shrink-0">&#10003;</span>
+        <span :if={@block[:result] && @block.result.error?} class="text-rose-300 text-[10px] shrink-0">
+          error
+        </span>
+        <span
+          :if={@block[:result] && not @block.result.error?}
+          class="text-emerald-400 text-[10px] shrink-0"
+        >
+          &#10003;
+        </span>
       </summary>
       <div class="mt-1 space-y-1">
         <div class="text-zinc-500 text-[10px] uppercase tracking-wider">input</div>
         <pre class="text-zinc-300 whitespace-pre-wrap text-xs">{@block.body}</pre>
-        <div :if={@block[:result]} class="text-zinc-500 text-[10px] uppercase tracking-wider mt-1">result</div>
-        <pre :if={@block[:result]} class={[
-          "whitespace-pre-wrap text-xs",
-          if(@block.result.error?, do: "text-rose-300", else: "text-zinc-300")
-        ]}>{@block.result.body}</pre>
+        <div :if={@block[:result]} class="text-zinc-500 text-[10px] uppercase tracking-wider mt-1">
+          result
+        </div>
+        <pre
+          :if={@block[:result]}
+          class={[
+            "whitespace-pre-wrap text-xs",
+            if(@block.result.error?, do: "text-rose-300", else: "text-zinc-300")
+          ]}
+        >{@block.result.body}</pre>
       </div>
     </details>
     """

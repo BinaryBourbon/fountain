@@ -140,21 +140,43 @@ defmodule FountainWeb.VaultsLive.Form do
     <div class="max-w-3xl space-y-6">
       <h1 class="text-2xl font-semibold">{page_title(@action)}</h1>
 
-      <form phx-change="validate" phx-submit="submit" class="space-y-4 bg-white rounded shadow p-6 border border-zinc-200">
-        <.input id="vault_name" name="vault[name]" label="Name" value={@form["name"]} autofocus required />
-        <.error_msg field="name" errors={@errors}/>
+      <form
+        phx-change="validate"
+        phx-submit="submit"
+        class="space-y-4 bg-white rounded shadow p-6 border border-zinc-200"
+      >
+        <.input
+          id="vault_name"
+          name="vault[name]"
+          label="Name"
+          value={@form["name"]}
+          autofocus
+          required
+        />
+        <.error_msg field="name" errors={@errors} />
 
-        <.input id="vault_description" name="vault[description]" type="textarea" rows="3"
-          label="Description (optional)" value={@form["description"]}
-          placeholder="Whose credentials these are, when to use them, etc."/>
+        <.input
+          id="vault_description"
+          name="vault[description]"
+          type="textarea"
+          rows="3"
+          label="Description (optional)"
+          value={@form["description"]}
+          placeholder="Whose credentials these are, when to use them, etc."
+        />
 
         <div class="flex gap-2">
           <.btn type="submit" phx-disable-with="Saving…">Save</.btn>
-          <.link navigate={~p"/vaults"}><.btn_secondary>Cancel</.btn_secondary></.link>
+          <.link navigate={~p"/vaults"}>
+            <.btn_secondary>Cancel</.btn_secondary>
+          </.link>
         </div>
       </form>
 
-      <section :if={@action == :edit} class="bg-white rounded shadow p-6 border border-zinc-200 space-y-4">
+      <section
+        :if={@action == :edit}
+        class="bg-white rounded shadow p-6 border border-zinc-200 space-y-4"
+      >
         <h2 class="text-lg font-semibold">Secrets</h2>
         <p class="text-sm text-zinc-500">
           Encrypted at rest with AES-256-GCM. When this vault is selected on a new conversation,
@@ -170,7 +192,9 @@ defmodule FountainWeb.VaultsLive.Form do
               <td class="py-2 font-mono">{s.key}</td>
               <td class="py-2 text-zinc-400 font-mono text-xs">•••••••</td>
               <td class="py-2 text-right">
-                <.btn_danger phx-click="delete_secret" phx-value-id={s.id} data-confirm="Delete?">Delete</.btn_danger>
+                <.btn_danger phx-click="delete_secret" phx-value-id={s.id} data-confirm="Delete?">
+                  Delete
+                </.btn_danger>
               </td>
             </tr>
           </tbody>
@@ -185,11 +209,19 @@ defmodule FountainWeb.VaultsLive.Form do
           phx-submit="add_secret"
           class="flex flex-col sm:flex-row gap-2"
         >
-          <input type="text" name="secret[key]" placeholder="KEY"
+          <input
+            type="text"
+            name="secret[key]"
+            placeholder="KEY"
             pattern="[A-Z][A-Z0-9_]*"
-            class="flex-1 rounded border border-zinc-300 px-3 py-2 text-sm font-mono"/>
-          <input type="password" name="secret[value]" placeholder="value"
-            class="flex-[2] rounded border border-zinc-300 px-3 py-2 text-sm font-mono"/>
+            class="flex-1 rounded border border-zinc-300 px-3 py-2 text-sm font-mono"
+          />
+          <input
+            type="password"
+            name="secret[value]"
+            placeholder="value"
+            class="flex-[2] rounded border border-zinc-300 px-3 py-2 text-sm font-mono"
+          />
           <.btn type="submit">Add secret</.btn>
         </form>
       </section>
@@ -202,7 +234,9 @@ defmodule FountainWeb.VaultsLive.Form do
 
   defp error_msg(assigns) do
     ~H"""
-    <p :if={Map.has_key?(@errors, @field)} class="text-rose-600 text-xs">{Map.get(@errors, @field)}</p>
+    <p :if={Map.has_key?(@errors, @field)} class="text-rose-600 text-xs">
+      {Map.get(@errors, @field)}
+    </p>
     """
   end
 end

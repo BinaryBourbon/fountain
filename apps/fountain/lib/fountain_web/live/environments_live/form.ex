@@ -344,9 +344,13 @@ defmodule FountainWeb.EnvironmentsLive.Form do
     <div class="max-w-3xl space-y-6">
       <h1 class="text-2xl font-semibold">{page_title(@action)}</h1>
 
-      <form phx-change="validate" phx-submit="submit" class="space-y-4 bg-white rounded shadow p-6 border border-zinc-200">
+      <form
+        phx-change="validate"
+        phx-submit="submit"
+        class="space-y-4 bg-white rounded shadow p-6 border border-zinc-200"
+      >
         <.input id="env_name" name="env[name]" label="Name" value={@form["name"]} autofocus required />
-        <.error_msg field="name" errors={@errors}/>
+        <.error_msg field="name" errors={@errors} />
 
         <%!-- Packages --%>
         <div class="space-y-2">
@@ -394,9 +398,15 @@ defmodule FountainWeb.EnvironmentsLive.Form do
           <.error_msg field="packages" errors={@errors} />
         </div>
 
-        <.input id="setup_script" name="env[setup_script]" type="textarea" rows="6"
-          label="Setup script (runs after packages, before agent turns)" value={@form["setup_script"]}
-          placeholder="curl -LsSf https://astral.sh/uv/install.sh | sh"/>
+        <.input
+          id="setup_script"
+          name="env[setup_script]"
+          type="textarea"
+          rows="6"
+          label="Setup script (runs after packages, before agent turns)"
+          value={@form["setup_script"]}
+          placeholder="curl -LsSf https://astral.sh/uv/install.sh | sh"
+        />
 
         <%!-- Env vars --%>
         <div class="space-y-2">
@@ -461,7 +471,9 @@ defmodule FountainWeb.EnvironmentsLive.Form do
             class="border border-zinc-200 rounded-md p-3 space-y-2 bg-zinc-50"
           >
             <div class="flex items-center justify-between">
-              <span class="text-xs font-semibold text-zinc-500 uppercase tracking-wide">Repo {i + 1}</span>
+              <span class="text-xs font-semibold text-zinc-500 uppercase tracking-wide">
+                Repo {i + 1}
+              </span>
               <button
                 type="button"
                 phx-click="remove_repo"
@@ -513,10 +525,13 @@ defmodule FountainWeb.EnvironmentsLive.Form do
           <.error_msg field="repositories" errors={@errors} />
           <p class="text-xs text-zinc-500 mt-1">
             Repos are cloned into the sprite before your setup script runs.
-            Set <code>mount_path</code> to where the repo should appear — use
-            <code>/workspace/repo-name</code> as the convention (cloned repos live under
-            <code>/workspace/</code> in the sprite). Use <code>secret_key</code> to name
-            an env secret whose value is passed as <code>x-access-token</code> for
+            Set <code>mount_path</code>
+            to where the repo should appear — use <code>/workspace/repo-name</code>
+            as the convention (cloned repos live under <code>/workspace/</code>
+            in the sprite). Use <code>secret_key</code>
+            to name
+            an env secret whose value is passed as <code>x-access-token</code>
+            for
             cloning private repos.
           </p>
         </div>
@@ -524,23 +539,43 @@ defmodule FountainWeb.EnvironmentsLive.Form do
         <div class="grid grid-cols-2 gap-3">
           <div class="space-y-1">
             <label class="block text-sm font-medium text-zinc-700">Networking</label>
-            <select name="env[networking_type]" class="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm">
-              <option :for={t <- ~w(unrestricted limited)} value={t} selected={@form["networking_type"] == t}>{t}</option>
+            <select
+              name="env[networking_type]"
+              class="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm"
+            >
+              <option
+                :for={t <- ~w(unrestricted limited)}
+                value={t}
+                selected={@form["networking_type"] == t}
+              >
+                {t}
+              </option>
             </select>
           </div>
-          <.input id="networking_config_json" name="env[networking_config_json]" type="textarea" rows="2"
-            label="Networking config (JSON, used when limited)" value={@form["networking_config_json"]}
-            placeholder='{"allowed_hosts": ["github.com", "api.anthropic.com"]}'/>
+          <.input
+            id="networking_config_json"
+            name="env[networking_config_json]"
+            type="textarea"
+            rows="2"
+            label="Networking config (JSON, used when limited)"
+            value={@form["networking_config_json"]}
+            placeholder='{"allowed_hosts": ["github.com", "api.anthropic.com"]}'
+          />
         </div>
-        <.error_msg field="networking_config_json" errors={@errors}/>
+        <.error_msg field="networking_config_json" errors={@errors} />
 
         <div class="flex gap-2">
           <.btn type="submit" phx-disable-with="Saving…">Save</.btn>
-          <.link navigate={~p"/environments"}><.btn_secondary>Cancel</.btn_secondary></.link>
+          <.link navigate={~p"/environments"}>
+            <.btn_secondary>Cancel</.btn_secondary>
+          </.link>
         </div>
       </form>
 
-      <section :if={@action == :edit} class="bg-white rounded shadow p-6 border border-zinc-200 space-y-4">
+      <section
+        :if={@action == :edit}
+        class="bg-white rounded shadow p-6 border border-zinc-200 space-y-4"
+      >
         <h2 class="text-lg font-semibold">Secrets</h2>
         <p class="text-sm text-zinc-500">
           Encrypted at rest with AES-256-GCM. Values are written into the sprite environment at
@@ -553,9 +588,13 @@ defmodule FountainWeb.EnvironmentsLive.Form do
           <tbody>
             <tr :for={s <- @secrets} class="border-b border-zinc-100 last:border-0">
               <td class="py-2 font-mono">{s.key}</td>
-              <td class="py-2 text-zinc-400 font-mono text-xs">&bull;&bull;&bull;&bull;&bull;&bull;&bull;</td>
+              <td class="py-2 text-zinc-400 font-mono text-xs">
+                &bull;&bull;&bull;&bull;&bull;&bull;&bull;
+              </td>
               <td class="py-2 text-right">
-                <.btn_danger phx-click="delete_secret" phx-value-id={s.id} data-confirm="Delete?">Delete</.btn_danger>
+                <.btn_danger phx-click="delete_secret" phx-value-id={s.id} data-confirm="Delete?">
+                  Delete
+                </.btn_danger>
               </td>
             </tr>
           </tbody>
@@ -570,11 +609,19 @@ defmodule FountainWeb.EnvironmentsLive.Form do
           phx-submit="add_secret"
           class="flex flex-col sm:flex-row gap-2"
         >
-          <input type="text" name="secret[key]" placeholder="KEY"
+          <input
+            type="text"
+            name="secret[key]"
+            placeholder="KEY"
             pattern="[A-Z][A-Z0-9_]*"
-            class="flex-1 rounded border border-zinc-300 px-3 py-2 text-sm font-mono"/>
-          <input type="password" name="secret[value]" placeholder="value"
-            class="flex-[2] rounded border border-zinc-300 px-3 py-2 text-sm font-mono"/>
+            class="flex-1 rounded border border-zinc-300 px-3 py-2 text-sm font-mono"
+          />
+          <input
+            type="password"
+            name="secret[value]"
+            placeholder="value"
+            class="flex-[2] rounded border border-zinc-300 px-3 py-2 text-sm font-mono"
+          />
           <.btn type="submit">Add secret</.btn>
         </form>
       </section>
@@ -587,7 +634,9 @@ defmodule FountainWeb.EnvironmentsLive.Form do
 
   defp error_msg(assigns) do
     ~H"""
-    <p :if={Map.has_key?(@errors, @field)} class="text-rose-600 text-xs">{Map.get(@errors, @field)}</p>
+    <p :if={Map.has_key?(@errors, @field)} class="text-rose-600 text-xs">
+      {Map.get(@errors, @field)}
+    </p>
     """
   end
 end

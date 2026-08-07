@@ -5,7 +5,11 @@ defmodule FountainWeb.PasswordResetHTML do
   def forgot_form(assigns) do
     ~H"""
     <div class="min-h-screen flex items-center justify-center bg-zinc-50 text-zinc-900 font-sans">
-      <form method="post" action={~p"/api/auth/forgot"} class="w-full max-w-sm bg-white rounded-lg shadow p-8 space-y-4">
+      <form
+        method="post"
+        action={~p"/api/auth/forgot"}
+        class="w-full max-w-sm bg-white rounded-lg shadow p-8 space-y-4"
+      >
         <input type="hidden" name="_csrf_token" value={get_csrf_token()} />
         <div>
           <h1 class="text-xl font-semibold">Reset your password</h1>
@@ -38,7 +42,11 @@ defmodule FountainWeb.PasswordResetHTML do
   def reset_form(assigns) do
     ~H"""
     <div class="min-h-screen flex items-center justify-center bg-zinc-50 text-zinc-900 font-sans">
-      <form method="post" action={~p"/auth/reset"} class="w-full max-w-sm bg-white rounded-lg shadow p-8 space-y-4">
+      <form
+        method="post"
+        action={~p"/auth/reset"}
+        class="w-full max-w-sm bg-white rounded-lg shadow p-8 space-y-4"
+      >
         <input type="hidden" name="_csrf_token" value={get_csrf_token()} />
         <input type="hidden" name="token" value={@token} />
         <div>

@@ -234,19 +234,26 @@ defmodule FountainWeb.OnboardingLive.Wizard do
                 providers={@inference_providers}
                 status={@inference_status}
                 messages={@inference_messages}
-                any_set?={Enum.any?(@inference_status, fn {_, set?} -> set? end)} />
+                any_set?={Enum.any?(@inference_status, fn {_, set?} -> set? end)}
+              />
             <% "step_2" -> %>
               <.step_env env_form={@env_form} env_errors={@env_errors} />
             <% "step_3" -> %>
-              <.step_agent agent_form={@agent_form} agent_errors={@agent_errors} environments={@environments} />
+              <.step_agent
+                agent_form={@agent_form}
+                agent_errors={@agent_errors}
+                environments={@environments}
+              />
             <% "step_4" -> %>
               <.step_start agents={@agents} />
           <% end %>
         </div>
 
         <div class="text-center">
-          <button phx-click="skip_wizard"
-            class="text-xs text-zinc-400 hover:text-zinc-600 underline">
+          <button
+            phx-click="skip_wizard"
+            class="text-xs text-zinc-400 hover:text-zinc-600 underline"
+          >
             Skip setup and go to dashboard
           </button>
         </div>
@@ -285,7 +292,10 @@ defmodule FountainWeb.OnboardingLive.Wizard do
           ]}>
             {num}
           </div>
-          <span class={["text-sm", if(i <= @current_index, do: "text-zinc-900 font-medium", else: "text-zinc-400")]}>
+          <span class={[
+            "text-sm",
+            if(i <= @current_index, do: "text-zinc-900 font-medium", else: "text-zinc-400")
+          ]}>
             {label}
           </span>
           <div :if={i < length(@steps) - 1} class="w-8 h-px bg-zinc-300 mx-1"></div>
@@ -311,29 +321,39 @@ defmodule FountainWeb.OnboardingLive.Wizard do
       </div>
 
       <div class="space-y-3">
-        <div :for={{provider, label, source} <- @providers}
-             class="rounded-md border border-zinc-200 p-3 space-y-2">
+        <div
+          :for={{provider, label, source} <- @providers}
+          class="rounded-md border border-zinc-200 p-3 space-y-2"
+        >
           <div class="flex items-center justify-between">
             <div>
               <span class="text-sm font-medium">{label}</span>
               <span class="text-xs text-zinc-500 ml-2">Get from {source}</span>
             </div>
             <%= if Map.get(@status, provider, false) do %>
-              <span class="inline-flex items-center rounded-full bg-emerald-100 text-emerald-800 px-2 py-0.5 text-xs font-medium">Set</span>
+              <span class="inline-flex items-center rounded-full bg-emerald-100 text-emerald-800 px-2 py-0.5 text-xs font-medium">
+                Set
+              </span>
             <% else %>
-              <span class="inline-flex items-center rounded-full bg-zinc-100 text-zinc-600 px-2 py-0.5 text-xs">Not set</span>
+              <span class="inline-flex items-center rounded-full bg-zinc-100 text-zinc-600 px-2 py-0.5 text-xs">
+                Not set
+              </span>
             <% end %>
           </div>
 
           <form phx-submit="save_credential" class="flex gap-2">
             <input type="hidden" name="provider" value={Atom.to_string(provider)} />
-            <input type="password"
-                   name="value"
-                   placeholder={if Map.get(@status, provider, false), do: "Replace…", else: "Paste token"}
-                   autocomplete="off"
-                   class="flex-1 rounded-md border border-zinc-300 px-2 py-1.5 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-zinc-900" />
-            <button type="submit"
-                    class="rounded-md bg-zinc-900 text-white px-3 py-1.5 text-xs font-medium hover:bg-zinc-700">
+            <input
+              type="password"
+              name="value"
+              placeholder={if Map.get(@status, provider, false), do: "Replace…", else: "Paste token"}
+              autocomplete="off"
+              class="flex-1 rounded-md border border-zinc-300 px-2 py-1.5 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-zinc-900"
+            />
+            <button
+              type="submit"
+              class="rounded-md bg-zinc-900 text-white px-3 py-1.5 text-xs font-medium hover:bg-zinc-700"
+            >
               Save
             </button>
           </form>
@@ -348,15 +368,17 @@ defmodule FountainWeb.OnboardingLive.Wizard do
         </div>
       </div>
 
-      <button phx-click="continue_from_inference"
-              disabled={!@any_set?}
-              class={[
-                "w-full rounded-md px-4 py-2 text-sm font-medium",
-                if(@any_set?,
-                  do: "bg-zinc-900 text-white hover:bg-zinc-700",
-                  else: "bg-zinc-200 text-zinc-400 cursor-not-allowed"
-                )
-              ]}>
+      <button
+        phx-click="continue_from_inference"
+        disabled={!@any_set?}
+        class={[
+          "w-full rounded-md px-4 py-2 text-sm font-medium",
+          if(@any_set?,
+            do: "bg-zinc-900 text-white hover:bg-zinc-700",
+            else: "bg-zinc-200 text-zinc-400 cursor-not-allowed"
+          )
+        ]}
+      >
         Continue →
       </button>
     </div>
@@ -380,28 +402,43 @@ defmodule FountainWeb.OnboardingLive.Wizard do
       <form phx-change="validate_env" phx-submit="create_env" class="space-y-4">
         <div class="space-y-1">
           <label class="block text-sm font-medium text-zinc-700">Name</label>
-          <input type="text" name="env[name]" value={@env_form["name"]}
-            placeholder="my-dev-env" autofocus
-            class="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900"/>
+          <input
+            type="text"
+            name="env[name]"
+            value={@env_form["name"]}
+            placeholder="my-dev-env"
+            autofocus
+            class="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900"
+          />
           <p :if={Map.has_key?(@env_errors, "name")} class="text-rose-600 text-xs">
             {Map.get(@env_errors, "name")}
           </p>
         </div>
 
         <div class="space-y-1">
-          <label class="block text-sm font-medium text-zinc-700">Setup script <span class="text-zinc-400 font-normal">(optional)</span></label>
-          <textarea name="env[setup_script]" rows="3"
+          <label class="block text-sm font-medium text-zinc-700">
+            Setup script <span class="text-zinc-400 font-normal">(optional)</span>
+          </label>
+          <textarea
+            name="env[setup_script]"
+            rows="3"
             placeholder="curl -LsSf https://astral.sh/uv/install.sh | sh"
-            class="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-zinc-900">{@env_form["setup_script"]}</textarea>
+            class="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-zinc-900"
+          >{@env_form["setup_script"]}</textarea>
         </div>
 
         <div class="flex gap-2 pt-2">
-          <button type="submit"
-            class="flex-1 rounded-md bg-zinc-900 text-white px-4 py-2 text-sm font-medium hover:bg-zinc-700">
+          <button
+            type="submit"
+            class="flex-1 rounded-md bg-zinc-900 text-white px-4 py-2 text-sm font-medium hover:bg-zinc-700"
+          >
             Create environment &amp; continue
           </button>
-          <button type="button" phx-click="skip_env"
-            class="rounded-md border border-zinc-300 px-4 py-2 text-sm text-zinc-600 hover:bg-zinc-50">
+          <button
+            type="button"
+            phx-click="skip_env"
+            class="rounded-md border border-zinc-300 px-4 py-2 text-sm text-zinc-600 hover:bg-zinc-50"
+          >
             Skip
           </button>
         </div>
@@ -427,37 +464,56 @@ defmodule FountainWeb.OnboardingLive.Wizard do
       <form phx-change="validate_agent" phx-submit="create_agent" class="space-y-4">
         <div class="space-y-1">
           <label class="block text-sm font-medium text-zinc-700">Name</label>
-          <input type="text" name="agent[name]" value={@agent_form["name"]}
-            placeholder="My first agent" autofocus
-            class="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900"/>
+          <input
+            type="text"
+            name="agent[name]"
+            value={@agent_form["name"]}
+            placeholder="My first agent"
+            autofocus
+            class="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900"
+          />
           <p :if={Map.has_key?(@agent_errors, "name")} class="text-rose-600 text-xs">
             {Map.get(@agent_errors, "name")}
           </p>
         </div>
 
         <div class="space-y-1">
-          <label class="block text-sm font-medium text-zinc-700">System prompt <span class="text-zinc-400 font-normal">(optional)</span></label>
-          <textarea name="agent[system_prompt]" rows="4"
+          <label class="block text-sm font-medium text-zinc-700">
+            System prompt <span class="text-zinc-400 font-normal">(optional)</span>
+          </label>
+          <textarea
+            name="agent[system_prompt]"
+            rows="4"
             placeholder="You are a helpful assistant..."
-            class="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900">{@agent_form["system_prompt"]}</textarea>
+            class="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900"
+          >{@agent_form["system_prompt"]}</textarea>
         </div>
 
         <div :if={@environments != []} class="space-y-1">
-          <label class="block text-sm font-medium text-zinc-700">Environment <span class="text-zinc-400 font-normal">(optional)</span></label>
-          <select name="agent[environment_id]"
-            class="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm">
+          <label class="block text-sm font-medium text-zinc-700">
+            Environment <span class="text-zinc-400 font-normal">(optional)</span>
+          </label>
+          <select
+            name="agent[environment_id]"
+            class="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm"
+          >
             <option value="">— none —</option>
             <option :for={e <- @environments} value={e.id}>{e.name}</option>
           </select>
         </div>
 
         <div class="flex gap-2 pt-2">
-          <button type="submit"
-            class="flex-1 rounded-md bg-zinc-900 text-white px-4 py-2 text-sm font-medium hover:bg-zinc-700">
+          <button
+            type="submit"
+            class="flex-1 rounded-md bg-zinc-900 text-white px-4 py-2 text-sm font-medium hover:bg-zinc-700"
+          >
             Create agent &amp; continue
           </button>
-          <button type="button" phx-click="skip_agent"
-            class="rounded-md border border-zinc-300 px-4 py-2 text-sm text-zinc-600 hover:bg-zinc-50">
+          <button
+            type="button"
+            phx-click="skip_agent"
+            class="rounded-md border border-zinc-300 px-4 py-2 text-sm text-zinc-600 hover:bg-zinc-50"
+          >
             Skip
           </button>
         </div>
@@ -476,7 +532,7 @@ defmodule FountainWeb.OnboardingLive.Wizard do
         <h2 class="text-lg font-semibold">You're all set!</h2>
         <p class="mt-1 text-sm text-zinc-500">
           <%= if @agents != [] do %>
-            You have <%= length(@agents) %> agent<%= if length(@agents) > 1, do: "s" %> ready to go.
+            You have {length(@agents)} agent{if length(@agents) > 1, do: "s"} ready to go.
             Start your first conversation now.
           <% else %>
             Your account is ready. Start a conversation to try it out — you can add agents anytime.
@@ -485,12 +541,16 @@ defmodule FountainWeb.OnboardingLive.Wizard do
       </div>
 
       <div class="flex flex-col gap-3 pt-2">
-        <button phx-click="start_conversation"
-          class="w-full rounded-md bg-zinc-900 text-white px-4 py-2.5 text-sm font-medium hover:bg-zinc-700">
+        <button
+          phx-click="start_conversation"
+          class="w-full rounded-md bg-zinc-900 text-white px-4 py-2.5 text-sm font-medium hover:bg-zinc-700"
+        >
           Start first conversation →
         </button>
-        <button phx-click="skip_wizard"
-          class="w-full rounded-md border border-zinc-300 px-4 py-2.5 text-sm text-zinc-600 hover:bg-zinc-50">
+        <button
+          phx-click="skip_wizard"
+          class="w-full rounded-md border border-zinc-300 px-4 py-2.5 text-sm text-zinc-600 hover:bg-zinc-50"
+        >
           Go to dashboard
         </button>
       </div>

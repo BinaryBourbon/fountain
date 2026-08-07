@@ -167,7 +167,10 @@ defmodule FountainWeb.AdminLive.UserDetail do
             onboarding {@user.onboarding_state}
           </div>
         </div>
-        <div :if={not @billing_enabled} class="bg-white rounded shadow border border-zinc-200 px-4 py-3">
+        <div
+          :if={not @billing_enabled}
+          class="bg-white rounded shadow border border-zinc-200 px-4 py-3"
+        >
           <div class="text-xs text-zinc-500">Onboarding</div>
           <div class="text-sm font-medium">{@user.onboarding_state}</div>
           <div class="text-xs text-zinc-500">
@@ -288,7 +291,8 @@ defmodule FountainWeb.AdminLive.UserDetail do
             class="underline"
           >
             Stripe dashboard
-          </a> directly.
+          </a>
+          directly.
         </div>
         <div :if={@invoices == []} class="text-sm text-zinc-500">None.</div>
         <table

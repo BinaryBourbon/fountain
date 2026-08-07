@@ -56,7 +56,10 @@ defmodule FountainWeb.LogViewerLive.Show do
     <div class="space-y-4">
       <div class="flex items-center justify-between">
         <div class="flex items-center gap-3">
-          <.link navigate={~p"/conversations/#{@conversation.id}"} class="text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] text-sm">
+          <.link
+            navigate={~p"/conversations/#{@conversation.id}"}
+            class="text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] text-sm"
+          >
             ← Conversation
           </.link>
           <h1 class="text-lg font-semibold font-mono">
@@ -74,8 +77,12 @@ defmodule FountainWeb.LogViewerLive.Show do
         <div :if={@logs == []} class="text-zinc-500 italic">No log output yet.</div>
         <div :for={event <- @logs} class={["leading-5", log_line_class(event)]}>
           <span class="text-zinc-500 select-none mr-3">{format_ts(event.inserted_at)}</span>
-          <span :if={event.kind == "stage"} class="text-yellow-400">[stage:{event.stage}:{event.state}]</span>
-          <span :if={event.kind != "stage"} class={log_stream_class(event.stream)}>[{event.stream}]</span>
+          <span :if={event.kind == "stage"} class="text-yellow-400">
+            [stage:{event.stage}:{event.state}]
+          </span>
+          <span :if={event.kind != "stage"} class={log_stream_class(event.stream)}>
+            [{event.stream}]
+          </span>
           <span class="ml-2 whitespace-pre-wrap">{event.data}</span>
         </div>
       </.code_block>

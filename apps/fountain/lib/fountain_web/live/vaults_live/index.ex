@@ -65,11 +65,14 @@ defmodule FountainWeb.VaultsLive.Index do
     <div class="space-y-4">
       <div class="flex items-center justify-between">
         <h1 class="text-2xl font-semibold">Vaults</h1>
-        <.link navigate={~p"/vaults/new"}><.btn>+ New vault</.btn></.link>
+        <.link navigate={~p"/vaults/new"}>
+          <.btn>+ New vault</.btn>
+        </.link>
       </div>
 
       <p class="text-sm max-w-2xl text-[var(--color-text-muted)]">
-        A <strong class="text-[var(--color-text-secondary)]">vault</strong> is a bag of env-var overrides — your credentials, a teammate&#39;s, or a virtual identity.
+        A <strong class="text-[var(--color-text-secondary)]">vault</strong>
+        is a bag of env-var overrides — your credentials, a teammate&#39;s, or a virtual identity.
         Pick one when starting a conversation and its values override the environment&#39;s baseline secrets at sprite spawn.
       </p>
 
@@ -91,7 +94,9 @@ defmodule FountainWeb.VaultsLive.Index do
         class="rounded-lg p-10 text-center bg-[var(--color-bg-1)] border border-dashed border-[var(--color-border)]"
       >
         <p class="text-sm text-[var(--color-text-muted)]">No vaults yet.</p>
-        <p class="text-xs mt-1 text-[var(--color-text-secondary)]">Create a vault to store a set of credential overrides you can apply per conversation.</p>
+        <p class="text-xs mt-1 text-[var(--color-text-secondary)]">
+          Create a vault to store a set of credential overrides you can apply per conversation.
+        </p>
       </div>
 
       <%!-- Empty state — search returned nothing --%>
@@ -111,9 +116,15 @@ defmodule FountainWeb.VaultsLive.Index do
       >
         <thead class="border-b border-[var(--color-border)]">
           <tr>
-            <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">Name</th>
-            <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">Description</th>
-            <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">Secrets</th>
+            <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
+              Name
+            </th>
+            <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
+              Description
+            </th>
+            <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
+              Secrets
+            </th>
             <th class="px-4 py-3"></th>
           </tr>
         </thead>
@@ -128,14 +139,21 @@ defmodule FountainWeb.VaultsLive.Index do
                 :if={v.description != ""}
                 class="text-xs block truncate text-[var(--color-text-muted)]"
                 title={v.description}
-              >{v.description}</span>
+              >
+                {v.description}
+              </span>
               <span :if={v.description == ""} class="text-[var(--color-text-muted)]">&#8212;</span>
             </td>
             <td class="px-4 py-3">
               <span
-                class={["inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium", secrets_badge_class(v.secret_count)]}
+                class={[
+                  "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium",
+                  secrets_badge_class(v.secret_count)
+                ]}
                 title={"#{v.secret_count} secrets"}
-              >&#128273; {v.secret_count}</span>
+              >
+                &#128273; {v.secret_count}
+              </span>
             </td>
             <td class="px-4 py-3 text-right">
               <div class="inline-flex gap-1">
@@ -147,7 +165,9 @@ defmodule FountainWeb.VaultsLive.Index do
                   phx-click="delete"
                   phx-value-id={v.id}
                   data-confirm="Delete vault?"
-                >Delete</button>
+                >
+                  Delete
+                </button>
               </div>
             </td>
           </tr>

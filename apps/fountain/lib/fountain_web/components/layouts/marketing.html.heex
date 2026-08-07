@@ -40,17 +40,41 @@
   <%!-- Footer --%>
   <footer class="border-t border-[var(--color-border)] bg-[var(--color-bg-1)]">
     <div class="max-w-5xl mx-auto px-6 py-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-[var(--color-text-muted)]">
-      <span>© 2026 Fountain. Managed agent infrastructure for teams who'd rather build than configure.</span>
+      <span>
+        © 2026 Fountain. Managed agent infrastructure for teams who'd rather build than configure.
+      </span>
       <div class="flex items-center gap-4">
         <%= if Fountain.Legal.published?() do %>
-          <a href={~p"/terms"} class="hover:text-[var(--color-text-secondary)] transition-colors">Terms</a>
-          <a href={~p"/privacy"} class="hover:text-[var(--color-text-secondary)] transition-colors">Privacy</a>
+          <a href={~p"/terms"} class="hover:text-[var(--color-text-secondary)] transition-colors">
+            Terms
+          </a>
+          <a
+            href={~p"/privacy"}
+            class="hover:text-[var(--color-text-secondary)] transition-colors"
+          >
+            Privacy
+          </a>
         <% end %>
         <%= if @current_user do %>
-          <a href={~p"/conversations"} class="hover:text-[var(--color-text-secondary)] transition-colors">Go to app</a>
+          <a
+            href={~p"/conversations"}
+            class="hover:text-[var(--color-text-secondary)] transition-colors"
+          >
+            Go to app
+          </a>
         <% else %>
-          <a href={~p"/auth/login"} class="hover:text-[var(--color-text-secondary)] transition-colors">Sign in</a>
-          <a href={~p"/auth/register"} class="hover:text-[var(--color-text-secondary)] transition-colors">Register</a>
+          <a
+            href={~p"/auth/login"}
+            class="hover:text-[var(--color-text-secondary)] transition-colors"
+          >
+            Sign in
+          </a>
+          <a
+            href={~p"/auth/register"}
+            class="hover:text-[var(--color-text-secondary)] transition-colors"
+          >
+            Register
+          </a>
         <% end %>
       </div>
     </div>
