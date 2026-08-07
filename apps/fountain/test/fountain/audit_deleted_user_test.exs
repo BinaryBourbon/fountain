@@ -128,7 +128,6 @@ defmodule Fountain.AuditDeletedUserTest do
       assert event.user_id == user.id
     end
   end
-
 end
 
 defmodule Fountain.AuditDeletedUserEndToEndTest do

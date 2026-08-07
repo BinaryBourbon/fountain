@@ -145,7 +145,10 @@ defmodule Fountain.ComposePassthroughConfigTest do
     test "a real value is parsed", %{base: base} do
       cfg =
         base
-        |> Map.merge(%{"SANDBOX_IDLE_TIMEOUT_MINUTES" => "0", "SANDBOX_MAX_LIFETIME_HOURS" => "72"})
+        |> Map.merge(%{
+          "SANDBOX_IDLE_TIMEOUT_MINUTES" => "0",
+          "SANDBOX_MAX_LIFETIME_HOURS" => "72"
+        })
         |> read_prod()
 
       assert cfg[:fountain][:sandbox_idle_timeout_minutes] == 0

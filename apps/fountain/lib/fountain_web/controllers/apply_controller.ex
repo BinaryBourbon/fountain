@@ -35,5 +35,4 @@ defmodule FountainWeb.ApplyController do
       render(conn, :create, results: results)
     end
   end
-
 end

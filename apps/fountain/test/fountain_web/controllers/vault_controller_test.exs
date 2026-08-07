@@ -37,7 +37,11 @@ defmodule FountainWeb.VaultControllerTest do
   end
 
   describe "GET /api/vaults/:id" do
-    test "returns 200 with the vault for the authenticated user", %{conn: conn, user: user, raw_key: raw_key} do
+    test "returns 200 with the vault for the authenticated user", %{
+      conn: conn,
+      user: user,
+      raw_key: raw_key
+    } do
       vault = insert_vault(user_id: user.id)
 
       conn = conn |> authed_with_key(raw_key) |> get("/api/vaults/#{vault.id}")

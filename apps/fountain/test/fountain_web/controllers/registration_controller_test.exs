@@ -82,7 +82,10 @@ defmodule FountainWeb.RegistrationControllerTest do
       conn =
         conn
         |> Plug.Conn.put_req_header("content-type", "application/json")
-        |> post("/api/auth/register", Jason.encode!(%{email: "json@example.com", password: "password123"}))
+        |> post(
+          "/api/auth/register",
+          Jason.encode!(%{email: "json@example.com", password: "password123"})
+        )
 
       assert json_response(conn, 201)["message"] =~ "verify"
       user = Fountain.Accounts.get_user_by_email("json@example.com")
@@ -104,7 +107,10 @@ defmodule FountainWeb.RegistrationControllerTest do
       conn =
         conn
         |> Plug.Conn.put_req_header("content-type", "application/json")
-        |> post("/api/auth/register", Jason.encode!(%{email: "taken_json@example.com", password: "password123"}))
+        |> post(
+          "/api/auth/register",
+          Jason.encode!(%{email: "taken_json@example.com", password: "password123"})
+        )
 
       assert json_response(conn, 422)
     end
@@ -214,7 +220,10 @@ defmodule FountainWeb.RegistrationControllerTest do
       # test runs synchronously to avoid interference.
       for i <- 1..5 do
         post(conn, ~p"/auth/register", %{
-          "user" => %{"email" => "rate#{i}+#{System.unique_integer()}@example.com", "password" => "password123"}
+          "user" => %{
+            "email" => "rate#{i}+#{System.unique_integer()}@example.com",
+            "password" => "password123"
+          }
         })
       end
 

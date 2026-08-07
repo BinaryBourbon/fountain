@@ -185,7 +185,9 @@ defmodule Fountain.ExportsTest do
 
     test "a superseded or deleted export id is a no-op, not a crash loop" do
       user = insert_verified_user()
-      assert :ok = perform_job(AccountExport, %{export_id: Ecto.UUID.generate(), user_id: user.id})
+
+      assert :ok =
+               perform_job(AccountExport, %{export_id: Ecto.UUID.generate(), user_id: user.id})
     end
 
     test "completion broadcasts so the account page updates" do
@@ -208,7 +210,9 @@ defmodule Fountain.ExportsTest do
     end
 
     test "the owner can fetch it", %{user: user, export: export} do
-      assert {:ok, %Export{payload: payload}} = Exports.get_downloadable_export(export.id, user.id)
+      assert {:ok, %Export{payload: payload}} =
+               Exports.get_downloadable_export(export.id, user.id)
+
       assert is_binary(payload)
     end
 

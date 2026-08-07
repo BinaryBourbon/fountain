@@ -363,10 +363,12 @@ defmodule Fountain.Accounts do
   are refused — they set a first password through the reset flow.
   """
   @spec change_password(User.t(), String.t(), String.t(), keyword()) ::
-          {:ok, User.t()} | {:error, :no_password | :invalid_current_password | Ecto.Changeset.t()}
+          {:ok, User.t()}
+          | {:error, :no_password | :invalid_current_password | Ecto.Changeset.t()}
   def change_password(user, current, new, opts \\ [])
 
-  def change_password(%User{password_hash: nil}, _current, _new, _opts), do: {:error, :no_password}
+  def change_password(%User{password_hash: nil}, _current, _new, _opts),
+    do: {:error, :no_password}
 
   def change_password(%User{} = user, current, new, opts)
       when is_binary(current) and is_binary(new) do
@@ -898,7 +900,10 @@ defmodule Fountain.Accounts do
 
     users =
       base
-      |> join(:left, [u], a in subquery(last_activity_query()), on: a.user_id == u.id, as: :activity)
+      |> join(:left, [u], a in subquery(last_activity_query()),
+        on: a.user_id == u.id,
+        as: :activity
+      )
       |> order_users(Keyword.get(opts, :sort), Keyword.get(opts, :dir, "desc"))
       |> offset(^((page - 1) * per_page))
       |> limit(^per_page)

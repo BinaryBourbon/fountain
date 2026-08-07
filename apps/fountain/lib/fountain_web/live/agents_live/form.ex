@@ -77,7 +77,13 @@ defmodule FountainWeb.AgentsLive.Form do
     Enum.map(mcp_servers, fn {name, config} ->
       args_str = (config["args"] || []) |> Enum.join("\n")
       env_vars = (config["env"] || %{}) |> Enum.map(fn {k, v} -> %{"key" => k, "value" => v} end)
-      %{"name" => name, "command" => config["command"] || "", "args" => args_str, "env_vars" => env_vars}
+
+      %{
+        "name" => name,
+        "command" => config["command"] || "",
+        "args" => args_str,
+        "env_vars" => env_vars
+      }
     end)
   end
 
@@ -85,11 +91,19 @@ defmodule FountainWeb.AgentsLive.Form do
   def handle_event("validate", %{"agent" => params}, socket) do
     skills = extract_skills_from_params(params, socket.assigns.skills)
     mcp_servers = extract_mcp_servers_from_params(params, socket.assigns.mcp_servers)
-    {:noreply, socket |> assign(:form, params) |> assign(:skills, skills) |> assign(:mcp_servers, mcp_servers)}
+
+    {:noreply,
+     socket
+     |> assign(:form, params)
+     |> assign(:skills, skills)
+     |> assign(:mcp_servers, mcp_servers)}
   end
 
   def handle_event("add_skill", _, socket) do
-    skills = socket.assigns.skills ++ [%{"type" => "github", "source" => "", "name" => "", "content" => ""}]
+    skills =
+      socket.assigns.skills ++
+        [%{"type" => "github", "source" => "", "name" => "", "content" => ""}]
+
     {:noreply, assign(socket, :skills, skills)}
   end
 
@@ -131,7 +145,11 @@ defmodule FountainWeb.AgentsLive.Form do
     {:noreply, assign(socket, :mcp_servers, servers)}
   end
 
-  def handle_event("remove_mcp_env_var", %{"server" => server_idx_str, "index" => idx_str}, socket) do
+  def handle_event(
+        "remove_mcp_env_var",
+        %{"server" => server_idx_str, "index" => idx_str},
+        socket
+      ) do
     server_idx = String.to_integer(server_idx_str)
     idx = String.to_integer(idx_str)
 
@@ -335,48 +353,71 @@ defmodule FountainWeb.AgentsLive.Form do
     uploaded =
       consume_uploaded_entries(socket, :avatar, fn %{path: path}, entry ->
         data = File.read!(path)
-        Agents.upload_avatar(agent, data, entry.client_type, FountainWeb.Audited.attribution(socket))
+
+        Agents.upload_avatar(
+          agent,
+          data,
+          entry.client_type,
+          FountainWeb.Audited.attribution(socket)
+        )
+
         {:ok, :uploaded}
       end)
 
     if uploaded == [] do
       case socket.assigns.generated_avatar_data do
-        nil -> :ok
-        data -> Agents.upload_avatar(agent, data, "image/png", FountainWeb.Audited.attribution(socket))
+        nil ->
+          :ok
+
+        data ->
+          Agents.upload_avatar(agent, data, "image/png", FountainWeb.Audited.attribution(socket))
       end
     end
   end
 
   defp extract_skills_from_params(params, current_skills) do
     case params["skills"] do
-      nil -> current_skills
+      nil ->
+        current_skills
+
       skills_map when is_map(skills_map) ->
         skills_map
         |> Enum.sort_by(fn {k, _} -> String.to_integer(k) end)
         |> Enum.map(fn {_, s} -> s end)
-      _ -> current_skills
+
+      _ ->
+        current_skills
     end
   end
 
   defp extract_mcp_servers_from_params(params, current_servers) do
     case params["mcp_servers"] do
-      nil -> current_servers
+      nil ->
+        current_servers
+
       servers_map when is_map(servers_map) ->
         servers_map
         |> Enum.sort_by(fn {k, _} -> String.to_integer(k) end)
         |> Enum.map(fn {_, s} ->
           env_vars =
             case s["env_vars"] do
-              nil -> []
+              nil ->
+                []
+
               evs when is_map(evs) ->
                 evs
                 |> Enum.sort_by(fn {k, _} -> String.to_integer(k) end)
                 |> Enum.map(fn {_, r} -> r end)
-              _ -> []
+
+              _ ->
+                []
             end
+
           Map.put(s, "env_vars", env_vars)
         end)
-      _ -> current_servers
+
+      _ ->
+        current_servers
     end
   end
 

@@ -52,5 +52,4 @@ defmodule FountainWeb.SessionControllerTest do
       refute body =~ "unavailable"
     end
   end
-
 end

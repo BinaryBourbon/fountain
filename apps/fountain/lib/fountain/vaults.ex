@@ -141,9 +141,7 @@ defmodule Fountain.Vaults do
   # ── secrets ───────────────────────────────────────────────────────────────
 
   def _unsafe_list_secrets(%Vault{id: vault_id}) do
-    Repo.all(
-      from s in VaultSecret, where: s.vault_id == ^vault_id, order_by: [asc: s.key]
-    )
+    Repo.all(from s in VaultSecret, where: s.vault_id == ^vault_id, order_by: [asc: s.key])
   end
 
   def _unsafe_get_secret(vault_id, key) do

@@ -79,8 +79,7 @@ defmodule Fountain.Manifest do
     outcome =
       case Environments.get_environment_by_name(name, user_id) do
         nil ->
-          {:created,
-           Environments.create_environment(Map.put(attrs, "user_id", user_id), opts)}
+          {:created, Environments.create_environment(Map.put(attrs, "user_id", user_id), opts)}
 
         env ->
           {:updated, Environments.update_environment(env, attrs, opts)}
@@ -90,6 +89,7 @@ defmodule Fountain.Manifest do
       {action, {:ok, env}} ->
         secret_results =
           upsert_secrets(secrets, &Environments.upsert_secret(env, &1, dek, secret_opts(opts)))
+
         {result("Environment", name, action, nil, secret_results, env.id), env}
 
       {_action, {:error, changeset}} ->
@@ -110,6 +110,7 @@ defmodule Fountain.Manifest do
       {action, {:ok, vault}} ->
         secret_results =
           upsert_secrets(secrets, &Vaults.upsert_secret(vault, &1, dek, secret_opts(opts)))
+
         result("Vault", name, action, nil, secret_results, vault.id)
 
       {_action, {:error, changeset}} ->

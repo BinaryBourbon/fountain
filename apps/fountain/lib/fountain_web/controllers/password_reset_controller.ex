@@ -98,7 +98,8 @@ defmodule FountainWeb.PasswordResetController do
         "other outstanding reset token for the account. Rate-limited to 10 " <>
         "per IP per hour.",
     security: [],
-    request_body: {"Token and new password", "application/json", Schemas.PasswordResetRequest, required: true},
+    request_body:
+      {"Token and new password", "application/json", Schemas.PasswordResetRequest, required: true},
     responses: [
       ok: {"Password updated", "application/json", Schemas.MessageResponse},
       unprocessable_entity:
@@ -173,27 +174,27 @@ defmodule FountainWeb.PasswordResetController do
     case verify_reset_token(conn, token) do
       {:ok, user} ->
         case Accounts.reset_password(user, password, FountainWeb.Audited.attribution(conn)) do
-              {:ok, _user} ->
-                # Also invalidates every existing session, so this is a
-                # security-relevant event even when the user initiated it.
-                conn
-                |> configure_session(drop: true)
-                |> put_flash(:info, "Password updated. Please sign in with your new password.")
-                |> redirect(to: ~p"/auth/login")
+          {:ok, _user} ->
+            # Also invalidates every existing session, so this is a
+            # security-relevant event even when the user initiated it.
+            conn
+            |> configure_session(drop: true)
+            |> put_flash(:info, "Password updated. Please sign in with your new password.")
+            |> redirect(to: ~p"/auth/login")
 
-              {:error, changeset} ->
-                errors =
-                  Ecto.Changeset.traverse_errors(changeset, fn {msg, _opts} -> msg end)
+          {:error, changeset} ->
+            errors =
+              Ecto.Changeset.traverse_errors(changeset, fn {msg, _opts} -> msg end)
 
-                password_error = errors |> Map.get(:password, []) |> List.first()
+            password_error = errors |> Map.get(:password, []) |> List.first()
 
-                conn
-                |> put_status(:unprocessable_entity)
-                |> render(:reset_form,
-                  token: token,
-                  error: password_error || "Could not update password.",
-                  layout: false
-                )
+            conn
+            |> put_status(:unprocessable_entity)
+            |> render(:reset_form,
+              token: token,
+              error: password_error || "Could not update password.",
+              layout: false
+            )
         end
 
       {:error, :expired} ->

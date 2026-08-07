@@ -151,7 +151,12 @@ defmodule FountainWeb.AuditLiveTest do
 
       html =
         lv
-        |> form("#audit-filters", %{"action" => "vault.", "resource" => "", "since" => "", "until" => ""})
+        |> form("#audit-filters", %{
+          "action" => "vault.",
+          "resource" => "",
+          "since" => "",
+          "until" => ""
+        })
         |> render_change()
 
       assert html =~ "vaultvau"

@@ -8,7 +8,11 @@ defmodule FountainWeb.VaultSecretControllerTest do
   end
 
   describe "GET /api/vaults/:vault_id/secrets" do
-    test "returns 200 with a list of secrets for the vault", %{conn: conn, user: user, raw_key: raw_key} do
+    test "returns 200 with a list of secrets for the vault", %{
+      conn: conn,
+      user: user,
+      raw_key: raw_key
+    } do
       vault = insert_vault(user_id: user.id)
       secret = insert_vault_secret(vault, key: "MY_KEY")
 
@@ -58,7 +62,11 @@ defmodule FountainWeb.VaultSecretControllerTest do
   end
 
   describe "DELETE /api/vaults/:vault_id/secrets/:id" do
-    test "deletes a vault secret by key and returns 204", %{conn: conn, user: user, raw_key: raw_key} do
+    test "deletes a vault secret by key and returns 204", %{
+      conn: conn,
+      user: user,
+      raw_key: raw_key
+    } do
       vault = insert_vault(user_id: user.id)
       secret = insert_vault_secret(vault, key: "TO_DELETE")
 
@@ -83,7 +91,11 @@ defmodule FountainWeb.VaultSecretControllerTest do
       assert json_response(conn, 404)
     end
 
-    test "returns 404 when the secret key does not exist", %{conn: conn, user: user, raw_key: raw_key} do
+    test "returns 404 when the secret key does not exist", %{
+      conn: conn,
+      user: user,
+      raw_key: raw_key
+    } do
       vault = insert_vault(user_id: user.id)
 
       conn =

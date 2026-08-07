@@ -51,8 +51,7 @@ defmodule Fountain.AuditGuardrailTest do
     # Secrets and credentials (#593). These had five and four call sites
     # respectively before the recording moved into the context; the entries
     # below are what stops a sixth from being silent.
-    {"environment secret write", &__MODULE__.do_env_secret_write/1,
-     "environment.secret.write"},
+    {"environment secret write", &__MODULE__.do_env_secret_write/1, "environment.secret.write"},
     {"environment secret delete", &__MODULE__.do_env_secret_delete/1,
      "environment.secret.delete"},
     {"vault secret write", &__MODULE__.do_vault_secret_write/1, "vault.secret.write"},
@@ -131,7 +130,8 @@ defmodule Fountain.AuditGuardrailTest do
 
   ## ── the mutations ─────────────────────────────────────────────────────────
 
-  def do_agent_create(user), do: {:ok, _} = Agents.create_agent(agent_attrs(%{"user_id" => user.id}))
+  def do_agent_create(user),
+    do: {:ok, _} = Agents.create_agent(agent_attrs(%{"user_id" => user.id}))
 
   def do_agent_update(user) do
     agent = insert_agent(user_id: user.id)
@@ -146,7 +146,8 @@ defmodule Fountain.AuditGuardrailTest do
     do: {:ok, _} = Environments.create_environment(env_attrs(%{"user_id" => user.id}))
 
   def do_env_update(user) do
-    {:ok, _} = Environments.update_environment(insert_env(user_id: user.id), %{"setup_script" => "x"})
+    {:ok, _} =
+      Environments.update_environment(insert_env(user_id: user.id), %{"setup_script" => "x"})
   end
 
   def do_env_delete(user) do

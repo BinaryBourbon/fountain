@@ -37,7 +37,11 @@ defmodule FountainWeb.AgentControllerTest do
   end
 
   describe "GET /api/agents/:id" do
-    test "returns 200 with the agent for the authenticated user", %{conn: conn, user: user, raw_key: raw_key} do
+    test "returns 200 with the agent for the authenticated user", %{
+      conn: conn,
+      user: user,
+      raw_key: raw_key
+    } do
       agent = insert_agent(user_id: user.id)
 
       conn = conn |> authed_with_key(raw_key) |> get("/api/agents/#{agent.id}")
@@ -85,7 +89,10 @@ defmodule FountainWeb.AgentControllerTest do
       assert json_response(conn, 401)
     end
 
-    test "returns 422 when a skill entry has neither content nor source", %{conn: conn, raw_key: raw_key} do
+    test "returns 422 when a skill entry has neither content nor source", %{
+      conn: conn,
+      raw_key: raw_key
+    } do
       # OpenApiSpex does not enforce the content/source mutual-exclusivity rule;
       # the Ecto changeset's validate_skills/1 does, so this reaches the DB layer
       # as a pure changeset error and is rendered as 422.
@@ -104,7 +111,10 @@ defmodule FountainWeb.AgentControllerTest do
       assert json_response(conn, 422)
     end
 
-    test "returns 422 when environment_id belongs to another tenant", %{conn: conn, raw_key: raw_key} do
+    test "returns 422 when environment_id belongs to another tenant", %{
+      conn: conn,
+      raw_key: raw_key
+    } do
       victim = insert_verified_user()
       victim_env = insert_env(user_id: victim.id)
 

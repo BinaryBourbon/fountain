@@ -118,7 +118,11 @@ defmodule Fountain.InferenceCredentials.ValidatorTest do
 
     test "gemini_api_key sends request to Google API with key as query param" do
       stub(Req, :get, fn url, _opts ->
-        assert String.starts_with?(url, "https://generativelanguage.googleapis.com/v1beta/models?key=")
+        assert String.starts_with?(
+                 url,
+                 "https://generativelanguage.googleapis.com/v1beta/models?key="
+               )
+
         assert String.contains?(url, "gemini-key-test")
         {:ok, %Req.Response{status: 200}}
       end)
@@ -130,7 +134,9 @@ defmodule Fountain.InferenceCredentials.ValidatorTest do
   describe "validate/2 - {:error, :invalid} on non-2xx" do
     test "returns {:error, :invalid, %{status: 401}} on 401" do
       stub(Req, :get, fn _url, _opts -> {:ok, %Req.Response{status: 401}} end)
-      assert {:error, :invalid, %{status: 401}} = Validator.validate(:anthropic_api_key, "bad-key")
+
+      assert {:error, :invalid, %{status: 401}} =
+               Validator.validate(:anthropic_api_key, "bad-key")
     end
 
     test "returns {:error, :invalid, %{status: 403}} on 403" do
@@ -140,7 +146,9 @@ defmodule Fountain.InferenceCredentials.ValidatorTest do
 
     test "returns {:error, :invalid, %{status: 429}} on 429" do
       stub(Req, :get, fn _url, _opts -> {:ok, %Req.Response{status: 429}} end)
-      assert {:error, :invalid, %{status: 429}} = Validator.validate(:claude_code_oauth_token, "token")
+
+      assert {:error, :invalid, %{status: 429}} =
+               Validator.validate(:claude_code_oauth_token, "token")
     end
 
     test "returns {:error, :invalid, %{status: 500}} on 500" do

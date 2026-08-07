@@ -182,7 +182,12 @@ defmodule FountainWeb.AccountSecurityController do
         })
 
       {:error, :invalid_current_password} ->
-        credential_error(conn, :forbidden, "invalid_current_password", "Current password is incorrect.")
+        credential_error(
+          conn,
+          :forbidden,
+          "invalid_current_password",
+          "Current password is incorrect."
+        )
 
       {:error, :no_password} ->
         credential_error(
@@ -222,7 +227,9 @@ defmodule FountainWeb.AccountSecurityController do
       {"New address and current password", "application/json", Schemas.EmailChangeRequest,
        required: true},
     responses: [
-      ok: {"Confirmation link sent (if the address was available)", "application/json", Schemas.MessageResponse},
+      ok:
+        {"Confirmation link sent (if the address was available)", "application/json",
+         Schemas.MessageResponse},
       unauthorized: {"Missing or invalid key", "application/json", Schemas.Error},
       forbidden:
         {"`invalid_current_password`, or a key without full scope", "application/json",
@@ -254,7 +261,12 @@ defmodule FountainWeb.AccountSecurityController do
         })
 
       {:error, :invalid_current_password} ->
-        credential_error(conn, :forbidden, "invalid_current_password", "Current password is incorrect.")
+        credential_error(
+          conn,
+          :forbidden,
+          "invalid_current_password",
+          "Current password is incorrect."
+        )
 
       {:error, :no_password} ->
         credential_error(

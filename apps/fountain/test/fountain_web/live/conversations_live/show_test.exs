@@ -12,14 +12,22 @@ defmodule FountainWeb.ConversationsLive.ShowTest do
       %{user: user, conversation: conversation}
     end
 
-    test "mounts with default pretty mode when no preference saved", %{conn: conn, user: user, conversation: conversation} do
+    test "mounts with default pretty mode when no preference saved", %{
+      conn: conn,
+      user: user,
+      conversation: conversation
+    } do
       conn = login_user(conn, user)
       {:ok, view, _html} = live(conn, ~p"/conversations/#{conversation.id}")
 
       assert view |> element("[data-view-mode]") |> render() =~ "pretty"
     end
 
-    test "mounts with chat mode when preference is saved as chat", %{conn: conn, user: user, conversation: conversation} do
+    test "mounts with chat mode when preference is saved as chat", %{
+      conn: conn,
+      user: user,
+      conversation: conversation
+    } do
       {:ok, _} = Fountain.Accounts.update_preferences(user, %{conversation_view_mode: "chat"})
       user = Fountain.Accounts.get_user!(user.id)
 
@@ -29,7 +37,11 @@ defmodule FountainWeb.ConversationsLive.ShowTest do
       assert view |> element("[data-view-mode]") |> render() =~ "chat"
     end
 
-    test "mounts with raw mode when preference is saved as raw", %{conn: conn, user: user, conversation: conversation} do
+    test "mounts with raw mode when preference is saved as raw", %{
+      conn: conn,
+      user: user,
+      conversation: conversation
+    } do
       {:ok, _} = Fountain.Accounts.update_preferences(user, %{conversation_view_mode: "raw"})
       user = Fountain.Accounts.get_user!(user.id)
 
@@ -48,7 +60,11 @@ defmodule FountainWeb.ConversationsLive.ShowTest do
     end
 
     @tag :push_view_mode_changed
-    test "pushes view_mode_changed event to client when mode is set", %{conn: conn, user: user, conversation: conversation} do
+    test "pushes view_mode_changed event to client when mode is set", %{
+      conn: conn,
+      user: user,
+      conversation: conversation
+    } do
       conn = login_user(conn, user)
       {:ok, view, _html} = live(conn, ~p"/conversations/#{conversation.id}")
 
@@ -56,7 +72,11 @@ defmodule FountainWeb.ConversationsLive.ShowTest do
       assert_push_event(view, "view_mode_changed", %{mode: "chat"})
     end
 
-    test "persists view mode to database when changed", %{conn: conn, user: user, conversation: conversation} do
+    test "persists view mode to database when changed", %{
+      conn: conn,
+      user: user,
+      conversation: conversation
+    } do
       conn = login_user(conn, user)
       {:ok, view, _html} = live(conn, ~p"/conversations/#{conversation.id}")
 
@@ -208,7 +228,11 @@ defmodule FountainWeb.ConversationsLive.ShowTest do
       %{user: user, conversation: conversation}
     end
 
-    test "toggling stdout off persists the preference", %{conn: conn, user: user, conversation: conversation} do
+    test "toggling stdout off persists the preference", %{
+      conn: conn,
+      user: user,
+      conversation: conversation
+    } do
       conn = login_user(conn, user)
       {:ok, view, _html} = live(conn, ~p"/conversations/#{conversation.id}")
 
@@ -220,8 +244,16 @@ defmodule FountainWeb.ConversationsLive.ShowTest do
       assert "stage" in reloaded.conversation_visible_streams
     end
 
-    test "toggling stdout back on persists the preference", %{conn: conn, user: user, conversation: conversation} do
-      {:ok, _} = Fountain.Accounts.update_preferences(user, %{conversation_visible_streams: ["stderr", "stage"]})
+    test "toggling stdout back on persists the preference", %{
+      conn: conn,
+      user: user,
+      conversation: conversation
+    } do
+      {:ok, _} =
+        Fountain.Accounts.update_preferences(user, %{
+          conversation_visible_streams: ["stderr", "stage"]
+        })
+
       user = Fountain.Accounts.get_user!(user.id)
 
       conn = login_user(conn, user)
@@ -233,8 +265,14 @@ defmodule FountainWeb.ConversationsLive.ShowTest do
       assert "stdout" in reloaded.conversation_visible_streams
     end
 
-    test "mounts with saved visible_streams preference", %{conn: conn, user: user, conversation: conversation} do
-      {:ok, _} = Fountain.Accounts.update_preferences(user, %{conversation_visible_streams: ["stdout"]})
+    test "mounts with saved visible_streams preference", %{
+      conn: conn,
+      user: user,
+      conversation: conversation
+    } do
+      {:ok, _} =
+        Fountain.Accounts.update_preferences(user, %{conversation_visible_streams: ["stdout"]})
+
       user = Fountain.Accounts.get_user!(user.id)
 
       conn = login_user(conn, user)

@@ -242,7 +242,10 @@ defmodule FountainWeb.Live.HooksTest do
     end
 
     @tag :push_roots_only_changed
-    test "sidebar_toggle_roots_only pushes roots_only_changed with value true", %{conn: conn, user: user} do
+    test "sidebar_toggle_roots_only pushes roots_only_changed with value true", %{
+      conn: conn,
+      user: user
+    } do
       conn = login_user(conn, user)
       {:ok, view, _html} = live(conn, ~p"/conversations")
 
@@ -251,7 +254,8 @@ defmodule FountainWeb.Live.HooksTest do
     end
 
     @tag :push_roots_only_changed
-    test "sidebar_toggle_roots_only pushes roots_only_changed with value false when toggled twice", %{conn: conn, user: user} do
+    test "sidebar_toggle_roots_only pushes roots_only_changed with value false when toggled twice",
+         %{conn: conn, user: user} do
       conn = login_user(conn, user)
       {:ok, view, _html} = live(conn, ~p"/conversations")
 

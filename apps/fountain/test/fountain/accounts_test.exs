@@ -9,7 +9,12 @@ defmodule Fountain.AccountsTest do
 
   describe "User.registration_changeset/2" do
     test "valid attrs produce a valid changeset" do
-      cs = User.registration_changeset(%User{}, %{email: "Alice@Example.com", password: "password123"})
+      cs =
+        User.registration_changeset(%User{}, %{
+          email: "Alice@Example.com",
+          password: "password123"
+        })
+
       assert cs.valid?
       # email is downcased
       assert Ecto.Changeset.get_change(cs, :email) == "alice@example.com"
@@ -50,7 +55,13 @@ defmodule Fountain.AccountsTest do
     end
 
     test "invalid role is rejected" do
-      cs = User.registration_changeset(%User{}, %{email: "a@b.com", password: "password123", role: "superuser"})
+      cs =
+        User.registration_changeset(%User{}, %{
+          email: "a@b.com",
+          password: "password123",
+          role: "superuser"
+        })
+
       assert "is invalid" in errors_on(cs, :role)
     end
   end
@@ -94,6 +105,7 @@ defmodule Fountain.AccountsTest do
   describe "User.theme_changeset/2" do
     test "accepts valid theme preferences" do
       user = %Fountain.Accounts.User{}
+
       for theme <- ~w(system light dark) do
         cs = Fountain.Accounts.User.theme_changeset(user, %{theme_preference: theme})
         assert cs.valid?

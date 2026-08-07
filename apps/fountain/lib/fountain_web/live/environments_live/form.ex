@@ -190,7 +190,11 @@ defmodule FountainWeb.EnvironmentsLive.Form do
     secret = Enum.find(socket.assigns.secrets, &(&1.id == id))
 
     if secret do
-      Environments.delete_secret(socket.assigns.env, secret, FountainWeb.Audited.attribution(socket))
+      Environments.delete_secret(
+        socket.assigns.env,
+        secret,
+        FountainWeb.Audited.attribution(socket)
+      )
 
       {:noreply,
        socket

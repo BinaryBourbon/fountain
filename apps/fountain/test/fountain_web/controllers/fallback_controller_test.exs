@@ -6,7 +6,9 @@ defmodule FountainWeb.FallbackControllerTest do
   use FountainWeb.ConnCase, async: true
 
   describe "{:error, %Ecto.Changeset{}} → 422" do
-    test "POST /api/agents with missing required fields returns 422 with errors body", %{conn: conn} do
+    test "POST /api/agents with missing required fields returns 422 with errors body", %{
+      conn: conn
+    } do
       user = insert_verified_user()
       {_key, raw_key} = insert_api_key(user)
 

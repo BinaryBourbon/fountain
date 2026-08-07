@@ -21,7 +21,8 @@ defmodule Fountain.InferenceCredentials.Validator do
 
   @timeout 5_000
 
-  @type provider :: :anthropic_api_key | :claude_code_oauth_token | :openai_api_key | :gemini_api_key
+  @type provider ::
+          :anthropic_api_key | :claude_code_oauth_token | :openai_api_key | :gemini_api_key
   @type result ::
           :ok
           | {:error, :invalid, %{status: integer()}}

@@ -22,8 +22,14 @@ defmodule Fountain.Environments.EnvironmentTest do
   describe "warm_start_fields/0" do
     test "returns the 6 expected warm-start fields" do
       assert Environment.warm_start_fields() ==
-               [:packages, :env_vars, :setup_script, :networking_type, :networking_config,
-                :repositories]
+               [
+                 :packages,
+                 :env_vars,
+                 :setup_script,
+                 :networking_type,
+                 :networking_config,
+                 :repositories
+               ]
     end
   end
 

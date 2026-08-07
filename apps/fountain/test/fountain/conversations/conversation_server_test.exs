@@ -426,9 +426,10 @@ defmodule Fountain.Conversations.ConversationServerTest do
       GenServer.stop(pid)
     end
 
-    test "a conversation deleted before provisioning stops the server instead of crash-looping", %{
-      conv: conv
-    } do
+    test "a conversation deleted before provisioning stops the server instead of crash-looping",
+         %{
+           conv: conv
+         } do
       # This used to raise Ecto.NoResultsError out of
       # handle_continue(:provision) — unrescued, restart: :transient, so
       # Horde restarted it straight back into the same raise, burning the
@@ -707,7 +708,8 @@ defmodule Fountain.Conversations.ConversationServerTest do
     end
 
     test "reports not_running for an unknown conversation" do
-      assert {:error, :not_running} = ConversationServer.terminate_conversation(Ecto.UUID.generate())
+      assert {:error, :not_running} =
+               ConversationServer.terminate_conversation(Ecto.UUID.generate())
     end
 
     test "does not resurrect an already-failed sandbox", %{conv: conv, sandbox: sandbox} do

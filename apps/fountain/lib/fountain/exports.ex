@@ -265,9 +265,7 @@ defmodule Fountain.Exports do
       )
 
     {count, _} =
-      Repo.delete_all(
-        from e in Export, where: not is_nil(e.expires_at) and e.expires_at <= ^now
-      )
+      Repo.delete_all(from e in Export, where: not is_nil(e.expires_at) and e.expires_at <= ^now)
 
     Enum.each(expiring, fn {id, user_id} ->
       Audit.record(%{
@@ -389,7 +387,8 @@ defmodule Fountain.Exports do
         "metadata" => vault.metadata,
         # Names only — values are write-only by design.
         # Ownership: vault comes from the tenant-scoped list_vaults above.
-        "secret_keys" => vault |> Vaults._unsafe_list_secrets() |> Enum.map(& &1.key) |> Enum.sort(),
+        "secret_keys" =>
+          vault |> Vaults._unsafe_list_secrets() |> Enum.map(& &1.key) |> Enum.sort(),
         "created_at" => vault.inserted_at,
         "updated_at" => vault.updated_at
       }

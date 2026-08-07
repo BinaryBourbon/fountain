@@ -116,7 +116,10 @@ defmodule Fountain.CryptoTest do
       bad_wrapped = Crypto.encrypt("short", master, "fountain.key_wrap")
 
       import Ecto.Query, only: [from: 2]
-      Fountain.Repo.delete_all(from k in Fountain.Accounts.UserDataKey, where: k.user_id == ^user.id)
+
+      Fountain.Repo.delete_all(
+        from k in Fountain.Accounts.UserDataKey, where: k.user_id == ^user.id
+      )
 
       %Fountain.Accounts.UserDataKey{}
       |> Fountain.Accounts.UserDataKey.changeset(%{
@@ -134,7 +137,10 @@ defmodule Fountain.CryptoTest do
 
       # Replace the valid UserDataKey created by register_user with garbage.
       import Ecto.Query, only: [from: 2]
-      Fountain.Repo.delete_all(from k in Fountain.Accounts.UserDataKey, where: k.user_id == ^user.id)
+
+      Fountain.Repo.delete_all(
+        from k in Fountain.Accounts.UserDataKey, where: k.user_id == ^user.id
+      )
 
       %Fountain.Accounts.UserDataKey{}
       |> Fountain.Accounts.UserDataKey.changeset(%{

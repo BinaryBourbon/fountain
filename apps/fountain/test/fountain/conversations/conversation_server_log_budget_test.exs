@@ -94,7 +94,10 @@ defmodule Fountain.Conversations.ConversationServerLogBudgetTest do
     _ = :sys.get_state(pid2)
 
     data = Enum.map(output_events(conv.id), & &1.data)
-    refute Enum.any?(data, &(&1 =~ "cccc")), "the over-budget chunk must be dropped, not persisted"
+
+    refute Enum.any?(data, &(&1 =~ "cccc")),
+           "the over-budget chunk must be dropped, not persisted"
+
     assert Enum.any?(data, &(&1 =~ "durable log budget"))
 
     # The counter seeded from the DB (90) and the capped chunk never counted.

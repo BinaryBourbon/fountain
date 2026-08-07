@@ -80,7 +80,12 @@ defmodule FountainWeb.OnboardingLive.Wizard do
 
             {:error, reason} ->
               {:noreply,
-               put_inference_message(socket, provider, :error, "Could not save: #{inspect(reason)}")}
+               put_inference_message(
+                 socket,
+                 provider,
+                 :error,
+                 "Could not save: #{inspect(reason)}"
+               )}
           end
 
         {:error, :invalid, %{status: status}} ->

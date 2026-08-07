@@ -355,7 +355,10 @@ defmodule FountainWeb.ConversationControllerTest do
 
     test "returns 400 when conversation is busy", %{conn: conn, user: user, raw_key: raw_key} do
       conv = insert_conversation(user_id: user.id)
-      stub(ConversationServer, :send_prompt, fn _id, _prompt, _images, _opts -> {:error, :busy} end)
+
+      stub(ConversationServer, :send_prompt, fn _id, _prompt, _images, _opts ->
+        {:error, :busy}
+      end)
 
       conn =
         conn
@@ -483,7 +486,10 @@ defmodule FountainWeb.ConversationControllerTest do
       raw_key: raw_key
     } do
       conv = insert_conversation(user_id: user.id)
-      stub(ConversationServer, :terminate_conversation, fn _id, _opts -> {:error, :not_running} end)
+
+      stub(ConversationServer, :terminate_conversation, fn _id, _opts ->
+        {:error, :not_running}
+      end)
 
       conn =
         conn

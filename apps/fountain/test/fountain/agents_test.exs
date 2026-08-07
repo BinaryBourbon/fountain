@@ -158,7 +158,9 @@ defmodule Fountain.AgentsTest do
       victim_env = insert_env(user_id: victim.id)
       agent = insert_agent(user_id: attacker.id)
 
-      assert {:error, changeset} = Agents.update_agent(agent, %{"environment_id" => victim_env.id})
+      assert {:error, changeset} =
+               Agents.update_agent(agent, %{"environment_id" => victim_env.id})
+
       assert %{environment_id: ["does not exist"]} = errors_on(changeset)
     end
   end
@@ -247,8 +249,10 @@ defmodule Fountain.AgentsTest do
       _agent_no_skills = insert_agent(user_id: user.id)
 
       agent_with_skills =
-        insert_agent(user_id: user.id,
-          skills: [%{"name" => "foo", "content" => "bar"}])
+        insert_agent(
+          user_id: user.id,
+          skills: [%{"name" => "foo", "content" => "bar"}]
+        )
 
       results = Agents.list_agents(user.id, has_skills: true)
       ids = Enum.map(results, & &1.id)
@@ -259,9 +263,12 @@ defmodule Fountain.AgentsTest do
     test "has_skills: false (default) returns all agents including those without skills" do
       user = insert_verified_user()
       agent_no_skills = insert_agent(user_id: user.id)
+
       agent_with_skills =
-        insert_agent(user_id: user.id,
-          skills: [%{"name" => "foo", "content" => "bar"}])
+        insert_agent(
+          user_id: user.id,
+          skills: [%{"name" => "foo", "content" => "bar"}]
+        )
 
       results = Agents.list_agents(user.id, has_skills: false)
       ids = Enum.map(results, & &1.id)
@@ -276,8 +283,10 @@ defmodule Fountain.AgentsTest do
       _agent_no_mcp = insert_agent(user_id: user.id)
 
       agent_with_mcp =
-        insert_agent(user_id: user.id,
-          mcp_servers: %{"my-server" => %{"url" => "http://localhost:8080"}})
+        insert_agent(
+          user_id: user.id,
+          mcp_servers: %{"my-server" => %{"url" => "http://localhost:8080"}}
+        )
 
       results = Agents.list_agents(user.id, has_mcp: true)
       ids = Enum.map(results, & &1.id)
@@ -290,8 +299,10 @@ defmodule Fountain.AgentsTest do
       agent_no_mcp = insert_agent(user_id: user.id)
 
       agent_with_mcp =
-        insert_agent(user_id: user.id,
-          mcp_servers: %{"my-server" => %{"url" => "http://localhost:8080"}})
+        insert_agent(
+          user_id: user.id,
+          mcp_servers: %{"my-server" => %{"url" => "http://localhost:8080"}}
+        )
 
       results = Agents.list_agents(user.id, has_mcp: false)
       ids = Enum.map(results, & &1.id)

@@ -158,7 +158,8 @@ defmodule FountainWeb.VaultsLive.Index do
   end
 
   defp secrets_badge_class(0),
-    do: "bg-[var(--color-bg-2)] text-[var(--color-text-muted)] border border-[var(--color-border)]"
+    do:
+      "bg-[var(--color-bg-2)] text-[var(--color-text-muted)] border border-[var(--color-border)]"
 
   defp secrets_badge_class(_),
     do:

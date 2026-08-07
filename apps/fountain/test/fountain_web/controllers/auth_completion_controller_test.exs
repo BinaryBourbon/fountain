@@ -173,7 +173,8 @@ defmodule FountainWeb.AuthCompletionControllerTest do
       user = insert_verified_user(%{"password" => "password12345"})
       token = Accounts.email_change_token(user, "new-address@example.com")
 
-      body = conn |> json_post("/api/auth/email/confirm", %{"token" => token}) |> json_response(200)
+      body =
+        conn |> json_post("/api/auth/email/confirm", %{"token" => token}) |> json_response(200)
 
       assert body["email"] == "new-address@example.com"
       assert Accounts.get_user(user.id).email == "new-address@example.com"
@@ -184,7 +185,8 @@ defmodule FountainWeb.AuthCompletionControllerTest do
       taken = insert_verified_user()
       token = Accounts.email_change_token(user, taken.email)
 
-      body = conn |> json_post("/api/auth/email/confirm", %{"token" => token}) |> json_response(422)
+      body =
+        conn |> json_post("/api/auth/email/confirm", %{"token" => token}) |> json_response(422)
 
       assert body["error"] == "email_taken"
       assert Accounts.get_user(user.id).email == user.email

@@ -82,5 +82,4 @@ defmodule FountainWeb.SessionHTML do
     </div>
     """
   end
-
 end

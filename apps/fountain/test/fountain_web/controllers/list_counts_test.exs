@@ -41,9 +41,10 @@ defmodule FountainWeb.ListCountsTest do
     test "a fresh agent reports zero, not null", %{conn: conn, user: user, key: key} do
       insert_agent(user_id: user.id)
 
-      assert conn |> authed_with_key(key) |> first("/api/agents") |> Map.fetch!(
-               "conversation_count"
-             ) == 0
+      assert conn
+             |> authed_with_key(key)
+             |> first("/api/agents")
+             |> Map.fetch!("conversation_count") == 0
     end
 
     test "another tenant's conversations do not count", %{conn: conn, user: user, key: key} do
@@ -51,9 +52,10 @@ defmodule FountainWeb.ListCountsTest do
       other = insert_verified_user()
       insert_conversation(user_id: other.id, agent_id: agent.id)
 
-      assert conn |> authed_with_key(key) |> first("/api/agents") |> Map.fetch!(
-               "conversation_count"
-             ) == 0
+      assert conn
+             |> authed_with_key(key)
+             |> first("/api/agents")
+             |> Map.fetch!("conversation_count") == 0
     end
 
     test "creating an agent returns counts too", %{conn: conn, key: key} do

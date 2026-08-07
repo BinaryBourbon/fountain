@@ -241,7 +241,11 @@ defmodule Fountain.EnvironmentsTest do
       {:ok, dek} = Fountain.Crypto.load_tenant_key(user.id)
 
       {:ok, secret} =
-        Environments.upsert_secret(env, %{"key" => "DECRYPT_ME", "value" => "plaintext_value"}, dek)
+        Environments.upsert_secret(
+          env,
+          %{"key" => "DECRYPT_ME", "value" => "plaintext_value"},
+          dek
+        )
 
       reloaded = Fountain.Repo.get!(Fountain.Environments.Secret, secret.id)
       assert {:ok, "plaintext_value"} = Fountain.Environments.Secret.decrypt(reloaded, dek)

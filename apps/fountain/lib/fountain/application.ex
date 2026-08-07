@@ -40,8 +40,7 @@ defmodule Fountain.Application do
           # cluster-aware replacements. Single-node behavior is
           # unchanged; on multiple nodes they sync state and let
           # processes be addressed across the cluster.
-          {Horde.Registry,
-           [name: Fountain.ConversationRegistry, keys: :unique, members: :auto]},
+          {Horde.Registry, [name: Fountain.ConversationRegistry, keys: :unique, members: :auto]},
           {Horde.DynamicSupervisor,
            [
              name: Fountain.ConversationSupervisor,

@@ -211,6 +211,7 @@ defmodule FountainWeb.Live.Hooks do
 
       "sidebar_toggle_roots_only", _params, socket ->
         next = !socket.assigns.sidebar_roots_only
+
         Accounts.update_preferences(socket.assigns.current_user, %{conversations_roots_only: next})
 
         {:halt,

@@ -74,12 +74,14 @@ defmodule Fountain.SubstitutionTest do
 
     test "substitutes inside a nested map" do
       input = %{"outer" => %{"inner" => "${VAL}"}}
+
       assert {:ok, %{"outer" => %{"inner" => "42"}}} =
                Substitution.apply(input, %{"VAL" => "42"})
     end
 
     test "substitutes inside a map with mixed types" do
       input = %{"key" => "${X}", "num" => 42}
+
       assert {:ok, %{"key" => "hello", "num" => 42}} =
                Substitution.apply(input, %{"X" => "hello"})
     end
@@ -93,29 +95,36 @@ defmodule Fountain.SubstitutionTest do
 
   describe "apply/2 — property tests" do
     property "substituting a variable always returns the provided value" do
-      check all key <- string(:alphanumeric, min_length: 1),
-                key = String.upcase(key),
-                String.match?(key, ~r/^[A-Z_][A-Z0-9_]*$/),
-                value <- string(:printable) do
+      check all(
+              key <- string(:alphanumeric, min_length: 1),
+              key = String.upcase(key),
+              String.match?(key, ~r/^[A-Z_][A-Z0-9_]*$/),
+              value <- string(:printable)
+            ) do
         template = "${#{key}}"
         assert {:ok, ^value} = Substitution.apply(template, %{key => value})
       end
     end
 
     property "plain strings with no $ pass through unchanged" do
-      check all s <- string(:alphanumeric) do
+      check all(s <- string(:alphanumeric)) do
         assert {:ok, ^s} = Substitution.apply(s, %{})
       end
     end
 
     property "applying with all vars provided always returns :ok" do
-      check all pairs <- list_of({
-                  string(:alphanumeric, min_length: 1)
-                  |> map(&String.upcase/1)
-                  |> filter(&String.match?(&1, ~r/^[A-Z][A-Z0-9_]*$/)),
-                  string(:printable)
-                },
-                min_length: 1) do
+      check all(
+              pairs <-
+                list_of(
+                  {
+                    string(:alphanumeric, min_length: 1)
+                    |> map(&String.upcase/1)
+                    |> filter(&String.match?(&1, ~r/^[A-Z][A-Z0-9_]*$/)),
+                    string(:printable)
+                  },
+                  min_length: 1
+                )
+            ) do
         vars = Map.new(pairs)
         template = vars |> Map.keys() |> Enum.map_join(" ", &"${#{&1}}")
         assert {:ok, _} = Substitution.apply(template, vars)
