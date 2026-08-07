@@ -196,12 +196,29 @@ defmodule Fountain.Accounts do
 
   # After the first-admin bootstrap, so a subscriber that re-reads the user
   # sees the settled role and not a half-applied verification.
+  #
+  # Skipped when `Fountain.PubSub` is not running (#609). `verify_email/2` is
+  # shared with `Fountain.Release.verify_email/1`, whose VM starts the Repo
+  # and nothing else — deliberately, since an eval task that booted the whole
+  # app would fight the running server for the metrics port and the Horde
+  # registry (#256). There, `Registry.meta/2` raised `unknown registry`
+  # *after* the row was written and the first-admin bootstrap had run, so the
+  # task exited non-zero having already done the work.
+  #
+  # A guard rather than an opt-out flag: the point of putting verification in
+  # the context was that every route behaves the same, and "tell anyone
+  # listening" is honestly satisfied by doing nothing when nobody can be. If
+  # PubSub is down in the web VM the waiting page is the least of it.
   defp broadcast_verification(%User{} = user) do
-    Phoenix.PubSub.broadcast(
-      Fountain.PubSub,
-      verification_topic(user.id),
-      {:email_verified, user.id}
-    )
+    if Process.whereis(Fountain.PubSub) do
+      Phoenix.PubSub.broadcast(
+        Fountain.PubSub,
+        verification_topic(user.id),
+        {:email_verified, user.id}
+      )
+    end
+
+    :ok
   end
 
   # Advisory lock key for the first-admin bootstrap. Any stable bigint works;

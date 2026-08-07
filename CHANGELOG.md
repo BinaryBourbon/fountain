@@ -30,6 +30,17 @@ upgrade, is in
   `:command_exited (runtime exited 1)`. The outcome is unchanged — this is
   the diagnosis #603 left missing (#608)
 
+- **`Fountain.Release.verify_email/1` no longer reports failure for work it
+  completed.** The account was verified, the first-admin bootstrap ran, and
+  then the task crashed on a PubSub broadcast and exited non-zero having
+  printed nothing but a stack trace — so any caller checking the exit code
+  concluded it had failed and an operator re-running it saw the same crash on
+  an already-verified account. The broadcast exists so a waiting page in one
+  tab advances when the link is clicked in another, and the release VM starts
+  the Repo and nothing else on purpose; it is now skipped when there is
+  nobody to hear it. The web paths are unchanged, and `promote_admin/1` was
+  never affected (#609)
+
 ## [0.6.0] — 2026-08-06
 
 ### Upgrade notes
