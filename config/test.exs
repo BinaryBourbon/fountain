@@ -70,9 +70,5 @@ config :swoosh, :api_client, false
 config :fountain, :email_enabled, true
 config :fountain, :first_user_admin, false
 
-# Point excoveralls at the repo-root coveralls.json regardless of which
-# app directory Mix happens to have as cwd when the settings are loaded.
-config :excoveralls, config_file: Path.expand("../coveralls.json", __DIR__)
-
 # Jobs are asserted with Oban.Testing rather than executed as a side effect.
 config :fountain, Oban, testing: :manual

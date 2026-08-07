@@ -17,26 +17,54 @@ concurrency:
 permissions:
   contents: read
 
-# Two Elixir jobs, not one. The test suite is ~4m30s of the ~6m50s a PR used
-# to take, and every other gate — format, credo, sobelow, dialyzer, the Go CLI
-# checks, the release boot probe — was queued behind or ahead of it in the same
-# job while sharing nothing with it but the checkout. Splitting them puts the
-# suite alone on the critical path (~5m20s) with the rest running beside it
-# (~2m15s).
+# Two kinds of Elixir job, not one. The test suite used to be ~4m30s of the
+# ~6m50s a PR took, and every other gate — format, credo, sobelow, dialyzer, the
+# Go CLI checks, the release boot probe — was queued behind or ahead of it in
+# the same job while sharing nothing with it but the checkout. #619 split them
+# so the suite runs alone on the critical path with the rest beside it.
 #
-# What this does NOT fix: the suite itself is 252s of which 112s is the
-# `async: false` tail, which ExUnit runs serially on one core after the async
-# phase drains. No runner size crosses that floor — only splitting the suite
-# across machines (`mix test --partition`) does, and that needs the 85%
-# coverage gate to learn how to merge partial results first. Tracked separately.
+# #620 then split the suite itself across three machines. ExUnit reported why:
+#
+#   Finished in 252.3 seconds (140.7s async, 111.6s sync)
+#
+# The async phase scales with cores; the sync phase does not — ExUnit runs
+# `async: false` modules one at a time on one core once the async phase drains,
+# and 55 of 198 modules are `async: false` for real reasons (Application.put_env
+# in the config tests, set_mimic_global in 13 files, the ETS rate-limit table).
+# No runner size crosses that floor; only separate OS processes do, because
+# separate partitions are separate BEAMs. Split three ways the serial tail
+# falls from 111.6s to roughly a third of it, and each partition gets its own
+# Postgres rather than 2,423 tests sharing one 20-connection pool.
+#
+# The cost is that each partition instruments every module while exercising a
+# third of the tests, so no partition's coverage means anything on its own.
+# Hence the `coverage` job: partitions export, it merges, and the 85% threshold
+# is enforced once against the union (see mix.exs / coverage.exs).
 jobs:
   test:
-    name: Build and Test
+    name: Build and Test (partition ${{ matrix.partition }})
     runs-on: ubuntu-24.04
     timeout-minutes: 20
 
     permissions:
       contents: read
+
+    strategy:
+      # Each partition is an independent verdict and all three are wanted: a
+      # cancelled sibling would leave the coverage merge without its export and
+      # turn one test failure into two unrelated-looking ones.
+      fail-fast: false
+      matrix:
+        # The single source of truth for how many partitions there are — the
+        # `--partitions` argument below is `strategy.job-total`, so adding an
+        # entry here is the whole change.
+        partition: [1, 2, 3]
+
+    outputs:
+      # Same value from every partition, so which one wins the race to set it
+      # does not matter. The coverage job uses it to check that it merged an
+      # export from every partition rather than from whichever ones uploaded.
+      partitions: ${{ steps.total.outputs.count }}
 
     services:
       postgres:
@@ -66,13 +94,19 @@ jobs:
           elixir-version: "1.19.2"
           otp-version: "28.3"
 
-      # Cache keys carry the job name. The two Elixir jobs build different
+      # Cache keys carry the job name. `test` and `checks` build different
       # trees — this one only ever compiles :test, while `checks` additionally
       # builds :dev for dialyzer and :prod for the release — and a shared key
       # would have them racing to save mutually incomplete archives under it,
       # winner decided by whichever finished first. Same reasoning as the
       # deliberately-narrow restore-keys below: a cache whose contents depend
       # on who got there first is the failure mode being avoided.
+      #
+      # The three partitions DO share a key, and that is not the same race:
+      # they compile one identical :test tree and differ only in which test
+      # files they load, so whichever wins the save has saved the same archive
+      # the others would have. Giving each partition its own key would triple
+      # the storage for identical content and stop them warming each other.
       - name: Restore deps cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
         with:
@@ -102,8 +136,119 @@ jobs:
       # Coverage instrumentation is free here — measured at 128.8s with cover
       # against 128.6s without, on the same machine. Running the suite bare on
       # PRs and gating coverage elsewhere would buy nothing and cost the gate.
+      #
+      # The script exists for the assertion, not for the mix invocation: with
+      # partitioning, "ran zero tests" and "passed" are both exit 0, so it
+      # parses ExUnit's summary line and refuses to succeed without one. See
+      # the header of scripts/test-partition.sh.
       - name: Run tests with coverage
-        run: mix coveralls
+        env:
+          MIX_TEST_PARTITION: ${{ matrix.partition }}
+        run: scripts/test-partition.sh ${{ strategy.job-total }}
+
+      - name: Publish the partition count
+        id: total
+        run: echo "count=${{ strategy.job-total }}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload coverage export
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: coverdata-${{ matrix.partition }}
+          path: |
+            apps/fountain/cover/${{ matrix.partition }}.coverdata
+            apps/fountain/cover/${{ matrix.partition }}.tests
+          # An export that silently fails to upload would leave the merge job
+          # gating on a fraction of the suite while still printing a number.
+          if-no-files-found: error
+          retention-days: 1
+
+  # The 85% gate, enforced once against all three partitions' data. It is a
+  # separate job because there is nowhere else it can live: no partition can
+  # see the others' coverage, and ExCoveralls — which this replaced in #620 —
+  # had no way to merge across machines at all. Elixir's built-in cover does,
+  # via the exports `mix test --partitions` writes.
+  #
+  # Deliberately light. `mix test.coverage` runs no tests and needs no
+  # database — it imports .coverdata and reports — so this job is a checkout,
+  # two cache restores and a few seconds of merging.
+  coverage:
+    name: Coverage gate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    needs: test
+
+    permissions:
+      contents: read
+
+    env:
+      MIX_ENV: test
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v5
+
+      - name: Set up Elixir
+        id: beam
+        uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124 # v1.24.1
+        with:
+          elixir-version: "1.19.2"
+          otp-version: "28.3"
+
+      # Both caches share the `test` job's keys: same tree, and by now the
+      # partitions have already saved them, so this restores rather than
+      # competes. The build cache is load-bearing, not a nicety — the task
+      # itself compiles nothing, but Mix runs loadpaths underneath it and will
+      # build the whole dependency tree into an empty _build first. Measured on
+      # a 10-core machine: 3.7s warm, 38.5s cold.
+      - name: Restore deps cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
+        with:
+          path: deps
+          key: ${{ runner.os }}-mix-test-${{ hashFiles('**/mix.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-mix-test-
+
+      - name: Restore build cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
+        with:
+          path: _build
+          key: ${{ runner.os }}-build-test-${{ steps.beam.outputs.otp-version }}-${{ steps.beam.outputs.elixir-version }}-${{ hashFiles('**/mix.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-build-test-${{ steps.beam.outputs.otp-version }}-${{ steps.beam.outputs.elixir-version }}-
+
+      - name: Install dependencies
+        run: mix deps.get
+
+      # Back into the directory the partitions wrote them from, which is where
+      # `mix test.coverage` looks: it merges every *.coverdata under the
+      # umbrella's children.
+      - name: Download coverage exports
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: coverdata-*
+          merge-multiple: true
+          path: apps/fountain/cover
+
+      # `mix test.coverage` reports on whatever exports it finds and says
+      # nothing about the ones it did not. Two partitions' data would produce a
+      # real-looking table with a number nobody could interpret, so the count
+      # is checked before the threshold is trusted. Summing the per-partition
+      # test counts is the same check from the other side, and puts the size of
+      # the suite the gate stood on into the log.
+      - name: Check every partition reported
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          expected=${{ needs.test.outputs.partitions }}
+          exports=(apps/fountain/cover/*.coverdata)
+          if [ "${#exports[@]}" -ne "$expected" ]; then
+            echo "merged ${#exports[@]} coverage exports, expected $expected" >&2
+            exit 1
+          fi
+          total=$(cat apps/fountain/cover/*.tests | awk '{s += $1} END {print s + 0}')
+          echo "merging ${#exports[@]} partitions covering $total tests"
+
+      - name: Enforce the coverage threshold
+        run: mix test.coverage
 
   checks:
     name: Static analysis and release checks

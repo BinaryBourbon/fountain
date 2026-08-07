@@ -78,9 +78,10 @@ Per the repo rule that ADRs must not describe unbuilt behavior as existing:
 - `mix test <path>` for ee files resolves only from `apps/fountain`
   (`mix test ../../ee/test/...`) or with an absolute path; root-relative
   paths do not match.
-- ExCoveralls reports ee modules with absolute paths (its `Path.relative_to`
+- ~~ExCoveralls reports ee modules with absolute paths (its `Path.relative_to`
   is against the app cwd). Cosmetic; `coveralls.json` skip regexes are
-  unanchored and still match.
+  unanchored and still match.~~ Moot since #620 replaced ExCoveralls with
+  built-in cover, which excludes by module name and so never sees a path.
 - Historical ADRs (notably 0006) reference pre-move file paths; they describe
   the state at their time and are not rewritten.
 
