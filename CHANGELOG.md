@@ -16,6 +16,205 @@ upgrade, is in
 
 ## [Unreleased]
 
+## [0.6.0] — 2026-08-06
+
+### Upgrade notes
+
+- **No migrations, and no new required configuration.** An instance on
+  v0.5.x upgrades by taking the new image.
+- **A bearer token belonging to an account that never verified its email now
+  gets `403 email_unverified`.** Verification is enforced where the identity
+  is established rather than at each door, so `authenticate_api_key/1`
+  refuses for such accounts and unverified browser sessions land on
+  `/auth/verify-pending` instead of reaching controller routes (theme,
+  avatars, export downloads, turn images, the credential POSTs). Nothing is
+  affected in practice — across 163 unverified accounts, zero API keys had
+  ever been issued — but a key minted before `POST /api/auth/token` was
+  closed would have kept working forever, and no longer does (#533).
+- **Expect `audit_events` to grow faster.** Mutations now record in the
+  context rather than at whichever surface happened to remember, so the UI
+  leaves the same trail `/api` always did, and background workers attribute
+  their own writes. The retention pruner already covers the table and now
+  records its own run; no action needed unless you have tightened retention
+  on the assumption of the old volume.
+- `POSTGRES_HOST_PORT` is a new optional compose variable, defaulting to
+  `5432` — set it if the evaluating machine already runs Postgres there
+  (#549). Existing compose files are unaffected.
+
+### Added
+
+- **How long a turn takes, and how long before it says anything, are now
+  metrics rather than one-off traces.** Turn duration existed only in the
+  `fountain.turn` OTel span and in `turns.started_at/ended_at` — a trace you
+  open one at a time and a column you query by hand, neither of which backs a
+  dashboard or an alert. There is now a `fountain.turn.duration` histogram
+  tagged by runtime and terminal status, and a `fountain.turn.first_output`
+  histogram for the gap between hitting enter and the agent visibly doing
+  something, which nothing captured at all. First output is measured in bytes
+  on stdout rather than parsed tokens, so claude, codex, gemini and opencode
+  stay directly comparable; a turn resumed after a restart deliberately emits
+  neither, since monotonic time does not survive the restart and a missing
+  sample beats a wrong one (#536, #535)
+
+- **Provisioning sub-steps have their own histograms.** `fresh_provision` and
+  `reattach` have been measured since #405, so a provision getting slower was
+  visible — but which step got slower was not, and attributing it meant
+  grepping log lines or opening individual traces. The setup script, package
+  installs, network policy, repository clones and checkpoint create/restore
+  each export a histogram now, sharing `fresh_provision`'s buckets so the
+  parts stay comparable with the whole. The emitters were already firing these
+  spans; nothing outside the log and OTel had subscribed. No tags on any of
+  them — the span metadata carries conversation and environment ids, and
+  promoting one to a label mints a time series per conversation (#537)
+
+- **The `/audit` page has the filters the API got in #526.** `GET /api/audit`
+  could narrow the trail by action prefix, resource type and time window; the
+  page could not, so the API was strictly better than the UI at the one thing
+  the UI is for — "show me every `vault.` event since Tuesday" was a curl away
+  and impossible in a browser, where you scrolled 200 rows and hoped. The
+  page now takes the same four filters through the same query, with the
+  resource-type list built from what is actually in your trail. Filter state
+  lives in the URL, so a filtered view is a link you can send someone and it
+  survives the 5s refresh. Admins get the filters over the cross-tenant view
+  too — previously the person seeing the most events could filter the least
+  (#572)
+
+- **`/api/admin/*` makes operator tasks scriptable** — list and inspect
+  accounts with the filters the admin UI has, set the sandbox cap, extend a
+  trial, comp, suspend, resync from Stripe, delete an account, list and reap
+  sandboxes, and read both the cross-tenant audit trail and the privilege
+  trail. Every one of these was AdminLive-only, so a bulk trial extension or
+  a suspension from an incident runbook meant a human clicking. The surface
+  needs three things at once: an authenticated key, `full` scope (a
+  sandbox's per-conversation token is not an operator credential even when
+  the account is an admin) and the admin role. Refusals mirror the UI — no
+  self-suspend, no self-delete, billing actions refused when billing is
+  disabled — plus one the UI has no need for: you cannot revoke your own
+  admin role, which over an API is a lockout one scripted typo away. Actions
+  record the same `admin.*` privilege-trail events, so a curl'd suspension
+  is as visible as a clicked one (#527)
+
+- **Billing is self-serve over the API**: `GET /api/account/billing` for
+  status, trial and period dates and the current month's usage, plus
+  `POST /api/account/billing/portal` and `.../checkout` to mint Stripe URLs.
+  All user-facing billing lived in `BillingLive`, so a CLI user who hit the
+  subscription gate got a 402 with no programmatic way out, and an expiring
+  trial was invisible — `/api/auth/me` carried `subscription_status` and
+  nothing else. Checkout refuses with 409 when Stripe already holds a live
+  subscription instead of quietly minting a duplicate, and refuses outright
+  when Stripe cannot be asked. With billing disabled the endpoints are 404
+  with `billing: "disabled"`, matching the UI's redirect. The URL-minting
+  rules moved into the billing context so the LiveView and the API cannot
+  drift; everything stays in `ee/` (#524)
+
+- **Account data export and account deletion are driveable over the API** —
+  `POST/GET /api/account/exports`, `GET /api/account/exports/:id/download`
+  and `DELETE /api/account`. These are the closest things Fountain has to
+  GDPR flows and both were browser-only. Export keeps its one-per-hour limit
+  (429 with `Retry-After`) and, since the API has no PubSub, reports progress
+  by polling instead of pushing; the download is the same owner-scoped,
+  expiring, audited artifact the session route serves. Deletion is
+  irreversible and takes the tenant encryption key with it, so it requires
+  both a typed `{"confirm": "<account email>"}` body — the API equivalent of
+  the UI's typed-email gate — and a `full`-scoped key, which keeps a
+  sandbox's per-conversation token from destroying the account it is running
+  inside (#523)
+
+- **Agent avatars have an API**: `GET/PUT/DELETE /api/agents/:id/avatar`, and
+  `avatar_media_type` is serialized on the agent so a client can tell one
+  exists. Upload and delete lived only in the agents LiveView, and even
+  *reading* the bytes required a session — while turn images next door
+  already had both a session route and a bearer route, so `fountain apply`
+  shipping an avatar file had nowhere to send it. Uploads take raw bytes with
+  an image content-type or the same base64 JSON shape prompt images use, cap
+  at 5 MB, and are refused with 415 for anything that is not one of the four
+  accepted image types — the ingest half of the rule that keeps
+  client-declared `text/html` from ever being servable from the app's own
+  origin (#528)
+
+- **Onboarding can be completed over the API** —
+  `POST /api/account/onboarding/complete`, with `GET /api/account/onboarding`
+  and new `onboarding_state` / `onboarding_completed` / `email_verified`
+  fields on `GET /api/auth/me`. `complete_onboarding/1` had exactly one
+  caller, the wizard LiveView, so an account configured entirely through the
+  API stayed permanently un-onboarded and a later browser visit dropped the
+  user into a wizard they had no reason to see (#525)
+
+- **`GET /api/audit`** serves the account's own audit trail — tenant-scoped,
+  newest first, cursor-paginated, with filters the `/audit` LiveView does not
+  have yet (`action_prefix`, `resource_type`, `since`, `until`). Programmatic
+  access previously meant scraping a LiveView or requesting a whole account
+  export, which is a poor fit for shipping events to a SIEM or an archive.
+  `action_prefix` is matched as a literal, so a `%` filters to nothing rather
+  than returning the entire trail, and a malformed `since`/`until` is a 400
+  rather than a silently unfiltered response (#526)
+
+- **Password and email changes work over a bearer token**:
+  `POST /api/auth/password` and `POST /api/auth/email`. Both existed only as
+  browser POSTs with session auth and CSRF, so an API-driven account could
+  never rotate its own credentials. Both still require the current password —
+  a stolen bearer token must not be enough — and sit behind the `full`-scope
+  gate so a sandbox's per-conversation token cannot rotate the account
+  password. A password change signs out browser sessions but does not revoke
+  API keys, which is what it has always done; the response now says so
+  (`sessions_invalidated`, `api_keys_revoked`) instead of leaving a caller
+  rotating a leaked password to find out later (#521)
+
+- **The auth email flows can be finished over the API.** An API consumer
+  could start every one of them — register, resend-verification, forgot —
+  and finish none: confirmation and reset were browser routes, so account
+  activation required a browser round-trip. `POST /api/auth/verify`,
+  `POST /api/auth/reset` and `POST /api/auth/email/confirm` accept the same
+  tokens the emailed links carry, so a CLI can prompt "paste the code from
+  your email". The links themselves still point at the browser pages.
+  `verify` is idempotent and issues no session — an API client mints a key
+  at `POST /api/auth/token` once the account is live — and every flow keeps
+  the browser path's rate limits, single-use token semantics and audit
+  events (#522)
+
+- **Usage counts are in the resource read-model**: agents carry
+  `conversation_count`, environments `secret_count` and `agent_count`, vaults
+  `secret_count` — on the list *and* single-resource reads, so "is this
+  environment in use / safe to delete" is one request instead of an N+1 the
+  client assembles. The counting queries already existed for the UI and had
+  no controller caller (#529)
+
+- **The conversation read-model the UI has is now the one the API serves.**
+  Conversation JSON gained `title`, `turn_count`, `last_active_at`,
+  `last_read_at` and a computed `unread`; `GET /api/conversations` takes
+  `?roots_only=true` (the context supported it, no caller passed it);
+  `POST /api/conversations/:id/read` marks one read; and
+  `GET /api/conversations/:id/tree` returns the whole spawn tree —
+  ancestors and descendants — so an agent that fanned out can enumerate its
+  own sub-conversations instead of keeping client-side bookkeeping.
+  `GET /api/conversations/:id` now reports real counts rather than the
+  struct defaults. The unread rule had three copies in the web layer and now
+  has one, in the context (#520)
+
+- **A conversation's log events are readable as JSON**, not only as an SSE
+  stream: `GET /api/conversations/:id/events`, cursor-paginated
+  (`?after=`, `?limit=`) with the same `?streams=` filter the stream takes.
+  Draining history with `?wait=false` still returned `text/event-stream`, so
+  anything fetching, archiving or analysing a conversation's output had to
+  implement an event-stream parser for what is a paginated list read. Rows
+  carry the same fields the stream sends plus each event's `id` — the same
+  value the stream uses as `Last-Event-ID`, so a client can page through
+  history and then attach the tail exactly where it stopped (#519)
+
+- **Inference credentials can be set over the API**, so an account can be
+  bootstrapped without ever opening a browser: `GET/PUT/DELETE
+  /api/account/inference-credentials[/:provider]`. A conversation cannot run
+  without one of these, and until now `put_credential` had exactly two
+  callers — the settings LiveView and the onboarding wizard — which made a
+  headless `register → configure → run` flow impossible. `PUT` runs the same
+  provider ping the settings page does and reports the outcomes distinctly
+  (422 rejected, 504 timed out, 502 unreachable) so a client knows whether to
+  re-type or retry; `validate: false` stores without the ping. Values stay
+  write-only, and the endpoints need a `full`-scoped key — a leaked
+  per-conversation sprite token must not be able to swap the keys the account
+  runs on. Both surfaces now emit `inference_credential.write` / `.delete`
+  audit events (#518)
+
 ### Fixed
 
 - **A runtime that dies at startup now fails its turn instead of orphaning
@@ -191,155 +390,16 @@ upgrade, is in
   `.delete`) events the LiveView forms do, carrying the key, never the
   value, and attributed to `api` or `sprite` as appropriate (#530)
 
-### Added
-
-- **The `/audit` page has the filters the API got in #526.** `GET /api/audit`
-  could narrow the trail by action prefix, resource type and time window; the
-  page could not, so the API was strictly better than the UI at the one thing
-  the UI is for — "show me every `vault.` event since Tuesday" was a curl away
-  and impossible in a browser, where you scrolled 200 rows and hoped. The
-  page now takes the same four filters through the same query, with the
-  resource-type list built from what is actually in your trail. Filter state
-  lives in the URL, so a filtered view is a link you can send someone and it
-  survives the 5s refresh. Admins get the filters over the cross-tenant view
-  too — previously the person seeing the most events could filter the least
-  (#572)
-
-- **`/api/admin/*` makes operator tasks scriptable** — list and inspect
-  accounts with the filters the admin UI has, set the sandbox cap, extend a
-  trial, comp, suspend, resync from Stripe, delete an account, list and reap
-  sandboxes, and read both the cross-tenant audit trail and the privilege
-  trail. Every one of these was AdminLive-only, so a bulk trial extension or
-  a suspension from an incident runbook meant a human clicking. The surface
-  needs three things at once: an authenticated key, `full` scope (a
-  sandbox's per-conversation token is not an operator credential even when
-  the account is an admin) and the admin role. Refusals mirror the UI — no
-  self-suspend, no self-delete, billing actions refused when billing is
-  disabled — plus one the UI has no need for: you cannot revoke your own
-  admin role, which over an API is a lockout one scripted typo away. Actions
-  record the same `admin.*` privilege-trail events, so a curl'd suspension
-  is as visible as a clicked one (#527)
-
-- **Billing is self-serve over the API**: `GET /api/account/billing` for
-  status, trial and period dates and the current month's usage, plus
-  `POST /api/account/billing/portal` and `.../checkout` to mint Stripe URLs.
-  All user-facing billing lived in `BillingLive`, so a CLI user who hit the
-  subscription gate got a 402 with no programmatic way out, and an expiring
-  trial was invisible — `/api/auth/me` carried `subscription_status` and
-  nothing else. Checkout refuses with 409 when Stripe already holds a live
-  subscription instead of quietly minting a duplicate, and refuses outright
-  when Stripe cannot be asked. With billing disabled the endpoints are 404
-  with `billing: "disabled"`, matching the UI's redirect. The URL-minting
-  rules moved into the billing context so the LiveView and the API cannot
-  drift; everything stays in `ee/` (#524)
-
-- **Account data export and account deletion are driveable over the API** —
-  `POST/GET /api/account/exports`, `GET /api/account/exports/:id/download`
-  and `DELETE /api/account`. These are the closest things Fountain has to
-  GDPR flows and both were browser-only. Export keeps its one-per-hour limit
-  (429 with `Retry-After`) and, since the API has no PubSub, reports progress
-  by polling instead of pushing; the download is the same owner-scoped,
-  expiring, audited artifact the session route serves. Deletion is
-  irreversible and takes the tenant encryption key with it, so it requires
-  both a typed `{"confirm": "<account email>"}` body — the API equivalent of
-  the UI's typed-email gate — and a `full`-scoped key, which keeps a
-  sandbox's per-conversation token from destroying the account it is running
-  inside (#523)
-
-- **Agent avatars have an API**: `GET/PUT/DELETE /api/agents/:id/avatar`, and
-  `avatar_media_type` is serialized on the agent so a client can tell one
-  exists. Upload and delete lived only in the agents LiveView, and even
-  *reading* the bytes required a session — while turn images next door
-  already had both a session route and a bearer route, so `fountain apply`
-  shipping an avatar file had nowhere to send it. Uploads take raw bytes with
-  an image content-type or the same base64 JSON shape prompt images use, cap
-  at 5 MB, and are refused with 415 for anything that is not one of the four
-  accepted image types — the ingest half of the rule that keeps
-  client-declared `text/html` from ever being servable from the app's own
-  origin (#528)
-
-- **Onboarding can be completed over the API** —
-  `POST /api/account/onboarding/complete`, with `GET /api/account/onboarding`
-  and new `onboarding_state` / `onboarding_completed` / `email_verified`
-  fields on `GET /api/auth/me`. `complete_onboarding/1` had exactly one
-  caller, the wizard LiveView, so an account configured entirely through the
-  API stayed permanently un-onboarded and a later browser visit dropped the
-  user into a wizard they had no reason to see (#525)
-
-- **`GET /api/audit`** serves the account's own audit trail — tenant-scoped,
-  newest first, cursor-paginated, with filters the `/audit` LiveView does not
-  have yet (`action_prefix`, `resource_type`, `since`, `until`). Programmatic
-  access previously meant scraping a LiveView or requesting a whole account
-  export, which is a poor fit for shipping events to a SIEM or an archive.
-  `action_prefix` is matched as a literal, so a `%` filters to nothing rather
-  than returning the entire trail, and a malformed `since`/`until` is a 400
-  rather than a silently unfiltered response (#526)
-
-- **Password and email changes work over a bearer token**:
-  `POST /api/auth/password` and `POST /api/auth/email`. Both existed only as
-  browser POSTs with session auth and CSRF, so an API-driven account could
-  never rotate its own credentials. Both still require the current password —
-  a stolen bearer token must not be enough — and sit behind the `full`-scope
-  gate so a sandbox's per-conversation token cannot rotate the account
-  password. A password change signs out browser sessions but does not revoke
-  API keys, which is what it has always done; the response now says so
-  (`sessions_invalidated`, `api_keys_revoked`) instead of leaving a caller
-  rotating a leaked password to find out later (#521)
-
-- **The auth email flows can be finished over the API.** An API consumer
-  could start every one of them — register, resend-verification, forgot —
-  and finish none: confirmation and reset were browser routes, so account
-  activation required a browser round-trip. `POST /api/auth/verify`,
-  `POST /api/auth/reset` and `POST /api/auth/email/confirm` accept the same
-  tokens the emailed links carry, so a CLI can prompt "paste the code from
-  your email". The links themselves still point at the browser pages.
-  `verify` is idempotent and issues no session — an API client mints a key
-  at `POST /api/auth/token` once the account is live — and every flow keeps
-  the browser path's rate limits, single-use token semantics and audit
-  events (#522)
-
-- **Usage counts are in the resource read-model**: agents carry
-  `conversation_count`, environments `secret_count` and `agent_count`, vaults
-  `secret_count` — on the list *and* single-resource reads, so "is this
-  environment in use / safe to delete" is one request instead of an N+1 the
-  client assembles. The counting queries already existed for the UI and had
-  no controller caller (#529)
-
-- **The conversation read-model the UI has is now the one the API serves.**
-  Conversation JSON gained `title`, `turn_count`, `last_active_at`,
-  `last_read_at` and a computed `unread`; `GET /api/conversations` takes
-  `?roots_only=true` (the context supported it, no caller passed it);
-  `POST /api/conversations/:id/read` marks one read; and
-  `GET /api/conversations/:id/tree` returns the whole spawn tree —
-  ancestors and descendants — so an agent that fanned out can enumerate its
-  own sub-conversations instead of keeping client-side bookkeeping.
-  `GET /api/conversations/:id` now reports real counts rather than the
-  struct defaults. The unread rule had three copies in the web layer and now
-  has one, in the context (#520)
-
-- **A conversation's log events are readable as JSON**, not only as an SSE
-  stream: `GET /api/conversations/:id/events`, cursor-paginated
-  (`?after=`, `?limit=`) with the same `?streams=` filter the stream takes.
-  Draining history with `?wait=false` still returned `text/event-stream`, so
-  anything fetching, archiving or analysing a conversation's output had to
-  implement an event-stream parser for what is a paginated list read. Rows
-  carry the same fields the stream sends plus each event's `id` — the same
-  value the stream uses as `Last-Event-ID`, so a client can page through
-  history and then attach the tail exactly where it stopped (#519)
-
-- **Inference credentials can be set over the API**, so an account can be
-  bootstrapped without ever opening a browser: `GET/PUT/DELETE
-  /api/account/inference-credentials[/:provider]`. A conversation cannot run
-  without one of these, and until now `put_credential` had exactly two
-  callers — the settings LiveView and the onboarding wizard — which made a
-  headless `register → configure → run` flow impossible. `PUT` runs the same
-  provider ping the settings page does and reports the outcomes distinctly
-  (422 rejected, 504 timed out, 502 unreachable) so a client knows whether to
-  re-type or retry; `validate: false` stores without the ping. Values stay
-  write-only, and the endpoints need a `full`-scoped key — a leaked
-  per-conversation sprite token must not be able to swap the keys the account
-  runs on. Both surfaces now emit `inference_credential.write` / `.delete`
-  audit events (#518)
+- **The compose quick start no longer collides with a Postgres you already
+  run.** The file published `5432:5432` unconditionally, which describes most
+  machines evaluating Fountain — so the documented quick start failed on a
+  developer workstation for a reason that had nothing to do with Fountain.
+  The publish is host-side convenience only (the app reaches Postgres over the
+  compose network), so it is now `${POSTGRES_HOST_PORT:-5432}:5432`: unchanged
+  by default, and settable when 5432 is taken. CI also boots the pinned image
+  against main's compose file on every run — the pairing a fresh `git clone &&
+  docker compose up` actually gets, which nothing had been exercising, and
+  which is how both #513 boot failures shipped (#549, #548)
 
 ## [0.5.2] — 2026-08-05
 
