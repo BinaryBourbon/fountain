@@ -1,8 +1,11 @@
 # The directory Mix will write compiled artifacts to.
 /_build/
 
-# If you run "mix test --cover", coverage assets end up here.
-/cover/
+# If you run "mix test --cover", coverage assets end up here. Unanchored: in an
+# umbrella the reports land in apps/*/cover/ as well as at the root, and while
+# the root pattern was anchored a generated excoveralls.json sat committed in
+# apps/fountain/cover/ from b1bc89c until #620.
+cover/
 
 # Local build outputs (CLI binaries in CI, `mix openapi.export` locally).
 /dist/

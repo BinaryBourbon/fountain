@@ -10,7 +10,15 @@ defmodule Fountain.Umbrella.MixProject do
       deps: deps(),
       releases: releases(),
       aliases: aliases(),
-      test_coverage: [tool: ExCoveralls],
+      # Built-in cover rather than ExCoveralls (#620): ExCoveralls has no way
+      # to merge results from separate machines, and the suite is now run as
+      # three partitions in three CI jobs, each of which instruments every
+      # module while exercising a third of the tests. `mix test --partitions`
+      # exports a .coverdata per partition and `mix test.coverage` merges them
+      # here, at the umbrella root, where the 85% threshold is enforced once
+      # against the union. Dropping the threshold per partition instead would
+      # have deleted the gate while leaving it looking present.
+      test_coverage: coverage(),
       dialyzer: [
         ignore_warnings: ".dialyzer_ignore.exs",
         # A fixed path (rather than the _build default) so CI can cache the
@@ -32,12 +40,14 @@ defmodule Fountain.Umbrella.MixProject do
   def cli do
     [
       preferred_envs: [
-        precommit: :test,
-        coveralls: :test,
-        "coveralls.html": :test,
-        "coveralls.github": :test
+        precommit: :test
       ]
     ]
+  end
+
+  # Shared with apps/fountain/mix.exs — see coverage.exs for why it is a file.
+  defp coverage do
+    Path.expand("coverage.exs", __DIR__) |> Code.eval_file() |> elem(0)
   end
 
   defp deps do

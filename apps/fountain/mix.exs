@@ -16,9 +16,17 @@ defmodule Fountain.MixProject do
       aliases: aliases(),
       deps: deps(),
       listeners: [Phoenix.CodeReloader],
-      test_coverage: [tool: ExCoveralls],
+      test_coverage: coverage(),
       preferred_cli_env: [muzak: :test]
     ]
+  end
+
+  # Same file the umbrella root reads (#620). Read rather than referenced
+  # through the root project because `mix test` is also run from inside this
+  # directory — the documented way to run a single ee/test file — and then the
+  # root mix.exs is never loaded at all.
+  defp coverage do
+    Path.expand("../../coverage.exs", __DIR__) |> Code.eval_file() |> elem(0)
   end
 
   def application do
@@ -84,7 +92,6 @@ defmodule Fountain.MixProject do
       {:ueberauth_github, "~> 0.8"},
       # Test / dev
       {:sobelow, "~> 0.13", only: [:dev, :test], runtime: false},
-      {:excoveralls, "~> 0.18", only: :test},
       {:mimic, "~> 2.3", only: :test},
       {:lazy_html, ">= 0.1.0", only: :test},
       {:stream_data, "~> 1.1", only: [:dev, :test]},

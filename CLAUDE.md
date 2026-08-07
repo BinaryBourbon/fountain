@@ -199,9 +199,21 @@ wrap `record/1` in a way that makes it blocking for the user.
 7. `MIX_ENV=dev mix dialyzer`
 8. Go CLI checks: `go test ./...` and `go vet ./...` in `cli/`
 9. `mix ecto.create && mix ecto.migrate`
-10. `mix coveralls` (the test suite, with coverage)
+10. The test suite, as three partitions in three parallel jobs (`scripts/test-partition.sh`), plus a `coverage` job that merges their exports with `mix test.coverage` and enforces the 85% threshold
 11. Release boot check — builds a prod release, probes `/health` and `/health/ready`, runs a release task beside the live server
 12. `mix openapi.spec.json` + `jq empty` (OpenAPI spec validates)
+
+### Coverage
+
+Coverage uses Elixir's built-in cover, not ExCoveralls — ExCoveralls cannot
+merge results across machines, and since #620 the suite runs as three
+partitions on three of them. Settings live in `coverage.exs` at the repo root
+(read by both mix.exs files): `summary: [threshold: 85]` and `:ignore_modules`,
+which replaced `coveralls.json`'s `minimum_coverage` and `skip_files`.
+
+`:ignore_modules` matches **module names**, not source paths — a bare atom for
+one module, a regex against `inspect(module)` for what used to be a
+directory entry. Locally, `mix test --cover` reports and gates in one step.
 
 Run `mix precommit` locally before pushing — it covers the core gate (compile with warnings-as-errors, unused deps, format, `credo --strict`, sobelow, dialyzer, tests). CI additionally runs hex.audit, the Go CLI checks, the release boot check, and OpenAPI validation.
 
