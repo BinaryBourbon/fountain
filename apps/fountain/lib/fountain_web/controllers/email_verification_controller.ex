@@ -49,7 +49,10 @@ defmodule FountainWeb.EmailVerificationController do
             |> redirect(to: destination(user))
 
           user ->
-            case Accounts.verify_email(user, FountainWeb.Audited.attribution(conn)) do
+            # Explicit actor: this route runs before a session exists, so
+            # derivation would report "system" for a person clicking a link in
+            # their mail client (ADR 0013 — bare "system" is a defect signal).
+            case Accounts.verify_email(user, FountainWeb.Audited.attribution(conn, actor: "ui")) do
               {:ok, verified_user} ->
                 # Durable job rather than a linked Task: this used to be a bare
                 # Task.async with no await, so it could be killed when the
@@ -133,7 +136,9 @@ defmodule FountainWeb.EmailVerificationController do
   end
 
   defp verify_user(conn, user) do
-    case Accounts.verify_email(user, FountainWeb.Audited.attribution(conn)) do
+    # `:api_public` — nothing has authenticated yet, so the actor is stated
+    # rather than derived. Same caveat as the browser route above.
+    case Accounts.verify_email(user, FountainWeb.Audited.attribution(conn, actor: "api")) do
       {:ok, verified} ->
         # Same follow-on work the browser route does — the account must not
         # end up in a different state depending on which surface finished it.

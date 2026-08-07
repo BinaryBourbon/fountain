@@ -24,6 +24,10 @@ defmodule Fountain.Audit do
   `FountainWeb.Audited.attribution/2` on a web surface, or a
   `"system:<worker>"` string from a background one.
 
+  ADR 0013 owns this rule and the closed actor vocabulary (`self`, `ui`,
+  `api`, `sprite`, `admin`, `admin:<id>`, `system:<worker>`); this moduledoc
+  keeps the mechanics.
+
   ## Deliberately not audited
 
   High-volume machine state is not audit material, and recording it would bury

@@ -183,6 +183,16 @@ Three rules that are easy to get wrong:
 context mutation and the guardrail fails until it audits, or until you add it
 to the documented exclusion list with a reason.
 
+The actor vocabulary is closed: `self` (the context default), `ui`, `api`,
+`sprite`, `admin`, `admin:<operator_id>` (account deletion only) and
+`system:<worker>`. A bare `"system"` — what `attribution/2` derives when a
+request has no principal — is a defect, not a value: the unauthenticated
+routes (login, registration, `POST /api/auth/token`, email verification) pass
+an explicit actor. **decisions/0013-audit-trail.md** owns all of this, plus
+the deliberate exclusions, the two-rows-per-API-mutation choice and the
+deletion semantics; read it before adding an actor string or moving a
+recording out of a context.
+
 `Fountain.Audit.record!/1` is deliberately test-only — see its docstring. Never
 wrap `record/1` in a way that makes it blocking for the user.
 

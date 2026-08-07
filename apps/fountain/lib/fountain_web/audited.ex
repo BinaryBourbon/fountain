@@ -20,6 +20,13 @@ defmodule FountainWeb.Audited do
     * `"ui"` — a browser session
     * `"system"` — no identifiable actor
 
+  The vocabulary is closed and ADR 0013 owns it; `"self"`, `"admin"` and
+  `"system:<worker>"` are the members contexts and background callers supply.
+  Derived `"system"` is **not** a member — it means the request had no
+  principal, which on the unauthenticated pipelines (login, registration,
+  `POST /api/auth/token`, email verification) is always a human whose actor the
+  call site knows. Pass the override there; a `"system"` row is a bug.
+
   Recording is best-effort throughout: `Fountain.Audit.record/1` rescues, so a
   logging failure can never break the operation being logged.
   """

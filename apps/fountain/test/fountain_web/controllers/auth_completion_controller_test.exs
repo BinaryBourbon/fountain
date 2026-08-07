@@ -63,8 +63,13 @@ defmodule FountainWeb.AuthCompletionControllerTest do
       |> json_post("/api/auth/verify", %{"token" => verification_token(user)})
       |> json_response(200)
 
-      actions = Fountain.Audit.list_recent_for_user(user.id, 50) |> Enum.map(& &1.action)
-      assert "auth.email.verified" in actions
+      events = Fountain.Audit.list_recent_for_user(user.id, 50)
+      assert event = Enum.find(events, &(&1.action == "auth.email.verified"))
+
+      # This route is `:api_public`, so nothing has authenticated and derived
+      # attribution would say "system" — of a CLI finishing a signup. The
+      # actor is stated instead (ADR 0013).
+      assert event.actor == "api"
     end
 
     test "is idempotent — a retried request is not an error", %{conn: conn} do

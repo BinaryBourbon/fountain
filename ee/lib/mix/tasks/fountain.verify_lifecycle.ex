@@ -520,7 +520,7 @@ defmodule Mix.Tasks.Fountain.VerifyLifecycle do
       user = Repo.reload!(user)
       {:ok, user} = user |> Ecto.Changeset.change(stripe_customer_id: nil) |> Repo.update()
 
-      case Fountain.Accounts.Deletion.delete_user(user, actor: "system:lifecycle-verify") do
+      case Fountain.Accounts.Deletion.delete_user(user, actor: "system:verify_lifecycle") do
         {:ok, _} -> info("✓ cleanup: scratch user deleted")
         {:error, err} -> info("! cleanup: scratch user #{user.id} not deleted: #{inspect(err)}")
       end
