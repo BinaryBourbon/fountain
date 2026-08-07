@@ -26,6 +26,24 @@ defmodule FountainWeb.EmailVerificationControllerTest do
       assert_enqueued(worker: WelcomeEmail, args: %{user_id: user.id})
     end
 
+    test "attributes the verification to the browser, not to the system", %{conn: conn} do
+      # The link is clicked before a session exists, so derivation would report
+      # "system" for a person reading their mail. Bare "system" is a defect
+      # signal, not an actor (ADR 0013).
+      user = insert_user()
+
+      token = Phoenix.Token.sign(FountainWeb.Endpoint, "email_verification", user.id)
+      get(conn, ~p"/users/confirm/#{token}")
+
+      event =
+        user.id
+        |> Fountain.Audit.list_recent_for_user(50)
+        |> Enum.find(&(&1.action == "auth.email.verified"))
+
+      assert event, "verifying through the browser route must be audited"
+      assert event.actor == "ui"
+    end
+
     test "does not enqueue a welcome email for an already-verified user (#449)", %{conn: conn} do
       user = insert_verified_user()
 

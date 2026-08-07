@@ -110,6 +110,11 @@ defmodule Fountain.BillingAuditTest do
       assert comped.metadata["to_status"] == "comped"
       assert comped.metadata["source"] == "admin"
 
+      # `admin`, not `system:admin`: an operator comping an account is a
+      # person, and the vocabulary reserves `system:` for unattended paths
+      # (ADR 0013). The source stays in metadata regardless.
+      assert comped.actor == "admin"
+
       {:ok, comped_user} = {:ok, Repo.reload!(user)}
       {:ok, _} = Billing.revoke_comp(comped_user)
 
@@ -146,6 +151,19 @@ defmodule Fountain.BillingAuditTest do
 
       assert find_action(webhook_user.id, "billing.subscription.synced").actor ==
                "system:webhook"
+    end
+
+    test "an operator-driven transition is not disguised as a system one" do
+      # The two routes to the same status must not both read `system:`, or the
+      # actor column stops answering "was a person behind this?".
+      user = customer_user()
+      stub(Stripe.Subscription, :list, fn _params -> {:ok, %{data: []}} end)
+
+      {:ok, _} = Billing.extend_trial(user, 7)
+
+      event = find_action(user.id, "billing.trial.extended")
+      assert event.actor == "admin"
+      assert event.metadata["source"] == "admin"
     end
   end
 end

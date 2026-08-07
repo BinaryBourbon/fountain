@@ -84,7 +84,7 @@ defmodule Fountain.Release do
         {:error, :not_found}
 
       user ->
-        case Fountain.Accounts.verify_email(user) do
+        case Fountain.Accounts.verify_email(user, actor: "system:release_task") do
           {:ok, verified} ->
             IO.puts("Verified #{verified.email}. You can now sign in.")
             {:ok, verified}

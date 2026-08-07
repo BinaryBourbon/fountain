@@ -334,7 +334,7 @@ defmodule Fountain.Billing do
         action: action,
         resource_type: "subscription",
         resource_id: updated.stripe_subscription_id,
-        actor: "system:#{source}",
+        actor: actor_for(source),
         metadata:
           Map.merge(
             %{
@@ -348,6 +348,14 @@ defmodule Fountain.Billing do
       })
     end
   end
+
+  # `source` says what drove the transition; the actor says who. Every source
+  # here is unattended except one — an operator extending a trial, comping an
+  # account or forcing a resync is a person, and `system:admin` claimed the
+  # opposite. Core records those as `admin` and so does this (ADR 0013). The
+  # source survives in metadata either way.
+  defp actor_for("admin"), do: "admin"
+  defp actor_for(source), do: "system:#{source}"
 
   @doc false
   def trial_end_from_now do

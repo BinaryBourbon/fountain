@@ -9,7 +9,8 @@ defmodule Fountain.AuditGuardrailTest do
 
   That property is invisible to the compiler. Without a test, the next context
   function to be added joins the gap list silently — which is exactly how the
-  original gap grew. This file is the guard.
+  original gap grew. This file is the guard; ADR 0013 is the decision it
+  guards.
 
   ## Adding a mutation
 
@@ -122,7 +123,11 @@ defmodule Fountain.AuditGuardrailTest do
           {Conversations, :start_conversation, 2},
           {Conversations, :delete_conversation, 2}
         ] do
-      assert function_exported?(mod, fun, arity),
+      # `Code.ensure_loaded?/1` first: `function_exported?/3` answers about
+      # *loaded* modules, so on a seed where this test ran before anything had
+      # referenced the context it reported a perfectly present function as
+      # missing.
+      assert Code.ensure_loaded?(mod) and function_exported?(mod, fun, arity),
              "#{inspect(mod)}.#{fun}/#{arity} is missing — an audited context " <>
                "function must accept an opts list carrying :actor and :request_ip"
     end

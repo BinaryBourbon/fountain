@@ -37,6 +37,9 @@ defmodule FountainWeb.Plugs.Audit do
   alternative, and it was rejected: that list would be a second place to
   remember, one forgotten entry away from a silently unaudited route — the
   exact failure mode #540 existed to remove.
+
+  Recorded as a decision in ADR 0013 §4 — two rows per API mutation is
+  intended, and deduplicating them in the UI would lose the refused requests.
   """
 
   import Plug.Conn
