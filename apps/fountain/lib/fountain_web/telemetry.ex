@@ -138,6 +138,62 @@ defmodule FountainWeb.Telemetry do
         description: "How long a sandbox reattach takes"
       ),
 
+      # ── Provisioning sub-steps (#537) ─────────────────────────────────────
+      # The two spans above answer "did provisioning get slower"; these answer
+      # "which step". All six were already emitting :stop events with a
+      # duration — they just went nowhere but the JSON log and OTel, so a
+      # regression in the provision histogram meant grepping log lines or
+      # opening individual traces to find the culprit.
+      #
+      # Same buckets as fresh_provision on purpose: these are its components,
+      # so shared boundaries make them comparable at a glance. 120s is also
+      # exactly the setup-script timeout, so the top bucket is that ceiling.
+      #
+      # No tags. The span metadata carries conv_id / env_id / checkpoint_id,
+      # and every one of those would mint a time series per conversation.
+      distribution("fountain.setup_script.stop.duration",
+        event_name: [:fountain, :setup_script, :stop],
+        measurement: :duration,
+        unit: {:native, :millisecond},
+        reporter_options: [buckets: [1000, 5000, 10_000, 30_000, 60_000, 120_000]],
+        description: "How long an environment's setup script takes"
+      ),
+      distribution("fountain.packages.stop.duration",
+        event_name: [:fountain, :packages, :stop],
+        measurement: :duration,
+        unit: {:native, :millisecond},
+        reporter_options: [buckets: [1000, 5000, 10_000, 30_000, 60_000, 120_000]],
+        description: "How long package installation takes"
+      ),
+      distribution("fountain.network_policy.stop.duration",
+        event_name: [:fountain, :network_policy, :stop],
+        measurement: :duration,
+        unit: {:native, :millisecond},
+        reporter_options: [buckets: [1000, 5000, 10_000, 30_000, 60_000, 120_000]],
+        description: "How long applying the sprite network policy takes"
+      ),
+      distribution("fountain.clone_repositories.stop.duration",
+        event_name: [:fountain, :clone_repositories, :stop],
+        measurement: :duration,
+        unit: {:native, :millisecond},
+        reporter_options: [buckets: [1000, 5000, 10_000, 30_000, 60_000, 120_000]],
+        description: "How long cloning an environment's repositories takes"
+      ),
+      distribution("fountain.checkpoint.create.stop.duration",
+        event_name: [:fountain, :checkpoint, :create, :stop],
+        measurement: :duration,
+        unit: {:native, :millisecond},
+        reporter_options: [buckets: [1000, 5000, 10_000, 30_000, 60_000, 120_000]],
+        description: "How long creating an environment checkpoint takes"
+      ),
+      distribution("fountain.checkpoint.restore.stop.duration",
+        event_name: [:fountain, :checkpoint, :restore, :stop],
+        measurement: :duration,
+        unit: {:native, :millisecond},
+        reporter_options: [buckets: [1000, 5000, 10_000, 30_000, 60_000, 120_000]],
+        description: "How long restoring an environment checkpoint takes"
+      ),
+
       # ── Lifecycle sweeps ──────────────────────────────────────────────────
       counter("fountain.sandbox.reclaimed.count",
         event_name: [:fountain, :sandbox, :reclaimed],

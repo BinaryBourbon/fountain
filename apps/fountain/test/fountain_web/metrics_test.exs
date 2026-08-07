@@ -103,6 +103,43 @@ defmodule FountainWeb.MetricsTest do
       end
     end
 
+    test "every provisioning sub-step has a duration histogram (#537)" do
+      # fresh_provision/reattach say provisioning got slower; these say which
+      # step did. Before #537 the events fired into nothing but the JSON log,
+      # so the only way to attribute a regression was grepping log lines.
+      names = Enum.map(AppTelemetry.prometheus_metrics(), & &1.name)
+
+      for span <- [
+            [:fountain, :setup_script, :stop, :duration],
+            [:fountain, :packages, :stop, :duration],
+            [:fountain, :network_policy, :stop, :duration],
+            [:fountain, :clone_repositories, :stop, :duration],
+            [:fountain, :checkpoint, :create, :stop, :duration],
+            [:fountain, :checkpoint, :restore, :stop, :duration]
+          ] do
+        assert span in names,
+               "#{Enum.join(span, ".")} is no longer exported — the span still " <>
+                 "fires, but the regression it would explain is invisible again"
+      end
+    end
+
+    test "provisioning histograms carry no id tags — cardinality (#537)" do
+      # Their span metadata holds conv_id / env_id / checkpoint_id. Any of
+      # those promoted to a tag mints a time series per conversation.
+      for metric <- AppTelemetry.prometheus_metrics(),
+          metric.event_name in [
+            [:fountain, :setup_script, :stop],
+            [:fountain, :packages, :stop],
+            [:fountain, :network_policy, :stop],
+            [:fountain, :clone_repositories, :stop],
+            [:fountain, :checkpoint, :create, :stop],
+            [:fountain, :checkpoint, :restore, :stop]
+          ] do
+        assert metric.tags == [],
+               "#{inspect(metric.name)} tags on #{inspect(metric.tags)}"
+      end
+    end
+
     test "every subscribed fountain event has a live producer" do
       # The class of bug behind #310: metrics subscribed to event names that
       # nothing emits, passing every name-list assertion while the scrape
@@ -113,6 +150,14 @@ defmodule FountainWeb.MetricsTest do
         # Fountain.Telemetry.span/3 callers
         [:fountain, :fresh_provision, :stop],
         [:fountain, :reattach, :stop],
+        # The provisioning sub-steps those two are made of (#537):
+        # ConversationServer.run_setup_script/4 and Conversations.Provisioning
+        [:fountain, :setup_script, :stop],
+        [:fountain, :packages, :stop],
+        [:fountain, :network_policy, :stop],
+        [:fountain, :clone_repositories, :stop],
+        [:fountain, :checkpoint, :create, :stop],
+        [:fountain, :checkpoint, :restore, :stop],
         # Rehydrator.sweep/0 wraps its post-boot sweep in this span; the
         # candidates/started numbers ride the stop event's METADATA (a
         # 2-tuple span return), which is why the metrics use measurement
@@ -289,6 +334,38 @@ defmodule FountainWeb.MetricsTest do
       # conversation_id is metadata, never a label — one series per
       # conversation would eat Prometheus.
       refute body =~ "conversation_id="
+    end
+
+    test "a provisioning sub-step span lands in the scrape (#537)" do
+      # Driven through the real Fountain.Telemetry.span/3 rather than a raw
+      # :telemetry.execute, so the event name and the `duration` measurement
+      # are the ones the provisioning code actually produces. A series exists
+      # in the scrape only once its event has fired, so each name asserted
+      # below is emitted here.
+      conv_id = Ecto.UUID.generate()
+
+      Fountain.Telemetry.span([:packages], %{conv_id: conv_id, commands: 2}, fn ->
+        {:ok, %{outcome: :ok}}
+      end)
+
+      Fountain.Telemetry.span([:checkpoint, :create], %{env_id: Ecto.UUID.generate()}, fn ->
+        {:ok, %{outcome: :ok}}
+      end)
+
+      Fountain.Telemetry.span([:checkpoint, :restore], %{checkpoint_id: "ckpt_1"}, fn ->
+        {:ok, %{outcome: :ok}}
+      end)
+
+      Process.sleep(50)
+      {200, body} = scrape()
+
+      assert body =~ "fountain_packages_stop_duration_bucket"
+      assert body =~ "fountain_checkpoint_create_stop_duration_bucket"
+      assert body =~ "fountain_checkpoint_restore_stop_duration_bucket"
+
+      # conv_id / checkpoint_id are span metadata, never labels.
+      refute body =~ conv_id
+      refute body =~ "checkpoint_id="
     end
 
     test "route tags are the matched pattern, not the raw path", %{conn: conn} do
