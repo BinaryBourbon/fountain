@@ -36,7 +36,7 @@ The tasks:
 | `Fountain.Release.verify_email("a@b.c")` | Mark an account's email verified without sending anything — the escape hatch for a broken mail provider (`EMAIL_DELIVERY=none` self-verifies at registration since ADR 0011) |
 | `Fountain.Release.promote_admin("a@b.c")` | Grant the admin role, recorded in the admin audit trail with a system actor. The manual alternative to `FIRST_USER_ADMIN=true` (ADR 0011) |
 | `Fountain.Release.expire_legacy_trials(dry_run: true)` | Report (then, without `dry_run`, backfill) trial end dates on legacy `trialing` accounts that have none |
-| `Fountain.Release.migrate()` | Run pending migrations by hand. They already run at every boot; this exists for unusual situations |
+| `Fountain.Release.migrate()` | Run pending migrations by hand — what `bin/migrate` runs. They already run at every boot unless `MIGRATE_ON_BOOT=false`, in which case this (in a Job, before the rollout) is how they run at all. Never skipped by that switch |
 | `Fountain.Release.rollback(Fountain.Repo, version)` | Roll migrations back to a version. Last resort — see [Upgrade gone wrong](#upgrade-gone-wrong) before reaching for it |
 
 ---

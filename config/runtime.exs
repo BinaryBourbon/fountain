@@ -612,6 +612,22 @@ if config_env() == :prod do
   config :fountain, :email_from, email_from || "noreply@localhost"
 end
 
+# Boot-time migrations (#610). A release migrates before it serves, on every
+# replica, which is right for the single-replica shape this ships as. The
+# standard Kubernetes shape is the other one: migrations run once in a Job,
+# and the app pods only serve — which needs a way to tell a pod not to
+# migrate. MIGRATE_ON_BOOT=false is that way; `bin/migrate` (and
+# `Fountain.Release.migrate/0` behind it) always migrates regardless, because
+# it is the entrypoint the Job runs.
+#
+# Skipped in :test — config/test.exs pins it, so a developer's shell cannot
+# change what the suite exercises.
+if config_env() != :test do
+  config :fountain,
+         :migrate_on_boot,
+         System.get_env("MIGRATE_ON_BOOT", "true") not in ~w(false 0 no)
+end
+
 # Database config is deliberately NOT behind `server?`. Release tasks
 # (`bin/fountain_server eval 'Fountain.Release...'`) run without PHX_SERVER
 # and still need the repo — gating this on `server?` left them with a repo

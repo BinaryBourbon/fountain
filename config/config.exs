@@ -56,6 +56,21 @@ config :fountain,
   ecto_repos: [Fountain.Repo],
   generators: [timestamp_type: :utc_datetime, binary_id: true]
 
+# Take the migration lock as a Postgres advisory lock rather than Ecto's
+# default `FOR UPDATE` on `schema_migrations` (#610). The default cannot
+# serialize the one moment that matters: on a virgin database the table it
+# locks does not exist yet, so two replicas booting together both reach
+# `CREATE TABLE schema_migrations` and the loser dies on the type's unique
+# index. An advisory lock is taken before anything touches the table, so the
+# bootstrap is serialized like every migration after it.
+config :fountain, Fountain.Repo, migration_lock: :pg_advisory_lock
+
+# Whether a booting release runs pending migrations before it serves. True
+# here so the shipped single-replica image needs no configuration;
+# runtime.exs turns it off for MIGRATE_ON_BOOT=false, the deployment that
+# runs migrations once in a Job instead. See Fountain.Release.migrate_on_boot/0.
+config :fountain, :migrate_on_boot, true
+
 config :fountain, FountainWeb.Endpoint,
   url: [host: "localhost"],
   adapter: Bandit.PhoenixAdapter,

@@ -83,9 +83,10 @@ spec:
             limits:
               cpu: 500m
               memory: 1Gi
-          # Migrations run at boot, before the endpoint listens. The startup
-          # probe holds the other probes off for up to 150s so a slow
-          # migration is not mistaken for a dead pod and restart-looped.
+          # Migrations run at boot, before the endpoint listens (unless
+          # MIGRATE_ON_BOOT=false — see configmap.yaml). The startup probe
+          # holds the other probes off for up to 150s so a slow migration is
+          # not mistaken for a dead pod and restart-looped.
           startupProbe:
             httpGet:
               path: /health
