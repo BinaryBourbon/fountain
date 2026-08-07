@@ -1722,7 +1722,21 @@ defmodule Fountain.Conversations.ConversationServer do
               # in every way that matters. The turn ends `failed` naming the
               # reason instead of the server dying and its restart orphaning
               # the turn behind a reattach.
-              fail_turn_before_start(state, turn, reason, "prompt write failed")
+              #
+              # Take the runtime's exit code and last words with us (#608).
+              # `:command_exited` names the mechanism; the code and whatever
+              # it printed on the way out are the diagnosis, and they are
+              # already sitting in our mailbox.
+              {exit_code, output} = drain_exited_command(command.ref)
+
+              fail_turn_before_start(
+                state,
+                turn,
+                reason,
+                "prompt write failed",
+                exit_code,
+                output
+              )
           end
 
         {:error, reason} ->
@@ -1736,27 +1750,43 @@ defmodule Fountain.Conversations.ConversationServer do
     end
   end
 
-  # A turn that never produced a single byte of output: either the spawn
-  # itself failed, or the runtime exited before the prompt reached its stdin
-  # (#603). Both leave nothing running, so both end the same way — the turn
-  # `failed` with the reason, a `turn`/`failed` stage event, and the
-  # conversation back to "idle".
+  # A turn that never got as far as running: either the spawn itself failed,
+  # or the runtime exited before the prompt reached its stdin (#603). Both
+  # leave nothing running, so both end the same way — the turn `failed` with
+  # the reason, a `turn`/`failed` stage event, and the conversation back to
+  # "idle".
+  #
+  # `exit_code` and `output` are what the runtime managed to say before it
+  # went (#608); the spawn-failure path has neither, since there was never a
+  # process to say anything.
   #
   # Called only from inside kick_turn's try block, which restores the caller's
   # previous current-span in its `after`; the span this ends is the turn span
   # kick_turn opened a few lines above the call.
-  defp fail_turn_before_start(state, turn, reason, what) do
-    Logger.error("#{what}: #{inspect(reason)}")
+  defp fail_turn_before_start(state, turn, reason, what, exit_code \\ nil, output \\ []) do
+    detail = "#{inspect(reason)}#{exit_detail(exit_code)}"
+    Logger.error("#{what}: #{detail}")
+
+    # Persist the runtime's parting words against the turn they explain.
+    # current_turn is nil on this path — it is only assigned once the prompt
+    # is away — and persist_output reads it for the turn_id, so stand it up
+    # for the duration and clear it again before returning.
+    state =
+      Enum.reduce(output, %{state | current_turn: turn}, fn {stream, data}, acc ->
+        log_output(acc, stream, data)
+      end)
 
     {:ok, _} =
       Conversations._unsafe_update_turn(turn, %{
         status: "failed",
+        exit_code: exit_code,
         ended_at: now()
       })
 
     publish_stage(state.conversation_id, "turn", "failed", %{
       turn_id: turn.id,
-      reason: inspect(reason)
+      reason: detail,
+      exit_code: exit_code
     })
 
     # The conversation was set to "running" just before the spawn attempt;
@@ -1770,13 +1800,64 @@ defmodule Fountain.Conversations.ConversationServer do
     end
 
     # The turn never started; close the span we just opened so it doesn't leak.
-    OpenTelemetry.Tracer.set_status(OpenTelemetry.status(:error, "#{what}: #{inspect(reason)}"))
+    if exit_code, do: OpenTelemetry.Tracer.set_attribute("exit_code", exit_code)
+    OpenTelemetry.Tracer.set_status(OpenTelemetry.status(:error, "#{what}: #{detail}"))
 
     # No-arg: end_span/1 takes a timestamp, not a span. turn_span is the
     # current span here (kick_turn made it current), which is what no-arg ends.
     OpenTelemetry.Tracer.end_span()
 
-    state
+    %{state | current_turn: nil}
+  end
+
+  # Appended to the reason everywhere it is reported. `:command_exited` stays
+  # in front of it: it is what downstream consumers (fountain-ops' e2e gate
+  # among them) match on, and it is still true — this only says why.
+  defp exit_detail(nil), do: ""
+  defp exit_detail(code), do: " (runtime exited #{code})"
+
+  # How long to wait for an exit that is, on this path, already queued.
+  @drain_timeout_ms 50
+
+  # Collect what a command said before it stopped: `{exit_code, output}`,
+  # with a nil code if no exit arrives.
+  #
+  # `Sprites.Command` sends the owner `{:exit, %{ref: ref}, code}` — behind
+  # any `{:stdout, …}` / `{:stderr, …}` the runtime produced first — and only
+  # *then* stops. So when a stdin write comes back `{:error, :command_exited}`
+  # it is because that already happened, and those messages are in this
+  # server's mailbox as we handle the failure.
+  #
+  # They have nowhere to land on their own: `current_command_ref` is assigned
+  # only on the success branch, so every handler guard misses and the
+  # catch-all drops them silently (#608). Receive them here instead, while we
+  # still have the ref and a turn to attribute them to. The triggers for this
+  # path — a bad flag, a missing binary, an OOM kill, an immediate non-zero
+  # exit — are exactly the ones where the code is the whole diagnosis, and
+  # for a runtime that prints `invalid api key` and exits 1, that line is the
+  # answer.
+  #
+  # The deadline is absolute rather than per-message: a `receive` timeout
+  # restarts on every match, and this runs inside a GenServer callback.
+  defp drain_exited_command(ref) do
+    drain_exited_command(ref, System.monotonic_time(:millisecond) + @drain_timeout_ms, [])
+  end
+
+  defp drain_exited_command(ref, deadline, output) do
+    timeout = max(deadline - System.monotonic_time(:millisecond), 0)
+
+    receive do
+      {:exit, %{ref: ^ref}, code} ->
+        {code, Enum.reverse(output)}
+
+      {:stdout, %{ref: ^ref}, data} ->
+        drain_exited_command(ref, deadline, [{"stdout", data} | output])
+
+      {:stderr, %{ref: ^ref}, data} ->
+        drain_exited_command(ref, deadline, [{"stderr", data} | output])
+    after
+      timeout -> {nil, Enum.reverse(output)}
+    end
   end
 
   # Emit the aggregate turn-duration event (#536). Called from every path
