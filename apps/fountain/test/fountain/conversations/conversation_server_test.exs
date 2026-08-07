@@ -386,6 +386,16 @@ defmodule Fountain.Conversations.ConversationServerTest do
       {pid, ref}
     end
 
+    # The `turn`/`failed` stage event's meta, decoded. Stage events persist
+    # their meta as JSON in `data`.
+    defp turn_failed_meta(conv_id) do
+      conv_id
+      |> Conversations._unsafe_list_log_events()
+      |> Enum.find(&(&1.kind == "stage" and &1.stage == "turn" and &1.state == "failed"))
+      |> then(& &1.data)
+      |> Jason.decode!()
+    end
+
     test "a completed command closes the turn and returns the conversation to idle", %{conv: conv} do
       {pid, ref} = start_with_turn(conv)
 
@@ -494,6 +504,59 @@ defmodule Fountain.Conversations.ConversationServerTest do
       assert turn.status == "failed"
       refute is_nil(turn.ended_at)
       assert Conversations._unsafe_get_conversation!(conv.id).status == "idle"
+
+      GenServer.stop(pid)
+    end
+
+    test "a runtime that exits before the prompt is written keeps its exit code (#608)", %{
+      conv: conv
+    } do
+      # Same path as #603 above, but about what the failure *says*. A real
+      # Sprites.Command sends the owner its {:stderr, ...} and {:exit, ...}
+      # frames and only then stops — so by the time the write comes back
+      # {:error, :command_exited}, both are already in this server's mailbox.
+      #
+      # current_command_ref is never assigned on this path, so every
+      # handle_info guard misses them and the catch-all used to drop them
+      # silently: turns.exit_code stayed NULL and the operator was told
+      # ":command_exited" for an expired key, a renamed binary and an OOM
+      # kill alike.
+      stub_happy_sprite()
+      ref = make_ref()
+
+      # Frames first, then stop :normal — the order the library guarantees,
+      # and the reason the messages beat the write's failure to the server.
+      exits_1_on_write =
+        spawn(fn ->
+          receive do
+            {:"$gen_call", {caller, _tag}, _request} ->
+              send(caller, {:stderr, %{ref: ref}, "invalid api key\n"})
+              send(caller, {:exit, %{ref: ref}, 1})
+              exit(:normal)
+          end
+        end)
+
+      Mimic.stub(Sprites, :spawn, fn _s, _cmd, _args, _opts ->
+        {:ok, %Sprites.Command{ref: ref, pid: exits_1_on_write, tty_mode: false}}
+      end)
+
+      {pid, _mon, :alive} = start_server(conv, initial_prompt: "hello")
+      _ = :sys.get_state(pid)
+
+      assert [turn] = Conversations._unsafe_list_turns(conv.id)
+      assert turn.status == "failed"
+      assert turn.exit_code == 1
+
+      # The reason still leads with the mechanism — downstream gates match on
+      # `:command_exited` — and now carries the cause behind it.
+      assert %{"reason" => reason, "exit_code" => 1} = turn_failed_meta(conv.id)
+      assert reason =~ ":command_exited"
+      assert reason =~ "runtime exited 1"
+
+      # The runtime's last words, attributed to the turn they explain.
+      events = Conversations._unsafe_list_log_events(conv.id)
+      assert stderr = Enum.find(events, &(&1.stream == "stderr" and &1.data =~ "invalid api key"))
+      assert stderr.turn_id == turn.id
 
       GenServer.stop(pid)
     end

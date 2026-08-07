@@ -16,6 +16,20 @@ upgrade, is in
 
 ## [Unreleased]
 
+### Fixed
+
+- **A turn that fails before it starts now says why.** When a runtime exits
+  before it reads the prompt, it has already sent its exit code and whatever
+  it printed on the way out — but those arrived just after the turn was
+  marked failed, on the one path that never registers the command they
+  belong to, so they were dropped without a trace. `turns.exit_code` stayed
+  `NULL` and every such failure reported the same `:command_exited`: an
+  expired key, a renamed binary and an OOM kill were indistinguishable. The
+  turn now records the exit code, keeps the runtime's last lines of
+  stdout/stderr as ordinary turn output, and reports
+  `:command_exited (runtime exited 1)`. The outcome is unchanged — this is
+  the diagnosis #603 left missing (#608)
+
 ## [0.6.0] — 2026-08-06
 
 ### Upgrade notes
