@@ -138,6 +138,28 @@ defmodule FountainWeb.Telemetry do
         description: "How long a sandbox reattach takes"
       ),
 
+      # How long a turn takes end to end (#536). Until this, turn duration
+      # existed only as a `fountain.turn` OTel span (traces, and only with
+      # OTLP export configured) and as turns.started_at/ended_at in Postgres
+      # (queryable by hand, not trended). fountain.stage.count already covers
+      # turn rates and outcomes — this is the duration.
+      #
+      # ConversationServer emits it from every path that ends a turn which
+      # ran; a turn resumed after a restart contributes no sample, since its
+      # start is in a previous BEAM lifetime.
+      #
+      # Buckets go much further out than the provision ones: a provision that
+      # takes 2 minutes is broken, a turn that takes 20 is a Tuesday.
+      distribution("fountain.turn.completed.duration_ms",
+        event_name: [:fountain, :turn, :completed],
+        measurement: :duration_ms,
+        tags: [:runtime, :status],
+        reporter_options: [
+          buckets: [1000, 5000, 15_000, 30_000, 60_000, 120_000, 300_000, 600_000, 1_800_000]
+        ],
+        description: "Turn duration by runtime and terminal status"
+      ),
+
       # ── Provisioning sub-steps (#537) ─────────────────────────────────────
       # The two spans above answer "did provisioning get slower"; these answer
       # "which step". All six were already emitting :stop events with a

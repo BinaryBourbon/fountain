@@ -249,6 +249,13 @@ defmodule Fountain.Conversations.ConversationServer do
       # OTel span context for the in-flight turn (started in kick_turn,
       # ended in the :exit / :interrupt handlers).
       current_turn_span: nil,
+      # Aggregate-metric bookkeeping for the in-flight turn (#536):
+      # `%{started_mono: ms, runtime: "claude"}`, set once the turn's
+      # command is spawned and dropped on every terminal path. nil
+      # whenever no turn is running. Monotonic rather than the turn row's
+      # timestamps because `now/0` truncates to the second, which rounds a
+      # sub-second turn to a duration of zero.
+      turn_metrics: nil,
       # Stream tracer for parsing Claude's stream-json stdout into OTel
       # child spans and events. nil for non-Claude runtimes.
       stream_tracer: nil,
@@ -815,6 +822,11 @@ defmodule Fountain.Conversations.ConversationServer do
         conv = Conversations._unsafe_get_conversation!(state.conversation_id)
         {:ok, _} = Conversations.update_conversation(conv, %{status: "running"})
 
+        # turn_metrics stays nil on purpose, so this turn contributes no
+        # duration sample (#536). Its start is in a previous BEAM lifetime:
+        # monotonic time isn't comparable across a restart, and measuring
+        # from the row's started_at would fold the whole deploy gap into the
+        # histogram. A missing sample beats a wrong one.
         %{
           state
           | current_command: command,
@@ -1024,6 +1036,8 @@ defmodule Fountain.Conversations.ConversationServer do
 
     end_turn_span(state.current_turn_span, :error, %{"outcome" => "interrupted"})
 
+    emit_turn_completed(state, "interrupted")
+
     conv = Conversations._unsafe_get_conversation!(state.conversation_id)
     {:ok, _} = Conversations.update_conversation(conv, %{status: "idle"})
 
@@ -1034,6 +1048,7 @@ defmodule Fountain.Conversations.ConversationServer do
          current_command_ref: nil,
          current_turn: nil,
          current_turn_span: nil,
+         turn_metrics: nil,
          stream_tracer: nil
      }}
   end
@@ -1161,6 +1176,8 @@ defmodule Fountain.Conversations.ConversationServer do
       %{"exit_code" => code}
     )
 
+    emit_turn_completed(state, turn.status)
+
     conv = Conversations._unsafe_get_conversation!(state.conversation_id)
     {:ok, _} = Conversations.update_conversation(conv, %{status: "idle"})
 
@@ -1171,6 +1188,7 @@ defmodule Fountain.Conversations.ConversationServer do
          current_command_ref: nil,
          current_turn: nil,
          current_turn_span: nil,
+         turn_metrics: nil,
          stream_tracer: nil
      }}
   end
@@ -1202,6 +1220,8 @@ defmodule Fountain.Conversations.ConversationServer do
     Fountain.Runtimes.Claude.StreamTracer.finalize(state.stream_tracer)
     end_turn_span(state.current_turn_span, :error, %{"error" => inspect(reason)})
 
+    emit_turn_completed(state, turn.status)
+
     conv = Conversations._unsafe_get_conversation!(state.conversation_id)
     {:ok, _} = Conversations.update_conversation(conv, %{status: "idle"})
 
@@ -1212,6 +1232,7 @@ defmodule Fountain.Conversations.ConversationServer do
          current_command_ref: nil,
          current_turn: nil,
          current_turn_span: nil,
+         turn_metrics: nil,
          stream_tracer: nil
      }}
   end
@@ -1633,6 +1654,13 @@ defmodule Fountain.Conversations.ConversationServer do
 
     previous_span = OpenTelemetry.Tracer.set_current_span(turn_span)
 
+    # Stamped before the spawn so the duration covers the round trip to
+    # sprites.dev — that latency is part of what the user waits through.
+    # Kept local until the spawn succeeds: a spawn that never starts has no
+    # run to time, and a stamp left in state would attach itself to the
+    # next turn.
+    turn_started_mono = System.monotonic_time(:millisecond)
+
     try do
       spawn_opts =
         [
@@ -1667,6 +1695,7 @@ defmodule Fountain.Conversations.ConversationServer do
               current_turn: turn,
               runtime_session_id: runtime_session_id,
               current_turn_span: turn_span,
+              turn_metrics: %{started_mono: turn_started_mono, runtime: conv.runtime},
               stream_tracer: stream_tracer
           }
 
@@ -1713,6 +1742,29 @@ defmodule Fountain.Conversations.ConversationServer do
       # caller's previous current-span here.
       OpenTelemetry.Tracer.set_current_span(previous_span)
     end
+  end
+
+  # Emit the aggregate turn-duration event (#536). Called from every path
+  # that ends a turn which actually ran: the :exit handler, the mid-turn
+  # {:error, ...} handler (#413) and :interrupt.
+  #
+  # The `fountain.turn` OTel span and the turn row's started_at/ended_at
+  # both already describe one turn each; neither trends. This is the
+  # dashboard/alert signal.
+  #
+  # Tags are `runtime` (four values, gated by Runtimes.for_runtime/1 on the
+  # only path that starts a server) and the terminal `status`
+  # (completed/failed/interrupted). conv_id rides along as metadata — it is
+  # what makes the JSON log line actionable, and as a tag it would mint a
+  # time series per conversation.
+  defp emit_turn_completed(%{turn_metrics: nil}, _status), do: :ok
+
+  defp emit_turn_completed(%{turn_metrics: metrics} = state, status) do
+    Fountain.Telemetry.event(
+      [:turn, :completed],
+      %{runtime: metrics.runtime, status: status, conv_id: state.conversation_id},
+      %{duration_ms: System.monotonic_time(:millisecond) - metrics.started_mono}
+    )
   end
 
   # End the OTel turn span (if any) with a status reflecting the

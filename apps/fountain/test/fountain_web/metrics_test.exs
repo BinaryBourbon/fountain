@@ -163,6 +163,9 @@ defmodule FountainWeb.MetricsTest do
         # 2-tuple span return), which is why the metrics use measurement
         # functions.
         [:fountain, :rehydrate, :stop],
+        # ConversationServer's terminal turn paths (#536) — exercised by
+        # conversation_server_turn_metrics_test.exs against a real server
+        [:fountain, :turn, :completed],
         # :telemetry.execute call sites
         [:fountain, :sandbox, :reclaimed],
         [:fountain, :reaper, :run],
@@ -366,6 +369,32 @@ defmodule FountainWeb.MetricsTest do
       # conv_id / checkpoint_id are span metadata, never labels.
       refute body =~ conv_id
       refute body =~ "checkpoint_id="
+    end
+
+    test "turn duration scrapes with runtime and status labels (#536)" do
+      # The subscription side. The producer side — ConversationServer emitting
+      # this on every terminal turn path — is asserted in
+      # conversation_server_turn_metrics_test.exs against a real server.
+      # The reporter is global to the VM and the ConversationServer tests feed
+      # the same histogram with runtime="claude". "opencode" is emitted by
+      # nothing else, so the bucket counts below are this test's alone.
+      Fountain.Telemetry.event(
+        [:turn, :completed],
+        %{runtime: "opencode", status: "completed", conv_id: Ecto.UUID.generate()},
+        %{duration_ms: 42_000}
+      )
+
+      Process.sleep(50)
+      {200, body} = scrape()
+
+      series = ~s(fountain_turn_completed_duration_ms_bucket{runtime="opencode",status="completed")
+
+      # 42s lands above the 30s boundary and below 60s. A duration handed over
+      # in seconds or in native units lands in a different bucket entirely.
+      assert body =~ ~s(#{series},le="60000"} 1)
+      assert body =~ ~s(#{series},le="30000"} 0)
+
+      refute body =~ "conv_id="
     end
 
     test "route tags are the matched pattern, not the raw path", %{conn: conn} do
