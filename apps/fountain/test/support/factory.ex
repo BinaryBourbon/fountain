@@ -110,18 +110,28 @@ defmodule Fountain.Factory do
   # ── agents ────────────────────────────────────────────────────────────────
 
   def agent_attrs(overrides \\ %{}) do
+    overrides = to_string_map(overrides)
+    runtime = Map.get(overrides, "runtime", "claude")
+
     Map.merge(
       %{
         "name" => "agent-#{uniq()}",
-        "model" => "anthropic/claude-sonnet-4-6",
-        "runtime" => "claude",
+        # The changeset requires the provider prefix to match the runtime
+        # (#553), so a call site that overrides only :runtime still gets a
+        # model its runtime can actually reach.
+        "model" => default_model_for(runtime),
+        "runtime" => runtime,
         "skills" => [],
         "mcp_servers" => %{},
         "metadata" => %{}
       },
-      to_string_map(overrides)
+      overrides
     )
   end
+
+  defp default_model_for("codex"), do: "openai/gpt-5-codex"
+  defp default_model_for("gemini"), do: "google/gemini-2.5-pro"
+  defp default_model_for(_runtime), do: "anthropic/claude-sonnet-4-6"
 
   def insert_agent(overrides \\ %{}) do
     overrides = to_string_map(overrides)

@@ -9,6 +9,15 @@ defmodule Fountain.Agents.AgentTest do
     runtime: "claude"
   }
 
+  # A model whose provider prefix each runtime actually accepts. opencode is
+  # multi-provider, so any prefix is fine there.
+  @model_for %{
+    "claude" => "anthropic/claude-sonnet-4-6",
+    "codex" => "openai/gpt-5-codex",
+    "gemini" => "google/gemini-2.5-pro",
+    "opencode" => "anthropic/claude-sonnet-4-6"
+  }
+
   describe "runtimes/0" do
     test "returns the expected list of runtimes" do
       assert Agent.runtimes() == ~w(claude codex gemini opencode)
@@ -43,7 +52,13 @@ defmodule Fountain.Agents.AgentTest do
   describe "changeset/2 — runtime inclusion" do
     for runtime <- ~w(claude codex gemini opencode) do
       test "runtime #{runtime} is valid" do
-        changeset = Agent.changeset(%Agent{}, Map.put(@valid_attrs, :runtime, unquote(runtime)))
+        attrs =
+          Map.merge(@valid_attrs, %{
+            runtime: unquote(runtime),
+            model: @model_for[unquote(runtime)]
+          })
+
+        changeset = Agent.changeset(%Agent{}, attrs)
         assert changeset.valid?
       end
     end
@@ -52,6 +67,50 @@ defmodule Fountain.Agents.AgentTest do
       changeset = Agent.changeset(%Agent{}, Map.put(@valid_attrs, :runtime, "unknown"))
       refute changeset.valid?
       assert "is invalid" in errors_on(changeset).runtime
+    end
+  end
+
+  describe "changeset/2 — model provider matches runtime" do
+    # #553: these three runtimes pass the bare model id to their CLI, so a
+    # mismatched prefix would ship e.g. `gpt-5` to `claude --model`.
+    test "claude rejects a non-anthropic model" do
+      changeset = Agent.changeset(%Agent{}, Map.put(@valid_attrs, :model, "openai/gpt-5"))
+      refute changeset.valid?
+      assert "claude runtime requires a anthropic/ model" in errors_on(changeset).model
+    end
+
+    test "codex rejects a non-openai model" do
+      attrs = Map.merge(@valid_attrs, %{runtime: "codex", model: "anthropic/claude-sonnet-4-6"})
+      changeset = Agent.changeset(%Agent{}, attrs)
+      refute changeset.valid?
+      assert "codex runtime requires a openai/ model" in errors_on(changeset).model
+    end
+
+    test "gemini rejects a non-google model" do
+      attrs = Map.merge(@valid_attrs, %{runtime: "gemini", model: "openai/gpt-5"})
+      changeset = Agent.changeset(%Agent{}, attrs)
+      refute changeset.valid?
+      assert "gemini runtime requires a google/ model" in errors_on(changeset).model
+    end
+
+    test "opencode accepts any provider — it is the multi-provider runtime" do
+      for model <- ~w(anthropic/claude-sonnet-4-6 openai/gpt-5 google/gemini-2.5-pro) do
+        attrs = Map.merge(@valid_attrs, %{runtime: "opencode", model: model})
+        assert Agent.changeset(%Agent{}, attrs).valid?
+      end
+    end
+
+    test "a runtime change alone is validated against the stored model" do
+      agent = %Agent{name: "a", model: "anthropic/claude-sonnet-4-6", runtime: "claude"}
+      changeset = Agent.changeset(agent, %{runtime: "codex"})
+      refute changeset.valid?
+      assert "codex runtime requires a openai/ model" in errors_on(changeset).model
+    end
+
+    test "a malformed model reports only the format error" do
+      changeset = Agent.changeset(%Agent{}, Map.put(@valid_attrs, :model, "claude-sonnet-4-6"))
+      refute changeset.valid?
+      assert errors_on(changeset).model == ["must be in canonical provider/model_id form"]
     end
   end
 

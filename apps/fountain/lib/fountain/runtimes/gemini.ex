@@ -4,8 +4,12 @@ defmodule Fountain.Runtimes.Gemini do
 
   Argv shape:
 
-      mode == :run       → gemini --output-format stream-json
-      mode == :continue  → gemini --resume --output-format stream-json
+      mode == :run       → gemini --output-format stream-json --model <model_id>
+      mode == :continue  → gemini --resume --output-format stream-json --model <model_id>
+
+  `--model` (also spelled `-m`) takes the bare id, so the canonical
+  `google/` prefix on `agent.model` is stripped — see
+  `Fountain.Runtimes.Model`.
 
   Gemini manages its own session state — `--resume` re-enters the most
   recent conversation in the workspace, so we don't pass a session id.
@@ -16,6 +20,8 @@ defmodule Fountain.Runtimes.Gemini do
   """
 
   @behaviour Fountain.Runtimes
+
+  alias Fountain.Runtimes.Model
 
   # Run gemini from a workspace dir we own and have git-init'd; avoids
   # the noisy `[WARN] [MemoryDiscovery] EACCES at /home/sprite/.git`
@@ -34,15 +40,16 @@ defmodule Fountain.Runtimes.Gemini do
 
   @impl true
   def build_command(agent, _prompt, mode, _runtime_session_id, opts) do
-    base = [
-      "--output-format",
-      "stream-json",
-      # `yolo` auto-approves tool calls — matches claude's
-      # `--dangerously-skip-permissions` and codex's
-      # `--dangerously-bypass-approvals-and-sandbox`.
-      "--approval-mode",
-      "yolo"
-    ]
+    base =
+      [
+        "--output-format",
+        "stream-json",
+        # `yolo` auto-approves tool calls — matches claude's
+        # `--dangerously-skip-permissions` and codex's
+        # `--dangerously-bypass-approvals-and-sandbox`.
+        "--approval-mode",
+        "yolo"
+      ] ++ Model.model_args(agent)
 
     # Non-interactive gemini does NOT load MCP tools by default. The
     # `--allowed-mcp-server-names` flag is the explicit allow-list.

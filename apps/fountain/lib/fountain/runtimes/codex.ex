@@ -6,10 +6,14 @@ defmodule Fountain.Runtimes.Codex do
 
       mode == :run       → codex exec
                               --dangerously-bypass-approvals-and-sandbox
-                              --json <PROMPT>
+                              --json --model <model_id> <PROMPT>
       mode == :continue  → codex exec resume --last
                               --dangerously-bypass-approvals-and-sandbox
-                              --json <PROMPT>
+                              --json --model <model_id> <PROMPT>
+
+  `--model` (also spelled `-m`) takes the bare id, so the canonical
+  `openai/` prefix on `agent.model` is stripped — see
+  `Fountain.Runtimes.Model`.
 
   The prompt is passed as the **trailing positional argument** rather
   than on stdin. When codex sees a piped stdin it logs an ugly
@@ -28,6 +32,8 @@ defmodule Fountain.Runtimes.Codex do
 
   @behaviour Fountain.Runtimes
 
+  alias Fountain.Runtimes.Model
+
   @impl true
   def skills_root, do: "/home/sprite/.codex/skills"
 
@@ -35,7 +41,7 @@ defmodule Fountain.Runtimes.Codex do
   def skills_sh_agent, do: "codex"
 
   @impl true
-  def build_command(_agent, prompt, mode, _runtime_session_id, opts) do
+  def build_command(agent, prompt, mode, _runtime_session_id, opts) do
     base =
       if mode == :continue do
         [
@@ -68,7 +74,8 @@ defmodule Fountain.Runtimes.Codex do
     # AND a /dev/null redirect trigger it. Allocate a PTY (`tty?: true`)
     # so codex sees stdin as a TTY and stays quiet. We pass the prompt
     # as argv so codex doesn't actually read from the PTY.
-    {"codex", base ++ image_args ++ [prompt], stdin?: false, tty?: true}
+    {"codex", base ++ Model.model_args(agent) ++ image_args ++ [prompt],
+     stdin?: false, tty?: true}
   end
 
   @impl true

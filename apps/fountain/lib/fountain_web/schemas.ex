@@ -240,7 +240,10 @@ defmodule FountainWeb.Schemas do
         system: %Schema{type: :string, description: "System prompt."},
         model: %Schema{
           type: :string,
-          description: "Canonical provider/model_id (e.g. anthropic/claude-sonnet-4-6).",
+          description:
+            "Canonical provider/model_id (e.g. anthropic/claude-sonnet-4-6). The " <>
+              "provider must match the runtime — anthropic for claude, openai for " <>
+              "codex, google for gemini; opencode accepts any provider.",
           pattern: "^[a-z0-9_-]+/[a-z0-9._-]+$"
         },
         runtime: %Schema{type: :string, enum: ~w(claude codex gemini opencode)},

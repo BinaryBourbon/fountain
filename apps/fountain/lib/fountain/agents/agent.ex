@@ -4,6 +4,7 @@ defmodule Fountain.Agents.Agent do
 
   alias Fountain.Accounts.User
   alias Fountain.Environments.Environment
+  alias Fountain.Runtimes.Model
 
   @primary_key {:id, :binary_id, autogenerate: true}
   @foreign_key_type :binary_id
@@ -56,10 +57,30 @@ defmodule Fountain.Agents.Agent do
     |> validate_format(:model, ~r{^[a-z0-9_-]+/[a-z0-9._-]+$},
       message: "must be in canonical provider/model_id form"
     )
+    |> validate_model_provider()
     |> validate_length(:name, min: 1, max: 200)
     |> validate_skills()
     |> unique_constraint(:name, name: :agents_user_id_name_index)
     |> foreign_key_constraint(:environment_id)
+  end
+
+  # claude / codex / gemini each drive a single provider's CLI and take a
+  # bare model id, so the runtime strips the canonical prefix at spawn.
+  # Reject a mismatched prefix here rather than shipping `gpt-5` to
+  # `claude --model`: before #553 those runtimes ignored the field
+  # entirely, so `openai/gpt-5` on a claude agent looked configured and
+  # silently ran the CLI's own default. opencode is multi-provider and
+  # takes any prefix, so it is unconstrained.
+  defp validate_model_provider(changeset) do
+    runtime = get_field(changeset, :runtime)
+
+    with expected when is_binary(expected) <- Model.provider_for_runtime(runtime),
+         actual when is_binary(actual) <- Model.provider(get_field(changeset, :model)),
+         true <- actual != expected do
+      add_error(changeset, :model, "#{runtime} runtime requires a #{expected}/ model")
+    else
+      _ -> changeset
+    end
   end
 
   defp validate_skills(changeset) do

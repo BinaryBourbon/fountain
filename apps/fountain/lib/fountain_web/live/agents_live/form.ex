@@ -87,6 +87,13 @@ defmodule FountainWeb.AgentsLive.Form do
     end)
   end
 
+  # Each runtime but opencode only reaches one provider, and the changeset
+  # rejects a mismatched prefix (#553). Track the selected runtime so the hint
+  # can't lead someone into that error.
+  defp model_placeholder("codex"), do: "openai/gpt-5-codex"
+  defp model_placeholder("gemini"), do: "google/gemini-2.5-pro"
+  defp model_placeholder(_runtime), do: "anthropic/claude-sonnet-4-6"
+
   @impl true
   def handle_event("validate", %{"agent" => params}, socket) do
     skills = extract_skills_from_params(params, socket.assigns.skills)
@@ -536,7 +543,7 @@ defmodule FountainWeb.AgentsLive.Form do
             name="agent[model]"
             label="Model"
             value={@form["model"]}
-            placeholder="anthropic/claude-sonnet-4-6"
+            placeholder={model_placeholder(@form["runtime"])}
             required
           />
         </div>
