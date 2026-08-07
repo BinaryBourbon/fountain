@@ -7,7 +7,11 @@ defmodule FountainWeb.SessionHTML do
   def new(assigns) do
     ~H"""
     <div class="min-h-screen flex items-center justify-center bg-zinc-50 text-zinc-900 font-sans">
-      <form method="post" action={~p"/auth/login"} class="w-full max-w-sm bg-white rounded-lg shadow p-8 space-y-4">
+      <form
+        method="post"
+        action={~p"/auth/login"}
+        class="w-full max-w-sm bg-white rounded-lg shadow p-8 space-y-4"
+      >
         <input type="hidden" name="_csrf_token" value={get_csrf_token()} />
         <div>
           <h1 class="text-xl font-semibold">Sign in to Fountain</h1>

@@ -121,7 +121,10 @@ defmodule FountainWeb.AgentsLive.Index do
           <div>
             <p class="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-1.5">Runtime</p>
             <div class="space-y-1.5">
-              <label :for={rt <- Agent.runtimes()} class="flex items-center justify-between gap-2 text-sm cursor-pointer">
+              <label
+                :for={rt <- Agent.runtimes()}
+                class="flex items-center justify-between gap-2 text-sm cursor-pointer"
+              >
                 <span class="flex items-center gap-1.5">
                   <input
                     type="checkbox"
@@ -139,7 +142,9 @@ defmodule FountainWeb.AgentsLive.Index do
 
           <%!-- Environment facet --%>
           <div>
-            <p class="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-1.5">Environment</p>
+            <p class="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-1.5">
+              Environment
+            </p>
             <div class="space-y-1.5">
               <label class="flex items-center justify-between gap-2 text-sm cursor-pointer">
                 <span class="flex items-center gap-1.5">
@@ -175,7 +180,9 @@ defmodule FountainWeb.AgentsLive.Index do
 
           <%!-- Capability facets --%>
           <div>
-            <p class="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-1.5">Capabilities</p>
+            <p class="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-1.5">
+              Capabilities
+            </p>
             <div class="space-y-1.5">
               <label class="flex items-center gap-1.5 text-sm cursor-pointer">
                 <input
@@ -184,8 +191,7 @@ defmodule FountainWeb.AgentsLive.Index do
                   value="true"
                   checked={@filter_has_skills}
                   class="rounded border-zinc-300"
-                />
-                Has skills
+                /> Has skills
               </label>
               <label class="flex items-center gap-1.5 text-sm cursor-pointer">
                 <input
@@ -194,8 +200,7 @@ defmodule FountainWeb.AgentsLive.Index do
                   value="true"
                   checked={@filter_has_mcp}
                   class="rounded border-zinc-300"
-                />
-                Has MCP servers
+                /> Has MCP servers
               </label>
             </div>
           </div>
@@ -214,7 +219,9 @@ defmodule FountainWeb.AgentsLive.Index do
       <div class="flex-1 min-w-0 space-y-4">
         <div class="flex items-center justify-between">
           <h1 class="text-2xl font-semibold">Agents</h1>
-          <.link href={~p"/agents/new"}><.btn>+ New agent</.btn></.link>
+          <.link href={~p"/agents/new"}>
+            <.btn>+ New agent</.btn>
+          </.link>
         </div>
 
         <div
@@ -237,11 +244,21 @@ defmodule FountainWeb.AgentsLive.Index do
         >
           <thead class="border-b border-[var(--color-border)]">
             <tr>
-              <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">Name</th>
-              <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">Runtime</th>
-              <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">Model</th>
-              <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">Stats</th>
-              <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">Env</th>
+              <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
+                Name
+              </th>
+              <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
+                Runtime
+              </th>
+              <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
+                Model
+              </th>
+              <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
+                Stats
+              </th>
+              <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
+                Env
+              </th>
               <th class="px-4 py-3"></th>
             </tr>
           </thead>
@@ -262,7 +279,10 @@ defmodule FountainWeb.AgentsLive.Index do
                 </div>
               </td>
               <td class="px-4 py-3">
-                <span class={["inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-semibold", runtime_badge_class(a.runtime)]}>
+                <span class={[
+                  "inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-semibold",
+                  runtime_badge_class(a.runtime)
+                ]}>
                   <span class="w-1.5 h-1.5 rounded-full" style="background:currentColor;"></span>
                   {a.runtime}
                 </span>
@@ -271,24 +291,44 @@ defmodule FountainWeb.AgentsLive.Index do
               <td class="px-4 py-3">
                 <div class="flex items-center gap-1.5 flex-wrap">
                   <span
-                    class={["inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium", stat_badge_class(:skills, length(a.skills))]}
+                    class={[
+                      "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium",
+                      stat_badge_class(:skills, length(a.skills))
+                    ]}
                     title={"#{length(a.skills)} skills"}
-                  >⚡ {length(a.skills)}</span>
+                  >
+                    ⚡ {length(a.skills)}
+                  </span>
                   <span
-                    class={["inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium", stat_badge_class(:mcp, map_size(a.mcp_servers))]}
+                    class={[
+                      "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium",
+                      stat_badge_class(:mcp, map_size(a.mcp_servers))
+                    ]}
                     title={"#{map_size(a.mcp_servers)} MCP servers"}
-                  >🔌 {map_size(a.mcp_servers)}</span>
+                  >
+                    🔌 {map_size(a.mcp_servers)}
+                  </span>
                   <span
-                    class={["inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium", stat_badge_class(:conversations, a.conversation_count)]}
+                    class={[
+                      "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium",
+                      stat_badge_class(:conversations, a.conversation_count)
+                    ]}
                     title={"#{a.conversation_count} total conversations"}
-                  >💬 {a.conversation_count}</span>
+                  >
+                    💬 {a.conversation_count}
+                  </span>
                 </div>
               </td>
               <td class="px-4 py-3">
                 <span
                   :if={a.environment}
-                  class={["inline-flex items-center px-2 py-1 rounded text-xs font-medium", env_badge_class(a.environment.name)]}
-                >{a.environment.name}</span>
+                  class={[
+                    "inline-flex items-center px-2 py-1 rounded text-xs font-medium",
+                    env_badge_class(a.environment.name)
+                  ]}
+                >
+                  {a.environment.name}
+                </span>
                 <span :if={!a.environment} class="text-[var(--color-text-muted)]">—</span>
               </td>
               <td class="px-4 py-3 text-right">
@@ -301,7 +341,9 @@ defmodule FountainWeb.AgentsLive.Index do
                     phx-click="delete"
                     phx-value-id={a.id}
                     data-confirm="Delete agent?"
-                  >Delete</button>
+                  >
+                    Delete
+                  </button>
                 </div>
               </td>
             </tr>

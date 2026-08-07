@@ -490,32 +490,68 @@ defmodule FountainWeb.AgentsLive.Form do
     <div class="max-w-2xl space-y-6">
       <h1 class="text-2xl font-semibold">{page_title(@action)}</h1>
 
-      <form phx-change="validate" phx-submit="submit" class="space-y-4 bg-white rounded shadow p-6 border border-zinc-200">
+      <form
+        phx-change="validate"
+        phx-submit="submit"
+        class="space-y-4 bg-white rounded shadow p-6 border border-zinc-200"
+      >
         <.input id="name" name="agent[name]" label="Name" value={@form["name"]} autofocus required />
-        <.error_msg field="name" errors={@errors}/>
+        <.error_msg field="name" errors={@errors} />
 
-        <.input id="description" name="agent[description]" label="Description" value={@form["description"]} />
+        <.input
+          id="description"
+          name="agent[description]"
+          label="Description"
+          value={@form["description"]}
+        />
 
-        <.input id="system" name="agent[system]" type="textarea" rows="6"
-          label="System prompt" value={@form["system"]} placeholder="You are a focused subagent..."/>
+        <.input
+          id="system"
+          name="agent[system]"
+          type="textarea"
+          rows="6"
+          label="System prompt"
+          value={@form["system"]}
+          placeholder="You are a focused subagent..."
+        />
 
         <div class="grid grid-cols-2 gap-3">
           <div class="space-y-1">
             <label class="block text-sm font-medium text-zinc-700">Runtime</label>
-            <select name="agent[runtime]" class="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm">
-              <option :for={r <- ~w(claude codex gemini opencode)} value={r} selected={@form["runtime"] == r}>{r}</option>
+            <select
+              name="agent[runtime]"
+              class="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm"
+            >
+              <option
+                :for={r <- ~w(claude codex gemini opencode)}
+                value={r}
+                selected={@form["runtime"] == r}
+              >
+                {r}
+              </option>
             </select>
           </div>
-          <.input id="model" name="agent[model]" label="Model" value={@form["model"]}
-            placeholder="anthropic/claude-sonnet-4-6" required/>
+          <.input
+            id="model"
+            name="agent[model]"
+            label="Model"
+            value={@form["model"]}
+            placeholder="anthropic/claude-sonnet-4-6"
+            required
+          />
         </div>
-        <.error_msg field="model" errors={@errors}/>
+        <.error_msg field="model" errors={@errors} />
 
         <div class="space-y-1">
           <label class="block text-sm font-medium text-zinc-700">Environment</label>
-          <select name="agent[environment_id]" class="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm">
+          <select
+            name="agent[environment_id]"
+            class="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm"
+          >
             <option value="">\u2014 none \u2014</option>
-            <option :for={e <- @envs} value={e.id} selected={@form["environment_id"] == e.id}>{e.name}</option>
+            <option :for={e <- @envs} value={e.id} selected={@form["environment_id"] == e.id}>
+              {e.name}
+            </option>
           </select>
         </div>
 
@@ -523,8 +559,10 @@ defmodule FountainWeb.AgentsLive.Form do
         <div class="space-y-3">
           <label class="block text-sm font-medium text-zinc-700">Avatar</label>
 
-          <div :if={@agent.id && @agent.avatar_media_type && !@generated_avatar_preview}
-               class="flex items-center gap-3">
+          <div
+            :if={@agent.id && @agent.avatar_media_type && !@generated_avatar_preview}
+            class="flex items-center gap-3"
+          >
             <img
               src={~p"/agents/#{@agent.id}/avatar"}
               class="w-14 h-14 rounded-xl object-cover border border-zinc-200"
@@ -662,9 +700,27 @@ defmodule FountainWeb.AgentsLive.Form do
                      text-white hover:bg-zinc-700 disabled:opacity-60 disabled:cursor-not-allowed"
             >
               <%= if @generating_avatar do %>
-                <svg class="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                  <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                  <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                <svg
+                  class="animate-spin h-4 w-4"
+                  xmlns="http://www.w3.org/2000/svg"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                >
+                  <circle
+                    class="opacity-25"
+                    cx="12"
+                    cy="12"
+                    r="10"
+                    stroke="currentColor"
+                    stroke-width="4"
+                  >
+                  </circle>
+                  <path
+                    class="opacity-75"
+                    fill="currentColor"
+                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                  >
+                  </path>
                 </svg>
                 Generating\u2026
               <% else %>
@@ -680,7 +736,9 @@ defmodule FountainWeb.AgentsLive.Form do
         <div class="space-y-2">
           <label class="block text-sm font-medium text-zinc-700">Skills</label>
 
-          <div :if={@skills == []} class="text-sm text-zinc-400 italic py-1">No skills configured.</div>
+          <div :if={@skills == []} class="text-sm text-zinc-400 italic py-1">
+            No skills configured.
+          </div>
 
           <div
             :for={{skill, i} <- Enum.with_index(@skills)}
@@ -777,16 +835,18 @@ defmodule FountainWeb.AgentsLive.Form do
             <p>
               GitHub skills are fetched via
               <a href="https://skills.sh" target="_blank" class="underline">skills.sh</a>
-              using the <code>source</code> (owner/repo) and optional skill <code>name</code>.
+              using the <code>source</code>
+              (owner/repo) and optional skill <code>name</code>.
               Inline skills embed a full SKILL.md body directly.
               <.link navigate={~p"/help/skills"} class="underline">Skills help \u2192</.link>
             </p>
             <div class="rounded border border-blue-200 bg-blue-50 px-3 py-2 text-blue-900 leading-relaxed">
               <strong>Always included:</strong>
-              the built-in <code>fountain</code> skill is automatically mounted in every
-              conversation \u2014 no need to declare it. It gives the agent
-              <code>$FOUNTAIN_TOKEN</code>, <code>$FOUNTAIN_BASE_URL</code>, and
-              <code>$FOUNTAIN_CONVERSATION_ID</code> so it can spawn and coordinate sub-agents.
+              the built-in <code>fountain</code>
+              skill is automatically mounted in every
+              conversation \u2014 no need to declare it. It gives the agent <code>$FOUNTAIN_TOKEN</code>, <code>$FOUNTAIN_BASE_URL</code>, and
+              <code>$FOUNTAIN_CONVERSATION_ID</code>
+              so it can spawn and coordinate sub-agents.
             </div>
           </div>
         </div>
@@ -804,7 +864,9 @@ defmodule FountainWeb.AgentsLive.Form do
             class="border border-zinc-200 rounded-md p-3 bg-zinc-50 space-y-2"
           >
             <div class="flex items-center justify-between">
-              <span class="text-xs font-semibold text-zinc-500 uppercase tracking-wide">Server {i + 1}</span>
+              <span class="text-xs font-semibold text-zinc-500 uppercase tracking-wide">
+                Server {i + 1}
+              </span>
               <button
                 type="button"
                 phx-click="remove_mcp_server"
@@ -897,7 +959,9 @@ defmodule FountainWeb.AgentsLive.Form do
 
         <div class="flex gap-2">
           <.btn type="submit" phx-disable-with="Saving\u2026">Save</.btn>
-          <.link navigate={~p"/agents"}><.btn_secondary>Cancel</.btn_secondary></.link>
+          <.link navigate={~p"/agents"}>
+            <.btn_secondary>Cancel</.btn_secondary>
+          </.link>
         </div>
       </form>
     </div>
@@ -909,7 +973,9 @@ defmodule FountainWeb.AgentsLive.Form do
 
   defp error_msg(assigns) do
     ~H"""
-    <p :if={Map.has_key?(@errors, @field)} class="text-rose-600 text-xs">{Map.get(@errors, @field)}</p>
+    <p :if={Map.has_key?(@errors, @field)} class="text-rose-600 text-xs">
+      {Map.get(@errors, @field)}
+    </p>
     """
   end
 end

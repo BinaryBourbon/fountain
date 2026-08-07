@@ -99,7 +99,9 @@ defmodule FountainWeb.CoreComponents do
         @class
       ]}
       {@rest}
-    >{render_slot(@inner_block)}</button>
+    >
+      {render_slot(@inner_block)}
+    </button>
     """
   end
 
@@ -124,7 +126,9 @@ defmodule FountainWeb.CoreComponents do
         @class
       ]}
       {@rest}
-    >{render_slot(@inner_block)}</button>
+    >
+      {render_slot(@inner_block)}
+    </button>
     """
   end
 
@@ -147,7 +151,9 @@ defmodule FountainWeb.CoreComponents do
         @class
       ]}
       {@rest}
-    >{render_slot(@inner_block)}</button>
+    >
+      {render_slot(@inner_block)}
+    </button>
     """
   end
 
@@ -599,7 +605,9 @@ defmodule FountainWeb.CoreComponents do
         :if={@label}
         for={@id}
         class="block text-sm font-medium text-[var(--color-text-primary)]"
-      >{@label}</label>
+      >
+        {@label}
+      </label>
       <input
         :if={@type != "textarea"}
         type={@type}

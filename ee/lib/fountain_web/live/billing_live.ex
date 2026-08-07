@@ -88,7 +88,10 @@ defmodule FountainWeb.Live.BillingLive do
 
       <%!-- past_due banner --%>
       <%= if @current_user.subscription_status == "past_due" do %>
-        <div class="rounded border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800" role="alert">
+        <div
+          class="rounded border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800"
+          role="alert"
+        >
           Your subscription requires attention. Update your payment method to
           continue starting conversations.
         </div>
@@ -101,8 +104,9 @@ defmodule FountainWeb.Live.BillingLive do
           class="rounded border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800"
           role="alert"
         >
-          Your subscription is set to cancel — you keep full access until
-          <%= access_until_text(@current_user) %>. You can renew any time from
+          Your subscription is set to cancel — you keep full access until {access_until_text(
+            @current_user
+          )}. You can renew any time from
           Manage Subscription.
         </div>
       <% end %>
@@ -122,7 +126,7 @@ defmodule FountainWeb.Live.BillingLive do
                 "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium",
                 status_badge_class(@current_user.subscription_status)
               ]}>
-                <%= format_status(@current_user.subscription_status) %>
+                {format_status(@current_user.subscription_status)}
               </span>
             </dd>
           </div>
@@ -130,7 +134,7 @@ defmodule FountainWeb.Live.BillingLive do
             <div class="flex items-center justify-between">
               <dt class="text-sm text-gray-500">Trial</dt>
               <dd class="text-sm font-medium">
-                <%= trial_countdown_text(@current_user) %>
+                {trial_countdown_text(@current_user)}
               </dd>
             </div>
           <% end %>
@@ -138,7 +142,7 @@ defmodule FountainWeb.Live.BillingLive do
             <div class="flex items-center justify-between">
               <dt class="text-sm text-gray-500">Access until</dt>
               <dd class="text-sm font-medium">
-                <%= access_until_text(@current_user) %>
+                {access_until_text(@current_user)}
               </dd>
             </div>
           <% end %>
@@ -146,8 +150,10 @@ defmodule FountainWeb.Live.BillingLive do
             <div class="flex items-center justify-between">
               <dt class="text-sm text-gray-500">Billing period</dt>
               <dd class="text-sm font-medium">
-                <%= Calendar.strftime(@period_start, "%B %-d") %> –
-                <%= Calendar.strftime(@period_end, "%B %-d, %Y") %>
+                {Calendar.strftime(@period_start, "%B %-d")} – {Calendar.strftime(
+                  @period_end,
+                  "%B %-d, %Y"
+                )}
               </dd>
             </div>
           <% end %>
@@ -197,21 +203,20 @@ defmodule FountainWeb.Live.BillingLive do
       <div class="rounded-lg border bg-white p-6 shadow-sm">
         <h2 class="mb-1 text-lg font-medium">Usage This Month</h2>
         <p class="mb-4 text-xs text-gray-400">
-          <%= Calendar.strftime(@period_start, "%b %-d") %> –
-          <%= Calendar.strftime(@period_end, "%b %-d, %Y") %>
+          {Calendar.strftime(@period_start, "%b %-d")} – {Calendar.strftime(@period_end, "%b %-d, %Y")}
         </p>
         <dl class="grid grid-cols-3 gap-4">
           <div class="rounded-md bg-gray-50 p-4 text-center">
             <dt class="text-xs text-gray-500">Conversations</dt>
-            <dd class="mt-1 text-2xl font-semibold"><%= @usage.conversations %></dd>
+            <dd class="mt-1 text-2xl font-semibold">{@usage.conversations}</dd>
           </div>
           <div class="rounded-md bg-gray-50 p-4 text-center">
             <dt class="text-xs text-gray-500">Turns</dt>
-            <dd class="mt-1 text-2xl font-semibold"><%= @usage.turns %></dd>
+            <dd class="mt-1 text-2xl font-semibold">{@usage.turns}</dd>
           </div>
           <div class="rounded-md bg-gray-50 p-4 text-center">
             <dt class="text-xs text-gray-500">Sandbox-min</dt>
-            <dd class="mt-1 text-2xl font-semibold"><%= format_minutes(@usage.sandbox_minutes) %></dd>
+            <dd class="mt-1 text-2xl font-semibold">{format_minutes(@usage.sandbox_minutes)}</dd>
           </div>
         </dl>
       </div>

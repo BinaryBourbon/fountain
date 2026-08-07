@@ -83,14 +83,16 @@ defmodule FountainWeb.ApiKeysLive.Index do
         <div class="flex items-center gap-2">
           <code
             id="new-api-key"
-            class="flex-1 bg-[var(--color-bg-2)] rounded border border-[var(--color-border)] px-3 py-2 text-sm font-mono break-all">
+            class="flex-1 bg-[var(--color-bg-2)] rounded border border-[var(--color-border)] px-3 py-2 text-sm font-mono break-all"
+          >
             {@new_key && @new_key.raw_token}
           </code>
           <.button
             phx-hook="CopyToClipboard"
             id="copy-api-key"
             data-target="new-api-key"
-            variant="secondary">
+            variant="secondary"
+          >
             Copy
           </.button>
         </div>
@@ -117,11 +119,17 @@ defmodule FountainWeb.ApiKeysLive.Index do
         <.button type="submit">Create key</.button>
       </form>
 
-      <div :if={@keys == []} class="rounded border border-dashed border-[var(--color-border)] p-8 text-center text-[var(--color-text-muted)]">
+      <div
+        :if={@keys == []}
+        class="rounded border border-dashed border-[var(--color-border)] p-8 text-center text-[var(--color-text-muted)]"
+      >
         No API keys yet.
       </div>
 
-      <table :if={@keys != []} class="w-full text-sm bg-[var(--color-bg-1)] rounded shadow border border-[var(--color-border)]">
+      <table
+        :if={@keys != []}
+        class="w-full text-sm bg-[var(--color-bg-1)] rounded shadow border border-[var(--color-border)]"
+      >
         <thead class="text-left text-[var(--color-text-muted)] border-b border-[var(--color-border)]">
           <tr>
             <th class="px-4 py-2 font-medium">Label</th>
@@ -132,10 +140,17 @@ defmodule FountainWeb.ApiKeysLive.Index do
           </tr>
         </thead>
         <tbody>
-          <tr :for={k <- @keys} class="border-b border-[var(--color-border)] last:border-0 hover:bg-[var(--color-bg-2)]">
+          <tr
+            :for={k <- @keys}
+            class="border-b border-[var(--color-border)] last:border-0 hover:bg-[var(--color-bg-2)]"
+          >
             <td class="px-4 py-2 font-medium">{k.name}</td>
-            <td class="px-4 py-2 font-mono text-[var(--color-text-muted)] text-xs">{k.key_prefix}···</td>
-            <td class="px-4 py-2 text-[var(--color-text-muted)] text-xs">{format_date(k.inserted_at)}</td>
+            <td class="px-4 py-2 font-mono text-[var(--color-text-muted)] text-xs">
+              {k.key_prefix}···
+            </td>
+            <td class="px-4 py-2 text-[var(--color-text-muted)] text-xs">
+              {format_date(k.inserted_at)}
+            </td>
             <td class="px-4 py-2 text-[var(--color-text-muted)] text-xs">
               {if k.last_used_at, do: format_date(k.last_used_at), else: "—"}
             </td>
@@ -145,7 +160,8 @@ defmodule FountainWeb.ApiKeysLive.Index do
                 phx-click="revoke"
                 phx-value-id={k.id}
                 data-confirm="Revoke this key? Any integrations using it will stop working."
-                class="text-[var(--color-error)] hover:text-[var(--color-error-text)]">
+                class="text-[var(--color-error)] hover:text-[var(--color-error-text)]"
+              >
                 Revoke
               </.button>
             </td>

@@ -167,7 +167,11 @@ defmodule FountainWeb.Layouts do
               phx-hook="RootsFilterPersist"
               type="button"
               phx-click="sidebar_toggle_roots_only"
-              title={if @sidebar_roots_only, do: "Showing roots only — click to show all", else: "Show root conversations only"}
+              title={
+                if @sidebar_roots_only,
+                  do: "Showing roots only — click to show all",
+                  else: "Show root conversations only"
+              }
               class={[
                 "shrink-0 inline-flex items-center gap-1 rounded px-2 py-1",
                 "text-[11px] font-medium leading-none transition-colors border",
@@ -329,11 +333,27 @@ defmodule FountainWeb.Layouts do
               aria-label="Toggle dark mode"
               class="shrink-0 mt-1 mr-1.5 rounded-md p-1.5 text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-2)] hover:text-[var(--color-text-primary)] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-focus-ring)]"
             >
-              <svg id="theme-icon-moon" class="size-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+              <svg
+                id="theme-icon-moon"
+                class="size-4"
+                viewBox="0 0 20 20"
+                fill="currentColor"
+                aria-hidden="true"
+              >
                 <path d="M17.293 13.293A8 8 0 0 1 6.707 2.707a8.001 8.001 0 1 0 10.586 10.586z" />
               </svg>
-              <svg id="theme-icon-sun" class="size-4 hidden" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                <path fill-rule="evenodd" d="M10 2a1 1 0 0 1 1 1v1a1 1 0 1 1-2 0V3a1 1 0 0 1 1-1Zm4 8a4 4 0 1 1-8 0 4 4 0 0 1 8 0Zm-.464 4.95.707.707a1 1 0 0 0 1.414-1.414l-.707-.707a1 1 0 0 0-1.414 1.414Zm2.12-10.607a1 1 0 0 1 0 1.414l-.706.707a1 1 0 1 1-1.414-1.414l.707-.707a1 1 0 0 1 1.414 0ZM17 11a1 1 0 1 0 0-2h-1a1 1 0 1 1 0 2h1Zm-7 4a1 1 0 0 1 1 1v1a1 1 0 1 1-2 0v-1a1 1 0 0 1 1-1ZM5.05 6.464A1 1 0 1 0 6.465 5.05l-.708-.707a1 1 0 0 0-1.414 1.414l.707.707Zm1.414 8.486-.707.707a1 1 0 0 1-1.414-1.414l.707-.707a1 1 0 0 1 1.414 1.414ZM4 11a1 1 0 1 0 0-2H3a1 1 0 0 0 0 2h1Z" clip-rule="evenodd" />
+              <svg
+                id="theme-icon-sun"
+                class="size-4 hidden"
+                viewBox="0 0 20 20"
+                fill="currentColor"
+                aria-hidden="true"
+              >
+                <path
+                  fill-rule="evenodd"
+                  d="M10 2a1 1 0 0 1 1 1v1a1 1 0 1 1-2 0V3a1 1 0 0 1 1-1Zm4 8a4 4 0 1 1-8 0 4 4 0 0 1 8 0Zm-.464 4.95.707.707a1 1 0 0 0 1.414-1.414l-.707-.707a1 1 0 0 0-1.414 1.414Zm2.12-10.607a1 1 0 0 1 0 1.414l-.706.707a1 1 0 1 1-1.414-1.414l.707-.707a1 1 0 0 1 1.414 0ZM17 11a1 1 0 1 0 0-2h-1a1 1 0 1 1 0 2h1Zm-7 4a1 1 0 0 1 1 1v1a1 1 0 1 1-2 0v-1a1 1 0 0 1 1-1ZM5.05 6.464A1 1 0 1 0 6.465 5.05l-.708-.707a1 1 0 0 0-1.414 1.414l.707.707Zm1.414 8.486-.707.707a1 1 0 0 1-1.414-1.414l.707-.707a1 1 0 0 1 1.414 1.414ZM4 11a1 1 0 1 0 0-2H3a1 1 0 0 0 0 2h1Z"
+                  clip-rule="evenodd"
+                />
               </svg>
             </button>
           </div>
@@ -348,7 +368,11 @@ defmodule FountainWeb.Layouts do
               aria-label="Open navigation"
             >
               <svg class="size-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                <path fill-rule="evenodd" d="M2 4.75A.75.75 0 0 1 2.75 4h14.5a.75.75 0 0 1 0 1.5H2.75A.75.75 0 0 1 2 4.75ZM2 10a.75.75 0 0 1 .75-.75h14.5a.75.75 0 0 1 0 1.5H2.75A.75.75 0 0 1 2 10Zm0 5.25a.75.75 0 0 1 .75-.75h14.5a.75.75 0 0 1 0 1.5H2.75a.75.75 0 0 1-.75-.75Z" clip-rule="evenodd" />
+                <path
+                  fill-rule="evenodd"
+                  d="M2 4.75A.75.75 0 0 1 2.75 4h14.5a.75.75 0 0 1 0 1.5H2.75A.75.75 0 0 1 2 4.75ZM2 10a.75.75 0 0 1 .75-.75h14.5a.75.75 0 0 1 0 1.5H2.75A.75.75 0 0 1 2 10Zm0 5.25a.75.75 0 0 1 .75-.75h14.5a.75.75 0 0 1 0 1.5H2.75a.75.75 0 0 1-.75-.75Z"
+                  clip-rule="evenodd"
+                />
               </svg>
             </label>
             <span class="font-semibold text-sm text-[var(--color-text-primary)]">Fountain</span>
@@ -432,7 +456,8 @@ defmodule FountainWeb.Layouts do
         "block rounded-md px-3 py-1 text-sm transition-colors",
         if(@active,
           do: "bg-[var(--color-bg-2)] font-medium text-[var(--color-text-primary)]",
-          else: "text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-2)] hover:text-[var(--color-text-primary)]"
+          else:
+            "text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-2)] hover:text-[var(--color-text-primary)]"
         )
       ]}
     >
@@ -494,7 +519,8 @@ defmodule FountainWeb.Layouts do
         "block rounded-md px-3 py-1.5 text-sm transition-colors",
         if(@active,
           do: "bg-[var(--color-bg-2)] text-[var(--color-text-primary)]",
-          else: "text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-2)] hover:text-[var(--color-text-primary)]"
+          else:
+            "text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-2)] hover:text-[var(--color-text-primary)]"
         )
       ]}
     >
@@ -503,11 +529,15 @@ defmodule FountainWeb.Layouts do
         :if={@task_label}
         class="block truncate text-[13px] text-[var(--color-text-primary)]"
         title={@task_label}
-      >{@task_label}</span>
+      >
+        {@task_label}
+      </span>
       <span
         :if={!@task_label}
         class="block truncate italic text-[11px] text-[var(--color-text-muted)]"
-      >(no task yet)</span>
+      >
+        (no task yet)
+      </span>
 
       <%!-- Line 2: small avatar + subtitle + badges --%>
       <span class="flex items-center gap-1.5 mt-0.5">
@@ -543,7 +573,9 @@ defmodule FountainWeb.Layouts do
           <span
             :if={@subtitle != ""}
             class="flex-1 min-w-0 text-[11px] text-[var(--color-text-muted)] truncate"
-          >{@subtitle}</span>
+          >
+            {@subtitle}
+          </span>
           <span class="ml-auto shrink-0 flex items-center gap-1">
             <span
               :if={@turn_count > 0}
@@ -554,7 +586,11 @@ defmodule FountainWeb.Layouts do
               title={~s(#{@turn_count} #{if @turn_count == 1, do: ~s(turn), else: ~s(turns)})}
             >
               <svg class="size-2.5" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-                <path fill-rule="evenodd" d="M1 2.75A.75.75 0 0 1 1.75 2h12.5a.75.75 0 0 1 .75.75v8.5a.75.75 0 0 1-.75.75h-6.5L5 14v-2H1.75a.75.75 0 0 1-.75-.75v-8.5Z" clip-rule="evenodd" />
+                <path
+                  fill-rule="evenodd"
+                  d="M1 2.75A.75.75 0 0 1 1.75 2h12.5a.75.75 0 0 1 .75.75v8.5a.75.75 0 0 1-.75.75h-6.5L5 14v-2H1.75a.75.75 0 0 1-.75-.75v-8.5Z"
+                  clip-rule="evenodd"
+                />
               </svg>
               {@turn_count}
             </span>

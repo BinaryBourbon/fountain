@@ -123,7 +123,10 @@ defmodule FountainWeb.AdminLive.ConversationDetail do
           Metadata only — prompt and output content are not shown to admins.
         </p>
         <div :if={@turns == []} class="text-sm text-zinc-500">None.</div>
-        <table :if={@turns != []} class="w-full text-sm bg-white rounded shadow border border-zinc-200">
+        <table
+          :if={@turns != []}
+          class="w-full text-sm bg-white rounded shadow border border-zinc-200"
+        >
           <thead class="text-left text-zinc-500 border-b border-zinc-200">
             <tr>
               <th class="px-4 py-2">#</th>

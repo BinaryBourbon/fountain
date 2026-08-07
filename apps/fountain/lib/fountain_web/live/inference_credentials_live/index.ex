@@ -168,8 +168,10 @@ defmodule FountainWeb.InferenceCredentialsLive.Index do
         </p>
       </div>
 
-      <div :for={{provider, label, env_name, hint} <- @providers}
-           class="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-1)] p-5 space-y-3">
+      <div
+        :for={{provider, label, env_name, hint} <- @providers}
+        class="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-1)] p-5 space-y-3"
+      >
         <div class="flex items-start justify-between gap-3">
           <div>
             <div class="flex items-center gap-2">
@@ -186,17 +188,25 @@ defmodule FountainWeb.InferenceCredentialsLive.Index do
         <form phx-submit="save" class="space-y-2">
           <input type="hidden" name="provider" value={Atom.to_string(provider)} />
           <div class="flex gap-2">
-            <input type="password"
-                   name="value"
-                   placeholder={if Map.get(@status, provider, false), do: "Paste a new value to replace", else: "Paste your token"}
-                   autocomplete="off"
-                   class="flex-1 rounded-md border border-[var(--color-border)] bg-[var(--color-bg-2)] px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-zinc-900" />
+            <input
+              type="password"
+              name="value"
+              placeholder={
+                if Map.get(@status, provider, false),
+                  do: "Paste a new value to replace",
+                  else: "Paste your token"
+              }
+              autocomplete="off"
+              class="flex-1 rounded-md border border-[var(--color-border)] bg-[var(--color-bg-2)] px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-zinc-900"
+            />
             <.button type="submit">Save</.button>
-            <.button :if={Map.get(@status, provider, false)}
-                     type="button"
-                     phx-click="clear"
-                     phx-value-provider={Atom.to_string(provider)}
-                     variant="secondary">
+            <.button
+              :if={Map.get(@status, provider, false)}
+              type="button"
+              phx-click="clear"
+              phx-value-provider={Atom.to_string(provider)}
+              variant="secondary"
+            >
               Clear
             </.button>
           </div>

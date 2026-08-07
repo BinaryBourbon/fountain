@@ -47,7 +47,12 @@ defmodule FountainWeb.AccountSecurityLive do
         <p class="mb-4 text-sm text-zinc-500">
           Every other session is signed out when the password changes; this one stays.
         </p>
-        <form method="post" action={~p"/account/security/password"} class="space-y-3" id="change-password">
+        <form
+          method="post"
+          action={~p"/account/security/password"}
+          class="space-y-3"
+          id="change-password"
+        >
           <input type="hidden" name="_csrf_token" value={Phoenix.Controller.get_csrf_token()} />
           <div>
             <label class="block text-sm font-medium text-zinc-700 mb-1">Current password</label>

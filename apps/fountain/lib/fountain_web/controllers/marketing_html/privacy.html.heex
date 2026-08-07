@@ -10,8 +10,10 @@
       <p>
         Fountain is operated by {@legal.entity} ("we", "us"). This policy describes what
         personal data we collect when you use the Fountain service, why we collect it, and the
-        choices you have. For questions or requests, contact
-        <a href={"mailto:#{@legal.contact_email}"} class="underline">{@legal.contact_email}</a>.
+        choices you have. For questions or requests, contact <a
+          href={"mailto:#{@legal.contact_email}"}
+          class="underline"
+        >{@legal.contact_email}</a>.
       </p>
     </div>
 
@@ -72,18 +74,26 @@
         We share data with service providers only as needed to run Fountain:
       </p>
       <ul class="list-disc pl-6 space-y-1">
-        <li><strong class="text-[var(--color-text-primary)]">Stripe</strong> — payment processing and subscription management;</li>
-        <li><strong class="text-[var(--color-text-primary)]">our email provider</strong> — transactional email delivery;</li>
+        <li>
+          <strong class="text-[var(--color-text-primary)]">Stripe</strong>
+          — payment processing and subscription management;
+        </li>
+        <li>
+          <strong class="text-[var(--color-text-primary)]">our email provider</strong>
+          — transactional email delivery;
+        </li>
         <li>
           <strong class="text-[var(--color-text-primary)]">sandbox infrastructure</strong>
           — the isolated compute environments your conversations run in, which receive the
           configuration and decrypted credentials needed to run each conversation;
         </li>
         <li>
-          <strong class="text-[var(--color-text-primary)]">AI model providers you configure</strong>
-          — your agents call them with credentials you supply, under those providers' terms;
+          <strong class="text-[var(--color-text-primary)]" phx-no-format>AI model providers you configure</strong> — your agents call them with credentials you supply, under those providers' terms;
         </li>
-        <li><strong class="text-[var(--color-text-primary)]">GitHub</strong> — only if you choose GitHub sign-in.</li>
+        <li>
+          <strong class="text-[var(--color-text-primary)]">GitHub</strong>
+          — only if you choose GitHub sign-in.
+        </li>
       </ul>
       <p class="mt-2">
         We may also disclose data if required by law, or as part of a merger or acquisition, in

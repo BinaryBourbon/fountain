@@ -121,8 +121,7 @@ defmodule FountainWeb.VerifyPendingLive do
         <div class="space-y-2">
           <h1 class="text-xl font-semibold">Check your email</h1>
           <p class="text-sm text-zinc-600">
-            We sent a verification link to
-            <span class="font-medium text-zinc-900">{@current_user.email}</span>. Open it and this
+            We sent a verification link to <span class="font-medium text-zinc-900">{@current_user.email}</span>. Open it and this
             page will continue on its own — you're already signed in, so there's nothing else to
             type here.
           </p>

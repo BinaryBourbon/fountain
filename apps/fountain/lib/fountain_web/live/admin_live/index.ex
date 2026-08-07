@@ -549,7 +549,9 @@ defmodule FountainWeb.AdminLive.Index do
           class="bg-amber-50 border border-amber-200 rounded px-4 py-3 text-sm text-amber-900 space-y-1"
         >
           <div class="font-medium">
-            {@funnel.stalled.count} verified {if @funnel.stalled.count == 1, do: "user has", else: "users have"} never started a conversation
+            {@funnel.stalled.count} verified {if @funnel.stalled.count == 1,
+              do: "user has",
+              else: "users have"} never started a conversation
           </div>
           <div class="text-xs">
             onboarding:
@@ -613,9 +615,11 @@ defmodule FountainWeb.AdminLive.Index do
           class="bg-red-50 border border-red-200 rounded px-4 py-3 text-sm space-y-2"
         >
           <div class="font-medium text-red-900">
-            {length(@billing_overview.failed_events)} webhook {if length(@billing_overview.failed_events) == 1,
-              do: "event is",
-              else: "events are"} failing — subscription state may lag Stripe
+            {length(@billing_overview.failed_events)} webhook {if length(
+                                                                    @billing_overview.failed_events
+                                                                  ) == 1,
+                                                                  do: "event is",
+                                                                  else: "events are"} failing — subscription state may lag Stripe
           </div>
           <table class="w-full text-sm bg-white rounded border border-red-100 font-mono">
             <tbody>
@@ -676,7 +680,11 @@ defmodule FountainWeb.AdminLive.Index do
               class="rounded border border-zinc-200 px-1 py-1 text-xs"
             >
               <option value="">any status</option>
-              <option :for={s <- ~w(trialing active past_due canceled comped)} value={s} selected={@filters.status == s}>
+              <option
+                :for={s <- ~w(trialing active past_due canceled comped)}
+                value={s}
+                selected={@filters.status == s}
+              >
                 {s}
               </option>
             </select>
@@ -764,7 +772,10 @@ defmodule FountainWeb.AdminLive.Index do
                     ]}>
                       {u.subscription_status}
                     </span>
-                    <span :if={u.subscription_status == "trialing" and u.trial_ends_at} class="text-xs text-zinc-500">
+                    <span
+                      :if={u.subscription_status == "trialing" and u.trial_ends_at}
+                      class="text-xs text-zinc-500"
+                    >
                       ends {format_date(u.trial_ends_at)}
                     </span>
                     <a
@@ -825,7 +836,11 @@ defmodule FountainWeb.AdminLive.Index do
                 {u.usage.conversations}c · {u.usage.turns}t · {round(u.usage.sandbox_minutes)}m
               </td>
               <td class="px-4 py-2">
-                <form phx-submit="set_sandbox_limit" id={"sandbox-limit-#{u.id}"} class="flex items-center gap-1">
+                <form
+                  phx-submit="set_sandbox_limit"
+                  id={"sandbox-limit-#{u.id}"}
+                  class="flex items-center gap-1"
+                >
                   <input type="hidden" name="user_id" value={u.id} />
                   <span class={[
                     "text-xs tabular-nums",
@@ -833,7 +848,9 @@ defmodule FountainWeb.AdminLive.Index do
                       do: "text-red-600 font-medium",
                       else: "text-zinc-500"
                     )
-                  ]}>{u.active_sandboxes} /</span>
+                  ]}>
+                    {u.active_sandboxes} /
+                  </span>
                   <input
                     type="number"
                     name="limit"
@@ -855,9 +872,12 @@ defmodule FountainWeb.AdminLive.Index do
               </td>
               <td class="px-4 py-2 text-zinc-500 text-xs">{format_date(u.inserted_at)}</td>
               <td class="px-4 py-2 text-right space-x-3">
-                <button phx-click="toggle_admin" phx-value-id={u.id}
+                <button
+                  phx-click="toggle_admin"
+                  phx-value-id={u.id}
                   data-confirm={"Toggle admin for #{u.email}?"}
-                  class="text-xs text-zinc-600 hover:text-zinc-900 underline">
+                  class="text-xs text-zinc-600 hover:text-zinc-900 underline"
+                >
                   {if u.role == "admin", do: "Remove admin", else: "Make admin"}
                 </button>
                 <button
@@ -879,7 +899,8 @@ defmodule FountainWeb.AdminLive.Index do
                   phx-click="delete_user"
                   phx-value-id={u.id}
                   data-confirm={"Permanently delete #{u.email}? This cancels their subscription, destroys their sandboxes and erases their data. It cannot be undone."}
-                  class="text-xs text-red-600 hover:text-red-800 underline">
+                  class="text-xs text-red-600 hover:text-red-800 underline"
+                >
                   Delete
                 </button>
               </td>
@@ -892,7 +913,11 @@ defmodule FountainWeb.AdminLive.Index do
         >
           <span>Page {@filters.page} of {page_count(@total_users)}</span>
           <div class="space-x-3">
-            <.link :if={@filters.page > 1} patch={admin_path(%{@filters | page: @filters.page - 1})} class="underline">
+            <.link
+              :if={@filters.page > 1}
+              patch={admin_path(%{@filters | page: @filters.page - 1})}
+              class="underline"
+            >
               ← prev
             </.link>
             <.link
@@ -911,7 +936,10 @@ defmodule FountainWeb.AdminLive.Index do
 
         <div :if={@sandboxes == []} class="text-sm text-zinc-500">No active sandboxes.</div>
 
-        <table :if={@sandboxes != []} class="w-full text-sm bg-white rounded shadow border border-zinc-200 font-mono">
+        <table
+          :if={@sandboxes != []}
+          class="w-full text-sm bg-white rounded shadow border border-zinc-200 font-mono"
+        >
           <thead class="text-left text-zinc-500 border-b border-zinc-200">
             <tr>
               <th class="px-4 py-2">ID</th>
@@ -950,7 +978,9 @@ defmodule FountainWeb.AdminLive.Index do
                     :for={c <- s.conversations}
                     navigate={~p"/admin/conversations/#{c.id}"}
                     class="hover:underline"
-                  >{String.slice(c.id, 0, 8)}</.link>
+                  >
+                    {String.slice(c.id, 0, 8)}
+                  </.link>
                 </span>
               </td>
               <td class="px-4 py-2 text-xs text-zinc-500">{format_ts(s.inserted_at)}</td>
@@ -971,13 +1001,16 @@ defmodule FountainWeb.AdminLive.Index do
       <section class="space-y-3">
         <h2 class="text-lg font-medium">Recent admin actions</h2>
         <p class="text-sm text-zinc-500">
-          Role grants and quota changes. Previously unrecorded — the
-          <code>admin_audit_events</code> table existed with no writer.
+          Role grants and quota changes. Previously unrecorded — the <code>admin_audit_events</code>
+          table existed with no writer.
         </p>
 
         <div :if={@admin_events == []} class="text-sm text-zinc-500">Nothing yet.</div>
 
-        <table :if={@admin_events != []} class="w-full text-sm bg-white rounded shadow border border-zinc-200">
+        <table
+          :if={@admin_events != []}
+          class="w-full text-sm bg-white rounded shadow border border-zinc-200"
+        >
           <thead class="text-left text-zinc-500 border-b border-zinc-200">
             <tr>
               <th class="px-4 py-2">When</th>

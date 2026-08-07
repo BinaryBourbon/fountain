@@ -37,15 +37,24 @@
     <ul class="max-w-xl mx-auto space-y-4 text-[var(--color-text-secondary)]">
       <li class="flex items-start gap-3">
         <span class="mt-2 size-1.5 rounded-full bg-[var(--color-brand)] flex-shrink-0"></span>
-        <span>New teammates spend afternoons reverse-engineering setup instead of writing code.</span>
+        <span>
+          New teammates spend afternoons reverse-engineering setup instead of writing code.
+        </span>
       </li>
       <li class="flex items-start gap-3">
         <span class="mt-2 size-1.5 rounded-full bg-[var(--color-brand)] flex-shrink-0"></span>
-        <span>API keys expire mid-sprint with no single source of truth — the wrong <code class="text-[var(--color-code-text)] bg-[var(--color-code-bg)] rounded px-1 py-0.5 text-sm">.env</code> silently breaks the agent.</span>
+        <span>
+          API keys expire mid-sprint with no single source of truth — the wrong <code
+            class="text-[var(--color-code-text)] bg-[var(--color-code-bg)] rounded px-1 py-0.5 text-sm"
+            phx-no-format
+          >.env</code> silently breaks the agent.
+        </span>
       </li>
       <li class="flex items-start gap-3">
         <span class="mt-2 size-1.5 rounded-full bg-[var(--color-brand)] flex-shrink-0"></span>
-        <span>Parallel tasks with different credentials mean maintaining separate local checkouts.</span>
+        <span>
+          Parallel tasks with different credentials mean maintaining separate local checkouts.
+        </span>
       </li>
     </ul>
   </div>
@@ -60,11 +69,22 @@
     <%!-- Self-serve onboarding --%>
     <div class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-1)] p-6">
       <div class="size-9 rounded-lg bg-[var(--color-bg-2)] flex items-center justify-center mb-4">
-        <svg class="size-5 text-[var(--color-brand)]" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-          <path fill-rule="evenodd" d="M10 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm-7 9a7 7 0 1 1 14 0H3Z" clip-rule="evenodd" />
+        <svg
+          class="size-5 text-[var(--color-brand)]"
+          viewBox="0 0 20 20"
+          fill="currentColor"
+          aria-hidden="true"
+        >
+          <path
+            fill-rule="evenodd"
+            d="M10 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm-7 9a7 7 0 1 1 14 0H3Z"
+            clip-rule="evenodd"
+          />
         </svg>
       </div>
-      <h3 class="font-semibold text-[var(--color-text-primary)] mb-2">Teammates onboard themselves</h3>
+      <h3 class="font-semibold text-[var(--color-text-primary)] mb-2">
+        Teammates onboard themselves
+      </h3>
       <p class="text-sm text-[var(--color-text-secondary)] leading-relaxed">
         A new engineer gets a URL, registers, and is running their first agent conversation before they've read a README. No documentation handoff, no ticket to the platform team.
       </p>
@@ -73,11 +93,22 @@
     <%!-- Vaults --%>
     <div class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-1)] p-6">
       <div class="size-9 rounded-lg bg-[var(--color-bg-2)] flex items-center justify-center mb-4">
-        <svg class="size-5 text-[var(--color-brand)]" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-          <path fill-rule="evenodd" d="M10 1a4.5 4.5 0 0 0-4.5 4.5V9H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6a2 2 0 0 0-2-2h-.5V5.5A4.5 4.5 0 0 0 10 1Zm3 8V5.5a3 3 0 1 0-6 0V9h6Z" clip-rule="evenodd" />
+        <svg
+          class="size-5 text-[var(--color-brand)]"
+          viewBox="0 0 20 20"
+          fill="currentColor"
+          aria-hidden="true"
+        >
+          <path
+            fill-rule="evenodd"
+            d="M10 1a4.5 4.5 0 0 0-4.5 4.5V9H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6a2 2 0 0 0-2-2h-.5V5.5A4.5 4.5 0 0 0 10 1Zm3 8V5.5a3 3 0 1 0-6 0V9h6Z"
+            clip-rule="evenodd"
+          />
         </svg>
       </div>
-      <h3 class="font-semibold text-[var(--color-text-primary)] mb-2">Switch credentials without touching config</h3>
+      <h3 class="font-semibold text-[var(--color-text-primary)] mb-2">
+        Switch credentials without touching config
+      </h3>
       <p class="text-sm text-[var(--color-text-secondary)] leading-relaxed">
         Vaults are encrypted per-conversation overrides layered on top of your baseline environment. Test against staging, scope a contractor's access, or rotate a single key — without duplicating your setup.
       </p>
@@ -86,26 +117,50 @@
     <%!-- Log viewer --%>
     <div class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-1)] p-6">
       <div class="size-9 rounded-lg bg-[var(--color-bg-2)] flex items-center justify-center mb-4">
-        <svg class="size-5 text-[var(--color-brand)]" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-          <path fill-rule="evenodd" d="M2 4.25A2.25 2.25 0 0 1 4.25 2h11.5A2.25 2.25 0 0 1 18 4.25v8.5A2.25 2.25 0 0 1 15.75 15h-3.105a3.501 3.501 0 0 0 1.1 1.677A.75.75 0 0 1 13.26 18H6.74a.75.75 0 0 1-.484-1.323A3.501 3.501 0 0 0 7.355 15H4.25A2.25 2.25 0 0 1 2 12.75v-8.5Zm1.5 0a.75.75 0 0 1 .75-.75h11.5a.75.75 0 0 1 .75.75v7.5a.75.75 0 0 1-.75.75H4.25a.75.75 0 0 1-.75-.75v-7.5Z" clip-rule="evenodd" />
+        <svg
+          class="size-5 text-[var(--color-brand)]"
+          viewBox="0 0 20 20"
+          fill="currentColor"
+          aria-hidden="true"
+        >
+          <path
+            fill-rule="evenodd"
+            d="M2 4.25A2.25 2.25 0 0 1 4.25 2h11.5A2.25 2.25 0 0 1 18 4.25v8.5A2.25 2.25 0 0 1 15.75 15h-3.105a3.501 3.501 0 0 0 1.1 1.677A.75.75 0 0 1 13.26 18H6.74a.75.75 0 0 1-.484-1.323A3.501 3.501 0 0 0 7.355 15H4.25A2.25 2.25 0 0 1 2 12.75v-8.5Zm1.5 0a.75.75 0 0 1 .75-.75h11.5a.75.75 0 0 1 .75.75v7.5a.75.75 0 0 1-.75.75H4.25a.75.75 0 0 1-.75-.75v-7.5Z"
+            clip-rule="evenodd"
+          />
         </svg>
       </div>
-      <h3 class="font-semibold text-[var(--color-text-primary)] mb-2">Debug in seconds, not sessions</h3>
+      <h3 class="font-semibold text-[var(--color-text-primary)] mb-2">
+        Debug in seconds, not sessions
+      </h3>
       <p class="text-sm text-[var(--color-text-secondary)] leading-relaxed">
-        Every conversation's stdout, stderr, and lifecycle events stream live in the dashboard. No <code class="text-[var(--color-code-text)] bg-[var(--color-code-bg)] rounded px-1 py-0.5 text-xs">curl -N</code> to a raw SSE endpoint, no log pipeline to stand up. Click a conversation and see exactly what happened.
+        Every conversation's stdout, stderr, and lifecycle events stream live in the dashboard. No <code
+          class="text-[var(--color-code-text)] bg-[var(--color-code-bg)] rounded px-1 py-0.5 text-xs"
+          phx-no-format
+        >curl -N</code> to a raw SSE endpoint, no log pipeline to stand up. Click a conversation and see exactly what happened.
       </p>
     </div>
 
     <%!-- Three surfaces --%>
     <div class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-1)] p-6">
       <div class="size-9 rounded-lg bg-[var(--color-bg-2)] flex items-center justify-center mb-4">
-        <svg class="size-5 text-[var(--color-brand)]" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+        <svg
+          class="size-5 text-[var(--color-brand)]"
+          viewBox="0 0 20 20"
+          fill="currentColor"
+          aria-hidden="true"
+        >
           <path d="M3.25 4A2.25 2.25 0 0 0 1 6.25v7.5A2.25 2.25 0 0 0 3.25 16h7.5A2.25 2.25 0 0 0 13 13.75v-7.5A2.25 2.25 0 0 0 10.75 4h-7.5ZM19 4.75a.75.75 0 0 0-1.28-.53l-3 3a.75.75 0 0 0-.22.53v4.5c0 .199.079.39.22.53l3 3a.75.75 0 0 0 1.28-.53V4.75Z" />
         </svg>
       </div>
-      <h3 class="font-semibold text-[var(--color-text-primary)] mb-2">Script it, click it, or pipe it to CI</h3>
+      <h3 class="font-semibold text-[var(--color-text-primary)] mb-2">
+        Script it, click it, or pipe it to CI
+      </h3>
       <p class="text-sm text-[var(--color-text-secondary)] leading-relaxed">
-        REST API for automation, a LiveView dashboard for hands-on work, and an <code class="text-[var(--color-code-text)] bg-[var(--color-code-bg)] rounded px-1 py-0.5 text-xs">aod</code> CLI for pipelines — all reading and writing the same Environments, Agents, and Conversations. Pick the interface that fits the job.
+        REST API for automation, a LiveView dashboard for hands-on work, and an <code
+          class="text-[var(--color-code-text)] bg-[var(--color-code-bg)] rounded px-1 py-0.5 text-xs"
+          phx-no-format
+        >aod</code> CLI for pipelines — all reading and writing the same Environments, Agents, and Conversations. Pick the interface that fits the job.
       </p>
     </div>
   </div>
@@ -117,7 +172,10 @@
     <div class="grid sm:grid-cols-2 gap-10">
       <figure>
         <blockquote class="text-[var(--color-text-primary)] leading-relaxed mb-4">
-          "We were maintaining three separate <code class="text-[var(--color-code-text)] bg-[var(--color-code-bg)] rounded px-1 py-0.5 text-sm">.env</code> files and a shared Notion doc to keep our agent configs in sync. Fountain replaced all of it. Onboarding the last two engineers took ten minutes each."
+          "We were maintaining three separate <code
+            class="text-[var(--color-code-text)] bg-[var(--color-code-bg)] rounded px-1 py-0.5 text-sm"
+            phx-no-format
+          >.env</code> files and a shared Notion doc to keep our agent configs in sync. Fountain replaced all of it. Onboarding the last two engineers took ten minutes each."
         </blockquote>
         <figcaption class="text-sm text-[var(--color-text-muted)] font-medium">
           — Engineering lead, early access customer
@@ -125,7 +183,10 @@
       </figure>
       <figure>
         <blockquote class="text-[var(--color-text-primary)] leading-relaxed mb-4">
-          "I evaluated Fountain on a Friday afternoon and had a shared environment running for the whole team before dinner. The Vaults alone killed our 'which <code class="text-[var(--color-code-text)] bg-[var(--color-code-bg)] rounded px-1 py-0.5 text-sm">.env</code> is current?' Slack thread."
+          "I evaluated Fountain on a Friday afternoon and had a shared environment running for the whole team before dinner. The Vaults alone killed our 'which <code
+            class="text-[var(--color-code-text)] bg-[var(--color-code-bg)] rounded px-1 py-0.5 text-sm"
+            phx-no-format
+          >.env</code> is current?' Slack thread."
         </blockquote>
         <figcaption class="text-sm text-[var(--color-text-muted)] font-medium">
           — Developer, early access customer

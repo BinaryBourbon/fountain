@@ -136,14 +136,15 @@ defmodule FountainWeb.Live.AccountLive do
             <%= case export_state(@export) do %>
               <% :pending -> %>
                 <span class="text-gray-700">
-                  Export requested <%= Calendar.strftime(@export.inserted_at, "%Y-%m-%d %H:%M UTC") %>
-                  — generating&hellip; The download will appear here when it is ready.
+                  Export requested {Calendar.strftime(@export.inserted_at, "%Y-%m-%d %H:%M UTC")} — generating&hellip; The download will appear here when it is ready.
                 </span>
               <% :ready -> %>
                 <div class="flex items-center justify-between gap-4">
                   <span class="text-gray-700">
-                    Export ready (<%= format_bytes(@export.byte_size) %>) — link expires
-                    <%= Calendar.strftime(@export.expires_at, "%Y-%m-%d %H:%M UTC") %>.
+                    Export ready ({format_bytes(@export.byte_size)}) — link expires {Calendar.strftime(
+                      @export.expires_at,
+                      "%Y-%m-%d %H:%M UTC"
+                    )}.
                   </span>
                   <a
                     href={~p"/account/exports/#{@export.id}/download"}
@@ -172,7 +173,7 @@ defmodule FountainWeb.Live.AccountLive do
           Request export
         </button>
         <p class="mt-2 text-xs text-gray-400">
-          One export per hour. Downloads expire after <%= Exports.ttl_hours() %> hours.
+          One export per hour. Downloads expire after {Exports.ttl_hours()} hours.
         </p>
       </div>
 
@@ -183,9 +184,9 @@ defmodule FountainWeb.Live.AccountLive do
           <%!-- "Cancels your subscription" is billing residue on a
                billing-disabled instance — there is no subscription to
                cancel (#513, the last surface the walkthrough sweep found). --%>
-          <%= if Fountain.Billing.enabled?(),
+          {if Fountain.Billing.enabled?(),
             do: "Cancels your subscription, destroys",
-            else: "Destroys" %> every running sandbox, and permanently
+            else: "Destroys"} every running sandbox, and permanently
           deletes your agents, environments, vaults, conversations and stored secrets.
           Secrets are encrypted with a key held only for your account; deleting the
           account destroys that key, so they cannot be recovered afterwards by anyone.
@@ -199,7 +200,8 @@ defmodule FountainWeb.Live.AccountLive do
 
         <form phx-submit="delete_account" class="space-y-3">
           <label class="block text-sm text-gray-700">
-            Type <span class="font-mono font-semibold"><%= @current_user.email %></span> to confirm
+            Type <span class="font-mono font-semibold">{@current_user.email}</span>
+            to confirm
             <input
               type="text"
               name="email"
@@ -215,7 +217,7 @@ defmodule FountainWeb.Live.AccountLive do
             disabled={@delete_confirmation != @current_user.email or @deleting}
             class="rounded bg-red-600 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-gray-300"
           >
-            <%= if @deleting, do: "Deleting…", else: "Delete my account" %>
+            {if @deleting, do: "Deleting…", else: "Delete my account"}
           </button>
         </form>
       </div>

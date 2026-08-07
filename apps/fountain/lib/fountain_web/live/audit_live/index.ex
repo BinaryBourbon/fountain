@@ -207,7 +207,10 @@ defmodule FountainWeb.AuditLive.Index do
         No events yet.
       </div>
 
-      <table :if={@events != []} class="w-full text-sm bg-white rounded shadow border border-zinc-200 font-mono">
+      <table
+        :if={@events != []}
+        class="w-full text-sm bg-white rounded shadow border border-zinc-200 font-mono"
+      >
         <thead class="text-left text-zinc-500 border-b border-zinc-200">
           <tr>
             <th class="px-3 py-2">when</th>
@@ -225,7 +228,9 @@ defmodule FountainWeb.AuditLive.Index do
             <td class="px-3 py-1.5">{e.action}</td>
             <td class="px-3 py-1.5">
               {e.resource_type}
-              <span :if={e.resource_id} class="text-zinc-400">/{String.slice(e.resource_id, 0, 8)}</span>
+              <span :if={e.resource_id} class="text-zinc-400">
+                /{String.slice(e.resource_id, 0, 8)}
+              </span>
             </td>
             <td class="px-3 py-1.5">{e.metadata["status"] || "—"}</td>
             <td class="px-3 py-1.5 text-zinc-500">{e.request_ip || "—"}</td>
