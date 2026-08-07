@@ -20,6 +20,8 @@ defmodule Fountain.Runtimes.OpenCode do
 
   @behaviour Fountain.Runtimes
 
+  alias Fountain.Runtimes.Model
+
   # opencode insists on being inside a git repo. Putting the workspace
   # in /tmp side-steps the sprite user's lack of write access on
   # /home/sprite (which prevents `git init` from stat'ing the work tree).
@@ -58,7 +60,7 @@ defmodule Fountain.Runtimes.OpenCode do
   def default_env(_, _inference_credentials), do: [{"HOME", "/tmp"}]
 
   defp provider_env(%{model: model}, inference_credentials) do
-    case provider_of(model) do
+    case Model.provider(model) do
       "anthropic" -> env_pair("ANTHROPIC_API_KEY", :anthropic_api_key, inference_credentials)
       "openai" -> env_pair("OPENAI_API_KEY", :openai_api_key, inference_credentials)
       "google" -> env_pair("GEMINI_API_KEY", :gemini_api_key, inference_credentials)
@@ -113,13 +115,6 @@ defmodule Fountain.Runtimes.OpenCode do
       )
 
     if code == 0, do: :ok, else: {:error, {:opencode_install_exit, code}}
-  end
-
-  defp provider_of(model) do
-    case String.split(model, "/", parts: 2) do
-      [p, _] -> p
-      _ -> nil
-    end
   end
 
   defp env_pair(name, key, inference_credentials) do

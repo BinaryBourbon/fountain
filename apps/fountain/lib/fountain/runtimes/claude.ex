@@ -3,15 +3,21 @@ defmodule Fountain.Runtimes.Claude do
   Anthropic Claude Code CLI runtime.
 
   Argv shape mirrors AoD's Python build_claude_command:
-      claude --dangerously-skip-permissions --print --verbose
+      claude --model <model_id>
+             --dangerously-skip-permissions --print --verbose
              --output-format stream-json
              (--session-id | --resume) <id>
+
+  `--model` takes the bare id, so the canonical `anthropic/` prefix on
+  `agent.model` is stripped (see `Fountain.Runtimes.Model`).
 
   The prompt is piped on stdin by the spawn caller. ANTHROPIC_API_KEY is
   exported into the sprite environment.
   """
 
   @behaviour Fountain.Runtimes
+
+  alias Fountain.Runtimes.Model
 
   @impl true
   def skills_root, do: "/home/sprite/.claude/skills"
@@ -20,22 +26,24 @@ defmodule Fountain.Runtimes.Claude do
   def skills_sh_agent, do: "claude-code"
 
   @impl true
-  def build_command(_agent, _prompt, mode, runtime_session_id, opts) do
+  def build_command(agent, _prompt, mode, runtime_session_id, opts) do
     if mode == :continue and is_nil(runtime_session_id) do
       raise ArgumentError, "mode=:continue requires runtime_session_id"
     end
 
     flag = if mode == :continue, do: "--resume", else: "--session-id"
 
-    base_args = [
-      "--dangerously-skip-permissions",
-      "--print",
-      "--verbose",
-      "--output-format",
-      "stream-json",
-      flag,
-      runtime_session_id || ""
-    ]
+    base_args =
+      Model.model_args(agent) ++
+        [
+          "--dangerously-skip-permissions",
+          "--print",
+          "--verbose",
+          "--output-format",
+          "stream-json",
+          flag,
+          runtime_session_id || ""
+        ]
 
     # The claude CLI has no --image flag. Append image file paths to the
     # stdin prompt so Claude can use its Read tool to load them visually.

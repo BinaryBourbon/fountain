@@ -56,7 +56,11 @@ spec:
 
 An **Agent** is a named, re-runnable configuration for an AI coding assistant:
 
-- **`model`** - `provider/model-id` (e.g. `anthropic/claude-sonnet-4-6`)
+- **`model`** - `provider/model-id` (e.g. `anthropic/claude-sonnet-4-6`), passed
+  to the runtime's CLI. The provider must match the runtime: `anthropic` for
+  `claude`, `openai` for `codex`, `google` for `gemini`. `opencode` is
+  multi-provider and takes any prefix — it also uses the prefix to pick which
+  API key to export.
 - **`runtime`** - one of `claude`, `codex`, `gemini`, `opencode`
 - **`environment`** - optional Environment to attach
 - **`system`** / **`description`** - system prompt and human-readable description
