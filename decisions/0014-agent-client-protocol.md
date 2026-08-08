@@ -123,11 +123,19 @@ ACP path has served real conversations, not when the code compiles.
 
 ### Not in scope
 
-Fountain as an ACP **agent** — `cli/` speaking ACP so that Zed or Neovim could
-drive a Fountain conversation in a remote sandbox from inside an editor. It is
-a distribution play rather than an architectural one, and ACP's remote
-(HTTP/WebSocket) transport is documented as work in progress. Revisit when
-that transport is stable; do not let it influence the gates above.
+Fountain as an ACP **agent** — `cli/` speaking ACP so that an editor could
+drive a Fountain conversation running in a remote sandbox. That is
+[0015](0015-fountain-as-an-acp-agent.md), and it is deliberately a separate
+decision: it is a distribution question rather than an architectural one, and
+it must not influence the gates above.
+
+The sequencing runs the other way, though. 0015 is *gated on this ADR*,
+because the event stream it would build on forwards raw runtime stdout — an
+ACP agent on today's API would have to reimplement the four dialect parsers in
+Go. Once gate 2 here lands, Fountain is already holding ACP blocks and the
+editor-facing side forwards rather than translates. Fountain becomes an ACP
+proxy, and the dialects stop at the server boundary, which is the only place
+that knows which runtime produced them.
 
 ## Consequences
 
@@ -181,6 +189,7 @@ session ids are worth that, and gate 3 is where the bet is settled.
   migration, a process-lifetime change and a reaper change in one PR, across
   four runtimes, with the LiveView moving underneath it.
 - **Fountain as an ACP agent first.** More strategically interesting and
-  answers a real distribution question, but the remote transport is WIP and it
-  does nothing for the four parsers or the permission gap. Deferred above,
-  deliberately.
+  answers a real distribution question, but it does nothing for the four
+  parsers or the permission gap — and building it first would mean a second
+  copy of those parsers in Go. Split out as
+  [0015](0015-fountain-as-an-acp-agent.md), sequenced after this.
