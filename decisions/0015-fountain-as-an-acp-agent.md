@@ -19,6 +19,55 @@ side and leaving for an editor on the other. That symmetry is the central
 insight of this ADR, and it is also the source of its one hard dependency
 (see *Dependency on 0014*).
 
+### The shape, drawn
+
+This ADR is the upper half of the picture; [0014](0014-agent-client-protocol.md)
+is the lower half. Both are drawn here so that neither is read as a tree with
+the other hanging off it — they are two protocol roles held by one process.
+
+```
+  ┌─ editor (Zed, VS Code, …) ─────────────┐   ┌─────────────┐
+  │  spawns  ▸  fountain acp               │   │   web UI    │
+  │              ▲   ACP over local stdio  │   │ (LiveView)  │
+  └──────────────┼─────────────────────────┘   └──────┬──────┘
+                 │  HTTP + SSE                        │  WebSocket
+                 ▼                                    ▼
+  ┌─────────────────────────────────────────────────────────┐
+  │                        fountain                         │
+  │    ACP *agent* upward (0015) · ACP *client* downward    │
+  │    (0014) — the four runtime dialects stop at this line │
+  └────────────────────────────┬────────────────────────────┘
+                               │  ACP over the sprite's stdio
+                               ▼
+  ┌─────────────────────────────────────────────────────────┐
+  │      sprite  —  where the workspace and the files are   │
+  │        claude  ·  codex  ·  gemini  ·  opencode         │
+  └─────────────────────────────────────────────────────────┘
+```
+
+Three things the boxes are there to make hard to misread.
+
+**`fountain acp` is a local subprocess of the editor, not a network peer of
+the server.** The editor spawns it and speaks ACP down a pipe; the HTTP+SSE
+hop happens on the far side of that process. This is where authentication and
+multi-account selection stay, and it is why the remote transport is declined
+below rather than treated as the obvious future.
+
+**The web UI is a peer client, not a legacy one.** Two surfaces render the
+same conversation from the same stream — that is the *Team visibility* bullet
+below, and it is also why the stream picks up interface obligations under
+*Consequences*.
+
+**The workspace is at the bottom of the diagram.** The editor is the only box
+on it that has no files in play. Any picture that runs a line straight from an
+editor to a remote agent invites exactly the misreading that
+*the impedance mismatch* section exists to prevent, and that v1 answers by
+declaring no client `fs/*` or `terminal/*` capabilities at all.
+
+Placement — which sandbox platform runs the sprite, and in whose cloud — is
+deliberately absent. It is an axis neither ADR touches: ACP unifies the leaves,
+not the substrate.
+
 ### Why an editor would want this rather than a local agent
 
 An editor can already spawn Claude Code or Codex locally. Fountain is worth
