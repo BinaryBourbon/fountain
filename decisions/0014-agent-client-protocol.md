@@ -76,6 +76,48 @@ the sandbox. So `default_env/2`, `write_config/2`, `prepare_sprite/3`,
 of `Fountain.Runtimes` is untouched by this ADR, and that is the expected
 end state, not a transitional one.
 
+### The shape, drawn
+
+This ADR is the lower half of the picture; [0015](0015-fountain-as-an-acp-agent.md)
+is the upper half. Both are drawn here so that neither is read as a tree with
+the other hanging off it — they are two protocol roles held by one process.
+
+```
+  ┌─ editor (Zed, VS Code, …) ─────────────┐   ┌─────────────┐
+  │  spawns  ▸  fountain acp               │   │   web UI    │
+  │              ▲   ACP over local stdio  │   │ (LiveView)  │
+  └──────────────┼─────────────────────────┘   └──────┬──────┘
+                 │  HTTP + SSE                        │  WebSocket
+                 ▼                                    ▼
+  ┌─────────────────────────────────────────────────────────┐
+  │                        fountain                         │
+  │    ACP *agent* upward (0015) · ACP *client* downward    │
+  │    (0014) — the four runtime dialects stop at this line │
+  └────────────────────────────┬────────────────────────────┘
+                               │  ACP over the sprite's stdio
+                               ▼
+  ┌─────────────────────────────────────────────────────────┐
+  │      sprite  —  where the workspace and the files are   │
+  │        claude  ·  codex  ·  gemini  ·  opencode         │
+  └─────────────────────────────────────────────────────────┘
+```
+
+Two things the boxes are there to make hard to misread.
+
+**The vertical edges are asymmetric, and the traffic runs both ways on each.**
+`session/prompt` travels down and its stop reason comes back up;
+`session/update` only ever travels up; `session/request_permission` originates
+at the *bottom* and is answered from the top, which is why gate 3 below is the
+gate that justifies the project.
+
+**Placement is not on this diagram, and that is deliberate.** Which sandbox
+platform runs the sprite, and in whose cloud, is a separate axis that ACP says
+nothing about — it lives in `prepare_sprite/3`, `default_env/2` and
+`write_config/2`, the half of `Fountain.Runtimes` this ADR does not touch.
+ACP unifies the leaves; it does not make the substrate pluggable, and adopting
+it buys nothing toward that. A diagram that hangs runtimes off cloud providers
+is describing a decision nobody has written.
+
 ### Gate 1 — survey, no code
 
 Confirm per runtime how ACP support is actually provided and what the version
