@@ -118,6 +118,54 @@ ACP unifies the leaves; it does not make the substrate pluggable, and adopting
 it buys nothing toward that. A diagram that hangs runtimes off cloud providers
 is describing a decision nobody has written.
 
+### Session lifetime: the connection is scoped to the turn
+
+The sandbox is the cost unit and it has to stay disposable. `Lifecycle`
+(`apps/fountain/lib/fountain/conversations/lifecycle.ex`) reclaims an idle
+sprite after 60 minutes and any sprite after 24 hours, and the reason that is
+safe is that nothing durable lives inside it: the conversation row stays
+`idle`, `runtime_session_id` is persisted *before* the turn spawns
+(`conversation_server.ex:1595`), and the next prompt provisions a fresh sprite
+and resumes. Being wrong in the reclaiming direction costs a re-provision;
+being wrong in the other direction bills indefinitely. Nothing in this ADR is
+allowed to weaken that asymmetry.
+
+An earlier draft of this document said "ACP wants one connection alive for the
+session" and filed the collision with `SandboxReaper` under mandatory scope.
+That conflated two things the specification keeps apart. A session is named by
+its `sessionId` and is independent of the connection that created it —
+`session/load` exists so a *different* client instance can pick one up, after
+which the client "can then continue sending prompts as if the session was
+never interrupted." And a turn has a defined end: "if there are no pending
+tool calls, the turn ends and the Agent **MUST** respond to the original
+`session/prompt` request with a `StopReason`."
+
+Nothing in ACP requires a connection to outlive a turn. So:
+
+> **One ACP connection per turn.** Spawn the agent, `initialize`,
+> `session/new` on turn 1 or `session/load` / `session/resume` on turn N,
+> exactly one `session/prompt`, take the `stopReason`, close. Nothing is
+> attached between turns. `SandboxReaper`, the rehydrator and `Lifecycle` are
+> untouched by this ADR.
+
+That is the shape we already run, with the protocol swapped in underneath it:
+
+| today | under ACP |
+|---|---|
+| `Sprites.spawn` per turn (`conversation_server.ex:1683`) | the same spawn; the process speaks ACP |
+| prompt written to stdin, then `close_stdin` | prompt in `session/prompt`; **stdin stays open** for the connection |
+| `--resume <runtime_session_id>`, `--last` | `session/load` or `session/resume`, same persisted id |
+| process exit ends the turn | the `session/prompt` response ends it; exit is the backstop |
+| idle sprite reclaimed at 60m, any sprite at 24h | unchanged |
+
+**The rule that keeps this from eroding one optimisation at a time: no ACP
+state may become a reason to keep a sandbox alive.** A connection may be
+scoped to the turn (v1) or, if per-turn `initialize` proves too slow, to the
+sandbox's own idle window — both are bounded by `Lifecycle`. A connection
+scoped to the *session* is out of bounds, because it makes protocol state
+outrank the cost control, and that is the form in which this decision would
+come back to bite us.
+
 ### Gate 1 — survey, no code
 
 Confirm per runtime how ACP support is actually provided and what the version
@@ -129,23 +177,65 @@ support — **resolve this before choosing the spike runtime**, because a
 runtime needing a vendored Node adapter in the sprite image is a materially
 different proposition from one that speaks ACP with a flag.
 
+The survey must also record, per runtime, the two capability flags the
+turn-scoped connection depends on: `agentCapabilities.loadSession` and
+`sessionCapabilities.resume`, both read from the `initialize` response.
+Under one-connection-per-turn these are not a convenience for genuine resume —
+they are the *only* thing carrying a conversation across turns.
+
+**A runtime that advertises neither is not convertible.** Without one of them
+we would be doing resume-by-guessing exactly as we do today, plus a JSON-RPC
+peer: strictly worse than what we ship. That is a rejection, not a gap to work
+around, and it applies whatever the adapter's other merits.
+
+It also makes gate 2's candidate conditional. Gemini is the interesting spike
+*because* its resume semantics are the weakest thing we ship — but that is
+only true if its ACP path advertises a resumption capability. If it does not,
+the spike fixes nothing and the candidate is whichever runtime does.
+
 Deliverable: a table of runtime → mechanism → package (if any) → minimum
-version, and a recommendation for which single runtime to spike.
+version → `loadSession` → `sessionCapabilities.resume`, and a recommendation
+for which single runtime to spike.
 
 ### Gate 2 — one runtime, behind a per-agent flag
 
 Build `Fountain.Runtimes.ACP` as a JSON-RPC peer over the stdio pipe we
 already own (`Fountain.SpriteStdin.write/2` for the write half, the existing
 stdout tail for the read half), for exactly one runtime, selected by gate 1.
-Leading candidate is Gemini — not for protocol reasons but because its resume
-semantics are the weakest thing we ship, so the spike fixes a live hazard
-rather than only relocating code.
 
 The peer must translate `session/update` into **the same block maps
 `show.ex` already renders**. The LiveView does not change in this gate. That
 constraint is what makes the two paths A/B-able on one screen, and it is the
 only way we find out whether the ACP stream is actually richer or merely
 different.
+
+Three requirements come from the turn-scoped connection above, and each is a
+concrete bug if it is missed:
+
+- **stdin stays open, and the turn gains a second terminator.** Today the
+  prompt is written and `close_stdin` follows immediately. An ACP peer needs
+  the write half open for the whole connection — it is the return path for
+  `session/request_permission` answers and for `session/cancel` — so
+  `close_stdin` moves to turn end. The turn then ends on *either* the
+  `session/prompt` response or process exit, whichever arrives first, and
+  never waits for both. #603 and #413 are both this class of bug: a turn whose
+  terminator never came, leaving `current_command` set forever.
+
+- **Discard the `session/load` replay.** The agent "**MUST** replay the entire
+  conversation to the Client in the form of `session/update` notifications"
+  before responding to `session/load`. Fountain already holds that history as
+  `LogEvent` rows, so a peer that persists what arrives before the `session/load`
+  response duplicates the whole transcript into the database and onto the SSE
+  stream, on every turn after the first. The peer runs in replay-discard mode
+  until `session/load` returns. Where `sessionCapabilities.resume` is
+  advertised, prefer `session/resume`: it is specified *not* to replay, which
+  deletes the failure mode instead of handling it.
+
+- **Measure the per-turn `initialize`.** Process start, `initialize`, and the
+  resumption round trip are now paid once per turn rather than once per
+  session. That is the honest price of a disposable sandbox, and gate 2 must
+  report it against the current spawn. If it is intolerable, the escape hatch
+  is the sandbox-scoped connection named above — never a session-scoped one.
 
 Ship it off by default, enabled per agent, with the legacy path intact.
 
@@ -187,14 +277,15 @@ correlation, agent→client method dispatch and cancellation
 sitting beside a `ConversationServer` that is already 2,088 lines. If the
 peer lands inside that module, this ADR has been implemented wrongly.
 
-**The connection outlives the turn.** Today we spawn a process per turn and
-resume; ACP wants one connection alive for the session. That interacts
-directly with `SandboxReaper` and the rehydrator, which are built around the
-assumption that nothing is attached between turns. A reconnect story is
-mandatory, not a follow-up: where an adapter implements `session/load` we use
-it, and where it does not we are back to the same guess-the-session resume
-we started with — which is a reason to reject that runtime for conversion,
-not a reason to paper over it.
+**A turn now has protocol state, even though the connection does not
+outlive it.** *Session lifetime* above settles the reaper question — nothing
+is attached between turns, so `SandboxReaper`, the rehydrator and `Lifecycle`
+are unchanged. What remains is that the turn itself is no longer a process we
+watch for an exit: it is a connection with states (initialised, prompting,
+awaiting a permission answer, cancelled) and two ways to end. The failure mode
+does not go away, it changes shape — from a runtime that exits without saying
+why, to a peer that is waiting for a message that will never arrive. Both end
+as a sprite billing until `max_lifetime`; the second is harder to see.
 
 **Client-side methods point at the wrong filesystem.** `fs/read_text_file`,
 `fs/write_text_file` and `terminal/*` are implemented by the *client*. Ours
