@@ -1,8 +1,12 @@
 # 0014 — Speaking the Agent Client Protocol to runtimes
 
-**Status:** Proposed — **nothing described here is built.** No ACP code exists
-in this repo today. This ADR records a direction and the gates that decide
-whether we take it; the PR that builds each gate removes its caveat.
+**Status:** Partially accepted — **gates 1 and 2 are built; gates 3 and 4 are
+not.** `Fountain.Runtimes.ACP` and its peer exist and speak ACP to the pinned
+Claude adapter, behind a per-agent flag that is off by default; every other
+agent takes the legacy path unchanged. Nothing in *Gate 3 — permissions* or
+*Gate 4* exists, and neither should be read as describing behaviour the system
+has. Each gate below carries its own status; the PR that builds one removes its
+caveat.
 
 ## Context
 
@@ -239,13 +243,16 @@ Five things the survey turned up that the rest of this ADR has to absorb:
   *to* the protocol org, not into abandonware.
 
 - **The Claude adapter does not wrap the `claude` CLI.** It is a separate
-  agent built on the Claude Agent SDK, so the sprite would run
-  `claude-agent-acp`, not `claude`. That contradicts this ADR's claim that
-  the provisioning half of `Fountain.Runtimes` survives unchanged: for Claude,
+  agent built on the Claude Agent SDK, so the sprite runs `claude-agent-acp`,
+  not `claude`. That put a question mark over this ADR's claim that the
+  provisioning half of `Fountain.Runtimes` survives unchanged, since
   `skills_root/0` (`/home/sprite/.claude/skills`) and `skills_sh_agent/0`
-  (`claude-code`) describe the CLI's discovery paths and must be re-verified
-  against the SDK's. The claim holds for the other three; it is wrong for the
-  one we are converting first.
+  (`claude-code`) describe the *CLI's* discovery paths.
+
+  **Resolved 2026-08-10, in favour of the claim:** a skill written to
+  `/home/sprite/.claude/skills/<name>/SKILL.md` was discovered and used by the
+  adapter on a live sprite. The SDK reads the same tree, so both callbacks are
+  correct as they stand and the provisioning layer really is untouched.
 
 - **Nothing is version-pinned today, so there is no floor to hold.** Claude,
   Codex and Gemini come from the sprite base image, which we do not control;
@@ -279,7 +286,7 @@ client, rather than being a plain stdio peer. It satisfies the protocol, but
 it is a heavier process model than the other three and should not be assumed
 equivalent when its turn comes at gate 4.
 
-### Gate 2 — one runtime, behind a per-agent flag
+### Gate 2 — one runtime, behind a per-agent flag — **done, 2026-08-10**
 
 Build `Fountain.Runtimes.ACP` as a JSON-RPC peer over the stdio pipe we
 already own (`Fountain.SpriteStdin.write/2` for the write half, the existing
@@ -425,6 +432,30 @@ Two things the run found that no test could:
   correctly answered a question that only turn 1's context contained. The
   turn-scoped connection is sound.
 
+Everything the ACP path carries over the protocol rather than around it was
+then exercised against the same adapter, using the shapes the production code
+actually emits:
+
+- **MCP servers arrive, and `env` really is an array.** A stdio server passed
+  through `ACP.mcp_servers/1` into `session/new` was started, listed and
+  called; its tool returned a value read from `MCP_TEST_VAR`, which was
+  delivered exactly as the `[%{name:, value:}]` form predicted. That was the
+  riskiest guess in the mapping — a map would have been accepted as JSON and
+  silently produced an empty environment — and it is now a measured fact
+  rather than a reading of the adapter's source.
+
+- **`session/request_permission` is real, and gate 2 was right to answer it.**
+  The MCP tool call produced exactly one permission request. Had the peer not
+  replied, the agent would have blocked — a turn in flight, idle reclaim
+  disarmed, the sprite billing to its ceiling. The channel gate 3 is built on
+  demonstrably exists on this adapter.
+
+- **Images in `session/prompt` work.** A generated PNG sent as an `image`
+  content block was described correctly, so attachments survive the ACP path.
+
+- **Skills are discovered from the CLI's tree**, resolving gate 1's open
+  question above.
+
 #### The reclaim finding, which is bigger than this gate
 
 **A session does not survive its sandbox, and that was already true before
@@ -457,7 +488,7 @@ being *unavoidable* — sandboxes are bounded whatever the protocol does — and
 ACP at least failing loudly, with a session id it was actually asked for,
 where the legacy path fails on an id it guessed.
 
-### Gate 3 — permissions
+### Gate 3 — permissions — **not built**
 
 Implement `session/request_permission` against the conversation LiveView: a
 real approval prompt, per tool call, with the answer written back over the
@@ -466,7 +497,7 @@ land and gate 3 turns out to be blocked — by adapter support, by latency, by
 the reaper killing sessions mid-prompt — the honest outcome is to stop with
 one runtime converted and say so here.
 
-### Gate 4 — remaining runtimes, and parser deletion
+### Gate 4 — remaining runtimes, and parser deletion — **not built**
 
 Only after gate 3 holds in production. A parser is deleted when its runtime's
 ACP path has served real conversations, not when the code compiles.
