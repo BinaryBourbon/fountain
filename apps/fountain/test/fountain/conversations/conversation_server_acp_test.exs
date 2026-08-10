@@ -277,4 +277,118 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
       assert decoded["params"]["sessionId"] == "sess_prior"
     end
   end
+
+  describe "timing" do
+    setup do
+      user = insert_verified_user()
+      conv = insert_conversation(agent: acp_agent(user), user_id: user.id)
+      {pid, ref} = start_acp_turn(conv)
+      {:ok, conv: conv, pid: pid, ref: ref}
+    end
+
+    test "the handshake cost is measured per turn", %{conv: conv, pid: pid, ref: ref} do
+      # The number gate 2 owes: what a turn pays for `initialize` plus
+      # resumption, which the legacy path does not pay at all. Without this
+      # emitted per turn, the ADR's "measure it against the current spawn" is
+      # something somebody has to remember to do by hand.
+      :telemetry.attach(
+        "acp-handshake-test",
+        [:fountain, :acp, :handshake],
+        fn _event, measurements, metadata, test_pid ->
+          send(test_pid, {:handshake, measurements, metadata})
+        end,
+        self()
+      )
+
+      on_exit(fn -> :telemetry.detach("acp-handshake-test") end)
+
+      %{"id" => init_id, "method" => "initialize"} = next_write()
+      reply(pid, ref, init_id, %{"agentCapabilities" => @caps})
+
+      assert_receive {:handshake, %{duration_ms: ms}, meta}
+      assert is_integer(ms) and ms >= 0
+      assert meta.conversation_id == conv.id
+      refute is_nil(meta.turn_id)
+    end
+
+    test "the measurement names the session-setup call it paid for", %{
+      pid: pid,
+      ref: ref
+    } do
+      # A resume pays a different price from a session/new, and averaging the
+      # two together would hide whichever is the problem.
+      :telemetry.attach(
+        "acp-handshake-mode-test",
+        [:fountain, :acp, :handshake],
+        fn _e, _m, metadata, test_pid -> send(test_pid, {:method, metadata.method}) end,
+        self()
+      )
+
+      on_exit(fn -> :telemetry.detach("acp-handshake-mode-test") end)
+
+      %{"id" => init_id} = next_write()
+      reply(pid, ref, init_id, %{"agentCapabilities" => @caps})
+
+      assert_receive {:method, "session/new"}
+    end
+
+    test "it is emitted once, not once per message", %{pid: pid, ref: ref} do
+      :telemetry.attach(
+        "acp-handshake-once-test",
+        [:fountain, :acp, :handshake],
+        fn _e, _m, _meta, test_pid -> send(test_pid, :handshake) end,
+        self()
+      )
+
+      on_exit(fn -> :telemetry.detach("acp-handshake-once-test") end)
+
+      drive_to_prompt(pid, ref)
+
+      notify(pid, ref, %{
+        "sessionUpdate" => "agent_message_chunk",
+        "content" => %{"type" => "text", "text" => "hi"}
+      })
+
+      assert_receive :handshake
+      refute_receive :handshake, 100
+    end
+  end
+
+  describe "images and mcp servers reach the agent" do
+    test "images ride in session/prompt rather than being written to the sandbox" do
+      user = insert_verified_user()
+      conv = insert_conversation(agent: acp_agent(user), user_id: user.id)
+
+      stub_happy_sprite()
+      test = self()
+      ref = make_ref()
+
+      Mimic.stub(Sprites, :cmd, fn _s, _c, _a, _o -> {"", 0} end)
+      Mimic.stub(Sprites, :spawn, fn _s, _c, _a, _o -> {:ok, %{ref: ref, pid: test}} end)
+      Mimic.stub(Sprites, :close_stdin, fn _c -> :ok end)
+
+      Mimic.stub(Sprites, :write, fn _c, data ->
+        send(test, {:wrote, IO.iodata_to_binary(data)})
+        :ok
+      end)
+
+      # Nothing should be written into the sandbox filesystem for an ACP turn.
+      Mimic.stub(Sprites.Filesystem, :write, fn _fs, path, _contents ->
+        send(test, {:fs_write, path})
+        :ok
+      end)
+
+      {pid, _mon, :alive} = start_server(conv, initial_prompt: "look")
+      on_exit(fn -> if Process.alive?(pid), do: GenServer.stop(pid) end)
+
+      GenServer.call(
+        pid,
+        {:send_prompt, "and this", [%{media_type: "image/png", data: <<9, 9, 9>>}]}
+      )
+
+      settle(pid)
+
+      refute_receive {:fs_write, "/tmp/aod_turn_" <> _}, 100
+    end
+  end
 end

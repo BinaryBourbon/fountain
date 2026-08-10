@@ -35,7 +35,9 @@ defmodule Fountain.Runtimes.ACP.PeerTest do
           prompt: "do the thing",
           mode: :run,
           session_id: nil,
-          cwd: "/work"
+          cwd: "/work",
+          images: [],
+          mcp_servers: []
         ]
         |> Keyword.merge(opts)
       )
@@ -83,13 +85,13 @@ defmodule Fountain.Runtimes.ACP.PeerTest do
       assert params["clientCapabilities"]["fs"]["writeTextFile"] == false
     end
 
-    test "reports the handshake cost to the owner", ctx do
+    test "reports the handshake cost, labelled with the call it is about to make", ctx do
       pid = start_peer(ctx, [])
       %{"id" => id} = next_write()
 
       send_response(pid, id, %{"agentCapabilities" => caps()})
 
-      assert_receive {:acp, _ref, {:handshake_ms, ms}}
+      assert_receive {:acp, _ref, {:handshake_ms, ms, "session/new"}}
       assert is_integer(ms) and ms >= 0
     end
   end
@@ -142,6 +144,17 @@ defmodule Fountain.Runtimes.ACP.PeerTest do
       send_response(pid, init_id, %{"agentCapabilities" => %{"loadSession" => true}})
 
       assert %{"method" => "session/load"} = next_write()
+    end
+
+    test "the handshake measurement names the expensive path when it takes it", ctx do
+      # A load pays for a full history replay and a resume does not. Reporting
+      # both as "a resume" would average away the only number that would tell us
+      # a pinned adapter had stopped advertising `sessionCapabilities.resume`.
+      pid = start_peer(ctx, mode: :continue, session_id: "sess_abc")
+      %{"id" => init_id} = next_write()
+      send_response(pid, init_id, %{"agentCapabilities" => %{"loadSession" => true}})
+
+      assert_receive {:acp, _ref, {:handshake_ms, _ms, "session/load"}}
     end
 
     test "an agent that can do neither fails the turn instead of starting a second session",
@@ -323,6 +336,63 @@ defmodule Fountain.Runtimes.ACP.PeerTest do
     end
   end
 
+  describe "images" do
+    test "ride along in session/prompt as base64 content blocks", ctx do
+      # The legacy path writes the bytes into the sandbox and appends the paths
+      # to the prompt, hoping the model reaches for its Read tool. ACP carries
+      # them in the prompt itself.
+      pid = start_peer(ctx, images: [%{media_type: "image/png", data: <<1, 2, 3>>}])
+      %{"id" => init_id} = next_write()
+      send_response(pid, init_id, %{"agentCapabilities" => caps()})
+      %{"id" => new_id} = next_write()
+      send_response(pid, new_id, %{"sessionId" => "s"})
+
+      assert %{"method" => "session/prompt", "params" => params} = next_write()
+
+      assert [
+               %{"type" => "text", "text" => "do the thing"},
+               %{"type" => "image", "mimeType" => "image/png", "data" => data}
+             ] = params["prompt"]
+
+      assert Base.decode64!(data) == <<1, 2, 3>>
+    end
+
+    test "a prompt with no images is text only", ctx do
+      pid = start_peer(ctx, [])
+      %{"id" => init_id} = next_write()
+      send_response(pid, init_id, %{"agentCapabilities" => caps()})
+      %{"id" => new_id} = next_write()
+      send_response(pid, new_id, %{"sessionId" => "s"})
+
+      assert %{"params" => %{"prompt" => [%{"type" => "text"}]}} = next_write()
+    end
+  end
+
+  describe "mcp servers" do
+    @servers [%{name: "files", command: "mcp-files", env: [%{name: "K", value: "v"}]}]
+
+    test "are sent with session/new", ctx do
+      pid = start_peer(ctx, mcp_servers: @servers)
+      %{"id" => init_id} = next_write()
+      send_response(pid, init_id, %{"agentCapabilities" => caps()})
+
+      assert %{"method" => "session/new", "params" => params} = next_write()
+      assert [%{"name" => "files", "command" => "mcp-files"}] = params["mcpServers"]
+    end
+
+    test "are re-sent on resume, not assumed to have survived", ctx do
+      # The adapter snapshots {cwd, mcpServers} per session and tears the
+      # session down when they change, so omitting them on resume would read as
+      # "the client removed every MCP server".
+      pid = start_peer(ctx, mode: :continue, session_id: "s1", mcp_servers: @servers)
+      %{"id" => init_id} = next_write()
+      send_response(pid, init_id, %{"agentCapabilities" => caps()})
+
+      assert %{"method" => "session/resume", "params" => params} = next_write()
+      assert [%{"name" => "files"}] = params["mcpServers"]
+    end
+  end
+
   test "the peer dies with its owner", ctx do
     owner = spawn(fn -> receive do: (:never -> :ok) end)
 
@@ -334,7 +404,9 @@ defmodule Fountain.Runtimes.ACP.PeerTest do
         prompt: "p",
         mode: :run,
         session_id: nil,
-        cwd: "/work"
+        cwd: "/work",
+        images: [],
+        mcp_servers: []
       )
 
     monitor = Process.monitor(pid)

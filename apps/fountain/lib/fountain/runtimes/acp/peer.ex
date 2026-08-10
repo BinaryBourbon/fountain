@@ -64,7 +64,7 @@ defmodule Fountain.Runtimes.ACP.Peer do
   @type payload ::
           {:lines, stream :: String.t(), data :: String.t()}
           | {:session, String.t()}
-          | {:handshake_ms, non_neg_integer()}
+          | {:handshake_ms, non_neg_integer(), method :: String.t()}
           | {:done, stop_reason :: String.t()}
           | {:failed, term()}
 
@@ -80,6 +80,8 @@ defmodule Fountain.Runtimes.ACP.Peer do
       :session_id,
       :cwd,
       :started_mono,
+      images: [],
+      mcp_servers: [],
       buffer: "",
       next_id: 1,
       pending: %{},
@@ -126,6 +128,8 @@ defmodule Fountain.Runtimes.ACP.Peer do
       mode: Keyword.fetch!(opts, :mode),
       session_id: Keyword.fetch!(opts, :session_id),
       cwd: Keyword.get(opts, :cwd, "/home/sprite"),
+      images: Keyword.get(opts, :images, []),
+      mcp_servers: Keyword.get(opts, :mcp_servers, []),
       started_mono: System.monotonic_time(:millisecond)
     }
 
@@ -225,7 +229,17 @@ defmodule Fountain.Runtimes.ACP.Peer do
     caps = Map.get(result, "agentCapabilities") || %{}
     state = %{state | capabilities: caps}
 
-    report(state, {:handshake_ms, System.monotonic_time(:millisecond) - state.started_mono})
+    # Labelled with the session-setup call we are about to make, not with the
+    # server's idea of the mode: `kick_turn` persists a generated session id
+    # before the first turn spawns, so by the time this lands the server cannot
+    # tell a `session/new` from a resume. A resume and a new session pay
+    # different prices, and averaging them hides whichever is the problem.
+    method = if state.mode == :run, do: "session/new", else: resume_method(state)
+
+    report(
+      state,
+      {:handshake_ms, System.monotonic_time(:millisecond) - state.started_mono, method}
+    )
 
     case state.mode do
       :run -> start_new_session(state)
@@ -260,7 +274,7 @@ defmodule Fountain.Runtimes.ACP.Peer do
   # ── session setup ─────────────────────────────────────────────────────────
 
   defp start_new_session(state) do
-    params = %{cwd: state.cwd, mcpServers: []}
+    params = %{cwd: state.cwd, mcpServers: state.mcp_servers}
     params = if state.session_id, do: Map.put(params, :sessionId, state.session_id), else: params
 
     send_request(%{state | phase: :starting_session}, :new_session, "session/new", params)
@@ -274,10 +288,14 @@ defmodule Fountain.Runtimes.ACP.Peer do
   end
 
   defp resume_session(state) do
-    params = %{sessionId: state.session_id, cwd: state.cwd, mcpServers: []}
+    # Resumption re-sends the servers rather than assuming the agent kept them.
+    # The adapter snapshots `{cwd, mcpServers}` per session and tears the
+    # session down when they change, so omitting them here would read as
+    # "the client removed every MCP server".
+    params = %{sessionId: state.session_id, cwd: state.cwd, mcpServers: state.mcp_servers}
 
-    cond do
-      supports?(state, ["sessionCapabilities", "resume"]) ->
+    case resume_method(state) do
+      "session/resume" ->
         send_request(
           %{state | phase: :starting_session},
           :resume_session,
@@ -285,24 +303,51 @@ defmodule Fountain.Runtimes.ACP.Peer do
           params
         )
 
-      Map.get(state.capabilities, "loadSession") == true ->
+      "session/load" ->
         # The expensive path: everything until the response is history we
         # already have.
         %{state | phase: :starting_session, replay_discard?: true}
         |> send_request(:load_session, "session/load", params)
 
-      true ->
+      _ ->
         fail(state, :acp_agent_cannot_resume)
+    end
+  end
+
+  # Which resumption the agent's advertised capabilities allow, preferring the
+  # one that does not replay. Consulted twice — once to label the handshake
+  # measurement, once to make the call — so the number and the behaviour cannot
+  # disagree.
+  defp resume_method(state) do
+    cond do
+      supports?(state, ["sessionCapabilities", "resume"]) -> "session/resume"
+      Map.get(state.capabilities, "loadSession") == true -> "session/load"
+      true -> "none"
     end
   end
 
   defp send_prompt(state) do
     params = %{
       sessionId: state.session_id,
-      prompt: [%{type: "text", text: state.prompt}]
+      prompt: [%{type: "text", text: state.prompt} | image_blocks(state.images)]
     }
 
     send_request(%{state | phase: :prompting}, :prompt, "session/prompt", params)
+  end
+
+  # ACP carries images in the prompt itself, so the legacy dance — write the
+  # bytes to a temp file in the sandbox, then append the paths to the prompt and
+  # hope the model reaches for its Read tool — is not needed. `data` here is raw
+  # binary (already decoded by `FountainWeb.PromptImages`), and the protocol
+  # wants base64.
+  #
+  # The adapter advertises `promptCapabilities.image`; we send images
+  # unconditionally because the alternative is dropping a user's attachment
+  # silently, and an agent that cannot read one will say so.
+  defp image_blocks(images) do
+    Enum.map(images, fn %{media_type: media_type, data: data} ->
+      %{type: "image", mimeType: media_type, data: Base.encode64(data)}
+    end)
   end
 
   # ── plumbing ──────────────────────────────────────────────────────────────
