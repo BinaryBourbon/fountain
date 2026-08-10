@@ -110,17 +110,31 @@ defmodule Fountain.Conversations.LifecycleTest do
   end
 
   describe "explain/1" do
-    test "tells the user what happened and that nothing was lost" do
+    test "names the bound that fired and what to do next" do
       # From the user's side the sandbox simply vanished. This message is the
       # difference between a bug report and a shrug.
       with_config([sandbox_idle_timeout_minutes: 60, sandbox_max_lifetime_hours: 24], fn ->
         idle = Lifecycle.explain(:idle)
         assert idle =~ "60 minutes idle"
         assert idle =~ "Send another prompt"
-        assert idle =~ "history is preserved"
 
         assert Lifecycle.explain(:max_lifetime) =~ "24 hour"
+        assert Lifecycle.explain(:max_lifetime) =~ "Send another prompt"
       end)
+    end
+
+    test "does not promise the agent remembers the conversation (#649)" do
+      # It used to say "history is preserved", which is true of the transcript
+      # and false of the agent: the runtime session lives in the sandbox that
+      # was just destroyed, so the next turn starts cold. Believing the promise
+      # makes the agent's amnesia read as a bug in the model.
+      for reason <- [:idle, :max_lifetime] do
+        message = Lifecycle.explain(reason)
+
+        refute message =~ "history is preserved"
+        assert message =~ "will not remember"
+        assert message =~ "transcript"
+      end
     end
   end
 end

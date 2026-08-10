@@ -68,8 +68,10 @@ the event data.
 
 What the statuses mean: `failed` and `terminated` are the two terminal
 states — a further prompt is refused. `idle` with a terminated *sandbox* is
-the normal resting state, not an error: the next prompt re-provisions and
-history is preserved.
+the normal resting state, not an error: the next prompt re-provisions. The
+stored transcript is unaffected, but the agent starts a fresh session and does
+not carry the earlier turns into it — see the note under
+[Primitives → Conversation](primitives.md).
 
 **Quota knock-on:** a crash mid-provision leaves a `pending`/`starting`
 sandbox row that counts against the user's quota (default 5 concurrent).
