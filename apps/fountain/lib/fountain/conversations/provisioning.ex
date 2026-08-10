@@ -105,9 +105,10 @@ defmodule Fountain.Conversations.Provisioning do
              label: "checkpoint create"
            ) do
         {:ok, stream} ->
-          checkpoint_id =
-            stream
-            |> Enum.reduce(nil, fn msg, acc -> extract_checkpoint_id(msg) || acc end)
+          # Drain first: the checkpoint is not on the server until the stream
+          # completes, so listing before this races the upload.
+          Stream.run(stream)
+          checkpoint_id = newest_checkpoint_id(sprite, "aod env #{env.name}")
 
           if is_binary(checkpoint_id) and checkpoint_id != "" do
             {:ok, _} =
@@ -130,10 +131,51 @@ defmodule Fountain.Conversations.Provisioning do
     end)
   end
 
-  defp extract_checkpoint_id(%{"checkpoint_id" => id}) when is_binary(id), do: id
-  defp extract_checkpoint_id(%{checkpoint_id: id}) when is_binary(id), do: id
-  defp extract_checkpoint_id(%{"id" => id}) when is_binary(id), do: id
-  defp extract_checkpoint_id(_), do: nil
+  # The id comes from `list_checkpoints/1`, not from the creation stream.
+  #
+  # The stream is `%Sprites.StreamMessage{type:, data:, error:}` and the id is
+  # *prose inside `data`* — the whole of it, measured against a live sprite, is
+  # ten `type: "info"` lines including `"  ID: v1"` and a closing
+  # `type: "complete"`. The extractor this replaced pattern-matched maps with
+  # `checkpoint_id`/`id` keys, which that shape never has, so every checkpoint
+  # ever taken resolved to `nil` and `environments.checkpoint_id` was never
+  # written — #652. Restore therefore never ran, and every provision re-did work
+  # a checkpoint existed to skip.
+  #
+  # `list_checkpoints/1` returns typed `%Sprites.Checkpoint{}` structs instead,
+  # so there is nothing to parse. Two traps in it:
+  #
+  #   * the list includes a synthetic `"Current"` entry for the live filesystem,
+  #     which is always the newest thing there and is not a saved checkpoint;
+  #   * `Sprites.Checkpoint` does not implement `Access`, so `c["id"]` raises —
+  #     it has to be `c.id`.
+  defp newest_checkpoint_id(sprite, comment) do
+    case Sprites.list_checkpoints(sprite) do
+      {:ok, checkpoints} when is_list(checkpoints) ->
+        saved = Enum.reject(checkpoints, &(&1.id == "Current"))
+
+        case Enum.filter(saved, &(&1.comment == comment)) do
+          [] -> saved
+          ours -> ours
+        end
+        |> newest()
+
+      other ->
+        Logger.warning("list_checkpoints after create returned #{inspect(other)}")
+        nil
+    end
+  end
+
+  defp newest([]), do: nil
+
+  defp newest(checkpoints) do
+    checkpoints
+    |> Enum.max_by(& &1.create_time, DateTime, fn -> nil end)
+    |> case do
+      nil -> nil
+      checkpoint -> checkpoint.id
+    end
+  end
 
   @doc """
   Restore a sprite from a saved checkpoint. Drains the stream so the
