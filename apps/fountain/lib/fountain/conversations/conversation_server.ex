@@ -1886,7 +1886,8 @@ defmodule Fountain.Conversations.ConversationServer do
                   start_acp_peer(command, prompt, mode, runtime_session_id,
                     cwd: cwd,
                     images: images,
-                    mcp_servers: Fountain.Runtimes.ACP.mcp_servers(agent)
+                    mcp_servers: Fountain.Runtimes.ACP.mcp_servers(agent),
+                    model: agent && Fountain.Runtimes.Model.id(agent.model)
                   )
                 else
                   {nil, nil}
@@ -2171,7 +2172,8 @@ defmodule Fountain.Conversations.ConversationServer do
         session_id: runtime_session_id,
         cwd: Keyword.get(opts, :cwd) || "/home/sprite",
         images: Keyword.get(opts, :images, []),
-        mcp_servers: Keyword.get(opts, :mcp_servers, [])
+        mcp_servers: Keyword.get(opts, :mcp_servers, []),
+        model: Keyword.get(opts, :model)
       )
 
     {peer, Process.monitor(peer)}

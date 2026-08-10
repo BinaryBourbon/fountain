@@ -35,7 +35,13 @@ defmodule Fountain.Runtimes.ACP do
   only while one conversation ever runs per workspace — an invariant held by
   accident and asserted by no test. ACP names the session.
 
-  Codex and OpenCode also advertise both capabilities and are still to come.
+  Codex and OpenCode both advertise `loadSession` *and*
+  `sessionCapabilities.resume`, so they resume as cheaply as Claude does. What
+  differs is how ACP is reached: Codex through an adapter package we install
+  and pin, OpenCode through its own `acp` subcommand — which starts a local
+  HTTP server inside the sprite and drives it through opencode's SDK rather
+  than being a plain stdio peer. It satisfies the protocol; it is simply a
+  second process model to remember when something hangs.
 
   ## The adapter is pinned, and that is load-bearing
 
@@ -85,6 +91,31 @@ defmodule Fountain.Runtimes.ACP do
       package: nil,
       version: nil,
       cwd: "/tmp/gemini-workspace"
+    },
+    # Adapter, on the Codex App Server. The `zed-industries/codex-acp` that
+    # earlier drafts named is archived; this is its successor under the
+    # protocol org. Auth is unchanged: `Codex.prepare_sprite/3` still runs
+    # `codex login --with-api-key`, and OPENAI_API_KEY is still exported, so
+    # the adapter inherits whichever the CLI would have used.
+    "codex" => %{
+      bin: "codex-acp",
+      args: [],
+      package: "@agentclientprotocol/codex-acp",
+      version: "1.1.14",
+      cwd: "/home/sprite"
+    },
+    # Native: `opencode acp`. Heavier than the others — the subcommand starts a
+    # local HTTP server inside the sprite and drives it through opencode's own
+    # SDK client, rather than being a plain stdio peer. It satisfies the
+    # protocol, but it is a second process model to keep in mind when something
+    # hangs. Nothing to install here: `OpenCode.prepare_sprite/3` already bun-
+    # installs the binary and symlinks it onto PATH.
+    "opencode" => %{
+      bin: "opencode",
+      args: ["acp"],
+      package: nil,
+      version: nil,
+      cwd: "/tmp/opencode-workspace"
     }
   }
 
@@ -176,11 +207,12 @@ defmodule Fountain.Runtimes.ACP do
   @spec install(sprite :: any(), String.t(), [{String.t(), String.t()}]) :: :ok | {:error, term()}
   def install(sprite, runtime, sprite_env)
 
-  # Native ACP: the runtime ships in the sprite base image and speaks the
-  # protocol behind a flag. Nothing to install, and nothing we can pin — the
-  # version floor is whatever the image carries, which gate 1 recorded as an
-  # open exposure for three of the four runtimes.
-  def install(_sprite, runtime, _sprite_env) when runtime == "gemini", do: :ok
+  # Native ACP: the runtime speaks the protocol itself, and is already on the
+  # sprite — gemini from the base image, opencode from
+  # `OpenCode.prepare_sprite/3`'s bun install. Nothing to install, and for
+  # gemini nothing we can pin either: the version floor is whatever the image
+  # carries, which gate 1 recorded as an open exposure.
+  def install(_sprite, runtime, _sprite_env) when runtime in ["gemini", "opencode"], do: :ok
 
   def install(sprite, runtime, sprite_env) do
     bin = adapter_bin(runtime)

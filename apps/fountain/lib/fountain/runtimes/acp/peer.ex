@@ -82,6 +82,7 @@ defmodule Fountain.Runtimes.ACP.Peer do
       :started_mono,
       images: [],
       mcp_servers: [],
+      model: nil,
       buffer: "",
       next_id: 1,
       pending: %{},
@@ -130,6 +131,7 @@ defmodule Fountain.Runtimes.ACP.Peer do
       cwd: Keyword.get(opts, :cwd, "/home/sprite"),
       images: Keyword.get(opts, :images, []),
       mcp_servers: Keyword.get(opts, :mcp_servers, []),
+      model: Keyword.get(opts, :model),
       started_mono: System.monotonic_time(:millisecond)
     }
 
@@ -196,6 +198,18 @@ defmodule Fountain.Runtimes.ACP.Peer do
     end
   end
 
+  # A model we could not pin is not worth failing a turn over — but it is worth
+  # the tenant seeing, because the alternative is their agent quietly running a
+  # model they did not choose. It lands in the transcript as ordinary output.
+  defp handle_message({:error_response, _id, error}, %State{phase: :setting_model} = state) do
+    state
+    |> persist("stderr", [
+      "fountain: could not select model #{state.model} over ACP (#{inspect(error)}); ",
+      "the runtime's default is in use for this turn\n"
+    ])
+    |> send_prompt()
+  end
+
   defp handle_message({:error_response, id, error}, state) do
     {tag, state} = pop_pending(state, id)
     fail(state, {:acp_error, tag, error})
@@ -251,19 +265,23 @@ defmodule Fountain.Runtimes.ACP.Peer do
     case Map.get(result, "sessionId") do
       id when is_binary(id) ->
         report(state, {:session, id})
-        send_prompt(%{state | session_id: id})
+        pin_model_then_prompt(%{state | session_id: id}, result)
 
       _ ->
         fail(state, {:acp_no_session_id, result})
     end
   end
 
-  defp handle_response(:resume_session, _result, state), do: send_prompt(state)
+  defp handle_response(:resume_session, result, state),
+    do: pin_model_then_prompt(state, result)
 
-  defp handle_response(:load_session, _result, state) do
+  defp handle_response(:load_session, result, state) do
     # The replay is over; everything from here is this turn's.
-    send_prompt(%{state | replay_discard?: false})
+    pin_model_then_prompt(%{state | replay_discard?: false}, result)
   end
+
+  # The model was pinned (or refused); either way the turn goes ahead.
+  defp handle_response(:set_model, _result, state), do: send_prompt(state)
 
   defp handle_response(:prompt, result, state) do
     stop = Map.get(result, "stopReason") || "end_turn"
@@ -329,6 +347,44 @@ defmodule Fountain.Runtimes.ACP.Peer do
       supports?(state, ["sessionCapabilities", "resume"]) -> "session/resume"
       Map.get(state.capabilities, "loadSession") == true -> "session/load"
       true -> "none"
+    end
+  end
+
+  # ACP carries no model in `session/new`. The runtime's own default therefore
+  # wins unless the client says otherwise, which would silently ignore
+  # `agent.model` — the field the tenant actually configured, and for a
+  # multi-provider runtime the entire configuration.
+  #
+  # The mechanism is `session/set_config_option` with `configId: "model"`, and
+  # the session response advertises which options exist. We only send it when
+  # the agent said it has one, so a runtime with no model concept is left alone
+  # rather than being handed a method it never offered.
+  defp pin_model_then_prompt(state, result) do
+    cond do
+      is_nil(state.model) or state.model == "" ->
+        send_prompt(state)
+
+      not model_configurable?(result) ->
+        state
+        |> persist("stderr", [
+          "fountain: this runtime does not expose model selection over ACP; ",
+          "#{state.model} was not applied and its default is in use\n"
+        ])
+        |> send_prompt()
+
+      true ->
+        send_request(%{state | phase: :setting_model}, :set_model, "session/set_config_option", %{
+          sessionId: state.session_id,
+          configId: "model",
+          value: state.model
+        })
+    end
+  end
+
+  defp model_configurable?(result) do
+    case Map.get(result, "configOptions") do
+      options when is_list(options) -> Enum.any?(options, &(Map.get(&1, "id") == "model"))
+      _ -> false
     end
   end
 

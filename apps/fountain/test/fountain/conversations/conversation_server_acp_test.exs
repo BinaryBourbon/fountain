@@ -112,20 +112,16 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
       refute ACP.enabled?(insert_agent(user_id: user.id, runtime: "claude"))
     end
 
-    test "only applies to a converted runtime" do
+    test "applies to every converted runtime" do
       user = insert_verified_user()
 
-      # Codex and OpenCode advertise the capabilities but have no adapter entry
-      # yet. Flagging one is a no-op rather than an error: the legacy path is
-      # the default, not a failure mode.
-      codex = insert_agent(user_id: user.id, runtime: "codex", metadata: %{"acp" => true})
-      refute ACP.enabled?(codex)
+      for runtime <- ACP.supported_runtimes() do
+        agent = insert_agent(user_id: user.id, runtime: runtime, metadata: %{"acp" => true})
+        assert ACP.enabled?(agent), "expected #{runtime} to be ACP-enabled"
+      end
 
-      assert ACP.enabled?(acp_agent(user))
-
-      assert ACP.enabled?(
-               insert_agent(user_id: user.id, runtime: "gemini", metadata: %{"acp" => true})
-             )
+      # All four are converted now, so the flag itself is the only off switch.
+      refute ACP.enabled?(insert_agent(user_id: user.id, runtime: "claude"))
     end
   end
 

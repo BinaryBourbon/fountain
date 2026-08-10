@@ -15,11 +15,18 @@ defmodule Fountain.Runtimes.ACPTest do
       refute ACP.enabled?(nil)
     end
 
-    test "an unconverted runtime ignores the flag rather than erroring" do
-      # Codex and OpenCode both advertise the capabilities but have no adapter
-      # entry yet. The legacy path is the default, not a failure mode.
-      refute ACP.enabled?(agent(runtime: "codex", metadata: %{"acp" => true}))
-      refute ACP.enabled?(agent(runtime: "opencode", metadata: %{"acp" => true}))
+    test "every supported runtime honours the flag" do
+      for runtime <- ACP.supported_runtimes() do
+        assert ACP.enabled?(agent(runtime: runtime, metadata: %{"acp" => true})),
+               "expected #{runtime} to be ACP-enabled"
+
+        refute ACP.enabled?(agent(runtime: runtime, metadata: %{}))
+      end
+    end
+
+    test "a runtime with no adapter entry ignores the flag rather than erroring" do
+      # The legacy path is the default, not a failure mode.
+      refute ACP.enabled?(agent(runtime: "somethingelse", metadata: %{"acp" => true}))
     end
 
     test "a truthy-looking value that is not true does not enable it" do
@@ -158,8 +165,26 @@ defmodule Fountain.Runtimes.ACPTest do
       assert ACP.cwd("claude") == "/home/sprite"
     end
 
+    test "codex runs a pinned adapter; opencode runs its own subcommand" do
+      assert {"codex-acp", []} = ACP.command("codex")
+      assert ACP.adapter_spec("codex") =~ ~r{^@agentclientprotocol/codex-acp@\d+\.\d+\.\d+$}
+
+      # opencode's `acp` subcommand starts a local HTTP server inside the
+      # sprite and drives it through its own SDK — a heavier process model than
+      # the others, but nothing for us to install: OpenCode.prepare_sprite/3
+      # already bun-installs it.
+      assert {"opencode", ["acp"]} = ACP.command("opencode")
+      assert is_nil(ACP.adapter_spec("opencode"))
+      assert :ok = ACP.install(%{name: "s"}, "opencode", [])
+    end
+
+    test "each runtime runs where its own runtime module prepared" do
+      assert ACP.cwd("opencode") == "/tmp/opencode-workspace"
+      assert ACP.cwd("codex") == "/home/sprite"
+    end
+
     test "an unknown runtime raises rather than spawning something arbitrary" do
-      assert_raise ArgumentError, fn -> ACP.command("codex") end
+      assert_raise ArgumentError, fn -> ACP.command("nonesuch") end
     end
 
     test "a native runtime needs no install" do

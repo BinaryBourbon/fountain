@@ -414,4 +414,81 @@ defmodule Fountain.Runtimes.ACP.PeerTest do
 
     assert_receive {:DOWN, ^monitor, :process, ^pid, :normal}, 1_000
   end
+
+  describe "model selection" do
+    # ACP carries no model in session/new, so without this the runtime's own
+    # default silently wins over the model the tenant configured — and for a
+    # multi-provider runtime that is the entire configuration.
+    defp caps_with_model_option,
+      do: %{"sessionId" => "s", "configOptions" => [%{"id" => "model"}]}
+
+    test "pins the configured model when the agent advertises the option", ctx do
+      pid = start_peer(ctx, model: "claude-sonnet-4-6")
+      %{"id" => init_id} = next_write()
+      send_response(pid, init_id, %{"agentCapabilities" => caps()})
+      %{"id" => new_id} = next_write()
+      send_response(pid, new_id, caps_with_model_option())
+
+      assert %{"method" => "session/set_config_option", "id" => set_id, "params" => params} =
+               next_write()
+
+      assert params["configId"] == "model"
+      assert params["value"] == "claude-sonnet-4-6"
+      assert params["sessionId"] == "s"
+
+      send_response(pid, set_id, %{})
+      assert %{"method" => "session/prompt"} = next_write()
+    end
+
+    test "says so in the transcript when the runtime has no model option", ctx do
+      # Silently running someone else's model is the failure mode this whole
+      # campaign keeps turning up. Not fatal, but not invisible either.
+      pid = start_peer(ctx, model: "gemini-2.5-pro")
+      %{"id" => init_id} = next_write()
+      send_response(pid, init_id, %{"agentCapabilities" => caps()})
+      %{"id" => new_id} = next_write()
+      send_response(pid, new_id, %{"sessionId" => "s"})
+
+      assert_receive {:acp, _ref, {:lines, "stderr", msg}}
+      assert msg =~ "does not expose model selection"
+      assert msg =~ "gemini-2.5-pro"
+
+      assert %{"method" => "session/prompt"} = next_write()
+    end
+
+    test "a refused model is reported but does not fail the turn", ctx do
+      pid = start_peer(ctx, model: "not-a-real-model")
+      %{"id" => init_id} = next_write()
+      send_response(pid, init_id, %{"agentCapabilities" => caps()})
+      %{"id" => new_id} = next_write()
+      send_response(pid, new_id, caps_with_model_option())
+      %{"id" => set_id} = next_write()
+
+      Peer.stdout(
+        pid,
+        Jason.encode!(%{
+          "jsonrpc" => "2.0",
+          "id" => set_id,
+          "error" => %{"code" => -32_602, "message" => "Invalid value for config option model"}
+        }) <> "\n"
+      )
+
+      assert_receive {:acp, _ref, {:lines, "stderr", msg}}
+      assert msg =~ "could not select model"
+
+      # The turn still runs.
+      assert %{"method" => "session/prompt"} = next_write()
+      refute_receive {:acp, _ref, {:failed, _}}, 100
+    end
+
+    test "no configured model means no round trip at all", ctx do
+      pid = start_peer(ctx, [])
+      %{"id" => init_id} = next_write()
+      send_response(pid, init_id, %{"agentCapabilities" => caps()})
+      %{"id" => new_id} = next_write()
+      send_response(pid, new_id, caps_with_model_option())
+
+      assert %{"method" => "session/prompt"} = next_write()
+    end
+  end
 end
