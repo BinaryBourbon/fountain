@@ -116,6 +116,63 @@ defmodule Fountain.Runtimes.ACP do
   end
 
   @doc """
+  An agent's MCP servers, in the shape `session/new` takes.
+
+  Fountain stores them as Claude's own config map — `%{name => %{"command" =>
+  …, "args" => […], "env" => %{…}}}`, or a `type`/`url` entry for HTTP and SSE.
+  ACP takes an *array*, each entry carrying its own `name`, and — the detail
+  that is easy to get silently wrong — **`env` and `headers` as arrays of
+  `%{name, value}` rather than maps.** Passing a map there is accepted as JSON
+  and then read as nothing: the server starts with no environment, which
+  surfaces much later as a tool that cannot authenticate.
+
+  Verified against the pinned adapter's own parser, which does
+  `Object.fromEntries(server.env.map((e) => [e.name, e.value]))`.
+
+  Servers are still installed into the sandbox by
+  `Fountain.Runtimes.Claude.prepare_sprite/3` as well. That is belt and braces
+  rather than duplication: the adapter runs on the Agent SDK rather than the
+  `claude` CLI, so whether it reads the CLI's user-scope config is exactly the
+  kind of thing gate 1 flagged as unverified. Passing them over the protocol is
+  the path that does not depend on the answer.
+  """
+  @spec mcp_servers(Agent.t() | nil) :: [map()]
+  def mcp_servers(%Agent{mcp_servers: servers}) when is_map(servers) and map_size(servers) > 0 do
+    servers
+    |> Enum.sort_by(fn {name, _} -> to_string(name) end)
+    |> Enum.map(fn {name, entry} -> mcp_server(to_string(name), entry) end)
+  end
+
+  def mcp_servers(_), do: []
+
+  defp mcp_server(name, %{"type" => type} = entry) when type in ["http", "sse"] do
+    %{name: name, type: type, url: entry["url"]}
+    |> put_if_present(:headers, name_value_list(entry["headers"]))
+  end
+
+  defp mcp_server(name, entry) when is_map(entry) do
+    # No `type` key at all: the adapter treats an entry without one as stdio,
+    # and sending `type: "stdio"` puts it down the http/sse branch of its
+    # parser, where it looks for a `url` that is not there.
+    %{name: name, command: entry["command"], args: entry["args"] || []}
+    |> put_if_present(:env, name_value_list(entry["env"]))
+  end
+
+  defp mcp_server(name, _), do: %{name: name, args: []}
+
+  defp name_value_list(map) when is_map(map) and map_size(map) > 0 do
+    map
+    |> Enum.sort_by(fn {k, _} -> to_string(k) end)
+    |> Enum.map(fn {k, v} -> %{name: to_string(k), value: to_string(v)} end)
+  end
+
+  defp name_value_list(list) when is_list(list) and list != [], do: list
+  defp name_value_list(_), do: nil
+
+  defp put_if_present(map, _key, nil), do: map
+  defp put_if_present(map, key, value), do: Map.put(map, key, value)
+
+  @doc """
   The `initialize` params we send.
 
   **We declare no client filesystem or terminal capabilities.** `fs/*` and

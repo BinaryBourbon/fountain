@@ -1220,9 +1220,20 @@ defmodule Fountain.Conversations.ConversationServer do
   # The number gate 2 exists to produce: what a turn pays for `initialize` plus
   # resumption, which the legacy path does not pay at all. Emitted per turn so
   # the cost of a disposable sandbox is measurable rather than argued about.
-  def handle_info({:acp, ref, {:handshake_ms, ms}}, %{current_command_ref: ref} = state) do
+  #
+  # Also stamped on the turn's OTel span, because the comparison that decides
+  # the gate is against *this same turn's* total — a handshake figure in an
+  # unrelated metrics stream tells you the cost but not the share.
+  def handle_info({:acp, ref, {:handshake_ms, ms, method}}, %{current_command_ref: ref} = state) do
     :telemetry.execute([:fountain, :acp, :handshake], %{duration_ms: ms}, %{
-      conversation_id: state.conversation_id
+      conversation_id: state.conversation_id,
+      turn_id: state.current_turn && state.current_turn.id,
+      method: method
+    })
+
+    stamp_turn_span(state.current_turn_span, %{
+      "acp.handshake_ms" => ms,
+      "acp.session_method" => method
     })
 
     {:noreply, state}
@@ -1715,8 +1726,12 @@ defmodule Fountain.Conversations.ConversationServer do
       end)
     end
 
-    # Write image temp files to sprite
-    image_paths = write_image_temp_files(state.sprite, turn.id, images)
+    acp? = Fountain.Runtimes.ACP.enabled?(agent)
+
+    # Write image temp files to sprite. Only on the legacy path: ACP carries
+    # images as content blocks inside `session/prompt`, so writing them into
+    # the sandbox first would be a round trip whose product nothing reads.
+    image_paths = if acp?, do: [], else: write_image_temp_files(state.sprite, turn.id, images)
 
     {:ok, _} = Conversations.update_conversation(conv, %{status: "running"})
 
@@ -1742,11 +1757,9 @@ defmodule Fountain.Conversations.ConversationServer do
 
     # 0014 gate 2: when the agent has opted in and its runtime is one gate 1
     # cleared, the turn spawns an ACP adapter instead of the CLI. Everything
-    # about the turn — the prompt, the session id, the mode — travels over the
-    # protocol rather than in argv, so `build_command/5` is not consulted at
-    # all on this path.
-    acp? = Fountain.Runtimes.ACP.enabled?(agent)
-
+    # about the turn — the prompt, the images, the session id, the mode —
+    # travels over the protocol rather than in argv, so `build_command/5` is
+    # not consulted at all on this path.
     {cmd, args, build_opts} =
       if acp? do
         {c, a} = Fountain.Runtimes.ACP.command()
@@ -1853,7 +1866,11 @@ defmodule Fountain.Conversations.ConversationServer do
 
               {peer, peer_mon} =
                 if acp? do
-                  start_acp_peer(command, prompt, mode, runtime_session_id, cwd)
+                  start_acp_peer(command, prompt, mode, runtime_session_id,
+                    cwd: cwd,
+                    images: images,
+                    mcp_servers: Fountain.Runtimes.ACP.mcp_servers(agent)
+                  )
                 else
                   {nil, nil}
                 end
@@ -2075,6 +2092,19 @@ defmodule Fountain.Conversations.ConversationServer do
 
   # End the OTel turn span (if any) with a status reflecting the
   # outcome. Called from the :exit and :interrupt handlers.
+  # Attributes on a turn's span from outside `kick_turn`, which restores the
+  # caller's current span in its `after` block — so by the time a peer report
+  # arrives the turn span is no longer current and a bare `set_attribute` would
+  # land on whatever is.
+  defp stamp_turn_span(nil, _attrs), do: :ok
+
+  defp stamp_turn_span(span_ctx, attrs) do
+    previous = OpenTelemetry.Tracer.set_current_span(span_ctx)
+    Enum.each(attrs, fn {k, v} -> OpenTelemetry.Tracer.set_attribute(to_string(k), v) end)
+    OpenTelemetry.Tracer.set_current_span(previous)
+    :ok
+  end
+
   defp end_turn_span(nil, _outcome, _attrs), do: :ok
 
   defp end_turn_span(span_ctx, outcome, attrs) do
@@ -2113,7 +2143,7 @@ defmodule Fountain.Conversations.ConversationServer do
     end
   end
 
-  defp start_acp_peer(command, prompt, mode, runtime_session_id, cwd) do
+  defp start_acp_peer(command, prompt, mode, runtime_session_id, opts) do
     {:ok, peer} =
       Fountain.Runtimes.ACP.Peer.start(
         owner: self(),
@@ -2122,7 +2152,9 @@ defmodule Fountain.Conversations.ConversationServer do
         prompt: prompt,
         mode: mode,
         session_id: runtime_session_id,
-        cwd: cwd || "/home/sprite"
+        cwd: Keyword.get(opts, :cwd) || "/home/sprite",
+        images: Keyword.get(opts, :images, []),
+        mcp_servers: Keyword.get(opts, :mcp_servers, [])
       )
 
     {peer, Process.monitor(peer)}

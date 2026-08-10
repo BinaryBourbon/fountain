@@ -354,15 +354,41 @@ Three things the build settled that the ADR had only asserted:
   filesystem or terminal capability, so a well-behaved adapter never asks; one
   that asks anyway gets JSON-RPC `-32601`. Silence would hang the agent.
 
+Images and MCP servers travel over the protocol rather than around it.
+Attachments are `image` content blocks inside `session/prompt`, so the legacy
+dance — write the bytes into the sandbox, append the paths to the prompt, hope
+the model reaches for its Read tool — is skipped entirely on this path. MCP
+servers are passed to `session/new` and re-sent on every resumption, because
+the adapter snapshots `{cwd, mcpServers}` per session and tears the session
+down when that snapshot changes; omitting them on resume reads as *the client
+removed every MCP server*. They are still installed into the sandbox by
+`Claude.prepare_sprite/3` as well — belt and braces, since gate 1 could not
+confirm that an SDK-based adapter reads the CLI's user-scope config.
+
+Two shape details that fail silently rather than loudly, both taken from the
+pinned adapter's own parser rather than from prose: `env` and `headers` are
+arrays of `%{name, value}` and **not** maps (a map is valid JSON and reads as
+nothing, so the server starts with no environment and surfaces later as a tool
+that cannot authenticate); and a stdio server carries **no** `type` key at all,
+because the adapter routes anything with a `type` down its http/sse branch and
+looks for a `url` that is not there.
+
 **Not delivered: the latency number.** Gate 2 says it "must report [the
-per-turn `initialize` cost] against the current spawn". The instrumentation
-exists — `[:fountain, :acp, :handshake]` is emitted per turn with the
-milliseconds from spawn to the `initialize` response — but the measurement
-needs the pinned adapter running in a real sprite against a real key, and the
-number is meaningless from anywhere else. **Gate 2 is not complete until that
-figure is recorded here.** If it turns out to be intolerable, the escape hatch
-is the sandbox-scoped connection in *Session lifetime* above, never a
-session-scoped one.
+per-turn `initialize` cost] against the current spawn". The instrumentation is
+in place — `[:fountain, :acp, :handshake]` per turn, carrying the milliseconds
+from spawn to the `initialize` response and the session-setup call it is about
+to make (`session/new`, `session/resume` or `session/load`, which pay
+materially different prices), and the same pair stamped on the turn's own OTel
+span so the figure can be read as a *share* of the turn rather than in an
+unrelated metrics stream. What is missing is a real run: the pinned adapter in
+a real sprite against a real key. **Gate 2 is not complete until that figure is
+recorded here.** If it is intolerable, the escape hatch is the sandbox-scoped
+connection in *Session lifetime* above, never a session-scoped one.
+
+The other thing only a real run can settle: whether `session/resume` restores
+context across a sandbox that `Lifecycle` has actually reclaimed. Every test
+here drives a scripted agent, and no test can destroy a sprite. That single
+observation is what the turn-scoped design rests on.
 
 ### Gate 3 — permissions
 
