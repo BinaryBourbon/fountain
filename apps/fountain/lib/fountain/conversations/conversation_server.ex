@@ -662,8 +662,13 @@ defmodule Fountain.Conversations.ConversationServer do
   defp attempt_warm_start(sprite, %{checkpoint_id: id} = env, conv_id) do
     publish_stage(conv_id, "checkpoint_restore", "started", %{checkpoint_id: id})
 
+    # `restore_checkpoint/2` returns a bare `:ok` — `Fountain.Telemetry.span/3`
+    # unwraps the `{result, metadata}` pair it is given, so the `{:ok, _}` this
+    # used to match never occurred and a successful restore raised
+    # CaseClauseError. Latent only because #652 kept `checkpoint_id` nil, so
+    # this branch was unreachable.
     case Fountain.Conversations.Provisioning.restore_checkpoint(sprite, id) do
-      {:ok, _} ->
+      ok when ok == :ok or (is_tuple(ok) and elem(ok, 0) == :ok) ->
         publish_stage(conv_id, "checkpoint_restore", "done", %{checkpoint_id: id})
         :warm_started
 
@@ -712,8 +717,20 @@ defmodule Fountain.Conversations.ConversationServer do
   # above. A new caller passing anything else should crash loudly here rather
   # than silently skip checkpointing.
 
+  # Off by default since #654: a checkpoint id is scoped to the sprite that
+  # created it, and an environment's checkpoint is only ever restored into a
+  # *different* sprite (sandboxes are per-conversation, with a fresh name each
+  # time). Measured against the API — a fresh sprite lists only `Current`, and
+  # restoring another sprite's `v1` answers `checkpoint not found: checkpoint
+  # with path checkpoints/v1 not found`. So the warm start this feature exists
+  # for cannot happen, and creating checkpoints only spends time and storage to
+  # record an id that every later conversation will fail to restore.
+  #
+  # Left as a flag rather than deleted: if the platform grows a fork-from-
+  # checkpoint or create-sprite-from-checkpoint call, this becomes a one-line
+  # re-enable plus a restore that can finally work.
   defp checkpoint_creation_enabled? do
-    Application.get_env(:fountain, :checkpoint_creation_enabled, true)
+    Application.get_env(:fountain, :checkpoint_creation_enabled, false)
   end
 
   defp reattach(state, conv, sandbox, agent, env, secrets) do

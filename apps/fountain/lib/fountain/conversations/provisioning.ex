@@ -197,8 +197,23 @@ defmodule Fountain.Conversations.Provisioning do
              ) do
           {:ok, stream} ->
             try do
-              Enum.each(stream, fn _ -> :ok end)
-              {:ok, %{outcome: :ok}}
+              # A failed restore is an ordinary *element* of the stream, not a
+              # raise and not an {:error, _} from the call — the library hands
+              # back `%Sprites.StreamMessage{type: "error", error: "..."}` and
+              # keeps going. Draining without looking therefore reported every
+              # failure as a success, and `attempt_warm_start/3` treats success
+              # as "the sandbox is already provisioned": it skips packages,
+              # repo clones, the setup script *and the network policy*. A
+              # restore that silently did nothing would hand the tenant an
+              # unprovisioned sandbox with no egress lockdown.
+              case Enum.find(stream, &stream_error?/1) do
+                nil ->
+                  {:ok, %{outcome: :ok}}
+
+                %{error: error} ->
+                  Logger.warning("checkpoint restore reported an error: #{inspect(error)}")
+                  {{:error, {:restore_failed, error}}, %{outcome: :failed}}
+              end
             rescue
               e ->
                 Logger.warning("checkpoint restore stream raised: #{inspect(e)}")
@@ -212,6 +227,10 @@ defmodule Fountain.Conversations.Provisioning do
       end
     )
   end
+
+  defp stream_error?(%{type: "error"}), do: true
+  defp stream_error?(%{error: error}) when is_binary(error) and error != "", do: true
+  defp stream_error?(_), do: false
 
   # ── packages ──────────────────────────────────────────────────────────────
 
