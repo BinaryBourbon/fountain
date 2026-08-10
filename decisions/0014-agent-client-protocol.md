@@ -313,6 +313,57 @@ concrete bug if it is missed:
 
 Ship it off by default, enabled per agent, with the legacy path intact.
 
+#### Result — built, 2026-08-10
+
+Built for Claude, off by default, behind `agent.metadata["acp"] == true`.
+`Fountain.Runtimes.ACP` decides and provisions; `…ACP.Protocol` frames;
+`…ACP.Peer` holds one connection for one turn; `…ACP.Blocks` translates. The
+peer is a separate GenServer, monitored in both directions rather than linked,
+so a protocol bug fails a turn instead of taking down a `ConversationServer`
+holding a sprite handle and a tenant's secrets.
+
+`log_events` gained an `acp` stream carrying `session/update` notifications,
+one per line — the protocol as it arrived, exactly as `stdout` rows carry raw
+output. `show.ex` gained a single delegating clause keyed on that stream. That
+is not quite "the LiveView does not change", and the difference is worth
+naming: a fifth *parser* in the render path was the thing this ADR set out to
+avoid, and there is none. The clause dispatches to a module with its own
+tests. Keying on the stream rather than on `conversation.runtime` also means a
+conversation whose flag flipped between turns renders its earlier turns
+through the legacy parser and its later ones through ACP, which is the A/B on
+one screen the gate asked for.
+
+Three things the build settled that the ADR had only asserted:
+
+- **The turn really does have two terminators, and they are not symmetric.**
+  The stop reason arrives first and closes stdin; the process exit follows and
+  must be a no-op. Clearing `current_command_ref` is what makes it one — the
+  existing `{:exit, …}` clause then finds no match and falls through. A test
+  asserts the turn stays `completed` when an exit code of 1 arrives after a
+  successful stop reason, because the alternative is a finished turn being
+  overwritten by the adapter's exit status.
+
+- **`session/request_permission` had to be answered in gate 2, before the gate
+  that is about answering it.** An unanswered request blocks the agent, and a
+  blocked agent is a turn in flight — which disarms idle reclaim and bills the
+  sprite to the ceiling, the same shape as #413. Gate 2 auto-allows, which is
+  exact parity with the `--dangerously-skip-permissions` the legacy path
+  already passes. Gate 3 replaces the answer source, not the plumbing.
+
+- **`fs/*` and `terminal/*` are refused, not ignored.** We declare no client
+  filesystem or terminal capability, so a well-behaved adapter never asks; one
+  that asks anyway gets JSON-RPC `-32601`. Silence would hang the agent.
+
+**Not delivered: the latency number.** Gate 2 says it "must report [the
+per-turn `initialize` cost] against the current spawn". The instrumentation
+exists — `[:fountain, :acp, :handshake]` is emitted per turn with the
+milliseconds from spawn to the `initialize` response — but the measurement
+needs the pinned adapter running in a real sprite against a real key, and the
+number is meaningless from anywhere else. **Gate 2 is not complete until that
+figure is recorded here.** If it turns out to be intolerable, the escape hatch
+is the sandbox-scoped connection in *Session lifetime* above, never a
+session-scoped one.
+
 ### Gate 3 — permissions
 
 Implement `session/request_permission` against the conversation LiveView: a
