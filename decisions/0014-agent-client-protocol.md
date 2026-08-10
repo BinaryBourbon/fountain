@@ -123,12 +123,20 @@ is describing a decision nobody has written.
 The sandbox is the cost unit and it has to stay disposable. `Lifecycle`
 (`apps/fountain/lib/fountain/conversations/lifecycle.ex`) reclaims an idle
 sprite after 60 minutes and any sprite after 24 hours, and the reason that is
-safe is that nothing durable lives inside it: the conversation row stays
-`idle`, `runtime_session_id` is persisted *before* the turn spawns
-(`conversation_server.ex:1595`), and the next prompt provisions a fresh sprite
-and resumes. Being wrong in the reclaiming direction costs a re-provision;
-being wrong in the other direction bills indefinitely. Nothing in this ADR is
-allowed to weaken that asymmetry.
+safe is that the conversation row stays `idle`, `runtime_session_id` is
+persisted *before* the turn spawns (`conversation_server.ex:1595`), and the
+next prompt provisions a fresh sprite and resumes.
+
+> **Correction, 2026-08-10.** That last clause is not true, and gate 2's live
+> run proved it: the runtime's session lives in the sandbox's filesystem, so a
+> reclaimed conversation resumes onto a sprite that has never heard of it.
+> Both `session/resume` and the legacy `--resume` fail with *not found*. See
+> *The reclaim finding* under gate 2. The reclaim/bill asymmetry this paragraph
+> was built on is real for **cost** and false for **continuity**, and the gap
+> predates ACP.
+
+Nothing in this ADR is allowed to make the cost side worse, which is what the
+rule below protects.
 
 An earlier draft of this document said "ACP wants one connection alive for the
 session" and filed the collision with `SandboxReaper` under mandatory scope.
@@ -373,22 +381,81 @@ that cannot authenticate); and a stdio server carries **no** `type` key at all,
 because the adapter routes anything with a `type` down its http/sse branch and
 looks for a `url` that is not there.
 
-**Not delivered: the latency number.** Gate 2 says it "must report [the
-per-turn `initialize` cost] against the current spawn". The instrumentation is
-in place — `[:fountain, :acp, :handshake]` per turn, carrying the milliseconds
-from spawn to the `initialize` response and the session-setup call it is about
-to make (`session/new`, `session/resume` or `session/load`, which pay
-materially different prices), and the same pair stamped on the turn's own OTel
-span so the figure can be read as a *share* of the turn rather than in an
-unrelated metrics stream. What is missing is a real run: the pinned adapter in
-a real sprite against a real key. **Gate 2 is not complete until that figure is
-recorded here.** If it is intolerable, the escape hatch is the sandbox-scoped
-connection in *Session lifetime* above, never a session-scoped one.
+#### Measured against live sprites — 2026-08-10
 
-The other thing only a real run can settle: whether `session/resume` restores
-context across a sandbox that `Lifecycle` has actually reclaimed. Every test
-here drives a scripted agent, and no test can destroy a sprite. That single
-observation is what the turn-scoped design rests on.
+The pinned adapter, installed by `ACP.install/2` into real sprites, driven over
+its stdio. Two runs, four turns; small enough that these are indicative
+magnitudes rather than a benchmark.
+
+**The capability read from gate 1 holds against the running binary.**
+`agentInfo` reports `@agentclientprotocol/claude-agent-acp` `0.66.0`,
+`loadSession: true`, and `sessionCapabilities` containing `resume` alongside
+`additionalDirectories`, `close`, `delete`, `fork` and `list`. `--version`
+prints a bare `0.66.0`, so the install's idempotency check compares cleanly.
+
+| | measured |
+|---|---|
+| `ACP.install/2`, cold | 11.2 s (once per sprite, at provision) |
+| handshake — spawn → `initialize` response | 0.37 s – 1.22 s |
+| `session/new` | 0.80 s |
+| `session/resume` | 1.31 s – 1.37 s |
+| `session/prompt` (a one-token reply) | 1.69 s – 2.97 s |
+| **ACP turn, end to end** | **3.7 s / 5.6 s** |
+| **legacy `claude --print` turn, same prompt** | **4.6 s** (of which the CLI self-reports 2.1 s of work) |
+
+So the per-turn protocol overhead — `initialize` plus session setup, roughly
+2.0–2.6 s — lands in the same range as the legacy CLI's own startup, about
+2.5 s by subtraction. **End to end the ACP turn was not slower than the turn it
+replaces**, which is the comparison gate 2 asked for. The turn-scoped
+connection does not need the sandbox-scoped escape hatch, and that option stays
+unexercised rather than being taken pre-emptively.
+
+Two things the run found that no test could:
+
+- **`npm install -g` does not put the adapter on `PATH`.** `npm prefix -g` is
+  `/.sprite/languages/node/nvm/versions/node/v24.18.0`, and its `bin/` is not
+  in the sprite's default `PATH`, so a spawn would have failed with `command
+  not found` — an error that reads like a protocol bug and is not one. Fixed by
+  symlinking into `/home/sprite/.local/bin`, the same way `OpenCode`'s
+  installer already works around the identical problem with bun.
+
+- **A resumed session survives the process, exactly as designed.** Turn 2 ran
+  as a *separate connection* to the same sprite — new process, new
+  `initialize`, `session/resume` with the persisted id — and the agent
+  correctly answered a question that only turn 1's context contained. The
+  turn-scoped connection is sound.
+
+#### The reclaim finding, which is bigger than this gate
+
+**A session does not survive its sandbox, and that was already true before
+ACP.** Destroying the sprite and resuming on a fresh one — precisely what
+`Lifecycle` reclaim plus `wake_conversation`'s `:create_new` branch does, down
+to the new sprite name — fails on *both* paths:
+
+- ACP: `session/resume` returns `-32002 Resource not found: <session id>`.
+- Legacy: `claude --resume <id>` prints `No conversation found with session ID`
+  and exits with `error_during_execution`.
+
+The session lives in the sandbox's filesystem. The environment checkpoint that
+a fresh provision restores is taken at *provision* time, before any turn, so it
+cannot contain it.
+
+This falsifies a claim made above, in *Session lifetime*, and inherited from
+`Lifecycle`'s own docstring: that "the cost of reclaiming early is a
+re-provision on the next prompt, not lost work." The cost is the agent's
+memory of the conversation. Fountain's transcript is unaffected — `log_events`
+still render every turn — so the failure is silent and asymmetric: the user
+sees their history, the agent does not have it, and
+`Lifecycle.explain/1` tells them "history is preserved — send another prompt to
+continue."
+
+That is a pre-existing defect rather than an ACP one, and it is tracked
+separately. What it changes *here* is the reasoning: the turn-scoped connection
+is still correct and still cheap, but it is no longer justified by reclaim
+being harmless, because reclaim is not harmless. It is justified by reclaim
+being *unavoidable* — sandboxes are bounded whatever the protocol does — and by
+ACP at least failing loudly, with a session id it was actually asked for,
+where the legacy path fails on an id it guessed.
 
 ### Gate 3 — permissions
 

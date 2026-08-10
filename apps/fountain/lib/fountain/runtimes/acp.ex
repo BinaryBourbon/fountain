@@ -94,16 +94,34 @@ defmodule Fountain.Runtimes.ACP do
   Idempotent on the exact pinned version: an image that already carries a
   different version is corrected rather than accepted, since "some adapter is
   installed" is precisely the state the pin exists to prevent.
+
+  ## npm's global bin is not on the sprite's PATH
+
+  Verified on a live sprite (2026-08-10): `npm prefix -g` is
+  `/.sprite/languages/node/nvm/versions/node/v24.18.0`, whose `bin/` is **not**
+  in the default PATH — `command -v claude-agent-acp` after a successful global
+  install returns nothing. The spawn would then fail with `command not found`,
+  which reads like a protocol bug and is not one.
+
+  So we symlink into `/home/sprite/.local/bin`, which *is* on PATH. This is the
+  same shape as `Fountain.Runtimes.OpenCode.prepare_sprite/3`, which hit the
+  identical problem with bun's global bin, and the absolute path is hardcoded
+  for the same reason it is there: `~` resolves against whatever `HOME` the
+  caller happens to have.
   """
   @spec install(sprite :: any(), [{String.t(), String.t()}]) :: :ok | {:error, term()}
   def install(sprite, sprite_env) do
     script = """
     set -e
     want=#{@adapter_version}
-    have=$(#{@adapter_bin} --version 2>/dev/null | tr -d '[:space:]' || true)
+    bin=/home/sprite/.local/bin/#{@adapter_bin}
+    have=$("$bin" --version 2>/dev/null | tr -d '[:space:]' || true)
     if [ "$have" != "$want" ]; then
       npm install -g --no-progress --silent #{adapter_spec()}
+      mkdir -p /home/sprite/.local/bin
+      ln -sf "$(npm prefix -g)/bin/#{@adapter_bin}" "$bin"
     fi
+    "$bin" --version >/dev/null
     """
 
     case Sprites.cmd(sprite, "bash", ["-lc", script], env: sprite_env, timeout: 180_000) do
