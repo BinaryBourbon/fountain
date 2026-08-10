@@ -166,16 +166,12 @@ scoped to the *session* is out of bounds, because it makes protocol state
 outrank the cost control, and that is the form in which this decision would
 come back to bite us.
 
-### Gate 1 — survey, no code
+### Gate 1 — survey, no code — **done, 2026-08-09**
 
 Confirm per runtime how ACP support is actually provided and what the version
-floor is. Claude Code and Codex are documented as supported via Zed's adapter
-packages (`zed-industries/claude-agent-acp`, `zed-industries/codex-acp`).
-Gemini CLI and OpenCode are both listed as ACP-supporting, but the published
-agents page does not clearly separate native support from adapter-based
-support — **resolve this before choosing the spike runtime**, because a
-runtime needing a vendored Node adapter in the sprite image is a materially
-different proposition from one that speaks ACP with a flag.
+floor is, because a runtime needing a vendored Node adapter in the sprite
+image is a materially different proposition from one that speaks ACP with a
+flag. **Result below; the recommendation changed as a result of running it.**
 
 The survey must also record, per runtime, the two capability flags the
 turn-scoped connection depends on: `agentCapabilities.loadSession` and
@@ -193,9 +189,87 @@ It also makes gate 2's candidate conditional. Gemini is the interesting spike
 only true if its ACP path advertises a resumption capability. If it does not,
 the spike fixes nothing and the candidate is whichever runtime does.
 
-Deliverable: a table of runtime → mechanism → package (if any) → minimum
-version → `loadSession` → `sessionCapabilities.resume`, and a recommendation
-for which single runtime to spike.
+#### Result
+
+Read from each implementation's `initialize` response in source, not from
+documentation, on 2026-08-09. Versions are the npm `latest` on that date.
+
+| Runtime | Mechanism | Launch | Verified at | `loadSession` | `sessionCapabilities.resume` |
+|---|---|---|---|---|---|
+| Claude | adapter, on the **Claude Agent SDK** | `claude-agent-acp` (`@agentclientprotocol/claude-agent-acp`) | 0.66.0 | ✅ `true` | ✅ `resume: {}` |
+| Codex | adapter, on the **Codex App Server** | `codex-acp` (`@agentclientprotocol/codex-acp`) | 1.1.14 | ✅ `true` | ✅ `resume: {}` |
+| Gemini | native | `gemini --acp` | 0.54.4 | ✅ `true` | ❌ **no `sessionCapabilities` block at all** |
+| OpenCode | native | `opencode acp` | 1.18.15 | ✅ `true` | ✅ `resume: {}` |
+
+**All four are convertible.** The rejection criterion above — advertises
+neither — applies to none of them, so gate 1 rejects nothing.
+
+**The spike runtime is Claude, not Gemini.** Gemini advertises `loadSession`
+and no resume, and its `loadSession` streams the conversation back to the
+client. Under one connection per turn that is the full history replayed on
+every turn after the first, which is the most expensive shape available and
+the one gate 2's replay-discard requirement exists to survive. Claude
+advertises both, and the two paths are visibly different in its source:
+`resumeSession` only reattaches (`getOrCreateSession`), while `loadSession`
+additionally calls `replaySessionHistory`. So for Claude the ACP path is a
+like-for-like swap for `--resume` at the same cost, with an explicit session
+id instead of an implicit one. Gemini remains worth converting — its
+resume-by-guessing is still the worst thing we ship — but it is the wrong
+runtime to learn the protocol on.
+
+Five things the survey turned up that the rest of this ADR has to absorb:
+
+- **Both adapters changed hands during the drafting of this ADR.** The Zed
+  packages named in earlier revisions are gone: `zed-industries/claude-code-acp`
+  now redirects to `agentclientprotocol/claude-agent-acp`, and
+  `zed-industries/codex-acp` is **archived** (last push 2026-07-22) behind a
+  notice pointing at `agentclientprotocol/codex-acp`, rebuilt on the new Codex
+  App Server. Both replacements are active. This is precisely the risk
+  [0016](0016-governance-as-an-acp-proxy.md) names — "a vendor dropping an
+  adapter turns a governed runtime into an ungoverned one" — and it fired
+  inside a month. The mitigating detail is the direction: the adapters moved
+  *to* the protocol org, not into abandonware.
+
+- **The Claude adapter does not wrap the `claude` CLI.** It is a separate
+  agent built on the Claude Agent SDK, so the sprite would run
+  `claude-agent-acp`, not `claude`. That contradicts this ADR's claim that
+  the provisioning half of `Fountain.Runtimes` survives unchanged: for Claude,
+  `skills_root/0` (`/home/sprite/.claude/skills`) and `skills_sh_agent/0`
+  (`claude-code`) describe the CLI's discovery paths and must be re-verified
+  against the SDK's. The claim holds for the other three; it is wrong for the
+  one we are converting first.
+
+- **Nothing is version-pinned today, so there is no floor to hold.** Claude,
+  Codex and Gemini come from the sprite base image, which we do not control;
+  OpenCode is installed at provision time with `bun install -g opencode-ai`
+  (`open_code.ex:85`), unpinned. We therefore cannot currently guarantee an
+  ACP-capable version at spawn for any runtime. Pinning the adapter and the
+  runtime is a **prerequisite of gate 2**, not a follow-up — an unpinned
+  adapter is a supply-chain surface that also silently decides whether the
+  feature works.
+
+- **ACP v2 exists in the published spec and changes exactly this area.** It
+  drops `session/load` altogether, keeps `session/resume`, and makes replay
+  opt-in — "by default, resume restores the session context without replaying
+  prior conversation history," with an explicit `replayFrom: {"type":
+  "start"}` for clients that want it. That is the turn-scoped design as a
+  first-class protocol shape. It is not announced as stable (the
+  announcements page carries only v1 stabilisations, most recently
+  2026-07-24) and all four implementations advertise v1-shaped capabilities
+  today, so gate 2 targets v1 and must record which version it negotiated.
+  Everything quoted in this ADR is v1.
+
+- **`ANTHROPIC_BASE_URL` is honoured by the Claude adapter**, alongside
+  `ANTHROPIC_API_KEY`. Our existing credential injection therefore works
+  unchanged, and it answers half of 0016 §4's base-URL question — the one
+  flagged there as "gate-1-shaped" — positively, for one runtime. The other
+  three are unverified and stay that way until 0016 gate 3 needs them.
+
+One process note, since it decides how much of this to trust: `opencode acp`
+starts a local HTTP server inside the sprite and drives it through an SDK
+client, rather than being a plain stdio peer. It satisfies the protocol, but
+it is a heavier process model than the other three and should not be assumed
+equivalent when its turn comes at gate 4.
 
 ### Gate 2 — one runtime, behind a per-agent flag
 
