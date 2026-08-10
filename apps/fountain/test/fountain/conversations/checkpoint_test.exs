@@ -138,4 +138,50 @@ defmodule Fountain.Conversations.CheckpointTest do
       assert {:error, :no_env} = Provisioning.create_checkpoint(%{name: "s"}, nil)
     end
   end
+
+  describe "restore_checkpoint/2" do
+    test "an error carried in the stream is a failure, not a success" do
+      # The library reports a failed restore as an ordinary element —
+      # %StreamMessage{type: "error"} — and keeps going. Draining without
+      # looking reported it as success, and a "successful" restore makes
+      # run_provisioning_pipeline/5 skip packages, clones, the setup script and
+      # the network policy. See #654.
+      Mimic.stub(Sprites, :restore_checkpoint, fn _sprite, _id ->
+        {:ok,
+         [
+           %Sprites.StreamMessage{
+             type: "info",
+             data: "Restoring from checkpoint v1...",
+             error: nil
+           },
+           %Sprites.StreamMessage{
+             type: "error",
+             data: nil,
+             error: "Failed to restore checkpoint: checkpoint not found"
+           }
+         ]}
+      end)
+
+      assert {:error, {:restore_failed, _}} = Provisioning.restore_checkpoint(%{name: "s"}, "v1")
+    end
+
+    test "a clean stream is a success" do
+      Mimic.stub(Sprites, :restore_checkpoint, fn _sprite, _id ->
+        {:ok,
+         [
+           %Sprites.StreamMessage{type: "info", data: "Restoring...", error: nil},
+           %Sprites.StreamMessage{type: "complete", data: "restored", error: nil}
+         ]}
+      end)
+
+      # A bare :ok, not {:ok, _} — Telemetry.span/3 unwraps the pair. The
+      # caller used to match {:ok, _} and would have raised on success (#654).
+      assert :ok = Provisioning.restore_checkpoint(%{name: "s"}, "v1")
+    end
+
+    test "a missing id short-circuits" do
+      assert {:error, :no_checkpoint} = Provisioning.restore_checkpoint(%{name: "s"}, nil)
+      assert {:error, :no_checkpoint} = Provisioning.restore_checkpoint(%{name: "s"}, "")
+    end
+  end
 end
