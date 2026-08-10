@@ -19,18 +19,30 @@ defmodule Fountain.Conversations.Lifecycle do
     activity. Catches the case an idle timeout cannot: a conversation that keeps
     itself busy forever.
 
-  ## Why reclaiming is safe
+  ## What reclaiming costs
 
   Only the *sandbox* is torn down. The conversation row stays `idle`, which
   keeps it resumable — `assert_resumable/1` only refuses `terminated` and
-  `failed`. The next prompt goes through `wake_conversation/2`, which
-  sees a sandbox that is no longer `ready`, provisions a fresh one, and passes
-  the persisted `runtime_session_id` so the runtime resumes the same chat.
+  `failed`. The next prompt goes through `wake_conversation/2`, which sees a
+  sandbox that is no longer `ready`, provisions a fresh one, and passes the
+  persisted `runtime_session_id`.
 
-  So the cost of reclaiming early is a re-provision on the next prompt, not lost
-  work. That asymmetry is why the defaults can be fairly aggressive: being wrong
-  in the reclaiming direction is recoverable and being wrong in the other
-  direction bills indefinitely.
+  This module used to claim that the runtime then "resumes the same chat", and
+  that the cost of reclaiming early was therefore "a re-provision on the next
+  prompt, not lost work". **That is false, and #649 has the measurement.** The
+  runtime's session lives in the *sandbox's* filesystem, and the environment
+  checkpoint a fresh provision restores is taken before any turn ran, so it
+  cannot contain one. Resuming onto a new sprite fails on every path we have:
+  `claude --resume` answers "No conversation found with session ID" and ACP's
+  `session/resume` answers `-32002 Resource not found`.
+
+  So the honest asymmetry is narrower than the one the defaults were chosen
+  under. Being wrong in the reclaiming direction costs the agent's memory of
+  the conversation — Fountain's own transcript is untouched, every `log_events`
+  row still renders, so the loss is invisible in the UI and visible only in the
+  agent's answers. Being wrong in the other direction bills indefinitely.
+  Reclaiming is still right; it is just not free, and `explain/1` says so
+  rather than promising otherwise.
 
   Setting the conversation itself to `terminated` here would *not* be safe — it
   would make the conversation permanently unresumable, turning a cost control
@@ -101,18 +113,27 @@ defmodule Fountain.Conversations.Lifecycle do
   Human-readable reason, for the stage event a client sees on the stream.
 
   Worth spending words on: from the user's side the sandbox simply went away,
-  and "your sandbox was idle for 60 minutes and was reclaimed; send another
-  prompt to continue" is the difference between a bug report and a shrug.
+  and an explanation is the difference between a bug report and a shrug.
+
+  It must not overstate what survived. The transcript does; the agent's context
+  does not (#649). Telling someone "history is preserved" and then having the
+  agent answer as though the conversation never happened is worse than saying
+  nothing, because they believe the first sentence and read the second as the
+  model being broken.
   """
   @spec explain(:idle | :max_lifetime) :: String.t()
   def explain(:idle) do
-    "Sandbox reclaimed after #{minutes(idle_timeout_seconds())} minutes idle. " <>
-      "Send another prompt to continue the conversation — history is preserved."
+    "Sandbox reclaimed after #{minutes(idle_timeout_seconds())} minutes idle. " <> resume_caveat()
   end
 
   def explain(:max_lifetime) do
     "Sandbox reclaimed after reaching the #{hours(max_lifetime_seconds())} hour maximum " <>
-      "lifetime. Send another prompt to continue the conversation — history is preserved."
+      "lifetime. " <> resume_caveat()
+  end
+
+  defp resume_caveat do
+    "Send another prompt to continue — the transcript above is kept, but the " <>
+      "agent starts a fresh session and will not remember the earlier turns."
   end
 
   defp minutes(nil), do: "?"
