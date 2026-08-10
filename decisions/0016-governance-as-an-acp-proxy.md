@@ -154,7 +154,7 @@ Policy-first, human-second. 0015 already found the failure mode from the other
 end — permission forwarding is two hops (sprite → Fountain → editor →
 Fountain → sprite) and *what replies when the editor detaches mid-request?* In
 a product whose pitch is governance, that stops being an edge case and becomes
-core semantics. Three requirements fall out, and none is a polish item:
+core semantics. Four requirements fall out, and none is a polish item:
 
 - **Most decisions are made without a human.** An agent makes many tool calls;
   a design that asks a person about each one is not a governance product, it
@@ -163,6 +163,21 @@ core semantics. Three requirements fall out, and none is a polish item:
   Fail-open is not a governance posture, and an escalation nobody will ever
   see is the normal case for a conversation started from CI or left running
   overnight.
+- **An escalation holds a sandbox open, so the timeout is a cost control as
+  much as a security one.** 0014's *Session lifetime* section binds the ACP
+  connection to the turn precisely so that an idle sandbox can be reclaimed,
+  and interception is possible only inside that window — which is fine,
+  because tool calls only happen inside it too. But a conversation parked on
+  an unanswered `session/request_permission` is a turn in flight, and
+  `Lifecycle.check/4` suppresses idle reclaim while one is
+  (`busy? = state.current_command != nil`, `conversation_server.ex:1263`). So
+  a prompt nobody answers bills a sprite up to the 24-hour ceiling with the
+  idle timeout disarmed. That is not a hypothetical: #413 produced exactly
+  this by accident, and the comment at `conversation_server.ex:1204` records
+  the result — "idle reclaim was suppressed (busy? true), the reaper skipped
+  the sandbox (server alive), and the sprite billed until max_lifetime."
+  Escalation deadlines must therefore be strictly shorter than the idle
+  window, and stated as a number rather than inherited from it.
 - **The conversation survives a deny.** A denial is an ordinary result the
   agent is told about, not a fault. Anything else hands `SandboxReaper` and
   the rehydrator a hang state neither knows about — which is the exact risk
@@ -257,6 +272,13 @@ the denial. This is the smallest artifact that proves interception,
 server-side evaluation, a real deny and survivability. If the deny wedges the
 conversation or the added latency is unacceptable, we have learned it for the
 price of one runtime rather than a platform.
+
+Two of its success criteria are numbers, not properties, and they should be
+written down before the gate starts rather than discovered in it: the added
+per-tool-call latency of a *non-escalated* decision, which every tool call
+pays; and the escalation deadline, which by §3 must be shorter than
+`sandbox_idle_timeout_minutes` and is the difference between a governance
+control and an unbounded bill.
 
 **Gate 1 — the chokepoints ACP already gives us.** `fs/*` and `terminal/*`
 serviced against the sprite, under policy. 0014 lists these under Consequences
