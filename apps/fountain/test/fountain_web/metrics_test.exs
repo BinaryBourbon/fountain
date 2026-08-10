@@ -401,18 +401,22 @@ defmodule FountainWeb.MetricsTest do
     end
 
     test "time to first token scrapes tagged by runtime (#535)" do
-      # Distinct runtime for the same reason as the turn-duration test: the
-      # reporter is global and the ConversationServer tests feed claude.
+      # A synthetic runtime, not a real one. The reporter is global and
+      # cumulative, so this asserts an exact bucket count only as long as
+      # nothing else in the suite emits the same tag — and "gemini" stopped
+      # being safe the moment the ACP conversion grew gemini ConversationServer
+      # tests, which feed first-output telemetry of their own. A tag no runtime
+      # can ever be named keeps the exact-count assertions meaningful.
       Fountain.Telemetry.event(
         [:turn, :first_output],
-        %{runtime: "gemini", conv_id: Ecto.UUID.generate()},
+        %{runtime: "probe-runtime", conv_id: Ecto.UUID.generate()},
         %{elapsed_ms: 1_500}
       )
 
       Process.sleep(50)
       {200, body} = scrape()
 
-      series = ~s(fountain_turn_first_output_elapsed_ms_bucket{runtime="gemini")
+      series = ~s(fountain_turn_first_output_elapsed_ms_bucket{runtime="probe-runtime")
 
       # 1.5s is above the 1s boundary and below 2.5s.
       assert body =~ ~s(#{series},le="2500"} 1)
@@ -420,7 +424,9 @@ defmodule FountainWeb.MetricsTest do
 
       # No status tag here: a turn reports first output once, before any
       # outcome is known.
-      refute body =~ ~s(fountain_turn_first_output_elapsed_ms_bucket{runtime="gemini",status)
+      refute body =~
+               ~s(fountain_turn_first_output_elapsed_ms_bucket{runtime="probe-runtime",status)
+
       refute body =~ "conv_id="
     end
 

@@ -273,11 +273,17 @@ defmodule Fountain.Runtimes.ACP.Peer do
 
   # ── session setup ─────────────────────────────────────────────────────────
 
+  # No client-proposed `sessionId`. The spec is explicit that the *agent*
+  # "MUST respond with a unique Session ID", and we overwrite whatever we sent
+  # with what comes back anyway — so proposing one was decoration that a
+  # stricter agent could reject on schema grounds.
   defp start_new_session(state) do
-    params = %{cwd: state.cwd, mcpServers: state.mcp_servers}
-    params = if state.session_id, do: Map.put(params, :sessionId, state.session_id), else: params
-
-    send_request(%{state | phase: :starting_session}, :new_session, "session/new", params)
+    send_request(
+      %{state | phase: :starting_session},
+      :new_session,
+      "session/new",
+      %{cwd: state.cwd, mcpServers: state.mcp_servers}
+    )
   end
 
   defp resume_session(%State{session_id: nil} = state) do
