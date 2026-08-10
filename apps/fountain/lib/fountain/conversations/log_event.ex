@@ -7,7 +7,13 @@ defmodule Fountain.Conversations.LogEvent do
   @foreign_key_type :binary_id
 
   @kinds ~w(output stage)
-  @streams ~w(stdout stderr)
+  # `acp` rows hold Agent Client Protocol `session/update` notifications, one
+  # per line, exactly as `stdout` rows hold raw runtime output — what is on disk
+  # is what the agent actually said. The render path tells them apart by stream
+  # rather than by the conversation's runtime, so a conversation whose agent had
+  # the flag flipped mid-way renders its earlier turns through the legacy parser
+  # and its later ones through ACP. See decisions/0014.
+  @streams ~w(stdout stderr acp)
   @states ~w(started done failed interrupted)
 
   schema "log_events" do

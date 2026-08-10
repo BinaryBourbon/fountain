@@ -1,0 +1,280 @@
+defmodule Fountain.Conversations.ConversationServerACPTest do
+  @moduledoc """
+  The ACP path through a real `ConversationServer` (0014 gate 2).
+
+  These are the assertions that cannot be made against the peer alone: which
+  binary gets spawned, that stdin is *not* closed at spawn, that protocol bytes
+  never reach the transcript, and that a turn ends exactly once even though it
+  now has two possible terminators.
+  """
+
+  use Fountain.ConversationServerCase
+
+  alias Fountain.Runtimes.ACP
+
+  defp acp_agent(user) do
+    insert_agent(user_id: user.id, runtime: "claude", metadata: %{"acp" => true})
+  end
+
+  # Starts a server whose turn speaks ACP, with the sprite side wired to this
+  # process: every byte written to stdin arrives as `{:wrote, line}`, and the
+  # command's ref is ours so tests can feed stdout back.
+  defp start_acp_turn(conv) do
+    stub_happy_sprite()
+    test = self()
+    ref = make_ref()
+
+    # The adapter install runs at provision time. It is `Sprites.cmd/4`
+    # returning `{output, exit_code}` — a different arity from the `cmd/3` the
+    # permissive harness stubs, so without this the real client is called.
+    Mimic.stub(Sprites, :cmd, fn _s, _cmd, _args, _opts -> {"", 0} end)
+
+    Mimic.stub(Sprites, :spawn, fn _s, cmd, args, opts ->
+      send(test, {:spawned, cmd, args, opts})
+      {:ok, %{ref: ref, pid: test}}
+    end)
+
+    Mimic.stub(Sprites, :close_stdin, fn _c ->
+      send(test, :stdin_closed)
+      :ok
+    end)
+
+    Mimic.stub(Sprites, :write, fn _c, data ->
+      send(test, {:wrote, IO.iodata_to_binary(data)})
+      :ok
+    end)
+
+    {pid, _mon, :alive} = start_server(conv, initial_prompt: "first")
+
+    # Unconditional teardown. A test that fails an assertion would otherwise
+    # skip its own `GenServer.stop`, leaving a server running into the next
+    # test — where its peer's next report does DB work against a sandbox
+    # connection that has already been checked in, and one real failure
+    # becomes four noisy ones.
+    on_exit(fn -> if Process.alive?(pid), do: GenServer.stop(pid) end)
+
+    {pid, ref}
+  end
+
+  defp next_write do
+    assert_receive {:wrote, line}, 1_000
+    Jason.decode!(line)
+  end
+
+  defp reply(pid, ref, id, result) do
+    line = Jason.encode!(%{"jsonrpc" => "2.0", "id" => id, "result" => result}) <> "\n"
+    send(pid, {:stdout, %{ref: ref}, line})
+    settle(pid)
+  end
+
+  # A message crosses three mailboxes: the server takes the stdout chunk and
+  # casts it to the peer, the peer acts and reports back, and the server acts on
+  # the report. Syncing only the server would assert against a state one hop
+  # behind, which is what made these tests pass alone and fail together.
+  defp settle(pid) do
+    peer = :sys.get_state(pid).acp_peer
+    if is_pid(peer) and Process.alive?(peer), do: :sys.get_state(peer)
+    _ = :sys.get_state(pid)
+    :ok
+  end
+
+  defp notify(pid, ref, update) do
+    line =
+      Jason.encode!(%{
+        "jsonrpc" => "2.0",
+        "method" => "session/update",
+        "params" => %{"sessionId" => "sess_1", "update" => update}
+      }) <> "\n"
+
+    send(pid, {:stdout, %{ref: ref}, line})
+    settle(pid)
+  end
+
+  @caps %{"loadSession" => true, "sessionCapabilities" => %{"resume" => %{}}}
+
+  # initialize → session/new → session/prompt, returning the prompt's id so a
+  # test can answer it.
+  defp drive_to_prompt(pid, ref) do
+    %{"id" => init_id, "method" => "initialize"} = next_write()
+    reply(pid, ref, init_id, %{"agentCapabilities" => @caps})
+
+    %{"id" => new_id, "method" => "session/new"} = next_write()
+    reply(pid, ref, new_id, %{"sessionId" => "sess_1"})
+
+    %{"id" => prompt_id, "method" => "session/prompt"} = next_write()
+    settle(pid)
+    prompt_id
+  end
+
+  describe "the flag" do
+    test "is off by default" do
+      user = insert_verified_user()
+      refute ACP.enabled?(insert_agent(user_id: user.id, runtime: "claude"))
+    end
+
+    test "only applies to a runtime gate 1 cleared" do
+      user = insert_verified_user()
+
+      # Gemini advertises loadSession and no resume, so every turn after the
+      # first would replay the whole conversation. Flagging it is a no-op rather
+      # than an error: the legacy path is the default, not a failure mode.
+      gemini = insert_agent(user_id: user.id, runtime: "gemini", metadata: %{"acp" => true})
+      refute ACP.enabled?(gemini)
+
+      assert ACP.enabled?(acp_agent(user))
+    end
+  end
+
+  describe "spawn" do
+    setup do
+      user = insert_verified_user()
+      conv = insert_conversation(agent: acp_agent(user), user_id: user.id)
+      {pid, ref} = start_acp_turn(conv)
+      {:ok, conv: conv, pid: pid, ref: ref}
+    end
+
+    test "runs the pinned adapter rather than the claude CLI", %{pid: pid} do
+      assert_receive {:spawned, cmd, _args, opts}
+      assert cmd == ACP.adapter_bin()
+      assert opts[:stdin] == true
+    end
+
+    test "writes initialize instead of the prompt", %{pid: pid} do
+      assert %{"method" => "initialize"} = next_write()
+    end
+
+    test "does not close stdin at spawn — it is the return path for the session", %{pid: pid} do
+      # The legacy path writes the prompt and closes immediately. Doing that here
+      # hangs up on the agent mid-handshake: permission answers and
+      # `session/cancel` both travel back up this pipe.
+      _ = next_write()
+      refute_receive :stdin_closed, 200
+    end
+  end
+
+  describe "a turn, end to end" do
+    setup do
+      user = insert_verified_user()
+      conv = insert_conversation(agent: acp_agent(user), user_id: user.id)
+      {pid, ref} = start_acp_turn(conv)
+      {:ok, conv: conv, pid: pid, ref: ref}
+    end
+
+    test "persists the session id so the next turn can resume it", %{
+      conv: conv,
+      pid: pid,
+      ref: ref
+    } do
+      drive_to_prompt(pid, ref)
+
+      assert Conversations._unsafe_get_conversation!(conv.id).runtime_session_id == "sess_1"
+    end
+
+    test "protocol chatter never reaches the transcript", %{conv: conv, pid: pid, ref: ref} do
+      drive_to_prompt(pid, ref)
+
+      events = Conversations._unsafe_list_log_events(conv.id)
+
+      # A JSON-RPC response to `initialize` is not something a user should find
+      # in their conversation.
+      refute Enum.any?(events, &(&1.data =~ "agentCapabilities"))
+    end
+
+    test "session/update lands as an acp-stream log event", %{conv: conv, pid: pid, ref: ref} do
+      drive_to_prompt(pid, ref)
+
+      notify(pid, ref, %{
+        "sessionUpdate" => "agent_message_chunk",
+        "content" => %{"type" => "text", "text" => "the answer"}
+      })
+
+      events = Conversations._unsafe_list_log_events(conv.id)
+      assert event = Enum.find(events, &(&1.stream == "acp"))
+      assert event.data =~ "the answer"
+    end
+
+    test "the stop reason ends the turn and closes stdin", %{conv: conv, pid: pid, ref: ref} do
+      prompt_id = drive_to_prompt(pid, ref)
+
+      reply(pid, ref, prompt_id, %{"stopReason" => "end_turn"})
+
+      assert [turn] = Conversations._unsafe_list_turns(conv.id)
+      assert turn.status == "completed"
+      refute is_nil(turn.ended_at)
+      assert Conversations._unsafe_get_conversation!(conv.id).status == "idle"
+
+      # Closing stdin is what makes the adapter exit.
+      assert_receive :stdin_closed
+    end
+
+    test "the process exit that follows is a no-op, not a second ending", %{
+      conv: conv,
+      pid: pid,
+      ref: ref
+    } do
+      # A turn ends on the prompt response *or* the exit, whichever arrives
+      # first, and never waits for both.
+      prompt_id = drive_to_prompt(pid, ref)
+      reply(pid, ref, prompt_id, %{"stopReason" => "end_turn"})
+
+      send(pid, {:exit, %{ref: ref}, 1})
+      _ = :sys.get_state(pid)
+
+      assert [turn] = Conversations._unsafe_list_turns(conv.id)
+      assert turn.status == "completed"
+      assert is_nil(turn.exit_code)
+    end
+
+    test "a refusal is recorded as a failed turn", %{conv: conv, pid: pid, ref: ref} do
+      prompt_id = drive_to_prompt(pid, ref)
+      reply(pid, ref, prompt_id, %{"stopReason" => "refusal"})
+
+      assert [turn] = Conversations._unsafe_list_turns(conv.id)
+      assert turn.status == "failed"
+    end
+
+    test "the conversation accepts another prompt afterwards", %{conv: conv, pid: pid, ref: ref} do
+      prompt_id = drive_to_prompt(pid, ref)
+      reply(pid, ref, prompt_id, %{"stopReason" => "end_turn"})
+
+      assert :ok = GenServer.call(pid, {:send_prompt, "again", []})
+      assert length(Conversations._unsafe_list_turns(conv.id)) == 2
+    end
+
+    test "an adapter that dies mid-handshake still ends the turn", %{
+      conv: conv,
+      pid: pid,
+      ref: ref
+    } do
+      # No stop reason will ever arrive. Leaving `current_command` set is the
+      # #413 shape: every prompt answered `:busy`, idle reclaim suppressed, and
+      # the sprite billing until the lifetime ceiling.
+      _ = next_write()
+      send(pid, {:exit, %{ref: ref}, 1})
+      _ = :sys.get_state(pid)
+
+      assert [turn] = Conversations._unsafe_list_turns(conv.id)
+      assert turn.status == "failed"
+      assert Conversations._unsafe_get_conversation!(conv.id).status == "idle"
+    end
+  end
+
+  describe "turn 2" do
+    test "resumes by the persisted id rather than guessing" do
+      # The hazard 0014 names: gemini's `--resume` and codex's `--last` re-enter
+      # "the most recent conversation in the workspace". ACP names the session.
+      user = insert_verified_user()
+      conv = insert_conversation(agent: acp_agent(user), user_id: user.id)
+      {:ok, _} = Conversations.update_conversation(conv, %{runtime_session_id: "sess_prior"})
+
+      {pid, ref} = start_acp_turn(conv)
+
+      %{"id" => init_id} = next_write()
+      reply(pid, ref, init_id, %{"agentCapabilities" => @caps})
+
+      decoded = next_write()
+      assert decoded["method"] == "session/resume"
+      assert decoded["params"]["sessionId"] == "sess_prior"
+    end
+  end
+end

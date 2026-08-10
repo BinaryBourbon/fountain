@@ -260,6 +260,12 @@ defmodule Fountain.Conversations.ConversationServer do
       # Stream tracer for parsing Claude's stream-json stdout into OTel
       # child spans and events. nil for non-Claude runtimes.
       stream_tracer: nil,
+      # The ACP peer driving the in-flight turn, when the agent has opted in
+      # (0014 gate 2). nil on the legacy path, which is the default. Monitored
+      # rather than linked: a protocol bug must fail a turn, not take down a
+      # server that is holding a sprite handle and a tenant's secrets.
+      acp_peer: nil,
+      acp_peer_mon: nil,
       # Bytes of replayed output to drop on reattach, keyed by stream.
       # Empty map outside a reattach window. See attempt_session_attach.
       replay_skip: %{},
@@ -982,8 +988,21 @@ defmodule Fountain.Conversations.ConversationServer do
   defp prepare_runtime_sprite(sprite, runtime_module, agent, sprite_env) do
     Code.ensure_loaded(runtime_module)
 
-    if function_exported?(runtime_module, :prepare_sprite, 3) do
-      runtime_module.prepare_sprite(sprite, agent, sprite_env)
+    with :ok <- prepare_acp_adapter(sprite, agent, sprite_env) do
+      if function_exported?(runtime_module, :prepare_sprite, 3) do
+        runtime_module.prepare_sprite(sprite, agent, sprite_env)
+      else
+        :ok
+      end
+    end
+  end
+
+  # The adapter is an npm install, so it has to happen here rather than at
+  # spawn: by the time a turn runs, the network policy has been applied and the
+  # install would fail in a way that reads as a protocol bug.
+  defp prepare_acp_adapter(sprite, agent, sprite_env) do
+    if Fountain.Runtimes.ACP.enabled?(agent) do
+      Fountain.Runtimes.ACP.install(sprite, sprite_env)
     else
       :ok
     end
@@ -1012,6 +1031,13 @@ defmodule Fountain.Conversations.ConversationServer do
   end
 
   def handle_call(:interrupt, _from, state) do
+    # Tell the agent before killing its process. `session/cancel` is a
+    # notification with no reply, so this costs one write and does not delay the
+    # kill below — but it is the difference between an agent that stops its
+    # tool calls and one that is shot mid-write. This is the other reason stdin
+    # stays open on the ACP path.
+    if state.acp_peer, do: Fountain.Runtimes.ACP.Peer.cancel(state.acp_peer)
+
     cmd_pid = state.current_command.pid
 
     if Process.alive?(cmd_pid) do
@@ -1036,6 +1062,11 @@ defmodule Fountain.Conversations.ConversationServer do
     # Finalize stream tracer: close any tool spans still open (abandoned calls).
     Fountain.Runtimes.Claude.StreamTracer.finalize(state.stream_tracer)
 
+    # An ACP turn can also end here — the adapter exits, is interrupted, or its
+    # socket drops before it ever answers `session/prompt`. The peer has nothing
+    # left to drive and must not outlive the turn.
+    stop_acp_peer(state)
+
     end_turn_span(state.current_turn_span, :error, %{"outcome" => "interrupted"})
 
     emit_turn_completed(state, "interrupted")
@@ -1051,7 +1082,9 @@ defmodule Fountain.Conversations.ConversationServer do
          current_turn: nil,
          current_turn_span: nil,
          turn_metrics: nil,
-         stream_tracer: nil
+         stream_tracer: nil,
+         acp_peer: nil,
+         acp_peer_mon: nil
      }}
   end
 
@@ -1114,7 +1147,20 @@ defmodule Fountain.Conversations.ConversationServer do
     {:noreply, state}
   end
 
+  # ACP path: stdout is protocol, not transcript. The peer frames it, decides
+  # what is worth keeping and reports that back as `{:acp, ref, _}` — a
+  # JSON-RPC response to `initialize` is not something a user should find in
+  # their conversation, and a `session/load` replay is history we already hold.
   @impl true
+  def handle_info(
+        {:stdout, %{ref: ref}, data},
+        %{current_command_ref: ref, acp_peer: peer} = state
+      )
+      when is_pid(peer) do
+    Fountain.Runtimes.ACP.Peer.stdout(peer, data)
+    {:noreply, maybe_emit_first_output(state)}
+  end
+
   def handle_info({:stdout, %{ref: ref}, data}, %{current_command_ref: ref} = state) do
     state = maybe_emit_first_output(state)
     new_state = log_with_replay_skip(state, "stdout", data)
@@ -1153,6 +1199,80 @@ defmodule Fountain.Conversations.ConversationServer do
     {:noreply, log_with_replay_skip(state, "stderr", data)}
   end
 
+  # ── ACP peer reports (0014 gate 2) ────────────────────────────────────────
+
+  # Persisting goes through the server's own path so the ACP stream inherits
+  # the log budget, the redaction pass and the replay skip. A peer writing rows
+  # itself would bypass all three.
+  def handle_info({:acp, ref, {:lines, stream, data}}, %{current_command_ref: ref} = state) do
+    {:noreply, log_with_replay_skip(state, stream, data)}
+  end
+
+  # `session/new` chose an id. Persisted immediately, exactly as the legacy path
+  # persists one before spawning: it is what the next turn resumes by, and a
+  # server restart between here and the end of the turn must not lose it.
+  def handle_info({:acp, ref, {:session, id}}, %{current_command_ref: ref} = state) do
+    conv = Conversations._unsafe_get_conversation!(state.conversation_id)
+    {:ok, _} = Conversations.update_conversation(conv, %{runtime_session_id: id})
+    {:noreply, %{state | runtime_session_id: id}}
+  end
+
+  # The number gate 2 exists to produce: what a turn pays for `initialize` plus
+  # resumption, which the legacy path does not pay at all. Emitted per turn so
+  # the cost of a disposable sandbox is measurable rather than argued about.
+  def handle_info({:acp, ref, {:handshake_ms, ms}}, %{current_command_ref: ref} = state) do
+    :telemetry.execute([:fountain, :acp, :handshake], %{duration_ms: ms}, %{
+      conversation_id: state.conversation_id
+    })
+
+    {:noreply, state}
+  end
+
+  # The turn's first terminator: `session/prompt` answered with a stop reason.
+  # Closing stdin here is what makes the adapter exit, and clearing the command
+  # ref is what makes that exit a no-op instead of a second ending.
+  def handle_info({:acp, ref, {:done, stop_reason}}, %{current_command_ref: ref} = state) do
+    status = if stop_reason in ["refusal", "cancelled"], do: "failed", else: "completed"
+
+    {:noreply,
+     finish_acp_turn(state, status, %{"stop_reason" => stop_reason}, %{
+       stop_reason: stop_reason
+     })}
+  end
+
+  def handle_info({:acp, ref, {:failed, reason}}, %{current_command_ref: ref} = state) do
+    Logger.error("conv #{state.conversation_id}: acp peer failed: #{inspect(reason)}")
+
+    {:noreply,
+     finish_acp_turn(state, "failed", %{"error" => inspect(reason)}, %{
+       reason: "acp: #{inspect(reason)}"
+     })}
+  end
+
+  # A report from a superseded turn's peer. The turn it belonged to is already
+  # over; acting on it would end the *current* one.
+  def handle_info({:acp, _stale_ref, _payload}, state), do: {:noreply, state}
+
+  # The peer died without reporting. Whatever it was, the turn has no driver
+  # any more, and leaving `current_command` set is the #413 shape: every prompt
+  # answered `:busy`, idle reclaim suppressed, sprite billing to the ceiling.
+  def handle_info(
+        {:DOWN, mon, :process, _pid, reason},
+        %{acp_peer_mon: mon, current_turn: turn} = state
+      )
+      when not is_nil(turn) do
+    Logger.error("conv #{state.conversation_id}: acp peer down: #{inspect(reason)}")
+
+    {:noreply,
+     finish_acp_turn(state, "failed", %{"error" => "peer_down"}, %{
+       reason: "acp peer down: #{inspect(reason)}"
+     })}
+  end
+
+  def handle_info({:DOWN, mon, :process, _pid, _reason}, %{acp_peer_mon: mon} = state) do
+    {:noreply, %{state | acp_peer: nil, acp_peer_mon: nil}}
+  end
+
   def handle_info({:exit, %{ref: ref}, code}, %{current_command_ref: ref} = state) do
     turn = state.current_turn
 
@@ -1171,6 +1291,11 @@ defmodule Fountain.Conversations.ConversationServer do
 
     # Finalize stream tracer: close any tool spans still open (abandoned calls).
     Fountain.Runtimes.Claude.StreamTracer.finalize(state.stream_tracer)
+
+    # An ACP turn can also end here — the adapter exits, is interrupted, or its
+    # socket drops before it ever answers `session/prompt`. The peer has nothing
+    # left to drive and must not outlive the turn.
+    stop_acp_peer(state)
 
     # Close the OTel turn span we opened in kick_turn.
     end_turn_span(
@@ -1192,7 +1317,9 @@ defmodule Fountain.Conversations.ConversationServer do
          current_turn: nil,
          current_turn_span: nil,
          turn_metrics: nil,
-         stream_tracer: nil
+         stream_tracer: nil,
+         acp_peer: nil,
+         acp_peer_mon: nil
      }}
   end
 
@@ -1221,6 +1348,11 @@ defmodule Fountain.Conversations.ConversationServer do
     })
 
     Fountain.Runtimes.Claude.StreamTracer.finalize(state.stream_tracer)
+
+    # An ACP turn can also end here — the adapter exits, is interrupted, or its
+    # socket drops before it ever answers `session/prompt`. The peer has nothing
+    # left to drive and must not outlive the turn.
+    stop_acp_peer(state)
     end_turn_span(state.current_turn_span, :error, %{"error" => inspect(reason)})
 
     emit_turn_completed(state, turn.status)
@@ -1236,7 +1368,9 @@ defmodule Fountain.Conversations.ConversationServer do
          current_turn: nil,
          current_turn_span: nil,
          turn_metrics: nil,
-         stream_tracer: nil
+         stream_tracer: nil,
+         acp_peer: nil,
+         acp_peer_mon: nil
      }}
   end
 
@@ -1606,10 +1740,22 @@ defmodule Fountain.Conversations.ConversationServer do
           existing
       end
 
+    # 0014 gate 2: when the agent has opted in and its runtime is one gate 1
+    # cleared, the turn spawns an ACP adapter instead of the CLI. Everything
+    # about the turn — the prompt, the session id, the mode — travels over the
+    # protocol rather than in argv, so `build_command/5` is not consulted at
+    # all on this path.
+    acp? = Fountain.Runtimes.ACP.enabled?(agent)
+
     {cmd, args, build_opts} =
-      state.runtime_module.build_command(agent, prompt, mode, runtime_session_id,
-        images: image_paths
-      )
+      if acp? do
+        {c, a} = Fountain.Runtimes.ACP.command()
+        {c, a, stdin?: true}
+      else
+        state.runtime_module.build_command(agent, prompt, mode, runtime_session_id,
+          images: image_paths
+        )
+      end
 
     # If a runtime embeds the prompt in argv (codex), it returns
     # `stdin?: false` and we skip the Sprites.write/close_stdin pipeline.
@@ -1684,14 +1830,16 @@ defmodule Fountain.Conversations.ConversationServer do
           # its caller when the runtime has already gone, and this process
           # being mid-turn is exactly what turned that into an orphaned turn
           # (#603). See `Fountain.SpriteStdin` for the whole chain.
+          # On the ACP path stdin stays **open**: it is the return path for
+          # `session/request_permission` answers and `session/cancel`, and the
+          # peer writes the prompt itself as `session/prompt`. Closing it here
+          # would hang up on the agent mid-handshake. It is closed when the
+          # turn ends — see `finish_turn/4`.
           stdin_result =
-            if use_stdin? do
-              case SpriteStdin.write(command, prompt <> prompt_suffix) do
-                :ok -> Sprites.close_stdin(command)
-                {:error, reason} -> {:error, reason}
-              end
-            else
-              :ok
+            cond do
+              acp? -> :ok
+              use_stdin? -> write_prompt_and_close(command, prompt <> prompt_suffix)
+              true -> :ok
             end
 
           case stdin_result do
@@ -1699,8 +1847,15 @@ defmodule Fountain.Conversations.ConversationServer do
               # Start a stream tracer for Claude (stream-json → OTel child spans).
               # Other runtimes produce unstructured output; tracer stays nil.
               stream_tracer =
-                if state.runtime_module == Fountain.Runtimes.Claude do
+                if not acp? and state.runtime_module == Fountain.Runtimes.Claude do
                   Fountain.Runtimes.Claude.StreamTracer.new(turn_span)
+                end
+
+              {peer, peer_mon} =
+                if acp? do
+                  start_acp_peer(command, prompt, mode, runtime_session_id, cwd)
+                else
+                  {nil, nil}
                 end
 
               %{
@@ -1715,7 +1870,9 @@ defmodule Fountain.Conversations.ConversationServer do
                     runtime: conv.runtime,
                     first_output?: false
                   },
-                  stream_tracer: stream_tracer
+                  stream_tracer: stream_tracer,
+                  acp_peer: peer,
+                  acp_peer_mon: peer_mon
               }
 
             {:error, reason} ->
@@ -1947,6 +2104,88 @@ defmodule Fountain.Conversations.ConversationServer do
   # every later chunk is dropped. Dropped rather than broadcast-only:
   # consumers key ordering off the DB-assigned event id, and an unbounded
   # broadcast stream would still let a hostile sandbox saturate PubSub.
+  # The legacy stdin dance, unchanged and lifted out so the ACP branch above
+  # reads as one condition rather than a nested `if`.
+  defp write_prompt_and_close(command, payload) do
+    case SpriteStdin.write(command, payload) do
+      :ok -> Sprites.close_stdin(command)
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp start_acp_peer(command, prompt, mode, runtime_session_id, cwd) do
+    {:ok, peer} =
+      Fountain.Runtimes.ACP.Peer.start(
+        owner: self(),
+        command: command,
+        ref: command.ref,
+        prompt: prompt,
+        mode: mode,
+        session_id: runtime_session_id,
+        cwd: cwd || "/home/sprite"
+      )
+
+    {peer, Process.monitor(peer)}
+  end
+
+  # Terminal path for an ACP turn. The order matters: stdin closes first so the
+  # adapter starts exiting while we do the bookkeeping, and `current_command_ref`
+  # is cleared at the end so the `{:exit, …}` that follows finds no match and
+  # falls through to the catch-all. A turn ends on the prompt response *or* the
+  # process exit, whichever arrives first, and never waits for both.
+  defp finish_acp_turn(state, status, span_attrs, stage_meta) do
+    if state.current_command, do: Sprites.close_stdin(state.current_command)
+    stop_acp_peer(state)
+
+    {:ok, turn} =
+      Conversations._unsafe_update_turn(state.current_turn, %{
+        status: status,
+        ended_at: now()
+      })
+
+    publish_stage(
+      state.conversation_id,
+      "turn",
+      if(status == "completed", do: "done", else: "failed"),
+      Map.merge(%{turn_id: turn.id, turn_number: turn.turn_number}, stage_meta)
+    )
+
+    end_turn_span(
+      state.current_turn_span,
+      if(status == "completed", do: :ok, else: :error),
+      span_attrs
+    )
+
+    emit_turn_completed(state, turn.status)
+
+    conv = Conversations._unsafe_get_conversation!(state.conversation_id)
+    {:ok, _} = Conversations.update_conversation(conv, %{status: "idle"})
+
+    %{
+      touch_activity(state)
+      | current_command: nil,
+        current_command_ref: nil,
+        current_turn: nil,
+        current_turn_span: nil,
+        turn_metrics: nil,
+        stream_tracer: nil,
+        acp_peer: nil,
+        acp_peer_mon: nil
+    }
+  end
+
+  # Demonitor before stopping so the peer's own exit does not arrive as a
+  # `:DOWN` that fails the turn we just finished.
+  defp stop_acp_peer(%{acp_peer: nil}), do: :ok
+
+  defp stop_acp_peer(%{acp_peer: peer, acp_peer_mon: mon}) do
+    if mon, do: Process.demonitor(mon, [:flush])
+    if Process.alive?(peer), do: GenServer.stop(peer, :normal, 1_000)
+    :ok
+  catch
+    :exit, _ -> :ok
+  end
+
   defp log_output(state, stream, data) do
     state = ensure_output_bytes(state)
     budget = output_byte_budget()

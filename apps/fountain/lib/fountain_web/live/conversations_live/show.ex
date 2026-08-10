@@ -1268,6 +1268,21 @@ defmodule FountainWeb.ConversationsLive.Show do
   # Splits an event's `data` (which may be a stream-json chunk with N
   # lines) into a flat list of structured blocks. Each block is a map
   # with at least `:kind`, plus kind-specific fields.
+  # ACP rows carry a specified protocol rather than a vendor's dialect, so the
+  # translation lives on the server in `Fountain.Runtimes.ACP.Blocks` — with its
+  # own tests, and outside the render path where a point release becomes a
+  # rendering bug. That relocation is the point of 0014; this clause is the
+  # seam, and it is deliberately the only ACP knowledge in this module.
+  #
+  # Keyed on the event's stream, not the conversation's runtime: the per-agent
+  # flag can flip between turns, and the turns before it flipped must keep
+  # rendering through the parser that produced them.
+  defp blocks_for(%{stream: "acp", data: data}, _runtime) when is_binary(data) do
+    data
+    |> String.split("\n", trim: true)
+    |> Enum.flat_map(&Fountain.Runtimes.ACP.Blocks.from_line/1)
+  end
+
   defp blocks_for(%{data: data}, runtime) when is_binary(data) do
     data
     |> String.split("\n", trim: true)

@@ -23,7 +23,10 @@ defmodule Fountain.Conversations.LogEventTest do
 
   describe "streams/0" do
     test "returns all valid streams" do
-      assert LogEvent.streams() == ~w(stdout stderr)
+      # `acp` joined the pair in 0014 gate 2: it holds Agent Client Protocol
+      # `session/update` notifications rather than raw runtime output, and the
+      # render path keys off it to pick a translator.
+      assert LogEvent.streams() == ~w(stdout stderr acp)
     end
   end
 

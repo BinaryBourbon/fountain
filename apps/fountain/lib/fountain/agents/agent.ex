@@ -11,6 +11,9 @@ defmodule Fountain.Agents.Agent do
 
   @runtimes ~w(claude codex gemini opencode)
 
+  @typedoc "A persisted agent."
+  @type t :: %__MODULE__{}
+
   schema "agents" do
     field :name, :string
     field :description, :string, default: ""
