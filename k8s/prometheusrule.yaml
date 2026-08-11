@@ -99,28 +99,57 @@ spec:
     # other backup mechanism: continuous WAL archiving plus the nightly
     # 02:47 base backup through the barman-cloud plugin (objectstore.yaml +
     # scheduledbackup.yaml). None of the kube_cronjob_*/kube_job_* metrics
-    # see any of it — CNPG's ScheduledBackup is a CRD, not a CronJob — so
-    # these use the cnpg_* metrics the instance pod exports, scraped via
-    # the PodMonitor that `monitoring.enablePodMonitor: true` in
-    # postgres.yaml creates.
+    # see any of it — CNPG's ScheduledBackup is a CRD, not a CronJob.
+    #
+    # These rules read from TWO different exporters, and the split matters
+    # when you edit them:
+    #
+    #   * WAL archiving  → cnpg_collector_* from the instance pod's own
+    #     exporter, scraped via the PodMonitor that
+    #     `monitoring.enablePodMonitor: true` in postgres.yaml creates.
+    #
+    #   * Base backups   → cnpg_backup_* synthesized by kube-state-metrics
+    #     from the Backup CRs, configured in home-cloud's
+    #     platform/monitoring/helmrelease.yaml (kube-state-metrics.
+    #     customResourceState). NOT part of the cnpg_ exporter namespace
+    #     despite the prefix.
+    #
+    # These used to read cnpg_collector_last_available_backup_timestamp and
+    # cnpg_collector_last_failed_backup_timestamp instead, which was wrong
+    # and silently so. The instance manager derives those from
+    # Cluster.status.lastSuccessfulBackup / firstRecoverabilityPoint, and
+    # the operator only populates those fields on the in-tree
+    # spec.backup.barmanObjectStore path. We back up through the
+    # barman-cloud CNPG-I plugin (Backup method: plugin), which reports via
+    # status.pluginStatus instead — so the fields are absent, both metrics
+    # sit at 0 forever, and the four rules below were a mix of permanent
+    # false positive (NeverSucceeded firing nightly against 8 completed
+    # backups) and permanently inert (Stale guarded on `> 0`, BackupFailed
+    # comparing 0 > 0, MetricsAbsent seeing a present-but-zero series).
+    # Found 2026-08-10.
+    #
+    # Note kube-state-metrics names the namespace label exported_namespace,
+    # not namespace, matching the gotk_* convention in the same config.
     - name: fountain-pitr
       interval: 60s
       rules:
         - alert: FountainPitrBaseBackupStale
-          # last_available_backup_timestamp is seconds since epoch of the
-          # newest completed base backup. The ScheduledBackup fires nightly
-          # at 02:47; 26h allows one slow or late run before shouting.
-          # Guarded on > 0 because before the first-ever backup the metric
-          # is exported as 0, not absent — time() - 0 would fire this with
-          # a nonsense age. FountainPitrBaseBackupNeverSucceeded owns that
-          # case.
+          # completion_timestamp_seconds comes from Backup.status.stoppedAt,
+          # so max(...{phase="completed"}) is when the newest good base
+          # backup finished. The ScheduledBackup fires nightly at 02:47;
+          # 26h allows one slow or late run before shouting.
+          #
+          # No `> 0` guard needed any more: unlike the old cnpg_collector_*
+          # metric, this series is simply ABSENT until a backup completes,
+          # so before the first-ever backup max() returns nothing and this
+          # rule stays quiet. FountainPitrBaseBackupNeverSucceeded owns
+          # that case, via absent() on the same selector.
           expr: |
-            (
-              time() - cnpg_collector_last_available_backup_timestamp{namespace="fountain"}
-                > 26 * 3600
-            )
-              and
-            cnpg_collector_last_available_backup_timestamp{namespace="fountain"} > 0
+            time() - max by (cluster) (
+              cnpg_backup_completion_timestamp_seconds{
+                exported_namespace="fountain", cluster="fountain-pg", phase="completed"
+              }
+            ) > 26 * 3600
           for: 10m
           labels:
             severity: critical
@@ -132,20 +161,33 @@ spec:
               with every hour of WAL replayed since the last base — and if the
               plugin is broken the WAL stream is probably rotting too.
 
-              Check: kubectl get backups -n fountain --sort-by=.metadata.creationTimestamp | tail
+              Check: kubectl get backups.postgresql.cnpg.io -n fountain --sort-by=.metadata.creationTimestamp | tail
                      kubectl get scheduledbackup -n fountain fountain-pg-base
               Logs:  kubectl logs -n fountain fountain-pg-1 -c plugin-barman-cloud
+              (Spell out backups.postgresql.cnpg.io — bare `backups`
+              resolves to Longhorn's Backup CRD on this cluster.)
               The 03:17 pg_dump path is independent of this one and still
               covers 24h-granularity recovery while this is broken.
 
         - alert: FountainPitrBaseBackupNeverSucceeded
-          # Before the first successful base backup the timestamp is 0, so
-          # the staleness alert above deliberately ignores it. Mirrors
+          # No Backup object has ever reached phase=completed, so the
+          # staleness alert above has nothing to measure. Mirrors
           # FountainBackupNeverSucceeded: either the ScheduledBackup was
           # just created, or every backup so far has failed — both mean
           # there is no base to replay WAL against, i.e. no PITR at all.
+          #
+          # This also covers "the Backup CRs were all deleted", which is a
+          # real hole in the same way: retention that prunes the last
+          # completed Backup leaves nothing proving a restorable base
+          # exists. FountainPitrMetricsAbsent fires first (1h) if the whole
+          # series family vanishes, which distinguishes a broken metrics
+          # pipeline from genuinely-never-succeeded.
           expr: |
-            cnpg_collector_last_available_backup_timestamp{namespace="fountain"} == 0
+            absent(
+              cnpg_backup_completion_timestamp_seconds{
+                exported_namespace="fountain", cluster="fountain-pg", phase="completed"
+              }
+            )
           for: 26h
           labels:
             severity: critical
@@ -155,16 +197,30 @@ spec:
               WAL may be archiving, but without a base backup to replay it
               against there is no point-in-time recovery. Check that the
               ScheduledBackup exists and its Backups are completing:
-              kubectl get scheduledbackup,backups -n fountain
+              kubectl get scheduledbackup,backups.postgresql.cnpg.io -n fountain
 
         - alert: FountainPitrBackupFailed
-          # A failure timestamp newer than the newest good backup means the
-          # most recent attempt failed. Clears on its own once a later
-          # backup succeeds.
+          # The newest failed Backup object being newer than the newest
+          # completed one means the most recent attempt failed. Clears on
+          # its own once a later backup succeeds.
+          #
+          # Keyed on creationTimestamp, not stoppedAt: a Backup that fails
+          # early enough never records status.stoppedAt, so the completion
+          # gauge is missing for exactly the failures this needs to catch.
+          # creationTimestamp is always present, and the ScheduledBackup
+          # creates one object per run, so newest-created is newest-attempt.
           expr: |
-            cnpg_collector_last_failed_backup_timestamp{namespace="fountain"}
+            max by (cluster) (
+              cnpg_backup_created_timestamp_seconds{
+                exported_namespace="fountain", cluster="fountain-pg", phase="failed"
+              }
+            )
               >
-            cnpg_collector_last_available_backup_timestamp{namespace="fountain"}
+            max by (cluster) (
+              cnpg_backup_created_timestamp_seconds{
+                exported_namespace="fountain", cluster="fountain-pg", phase="completed"
+              }
+            )
           for: 15m
           labels:
             severity: warning
@@ -175,7 +231,7 @@ spec:
               is one night older than it should be. One failure is not yet
               data loss — FountainPitrBaseBackupStale escalates if it keeps
               happening.
-              Check: kubectl get backups -n fountain --sort-by=.metadata.creationTimestamp | tail
+              Check: kubectl get backups.postgresql.cnpg.io -n fountain --sort-by=.metadata.creationTimestamp | tail
               Logs:  kubectl logs -n fountain fountain-pg-1 -c plugin-barman-cloud
 
         - alert: FountainPitrWalArchivingFailing
@@ -204,23 +260,56 @@ spec:
                        psql -c 'select * from pg_stat_archiver'
               Logs:  kubectl logs -n fountain fountain-pg-1 -c plugin-barman-cloud
 
+        # Two watchers-of-the-watchers, because the base-backup and WAL
+        # rules above now read from two independent exporters — one absent()
+        # per exporter, or a failure of either goes unnoticed.
+
         - alert: FountainPitrMetricsAbsent
-          # None of the alerts above can fire on a metric that is not being
-          # scraped at all — this is the watcher's watcher. It fires if the
-          # cnpg_* series vanish: PodMonitor deleted, selector drift in
-          # kube-prometheus-stack, or the instance exporter broken. Scoped
-          # to one representative series; they come from the same exporter.
+          # Covers the base-backup rules. Fires if the kube-state-metrics
+          # side breaks: the customResourceState block dropped from
+          # home-cloud's platform/monitoring/helmrelease.yaml, its RBAC
+          # extraRule for postgresql.cnpg.io/backups removed (KSM logs the
+          # list/watch denial and just emits nothing), or KSM itself down.
           expr: |
-            absent(cnpg_collector_last_available_backup_timestamp{namespace="fountain"})
+            absent(
+              cnpg_backup_created_timestamp_seconds{
+                exported_namespace="fountain", cluster="fountain-pg"
+              }
+            )
           for: 1h
           labels:
             severity: warning
           annotations:
-            summary: "CNPG backup metrics for fountain-pg are not being scraped"
+            summary: "CNPG base backup metrics for fountain-pg are not being scraped"
             description: |
-              cnpg_collector_last_available_backup_timestamp has been absent
-              for an hour, so every PITR alert is blind. Check that the
-              PodMonitor exists and Prometheus has the target:
+              cnpg_backup_created_timestamp_seconds has been absent for an
+              hour, so FountainPitrBaseBackupStale / NeverSucceeded /
+              BackupFailed are all blind. This series is synthesized by
+              kube-state-metrics from the Backup CRs, NOT by the CNPG
+              exporter — check KSM, not the PodMonitor:
+                kubectl -n monitoring logs deploy/kube-prometheus-stack-kube-state-metrics
+                kubectl get backups.postgresql.cnpg.io -n fountain
+              Config lives in home-cloud, platform/monitoring/helmrelease.yaml
+              under kube-state-metrics.customResourceState.
+
+        - alert: FountainPitrWalMetricsAbsent
+          # Covers FountainPitrWalArchivingFailing, the one rule still on
+          # the instance exporter. Fires if the cnpg_collector_* series
+          # vanish: PodMonitor deleted, selector drift in
+          # kube-prometheus-stack, or the instance exporter broken.
+          expr: |
+            absent(cnpg_collector_pg_wal_archive_status{namespace="fountain"})
+          for: 1h
+          labels:
+            severity: warning
+          annotations:
+            summary: "CNPG WAL archiving metrics for fountain-pg are not being scraped"
+            description: |
+              cnpg_collector_pg_wal_archive_status has been absent for an
+              hour, so FountainPitrWalArchivingFailing is blind and a
+              stalled WAL stream would go unnoticed until the base backup
+              alerts caught up a day later. Check that the PodMonitor
+              exists and Prometheus has the target:
               kubectl get podmonitor -n fountain
               then look for fountain-pg under Status > Targets in Prometheus.
 
