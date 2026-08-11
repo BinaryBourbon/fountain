@@ -39,6 +39,14 @@ defmodule Fountain.Runtimes.ACP.Peer do
   first. While a `session/load` is outstanding the peer runs in replay-discard
   mode and drops updates on the floor.
 
+  **The response is not the end of the replay, and we do not treat it as one.**
+  Gemini answers `session/load` before replaying — its `streamHistory` is a
+  floating promise — so a window closed on the response misses the replay
+  entirely (#657, live: one assistant message rendered twice). The window
+  closes instead on a bounded quiet period: keep discarding until the stream
+  has been silent for `@replay_quiet_ms`, then prompt, giving up after
+  `@replay_max_ms` because a turn held open disarms idle reclaim (#413).
+
   We prefer `resume` whenever the adapter advertises it, which the pinned Claude
   adapter does. `load` is kept because the capability is per-adapter and per
   version, and discovering at runtime that this build cannot resume is better
@@ -59,6 +67,11 @@ defmodule Fountain.Runtimes.ACP.Peer do
   alias Fountain.Runtimes.ACP
   alias Fountain.Runtimes.ACP.Protocol
   alias Fountain.SpriteStdin
+
+  # How long the replay has to stay quiet before we believe it is over, and how
+  # long we will wait for that in total. See `handle_response(:load_session, …)`.
+  @replay_quiet_ms 250
+  @replay_max_ms 10_000
 
   @typedoc "What the peer reports upward. `ref` is the sprite command's ref."
   @type payload ::
@@ -88,6 +101,12 @@ defmodule Fountain.Runtimes.ACP.Peer do
       pending: %{},
       phase: :initializing,
       replay_discard?: false,
+      # Both set from opts in `init/1`; the defaults live on the outer module.
+      replay_quiet_ms: nil,
+      replay_max_ms: nil,
+      replay_result: nil,
+      replay_last_ms: nil,
+      replay_until_ms: nil,
       capabilities: %{},
       auth_methods: [],
       authenticated?: false
@@ -134,6 +153,8 @@ defmodule Fountain.Runtimes.ACP.Peer do
       images: Keyword.get(opts, :images, []),
       mcp_servers: Keyword.get(opts, :mcp_servers, []),
       model: Keyword.get(opts, :model),
+      replay_quiet_ms: Keyword.get(opts, :replay_quiet_ms, @replay_quiet_ms),
+      replay_max_ms: Keyword.get(opts, :replay_max_ms, @replay_max_ms),
       started_mono: System.monotonic_time(:millisecond)
     }
 
@@ -170,6 +191,21 @@ defmodule Fountain.Runtimes.ACP.Peer do
     {:stop, :normal, state}
   end
 
+  def handle_info(:replay_check, %State{phase: :draining_replay} = state) do
+    quiet_for = now_ms() - state.replay_last_ms
+
+    if quiet_for >= state.replay_quiet_ms or now_ms() >= state.replay_until_ms do
+      %{state | replay_discard?: false}
+      |> pin_model_then_prompt(state.replay_result)
+      |> noreply()
+    else
+      state |> schedule_replay_check(state.replay_quiet_ms - quiet_for) |> noreply()
+    end
+  end
+
+  # A turn that failed or was answered while a check was in flight.
+  def handle_info(:replay_check, state), do: {:noreply, state}
+
   def handle_info(msg, state) do
     Logger.debug("acp peer: unexpected message #{inspect(msg)}")
     {:noreply, state}
@@ -180,8 +216,8 @@ defmodule Fountain.Runtimes.ACP.Peer do
   defp handle_message({:notification, "session/update", params}, state) do
     if state.replay_discard? do
       # Replay of history we already hold. Dropped, not persisted — see the
-      # moduledoc.
-      state
+      # moduledoc. The timestamp is what the quiet period below measures.
+      %{state | replay_last_ms: now_ms()}
     else
       persist(state, "acp", Protocol.notification("session/update", params))
     end
@@ -312,9 +348,33 @@ defmodule Fountain.Runtimes.ACP.Peer do
   defp handle_response(:resume_session, result, state),
     do: pin_model_then_prompt(state, result)
 
+  # ACP says the agent MUST replay the conversation as `session/update`
+  # notifications *before* responding to `session/load`, which would make this
+  # response the end of the replay. Gemini does not: it calls its
+  # `streamHistory` as a floating promise and answers first, so the replay
+  # arrives after this point and would land in `log_events` — duplicating the
+  # transcript on every turn after the first (#657, measured against a live
+  # agent: two `:text` blocks reading `"ECHO-5ECHO-5"`).
+  #
+  # So the response is not the signal. We keep discarding until the stream has
+  # been quiet for `replay_quiet_ms`, then prompt. Timing is the only thing
+  # separating replay from answer here — both arrive as `session/update` on the
+  # same session, and the fresh answer cannot begin before we send
+  # `session/prompt`, which the quiet period gates. Do not "fix" this by
+  # widening the discard past the prompt; that drops the answer.
+  #
+  # The wait is capped: an agent that never goes quiet must not hold a turn
+  # open, because a turn in flight disarms idle reclaim (#413). The cost is
+  # cheap next to gemini's ~2.8s handshake, and it comes off entirely when the
+  # upstream `await` lands.
   defp handle_response(:load_session, result, state) do
-    # The replay is over; everything from here is this turn's.
-    pin_model_then_prompt(%{state | replay_discard?: false}, result)
+    schedule_replay_check(%{
+      state
+      | phase: :draining_replay,
+        replay_result: result,
+        replay_last_ms: now_ms(),
+        replay_until_ms: now_ms() + state.replay_max_ms
+    })
   end
 
   # The model was pinned (or refused); either way the turn goes ahead.
@@ -545,6 +605,13 @@ defmodule Fountain.Runtimes.ACP.Peer do
   end
 
   defp report(state, payload), do: send(state.owner, {:acp, state.ref, payload})
+
+  defp schedule_replay_check(state, after_ms \\ nil) do
+    Process.send_after(self(), :replay_check, after_ms || state.replay_quiet_ms)
+    state
+  end
+
+  defp now_ms, do: System.monotonic_time(:millisecond)
 
   defp supports?(state, path) do
     case get_in(state.capabilities, path) do
