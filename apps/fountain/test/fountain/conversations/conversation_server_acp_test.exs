@@ -112,7 +112,7 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
       refute ACP.enabled?(insert_agent(user_id: user.id, runtime: "claude"))
     end
 
-    test "applies to every converted runtime" do
+    test "applies to every shippable runtime" do
       user = insert_verified_user()
 
       for runtime <- ACP.supported_runtimes() do
@@ -392,120 +392,17 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
     end
   end
 
-  # A gemini conversation whose first turn already happened: the session id is
-  # persisted, so the server computes mode :continue and the peer resumes.
-  # Built fresh rather than restarted, because a second server for a
-  # conversation whose sandbox is already `ready` takes the reattach path.
-  defp resumed_gemini_turn(shape \\ :bare) do
-    user = insert_verified_user()
-    agent = acp_agent(user, "gemini")
-    conv = insert_conversation(agent: agent, user_id: user.id, runtime: "gemini")
-    {:ok, conv} = Conversations.update_conversation(conv, %{runtime_session_id: "gem-1"})
-    {pid, ref} = start_acp_turn(conv)
-
-    case shape do
-      :with_conv -> {conv, pid, ref}
-      :bare -> {pid, ref}
-    end
-  end
-
-  describe "gemini" do
-    setup do
-      user = insert_verified_user()
-      agent = acp_agent(user, "gemini")
-      conv = insert_conversation(agent: agent, user_id: user.id, runtime: "gemini")
-      {pid, ref} = start_acp_turn(conv)
-      {:ok, conv: conv, pid: pid, ref: ref}
-    end
-
-    test "spawns the native flag in the workspace its runtime module git-inits", %{pid: pid} do
-      assert_receive {:spawned, cmd, args, opts}
-      assert cmd == "gemini"
-      assert args == ["--acp"]
-
-      # gemini walks up from cwd looking for a .git. /home/sprite is where the
-      # EACCES noise comes from, and Gemini.prepare_sprite/3 prepares exactly
-      # this directory.
-      assert opts[:dir] == "/tmp/gemini-workspace"
-
-      _ = next_write()
-      GenServer.stop(pid)
-    end
-
-    test "session/new carries the same cwd the process was spawned in", %{pid: pid, ref: ref} do
-      %{"id" => init_id, "method" => "initialize"} = next_write()
-      reply(pid, ref, init_id, %{"agentCapabilities" => %{"loadSession" => true}})
-
-      assert %{"method" => "session/new", "params" => params} = next_write()
-      assert params["cwd"] == "/tmp/gemini-workspace"
-
-      GenServer.stop(pid)
-    end
-
-    test "session/new proposes no session id — the agent assigns it", %{pid: pid, ref: ref} do
-      # The spec says the *agent* MUST respond with a unique id, and we persist
-      # whatever comes back. Proposing one was decoration a stricter agent
-      # could reject on schema grounds.
-      %{"id" => init_id} = next_write()
-      reply(pid, ref, init_id, %{"agentCapabilities" => %{"loadSession" => true}})
-
-      assert %{"method" => "session/new", "params" => params} = next_write()
-      refute Map.has_key?(params, "sessionId")
-
-      GenServer.stop(pid)
-    end
-  end
-
-  # Separate describe on purpose: these build their own conversation, and the
-  # gemini setup above would start a second server writing into the same
-  # mailbox, so every assertion would read the wrong connection's traffic.
-  describe "gemini, turn 2" do
-    test "turn 2 uses session/load, because gemini advertises no resume" do
-      {pid, ref} = resumed_gemini_turn()
-
-      %{"id" => init_id} = next_write()
-      # Exactly what gemini's dispatcher advertises: loadSession and no
-      # sessionCapabilities block at all.
-      reply(pid, ref, init_id, %{"agentCapabilities" => %{"loadSession" => true}})
-
-      decoded = next_write()
-      assert decoded["method"] == "session/load"
-      assert decoded["params"]["sessionId"] == "gem-1"
-
-      GenServer.stop(pid)
-    end
-
-    test "the replay gemini sends before session/load returns is discarded" do
-      # This is the cost of having no `resume`: the whole conversation arrives
-      # again on every turn after the first. We already hold it as log_events,
-      # so persisting it would duplicate the transcript into the DB and onto
-      # the SSE stream, every turn, for the life of the conversation.
-      {conv, pid, ref} = resumed_gemini_turn(:with_conv)
-
-      %{"id" => init_id} = next_write()
-      reply(pid, ref, init_id, %{"agentCapabilities" => %{"loadSession" => true}})
-      %{"id" => load_id, "method" => "session/load"} = next_write()
-
-      notify(pid, ref, %{
-        "sessionUpdate" => "agent_message_chunk",
-        "content" => %{"type" => "text", "text" => "REPLAYED HISTORY"}
-      })
-
-      reply(pid, ref, load_id, %{})
-      %{"method" => "session/prompt"} = next_write()
-
-      notify(pid, ref, %{
-        "sessionUpdate" => "agent_message_chunk",
-        "content" => %{"type" => "text", "text" => "FRESH ANSWER"}
-      })
-
-      events = Conversations._unsafe_list_log_events(conv.id)
-      acp = Enum.filter(events, &(&1.stream == "acp"))
-
-      assert Enum.any?(acp, &(&1.data =~ "FRESH ANSWER"))
-      refute Enum.any?(acp, &(&1.data =~ "REPLAYED HISTORY"))
-
-      GenServer.stop(pid)
-    end
-  end
+  # The gemini describes that lived here are gone with #659: gemini is held
+  # back from `supported_runtimes/0`, so a gemini agent takes the legacy path
+  # and these could only ever assert that. The behaviour they covered did not
+  # go away with them —
+  #
+  #   * launch command and workspace  → `Fountain.Runtimes.ACPTest`
+  #     ("the held-back gemini entry still points at the right workspace")
+  #   * session/load instead of resume, and the replay discard
+  #     → `Fountain.Runtimes.ACP.PeerTest`, driven by an agent advertising
+  #       `loadSession` and no `resume`, which is exactly gemini's shape
+  #
+  # When #659 lifts the block, a gemini conversation-level test belongs here
+  # again.
 end
