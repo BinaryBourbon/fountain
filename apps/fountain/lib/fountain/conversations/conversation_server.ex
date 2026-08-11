@@ -1019,7 +1019,7 @@ defmodule Fountain.Conversations.ConversationServer do
   # install would fail in a way that reads as a protocol bug.
   defp prepare_acp_adapter(sprite, agent, sprite_env) do
     if Fountain.Runtimes.ACP.enabled?(agent) do
-      Fountain.Runtimes.ACP.install(sprite, sprite_env)
+      Fountain.Runtimes.ACP.install(sprite, agent.runtime, sprite_env)
     else
       :ok
     end
@@ -1779,8 +1779,8 @@ defmodule Fountain.Conversations.ConversationServer do
     # not consulted at all on this path.
     {cmd, args, build_opts} =
       if acp? do
-        {c, a} = Fountain.Runtimes.ACP.command()
-        {c, a, stdin?: true}
+        {c, a} = Fountain.Runtimes.ACP.command(conv.runtime)
+        {c, a, stdin?: true, dir: Fountain.Runtimes.ACP.cwd(conv.runtime)}
       else
         state.runtime_module.build_command(agent, prompt, mode, runtime_session_id,
           images: image_paths
@@ -1886,7 +1886,8 @@ defmodule Fountain.Conversations.ConversationServer do
                   start_acp_peer(command, prompt, mode, runtime_session_id,
                     cwd: cwd,
                     images: images,
-                    mcp_servers: Fountain.Runtimes.ACP.mcp_servers(agent)
+                    mcp_servers: Fountain.Runtimes.ACP.mcp_servers(agent),
+                    model: agent && Fountain.Runtimes.Model.id(agent.model)
                   )
                 else
                   {nil, nil}
@@ -2171,7 +2172,8 @@ defmodule Fountain.Conversations.ConversationServer do
         session_id: runtime_session_id,
         cwd: Keyword.get(opts, :cwd) || "/home/sprite",
         images: Keyword.get(opts, :images, []),
-        mcp_servers: Keyword.get(opts, :mcp_servers, [])
+        mcp_servers: Keyword.get(opts, :mcp_servers, []),
+        model: Keyword.get(opts, :model)
       )
 
     {peer, Process.monitor(peer)}

@@ -82,12 +82,15 @@ defmodule Fountain.Runtimes.ACP.Peer do
       :started_mono,
       images: [],
       mcp_servers: [],
+      model: nil,
       buffer: "",
       next_id: 1,
       pending: %{},
       phase: :initializing,
       replay_discard?: false,
-      capabilities: %{}
+      capabilities: %{},
+      auth_methods: [],
+      authenticated?: false
     ]
   end
 
@@ -130,6 +133,7 @@ defmodule Fountain.Runtimes.ACP.Peer do
       cwd: Keyword.get(opts, :cwd, "/home/sprite"),
       images: Keyword.get(opts, :images, []),
       mcp_servers: Keyword.get(opts, :mcp_servers, []),
+      model: Keyword.get(opts, :model),
       started_mono: System.monotonic_time(:millisecond)
     }
 
@@ -196,9 +200,38 @@ defmodule Fountain.Runtimes.ACP.Peer do
     end
   end
 
+  # A model we could not pin is not worth failing a turn over — but it is worth
+  # the tenant seeing, because the alternative is their agent quietly running a
+  # model they did not choose. It lands in the transcript as ordinary output.
+  defp handle_message({:error_response, _id, error}, %State{phase: :setting_model} = state) do
+    state
+    |> persist("stderr", [
+      "fountain: could not select model #{state.model} over ACP (#{inspect(error)}); ",
+      "the runtime's default is in use for this turn\n"
+    ])
+    |> send_prompt()
+  end
+
+  # Backstop for an agent that advertises no auth method at `initialize` and
+  # then refuses anyway. The eager path above covers everything measured; this
+  # covers being wrong about that, once, rather than failing the turn outright.
   defp handle_message({:error_response, id, error}, state) do
     {tag, state} = pop_pending(state, id)
-    fail(state, {:acp_error, tag, error})
+
+    if session_setup?(tag) and auth_error?(error) and not state.authenticated? and
+         auth_method(state) do
+      method = auth_method(state)
+      Logger.info("acp peer: #{tag} needs authentication; retrying with #{method}")
+
+      send_request(
+        %{state | authenticated?: true},
+        :authenticate,
+        "authenticate",
+        %{methodId: method}
+      )
+    else
+      fail(state, {:acp_error, tag, error})
+    end
   end
 
   # `session/request_permission` is the channel gate 3 exists to use. Gate 2
@@ -227,7 +260,7 @@ defmodule Fountain.Runtimes.ACP.Peer do
 
   defp handle_response(:initialize, result, state) do
     caps = Map.get(result, "agentCapabilities") || %{}
-    state = %{state | capabilities: caps}
+    state = %{state | capabilities: caps, auth_methods: Map.get(result, "authMethods") || []}
 
     # Labelled with the session-setup call we are about to make, not with the
     # server's idea of the mode: `kick_turn` persists a generated session id
@@ -241,9 +274,27 @@ defmodule Fountain.Runtimes.ACP.Peer do
       {:handshake_ms, System.monotonic_time(:millisecond) - state.started_mono, method}
     )
 
-    case state.mode do
-      :run -> start_new_session(state)
-      :continue -> resume_session(state)
+    # Authenticate *before* opening a session, when the agent offers a method.
+    #
+    # This was reactive at first — authenticate only when a call is refused —
+    # and that is too late to be useful. Gemini will happily open a session
+    # from ambient credentials without being told which auth method to use, but
+    # it does not *persist* one: the next turn's `session/load` answers "No
+    # previous sessions found for this project", so the retry authenticates
+    # correctly and then finds nothing to load. The session has to be created
+    # under a chosen method to exist at all.
+    #
+    # Safe to do eagerly because an agent that needs nothing advertises
+    # nothing: claude's adapter returns `authMethods: []` (measured), so
+    # `auth_method/1` is nil and this is skipped entirely for it.
+    case auth_method(state) do
+      nil ->
+        start_session(state)
+
+      chosen ->
+        send_request(%{state | authenticated?: true}, :authenticate, "authenticate", %{
+          methodId: chosen
+        })
     end
   end
 
@@ -251,19 +302,26 @@ defmodule Fountain.Runtimes.ACP.Peer do
     case Map.get(result, "sessionId") do
       id when is_binary(id) ->
         report(state, {:session, id})
-        send_prompt(%{state | session_id: id})
+        pin_model_then_prompt(%{state | session_id: id}, result)
 
       _ ->
         fail(state, {:acp_no_session_id, result})
     end
   end
 
-  defp handle_response(:resume_session, _result, state), do: send_prompt(state)
+  defp handle_response(:resume_session, result, state),
+    do: pin_model_then_prompt(state, result)
 
-  defp handle_response(:load_session, _result, state) do
+  defp handle_response(:load_session, result, state) do
     # The replay is over; everything from here is this turn's.
-    send_prompt(%{state | replay_discard?: false})
+    pin_model_then_prompt(%{state | replay_discard?: false}, result)
   end
+
+  # The model was pinned (or refused); either way the turn goes ahead.
+  defp handle_response(:set_model, _result, state), do: send_prompt(state)
+
+  # Authenticated; open (or reopen) the session.
+  defp handle_response(:authenticate, _result, state), do: start_session(state)
 
   defp handle_response(:prompt, result, state) do
     stop = Map.get(result, "stopReason") || "end_turn"
@@ -271,13 +329,48 @@ defmodule Fountain.Runtimes.ACP.Peer do
     %{state | phase: :done}
   end
 
+  # ── authentication ────────────────────────────────────────────────────────
+
+  defp session_setup?(tag), do: tag in [:new_session, :resume_session, :load_session]
+
+  defp auth_error?(%{"code" => -32_000}), do: true
+
+  defp auth_error?(%{"message" => message}) when is_binary(message),
+    do: String.contains?(String.downcase(message), "auth")
+
+  defp auth_error?(_), do: false
+
+  # Prefer a method naming an API key in its `_meta`: that is what an agent
+  # offers for "there is a key in the environment, use it", as against an
+  # interactive OAuth flow a headless sandbox can never complete.
+  defp auth_method(state) do
+    pick =
+      Enum.find(state.auth_methods, fn m ->
+        is_map(Map.get(m, "_meta")) and Map.has_key?(m["_meta"], "api-key")
+      end) || List.first(state.auth_methods)
+
+    case pick do
+      %{"id" => id} when is_binary(id) -> id
+      _ -> nil
+    end
+  end
+
   # ── session setup ─────────────────────────────────────────────────────────
 
-  defp start_new_session(state) do
-    params = %{cwd: state.cwd, mcpServers: state.mcp_servers}
-    params = if state.session_id, do: Map.put(params, :sessionId, state.session_id), else: params
+  defp start_session(%State{mode: :run} = state), do: start_new_session(state)
+  defp start_session(%State{mode: :continue} = state), do: resume_session(state)
 
-    send_request(%{state | phase: :starting_session}, :new_session, "session/new", params)
+  # No client-proposed `sessionId`. The spec is explicit that the *agent*
+  # "MUST respond with a unique Session ID", and we overwrite whatever we sent
+  # with what comes back anyway — so proposing one was decoration that a
+  # stricter agent could reject on schema grounds.
+  defp start_new_session(state) do
+    send_request(
+      %{state | phase: :starting_session},
+      :new_session,
+      "session/new",
+      %{cwd: state.cwd, mcpServers: state.mcp_servers}
+    )
   end
 
   defp resume_session(%State{session_id: nil} = state) do
@@ -323,6 +416,55 @@ defmodule Fountain.Runtimes.ACP.Peer do
       supports?(state, ["sessionCapabilities", "resume"]) -> "session/resume"
       Map.get(state.capabilities, "loadSession") == true -> "session/load"
       true -> "none"
+    end
+  end
+
+  # ACP carries no model in `session/new`. The runtime's own default therefore
+  # wins unless the client says otherwise, which would silently ignore
+  # `agent.model` — the field the tenant actually configured, and for a
+  # multi-provider runtime the entire configuration.
+  #
+  # The mechanism is `session/set_config_option` with `configId: "model"`, and
+  # the session response advertises which options exist. We only send it when
+  # the agent said it has one, so a runtime with no model concept is left alone
+  # rather than being handed a method it never offered.
+  defp pin_model_then_prompt(state, result) do
+    cond do
+      is_nil(state.model) or state.model == "" ->
+        send_prompt(state)
+
+      model_configurable?(result) ->
+        send_request(%{state | phase: :setting_model}, :set_model, "session/set_config_option", %{
+          sessionId: state.session_id,
+          configId: "model",
+          value: state.model
+        })
+
+      Map.has_key?(result, "models") ->
+        send_request(%{state | phase: :setting_model}, :set_model, "session/set_model", %{
+          sessionId: state.session_id,
+          modelId: state.model
+        })
+
+      true ->
+        state
+        |> persist("stderr", [
+          "fountain: this runtime does not expose model selection over ACP; ",
+          "#{state.model} was not applied and its default is in use\n"
+        ])
+        |> send_prompt()
+    end
+  end
+
+  # Two shapes in the wild, both measured against live agents on 2026-08-10.
+  # Claude's adapter advertises `configOptions` and takes
+  # `session/set_config_option` with `configId: "model"`; gemini advertises
+  # `models` and implements ACP's own `session/set_model` with a `modelId`.
+  # Neither is a superset of the other, so the session response decides.
+  defp model_configurable?(result) do
+    case Map.get(result, "configOptions") do
+      options when is_list(options) -> Enum.any?(options, &(Map.get(&1, "id") == "model"))
+      _ -> false
     end
   end
 

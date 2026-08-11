@@ -7,12 +7,26 @@ defmodule Fountain.Runtimes.ACPTest do
   defp agent(attrs), do: struct(Agent, attrs)
 
   describe "enabled?/1" do
-    test "requires both the flag and a runtime gate 1 cleared" do
+    test "requires both the flag and a converted runtime" do
       assert ACP.enabled?(agent(runtime: "claude", metadata: %{"acp" => true}))
+      assert ACP.enabled?(agent(runtime: "gemini", metadata: %{"acp" => true}))
 
       refute ACP.enabled?(agent(runtime: "claude", metadata: %{}))
-      refute ACP.enabled?(agent(runtime: "gemini", metadata: %{"acp" => true}))
       refute ACP.enabled?(nil)
+    end
+
+    test "every supported runtime honours the flag" do
+      for runtime <- ACP.supported_runtimes() do
+        assert ACP.enabled?(agent(runtime: runtime, metadata: %{"acp" => true})),
+               "expected #{runtime} to be ACP-enabled"
+
+        refute ACP.enabled?(agent(runtime: runtime, metadata: %{}))
+      end
+    end
+
+    test "a runtime with no adapter entry ignores the flag rather than erroring" do
+      # The legacy path is the default, not a failure mode.
+      refute ACP.enabled?(agent(runtime: "somethingelse", metadata: %{"acp" => true}))
     end
 
     test "a truthy-looking value that is not true does not enable it" do
@@ -126,12 +140,57 @@ defmodule Fountain.Runtimes.ACPTest do
     end
   end
 
-  describe "the pin" do
-    test "names an exact version, never a range or a tag" do
+  describe "per-runtime launch" do
+    test "claude runs an installed adapter, pinned to an exact version" do
       # An unpinned adapter can stop advertising sessionCapabilities.resume in a
       # point release, which downgrades every conversation to a full history
       # replay per turn with no error anywhere.
-      assert ACP.adapter_spec() =~ ~r{^@agentclientprotocol/claude-agent-acp@\d+\.\d+\.\d+$}
+      assert ACP.adapter_bin("claude") == "claude-agent-acp"
+      assert {"claude-agent-acp", []} = ACP.command("claude")
+
+      assert ACP.adapter_spec("claude") =~
+               ~r{^@agentclientprotocol/claude-agent-acp@\d+\.\d+\.\d+$}
+    end
+
+    test "gemini speaks ACP natively, so there is nothing to pin" do
+      assert {"gemini", ["--acp"]} = ACP.command("gemini")
+      assert is_nil(ACP.adapter_spec("gemini"))
+    end
+
+    test "gemini runs in the workspace its own runtime module git-inits" do
+      # gemini walks up from cwd looking for a .git; pointing it at
+      # /home/sprite reintroduces the EACCES noise the workspace exists to
+      # avoid, and leaves MemoryDiscovery crawling /home.
+      assert ACP.cwd("gemini") == "/tmp/gemini-workspace"
+      assert ACP.cwd("claude") == "/home/sprite"
+    end
+
+    test "codex runs a pinned adapter; opencode runs its own subcommand" do
+      assert {"codex-acp", []} = ACP.command("codex")
+      assert ACP.adapter_spec("codex") =~ ~r{^@agentclientprotocol/codex-acp@\d+\.\d+\.\d+$}
+
+      # opencode's `acp` subcommand starts a local HTTP server inside the
+      # sprite and drives it through its own SDK — a heavier process model than
+      # the others, but nothing for us to install: OpenCode.prepare_sprite/3
+      # already bun-installs it.
+      assert {"opencode", ["acp"]} = ACP.command("opencode")
+      assert is_nil(ACP.adapter_spec("opencode"))
+      assert :ok = ACP.install(%{name: "s"}, "opencode", [])
+    end
+
+    test "each runtime runs where its own runtime module prepared" do
+      assert ACP.cwd("opencode") == "/tmp/opencode-workspace"
+      assert ACP.cwd("codex") == "/home/sprite"
+    end
+
+    test "an unknown runtime raises rather than spawning something arbitrary" do
+      assert_raise ArgumentError, fn -> ACP.command("nonesuch") end
+    end
+
+    test "a native runtime needs no install" do
+      # No Sprites stub here on purpose: if this tried to shell out, the test
+      # would fail rather than quietly pass.
+      assert :ok = ACP.install(%{name: "s"}, "gemini", [])
     end
   end
 end

@@ -17,14 +17,31 @@ defmodule Fountain.Runtimes.ACP do
   turn and leaves the earlier ones rendering through the legacy path, which is
   exactly the A/B the gate asks for.
 
-  ## One runtime
+  ## Which runtimes
 
-  Claude only, and that is gate 1's answer rather than a convenience. Gemini
-  advertises `loadSession` and no `sessionCapabilities.resume`, and its
-  `session/load` replays the entire conversation before responding — under one
-  connection per turn that is the whole history re-streamed on every turn after
-  the first. Claude advertises both, and its `session/resume` does not replay.
-  Codex and OpenCode also advertise both and are gate 4's business.
+  Claude and Gemini, and the pair is deliberate: they are the two ends of the
+  resumption story gate 1 mapped.
+
+  Claude advertises `sessionCapabilities.resume`, so a turn costs a handshake
+  and nothing else. Gemini advertises only `loadSession`, and `session/load`
+  replays the entire conversation before responding — under one connection per
+  turn that is the whole history re-streamed on every turn after the first.
+  `Peer`'s replay-discard exists for exactly this, and Gemini is the runtime
+  that actually exercises it.
+
+  Converting Gemini is still worth it despite the replay, because its legacy
+  resume is the worst thing we ship: `gemini --resume` re-enters "the most
+  recent conversation in the workspace" (`gemini.ex:14-17`), which is correct
+  only while one conversation ever runs per workspace — an invariant held by
+  accident and asserted by no test. ACP names the session.
+
+  Codex and OpenCode both advertise `loadSession` *and*
+  `sessionCapabilities.resume`, so they resume as cheaply as Claude does. What
+  differs is how ACP is reached: Codex through an adapter package we install
+  and pin, OpenCode through its own `acp` subcommand — which starts a local
+  HTTP server inside the sprite and drives it through opencode's SDK rather
+  than being a plain stdio peer. It satisfies the protocol; it is simply a
+  second process model to remember when something hangs.
 
   ## The adapter is pinned, and that is load-bearing
 
@@ -42,20 +59,93 @@ defmodule Fountain.Runtimes.ACP do
 
   alias Fountain.Agents.Agent
 
-  # Verified at gate 1 (2026-08-09): advertises `loadSession: true` and
-  # `sessionCapabilities.resume`, and its `resumeSession` reattaches without
-  # replaying while `loadSession` calls `replaySessionHistory`.
-  @adapter_package "@agentclientprotocol/claude-agent-acp"
-  @adapter_version "0.66.0"
-  @adapter_bin "claude-agent-acp"
+  # Per runtime: how ACP is reached, and where the agent should run.
+  #
+  # `package` nil means native support — the runtime speaks ACP itself and
+  # arrives with the sprite base image, so there is nothing to install and
+  # nothing we can pin. That is a real difference in exposure, not a
+  # convenience: an adapter we install is a supply-chain surface we version,
+  # and a native flag is a surface the image owner versions for us.
+  @adapters %{
+    # Verified at gate 1 (2026-08-09) and live on 2026-08-10: advertises
+    # `loadSession: true` and `sessionCapabilities.resume`; `resumeSession`
+    # reattaches without replaying while `loadSession` calls
+    # `replaySessionHistory`.
+    "claude" => %{
+      bin: "claude-agent-acp",
+      args: [],
+      package: "@agentclientprotocol/claude-agent-acp",
+      version: "0.66.0",
+      cwd: "/home/sprite"
+    },
+    # Native: `gemini --acp`. Advertises `loadSession: true` and **no**
+    # `sessionCapabilities`, so every turn after the first pays a full replay
+    # that `Peer` discards. The cwd mirrors `Fountain.Runtimes.Gemini`'s
+    # `@workdir` — gemini walks up from cwd looking for a `.git`, and
+    # `Gemini.prepare_sprite/3` git-inits exactly this directory. Pointing it
+    # at /home/sprite instead reintroduces the EACCES noise that workspace
+    # exists to avoid.
+    "gemini" => %{
+      bin: "gemini",
+      args: ["--acp"],
+      package: nil,
+      version: nil,
+      cwd: "/tmp/gemini-workspace"
+    },
+    # Adapter, on the Codex App Server. The `zed-industries/codex-acp` that
+    # earlier drafts named is archived; this is its successor under the
+    # protocol org. Auth is unchanged: `Codex.prepare_sprite/3` still runs
+    # `codex login --with-api-key`, and OPENAI_API_KEY is still exported, so
+    # the adapter inherits whichever the CLI would have used.
+    "codex" => %{
+      bin: "codex-acp",
+      args: [],
+      package: "@agentclientprotocol/codex-acp",
+      version: "1.1.14",
+      cwd: "/home/sprite"
+    },
+    # Native: `opencode acp`. Heavier than the others — the subcommand starts a
+    # local HTTP server inside the sprite and drives it through opencode's own
+    # SDK client, rather than being a plain stdio peer. It satisfies the
+    # protocol, but it is a second process model to keep in mind when something
+    # hangs. Nothing to install here: `OpenCode.prepare_sprite/3` already bun-
+    # installs the binary and symlinks it onto PATH.
+    "opencode" => %{
+      bin: "opencode",
+      args: ["acp"],
+      package: nil,
+      version: nil,
+      cwd: "/tmp/opencode-workspace"
+    }
+  }
 
-  @doc "The npm package and version this build is pinned to."
-  @spec adapter_spec() :: String.t()
-  def adapter_spec, do: "#{@adapter_package}@#{@adapter_version}"
+  @doc "Runtimes that can currently speak ACP."
+  @spec supported_runtimes() :: [String.t()]
+  def supported_runtimes, do: Map.keys(@adapters)
 
-  @doc "The executable name the pinned package installs."
-  @spec adapter_bin() :: String.t()
-  def adapter_bin, do: @adapter_bin
+  @doc "The npm package and version pinned for a runtime, or nil when native."
+  @spec adapter_spec(String.t()) :: String.t() | nil
+  def adapter_spec(runtime) do
+    case @adapters[runtime] do
+      %{package: nil} -> nil
+      %{package: pkg, version: version} -> "#{pkg}@#{version}"
+      _ -> nil
+    end
+  end
+
+  @doc "The executable a runtime's ACP mode is reached through."
+  @spec adapter_bin(String.t()) :: String.t() | nil
+  def adapter_bin(runtime), do: get_in(@adapters, [runtime, :bin])
+
+  @doc """
+  Where the agent runs.
+
+  ACP carries `cwd` in `session/new`, and it is the *agent's* working
+  directory rather than ours — a runtime that walks up from it looking for a
+  repo (gemini does) behaves differently depending on what we say here.
+  """
+  @spec cwd(String.t()) :: String.t()
+  def cwd(runtime), do: get_in(@adapters, [runtime, :cwd]) || "/home/sprite"
 
   @doc """
   Whether this turn should speak ACP.
@@ -65,8 +155,8 @@ defmodule Fountain.Runtimes.ACP do
   legacy path is not a failure mode, it is the default.
   """
   @spec enabled?(Agent.t() | nil) :: boolean()
-  def enabled?(%Agent{runtime: "claude", metadata: metadata}) when is_map(metadata) do
-    Map.get(metadata, "acp") == true
+  def enabled?(%Agent{runtime: runtime, metadata: metadata}) when is_map(metadata) do
+    Map.has_key?(@adapters, runtime) and Map.get(metadata, "acp") == true
   end
 
   def enabled?(_), do: false
@@ -80,8 +170,13 @@ defmodule Fountain.Runtimes.ACP do
   is the entire architectural change, and it is why this does not implement the
   `Fountain.Runtimes` behaviour.
   """
-  @spec command() :: {String.t(), [String.t()]}
-  def command, do: {@adapter_bin, []}
+  @spec command(String.t()) :: {String.t(), [String.t()]}
+  def command(runtime) do
+    case @adapters[runtime] do
+      %{bin: bin, args: args} -> {bin, args}
+      _ -> raise ArgumentError, "runtime #{inspect(runtime)} has no ACP adapter"
+    end
+  end
 
   @doc """
   Install the pinned adapter into a sprite.
@@ -109,17 +204,30 @@ defmodule Fountain.Runtimes.ACP do
   for the same reason it is there: `~` resolves against whatever `HOME` the
   caller happens to have.
   """
-  @spec install(sprite :: any(), [{String.t(), String.t()}]) :: :ok | {:error, term()}
-  def install(sprite, sprite_env) do
+  @spec install(sprite :: any(), String.t(), [{String.t(), String.t()}]) :: :ok | {:error, term()}
+  def install(sprite, runtime, sprite_env)
+
+  # Native ACP: the runtime speaks the protocol itself, and is already on the
+  # sprite — gemini from the base image, opencode from
+  # `OpenCode.prepare_sprite/3`'s bun install. Nothing to install, and for
+  # gemini nothing we can pin either: the version floor is whatever the image
+  # carries, which gate 1 recorded as an open exposure.
+  def install(_sprite, runtime, _sprite_env) when runtime in ["gemini", "opencode"], do: :ok
+
+  def install(sprite, runtime, sprite_env) do
+    bin = adapter_bin(runtime)
+    spec = adapter_spec(runtime)
+    version = get_in(@adapters, [runtime, :version])
+
     script = """
     set -e
-    want=#{@adapter_version}
-    bin=/home/sprite/.local/bin/#{@adapter_bin}
+    want=#{version}
+    bin=/home/sprite/.local/bin/#{bin}
     have=$("$bin" --version 2>/dev/null | tr -d '[:space:]' || true)
     if [ "$have" != "$want" ]; then
-      npm install -g --no-progress --silent #{adapter_spec()}
+      npm install -g --no-progress --silent #{spec}
       mkdir -p /home/sprite/.local/bin
-      ln -sf "$(npm prefix -g)/bin/#{@adapter_bin}" "$bin"
+      ln -sf "$(npm prefix -g)/bin/#{bin}" "$bin"
     fi
     "$bin" --version >/dev/null
     """
