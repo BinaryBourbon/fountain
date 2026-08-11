@@ -35,6 +35,13 @@ defmodule Fountain.Runtimes.ACP do
   only while one conversation ever runs per workspace — an invariant held by
   accident and asserted by no test. ACP names the session.
 
+  **Gemini is converted but held back** (#659): its `session/load` cannot
+  reliably find a session it created minutes earlier — 2 successes to 4
+  failures against a live agent — and its replay escapes the discard window
+  (#657). `supported_runtimes/0` therefore excludes it, so the per-agent flag
+  cannot switch it on. The entry stays because the conversion is correct as far
+  as it goes; what fails is gemini's own session store.
+
   Codex and OpenCode both advertise `loadSession` *and*
   `sessionCapabilities.resume`, so they resume as cheaply as Claude does. What
   differs is how ACP is reached: Codex through an adapter package we install
@@ -85,12 +92,17 @@ defmodule Fountain.Runtimes.ACP do
     # `Gemini.prepare_sprite/3` git-inits exactly this directory. Pointing it
     # at /home/sprite instead reintroduces the EACCES noise that workspace
     # exists to avoid.
+    # Converted, verified, and **not shippable** — see `blocked`. Left in the
+    # table rather than deleted because the conversion itself is correct: turn
+    # 1 works end to end against a live agent. What does not work is gemini's
+    # own session store.
     "gemini" => %{
       bin: "gemini",
       args: ["--acp"],
       package: nil,
       version: nil,
-      cwd: "/tmp/gemini-workspace"
+      cwd: "/tmp/gemini-workspace",
+      blocked: "#659"
     },
     # Adapter, on the Codex App Server. The `zed-industries/codex-acp` that
     # earlier drafts named is archived; this is its successor under the
@@ -119,9 +131,30 @@ defmodule Fountain.Runtimes.ACP do
     }
   }
 
-  @doc "Runtimes that can currently speak ACP."
+  @doc """
+  Runtimes that may actually be switched on.
+
+  Distinct from having an adapter entry. A runtime is listed here only when a
+  full turn *and* a resume have been observed against a live agent — a
+  conversion that resumes unreliably is worse than the legacy path it replaces,
+  because the user gets a working first turn and an agent with no memory on
+  every turn after.
+  """
   @spec supported_runtimes() :: [String.t()]
-  def supported_runtimes, do: Map.keys(@adapters)
+  def supported_runtimes do
+    @adapters |> Enum.reject(fn {_k, v} -> v[:blocked] end) |> Enum.map(&elem(&1, 0))
+  end
+
+  @doc """
+  Runtimes with an adapter entry that are held back, and why.
+
+  Public so the reason travels with the code rather than living only in an
+  issue: `%{"gemini" => "#659"}`.
+  """
+  @spec blocked_runtimes() :: %{String.t() => String.t()}
+  def blocked_runtimes do
+    for {name, %{blocked: reason}} <- @adapters, into: %{}, do: {name, reason}
+  end
 
   @doc "The npm package and version pinned for a runtime, or nil when native."
   @spec adapter_spec(String.t()) :: String.t() | nil
@@ -156,7 +189,7 @@ defmodule Fountain.Runtimes.ACP do
   """
   @spec enabled?(Agent.t() | nil) :: boolean()
   def enabled?(%Agent{runtime: runtime, metadata: metadata}) when is_map(metadata) do
-    Map.has_key?(@adapters, runtime) and Map.get(metadata, "acp") == true
+    runtime in supported_runtimes() and Map.get(metadata, "acp") == true
   end
 
   def enabled?(_), do: false

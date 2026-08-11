@@ -7,12 +7,26 @@ defmodule Fountain.Runtimes.ACPTest do
   defp agent(attrs), do: struct(Agent, attrs)
 
   describe "enabled?/1" do
-    test "requires both the flag and a converted runtime" do
+    test "requires both the flag and a shippable runtime" do
       assert ACP.enabled?(agent(runtime: "claude", metadata: %{"acp" => true}))
-      assert ACP.enabled?(agent(runtime: "gemini", metadata: %{"acp" => true}))
 
       refute ACP.enabled?(agent(runtime: "claude", metadata: %{}))
       refute ACP.enabled?(nil)
+    end
+
+    test "a blocked runtime cannot be switched on at all" do
+      # gemini is converted and verified for turn 1, but its session/load
+      # cannot reliably find a session it just created (#659). A working first
+      # turn followed by an amnesiac agent is worse than the resume-by-guessing
+      # it replaces, so the flag must not reach it.
+      assert %{"gemini" => _} = ACP.blocked_runtimes()
+      refute "gemini" in ACP.supported_runtimes()
+      refute ACP.enabled?(agent(runtime: "gemini", metadata: %{"acp" => true}))
+    end
+
+    test "a blocked runtime keeps its adapter entry, so the work is not lost" do
+      assert {"gemini", ["--acp"]} = ACP.command("gemini")
+      assert ACP.cwd("gemini") == "/tmp/gemini-workspace"
     end
 
     test "every supported runtime honours the flag" do
@@ -157,7 +171,7 @@ defmodule Fountain.Runtimes.ACPTest do
       assert is_nil(ACP.adapter_spec("gemini"))
     end
 
-    test "gemini runs in the workspace its own runtime module git-inits" do
+    test "the held-back gemini entry still points at the right workspace" do
       # gemini walks up from cwd looking for a .git; pointing it at
       # /home/sprite reintroduces the EACCES noise the workspace exists to
       # avoid, and leaves MemoryDiscovery crawling /home.
