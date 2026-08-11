@@ -15,10 +15,12 @@ defmodule Fountain.Runtimes.ACPTest do
     end
 
     test "a blocked runtime cannot be switched on at all" do
-      # gemini is converted and verified for turn 1, but its session/load
-      # cannot reliably find a session it just created (#659). A working first
-      # turn followed by an amnesiac agent is worse than the resume-by-guessing
-      # it replaces, so the flag must not reach it.
+      # gemini is converted and verified for turn 1, but loading a session
+      # erases it: the load path's own chat recorder overwrites the message
+      # list in the session file before the lookup reads it (#658, mechanism in
+      # the ACP moduledoc). A working first turn followed by an amnesiac agent
+      # — and an unrecoverable conversation — is worse than the
+      # resume-by-guessing it replaces, so the flag must not reach it.
       assert %{"gemini" => _} = ACP.blocked_runtimes()
       refute "gemini" in ACP.supported_runtimes()
       refute ACP.enabled?(agent(runtime: "gemini", metadata: %{"acp" => true}))

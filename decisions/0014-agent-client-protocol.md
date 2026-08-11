@@ -320,6 +320,19 @@ concrete bug if it is missed:
   advertised, prefer `session/resume`: it is specified *not* to replay, which
   deletes the failure mode instead of handling it.
 
+  > **Correction, 2026-08-11.** "Until `session/load` returns" is not a
+  > sufficient rule, because an agent may not honour the MUST. Gemini calls its
+  > `streamHistory` as a floating promise and answers `session/load` *first*,
+  > so the replay arrives after the response and lands outside the window —
+  > measured live as a duplicated assistant message (#657). The peer now closes
+  > the window on a **bounded quiet period** rather than on the response: keep
+  > discarding until no `session/update` has arrived for 250 ms, then prompt,
+  > capped at 10 s so an agent that never goes quiet cannot hold a turn open
+  > (#413's shape). Timing is the only available discriminator — replay and
+  > answer are the same notification on the same session, and what separates
+  > them is that the answer cannot begin before we send `session/prompt`. The
+  > cap comes off if the one-word upstream fix (`await`) lands.
+
 - **Measure the per-turn `initialize`.** Process start, `initialize`, and the
   resumption round trip are now paid once per turn rather than once per
   session. That is the honest price of a disposable sandbox, and gate 2 must
@@ -501,6 +514,40 @@ one runtime converted and say so here.
 
 Only after gate 3 holds in production. A parser is deleted when its runtime's
 ACP path has served real conversations, not when the code compiles.
+
+**Three of the four runtimes are converted and one is not, for a reason
+outside our code — 2026-08-11.** Claude, Codex and OpenCode each did
+`session/new` then `session/resume` against a live agent, recalling a token
+only the prior turn established. Gemini's first turn is equally good and its
+resume cannot be made to work from this side, so it is excluded from
+`ACP.supported_runtimes/0` (#659) and its dialect parser stays.
+
+The mechanism, read out of gemini 0.53.0's shipped bundle and confirmed on live
+sprites (#658): a session **is** written to disk after turn 1, and gemini's own
+`--list-sessions` finds it. `session/load` then builds a fresh config on the
+same session id *before* resolving the session, and that config's chat recorder
+takes its new-session branch — computing the same file name, which is the first
+8 characters of the session id plus the current wall-clock **minute**, and
+appending a `$set` whose `messages` array holds only its `<session_context>`
+bootstrap. The reader treats `$set.messages` as a replacement and skips
+`<session_context>` as ignored content, so the session it was asked to load now
+has no resumable content, disappears from the listing, and comes back as
+`-32603` "No previous sessions found for this project".
+
+Two consequences worth carrying into gate 4:
+
+- **The intermittency was a clock.** A resume in the same minute as the
+  previous turn always fails; one a minute later lands its poison in a sibling
+  file and succeeds. The earlier "2 successes to 4 failures" was not a race.
+  Waiting is still not a workaround — a *second* consecutive resume failed with
+  a minute between every turn, and afterwards every older session file for that
+  project had been removed. One resume is not a conversation.
+- **Failure is destructive.** The session is unloadable afterwards, so this
+  costs a conversation rather than a turn — which is the whole reason the flag
+  must not reach gemini, rather than merely being discouraged for it.
+
+A workaround would mean writing into another product's private store on a
+filename convention it can change without notice. We wait for upstream.
 
 ### Not in scope
 
