@@ -212,15 +212,9 @@ defmodule Fountain.Runtimes.ACP.Peer do
     |> send_prompt()
   end
 
-  # Some agents open a session from ambient credentials but refuse to *load*
-  # one until told which auth method to use — gemini answers `session/load`
-  # with `-32000 Authentication required` while `session/new` on the same
-  # connection succeeds, so every turn after the first failed outright.
-  #
-  # Reactive rather than eager, on purpose: claude's adapter authenticates from
-  # the environment and never asks, and calling `authenticate` at it unprompted
-  # would be us guessing a method it did not require. We ask only when an agent
-  # says we must, and only once.
+  # Backstop for an agent that advertises no auth method at `initialize` and
+  # then refuses anyway. The eager path above covers everything measured; this
+  # covers being wrong about that, once, rather than failing the turn outright.
   defp handle_message({:error_response, id, error}, state) do
     {tag, state} = pop_pending(state, id)
 
@@ -280,9 +274,27 @@ defmodule Fountain.Runtimes.ACP.Peer do
       {:handshake_ms, System.monotonic_time(:millisecond) - state.started_mono, method}
     )
 
-    case state.mode do
-      :run -> start_new_session(state)
-      :continue -> resume_session(state)
+    # Authenticate *before* opening a session, when the agent offers a method.
+    #
+    # This was reactive at first — authenticate only when a call is refused —
+    # and that is too late to be useful. Gemini will happily open a session
+    # from ambient credentials without being told which auth method to use, but
+    # it does not *persist* one: the next turn's `session/load` answers "No
+    # previous sessions found for this project", so the retry authenticates
+    # correctly and then finds nothing to load. The session has to be created
+    # under a chosen method to exist at all.
+    #
+    # Safe to do eagerly because an agent that needs nothing advertises
+    # nothing: claude's adapter returns `authMethods: []` (measured), so
+    # `auth_method/1` is nil and this is skipped entirely for it.
+    case auth_method(state) do
+      nil ->
+        start_session(state)
+
+      chosen ->
+        send_request(%{state | authenticated?: true}, :authenticate, "authenticate", %{
+          methodId: chosen
+        })
     end
   end
 
@@ -308,13 +320,8 @@ defmodule Fountain.Runtimes.ACP.Peer do
   # The model was pinned (or refused); either way the turn goes ahead.
   defp handle_response(:set_model, _result, state), do: send_prompt(state)
 
-  # Authenticated on demand; retry the session setup that provoked it.
-  defp handle_response(:authenticate, _result, state) do
-    case state.mode do
-      :run -> start_new_session(state)
-      :continue -> resume_session(state)
-    end
-  end
+  # Authenticated; open (or reopen) the session.
+  defp handle_response(:authenticate, _result, state), do: start_session(state)
 
   defp handle_response(:prompt, result, state) do
     stop = Map.get(result, "stopReason") || "end_turn"
@@ -349,6 +356,9 @@ defmodule Fountain.Runtimes.ACP.Peer do
   end
 
   # ── session setup ─────────────────────────────────────────────────────────
+
+  defp start_session(%State{mode: :run} = state), do: start_new_session(state)
+  defp start_session(%State{mode: :continue} = state), do: resume_session(state)
 
   # No client-proposed `sessionId`. The spec is explicit that the *agent*
   # "MUST respond with a unique Session ID", and we overwrite whatever we sent

@@ -525,48 +525,67 @@ defmodule Fountain.Runtimes.ACP.PeerTest do
       )
     end
 
-    test "authenticates and retries when session/load is refused", ctx do
-      pid = start_peer(ctx, mode: :continue, session_id: "gem-1")
+    test "authenticates before opening a session, not after being refused", ctx do
+      # Reactive was too late. Gemini opens a session from ambient credentials
+      # without being told a method, but does not *persist* one — the next
+      # turn's session/load then answers "No previous sessions found for this
+      # project", so the retry authenticates correctly and finds nothing.
+      # Measured live 2026-08-10.
+      pid = start_peer(ctx, [])
       init_with_auth(pid, @gemini_auth)
-
-      %{"id" => load_id, "method" => "session/load"} = next_write()
-      refuse(pid, load_id, "Authentication required")
 
       assert %{"method" => "authenticate", "id" => auth_id, "params" => params} = next_write()
 
       # The api-key method, not the OAuth one: a headless sandbox can never
-      # complete an interactive Google login.
+      # complete an interactive Google login, and gemini lists oauth first.
       assert params["methodId"] == "gemini-api-key"
 
       send_response(pid, auth_id, %{})
 
-      # And the setup that provoked it runs again.
-      assert %{"method" => "session/load"} = next_write()
+      # Only then is the session opened.
+      assert %{"method" => "session/new"} = next_write()
+    end
+
+    test "an agent advertising no methods is never sent authenticate", ctx do
+      # claude's adapter returns authMethods: [] (measured), so this must be a
+      # complete no-op for it rather than a guessed method.
+      pid = start_peer(ctx, [])
+      init_with_auth(pid, [])
+
+      assert %{"method" => "session/new"} = next_write()
     end
 
     test "does not authenticate a second time", ctx do
-      # An agent that refuses twice is refusing for a reason authentication
-      # will not fix; looping would hold the turn open indefinitely.
+      # An agent that refuses after we have already authenticated is refusing
+      # for a reason authentication will not fix; looping would hold the turn
+      # open indefinitely.
       pid = start_peer(ctx, mode: :continue, session_id: "gem-1")
       init_with_auth(pid, @gemini_auth)
 
+      %{"id" => auth_id, "method" => "authenticate"} = next_write()
+      send_response(pid, auth_id, %{})
       %{"id" => load_id} = next_write()
       refuse(pid, load_id, "Authentication required")
-      %{"id" => auth_id} = next_write()
-      send_response(pid, auth_id, %{})
-      %{"id" => load_id2} = next_write()
-      refuse(pid, load_id2, "Authentication required")
 
       assert_receive {:acp, _ref, {:failed, {:acp_error, :load_session, _}}}
     end
 
-    test "an agent advertising no methods just fails", ctx do
+    test "the reactive backstop still covers an agent that advertised nothing", ctx do
+      # Eager covers everything measured; this covers being wrong about that,
+      # once, rather than failing the turn outright.
       pid = start_peer(ctx, mode: :continue, session_id: "gem-1")
-      init_with_auth(pid, [])
 
-      %{"id" => load_id} = next_write()
+      %{"id" => init_id} = next_write()
+
+      send_response(pid, init_id, %{
+        "agentCapabilities" => %{"loadSession" => true},
+        "authMethods" => []
+      })
+
+      %{"id" => load_id, "method" => "session/load"} = next_write()
       refuse(pid, load_id, "Authentication required")
 
+      # Nothing to pick, so it fails rather than inventing a method.
       assert_receive {:acp, _ref, {:failed, {:acp_error, :load_session, _}}}
     end
 
@@ -574,6 +593,8 @@ defmodule Fountain.Runtimes.ACP.PeerTest do
       pid = start_peer(ctx, mode: :continue, session_id: "gem-1")
       init_with_auth(pid, @gemini_auth)
 
+      %{"id" => auth_id, "method" => "authenticate"} = next_write()
+      send_response(pid, auth_id, %{})
       %{"id" => load_id} = next_write()
 
       Peer.stdout(
