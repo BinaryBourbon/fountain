@@ -344,15 +344,28 @@ defmodule Fountain.Runtimes.ACP.Peer do
   # offers for "there is a key in the environment, use it", as against an
   # interactive OAuth flow a headless sandbox can never complete.
   defp auth_method(state) do
-    pick =
-      Enum.find(state.auth_methods, fn m ->
-        is_map(Map.get(m, "_meta")) and Map.has_key?(m["_meta"], "api-key")
-      end) || List.first(state.auth_methods)
-
-    case pick do
+    case Enum.find(state.auth_methods, &api_key_method?/1) do
       %{"id" => id} when is_binary(id) -> id
       _ -> nil
     end
+  end
+
+  # An api-key method only — never "whatever it listed first".
+  #
+  # Measured 2026-08-10: opencode advertises exactly `["opencode-login"]`, and
+  # a first-in-the-list fallback picked it. It happened to return ok, but the
+  # name is an interactive login and a headless sandbox cannot complete one; an
+  # agent that *blocked* on it would leave a turn in flight forever, which
+  # disarms idle reclaim and bills the sprite to its ceiling. Getting away with
+  # it once is not evidence.
+  #
+  # Nothing needs the fallback. Of the four runtimes, only gemini requires
+  # authentication at all, and it advertises an api-key method; claude
+  # advertises none, and codex and opencode were both driven through a full
+  # turn without ever authenticating.
+  defp api_key_method?(method) do
+    meta = Map.get(method, "_meta")
+    is_map(meta) and Map.has_key?(meta, "api-key")
   end
 
   # ── session setup ─────────────────────────────────────────────────────────

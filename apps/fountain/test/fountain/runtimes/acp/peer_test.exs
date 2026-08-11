@@ -555,6 +555,17 @@ defmodule Fountain.Runtimes.ACP.PeerTest do
       assert %{"method" => "session/new"} = next_write()
     end
 
+    test "never picks a method that is not an api key", ctx do
+      # opencode advertises exactly ["opencode-login"], an interactive flow a
+      # headless sandbox cannot complete. A first-in-the-list fallback picked
+      # it and got away with it; an agent that *blocked* on that login would
+      # leave the turn in flight forever, which disarms idle reclaim.
+      pid = start_peer(ctx, [])
+      init_with_auth(pid, [%{"id" => "opencode-login", "name" => "Log in to OpenCode"}])
+
+      assert %{"method" => "session/new"} = next_write()
+    end
+
     test "does not authenticate a second time", ctx do
       # An agent that refuses after we have already authenticated is refusing
       # for a reason authentication will not fix; looping would hold the turn
