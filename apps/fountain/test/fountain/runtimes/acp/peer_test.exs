@@ -209,6 +209,89 @@ defmodule Fountain.Runtimes.ACP.PeerTest do
       refute data =~ "OLD TURN"
     end
 
+    test "a replay that lands after the load response is still discarded", ctx do
+      # #657: gemini streams its replay as a floating promise, so `session/load`
+      # answers *before* replaying. Measured against a live agent — closing the
+      # window on the response duplicated the whole transcript.
+      pid =
+        start_peer(ctx,
+          mode: :continue,
+          session_id: "sess_abc",
+          replay_quiet_ms: 40,
+          replay_max_ms: 2_000
+        )
+
+      %{"id" => init_id} = next_write()
+      send_response(pid, init_id, %{"agentCapabilities" => %{"loadSession" => true}})
+      %{"id" => load_id} = next_write()
+
+      send_response(pid, load_id, %{})
+
+      # Late replay, in two bursts, each of which pushes the quiet period out.
+      for text <- ["OLD ONE", "OLD TWO"] do
+        Peer.stdout(
+          pid,
+          update_line(%{
+            "sessionUpdate" => "agent_message_chunk",
+            "content" => %{"type" => "text", "text" => text}
+          })
+        )
+
+        Process.sleep(20)
+      end
+
+      refute_receive {:acp, _, {:lines, _, _}}, 20
+
+      # Only once the stream goes quiet does the turn's own prompt go out.
+      assert %{"method" => "session/prompt"} = next_write()
+
+      Peer.stdout(
+        pid,
+        update_line(%{
+          "sessionUpdate" => "agent_message_chunk",
+          "content" => %{"type" => "text", "text" => "NEW"}
+        })
+      )
+
+      assert_receive {:acp, _ref, {:lines, "acp", data}}
+      assert data =~ "NEW"
+      refute data =~ "OLD"
+    end
+
+    test "a replay that never goes quiet still prompts, rather than holding the turn open", ctx do
+      # An unbounded wait would be the #413 shape: a turn in flight disarms idle
+      # reclaim, so a chatty agent could bill a sprite to its ceiling.
+      pid =
+        start_peer(ctx,
+          mode: :continue,
+          session_id: "sess_abc",
+          replay_quiet_ms: 30,
+          replay_max_ms: 60
+        )
+
+      %{"id" => init_id} = next_write()
+      send_response(pid, init_id, %{"agentCapabilities" => %{"loadSession" => true}})
+      %{"id" => load_id} = next_write()
+      send_response(pid, load_id, %{})
+
+      noisy = fn ->
+        Peer.stdout(
+          pid,
+          update_line(%{
+            "sessionUpdate" => "agent_message_chunk",
+            "content" => %{"type" => "text", "text" => "chatter"}
+          })
+        )
+      end
+
+      for _ <- 1..12 do
+        noisy.()
+        Process.sleep(10)
+      end
+
+      assert %{"method" => "session/prompt"} = next_write()
+    end
+
     test "session/resume never enters replay-discard, so nothing is lost", ctx do
       pid = start_peer(ctx, mode: :continue, session_id: "sess_abc")
       %{"id" => init_id} = next_write()

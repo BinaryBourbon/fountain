@@ -35,12 +35,39 @@ defmodule Fountain.Runtimes.ACP do
   only while one conversation ever runs per workspace — an invariant held by
   accident and asserted by no test. ACP names the session.
 
-  **Gemini is converted but held back** (#659): its `session/load` cannot
-  reliably find a session it created minutes earlier — 2 successes to 4
-  failures against a live agent — and its replay escapes the discard window
-  (#657). `supported_runtimes/0` therefore excludes it, so the per-agent flag
-  cannot switch it on. The entry stays because the conversion is correct as far
-  as it goes; what fails is gemini's own session store.
+  **Gemini is converted but held back** (#659), and the reason is not ours to
+  fix. `supported_runtimes/0` excludes it, so the per-agent flag cannot switch
+  it on; the entry stays because the conversion is correct as far as it goes.
+
+  Diagnosed against a live 0.53.0 on 2026-08-11 (#658). Turn 1 does write a
+  session, to `$HOME/.gemini/tmp/<project>/chats/session-<ISO minute>-<first 8
+  of the id>.jsonl`, and gemini's own `--list-sessions` finds it. **Loading it
+  is what destroys it.** `session/load` builds a fresh config on the same
+  session id *before* looking the session up, and that config's chat recorder
+  takes its new-session branch: it computes the same file name — the id's first
+  8 characters plus the current wall-clock minute — and appends a header and a
+  `$set` carrying a `messages` array holding only its `<session_context>`
+  bootstrap. Gemini's own reader treats a `$set.messages` as a **replacement**,
+  and a user message beginning `<session_context>` is ignored content, so the
+  file it just appended to now has no resumable content. It drops out of
+  `listSessions()`, and `findSession` reports `-32603` / "No previous sessions
+  found for this project" — about a session whose transcript is still sitting
+  in the same file, above the line that erased it.
+
+  That is why it looked random. The collision is bucketed by **minute**: a
+  resume in the same minute as the previous turn poisons the session's own file
+  and always fails; a minute later the poison lands in a sibling file and the
+  load succeeds. The "2 successes to 4 failures" was a wall clock, not a race.
+  Verified in both directions on live sprites.
+
+  Waiting is not a workaround: a *second* consecutive resume failed even with a
+  minute between every turn, and afterwards every older session file for that
+  project was gone. One resume is not a conversation.
+
+  It is also destructive rather than merely unreliable — a failed load leaves
+  the session unloadable forever, so a user would lose the conversation, not
+  just a turn. Fountain cannot work around this without reaching into another
+  product's private store, so gemini stays blocked until upstream fixes it.
 
   Codex and OpenCode both advertise `loadSession` *and*
   `sessionCapabilities.resume`, so they resume as cheaply as Claude does. What
@@ -95,7 +122,8 @@ defmodule Fountain.Runtimes.ACP do
     # Converted, verified, and **not shippable** — see `blocked`. Left in the
     # table rather than deleted because the conversion itself is correct: turn
     # 1 works end to end against a live agent. What does not work is gemini's
-    # own session store.
+    # own session store, which erases a session in the act of loading it — the
+    # moduledoc has the mechanism.
     "gemini" => %{
       bin: "gemini",
       args: ["--acp"],
