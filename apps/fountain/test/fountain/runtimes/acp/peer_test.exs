@@ -491,4 +491,125 @@ defmodule Fountain.Runtimes.ACP.PeerTest do
       assert %{"method" => "session/prompt"} = next_write()
     end
   end
+
+  describe "authentication on demand" do
+    # gemini opens a session from ambient credentials but answers session/load
+    # with -32000 "Authentication required", so every turn after the first
+    # failed outright until the peer learned to authenticate. Measured live on
+    # 2026-08-10; the method ids below are gemini's own.
+    @gemini_auth [
+      %{"id" => "oauth-personal", "name" => "Log in with Google"},
+      %{"id" => "gemini-api-key", "name" => "Gemini API key", "_meta" => %{"api-key" => %{}}},
+      %{"id" => "vertex-ai", "name" => "Vertex AI"}
+    ]
+
+    defp init_with_auth(pid, methods) do
+      %{"id" => init_id} = next_write()
+
+      send_response(pid, init_id, %{
+        "agentCapabilities" => %{"loadSession" => true},
+        "authMethods" => methods
+      })
+
+      init_id
+    end
+
+    defp refuse(pid, id, message) do
+      Peer.stdout(
+        pid,
+        Jason.encode!(%{
+          "jsonrpc" => "2.0",
+          "id" => id,
+          "error" => %{"code" => -32_000, "message" => message}
+        }) <> "\n"
+      )
+    end
+
+    test "authenticates and retries when session/load is refused", ctx do
+      pid = start_peer(ctx, mode: :continue, session_id: "gem-1")
+      init_with_auth(pid, @gemini_auth)
+
+      %{"id" => load_id, "method" => "session/load"} = next_write()
+      refuse(pid, load_id, "Authentication required")
+
+      assert %{"method" => "authenticate", "id" => auth_id, "params" => params} = next_write()
+
+      # The api-key method, not the OAuth one: a headless sandbox can never
+      # complete an interactive Google login.
+      assert params["methodId"] == "gemini-api-key"
+
+      send_response(pid, auth_id, %{})
+
+      # And the setup that provoked it runs again.
+      assert %{"method" => "session/load"} = next_write()
+    end
+
+    test "does not authenticate a second time", ctx do
+      # An agent that refuses twice is refusing for a reason authentication
+      # will not fix; looping would hold the turn open indefinitely.
+      pid = start_peer(ctx, mode: :continue, session_id: "gem-1")
+      init_with_auth(pid, @gemini_auth)
+
+      %{"id" => load_id} = next_write()
+      refuse(pid, load_id, "Authentication required")
+      %{"id" => auth_id} = next_write()
+      send_response(pid, auth_id, %{})
+      %{"id" => load_id2} = next_write()
+      refuse(pid, load_id2, "Authentication required")
+
+      assert_receive {:acp, _ref, {:failed, {:acp_error, :load_session, _}}}
+    end
+
+    test "an agent advertising no methods just fails", ctx do
+      pid = start_peer(ctx, mode: :continue, session_id: "gem-1")
+      init_with_auth(pid, [])
+
+      %{"id" => load_id} = next_write()
+      refuse(pid, load_id, "Authentication required")
+
+      assert_receive {:acp, _ref, {:failed, {:acp_error, :load_session, _}}}
+    end
+
+    test "a non-auth error is not retried as an auth problem", ctx do
+      pid = start_peer(ctx, mode: :continue, session_id: "gem-1")
+      init_with_auth(pid, @gemini_auth)
+
+      %{"id" => load_id} = next_write()
+
+      Peer.stdout(
+        pid,
+        Jason.encode!(%{
+          "jsonrpc" => "2.0",
+          "id" => load_id,
+          "error" => %{"code" => -32_602, "message" => "Session not found"}
+        }) <> "\n"
+      )
+
+      assert_receive {:acp, _ref, {:failed, {:acp_error, :load_session, _}}}
+    end
+  end
+
+  describe "model selection, second shape" do
+    test "uses session/set_model when the agent advertises models", ctx do
+      # gemini exposes `models` in the session response and implements ACP's
+      # own session/set_model; claude's adapter exposes `configOptions` and
+      # takes session/set_config_option. Neither is a superset of the other.
+      pid = start_peer(ctx, model: "gemini-flash-latest")
+      %{"id" => init_id} = next_write()
+      send_response(pid, init_id, %{"agentCapabilities" => caps()})
+      %{"id" => new_id} = next_write()
+
+      send_response(pid, new_id, %{
+        "sessionId" => "s",
+        "models" => %{"availableModels" => [], "currentModelId" => "x"}
+      })
+
+      assert %{"method" => "session/set_model", "id" => set_id, "params" => params} = next_write()
+      assert params["modelId"] == "gemini-flash-latest"
+      assert params["sessionId"] == "s"
+
+      send_response(pid, set_id, %{})
+      assert %{"method" => "session/prompt"} = next_write()
+    end
+  end
 end
