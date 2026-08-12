@@ -120,6 +120,14 @@ spec:
             # unverified-account pruner (#258).
             - name: UNVERIFIED_PRUNE_EXEMPT
               value: jhgaylor
+            # Incident conversations (estate-medic) wait on a human PR merge
+            # mid-runbook; the stock 60-minute idle reclaim erases the
+            # sandbox — and with it the agent's working memory — while the
+            # human is still reviewing. Four hours covers a slow review
+            # without giving up reclaim entirely. Global knob: fountain has
+            # no per-environment lifetime yet.
+            - name: SANDBOX_IDLE_TIMEOUT_MINUTES
+              value: "240"
             # TRUSTED_PROXIES is deliberately NOT set. Public traffic arrives
             # via the Cloudflare Tunnel (home-cloud k8s/cloudflared/), so the
             # X-Forwarded-For chain is "client, <cloudflared pod>" — every
