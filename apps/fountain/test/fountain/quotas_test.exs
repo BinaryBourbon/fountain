@@ -36,6 +36,18 @@ defmodule Fountain.QuotasTest do
       assert Quotas.active_sandbox_count(user.id) == 1
     end
 
+    test "suspended does not count — a parked sprite is not compute (0017)" do
+      # Otherwise five abandoned conversations would permanently lock a
+      # default-cap tenant out of starting anything. Waking a suspended
+      # sandbox re-runs the gate (Conversations.wake_suspended_sandbox/2).
+      user = insert_verified_user()
+
+      insert_sandbox(user_id: user.id, status: "ready")
+      insert_sandbox(user_id: user.id, status: "suspended")
+
+      assert Quotas.active_sandbox_count(user.id) == 1
+    end
+
     test "exclude: leaves the named sandbox out" do
       user = insert_verified_user()
       keep = insert_sandbox(user_id: user.id, status: "ready")

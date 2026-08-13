@@ -501,6 +501,16 @@ being *unavoidable* — sandboxes are bounded whatever the protocol does — and
 ACP at least failing loudly, with a session id it was actually asked for,
 where the legacy path fails on an id it guessed.
 
+> **Correction, 2026-08-13 (decisions/0017).** The idle bound no longer
+> destroys the sprite: an idle sandbox is *suspended* — the sprite stays,
+> scaled to zero, and the next prompt reattaches to the same disk, so the
+> session survives and this section's failure mode applies only to the
+> max-lifetime ceiling (and to explicit termination). The premise this ADR
+> inherited from `Lifecycle` — that an idle sprite bills until destroyed —
+> was itself wrong; sprites stop billing on their own. The turn-scoped
+> connection stays correct on 0017's terms too: nothing is attached between
+> turns, whether the sandbox is parked or destroyed.
+
 ### Gate 3 — permissions — **not built**
 
 Implement `session/request_permission` against the conversation LiveView: a

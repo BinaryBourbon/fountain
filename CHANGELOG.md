@@ -16,6 +16,31 @@ upgrade, is in
 
 ## [Unreleased]
 
+### Upgrade notes
+
+- **Sandboxes now rest in a new `suspended` status instead of being
+  destroyed when idle.** Suspended sandboxes keep their sprite alive at
+  sprites.dev indefinitely (scaled to zero; treated as free) and do not
+  count toward the concurrent-sandbox quota. Anything consuming the API's
+  sandbox `status` field needs to accept the new value, and operators
+  who relied on idle reclaim to clean up sprites should know it no longer
+  does — only the max-lifetime ceiling, explicit termination, tenant
+  suspension and account deletion destroy sprites now.
+
+### Changed
+
+- **An idle sandbox is suspended rather than destroyed, and the next prompt
+  reattaches to the same sprite — the agent keeps its memory of the
+  conversation.** Idle reclaim was built on the premise that an idle sprite
+  bills until destroyed; it doesn't (sprites scale themselves to zero), and
+  the destroy was silently costing every idle conversation its runtime
+  session (#649). The max-lifetime ceiling still destroys — it exists to
+  bound runaway busy compute — and its message still says honestly that the
+  agent will not remember. The ceiling now measures a continuous run
+  (restarting on each wake) rather than calendar age, so a conversation
+  parked for a week is not destroyed the moment it is woken. See
+  decisions/0017.
+
 ## [0.7.0] — 2026-08-07
 
 ### Upgrade notes

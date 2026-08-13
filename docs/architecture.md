@@ -141,14 +141,19 @@ strings shown in the UI, the SSE stream and the log rows, each with a state of
 5. **`reattach`.** If the server is gone — a deploy, a node loss — but the
    sprite survived, the next prompt (or the boot-time rehydrator) reattaches:
    verify the sprite still exists, rewrite its env, pick a still-running
-   turn's session back up where it left off. If the sprite is gone too, the
-   conversation re-provisions from step 2; the runtime resumes the same
-   session ID, so **history survives sandbox loss**.
-6. **`sandbox`** — reclaim. Every server checks its bounds each minute:
-   [idle timeout or max lifetime](self-hosting.md#sandbox-lifetime) destroys
-   the sprite and marks the sandbox `terminated` — but the conversation goes
-   back to `idle`, resumable. The hourly reaper applies the same bounds to
-   anything a crashed server left behind.
+   turn's session back up where it left off. The runtime's session lives on
+   the sprite's disk, so reattaching to the *same* sprite keeps the agent's
+   memory. If the sprite is gone, the conversation re-provisions from step 2 —
+   Fountain's transcript survives, the agent's session does not (#649).
+6. **`sandbox`** — the lifetime bounds. Every server checks its
+   [bounds](self-hosting.md#sandbox-lifetime) each minute, and they do
+   different things: crossing the **idle timeout** *suspends* — the server
+   stops, the sprite stays (it scales itself to zero) and the sandbox parks in
+   `suspended`, to be woken with everything intact by the next prompt.
+   Crossing the **max lifetime** *destroys* the sprite and marks the sandbox
+   `terminated`; the conversation goes back to `idle`, resumable at the #649
+   price. The hourly reaper applies the same split to anything a crashed
+   server left behind.
 7. **`terminate`.** An explicit `POST .../terminate` destroys the sprite and
    marks the conversation `terminated` — one of the two terminal states,
    alongside `failed`.
@@ -156,12 +161,13 @@ strings shown in the UI, the SSE stream and the log rows, each with a state of
 The two status vocabularies, side by side:
 
 ```
-conversation:  pending -> running -> idle -> running ...  -> failed | terminated
-sandbox:       pending -> starting -> ready               -> terminated | failed
+conversation:  pending -> running -> idle -> running ...     -> failed | terminated
+sandbox:       pending -> starting -> ready <-> suspended    -> terminated | failed
 ```
 
-A conversation outlives its sandboxes: `idle` with a `terminated` sandbox is
-the normal resting state, not an error.
+A conversation outlives its sandboxes: `idle` with a `suspended` sandbox is
+the normal resting state, not an error (and `idle` with a `terminated` one is
+what a max-lifetime reclaim leaves behind).
 
 ---
 
@@ -178,4 +184,4 @@ level — what to run and what the output means — is [Operations](operations.m
 | Streaming dead for some viewers, fine for others, multiple replicas | Erlang clustering — `CLUSTER_DNS_QUERY` |
 | Signups never complete | Mail delivery — see [Email](self-hosting.md#email) |
 | `402 subscription_required` on a self-hosted instance | `BILLING_ENABLED` should be `false` |
-| Sandboxes vanish mid-conversation, work resumes on the next prompt | Working as designed — [lifecycle bounds](self-hosting.md#sandbox-lifetime) |
+| Sandbox suspends between prompts, work resumes on the next one | Working as designed — [lifecycle bounds](self-hosting.md#sandbox-lifetime) |

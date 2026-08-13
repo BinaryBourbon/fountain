@@ -1193,6 +1193,88 @@ defmodule Fountain.ConversationsContextTest do
       assert {:ok, _conv} = Conversations.wake_conversation(conv.id)
     end
 
+    test "waking a suspended sandbox flips it to ready and stamps the clock" do
+      # The core of decisions/0017: the parked sprite is reused, re-added to
+      # the quota, and the max-lifetime ceiling restarts from the wake.
+      user = insert_verified_user()
+      agent = insert_agent(user_id: user.id)
+      sandbox = insert_sandbox(user_id: user.id, sprite_name: "test-sprite-parked")
+      {:ok, sandbox} = Conversations.update_sandbox(sandbox, %{status: "suspended"})
+      conv = insert_conversation(user_id: user.id, agent: agent, sandbox: sandbox, status: "idle")
+
+      stub(Fountain.SpritesClient, :get!, fn -> %{} end)
+      stub(Sprites, :get_sprite, fn _client, _name -> {:ok, %{name: "test-sprite-parked"}} end)
+
+      stub(Horde.DynamicSupervisor, :start_child, fn _supervisor, _child_spec ->
+        {:ok, spawn(fn -> :ok end)}
+      end)
+
+      assert {:ok, woken} = Conversations.wake_conversation(conv.id)
+      # Same sandbox — no fresh sprite was provisioned.
+      assert woken.sandbox_id == sandbox.id
+
+      reloaded = Repo.reload(sandbox)
+      assert reloaded.status == "ready"
+      assert %DateTime{} = reloaded.last_resumed_at
+    end
+
+    test "waking a suspended sandbox re-runs the quota gate" do
+      # A parked sprite is free; waking it is compute again. A user at their
+      # cap must be refused, exactly as if they were starting a conversation.
+      user = insert_verified_user()
+      {:ok, user} = Fountain.Accounts.update_sandbox_limit(user, 1)
+      agent = insert_agent(user_id: user.id)
+
+      insert_sandbox(user_id: user.id, status: "ready")
+
+      sandbox = insert_sandbox(user_id: user.id, sprite_name: "test-sprite-capped")
+      {:ok, sandbox} = Conversations.update_sandbox(sandbox, %{status: "suspended"})
+      conv = insert_conversation(user_id: user.id, agent: agent, sandbox: sandbox, status: "idle")
+
+      stub(Fountain.SpritesClient, :get!, fn -> %{} end)
+      stub(Sprites, :get_sprite, fn _client, _name -> {:ok, %{}} end)
+
+      assert {:error, {:sandbox_quota_exceeded, _}} = Conversations.wake_conversation(conv.id)
+      # Refused means still parked — the row must not be half-woken.
+      assert Repo.reload(sandbox).status == "suspended"
+    end
+
+    test "a transient sprite probe failure does not give up a suspended sandbox" do
+      # Falling to :create_new would retire the row and route the still-live
+      # sprite — the agent's memory — to the reaper's destroy pass. Only a
+      # definitive not-found may do that; anything else fails retryably.
+      user = insert_verified_user()
+      agent = insert_agent(user_id: user.id)
+      sandbox = insert_sandbox(user_id: user.id, sprite_name: "test-sprite-blip")
+      {:ok, sandbox} = Conversations.update_sandbox(sandbox, %{status: "suspended"})
+      conv = insert_conversation(user_id: user.id, agent: agent, sandbox: sandbox, status: "idle")
+
+      stub(Fountain.SpritesClient, :get!, fn -> %{} end)
+      stub(Sprites, :get_sprite, fn _client, _name -> {:error, :timeout} end)
+
+      assert {:error, :sprite_probe_failed} = Conversations.wake_conversation(conv.id)
+      assert Repo.reload(sandbox).status == "suspended"
+    end
+
+    test "a definitively gone sprite retires the suspended sandbox and provisions fresh" do
+      user = insert_verified_user()
+      agent = insert_agent(user_id: user.id)
+      sandbox = insert_sandbox(user_id: user.id, sprite_name: "test-sprite-vanished")
+      {:ok, sandbox} = Conversations.update_sandbox(sandbox, %{status: "suspended"})
+      conv = insert_conversation(user_id: user.id, agent: agent, sandbox: sandbox, status: "idle")
+
+      stub(Fountain.SpritesClient, :get!, fn -> %{} end)
+      stub(Sprites, :get_sprite, fn _client, _name -> {:error, {:not_found, %{}}} end)
+
+      stub(Horde.DynamicSupervisor, :start_child, fn _supervisor, _child_spec ->
+        {:ok, spawn(fn -> :ok end)}
+      end)
+
+      assert {:ok, woken} = Conversations.wake_conversation(conv.id)
+      assert woken.sandbox_id != sandbox.id
+      assert Repo.reload(sandbox).status == "terminated"
+    end
+
     test "returns {:ok, conv} creating fresh sandbox when sprite is gone" do
       user = insert_verified_user()
       agent = insert_agent(user_id: user.id)

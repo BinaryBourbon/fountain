@@ -20,7 +20,7 @@ for checkpoints.
 |---|---|---|
 | Create sprite | `POST /v1/sprites` — JSON `{"name": …}`, allowed 120s | Every conversation start |
 | Get sprite | `GET /v1/sprites/{name}` — 404 → not-found | Waking a conversation, sandbox reuse |
-| Destroy sprite | `DELETE /v1/sprites/{name}` — **404 counts as success** | Terminate, idle reclaim, the reaper, account deletion |
+| Destroy sprite | `DELETE /v1/sprites/{name}` — **404 counts as success** | Terminate, the max-lifetime ceiling, the reaper, account deletion (idle suspension deliberately calls nothing — the sprite scales to zero on its own) |
 | List sprites | `GET /v1/sprites` — paginated, see below | The reaper's hourly reconciliation |
 | Write file | `PUT /v1/sprites/{name}/fs/write?path=…&workingDir=…&mode=…&mkdirParents=…` — raw body | The env file, inline skills, runtime config files |
 | Execute (blocking) | WebSocket `/v1/sprites/{name}/exec` — run to exit, collect output | Package installs, git clones, setup scripts, runtime preparation |

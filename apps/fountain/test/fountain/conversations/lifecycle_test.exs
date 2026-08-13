@@ -123,18 +123,20 @@ defmodule Fountain.Conversations.LifecycleTest do
       end)
     end
 
-    test "does not promise the agent remembers the conversation (#649)" do
-      # It used to say "history is preserved", which is true of the transcript
-      # and false of the agent: the runtime session lives in the sandbox that
-      # was just destroyed, so the next turn starts cold. Believing the promise
-      # makes the agent's amnesia read as a bug in the model.
-      for reason <- [:idle, :max_lifetime] do
-        message = Lifecycle.explain(reason)
+    test "the two bounds promise exactly what each one keeps (#649, 0017)" do
+      # A suspend keeps the sprite's disk — the agent's memory — so the idle
+      # copy may promise a real resume. A max-lifetime reclaim destroys it, and
+      # promising anything more than the transcript makes the agent's amnesia
+      # read as a bug in the model. The copy must not blur the two.
+      idle = Lifecycle.explain(:idle)
+      assert idle =~ "suspended"
+      assert idle =~ "picks up right where it left off"
+      refute idle =~ "will not remember"
 
-        refute message =~ "history is preserved"
-        assert message =~ "will not remember"
-        assert message =~ "transcript"
-      end
+      max = Lifecycle.explain(:max_lifetime)
+      refute max =~ "history is preserved"
+      assert max =~ "will not remember"
+      assert max =~ "transcript"
     end
   end
 end

@@ -57,8 +57,8 @@ the event data.
   at their concurrent-sandbox quota. See [Sprites errors](#sprites-errors).
 - **Stuck with no failure** — a conversation `running` with no events
   arriving usually means the sprite-side process died and the exit was
-  missed. Interrupt it, or just send another prompt — waking provisions a
-  fresh sandbox and the runtime resumes the same session:
+  missed. Interrupt it, or just send another prompt — waking reattaches to
+  the existing sprite when it still exists:
 
     ```bash
     fountain conv show <conv-id>          # turn status, sandbox name
@@ -67,11 +67,13 @@ the event data.
     ```
 
 What the statuses mean: `failed` and `terminated` are the two terminal
-states — a further prompt is refused. `idle` with a terminated *sandbox* is
-the normal resting state, not an error: the next prompt re-provisions. The
-stored transcript is unaffected, but the agent starts a fresh session and does
-not carry the earlier turns into it — see the note under
-[Primitives → Conversation](primitives.md).
+states — a further prompt is refused. `idle` with a *suspended* sandbox is
+the normal resting state, not an error: the sprite is parked at sprites.dev,
+scaled to zero, and the next prompt wakes it with the agent's memory intact.
+`idle` with a *terminated* sandbox is what the max-lifetime ceiling (or an
+explicit reap) leaves behind: the next prompt provisions fresh, the stored
+transcript is unaffected, but the agent starts a fresh session — see the note
+under [Primitives → Conversation](primitives.md).
 
 **Quota knock-on:** a crash mid-provision leaves a `pending`/`starting`
 sandbox row that counts against the user's quota (default 5 concurrent).
@@ -81,8 +83,11 @@ reaper logs one summary line per run:
 
 ```bash
 kubectl logs -n fountain -l app=fountain --since=2h | grep 'reaper:'
-# reaper: released=0 expired=0 destroyed=2 untracked=102 live=114
+# reaper: released=0 parked=1 expired=0 destroyed=2 untracked=102 live=114
 ```
+
+(`parked` is the reaper suspending idle server-less sandboxes — reversible
+bookkeeping, not a teardown.)
 
 ---
 

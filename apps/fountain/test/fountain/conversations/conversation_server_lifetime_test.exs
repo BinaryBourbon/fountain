@@ -53,12 +53,13 @@ defmodule Fountain.Conversations.ConversationServerLifetimeTest do
   end
 
   describe "idle timeout" do
-    test "an idle server tears down its sandbox and stops" do
+    test "an idle server suspends its sandbox — sprite kept — and stops" do
       {conv, sandbox} = aged_conversation(180)
       stub_reattach()
 
-      test = self()
-      stub(Sprites, :destroy, fn _sprite -> send(test, :destroyed) && :ok end)
+      # The whole point of decisions/0017: the sprite's disk holds the agent's
+      # memory, and the idle bound must not destroy it.
+      reject(&Sprites.destroy/1)
 
       with_bounds([sandbox_idle_timeout_minutes: 60, sandbox_max_lifetime_hours: 24], fn ->
         {pid, ref, :alive} = start_server(conv)
@@ -72,11 +73,12 @@ defmodule Fountain.Conversations.ConversationServerLifetimeTest do
         assert :normal = assert_stopped(ref)
       end)
 
-      assert_received :destroyed
-      assert Fountain.Repo.reload(sandbox).status == "terminated"
+      reloaded = Fountain.Repo.reload(sandbox)
+      assert reloaded.status == "suspended"
+      refute reloaded.terminated_at
     end
 
-    test "the timer is actually wired: reclamation fires with no manual tick" do
+    test "the timer is actually wired: suspension fires with no manual tick" do
       {conv, sandbox} = aged_conversation(180)
       stub_reattach()
 
@@ -94,7 +96,7 @@ defmodule Fountain.Conversations.ConversationServerLifetimeTest do
         assert :normal = assert_stopped(ref, 5_000)
       end)
 
-      assert Fountain.Repo.reload(sandbox).status == "terminated"
+      assert Fountain.Repo.reload(sandbox).status == "suspended"
     end
 
     test "the conversation stays resumable" do
@@ -158,9 +160,15 @@ defmodule Fountain.Conversations.ConversationServerLifetimeTest do
   end
 
   describe "max lifetime" do
-    test "an old sandbox is reclaimed even with recent activity" do
+    test "an old sandbox is destroyed even with recent activity" do
+      # The regression anchor for the idle/max split: the ceiling exists for
+      # runaway compute and must KEEP destroying the sprite, unlike the idle
+      # bound above.
       {conv, sandbox} = aged_conversation(60 * 48)
       stub_reattach()
+
+      test = self()
+      stub(Sprites, :destroy, fn _sprite -> send(test, :destroyed) && :ok end)
 
       with_bounds([sandbox_idle_timeout_minutes: 0, sandbox_max_lifetime_hours: 24], fn ->
         {pid, ref, :alive} = start_server(conv)
@@ -169,6 +177,7 @@ defmodule Fountain.Conversations.ConversationServerLifetimeTest do
         assert :normal = assert_stopped(ref)
       end)
 
+      assert_received :destroyed
       assert Fountain.Repo.reload(sandbox).status == "terminated"
     end
 
@@ -187,6 +196,36 @@ defmodule Fountain.Conversations.ConversationServerLifetimeTest do
         send(pid, :lifecycle_check)
         assert_stopped(ref)
       end)
+    end
+
+    test "a wake from suspended restarts the ceiling clock" do
+      # A conversation parked for days must not be destroyed the moment it is
+      # woken: the ceiling measures a continuous run, so it is dated from
+      # last_resumed_at when the sandbox has been through a suspend/wake.
+      {conv, sandbox} = aged_conversation(60 * 48)
+      stub_reattach()
+      reject(&Sprites.destroy/1)
+
+      resumed_at = DateTime.utc_now() |> DateTime.add(-60, :second) |> DateTime.truncate(:second)
+
+      {:ok, _} =
+        Fountain.Conversations.update_sandbox(Fountain.Repo.reload(sandbox), %{
+          last_resumed_at: resumed_at
+        })
+
+      with_bounds([sandbox_idle_timeout_minutes: 0, sandbox_max_lifetime_hours: 24], fn ->
+        {pid, _ref, :alive} = start_server(conv)
+
+        assert %{sandbox_started_at: started} = :sys.get_state(pid)
+        assert DateTime.compare(started, resumed_at) == :eq
+
+        send(pid, :lifecycle_check)
+        # Two-day-old row, minute-old resume: the server must stay up.
+        assert is_map(:sys.get_state(pid))
+        GenServer.stop(pid)
+      end)
+
+      assert Fountain.Repo.reload(sandbox).status == "ready"
     end
   end
 

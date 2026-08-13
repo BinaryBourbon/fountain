@@ -103,19 +103,18 @@ A **Conversation** is a running session of an Agent inside a sandboxed VM. It st
 2. Fountain resolves the full env-var set and spawns a Sprites sandbox
 3. The agent runs; log events stream in real time over SSE (`GET /api/conversations/:id/stream`)
 4. Follow-up prompts go to `POST /api/conversations/:id/prompts`; a running turn can be interrupted (`POST .../interrupt`) and the whole conversation ended early (`POST .../terminate`)
-5. The sandbox exits when the conversation terminates, or when it is reclaimed for being idle (default 60 minutes with no turn activity) or for reaching its maximum lifetime (default 24 hours)
+5. After 60 minutes with no turn activity (default) the sandbox is **suspended**: it scales to zero, costs nothing while parked, and the next prompt wakes it with the agent's memory intact. At 24 hours of continuous running (default) it is **destroyed** — the ceiling for a conversation that never stops being busy.
 
-Reclaiming ends the **sandbox**, not the conversation. The conversation stays resumable: the next prompt provisions a fresh sandbox and carries on. Self-hosters can widen or disable both bounds with `SANDBOX_IDLE_TIMEOUT_MINUTES` and `SANDBOX_MAX_LIFETIME_HOURS` (`0` disables).
+Neither bound ends the conversation — it stays resumable either way. Self-hosters can widen or disable both bounds with `SANDBOX_IDLE_TIMEOUT_MINUTES` and `SANDBOX_MAX_LIFETIME_HOURS` (`0` disables).
 
-!!! warning "A reclaimed conversation loses the agent's context"
+!!! note "Suspend keeps the agent's memory; the max-lifetime ceiling does not"
 
-    The stored transcript survives — every turn still renders, and the
-    conversation is still resumable. What does not survive is the *agent's*
-    memory of it: the runtime keeps its session inside the sandbox, so a fresh
-    sandbox means a fresh session, and the next turn answers without the
-    earlier ones. Expect to restate context after a reclaim, or keep the
-    conversation active. Raising `SANDBOX_IDLE_TIMEOUT_MINUTES` trades sandbox
-    cost against how often this happens.
+    The runtime keeps its session on the sandbox's disk. A suspended sandbox
+    keeps that disk, so waking it resumes the agent right where it left off.
+    A sandbox that hits the max-lifetime ceiling is destroyed, disk and all:
+    the stored transcript survives and the conversation stays resumable, but
+    the next turn starts a fresh session and the agent answers without the
+    earlier ones. Expect to restate context after a ceiling reclaim.
 
 ### Status lifecycle
 

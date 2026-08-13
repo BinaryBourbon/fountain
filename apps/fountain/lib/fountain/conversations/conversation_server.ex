@@ -478,9 +478,14 @@ defmodule Fountain.Conversations.ConversationServer do
     case substitute_agent_mcp(agent, env, secrets) do
       {:ok, agent} ->
         case sandbox.status do
-          "ready" ->
+          s when s in ["ready", "suspended"] ->
             # The sprite already exists at sprites.dev and was fully provisioned
             # in a previous BEAM lifetime. Reattach instead of recreating.
+            # `suspended` normally becomes `ready` under the quota reservation
+            # in wake_conversation before this server starts; seeing it here
+            # means the reaper parked the row mid-wake. Reattaching is still
+            # right — the catch-all below would provision a second sprite over
+            # a live one — and do_reattach flips the row back to ready.
             reattach(state, conv, sandbox, agent, env, secrets)
 
           s when s in ["pending", "starting"] ->
@@ -593,7 +598,7 @@ defmodule Fountain.Conversations.ConversationServer do
             state
             | sprite: sprite,
               sprite_env: sprite_env,
-              sandbox_started_at: sandbox.inserted_at
+              sandbox_started_at: sandbox_clock_start(sandbox)
           }
 
           # Any prompt this conversation was started for arrives as a cast,
@@ -761,11 +766,28 @@ defmodule Fountain.Conversations.ConversationServer do
         # between the original provision and this reattach.
         Fountain.Conversations.Provisioning.write_env_file(sprite, sprite_env)
 
+        # Normally the wake path already flipped suspended → ready under the
+        # quota reservation; this covers the reaper parking the row mid-wake.
+        # Without it the row would stay `suspended` under a live server —
+        # invisible to the quota and unreachable by any reaper pass.
+        sandbox =
+          if sandbox.status == "suspended" do
+            {:ok, s} =
+              Conversations.update_sandbox(sandbox, %{
+                status: "ready",
+                last_resumed_at: DateTime.utc_now() |> DateTime.truncate(:second)
+              })
+
+            s
+          else
+            sandbox
+          end
+
         new_state = %{
           state
           | sprite: sprite,
             sprite_env: sprite_env,
-            sandbox_started_at: sandbox.inserted_at
+            sandbox_started_at: sandbox_clock_start(sandbox)
         }
 
         new_state = reattach_running_turn(new_state)
@@ -1440,6 +1462,12 @@ defmodule Fountain.Conversations.ConversationServer do
 
   def handle_info(_msg, state), do: {:noreply, state}
 
+  # The absolute lifetime ceiling measures a continuous run, not calendar age:
+  # a wake from `suspended` stamps `last_resumed_at` and restarts the clock,
+  # while a deploy reattach of a `ready` row stamps nothing and keeps it.
+  # SandboxReaper.expired?/2 must agree with this — change both together.
+  defp sandbox_clock_start(sandbox), do: sandbox.last_resumed_at || sandbox.inserted_at
+
   defp schedule_lifecycle_check do
     # Interval overridable in tests so the timer wiring itself is testable —
     # dropping schedule_lifecycle_check() from init/1 used to pass the whole
@@ -1450,11 +1478,49 @@ defmodule Fountain.Conversations.ConversationServer do
 
   defp touch_activity(state), do: %{state | last_activity_at: DateTime.utc_now()}
 
-  # Tear down the sprite and stop, leaving the conversation `idle` so the next
-  # prompt wakes it with a fresh sandbox. Setting the conversation `terminated`
-  # here would make it permanently unresumable — a cost control turning into
-  # data loss. See Fountain.Conversations.Lifecycle.
-  defp reclaim_sandbox(state, reason) do
+  # Idle: park, don't destroy. The sprite scales to zero on its own and costs
+  # ~nothing while suspended (decisions/0017), and its disk holds the runtime
+  # session — the agent's memory of the conversation, which #649 proved cannot
+  # be rebuilt on a fresh sprite. Stopping the server frees the BEAM side; the
+  # next prompt reattaches to the same sprite via wake_conversation.
+  defp reclaim_sandbox(state, :idle) do
+    Logger.info(
+      "suspending sandbox for conv #{state.conversation_id}: idle " <>
+        "(sprite #{inspect(state.sprite && state.sprite.name)})"
+    )
+
+    if state.sandbox_id do
+      sandbox = Conversations._unsafe_get_sandbox!(state.sandbox_id)
+
+      if sandbox.status not in ["terminated", "failed"] do
+        {:ok, _} = Conversations.update_sandbox(sandbox, %{status: "suspended"})
+      end
+    end
+
+    # The conversation stays idle and resumable; the sprite stays parked.
+    conv = Conversations._unsafe_get_conversation!(state.conversation_id)
+    if conv.status == "running", do: Conversations.update_conversation(conv, %{status: "idle"})
+
+    # Same stage/state as the reclaim below (LogEvent's state set is closed and
+    # clients already key on the "sandbox" stage); `event` is the discriminator.
+    publish_stage(state.conversation_id, "sandbox", "done", %{
+      event: "suspended",
+      reason: "idle",
+      message: Lifecycle.explain(:idle)
+    })
+
+    :telemetry.execute([:fountain, :sandbox, :suspended], %{count: 1}, %{})
+
+    {:stop, :normal, %{state | sprite: nil}}
+  end
+
+  # Max lifetime: tear down the sprite and stop. This bound exists for the
+  # conversation that never stops being busy — it fires with a detachable
+  # session still running on the sprite, so parking would leave that exec
+  # burning unattended. The conversation stays `idle` and resumable; setting it
+  # `terminated` here would make a cost control into data loss. See
+  # Fountain.Conversations.Lifecycle.
+  defp reclaim_sandbox(state, :max_lifetime = reason) do
     Logger.info(
       "reclaiming sandbox for conv #{state.conversation_id}: #{reason} " <>
         "(sprite #{inspect(state.sprite && state.sprite.name)})"
@@ -1471,7 +1537,6 @@ defmodule Fountain.Conversations.ConversationServer do
       end
     end
 
-    # The conversation stays idle and resumable; only the sandbox is gone.
     conv = Conversations._unsafe_get_conversation!(state.conversation_id)
     if conv.status == "running", do: Conversations.update_conversation(conv, %{status: "idle"})
 
@@ -1479,8 +1544,7 @@ defmodule Fountain.Conversations.ConversationServer do
     # started/done/failed/interrupted, and both the CLI and the LiveView switch
     # on it. A reclaimed sandbox is a stage that reached its end, so "done" is
     # accurate and needs no client to learn a new word; the `reason` and
-    # `message` fields carry what actually happened. The new part clients key on
-    # is the "sandbox" stage itself.
+    # `message` fields carry what actually happened.
     publish_stage(state.conversation_id, "sandbox", "done", %{
       event: "reclaimed",
       reason: to_string(reason),

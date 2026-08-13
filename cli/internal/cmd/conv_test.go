@@ -100,8 +100,17 @@ func TestHandleStageEvent(t *testing.T) {
 			wantErr:  nil,
 		},
 		{
-			// Idle reclaim means no turn was running: a clean end.
-			name:     "sandbox reclaimed for idleness is a clean terminal",
+			// Idle suspend keeps the sprite: a clean end, resumable with
+			// the agent's memory intact.
+			name:     "sandbox suspended for idleness is a clean terminal",
+			data:     map[string]any{"stage": "sandbox", "state": "done", "data": `{"event":"suspended","reason":"idle"}`},
+			terminal: true,
+			wantErr:  nil,
+		},
+		{
+			// An old server can still send the pre-0017 idle reclaim; it
+			// stays a clean exit.
+			name:     "legacy idle reclaim is a clean terminal",
 			data:     map[string]any{"stage": "sandbox", "state": "done", "data": `{"event":"reclaimed","reason":"idle"}`},
 			terminal: true,
 			wantErr:  nil,

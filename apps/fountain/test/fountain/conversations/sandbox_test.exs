@@ -16,8 +16,8 @@ defmodule Fountain.Conversations.SandboxTest do
   end
 
   describe "statuses/0" do
-    test "returns all five valid statuses" do
-      assert Sandbox.statuses() == ~w(pending starting ready terminated failed)
+    test "returns all six valid statuses" do
+      assert Sandbox.statuses() == ~w(pending starting ready suspended terminated failed)
     end
   end
 
