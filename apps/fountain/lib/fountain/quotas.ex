@@ -12,11 +12,15 @@ defmodule Fountain.Quotas do
 
   ## What counts
 
-  A sandbox is "active" while its status is anything other than `terminated` or
-  `failed`, matching the definition used by the admin sandbox view. `pending`
-  and `starting` both count: a sprite is being paid for from the moment
-  provisioning begins, and counting only `ready` would let a burst of concurrent
-  starts sail past the cap before any of them settle.
+  A sandbox counts while it is compute: `pending`, `starting` and `ready`.
+  `pending` and `starting` count because a sprite is being paid for from the
+  moment provisioning begins, and counting only `ready` would let a burst of
+  concurrent starts sail past the cap before any of them settle. `suspended`
+  deliberately does NOT count — a parked sprite is scaled to zero and costs
+  ~nothing (decisions/0017) — which means this set is narrower than the admin
+  sandbox view's "anything non-terminal": the admin table will list a suspended
+  sandbox that the per-user counter ignores. Waking one re-runs the quota gate
+  (`Conversations.wake_suspended_sandbox/2`).
   """
 
   import Ecto.Query

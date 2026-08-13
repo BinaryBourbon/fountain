@@ -210,21 +210,23 @@ the [mail integration guide](integrations/mail.md).
 
 ## Sandbox lifetime
 
-Sandboxes are reclaimed when they go idle or reach a maximum age, so an
-abandoned conversation stops costing you:
+Two bounds, doing different things:
 
 | Setting | Default | |
 |---|---|---|
-| `SANDBOX_IDLE_TIMEOUT_MINUTES` | `60` | No turn activity for this long and the sandbox is torn down |
-| `SANDBOX_MAX_LIFETIME_HOURS` | `24` | Absolute ceiling from creation, regardless of activity |
+| `SANDBOX_IDLE_TIMEOUT_MINUTES` | `60` | No turn activity for this long and the sandbox is **suspended** — the sprite stays, scaled to zero, and the next prompt wakes it with the agent's memory intact |
+| `SANDBOX_MAX_LIFETIME_HOURS` | `24` | Ceiling on a continuous run (from creation or the last wake). Crossing it **destroys** the sprite — the backstop for a conversation that never stops being busy |
 
 Set either to `0` to disable it. A value that is not a non-negative integer
 refuses to boot rather than quietly disabling the bound.
 
-Reclaiming ends the **sandbox**, not the conversation. The conversation stays
-resumable — the next prompt provisions a fresh sandbox and the runtime resumes
-the same session — so the cost of a bound being too aggressive is a
-re-provisioning wait, not lost work.
+Neither bound ends the conversation; it stays resumable either way. The idle
+bound is free to be aggressive — suspension loses nothing. The max-lifetime
+ceiling is not: the runtime session lives on the destroyed disk, so after a
+ceiling reclaim the next prompt provisions fresh and the agent starts without
+its memory of the earlier turns. Suspended sandboxes are never aged out —
+their sprites persist at sprites.dev until the conversation is terminated or
+the account deleted.
 
 ## Billing
 

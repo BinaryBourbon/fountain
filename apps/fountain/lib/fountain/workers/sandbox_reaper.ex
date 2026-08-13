@@ -71,7 +71,7 @@ defmodule Fountain.Workers.SandboxReaper do
   @impl Oban.Worker
   def perform(_job) do
     released = release_stuck_sandboxes()
-    expired = expire_abandoned_sandboxes()
+    {parked, expired} = sweep_abandoned_sandboxes()
 
     result =
       case list_sprites() do
@@ -80,8 +80,8 @@ defmodule Fountain.Workers.SandboxReaper do
           untracked = report_untracked(live_names)
 
           Logger.info(
-            "reaper: released=#{released} expired=#{expired} destroyed=#{destroyed} " <>
-              "untracked=#{untracked} live=#{MapSet.size(live_names)}"
+            "reaper: released=#{released} parked=#{parked} expired=#{expired} " <>
+              "destroyed=#{destroyed} untracked=#{untracked} live=#{MapSet.size(live_names)}"
           )
 
           :ok
@@ -93,7 +93,13 @@ defmodule Fountain.Workers.SandboxReaper do
           {:error, reason}
       end
 
-    :telemetry.execute([:fountain, :reaper, :run], %{released: released, expired: expired}, %{})
+    # `parked` is its own measurement: parks are reversible bookkeeping, and
+    # folding them into `expired` would silently change what that metric means.
+    :telemetry.execute(
+      [:fountain, :reaper, :run],
+      %{released: released, parked: parked, expired: expired},
+      %{}
+    )
 
     result
   end
@@ -158,44 +164,68 @@ defmodule Fountain.Workers.SandboxReaper do
 
   # ── pass 1b: ready sandboxes nobody is holding ────────────────────────────
 
+  # A `ready` row whose server died mid-wake looks identical to an abandoned
+  # one until the new server registers in Horde — whose registry is an async
+  # CRDT, so `server_alive?/1` can briefly miss a live server on another node.
+  # The wake path touches `updated_at` when it flips `suspended → ready`, so a
+  # grace period on `updated_at` makes a just-woken row untouchable for far
+  # longer than registry propagation takes.
+  @abandoned_grace_minutes 15
+
   @doc """
-  Marks `ready` sandboxes past their lifetime bound as terminated.
+  Sweeps `ready` sandboxes with no live server past a lifetime bound: past the
+  idle bound they are parked to `suspended` (the sprite stays, scaled to zero,
+  and the next prompt reattaches — decisions/0017); past the max-lifetime
+  ceiling they are terminated, and pass 2 destroys the sprite this same run.
 
   This is the half of #167 that the ConversationServer cannot do. The server
-  enforces its own idle timeout while it is alive, but a sandbox whose server
+  enforces its own bounds while it is alive, but a sandbox whose server
   died — a crash, a node that left the cluster, a deploy that happened to land
   between the rehydrator's scan and a reattach — has nothing watching it. The
   83-day-old sandbox in production was exactly that: `ready`, no server, alive
   since 2026-05-10.
+
+  `suspended` rows deliberately match no pass: that is the durable resting
+  state, aged out by nothing (decisions/0017).
 
   Activity is read from the conversation's most recent turn rather than from
   `sandboxes.updated_at` or `conversations.updated_at`, both of which get
   touched by bookkeeping the user had nothing to do with — the rehydrator moves
   `conversations.updated_at` on every boot, which would make an abandoned
   conversation look freshly active after each deploy.
+
+  Returns `{parked, expired}`.
   """
-  def expire_abandoned_sandboxes do
+  def sweep_abandoned_sandboxes do
     idle = Lifecycle.idle_timeout_seconds()
     max_lifetime = Lifecycle.max_lifetime_seconds()
 
     if is_nil(idle) and is_nil(max_lifetime) do
-      0
+      {0, 0}
     else
       now = DateTime.utc_now()
+      grace_cutoff = DateTime.add(now, -@abandoned_grace_minutes * 60, :second)
 
-      Sandbox
-      |> where([s], s.status == "ready")
-      |> Repo.all()
-      |> Repo.preload(:conversations)
-      |> Enum.reject(&server_alive?/1)
-      |> Enum.filter(&expired?(&1, now))
-      |> Enum.map(&expire/1)
-      |> length()
+      verdicts =
+        Sandbox
+        |> where([s], s.status == "ready" and s.updated_at < ^grace_cutoff)
+        |> Repo.all()
+        |> Repo.preload(:conversations)
+        |> Enum.reject(&server_alive?/1)
+        |> Enum.map(&{&1, check_bounds(&1, now)})
+
+      parked = for {sandbox, {:expired, :idle}} <- verdicts, do: park(sandbox)
+      expired = for {sandbox, {:expired, :max_lifetime}} <- verdicts, do: expire(sandbox)
+
+      {length(parked), length(expired)}
     end
   end
 
-  defp expired?(sandbox, now) do
-    Lifecycle.check(sandbox.inserted_at, last_activity_at(sandbox), false, now) != :ok
+  # Same clock as ConversationServer.sandbox_clock_start/1: the max-lifetime
+  # ceiling measures a continuous run, restarting on a wake from `suspended`.
+  defp check_bounds(sandbox, now) do
+    started_at = sandbox.last_resumed_at || sandbox.inserted_at
+    Lifecycle.check(started_at, last_activity_at(sandbox), false, now)
   end
 
   # Newest turn across the sandbox's conversations, falling back to when the
@@ -216,6 +246,22 @@ defmodule Fountain.Workers.SandboxReaper do
     latest || inserted_at
   end
 
+  # Idle with no server: the server that would have suspended it is gone, so
+  # park it here. Reversible bookkeeping — the sprite stays, and the next
+  # prompt wakes it through the ordinary reattach path.
+  defp park(sandbox) do
+    {:ok, _} = Conversations.update_sandbox(sandbox, %{status: "suspended"})
+
+    Logger.info(
+      "reaper: parked idle sandbox #{sandbox.id} (#{sandbox.sprite_name}) — " <>
+        "ready with no live server past the idle bound"
+    )
+
+    record_reap(sandbox, "sandbox.suspended", %{"reason" => "idle with no live server"})
+
+    sandbox
+  end
+
   defp expire(sandbox) do
     {:ok, _} =
       Conversations.update_sandbox(sandbox, %{
@@ -225,13 +271,14 @@ defmodule Fountain.Workers.SandboxReaper do
 
     Logger.info(
       "reaper: expired abandoned sandbox #{sandbox.id} (#{sandbox.sprite_name}) — " <>
-        "ready with no live server past its lifetime bound"
+        "ready with no live server past the max-lifetime ceiling"
     )
 
-    record_reap(sandbox, "sandbox.expired", %{"reason" => "past lifetime bound"})
+    record_reap(sandbox, "sandbox.expired", %{"reason" => "past max lifetime"})
 
     # The conversation is deliberately left alone. It stays resumable, and the
-    # next prompt provisions a fresh sandbox with the same runtime session.
+    # next prompt provisions a fresh sandbox (the runtime session on the
+    # destroyed disk is lost — the price of the ceiling, see decisions/0017).
     # The sprite itself is destroyed by pass 2 on this same run, now that the
     # row is terminal.
     sandbox

@@ -126,6 +126,22 @@ defmodule Fountain.Accounts.DeletionTest do
       assert name == sandbox.sprite_name
     end
 
+    test "suspended sandboxes are destroyed too" do
+      # Suspended is excluded from the quota but its sprite is alive at
+      # sprites.dev — and deletion nilifies user_id, so a sprite missed here
+      # is unfindable afterward, a permanent leak.
+      user = insert_verified_user()
+      sandbox = insert_sandbox(user_id: user.id, status: "suspended")
+
+      test = self()
+      stub(Sprites, :destroy, fn {:handle, name} -> send(test, {:destroyed, name}) && :ok end)
+
+      capture_log(fn -> assert {:ok, %{sprites_destroyed: 1}} = Deletion.delete_user(user) end)
+
+      assert_received {:destroyed, name}
+      assert name == sandbox.sprite_name
+    end
+
     test "already-terminal sandboxes are not touched again" do
       user = insert_verified_user()
       insert_sandbox(user_id: user.id, status: "terminated")

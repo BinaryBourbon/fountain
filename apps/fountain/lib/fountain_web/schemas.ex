@@ -22,7 +22,7 @@ defmodule FountainWeb.Schemas do
         sprite_name: %Schema{type: :string},
         status: %Schema{
           type: :string,
-          enum: ~w(pending starting ready terminated failed)
+          enum: ~w(pending starting ready suspended terminated failed)
         }
       },
       required: [:id, :sprite_name, :status]

@@ -9,12 +9,17 @@ defmodule Fountain.Conversations.Sandbox do
   @primary_key {:id, :binary_id, autogenerate: true}
   @foreign_key_type :binary_id
 
-  @statuses ~w(pending starting ready terminated failed)
+  # `suspended`: the sprite still exists at sprites.dev (scaled to zero on its
+  # own) but no ConversationServer is attached. The durable resting state of an
+  # idle conversation — not counted toward the concurrency quota, woken by the
+  # next prompt via the reattach path. See decisions/0017.
+  @statuses ~w(pending starting ready suspended terminated failed)
 
   schema "sandboxes" do
     field :sprite_name, :string
     field :status, :string, default: "pending"
     field :terminated_at, :utc_datetime
+    field :last_resumed_at, :utc_datetime
     belongs_to :environment, Environment
     belongs_to :user, User
     has_many :conversations, Conversation
@@ -25,7 +30,14 @@ defmodule Fountain.Conversations.Sandbox do
 
   def changeset(sandbox, attrs) do
     sandbox
-    |> cast(attrs, [:sprite_name, :status, :terminated_at, :environment_id, :user_id])
+    |> cast(attrs, [
+      :sprite_name,
+      :status,
+      :terminated_at,
+      :last_resumed_at,
+      :environment_id,
+      :user_id
+    ])
     |> validate_required([:sprite_name, :status, :user_id])
     |> validate_inclusion(:status, @statuses)
   end

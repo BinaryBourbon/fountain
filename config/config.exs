@@ -43,11 +43,12 @@ config :fountain,
   registration_enabled: true,
   registration_allowed_email_domains: []
 
-# Sandbox lifetime bounds. A sandbox used to live until something explicitly
-# terminated it; production had one idle for 83 days. Reclaiming only tears down
-# the sandbox — the conversation stays resumable and the next prompt provisions
-# a fresh one — so the cost of being wrong here is a re-provision, not lost
-# work. Set either to 0 to disable. See Fountain.Conversations.Lifecycle.
+# Sandbox lifetime bounds. Crossing the idle bound SUSPENDS the sandbox — the
+# sprite stays (scaled to zero) and the next prompt resumes the agent with its
+# memory intact, so this bound is free to be aggressive. Crossing the
+# max-lifetime ceiling DESTROYS the sprite, and the agent's session with it
+# (#649) — it exists to bound runaway busy compute. Set either to 0 to
+# disable. See Fountain.Conversations.Lifecycle and decisions/0017.
 config :fountain,
   sandbox_idle_timeout_minutes: 60,
   sandbox_max_lifetime_hours: 24

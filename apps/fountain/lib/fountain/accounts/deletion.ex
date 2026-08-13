@@ -63,7 +63,10 @@ defmodule Fountain.Accounts.Deletion do
   alias Fountain.Conversations.{ConversationServer, Sandbox}
   alias Fountain.{Audit, Billing, Conversations, Repo}
 
-  @non_terminal ~w(pending starting ready)
+  # Includes `suspended`: parked sprites are excluded from the concurrency
+  # quota but still exist at sprites.dev, and deletion nilifies user_id — a
+  # sprite missed here is unfindable afterward, a permanent leak.
+  @non_terminal ~w(pending starting ready suspended)
 
   @doc """
   Delete `user` and everything belonging to them.

@@ -120,14 +120,12 @@ spec:
             # unverified-account pruner (#258).
             - name: UNVERIFIED_PRUNE_EXEMPT
               value: jhgaylor
-            # Incident conversations (estate-medic) wait on a human PR merge
-            # mid-runbook; the stock 60-minute idle reclaim erases the
-            # sandbox — and with it the agent's working memory — while the
-            # human is still reviewing. Four hours covers a slow review
-            # without giving up reclaim entirely. Global knob: fountain has
-            # no per-environment lifetime yet.
-            - name: SANDBOX_IDLE_TIMEOUT_MINUTES
-              value: "240"
+            # SANDBOX_IDLE_TIMEOUT_MINUTES is back at the stock 60m default.
+            # The 240m override (#664) existed because idle reclaim used to
+            # destroy the sandbox — and the agent's working memory — while a
+            # human-gated incident (estate-medic) waited on a PR review.
+            # Since decisions/0017 an idle sandbox is suspended, not
+            # destroyed, and waking it restores the agent intact.
             # TRUSTED_PROXIES is deliberately NOT set. Public traffic arrives
             # via the Cloudflare Tunnel (home-cloud k8s/cloudflared/), so the
             # X-Forwarded-For chain is "client, <cloudflared pod>" — every

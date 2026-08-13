@@ -55,6 +55,34 @@ defmodule Fountain.UsageMeteringTest do
 
       assert length(events_for(user.id, "sandbox_provisioned")) == 1
     end
+
+    test "is not re-emitted by a suspend/wake cycle (0017)" do
+      # Waking a suspended sandbox reattaches to a sprite whose provision was
+      # already recorded; a second event would double-count it.
+      user = insert_verified_user()
+      sandbox = insert_sandbox(user_id: user.id, status: "pending")
+
+      {:ok, ready} = Conversations.update_sandbox(sandbox, %{status: "ready"})
+      {:ok, parked} = Conversations.update_sandbox(ready, %{status: "suspended"})
+      {:ok, _} = Conversations.update_sandbox(parked, %{status: "ready"})
+
+      assert length(events_for(user.id, "sandbox_provisioned")) == 1
+    end
+
+    test "terminating from suspended is not a failed provision" do
+      # `suspended` had to pass through `ready` to get parked — account
+      # deletion or an admin reap of a parked sandbox must not count as a
+      # provisioning failure.
+      user = insert_verified_user()
+      sandbox = insert_sandbox(user_id: user.id, status: "pending")
+
+      {:ok, ready} = Conversations.update_sandbox(sandbox, %{status: "ready"})
+      {:ok, parked} = Conversations.update_sandbox(ready, %{status: "suspended"})
+      {:ok, _} = Conversations.update_sandbox(parked, %{status: "terminated"})
+
+      assert events_for(user.id, "sandbox_provision_failed") == []
+      assert [_] = events_for(user.id, "sandbox_terminated")
+    end
   end
 
   describe "sandbox_terminated" do

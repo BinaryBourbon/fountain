@@ -121,7 +121,13 @@ defmodule Fountain.Workers.SandboxReaperTest do
 
     defp age_rows(sandbox, conv, minutes) do
       ts = minutes_ago(minutes)
-      Repo.update_all(from(s in Sandbox, where: s.id == ^sandbox.id), set: [inserted_at: ts])
+
+      # updated_at ages too: the sweep's grace window keys on it, and a row
+      # this old that was genuinely abandoned has not been touched either.
+      Repo.update_all(
+        from(s in Sandbox, where: s.id == ^sandbox.id),
+        set: [inserted_at: ts, updated_at: ts]
+      )
 
       if conv do
         Repo.update_all(
@@ -133,9 +139,12 @@ defmodule Fountain.Workers.SandboxReaperTest do
       Repo.reload(sandbox)
     end
 
-    test "a ready sandbox with no server and no recent turn is expired" do
+    test "past the ceiling with no server, a ready sandbox is expired" do
       # The 83-day production sandbox. Its ConversationServer is long gone, so
-      # nothing was watching it — the server-side idle timeout cannot help.
+      # nothing was watching it. Both bounds are crossed at that age and the
+      # ceiling wins: an unattended row this old only exists if the reaper
+      # itself was down past the idle window that would have parked it, and
+      # the ceiling is the backstop that still bounds it.
       user = insert_verified_user()
       sandbox = insert_sandbox(user_id: user.id, status: "ready")
       conv = insert_conversation(user_id: user.id, sandbox: sandbox, status: "idle")
@@ -143,7 +152,7 @@ defmodule Fountain.Workers.SandboxReaperTest do
       sandbox = age_rows(sandbox, conv, 60 * 24 * 83)
 
       with_bounds([sandbox_idle_timeout_minutes: 60, sandbox_max_lifetime_hours: 24], fn ->
-        capture_log(fn -> assert 1 = SandboxReaper.expire_abandoned_sandboxes() end)
+        capture_log(fn -> assert {0, 1} = SandboxReaper.sweep_abandoned_sandboxes() end)
       end)
 
       assert Repo.reload(sandbox).status == "terminated"
@@ -155,6 +164,75 @@ defmodule Fountain.Workers.SandboxReaperTest do
       refute Repo.reload(conv).status in ~w(terminated failed completed)
     end
 
+    test "past the idle bound but under the ceiling, a ready sandbox is parked" do
+      # The common case after a crash or deploy gap: the server that would
+      # have suspended it is gone. Parking is the reaper doing the server's
+      # idle-suspend on its behalf — the sprite stays (decisions/0017).
+      user = insert_verified_user()
+      sandbox = insert_sandbox(user_id: user.id, status: "ready")
+      conv = insert_conversation(user_id: user.id, sandbox: sandbox, status: "idle")
+      insert_turn(conv, %{status: "completed"})
+      sandbox = age_rows(sandbox, conv, 60 * 5)
+
+      capture_destroys()
+
+      with_bounds([sandbox_idle_timeout_minutes: 60, sandbox_max_lifetime_hours: 24], fn ->
+        capture_log(fn -> assert {1, 0} = SandboxReaper.sweep_abandoned_sandboxes() end)
+      end)
+
+      reloaded = Repo.reload(sandbox)
+      assert reloaded.status == "suspended"
+      refute reloaded.terminated_at
+      assert destroyed_names() == []
+      assert Repo.reload(conv).status == "idle"
+    end
+
+    test "a suspended sandbox matches no pass, however old" do
+      # The durable resting state: never released, never expired, never
+      # destroyed — its sprite is the agent's memory (decisions/0017).
+      user = insert_verified_user()
+      sandbox = insert_sandbox(user_id: user.id, status: "suspended")
+      conv = insert_conversation(user_id: user.id, sandbox: sandbox, status: "idle")
+      insert_turn(conv, %{status: "completed"})
+      sandbox = age_rows(sandbox, conv, 60 * 24 * 83)
+
+      stub_sprites([sandbox.sprite_name])
+      capture_destroys()
+
+      with_bounds([sandbox_idle_timeout_minutes: 60, sandbox_max_lifetime_hours: 24], fn ->
+        capture_log(fn -> assert :ok = perform_job(SandboxReaper, %{}) end)
+      end)
+
+      assert Repo.reload(sandbox).status == "suspended"
+      assert destroyed_names() == []
+    end
+
+    test "a recently touched ready row is inside the grace window" do
+      # The wake path flips suspended → ready (touching updated_at) before the
+      # new server registers in Horde, whose registry propagates async — so a
+      # mid-wake row looks server-less. The grace window keeps the reaper from
+      # parking it back out from under the reattach.
+      user = insert_verified_user()
+      sandbox = insert_sandbox(user_id: user.id, status: "ready")
+      conv = insert_conversation(user_id: user.id, sandbox: sandbox, status: "idle")
+      insert_turn(conv, %{status: "completed"})
+
+      # Old activity and an old creation date, but updated_at is fresh.
+      ts = minutes_ago(60 * 5)
+      Repo.update_all(from(s in Sandbox, where: s.id == ^sandbox.id), set: [inserted_at: ts])
+
+      Repo.update_all(
+        from(t in Fountain.Conversations.Turn, where: t.conversation_id == ^conv.id),
+        set: [inserted_at: ts]
+      )
+
+      with_bounds([sandbox_idle_timeout_minutes: 60, sandbox_max_lifetime_hours: 24], fn ->
+        assert {0, 0} = SandboxReaper.sweep_abandoned_sandboxes()
+      end)
+
+      assert Repo.reload(sandbox).status == "ready"
+    end
+
     test "recent turn activity keeps a sandbox alive" do
       user = insert_verified_user()
       sandbox = insert_sandbox(user_id: user.id, status: "ready")
@@ -162,7 +240,7 @@ defmodule Fountain.Workers.SandboxReaperTest do
       insert_turn(conv, %{status: "completed"})
 
       with_bounds([sandbox_idle_timeout_minutes: 60, sandbox_max_lifetime_hours: 24], fn ->
-        assert 0 = SandboxReaper.expire_abandoned_sandboxes()
+        assert {0, 0} = SandboxReaper.sweep_abandoned_sandboxes()
       end)
 
       assert Repo.reload(sandbox).status == "ready"
@@ -179,7 +257,7 @@ defmodule Fountain.Workers.SandboxReaperTest do
       end)
 
       with_bounds([sandbox_idle_timeout_minutes: 60, sandbox_max_lifetime_hours: 24], fn ->
-        assert 0 = SandboxReaper.expire_abandoned_sandboxes()
+        assert {0, 0} = SandboxReaper.sweep_abandoned_sandboxes()
       end)
 
       assert Repo.reload(sandbox).status == "ready"
@@ -192,7 +270,7 @@ defmodule Fountain.Workers.SandboxReaperTest do
       age_rows(sandbox, conv, 60 * 24 * 83)
 
       with_bounds([sandbox_idle_timeout_minutes: 0, sandbox_max_lifetime_hours: 0], fn ->
-        assert 0 = SandboxReaper.expire_abandoned_sandboxes()
+        assert {0, 0} = SandboxReaper.sweep_abandoned_sandboxes()
       end)
 
       assert Repo.reload(sandbox).status == "ready"
@@ -200,17 +278,18 @@ defmodule Fountain.Workers.SandboxReaperTest do
 
     test "a sandbox that never took a turn is dated from its own creation" do
       # Otherwise a sandbox with no turns has no activity timestamp at all and
-      # would either never expire or expire immediately.
+      # would either never expire or expire immediately. Five hours old crosses
+      # the idle bound but not the ceiling, so the verdict is a park.
       user = insert_verified_user()
       sandbox = insert_sandbox(user_id: user.id, status: "ready")
       conv = insert_conversation(user_id: user.id, sandbox: sandbox)
       sandbox = age_rows(sandbox, conv, 60 * 5)
 
       with_bounds([sandbox_idle_timeout_minutes: 60, sandbox_max_lifetime_hours: 24], fn ->
-        capture_log(fn -> assert 1 = SandboxReaper.expire_abandoned_sandboxes() end)
+        capture_log(fn -> assert {1, 0} = SandboxReaper.sweep_abandoned_sandboxes() end)
       end)
 
-      assert Repo.reload(sandbox).status == "terminated"
+      assert Repo.reload(sandbox).status == "suspended"
     end
 
     test "expiring a sandbox makes its sprite eligible for destruction the same run" do

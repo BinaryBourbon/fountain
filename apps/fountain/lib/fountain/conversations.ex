@@ -105,10 +105,11 @@ defmodule Fountain.Conversations do
 
   A conversation with a live `ConversationServer` is terminated through the
   server, which destroys the sprite and ends the conversation — that is what
-  stopping a runaway agent means. A sandbox with no live server just has its
-  row marked terminated: the conversation stays resumable (next prompt gets a
-  fresh sandbox, same session) and the reaper destroys the sprite on its next
-  pass, the same split `SandboxReaper.expire_abandoned_sandboxes/0` uses.
+  stopping a runaway agent means. A sandbox with no live server (including a
+  `suspended` one) just has its row marked terminated: the conversation stays
+  resumable (next prompt gets a fresh sandbox, with the agent's memory lost —
+  decisions/0017) and the reaper destroys the sprite on its next pass, the
+  same split `SandboxReaper.sweep_abandoned_sandboxes/0` uses.
   """
   def _unsafe_reap_sandbox(sandbox_id) do
     alias Fountain.Conversations.ConversationServer
@@ -152,8 +153,11 @@ defmodule Fountain.Conversations do
   sweeps stragglers. Returns the number of sandboxes reaped.
   """
   def _unsafe_reap_all_for_user(user_id) when is_binary(user_id) do
+    # Deliberately NOT Quotas.active_statuses(): `suspended` is excluded from
+    # the concurrency cap (a parked sprite is not compute) but its sprite is
+    # very much alive at sprites.dev, and a suspended tenant must not keep it.
     from(s in Sandbox,
-      where: s.user_id == ^user_id and s.status in ^Fountain.Quotas.active_statuses(),
+      where: s.user_id == ^user_id and s.status in ~w(pending starting ready suspended),
       select: s.id
     )
     |> Repo.all()
@@ -187,8 +191,11 @@ defmodule Fountain.Conversations do
   @billable_terminal ~w(terminated failed)
 
   # Transitions only: update_sandbox/2 is called repeatedly with the same status
-  # in places, and double-counting a sandbox would overstate a bill.
-  defp record_sandbox_usage(was, %Sandbox{status: "ready"} = sandbox) when was != "ready" do
+  # in places, and double-counting a sandbox would overstate a bill. Provision
+  # transitions only — a `suspended → ready` wake reattaches to a sprite whose
+  # provision was already recorded, so re-emitting would double-count it.
+  defp record_sandbox_usage(was, %Sandbox{status: "ready"} = sandbox)
+       when was in ["pending", "starting"] do
     Fountain.Billing.record_usage(
       sandbox.user_id,
       "sandbox_provisioned",
@@ -205,8 +212,9 @@ defmodule Fountain.Conversations do
     # duration — so the conversation count and the sandbox minutes on the
     # billing page would diverge for exactly the accounts where provisioning
     # is failing. Record the attempt under its own event type so the two
-    # sides can be reconciled.
-    if was != "ready" do
+    # sides can be reconciled. `suspended` had to pass through `ready` to get
+    # parked, so it is a completed provision, not a failed one.
+    if was in ["pending", "starting"] do
       Fountain.Billing.record_usage(
         sandbox.user_id,
         "sandbox_provision_failed",
@@ -412,6 +420,11 @@ defmodule Fountain.Conversations do
   Conversations whose `ConversationServer` would have been running at the
   time of a clean BEAM stop: status `idle` or `running`, with a fully-
   provisioned (`ready`) sandbox.
+
+  `suspended` is deliberately excluded: a parked conversation has no server
+  by design and wakes on the next prompt, not at boot — rehydrating every
+  parked conversation would start a server (and re-arm an idle clock) for
+  each one on every deploy.
   """
   def _unsafe_list_resumable_conversations do
     Repo.all(
@@ -1128,17 +1141,22 @@ defmodule Fountain.Conversations do
         {:reuse, sandbox_id} ->
           # Reuse provisions nothing, so the fresh-path gates below never ran
           # here — a canceled or suspended user could restart a server against
-          # a live sprite and keep prompting (#313). Same checks, minus the
-          # quota (reusing adds no concurrency). The per-turn gate in
-          # ConversationServer is the backstop; this one makes the refusal
-          # synchronous at the API door.
+          # a live sprite and keep prompting (#313). Same checks. Reusing a
+          # `ready` sandbox adds no concurrency, so no quota; waking a
+          # `suspended` one re-adds compute, so wake_suspended_sandbox re-runs
+          # the quota gate. The per-turn gate in ConversationServer is the
+          # backstop; this one makes the refusal synchronous at the API door.
           with :ok <- Fountain.Accounts.check_not_suspended(conv.user_id),
-               :ok <- Fountain.Billing.check_active(conv.user_id) do
+               :ok <- Fountain.Billing.check_active(conv.user_id),
+               {:ok, _} <- wake_suspended_sandbox(conv.user_id, sandbox_id) do
             start_conversation_server(conv, sandbox_id, runtime_module, initial_prompt)
           end
 
         :create_new ->
           create_fresh_sandbox_and_start(conv, agent, runtime_module, initial_prompt)
+
+        {:error, _} = err ->
+          err
       end
     else
       nil -> {:error, :not_found}
@@ -1146,23 +1164,70 @@ defmodule Fountain.Conversations do
     end
   end
 
-  # Probe the existing sandbox: if it's `ready` and sprites.dev confirms
-  # the sprite still exists, we can reattach without provisioning a new
-  # one. Otherwise, fall through to creating a fresh sandbox.
+  # Probe the existing sandbox: if it's `ready` or `suspended` and sprites.dev
+  # confirms the sprite still exists, we can reattach without provisioning a
+  # new one. Otherwise, fall through to creating a fresh sandbox.
   defp maybe_reuse_sandbox(%Conversation{sandbox_id: nil}), do: :create_new
 
   defp maybe_reuse_sandbox(%Conversation{sandbox_id: sandbox_id}) do
     case _unsafe_get_sandbox(sandbox_id) do
-      %{status: "ready", sprite_name: name} when is_binary(name) ->
+      %{status: status, sprite_name: name}
+      when status in ["ready", "suspended"] and is_binary(name) ->
         client = Fountain.SpritesClient.get!()
 
         case Sprites.get_sprite(client, name) do
-          {:ok, _info} -> {:reuse, sandbox_id}
-          _ -> :create_new
+          {:ok, _info} ->
+            {:reuse, sandbox_id}
+
+          {:error, {:not_found, _}} ->
+            :create_new
+
+          {:error, reason} when status == "suspended" ->
+            # A transient probe failure must not cost the parked disk: falling
+            # to :create_new retires this row, and the reaper then destroys the
+            # still-live sprite — with the agent's memory on it. Only a
+            # definitive not-found gives up the suspended sandbox; anything
+            # else fails the wake retryably.
+            Logger.warning(
+              "sprite probe failed for suspended sandbox #{sandbox_id}: #{inspect(reason)}"
+            )
+
+            {:error, :sprite_probe_failed}
+
+          _ ->
+            :create_new
         end
 
       _ ->
         :create_new
+    end
+  end
+
+  # Waking a suspended sandbox turns a parked sprite back into compute, so it
+  # re-runs the quota gate — under the same advisory lock as creation, with the
+  # row re-read inside. Two concurrent wakes both probe `suspended`; the loser
+  # re-reads the winner's `ready` flip and must not double-stamp the clock.
+  # `exclude: sandbox_id` makes the check identical for both ("does the user
+  # have capacity besides this sandbox"), so the loser is never spuriously
+  # refused at the cap for a wake that added no concurrency.
+  defp wake_suspended_sandbox(user_id, sandbox_id) do
+    case _unsafe_get_sandbox(sandbox_id) do
+      %Sandbox{status: "suspended"} ->
+        Fountain.Quotas.with_sandbox_reservation(user_id, [exclude: sandbox_id], fn ->
+          case _unsafe_get_sandbox(sandbox_id) do
+            %Sandbox{status: "suspended"} = sandbox ->
+              update_sandbox(sandbox, %{
+                status: "ready",
+                last_resumed_at: DateTime.utc_now() |> DateTime.truncate(:second)
+              })
+
+            sandbox ->
+              {:ok, sandbox}
+          end
+        end)
+
+      sandbox ->
+        {:ok, sandbox}
     end
   end
 

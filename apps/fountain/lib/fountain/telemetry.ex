@@ -131,6 +131,7 @@ defmodule Fountain.Telemetry do
       @prefix ++ [:turn, :first_output],
       @prefix ++ [:turn, :completed],
       @prefix ++ [:sandbox, :reclaimed],
+      @prefix ++ [:sandbox, :suspended],
       @prefix ++ [:reaper, :run],
       @prefix ++ [:reaper, :untracked],
       @prefix ++ [:usage, :dropped]

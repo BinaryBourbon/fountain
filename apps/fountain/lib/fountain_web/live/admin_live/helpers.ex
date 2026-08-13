@@ -15,6 +15,7 @@ defmodule FountainWeb.AdminLive.Helpers do
 
   def sandbox_status_color("running"), do: "bg-blue-100 text-blue-800 border-blue-200"
   def sandbox_status_color("ready"), do: "bg-green-100 text-green-800 border-green-200"
+  def sandbox_status_color("suspended"), do: "bg-sky-100 text-sky-800 border-sky-200"
   def sandbox_status_color("failed"), do: "bg-red-100 text-red-700 border-red-200"
   def sandbox_status_color(_), do: "bg-zinc-100 text-zinc-500 border-zinc-200"
 

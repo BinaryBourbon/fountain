@@ -238,12 +238,21 @@ defmodule FountainWeb.Telemetry do
       # ── Lifecycle sweeps ──────────────────────────────────────────────────
       counter("fountain.sandbox.reclaimed.count",
         event_name: [:fountain, :sandbox, :reclaimed],
-        description: "Sandboxes reclaimed by the lifecycle bounds"
+        description: "Sandboxes destroyed by the max-lifetime ceiling"
+      ),
+      counter("fountain.sandbox.suspended.count",
+        event_name: [:fountain, :sandbox, :suspended],
+        description: "Sandboxes parked by the idle bound (sprite kept, decisions/0017)"
       ),
       sum("fountain.reaper.run.released",
         event_name: [:fountain, :reaper, :run],
         measurement: :released,
         description: "Sprites released by SandboxReaper runs"
+      ),
+      sum("fountain.reaper.run.parked",
+        event_name: [:fountain, :reaper, :run],
+        measurement: :parked,
+        description: "Idle server-less sandboxes parked to suspended by SandboxReaper runs"
       ),
       sum("fountain.reaper.run.expired",
         event_name: [:fountain, :reaper, :run],
