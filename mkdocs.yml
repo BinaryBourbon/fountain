@@ -64,6 +64,7 @@ nav:
       - The Sprites contract: integrations/sprites-contract.md
       - E2B: integrations/e2b.md
       - Daytona: integrations/daytona.md
+      - Adding a provider: integrations/adding-a-sandbox-provider.md
       - GitHub OAuth: integrations/github-oauth.md
       - Stripe: integrations/stripe.md
       - Sentry: integrations/sentry.md
