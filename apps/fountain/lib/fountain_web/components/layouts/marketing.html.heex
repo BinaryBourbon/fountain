@@ -7,6 +7,12 @@
         <span class="font-semibold text-sm text-[var(--color-text-primary)]">Fountain</span>
       </a>
       <nav class="flex items-center gap-3">
+        <a
+          href="/docs"
+          class="text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] transition-colors px-3 py-1.5 rounded-md hover:bg-[var(--color-bg-2)]"
+        >
+          Docs
+        </a>
         <%= if @current_user do %>
           <a
             href={~p"/conversations"}
@@ -44,6 +50,9 @@
         © 2026 Fountain. Managed agent infrastructure for teams who'd rather build than configure.
       </span>
       <div class="flex items-center gap-4">
+        <a href="/docs" class="hover:text-[var(--color-text-secondary)] transition-colors">
+          Docs
+        </a>
         <%= if Fountain.Legal.published?() do %>
           <a href={~p"/terms"} class="hover:text-[var(--color-text-secondary)] transition-colors">
             Terms
