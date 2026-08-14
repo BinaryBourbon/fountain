@@ -17,6 +17,14 @@ defmodule Fountain.Conversations.CheckpointTest do
 
   setup :set_mimic_global
 
+  # Full-stack: Provisioning -> facade -> real Sprites adapter -> the SDK
+  # stubs below, so these fixtures keep pinning the shapes the library
+  # really returns.
+  defp handle(name \\ "s") do
+    Mimic.stub(Fountain.SpritesClient, :get!, fn -> %Sprites.Client{token: "test"} end)
+    Fountain.Sandbox.Sprites.build_handle(name)
+  end
+
   # Verbatim from a live sprite (2026-08-10). The id appears only inside `data`.
   defp create_stream do
     [
@@ -57,7 +65,7 @@ defmodule Fountain.Conversations.CheckpointTest do
         checkpoint("v1", "aod env proj", ~U[2026-08-10 19:42:00Z])
       ])
 
-      assert {:ok, "v1"} = Provisioning.create_checkpoint(%{name: "s"}, env)
+      assert {:ok, "v1"} = Provisioning.create_checkpoint(handle(), env)
       assert Fountain.Environments._unsafe_get_environment!(env.id).checkpoint_id == "v1"
     end
 
@@ -72,7 +80,7 @@ defmodule Fountain.Conversations.CheckpointTest do
         checkpoint("v3", "aod env proj", ~U[2026-08-10 19:00:00Z])
       ])
 
-      assert {:ok, "v3"} = Provisioning.create_checkpoint(%{name: "s"}, env)
+      assert {:ok, "v3"} = Provisioning.create_checkpoint(handle(), env)
     end
 
     test "prefers this environment's own checkpoint over a newer stranger" do
@@ -83,7 +91,7 @@ defmodule Fountain.Conversations.CheckpointTest do
         checkpoint("v2", "aod env proj", ~U[2026-08-10 19:00:00Z])
       ])
 
-      assert {:ok, "v2"} = Provisioning.create_checkpoint(%{name: "s"}, env)
+      assert {:ok, "v2"} = Provisioning.create_checkpoint(handle(), env)
     end
 
     test "falls back to the newest saved checkpoint when no comment matches" do
@@ -94,14 +102,16 @@ defmodule Fountain.Conversations.CheckpointTest do
         checkpoint("v2", nil, ~U[2026-08-10 20:00:00Z])
       ])
 
-      assert {:ok, "v2"} = Provisioning.create_checkpoint(%{name: "s"}, env)
+      assert {:ok, "v2"} = Provisioning.create_checkpoint(handle(), env)
     end
 
     test "reports no_checkpoint_id rather than writing a bogus one" do
       env = env_with_name("proj")
       stub_sprites([checkpoint("Current", nil, ~U[2026-08-10 20:00:00Z])])
 
-      assert {:error, :no_checkpoint_id} = Provisioning.create_checkpoint(%{name: "s"}, env)
+      assert {:error, {:provider, :sprites, :no_checkpoint_id}} =
+               Provisioning.create_checkpoint(handle(), env)
+
       assert is_nil(Fountain.Environments._unsafe_get_environment!(env.id).checkpoint_id)
     end
 
@@ -120,7 +130,7 @@ defmodule Fountain.Conversations.CheckpointTest do
         {:ok, [checkpoint("v1", "aod env proj", ~U[2026-08-10 19:42:00Z])]}
       end)
 
-      assert {:ok, "v1"} = Provisioning.create_checkpoint(%{name: "s"}, env)
+      assert {:ok, "v1"} = Provisioning.create_checkpoint(handle(), env)
 
       assert_received :drained
       assert_received :listed
@@ -131,11 +141,12 @@ defmodule Fountain.Conversations.CheckpointTest do
       Mimic.stub(Sprites, :create_checkpoint, fn _s, _o -> {:ok, create_stream()} end)
       Mimic.stub(Sprites, :list_checkpoints, fn _s -> {:error, :nope} end)
 
-      assert {:error, :no_checkpoint_id} = Provisioning.create_checkpoint(%{name: "s"}, env)
+      assert {:error, {:provider, :sprites, :no_checkpoint_id}} =
+               Provisioning.create_checkpoint(handle(), env)
     end
 
     test "no environment is not an error worth retrying" do
-      assert {:error, :no_env} = Provisioning.create_checkpoint(%{name: "s"}, nil)
+      assert {:error, :no_env} = Provisioning.create_checkpoint(handle(), nil)
     end
   end
 
@@ -162,7 +173,7 @@ defmodule Fountain.Conversations.CheckpointTest do
          ]}
       end)
 
-      assert {:error, {:restore_failed, _}} = Provisioning.restore_checkpoint(%{name: "s"}, "v1")
+      assert {:error, {:restore_failed, _}} = Provisioning.restore_checkpoint(handle(), "v1")
     end
 
     test "a clean stream is a success" do
@@ -176,12 +187,12 @@ defmodule Fountain.Conversations.CheckpointTest do
 
       # A bare :ok, not {:ok, _} — Telemetry.span/3 unwraps the pair. The
       # caller used to match {:ok, _} and would have raised on success (#654).
-      assert :ok = Provisioning.restore_checkpoint(%{name: "s"}, "v1")
+      assert :ok = Provisioning.restore_checkpoint(handle(), "v1")
     end
 
     test "a missing id short-circuits" do
-      assert {:error, :no_checkpoint} = Provisioning.restore_checkpoint(%{name: "s"}, nil)
-      assert {:error, :no_checkpoint} = Provisioning.restore_checkpoint(%{name: "s"}, "")
+      assert {:error, :no_checkpoint} = Provisioning.restore_checkpoint(handle(), nil)
+      assert {:error, :no_checkpoint} = Provisioning.restore_checkpoint(handle(), "")
     end
   end
 end

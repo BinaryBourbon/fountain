@@ -585,10 +585,10 @@ defmodule Fountain.Conversations.ConversationServer do
         sprite_env = build_sprite_env(state, agent, env, secrets)
 
         write_runtime_config(handle, state.runtime_module, agent)
-        Fountain.Conversations.Provisioning.write_env_file(sprite, sprite_env)
+        Fountain.Conversations.Provisioning.write_env_file(handle, sprite_env)
 
         with :ok <-
-               run_provisioning_pipeline(sprite, env, sprite_env, secrets, state.conversation_id),
+               run_provisioning_pipeline(handle, env, sprite_env, secrets, state.conversation_id),
              :ok <-
                prepare_runtime_sprite(handle, runtime, state.runtime_module, agent, sprite_env) do
           {:ok, _} = Conversations.update_sandbox(sandbox, %{status: "ready"})
@@ -597,7 +597,7 @@ defmodule Fountain.Conversations.ConversationServer do
           # Best-effort: snapshot the fully-provisioned state so subsequent
           # conversations on this env can warm-start from it. Async so it
           # doesn't block the user's first turn.
-          maybe_create_checkpoint_async(sprite, env)
+          maybe_create_checkpoint_async(handle, env)
 
           # Dated from the sandbox row, not from now, so the absolute lifetime
           # ceiling survives a restart and a reattach rather than resetting.
@@ -640,38 +640,38 @@ defmodule Fountain.Conversations.ConversationServer do
   # setup_script) — they all ran when the checkpoint was originally
   # taken. If restore fails, clear the checkpoint id and fall through to
   # the full pipeline.
-  defp run_provisioning_pipeline(sprite, env, sprite_env, secrets, conv_id) do
-    case attempt_warm_start(sprite, env, conv_id) do
+  defp run_provisioning_pipeline(handle, env, sprite_env, secrets, conv_id) do
+    case attempt_warm_start(handle, env, conv_id) do
       :warm_started ->
         :ok
 
       :cold ->
         with :ok <-
                Fountain.Conversations.Provisioning.install_packages(
-                 sprite,
+                 handle,
                  env,
                  sprite_env,
                  conv_id
                ),
              :ok <-
-               Fountain.Conversations.Provisioning.apply_network_policy(sprite, env, conv_id),
+               Fountain.Conversations.Provisioning.apply_network_policy(handle, env, conv_id),
              :ok <-
                Fountain.Conversations.Provisioning.clone_repositories(
-                 sprite,
+                 handle,
                  env,
                  secrets,
                  conv_id
                ) do
-          run_setup_script(sprite, env, sprite_env, conv_id)
+          run_setup_script(handle, env, sprite_env, conv_id)
         end
     end
   end
 
-  defp attempt_warm_start(_sprite, nil, _conv_id), do: :cold
-  defp attempt_warm_start(_sprite, %{checkpoint_id: nil}, _conv_id), do: :cold
-  defp attempt_warm_start(_sprite, %{checkpoint_id: ""}, _conv_id), do: :cold
+  defp attempt_warm_start(_handle, nil, _conv_id), do: :cold
+  defp attempt_warm_start(_handle, %{checkpoint_id: nil}, _conv_id), do: :cold
+  defp attempt_warm_start(_handle, %{checkpoint_id: ""}, _conv_id), do: :cold
 
-  defp attempt_warm_start(sprite, %{checkpoint_id: id} = env, conv_id) do
+  defp attempt_warm_start(handle, %{checkpoint_id: id} = env, conv_id) do
     publish_stage(conv_id, "checkpoint_restore", "started", %{checkpoint_id: id})
 
     # `restore_checkpoint/2` returns a bare `:ok` — `Fountain.Telemetry.span/3`
@@ -679,7 +679,7 @@ defmodule Fountain.Conversations.ConversationServer do
     # used to match never occurred and a successful restore raised
     # CaseClauseError. Latent only because #652 kept `checkpoint_id` nil, so
     # this branch was unreachable.
-    case Fountain.Conversations.Provisioning.restore_checkpoint(sprite, id) do
+    case Fountain.Conversations.Provisioning.restore_checkpoint(handle, id) do
       ok when ok == :ok or (is_tuple(ok) and elem(ok, 0) == :ok) ->
         publish_stage(conv_id, "checkpoint_restore", "done", %{checkpoint_id: id})
         :warm_started
@@ -703,17 +703,17 @@ defmodule Fountain.Conversations.ConversationServer do
     end
   end
 
-  defp maybe_create_checkpoint_async(_sprite, nil), do: :ok
+  defp maybe_create_checkpoint_async(_handle, nil), do: :ok
 
-  defp maybe_create_checkpoint_async(_sprite, %{checkpoint_id: id})
+  defp maybe_create_checkpoint_async(_handle, %{checkpoint_id: id})
        when is_binary(id) and id != "",
        do: :ok
 
-  defp maybe_create_checkpoint_async(sprite, %Fountain.Environments.Environment{} = env) do
+  defp maybe_create_checkpoint_async(handle, %Fountain.Environments.Environment{} = env) do
     if checkpoint_creation_enabled?() do
       Task.start(fn ->
         try do
-          Fountain.Conversations.Provisioning.create_checkpoint(sprite, env)
+          Fountain.Conversations.Provisioning.create_checkpoint(handle, env)
         rescue
           # Best-effort: if the env was deleted or the DB is gone (test
           # teardown), don't crash the Task and pollute logs.
@@ -771,7 +771,10 @@ defmodule Fountain.Conversations.ConversationServer do
 
         # Refresh the .env file in case secrets/env_vars were edited
         # between the original provision and this reattach.
-        Fountain.Conversations.Provisioning.write_env_file(sprite, sprite_env)
+        Fountain.Conversations.Provisioning.write_env_file(
+          Fountain.Sandbox.Sprites.from_sdk(sprite),
+          sprite_env
+        )
 
         # Normally the wake path already flipped suspended → ready under the
         # quota reservation; this covers the reaper parking the row mid-wake.
@@ -987,37 +990,41 @@ defmodule Fountain.Conversations.ConversationServer do
     end
   end
 
-  defp run_setup_script(_sprite, nil, _sprite_env, _conv_id), do: :ok
-  defp run_setup_script(_sprite, %{setup_script: ""}, _sprite_env, _conv_id), do: :ok
+  defp run_setup_script(_handle, nil, _sprite_env, _conv_id), do: :ok
+  defp run_setup_script(_handle, %{setup_script: ""}, _sprite_env, _conv_id), do: :ok
 
-  defp run_setup_script(sprite, %{setup_script: script}, sprite_env, conv_id) do
+  defp run_setup_script(handle, %{setup_script: script}, sprite_env, conv_id) do
     Fountain.Telemetry.span(
       [:setup_script],
       %{conv_id: conv_id, script_size: byte_size(script)},
       fn ->
         publish_stage(conv_id, "setup", "started")
 
-        {output, code} =
-          Sprites.cmd(sprite, "bash", ["-lc", script],
-            env: sprite_env,
-            stderr_to_stdout: true,
-            timeout: 120_000
-          )
+        case Fountain.Sandbox.exec(handle, "bash", ["-lc", script],
+               env: sprite_env,
+               stderr_to_stdout: true,
+               timeout: 120_000
+             ) do
+          {:ok, output, code} ->
+            Conversations.log!(%{
+              conversation_id: conv_id,
+              kind: "output",
+              stream: "stdout",
+              stage: "setup",
+              data: output
+            })
 
-        Conversations.log!(%{
-          conversation_id: conv_id,
-          kind: "output",
-          stream: "stdout",
-          stage: "setup",
-          data: output
-        })
+            if code == 0 do
+              publish_stage(conv_id, "setup", "done", %{exit_code: code})
+              {:ok, %{outcome: :ok, exit_code: code}}
+            else
+              publish_stage(conv_id, "setup", "failed", %{exit_code: code})
+              {{:error, {:setup_exit, code}}, %{outcome: :failed, exit_code: code}}
+            end
 
-        if code == 0 do
-          publish_stage(conv_id, "setup", "done", %{exit_code: code})
-          {:ok, %{outcome: :ok, exit_code: code}}
-        else
-          publish_stage(conv_id, "setup", "failed", %{exit_code: code})
-          {{:error, {:setup_exit, code}}, %{outcome: :failed, exit_code: code}}
+          {:error, reason} ->
+            publish_stage(conv_id, "setup", "failed", %{reason: inspect(reason)})
+            {{:error, {:setup_unreachable, reason}}, %{outcome: :failed, reason: inspect(reason)}}
         end
       end
     )

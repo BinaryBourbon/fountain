@@ -1,6 +1,6 @@
 defmodule Fountain.Conversations.Provisioning do
   @moduledoc """
-  Provisioning steps that run inside a freshly-created sprite, before the
+  Provisioning steps that run inside a freshly-created sandbox, before the
   runtime CLI is spawned. Each step publishes its own stage events so the
   UI/SSE clients can show progress.
 
@@ -9,18 +9,23 @@ defmodule Fountain.Conversations.Provisioning do
        installs need network and run before the policy lockdown)
     2. `install_packages/4` (apt/npm — needs unrestricted network; must
        run before the policy lockdown so apt can reach package repos)
-    3. `apply_network_policy/3` (sprite API call — fast)
+    3. `apply_network_policy/3` (sandbox API call — fast)
     4. `clone_repositories/4` (git clone — slow)
     5. user's `setup_script` (whatever they supplied)
     6. write runtime-specific config (e.g. claude `~/.claude.json`)
 
   Each step is a no-op when the corresponding field is empty, so legacy
   environments with bare config (just a name) provision instantly.
+
+  Everything here talks to the sandbox through `Fountain.Sandbox`; nothing
+  provider-shaped (rule structs, checkpoint streams) appears at this level.
   """
 
   alias Fountain.Conversations
   alias Fountain.Environments.Environment
   alias Fountain.Retry
+  alias Fountain.Sandbox
+  alias Fountain.Sandbox.NetworkPolicy
 
   require Logger
 
@@ -31,31 +36,21 @@ defmodule Fountain.Conversations.Provisioning do
   to `/home/sprite/.env` so a `setup_script` that does `source .env`
   picks up the variables. Mirrors the legacy AoD's `env_file.py`.
 
-  The file is `chmod 600` after the write so other sprite users (if any)
-  can't read tokens.
+  Written with mode 600, and `chmod 600` again after the write as defense
+  in depth — other sandbox users (if any) must not be able to read tokens.
   """
-  def write_env_file(_sprite, sprite_env) when sprite_env in [nil, []], do: :ok
+  def write_env_file(_handle, sprite_env) when sprite_env in [nil, []], do: :ok
 
-  def write_env_file(sprite, sprite_env) do
+  def write_env_file(handle, sprite_env) do
     body = render_env_file(sprite_env)
-    fs = Sprites.filesystem(sprite, "/")
 
-    case Retry.with_backoff(fn -> Sprites.Filesystem.write(fs, @env_file, body) end,
+    case Retry.with_backoff(fn -> Sandbox.write_file(handle, @env_file, body, mode: 0o600) end,
            label: "env file write"
          ) do
       :ok ->
-        # Ignore chmod errors — we still wrote the file. Defense in depth,
-        # not a hard requirement. Sprites.cmd raises on failure to start, so
-        # "ignore" needs the rescue, not just dropping a return value.
-        try do
-          Retry.with_backoff(
-            fn -> Sprites.cmd(sprite, "chmod", ["600", @env_file], timeout: 5_000) end,
-            label: "env file chmod"
-          )
-        rescue
-          _ -> :ok
-        end
-
+        # Ignore chmod errors — we still wrote the file (already mode 600).
+        # Defense in depth, not a hard requirement.
+        _ = Sandbox.exec(handle, "chmod", ["600", @env_file], timeout: 5_000)
         :ok
 
       {:error, _} = err ->
@@ -85,44 +80,37 @@ defmodule Fountain.Conversations.Provisioning do
   # ── checkpoint create / restore ───────────────────────────────────────────
 
   @doc """
-  Create a sprites.dev checkpoint of the fully-provisioned sprite. The
-  checkpoint id is persisted onto the environment row so subsequent
-  conversations can warm-start from it instead of redoing
-  packages/repos/setup_script.
+  Create a checkpoint of the fully-provisioned sandbox. The checkpoint id
+  is persisted onto the environment row so subsequent conversations can
+  warm-start from it instead of redoing packages/repos/setup_script.
 
   Best-effort — failures are logged and don't block the conversation.
   Caller typically wraps in `Task.start/1` so the user's first turn
   isn't gated on the checkpoint upload.
-  """
-  def create_checkpoint(_sprite, nil), do: {:error, :no_env}
 
-  def create_checkpoint(sprite, %Environment{} = env) do
+  The provider-specific mechanics (stream draining, id resolution) live in
+  the adapter; `Fountain.Sandbox.create_checkpoint/2` returns only when the
+  checkpoint durably exists, with its id.
+  """
+  def create_checkpoint(_handle, nil), do: {:error, :no_env}
+
+  def create_checkpoint(handle, %Environment{} = env) do
     Fountain.Telemetry.span([:checkpoint, :create], %{env_id: env.id}, fn ->
       # Retried: a duplicate checkpoint from a lost-response retry is a
       # harmless orphan, so the call is idempotent enough.
       case Retry.with_backoff(
-             fn -> Sprites.create_checkpoint(sprite, comment: "aod env #{env.name}") end,
+             fn -> Sandbox.create_checkpoint(handle, comment: "aod env #{env.name}") end,
              label: "checkpoint create"
            ) do
-        {:ok, stream} ->
-          # Drain first: the checkpoint is not on the server until the stream
-          # completes, so listing before this races the upload.
-          Stream.run(stream)
-          checkpoint_id = newest_checkpoint_id(sprite, "aod env #{env.name}")
+        {:ok, checkpoint_id} ->
+          {:ok, _} =
+            Fountain.Environments.update_environment(
+              env,
+              %{"checkpoint_id" => checkpoint_id},
+              actor: "system:provisioning"
+            )
 
-          if is_binary(checkpoint_id) and checkpoint_id != "" do
-            {:ok, _} =
-              Fountain.Environments.update_environment(
-                env,
-                %{"checkpoint_id" => checkpoint_id},
-                actor: "system:provisioning"
-              )
-
-            {{:ok, checkpoint_id}, %{outcome: :ok, checkpoint_id: checkpoint_id}}
-          else
-            Logger.warning("checkpoint create stream finished without a checkpoint_id")
-            {{:error, :no_checkpoint_id}, %{outcome: :no_id}}
-          end
+          {{:ok, checkpoint_id}, %{outcome: :ok, checkpoint_id: checkpoint_id}}
 
         {:error, reason} ->
           Logger.warning("checkpoint create failed for env #{env.name}: #{inspect(reason)}")
@@ -131,94 +119,27 @@ defmodule Fountain.Conversations.Provisioning do
     end)
   end
 
-  # The id comes from `list_checkpoints/1`, not from the creation stream.
-  #
-  # The stream is `%Sprites.StreamMessage{type:, data:, error:}` and the id is
-  # *prose inside `data`* — the whole of it, measured against a live sprite, is
-  # ten `type: "info"` lines including `"  ID: v1"` and a closing
-  # `type: "complete"`. The extractor this replaced pattern-matched maps with
-  # `checkpoint_id`/`id` keys, which that shape never has, so every checkpoint
-  # ever taken resolved to `nil` and `environments.checkpoint_id` was never
-  # written — #652. Restore therefore never ran, and every provision re-did work
-  # a checkpoint existed to skip.
-  #
-  # `list_checkpoints/1` returns typed `%Sprites.Checkpoint{}` structs instead,
-  # so there is nothing to parse. Two traps in it:
-  #
-  #   * the list includes a synthetic `"Current"` entry for the live filesystem,
-  #     which is always the newest thing there and is not a saved checkpoint;
-  #   * `Sprites.Checkpoint` does not implement `Access`, so `c["id"]` raises —
-  #     it has to be `c.id`.
-  defp newest_checkpoint_id(sprite, comment) do
-    case Sprites.list_checkpoints(sprite) do
-      {:ok, checkpoints} when is_list(checkpoints) ->
-        saved = Enum.reject(checkpoints, &(&1.id == "Current"))
-
-        case Enum.filter(saved, &(&1.comment == comment)) do
-          [] -> saved
-          ours -> ours
-        end
-        |> newest()
-
-      other ->
-        Logger.warning("list_checkpoints after create returned #{inspect(other)}")
-        nil
-    end
-  end
-
-  defp newest([]), do: nil
-
-  defp newest(checkpoints) do
-    checkpoints
-    |> Enum.max_by(& &1.create_time, DateTime, fn -> nil end)
-    |> case do
-      nil -> nil
-      checkpoint -> checkpoint.id
-    end
-  end
-
   @doc """
-  Restore a sprite from a saved checkpoint. Drains the stream so the
-  operation is fully complete on return. Returns `:ok` on success or
-  `{:error, reason}` if the checkpoint is gone / restore failed; the
-  caller should clear `env.checkpoint_id` and fall back to fresh
-  provisioning.
+  Restore a sandbox from a saved checkpoint. Fully complete on return.
+  Returns `:ok` on success or `{:error, reason}` if the checkpoint is
+  gone / restore failed; the caller should clear `env.checkpoint_id` and
+  fall back to fresh provisioning.
   """
-  def restore_checkpoint(_sprite, nil), do: {:error, :no_checkpoint}
-  def restore_checkpoint(_sprite, ""), do: {:error, :no_checkpoint}
+  def restore_checkpoint(_handle, nil), do: {:error, :no_checkpoint}
+  def restore_checkpoint(_handle, ""), do: {:error, :no_checkpoint}
 
-  def restore_checkpoint(sprite, checkpoint_id) when is_binary(checkpoint_id) do
+  def restore_checkpoint(handle, checkpoint_id) when is_binary(checkpoint_id) do
     Fountain.Telemetry.span(
       [:checkpoint, :restore],
       %{checkpoint_id: checkpoint_id},
       fn ->
-        case Retry.with_backoff(fn -> Sprites.restore_checkpoint(sprite, checkpoint_id) end,
+        # A reported-failed restore comes back as {:error, {:restore_failed, _}}
+        # (permanent, not retried); only transport-level failures retry.
+        case Retry.with_backoff(fn -> Sandbox.restore_checkpoint(handle, checkpoint_id) end,
                label: "checkpoint restore"
              ) do
-          {:ok, stream} ->
-            try do
-              # A failed restore is an ordinary *element* of the stream, not a
-              # raise and not an {:error, _} from the call — the library hands
-              # back `%Sprites.StreamMessage{type: "error", error: "..."}` and
-              # keeps going. Draining without looking therefore reported every
-              # failure as a success, and `attempt_warm_start/3` treats success
-              # as "the sandbox is already provisioned": it skips packages,
-              # repo clones, the setup script *and the network policy*. A
-              # restore that silently did nothing would hand the tenant an
-              # unprovisioned sandbox with no egress lockdown.
-              case Enum.find(stream, &stream_error?/1) do
-                nil ->
-                  {:ok, %{outcome: :ok}}
-
-                %{error: error} ->
-                  Logger.warning("checkpoint restore reported an error: #{inspect(error)}")
-                  {{:error, {:restore_failed, error}}, %{outcome: :failed}}
-              end
-            rescue
-              e ->
-                Logger.warning("checkpoint restore stream raised: #{inspect(e)}")
-                {{:error, :stream_error}, %{outcome: :stream_error}}
-            end
+          :ok ->
+            {:ok, %{outcome: :ok}}
 
           {:error, reason} ->
             Logger.warning("checkpoint restore failed: #{inspect(reason)}")
@@ -227,10 +148,6 @@ defmodule Fountain.Conversations.Provisioning do
       end
     )
   end
-
-  defp stream_error?(%{type: "error"}), do: true
-  defp stream_error?(%{error: error}) when is_binary(error) and error != "", do: true
-  defp stream_error?(_), do: false
 
   # ── packages ──────────────────────────────────────────────────────────────
 
@@ -243,12 +160,12 @@ defmodule Fountain.Conversations.Provisioning do
       }
 
   Anything else is silently ignored. Returns `:ok` on success, `{:error,
-  {step, exit_code, output}}` on first failure (sprite kept alive so the
+  {step, exit_code, output}}` on first failure (sandbox kept alive so the
   caller can decide whether to destroy).
   """
-  def install_packages(_sprite, nil, _sprite_env, _conv_id), do: :ok
+  def install_packages(_handle, nil, _sprite_env, _conv_id), do: :ok
 
-  def install_packages(sprite, %Environment{} = env, sprite_env, conv_id) do
+  def install_packages(handle, %Environment{} = env, sprite_env, conv_id) do
     case build_package_commands(env.packages || %{}) do
       [] ->
         :ok
@@ -263,26 +180,31 @@ defmodule Fountain.Conversations.Provisioning do
             result =
               Enum.reduce_while(cmds, :ok, fn cmd, _ ->
                 # Retried: apt-get install -y and npm install -g are safe to
-                # re-run. A non-zero exit comes back as {output, code} and is
-                # handled below, not retried — only a failure to reach the
-                # sprite at all (Sprites.cmd raises) is.
-                {output, code} =
-                  Retry.with_backoff(
-                    fn ->
-                      Sprites.cmd(sprite, "bash", ["-lc", cmd],
-                        env: sprite_env,
-                        stderr_to_stdout: true,
-                        timeout: 300_000
-                      )
-                    end,
-                    label: "package install"
-                  )
+                # re-run. A non-zero exit comes back as {:ok, output, code} and
+                # is handled below, not retried — only a failure to reach the
+                # sandbox at all is.
+                Retry.with_backoff(
+                  fn ->
+                    Sandbox.exec(handle, "bash", ["-lc", cmd],
+                      env: sprite_env,
+                      stderr_to_stdout: true,
+                      timeout: 300_000
+                    )
+                  end,
+                  label: "package install"
+                )
+                |> case do
+                  {:ok, output, 0} ->
+                    log_output(conv_id, "packages", output)
+                    {:cont, :ok}
 
-                log_output(conv_id, "packages", output)
+                  {:ok, output, code} ->
+                    log_output(conv_id, "packages", output)
+                    {:halt, {:error, {:packages, code, output}}}
 
-                if code == 0,
-                  do: {:cont, :ok},
-                  else: {:halt, {:error, {:packages, code, output}}}
+                  {:error, reason} ->
+                    {:halt, {:error, {:packages_unreachable, reason}}}
+                end
               end)
 
             case result do
@@ -293,6 +215,10 @@ defmodule Fountain.Conversations.Provisioning do
               {:error, {:packages, code, _}} = err ->
                 publish_stage(conv_id, "packages", "failed", %{exit_code: code})
                 {err, %{outcome: :failed, exit_code: code}}
+
+              {:error, reason} = err ->
+                publish_stage(conv_id, "packages", "failed", %{reason: inspect(reason)})
+                {err, %{outcome: :failed, reason: inspect(reason)}}
             end
           end
         )
@@ -332,31 +258,30 @@ defmodule Fountain.Conversations.Provisioning do
   # ── network policy ────────────────────────────────────────────────────────
 
   @doc """
-  Apply the env's networking config to the sprite. `unrestricted` is a
-  no-op (sprites are open by default). `limited` builds an allowlist from
-  `networking_config.allowed_hosts: [...]`. Sprites treats a policy with no
-  rules as "no enforcement" (allow-all), so an empty/absent allowlist is
-  translated into an explicit deny-all rule rather than a bare `rules: []`
-  — otherwise `limited` with nothing allowed would silently open full
-  egress instead of denying it.
+  Apply the env's networking config to the sandbox. `unrestricted` is a
+  no-op (sandboxes are open by default). `limited` builds an allowlist from
+  `networking_config.allowed_hosts: [...]` and applies it as a default-deny
+  `Fountain.Sandbox.NetworkPolicy` — an empty/absent allowlist therefore
+  denies all egress. Translating that intent into provider mechanics
+  (including Sprites' rules-empty-means-allow-all quirk) is the adapter's
+  job.
   """
-  def apply_network_policy(_sprite, nil, _conv_id), do: :ok
+  def apply_network_policy(_handle, nil, _conv_id), do: :ok
 
-  def apply_network_policy(_sprite, %Environment{networking_type: "unrestricted"}, _conv_id),
+  def apply_network_policy(_handle, %Environment{networking_type: "unrestricted"}, _conv_id),
     do: :ok
 
-  def apply_network_policy(sprite, %Environment{networking_type: "limited"} = env, conv_id) do
+  def apply_network_policy(handle, %Environment{networking_type: "limited"} = env, conv_id) do
     hosts = get_in(env.networking_config, ["allowed_hosts"]) || []
 
     Fountain.Telemetry.span(
       [:network_policy],
       %{conv_id: conv_id, hosts: length(hosts)},
       fn ->
-        rules = network_policy_rules(hosts)
         publish_stage(conv_id, "network", "started", %{type: "limited", hosts: length(hosts)})
 
         case Retry.with_backoff(
-               fn -> Sprites.update_network_policy(sprite, %Sprites.Policy{rules: rules}) end,
+               fn -> Sandbox.apply_network_policy(handle, %NetworkPolicy{allow: hosts}) end,
                label: "network policy"
              ) do
           :ok ->
@@ -371,32 +296,22 @@ defmodule Fountain.Conversations.Provisioning do
     )
   end
 
-  def apply_network_policy(_sprite, _env, _conv_id), do: :ok
-
-  # An empty allowlist must still deny by default. Sending Sprites a bare
-  # `rules: []` is interpreted as "no enforcement" (allow-all) on their
-  # side, so `limited` with nothing allowed would otherwise fail open.
-  # The deny rule stands alone — no `include: "defaults"` — since pulling
-  # in Sprites' own default allowances would defeat the deny-all.
-  defp network_policy_rules([]), do: [%Sprites.Policy.Rule{domain: "*", action: "deny"}]
-
-  defp network_policy_rules(hosts),
-    do: Enum.map(hosts, &%Sprites.Policy.Rule{domain: &1, action: "allow"})
+  def apply_network_policy(_handle, _env, _conv_id), do: :ok
 
   # ── git clone ─────────────────────────────────────────────────────────────
 
   @doc """
-  Clone every repository declared on the env into the sprite at its
+  Clone every repository declared on the env into the sandbox at its
   `mount_path`. HTTPS only, x-access-token auth via the env secret named
   by `secret_key`. Returns `:ok` or `{:error, ...}` on first failure.
   """
-  def clone_repositories(_sprite, nil, _secrets, _conv_id), do: :ok
+  def clone_repositories(_handle, nil, _secrets, _conv_id), do: :ok
 
-  def clone_repositories(_sprite, %Environment{repositories: repos}, _secrets, _conv_id)
+  def clone_repositories(_handle, %Environment{repositories: repos}, _secrets, _conv_id)
       when repos in [nil, []],
       do: :ok
 
-  def clone_repositories(sprite, %Environment{repositories: repos}, secrets, conv_id) do
+  def clone_repositories(handle, %Environment{repositories: repos}, secrets, conv_id) do
     Fountain.Telemetry.span(
       [:clone_repositories],
       %{conv_id: conv_id, count: length(repos)},
@@ -405,7 +320,7 @@ defmodule Fountain.Conversations.Provisioning do
 
         result =
           Enum.reduce_while(repos, :ok, fn repo, _ ->
-            case clone_one(sprite, repo, secrets, conv_id) do
+            case clone_one(handle, repo, secrets, conv_id) do
               :ok -> {:cont, :ok}
               err -> {:halt, err}
             end
@@ -431,9 +346,9 @@ defmodule Fountain.Conversations.Provisioning do
   # case is covered by token auth, and enabling it would first have required
   # establishing that limited networking permits SSH at all. The implementation
   # lives in git history if real demand ever shows up.
-  defp clone_one(sprite, %{"url" => url} = repo, secrets, conv_id) do
+  defp clone_one(handle, %{"url" => url} = repo, secrets, conv_id) do
     if is_binary(url) and String.starts_with?(url, "https://") do
-      clone_https(sprite, repo, secrets, conv_id)
+      clone_https(handle, repo, secrets, conv_id)
     else
       {:error, {:clone_unsupported_url, url}}
     end
@@ -441,7 +356,7 @@ defmodule Fountain.Conversations.Provisioning do
 
   defp clone_one(_, repo, _, _), do: {:error, {:clone_invalid_spec, repo}}
 
-  defp clone_https(sprite, %{"url" => url, "mount_path" => mount} = repo, secrets, conv_id) do
+  defp clone_https(handle, %{"url" => url, "mount_path" => mount} = repo, secrets, conv_id) do
     auth_url = inject_token(url, repo["secret_key"], secrets)
 
     cmd =
@@ -449,15 +364,18 @@ defmodule Fountain.Conversations.Provisioning do
         "mkdir -p #{shell_quote(Path.dirname(mount))} && " <>
         "git clone --depth 50 #{branch_arg(repo)}#{shell_quote(auth_url)} #{shell_quote(mount)}"
 
-    {output, code} =
-      Sprites.cmd(sprite, "bash", ["-lc", cmd],
-        stderr_to_stdout: true,
-        timeout: 600_000
-      )
+    # Not retried: a clone into a half-written directory is not idempotent.
+    case Sandbox.exec(handle, "bash", ["-lc", cmd],
+           stderr_to_stdout: true,
+           timeout: 600_000
+         ) do
+      {:ok, output, code} ->
+        log_output(conv_id, "clone", scrub_token(output))
+        if code == 0, do: :ok, else: {:error, {:clone, url, code}}
 
-    log_output(conv_id, "clone", scrub_token(output))
-
-    if code == 0, do: :ok, else: {:error, {:clone, url, code}}
+      {:error, reason} ->
+        {:error, {:clone_unreachable, url, reason}}
+    end
   end
 
   # The sprite user can't read `/home/sprite/.config/git/ignore` (parent
