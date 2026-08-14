@@ -28,6 +28,14 @@ upgrade, is in
 
 ### Changed
 
+- **MCP servers now reach claude, codex and opencode agents through the
+  protocol, not the sandbox.** The three out-of-band mechanisms — claude's
+  `mcp add-json` provisioning loop, codex's `config.toml` writer,
+  opencode's `opencode.json` writer — are deleted; `session/new`'s
+  `mcpServers` param is the single path (#636). Consequence for the
+  `"acp": false` escape hatch: an opted-out agent runs its legacy turns
+  without MCP servers. Gemini's argv mechanism stays with its legacy
+  path.
 - **ACP is now the default protocol for claude, codex and opencode
   agents.** The per-agent `metadata["acp"]` flag flips polarity: instead
   of opting in with `true`, agents on those runtimes speak the Agent
