@@ -5,7 +5,7 @@ defmodule Fountain.Workers.SandboxReaper do
   ## What leaks, and how
 
   Both destroy call sites in `ConversationServer` discard the result —
-  `_ = Sprites.destroy(sprite)` — and then mark the row `terminated` or
+  `_ = Fountain.Sandbox.destroy(handle)` — and then mark the row `terminated` or
   `failed` regardless. So any destroy that fails for a transient reason leaves a
   sprite alive with a database row that says it is gone, and nothing ever looks
   again. This does not need a hard BEAM crash; the ordinary path is enough.

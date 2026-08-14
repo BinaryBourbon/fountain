@@ -99,7 +99,8 @@ defmodule Fountain.Quotas do
   Returns `:ok`, or `{:error, {:sandbox_quota_exceeded, %{count: n, limit: n}}}`.
 
   Call this immediately before creating a sandbox row — every row precedes a
-  `Sprites.create/2`, so guarding row creation guards sprite creation.
+  `Fountain.Sandbox.create/3`, so guarding row creation guards sandbox
+  creation at the provider.
   """
   @spec check_sandbox_quota(binary(), keyword()) ::
           :ok
