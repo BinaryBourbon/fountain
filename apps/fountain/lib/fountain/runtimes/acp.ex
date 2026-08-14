@@ -330,12 +330,10 @@ defmodule Fountain.Runtimes.ACP do
   Verified against the pinned adapter's own parser, which does
   `Object.fromEntries(server.env.map((e) => [e.name, e.value]))`.
 
-  Servers are still installed into the sandbox by
-  `Fountain.Runtimes.Claude.prepare_sprite/3` as well. That is belt and braces
-  rather than duplication: the adapter runs on the Agent SDK rather than the
-  `claude` CLI, so whether it reads the CLI's user-scope config is exactly the
-  kind of thing gate 1 flagged as unverified. Passing them over the protocol is
-  the path that does not depend on the answer.
+  This is the *only* delivery path since #636 — the out-of-band per-runtime
+  config writers (claude's `mcp add-json` loop, codex's `config.toml`,
+  opencode's `opencode.json`) are gone. Gate 2 verified the protocol path
+  live: server started, listed, called, env delivered.
   """
   @spec mcp_servers(Agent.t() | nil) :: [map()]
   def mcp_servers(%Agent{mcp_servers: servers}) when is_map(servers) and map_size(servers) > 0 do
