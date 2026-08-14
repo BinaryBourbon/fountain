@@ -223,11 +223,38 @@ defmodule Fountain.Sandbox do
     end
   end
 
-  @doc "The instance-default provider."
+  @doc "The instance-default provider (`SANDBOX_PROVIDER`; validated at boot)."
   @spec default_provider() :: provider()
   def default_provider do
     Application.get_env(:fountain, :sandbox_default_provider, :sprites)
   end
+
+  @doc """
+  Whether a provider is usable on this instance: its adapter is registered
+  **and** its credential is configured. Enabledness is runtime state — the
+  schema validates against `known_providers/0`, selection validates against
+  this.
+  """
+  @spec enabled?(provider()) :: boolean()
+  def enabled?(provider) when is_atom(provider) do
+    adapters = Application.get_env(:fountain, :sandbox_adapters, @default_adapters)
+    Map.has_key?(adapters, provider) and credential_present?(provider)
+  end
+
+  @doc "Every provider currently usable on this instance."
+  @spec enabled_providers() :: [provider()]
+  def enabled_providers do
+    known_providers()
+    |> Enum.map(&String.to_existing_atom/1)
+    |> Enum.filter(&enabled?/1)
+  end
+
+  defp credential_present?(:sprites), do: Application.get_env(:fountain, :sprites_token) != nil
+  defp credential_present?(:e2b), do: Application.get_env(:fountain, :e2b_api_key) != nil
+  defp credential_present?(:daytona), do: Application.get_env(:fountain, :daytona_api_key) != nil
+  # Non-production adapters (the in-memory Fake) carry no credentials; being
+  # registered in :sandbox_adapters is what enables them.
+  defp credential_present?(_other), do: true
 
   @doc "Whether a provider (or the provider owning a handle) has a capability."
   @spec supports?(provider() | Handle.t(), capability()) :: boolean()

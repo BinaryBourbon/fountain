@@ -18,7 +18,8 @@ defmodule Fountain.ComposePassthroughConfigTest do
   @runtime_exs Path.expand("../../../../config/runtime.exs", __DIR__)
 
   @vars ~w(TRUSTED_PROXIES SENTRY_DSN DATABASE_SSL_VERIFY DATABASE_SSL_CA_FILE
-           SANDBOX_IDLE_TIMEOUT_MINUTES SANDBOX_MAX_LIFETIME_HOURS SPRITES_BASE_URL)
+           SANDBOX_IDLE_TIMEOUT_MINUTES SANDBOX_MAX_LIFETIME_HOURS SPRITES_BASE_URL
+           SANDBOX_PROVIDER E2B_API_KEY E2B_BASE_URL DAYTONA_API_KEY DAYTONA_API_URL)
 
   # Not under test here, but they change what the prod boot requires (a
   # configured mail provider demands EMAIL_FROM). Cleared before every read
@@ -175,6 +176,45 @@ defmodule Fountain.ComposePassthroughConfigTest do
       cfg = read_prod(Map.put(base, "SPRITES_BASE_URL", "https://sprites.internal.example.com"))
 
       assert cfg[:fountain][:sprites_base_url] == "https://sprites.internal.example.com"
+    end
+  end
+
+  describe "sandbox provider selection" do
+    test "blank SANDBOX_PROVIDER defaults to sprites; blank credentials stay unset", %{base: base} do
+      cfg =
+        read_prod(
+          Map.merge(base, %{
+            "SANDBOX_PROVIDER" => "",
+            "E2B_API_KEY" => "",
+            "E2B_BASE_URL" => "",
+            "DAYTONA_API_KEY" => "",
+            "DAYTONA_API_URL" => ""
+          })
+        )
+
+      assert cfg[:fountain][:sandbox_default_provider] == :sprites
+      assert cfg[:fountain][:e2b_api_key] == nil
+      assert cfg[:fountain][:e2b_base_url] == "https://api.e2b.app"
+      assert cfg[:fountain][:daytona_api_key] == nil
+      assert cfg[:fountain][:daytona_api_url] == "https://app.daytona.io/api"
+    end
+
+    test "an explicit default with its credential present is stored as an atom", %{base: base} do
+      cfg = read_prod(Map.merge(base, %{"SANDBOX_PROVIDER" => "e2b", "E2B_API_KEY" => "e2b_x"}))
+      assert cfg[:fountain][:sandbox_default_provider] == :e2b
+      assert cfg[:fountain][:e2b_api_key] == "e2b_x"
+    end
+
+    test "an explicit default without its credential refuses to boot", %{base: base} do
+      assert_raise RuntimeError, ~r/E2B_API_KEY is not set/, fn ->
+        read_prod(Map.merge(base, %{"SANDBOX_PROVIDER" => "e2b", "E2B_API_KEY" => ""}))
+      end
+    end
+
+    test "an unknown provider refuses to boot", %{base: base} do
+      assert_raise RuntimeError, ~r/must be one of sprites\|e2b\|daytona/, fn ->
+        read_prod(Map.put(base, "SANDBOX_PROVIDER", "modal"))
+      end
     end
   end
 end
