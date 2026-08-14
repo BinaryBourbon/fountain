@@ -25,9 +25,12 @@ defmodule Fountain.Sandbox do
     * `c:list_all_names/0` returns the full account view or refuses with
       `{:error, :truncated}` — never a partial set that looks whole.
     * `c:suspend/1` / `c:resume/1` park and wake a sandbox. Adapters whose
-      platform parks implicitly (scale-to-zero) implement them as no-ops and
-      do **not** advertise the `:suspend` capability; the flag means
-      "suspension is an explicit, billable-state-changing operation".
+      platform parks implicitly (scale-to-zero) implement them as no-ops but
+      still advertise `:suspend` — the flag answers "does idle parking
+      preserve the disk cheaply?", and the idle sweep destroys instead where
+      it is absent. A failed suspend call degrades to destroy (an unparked
+      sandbox keeps billing); a failed resume leaves the row suspended (the
+      disk is the agent's memory).
 
   ## Exec semantics
 
@@ -75,8 +78,10 @@ defmodule Fountain.Sandbox do
   @typedoc """
   What a provider can do beyond the required operations.
 
-    * `:suspend` — suspension is an explicit provider operation (pause/stop)
-      rather than implicit scale-to-zero
+    * `:suspend` — idle sandboxes can park with their disk preserved at
+      negligible cost (implicitly via scale-to-zero, or via an explicit
+      pause/stop call in `c:suspend/1`); the idle sweep destroys instead
+      where absent
     * `:network_policy` — deny-capable egress policy
     * `:checkpoint` — checkpoint create/restore currently usable
     * `:attach` — detachable sessions with replay-from-start

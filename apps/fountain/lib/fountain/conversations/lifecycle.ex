@@ -116,15 +116,46 @@ defmodule Fountain.Conversations.Lifecycle do
   discredit the other.
   """
   @spec explain(:idle | :max_lifetime) :: String.t()
-  def explain(:idle) do
-    "Sandbox suspended after #{minutes(idle_timeout_seconds())} minutes idle. " <>
-      "Send another prompt to continue — the agent picks up right where it left off."
-  end
+  def explain(:idle), do: explain(:idle, :suspend)
 
   def explain(:max_lifetime) do
     "Sandbox reclaimed after reaching the #{hours(max_lifetime_seconds())} hour maximum " <>
       "lifetime. Send another prompt to continue — the transcript above is kept, but the " <>
       "agent starts a fresh session and will not remember the earlier turns."
+  end
+
+  @doc """
+  What crossing the idle bound does on this provider.
+
+  `:suspend` where the provider can park with the disk preserved (the
+  `:suspend` capability); `:destroy` where it cannot — an idle sandbox on
+  such a backend keeps billing, so the cost control wins over the agent's
+  memory, exactly as the max-lifetime ceiling already prices it.
+
+  This is the single place the degradation decision lives; the
+  ConversationServer's idle reclaim and the reaper's park both consult it —
+  the same change-both-together discipline as the clock in `check/4`.
+  """
+  @spec idle_action(atom()) :: :suspend | :destroy
+  def idle_action(provider) when is_atom(provider) do
+    if Fountain.Sandbox.supports?(provider, :suspend), do: :suspend, else: :destroy
+  end
+
+  @doc """
+  The idle copy, by what actually happened. Same honesty rule as the two
+  arms of `explain/1`: promise memory only where the disk survives.
+  """
+  @spec explain(:idle, :suspend | :destroy) :: String.t()
+  def explain(:idle, :suspend) do
+    "Sandbox suspended after #{minutes(idle_timeout_seconds())} minutes idle. " <>
+      "Send another prompt to continue — the agent picks up right where it left off."
+  end
+
+  def explain(:idle, :destroy) do
+    "Sandbox reclaimed after #{minutes(idle_timeout_seconds())} minutes idle. " <>
+      "Send another prompt to continue — the transcript above is kept, but this sandbox " <>
+      "provider cannot park an idle sandbox, so the agent starts a fresh session and " <>
+      "will not remember the earlier turns."
   end
 
   defp minutes(nil), do: "?"

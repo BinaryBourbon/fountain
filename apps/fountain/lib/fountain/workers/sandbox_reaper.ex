@@ -73,23 +73,32 @@ defmodule Fountain.Workers.SandboxReaper do
     released = release_stuck_sandboxes()
     {parked, expired} = sweep_abandoned_sandboxes()
 
+    listings = list_by_provider()
+    ok_listings = for {p, {:ok, names}} <- listings, into: %{}, do: {p, names}
+    destroyed = destroy_dead_sprites(ok_listings)
+    untracked = report_untracked(ok_listings)
+
+    live = ok_listings |> Map.values() |> Enum.map(&MapSet.size/1) |> Enum.sum()
+
+    Logger.info(
+      "reaper: released=#{released} parked=#{parked} expired=#{expired} " <>
+        "destroyed=#{destroyed} untracked=#{untracked} live=#{live}"
+    )
+
     result =
-      case list_sprites() do
-        {:ok, live_names} ->
-          destroyed = destroy_dead_sprites(live_names)
-          untracked = report_untracked(live_names)
-
-          Logger.info(
-            "reaper: released=#{released} parked=#{parked} expired=#{expired} " <>
-              "destroyed=#{destroyed} untracked=#{untracked} live=#{MapSet.size(live_names)}"
-          )
-
+      case for {p, {:error, reason}} <- listings, do: {p, reason} do
+        [] ->
           :ok
 
-        {:error, reason} ->
-          # The stuck-row pass already ran and does not need sprites.dev, so its
-          # work stands. Returning an error lets Oban retry the rest.
-          Logger.warning("reaper: could not list sprites: #{inspect(reason)}")
+        [{provider, reason} | _] = failures ->
+          # Every pass that could run already did — per-provider isolation
+          # means one backend's listing failure does not stop another's
+          # destroys. Returning an error lets Oban retry the rest.
+          Enum.each(failures, fn {p, r} ->
+            Logger.warning("reaper: could not list #{p} sandboxes: #{inspect(r)}")
+          end)
+
+          _ = provider
           {:error, reason}
       end
 
@@ -217,10 +226,23 @@ defmodule Fountain.Workers.SandboxReaper do
         |> Enum.reject(&server_alive?/1)
         |> Enum.map(&{&1, check_bounds(&1, now)})
 
-      parked = for {sandbox, {:expired, :idle}} <- verdicts, do: park(sandbox)
-      expired = for {sandbox, {:expired, :max_lifetime}} <- verdicts, do: expire(sandbox)
+      {parked, expired} =
+        Enum.reduce(verdicts, {0, 0}, fn
+          {sandbox, {:expired, :idle}}, {p, e} ->
+            case idle_sweep(sandbox) do
+              :parked -> {p + 1, e}
+              :expired -> {p, e + 1}
+            end
 
-      {length(parked), length(expired)}
+          {sandbox, {:expired, :max_lifetime}}, {p, e} ->
+            expire(sandbox, "past max lifetime")
+            {p, e + 1}
+
+          {_sandbox, :ok}, acc ->
+            acc
+        end)
+
+      {parked, expired}
     end
   end
 
@@ -249,9 +271,36 @@ defmodule Fountain.Workers.SandboxReaper do
     latest || inserted_at
   end
 
-  # Idle with no server: the server that would have suspended it is gone, so
-  # park it here. Reversible bookkeeping — the sprite stays, and the next
-  # prompt wakes it through the ordinary reattach path.
+  # Idle with no server: park where the provider can preserve the disk,
+  # expire where it cannot — the same Lifecycle.idle_action/1 decision the
+  # ConversationServer applies, and the same degradation when the explicit
+  # suspend call fails (an unparked sandbox keeps billing).
+  defp idle_sweep(sandbox) do
+    provider = Conversations.sandbox_provider_atom(sandbox)
+
+    with :suspend <- Lifecycle.idle_action(provider),
+         :ok <-
+           Fountain.Sandbox.suspend(Fountain.Sandbox.build_handle(provider, sandbox.sprite_name)) do
+      park(sandbox)
+      :parked
+    else
+      :destroy ->
+        expire(sandbox, "idle on a provider without suspend")
+        :expired
+
+      {:error, reason} ->
+        Logger.warning(
+          "reaper: suspend call failed for #{sandbox.sprite_name} (#{inspect(reason)}); " <>
+            "expiring instead"
+        )
+
+        expire(sandbox, "idle; suspend call failed")
+        :expired
+    end
+  end
+
+  # Reversible bookkeeping — the sandbox stays parked at the provider, and
+  # the next prompt wakes it through the ordinary reattach path.
   defp park(sandbox) do
     {:ok, _} = Conversations.update_sandbox(sandbox, %{status: "suspended"})
 
@@ -265,7 +314,7 @@ defmodule Fountain.Workers.SandboxReaper do
     sandbox
   end
 
-  defp expire(sandbox) do
+  defp expire(sandbox, reason) do
     {:ok, _} =
       Conversations.update_sandbox(sandbox, %{
         status: "terminated",
@@ -274,35 +323,44 @@ defmodule Fountain.Workers.SandboxReaper do
 
     Logger.info(
       "reaper: expired abandoned sandbox #{sandbox.id} (#{sandbox.sprite_name}) — " <>
-        "ready with no live server past the max-lifetime ceiling"
+        "ready with no live server, #{reason}"
     )
 
-    record_reap(sandbox, "sandbox.expired", %{"reason" => "past max lifetime"})
+    record_reap(sandbox, "sandbox.expired", %{"reason" => reason})
 
     # The conversation is deliberately left alone. It stays resumable, and the
     # next prompt provisions a fresh sandbox (the runtime session on the
     # destroyed disk is lost — the price of the ceiling, see decisions/0017).
-    # The sprite itself is destroyed by pass 2 on this same run, now that the
+    # The sandbox itself is destroyed by pass 2 on this same run, now that the
     # row is terminal.
     sandbox
   end
 
   # ── pass 2: terminal rows whose sprite is still there ─────────────────────
 
-  defp destroy_dead_sprites(live_names) do
+  defp destroy_dead_sprites(live_by_provider) do
     Sandbox
     |> where([s], s.status in ^@terminal_statuses)
-    |> select([s], {s.id, s.sprite_name})
+    |> select([s], {s.id, s.sprite_name, s.provider})
     |> Repo.all()
-    |> Enum.filter(fn {_id, name} -> MapSet.member?(live_names, name) end)
+    |> Enum.filter(fn {_id, name, provider} ->
+      case Map.fetch(live_by_provider, provider_atom(provider)) do
+        # Rows on a provider whose listing failed (or that is disabled) are
+        # skipped, not destroyed — the next run with credentials converges.
+        {:ok, live_names} -> MapSet.member?(live_names, name)
+        :error -> false
+      end
+    end)
     |> Enum.take(@destroy_limit)
-    |> Enum.count(fn {id, name} -> destroy(id, name) end)
+    |> Enum.count(fn {id, name, provider} -> destroy(id, name, provider_atom(provider)) end)
   end
 
-  defp destroy(sandbox_id, sprite_name) do
+  defp provider_atom(provider), do: Conversations.sandbox_provider_atom(%{provider: provider})
+
+  defp destroy(sandbox_id, sprite_name, provider) do
     # build_handle/2 is pure — we already know the sandbox exists (it came
     # out of the listing), so there is nothing to look up first.
-    case Fountain.Sandbox.destroy(Fountain.Sandbox.build_handle(:sprites, sprite_name)) do
+    case Fountain.Sandbox.destroy(Fountain.Sandbox.build_handle(provider, sprite_name)) do
       :ok ->
         Logger.info("reaper: destroyed leaked sprite #{sprite_name} (sandbox #{sandbox_id})")
         true
@@ -318,37 +376,52 @@ defmodule Fountain.Workers.SandboxReaper do
   # ── pass 3: sprites with no row — counted, never touched ──────────────────
 
   @doc false
-  def report_untracked(live_names) do
-    known =
-      Sandbox
-      |> select([s], s.sprite_name)
-      |> Repo.all()
-      |> MapSet.new()
+  def report_untracked(live_by_provider) do
+    Enum.reduce(live_by_provider, 0, fn {provider, live_names}, total ->
+      known =
+        Sandbox
+        |> where([s], s.provider == ^Atom.to_string(provider))
+        |> select([s], s.sprite_name)
+        |> Repo.all()
+        |> MapSet.new()
 
-    untracked = MapSet.difference(live_names, known)
-    count = MapSet.size(untracked)
+      untracked = MapSet.difference(live_names, known)
+      count = MapSet.size(untracked)
 
-    if count > 0 do
-      sample = untracked |> Enum.sort() |> Enum.take(10) |> Enum.join(", ")
+      if count > 0 do
+        sample = untracked |> Enum.sort() |> Enum.take(10) |> Enum.join(", ")
 
-      Logger.info(
-        "reaper: #{count} sprite(s) at sprites.dev have no sandbox row and were " <>
-          "left alone (sample: #{sample})"
-      )
-    end
+        Logger.info(
+          "reaper: #{count} #{provider} sandbox(es) have no sandbox row and were " <>
+            "left alone (sample: #{sample})"
+        )
+      end
 
-    :telemetry.execute([:fountain, :reaper, :untracked], %{count: count}, %{})
-    count
+      :telemetry.execute([:fountain, :reaper, :untracked], %{count: count}, %{
+        provider: provider
+      })
+
+      total + count
+    end)
   end
 
   # ── sprites.dev ───────────────────────────────────────────────────────────
 
-  # Paginated deliberately inside the adapter — a first-page-only listing
-  # looks complete, which for a function that decides what to delete is the
-  # worst possible shape of wrong; the adapter returns {:error, :truncated}
-  # rather than a partial view.
-  defp list_sprites do
-    Fountain.Sandbox.list_all_names(:sprites)
+  # One listing per provider, isolated: one backend being down must not stop
+  # another's reconciliation. Sprites is always attempted (the historical
+  # default may hold rows even when its credential was pulled); other
+  # providers only when enabled. Pagination is the adapter's problem — a
+  # first-page-only listing looks complete, which for a function that decides
+  # what to delete is the worst possible shape of wrong, so adapters return
+  # {:error, :truncated} rather than a partial view.
+  defp list_by_provider do
+    [:sprites | Fountain.Sandbox.enabled_providers()]
+    |> Enum.uniq()
+    |> Map.new(fn provider -> {provider, safe_list(provider)} end)
+  end
+
+  defp safe_list(provider) do
+    Fountain.Sandbox.list_all_names(provider)
   rescue
     e -> {:error, e}
   end

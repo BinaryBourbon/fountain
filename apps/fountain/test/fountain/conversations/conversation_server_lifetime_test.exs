@@ -158,6 +158,63 @@ defmodule Fountain.Conversations.ConversationServerLifetimeTest do
     end
   end
 
+  describe "idle timeout on a provider that cannot park" do
+    test "idle destroys instead of suspending, and says so honestly" do
+      {conv, sandbox} = aged_conversation(180)
+      stub_reattach()
+      test = self()
+
+      # A provider without the :suspend capability cannot park with the disk
+      # preserved; the idle bound degrades to the destroy arm.
+      stub(Fountain.Sandbox.Sprites, :capabilities, fn ->
+        MapSet.new([:network_policy, :attach])
+      end)
+
+      stub(Fountain.Sandbox.Sprites, :destroy, fn _handle -> send(test, :destroyed) && :ok end)
+
+      with_bounds([sandbox_idle_timeout_minutes: 60, sandbox_max_lifetime_hours: 24], fn ->
+        {pid, ref, :alive} = start_server(conv)
+
+        :sys.replace_state(pid, fn state ->
+          %{state | last_activity_at: DateTime.add(DateTime.utc_now(), -7200, :second)}
+        end)
+
+        send(pid, :lifecycle_check)
+        assert :normal = assert_stopped(ref)
+      end)
+
+      assert_received :destroyed
+      assert Fountain.Repo.reload(sandbox).status == "terminated"
+      assert Fountain.Repo.reload(conv).status in ["idle", "pending"]
+    end
+
+    test "a failed suspend call degrades to destroy — an unparked sandbox keeps billing" do
+      {conv, sandbox} = aged_conversation(180)
+      stub_reattach()
+      test = self()
+
+      stub(Fountain.Sandbox.Sprites, :suspend, fn _handle ->
+        {:error, {:unavailable, :timeout}}
+      end)
+
+      stub(Fountain.Sandbox.Sprites, :destroy, fn _handle -> send(test, :destroyed) && :ok end)
+
+      with_bounds([sandbox_idle_timeout_minutes: 60, sandbox_max_lifetime_hours: 24], fn ->
+        {pid, ref, :alive} = start_server(conv)
+
+        :sys.replace_state(pid, fn state ->
+          %{state | last_activity_at: DateTime.add(DateTime.utc_now(), -7200, :second)}
+        end)
+
+        send(pid, :lifecycle_check)
+        assert :normal = assert_stopped(ref)
+      end)
+
+      assert_received :destroyed
+      assert Fountain.Repo.reload(sandbox).status == "terminated"
+    end
+  end
+
   describe "max lifetime" do
     test "an old sandbox is destroyed even with recent activity" do
       # The regression anchor for the idle/max split: the ceiling exists for

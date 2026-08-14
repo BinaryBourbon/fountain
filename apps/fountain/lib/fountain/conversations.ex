@@ -1270,10 +1270,7 @@ defmodule Fountain.Conversations do
         Fountain.Quotas.with_sandbox_reservation(user_id, [exclude: sandbox_id], fn ->
           case _unsafe_get_sandbox(sandbox_id) do
             %Sandbox{status: "suspended"} = sandbox ->
-              update_sandbox(sandbox, %{
-                status: "ready",
-                last_resumed_at: DateTime.utc_now() |> DateTime.truncate(:second)
-              })
+              resume_and_wake(sandbox)
 
             sandbox ->
               {:ok, sandbox}
@@ -1282,6 +1279,33 @@ defmodule Fountain.Conversations do
 
       sandbox ->
         {:ok, sandbox}
+    end
+  end
+
+  # Resume BEFORE the row flips: if the provider's wake call fails, the row
+  # stays `suspended` and the wake fails retryably — the parked disk is the
+  # agent's memory, and a row marked ready over a still-parked backend would
+  # strand it. For Sprites resume is a probe (waking is a side effect of the
+  # next exec); for pause/stop providers it is the call that restarts the
+  # sandbox.
+  defp resume_and_wake(sandbox) do
+    handle =
+      Fountain.Sandbox.build_handle(sandbox_provider_atom(sandbox), sandbox.sprite_name)
+
+    case Fountain.Sandbox.resume(handle) do
+      {:ok, _handle} ->
+        update_sandbox(sandbox, %{
+          status: "ready",
+          last_resumed_at: DateTime.utc_now() |> DateTime.truncate(:second)
+        })
+
+      {:error, reason} ->
+        Logger.warning(
+          "resume failed for suspended sandbox #{sandbox.id} (#{inspect(reason)}); " <>
+            "leaving it parked"
+        )
+
+        {:error, :sandbox_resume_failed}
     end
   end
 
