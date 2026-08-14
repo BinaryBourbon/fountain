@@ -16,7 +16,7 @@ defmodule Fountain.Conversations.ConversationServerTurnMetricsTest do
   setup do
     user = insert_verified_user()
     env = insert_env(user_id: user.id)
-    agent = insert_agent(user_id: user.id, environment_id: env.id)
+    agent = insert_agent(user_id: user.id, environment_id: env.id, runtime: "gemini")
     sandbox = insert_sandbox(user_id: user.id, status: "pending")
 
     conv =
@@ -77,7 +77,7 @@ defmodule Fountain.Conversations.ConversationServerTurnMetricsTest do
       _ = :sys.get_state(pid)
 
       assert_received {:turn_completed, measurements, metadata}
-      assert metadata.runtime == "claude"
+      assert metadata.runtime == "gemini"
       assert metadata.status == "completed"
 
       # Metadata, never a tag: it's what makes the JSON log line point at a
@@ -173,7 +173,7 @@ defmodule Fountain.Conversations.ConversationServerTurnMetricsTest do
       _ = :sys.get_state(pid)
 
       assert_received {:first_output, measurements, metadata}
-      assert metadata.runtime == "claude"
+      assert metadata.runtime == "gemini"
       assert metadata.conv_id == conv.id
       assert is_integer(measurements.elapsed_ms)
       assert measurements.elapsed_ms >= 0

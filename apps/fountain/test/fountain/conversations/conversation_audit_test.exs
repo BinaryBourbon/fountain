@@ -20,7 +20,12 @@ defmodule Fountain.Conversations.ConversationAuditTest do
   setup do
     user = insert_verified_user()
     env = insert_env(user_id: user.id)
-    agent = insert_agent(user_id: user.id, environment_id: env.id)
+    # These start real servers with the real runtime module, and what they
+    # assert is the audit trail, not the turn pipeline — so they pin the
+    # legacy path with the opt-out rather than by switching runtime (gemini's
+    # prepare_sprite reaches Sprites APIs this harness does not stub).
+    agent =
+      insert_agent(user_id: user.id, environment_id: env.id, metadata: %{"acp" => false})
 
     {:ok, user: user, env: env, agent: agent}
   end

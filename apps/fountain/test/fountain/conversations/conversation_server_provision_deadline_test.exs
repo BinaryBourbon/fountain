@@ -37,7 +37,7 @@ defmodule Fountain.Conversations.ConversationServerProvisionDeadlineTest do
     end)
 
     user = insert_verified_user()
-    agent = insert_agent(user_id: user.id)
+    agent = insert_agent(user_id: user.id, runtime: "gemini")
     conv = insert_conversation(user_id: user.id, agent_id: agent.id)
 
     args = [
@@ -74,7 +74,7 @@ defmodule Fountain.Conversations.ConversationServerProvisionDeadlineTest do
     end)
 
     user = insert_verified_user()
-    agent = insert_agent(user_id: user.id)
+    agent = insert_agent(user_id: user.id, runtime: "gemini")
     conv = insert_conversation(user_id: user.id, agent_id: agent.id)
     test_pid = self()
     sandbox_id = conv.sandbox_id
@@ -114,7 +114,7 @@ defmodule Fountain.Conversations.ConversationServerProvisionDeadlineTest do
     end)
 
     user = insert_verified_user()
-    agent = insert_agent(user_id: user.id)
+    agent = insert_agent(user_id: user.id, runtime: "gemini")
     conv = insert_conversation(user_id: user.id, agent_id: agent.id)
 
     args = [
@@ -142,7 +142,7 @@ defmodule Fountain.Conversations.ConversationServerProvisionDeadlineTest do
   test "a provision that completes in time is left alone" do
     stub_happy_sprite()
     user = insert_verified_user()
-    agent = insert_agent(user_id: user.id)
+    agent = insert_agent(user_id: user.id, runtime: "gemini")
     conv = insert_conversation(user_id: user.id, agent_id: agent.id)
 
     {pid, _ref, :alive} = start_server(conv)

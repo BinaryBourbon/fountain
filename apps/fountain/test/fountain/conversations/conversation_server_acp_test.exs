@@ -107,21 +107,23 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
   end
 
   describe "the flag" do
-    test "is off by default" do
+    test "is on by default" do
       user = insert_verified_user()
-      refute ACP.enabled?(insert_agent(user_id: user.id, runtime: "claude"))
+      assert ACP.enabled?(insert_agent(user_id: user.id, runtime: "claude"))
     end
 
-    test "applies to every shippable runtime" do
+    test "defaults on for every shippable runtime, with a per-agent opt-out" do
       user = insert_verified_user()
 
       for runtime <- ACP.supported_runtimes() do
-        agent = insert_agent(user_id: user.id, runtime: runtime, metadata: %{"acp" => true})
-        assert ACP.enabled?(agent), "expected #{runtime} to be ACP-enabled"
+        agent = insert_agent(user_id: user.id, runtime: runtime)
+        assert ACP.enabled?(agent), "expected #{runtime} to be ACP-enabled by default"
       end
 
-      # All four are converted now, so the flag itself is the only off switch.
-      refute ACP.enabled?(insert_agent(user_id: user.id, runtime: "claude"))
+      # The opt-out is the only off switch for a shippable runtime.
+      refute ACP.enabled?(
+               insert_agent(user_id: user.id, runtime: "claude", metadata: %{"acp" => false})
+             )
     end
   end
 

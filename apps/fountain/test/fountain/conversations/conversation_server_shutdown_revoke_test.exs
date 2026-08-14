@@ -11,7 +11,7 @@ defmodule Fountain.Conversations.ConversationServerShutdownRevokeTest do
   defp start_provisioned_server do
     stub_happy_sprite()
     user = insert_verified_user()
-    agent = insert_agent(user_id: user.id)
+    agent = insert_agent(user_id: user.id, runtime: "gemini")
     conv = insert_conversation(user_id: user.id, agent_id: agent.id)
 
     {pid, ref, :alive} = start_server(conv)
@@ -83,7 +83,7 @@ defmodule Fountain.Conversations.ConversationServerShutdownRevokeTest do
     # credential out from under the first server.
     stub_happy_sprite()
     user = insert_verified_user()
-    agent = insert_agent(user_id: user.id)
+    agent = insert_agent(user_id: user.id, runtime: "gemini")
     conv = insert_conversation(user_id: user.id, agent_id: agent.id)
 
     {:ok, {%Fountain.Accounts.ApiKey{id: predecessor_key}, _raw}} =

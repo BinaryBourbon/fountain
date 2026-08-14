@@ -24,7 +24,7 @@ defmodule Fountain.Conversations.ConversationServerRedactionTest do
   defp start_server_with_secrets do
     stub_happy_sprite()
     user = insert_verified_user()
-    agent = insert_agent(user_id: user.id)
+    agent = insert_agent(user_id: user.id, runtime: "gemini")
     conv = insert_conversation(user_id: user.id, agent_id: agent.id)
 
     {pid, ref, :alive} = start_server(conv)

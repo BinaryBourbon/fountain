@@ -29,7 +29,7 @@ defmodule Fountain.Conversations.ConversationServerLogBudgetTest do
   defp setup_conv do
     stub_happy_sprite()
     user = insert_verified_user()
-    agent = insert_agent(user_id: user.id)
+    agent = insert_agent(user_id: user.id, runtime: "gemini")
     insert_conversation(user_id: user.id, agent_id: agent.id)
   end
 

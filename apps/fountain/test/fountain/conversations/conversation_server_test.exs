@@ -21,7 +21,12 @@ defmodule Fountain.Conversations.ConversationServerTest do
   setup do
     user = insert_verified_user()
     env = insert_env(user_id: user.id)
-    agent = insert_agent(user_id: user.id, environment_id: env.id)
+
+    # These tests drive the legacy (non-ACP) turn pipeline through FakeRuntime.
+    # ACP is on by default for claude/codex/opencode, so the agent is pinned to
+    # gemini — the runtime that actually still runs this pipeline (#659). The
+    # ACP turn pipeline has its own harness in conversation_server_acp_test.exs.
+    agent = insert_agent(user_id: user.id, environment_id: env.id, runtime: "gemini")
     sandbox = insert_sandbox(user_id: user.id, status: "pending")
 
     conv =
@@ -144,8 +149,8 @@ defmodule Fountain.Conversations.ConversationServerTest do
         %Fountain.Agents.Agent{}
         |> Fountain.Agents.Agent.changeset(%{
           "name" => "legacy-cross-tenant",
-          "model" => "anthropic/claude-sonnet-4-6",
-          "runtime" => "claude",
+          "model" => "google/gemini-2.5-pro",
+          "runtime" => "gemini",
           "user_id" => attacker.id,
           "environment_id" => victim_env.id
         })

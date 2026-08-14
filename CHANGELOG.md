@@ -16,6 +16,16 @@ upgrade, is in
 
 ## [Unreleased]
 
+### Changed
+
+- **ACP is now the default protocol for claude, codex and opencode
+  agents.** The per-agent `metadata["acp"]` flag flips polarity: instead
+  of opting in with `true`, agents on those runtimes speak the Agent
+  Client Protocol unless the agent carries `"acp": false` (an operational
+  escape hatch, set over the API). Gemini agents stay on the legacy path
+  until gemini's `session/load` is fixed upstream (#658, #659). ADR 0014
+  gate 4 begins here.
+
 ## [0.8.1] — 2026-08-13
 
 ### Fixed
