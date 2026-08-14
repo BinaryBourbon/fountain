@@ -16,6 +16,16 @@ upgrade, is in
 
 ## [Unreleased]
 
+### Added
+
+- **Tool-level OTel spans for every ACP runtime.** Tool-call tracing was
+  claude-only (a parser over its proprietary stream-json); ACP's
+  `tool_call`/`tool_call_update` carry the id and status for all runtimes,
+  so every ACP turn now emits `fountain.tool_use` child spans plus
+  `fountain.text_bytes`/`thinking_bytes`/`tool_calls` turn totals. Cost
+  and token-usage attributes do not exist on the ACP path — the protocol's
+  stop reason carries no usage block (#637).
+
 ### Changed
 
 - **ACP is now the default protocol for claude, codex and opencode
