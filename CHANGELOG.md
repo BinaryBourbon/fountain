@@ -18,6 +18,12 @@ upgrade, is in
 
 ### Added
 
+- **The documentation site is served in-app at `/docs`.** The same markdown
+  GitHub Pages publishes is embedded at compile time and rendered through
+  the app's sanitizing markdown pipeline, with the sidebar mirroring the
+  `mkdocs.yml` nav (a test fails on drift). Public, like the Pages site;
+  the curated `/help` topics are unchanged and now link to it.
+
 - **Pluggable sandbox backends: E2B and Daytona join Sprites.** The
   sandbox layer is a provider-agnostic behaviour (`Fountain.Sandbox`) with
   an executable conformance suite; `SANDBOX_PROVIDER` picks the instance

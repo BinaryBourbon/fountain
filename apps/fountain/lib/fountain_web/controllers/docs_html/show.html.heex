@@ -1,0 +1,51 @@
+<div class="max-w-6xl mx-auto px-6 py-10 flex gap-8">
+  <aside class="w-56 shrink-0 hidden md:block">
+    <nav class="space-y-1 sticky top-6">
+      <%= for {title, item} <- @nav do %>
+        <%= if is_list(item) do %>
+          <div class="text-[10px] uppercase tracking-wider text-[var(--color-text-muted)] font-medium mt-4 mb-1 px-2">
+            {title}
+          </div>
+          <%= for {child_title, child_slug} <- item do %>
+            <a
+              href={docs_path(child_slug)}
+              class={[
+                "block rounded px-3 py-1.5 text-sm hover:bg-[var(--color-bg-2)]",
+                @slug == child_slug &&
+                  "bg-[var(--color-bg-2)] font-medium text-[var(--color-text-primary)]",
+                @slug != child_slug && "text-[var(--color-text-secondary)]"
+              ]}
+            >
+              {child_title}
+            </a>
+          <% end %>
+        <% else %>
+          <a
+            href={docs_path(item)}
+            class={[
+              "block rounded px-3 py-1.5 text-sm hover:bg-[var(--color-bg-2)]",
+              @slug == item &&
+                "bg-[var(--color-bg-2)] font-medium text-[var(--color-text-primary)]",
+              @slug != item && "text-[var(--color-text-secondary)]"
+            ]}
+          >
+            {title}
+          </a>
+        <% end %>
+      <% end %>
+      <a
+        href="/api/docs"
+        target="_blank"
+        class="block rounded px-3 py-1.5 text-sm hover:bg-[var(--color-bg-2)] text-[var(--color-text-secondary)] mt-4"
+      >
+        API reference (Swagger) ↗
+      </a>
+    </nav>
+  </aside>
+
+  <article class="flex-1 min-w-0 bg-[var(--color-bg-1)] border border-[var(--color-border)] rounded-lg shadow-sm p-8">
+    <div class="prose prose-zinc dark:prose-invert max-w-none prose-headings:font-semibold prose-headings:tracking-tight prose-pre:bg-zinc-900 prose-pre:text-zinc-100 prose-pre:text-xs prose-code:text-zinc-800 prose-code:bg-zinc-100 dark:prose-code:text-zinc-200 dark:prose-code:bg-zinc-800 prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:before:content-none prose-code:after:content-none prose-a:text-blue-600 dark:prose-a:text-indigo-400">
+      {Phoenix.HTML.raw(@body_html)}
+    </div>
+  </article>
+</div>

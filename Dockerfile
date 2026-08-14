@@ -52,6 +52,12 @@ COPY apps ./apps
 # email — decisions/0010). Mix SILENTLY skips missing elixirc_paths dirs:
 # without this COPY the release still builds but is missing those modules.
 COPY ee ./ee
+# Fountain.Docs embeds docs/ (and the CHANGELOG.md its changelog page
+# includes) at compile time to serve them at /docs — without these the
+# compile fails on File.read!. This is also the only way the content
+# ships: the release never contains docs/ as files.
+COPY docs ./docs
+COPY CHANGELOG.md ./
 
 RUN mix compile \
  && mix release fountain_server

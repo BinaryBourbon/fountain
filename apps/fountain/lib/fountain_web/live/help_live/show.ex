@@ -77,6 +77,13 @@ defmodule FountainWeb.HelpLive.Show do
             </.link>
           <% end %>
           <a
+            href="/docs"
+            target="_blank"
+            class="block rounded px-3 py-1.5 text-sm hover:bg-zinc-100 text-zinc-600"
+          >
+            Full documentation ↗
+          </a>
+          <a
             href="/api/docs"
             target="_blank"
             class="block rounded px-3 py-1.5 text-sm hover:bg-zinc-100 text-zinc-600"
