@@ -566,7 +566,7 @@ defmodule Fountain.Conversations.ConversationServer do
     {:ok, _} = Conversations.update_sandbox(sandbox, %{status: "starting"})
     publish_stage(state.conversation_id, "provision", "started")
 
-    case create_sandbox_handle(sandbox.sprite_name) do
+    case create_sandbox_handle(sandbox) do
       {:ok, handle} ->
         skills = (agent && agent.skills) || []
         # conv.runtime is validated-required and outlives the agent; the agent
@@ -752,7 +752,11 @@ defmodule Fountain.Conversations.ConversationServer do
       sprite_name: sandbox.sprite_name
     })
 
-    handle = Fountain.Sandbox.build_handle(:sprites, sandbox.sprite_name)
+    handle =
+      Fountain.Sandbox.build_handle(
+        Fountain.Conversations.sandbox_provider_atom(sandbox),
+        sandbox.sprite_name
+      )
 
     case Fountain.Retry.with_backoff(
            fn -> Fountain.Sandbox.get(handle) end,
@@ -1625,12 +1629,14 @@ defmodule Fountain.Conversations.ConversationServer do
 
   # ── helpers ───────────────────────────────────────────────────────────────
 
-  # Provider hardcoded until the sandboxes row carries one; adopt-on-409 is
-  # the adapter's job now.
-  defp create_sandbox_handle(name) do
+  # The row's provider decides where the sandbox is created; adopt-on-
+  # already-exists is the adapter's job.
+  defp create_sandbox_handle(sandbox) do
+    provider = Fountain.Conversations.sandbox_provider_atom(sandbox)
+
     Fountain.Retry.with_backoff(
-      fn -> Fountain.Sandbox.create(:sprites, name) end,
-      label: "sprite create #{name}"
+      fn -> Fountain.Sandbox.create(provider, sandbox.sprite_name) end,
+      label: "sprite create #{sandbox.sprite_name}"
     )
   end
 

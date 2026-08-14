@@ -250,6 +250,14 @@ defmodule FountainWeb.Schemas do
           pattern: "^[a-z0-9_-]+/[a-z0-9._-]+$"
         },
         runtime: %Schema{type: :string, enum: ~w(claude codex gemini opencode)},
+        sandbox_provider: %Schema{
+          type: :string,
+          enum: ~w(sprites e2b daytona),
+          nullable: true,
+          description:
+            "Sandbox backend override; null inherits the instance default " <>
+              "(SANDBOX_PROVIDER). Only providers configured on this instance are accepted"
+        },
         environment_id: %Schema{type: :string, format: :uuid, nullable: true},
         skills: %Schema{
           type: :array,
@@ -336,6 +344,14 @@ defmodule FountainWeb.Schemas do
           pattern: "^[a-z0-9_-]+/[a-z0-9._-]+$"
         },
         runtime: %Schema{type: :string, enum: ~w(claude codex gemini opencode)},
+        sandbox_provider: %Schema{
+          type: :string,
+          enum: ~w(sprites e2b daytona),
+          nullable: true,
+          description:
+            "Sandbox backend override; null inherits the instance default " <>
+              "(SANDBOX_PROVIDER). Only providers configured on this instance are accepted"
+        },
         environment_id: %Schema{type: :string, format: :uuid, nullable: true},
         skills: %Schema{
           type: :array,
@@ -403,6 +419,14 @@ defmodule FountainWeb.Schemas do
         system: %Schema{type: :string},
         model: %Schema{type: :string, pattern: "^[a-z0-9_-]+/[a-z0-9._-]+$"},
         runtime: %Schema{type: :string, enum: ~w(claude codex gemini opencode)},
+        sandbox_provider: %Schema{
+          type: :string,
+          enum: ~w(sprites e2b daytona),
+          nullable: true,
+          description:
+            "Sandbox backend override; null inherits the instance default " <>
+              "(SANDBOX_PROVIDER). Only providers configured on this instance are accepted"
+        },
         environment_id: %Schema{type: :string, format: :uuid, nullable: true},
         skills: %Schema{
           type: :array,

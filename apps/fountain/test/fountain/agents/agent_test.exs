@@ -273,4 +273,32 @@ defmodule Fountain.Agents.AgentTest do
       assert errors_on(changeset).skills != []
     end
   end
+
+  describe "sandbox_provider" do
+    test "nil inherits the instance default and validates clean" do
+      changeset = Agent.changeset(%Agent{}, @valid_attrs)
+      assert changeset.valid?
+    end
+
+    test "an unknown backend is rejected against the closed vocabulary" do
+      changeset =
+        Agent.changeset(%Agent{}, Map.put(@valid_attrs, :sandbox_provider, "modal"))
+
+      refute changeset.valid?
+      assert [msg] = errors_on(changeset).sandbox_provider
+      assert msg =~ "must be one of"
+    end
+
+    test "a known but unconfigured backend is rejected at save time" do
+      # e2b is in the vocabulary but has no adapter registered (and no
+      # credentials in test), so pinning an agent to it must fail with a
+      # message pointing at instance configuration, not at conversation start.
+      changeset =
+        Agent.changeset(%Agent{}, Map.put(@valid_attrs, :sandbox_provider, "e2b"))
+
+      refute changeset.valid?
+      assert [msg] = errors_on(changeset).sandbox_provider
+      assert msg =~ "not configured"
+    end
+  end
 end

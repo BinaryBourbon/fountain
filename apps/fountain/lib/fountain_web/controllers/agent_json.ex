@@ -13,6 +13,7 @@ defmodule FountainWeb.AgentJSON do
       system: a.system,
       model: a.model,
       runtime: a.runtime,
+      sandbox_provider: a.sandbox_provider,
       environment_id: a.environment_id,
       skills: a.skills,
       mcp_servers: a.mcp_servers,

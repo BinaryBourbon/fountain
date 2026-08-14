@@ -17,6 +17,7 @@ defmodule FountainWeb.AgentsLive.Form do
      |> assign(:page_title, page_title(action))
      |> assign(:user_id, user_id)
      |> assign(:envs, envs)
+     |> assign(:sandbox_providers, Fountain.Sandbox.enabled_providers())
      |> assign(:action, action)
      |> assign(:agent, agent)
      |> assign(:form, agent_to_form(agent))
@@ -50,6 +51,7 @@ defmodule FountainWeb.AgentsLive.Form do
       "system" => a.system || "",
       "model" => a.model || "anthropic/claude-sonnet-4-6",
       "runtime" => a.runtime || "claude",
+      "sandbox_provider" => a.sandbox_provider || "",
       "environment_id" => a.environment_id || ""
     }
   end
@@ -284,6 +286,7 @@ defmodule FountainWeb.AgentsLive.Form do
         |> Map.put("mcp_servers", mcp_map)
         |> Map.put("user_id", socket.assigns.user_id)
         |> nil_if_blank("environment_id")
+        |> nil_if_blank("sandbox_provider")
 
       case save(socket, attrs) do
         {:ok, socket} -> {:noreply, socket}
@@ -570,6 +573,24 @@ defmodule FountainWeb.AgentsLive.Form do
         >
           Not one of the models Fountain lists — it will be passed to the runtime as-is.
         </p>
+
+        <div :if={length(@sandbox_providers) > 1} class="space-y-1">
+          <label class="block text-sm font-medium text-zinc-700">Sandbox provider</label>
+          <select
+            name="agent[sandbox_provider]"
+            class="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm"
+          >
+            <option value="">Instance default ({Fountain.Sandbox.default_provider()})</option>
+            <option
+              :for={p <- @sandbox_providers}
+              value={p}
+              selected={@form["sandbox_provider"] == to_string(p)}
+            >
+              {p}
+            </option>
+          </select>
+          <.error_msg field="sandbox_provider" errors={@errors} />
+        </div>
 
         <div class="space-y-1">
           <label class="block text-sm font-medium text-zinc-700">Environment</label>

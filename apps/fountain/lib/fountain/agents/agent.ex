@@ -20,6 +20,9 @@ defmodule Fountain.Agents.Agent do
     field :system, :string, default: ""
     field :model, :string
     field :runtime, :string
+    # Optional sandbox-backend override; nil inherits the instance default
+    # (SANDBOX_PROVIDER) at conversation start.
+    field :sandbox_provider, :string
     # Each entry is one of:
     #   %{"name" => name, "content" => skill_md}     # inline SKILL.md
     #   %{"source" => "owner/repo", "name" => opt}   # github via skills.sh CLI
@@ -48,6 +51,7 @@ defmodule Fountain.Agents.Agent do
       :system,
       :model,
       :runtime,
+      :sandbox_provider,
       :skills,
       :mcp_servers,
       :metadata,
@@ -61,6 +65,7 @@ defmodule Fountain.Agents.Agent do
       message: "must be in canonical provider/model_id form"
     )
     |> validate_model_provider()
+    |> validate_sandbox_provider()
     |> validate_length(:name, min: 1, max: 200)
     |> validate_skills()
     |> unique_constraint(:name, name: :agents_user_id_name_index)
@@ -107,6 +112,29 @@ defmodule Fountain.Agents.Agent do
         "unknown provider \"#{provider}\" — must be one of: #{Enum.join(Model.providers(), ", ")}"
       )
     end
+  end
+
+  # Distinct from the *model* provider above: this picks which sandbox
+  # backend the agent's conversations run on. Nil inherits the instance
+  # default. Only validated when the field changes, so removing a provider's
+  # credentials later does not brick unrelated edits to existing agents —
+  # conversation start re-checks enabledness anyway.
+  defp validate_sandbox_provider(changeset) do
+    validate_change(changeset, :sandbox_provider, fn :sandbox_provider, value ->
+      cond do
+        value not in Fountain.Sandbox.known_providers() ->
+          [
+            sandbox_provider:
+              "must be one of: " <> Enum.join(Fountain.Sandbox.known_providers(), ", ")
+          ]
+
+        not Fountain.Sandbox.enabled?(String.to_existing_atom(value)) ->
+          [sandbox_provider: "is not configured on this instance"]
+
+        true ->
+          []
+      end
+    end)
   end
 
   defp validate_skills(changeset) do

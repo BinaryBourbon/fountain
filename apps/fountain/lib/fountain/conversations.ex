@@ -930,6 +930,7 @@ defmodule Fountain.Conversations do
          {:ok, parent_id} <- resolve_parent_id(attrs["parent_conversation_id"], user_id),
          :ok <- Fountain.Accounts.check_not_suspended(user_id),
          :ok <- Fountain.Billing.check_active(user_id),
+         {:ok, provider} <- resolve_sandbox_provider(agent),
          # Quota check + row insert under one per-user advisory lock: checked
          # separately they are check-then-insert, and N concurrent requests at
          # the cap could each pass and provision N-1 sprites over it (#330).
@@ -940,6 +941,7 @@ defmodule Fountain.Conversations do
                sprite_name:
                  attrs["sprite_name"] || "fountain-#{tenant_prefix(user_id)}-#{short_id()}",
                status: "pending",
+               provider: Atom.to_string(provider),
                user_id: user_id
              })
            end),
@@ -1176,33 +1178,82 @@ defmodule Fountain.Conversations do
 
   defp maybe_reuse_sandbox(%Conversation{sandbox_id: sandbox_id}) do
     case _unsafe_get_sandbox(sandbox_id) do
-      %{status: status, sprite_name: name}
+      %{status: status, sprite_name: name} = sandbox
       when status in ["ready", "suspended"] and is_binary(name) ->
-        case Fountain.Sandbox.get(Fountain.Sandbox.build_handle(:sprites, name)) do
-          {:ok, _info} ->
-            {:reuse, sandbox_id}
-
-          {:error, :not_found} ->
-            :create_new
-
-          {:error, reason} when status == "suspended" ->
-            # A transient probe failure must not cost the parked disk: falling
-            # to :create_new retires this row, and the reaper then destroys the
-            # still-live sprite — with the agent's memory on it. Only a
-            # definitive not-found gives up the suspended sandbox; anything
-            # else fails the wake retryably.
-            Logger.warning(
-              "sprite probe failed for suspended sandbox #{sandbox_id}: #{inspect(reason)}"
-            )
-
-            {:error, :sprite_probe_failed}
-
-          _ ->
-            :create_new
-        end
+        probe_reusable_sandbox(sandbox, sandbox_id)
 
       _ ->
         :create_new
+    end
+  end
+
+  # The row's provider is sticky: a parked sandbox wakes on the backend that
+  # holds its disk, never on whatever the instance default is by now. A row
+  # whose (non-default) provider lost its credentials fails retryably — the
+  # same protect-the-parked-disk reasoning as :sprite_probe_failed below;
+  # falling through to :create_new would retire the row and orphan (or lose)
+  # the parked sandbox. Re-adding the credentials restores wakes.
+  defp probe_reusable_sandbox(%{status: status, sprite_name: name} = sandbox, sandbox_id) do
+    provider = sandbox_provider_atom(sandbox)
+
+    if provider != Fountain.Sandbox.default_provider() and
+         not Fountain.Sandbox.enabled?(provider) do
+      Logger.warning(
+        "sandbox #{sandbox_id} is on disabled provider #{provider}; refusing to wake or retire"
+      )
+
+      {:error, {:sandbox_provider_disabled, provider}}
+    else
+      probe_sandbox(provider, name, status, sandbox_id)
+    end
+  end
+
+  defp probe_sandbox(provider, name, status, sandbox_id) do
+    case Fountain.Sandbox.get(Fountain.Sandbox.build_handle(provider, name)) do
+      {:ok, _info} ->
+        {:reuse, sandbox_id}
+
+      {:error, :not_found} ->
+        :create_new
+
+      {:error, reason} when status == "suspended" ->
+        # A transient probe failure must not cost the parked disk: falling
+        # to :create_new retires this row, and the reaper then destroys the
+        # still-live sprite — with the agent's memory on it. Only a
+        # definitive not-found gives up the suspended sandbox; anything
+        # else fails the wake retryably.
+        Logger.warning(
+          "sprite probe failed for suspended sandbox #{sandbox_id}: #{inspect(reason)}"
+        )
+
+        {:error, :sprite_probe_failed}
+
+      _ ->
+        :create_new
+    end
+  end
+
+  def sandbox_provider_atom(%{provider: provider}) when is_binary(provider),
+    do: String.to_existing_atom(provider)
+
+  def sandbox_provider_atom(_sandbox), do: :sprites
+
+  # Placement for a NEW sandbox: the agent's override, else the instance
+  # default. Only an override is gated on enabledness — the default keeps its
+  # lazy credential check (a credential-less boot fails at provision time
+  # with the missing variable named, exactly as before), while an agent
+  # pinned to a provider whose credentials were since removed fails here
+  # with an error the API/UI can explain.
+  defp resolve_sandbox_provider(%Agents.Agent{sandbox_provider: nil}),
+    do: {:ok, Fountain.Sandbox.default_provider()}
+
+  defp resolve_sandbox_provider(%Agents.Agent{sandbox_provider: value}) do
+    provider = String.to_existing_atom(value)
+
+    if Fountain.Sandbox.enabled?(provider) do
+      {:ok, provider}
+    else
+      {:error, {:sandbox_provider_disabled, provider}}
     end
   end
 
@@ -1275,6 +1326,10 @@ defmodule Fountain.Conversations do
     # conversation was an unmetered way past billing entirely.
     with :ok <- Fountain.Accounts.check_not_suspended(conv.user_id),
          :ok <- Fountain.Billing.check_active(conv.user_id),
+         # A fresh sandbox is a fresh placement decision — re-resolve from
+         # the agent, so a conversation whose old sandbox died can migrate
+         # providers naturally.
+         {:ok, provider} <- resolve_sandbox_provider(agent),
          # Same reservation as start_conversation/1 — see the note there (#330).
          {:ok, new_sandbox} <-
            Fountain.Quotas.with_sandbox_reservation(
@@ -1285,6 +1340,7 @@ defmodule Fountain.Conversations do
                  environment_id: agent.environment_id,
                  sprite_name: "fountain-#{tenant_prefix(conv.user_id)}-#{short_id()}",
                  status: "pending",
+                 provider: Atom.to_string(provider),
                  user_id: conv.user_id
                })
              end

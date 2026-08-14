@@ -49,6 +49,10 @@ defmodule FountainWeb.SchemaEnumGuardrailTest do
     {FountainWeb.Schemas.Agent, "runtime"} => {Agent, :runtimes},
     {FountainWeb.Schemas.AgentRequest, "runtime"} => {Agent, :runtimes},
     {FountainWeb.Schemas.AgentUpdate, "runtime"} => {Agent, :runtimes},
+    {FountainWeb.Schemas.Agent, "sandbox_provider"} => {Fountain.Sandbox, :known_providers},
+    {FountainWeb.Schemas.AgentRequest, "sandbox_provider"} =>
+      {Fountain.Sandbox, :known_providers},
+    {FountainWeb.Schemas.AgentUpdate, "sandbox_provider"} => {Fountain.Sandbox, :known_providers},
     # A conversation's runtime is copied from its agent at spawn, so it must
     # speak the same vocabulary even though the column carries no inclusion
     # validation of its own.
