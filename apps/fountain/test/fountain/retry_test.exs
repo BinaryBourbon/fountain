@@ -115,5 +115,18 @@ defmodule Fountain.RetryTest do
       assert Retry.transient?(:closed)
       assert Retry.transient?(%RuntimeError{message: "x"})
     end
+
+    test "the Fountain.Sandbox taxonomy classifies directly" do
+      assert Retry.transient?({:unavailable, {:http, 502, %{}}})
+      assert Retry.transient?({:rate_limited, 17})
+      assert Retry.transient?({:provider, :sprites, :weird})
+
+      refute Retry.transient?(:not_found)
+      refute Retry.transient?(:truncated)
+      refute Retry.transient?(:not_supported)
+      refute Retry.transient?({:denied, {:http, 401, %{}}})
+      refute Retry.transient?({:invalid, {:http, 422, %{}}})
+      refute Retry.transient?({:restore_failed, "no such checkpoint"})
+    end
   end
 end

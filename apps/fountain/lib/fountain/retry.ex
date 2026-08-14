@@ -103,12 +103,26 @@ defmodule Fountain.Retry do
   @doc """
   Whether an error reason is worth retrying.
 
-  `{:api_error, status, body}` is the Sprites client's HTTP-level shape: 5xx
-  and 429 are transient, other 4xx are the caller's fault and permanent.
+  The `Fountain.Sandbox` taxonomy classifies directly: `{:unavailable, _}`
+  and `{:rate_limited, _}` are transient; `:not_found`, `{:denied, _}` and
+  `{:invalid, _}` are provably permanent, as are `:truncated`,
+  `:not_supported` and a reported-failed restore.
+
+  `{:api_error, status, body}` is the raw Sprites SDK HTTP shape, still seen
+  by call sites that have not moved onto the sandbox facade: 5xx and 429 are
+  transient, other 4xx are the caller's fault and permanent.
+
   Everything else — `:timeout`, transport exceptions, unknown shapes — is
   treated as transient; see the moduledoc for why unknown defaults to retry.
   """
   @spec transient?(term()) :: boolean()
+  def transient?({:unavailable, _detail}), do: true
+  def transient?({:rate_limited, _retry_after}), do: true
+  def transient?(reason) when reason in [:not_found, :truncated, :not_supported], do: false
+  def transient?({:denied, _detail}), do: false
+  def transient?({:invalid, _detail}), do: false
+  def transient?({:restore_failed, _detail}), do: false
+
   def transient?({:api_error, status, _body}) when is_integer(status) do
     status >= 500 or status == 429
   end
