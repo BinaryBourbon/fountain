@@ -53,6 +53,11 @@ defmodule Fountain.ConversationServerCase do
     Mimic.stub(Sprites, :create, fn _client, _name -> {:ok, sprite} end)
     Mimic.stub(Sprites, :destroy, fn _sprite -> :ok end)
     Mimic.stub(Sprites, :cmd, fn _sprite, _cmd, _opts -> {:ok, %{exit_code: 0, stdout: ""}} end)
+
+    # The 4-arity variant returns {output, exit_code} and is what the ACP
+    # adapter install and the runtimes' prepare_sprite scripts call; without
+    # this stub those reach the real client.
+    Mimic.stub(Sprites, :cmd, fn _sprite, _cmd, _args, _opts -> {"", 0} end)
     Mimic.stub(Sprites, :list_sessions, fn _sprite -> {:ok, []} end)
     Mimic.stub(Sprites, :update_network_policy, fn _sprite, _policy -> :ok end)
     Mimic.stub(Sprites.Filesystem, :write, fn _sprite, _path, _contents -> :ok end)

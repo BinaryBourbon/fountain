@@ -113,32 +113,12 @@ defmodule Fountain.Runtimes.ModelTest do
     end
   end
 
-  # The regression #553 describes: three of four runtimes built argv that
-  # never mentioned agent.model, so the CLI's own default ran instead.
+  # The regression #553 describes: runtimes built argv that never mentioned
+  # agent.model, so the CLI's own default ran instead. Only gemini still
+  # builds argv — the other runtimes' turns travel over ACP, where the model
+  # is pinned per session by the peer (see "model selection" in
+  # acp/peer_test.exs).
   describe "build_command/5 honours agent.model" do
-    test "claude passes the bare id" do
-      {"claude", argv, _opts} =
-        Runtimes.Claude.build_command(
-          agent("claude", "anthropic/claude-opus-4-7"),
-          "hi",
-          :run,
-          "sess-1",
-          []
-        )
-
-      assert "--model" in argv
-      assert Enum.at(argv, Enum.find_index(argv, &(&1 == "--model")) + 1) == "claude-opus-4-7"
-      refute "anthropic/claude-opus-4-7" in argv
-    end
-
-    test "codex passes the bare id" do
-      {"codex", argv, _opts} =
-        Runtimes.Codex.build_command(agent("codex", "openai/gpt-5-codex"), "hi", :run, nil, [])
-
-      assert "--model" in argv
-      assert Enum.at(argv, Enum.find_index(argv, &(&1 == "--model")) + 1) == "gpt-5-codex"
-    end
-
     test "gemini passes the bare id" do
       {"gemini", argv, _opts} =
         Runtimes.Gemini.build_command(
@@ -151,33 +131,6 @@ defmodule Fountain.Runtimes.ModelTest do
 
       assert "--model" in argv
       assert Enum.at(argv, Enum.find_index(argv, &(&1 == "--model")) + 1) == "gemini-2.5-pro"
-    end
-
-    test "opencode still passes the canonical string verbatim" do
-      {"opencode", argv, _opts} =
-        Runtimes.OpenCode.build_command(
-          agent("opencode", "anthropic/claude-sonnet-4-6"),
-          "hi",
-          :run,
-          nil,
-          []
-        )
-
-      assert "anthropic/claude-sonnet-4-6" in argv
-    end
-
-    test "the model survives a continue turn too" do
-      {"claude", argv, _opts} =
-        Runtimes.Claude.build_command(
-          agent("claude", "anthropic/claude-opus-4-7"),
-          "hi",
-          :continue,
-          "sess-1",
-          []
-        )
-
-      assert "claude-opus-4-7" in argv
-      assert "--resume" in argv
     end
   end
 end

@@ -2,6 +2,11 @@ defmodule Fountain.Runtimes do
   @moduledoc """
   Behaviour every runtime (claude/codex/gemini/opencode) implements,
   plus a small dispatcher.
+
+  This is the **provisioning** layer ADR 0014 deliberately kept: credentials,
+  skills layout, sandbox bootstrap. Turn I/O is ACP (`Fountain.Runtimes.ACP`)
+  for every supported runtime; `build_command/5` exists only for runtimes
+  still on the legacy spawn path (gemini, #659), which is why it is optional.
   """
 
   alias Fountain.Agents.Agent
@@ -10,7 +15,10 @@ defmodule Fountain.Runtimes do
   @type cmd :: {String.t(), [String.t()], keyword()}
 
   @doc """
-  Build the argv (and any extra spawn opts like `:env`) for a single turn.
+  Build the argv (and any extra spawn opts like `:env`) for a single turn on
+  the **legacy** spawn path. Only runtimes excluded from
+  `Fountain.Runtimes.ACP.supported_runtimes/0` need this; for everything else
+  the turn travels over ACP and argv says nothing about it.
 
   - `mode == :run` for the first turn
   - `mode == :continue` for subsequent turns
@@ -75,7 +83,7 @@ defmodule Fountain.Runtimes do
   """
   @callback skills_sh_agent() :: String.t()
 
-  @optional_callbacks default_env: 2, write_config: 2, prepare_sprite: 3
+  @optional_callbacks build_command: 5, default_env: 2, write_config: 2, prepare_sprite: 3
 
   @runtime_modules %{
     "claude" => Fountain.Runtimes.Claude,

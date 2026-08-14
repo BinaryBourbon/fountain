@@ -1,82 +1,25 @@
 defmodule Fountain.Runtimes.Codex do
   @moduledoc """
-  OpenAI Codex CLI runtime.
+  OpenAI Codex runtime — provisioning only.
 
-  Argv shape:
-
-      mode == :run       → codex exec
-                              --dangerously-bypass-approvals-and-sandbox
-                              --json --model <model_id> <PROMPT>
-      mode == :continue  → codex exec resume --last
-                              --dangerously-bypass-approvals-and-sandbox
-                              --json --model <model_id> <PROMPT>
-
-  `--model` (also spelled `-m`) takes the bare id, so the canonical
-  `openai/` prefix on `agent.model` is stripped — see
-  `Fountain.Runtimes.Model`.
-
-  The prompt is passed as the **trailing positional argument** rather
-  than on stdin. When codex sees a piped stdin it logs an ugly
-  `"Reading prompt from stdin..."` line to stderr; passing the prompt
-  in argv side-steps that. We return `stdin?: false` from build_command
-  so conversation_server skips the write/close_stdin dance.
-
-  Codex tracks its own per-workspace conversation state on disk, so we
-  pass no session id; `--last` (in `continue` mode) tells it to reattach
-  to the most recent conversation in the workspace. `--json` is the
-  line-delimited stream-json output the worker tails into LogEvents.
+  Turns speak ACP through the pinned `codex-acp` adapter
+  (`Fountain.Runtimes.ACP`); the `codex exec` argv builder — and with it the
+  resume-by-guessing `--last` flag, the worst thing this module shipped —
+  went with the legacy spawn path. What remains is the half ADR 0014
+  deliberately kept: credentials and skills.
 
   Auth: `OPENAI_API_KEY` is consumed once at provision time via
-  `prepare_sprite/3` (see below).
+  `prepare_sprite/3` (see below) — codex reads `~/.codex/auth.json`, not the
+  process env, and the adapter runs on the same store.
   """
 
   @behaviour Fountain.Runtimes
-
-  alias Fountain.Runtimes.Model
 
   @impl true
   def skills_root, do: "/home/sprite/.codex/skills"
 
   @impl true
   def skills_sh_agent, do: "codex"
-
-  @impl true
-  def build_command(agent, prompt, mode, _runtime_session_id, opts) do
-    base =
-      if mode == :continue do
-        [
-          "exec",
-          "resume",
-          "--last",
-          "--dangerously-bypass-approvals-and-sandbox",
-          "--json",
-          "--color",
-          "never"
-        ]
-      else
-        [
-          "exec",
-          "--dangerously-bypass-approvals-and-sandbox",
-          "--json",
-          "--color",
-          "never"
-        ]
-      end
-
-    # codex exec natively supports --image <path> for multimodal input.
-    image_args =
-      opts
-      |> Keyword.get(:images, [])
-      |> Enum.flat_map(fn {path, _mt} -> ["--image", path] end)
-
-    # codex prints an "additional input from stdin" / "prompt from
-    # stdin" warning whenever `isatty(0)` is false. Both a piped stdin
-    # AND a /dev/null redirect trigger it. Allocate a PTY (`tty?: true`)
-    # so codex sees stdin as a TTY and stays quiet. We pass the prompt
-    # as argv so codex doesn't actually read from the PTY.
-    {"codex", base ++ Model.model_args(agent) ++ image_args ++ [prompt],
-     stdin?: false, tty?: true}
-  end
 
   @impl true
   def default_env(_agent, inference_credentials) do

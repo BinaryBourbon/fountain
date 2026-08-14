@@ -1,64 +1,24 @@
 defmodule Fountain.Runtimes.Claude do
   @moduledoc """
-  Anthropic Claude Code CLI runtime.
+  Anthropic Claude runtime — provisioning only.
 
-  Argv shape mirrors AoD's Python build_claude_command:
-      claude --model <model_id>
-             --dangerously-skip-permissions --print --verbose
-             --output-format stream-json
-             (--session-id | --resume) <id>
+  Turns speak ACP through the pinned `claude-agent-acp` adapter
+  (`Fountain.Runtimes.ACP`); the CLI argv builder that used to live here went
+  with the legacy spawn path. What remains is the half ADR 0014 deliberately
+  kept: how credentials and skills get into the sandbox.
 
-  `--model` takes the bare id, so the canonical `anthropic/` prefix on
-  `agent.model` is stripped (see `Fountain.Runtimes.Model`).
-
-  The prompt is piped on stdin by the spawn caller. ANTHROPIC_API_KEY is
-  exported into the sprite environment.
+  The adapter runs on the Claude Agent SDK, which reads the same skills tree
+  as the CLI (`/home/sprite/.claude/skills`, verified live 2026-08-10) and
+  honours the same credential env vars.
   """
 
   @behaviour Fountain.Runtimes
-
-  alias Fountain.Runtimes.Model
 
   @impl true
   def skills_root, do: "/home/sprite/.claude/skills"
 
   @impl true
   def skills_sh_agent, do: "claude-code"
-
-  @impl true
-  def build_command(agent, _prompt, mode, runtime_session_id, opts) do
-    if mode == :continue and is_nil(runtime_session_id) do
-      raise ArgumentError, "mode=:continue requires runtime_session_id"
-    end
-
-    flag = if mode == :continue, do: "--resume", else: "--session-id"
-
-    base_args =
-      Model.model_args(agent) ++
-        [
-          "--dangerously-skip-permissions",
-          "--print",
-          "--verbose",
-          "--output-format",
-          "stream-json",
-          flag,
-          runtime_session_id || ""
-        ]
-
-    # The claude CLI has no --image flag. Append image file paths to the
-    # stdin prompt so Claude can use its Read tool to load them visually.
-    prompt_suffix =
-      case Keyword.get(opts, :images, []) do
-        [] ->
-          ""
-
-        images ->
-          paths = Enum.map_join(images, "\n", fn {path, _mt} -> path end)
-          "\n\n[Attached images — read each file path to view:\n#{paths}]"
-      end
-
-    {"claude", base_args, [prompt_suffix: prompt_suffix]}
-  end
 
   @impl true
   def default_env(_agent, inference_credentials) do
@@ -78,10 +38,6 @@ defmodule Fountain.Runtimes.Claude do
     end
   end
 
-  # MCP servers travel in `session/new`'s `mcpServers` param on the ACP path
-  # (#636); the `claude mcp add-json --scope user` provisioning loop that used
-  # to live here existed for the CLI, which the ACP adapter does not wrap. An
-  # agent opted out of ACP (`metadata["acp"] == false`) therefore runs its
-  # legacy turns without MCP servers — the opt-out is an emergency hatch, not
-  # a configuration.
+  # MCP servers travel in `session/new`'s `mcpServers` param (#636); nothing
+  # MCP-shaped to prepare in the sandbox.
 end

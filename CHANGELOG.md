@@ -28,6 +28,18 @@ upgrade, is in
 
 ### Changed
 
+- **The legacy spawn path for claude, codex and opencode is deleted; ACP
+  is the only way Fountain talks to them.** The three `build_command/5`
+  argv builders go — and with them `--dangerously-skip-permissions`,
+  `--dangerously-bypass-approvals-and-sandbox`, codex's
+  resume-by-guessing `--last`, and the claude-only stream-json OTel
+  tracer (superseded by the protocol-wide ACP tracer). The per-agent
+  `metadata["acp"]` flag is retired: with no legacy path left there is
+  nothing to opt out into, and stale metadata is ignored. The ACP
+  decision now keys on the conversation's runtime rather than the agent,
+  so conversations whose agent was deleted keep working. Gemini keeps
+  its full legacy stack until its `session/load` is fixed upstream
+  (#658, #659).
 - **MCP servers now reach claude, codex and opencode agents through the
   protocol, not the sandbox.** The three out-of-band mechanisms — claude's
   `mcp add-json` provisioning loop, codex's `config.toml` writer,

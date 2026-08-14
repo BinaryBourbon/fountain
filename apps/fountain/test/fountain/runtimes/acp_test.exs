@@ -7,16 +7,20 @@ defmodule Fountain.Runtimes.ACPTest do
   defp agent(attrs), do: struct(Agent, attrs)
 
   describe "enabled?/1" do
-    test "on by default for a shippable runtime" do
+    test "a property of the runtime alone — agent, runtime string, or nil" do
       assert ACP.enabled?(agent(runtime: "claude", metadata: %{}))
-      assert ACP.enabled?(agent(runtime: "claude", metadata: nil))
-      assert ACP.enabled?(agent(runtime: "claude", metadata: %{"acp" => true}))
+      assert ACP.enabled?("claude")
 
       refute ACP.enabled?(nil)
     end
 
-    test "metadata acp: false is the per-agent escape hatch" do
-      refute ACP.enabled?(agent(runtime: "claude", metadata: %{"acp" => false}))
+    test "the retired metadata flag is ignored in both directions" do
+      # The per-agent flag (gate 2's opt-in, then the default-on opt-out) died
+      # with the legacy spawn path: for a supported runtime there is nothing
+      # left to opt out into, so stale metadata must not route anywhere.
+      assert ACP.enabled?(agent(runtime: "claude", metadata: %{"acp" => false}))
+      assert ACP.enabled?(agent(runtime: "claude", metadata: %{"acp" => true}))
+      refute ACP.enabled?(agent(runtime: "gemini", metadata: %{"acp" => true}))
     end
 
     test "a blocked runtime cannot be switched on at all" do
@@ -36,28 +40,17 @@ defmodule Fountain.Runtimes.ACPTest do
       assert ACP.cwd("gemini") == "/tmp/gemini-workspace"
     end
 
-    test "every supported runtime defaults on and honours the opt-out" do
+    test "every supported runtime speaks ACP unconditionally" do
       for runtime <- ACP.supported_runtimes() do
-        assert ACP.enabled?(agent(runtime: runtime, metadata: %{})),
-               "expected #{runtime} to be ACP-enabled by default"
-
-        refute ACP.enabled?(agent(runtime: runtime, metadata: %{"acp" => false}))
+        assert ACP.enabled?(runtime), "expected #{runtime} to be ACP-enabled"
+        assert ACP.enabled?(agent(runtime: runtime, metadata: %{}))
       end
     end
 
-    test "a runtime with no adapter entry stays legacy whatever the metadata says" do
+    test "a runtime with no adapter entry stays legacy" do
       # For an unconvertible runtime the legacy path is the only path.
+      refute ACP.enabled?("somethingelse")
       refute ACP.enabled?(agent(runtime: "somethingelse", metadata: %{}))
-      refute ACP.enabled?(agent(runtime: "somethingelse", metadata: %{"acp" => true}))
-    end
-
-    test "only the literal boolean false opts out" do
-      # Metadata arrives as JSON over the API; a string "false" is a typo,
-      # not a decision, and must not silently route an agent onto the legacy
-      # path.
-      assert ACP.enabled?(agent(runtime: "claude", metadata: %{"acp" => "false"}))
-      assert ACP.enabled?(agent(runtime: "claude", metadata: %{"acp" => nil}))
-      assert ACP.enabled?(agent(runtime: "claude", metadata: %{"acp" => 0}))
     end
   end
 
