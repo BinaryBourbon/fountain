@@ -36,20 +36,29 @@ defmodule Fountain.Sandbox.Daytona.Api do
       raise "DAYTONA_API_KEY is not set — cannot talk to daytona.io"
   end
 
-  @doc "The snapshot (image) new sandboxes are created from."
+  @doc """
+  The snapshot (image) new sandboxes are created from, or nil for the
+  organization's default. A named snapshot must be registered with the org
+  (the API rejects unknown ones with a 400).
+  """
   def snapshot do
-    Application.get_env(:fountain, :daytona_snapshot, "daytonaio/sandbox:latest")
+    Application.get_env(:fountain, :daytona_snapshot)
   end
 
   def create_sandbox(name) do
-    body = %{
+    base = %{
       name: name,
-      snapshot: snapshot(),
       labels: %{fountain: "1"},
       autoStopInterval: 0,
       autoArchiveInterval: @auto_archive_minutes,
       ttlMinutes: 0
     }
+
+    body =
+      case snapshot() do
+        nil -> base
+        snapshot -> Map.put(base, :snapshot, snapshot)
+      end
 
     case Req.post(req(), url: "/sandbox", json: body) do
       {:ok, %{status: status, body: body}} when status in 200..299 -> {:ok, body}
@@ -139,7 +148,9 @@ defmodule Fountain.Sandbox.Daytona.Api do
   translation.
   """
   def set_network(name, allow_domains) do
-    body = %{networkBlockAll: true, domainAllowList: allow_domains}
+    # The API takes the allowlist as a comma-separated string (measured
+    # live: an array answers 400 "domainAllowList must be a string").
+    body = %{networkBlockAll: true, domainAllowList: Enum.join(allow_domains, ",")}
 
     case Req.post(req(), url: "/sandbox/#{name}/network-settings", json: body) do
       {:ok, %{status: status}} when status in 200..299 -> :ok
@@ -148,21 +159,31 @@ defmodule Fountain.Sandbox.Daytona.Api do
     end
   end
 
-  @doc "The per-sandbox toolbox proxy base URL, off the sandbox DTO."
+  @doc """
+  The per-sandbox toolbox base URL: the account's proxy URL with the
+  sandbox's server-assigned **id** appended (`{proxy}/{id}` — the DTO's
+  `toolboxProxyUrl` alone carries no sandbox identity; the official SDK
+  builds exactly this base).
+  """
   def toolbox_url(name) do
-    with {:ok, info} <- get_sandbox(name) do
-      case info["toolboxProxyUrl"] do
-        url when is_binary(url) and url != "" ->
-          {:ok, url}
+    with {:ok, info} <- get_sandbox(name),
+         {:ok, proxy} <- proxy_url(info) do
+      {:ok, String.trim_trailing(proxy, "/") <> "/" <> info["id"]}
+    end
+  end
 
-        _ ->
-          case Req.get(req(), url: "/sandbox/#{name}/toolbox-proxy-url") do
-            {:ok, %{status: 200, body: %{"url" => url}}} -> {:ok, url}
-            {:ok, %{status: 200, body: url}} when is_binary(url) -> {:ok, url}
-            {:ok, %{status: status, body: body}} -> {:error, {:api_error, status, body}}
-            {:error, reason} -> {:error, reason}
-          end
-      end
+  defp proxy_url(info) do
+    case info["toolboxProxyUrl"] do
+      url when is_binary(url) and url != "" ->
+        {:ok, url}
+
+      _ ->
+        case Req.get(req(), url: "/sandbox/#{info["id"]}/toolbox-proxy-url") do
+          {:ok, %{status: 200, body: %{"url" => url}}} -> {:ok, url}
+          {:ok, %{status: 200, body: url}} when is_binary(url) -> {:ok, url}
+          {:ok, %{status: status, body: body}} -> {:error, {:api_error, status, body}}
+          {:error, reason} -> {:error, reason}
+        end
     end
   end
 end

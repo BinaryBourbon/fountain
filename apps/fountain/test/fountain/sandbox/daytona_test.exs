@@ -40,7 +40,12 @@ defmodule Fountain.Sandbox.DaytonaTest do
   defp handle, do: Adapter.build_handle(@name)
 
   defp sandbox_body(state) do
-    %{"name" => @name, "state" => state, "toolboxProxyUrl" => @toolbox}
+    %{
+      "id" => "sbx1",
+      "name" => @name,
+      "state" => state,
+      "toolboxProxyUrl" => "https://proxy.daytona.test/toolbox"
+    }
   end
 
   describe "create/2" do
@@ -64,6 +69,27 @@ defmodule Fountain.Sandbox.DaytonaTest do
       assert body["ttlMinutes"] == 0
       assert body["autoStopInterval"] == 0
       assert body["autoArchiveInterval"] > 0
+      # Unset snapshot means the organization's default image — the field
+      # must be absent, not a hardcoded name the org never registered.
+      refute Map.has_key?(body, "snapshot")
+    end
+
+    test "a create rejected outright surfaces its own error, not the probe's" do
+      # An unregistered snapshot answers 400; the follow-up get finds no
+      # sandbox, and the caller must see the 400, not :not_found.
+      Req.Test.stub(__MODULE__, fn conn ->
+        case {conn.method, conn.request_path} do
+          {"POST", "/api/sandbox"} ->
+            conn
+            |> Plug.Conn.put_status(400)
+            |> Req.Test.json(%{"message" => "Snapshot x not found"})
+
+          {"GET", "/api/sandbox/" <> @name} ->
+            conn |> Plug.Conn.put_status(404) |> Req.Test.json(%{})
+        end
+      end)
+
+      assert {:error, {:invalid, {:http, 400, %{"message" => _}}}} = Adapter.create(@name, [])
     end
 
     test "a conflicting create adopts when the follow-up get succeeds" do
@@ -255,7 +281,10 @@ defmodule Fountain.Sandbox.DaytonaTest do
                )
 
       assert command.private.command_id == "cmd-1"
-      assert_received {:exec_async, %{"runAsync" => true, "suppressInputEcho" => true}}
+      assert_received {:exec_async, %{"runAsync" => true, "suppressInputEcho" => true} = body}
+      # stdin: true wraps the command in the tail-fed stdin shim — the
+      # daemon's own FIFO EOFs after every single write (measured live).
+      assert body["command"] =~ "tail -c +1 -f /tmp/fountain/"
       assert_received {:log_stream_started, session_id, "cmd-1"}
       assert String.starts_with?(session_id, "fountain-")
     end
@@ -310,23 +339,61 @@ defmodule Fountain.Sandbox.DaytonaTest do
   end
 
   describe "stdin" do
-    test "input to a finished command is :command_exited, not a crash" do
-      Req.Test.stub(__MODULE__, fn conn ->
-        conn |> Plug.Conn.put_status(404) |> Req.Test.json(%{"error" => "completed"})
-      end)
-
-      command = %Command{
+    defp stdin_command do
+      %Command{
         provider: :daytona,
         ref: make_ref(),
         private: %{pid: self(), toolbox_url: @toolbox, session_id: "fountain-1", command_id: "c1"}
       }
-
-      assert {:error, :command_exited} = Adapter.write_stdin(command, "late\n")
     end
 
-    test "close_stdin is a documented no-op" do
-      command = %Command{provider: :daytona, ref: make_ref(), private: %{pid: self()}}
-      assert :ok = Adapter.close_stdin(command)
+    test "input to a finished command is :command_exited, not a crash" do
+      # The shim's exit sentinel exists -> the guarded append refuses.
+      Req.Test.stub(__MODULE__, fn conn ->
+        case {conn.method, conn.request_path} do
+          {"POST", "/toolbox/sbx1/process/execute"} ->
+            Req.Test.json(conn, %{"result" => "FOUNTAIN_EXITED\n", "exitCode" => 0})
+        end
+      end)
+
+      assert {:error, :command_exited} = Adapter.write_stdin(stdin_command(), "late\n")
+    end
+
+    test "input to a live command appends to the stdin file via a one-shot exec" do
+      test = self()
+
+      Req.Test.stub(__MODULE__, fn conn ->
+        case {conn.method, conn.request_path} do
+          {"POST", "/toolbox/sbx1/process/execute"} ->
+            {:ok, raw, conn} = Plug.Conn.read_body(conn)
+            send(test, {:append, Jason.decode!(raw)["command"]})
+            Req.Test.json(conn, %{"result" => "", "exitCode" => 0})
+        end
+      end)
+
+      assert :ok = Adapter.write_stdin(stdin_command(), "ping\n")
+      assert_received {:append, command}
+      assert command =~ "base64 -d >> /tmp/fountain/fountain-1.in"
+      # The append is guarded on the exit sentinel in the same round trip.
+      assert command =~ "fountain-1.code"
+    end
+
+    test "close_stdin kills the stdin tail — a real EOF" do
+      test = self()
+
+      Req.Test.stub(__MODULE__, fn conn ->
+        case {conn.method, conn.request_path} do
+          {"POST", "/toolbox/sbx1/process/execute"} ->
+            {:ok, raw, conn} = Plug.Conn.read_body(conn)
+            send(test, {:close, Jason.decode!(raw)["command"]})
+            Req.Test.json(conn, %{"result" => "", "exitCode" => 0})
+        end
+      end)
+
+      assert :ok = Adapter.close_stdin(stdin_command())
+      assert_received {:close, command}
+      assert command =~ "kill"
+      assert command =~ "/tmp/fountain/fountain-1.tailpid"
     end
   end
 
@@ -344,7 +411,7 @@ defmodule Fountain.Sandbox.DaytonaTest do
       end)
 
       assert :ok = Adapter.apply_network_policy(handle(), %NetworkPolicy{allow: []})
-      assert_received {:network, %{"networkBlockAll" => true, "domainAllowList" => []}}
+      assert_received {:network, %{"networkBlockAll" => true, "domainAllowList" => ""}}
     end
   end
 

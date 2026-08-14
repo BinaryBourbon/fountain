@@ -59,13 +59,15 @@ defmodule Fountain.Sandbox.Daytona do
       {:ok, _info} ->
         {:ok, build_handle(name)}
 
-      # The name already exists — adopt it, exactly like the 409 rule on
-      # Sprites. Daytona's conflict shape is verified permissive here: any
-      # 4xx where a subsequent get succeeds is an adoption.
-      {:error, {:api_error, status, _body}} when status in [400, 409] ->
+      # A 4xx where a follow-up get finds the sandbox is a name conflict —
+      # adopt it, exactly like the 409 rule on Sprites. When the get finds
+      # nothing, the create failed for a real reason (e.g. an unregistered
+      # snapshot answers 400) and THAT error must surface, not the probe's
+      # not-found.
+      {:error, {:api_error, status, _body} = create_error} when status in [400, 409] ->
         case Api.get_sandbox(name) do
           {:ok, _info} -> {:ok, build_handle(name)}
-          {:error, reason} -> {:error, Errors.normalize(reason)}
+          {:error, _probe_miss} -> {:error, Errors.normalize(create_error)}
         end
 
       {:error, reason} ->
@@ -105,8 +107,18 @@ defmodule Fountain.Sandbox.Daytona do
 
   @impl true
   def resume(%Handle{name: name} = handle) do
-    with {:ok, _url} <- ensure_started(name) do
-      {:ok, handle}
+    case ensure_started(name) do
+      {:ok, _url} ->
+        {:ok, handle}
+
+      # `start` answers 409 while the sandbox is still mid-transition
+      # (`stopping`/`archiving`); that is weather, not a verdict — the wake
+      # path retries transient errors.
+      {:error, {:invalid, {:http, 409, body}}} ->
+        {:error, {:unavailable, {:http, 409, body}}}
+
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 
@@ -155,13 +167,65 @@ defmodule Fountain.Sandbox.Daytona do
 
   defp shell_quote(s), do: "'" <> String.replace(to_string(s), "'", "'\\''") <> "'"
 
+  # Daytona's per-command stdin FIFO delivers EOF after every input POST —
+  # measured live: one write ended a `while read` loop — so a command that
+  # needs a long-lived stdin (the ACP turn) reads from a `tail -f`-fed file
+  # instead. Writes append to the file via one-shot execs; killing the tail
+  # is a REAL stdin EOF. The tail orphaned by a command that exits on its
+  # own lingers idle until the sandbox stops — harmless, and the price of
+  # a working stdin.
+  # POSIX sh only — session commands do not run under bash, so no process
+  # substitution: the tail feeds a private FIFO the command reads as stdin,
+  # and killing the tail (close_stdin) EOFs it. The daemon's command record
+  # carries no exit code (measured live), so the shim writes it to a
+  # sentinel file the LogStream polls — the same pattern as the E2B
+  # journaling shim.
+  defp stdin_shim(tag, command) do
+    base = "/tmp/fountain/#{tag}"
+
+    """
+    mkdir -p /tmp/fountain
+    rm -f #{base}.p #{base}.code
+    mkfifo #{base}.p
+    : > #{base}.in
+    tail -c +1 -f #{base}.in > #{base}.p &
+    FOUNTAIN_TAIL=$!
+    echo $FOUNTAIN_TAIL > #{base}.tailpid
+    #{command} < #{base}.p
+    FOUNTAIN_CODE=$?
+    kill $FOUNTAIN_TAIL 2>/dev/null
+    echo $FOUNTAIN_CODE > #{base}.code
+    exit $FOUNTAIN_CODE
+    """
+  end
+
+  defp plain_shim(tag, command) do
+    base = "/tmp/fountain/#{tag}"
+
+    """
+    mkdir -p /tmp/fountain
+    rm -f #{base}.code
+    #{command}
+    FOUNTAIN_CODE=$?
+    echo $FOUNTAIN_CODE > #{base}.code
+    exit $FOUNTAIN_CODE
+    """
+  end
+
+  defp exit_file(session_id), do: "/tmp/fountain/#{session_id}.code"
+
   @impl true
   def spawn(%Handle{name: name}, cmd, args, opts) do
     with {:ok, url} <- ensure_started(name) do
       tag = "fountain-#{System.unique_integer([:positive])}"
       ref = make_ref()
       owner = Keyword.get(opts, :owner, self())
-      command = render_command(cmd, args, opts)
+      rendered = render_command(cmd, args, opts)
+
+      command =
+        if Keyword.get(opts, :stdin, false),
+          do: stdin_shim(tag, rendered),
+          else: plain_shim(tag, rendered)
 
       with :ok <- Toolbox.create_session(url, tag) |> normalize_ok(),
            {:ok, command_id} <- exec_async(url, tag, command),
@@ -170,6 +234,7 @@ defmodule Fountain.Sandbox.Daytona do
                toolbox_url: url,
                session_id: tag,
                command_id: command_id,
+               exit_file: exit_file(tag),
                ref: ref,
                owner: owner
              ) do
@@ -192,25 +257,43 @@ defmodule Fountain.Sandbox.Daytona do
 
   @impl true
   def write_stdin(%Command{provider: :daytona, private: private}, data) do
-    case Toolbox.send_input(private.toolbox_url, private.session_id, private.command_id, data) do
-      :ok ->
-        :ok
+    # One round-trip that appends only while the command lives: the shim's
+    # exit sentinel is the daemon-independent word on liveness (the command
+    # record carries no exit code), and writing after exit must be the #603
+    # error, not a silent append nobody reads.
+    encoded = Base.encode64(IO.iodata_to_binary(data))
+    base = "/tmp/fountain/#{private.session_id}"
 
-      # The daemon refuses input to a finished command; that is the #603
-      # shape, not a transport problem.
-      {:error, {:api_error, status, _body}} when status in [400, 404, 409, 410] ->
-        {:error, :command_exited}
+    command =
+      "if [ -f #{base}.code ]; then echo FOUNTAIN_EXITED; " <>
+        "else printf %s '#{encoded}' | base64 -d >> #{base}.in; fi"
+
+    case Toolbox.execute(private.toolbox_url, command, timeout: 30_000) do
+      {:ok, out, 0} ->
+        if String.contains?(out, "FOUNTAIN_EXITED"), do: {:error, :command_exited}, else: :ok
+
+      {:ok, out, code} ->
+        {:error, {:write_failed, {:stdin_append_exit, code, out}}}
 
       {:error, reason} ->
         {:error, {:write_failed, Errors.normalize(reason)}}
     end
   end
 
-  # Daytona's FIFO has no EOF operation. The ACP path never needs a mid-turn
-  # EOF (stdin deliberately stays open), and one-shot stdin consumers go
-  # through exec/4 with a pipe instead.
+  # Killing the tail that feeds the stdin file closes the command's stdin —
+  # a real EOF, unlike the daemon FIFO (which has no close operation). The
+  # tail's pid was written by the shim; `kill` is a builtin, so this works
+  # on images without procps.
   @impl true
-  def close_stdin(%Command{provider: :daytona}), do: :ok
+  def close_stdin(%Command{provider: :daytona, private: private}) do
+    base = "/tmp/fountain/#{private.session_id}"
+    command = "kill $(cat #{base}.tailpid) 2>/dev/null; true"
+
+    case Toolbox.execute(private.toolbox_url, command, timeout: 30_000) do
+      {:ok, _out, _code} -> :ok
+      {:error, _reason} -> :ok
+    end
+  end
 
   @impl true
   def stop_command(%Command{provider: :daytona, private: %{pid: pid}}) do
@@ -253,6 +336,7 @@ defmodule Fountain.Sandbox.Daytona do
                toolbox_url: url,
                session_id: session_id,
                command_id: command_id,
+               exit_file: exit_file(session_id),
                ref: ref,
                owner: owner
              ) do

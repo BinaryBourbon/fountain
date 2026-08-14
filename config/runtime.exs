@@ -159,7 +159,7 @@ config :fountain, :e2b_template, e2b_template
 
 daytona_snapshot =
   case System.get_env("DAYTONA_SNAPSHOT") do
-    blank when blank in [nil, ""] -> "daytonaio/sandbox:latest"
+    blank when blank in [nil, ""] -> nil
     snapshot -> snapshot
   end
 

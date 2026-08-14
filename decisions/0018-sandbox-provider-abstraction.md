@@ -140,9 +140,41 @@ conformance suite pins.
 
 Adapter logic is tested full-stack against stubbed HTTP (including E2B's
 Connect streaming end to end) and the conformance suite runs against the
-Fake and Sprites adapters. **Live smoke tests against real E2B and Daytona
-accounts have not run yet** — they need credentials, and E2B's Hobby tier
-caps continuous runtime below a long agent turn (Pro is effectively
-required). Until a live provision → turn → park → wake → terminate cycle
-has passed on each provider, treat the adapters as integration-complete
-but not production-proven.
+Fake and Sprites adapters.
+
+**Live smoke tests passed on real accounts (2026-08-14)** — full
+create → adopt → exec → streaming spawn with multi-write stdin →
+attach-with-replay-from-byte-zero → stdin EOF with real exit code →
+suspend → resume with the filesystem intact → destroy cycles on both
+providers, against the stock images (adapter wire protocols, not the
+agent-CLI templates). The E2B run also verified deny-all egress actually
+blocking and an allowlist opening exactly the listed host. What the live
+runs corrected in the adapters, kept here because each looks wrong
+without the context:
+
+- **Daytona publishes no exit code on session-command records** (measured
+  on daemon v0.204.0), and its follow-websocket both *closes while
+  commands still run* and *lingers after they exit*. The adapter
+  therefore owns command endings itself: spawned commands run under a
+  shim that writes an exit-sentinel file, and the LogStream reconnects on
+  close-while-running with a cumulative delivered-bytes skip (the
+  journal's replay-from-start makes that exact) and polls the sentinel
+  for the real exit.
+- **Daytona's per-command stdin FIFO EOFs after every single write**, so
+  stdin-consuming commands read from a `tail -f`-fed file instead; writes
+  append via one-shot execs guarded on the exit sentinel, and killing the
+  tail is a real `close_stdin`. Session commands run under plain `sh` —
+  no bashisms in shims.
+- **Daytona's `domainAllowList` is a comma-separated string**, not an
+  array, and lower org tiers refuse sandbox-level egress overrides
+  entirely (a documented platform restriction `limited` environments will
+  surface as a provision failure on such orgs).
+- **A named Daytona snapshot must be registered with the org**; the
+  default is now the organization's default image, and a rejected create
+  surfaces its own error instead of being mistaken for a name conflict.
+- The E2B run passed without adapter changes.
+
+Still unproven live: the custom agent-CLI images (`images/e2b/`,
+`images/daytona/` — including selecting the `sprite` user in-guest) and a
+full Fountain conversation cycle on either provider; E2B Hobby's 1h
+continuous-run cap stands until the account upgrades.
