@@ -88,6 +88,7 @@ services:
       E2B_TEMPLATE: ${E2B_TEMPLATE:-}
       DAYTONA_API_KEY: ${DAYTONA_API_KEY:-}
       DAYTONA_API_URL: ${DAYTONA_API_URL:-}
+      DAYTONA_SNAPSHOT: ${DAYTONA_SNAPSHOT:-}
 
       # Empty means the app's defaults apply. Advertised in
       # .env.compose.example; a key listed there but not passed through here
