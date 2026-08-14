@@ -16,6 +16,18 @@ upgrade, is in
 
 ## [Unreleased]
 
+## [0.8.1] — 2026-08-13
+
+### Fixed
+
+- **ACP agents' replies now render in the conversation view.** Since the
+  ACP conversion, an ACP-flagged agent's output — stored under its own
+  event stream — was filtered out by all three view modes, which still
+  keyed on `stdout`: the transcript showed the agent never answering while
+  the API and CLI streamed the reply fine. ACP output now follows the
+  stdout pill, including for accounts with stream preferences saved before
+  the flag existed (#669).
+
 ## [0.8.0] — 2026-08-13
 
 ### Upgrade notes
