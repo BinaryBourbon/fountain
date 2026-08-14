@@ -6,8 +6,11 @@ if Process.whereis(Fountain.Repo) do
   Ecto.Adapters.SQL.Sandbox.mode(Fountain.Repo, :manual)
 end
 
-# Mimic copies modules so tests can stub/expect their functions without
-# requiring us to wrap sprites-ex in an adapter behaviour.
+# Mimic copies modules so tests can stub/expect their functions. The sandbox
+# seam is Fountain.Sandbox.Sprites (the adapter behind the Fountain.Sandbox
+# facade); the raw SDK copies below it survive only for the adapter's own
+# unit tests and for call sites not yet migrated onto the facade.
+Mimic.copy(Fountain.Sandbox.Sprites)
 Mimic.copy(Sprites)
 Mimic.copy(Sprites.Filesystem)
 Mimic.copy(Fountain.SpritesClient)
