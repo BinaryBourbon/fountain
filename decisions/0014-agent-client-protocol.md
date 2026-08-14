@@ -541,6 +541,16 @@ one runtime converted and say so here.
 A parser is deleted when its runtime's ACP path has served real conversations,
 not when the code compiles.
 
+> **Amendment, 2026-08-14.** The render path is clean: the four dialect
+> parsers left the LiveView for a dedicated `LegacyBlocks` module (#642).
+> Three of them are *frozen*, not deleted — the converted runtimes' `stdout`
+> rows predate ACP and still need rendering, but the input set is historical
+> and can no longer change, so the maintenance surface this gate exists to
+> shed is gone. They are deleted outright when pre-ACP history ages out of
+> retention. `pair_tool_results/1` also survives, deliberately: the ACP
+> translation leans on it to collapse `tool_call`/`tool_call_update` block
+> pairs, which is cheaper than a second pairing pass.
+
 **Three of the four runtimes are converted and one is not, for a reason
 outside our code — 2026-08-11.** Claude, Codex and OpenCode each did
 `session/new` then `session/resume` against a live agent, recalling a token
