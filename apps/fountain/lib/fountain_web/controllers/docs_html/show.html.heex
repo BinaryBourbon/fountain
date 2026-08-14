@@ -3,22 +3,26 @@
     <nav class="space-y-1 sticky top-6">
       <%= for {title, item} <- @nav do %>
         <%= if is_list(item) do %>
-          <div class="text-[10px] uppercase tracking-wider text-[var(--color-text-muted)] font-medium mt-4 mb-1 px-2">
-            {title}
+          <div class="mt-4 mb-2">
+            <div class="text-[10px] uppercase tracking-wider text-[var(--color-text-muted)] font-medium mb-1 px-2">
+              {title}
+            </div>
+            <div class="ml-3 pl-2 border-l border-[var(--color-border)] space-y-1">
+              <%= for {child_title, child_slug} <- item do %>
+                <a
+                  href={docs_path(child_slug)}
+                  class={[
+                    "block rounded px-3 py-1.5 text-sm hover:bg-[var(--color-bg-2)]",
+                    @slug == child_slug &&
+                      "bg-[var(--color-bg-2)] font-medium text-[var(--color-text-primary)]",
+                    @slug != child_slug && "text-[var(--color-text-secondary)]"
+                  ]}
+                >
+                  {child_title}
+                </a>
+              <% end %>
+            </div>
           </div>
-          <%= for {child_title, child_slug} <- item do %>
-            <a
-              href={docs_path(child_slug)}
-              class={[
-                "block rounded px-3 py-1.5 text-sm hover:bg-[var(--color-bg-2)]",
-                @slug == child_slug &&
-                  "bg-[var(--color-bg-2)] font-medium text-[var(--color-text-primary)]",
-                @slug != child_slug && "text-[var(--color-text-secondary)]"
-              ]}
-            >
-              {child_title}
-            </a>
-          <% end %>
         <% else %>
           <a
             href={docs_path(item)}
