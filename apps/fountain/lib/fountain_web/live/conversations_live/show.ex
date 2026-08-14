@@ -322,6 +322,15 @@ defmodule FountainWeb.ConversationsLive.Show do
        when is_binary(s) and s != "" and s != "turn",
        do: MapSet.member?(streams, "stage")
 
+  # ACP rows are the model's output channel, exactly what stdout is on the
+  # legacy path — so they follow the stdout pill rather than getting a pill
+  # of their own. Keying on a literal "acp" entry instead would hide every
+  # ACP turn for users whose persisted visible_streams predate the flag
+  # (the default list only applies when nothing is saved), which is how ACP
+  # conversations shipped invisible in all three view modes.
+  defp event_visible?(%{kind: "output", stream: "acp"}, streams),
+    do: MapSet.member?(streams, "stdout")
+
   defp event_visible?(%{kind: "output", stream: s}, streams) when is_binary(s) and s != "",
     do: MapSet.member?(streams, s)
 
@@ -818,7 +827,9 @@ defmodule FountainWeb.ConversationsLive.Show do
   # one contiguous reply.
   defp chat_assistant_reply(events, runtime) do
     events
-    |> Enum.filter(&(&1.kind == "output" and &1.stream == "stdout" and is_binary(&1.data)))
+    |> Enum.filter(
+      &(&1.kind == "output" and &1.stream in ["stdout", "acp"] and is_binary(&1.data))
+    )
     |> Enum.flat_map(&blocks_for(&1, runtime))
     |> Enum.flat_map(fn
       %{kind: :text, body: t} when is_binary(t) -> [t]

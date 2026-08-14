@@ -52,6 +52,53 @@ defmodule FountainWeb.ConversationsLive.ShowTest do
     end
   end
 
+  describe "ACP output events are visible (regression)" do
+    # The ACP conversion stored the model's output under stream "acp", but
+    # every view mode filtered on "stdout": event_visible?/2 dropped ACP rows
+    # in pretty/raw (no "acp" in visible_streams and no pill to add it), and
+    # chat_assistant_reply/2 hard-filtered stream == "stdout". An ACP-flagged
+    # agent's replies rendered nowhere — the transcript looked like the agent
+    # never answered.
+    @acp_line ~s({"params":{"sessionId":"s1","update":{"content":{"text":"Acknowledged — Cassiopeia.","type":"text"},"messageId":"m1","sessionUpdate":"agent_message_chunk"}},"method":"session/update","jsonrpc":"2.0"})
+
+    setup do
+      user = insert_verified_user()
+      conversation = insert_conversation(user_id: user.id)
+
+      turn =
+        insert_turn(conversation, %{
+          status: "completed",
+          prompt: "favorite constellation?",
+          started_at: DateTime.utc_now() |> DateTime.truncate(:second)
+        })
+
+      insert_log_event(conversation, %{stream: "acp", turn_id: turn.id, data: @acp_line})
+      %{user: user, conversation: conversation}
+    end
+
+    for mode <- ~w(pretty raw chat) do
+      test "the agent's reply renders in #{mode} mode", %{
+        conn: conn,
+        user: user,
+        conversation: conversation
+      } do
+        {:ok, _} =
+          Fountain.Accounts.update_preferences(user, %{
+            conversation_view_mode: unquote(mode),
+            # A pre-ACP persisted preference — the shape that stayed broken
+            # even after adding "acp" to the default list would have fixed
+            # fresh accounts.
+            conversation_visible_streams: ["stdout", "stderr", "stage"]
+          })
+
+        conn = login_user(conn, Fountain.Accounts.get_user!(user.id))
+        {:ok, _view, html} = live(conn, ~p"/conversations/#{conversation.id}")
+
+        assert html =~ "Cassiopeia"
+      end
+    end
+  end
+
   describe "set_view_mode" do
     setup do
       user = insert_verified_user()
