@@ -116,14 +116,6 @@ defmodule Fountain.Sandbox.Daytona.Toolbox do
     end
   end
 
-  @doc "The websocket URL that streams a command's journaled log from the start."
-  def logs_ws_url(toolbox_url, session_id, command_id) do
-    toolbox_url
-    |> String.replace_prefix("https://", "wss://")
-    |> String.replace_prefix("http://", "ws://")
-    |> Kernel.<>("/process/session/#{session_id}/command/#{command_id}/logs?follow=true")
-  end
-
   def write_file(toolbox_url, path, data) do
     form = [file: {IO.iodata_to_binary(data), filename: Path.basename(path)}]
 

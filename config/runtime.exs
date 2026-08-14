@@ -153,9 +153,16 @@ e2b_template =
     template -> template
   end
 
+e2b_user =
+  case System.get_env("E2B_USER") do
+    blank when blank in [nil, ""] -> "sprite"
+    user -> user
+  end
+
 config :fountain, :e2b_api_key, e2b_api_key
 config :fountain, :e2b_base_url, e2b_base_url
 config :fountain, :e2b_template, e2b_template
+config :fountain, :e2b_user, e2b_user
 
 daytona_snapshot =
   case System.get_env("DAYTONA_SNAPSHOT") do

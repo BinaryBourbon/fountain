@@ -33,9 +33,13 @@ RUN useradd -m -d /home/sprite -s /bin/bash sprite && \
 USER sprite
 WORKDIR /home/sprite
 ENV HOME=/home/sprite
-ENV PATH=/home/sprite/.local/bin:/home/sprite/.bun/bin:$PATH
+ENV PATH=/home/sprite/.local/bin:/home/sprite/.npm-global/bin:/home/sprite/.bun/bin:$PATH
 
-RUN mkdir -p /home/sprite/.local/bin && \
+# Runtime npm installs (the pinned ACP adapters, env packages) run as
+# sprite; the default global prefix /usr is root-only and npm's --silent
+# hides the EACCES entirely (exit 243, no output — measured live).
+RUN mkdir -p /home/sprite/.local/bin /home/sprite/.npm-global && \
+    npm config set prefix /home/sprite/.npm-global && \
     curl -fsSL https://bun.sh/install | bash
 
 # The agent CLIs the runtimes expect on PATH. Versions float with the image
