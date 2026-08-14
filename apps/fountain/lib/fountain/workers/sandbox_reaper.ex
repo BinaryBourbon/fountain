@@ -154,7 +154,10 @@ defmodule Fountain.Workers.SandboxReaper do
       resource_type: "sandbox",
       resource_id: sandbox.id,
       actor: "system:sandbox_reaper",
-      metadata: Map.put(metadata, "sprite_name", sandbox.sprite_name)
+      metadata:
+        metadata
+        |> Map.put("sprite_name", sandbox.sprite_name)
+        |> Map.put("provider", sandbox.provider)
     })
   end
 

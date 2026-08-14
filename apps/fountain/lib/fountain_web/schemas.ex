@@ -944,6 +944,7 @@ defmodule FountainWeb.Schemas do
       properties: %{
         id: %Schema{type: :string, format: :uuid},
         sprite_name: %Schema{type: :string},
+        provider: %Schema{type: :string, description: "Sandbox backend that owns this row"},
         status: %Schema{type: :string},
         user_id: %Schema{type: :string, format: :uuid, nullable: true},
         user_email: %Schema{type: :string, nullable: true},

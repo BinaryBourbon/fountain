@@ -16,8 +16,18 @@ defmodule Fountain.Conversations.Sandbox do
   @statuses ~w(pending starting ready suspended terminated failed)
 
   schema "sandboxes" do
+    # Provider-scoped sandbox identity: the name Fountain mints
+    # (`fountain-<tenant-prefix>-<hex>`) and uses as the primary external ref.
+    # The column name predates multiple providers and survives for API and
+    # historical-metadata compatibility.
     field :sprite_name, :string
     field :status, :string, default: "pending"
+    # Which sandbox backend owns this row. Stamped at creation and never
+    # re-resolved: a parked sandbox wakes on the provider that holds its
+    # disk, whatever the instance default is by then.
+    field :provider, :string, default: "sprites"
+    # Adapter-opaque state (e.g. a server-assigned id). Never tenant-visible.
+    field :provider_meta, :map, default: %{}
     field :terminated_at, :utc_datetime
     field :last_resumed_at, :utc_datetime
     belongs_to :environment, Environment
@@ -33,12 +43,15 @@ defmodule Fountain.Conversations.Sandbox do
     |> cast(attrs, [
       :sprite_name,
       :status,
+      :provider,
+      :provider_meta,
       :terminated_at,
       :last_resumed_at,
       :environment_id,
       :user_id
     ])
-    |> validate_required([:sprite_name, :status, :user_id])
+    |> validate_required([:sprite_name, :status, :provider, :user_id])
     |> validate_inclusion(:status, @statuses)
+    |> validate_inclusion(:provider, Fountain.Sandbox.known_providers())
   end
 end

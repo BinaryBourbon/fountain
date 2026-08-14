@@ -351,7 +351,7 @@ defmodule FountainWeb.ConversationsLive.Show do
           </div>
           <div class="text-sm text-zinc-500">runtime: {@conv.runtime}</div>
           <div :if={@conv.sandbox} class="text-sm text-zinc-500 font-mono">
-            sprite: {@conv.sandbox.sprite_name}
+            sprite: {@conv.sandbox.sprite_name} ({@conv.sandbox.provider})
             <span class="text-zinc-400">
               ({String.slice(@conv.sandbox.id, 0, 8)} &middot; {@conv.sandbox.status})
             </span>

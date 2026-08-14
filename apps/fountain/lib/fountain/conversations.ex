@@ -201,7 +201,7 @@ defmodule Fountain.Conversations do
       "sandbox_provisioned",
       sandbox.id,
       "sandbox",
-      %{"sprite_name" => sandbox.sprite_name}
+      %{"sprite_name" => sandbox.sprite_name, "provider" => sandbox.provider}
     )
   end
 
@@ -220,7 +220,11 @@ defmodule Fountain.Conversations do
         "sandbox_provision_failed",
         sandbox.id,
         "sandbox",
-        %{"sprite_name" => sandbox.sprite_name, "status_before_failure" => was}
+        %{
+          "sprite_name" => sandbox.sprite_name,
+          "provider" => sandbox.provider,
+          "status_before_failure" => was
+        }
       )
     end
 
@@ -234,7 +238,8 @@ defmodule Fountain.Conversations do
       "sandbox",
       %{
         "duration_ms" => sandbox_duration_ms(sandbox),
-        "final_status" => status
+        "final_status" => status,
+        "provider" => sandbox.provider
       }
     )
   end
