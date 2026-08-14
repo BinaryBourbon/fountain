@@ -1099,7 +1099,7 @@ defmodule Fountain.Conversations.ConversationServer do
     })
 
     # Finalize stream tracer: close any tool spans still open (abandoned calls).
-    Fountain.Runtimes.Claude.StreamTracer.finalize(state.stream_tracer)
+    finalize_tracer(state.stream_tracer)
 
     # An ACP turn can also end here — the adapter exits, is interrupted, or its
     # socket drops before it ever answers `session/prompt`. The peer has nothing
@@ -1216,6 +1216,12 @@ defmodule Fountain.Conversations.ConversationServer do
         is_nil(state.stream_tracer) ->
           nil
 
+        # An ACP turn whose peer died lands its raw stdout here; the ACP
+        # tracer reads protocol lines from the peer, not raw chunks, and the
+        # claude tracer below would crash on the struct.
+        is_struct(state.stream_tracer, Fountain.Runtimes.ACP.Tracer) ->
+          state.stream_tracer
+
         skip == 0 ->
           Fountain.Runtimes.Claude.StreamTracer.handle_chunk(state.stream_tracer, data)
 
@@ -1244,7 +1250,19 @@ defmodule Fountain.Conversations.ConversationServer do
   # the log budget, the redaction pass and the replay skip. A peer writing rows
   # itself would bypass all three.
   def handle_info({:acp, ref, {:lines, stream, data}}, %{current_command_ref: ref} = state) do
-    {:noreply, log_with_replay_skip(state, stream, data)}
+    new_state = log_with_replay_skip(state, stream, data)
+
+    # Each "acp" report is one session/update line; the tracer turns tool_call
+    # / tool_call_update into child spans. Peer-relayed lines never replay (a
+    # peer lives for exactly one turn), so no replay-suffix arithmetic here.
+    tracer =
+      if stream == "acp" do
+        Fountain.Runtimes.ACP.Tracer.handle_line(new_state.stream_tracer, data)
+      else
+        new_state.stream_tracer
+      end
+
+    {:noreply, %{new_state | stream_tracer: tracer}}
   end
 
   # `session/new` chose an id. Persisted immediately, exactly as the legacy path
@@ -1340,7 +1358,7 @@ defmodule Fountain.Conversations.ConversationServer do
     })
 
     # Finalize stream tracer: close any tool spans still open (abandoned calls).
-    Fountain.Runtimes.Claude.StreamTracer.finalize(state.stream_tracer)
+    finalize_tracer(state.stream_tracer)
 
     # An ACP turn can also end here — the adapter exits, is interrupted, or its
     # socket drops before it ever answers `session/prompt`. The peer has nothing
@@ -1397,7 +1415,7 @@ defmodule Fountain.Conversations.ConversationServer do
       reason: "sprite connection lost: #{inspect(reason)}"
     })
 
-    Fountain.Runtimes.Claude.StreamTracer.finalize(state.stream_tracer)
+    finalize_tracer(state.stream_tracer)
 
     # An ACP turn can also end here — the adapter exits, is interrupted, or its
     # socket drops before it ever answers `session/prompt`. The peer has nothing
@@ -1938,11 +1956,20 @@ defmodule Fountain.Conversations.ConversationServer do
 
           case stdin_result do
             :ok ->
-              # Start a stream tracer for Claude (stream-json → OTel child spans).
-              # Other runtimes produce unstructured output; tracer stays nil.
+              # Tool-span tracing. Every ACP turn gets it, whatever the runtime
+              # — `session/update` carries the id and status the tracer keys on
+              # (#637). On the legacy path only claude's dialect is traced;
+              # that tracer goes away with the path.
               stream_tracer =
-                if not acp? and state.runtime_module == Fountain.Runtimes.Claude do
-                  Fountain.Runtimes.Claude.StreamTracer.new(turn_span)
+                cond do
+                  acp? ->
+                    Fountain.Runtimes.ACP.Tracer.new(turn_span)
+
+                  state.runtime_module == Fountain.Runtimes.Claude ->
+                    Fountain.Runtimes.Claude.StreamTracer.new(turn_span)
+
+                  true ->
+                    nil
                 end
 
               {peer, peer_mon} =
@@ -2248,9 +2275,21 @@ defmodule Fountain.Conversations.ConversationServer do
   # is cleared at the end so the `{:exit, …}` that follows finds no match and
   # falls through to the catch-all. A turn ends on the prompt response *or* the
   # process exit, whichever arrives first, and never waits for both.
+  # One tracer field, two shapes: ACP turns hold an `ACP.Tracer` struct, legacy
+  # claude turns the old map. Dispatch on shape so every way a turn can end
+  # closes whichever one is live; the second clause goes away with the legacy
+  # path.
+  defp finalize_tracer(%Fountain.Runtimes.ACP.Tracer{} = tracer),
+    do: Fountain.Runtimes.ACP.Tracer.finalize(tracer)
+
+  defp finalize_tracer(tracer), do: Fountain.Runtimes.Claude.StreamTracer.finalize(tracer)
+
   defp finish_acp_turn(state, status, span_attrs, stage_meta) do
     if state.current_command, do: Sprites.close_stdin(state.current_command)
     stop_acp_peer(state)
+
+    # Before the turn span ends: totals land on it, abandoned tool spans close.
+    finalize_tracer(state.stream_tracer)
 
     {:ok, turn} =
       Conversations._unsafe_update_turn(state.current_turn, %{
