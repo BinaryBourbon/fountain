@@ -469,7 +469,7 @@ spec:
 
     # ── Sprite reaper (#405) ──────────────────────────────────────────────
     #
-    # SandboxReaper reconciles the sandboxes table against sprites.dev
+    # SandboxReaper reconciles the sandboxes table against each sandbox provider
     # hourly (crontab :07). Its third pass counts sprites running with no
     # sandbox row and deliberately never destroys them — so its entire
     # output is a gauge someone must be looking at, plus these alerts.
@@ -477,8 +477,8 @@ spec:
       interval: 60s
       rules:
         - alert: FountainUntrackedSprites
-          # fountain_reaper_untracked_count is the LEVEL of sprites alive at
-          # sprites.dev with no live sandbox row, re-measured every run.
+          # fountain_reaper_untracked_count is the LEVEL of sandboxes alive at
+          # a provider with no live sandbox row, re-measured every run.
           # Sustained non-zero is leaked money, not an outage — hence
           # warning, not critical. 2h means at least two consecutive hourly
           # runs both saw leaks, which filters the legitimate transients the

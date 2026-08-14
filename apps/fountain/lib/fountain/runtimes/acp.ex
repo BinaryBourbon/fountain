@@ -116,7 +116,7 @@ defmodule Fountain.Runtimes.ACP do
     # `sessionCapabilities`, so every turn after the first pays a full replay
     # that `Peer` discards. The cwd mirrors `Fountain.Runtimes.Gemini`'s
     # `@workdir` — gemini walks up from cwd looking for a `.git`, and
-    # `Gemini.prepare_sprite/3` git-inits exactly this directory. Pointing it
+    # `Gemini.prepare_sandbox/3` git-inits exactly this directory. Pointing it
     # at /home/sprite instead reintroduces the EACCES noise that workspace
     # exists to avoid.
     # Converted, verified, and **not shippable** — see `blocked`. Left in the
@@ -134,7 +134,7 @@ defmodule Fountain.Runtimes.ACP do
     },
     # Adapter, on the Codex App Server. The `zed-industries/codex-acp` that
     # earlier drafts named is archived; this is its successor under the
-    # protocol org. Auth is unchanged: `Codex.prepare_sprite/3` still runs
+    # protocol org. Auth is unchanged: `Codex.prepare_sandbox/3` still runs
     # `codex login --with-api-key`, and OPENAI_API_KEY is still exported, so
     # the adapter inherits whichever the CLI would have used.
     "codex" => %{
@@ -148,7 +148,7 @@ defmodule Fountain.Runtimes.ACP do
     # local HTTP server inside the sprite and drives it through opencode's own
     # SDK client, rather than being a plain stdio peer. It satisfies the
     # protocol, but it is a second process model to keep in mind when something
-    # hangs. Nothing to install here: `OpenCode.prepare_sprite/3` already bun-
+    # hangs. Nothing to install here: `OpenCode.prepare_sandbox/3` already bun-
     # installs the binary and symlinks it onto PATH.
     "opencode" => %{
       bin: "opencode",
@@ -264,7 +264,7 @@ defmodule Fountain.Runtimes.ACP do
   which reads like a protocol bug and is not one.
 
   So we symlink into `/home/sprite/.local/bin`, which *is* on PATH. This is the
-  same shape as `Fountain.Runtimes.OpenCode.prepare_sprite/3`, which hit the
+  same shape as `Fountain.Runtimes.OpenCode.prepare_sandbox/3`, which hit the
   identical problem with bun's global bin, and the absolute path is hardcoded
   for the same reason it is there: `~` resolves against whatever `HOME` the
   caller happens to have.
@@ -274,7 +274,7 @@ defmodule Fountain.Runtimes.ACP do
 
   # Native ACP: the runtime speaks the protocol itself, and is already on the
   # sprite — gemini from the base image, opencode from
-  # `OpenCode.prepare_sprite/3`'s bun install. Nothing to install, and for
+  # `OpenCode.prepare_sandbox/3`'s bun install. Nothing to install, and for
   # gemini nothing we can pin either: the version floor is whatever the image
   # carries, which gate 1 recorded as an open exposure.
   def install(_handle, runtime, _sprite_env) when runtime in ["gemini", "opencode"], do: :ok

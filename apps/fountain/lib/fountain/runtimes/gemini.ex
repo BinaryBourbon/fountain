@@ -114,7 +114,7 @@ defmodule Fountain.Runtimes.Gemini do
   # MemoryDiscovery is happy as long as it finds *some* .git when it
   # walks up from cwd.
   @impl true
-  def prepare_sprite(handle, _agent, sprite_env) do
+  def prepare_sandbox(handle, _agent, sprite_env) do
     script = """
     set -e
     if [ ! -d #{@workdir}/.git ]; then

@@ -56,7 +56,7 @@ defmodule Fountain.Conversations.ConversationServerTest do
       {pid, _ref, :alive} = start_server(conv)
 
       assert_received :write_config
-      assert_received :prepare_sprite
+      assert_received :prepare_sandbox
       GenServer.stop(pid)
     end
 
@@ -357,7 +357,7 @@ defmodule Fountain.Conversations.ConversationServerTest do
       # step cannot strand a conversation in `pending` forever.
       stub_happy_sprite()
 
-      Mimic.stub(Fountain.SpriteSkills, :mount, fn _s, _r, _sk ->
+      Mimic.stub(Fountain.SandboxSkills, :mount, fn _s, _r, _sk ->
         raise "boom"
       end)
 

@@ -218,6 +218,14 @@ than exempted quietly.
 
 ### 5. The sandbox behaviour is defined by a conformance bar, not a cloud list
 
+> **Status note (2026-08-14):** built, with one deviation.
+> [0018](0018-sandbox-provider-abstraction.md) supersedes this section's
+> two-implementation cap: `Fountain.Sandbox` + its conformance suite exist,
+> and the second and third implementations are hosted providers (E2B,
+> Daytona) rather than the BYO-Kubernetes runner sketched here — proving
+> the seam against differently-shaped backends took priority over waiting
+> for a named customer. The conformance bar itself is unchanged.
+
 `Fountain.SpritesClient` is the single sandbox implementation, reached through
 a platform-shared token ([0005](0005-platform-shared-sprites-token.md)).
 "Whatever cloud" must not become a matrix of providers — that is the entire

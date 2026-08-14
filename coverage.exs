@@ -25,7 +25,7 @@
     Fountain.Mailer,
     Fountain.Release,
     Fountain.Telemetry,
-    Fountain.SpriteSkills,
+    Fountain.SandboxSkills,
     Fountain.Conversations.Provisioning,
     Fountain.Conversations.Rehydrator,
     ~r/^Fountain\.Runtimes\./,

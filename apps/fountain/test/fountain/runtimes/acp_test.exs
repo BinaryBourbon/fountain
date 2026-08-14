@@ -188,7 +188,7 @@ defmodule Fountain.Runtimes.ACPTest do
 
       # opencode's `acp` subcommand starts a local HTTP server inside the
       # sprite and drives it through its own SDK — a heavier process model than
-      # the others, but nothing for us to install: OpenCode.prepare_sprite/3
+      # the others, but nothing for us to install: OpenCode.prepare_sandbox/3
       # already bun-installs it.
       assert {"opencode", ["acp"]} = ACP.command("opencode")
       assert is_nil(ACP.adapter_spec("opencode"))

@@ -58,7 +58,7 @@ defmodule Fountain.Runtimes.OpenCode do
   # bun's own global bin at /.sprite/languages/bun/bin is not on PATH).
   # Idempotent — `command -v` short-circuits on subsequent calls.
   @impl true
-  def prepare_sprite(handle, _agent, sprite_env) do
+  def prepare_sandbox(handle, _agent, sprite_env) do
     install_script = """
     set -e
 

@@ -18,6 +18,18 @@ upgrade, is in
 
 ### Added
 
+- **Pluggable sandbox backends: E2B and Daytona join Sprites.** The
+  sandbox layer is a provider-agnostic behaviour (`Fountain.Sandbox`) with
+  an executable conformance suite; `SANDBOX_PROVIDER` picks the instance
+  default, an agent can pin `sandbox_provider`, and every sandbox row
+  records the provider that owns it — parked sandboxes always wake where
+  their disk lives. E2B (`E2B_API_KEY`) pauses idle sandboxes with a
+  filesystem+memory snapshot; Daytona (`DAYTONA_API_KEY`) stops them with
+  the disk preserved. A provider that cannot park degrades to
+  destroy-on-idle, and the reaper reconciles each provider independently.
+  Reference sandbox images live in `images/e2b/` and `images/daytona/`;
+  decisions/0018 has the full design (#676–#686).
+
 - **Tool-level OTel spans for every ACP runtime.** Tool-call tracing was
   claude-only (a parser over its proprietary stream-json); ACP's
   `tool_call`/`tool_call_update` carry the id and status for all runtimes,

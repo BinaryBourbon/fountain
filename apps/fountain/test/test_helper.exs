@@ -32,7 +32,7 @@ Mimic.copy(Stripe.Invoice)
 
 Mimic.copy(Fountain.Conversations.ConversationServer)
 Mimic.copy(Fountain.Conversations.Provisioning)
-Mimic.copy(Fountain.SpriteSkills)
+Mimic.copy(Fountain.SandboxSkills)
 Mimic.copy(Fountain.Accounts)
 Mimic.copy(Fountain.Audit)
 Mimic.copy(Fountain.Crypto)

@@ -1,11 +1,13 @@
 # The Sprites contract
 
-Sprites is Fountain's one hard external dependency, and `SPRITES_BASE_URL` is
-a real seam: pointing it at something else means implementing everything on
-this page, and nothing less. This is the contract as actually consumed — every
-endpoint Fountain calls, the semantics it relies on, and the operational
-assumptions baked into the calling code. It exists so that evaluating a
-replacement backend is a reading exercise, not an archaeology project.
+This page documents the **Sprites adapter's** transport contract — every
+endpoint `Fountain.Sandbox.Sprites` calls, the semantics it relies on, and
+the operational assumptions baked in. The provider-neutral form of this
+contract is executable: the `Fountain.Sandbox` behaviour and its
+conformance suite (`Fountain.SandboxConformanceCase`), which the
+[E2B](e2b.md) and [Daytona](daytona.md) adapters also satisfy. Evaluating a
+new backend starts there; this page is the reference for what the original
+backend actually provides.
 
 Setup and cost model are in the [Sprites integration guide](sprites.md).
 Transport summary: REST over HTTPS with `Authorization: Bearer <token>`, one
