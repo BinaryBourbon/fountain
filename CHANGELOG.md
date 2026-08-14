@@ -16,6 +16,8 @@ upgrade, is in
 
 ## [Unreleased]
 
+## [0.8.0] — 2026-08-13
+
 ### Upgrade notes
 
 - **Sandboxes now rest in a new `suspended` status instead of being
@@ -26,6 +28,24 @@ upgrade, is in
   who relied on idle reclaim to clean up sprites should know it no longer
   does — only the max-lifetime ceiling, explicit termination, tenant
   suspension and account deletion destroy sprites now.
+- **One additive migration** (`sandboxes.last_resumed_at`); it runs
+  automatically on boot per the standard upgrade flow. No new required
+  configuration.
+
+### Added
+
+- **Agents can opt into speaking the Agent Client Protocol to their
+  runtime.** Setting `metadata.acp: true` on an agent whose runtime is
+  `claude`, `codex` or `opencode` replaces the per-turn CLI invocation with
+  an ACP connection scoped to the turn: prompts, images and MCP servers are
+  carried over the protocol, `agent.model` is honored on every turn, and
+  follow-up turns resume the runtime's own session (`session/resume` or
+  `session/load`, whichever the adapter advertises). The legacy path remains
+  the default and is unchanged (#647, #648, #656). `gemini` is deliberately
+  held back from the flag until its upstream `session/load` can find the
+  session it just wrote — a flag set on a gemini agent is a no-op, not an
+  error (#659, #660, #661). The design record is decisions/0014 through
+  0016.
 
 ### Changed
 
@@ -40,6 +60,25 @@ upgrade, is in
   (restarting on each wake) rather than calendar age, so a conversation
   parked for a week is not destroyed the moment it is woken. See
   decisions/0017.
+- **Environment warm-start checkpoints are no longer created.** A
+  checkpoint id is scoped to the sprite that made it, and an environment's
+  checkpoint was only ever restored into a *different* sprite — so every
+  restore failed and the checkpoint only spent time and storage. Creation
+  is now off by default behind a flag, ready to re-enable if the platform
+  grows a create-from-checkpoint call (#654).
+
+### Fixed
+
+- **ACP authentication only ever uses an API-key method, never whatever the
+  adapter listed first.** The fallback could pick an interactive login flow —
+  which a headless sandbox can never complete, leaving a turn in flight
+  forever, disarming idle reclaim and billing the sprite to its ceiling.
+- **Checkpoint creation never actually captured an id** — the extractor
+  matched a shape the library doesn't emit, so `checkpoint_id` was never
+  written and every restore was skipped; the id is now read from the
+  checkpoint listing (#653). Moot for warm starts since checkpoints stopped
+  being created (#654, above), but the restore path is correct if
+  re-enabled.
 
 ## [0.7.0] — 2026-08-07
 
