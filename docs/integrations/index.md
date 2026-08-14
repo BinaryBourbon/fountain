@@ -6,11 +6,15 @@ provider side, which env vars result, and how to verify it works.
 
 | Integration | Required? | Env vars | Without it |
 |---|---|---|---|
-| [Sprites](sprites.md) | **Yes** | `SPRITES_TOKEN`, `SPRITES_BASE_URL`, `SPRITES_TIMEOUT_MS` | The app boots, but every conversation fails |
+| [A sandbox provider](sandbox-contract.md) | **Yes — one of three** | `SPRITES_TOKEN` *or* `E2B_API_KEY` *or* `DAYTONA_API_KEY`, plus `SANDBOX_PROVIDER` to pick the default | The app boots, but every conversation fails at provision time |
 | [Mail](mail.md) | **A decision, yes** | `RESEND_API_KEY` *or* `SMTP_*` *or* `EMAIL_DELIVERY=none`, `EMAIL_FROM` | Production refuses to boot with none of the three set |
 | [GitHub OAuth](github-oauth.md) | Optional | `GITHUB_OAUTH_CLIENT_ID`, `GITHUB_OAUTH_CLIENT_SECRET` | Email + password auth only |
 | [Stripe](stripe.md) | Optional | `BILLING_ENABLED`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_ID` | No billing. Correct for most self-hosted instances — leave the gate off |
 | [Sentry](sentry.md) | Optional | `SENTRY_DSN`, `SENTRY_ENVIRONMENT` | No error tracking; the SDK is inert and nothing leaves the instance |
+
+The sandbox providers — Sprites, E2B, Daytona — have
+[a section of their own](sandbox-contract.md): one contract, three
+implementations.
 
 ## The integration you do not configure
 

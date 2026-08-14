@@ -34,14 +34,18 @@ defmodule Fountain.Docs do
     {"Architecture", "architecture.md"},
     {"Operations", "operations.md"},
     {"Configuration reference", "configuration.md"},
+    {"Sandbox providers",
+     [
+       {"The contract", "integrations/sandbox-contract.md"},
+       {"Sprites", "integrations/sprites.md"},
+       {"Sprites transport reference", "integrations/sprites-contract.md"},
+       {"E2B", "integrations/e2b.md"},
+       {"Daytona", "integrations/daytona.md"},
+       {"Adding a provider", "integrations/adding-a-sandbox-provider.md"}
+     ]},
     {"Integrations",
      [
        {"Overview", "integrations/index.md"},
-       {"Sprites", "integrations/sprites.md"},
-       {"The Sprites contract", "integrations/sprites-contract.md"},
-       {"E2B", "integrations/e2b.md"},
-       {"Daytona", "integrations/daytona.md"},
-       {"Adding a provider", "integrations/adding-a-sandbox-provider.md"},
        {"GitHub OAuth", "integrations/github-oauth.md"},
        {"Stripe", "integrations/stripe.md"},
        {"Sentry", "integrations/sentry.md"},

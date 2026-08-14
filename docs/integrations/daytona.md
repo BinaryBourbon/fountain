@@ -1,7 +1,8 @@
 # Daytona
 
-[Daytona](https://daytona.io) is an alternative sandbox backend — the
-closest semantic match to Fountain's sandbox contract of any provider.
+[Daytona](https://daytona.io) is one of the three
+[sandbox providers](sandbox-contract.md), and the closest semantic match
+to the contract of any of them.
 Setting `DAYTONA_API_KEY` enables it; `SANDBOX_PROVIDER=daytona` makes it
 the default for newly-created sandboxes, and an individual agent can pin it
 via `sandbox_provider`. Existing sandboxes always stay on the provider they
