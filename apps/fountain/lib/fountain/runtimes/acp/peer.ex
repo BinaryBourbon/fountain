@@ -66,7 +66,6 @@ defmodule Fountain.Runtimes.ACP.Peer do
 
   alias Fountain.Runtimes.ACP
   alias Fountain.Runtimes.ACP.Protocol
-  alias Fountain.SpriteStdin
 
   # How long the replay has to stay quiet before we believe it is over, and how
   # long we will wait for that in total. See `handle_response(:load_session, …)`.
@@ -579,14 +578,14 @@ defmodule Fountain.Runtimes.ACP.Peer do
     {tag, %{state | pending: pending}}
   end
 
-  # Every write goes through `SpriteStdin` rather than `Sprites.write/2`,
-  # because the latter exits its caller when the runtime has already gone —
-  # #603, and being mid-turn is exactly the condition that made it an orphaned
-  # turn rather than an error.
+  # `Fountain.Sandbox.write_stdin/2` is total by contract: a runtime that has
+  # already gone yields {:error, :command_exited} rather than exiting this
+  # process — #603, and being mid-turn is exactly the condition that made
+  # that an orphaned turn rather than an error.
   defp write(%State{phase: :failed} = state, _iodata), do: state
 
   defp write(state, iodata) do
-    case SpriteStdin.write(state.command, iodata) do
+    case Fountain.Sandbox.write_stdin(state.command, iodata) do
       :ok -> state
       {:error, reason} -> fail(state, {:acp_write_failed, reason})
     end

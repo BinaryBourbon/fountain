@@ -119,8 +119,9 @@ defmodule Fountain.BillingGateTest do
     end
 
     defp stub_sprite_alive do
-      stub(Fountain.SpritesClient, :get!, fn -> :fake_client end)
-      stub(Sprites, :get_sprite, fn _client, _name -> {:ok, %{name: "alive"}} end)
+      stub(Fountain.Sandbox.Sprites, :get, fn _handle ->
+        {:ok, %{status: :running, raw: %{name: "alive"}}}
+      end)
     end
 
     test "is refused for a canceled subscription without starting a server" do

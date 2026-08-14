@@ -168,6 +168,14 @@ defmodule Fountain.Sandbox do
   @doc "Send stdin EOF."
   @callback close_stdin(Command.t()) :: :ok | {:error, error()}
 
+  @doc """
+  Stop the local command handle, terminating its transport. Total — an
+  already-stopped command is `:ok`. For a detachable command the remote
+  process keeps running (that is what reattach exists for); this only tears
+  down this node's end.
+  """
+  @callback stop_command(Command.t()) :: :ok
+
   @doc "List the sandbox's detachable sessions."
   @callback list_sessions(Handle.t()) :: {:ok, [Session.t()]} | {:error, error()}
 
@@ -289,6 +297,12 @@ defmodule Fountain.Sandbox do
   @spec close_stdin(Command.t()) :: :ok | {:error, error()}
   def close_stdin(%Command{} = command) do
     adapter_for(command.provider).close_stdin(command)
+  end
+
+  @doc "Stop the local command handle. Total."
+  @spec stop_command(Command.t()) :: :ok
+  def stop_command(%Command{} = command) do
+    adapter_for(command.provider).stop_command(command)
   end
 
   @doc "List a sandbox's detachable sessions."

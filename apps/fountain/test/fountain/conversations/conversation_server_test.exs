@@ -80,12 +80,12 @@ defmodule Fountain.Conversations.ConversationServerTest do
       stub_happy_sprite()
       # The server reads command.ref, so the spawn result must be a command struct
       # rather than a bare pid.
-      Mimic.stub(Sprites, :spawn, fn _s, _cmd, _args, _opts ->
-        {:ok, %{ref: make_ref(), pid: self()}}
+      Mimic.stub(Fountain.Sandbox.Sprites, :spawn, fn _h, _cmd, _args, _opts ->
+        {:ok, %Fountain.Sandbox.Command{provider: :sprites, ref: make_ref()}}
       end)
 
-      Mimic.stub(Sprites, :write, fn _cmd, _data -> :ok end)
-      Mimic.stub(Sprites, :close_stdin, fn _cmd -> :ok end)
+      Mimic.stub(Fountain.Sandbox.Sprites, :write_stdin, fn _cmd, _data -> :ok end)
+      Mimic.stub(Fountain.Sandbox.Sprites, :close_stdin, fn _cmd -> :ok end)
 
       {pid, _ref, :alive} = start_server(conv, initial_prompt: "hello there")
 
@@ -115,12 +115,12 @@ defmodule Fountain.Conversations.ConversationServerTest do
       # so the registry genuinely cannot resolve them.
       stub_happy_sprite()
 
-      Mimic.stub(Sprites, :spawn, fn _s, _cmd, _args, _opts ->
-        {:ok, %{ref: make_ref(), pid: self()}}
+      Mimic.stub(Fountain.Sandbox.Sprites, :spawn, fn _h, _cmd, _args, _opts ->
+        {:ok, %Fountain.Sandbox.Command{provider: :sprites, ref: make_ref()}}
       end)
 
-      Mimic.stub(Sprites, :write, fn _cmd, _data -> :ok end)
-      Mimic.stub(Sprites, :close_stdin, fn _cmd -> :ok end)
+      Mimic.stub(Fountain.Sandbox.Sprites, :write_stdin, fn _cmd, _data -> :ok end)
+      Mimic.stub(Fountain.Sandbox.Sprites, :close_stdin, fn _cmd -> :ok end)
 
       {pid, _ref, :alive} = start_server(conv, initial_prompt: "first prompt")
 
@@ -257,7 +257,11 @@ defmodule Fountain.Conversations.ConversationServerTest do
 
     test "a failed provision lands in the scrape as provision/failed", %{conv: conv} do
       stub_happy_sprite()
-      Mimic.stub(Sprites, :create, fn _client, _name -> {:error, :quota_exceeded} end)
+
+      Mimic.stub(Fountain.Sandbox.Sprites, :create, fn _name, _opts ->
+        {:error, :quota_exceeded}
+      end)
+
       before_body = scrape_body()
 
       {_pid, ref, _} = start_server(conv)
@@ -276,12 +280,12 @@ defmodule Fountain.Conversations.ConversationServerTest do
       stub_happy_sprite()
       cmd_ref = make_ref()
 
-      Mimic.stub(Sprites, :spawn, fn _s, _cmd, _args, _opts ->
-        {:ok, %{ref: cmd_ref, pid: self()}}
+      Mimic.stub(Fountain.Sandbox.Sprites, :spawn, fn _h, _cmd, _args, _opts ->
+        {:ok, %Fountain.Sandbox.Command{provider: :sprites, ref: cmd_ref}}
       end)
 
-      Mimic.stub(Sprites, :write, fn _cmd, _data -> :ok end)
-      Mimic.stub(Sprites, :close_stdin, fn _cmd -> :ok end)
+      Mimic.stub(Fountain.Sandbox.Sprites, :write_stdin, fn _cmd, _data -> :ok end)
+      Mimic.stub(Fountain.Sandbox.Sprites, :close_stdin, fn _cmd -> :ok end)
 
       before_body = scrape_body()
 
@@ -300,7 +304,10 @@ defmodule Fountain.Conversations.ConversationServerTest do
   describe "provisioning — failure paths" do
     test "a sprite that cannot be created marks both rows failed", %{conv: conv, sandbox: sandbox} do
       stub_happy_sprite()
-      Mimic.stub(Sprites, :create, fn _client, _name -> {:error, :quota_exceeded} end)
+
+      Mimic.stub(Fountain.Sandbox.Sprites, :create, fn _name, _opts ->
+        {:error, :quota_exceeded}
+      end)
 
       {_pid, ref, _} = start_server(conv)
       assert_stopped(ref)
@@ -317,8 +324,8 @@ defmodule Fountain.Conversations.ConversationServerTest do
         {:error, :apt_failed}
       end)
 
-      Mimic.stub(Sprites, :destroy, fn sprite ->
-        send(test_pid, {:destroyed, sprite.name})
+      Mimic.stub(Fountain.Sandbox.Sprites, :destroy, fn handle ->
+        send(test_pid, {:destroyed, handle.name})
         :ok
       end)
 
@@ -380,12 +387,12 @@ defmodule Fountain.Conversations.ConversationServerTest do
       stub_happy_sprite()
       ref = make_ref()
 
-      Mimic.stub(Sprites, :spawn, fn _s, _cmd, _args, _opts ->
-        {:ok, %{ref: ref, pid: self()}}
+      Mimic.stub(Fountain.Sandbox.Sprites, :spawn, fn _h, _cmd, _args, _opts ->
+        {:ok, %Fountain.Sandbox.Command{provider: :sprites, ref: ref}}
       end)
 
-      Mimic.stub(Sprites, :write, fn _cmd, _data -> :ok end)
-      Mimic.stub(Sprites, :close_stdin, fn _cmd -> :ok end)
+      Mimic.stub(Fountain.Sandbox.Sprites, :write_stdin, fn _cmd, _data -> :ok end)
+      Mimic.stub(Fountain.Sandbox.Sprites, :close_stdin, fn _cmd -> :ok end)
 
       {pid, _mon, :alive} = start_server(conv, initial_prompt: "first")
       {pid, ref}
@@ -473,7 +480,10 @@ defmodule Fountain.Conversations.ConversationServerTest do
       # Before this reset, a failed spawn marked the turn failed but left the
       # conversation reporting "running" in the API and UI indefinitely.
       stub_happy_sprite()
-      Mimic.stub(Sprites, :spawn, fn _s, _cmd, _args, _opts -> {:error, :econnrefused} end)
+
+      Mimic.stub(Fountain.Sandbox.Sprites, :spawn, fn _h, _cmd, _args, _opts ->
+        {:error, :econnrefused}
+      end)
 
       {pid, _ref, :alive} = start_server(conv, initial_prompt: "hello")
       _ = :sys.get_state(pid)
@@ -486,11 +496,11 @@ defmodule Fountain.Conversations.ConversationServerTest do
     end
 
     test "a runtime that exits before the prompt is written fails the turn (#603)", %{conv: conv} do
-      # The real Sprites.write/2 against a real command process that stops
+      # The real adapter write path against a real command process that stops
       # :normal on the write, which is what Sprites.Command does the moment the
       # runtime's exit frame arrives. Nothing about this path is stubbed.
       #
-      # The GenServer.call inside Sprites.write used to exit THIS server, and
+      # The GenServer.call inside the SDK write used to exit THIS server, and
       # the supervisor's restart then found the sandbox already "ready", took
       # the reattach branch, and orphaned the turn behind a list_sessions error
       # that named nothing real. Against spritzer's one-shot exec that lost
@@ -498,8 +508,15 @@ defmodule Fountain.Conversations.ConversationServerTest do
       stub_happy_sprite()
       dead_on_write = spawn(fn -> receive(do: (_ -> exit(:normal))) end)
 
-      Mimic.stub(Sprites, :spawn, fn _s, _cmd, _args, _opts ->
-        {:ok, %Sprites.Command{ref: make_ref(), pid: dead_on_write, tty_mode: false}}
+      Mimic.stub(Fountain.Sandbox.Sprites, :spawn, fn _h, _cmd, _args, _opts ->
+        ref = make_ref()
+
+        {:ok,
+         %Fountain.Sandbox.Command{
+           provider: :sprites,
+           ref: ref,
+           private: %Sprites.Command{ref: ref, pid: dead_on_write, tty_mode: false}
+         }}
       end)
 
       # :alive is the regression: the prompt is delivered before this returns.
@@ -542,8 +559,13 @@ defmodule Fountain.Conversations.ConversationServerTest do
           end
         end)
 
-      Mimic.stub(Sprites, :spawn, fn _s, _cmd, _args, _opts ->
-        {:ok, %Sprites.Command{ref: ref, pid: exits_1_on_write, tty_mode: false}}
+      Mimic.stub(Fountain.Sandbox.Sprites, :spawn, fn _h, _cmd, _args, _opts ->
+        {:ok,
+         %Fountain.Sandbox.Command{
+           provider: :sprites,
+           ref: ref,
+           private: %Sprites.Command{ref: ref, pid: exits_1_on_write, tty_mode: false}
+         }}
       end)
 
       {pid, _mon, :alive} = start_server(conv, initial_prompt: "hello")

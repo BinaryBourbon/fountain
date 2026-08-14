@@ -20,8 +20,6 @@ defmodule Fountain.Conversations.ConversationServer do
     Crypto,
     Environments,
     InferenceCredentials,
-    SpritesClient,
-    SpriteStdin,
     Substitution,
     Vaults
   }
@@ -241,7 +239,7 @@ defmodule Fountain.Conversations.ConversationServer do
       sandbox_id: Keyword.fetch!(args, :sandbox_id),
       runtime_module: Keyword.fetch!(args, :runtime_module),
       user_id: nil,
-      sprite: nil,
+      handle: nil,
       sprite_env: [],
       current_command: nil,
       current_command_ref: nil,
@@ -568,12 +566,8 @@ defmodule Fountain.Conversations.ConversationServer do
     {:ok, _} = Conversations.update_sandbox(sandbox, %{status: "starting"})
     publish_stage(state.conversation_id, "provision", "started")
 
-    case create_sprite(sandbox.sprite_name) do
-      {:ok, sprite} ->
-        # Transitional while this server still holds the SDK sprite: the
-        # already-migrated leaf modules (skills, runtime prepare/config)
-        # take a Fountain.Sandbox.Handle.
-        handle = Fountain.Sandbox.Sprites.from_sdk(sprite)
+    case create_sandbox_handle(sandbox.sprite_name) do
+      {:ok, handle} ->
         skills = (agent && agent.skills) || []
         # conv.runtime is validated-required and outlives the agent; the agent
         # fallback only covers rows predating the runtime column.
@@ -603,7 +597,7 @@ defmodule Fountain.Conversations.ConversationServer do
           # ceiling survives a restart and a reattach rather than resetting.
           new_state = %{
             state
-            | sprite: sprite,
+            | handle: handle,
               sprite_env: sprite_env,
               sandbox_started_at: sandbox_clock_start(sandbox)
           }
@@ -615,7 +609,7 @@ defmodule Fountain.Conversations.ConversationServer do
         else
           {:error, reason} ->
             Logger.error("provision step failed: #{inspect(reason)}")
-            _ = Sprites.destroy(sprite)
+            _ = Fountain.Sandbox.destroy(handle)
             {:ok, _} = Conversations.update_sandbox(sandbox, %{status: "failed"})
 
             publish_stage(state.conversation_id, "provision", "failed", %{
@@ -758,23 +752,19 @@ defmodule Fountain.Conversations.ConversationServer do
       sprite_name: sandbox.sprite_name
     })
 
-    client = SpritesClient.get!()
+    handle = Fountain.Sandbox.build_handle(:sprites, sandbox.sprite_name)
 
     case Fountain.Retry.with_backoff(
-           fn -> Sprites.get_sprite(client, sandbox.sprite_name) end,
+           fn -> Fountain.Sandbox.get(handle) end,
            label: "sprite lookup on wake"
          ) do
       {:ok, _info} ->
-        sprite = Sprites.sprite(client, sandbox.sprite_name)
         {state, _conv} = rotate_callback_api_key(state, conv)
         sprite_env = build_sprite_env(state, agent, env, secrets)
 
         # Refresh the .env file in case secrets/env_vars were edited
         # between the original provision and this reattach.
-        Fountain.Conversations.Provisioning.write_env_file(
-          Fountain.Sandbox.Sprites.from_sdk(sprite),
-          sprite_env
-        )
+        Fountain.Conversations.Provisioning.write_env_file(handle, sprite_env)
 
         # Normally the wake path already flipped suspended → ready under the
         # quota reservation; this covers the reaper parking the row mid-wake.
@@ -795,7 +785,7 @@ defmodule Fountain.Conversations.ConversationServer do
 
         new_state = %{
           state
-          | sprite: sprite,
+          | handle: handle,
             sprite_env: sprite_env,
             sandbox_started_at: sandbox_clock_start(sandbox)
         }
@@ -836,7 +826,7 @@ defmodule Fountain.Conversations.ConversationServer do
       publish_stage(state.conversation_id, "reattach", "done", %{outcome: "no_running_turn"})
       state
     else
-      case Fountain.Retry.with_backoff(fn -> Sprites.list_sessions(state.sprite) end,
+      case Fountain.Retry.with_backoff(fn -> Fountain.Sandbox.list_sessions(state.handle) end,
              label: "session list on reattach"
            ) do
         {:ok, sessions} ->
@@ -860,7 +850,7 @@ defmodule Fountain.Conversations.ConversationServer do
   end
 
   defp attempt_session_attach(state, running_turn, [session | _]) do
-    case Sprites.attach_session(state.sprite, session.id, owner: self(), stdin: true) do
+    case Fountain.Sandbox.attach(state.handle, session.id, owner: self(), stdin: true) do
       {:ok, command} ->
         # sprites replays the session's buffered output before live-tailing.
         # Count the bytes we already persisted for this turn so the
@@ -1092,15 +1082,7 @@ defmodule Fountain.Conversations.ConversationServer do
     # stays open on the ACP path.
     if state.acp_peer, do: Fountain.Runtimes.ACP.Peer.cancel(state.acp_peer)
 
-    cmd_pid = state.current_command.pid
-
-    if Process.alive?(cmd_pid) do
-      try do
-        GenServer.stop(cmd_pid, :normal, 1_000)
-      catch
-        :exit, _ -> :ok
-      end
-    end
+    Fountain.Sandbox.stop_command(state.current_command)
 
     {:ok, _turn} =
       Conversations._unsafe_update_turn(state.current_turn, %{
@@ -1143,7 +1125,7 @@ defmodule Fountain.Conversations.ConversationServer do
   end
 
   def handle_call(:terminate_conv, _from, state) do
-    if state.sprite, do: _ = Sprites.destroy(state.sprite)
+    if state.handle, do: _ = Fountain.Sandbox.destroy(state.handle)
     sandbox = Conversations._unsafe_get_sandbox!(state.sandbox_id)
 
     {:ok, _} =
@@ -1376,7 +1358,7 @@ defmodule Fountain.Conversations.ConversationServer do
   end
 
   # An error naming the CURRENT command is terminal for the turn (#413):
-  # Sprites.Command sends it when the WebSocket to the sprite drops mid-run,
+  # The adapter sends it when the transport to the sandbox drops mid-run,
   # then stops — and since the command process is neither linked nor
   # monitored, this message is the only signal there will ever be. Ignoring
   # it left current_command set forever: every prompt answered {:error,
@@ -1488,7 +1470,7 @@ defmodule Fountain.Conversations.ConversationServer do
   defp reclaim_sandbox(state, :idle) do
     Logger.info(
       "suspending sandbox for conv #{state.conversation_id}: idle " <>
-        "(sprite #{inspect(state.sprite && state.sprite.name)})"
+        "(sprite #{inspect(state.handle && state.handle.name)})"
     )
 
     if state.sandbox_id do
@@ -1513,7 +1495,7 @@ defmodule Fountain.Conversations.ConversationServer do
 
     :telemetry.execute([:fountain, :sandbox, :suspended], %{count: 1}, %{})
 
-    {:stop, :normal, %{state | sprite: nil}}
+    {:stop, :normal, %{state | handle: nil}}
   end
 
   # Max lifetime: tear down the sprite and stop. This bound exists for the
@@ -1525,10 +1507,10 @@ defmodule Fountain.Conversations.ConversationServer do
   defp reclaim_sandbox(state, :max_lifetime = reason) do
     Logger.info(
       "reclaiming sandbox for conv #{state.conversation_id}: #{reason} " <>
-        "(sprite #{inspect(state.sprite && state.sprite.name)})"
+        "(sprite #{inspect(state.handle && state.handle.name)})"
     )
 
-    if state.sprite, do: _ = Sprites.destroy(state.sprite)
+    if state.handle, do: _ = Fountain.Sandbox.destroy(state.handle)
 
     if state.sandbox_id do
       sandbox = Conversations._unsafe_get_sandbox!(state.sandbox_id)
@@ -1555,7 +1537,7 @@ defmodule Fountain.Conversations.ConversationServer do
 
     :telemetry.execute([:fountain, :sandbox, :reclaimed], %{count: 1}, %{reason: reason})
 
-    {:stop, :normal, %{state | sprite: nil}}
+    {:stop, :normal, %{state | handle: nil}}
   end
 
   # Best-effort revoke of the per-conversation API key when this server
@@ -1617,16 +1599,13 @@ defmodule Fountain.Conversations.ConversationServer do
   defp redact_state(state) do
     %{
       state
-      | sprite: redact_sprite(state.sprite),
+      | handle: state.handle && %{state.handle | private: nil},
         sprite_env: Enum.map(state.sprite_env, fn {k, _v} -> {k, "[REDACTED]"} end),
         tenant_key: redact(state.tenant_key),
         inference_credentials: redact_map(state.inference_credentials),
         callback_token: redact(state.callback_token)
     }
   end
-
-  defp redact_sprite(%{client: _} = sprite), do: Map.put(sprite, :client, "[REDACTED]")
-  defp redact_sprite(other), do: other
 
   defp redact_map(%{} = map), do: Map.new(map, fn {k, _v} -> {k, "[REDACTED]"} end)
   defp redact_map(other), do: redact(other)
@@ -1636,19 +1615,11 @@ defmodule Fountain.Conversations.ConversationServer do
 
   # ── helpers ───────────────────────────────────────────────────────────────
 
-  defp create_sprite(name) do
-    client = SpritesClient.get!()
-
+  # Provider hardcoded until the sandboxes row carries one; adopt-on-409 is
+  # the adapter's job now.
+  defp create_sandbox_handle(name) do
     Fountain.Retry.with_backoff(
-      fn ->
-        case Sprites.create(client, name) do
-          # A 409 means a sprite with this name already exists. Names are
-          # unique per sandbox row, so the only way that happens is an earlier
-          # attempt that created it but lost the response — adopt it.
-          {:error, {:api_error, 409, _body}} -> {:ok, Sprites.sprite(client, name)}
-          other -> other
-        end
-      end,
+      fn -> Fountain.Sandbox.create(:sprites, name) end,
       label: "sprite create #{name}"
     )
   end
@@ -1817,7 +1788,7 @@ defmodule Fountain.Conversations.ConversationServer do
     # Write image temp files to sprite. Only on the legacy path: ACP carries
     # images as content blocks inside `session/prompt`, so writing them into
     # the sandbox first would be a round trip whose product nothing reads.
-    image_paths = if acp?, do: [], else: write_image_temp_files(state.sprite, turn.id, images)
+    image_paths = if acp?, do: [], else: write_image_temp_files(state.handle, turn.id, images)
 
     {:ok, _} = Conversations.update_conversation(conv, %{status: "running"})
 
@@ -1857,7 +1828,7 @@ defmodule Fountain.Conversations.ConversationServer do
       end
 
     # If a runtime embeds the prompt in argv (codex), it returns
-    # `stdin?: false` and we skip the Sprites.write/close_stdin pipeline.
+    # `stdin?: false` and we skip the write_stdin/close_stdin pipeline.
     # claude / gemini / opencode default to true and read from stdin.
     use_stdin? = Keyword.get(build_opts, :stdin?, true)
 
@@ -1923,12 +1894,11 @@ defmodule Fountain.Conversations.ConversationServer do
         ]
         |> then(&if cwd, do: Keyword.put(&1, :dir, cwd), else: &1)
 
-      case Sprites.spawn(state.sprite, cmd, args, spawn_opts) do
+      case Fountain.Sandbox.spawn(state.handle, cmd, args, spawn_opts) do
         {:ok, command} ->
-          # SpriteStdin.write/2 rather than Sprites.write/2: the latter exits
-          # its caller when the runtime has already gone, and this process
-          # being mid-turn is exactly what turned that into an orphaned turn
-          # (#603). See `Fountain.SpriteStdin` for the whole chain.
+          # write_stdin/2 is total by contract — a runtime that exits before
+          # reading its prompt yields {:error, :command_exited} rather than
+          # taking this server down (#603).
           # On the ACP path stdin stays **open**: it is the return path for
           # `session/request_permission` answers and `session/cancel`, and the
           # peer writes the prompt itself as `session/prompt`. Closing it here
@@ -2084,7 +2054,7 @@ defmodule Fountain.Conversations.ConversationServer do
   # Collect what a command said before it stopped: `{exit_code, output}`,
   # with a nil code if no exit arrives.
   #
-  # `Sprites.Command` sends the owner `{:exit, %{ref: ref}, code}` — behind
+  # The adapter sends the owner `{:exit, %{ref: ref}, code}` — behind
   # any `{:stdout, …}` / `{:stderr, …}` the runtime produced first — and only
   # *then* stops. So when a stdin write comes back `{:error, :command_exited}`
   # it is because that already happened, and those messages are in this
@@ -2223,8 +2193,8 @@ defmodule Fountain.Conversations.ConversationServer do
   # The legacy stdin dance, unchanged and lifted out so the ACP branch above
   # reads as one condition rather than a nested `if`.
   defp write_prompt_and_close(command, payload) do
-    case SpriteStdin.write(command, payload) do
-      :ok -> Sprites.close_stdin(command)
+    case Fountain.Sandbox.write_stdin(command, payload) do
+      :ok -> Fountain.Sandbox.close_stdin(command)
       {:error, reason} -> {:error, reason}
     end
   end
@@ -2258,7 +2228,7 @@ defmodule Fountain.Conversations.ConversationServer do
   defp finalize_tracer(tracer), do: Fountain.Runtimes.ACP.Tracer.finalize(tracer)
 
   defp finish_acp_turn(state, status, span_attrs, stage_meta) do
-    if state.current_command, do: Sprites.close_stdin(state.current_command)
+    if state.current_command, do: Fountain.Sandbox.close_stdin(state.current_command)
     stop_acp_peer(state)
 
     # Before the turn span ends: totals land on it, abandoned tool spans close.
@@ -2431,17 +2401,15 @@ defmodule Fountain.Conversations.ConversationServer do
 
   # Write each image to a temp path in the sprite filesystem and return
   # a list of {path, media_type} tuples for passing to the runtime.
-  defp write_image_temp_files(_sprite, _turn_id, []), do: []
+  defp write_image_temp_files(_handle, _turn_id, []), do: []
 
-  defp write_image_temp_files(sprite, turn_id, images) do
-    fs = Sprites.filesystem(sprite, "/")
-
+  defp write_image_temp_files(handle, turn_id, images) do
     images
     |> Enum.with_index()
     |> Enum.map(fn {%{media_type: mt, data: data}, idx} ->
       ext = media_type_to_ext(mt)
       path = "/tmp/aod_turn_#{turn_id}_#{idx}.#{ext}"
-      Sprites.Filesystem.write(fs, path, data)
+      Fountain.Sandbox.write_file(handle, path, data)
       {path, mt}
     end)
   end

@@ -1173,13 +1173,11 @@ defmodule Fountain.Conversations do
     case _unsafe_get_sandbox(sandbox_id) do
       %{status: status, sprite_name: name}
       when status in ["ready", "suspended"] and is_binary(name) ->
-        client = Fountain.SpritesClient.get!()
-
-        case Sprites.get_sprite(client, name) do
+        case Fountain.Sandbox.get(Fountain.Sandbox.build_handle(:sprites, name)) do
           {:ok, _info} ->
             {:reuse, sandbox_id}
 
-          {:error, {:not_found, _}} ->
+          {:error, :not_found} ->
             :create_new
 
           {:error, reason} when status == "suspended" ->

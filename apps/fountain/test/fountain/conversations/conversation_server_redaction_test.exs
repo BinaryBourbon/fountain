@@ -35,9 +35,13 @@ defmodule Fountain.Conversations.ConversationServerRedactionTest do
     :sys.replace_state(pid, fn state ->
       %{
         state
-        | sprite: %Sprites.Sprite{
+        | handle: %Fountain.Sandbox.Handle{
+            provider: :sprites,
             name: "test-sprite",
-            client: %Sprites.Client{token: @sprites_token}
+            private: %Sprites.Sprite{
+              name: "test-sprite",
+              client: %Sprites.Client{token: @sprites_token}
+            }
           },
           sprite_env: [{"MY_SECRET", @secret_env_value}, {"OTHER", "other-value-315"}],
           tenant_key: @dek_value,

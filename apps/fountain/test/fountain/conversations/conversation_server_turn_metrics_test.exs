@@ -57,12 +57,12 @@ defmodule Fountain.Conversations.ConversationServerTurnMetricsTest do
     stub_happy_sprite()
     ref = make_ref()
 
-    Mimic.stub(Sprites, :spawn, fn _s, _cmd, _args, _opts ->
-      {:ok, %{ref: ref, pid: self()}}
+    Mimic.stub(Fountain.Sandbox.Sprites, :spawn, fn _h, _cmd, _args, _opts ->
+      {:ok, %Fountain.Sandbox.Command{provider: :sprites, ref: ref}}
     end)
 
-    Mimic.stub(Sprites, :write, fn _cmd, _data -> :ok end)
-    Mimic.stub(Sprites, :close_stdin, fn _cmd -> :ok end)
+    Mimic.stub(Fountain.Sandbox.Sprites, :write_stdin, fn _cmd, _data -> :ok end)
+    Mimic.stub(Fountain.Sandbox.Sprites, :close_stdin, fn _cmd -> :ok end)
 
     {pid, _mon, :alive} = start_server(conv, initial_prompt: "first")
     {pid, ref}
@@ -137,7 +137,10 @@ defmodule Fountain.Conversations.ConversationServerTurnMetricsTest do
       # duration" dragging the histogram's low end down.
       capture_turn_completed()
       stub_happy_sprite()
-      Mimic.stub(Sprites, :spawn, fn _s, _cmd, _args, _opts -> {:error, :econnrefused} end)
+
+      Mimic.stub(Fountain.Sandbox.Sprites, :spawn, fn _h, _cmd, _args, _opts ->
+        {:error, :econnrefused}
+      end)
 
       {pid, _ref, :alive} = start_server(conv, initial_prompt: "hello")
       _ = :sys.get_state(pid)

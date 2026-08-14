@@ -20,9 +20,7 @@ defmodule Fountain.Accounts.DeletionTest do
   setup :set_mimic_global
 
   setup do
-    stub(Fountain.SpritesClient, :get!, fn -> :client end)
-    stub(Sprites, :sprite, fn :client, name -> {:handle, name} end)
-    stub(Sprites, :destroy, fn _handle -> :ok end)
+    stub(Fountain.Sandbox.Sprites, :destroy, fn _handle -> :ok end)
     stub(Fountain.Conversations.ConversationServer, :whereis, fn _ -> nil end)
     :ok
   end
@@ -118,7 +116,10 @@ defmodule Fountain.Accounts.DeletionTest do
       sandbox = insert_sandbox(user_id: user.id, status: "ready")
 
       test = self()
-      stub(Sprites, :destroy, fn {:handle, name} -> send(test, {:destroyed, name}) && :ok end)
+
+      stub(Fountain.Sandbox.Sprites, :destroy, fn handle ->
+        send(test, {:destroyed, handle.name}) && :ok
+      end)
 
       capture_log(fn -> assert {:ok, %{sprites_destroyed: 1}} = Deletion.delete_user(user) end)
 
@@ -134,7 +135,10 @@ defmodule Fountain.Accounts.DeletionTest do
       sandbox = insert_sandbox(user_id: user.id, status: "suspended")
 
       test = self()
-      stub(Sprites, :destroy, fn {:handle, name} -> send(test, {:destroyed, name}) && :ok end)
+
+      stub(Fountain.Sandbox.Sprites, :destroy, fn handle ->
+        send(test, {:destroyed, handle.name}) && :ok
+      end)
 
       capture_log(fn -> assert {:ok, %{sprites_destroyed: 1}} = Deletion.delete_user(user) end)
 
@@ -145,7 +149,7 @@ defmodule Fountain.Accounts.DeletionTest do
     test "already-terminal sandboxes are not touched again" do
       user = insert_verified_user()
       insert_sandbox(user_id: user.id, status: "terminated")
-      reject(&Sprites.destroy/1)
+      reject(&Fountain.Sandbox.Sprites.destroy/1)
 
       capture_log(fn -> assert {:ok, %{sprites_destroyed: 0}} = Deletion.delete_user(user) end)
     end
@@ -156,7 +160,7 @@ defmodule Fountain.Accounts.DeletionTest do
       # leave the person unable to leave.
       user = insert_verified_user()
       insert_sandbox(user_id: user.id, status: "ready")
-      stub(Sprites, :destroy, fn _ -> {:error, :boom} end)
+      stub(Fountain.Sandbox.Sprites, :destroy, fn _ -> {:error, :boom} end)
 
       capture_log(fn -> assert {:ok, _} = Deletion.delete_user(user) end)
 
@@ -166,7 +170,7 @@ defmodule Fountain.Accounts.DeletionTest do
     test "the sandbox row is marked terminated so the reaper can finish the job" do
       user = insert_verified_user()
       sandbox = insert_sandbox(user_id: user.id, status: "ready")
-      stub(Sprites, :destroy, fn _ -> {:error, :boom} end)
+      stub(Fountain.Sandbox.Sprites, :destroy, fn _ -> {:error, :boom} end)
 
       capture_log(fn -> assert {:ok, _} = Deletion.delete_user(user) end)
 
@@ -201,7 +205,7 @@ defmodule Fountain.Accounts.DeletionTest do
       # cancel from. So this is the one failure that stops everything.
       user = billing_user(%{stripe_customer_id: "cus_123", subscription_status: "active"})
       sandbox = insert_sandbox(user_id: user.id, status: "ready")
-      reject(&Sprites.destroy/1)
+      reject(&Fountain.Sandbox.Sprites.destroy/1)
 
       stub(Stripe.Subscription, :list, fn _ -> {:error, :stripe_down} end)
 

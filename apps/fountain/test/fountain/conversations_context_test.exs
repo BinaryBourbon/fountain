@@ -1183,8 +1183,9 @@ defmodule Fountain.ConversationsContextTest do
 
       fake_client = %{}
 
-      stub(Fountain.SpritesClient, :get!, fn -> fake_client end)
-      stub(Sprites, :get_sprite, fn _client, _name -> {:ok, %{name: "test-sprite-alive"}} end)
+      stub(Fountain.Sandbox.Sprites, :get, fn _handle ->
+        {:ok, %{status: :running, raw: %{name: "test-sprite-alive"}}}
+      end)
 
       stub(Horde.DynamicSupervisor, :start_child, fn _supervisor, _child_spec ->
         {:ok, spawn(fn -> :ok end)}
@@ -1202,8 +1203,9 @@ defmodule Fountain.ConversationsContextTest do
       {:ok, sandbox} = Conversations.update_sandbox(sandbox, %{status: "suspended"})
       conv = insert_conversation(user_id: user.id, agent: agent, sandbox: sandbox, status: "idle")
 
-      stub(Fountain.SpritesClient, :get!, fn -> %{} end)
-      stub(Sprites, :get_sprite, fn _client, _name -> {:ok, %{name: "test-sprite-parked"}} end)
+      stub(Fountain.Sandbox.Sprites, :get, fn _handle ->
+        {:ok, %{status: :suspended, raw: %{name: "test-sprite-parked"}}}
+      end)
 
       stub(Horde.DynamicSupervisor, :start_child, fn _supervisor, _child_spec ->
         {:ok, spawn(fn -> :ok end)}
@@ -1231,8 +1233,7 @@ defmodule Fountain.ConversationsContextTest do
       {:ok, sandbox} = Conversations.update_sandbox(sandbox, %{status: "suspended"})
       conv = insert_conversation(user_id: user.id, agent: agent, sandbox: sandbox, status: "idle")
 
-      stub(Fountain.SpritesClient, :get!, fn -> %{} end)
-      stub(Sprites, :get_sprite, fn _client, _name -> {:ok, %{}} end)
+      stub(Fountain.Sandbox.Sprites, :get, fn _handle -> {:ok, %{status: :unknown, raw: %{}}} end)
 
       assert {:error, {:sandbox_quota_exceeded, _}} = Conversations.wake_conversation(conv.id)
       # Refused means still parked — the row must not be half-woken.
@@ -1249,8 +1250,7 @@ defmodule Fountain.ConversationsContextTest do
       {:ok, sandbox} = Conversations.update_sandbox(sandbox, %{status: "suspended"})
       conv = insert_conversation(user_id: user.id, agent: agent, sandbox: sandbox, status: "idle")
 
-      stub(Fountain.SpritesClient, :get!, fn -> %{} end)
-      stub(Sprites, :get_sprite, fn _client, _name -> {:error, :timeout} end)
+      stub(Fountain.Sandbox.Sprites, :get, fn _handle -> {:error, {:unavailable, :timeout}} end)
 
       assert {:error, :sprite_probe_failed} = Conversations.wake_conversation(conv.id)
       assert Repo.reload(sandbox).status == "suspended"
@@ -1263,8 +1263,7 @@ defmodule Fountain.ConversationsContextTest do
       {:ok, sandbox} = Conversations.update_sandbox(sandbox, %{status: "suspended"})
       conv = insert_conversation(user_id: user.id, agent: agent, sandbox: sandbox, status: "idle")
 
-      stub(Fountain.SpritesClient, :get!, fn -> %{} end)
-      stub(Sprites, :get_sprite, fn _client, _name -> {:error, {:not_found, %{}}} end)
+      stub(Fountain.Sandbox.Sprites, :get, fn _handle -> {:error, :not_found} end)
 
       stub(Horde.DynamicSupervisor, :start_child, fn _supervisor, _child_spec ->
         {:ok, spawn(fn -> :ok end)}
@@ -1284,8 +1283,7 @@ defmodule Fountain.ConversationsContextTest do
 
       fake_client = %{}
 
-      stub(Fountain.SpritesClient, :get!, fn -> fake_client end)
-      stub(Sprites, :get_sprite, fn _client, _name -> {:error, :not_found} end)
+      stub(Fountain.Sandbox.Sprites, :get, fn _handle -> {:error, :not_found} end)
 
       stub(Horde.DynamicSupervisor, :start_child, fn _supervisor, _child_spec ->
         {:ok, spawn(fn -> :ok end)}
