@@ -4,6 +4,7 @@ defmodule Fountain.Sandbox.DaytonaTest do
   # LogStreamTest); everything REST runs here. Mutates global app env, so
   # not async.
   use ExUnit.Case, async: false
+  use Mimic
 
   alias Fountain.Sandbox.Command
   alias Fountain.Sandbox.Daytona, as: Adapter
@@ -212,6 +213,99 @@ defmodule Fountain.Sandbox.DaytonaTest do
 
       assert {:ok, "", 0} = Adapter.exec(handle(), "true", [], [])
       assert_received :started
+    end
+  end
+
+  describe "spawn/4, attach/3 and list_sessions/1" do
+    setup do
+      # The websocket replayer is unit-tested at the demux level; here it is
+      # stubbed so the session/exec plumbing can be asserted over REST.
+      Mimic.stub(Fountain.Sandbox.Daytona.LogStream, :start, fn opts ->
+        send(opts[:owner], {:log_stream_started, opts[:session_id], opts[:command_id]})
+        {:ok, spawn(fn -> Process.sleep(:infinity) end)}
+      end)
+
+      :ok
+    end
+
+    test "spawn creates a tagged session, execs async, and wires the stream" do
+      test = self()
+
+      Req.Test.stub(__MODULE__, fn conn ->
+        case {conn.method, conn.request_path} do
+          {"GET", "/api/sandbox/" <> @name} ->
+            Req.Test.json(conn, sandbox_body("started"))
+
+          {"POST", "/toolbox/sbx1/process/session"} ->
+            Req.Test.json(conn, %{})
+
+          {"POST", "/toolbox/sbx1/process/session/" <> rest} ->
+            assert String.ends_with?(rest, "/exec")
+            {:ok, raw, conn} = Plug.Conn.read_body(conn)
+            send(test, {:exec_async, Jason.decode!(raw)})
+            Req.Test.json(conn, %{"cmdId" => "cmd-1"})
+        end
+      end)
+
+      assert {:ok, %Command{provider: :daytona} = command} =
+               Adapter.spawn(handle(), "claude-agent-acp", [],
+                 owner: self(),
+                 stdin: true,
+                 detachable: true
+               )
+
+      assert command.private.command_id == "cmd-1"
+      assert_received {:exec_async, %{"runAsync" => true, "suppressInputEcho" => true}}
+      assert_received {:log_stream_started, session_id, "cmd-1"}
+      assert String.starts_with?(session_id, "fountain-")
+    end
+
+    test "list_sessions filters to fountain sessions; attach re-streams the newest command" do
+      sessions = [
+        %{"sessionId" => "someone-else", "commands" => []},
+        %{
+          "sessionId" => "fountain-42",
+          "commands" => [%{"id" => "cmd-9", "command" => "claude-agent-acp"}]
+        }
+      ]
+
+      Req.Test.stub(__MODULE__, fn conn ->
+        case {conn.method, conn.request_path} do
+          {"GET", "/api/sandbox/" <> @name} ->
+            Req.Test.json(conn, sandbox_body("started"))
+
+          {"GET", "/toolbox/sbx1/process/session"} ->
+            Req.Test.json(conn, sessions)
+        end
+      end)
+
+      assert {:ok, [%{id: "fountain-42", command: "claude-agent-acp"}]} =
+               Adapter.list_sessions(handle())
+
+      assert {:ok, %Command{} = command} = Adapter.attach(handle(), "fountain-42", owner: self())
+      assert command.private.command_id == "cmd-9"
+      assert_received {:log_stream_started, "fountain-42", "cmd-9"}
+    end
+
+    test "attaching to an unknown session is definitively not found" do
+      Req.Test.stub(__MODULE__, fn conn ->
+        case {conn.method, conn.request_path} do
+          {"GET", "/api/sandbox/" <> @name} ->
+            Req.Test.json(conn, sandbox_body("started"))
+
+          {"GET", "/toolbox/sbx1/process/session"} ->
+            Req.Test.json(conn, [])
+        end
+      end)
+
+      assert {:error, :not_found} = Adapter.attach(handle(), "fountain-77", owner: self())
+    end
+
+    test "stop_command is total" do
+      pid = spawn(fn -> Process.sleep(:infinity) end)
+      command = %Command{provider: :daytona, ref: make_ref(), private: %{pid: pid}}
+      assert :ok = Adapter.stop_command(command)
+      assert :ok = Adapter.stop_command(command)
     end
   end
 

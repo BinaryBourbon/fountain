@@ -12,6 +12,7 @@ end
 # tests and the full-stack provisioning/checkpoint pins.
 Mimic.copy(Fountain.Sandbox.Sprites)
 Mimic.copy(Fountain.Sandbox.Sprites.Client)
+Mimic.copy(Fountain.Sandbox.Daytona.LogStream)
 Mimic.copy(Sprites)
 Mimic.copy(Sprites.Filesystem)
 Mimic.copy(Horde.DynamicSupervisor)
