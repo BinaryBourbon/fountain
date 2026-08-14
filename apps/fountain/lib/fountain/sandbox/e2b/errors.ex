@@ -10,6 +10,7 @@ defmodule Fountain.Sandbox.E2B.Errors do
   @spec normalize(term()) :: Sandbox.error()
   def normalize(:not_found), do: :not_found
   def normalize(:truncated), do: :truncated
+  def normalize(:command_exited), do: :command_exited
   def normalize({:api_error, 404, _body}), do: :not_found
 
   def normalize({:api_error, status, body}) when status in [401, 403],

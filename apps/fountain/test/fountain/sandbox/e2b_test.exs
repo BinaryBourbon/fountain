@@ -236,6 +236,7 @@ defmodule Fountain.Sandbox.E2BTest do
     test "spawn delivers frames to the owner and write_stdin is total after exit" do
       body =
         stream_body([
+          %{"event" => %{"start" => %{"pid" => 42}}},
           %{"event" => %{"data" => %{"stdout" => Base.encode64("ready")}}},
           %{"event" => %{"end" => %{"exitCode" => 0}}}
         ])
@@ -257,6 +258,22 @@ defmodule Fountain.Sandbox.E2BTest do
       # back as an error rather than exiting the caller (#603 semantics).
       wait_for_down(command.private.pid)
       assert {:error, :command_exited} = Adapter.write_stdin(command, "late\n")
+    end
+
+    test "spawn does not return :ok before envd acks the process" do
+      # A stream that dies without ever sending the start event: the process
+      # never existed, so spawn must surface an error — returning :ok here is
+      # the race that let the ACP peer's first write 404 against envd and
+      # fail prod turns in ~300ms.
+      Req.Test.stub(__MODULE__, fn conn ->
+        case {conn.method, conn.request_path} do
+          {"GET", "/v2/sandboxes"} -> Req.Test.json(conn, [listed("running")])
+          {"POST", "/process.Process/Start"} -> Plug.Conn.resp(conn, 200, end_stream_frame())
+        end
+      end)
+
+      assert {:error, _reason} =
+               Adapter.spawn(handle(), "claude-agent-acp", [], owner: self(), stdin: true)
     end
   end
 

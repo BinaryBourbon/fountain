@@ -39,6 +39,27 @@ defmodule Fountain.Sandbox.E2B.CommandServer do
   def write_stdin(pid, data), do: GenServer.call(pid, {:write_stdin, data})
   def close_stdin(pid), do: GenServer.call(pid, :close_stdin)
 
+  @doc """
+  Block until envd acknowledges the process (its `start` event, always the
+  stream's first frame) or the stream dies first.
+
+  Spawn must not return before this: the caller's first `write_stdin` —
+  the ACP peer writes `initialize` immediately — addresses the process by
+  tag, and a SendInput that races envd's registration 404s, which reads as
+  "process exited" and fails the turn before it began. Measured live on
+  prod (2026-08-14): the race lost twice in a row at ~300ms.
+  """
+  def await_start(pid, timeout) do
+    GenServer.call(pid, :await_start, timeout)
+  catch
+    # Already gone = the command ran its whole life before we asked; its
+    # terminal frame is in the owner's mailbox and that is the truth. Only
+    # a live-but-silent server is a failed start.
+    :exit, {:noproc, _} -> :ok
+    :exit, {:normal, _} -> :ok
+    :exit, _ -> {:error, {:unavailable, :start_timeout}}
+  end
+
   @impl true
   def init(opts) do
     state = %{
@@ -53,6 +74,8 @@ defmodule Fountain.Sandbox.E2B.CommandServer do
       exit_file: Keyword.get(opts, :exit_file),
       buffer: <<>>,
       exited?: false,
+      started?: false,
+      await_from: nil,
       heartbeat: nil,
       stream_task: nil
     }
@@ -85,8 +108,23 @@ defmodule Fountain.Sandbox.E2B.CommandServer do
 
   @impl true
   def handle_call({:write_stdin, data}, _from, state) do
-    {:reply, Envd.send_input(state.sandbox_id, state.stdin_tag, data), state}
+    # By the time writes are allowed the process has been start-acked, so a
+    # 404 here means it has since exited — the contract's :command_exited.
+    reply =
+      case Envd.send_input(state.sandbox_id, state.stdin_tag, data) do
+        {:error, {:api_error, 404, _body}} -> {:error, :command_exited}
+        other -> other
+      end
+
+    {:reply, reply, state}
   end
+
+  def handle_call(:await_start, _from, %{started?: true} = state), do: {:reply, :ok, state}
+
+  def handle_call(:await_start, _from, %{exited?: true} = state),
+    do: {:reply, {:error, :command_exited}, state}
+
+  def handle_call(:await_start, from, state), do: {:noreply, %{state | await_from: from}}
 
   def handle_call(:close_stdin, _from, state) do
     {:reply, Envd.close_stdin(state.sandbox_id, state.stdin_tag), state}
@@ -153,6 +191,11 @@ defmodule Fountain.Sandbox.E2B.CommandServer do
     end
   end
 
+  defp handle_event(%{"start" => _start}, state) do
+    if state.await_from, do: GenServer.reply(state.await_from, :ok)
+    %{state | started?: true, await_from: nil}
+  end
+
   defp handle_event(%{"data" => data}, state) do
     emit_data(state, :stdout, data["stdout"])
     emit_data(state, :stderr, data["stderr"])
@@ -182,12 +225,21 @@ defmodule Fountain.Sandbox.E2B.CommandServer do
   defp finish(state, {:exit, code}) do
     code = if state.exit_file, do: read_exit_code(state, code), else: code
     send(state.owner, {:exit, %{ref: state.ref}, code})
-    %{state | exited?: true}
+    state |> fail_waiter(:command_exited) |> Map.put(:exited?, true)
   end
 
   defp finish(state, {:error, reason}) do
     send(state.owner, {:error, %{ref: state.ref}, reason})
-    %{state | exited?: true}
+    state |> fail_waiter(reason) |> Map.put(:exited?, true)
+  end
+
+  # A stream that dies before the start ack means the spawn never happened —
+  # the blocked caller gets the verdict instead of a timeout.
+  defp fail_waiter(%{await_from: nil} = state, _reason), do: state
+
+  defp fail_waiter(state, reason) do
+    GenServer.reply(state.await_from, {:error, reason})
+    %{state | await_from: nil}
   end
 
   defp read_exit_code(state, fallback) do
