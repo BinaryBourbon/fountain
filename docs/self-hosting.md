@@ -10,12 +10,20 @@ is a different thing, and this page assumes you want an instance that stays up.
 | | |
 |---|---|
 | **Postgres 16+** | The compose file below runs one for you |
-| **A Sprites token** | Fountain provisions sandboxes through [sprites.dev](https://sprites.dev). The app boots without one, but every conversation fails |
+| **A sandbox provider credential** | [sprites.dev](https://sprites.dev) by default; [E2B](integrations/e2b.md) and [Daytona](integrations/daytona.md) are alternatives. The app boots without one, but every conversation fails |
 | **A mail provider** | Resend or any SMTP server. Optional — see [Email](#email) |
 
-Sprites is currently the only sandbox backend, and it is a hosted service, so a
-Fountain instance is not fully self-contained. `SPRITES_BASE_URL` repoints the
-API endpoint if you have a compatible one; there is no bundled alternative.
+Sandboxes run on one of three backends, all hosted services — a Fountain
+instance is not fully self-contained (self-hosted Daytona comes closest):
+
+| Provider | Enabled by | Idle behavior | Notes |
+|---|---|---|---|
+| **Sprites** (default) | `SPRITES_TOKEN` | Parks — scales to zero on its own | The reference backend |
+| **E2B** | `E2B_API_KEY` | Parks — explicit pause (filesystem + memory snapshot) | Needs a template built from `images/e2b/`; see [E2B](integrations/e2b.md) |
+| **Daytona** | `DAYTONA_API_KEY` | Parks — explicit stop (disk preserved; archives when long-parked) | Self-hostable via `DAYTONA_API_URL`; see [Daytona](integrations/daytona.md) |
+
+`SANDBOX_PROVIDER` picks the default for new sandboxes; an agent can pin a
+provider, and existing sandboxes always stay where they were created.
 
 For what each piece of the system does and what breaks when a dependency is
 down, see [Architecture](architecture.md).
@@ -351,7 +359,8 @@ including commercially.
 
 Being straight about what self-hosting does not yet include:
 
-- **Sprites is a hosted dependency** — `SPRITES_BASE_URL` can repoint it, but
-  there is no self-hostable sandbox backend to point it at. What one would
-  have to implement is written down in
+- **Sandbox backends are hosted dependencies** — Sprites, E2B and Daytona
+  are all services (self-hosted Daytona narrows this). The contract a new
+  backend must satisfy is executable — `Fountain.Sandbox` plus its
+  conformance suite — and written down in
   [the Sprites contract](integrations/sprites-contract.md).

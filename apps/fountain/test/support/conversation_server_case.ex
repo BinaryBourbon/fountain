@@ -75,7 +75,7 @@ defmodule Fountain.ConversationServerCase do
       {:error, {:unavailable, :spawn_not_stubbed}}
     end)
 
-    Mimic.stub(Fountain.SpriteSkills, :mount, fn _handle, _runtime, _skills -> :ok end)
+    Mimic.stub(Fountain.SandboxSkills, :mount, fn _handle, _runtime, _skills -> :ok end)
 
     Mimic.stub(Fountain.Conversations.Provisioning, :write_env_file, fn _s, _e -> :ok end)
 

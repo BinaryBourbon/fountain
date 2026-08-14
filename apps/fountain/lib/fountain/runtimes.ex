@@ -62,7 +62,7 @@ defmodule Fountain.Runtimes do
   Receives the same `sprite_env` pairs the spawn will use. Implementers
   pull whichever keys they need out of that list. No-op by default.
   """
-  @callback prepare_sprite(
+  @callback prepare_sandbox(
               handle :: Fountain.Sandbox.Handle.t(),
               agent :: %Agent{} | nil,
               sprite_env :: [{String.t(), String.t()}]
@@ -83,7 +83,7 @@ defmodule Fountain.Runtimes do
   """
   @callback skills_sh_agent() :: String.t()
 
-  @optional_callbacks build_command: 5, default_env: 2, write_config: 2, prepare_sprite: 3
+  @optional_callbacks build_command: 5, default_env: 2, write_config: 2, prepare_sandbox: 3
 
   @runtime_modules %{
     "claude" => Fountain.Runtimes.Claude,

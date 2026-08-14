@@ -1,4 +1,4 @@
-defmodule Fountain.SpriteSkills do
+defmodule Fountain.SandboxSkills do
   @moduledoc """
   Materialize an agent's skills onto its sprite at provision time.
 

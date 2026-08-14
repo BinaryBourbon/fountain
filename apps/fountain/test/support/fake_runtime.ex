@@ -36,7 +36,7 @@ defmodule Fountain.Test.FakeRuntime do
   def write_config(_sprite, _agent), do: report(:write_config)
 
   @impl true
-  def prepare_sprite(_sprite, _agent, _sprite_env), do: report(:prepare_sprite)
+  def prepare_sandbox(_sprite, _agent, _sprite_env), do: report(:prepare_sandbox)
 
   @impl true
   def skills_root, do: "/home/sprite/.fake/skills"
@@ -47,7 +47,7 @@ end
 
 defmodule Fountain.Test.FailingRuntime do
   @moduledoc """
-  A runtime whose `prepare_sprite/3` fails, for exercising the provisioning
+  A runtime whose `prepare_sandbox/3` fails, for exercising the provisioning
   failure path without having to make a Sprites call fail.
   """
 
@@ -63,7 +63,7 @@ defmodule Fountain.Test.FailingRuntime do
   def write_config(_sprite, _agent), do: :ok
 
   @impl true
-  def prepare_sprite(_sprite, _agent, _sprite_env), do: {:error, :prepare_failed}
+  def prepare_sandbox(_sprite, _agent, _sprite_env), do: {:error, :prepare_failed}
 
   @impl true
   def skills_root, do: "/home/sprite/.fake/skills"

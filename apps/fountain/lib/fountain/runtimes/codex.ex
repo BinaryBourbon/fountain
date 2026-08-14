@@ -9,7 +9,7 @@ defmodule Fountain.Runtimes.Codex do
   deliberately kept: credentials and skills.
 
   Auth: `OPENAI_API_KEY` is consumed once at provision time via
-  `prepare_sprite/3` (see below) — codex reads `~/.codex/auth.json`, not the
+  `prepare_sandbox/3` (see below) — codex reads `~/.codex/auth.json`, not the
   process env, and the adapter runs on the same store.
   """
 
@@ -39,7 +39,7 @@ defmodule Fountain.Runtimes.Codex do
   # `~/.codex/auth.json`, which `codex login --with-api-key` writes by
   # consuming the key on stdin. Run the login once at provision time.
   @impl true
-  def prepare_sprite(handle, _agent, sprite_env) do
+  def prepare_sandbox(handle, _agent, sprite_env) do
     case List.keyfind(sprite_env, "OPENAI_API_KEY", 0) do
       {"OPENAI_API_KEY", key} when is_binary(key) and key != "" ->
         case Fountain.Sandbox.spawn(handle, "codex", ["login", "--with-api-key"],

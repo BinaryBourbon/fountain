@@ -572,7 +572,7 @@ defmodule Fountain.Conversations.ConversationServer do
         # conv.runtime is validated-required and outlives the agent; the agent
         # fallback only covers rows predating the runtime column.
         runtime = conv.runtime || (agent && agent.runtime) || "claude"
-        Fountain.SpriteSkills.mount(handle, runtime, skills)
+        Fountain.SandboxSkills.mount(handle, runtime, skills)
 
         {state, conv} = rotate_callback_api_key(state, conv)
 
@@ -1036,8 +1036,8 @@ defmodule Fountain.Conversations.ConversationServer do
     Code.ensure_loaded(runtime_module)
 
     with :ok <- prepare_acp_adapter(handle, runtime, sprite_env) do
-      if function_exported?(runtime_module, :prepare_sprite, 3) do
-        runtime_module.prepare_sprite(handle, agent, sprite_env)
+      if function_exported?(runtime_module, :prepare_sandbox, 3) do
+        runtime_module.prepare_sandbox(handle, agent, sprite_env)
       else
         :ok
       end
