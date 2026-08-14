@@ -102,6 +102,20 @@ defmodule Fountain.Sandbox.Daytona.Toolbox do
     end
   end
 
+  @doc """
+  The command's full journal so far (no follow) — raw bytes with the same
+  channel markers the websocket carries, or a JSON map on older daemons.
+  """
+  def get_logs(toolbox_url, session_id, command_id) do
+    url = "/process/session/#{session_id}/command/#{command_id}/logs"
+
+    case Req.get(req(toolbox_url), url: url) do
+      {:ok, %{status: 200, body: body}} -> {:ok, body}
+      {:ok, %{status: status, body: body}} -> {:error, {:api_error, status, body}}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
   @doc "The websocket URL that streams a command's journaled log from the start."
   def logs_ws_url(toolbox_url, session_id, command_id) do
     toolbox_url

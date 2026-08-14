@@ -9,7 +9,7 @@ were created on.
 
 ```bash
 DAYTONA_API_KEY=dtn_...            # enables the provider
-DAYTONA_SNAPSHOT=fountain          # a snapshot built from images/daytona/
+DAYTONA_SNAPSHOT=fountain          # a snapshot built from images/daytona/ (unset = org default image)
 # DAYTONA_API_URL=https://app.daytona.io/api   # self-hosted Daytona
 # SANDBOX_PROVIDER=daytona
 ```
@@ -32,8 +32,8 @@ daytona snapshot create fountain --dockerfile Dockerfile
 | Suspend / resume | `stop` preserves the whole disk; `start` resumes it. Long-parked sandboxes auto-archive to object storage (still startable, slower) so they stop consuming disk quota |
 | TTL | None — sandboxes are created with `ttlMinutes: 0` and `autoStopInterval: 0`; Fountain's own lifecycle owns suspension. No heartbeat needed |
 | Exec | One-shot toolbox `process/execute` with cwd/env/timeout |
-| Streaming / reattach | Daemon-side sessions journal output server-side, and the log websocket **replays from byte zero before following** — the replay-from-start contract holds natively, no shim. Reattach is the same stream opened again |
-| Stdin | Per-command FIFO, line-oriented (a trailing newline is appended) — fits the NDJSON JSON-RPC of the ACP path. There is no stdin-EOF operation; `close_stdin` is a documented no-op |
+| Streaming / reattach | Daemon-side sessions journal output server-side, and the log websocket **replays from byte zero before following** — reattach is the same stream opened again. The daemon publishes no exit code and its follow stream is unreliable at both ends, so the adapter's shim writes an exit sentinel and the stream reconnects with a byte-exact skip |
+| Stdin | The daemon FIFO EOFs after every write, so stdin-consuming commands read from a `tail -f`-fed file; writes append via one-shot execs and `close_stdin` kills the tail — a real EOF |
 | Network policy | `networkBlockAll` + `domainAllowList` per sandbox, updatable on a running sandbox — genuinely default-deny, so `allow: []` needs no translation |
 | Checkpoints | Not supported (`:checkpoint` is not advertised) |
 
