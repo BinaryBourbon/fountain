@@ -100,13 +100,13 @@ defmodule Fountain.Conversations.ConversationServerProvisionDeadlineTest do
   end
 
   test "a server restarted after the deadline provisions no second sprite (#394)" do
-    sprite = stub_happy_sprite()
+    handle = stub_happy_sprite()
     test_pid = self()
 
     # Count every sprite creation across all processes (global mode).
-    Mimic.stub(Sprites, :create, fn _client, _name ->
+    Mimic.stub(Fountain.Sandbox.Sprites, :create, fn _name, _opts ->
       send(test_pid, :sprite_created)
-      {:ok, sprite}
+      {:ok, handle}
     end)
 
     Mimic.stub(Fountain.Conversations.Provisioning, :install_packages, fn _s, _e, _se, _c ->

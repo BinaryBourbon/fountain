@@ -44,35 +44,38 @@ defmodule Fountain.ConversationServerCase do
   @doc """
   Stub every external boundary a provision touches, on the happy path.
 
-  Returns the sprite the stubbed `Sprites.create/2` will hand back.
+  The whole sandbox seam is the `Fountain.Sandbox.Sprites` adapter — the
+  server never names the SDK anymore. Returns the handle the stubbed
+  `create/2` will hand back.
   """
   def stub_happy_sprite(name \\ "test-sprite") do
-    sprite = %{name: name, id: "sprite_" <> name}
+    handle = Fountain.Sandbox.Sprites.build_handle(name)
 
-    Mimic.stub(Fountain.SpritesClient, :get!, fn -> %{token: "test"} end)
-    Mimic.stub(Sprites, :create, fn _client, _name -> {:ok, sprite} end)
-    Mimic.stub(Sprites, :destroy, fn _sprite -> :ok end)
-    Mimic.stub(Sprites, :cmd, fn _sprite, _cmd, _opts -> {:ok, %{exit_code: 0, stdout: ""}} end)
+    Mimic.stub(Fountain.Sandbox.Sprites, :create, fn _name, _opts -> {:ok, handle} end)
+    Mimic.stub(Fountain.Sandbox.Sprites, :destroy, fn _handle -> :ok end)
 
-    # The 4-arity variant returns {output, exit_code} and is what the
-    # not-yet-migrated call sites' scripts call; without this stub those
-    # reach the real client.
-    Mimic.stub(Sprites, :cmd, fn _sprite, _cmd, _args, _opts -> {"", 0} end)
-    Mimic.stub(Sprites, :list_sessions, fn _sprite -> {:ok, []} end)
-    Mimic.stub(Sprites, :update_network_policy, fn _sprite, _policy -> :ok end)
-    Mimic.stub(Sprites.Filesystem, :write, fn _sprite, _path, _contents -> :ok end)
+    Mimic.stub(Fountain.Sandbox.Sprites, :get, fn _handle ->
+      {:ok, %{status: :running, raw: %{}}}
+    end)
 
-    # Modules already migrated onto the Fountain.Sandbox facade (ACP adapter
-    # install, runtime prepare/config) go through the Sprites adapter rather
-    # than the SDK; stub that layer too until the migration completes and the
-    # SDK stubs above can go entirely.
     Mimic.stub(Fountain.Sandbox.Sprites, :exec, fn _handle, _cmd, _args, _opts ->
       {:ok, "", 0}
     end)
 
     Mimic.stub(Fountain.Sandbox.Sprites, :write_file, fn _handle, _path, _data, _opts -> :ok end)
+    Mimic.stub(Fountain.Sandbox.Sprites, :list_sessions, fn _handle -> {:ok, []} end)
+    Mimic.stub(Fountain.Sandbox.Sprites, :apply_network_policy, fn _handle, _policy -> :ok end)
 
-    Mimic.stub(Fountain.SpriteSkills, :mount, fn _sprite, _runtime, _skills -> :ok end)
+    # A turn's spawn fails cleanly unless the test stubs it — mirroring the
+    # pre-facade behavior where spawning against the fake sprite errored and
+    # the turn was marked failed. Tests exercising turns re-stub spawn (and
+    # write_stdin/close_stdin where their turn writes; the #603 tests rely on
+    # the adapter's REAL write path, so those stay unstubbed here).
+    Mimic.stub(Fountain.Sandbox.Sprites, :spawn, fn _handle, _cmd, _args, _opts ->
+      {:error, {:unavailable, :spawn_not_stubbed}}
+    end)
+
+    Mimic.stub(Fountain.SpriteSkills, :mount, fn _handle, _runtime, _skills -> :ok end)
 
     Mimic.stub(Fountain.Conversations.Provisioning, :write_env_file, fn _s, _e -> :ok end)
 
@@ -101,7 +104,7 @@ defmodule Fountain.ConversationServerCase do
     Mimic.stub(Fountain.Crypto, :load_tenant_key, fn _user_id -> {:ok, <<0::256>>} end)
     Mimic.stub(Fountain.InferenceCredentials, :decrypted_for_user, fn _u, _k -> {:ok, %{}} end)
 
-    sprite
+    handle
   end
 
   @doc """

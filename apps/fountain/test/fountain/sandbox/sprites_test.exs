@@ -239,6 +239,25 @@ defmodule Fountain.Sandbox.SpritesTest do
       assert :ok = Adapter.write_stdin(command, "data")
     end
 
+    test "stop_command stops a live command process and tolerates a dead one" do
+      {:ok, agent} = Agent.start(fn -> :ok end)
+
+      live = %Command{
+        provider: :sprites,
+        ref: make_ref(),
+        private: %Sprites.Command{ref: make_ref(), pid: agent}
+      }
+
+      assert :ok = Adapter.stop_command(live)
+      refute Process.alive?(agent)
+
+      # Already stopped — total, no exit.
+      assert :ok = Adapter.stop_command(live)
+
+      # No private state at all (a handle that never carried the SDK struct).
+      assert :ok = Adapter.stop_command(%Command{provider: :sprites, ref: make_ref()})
+    end
+
     test "close_stdin on a dead command process is still :ok" do
       dead = spawn(fn -> :ok end)
       ref = Process.monitor(dead)

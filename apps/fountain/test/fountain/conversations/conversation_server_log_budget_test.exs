@@ -14,12 +14,12 @@ defmodule Fountain.Conversations.ConversationServerLogBudgetTest do
   defp start_with_turn(conv) do
     cmd_ref = make_ref()
 
-    Mimic.stub(Sprites, :spawn, fn _s, _cmd, _args, _opts ->
-      {:ok, %{ref: cmd_ref, pid: self()}}
+    Mimic.stub(Fountain.Sandbox.Sprites, :spawn, fn _h, _cmd, _args, _opts ->
+      {:ok, %Fountain.Sandbox.Command{provider: :sprites, ref: cmd_ref}}
     end)
 
-    Mimic.stub(Sprites, :write, fn _cmd, _data -> :ok end)
-    Mimic.stub(Sprites, :close_stdin, fn _cmd -> :ok end)
+    Mimic.stub(Fountain.Sandbox.Sprites, :write_stdin, fn _cmd, _data -> :ok end)
+    Mimic.stub(Fountain.Sandbox.Sprites, :close_stdin, fn _cmd -> :ok end)
 
     {pid, mon, :alive} = start_server(conv, initial_prompt: "go")
     _ = :sys.get_state(pid)
@@ -82,10 +82,8 @@ defmodule Fountain.Conversations.ConversationServerLogBudgetTest do
     # server has persisted nothing itself; only a seed read from the DB can
     # make a 20-byte chunk cross the 100-byte budget. A seed of zero (the
     # per-BEAM-lifetime bug this pins against) would let it straight through.
-    Mimic.stub(Sprites, :get_sprite, fn _client, _name -> {:ok, %{}} end)
-
-    Mimic.stub(Sprites, :sprite, fn _client, _name ->
-      %{name: "test-sprite", id: "sprite_test-sprite"}
+    Mimic.stub(Fountain.Sandbox.Sprites, :get, fn _handle ->
+      {:ok, %{status: :running, raw: %{}}}
     end)
 
     {pid2, cmd_ref2, _ref2} = start_with_turn(conv)

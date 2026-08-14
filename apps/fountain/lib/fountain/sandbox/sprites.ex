@@ -211,6 +211,16 @@ defmodule Fountain.Sandbox.Sprites do
     Sprites.close_stdin(sdk_command(command))
   end
 
+  @impl true
+  def stop_command(%Command{provider: :sprites, private: %Sprites.Command{pid: pid}}) do
+    GenServer.stop(pid, :normal, 1_000)
+    :ok
+  catch
+    :exit, _ -> :ok
+  end
+
+  def stop_command(%Command{provider: :sprites}), do: :ok
+
   # ── sessions ───────────────────────────────────────────────────────────────
 
   @impl true

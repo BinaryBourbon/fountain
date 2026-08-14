@@ -17,12 +17,12 @@ defmodule Fountain.Runtimes.ACP.PeerTest do
   setup do
     test = self()
 
-    Mimic.stub(Sprites, :write, fn _command, data ->
+    Mimic.stub(Fountain.Sandbox.Sprites, :write_stdin, fn _command, data ->
       send(test, {:wrote, IO.iodata_to_binary(data)})
       :ok
     end)
 
-    {:ok, ref: make_ref(), command: %{ref: :fake, pid: self()}}
+    {:ok, ref: make_ref(), command: %Fountain.Sandbox.Command{provider: :sprites, ref: :fake}}
   end
 
   defp start_peer(ctx, opts) do
@@ -344,14 +344,14 @@ defmodule Fountain.Runtimes.ACP.PeerTest do
     end
 
     test "a stdin write failure fails the turn rather than exiting the peer", ctx do
-      # #603: Sprites.write is a bare GenServer.call underneath, and the command
-      # process stops :normal the moment the runtime's exit frame arrives — so a
-      # write landing after that exits the *caller* with the call wrapped
-      # alongside the reason. SpriteStdin turns that into an error; the peer
-      # must report it, because a peer that dies silently leaves a turn with no
-      # terminator at all.
-      Mimic.stub(Sprites, :write, fn _c, _d ->
-        exit({:normal, {GenServer, :call, [self(), :write, 5_000]}})
+      # #603: the SDK write is a bare GenServer.call underneath, and the command
+      # process stops :normal the moment the runtime's exit frame arrives. The
+      # adapter's write_stdin/2 turns that into {:error, :command_exited}; the
+      # peer must report it, because a peer that dies silently leaves a turn
+      # with no terminator at all. (The exit-to-error catch itself is pinned in
+      # the adapter's own tests.)
+      Mimic.stub(Fountain.Sandbox.Sprites, :write_stdin, fn _c, _d ->
+        {:error, :command_exited}
       end)
 
       start_peer(ctx, [])

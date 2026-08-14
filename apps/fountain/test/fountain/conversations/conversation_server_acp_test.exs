@@ -24,22 +24,17 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
     test = self()
     ref = make_ref()
 
-    # The adapter install runs at provision time. It is `Sprites.cmd/4`
-    # returning `{output, exit_code}` — a different arity from the `cmd/3` the
-    # permissive harness stubs, so without this the real client is called.
-    Mimic.stub(Sprites, :cmd, fn _s, _cmd, _args, _opts -> {"", 0} end)
-
-    Mimic.stub(Sprites, :spawn, fn _s, cmd, args, opts ->
+    Mimic.stub(Fountain.Sandbox.Sprites, :spawn, fn _h, cmd, args, opts ->
       send(test, {:spawned, cmd, args, opts})
-      {:ok, %{ref: ref, pid: test}}
+      {:ok, %Fountain.Sandbox.Command{provider: :sprites, ref: ref}}
     end)
 
-    Mimic.stub(Sprites, :close_stdin, fn _c ->
+    Mimic.stub(Fountain.Sandbox.Sprites, :close_stdin, fn _c ->
       send(test, :stdin_closed)
       :ok
     end)
 
-    Mimic.stub(Sprites, :write, fn _c, data ->
+    Mimic.stub(Fountain.Sandbox.Sprites, :write_stdin, fn _c, data ->
       send(test, {:wrote, IO.iodata_to_binary(data)})
       :ok
     end)
@@ -361,17 +356,19 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
       test = self()
       ref = make_ref()
 
-      Mimic.stub(Sprites, :cmd, fn _s, _c, _a, _o -> {"", 0} end)
-      Mimic.stub(Sprites, :spawn, fn _s, _c, _a, _o -> {:ok, %{ref: ref, pid: test}} end)
-      Mimic.stub(Sprites, :close_stdin, fn _c -> :ok end)
+      Mimic.stub(Fountain.Sandbox.Sprites, :spawn, fn _h, _c, _a, _o ->
+        {:ok, %Fountain.Sandbox.Command{provider: :sprites, ref: ref}}
+      end)
 
-      Mimic.stub(Sprites, :write, fn _c, data ->
+      Mimic.stub(Fountain.Sandbox.Sprites, :close_stdin, fn _c -> :ok end)
+
+      Mimic.stub(Fountain.Sandbox.Sprites, :write_stdin, fn _c, data ->
         send(test, {:wrote, IO.iodata_to_binary(data)})
         :ok
       end)
 
       # Nothing should be written into the sandbox filesystem for an ACP turn.
-      Mimic.stub(Sprites.Filesystem, :write, fn _fs, path, _contents ->
+      Mimic.stub(Fountain.Sandbox.Sprites, :write_file, fn _h, path, _contents, _opts ->
         send(test, {:fs_write, path})
         :ok
       end)

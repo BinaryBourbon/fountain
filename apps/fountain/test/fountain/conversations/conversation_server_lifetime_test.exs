@@ -28,10 +28,9 @@ defmodule Fountain.Conversations.ConversationServerLifetimeTest do
   # reattach path rather than a fresh provision. The shared harness only covers
   # provisioning, so the two reattach-specific calls are stubbed here.
   defp stub_reattach do
-    sprite = stub_happy_sprite()
-    stub(Sprites, :get_sprite, fn _client, _name -> {:ok, %{}} end)
-    stub(Sprites, :sprite, fn _client, _name -> sprite end)
-    sprite
+    # stub_happy_sprite/0 already stubs the adapter's get/1 probe, which is
+    # all the reattach path needs beyond the shared harness.
+    stub_happy_sprite()
   end
 
   defp aged_conversation(minutes) do
@@ -59,7 +58,7 @@ defmodule Fountain.Conversations.ConversationServerLifetimeTest do
 
       # The whole point of decisions/0017: the sprite's disk holds the agent's
       # memory, and the idle bound must not destroy it.
-      reject(&Sprites.destroy/1)
+      reject(&Fountain.Sandbox.Sprites.destroy/1)
 
       with_bounds([sandbox_idle_timeout_minutes: 60, sandbox_max_lifetime_hours: 24], fn ->
         {pid, ref, :alive} = start_server(conv)
@@ -168,7 +167,7 @@ defmodule Fountain.Conversations.ConversationServerLifetimeTest do
       stub_reattach()
 
       test = self()
-      stub(Sprites, :destroy, fn _sprite -> send(test, :destroyed) && :ok end)
+      stub(Fountain.Sandbox.Sprites, :destroy, fn _handle -> send(test, :destroyed) && :ok end)
 
       with_bounds([sandbox_idle_timeout_minutes: 0, sandbox_max_lifetime_hours: 24], fn ->
         {pid, ref, :alive} = start_server(conv)
@@ -204,7 +203,7 @@ defmodule Fountain.Conversations.ConversationServerLifetimeTest do
       # last_resumed_at when the sandbox has been through a suspend/wake.
       {conv, sandbox} = aged_conversation(60 * 48)
       stub_reattach()
-      reject(&Sprites.destroy/1)
+      reject(&Fountain.Sandbox.Sprites.destroy/1)
 
       resumed_at = DateTime.utc_now() |> DateTime.add(-60, :second) |> DateTime.truncate(:second)
 
