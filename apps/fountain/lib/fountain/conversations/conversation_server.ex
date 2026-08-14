@@ -571,7 +571,9 @@ defmodule Fountain.Conversations.ConversationServer do
     case create_sprite(sandbox.sprite_name) do
       {:ok, sprite} ->
         skills = (agent && agent.skills) || []
-        runtime = (agent && agent.runtime) || "claude"
+        # conv.runtime is validated-required and outlives the agent; the agent
+        # fallback only covers rows predating the runtime column.
+        runtime = conv.runtime || (agent && agent.runtime) || "claude"
         Fountain.SpriteSkills.mount(sprite, runtime, skills)
 
         {state, conv} = rotate_callback_api_key(state, conv)
@@ -583,7 +585,8 @@ defmodule Fountain.Conversations.ConversationServer do
 
         with :ok <-
                run_provisioning_pipeline(sprite, env, sprite_env, secrets, state.conversation_id),
-             :ok <- prepare_runtime_sprite(sprite, state.runtime_module, agent, sprite_env) do
+             :ok <-
+               prepare_runtime_sprite(sprite, runtime, state.runtime_module, agent, sprite_env) do
           {:ok, _} = Conversations.update_sandbox(sandbox, %{status: "ready"})
           publish_stage(state.conversation_id, "provision", "done")
 
@@ -1024,10 +1027,10 @@ defmodule Fountain.Conversations.ConversationServer do
     end
   end
 
-  defp prepare_runtime_sprite(sprite, runtime_module, agent, sprite_env) do
+  defp prepare_runtime_sprite(sprite, runtime, runtime_module, agent, sprite_env) do
     Code.ensure_loaded(runtime_module)
 
-    with :ok <- prepare_acp_adapter(sprite, agent, sprite_env) do
+    with :ok <- prepare_acp_adapter(sprite, runtime, sprite_env) do
       if function_exported?(runtime_module, :prepare_sprite, 3) do
         runtime_module.prepare_sprite(sprite, agent, sprite_env)
       else
@@ -1038,10 +1041,11 @@ defmodule Fountain.Conversations.ConversationServer do
 
   # The adapter is an npm install, so it has to happen here rather than at
   # spawn: by the time a turn runs, the network policy has been applied and the
-  # install would fail in a way that reads as a protocol bug.
-  defp prepare_acp_adapter(sprite, agent, sprite_env) do
-    if Fountain.Runtimes.ACP.enabled?(agent) do
-      Fountain.Runtimes.ACP.install(sprite, agent.runtime, sprite_env)
+  # install would fail in a way that reads as a protocol bug. Keyed on the
+  # conversation's runtime, matching the spawn decision in kick_turn/4.
+  defp prepare_acp_adapter(sprite, runtime, sprite_env) do
+    if Fountain.Runtimes.ACP.enabled?(runtime) do
+      Fountain.Runtimes.ACP.install(sprite, runtime, sprite_env)
     else
       :ok
     end
@@ -1201,43 +1205,12 @@ defmodule Fountain.Conversations.ConversationServer do
   end
 
   def handle_info({:stdout, %{ref: ref}, data}, %{current_command_ref: ref} = state) do
+    # Raw stdout only arrives here on the legacy path (or from an ACP turn
+    # whose peer died mid-turn). The tracer reads protocol lines from the
+    # peer's reports, never raw chunks — the dialect tracer that used to eat
+    # this stream went with the legacy claude path.
     state = maybe_emit_first_output(state)
-    new_state = log_with_replay_skip(state, "stdout", data)
-
-    # Feed non-replayed bytes into the stream tracer (Claude only).
-    # Replayed bytes were already processed in a prior BEAM lifetime; skip them
-    # to avoid duplicate spans. The replay window shrinks as we consume bytes,
-    # so we compute how much of this chunk is genuinely new.
-    skip = Map.get(state.replay_skip, "stdout", 0)
-    size = byte_size(data)
-
-    new_tracer =
-      cond do
-        is_nil(state.stream_tracer) ->
-          nil
-
-        # An ACP turn whose peer died lands its raw stdout here; the ACP
-        # tracer reads protocol lines from the peer, not raw chunks, and the
-        # claude tracer below would crash on the struct.
-        is_struct(state.stream_tracer, Fountain.Runtimes.ACP.Tracer) ->
-          state.stream_tracer
-
-        skip == 0 ->
-          Fountain.Runtimes.Claude.StreamTracer.handle_chunk(state.stream_tracer, data)
-
-        skip >= size ->
-          # Entire chunk is replayed — discard.
-          state.stream_tracer
-
-        true ->
-          # Partial replay: only forward the fresh suffix.
-          Fountain.Runtimes.Claude.StreamTracer.handle_chunk(
-            state.stream_tracer,
-            binary_part(data, skip, size - skip)
-          )
-      end
-
-    {:noreply, %{new_state | stream_tracer: new_tracer}}
+    {:noreply, log_with_replay_skip(state, "stdout", data)}
   end
 
   def handle_info({:stderr, %{ref: ref}, data}, %{current_command_ref: ref} = state) do
@@ -1825,7 +1798,10 @@ defmodule Fountain.Conversations.ConversationServer do
       end)
     end
 
-    acp? = Fountain.Runtimes.ACP.enabled?(agent)
+    # Keyed on the conversation's runtime, not the agent: a conversation
+    # outlives its agent (deletion nilifies agent_id), and for a supported
+    # runtime the legacy spawn path no longer exists to fall back to.
+    acp? = Fountain.Runtimes.ACP.enabled?(conv.runtime)
 
     # Write image temp files to sprite. Only on the legacy path: ACP carries
     # images as content blocks inside `session/prompt`, so writing them into
@@ -1958,19 +1934,9 @@ defmodule Fountain.Conversations.ConversationServer do
             :ok ->
               # Tool-span tracing. Every ACP turn gets it, whatever the runtime
               # — `session/update` carries the id and status the tracer keys on
-              # (#637). On the legacy path only claude's dialect is traced;
-              # that tracer goes away with the path.
-              stream_tracer =
-                cond do
-                  acp? ->
-                    Fountain.Runtimes.ACP.Tracer.new(turn_span)
-
-                  state.runtime_module == Fountain.Runtimes.Claude ->
-                    Fountain.Runtimes.Claude.StreamTracer.new(turn_span)
-
-                  true ->
-                    nil
-                end
+              # (#637). The legacy path traces nothing: its only tracer was a
+              # parser over claude's dialect, deleted with that path.
+              stream_tracer = if acp?, do: Fountain.Runtimes.ACP.Tracer.new(turn_span)
 
               {peer, peer_mon} =
                 if acp? do
@@ -2275,14 +2241,10 @@ defmodule Fountain.Conversations.ConversationServer do
   # is cleared at the end so the `{:exit, …}` that follows finds no match and
   # falls through to the catch-all. A turn ends on the prompt response *or* the
   # process exit, whichever arrives first, and never waits for both.
-  # One tracer field, two shapes: ACP turns hold an `ACP.Tracer` struct, legacy
-  # claude turns the old map. Dispatch on shape so every way a turn can end
-  # closes whichever one is live; the second clause goes away with the legacy
-  # path.
-  defp finalize_tracer(%Fountain.Runtimes.ACP.Tracer{} = tracer),
-    do: Fountain.Runtimes.ACP.Tracer.finalize(tracer)
-
-  defp finalize_tracer(tracer), do: Fountain.Runtimes.Claude.StreamTracer.finalize(tracer)
+  # Called on every way a turn can end; ACP turns are the only ones that
+  # trace, so nil is the legacy case.
+  defp finalize_tracer(nil), do: :ok
+  defp finalize_tracer(tracer), do: Fountain.Runtimes.ACP.Tracer.finalize(tracer)
 
   defp finish_acp_turn(state, status, span_attrs, stage_meta) do
     if state.current_command, do: Sprites.close_stdin(state.current_command)

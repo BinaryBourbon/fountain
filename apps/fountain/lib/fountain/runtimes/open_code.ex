@@ -1,13 +1,13 @@
 defmodule Fountain.Runtimes.OpenCode do
   @moduledoc """
-  Opencode CLI runtime — a multi-provider front-end. Unlike claude /
-  codex / gemini whose argv is model-agnostic, opencode inlines the
-  model into argv via `--model provider/model_id`.
+  Opencode runtime — provisioning only. A multi-provider front-end; the
+  model is selected over ACP (`session/set_model` via the peer) rather than
+  argv since the `opencode run` builder went with the legacy spawn path.
 
-  Argv shape:
-
-      mode == :run       → opencode run --model <agent.model> --format json
-      mode == :continue  → opencode run --model <agent.model> --format json --continue
+  Turns speak ACP through opencode's own `acp` subcommand
+  (`Fountain.Runtimes.ACP`), which starts a local HTTP server inside the
+  sprite and drives it through opencode's SDK — a heavier process model than
+  the stdio-only adapters, worth remembering when something hangs.
 
   Auth: depends on the provider in `agent.model`. We export whichever
   one of {ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY} matches.
@@ -25,6 +25,8 @@ defmodule Fountain.Runtimes.OpenCode do
   # opencode insists on being inside a git repo. Putting the workspace
   # in /tmp side-steps the sprite user's lack of write access on
   # /home/sprite (which prevents `git init` from stat'ing the work tree).
+  # Mirrors `Fountain.Runtimes.ACP.cwd("opencode")`, which is where the ACP
+  # session actually runs.
   @workdir "/tmp/opencode-workspace"
 
   # opencode runs with HOME=/tmp (see default_env/1), so its skills
@@ -34,23 +36,6 @@ defmodule Fountain.Runtimes.OpenCode do
 
   @impl true
   def skills_sh_agent, do: "opencode"
-
-  @impl true
-  def build_command(agent, _prompt, mode, _runtime_session_id, _opts) do
-    base = [
-      "run",
-      "--model",
-      agent.model,
-      "--format",
-      "json",
-      "--dangerously-skip-permissions",
-      "--dir",
-      @workdir
-    ]
-
-    args = if mode == :continue, do: base ++ ["--continue"], else: base
-    {"opencode", args, []}
-  end
 
   @impl true
   def default_env(%{model: model} = agent, inference_credentials) when is_binary(model) do

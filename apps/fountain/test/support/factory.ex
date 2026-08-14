@@ -157,7 +157,13 @@ defmodule Fountain.Factory do
 
   def insert_conversation(overrides \\ %{}) do
     overrides_map = to_atom_map(overrides)
-    agent = Map.get(overrides_map, :agent)
+
+    agent =
+      Map.get(overrides_map, :agent) ||
+        case Map.get(overrides_map, :agent_id) do
+          nil -> nil
+          agent_id -> Repo.get(Fountain.Agents.Agent, agent_id)
+        end
 
     user_id =
       Map.get(overrides_map, :user_id) ||

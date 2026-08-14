@@ -20,12 +20,12 @@ defmodule Fountain.Conversations.ConversationAuditTest do
   setup do
     user = insert_verified_user()
     env = insert_env(user_id: user.id)
-    # These start real servers with the real runtime module, and what they
-    # assert is the audit trail, not the turn pipeline — so they pin the
-    # legacy path with the opt-out rather than by switching runtime (gemini's
-    # prepare_sprite reaches Sprites APIs this harness does not stub).
-    agent =
-      insert_agent(user_id: user.id, environment_id: env.id, metadata: %{"acp" => false})
+    # These start real servers with the real runtime module and assert the
+    # audit trail, not the turn pipeline. The default claude agent provisions
+    # over the ACP path (the adapter install is covered by the harness's
+    # Sprites.cmd/4 stub); the turn's spawn may fail against the fake sprite,
+    # which is fine — the trail records the action, not the outcome.
+    agent = insert_agent(user_id: user.id, environment_id: env.id)
 
     {:ok, user: user, env: env, agent: agent}
   end

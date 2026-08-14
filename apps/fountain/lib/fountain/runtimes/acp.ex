@@ -7,24 +7,14 @@ defmodule Fountain.Runtimes.ACP do
   gets into the sprite — and it deliberately holds no protocol state. The
   session lives in `Fountain.Runtimes.ACP.Peer`, for one turn, and dies with it.
 
-  ## On by default, per-agent opt-out
+  ## The only path
 
-  ACP is the primary path: every supported runtime speaks it unless the agent
-  carries `metadata["acp"] == false`. The opt-out is an operational escape
-  hatch (set over the API — metadata has no form UI), not a supported
-  configuration; it exists so a broken adapter release can be routed around
-  without a deploy, and it goes away with the legacy path itself.
-
-  Metadata rather than a column because the flag is transitional — once the
-  legacy path is deleted there is nothing to opt out into, and a migration
-  would outlive the thing it was added for. The flag is read per turn, so
-  flipping it mid-conversation switches the next turn; earlier turns keep
-  rendering through whichever path produced them (the render side keys on the
-  log-event stream, not on the flag).
-
-  Gate 2 ran the inverse polarity — opt-in, off by default — and the flip to
-  default-on is the start of ADR 0014's gate 4: ACP as the primary way to talk
-  to every runtime that can hold a conversation over it.
+  Every supported runtime speaks ACP, unconditionally. The per-agent
+  `metadata["acp"]` flag is dead: it began as gate 2's opt-in, flipped to an
+  opt-out when ACP became the default, and was removed when the legacy spawn
+  path for these runtimes was deleted — there is nothing left to opt out
+  into. `build_command/5` survives only on runtimes that are not here
+  (gemini, #659).
 
   ## Which runtimes
 
@@ -219,21 +209,21 @@ defmodule Fountain.Runtimes.ACP do
   def cwd(runtime), do: get_in(@adapters, [runtime, :cwd]) || "/home/sprite"
 
   @doc """
-  Whether this turn should speak ACP.
+  Whether this turn speaks ACP.
 
-  Default-on for every supported runtime; `metadata["acp"] == false` is the
-  per-agent escape hatch. Only the literal boolean opts out — metadata arrives
-  as JSON over the API, and a string `"false"` is a typo, not a decision.
+  A property of the runtime alone: supported runtimes always do, and for them
+  the legacy spawn path no longer exists. A blocked or unknown runtime
+  (gemini, #659) takes the legacy path — for those it is not a failure mode,
+  it is the only path.
 
-  A supported runtime is still the other half: an unsupported or blocked
-  runtime (gemini, #659) takes the legacy path whatever the metadata says —
-  for those the legacy path is not a failure mode, it is the only path.
+  Takes the runtime string, not the agent, because a conversation outlives
+  its agent (deleting one nilifies `agent_id`) and the conversation row
+  carries its own `runtime`. An `%Agent{}` is accepted for call sites that
+  have one.
   """
-  @spec enabled?(Agent.t() | nil) :: boolean()
-  def enabled?(%Agent{runtime: runtime, metadata: metadata}) do
-    runtime in supported_runtimes() and Map.get(metadata || %{}, "acp") != false
-  end
-
+  @spec enabled?(String.t() | Agent.t() | nil) :: boolean()
+  def enabled?(%Agent{runtime: runtime}), do: enabled?(runtime)
+  def enabled?(runtime) when is_binary(runtime), do: runtime in supported_runtimes()
   def enabled?(_), do: false
 
   @doc """

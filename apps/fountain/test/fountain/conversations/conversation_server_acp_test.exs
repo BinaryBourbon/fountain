@@ -13,7 +13,7 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
   alias Fountain.Runtimes.ACP
 
   defp acp_agent(user, runtime \\ "claude") do
-    insert_agent(user_id: user.id, runtime: runtime, metadata: %{"acp" => true})
+    insert_agent(user_id: user.id, runtime: runtime)
   end
 
   # Starts a server whose turn speaks ACP, with the sprite side wired to this
@@ -106,22 +106,18 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
     prompt_id
   end
 
-  describe "the flag" do
-    test "is on by default" do
-      user = insert_verified_user()
-      assert ACP.enabled?(insert_agent(user_id: user.id, runtime: "claude"))
-    end
-
-    test "defaults on for every shippable runtime, with a per-agent opt-out" do
+  describe "the decision" do
+    test "every shippable runtime speaks ACP; the retired flag routes nothing" do
       user = insert_verified_user()
 
       for runtime <- ACP.supported_runtimes() do
         agent = insert_agent(user_id: user.id, runtime: runtime)
-        assert ACP.enabled?(agent), "expected #{runtime} to be ACP-enabled by default"
+        assert ACP.enabled?(agent), "expected #{runtime} to be ACP-enabled"
       end
 
-      # The opt-out is the only off switch for a shippable runtime.
-      refute ACP.enabled?(
+      # Stale metadata from the flag's opt-in/opt-out eras must not resurrect
+      # a spawn path that no longer exists.
+      assert ACP.enabled?(
                insert_agent(user_id: user.id, runtime: "claude", metadata: %{"acp" => false})
              )
     end

@@ -1,13 +1,17 @@
 # 0014 — Speaking the Agent Client Protocol to runtimes
 
 **Status:** Partially accepted — **gates 1 and 2 are built; gate 4 is in
-progress; gate 3 is not built.** `Fountain.Runtimes.ACP` and its peer speak
-ACP to claude, codex and opencode, **on by default** since 2026-08-13 (the
-per-agent `metadata["acp"]` flag flipped polarity: `false` is now an opt-out
-escape hatch rather than `true` an opt-in). Gemini takes the legacy path — an
-upstream defect, not a choice; see gate 4. Nothing in *Gate 3 — permissions*
-exists, and it should not be read as describing behaviour the system has. Each
-gate below carries its own status; the PR that builds one removes its caveat.
+progress; gate 3 is not built.** ACP is the **only** way Fountain speaks to
+claude, codex and opencode: their legacy spawn path (`build_command/5`, the
+permission-bypass flags, the claude-only stream tracer) was deleted on
+2026-08-14, and the per-agent `metadata["acp"]` flag — gate 2's opt-in, then
+briefly a default-on opt-out — was retired with it, since there is nothing
+left to opt out into. Their MCP config travels only in `session/new` (#636)
+and every ACP turn gets protocol-keyed tool spans (#637). Gemini takes the
+legacy path — an upstream defect, not a choice; see gate 4. Nothing in *Gate 3
+— permissions* exists, and it should not be read as describing behaviour the
+system has. Each gate below carries its own status; the PR that builds one
+removes its caveat.
 
 ## Context
 
