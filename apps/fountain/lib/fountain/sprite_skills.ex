@@ -20,31 +20,32 @@ defmodule Fountain.SpriteSkills do
 
   This must run before the network policy locks the sprite down: github
   installs hit npm + GitHub. Inside `mount/3` the github installs run
-  before the inline writes — `Sprites.cmd` blocks until the sprite is
-  fully ready, which is the readiness gate the HTTP `/fs/*` endpoints
+  before the inline writes — a blocking exec waits until the sandbox is
+  fully ready, which is the readiness gate the file-write endpoints
   silently need too.
   """
 
   require Logger
 
   alias Fountain.Runtimes
-  alias Sprites.Filesystem
+  alias Fountain.Sandbox
 
   @bundle_root "sprite_skills"
   @fountain_skill_name "fountain"
 
   @doc """
-  Mount `skills` (a list of inline/github maps) on `sprite` for the
-  named runtime. The bundled `fountain` skill is always prepended.
+  Mount `skills` (a list of inline/github maps) on the sandbox behind
+  `handle` for the named runtime. The bundled `fountain` skill is always
+  prepended.
   """
-  def mount(sprite, runtime, skills) when is_binary(runtime) do
+  def mount(handle, runtime, skills) when is_binary(runtime) do
     case Runtimes.for_runtime(runtime) do
-      {:ok, mod} -> mount(sprite, mod, skills)
+      {:ok, mod} -> mount(handle, mod, skills)
       {:error, _} = err -> err
     end
   end
 
-  def mount(sprite, runtime_module, skills) when is_atom(runtime_module) do
+  def mount(handle, runtime_module, skills) when is_atom(runtime_module) do
     skills_root = runtime_module.skills_root()
     sh_agent = runtime_module.skills_sh_agent()
 
@@ -53,13 +54,12 @@ defmodule Fountain.SpriteSkills do
     {inline, github} =
       Enum.split_with(all, fn s -> is_binary(s["content"]) end)
 
-    # Github installs first, inline writes second: `Sprites.cmd` waits for
-    # the sprite to be running, so by the time we touch the HTTP `/fs/*`
+    # Github installs first, inline writes second: a blocking exec waits for
+    # the sandbox to be running, so by the time we touch the file-write
     # endpoints they're definitely up. (Not strictly required after the
     # SDK URL fix, but cheap defense against future readiness regressions.)
-    install_github_skills(sprite, sh_agent, github)
-    fs = Sprites.filesystem(sprite, "/")
-    write_inline_skills(fs, skills_root, inline)
+    install_github_skills(handle, sh_agent, github)
+    write_inline_skills(handle, skills_root, inline)
     :ok
   end
 
@@ -84,17 +84,16 @@ defmodule Fountain.SpriteSkills do
     }
   end
 
-  defp write_inline_skills(_fs, _root, []), do: :ok
+  defp write_inline_skills(_handle, _root, []), do: :ok
 
-  defp write_inline_skills(fs, root, inline) do
+  defp write_inline_skills(handle, root, inline) do
     Enum.each(inline, fn %{"name" => name, "content" => content} ->
-      # `mkdirParents: true` inside `Filesystem.write/4` creates the
-      # `<root>/<name>` directory atomically with the file write, so we
-      # don't need a separate `mkdir_p` round-trip (each one was another
-      # opportunity for the same readiness race).
+      # write_file/4 creates the `<root>/<name>` directory atomically with
+      # the file write, so we don't need a separate mkdir round-trip (each
+      # one was another opportunity for the same readiness race).
       path = Path.join([root, name, "SKILL.md"])
 
-      case Filesystem.write(fs, path, content) do
+      case Sandbox.write_file(handle, path, content) do
         :ok ->
           :ok
 
@@ -104,24 +103,28 @@ defmodule Fountain.SpriteSkills do
     end)
   end
 
-  defp install_github_skills(_sprite, _agent_id, []), do: :ok
+  defp install_github_skills(_handle, _agent_id, []), do: :ok
 
-  defp install_github_skills(sprite, agent_id, github) do
+  defp install_github_skills(handle, agent_id, github) do
     safe_agent = safe_token!(agent_id)
 
     Enum.each(github, fn entry ->
       cmd = github_install_cmd(entry, safe_agent)
 
-      {output, code} =
-        Sprites.cmd(sprite, "bash", ["-lc", cmd],
-          stderr_to_stdout: true,
-          timeout: 120_000
-        )
+      case Sandbox.exec(handle, "bash", ["-lc", cmd],
+             stderr_to_stdout: true,
+             timeout: 120_000
+           ) do
+        {:ok, _output, 0} ->
+          :ok
 
-      if code != 0 do
-        Logger.warning(
-          "skills.sh install failed (#{code}) for #{inspect(entry)}: #{String.slice(output, 0, 500)}"
-        )
+        {:ok, output, code} ->
+          Logger.warning(
+            "skills.sh install failed (#{code}) for #{inspect(entry)}: #{String.slice(output, 0, 500)}"
+          )
+
+        {:error, reason} ->
+          Logger.warning("skills.sh install failed for #{inspect(entry)}: #{inspect(reason)}")
       end
     end)
   end

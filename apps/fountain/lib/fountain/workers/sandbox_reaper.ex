@@ -287,22 +287,19 @@ defmodule Fountain.Workers.SandboxReaper do
   # ── pass 2: terminal rows whose sprite is still there ─────────────────────
 
   defp destroy_dead_sprites(live_names) do
-    client = Fountain.SpritesClient.get!()
-
     Sandbox
     |> where([s], s.status in ^@terminal_statuses)
     |> select([s], {s.id, s.sprite_name})
     |> Repo.all()
     |> Enum.filter(fn {_id, name} -> MapSet.member?(live_names, name) end)
     |> Enum.take(@destroy_limit)
-    |> Enum.count(fn {id, name} -> destroy(client, id, name) end)
+    |> Enum.count(fn {id, name} -> destroy(id, name) end)
   end
 
-  defp destroy(client, sandbox_id, sprite_name) do
-    # `Sprites.sprite/2` builds the handle; `get_sprite/2` only returns a map
-    # and cannot be passed to destroy. We already know it exists — it came out
-    # of the listing — so there is nothing to look up first.
-    case Sprites.destroy(Sprites.sprite(client, sprite_name)) do
+  defp destroy(sandbox_id, sprite_name) do
+    # build_handle/2 is pure — we already know the sandbox exists (it came
+    # out of the listing), so there is nothing to look up first.
+    case Fountain.Sandbox.destroy(Fountain.Sandbox.build_handle(:sprites, sprite_name)) do
       :ok ->
         Logger.info("reaper: destroyed leaked sprite #{sprite_name} (sandbox #{sandbox_id})")
         true
@@ -343,12 +340,12 @@ defmodule Fountain.Workers.SandboxReaper do
 
   # ── sprites.dev ───────────────────────────────────────────────────────────
 
-  # Paginated deliberately — see Fountain.SpritesClient.list_all_sprite_names/0.
-  # A single `Sprites.list/2` call returns the first 50 and looks complete,
-  # which for a function that decides what to delete is the worst possible
-  # shape of wrong.
+  # Paginated deliberately inside the adapter — a first-page-only listing
+  # looks complete, which for a function that decides what to delete is the
+  # worst possible shape of wrong; the adapter returns {:error, :truncated}
+  # rather than a partial view.
   defp list_sprites do
-    Fountain.SpritesClient.list_all_sprite_names()
+    Fountain.Sandbox.list_all_names(:sprites)
   rescue
     e -> {:error, e}
   end

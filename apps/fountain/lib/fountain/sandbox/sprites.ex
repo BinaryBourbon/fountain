@@ -52,6 +52,16 @@ defmodule Fountain.Sandbox.Sprites do
     %Handle{provider: :sprites, name: name}
   end
 
+  @doc """
+  Transitional: wrap the SDK sprite `ConversationServer` still holds in a
+  `Handle` so already-migrated modules can be called from not-yet-migrated
+  ones. Accepts the bare `%{name: ...}` map the test harness uses as its
+  stand-in sprite. Deleted once the server builds handles itself.
+  """
+  @spec from_sdk(Sprites.Sprite.t() | %{required(:name) => String.t()}) :: Handle.t()
+  def from_sdk(%Sprites.Sprite{} = sprite), do: wrap(sprite)
+  def from_sdk(%{name: name}) when is_binary(name), do: build_handle(name)
+
   @impl true
   def create(name, opts) when is_binary(name) do
     client = Fountain.SpritesClient.get!()
