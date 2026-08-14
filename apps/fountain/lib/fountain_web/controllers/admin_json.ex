@@ -62,6 +62,7 @@ defmodule FountainWeb.AdminJSON do
     %{
       id: s.id,
       sprite_name: s.sprite_name,
+      provider: s.provider,
       status: s.status,
       user_id: s.user_id,
       user_email: s.user && s.user.email,

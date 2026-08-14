@@ -1450,6 +1450,11 @@ defmodule Fountain.Conversations.ConversationServer do
   # a wake from `suspended` stamps `last_resumed_at` and restarts the clock,
   # while a deploy reattach of a `ready` row stamps nothing and keeps it.
   # SandboxReaper.expired?/2 must agree with this — change both together.
+  # The provider tag for telemetry: read off the live handle, which was
+  # built from the sandbox row's provider column.
+  defp provider(%{handle: %Fountain.Sandbox.Handle{provider: provider}}), do: provider
+  defp provider(_state), do: :sprites
+
   defp sandbox_clock_start(sandbox), do: sandbox.last_resumed_at || sandbox.inserted_at
 
   defp schedule_lifecycle_check do
@@ -1493,7 +1498,9 @@ defmodule Fountain.Conversations.ConversationServer do
       message: Lifecycle.explain(:idle)
     })
 
-    :telemetry.execute([:fountain, :sandbox, :suspended], %{count: 1}, %{})
+    :telemetry.execute([:fountain, :sandbox, :suspended], %{count: 1}, %{
+      provider: provider(state)
+    })
 
     {:stop, :normal, %{state | handle: nil}}
   end
@@ -1535,7 +1542,10 @@ defmodule Fountain.Conversations.ConversationServer do
       message: Lifecycle.explain(reason)
     })
 
-    :telemetry.execute([:fountain, :sandbox, :reclaimed], %{count: 1}, %{reason: reason})
+    :telemetry.execute([:fountain, :sandbox, :reclaimed], %{count: 1}, %{
+      reason: reason,
+      provider: provider(state)
+    })
 
     {:stop, :normal, %{state | handle: nil}}
   end
