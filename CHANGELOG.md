@@ -28,6 +28,13 @@ upgrade, is in
 
 ### Changed
 
+- **The four dialect parsers are out of the conversation LiveView.** The
+  24 `event_blocks/2` clauses move to a dedicated, tested
+  `LegacyBlocks` module: gemini's dialect stays live (#659), and the
+  claude/codex/opencode parsers are frozen — they render pre-ACP
+  history only and are deleted when that history ages out. The rule
+  this closes: a dialect parser is never written again; a runtime that
+  doesn't speak ACP gets an adapter at the sandbox boundary (#642).
 - **The legacy spawn path for claude, codex and opencode is deleted; ACP
   is the only way Fountain talks to them.** The three `build_command/5`
   argv builders go — and with them `--dangerously-skip-permissions`,
