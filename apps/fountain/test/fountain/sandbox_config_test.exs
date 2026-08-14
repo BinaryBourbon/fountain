@@ -30,10 +30,18 @@ defmodule Fountain.SandboxConfigTest do
     assert Sandbox.enabled_providers() == [:sprites]
   end
 
-  test "a credential without a registered adapter does not enable the provider" do
-    # E2B credentials can be configured ahead of the adapter shipping; the
-    # provider stays unusable until its module is in :sandbox_adapters.
-    Application.put_env(:fountain, :e2b_api_key, "e2b_x")
+  test "an e2b credential enables the provider now that its adapter ships" do
     refute Sandbox.enabled?(:e2b)
+    Application.put_env(:fountain, :e2b_api_key, "e2b_x")
+    assert Sandbox.enabled?(:e2b)
+  end
+
+  test "a credential without a registered adapter does not enable the provider" do
+    # Daytona credentials can be configured ahead of the adapter shipping;
+    # the provider stays unusable until its module is in :sandbox_adapters.
+    previous = Application.get_env(:fountain, :daytona_api_key)
+    on_exit(fn -> restore(:daytona_api_key, previous) end)
+    Application.put_env(:fountain, :daytona_api_key, "dtn_x")
+    refute Sandbox.enabled?(:daytona)
   end
 end

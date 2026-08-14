@@ -147,8 +147,15 @@ daytona_api_url =
     url -> url
   end
 
+e2b_template =
+  case System.get_env("E2B_TEMPLATE") do
+    blank when blank in [nil, ""] -> "base"
+    template -> template
+  end
+
 config :fountain, :e2b_api_key, e2b_api_key
 config :fountain, :e2b_base_url, e2b_base_url
+config :fountain, :e2b_template, e2b_template
 config :fountain, :daytona_api_key, daytona_api_key
 config :fountain, :daytona_api_url, daytona_api_url
 

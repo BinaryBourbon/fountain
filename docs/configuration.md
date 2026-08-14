@@ -47,6 +47,7 @@ an error message.
 | `SANDBOX_PROVIDER` | `sprites` | — | Which backend newly-created sandboxes run on: `sprites`, `e2b`, or `daytona`. A provider is enabled by the presence of its credential; boot refuses an explicit default whose credential is missing. Existing sandboxes stay on the provider they were created on |
 | `E2B_API_KEY` | — | for the `e2b` provider | [E2B](https://e2b.dev) API key. Its presence enables the provider |
 | `E2B_BASE_URL` | `https://api.e2b.app` | — | Repoints the E2B control plane |
+| `E2B_TEMPLATE` | `base` | — | Template new E2B sandboxes are created from. The stock `base` template lacks the agent CLIs — build one from `images/e2b/` for real use |
 | `DAYTONA_API_KEY` | — | for the `daytona` provider | [Daytona](https://daytona.io) API key. Its presence enables the provider |
 | `DAYTONA_API_URL` | `https://app.daytona.io/api` | — | Repoints the Daytona API (self-hosted Daytona) |
 | `SANDBOX_IDLE_TIMEOUT_MINUTES` | `60` | — | No turn activity for this long and the sandbox is reclaimed — the conversation stays [resumable](self-hosting.md#sandbox-lifetime). `0` disables the bound; boot refuses anything that is not a non-negative integer |
