@@ -87,60 +87,10 @@ defmodule Fountain.Runtimes.Codex do
     end
   end
 
-  # Codex reads `~/.codex/config.toml`; MCP servers go under
-  # `[mcp_servers.<name>]` (snake_case, NOT `mcpServers`).
-  @impl true
-  def write_config(_sprite, nil), do: :ok
-  def write_config(_sprite, %{mcp_servers: m}) when m == %{} or is_nil(m), do: :ok
-
-  def write_config(sprite, %{mcp_servers: mcp_servers}) do
-    fs = Sprites.filesystem(sprite, "/")
-    Sprites.Filesystem.mkdir_p(fs, "/home/sprite/.codex")
-    Sprites.Filesystem.write(fs, "/home/sprite/.codex/config.toml", render_toml(mcp_servers))
-    :ok
-  end
-
-  defp render_toml(mcp_servers) do
-    mcp_servers
-    |> Enum.sort()
-    |> Enum.map_join("\n", &render_server/1)
-  end
-
-  defp render_server({name, %{} = entry}) do
-    fields =
-      [
-        toml_kv("command", Map.get(entry, "command")),
-        toml_array("args", Map.get(entry, "args", [])),
-        toml_inline_table("env", Map.get(entry, "env", %{}))
-      ]
-      |> Enum.reject(&is_nil/1)
-      |> Enum.join("\n")
-
-    "[mcp_servers.#{name}]\n#{fields}\n"
-  end
-
-  defp toml_kv(_, nil), do: nil
-  defp toml_kv(k, v) when is_binary(v), do: ~s(#{k} = "#{toml_escape(v)}")
-
-  defp toml_array(_, []), do: nil
-
-  defp toml_array(k, list) when is_list(list) do
-    items = Enum.map_join(list, ", ", &~s("#{toml_escape(to_string(&1))}"))
-    "#{k} = [#{items}]"
-  end
-
-  defp toml_inline_table(_, m) when m == %{}, do: nil
-
-  defp toml_inline_table(k, m) when is_map(m) do
-    pairs = Enum.map_join(m, ", ", fn {ek, ev} -> ~s(#{ek} = "#{toml_escape(to_string(ev))}") end)
-    "#{k} = { #{pairs} }"
-  end
-
-  defp toml_escape(s) do
-    s
-    |> String.replace("\\", "\\\\")
-    |> String.replace(~s("), ~s(\\"  ))
-  end
+  # MCP servers travel in `session/new`'s `mcpServers` param on the ACP path
+  # (#636); the `~/.codex/config.toml` writer that used to live here served
+  # the bare CLI. An agent opted out of ACP runs its legacy turns without MCP
+  # servers.
 
   # codex 0.118+ does NOT read OPENAI_API_KEY at exec time — it only reads
   # `~/.codex/auth.json`, which `codex login --with-api-key` writes by

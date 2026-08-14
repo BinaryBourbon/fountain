@@ -125,47 +125,7 @@ defmodule Fountain.Runtimes.OpenCode do
     end
   end
 
-  # opencode reads `~/.config/opencode/opencode.json`; MCP servers go under
-  # `mcp` and each entry needs `type: "local"`, `command` as an ARRAY,
-  # and `environment` (not `env`).  We translate from the canonical
-  # claude shape stored on the agent.
-  @impl true
-  def write_config(_sprite, nil), do: :ok
-  def write_config(_sprite, %{mcp_servers: m}) when m == %{} or is_nil(m), do: :ok
-
-  def write_config(sprite, %{mcp_servers: mcp_servers}) do
-    fs = Sprites.filesystem(sprite, "/")
-    Sprites.Filesystem.mkdir_p(fs, "/tmp/.config/opencode")
-    Sprites.Filesystem.mkdir_p(fs, "/home/sprite/.config/opencode")
-
-    payload =
-      Jason.encode!(
-        %{
-          "$schema" => "https://opencode.ai/config.json",
-          "mcp" => Map.new(mcp_servers, &translate_mcp_entry/1)
-        },
-        pretty: true
-      )
-
-    # Write to both locations: the runtime overrides HOME=/tmp at spawn
-    # time, so opencode actually reads /tmp/.config/opencode/opencode.json.
-    # We keep the /home/sprite copy in sync for `opencode` invocations
-    # outside our spawn (e.g. an operator shelling in).
-    Sprites.Filesystem.write(fs, "/tmp/.config/opencode/opencode.json", payload)
-    Sprites.Filesystem.write(fs, "/home/sprite/.config/opencode/opencode.json", payload)
-    :ok
-  end
-
-  defp translate_mcp_entry({name, %{} = entry}) do
-    cmd = Map.get(entry, "command")
-    args = Map.get(entry, "args", [])
-
-    {name,
-     %{
-       "type" => "local",
-       "command" => [cmd | args],
-       "environment" => Map.get(entry, "env", %{}),
-       "enabled" => true
-     }}
-  end
+  # MCP servers travel in `session/new`'s `mcpServers` param on the ACP path
+  # (#636); the `opencode.json` writer that used to live here served the bare
+  # CLI. An agent opted out of ACP runs its legacy turns without MCP servers.
 end

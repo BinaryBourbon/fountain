@@ -78,41 +78,10 @@ defmodule Fountain.Runtimes.Claude do
     end
   end
 
-  # Claude Code 2.x dropped support for top-level `mcpServers` in
-  # `~/.claude.json` and rewrites that file aggressively on first
-  # launch, clobbering anything we drop in there. Use the supported
-  # `claude mcp add-json --scope user` path instead — it goes through
-  # Claude's own state machine and survives further schema changes.
-  @impl true
-  def prepare_sprite(_sprite, nil, _sprite_env), do: :ok
-
-  def prepare_sprite(_sprite, %{mcp_servers: m}, _sprite_env)
-      when m == %{} or is_nil(m),
-      do: :ok
-
-  def prepare_sprite(sprite, %{mcp_servers: mcp_servers}, sprite_env)
-      when is_map(mcp_servers) do
-    Enum.reduce_while(mcp_servers, :ok, fn {name, entry}, :ok ->
-      args = [
-        "mcp",
-        "add-json",
-        "--scope",
-        "user",
-        to_string(name),
-        Jason.encode!(entry)
-      ]
-
-      case Sprites.cmd(sprite, "claude", args,
-             env: sprite_env,
-             stderr_to_stdout: true,
-             timeout: 30_000
-           ) do
-        {_out, 0} ->
-          {:cont, :ok}
-
-        {out, code} ->
-          {:halt, {:error, {:claude_mcp_add_failed, name, code, out}}}
-      end
-    end)
-  end
+  # MCP servers travel in `session/new`'s `mcpServers` param on the ACP path
+  # (#636); the `claude mcp add-json --scope user` provisioning loop that used
+  # to live here existed for the CLI, which the ACP adapter does not wrap. An
+  # agent opted out of ACP (`metadata["acp"] == false`) therefore runs its
+  # legacy turns without MCP servers — the opt-out is an emergency hatch, not
+  # a configuration.
 end
