@@ -44,6 +44,21 @@ defmodule FountainWeb.FallbackController do
     |> json(%{error: "parent_conversation_not_found"})
   end
 
+  # The agent pins a sandbox provider that is not usable on this instance
+  # (its adapter is missing or its credentials were removed). 422 with the
+  # provider named: an admin either configures the credentials or clears the
+  # agent's override.
+  def call(conn, {:error, {:sandbox_provider_disabled, provider}}) do
+    conn
+    |> put_status(:unprocessable_entity)
+    |> json(%{
+      error: "sandbox_provider_disabled",
+      message:
+        "sandbox provider #{provider} is not configured on this instance — " <>
+          "set its credentials or clear the agent's sandbox_provider override"
+    })
+  end
+
   # Subscription gate (ADR 0006). Raised from the context so every provisioning
   # path renders the same response, rather than each controller inventing one.
   def call(conn, {:error, :subscription_required}) do

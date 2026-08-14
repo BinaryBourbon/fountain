@@ -1366,7 +1366,61 @@ defmodule Fountain.ConversationsContextTest do
   # start_conversation/1
   # ────────────────────────────────────────────────────────────────────────────
 
+  describe "wake_conversation/2 — provider stickiness" do
+    test "a suspended sandbox on a disabled provider refuses to wake rather than retire" do
+      # Falling through to :create_new would retire the row and orphan (or
+      # lose) the parked disk; a retryable error keeps the agent's memory
+      # safe until the operator restores the provider's credentials.
+      user = insert_verified_user()
+      agent = insert_agent(user_id: user.id)
+      sandbox = insert_sandbox(user_id: user.id, sprite_name: "parked-on-e2b")
+
+      {:ok, sandbox} =
+        Conversations.update_sandbox(sandbox, %{status: "suspended", provider: "e2b"})
+
+      conv = insert_conversation(user_id: user.id, agent: agent, sandbox: sandbox, status: "idle")
+
+      assert {:error, {:sandbox_provider_disabled, :e2b}} =
+               Conversations.wake_conversation(conv.id)
+
+      assert Repo.reload(sandbox).status == "suspended"
+    end
+  end
+
   describe "start_conversation/1" do
+    test "the sandbox row is stamped with the resolved provider" do
+      user = insert_verified_user()
+      agent = insert_agent(user_id: user.id)
+      stub(Horde.DynamicSupervisor, :start_child, fn _s, _spec -> {:ok, spawn(fn -> :ok end)} end)
+
+      assert {:ok, conv} =
+               Conversations.start_conversation(%{"agent_id" => agent.id, "user_id" => user.id})
+
+      sandbox = Conversations._unsafe_get_sandbox!(conv.sandbox_id)
+      assert sandbox.provider == "sprites"
+    end
+
+    test "an agent pinned to a disabled provider is refused before any row is allocated" do
+      user = insert_verified_user()
+      agent = insert_agent(user_id: user.id)
+
+      # Simulate drift: the override was saved while the provider was
+      # configured, and its credentials/adapter have since gone away. The
+      # changeset guards saves, so write the column directly.
+      {1, _} =
+        Repo.update_all(
+          Ecto.Query.from(a in Fountain.Agents.Agent, where: a.id == ^agent.id),
+          set: [sandbox_provider: "e2b"]
+        )
+
+      before = Fountain.Quotas.active_sandbox_count(user.id)
+
+      assert {:error, {:sandbox_provider_disabled, :e2b}} =
+               Conversations.start_conversation(%{"agent_id" => agent.id, "user_id" => user.id})
+
+      assert Fountain.Quotas.active_sandbox_count(user.id) == before
+    end
+
     test "returns {:error, :vault_not_found} when vault_id belongs to a different user" do
       user1 = insert_verified_user()
       user2 = insert_verified_user()
