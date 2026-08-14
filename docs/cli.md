@@ -118,6 +118,31 @@ Disconnecting loses nothing — reattach at any time:
 fountain conv stream <conversation-id>
 ```
 
+## Editor integration (ACP)
+
+```bash
+fountain acp [--log-level debug]
+```
+
+Speaks the [Agent Client Protocol](https://agentclientprotocol.com) on stdio, so
+an ACP-capable editor can drive a Fountain conversation. You do not run this
+yourself — the editor spawns it and talks JSON-RPC over the pipe. stdout carries
+the protocol and nothing else; diagnostics go to stderr, which is where to look
+first when an editor reports a problem.
+
+It authenticates with the same credentials as every other command
+(`FOUNTAIN_API_KEY`, then the active profile), so `fountain auth login` is the
+only setup step. `--profile` selects the instance.
+
+**What it is not:** a way for a remote agent to edit your local files. The agent
+works inside a Fountain sandbox, on a checkout that is not yours, and this
+integration declares no filesystem or terminal access to your editor at all.
+Paths it reports are paths inside the sandbox.
+
+Status: in progress. Today the process handshakes and authenticates; the session
+methods that carry a conversation are being built
+([tracker](https://github.com/BinaryBourbon/fountain/issues/709)).
+
 ## Apply manifests
 
 ```bash
