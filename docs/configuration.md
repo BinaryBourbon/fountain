@@ -50,6 +50,7 @@ an error message.
 | `E2B_TEMPLATE` | `base` | — | Template new E2B sandboxes are created from. The stock `base` template lacks the agent CLIs — build one from `images/e2b/` for real use |
 | `DAYTONA_API_KEY` | — | for the `daytona` provider | [Daytona](https://daytona.io) API key. Its presence enables the provider |
 | `DAYTONA_API_URL` | `https://app.daytona.io/api` | — | Repoints the Daytona API (self-hosted Daytona) |
+| `DAYTONA_SNAPSHOT` | `daytonaio/sandbox:latest` | — | Snapshot (image) new Daytona sandboxes are created from. The stock image lacks the agent CLIs — build one from `images/daytona/` for real use |
 | `SANDBOX_IDLE_TIMEOUT_MINUTES` | `60` | — | No turn activity for this long and the sandbox is reclaimed — the conversation stays [resumable](self-hosting.md#sandbox-lifetime). `0` disables the bound; boot refuses anything that is not a non-negative integer |
 | `SANDBOX_MAX_LIFETIME_HOURS` | `24` | — | Absolute sandbox age ceiling, regardless of activity. Same `0`-disables and boot-refusal rules |
 | `LOG_OUTPUT_BUDGET_MB` | `50` | — | Durable log volume per conversation. Once a conversation has persisted this much sandbox output, one truncation marker is written and further output is discarded (retention bounds age; this bounds rate). Same `0`-disables and boot-refusal rules |

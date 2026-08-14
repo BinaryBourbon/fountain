@@ -156,8 +156,16 @@ e2b_template =
 config :fountain, :e2b_api_key, e2b_api_key
 config :fountain, :e2b_base_url, e2b_base_url
 config :fountain, :e2b_template, e2b_template
+
+daytona_snapshot =
+  case System.get_env("DAYTONA_SNAPSHOT") do
+    blank when blank in [nil, ""] -> "daytonaio/sandbox:latest"
+    snapshot -> snapshot
+  end
+
 config :fountain, :daytona_api_key, daytona_api_key
 config :fountain, :daytona_api_url, daytona_api_url
+config :fountain, :daytona_snapshot, daytona_snapshot
 
 sandbox_provider_env = System.get_env("SANDBOX_PROVIDER")
 

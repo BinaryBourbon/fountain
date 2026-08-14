@@ -201,7 +201,11 @@ defmodule Fountain.Sandbox do
 
   # ── facade ─────────────────────────────────────────────────────────────────
 
-  @default_adapters %{sprites: Fountain.Sandbox.Sprites, e2b: Fountain.Sandbox.E2B}
+  @default_adapters %{
+    sprites: Fountain.Sandbox.Sprites,
+    e2b: Fountain.Sandbox.E2B,
+    daytona: Fountain.Sandbox.Daytona
+  }
 
   @doc """
   The closed vocabulary of providers Fountain knows how to name.

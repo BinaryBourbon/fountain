@@ -16,8 +16,8 @@ defmodule Fountain.SandboxTest do
     end
 
     test "an unconfigured provider raises with the configured set named" do
-      assert_raise ArgumentError, ~r/unknown sandbox provider :daytona/, fn ->
-        Sandbox.adapter_for(:daytona)
+      assert_raise ArgumentError, ~r/unknown sandbox provider :modal/, fn ->
+        Sandbox.adapter_for(:modal)
       end
     end
 
