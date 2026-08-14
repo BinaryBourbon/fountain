@@ -4,6 +4,14 @@ defmodule Fountain.Conversations.ProvisioningTest do
 
   alias Fountain.Conversations.Provisioning
 
+  # Full-stack: Provisioning -> Fountain.Sandbox facade -> real Sprites
+  # adapter -> stubbed SDK, so the provider-quirk pins below still assert
+  # the exact wire shapes Sprites receives.
+  defp sandbox_handle(name \\ "test-sprite") do
+    stub(Fountain.SpritesClient, :get!, fn -> %Sprites.Client{token: "test"} end)
+    Fountain.Sandbox.Sprites.build_handle(name)
+  end
+
   describe "apply_network_policy/3 — limited networking" do
     test "empty allowed_hosts denies by default instead of sending an empty rule list" do
       env = insert_env(%{"networking_type" => "limited", "networking_config" => %{}})
@@ -20,7 +28,7 @@ defmodule Fountain.Conversations.ProvisioningTest do
         :ok
       end)
 
-      assert :ok = Provisioning.apply_network_policy(%{name: "test-sprite"}, env, conv.id)
+      assert :ok = Provisioning.apply_network_policy(sandbox_handle(), env, conv.id)
     end
 
     test "absent allowed_hosts (no networking_config at all) also denies by default" do
@@ -34,7 +42,7 @@ defmodule Fountain.Conversations.ProvisioningTest do
         :ok
       end)
 
-      assert :ok = Provisioning.apply_network_policy(%{name: "test-sprite"}, env, conv.id)
+      assert :ok = Provisioning.apply_network_policy(sandbox_handle(), env, conv.id)
     end
 
     test "non-empty allowed_hosts still builds an allowlist" do
@@ -57,7 +65,7 @@ defmodule Fountain.Conversations.ProvisioningTest do
         :ok
       end)
 
-      assert :ok = Provisioning.apply_network_policy(%{name: "test-sprite"}, env, conv.id)
+      assert :ok = Provisioning.apply_network_policy(sandbox_handle(), env, conv.id)
     end
   end
 
@@ -131,36 +139,47 @@ defmodule Fountain.Conversations.ProvisioningTest do
   end
 
   describe "retry behaviour on transient Sprites failures" do
+    defp stub_chmod_exec do
+      # The belt-and-suspenders chmod goes through the adapter's exec, which
+      # spawns and collects frames; hand back an immediate clean exit.
+      stub(Sprites, :spawn, fn _sprite, "chmod", _args, _opts ->
+        ref = make_ref()
+        send(self(), {:exit, %{ref: ref}, 0})
+        {:ok, %Sprites.Command{ref: ref}}
+      end)
+    end
+
     test "write_env_file survives one transport failure on the file write" do
       {:ok, counter} = Agent.start_link(fn -> 0 end)
+      handle = sandbox_handle("s")
 
       stub(Sprites, :filesystem, fn _sprite, _root -> :fake_fs end)
 
-      stub(Sprites.Filesystem, :write, fn :fake_fs, _path, _body ->
+      stub(Sprites.Filesystem, :write, fn :fake_fs, _path, _body, _opts ->
         case Agent.get_and_update(counter, &{&1 + 1, &1 + 1}) do
           1 -> {:error, :timeout}
           _ -> :ok
         end
       end)
 
-      stub(Sprites, :cmd, fn _sprite, "chmod", _args, _opts -> {"", 0} end)
+      stub_chmod_exec()
 
-      assert :ok = Provisioning.write_env_file(%{name: "s"}, [{"A", "1"}])
+      assert :ok = Provisioning.write_env_file(handle, [{"A", "1"}])
       assert Agent.get(counter, & &1) == 2
     end
 
-    test "write_env_file does not retry a permanent api_error" do
+    test "write_env_file does not retry a permanent not-found" do
       {:ok, counter} = Agent.start_link(fn -> 0 end)
+      handle = sandbox_handle("s")
 
       stub(Sprites, :filesystem, fn _sprite, _root -> :fake_fs end)
 
-      stub(Sprites.Filesystem, :write, fn :fake_fs, _path, _body ->
+      stub(Sprites.Filesystem, :write, fn :fake_fs, _path, _body, _opts ->
         Agent.update(counter, &(&1 + 1))
         {:error, {:api_error, 404, "no such sprite"}}
       end)
 
-      assert {:error, {:api_error, 404, _}} =
-               Provisioning.write_env_file(%{name: "s"}, [{"A", "1"}])
+      assert {:error, :not_found} = Provisioning.write_env_file(handle, [{"A", "1"}])
 
       assert Agent.get(counter, & &1) == 1
     end
@@ -177,7 +196,7 @@ defmodule Fountain.Conversations.ProvisioningTest do
         end
       end)
 
-      assert :ok = Provisioning.apply_network_policy(%{name: "s"}, env, conv.id)
+      assert :ok = Provisioning.apply_network_policy(sandbox_handle("s"), env, conv.id)
       assert Agent.get(counter, & &1) == 2
     end
   end
