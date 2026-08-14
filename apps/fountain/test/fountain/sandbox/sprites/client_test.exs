@@ -1,4 +1,4 @@
-defmodule Fountain.SpritesClientTest do
+defmodule Fountain.Sandbox.Sprites.ClientTest do
   @moduledoc """
   Listing every sprite on the account.
 
@@ -13,7 +13,7 @@ defmodule Fountain.SpritesClientTest do
   use ExUnit.Case, async: false
   use Mimic
 
-  alias Fountain.SpritesClient
+  alias Fountain.Sandbox.Sprites.Client, as: SpritesClient
 
   setup :set_mimic_global
 
@@ -44,7 +44,7 @@ defmodule Fountain.SpritesClientTest do
   test "a single page returns every name" do
     stub_pages(%{nil => page(~w(a b c))})
 
-    assert {:ok, names} = SpritesClient.list_all_sprite_names()
+    assert {:ok, names} = SpritesClient.list_all_names()
     assert names == MapSet.new(~w(a b c))
   end
 
@@ -56,7 +56,7 @@ defmodule Fountain.SpritesClientTest do
       "tok-2" => page(~w(e))
     })
 
-    assert {:ok, names} = SpritesClient.list_all_sprite_names()
+    assert {:ok, names} = SpritesClient.list_all_names()
     assert names == MapSet.new(~w(a b c d e))
   end
 
@@ -64,7 +64,7 @@ defmodule Fountain.SpritesClientTest do
     # Rather than looping forever on a server that contradicts itself.
     stub_pages(%{nil => %{"sprites" => [%{"name" => "a"}], "has_more" => true}})
 
-    assert {:ok, names} = SpritesClient.list_all_sprite_names()
+    assert {:ok, names} = SpritesClient.list_all_names()
     assert names == MapSet.new(["a"])
   end
 
@@ -77,26 +77,26 @@ defmodule Fountain.SpritesClientTest do
       {:ok, %{status: 200, body: page(["sprite-#{token}"], next)}}
     end)
 
-    assert {:error, :truncated} = SpritesClient.list_all_sprite_names()
+    assert {:error, :truncated} = SpritesClient.list_all_names()
   end
 
   test "surfaces an API error" do
     stub(Req, :get, fn _req, _opts -> {:ok, %{status: 500, body: "boom"}} end)
 
-    assert {:error, {:api_error, 500, "boom"}} = SpritesClient.list_all_sprite_names()
+    assert {:error, {:api_error, 500, "boom"}} = SpritesClient.list_all_names()
   end
 
   test "surfaces a transport error" do
     stub(Req, :get, fn _req, _opts -> {:error, :nxdomain} end)
 
-    assert {:error, :nxdomain} = SpritesClient.list_all_sprite_names()
+    assert {:error, :nxdomain} = SpritesClient.list_all_names()
   end
 
   test "raises when no token is configured" do
     Application.put_env(:fountain, :sprites_token, nil)
 
     assert_raise RuntimeError, ~r/SPRITES_TOKEN is not set/, fn ->
-      SpritesClient.list_all_sprite_names()
+      SpritesClient.list_all_names()
     end
   end
 end

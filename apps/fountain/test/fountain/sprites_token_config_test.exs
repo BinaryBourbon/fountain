@@ -7,7 +7,7 @@ defmodule Fountain.SpritesTokenConfigTest do
   ships the key blank, so the compose quick-start delivers a present-but-empty
   variable. Stored verbatim, `""` is truthy and defeats the
   `Application.get_env(:fountain, :sprites_token) || raise` guard in
-  `Fountain.SpritesClient.get!/0` — the operator's first conversation then
+  `Fountain.Sandbox.Sprites.Client.get!/0` — the operator's first conversation then
   fails with an opaque 401 from sprites.dev instead of the message written
   for exactly that case.
   """

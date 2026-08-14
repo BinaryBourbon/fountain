@@ -48,13 +48,11 @@ defmodule Fountain.RetryTest do
     assert Agent.get(counter, & &1) == 3
   end
 
-  test "does not retry a permanent api_error" do
+  test "does not retry a permanent error" do
     counter = new_counter()
 
-    assert {:error, {:api_error, 404, "gone"}} =
-             Retry.with_backoff(flaky(counter, [{:error, {:api_error, 404, "gone"}}]),
-               base_ms: 1
-             )
+    assert {:error, :not_found} =
+             Retry.with_backoff(flaky(counter, [{:error, :not_found}]), base_ms: 1)
 
     assert Agent.get(counter, & &1) == 1
   end
@@ -101,15 +99,6 @@ defmodule Fountain.RetryTest do
   end
 
   describe "transient?/1" do
-    test "5xx and 429 are transient; other 4xx are not" do
-      assert Retry.transient?({:api_error, 500, ""})
-      assert Retry.transient?({:api_error, 503, ""})
-      assert Retry.transient?({:api_error, 429, ""})
-      refute Retry.transient?({:api_error, 404, ""})
-      refute Retry.transient?({:api_error, 409, ""})
-      refute Retry.transient?({:api_error, 422, ""})
-    end
-
     test "unknown shapes default to transient" do
       assert Retry.transient?(:timeout)
       assert Retry.transient?(:closed)

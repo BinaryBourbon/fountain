@@ -13,7 +13,7 @@ defmodule Fountain.Sandbox.SpritesTest do
   defp handle, do: %Handle{provider: :sprites, name: @name}
 
   defp stub_client do
-    stub(Fountain.SpritesClient, :get!, fn -> %Sprites.Client{token: "test-token"} end)
+    stub(Fountain.Sandbox.Sprites.Client, :get!, fn -> %Sprites.Client{token: "test-token"} end)
   end
 
   describe "identity" do
@@ -105,13 +105,13 @@ defmodule Fountain.Sandbox.SpritesTest do
   describe "list_all_names/0" do
     test "passes the full view through and refuses truncation" do
       names = MapSet.new(["a", "b"])
-      stub(Fountain.SpritesClient, :list_all_sprite_names, fn -> {:ok, names} end)
+      stub(Fountain.Sandbox.Sprites.Client, :list_all_names, fn -> {:ok, names} end)
       assert {:ok, ^names} = Adapter.list_all_names()
 
-      stub(Fountain.SpritesClient, :list_all_sprite_names, fn -> {:error, :truncated} end)
+      stub(Fountain.Sandbox.Sprites.Client, :list_all_names, fn -> {:error, :truncated} end)
       assert {:error, :truncated} = Adapter.list_all_names()
 
-      stub(Fountain.SpritesClient, :list_all_sprite_names, fn ->
+      stub(Fountain.Sandbox.Sprites.Client, :list_all_names, fn ->
         {:error, {:api_error, 503, %{}}}
       end)
 
