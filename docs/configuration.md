@@ -44,6 +44,11 @@ an error message.
 | `SPRITES_TOKEN` | — | for conversations | Platform token for [sprites.dev](https://sprites.dev). The app boots without it, but every conversation fails. Never expose it to tenants — it pays for every sandbox |
 | `SPRITES_BASE_URL` | `https://api.sprites.dev` | — | Repoints the sandbox API. Anything else must implement the same contract; there is no bundled alternative |
 | `SPRITES_TIMEOUT_MS` | `30000` | — | Bounds every HTTP call to the Sprites API. Long-running commands (package installs, clones) set their own per-call timeouts. Boot refuses a non-positive value |
+| `SANDBOX_PROVIDER` | `sprites` | — | Which backend newly-created sandboxes run on: `sprites`, `e2b`, or `daytona`. A provider is enabled by the presence of its credential; boot refuses an explicit default whose credential is missing. Existing sandboxes stay on the provider they were created on |
+| `E2B_API_KEY` | — | for the `e2b` provider | [E2B](https://e2b.dev) API key. Its presence enables the provider |
+| `E2B_BASE_URL` | `https://api.e2b.app` | — | Repoints the E2B control plane |
+| `DAYTONA_API_KEY` | — | for the `daytona` provider | [Daytona](https://daytona.io) API key. Its presence enables the provider |
+| `DAYTONA_API_URL` | `https://app.daytona.io/api` | — | Repoints the Daytona API (self-hosted Daytona) |
 | `SANDBOX_IDLE_TIMEOUT_MINUTES` | `60` | — | No turn activity for this long and the sandbox is reclaimed — the conversation stays [resumable](self-hosting.md#sandbox-lifetime). `0` disables the bound; boot refuses anything that is not a non-negative integer |
 | `SANDBOX_MAX_LIFETIME_HOURS` | `24` | — | Absolute sandbox age ceiling, regardless of activity. Same `0`-disables and boot-refusal rules |
 | `LOG_OUTPUT_BUDGET_MB` | `50` | — | Durable log volume per conversation. Once a conversation has persisted this much sandbox output, one truncation marker is written and further output is discarded (retention bounds age; this bounds rate). Same `0`-disables and boot-refusal rules |

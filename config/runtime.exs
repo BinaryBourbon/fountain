@@ -115,6 +115,78 @@ sprites_timeout_ms =
 
 config :fountain, :sprites_timeout_ms, sprites_timeout_ms
 
+# ── sandbox providers ────────────────────────────────────────────────────────
+#
+# Fountain can run sandboxes on more than one backend. Each provider is
+# *enabled* by the presence of its credential; `SANDBOX_PROVIDER` picks the
+# instance default for newly-created sandboxes (existing rows keep the
+# provider stamped on them). Blank counts as unset throughout, matching the
+# compose `${VAR:-}` pattern (#396/#513).
+
+e2b_api_key =
+  case System.get_env("E2B_API_KEY") do
+    blank when blank in [nil, ""] -> nil
+    key -> key
+  end
+
+e2b_base_url =
+  case System.get_env("E2B_BASE_URL") do
+    blank when blank in [nil, ""] -> "https://api.e2b.app"
+    url -> url
+  end
+
+daytona_api_key =
+  case System.get_env("DAYTONA_API_KEY") do
+    blank when blank in [nil, ""] -> nil
+    key -> key
+  end
+
+daytona_api_url =
+  case System.get_env("DAYTONA_API_URL") do
+    blank when blank in [nil, ""] -> "https://app.daytona.io/api"
+    url -> url
+  end
+
+config :fountain, :e2b_api_key, e2b_api_key
+config :fountain, :e2b_base_url, e2b_base_url
+config :fountain, :daytona_api_key, daytona_api_key
+config :fountain, :daytona_api_url, daytona_api_url
+
+sandbox_provider_env = System.get_env("SANDBOX_PROVIDER")
+
+sandbox_default_provider =
+  case sandbox_provider_env do
+    blank when blank in [nil, ""] ->
+      :sprites
+
+    value when value in ["sprites", "e2b", "daytona"] ->
+      # An *explicitly chosen* default must be usable: failing at boot with
+      # the missing variable named beats every conversation failing at
+      # provision time. An unset SANDBOX_PROVIDER keeps the old behavior —
+      # default sprites, credential checked lazily at first use — so
+      # migration-only boots and credential-less dev/test still start.
+      credential =
+        case value do
+          "sprites" -> {sprites_token, "SPRITES_TOKEN"}
+          "e2b" -> {e2b_api_key, "E2B_API_KEY"}
+          "daytona" -> {daytona_api_key, "DAYTONA_API_KEY"}
+        end
+
+      case credential do
+        {nil, var} ->
+          raise "SANDBOX_PROVIDER=#{value} but #{var} is not set — the default " <>
+                  "sandbox provider must have credentials"
+
+        _ ->
+          String.to_atom(value)
+      end
+
+    other ->
+      raise "SANDBOX_PROVIDER must be one of sprites|e2b|daytona, got: #{inspect(other)}"
+  end
+
+config :fountain, :sandbox_default_provider, sandbox_default_provider
+
 # Two different shapes are needed and they are not interchangeable:
 #
 #   :public_url — absolute, scheme-ful. Used to build links that leave the app

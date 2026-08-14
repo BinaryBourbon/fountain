@@ -82,6 +82,11 @@ services:
       # attempt to start a conversation then fails.
       SPRITES_TOKEN: ${SPRITES_TOKEN:-}
       SPRITES_BASE_URL: ${SPRITES_BASE_URL:-}
+      SANDBOX_PROVIDER: ${SANDBOX_PROVIDER:-}
+      E2B_API_KEY: ${E2B_API_KEY:-}
+      E2B_BASE_URL: ${E2B_BASE_URL:-}
+      DAYTONA_API_KEY: ${DAYTONA_API_KEY:-}
+      DAYTONA_API_URL: ${DAYTONA_API_URL:-}
 
       # Empty means the app's defaults apply. Advertised in
       # .env.compose.example; a key listed there but not passed through here
