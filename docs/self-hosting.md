@@ -363,4 +363,4 @@ Being straight about what self-hosting does not yet include:
   are all services (self-hosted Daytona narrows this). The contract a new
   backend must satisfy is executable — `Fountain.Sandbox` plus its
   conformance suite — and written down in
-  [the Sprites contract](integrations/sprites-contract.md).
+  [the sandbox contract](integrations/sandbox-contract.md).

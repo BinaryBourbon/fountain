@@ -1,6 +1,7 @@
 # E2B
 
-[E2B](https://e2b.dev) is an alternative sandbox backend. Setting
+[E2B](https://e2b.dev) is one of the three
+[sandbox providers](sandbox-contract.md). Setting
 `E2B_API_KEY` enables it; `SANDBOX_PROVIDER=e2b` makes it the default for
 newly-created sandboxes, and an individual agent can pin it via
 `sandbox_provider`. Existing sandboxes always stay on the provider they were

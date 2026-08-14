@@ -46,6 +46,12 @@ upgrade, is in
 
 ### Changed
 
+- **The sandbox docs now tell the provider story straight.** The docs site
+  gets a "Sandbox providers" section — one contract
+  (`Fountain.Sandbox` + its conformance suite), three implementations
+  (Sprites, E2B, Daytona) — with a new contract overview page, and the
+  Sprites page no longer claims to be the only backend.
+
 - **The four dialect parsers are out of the conversation LiveView.** The
   24 `event_blocks/2` clauses move to a dedicated, tested
   `LegacyBlocks` module: gemini's dialect stays live (#659), and the

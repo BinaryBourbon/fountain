@@ -1,13 +1,14 @@
-# The Sprites contract
+# The Sprites transport reference
 
 This page documents the **Sprites adapter's** transport contract — every
 endpoint `Fountain.Sandbox.Sprites` calls, the semantics it relies on, and
-the operational assumptions baked in. The provider-neutral form of this
-contract is executable: the `Fountain.Sandbox` behaviour and its
-conformance suite (`Fountain.SandboxConformanceCase`), which the
-[E2B](e2b.md) and [Daytona](daytona.md) adapters also satisfy. Evaluating a
-new backend starts there; this page is the reference for what the original
-backend actually provides.
+the operational assumptions baked in. The provider-neutral contract every
+backend must meet is [the sandbox contract](sandbox-contract.md) — the
+`Fountain.Sandbox` behaviour and its conformance suite
+(`Fountain.SandboxConformanceCase`), which the [E2B](e2b.md) and
+[Daytona](daytona.md) adapters also satisfy. Evaluating a new backend
+starts there; this page is the reference for what the original backend
+actually provides.
 
 Setup and cost model are in the [Sprites integration guide](sprites.md).
 Transport summary: REST over HTTPS with `Authorization: Bearer <token>`, one
