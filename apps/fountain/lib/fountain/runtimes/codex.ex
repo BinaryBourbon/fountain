@@ -39,10 +39,10 @@ defmodule Fountain.Runtimes.Codex do
   # `~/.codex/auth.json`, which `codex login --with-api-key` writes by
   # consuming the key on stdin. Run the login once at provision time.
   @impl true
-  def prepare_sprite(sprite, _agent, sprite_env) do
+  def prepare_sprite(handle, _agent, sprite_env) do
     case List.keyfind(sprite_env, "OPENAI_API_KEY", 0) do
       {"OPENAI_API_KEY", key} when is_binary(key) and key != "" ->
-        case Sprites.spawn(sprite, "codex", ["login", "--with-api-key"],
+        case Fountain.Sandbox.spawn(handle, "codex", ["login", "--with-api-key"],
                owner: self(),
                stdin: true,
                env: sprite_env
@@ -51,9 +51,10 @@ defmodule Fountain.Runtimes.Codex do
             # Same exposure as #603: `codex login` exiting before it reads the
             # key — a missing binary, a bad flag — would otherwise exit whoever
             # is provisioning, rather than returning an error they can report.
-            case Fountain.SpriteStdin.write(command, key <> "\n") do
+            # write_stdin/2 is total by contract, so that exposure stays closed.
+            case Fountain.Sandbox.write_stdin(command, key <> "\n") do
               :ok ->
-                :ok = Sprites.close_stdin(command)
+                Fountain.Sandbox.close_stdin(command)
 
                 receive do
                   {:exit, %{ref: ref}, 0} when ref == command.ref ->

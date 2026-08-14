@@ -54,13 +54,23 @@ defmodule Fountain.ConversationServerCase do
     Mimic.stub(Sprites, :destroy, fn _sprite -> :ok end)
     Mimic.stub(Sprites, :cmd, fn _sprite, _cmd, _opts -> {:ok, %{exit_code: 0, stdout: ""}} end)
 
-    # The 4-arity variant returns {output, exit_code} and is what the ACP
-    # adapter install and the runtimes' prepare_sprite scripts call; without
-    # this stub those reach the real client.
+    # The 4-arity variant returns {output, exit_code} and is what the
+    # not-yet-migrated call sites' scripts call; without this stub those
+    # reach the real client.
     Mimic.stub(Sprites, :cmd, fn _sprite, _cmd, _args, _opts -> {"", 0} end)
     Mimic.stub(Sprites, :list_sessions, fn _sprite -> {:ok, []} end)
     Mimic.stub(Sprites, :update_network_policy, fn _sprite, _policy -> :ok end)
     Mimic.stub(Sprites.Filesystem, :write, fn _sprite, _path, _contents -> :ok end)
+
+    # Modules already migrated onto the Fountain.Sandbox facade (ACP adapter
+    # install, runtime prepare/config) go through the Sprites adapter rather
+    # than the SDK; stub that layer too until the migration completes and the
+    # SDK stubs above can go entirely.
+    Mimic.stub(Fountain.Sandbox.Sprites, :exec, fn _handle, _cmd, _args, _opts ->
+      {:ok, "", 0}
+    end)
+
+    Mimic.stub(Fountain.Sandbox.Sprites, :write_file, fn _handle, _path, _data, _opts -> :ok end)
 
     Mimic.stub(Fountain.SpriteSkills, :mount, fn _sprite, _runtime, _skills -> :ok end)
 

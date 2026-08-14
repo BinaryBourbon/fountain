@@ -277,9 +277,9 @@ defmodule Fountain.Runtimes.ACP do
   # `OpenCode.prepare_sprite/3`'s bun install. Nothing to install, and for
   # gemini nothing we can pin either: the version floor is whatever the image
   # carries, which gate 1 recorded as an open exposure.
-  def install(_sprite, runtime, _sprite_env) when runtime in ["gemini", "opencode"], do: :ok
+  def install(_handle, runtime, _sprite_env) when runtime in ["gemini", "opencode"], do: :ok
 
-  def install(sprite, runtime, sprite_env) do
+  def install(handle, runtime, sprite_env) do
     bin = adapter_bin(runtime)
     spec = adapter_spec(runtime)
     version = get_in(@adapters, [runtime, :version])
@@ -297,12 +297,18 @@ defmodule Fountain.Runtimes.ACP do
     "$bin" --version >/dev/null
     """
 
-    case Sprites.cmd(sprite, "bash", ["-lc", script], env: sprite_env, timeout: 180_000) do
-      {_out, 0} ->
+    case Fountain.Sandbox.exec(handle, "bash", ["-lc", script],
+           env: sprite_env,
+           timeout: 180_000
+         ) do
+      {:ok, _out, 0} ->
         :ok
 
-      {out, code} ->
+      {:ok, out, code} ->
         {:error, {:acp_adapter_install_exit, code, String.slice(to_string(out), 0, 500)}}
+
+      {:error, reason} ->
+        {:error, {:acp_adapter_install, reason}}
     end
   end
 

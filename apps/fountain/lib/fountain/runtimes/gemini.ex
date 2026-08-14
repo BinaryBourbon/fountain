@@ -101,14 +101,12 @@ defmodule Fountain.Runtimes.Gemini do
   # was making gemini register every MCP tool twice on startup and
   # spam the log with `Tool ... already registered. Overwriting.` lines.
   @impl true
-  def write_config(_sprite, nil), do: :ok
-  def write_config(_sprite, %{mcp_servers: m}) when m == %{} or is_nil(m), do: :ok
+  def write_config(_handle, nil), do: :ok
+  def write_config(_handle, %{mcp_servers: m}) when m == %{} or is_nil(m), do: :ok
 
-  def write_config(sprite, %{mcp_servers: mcp_servers}) do
-    fs = Sprites.filesystem(sprite, "/")
+  def write_config(handle, %{mcp_servers: mcp_servers}) do
     payload = Jason.encode!(%{"mcpServers" => mcp_servers}, pretty: true)
-    Sprites.Filesystem.mkdir_p(fs, "/tmp/.gemini")
-    Sprites.Filesystem.write(fs, "/tmp/.gemini/settings.json", payload)
+    Fountain.Sandbox.write_file(handle, "/tmp/.gemini/settings.json", payload)
     :ok
   end
 
@@ -116,7 +114,7 @@ defmodule Fountain.Runtimes.Gemini do
   # MemoryDiscovery is happy as long as it finds *some* .git when it
   # walks up from cwd.
   @impl true
-  def prepare_sprite(sprite, _agent, sprite_env) do
+  def prepare_sprite(handle, _agent, sprite_env) do
     script = """
     set -e
     if [ ! -d #{@workdir}/.git ]; then
@@ -128,12 +126,13 @@ defmodule Fountain.Runtimes.Gemini do
     fi
     """
 
-    {_out, code} =
-      Sprites.cmd(sprite, "bash", ["-lc", script],
-        env: sprite_env,
-        timeout: 30_000
-      )
-
-    if code == 0, do: :ok, else: {:error, {:gemini_workspace_init_exit, code}}
+    case Fountain.Sandbox.exec(handle, "bash", ["-lc", script],
+           env: sprite_env,
+           timeout: 30_000
+         ) do
+      {:ok, _out, 0} -> :ok
+      {:ok, _out, code} -> {:error, {:gemini_workspace_init_exit, code}}
+      {:error, reason} -> {:error, {:gemini_workspace_init, reason}}
+    end
   end
 end

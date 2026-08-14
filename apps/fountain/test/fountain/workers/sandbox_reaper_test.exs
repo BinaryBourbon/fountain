@@ -422,7 +422,9 @@ defmodule Fountain.Workers.SandboxReaperTest do
       stub(Fountain.SpritesClient, :list_all_sprite_names, fn -> {:error, :nxdomain} end)
 
       capture_log(fn ->
-        assert {:error, :nxdomain} = perform_job(SandboxReaper, %{})
+        # The adapter normalizes unknown transport reasons into the sandbox
+        # error taxonomy; any {:error, _} is what lets Oban retry.
+        assert {:error, {:provider, :sprites, :nxdomain}} = perform_job(SandboxReaper, %{})
       end)
 
       assert Repo.reload(sandbox).status == "failed"

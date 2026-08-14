@@ -174,10 +174,10 @@ defmodule Fountain.Accounts.Deletion do
   end
 
   defp destroy_sprite(%Sandbox{sprite_name: name} = sandbox) when is_binary(name) do
-    client = Fountain.SpritesClient.get!()
+    handle = Fountain.Sandbox.build_handle(:sprites, name)
 
     result =
-      case Sprites.destroy(Sprites.sprite(client, name)) do
+      case Fountain.Sandbox.destroy(handle) do
         :ok ->
           true
 

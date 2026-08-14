@@ -570,23 +570,27 @@ defmodule Fountain.Conversations.ConversationServer do
 
     case create_sprite(sandbox.sprite_name) do
       {:ok, sprite} ->
+        # Transitional while this server still holds the SDK sprite: the
+        # already-migrated leaf modules (skills, runtime prepare/config)
+        # take a Fountain.Sandbox.Handle.
+        handle = Fountain.Sandbox.Sprites.from_sdk(sprite)
         skills = (agent && agent.skills) || []
         # conv.runtime is validated-required and outlives the agent; the agent
         # fallback only covers rows predating the runtime column.
         runtime = conv.runtime || (agent && agent.runtime) || "claude"
-        Fountain.SpriteSkills.mount(sprite, runtime, skills)
+        Fountain.SpriteSkills.mount(handle, runtime, skills)
 
         {state, conv} = rotate_callback_api_key(state, conv)
 
         sprite_env = build_sprite_env(state, agent, env, secrets)
 
-        write_runtime_config(sprite, state.runtime_module, agent)
+        write_runtime_config(handle, state.runtime_module, agent)
         Fountain.Conversations.Provisioning.write_env_file(sprite, sprite_env)
 
         with :ok <-
                run_provisioning_pipeline(sprite, env, sprite_env, secrets, state.conversation_id),
              :ok <-
-               prepare_runtime_sprite(sprite, runtime, state.runtime_module, agent, sprite_env) do
+               prepare_runtime_sprite(handle, runtime, state.runtime_module, agent, sprite_env) do
           {:ok, _} = Conversations.update_sandbox(sandbox, %{status: "ready"})
           publish_stage(state.conversation_id, "provision", "done")
 
@@ -1019,20 +1023,20 @@ defmodule Fountain.Conversations.ConversationServer do
     )
   end
 
-  defp write_runtime_config(sprite, runtime_module, agent) do
+  defp write_runtime_config(handle, runtime_module, agent) do
     Code.ensure_loaded(runtime_module)
 
     if function_exported?(runtime_module, :write_config, 2) do
-      runtime_module.write_config(sprite, agent)
+      runtime_module.write_config(handle, agent)
     end
   end
 
-  defp prepare_runtime_sprite(sprite, runtime, runtime_module, agent, sprite_env) do
+  defp prepare_runtime_sprite(handle, runtime, runtime_module, agent, sprite_env) do
     Code.ensure_loaded(runtime_module)
 
-    with :ok <- prepare_acp_adapter(sprite, runtime, sprite_env) do
+    with :ok <- prepare_acp_adapter(handle, runtime, sprite_env) do
       if function_exported?(runtime_module, :prepare_sprite, 3) do
-        runtime_module.prepare_sprite(sprite, agent, sprite_env)
+        runtime_module.prepare_sprite(handle, agent, sprite_env)
       else
         :ok
       end
@@ -1043,9 +1047,9 @@ defmodule Fountain.Conversations.ConversationServer do
   # spawn: by the time a turn runs, the network policy has been applied and the
   # install would fail in a way that reads as a protocol bug. Keyed on the
   # conversation's runtime, matching the spawn decision in kick_turn/4.
-  defp prepare_acp_adapter(sprite, runtime, sprite_env) do
+  defp prepare_acp_adapter(handle, runtime, sprite_env) do
     if Fountain.Runtimes.ACP.enabled?(runtime) do
-      Fountain.Runtimes.ACP.install(sprite, runtime, sprite_env)
+      Fountain.Runtimes.ACP.install(handle, runtime, sprite_env)
     else
       :ok
     end
