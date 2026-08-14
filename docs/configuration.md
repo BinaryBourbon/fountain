@@ -48,6 +48,7 @@ an error message.
 | `E2B_API_KEY` | — | for the `e2b` provider | [E2B](https://e2b.dev) API key. Its presence enables the provider |
 | `E2B_BASE_URL` | `https://api.e2b.app` | — | Repoints the E2B control plane |
 | `E2B_TEMPLATE` | `base` | — | Template new E2B sandboxes are created from. The stock `base` template lacks the agent CLIs — build one from `images/e2b/` for real use |
+| `E2B_USER` | `sprite` | — | In-guest user envd runs commands as. `images/e2b/` templates create `sprite`; set to `user` when pointing at the stock `base` template |
 | `DAYTONA_API_KEY` | — | for the `daytona` provider | [Daytona](https://daytona.io) API key. Its presence enables the provider |
 | `DAYTONA_API_URL` | `https://app.daytona.io/api` | — | Repoints the Daytona API (self-hosted Daytona) |
 | `DAYTONA_SNAPSHOT` | org default | — | Snapshot (image) new Daytona sandboxes are created from; must be registered with the organization. The default image lacks the agent CLIs — build one from `images/daytona/` for real use |

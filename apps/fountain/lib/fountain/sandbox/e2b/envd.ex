@@ -19,7 +19,12 @@ defmodule Fountain.Sandbox.E2B.Envd do
   """
 
   @port 49_983
-  @user "user"
+
+  # The in-guest user envd runs commands as (and reads/writes files as) —
+  # selected per request via Basic auth. The fountain template creates
+  # `sprite` (the layout the provisioning pipeline assumes); the stock E2B
+  # base template uses `user`.
+  defp user, do: Application.get_env(:fountain, :e2b_user, "sprite")
 
   def host(sandbox_id) do
     base = Fountain.Sandbox.E2B.Api.base_url()
@@ -33,7 +38,7 @@ defmodule Fountain.Sandbox.E2B.Envd do
       [
         base_url: host(sandbox_id),
         headers: [
-          {"authorization", "Basic " <> Base.encode64("#{@user}:")},
+          {"authorization", "Basic " <> Base.encode64("#{user()}:")},
           {"keepalive-ping-interval", "50"}
         ],
         receive_timeout: Application.get_env(:fountain, :e2b_timeout_ms, 30_000)
@@ -89,7 +94,7 @@ defmodule Fountain.Sandbox.E2B.Envd do
 
     case Req.post(req(sandbox_id),
            url: "/files",
-           params: [path: path, username: @user],
+           params: [path: path, username: user()],
            form_multipart: form
          ) do
       {:ok, %{status: status}} when status in 200..299 -> :ok
@@ -99,7 +104,7 @@ defmodule Fountain.Sandbox.E2B.Envd do
   end
 
   def read_file(sandbox_id, path) do
-    case Req.get(req(sandbox_id), url: "/files", params: [path: path, username: @user]) do
+    case Req.get(req(sandbox_id), url: "/files", params: [path: path, username: user()]) do
       {:ok, %{status: 200, body: body}} when is_binary(body) -> {:ok, body}
       {:ok, %{status: 404, body: _}} -> {:error, :not_found}
       {:ok, %{status: status, body: body}} -> {:error, {:api_error, status, body}}
