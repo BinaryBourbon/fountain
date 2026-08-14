@@ -200,14 +200,43 @@ defmodule Fountain.Sandbox.E2B do
 
       case CommandServer.start(sandbox_id: id, tag: tag, ref: ref, owner: owner, request: request) do
         {:ok, pid} ->
-          {:ok,
-           %Command{provider: :e2b, ref: ref, private: %{pid: pid, tag: tag, sandbox_id: id}}}
+          started(pid, ref, tag, id)
 
         {:error, reason} ->
           {:error, Errors.normalize(reason)}
       end
     end
   end
+
+  # Spawn returns only once envd has start-acked the tagged process. The
+  # caller's first write_stdin addresses it by tag, and a write that races
+  # registration 404s — which reads as "already exited" and killed prod
+  # turns at ~300ms (2026-08-14).
+  defp started(pid, ref, tag, sandbox_id) do
+    case CommandServer.await_start(pid, start_timeout()) do
+      :ok ->
+        {:ok,
+         %Command{
+           provider: :e2b,
+           ref: ref,
+           private: %{pid: pid, tag: tag, sandbox_id: sandbox_id}
+         }}
+
+      {:error, reason} ->
+        stop_quietly(pid)
+        {:error, Errors.normalize(reason)}
+    end
+  end
+
+  # The server may have stopped on its own between the failed await and
+  # this cleanup — racing it is fine, being taken down by it is not.
+  defp stop_quietly(pid) do
+    GenServer.stop(pid, :normal)
+  catch
+    :exit, _ -> :ok
+  end
+
+  defp start_timeout, do: Application.get_env(:fountain, :e2b_timeout_ms, 30_000)
 
   # stdout/stderr tee into append-only journals and the exit code lands in a
   # sentinel file — the raw material attach/3's replayer needs. `exec`
@@ -312,8 +341,7 @@ defmodule Fountain.Sandbox.E2B do
              exit_file: "#{@journal_dir}/#{tag}.exit"
            ) do
         {:ok, pid} ->
-          {:ok,
-           %Command{provider: :e2b, ref: ref, private: %{pid: pid, tag: tag, sandbox_id: id}}}
+          started(pid, ref, tag, id)
 
         {:error, reason} ->
           {:error, Errors.normalize(reason)}
