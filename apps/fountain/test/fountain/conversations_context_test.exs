@@ -1207,6 +1207,10 @@ defmodule Fountain.ConversationsContextTest do
         {:ok, %{status: :suspended, raw: %{name: "test-sprite-parked"}}}
       end)
 
+      # resume/1 is the explicit wake call (a probe on Sprites); the adapter
+      # is the stubbing seam, so it needs its own stub here.
+      stub(Fountain.Sandbox.Sprites, :resume, fn handle -> {:ok, handle} end)
+
       stub(Horde.DynamicSupervisor, :start_child, fn _supervisor, _child_spec ->
         {:ok, spawn(fn -> :ok end)}
       end)
@@ -1365,6 +1369,27 @@ defmodule Fountain.ConversationsContextTest do
   # ────────────────────────────────────────────────────────────────────────────
   # start_conversation/1
   # ────────────────────────────────────────────────────────────────────────────
+
+  describe "wake_conversation/2 — provider resume" do
+    test "a failed resume leaves the row suspended and fails retryably" do
+      user = insert_verified_user()
+      agent = insert_agent(user_id: user.id)
+      sandbox = insert_sandbox(user_id: user.id, sprite_name: "parked-wont-wake")
+      {:ok, sandbox} = Conversations.update_sandbox(sandbox, %{status: "suspended"})
+      conv = insert_conversation(user_id: user.id, agent: agent, sandbox: sandbox, status: "idle")
+
+      stub(Fountain.Sandbox.Sprites, :get, fn _handle ->
+        {:ok, %{status: :suspended, raw: %{}}}
+      end)
+
+      stub(Fountain.Sandbox.Sprites, :resume, fn _handle ->
+        {:error, {:unavailable, :timeout}}
+      end)
+
+      assert {:error, :sandbox_resume_failed} = Conversations.wake_conversation(conv.id)
+      assert Repo.reload(sandbox).status == "suspended"
+    end
+  end
 
   describe "wake_conversation/2 — provider stickiness" do
     test "a suspended sandbox on a disabled provider refuses to wake rather than retire" do

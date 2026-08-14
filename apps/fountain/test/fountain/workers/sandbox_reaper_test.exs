@@ -373,9 +373,9 @@ defmodule Fountain.Workers.SandboxReaperTest do
 
       capture_log(fn ->
         assert 2 =
-                 SandboxReaper.report_untracked(
-                   MapSet.new(["known-1", "stranger-a", "stranger-b"])
-                 )
+                 SandboxReaper.report_untracked(%{
+                   sprites: MapSet.new(["known-1", "stranger-a", "stranger-b"])
+                 })
       end)
 
       assert_received {:untracked, 2}

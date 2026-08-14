@@ -11,11 +11,10 @@ defmodule Fountain.Sandbox.Sprites do
 
   Capability notes:
 
-    * `:suspend` is **not** advertised. Sprites parks implicitly
-      (scale-to-zero), so `suspend/1` is a documented no-op and `resume/1`
-      is a probe — waking happens as a side effect of the next exec. The
-      flag is reserved for providers where suspension is an explicit,
-      billable-state-changing API call.
+    * `:suspend` is advertised — idle parking preserves the disk — but
+      Sprites parks implicitly (scale-to-zero), so `suspend/1` is a
+      documented no-op and `resume/1` is a probe; waking happens as a side
+      effect of the next exec.
     * `:checkpoint` is advertised only while `:checkpoint_creation_enabled`
       is set — a Sprites checkpoint id is scoped to the sprite that created
       it, so cross-sprite warm starts cannot work (#654).
@@ -37,7 +36,7 @@ defmodule Fountain.Sandbox.Sprites do
 
   @impl true
   def capabilities do
-    MapSet.new([:network_policy, :attach, :tty] ++ checkpoint_capabilities())
+    MapSet.new([:suspend, :network_policy, :attach, :tty] ++ checkpoint_capabilities())
   end
 
   defp checkpoint_capabilities do

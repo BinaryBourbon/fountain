@@ -22,11 +22,11 @@ defmodule Fountain.Sandbox.SpritesTest do
       assert %Handle{provider: :sprites, name: @name, private: nil} = Adapter.build_handle(@name)
     end
 
-    test "capabilities: no :suspend (implicit scale-to-zero), no :checkpoint by default" do
+    test "capabilities: :suspend (implicit park), no :checkpoint by default" do
       caps = Adapter.capabilities()
       assert MapSet.member?(caps, :network_policy)
       assert MapSet.member?(caps, :attach)
-      refute MapSet.member?(caps, :suspend)
+      assert MapSet.member?(caps, :suspend)
       refute MapSet.member?(caps, :checkpoint)
     end
 

@@ -1471,12 +1471,48 @@ defmodule Fountain.Conversations.ConversationServer do
 
   defp touch_activity(state), do: %{state | last_activity_at: DateTime.utc_now()}
 
-  # Idle: park, don't destroy. The sprite scales to zero on its own and costs
-  # ~nothing while suspended (decisions/0017), and its disk holds the runtime
-  # session — the agent's memory of the conversation, which #649 proved cannot
-  # be rebuilt on a fresh sprite. Stopping the server frees the BEAM side; the
-  # next prompt reattaches to the same sprite via wake_conversation.
+  # Idle: park where the provider can preserve the disk (the :suspend
+  # capability — implicit scale-to-zero for Sprites, an explicit pause/stop
+  # for providers that need one), destroy where it cannot. The disk holds the
+  # runtime session — the agent's memory, which #649 proved cannot be rebuilt
+  # on a fresh sandbox — so parking is always preferred; but an idle sandbox
+  # that cannot park keeps billing, and a park *call* that fails leaves it
+  # billing too, so both of those degrade to the destroy arm. The decision
+  # lives in Lifecycle.idle_action/1.
   defp reclaim_sandbox(state, :idle) do
+    with :suspend <- Lifecycle.idle_action(provider(state)),
+         :ok <- suspend_sandbox(state) do
+      park_sandbox(state)
+    else
+      :destroy ->
+        destroy_sandbox(state, :idle)
+
+      {:error, reason} ->
+        Logger.warning(
+          "suspend call failed for conv #{state.conversation_id} " <>
+            "(#{inspect(reason)}); destroying instead — an unparked sandbox keeps billing"
+        )
+
+        destroy_sandbox(state, :idle)
+    end
+  end
+
+  # Max lifetime: tear down and stop, whatever the provider. This bound exists
+  # for the conversation that never stops being busy; the conversation stays
+  # `idle` and resumable — setting it `terminated` here would make a cost
+  # control into data loss. See Fountain.Conversations.Lifecycle.
+  defp reclaim_sandbox(state, :max_lifetime) do
+    destroy_sandbox(state, :max_lifetime)
+  end
+
+  # Explicitly park the sandbox before the row flips: for Sprites this is a
+  # no-op (scale-to-zero), for pause/stop providers it is the call that stops
+  # the meter. Ordering matters — a row marked suspended with the backend
+  # still running would be invisible to every reclaim pass.
+  defp suspend_sandbox(%{handle: nil}), do: :ok
+  defp suspend_sandbox(state), do: Fountain.Sandbox.suspend(state.handle)
+
+  defp park_sandbox(state) do
     Logger.info(
       "suspending sandbox for conv #{state.conversation_id}: idle " <>
         "(sprite #{inspect(state.handle && state.handle.name)})"
@@ -1499,7 +1535,7 @@ defmodule Fountain.Conversations.ConversationServer do
     publish_stage(state.conversation_id, "sandbox", "done", %{
       event: "suspended",
       reason: "idle",
-      message: Lifecycle.explain(:idle)
+      message: Lifecycle.explain(:idle, :suspend)
     })
 
     :telemetry.execute([:fountain, :sandbox, :suspended], %{count: 1}, %{
@@ -1509,13 +1545,11 @@ defmodule Fountain.Conversations.ConversationServer do
     {:stop, :normal, %{state | handle: nil}}
   end
 
-  # Max lifetime: tear down the sprite and stop. This bound exists for the
-  # conversation that never stops being busy — it fires with a detachable
-  # session still running on the sprite, so parking would leave that exec
-  # burning unattended. The conversation stays `idle` and resumable; setting it
-  # `terminated` here would make a cost control into data loss. See
-  # Fountain.Conversations.Lifecycle.
-  defp reclaim_sandbox(state, :max_lifetime = reason) do
+  # Tear down the sandbox and stop; the conversation stays `idle` and
+  # resumable (setting it `terminated` here would make a cost control into
+  # data loss). Serves both the max-lifetime ceiling and the idle bound on a
+  # provider that cannot park. See Fountain.Conversations.Lifecycle.
+  defp destroy_sandbox(state, reason) do
     Logger.info(
       "reclaiming sandbox for conv #{state.conversation_id}: #{reason} " <>
         "(sprite #{inspect(state.handle && state.handle.name)})"
@@ -1543,7 +1577,7 @@ defmodule Fountain.Conversations.ConversationServer do
     publish_stage(state.conversation_id, "sandbox", "done", %{
       event: "reclaimed",
       reason: to_string(reason),
-      message: Lifecycle.explain(reason)
+      message: reclaim_message(reason)
     })
 
     :telemetry.execute([:fountain, :sandbox, :reclaimed], %{count: 1}, %{
@@ -1553,6 +1587,9 @@ defmodule Fountain.Conversations.ConversationServer do
 
     {:stop, :normal, %{state | handle: nil}}
   end
+
+  defp reclaim_message(:max_lifetime), do: Lifecycle.explain(:max_lifetime)
+  defp reclaim_message(:idle), do: Lifecycle.explain(:idle, :destroy)
 
   # Best-effort revoke of the per-conversation API key when this server
   # exits — clean termination (`:terminate_conv`), crash paths that hit

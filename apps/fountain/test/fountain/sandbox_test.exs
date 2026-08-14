@@ -23,7 +23,8 @@ defmodule Fountain.SandboxTest do
 
     test "supports? consults the adapter's capability set" do
       assert Sandbox.supports?(:sprites, :network_policy)
-      refute Sandbox.supports?(:sprites, :suspend)
+      assert Sandbox.supports?(:sprites, :suspend)
+      refute Sandbox.supports?(:sprites, :checkpoint)
 
       handle = %Handle{provider: :sprites, name: @name}
       assert Sandbox.supports?(handle, :attach)
