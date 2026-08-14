@@ -7,11 +7,16 @@ defmodule Fountain.Runtimes.ACPTest do
   defp agent(attrs), do: struct(Agent, attrs)
 
   describe "enabled?/1" do
-    test "requires both the flag and a shippable runtime" do
+    test "on by default for a shippable runtime" do
+      assert ACP.enabled?(agent(runtime: "claude", metadata: %{}))
+      assert ACP.enabled?(agent(runtime: "claude", metadata: nil))
       assert ACP.enabled?(agent(runtime: "claude", metadata: %{"acp" => true}))
 
-      refute ACP.enabled?(agent(runtime: "claude", metadata: %{}))
       refute ACP.enabled?(nil)
+    end
+
+    test "metadata acp: false is the per-agent escape hatch" do
+      refute ACP.enabled?(agent(runtime: "claude", metadata: %{"acp" => false}))
     end
 
     test "a blocked runtime cannot be switched on at all" do
@@ -31,25 +36,28 @@ defmodule Fountain.Runtimes.ACPTest do
       assert ACP.cwd("gemini") == "/tmp/gemini-workspace"
     end
 
-    test "every supported runtime honours the flag" do
+    test "every supported runtime defaults on and honours the opt-out" do
       for runtime <- ACP.supported_runtimes() do
-        assert ACP.enabled?(agent(runtime: runtime, metadata: %{"acp" => true})),
-               "expected #{runtime} to be ACP-enabled"
+        assert ACP.enabled?(agent(runtime: runtime, metadata: %{})),
+               "expected #{runtime} to be ACP-enabled by default"
 
-        refute ACP.enabled?(agent(runtime: runtime, metadata: %{}))
+        refute ACP.enabled?(agent(runtime: runtime, metadata: %{"acp" => false}))
       end
     end
 
-    test "a runtime with no adapter entry ignores the flag rather than erroring" do
-      # The legacy path is the default, not a failure mode.
+    test "a runtime with no adapter entry stays legacy whatever the metadata says" do
+      # For an unconvertible runtime the legacy path is the only path.
+      refute ACP.enabled?(agent(runtime: "somethingelse", metadata: %{}))
       refute ACP.enabled?(agent(runtime: "somethingelse", metadata: %{"acp" => true}))
     end
 
-    test "a truthy-looking value that is not true does not enable it" do
-      # Metadata is user-editable JSON. "false" and "true" are both strings
-      # there, and a string is not an opt-in.
-      refute ACP.enabled?(agent(runtime: "claude", metadata: %{"acp" => "true"}))
-      refute ACP.enabled?(agent(runtime: "claude", metadata: %{"acp" => 1}))
+    test "only the literal boolean false opts out" do
+      # Metadata arrives as JSON over the API; a string "false" is a typo,
+      # not a decision, and must not silently route an agent onto the legacy
+      # path.
+      assert ACP.enabled?(agent(runtime: "claude", metadata: %{"acp" => "false"}))
+      assert ACP.enabled?(agent(runtime: "claude", metadata: %{"acp" => nil}))
+      assert ACP.enabled?(agent(runtime: "claude", metadata: %{"acp" => 0}))
     end
   end
 

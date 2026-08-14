@@ -7,20 +7,30 @@ defmodule Fountain.Runtimes.ACP do
   gets into the sprite — and it deliberately holds no protocol state. The
   session lives in `Fountain.Runtimes.ACP.Peer`, for one turn, and dies with it.
 
-  ## Off by default, per agent
+  ## On by default, per-agent opt-out
 
-  The flag is `agent.metadata["acp"] == true`. Metadata rather than a column
-  because gate 2 is an experiment with an explicit exit — if gates 3 and 4 do
-  not hold, this is deleted, and a migration would outlive the thing it was
-  added for. A conversation started under the flag records nothing about it:
-  the flag is read per turn, so flipping it mid-conversation switches the next
-  turn and leaves the earlier ones rendering through the legacy path, which is
-  exactly the A/B the gate asks for.
+  ACP is the primary path: every supported runtime speaks it unless the agent
+  carries `metadata["acp"] == false`. The opt-out is an operational escape
+  hatch (set over the API — metadata has no form UI), not a supported
+  configuration; it exists so a broken adapter release can be routed around
+  without a deploy, and it goes away with the legacy path itself.
+
+  Metadata rather than a column because the flag is transitional — once the
+  legacy path is deleted there is nothing to opt out into, and a migration
+  would outlive the thing it was added for. The flag is read per turn, so
+  flipping it mid-conversation switches the next turn; earlier turns keep
+  rendering through whichever path produced them (the render side keys on the
+  log-event stream, not on the flag).
+
+  Gate 2 ran the inverse polarity — opt-in, off by default — and the flip to
+  default-on is the start of ADR 0014's gate 4: ACP as the primary way to talk
+  to every runtime that can hold a conversation over it.
 
   ## Which runtimes
 
-  Claude and Gemini, and the pair is deliberate: they are the two ends of the
-  resumption story gate 1 mapped.
+  All four have adapter entries; claude, codex and opencode are shippable and
+  gemini is held back (#659). The two ends of the resumption story gate 1
+  mapped are claude and gemini:
 
   Claude advertises `sessionCapabilities.resume`, so a turn costs a handshake
   and nothing else. Gemini advertises only `loadSession`, and `session/load`
@@ -211,13 +221,17 @@ defmodule Fountain.Runtimes.ACP do
   @doc """
   Whether this turn should speak ACP.
 
-  Both halves have to hold: the agent opted in, and its runtime is one gate 1
-  cleared. A flag set on a Gemini agent is a no-op rather than an error — the
-  legacy path is not a failure mode, it is the default.
+  Default-on for every supported runtime; `metadata["acp"] == false` is the
+  per-agent escape hatch. Only the literal boolean opts out — metadata arrives
+  as JSON over the API, and a string `"false"` is a typo, not a decision.
+
+  A supported runtime is still the other half: an unsupported or blocked
+  runtime (gemini, #659) takes the legacy path whatever the metadata says —
+  for those the legacy path is not a failure mode, it is the only path.
   """
   @spec enabled?(Agent.t() | nil) :: boolean()
-  def enabled?(%Agent{runtime: runtime, metadata: metadata}) when is_map(metadata) do
-    runtime in supported_runtimes() and Map.get(metadata, "acp") == true
+  def enabled?(%Agent{runtime: runtime, metadata: metadata}) do
+    runtime in supported_runtimes() and Map.get(metadata || %{}, "acp") != false
   end
 
   def enabled?(_), do: false

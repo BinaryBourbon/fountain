@@ -170,7 +170,10 @@ defmodule Fountain.Factory do
       sandbox_id: sandbox.id,
       agent_id: agent && agent.id,
       user_id: user_id,
-      runtime: "claude",
+      # A conversation's runtime is snapshotted from its agent in production;
+      # a factory row that disagrees with its own agent misleads every test
+      # that branches on it.
+      runtime: (agent && agent.runtime) || "claude",
       status: "pending"
     }
 

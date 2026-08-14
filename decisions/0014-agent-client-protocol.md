@@ -1,12 +1,13 @@
 # 0014 — Speaking the Agent Client Protocol to runtimes
 
-**Status:** Partially accepted — **gates 1 and 2 are built; gates 3 and 4 are
-not.** `Fountain.Runtimes.ACP` and its peer exist and speak ACP to the pinned
-Claude adapter, behind a per-agent flag that is off by default; every other
-agent takes the legacy path unchanged. Nothing in *Gate 3 — permissions* or
-*Gate 4* exists, and neither should be read as describing behaviour the system
-has. Each gate below carries its own status; the PR that builds one removes its
-caveat.
+**Status:** Partially accepted — **gates 1 and 2 are built; gate 4 is in
+progress; gate 3 is not built.** `Fountain.Runtimes.ACP` and its peer speak
+ACP to claude, codex and opencode, **on by default** since 2026-08-13 (the
+per-agent `metadata["acp"]` flag flipped polarity: `false` is now an opt-out
+escape hatch rather than `true` an opt-in). Gemini takes the legacy path — an
+upstream defect, not a choice; see gate 4. Nothing in *Gate 3 — permissions*
+exists, and it should not be read as describing behaviour the system has. Each
+gate below carries its own status; the PR that builds one removes its caveat.
 
 ## Context
 
@@ -520,10 +521,21 @@ land and gate 3 turns out to be blocked — by adapter support, by latency, by
 the reaper killing sessions mid-prompt — the honest outcome is to stop with
 one runtime converted and say so here.
 
-### Gate 4 — remaining runtimes, and parser deletion — **not built**
+### Gate 4 — remaining runtimes, and parser deletion — **in progress**
 
-Only after gate 3 holds in production. A parser is deleted when its runtime's
-ACP path has served real conversations, not when the code compiles.
+> **Amendment, 2026-08-13.** Two changes to this gate as written. First, the
+> sequencing: #644 already departed from "only after gate 3" — if the
+> justification is deleting per-runtime code, permissions follow the
+> conversions rather than gating them, and this amendment makes the ADR match
+> the tracker. Second, the default: ACP is now **on by default** for the three
+> shippable runtimes. `enabled?/1` reads `metadata["acp"] != false`, so the
+> flag is an operational opt-out (routing around a broken adapter release
+> without a deploy), no longer an experiment's opt-in. The deletion rule below
+> is unchanged: a parser is deleted when its runtime's ACP path has served
+> real conversations, and default-on is what makes that happen.
+
+A parser is deleted when its runtime's ACP path has served real conversations,
+not when the code compiles.
 
 **Three of the four runtimes are converted and one is not, for a reason
 outside our code — 2026-08-11.** Claude, Codex and OpenCode each did
