@@ -8,7 +8,7 @@ defmodule Fountain.Conversations.ProvisioningTest do
   # adapter -> stubbed SDK, so the provider-quirk pins below still assert
   # the exact wire shapes Sprites receives.
   defp sandbox_handle(name \\ "test-sprite") do
-    stub(Fountain.SpritesClient, :get!, fn -> %Sprites.Client{token: "test"} end)
+    stub(Fountain.Sandbox.Sprites.Client, :get!, fn -> %Sprites.Client{token: "test"} end)
     Fountain.Sandbox.Sprites.build_handle(name)
   end
 

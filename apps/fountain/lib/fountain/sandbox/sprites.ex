@@ -27,6 +27,7 @@ defmodule Fountain.Sandbox.Sprites do
   alias Fountain.Sandbox.Handle
   alias Fountain.Sandbox.NetworkPolicy
   alias Fountain.Sandbox.Session
+  alias Fountain.Sandbox.Sprites.Client
   alias Fountain.Sandbox.Sprites.Errors
 
   require Logger
@@ -52,19 +53,9 @@ defmodule Fountain.Sandbox.Sprites do
     %Handle{provider: :sprites, name: name}
   end
 
-  @doc """
-  Transitional: wrap the SDK sprite `ConversationServer` still holds in a
-  `Handle` so already-migrated modules can be called from not-yet-migrated
-  ones. Accepts the bare `%{name: ...}` map the test harness uses as its
-  stand-in sprite. Deleted once the server builds handles itself.
-  """
-  @spec from_sdk(Sprites.Sprite.t() | %{required(:name) => String.t()}) :: Handle.t()
-  def from_sdk(%Sprites.Sprite{} = sprite), do: wrap(sprite)
-  def from_sdk(%{name: name}) when is_binary(name), do: build_handle(name)
-
   @impl true
   def create(name, opts) when is_binary(name) do
-    client = Fountain.SpritesClient.get!()
+    client = Client.get!()
 
     case Sprites.create(client, name, opts) do
       {:ok, %Sprites.Sprite{} = sprite} ->
@@ -83,7 +74,7 @@ defmodule Fountain.Sandbox.Sprites do
 
   @impl true
   def get(%Handle{} = handle) do
-    client = Fountain.SpritesClient.get!()
+    client = Client.get!()
 
     case Sprites.get_sprite(client, handle.name) do
       {:ok, body} -> {:ok, %{status: normalize_status(body), raw: body}}
@@ -101,7 +92,7 @@ defmodule Fountain.Sandbox.Sprites do
 
   @impl true
   def list_all_names do
-    case Fountain.SpritesClient.list_all_sprite_names() do
+    case Client.list_all_names() do
       {:ok, names} -> {:ok, names}
       {:error, :truncated} -> {:error, :truncated}
       {:error, reason} -> {:error, Errors.normalize(reason)}
@@ -369,7 +360,7 @@ defmodule Fountain.Sandbox.Sprites do
   defp sprite_of(%Handle{provider: :sprites, private: %Sprites.Sprite{} = sprite}), do: sprite
 
   defp sprite_of(%Handle{provider: :sprites, name: name}) do
-    Sprites.sprite(Fountain.SpritesClient.get!(), name)
+    Sprites.sprite(Client.get!(), name)
   end
 
   defp sdk_command(%Command{private: %Sprites.Command{} = command}), do: command

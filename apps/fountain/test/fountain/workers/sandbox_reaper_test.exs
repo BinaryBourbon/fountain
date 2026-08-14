@@ -30,8 +30,8 @@ defmodule Fountain.Workers.SandboxReaperTest do
   end
 
   defp stub_sprites(names) do
-    stub(Fountain.SpritesClient, :list_all_sprite_names, fn -> {:ok, MapSet.new(names)} end)
-    stub(Fountain.SpritesClient, :get!, fn -> :client end)
+    stub(Fountain.Sandbox.Sprites.Client, :list_all_names, fn -> {:ok, MapSet.new(names)} end)
+    stub(Fountain.Sandbox.Sprites.Client, :get!, fn -> :client end)
   end
 
   defp capture_destroys do
@@ -419,7 +419,7 @@ defmodule Fountain.Workers.SandboxReaperTest do
       # The quota fix needs no network, so it must not be held hostage to the
       # API being up. Returning an error lets Oban retry the rest.
       sandbox = insert_sandbox(status: "pending") |> age_sandbox(120)
-      stub(Fountain.SpritesClient, :list_all_sprite_names, fn -> {:error, :nxdomain} end)
+      stub(Fountain.Sandbox.Sprites.Client, :list_all_names, fn -> {:error, :nxdomain} end)
 
       capture_log(fn ->
         # The adapter normalizes unknown transport reasons into the sandbox
@@ -431,11 +431,11 @@ defmodule Fountain.Workers.SandboxReaperTest do
     end
 
     test "a truncated listing destroys nothing" do
-      # SpritesClient refuses to return a partial page set. Treating a partial
+      # The client refuses to return a partial page set. Treating a partial
       # view as complete would make every unlisted sprite look like it had
       # already been destroyed.
       sandbox = insert_sandbox(status: "terminated")
-      stub(Fountain.SpritesClient, :list_all_sprite_names, fn -> {:error, :truncated} end)
+      stub(Fountain.Sandbox.Sprites.Client, :list_all_names, fn -> {:error, :truncated} end)
       capture_destroys()
 
       capture_log(fn -> assert {:error, :truncated} = perform_job(SandboxReaper, %{}) end)

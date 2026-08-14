@@ -1,7 +1,10 @@
-defmodule Fountain.SpritesClient do
+defmodule Fountain.Sandbox.Sprites.Client do
   @moduledoc """
-  Lazy access to the configured Sprites client. Reads SPRITES_TOKEN from
-  application env (set in runtime.exs).
+  SDK client construction and account listing for the Sprites adapter.
+
+  Reads `SPRITES_TOKEN` / `SPRITES_BASE_URL` / `SPRITES_TIMEOUT_MS` from
+  application env (set in `config/runtime.exs`). Nothing outside
+  `Fountain.Sandbox.Sprites.*` should build a Sprites client.
   """
 
   require Logger
@@ -20,7 +23,7 @@ defmodule Fountain.SpritesClient do
 
     # Explicit rather than the library default, so an operator can see and
     # tune it (SPRITES_TIMEOUT_MS). This bounds every HTTP call the client
-    # makes; long-running Sprites.cmd invocations pass their own :timeout.
+    # makes; long-running execs pass their own :timeout.
     timeout = Application.get_env(:fountain, :sprites_timeout_ms, 30_000)
 
     Sprites.new(token, base_url: base_url, timeout: timeout)
@@ -39,9 +42,12 @@ defmodule Fountain.SpritesClient do
   Returns `{:error, :truncated}` rather than a short list if the account somehow
   exceeds `#{@max_pages}` pages, because a caller deciding what to delete must
   never be handed a partial view that looks whole.
+
+  Errors are raw SDK shapes here; `Fountain.Sandbox.Sprites.list_all_names/0`
+  normalizes them into the taxonomy.
   """
-  @spec list_all_sprite_names() :: {:ok, MapSet.t(String.t())} | {:error, term()}
-  def list_all_sprite_names do
+  @spec list_all_names() :: {:ok, MapSet.t(String.t())} | {:error, term()}
+  def list_all_names do
     collect(get!(), nil, MapSet.new(), 0)
   end
 

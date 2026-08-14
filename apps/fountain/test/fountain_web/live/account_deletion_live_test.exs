@@ -20,7 +20,7 @@ defmodule FountainWeb.AccountDeletionLiveTest do
   setup :set_mimic_global
 
   setup do
-    stub(Fountain.SpritesClient, :get!, fn -> :client end)
+    stub(Fountain.Sandbox.Sprites.Client, :get!, fn -> :client end)
     stub(Sprites, :sprite, fn :client, name -> {:handle, name} end)
     stub(Sprites, :destroy, fn _ -> :ok end)
     stub(Fountain.Conversations.ConversationServer, :whereis, fn _ -> nil end)

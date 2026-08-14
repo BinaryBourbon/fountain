@@ -8,12 +8,12 @@ end
 
 # Mimic copies modules so tests can stub/expect their functions. The sandbox
 # seam is Fountain.Sandbox.Sprites (the adapter behind the Fountain.Sandbox
-# facade); the raw SDK copies below it survive only for the adapter's own
-# unit tests and for call sites not yet migrated onto the facade.
+# facade); the raw SDK copies below it exist only for the adapter's own unit
+# tests and the full-stack provisioning/checkpoint pins.
 Mimic.copy(Fountain.Sandbox.Sprites)
+Mimic.copy(Fountain.Sandbox.Sprites.Client)
 Mimic.copy(Sprites)
 Mimic.copy(Sprites.Filesystem)
-Mimic.copy(Fountain.SpritesClient)
 Mimic.copy(Horde.DynamicSupervisor)
 Mimic.copy(Req)
 
@@ -28,7 +28,6 @@ Mimic.copy(Stripe.BillingPortal.Session)
 Mimic.copy(Stripe.Checkout.Session)
 Mimic.copy(Stripe.Subscription)
 Mimic.copy(Stripe.Invoice)
-Mimic.copy(Fountain.SpritesClient)
 
 Mimic.copy(Fountain.Conversations.ConversationServer)
 Mimic.copy(Fountain.Conversations.Provisioning)

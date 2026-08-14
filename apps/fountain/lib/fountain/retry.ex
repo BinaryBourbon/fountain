@@ -24,9 +24,8 @@ defmodule Fountain.Retry do
   @doc """
   Runs `fun`, retrying on retriable failure with exponential backoff + jitter.
 
-  Retries when `fun` returns `{:error, reason}` with a retriable reason, or —
-  because `Sprites.cmd/4` raises on failure to start rather than returning an
-  error tuple — when it raises. Anything else `fun` returns passes through
+  Retries when `fun` returns `{:error, reason}` with a retriable reason, or
+  when it raises (unknown raises are treated as transient, per the moduledoc). Anything else `fun` returns passes through
   untouched. When attempts are exhausted the last error tuple is returned, or
   the last exception re-raised, so call sites keep their existing semantics.
 
@@ -108,10 +107,6 @@ defmodule Fountain.Retry do
   `{:invalid, _}` are provably permanent, as are `:truncated`,
   `:not_supported` and a reported-failed restore.
 
-  `{:api_error, status, body}` is the raw Sprites SDK HTTP shape, still seen
-  by call sites that have not moved onto the sandbox facade: 5xx and 429 are
-  transient, other 4xx are the caller's fault and permanent.
-
   Everything else — `:timeout`, transport exceptions, unknown shapes — is
   treated as transient; see the moduledoc for why unknown defaults to retry.
   """
@@ -122,10 +117,6 @@ defmodule Fountain.Retry do
   def transient?({:denied, _detail}), do: false
   def transient?({:invalid, _detail}), do: false
   def transient?({:restore_failed, _detail}), do: false
-
-  def transient?({:api_error, status, _body}) when is_integer(status) do
-    status >= 500 or status == 429
-  end
 
   def transient?(_reason), do: true
 end
