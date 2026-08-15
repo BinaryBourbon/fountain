@@ -13,6 +13,13 @@ defmodule FountainWeb.AgentJSON do
       system: a.system,
       model: a.model,
       runtime: a.runtime,
+      # Derived, never stored: whether this agent's runtime speaks ACP, and so
+      # whether a client outside the server can render its output as protocol
+      # rather than as one of the four proprietary dialects. `fountain acp`
+      # asks this before it opens a session (#702) — the alternative was a
+      # hardcoded runtime list in the Go CLI, which would go stale the day a
+      # held-back runtime is converted.
+      acp: Fountain.Runtimes.ACP.enabled?(a.runtime),
       sandbox_provider: a.sandbox_provider,
       environment_id: a.environment_id,
       skills: a.skills,
