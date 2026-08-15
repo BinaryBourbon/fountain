@@ -1394,13 +1394,30 @@ defmodule Fountain.Conversations do
                  user_id: conv.user_id
                })
              end
-           ),
-         _ <- mark_old_sandbox_terminated(conv.sandbox_id),
-         {:ok, conv} <-
-           update_conversation(conv, %{sandbox_id: new_sandbox.id, status: "pending"}) do
+           ) do
+      # The row is repointed *after* the server starts, not before (#717).
+      #
+      # The old order repointed first, so a wake that then lost the start race
+      # left the conversation pointing at the sandbox it had just terminated,
+      # while the winner ran on a different one — a conversation that reads as
+      # terminated in the API and the UI while it is happily serving turns, and
+      # an orphan `ready` row nothing references. `fountain acp` reproduced it
+      # on every session, because `session/new` and the first prompt arrive a
+      # second apart and the prompt takes this path before the registry has the
+      # new server.
+      #
+      # Deferring leaves a much smaller window — between the server starting
+      # and the row being updated — in which the row still names the old
+      # sandbox. That one is transient and self-correcting; the old one was
+      # permanent.
       case start_conversation_server(conv, new_sandbox.id, runtime_module, initial_prompt) do
-        {:ok, _} = ok ->
-          ok
+        {:ok, _} ->
+          _ = mark_old_sandbox_terminated(conv.sandbox_id)
+
+          {:ok, conv} =
+            update_conversation(conv, %{sandbox_id: new_sandbox.id, status: "pending"})
+
+          {:ok, _unsafe_get_conversation!(conv.id)}
 
         {:error, {:already_started, winner_pid}} ->
           # Lost a concurrent wake of the same conversation. The winner's
@@ -1410,6 +1427,9 @@ defmodule Fountain.Conversations do
           # themselves out by double-clicking (#330). Clean up our own row and
           # hand the prompt to the winner, which drops it if a turn is already
           # running — exactly right for a double-click.
+          #
+          # The conversation is left alone: the winner owns it, and it is the
+          # winner's sandbox the row should name.
           _ = mark_old_sandbox_terminated(new_sandbox.id)
 
           if is_binary(initial_prompt) and initial_prompt != "" do
@@ -1419,6 +1439,10 @@ defmodule Fountain.Conversations do
           {:ok, _unsafe_get_conversation!(conv.id)}
 
         {:error, _} = err ->
+          # Nothing ever ran on this sandbox. Retiring it keeps a failed wake
+          # from holding a quota slot until the reaper's next pass — the same
+          # reasoning as the branch above.
+          _ = mark_old_sandbox_terminated(new_sandbox.id)
           err
       end
     end
