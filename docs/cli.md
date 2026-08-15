@@ -146,7 +146,12 @@ UI or `fountain run`.
 **What it is not:** a way for a remote agent to edit your local files. The agent
 works inside a Fountain sandbox, on a checkout that is not yours, and this
 integration declares no filesystem or terminal access to your editor at all.
-Paths it reports are paths inside the sandbox.
+
+Tool calls name files in the sandbox, so those paths are deliberately not sent
+as editor-clickable locations — clicking one would open the wrong file on your
+machine, or nothing. The file a tool touched is still named in the tool call
+itself, and the full paths travel under `_meta.fountain.sandboxLocations` for
+clients that know what to do with a remote path.
 
 A turn survives a dropped connection: the server closes an idle SSE stream
 after 60 seconds, and the adapter reconnects and resumes from where it left
