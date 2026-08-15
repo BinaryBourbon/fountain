@@ -12,7 +12,7 @@ import (
 func loadAgent(t *testing.T, api *fakeAPI) (*Agent, *fakeNotifier) {
 	t.Helper()
 
-	a := NewAgent(&fakeAuth{available: true}, api, "researcher", discardLogger())
+	a := NewAgent(&fakeAuth{available: true}, api, "researcher", "test", discardLogger())
 	if _, rpcErr := request(t, a, "initialize", map[string]any{"protocolVersion": ProtocolVersion}); rpcErr != nil {
 		t.Fatalf("initialize failed: %v", rpcErr)
 	}
@@ -175,7 +175,7 @@ func TestReplayedUpdatesCarryOurSessionID(t *testing.T) {
 // to.
 func TestLoadNeedsNoConfiguredAgent(t *testing.T) {
 	api := &fakeAPI{conversation: acpConversation()}
-	a := NewAgent(&fakeAuth{available: true}, api, "", discardLogger())
+	a := NewAgent(&fakeAuth{available: true}, api, "", "test", discardLogger())
 	request(t, a, "initialize", map[string]any{"protocolVersion": ProtocolVersion})
 	a.SetNotifier(&fakeNotifier{})
 
@@ -186,7 +186,7 @@ func TestLoadNeedsNoConfiguredAgent(t *testing.T) {
 
 func TestLoadBeforeInitializeIsRefused(t *testing.T) {
 	api := &fakeAPI{conversation: acpConversation()}
-	a := NewAgent(&fakeAuth{available: true}, api, "researcher", discardLogger())
+	a := NewAgent(&fakeAuth{available: true}, api, "researcher", "test", discardLogger())
 
 	_, rpcErr := request(t, a, "session/load", map[string]any{"sessionId": "conv-9"})
 	if rpcErr == nil || rpcErr.Code != CodeInvalidRequest {

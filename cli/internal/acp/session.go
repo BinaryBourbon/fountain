@@ -42,6 +42,10 @@ type ConversationRef struct {
 	ID      string
 	Runtime string
 	Status  string
+	// Agent and Model describe what this conversation runs, for the model
+	// state a reopened session reports.
+	Agent string
+	Model string
 	// ACP reports whether this conversation's output was stored as protocol.
 	// A legacy-runtime conversation has a transcript, but not one this adapter
 	// can replay — see #702.
@@ -53,6 +57,10 @@ type AgentRef struct {
 	ID      string
 	Name    string
 	Runtime string
+	// Model is the agent's canonical provider/model id, e.g.
+	// "anthropic/claude-sonnet-4-6". Reported to the client as the session's
+	// current model — see modelState.
+	Model string
 	// ACP reports whether the runtime speaks the protocol. The server derives
 	// it (GET /api/agents/:id) precisely so this file does not carry a list of
 	// runtime names that goes stale the day a held-back runtime is converted.
@@ -157,9 +165,44 @@ func (a *Agent) newSession(ctx context.Context, raw json.RawMessage) (any, error
 
 	sess := Session{ID: convID, Agent: ref}
 	a.sessions.put(sess)
-	a.log.Info("session opened", "sessionId", sess.ID, "agent", ref.Name, "runtime", ref.Runtime)
+	a.log.Info("session opened",
+		"sessionId", sess.ID, "agent", ref.Name, "runtime", ref.Runtime, "model", ref.Model)
 
-	return map[string]any{"sessionId": sess.ID}, nil
+	return map[string]any{
+		"sessionId": sess.ID,
+		"models":    modelState(ref),
+	}, nil
+}
+
+// modelState reports the session's model.
+//
+// A Fountain agent's model is part of the agent, chosen once and shared by
+// every conversation it runs — so the list has exactly one entry and it is
+// also the current one. That is not a placeholder: switching models here would
+// mean editing the agent, which would silently change what every other
+// conversation on it runs, and `session/set_model` is not implemented for that
+// reason.
+//
+// Reporting it at all matters because clients use this list to decide the
+// agent is usable: Buzz refuses an agent that reports no models, with a
+// message about the CLI not being signed in — a true statement about a
+// different problem.
+func modelState(ref AgentRef) map[string]any {
+	model := ref.Model
+	if model == "" {
+		// An agent with no model set runs the runtime's own default. Saying so
+		// beats reporting an empty list, which reads as "no models available".
+		model = "default"
+	}
+
+	return map[string]any{
+		"currentModelId": model,
+		"availableModels": []map[string]any{{
+			"modelId":     model,
+			"name":        model,
+			"description": "Configured on the Fountain agent \"" + ref.Name + "\". Change it on the agent, not here.",
+		}},
+	}
 }
 
 // requireReady is the gate the session methods share: a client that has not

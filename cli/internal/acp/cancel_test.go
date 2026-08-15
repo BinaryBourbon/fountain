@@ -60,7 +60,7 @@ func TestCancelReachesAPromptThatIsStillRunning(t *testing.T) {
 		events:        []Event{stageEvent("turn", "interrupted", `{}`)},
 	}
 
-	a := NewAgent(&fakeAuth{available: true}, api, "researcher", discardLogger())
+	a := NewAgent(&fakeAuth{available: true}, api, "researcher", "test", discardLogger())
 	client := newTestClient(t, a)
 	defer client.close()
 

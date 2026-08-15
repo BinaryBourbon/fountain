@@ -154,7 +154,7 @@ func acpAgentRef() AgentRef {
 func sessionAgent(t *testing.T, api *fakeAPI, target string) *Agent {
 	t.Helper()
 
-	a := NewAgent(&fakeAuth{available: true}, api, target, discardLogger())
+	a := NewAgent(&fakeAuth{available: true}, api, target, "test", discardLogger())
 	if _, rpcErr := request(t, a, "initialize", map[string]any{"protocolVersion": ProtocolVersion}); rpcErr != nil {
 		t.Fatalf("initialize failed: %v", rpcErr)
 	}
@@ -268,7 +268,7 @@ func TestNewSessionReportsAFailedConversationStart(t *testing.T) {
 // A client that skips the handshake gets told which step it missed, rather
 // than an error from three layers down.
 func TestNewSessionBeforeInitializeIsRefused(t *testing.T) {
-	a := NewAgent(&fakeAuth{available: true}, &fakeAPI{ref: acpAgentRef()}, "researcher", discardLogger())
+	a := NewAgent(&fakeAuth{available: true}, &fakeAPI{ref: acpAgentRef()}, "researcher", "test", discardLogger())
 
 	_, rpcErr := request(t, a, "session/new", map[string]any{})
 	if rpcErr == nil || rpcErr.Code != CodeInvalidRequest {
@@ -281,7 +281,7 @@ func TestNewSessionBeforeInitializeIsRefused(t *testing.T) {
 
 func TestNewSessionWithoutCredentialsIsRefused(t *testing.T) {
 	api := &fakeAPI{ref: acpAgentRef()}
-	a := NewAgent(&fakeAuth{available: false}, api, "researcher", discardLogger())
+	a := NewAgent(&fakeAuth{available: false}, api, "researcher", "test", discardLogger())
 	request(t, a, "initialize", map[string]any{"protocolVersion": ProtocolVersion})
 
 	_, rpcErr := request(t, a, "session/new", map[string]any{})

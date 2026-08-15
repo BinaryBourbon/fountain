@@ -57,7 +57,10 @@ func (a *Agent) loadSession(ctx context.Context, raw json.RawMessage) (any, erro
 				"is in the web UI", conv.ID, conv.Runtime)
 	}
 
-	sess := Session{ID: conv.ID, Agent: AgentRef{Runtime: conv.Runtime, ACP: true}}
+	sess := Session{
+		ID:    conv.ID,
+		Agent: AgentRef{Name: conv.Agent, Runtime: conv.Runtime, Model: conv.Model, ACP: true},
+	}
 	a.sessions.put(sess)
 
 	replayed := 0
@@ -84,5 +87,5 @@ func (a *Agent) loadSession(ctx context.Context, raw json.RawMessage) (any, erro
 		"status", conv.Status,
 		"updates_replayed", replayed)
 
-	return nil, nil
+	return map[string]any{"models": modelState(sess.Agent)}, nil
 }

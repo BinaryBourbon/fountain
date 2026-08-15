@@ -160,8 +160,18 @@ func (c *Conn) dispatch(ctx context.Context, h Handler, line string) {
 	case len(msg.ID) == 0:
 		h.Notify(ctx, msg.Method, msg.Params)
 
+	case isHandshake(msg.Method):
+		// The handshake runs in order, on this goroutine. A client is supposed
+		// to await each response before sending the next, and every one does —
+		// but a pipelined `initialize` + `session/new` would otherwise race
+		// and fail with "initialize must come first", which is a confusing
+		// thing to tell someone whose client did nothing wrong. These calls
+		// are local and fast; nothing is gained by running them concurrently.
+		result, err := h.Request(ctx, msg.Method, msg.Params)
+		c.respond(msg, result, err)
+
 	default:
-		// Each request runs on its own goroutine because `session/prompt`
+		// Everything else runs on its own goroutine because `session/prompt`
 		// blocks for the whole turn — minutes, sometimes — and a connection
 		// that stopped reading during it would be deaf to exactly the messages
 		// a developer sends when a turn is taking too long: `session/cancel`
@@ -232,6 +242,13 @@ func (c *Conn) write(v any) {
 	if _, err := c.out.Write(append(encoded, '\n')); err != nil {
 		c.log.Error("failed to write to client", "err", err)
 	}
+}
+
+// isHandshake reports whether a method establishes the connection rather than
+// doing work on it. These are ordered against each other by the protocol, so
+// they are answered in the order they arrive.
+func isHandshake(method string) bool {
+	return method == "initialize" || method == "authenticate"
 }
 
 func truncate(s string, n int) string {

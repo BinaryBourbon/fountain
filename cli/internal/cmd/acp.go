@@ -67,7 +67,7 @@ func runACP() error {
 	defer stop()
 
 	opts := activeOpts()
-	agent := acp.NewAgent(cliAuth{opts: opts}, fountainAPI{opts: opts, log: log}, acpAgent, log)
+	agent := acp.NewAgent(cliAuth{opts: opts}, fountainAPI{opts: opts, log: log}, acpAgent, Version, log)
 	conn := acp.NewConn(os.Stdin, os.Stdout, log)
 	// The connection is how a turn's updates reach the editor while the turn
 	// is still running; without it `session/prompt` would block in silence and
@@ -176,6 +176,7 @@ func agentRef(data map[string]any) acp.AgentRef {
 		ID:      output.ToString(data["id"]),
 		Name:    output.ToString(data["name"]),
 		Runtime: output.ToString(data["runtime"]),
+		Model:   output.ToString(data["model"]),
 		ACP:     acpOK,
 	}
 }
@@ -205,12 +206,27 @@ func (f fountainAPI) Conversation(_ context.Context, convID string) (acp.Convers
 		return acp.ConversationRef{}, err
 	}
 	acpOK, _ := resp.Data["acp"].(bool)
-	return acp.ConversationRef{
+	ref := acp.ConversationRef{
 		ID:      output.ToString(resp.Data["id"]),
 		Runtime: output.ToString(resp.Data["runtime"]),
 		Status:  output.ToString(resp.Data["status"]),
 		ACP:     acpOK,
-	}, nil
+	}
+
+	// The conversation knows its agent by id only, and a reopened session
+	// still owes the client a model. Best-effort: an agent deleted since the
+	// conversation ran leaves the model unreported rather than failing a load
+	// that would otherwise work.
+	if agentID := output.ToString(resp.Data["agent_id"]); agentID != "" {
+		if agent, err := f.Agent(context.Background(), agentID); err == nil {
+			ref.Agent = agent.Name
+			ref.Model = agent.Model
+		} else {
+			f.log.Info("could not read the conversation's agent", "agent_id", agentID, "err", err)
+		}
+	}
+
+	return ref, nil
 }
 
 // Replay drains everything the conversation has stored on the `acp` stream and
