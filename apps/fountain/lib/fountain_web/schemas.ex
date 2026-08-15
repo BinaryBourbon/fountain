@@ -23,6 +23,14 @@ defmodule FountainWeb.Schemas do
         status: %Schema{
           type: :string,
           enum: ~w(pending starting ready suspended terminated failed)
+        },
+        url: %Schema{
+          type: :string,
+          nullable: true,
+          description:
+            "The sandbox's own HTTP endpoint, where a service the agent starts " <>
+              "is reachable. Null for providers that expose no such URL. The " <>
+              "same value is available inside the sandbox as `SANDBOX_URL`."
         }
       },
       required: [:id, :sprite_name, :status]

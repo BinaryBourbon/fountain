@@ -86,8 +86,12 @@ defmodule Fountain.Sandbox do
     * `:checkpoint` — checkpoint create/restore currently usable
     * `:attach` — detachable sessions with replay-from-start
     * `:tty` — PTY allocation on spawn
+    * `:public_url` — the platform gives each sandbox an HTTP endpoint, and
+      the adapter can report it (and make it reachable without a platform
+      credential). Agents serve from inside the sandbox and need to be able to
+      tell a human where to look
   """
-  @type capability :: :suspend | :network_policy | :checkpoint | :attach | :tty
+  @type capability :: :suspend | :network_policy | :checkpoint | :attach | :tty | :public_url
 
   @typedoc """
   The provider-neutral error taxonomy.
@@ -190,6 +194,17 @@ defmodule Fountain.Sandbox do
 
   @doc "Apply a deny-capable egress policy. `allow: []` must deny all egress."
   @callback apply_network_policy(Handle.t(), NetworkPolicy.t()) :: :ok | {:error, error()}
+
+  @doc """
+  The sandbox's HTTP endpoint, or `{:error, :unsupported}` where the platform
+  has no such concept.
+
+  Adapters that advertise `:public_url` must return a URL a browser can open.
+  Everything else returns `{:error, :unsupported}` rather than a guess: a URL
+  that does not resolve is worse than none, because the agent will hand it to
+  a human who then blames the service they were told to visit.
+  """
+  @callback public_url(Handle.t()) :: {:ok, String.t()} | {:error, :unsupported | error()}
 
   @doc "Checkpoint the sandbox filesystem; returns the durable checkpoint id."
   @callback create_checkpoint(Handle.t(), keyword()) ::
@@ -294,6 +309,17 @@ defmodule Fountain.Sandbox do
   @doc "Destroy a sandbox."
   @spec destroy(Handle.t()) :: :ok | {:error, error()}
   def destroy(%Handle{} = handle), do: adapter(handle).destroy(handle)
+
+  @doc """
+  The sandbox's HTTP endpoint.
+
+  `{:error, :unsupported}` when the provider has none — callers treat that as
+  "no URL to report", not as a failure. It is deliberately outside the shared
+  error taxonomy: every other error means something went wrong, and this one
+  means the question does not apply.
+  """
+  @spec public_url(Handle.t()) :: {:ok, String.t()} | {:error, :unsupported | error()}
+  def public_url(%Handle{} = handle), do: adapter(handle).public_url(handle)
 
   @doc "Explicitly park a sandbox."
   @spec suspend(Handle.t()) :: :ok | {:error, error()}

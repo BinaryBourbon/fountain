@@ -43,8 +43,73 @@ defmodule Fountain.Sandbox.SpritesTest do
     test "wraps a created sprite in a handle" do
       stub_client()
       stub(Sprites, :create, fn _client, @name, [] -> {:ok, %Sprites.Sprite{name: @name}} end)
+      stub(Sprites, :update_url_settings, fn _sprite, _settings -> :ok end)
 
       assert {:ok, %Handle{provider: :sprites, name: @name}} = Adapter.create(@name, [])
+    end
+
+    # Sprites' URLs default to `auth: sprite` — reachable only with a platform
+    # credential, which is not what an agent serving a page for a human needs.
+    test "opens the sprite's URL to the public" do
+      stub_client()
+      stub(Sprites, :create, fn _client, @name, [] -> {:ok, %Sprites.Sprite{name: @name}} end)
+
+      test_pid = self()
+
+      stub(Sprites, :update_url_settings, fn _sprite, settings ->
+        send(test_pid, {:url_settings, settings})
+        :ok
+      end)
+
+      assert {:ok, %Handle{}} = Adapter.create(@name, [])
+      assert_receive {:url_settings, %{auth: "public"}}
+    end
+
+    # A sandbox that provisions but cannot be made public is still a working
+    # sandbox; trading the whole conversation for the URL setting would be the
+    # wrong bargain.
+    test "a failed url-settings call does not fail the create" do
+      stub_client()
+      stub(Sprites, :create, fn _client, @name, [] -> {:ok, %Sprites.Sprite{name: @name}} end)
+      stub(Sprites, :update_url_settings, fn _sprite, _settings -> {:error, :boom} end)
+
+      assert {:ok, %Handle{provider: :sprites, name: @name}} = Adapter.create(@name, [])
+    end
+
+    test "leaves the URL alone when public URLs are switched off" do
+      stub_client()
+      stub(Sprites, :create, fn _client, @name, [] -> {:ok, %Sprites.Sprite{name: @name}} end)
+
+      stub(Sprites, :update_url_settings, fn _sprite, _settings ->
+        flunk("should not be called")
+      end)
+
+      Application.put_env(:fountain, :sprites_public_urls, false)
+      on_exit(fn -> Application.delete_env(:fountain, :sprites_public_urls) end)
+
+      assert {:ok, %Handle{}} = Adapter.create(@name, [])
+    end
+  end
+
+  describe "public_url/1" do
+    test "reports the URL the platform assigned" do
+      stub_client()
+
+      stub(Sprites, :get_sprite, fn _client, @name ->
+        {:ok, %{"name" => @name, "url" => "https://#{@name}-abc12.sprites.app"}}
+      end)
+
+      assert {:ok, "https://" <> _} = Adapter.public_url(%Handle{provider: :sprites, name: @name})
+    end
+
+    # A sprite with no url field is not an error to shout about — it is a
+    # platform that did not give this sandbox an endpoint.
+    test "a sprite with no url is unsupported, not a failure" do
+      stub_client()
+      stub(Sprites, :get_sprite, fn _client, @name -> {:ok, %{"name" => @name}} end)
+
+      assert {:error, :unsupported} =
+               Adapter.public_url(%Handle{provider: :sprites, name: @name})
     end
 
     test "adopts on 409 — the name already exists" do

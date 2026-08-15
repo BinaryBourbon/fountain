@@ -57,7 +57,7 @@ defmodule Fountain.Sandbox.Fake do
   def provider, do: :fake
 
   @impl true
-  def capabilities, do: MapSet.new([:suspend, :network_policy, :attach])
+  def capabilities, do: MapSet.new([:suspend, :network_policy, :attach, :public_url])
 
   @impl true
   def build_handle(name) when is_binary(name), do: %Handle{provider: :fake, name: name}
@@ -71,6 +71,18 @@ defmodule Fountain.Sandbox.Fake do
     end)
 
     {:ok, build_handle(name)}
+  end
+
+  @impl true
+  # The Fake advertises :public_url so the conformance suite exercises the
+  # capability without a network. Like a real adapter it looks the sandbox up
+  # first, so asking about one that does not exist is not-found rather than a
+  # confidently wrong URL.
+  def public_url(%Handle{name: name}) do
+    case Agent.get(@registry, &Map.get(&1, name)) do
+      nil -> {:error, :not_found}
+      _ -> {:ok, "https://#{name}.fake.test"}
+    end
   end
 
   @impl true
