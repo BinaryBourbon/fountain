@@ -146,6 +146,51 @@ defmodule FountainWeb.ApiSpecTest do
     end
   end
 
+  # The event stream stopped being an implementation detail when a second
+  # client started rendering from it: `fountain acp` forwards its `acp` events
+  # to an editor (decisions/0015). Its shape and its stream names are now a
+  # published contract, and this is the part of the contract a reader relies on
+  # to know what to ask for.
+  #
+  # It has already gone stale once in the worst way: `acp` shipped in #647,
+  # the documented values still said "stdout, stderr, stage", and the query
+  # filter dropped the name entirely, so `session/load` replayed nothing
+  # (#716). A doc string is not enough on its own — this ties it to
+  # `LogEvent.streams/0`, which is where the real list lives.
+  describe "the stream endpoint documents what it streams (issue #707)" do
+    setup do
+      op = ApiSpec.spec().paths["/api/conversations/{conversation_id}/stream"].get
+      param = Enum.find(op.parameters, &(&1.name == :streams))
+
+      assert param, "the `streams` query parameter is undocumented"
+      %{op: op, description: param.description}
+    end
+
+    test "every real stream name is named", %{description: description} do
+      for stream <- Fountain.Conversations.LogEvent.streams() do
+        assert description =~ "`#{stream}`",
+               "the `streams` parameter does not mention `#{stream}` — a client cannot " <>
+                 "ask for a stream it has never been told about"
+      end
+    end
+
+    test "the synthetic stage name is named too", %{description: description} do
+      assert description =~ "`stage`"
+    end
+
+    test "the acp stream's contract is stated, not just its name", %{description: description} do
+      assert description =~ "session/update",
+             "a client forwarding these lines needs to know they are ACP notifications"
+    end
+
+    test "the event envelope is described", %{op: op} do
+      for field <- ~w(kind stream data stage state turn_id ts) do
+        assert op.description =~ "`#{field}`",
+               "the SSE payload's `#{field}` field is undocumented"
+      end
+    end
+  end
+
   defp open_api_path(path) do
     path
     |> String.split("/")

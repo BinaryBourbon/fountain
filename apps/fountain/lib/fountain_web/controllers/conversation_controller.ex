@@ -443,7 +443,15 @@ defmodule FountainWeb.ConversationController do
     description:
       "Server-Sent Events stream of the conversation's log events. The `Last-Event-ID` " <>
         "request header resumes from a known event id; missed events are replayed before " <>
-        "the live tail begins. Keep-alive heartbeats every 15s as `: heartbeat` comments.",
+        "the live tail begins. Keep-alive heartbeats every 15s as `: heartbeat` comments.\n\n" <>
+        "Each message carries the event id in `id:`, the event's `kind` in `event:` " <>
+        "(`output` or `stage`), and a JSON object in `data:` with `kind`, `stream`, " <>
+        "`data`, `stage`, `state`, `turn_id` and `ts`. The `data` field is a string: raw " <>
+        "output for an `output` event, JSON-encoded metadata for a `stage` one.\n\n" <>
+        "**This shape is an interface, not an implementation detail.** Two clients render " <>
+        "from it — the web UI and `fountain acp`, the Agent Client Protocol adapter an " <>
+        "editor spawns — so changing an event's shape or a stream's meaning breaks a " <>
+        "surface outside this repo. See decisions/0015.",
     parameters: [
       conversation_id: [in: :path, type: :string, required: true],
       "Last-Event-ID": [
@@ -455,14 +463,27 @@ defmodule FountainWeb.ConversationController do
             "Missing or unparseable values are treated as 0."
       ],
       # Both load-bearing in the bundled SKILL.md files and undocumented here
-      # until now.
+      # until now. The values are enumerated from LogEvent.streams/0 by a guard
+      # test, because this list has already gone stale once: `acp` shipped in
+      # #647 and the description still said "stdout, stderr, stage" while the
+      # query filter silently dropped it (#716).
       streams: [
         in: :query,
         type: :string,
         required: false,
         description:
-          "Comma-separated subset of `stdout`, `stderr`, `stage`. " <>
-            "Omitted or empty means all three."
+          "Comma-separated subset of `stdout`, `stderr`, `acp` and `stage`. " <>
+            "Omitted or empty means everything.\n\n" <>
+            "- `stdout` / `stderr` — the runtime process's own output, byte for byte.\n" <>
+            "- `acp` — one Agent Client Protocol `session/update` notification per line, " <>
+            "stored exactly as the runtime's adapter emitted it. This is what a protocol " <>
+            "client forwards to an editor, so it is a compatibility surface (decisions/0015). " <>
+            "Only conversations whose runtime speaks ACP have it — see the conversation's " <>
+            "`acp` field.\n" <>
+            "- `stage` — lifecycle events (`provision`, `setup`, `turn`, `reattach`, " <>
+            "`sandbox`, `terminate`) with a `state` and JSON metadata. The terminal " <>
+            "`turn`/`done` carries the turn's `stop_reason`.\n\n" <>
+            "A name no event carries selects nothing; it is not an error."
       ],
       wait: [
         in: :query,
