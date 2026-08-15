@@ -125,6 +125,7 @@ defmodule FountainWeb.SseStreamTest do
     setup %{conv: conv} do
       insert_log_event(conv, %{kind: "output", stream: "stdout", data: "on-stdout"})
       insert_log_event(conv, %{kind: "output", stream: "stderr", data: "on-stderr"})
+      insert_log_event(conv, %{kind: "output", stream: "acp", data: "on-acp"})
       insert_log_event(conv, %{kind: "stage", stream: "", stage: "provision", state: "done"})
       :ok
     end
@@ -151,6 +152,29 @@ defmodule FountainWeb.SseStreamTest do
       refute conn.resp_body =~ "on-stdout"
       assert conn.resp_body =~ "on-stderr"
       assert conn.resp_body =~ "event: stage"
+    end
+
+    # These three existed for stdout/stderr/stage, which is exactly why the
+    # `acp` stream could be dropped from every filtered replay without a test
+    # noticing. `fountain acp` asks for `acp,stage` on every reconnect and
+    # `acp` alone on every `session/load`.
+    test "the acp stream replays when asked for by name", %{raw_key: key, conv: conv} do
+      conn = stream(key, "/api/conversations/#{conv.id}/stream?wait=false&streams=acp")
+
+      assert conn.resp_body =~ "on-acp"
+      refute conn.resp_body =~ "on-stdout"
+      refute conn.resp_body =~ "event: stage"
+    end
+
+    test "acp combines with stage, which is what a protocol client asks for", %{
+      raw_key: key,
+      conv: conv
+    } do
+      conn = stream(key, "/api/conversations/#{conv.id}/stream?wait=false&streams=acp,stage")
+
+      assert conn.resp_body =~ "on-acp"
+      assert conn.resp_body =~ "event: stage"
+      refute conn.resp_body =~ "on-stdout"
     end
   end
 

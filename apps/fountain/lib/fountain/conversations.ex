@@ -856,16 +856,28 @@ defmodule Fountain.Conversations do
   defp apply_limit(query, limit) when is_integer(limit) and limit > 0,
     do: from(e in query, limit: ^limit)
 
-  # `streams` is a list of allowed stream identifiers. We accept the
-  # three values that show up in log_events: `"stdout"`, `"stderr"`, and
-  # `"stage"` (the synthetic name we give to `kind: "stage"` events,
-  # which don't have a real `stream` column value). `nil`/empty list =
+  # `streams` is a list of allowed stream identifiers: any value of the
+  # `stream` column, plus `"stage"`, the synthetic name for `kind: "stage"`
+  # events (which have no `stream` value of their own). `nil`/empty list =
   # no filter.
+  #
+  # There is deliberately **no allow-list of stream names**. There used to be
+  # one — `["stdout", "stderr"]`, written when those were the only two — and
+  # when ACP added a third (`"acp"`, one stored `session/update` per line) the
+  # filter silently answered "nothing" for it: an unrecognised name fell to a
+  # `where: false`. A name we do not know is now simply a name no row has,
+  # which returns nothing on its own without a list to keep in step.
+  #
+  # `event_in_streams?/2` is the same rule for an event already in hand. The
+  # two must agree — see the test that runs one table through both. They did
+  # not agree before, and the gap was invisible in exactly the way that hurts:
+  # live events matched, replayed ones did not, so a filtered stream returned
+  # a conversation's future and none of its past.
   defp apply_streams_filter(query, nil), do: query
   defp apply_streams_filter(query, []), do: query
 
   defp apply_streams_filter(query, streams) when is_list(streams) do
-    real_streams = Enum.filter(streams, &(&1 in ["stdout", "stderr"]))
+    real_streams = Enum.reject(streams, &(&1 == "stage"))
     include_stage? = "stage" in streams
 
     cond do
@@ -876,14 +888,28 @@ defmodule Fountain.Conversations do
       include_stage? ->
         from e in query, where: e.kind == "stage"
 
-      real_streams != [] ->
-        from e in query, where: e.stream in ^real_streams
-
       true ->
-        # All values were unknown; return nothing rather than everything.
-        from e in query, where: false
+        from e in query, where: e.stream in ^real_streams
     end
   end
+
+  @doc """
+  Whether one already-loaded event belongs to a `?streams=` selection.
+
+  The in-memory half of `apply_streams_filter/2`, used for events arriving
+  live over PubSub, where there is no query to add a `where` to. It lives here
+  rather than in the controller so the two halves of one rule sit together and
+  are tested together.
+  """
+  @spec event_in_streams?(LogEvent.t(), [String.t()] | nil) :: boolean()
+  def event_in_streams?(_ev, nil), do: true
+  def event_in_streams?(_ev, []), do: true
+  def event_in_streams?(%LogEvent{kind: "stage"}, streams), do: "stage" in streams
+
+  def event_in_streams?(%LogEvent{stream: s}, streams) when is_binary(s),
+    do: s in streams
+
+  def event_in_streams?(_ev, _streams), do: false
 
   @doc """
   Sum the byte sizes of persisted output events for a turn, by stream.
