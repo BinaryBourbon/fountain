@@ -3,7 +3,9 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/signal"
 	"strings"
@@ -14,6 +16,8 @@ import (
 	"github.com/BinaryBourbon/fountain/cli/internal/config"
 	"github.com/BinaryBourbon/fountain/cli/internal/credentials"
 	"github.com/BinaryBourbon/fountain/cli/internal/output"
+	"github.com/BinaryBourbon/fountain/cli/internal/sse"
+	"github.com/BinaryBourbon/fountain/cli/internal/stream"
 	"github.com/spf13/cobra"
 )
 
@@ -63,7 +67,12 @@ func runACP() error {
 	defer stop()
 
 	opts := activeOpts()
-	agent := acp.NewAgent(cliAuth{opts: opts}, fountainAPI{opts: opts}, acpAgent, log)
+	agent := acp.NewAgent(cliAuth{opts: opts}, fountainAPI{opts: opts, log: log}, acpAgent, log)
+	conn := acp.NewConn(os.Stdin, os.Stdout, log)
+	// The connection is how a turn's updates reach the editor while the turn
+	// is still running; without it `session/prompt` would block in silence and
+	// deliver everything at the end, which is not a live session.
+	agent.SetNotifier(conn)
 
 	// An unset --agent is not fatal here: the editor still gets a working
 	// handshake, and the refusal arrives at `session/new` where the editor can
@@ -74,7 +83,7 @@ func runACP() error {
 		"profile", credentials.ProfileName(opts),
 		"agent", acpAgent)
 
-	return acp.NewConn(os.Stdin, os.Stdout, log).Serve(ctx, agent)
+	return conn.Serve(ctx, agent)
 }
 
 func parseLogLevel(s string) (slog.Level, error) {
@@ -128,6 +137,7 @@ func (a cliAuth) Describe() string {
 // renders, not a reason to kill a process the editor is talking to.
 type fountainAPI struct {
 	opts credentials.Opts
+	log  *slog.Logger
 }
 
 func (f fountainAPI) Agent(_ context.Context, target string) (acp.AgentRef, error) {
@@ -185,4 +195,64 @@ func (f fountainAPI) CreateConversation(_ context.Context, agentID string) (stri
 		return "", fmt.Errorf("conversation created but the response carried no id")
 	}
 	return id, nil
+}
+
+func (f fountainAPI) StreamHead(_ context.Context, convID string) (string, error) {
+	return streamHead(api.New(f.opts), convID)
+}
+
+func (f fountainAPI) SendPrompt(_ context.Context, convID, prompt string, images []acp.Image) error {
+	payload := make([]map[string]string, 0, len(images))
+	for _, img := range images {
+		payload = append(payload, map[string]string{
+			"data":       img.Data,
+			"media_type": img.MediaType,
+		})
+	}
+	body := map[string]any{"prompt": prompt, "images": payload}
+	return api.New(f.opts).Post("/conversations/"+convID+"/prompts", body, nil)
+}
+
+// Follow reads the conversation's stream with `?streams=acp,stage`.
+//
+// The filter is the reason this adapter is a forwarder rather than a parser:
+// the `acp` stream is the sprite adapter's own `session/update` notifications,
+// stored verbatim by the server (#644). Asking for `stdout` as well would put
+// a runtime's dialect in front of a client that has no idea what it is.
+func (f fountainAPI) Follow(ctx context.Context, convID, lastEventID string, fn acp.EventFunc) error {
+	c := api.New(f.opts)
+
+	open := func(ctx context.Context, lastEventID string) (io.ReadCloser, error) {
+		req, err := c.NewStreamRequest(ctx, "/conversations/"+convID+"/stream?streams=acp,stage", lastEventID)
+		if err != nil {
+			return nil, err
+		}
+		// No client timeout: the idle watchdog inside the follow loop is what
+		// bounds a stream, and a turn may legitimately think for a long time.
+		resp, err := (&http.Client{}).Do(req)
+		if err != nil {
+			return nil, err
+		}
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			body, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			return nil, fmt.Errorf("stream HTTP %d: %s", resp.StatusCode, body)
+		}
+		return resp.Body, nil
+	}
+
+	return stream.Follow(ctx, open, stream.IdleTimeout(), convID, lastEventID, func(ev sse.Event) (bool, error) {
+		data, ok := ev.Data.(map[string]any)
+		if !ok {
+			f.log.Debug("skipping an event with no object payload", "event", ev.Event)
+			return false, nil
+		}
+		return fn(acp.Event{
+			Kind:   output.ToString(data["kind"]),
+			Stream: output.ToString(data["stream"]),
+			Data:   output.ToString(data["data"]),
+			Stage:  output.ToString(data["stage"]),
+			State:  output.ToString(data["state"]),
+		})
+	})
 }

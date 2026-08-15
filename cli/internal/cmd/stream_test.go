@@ -9,6 +9,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/BinaryBourbon/fountain/cli/internal/stream"
 )
 
 // fakeStream serves a scripted sequence of connections. Each entry is the body
@@ -212,9 +214,11 @@ func TestIdleTimeoutIsAnErrorNotSilentSuccess(t *testing.T) {
 
 func noBackoff(t *testing.T) {
 	t.Helper()
-	original := reconnectBackoff
-	reconnectBackoff = func(int) time.Duration { return 0 }
-	t.Cleanup(func() { reconnectBackoff = original })
+	// The backoff now lives with the loop it paces (internal/stream); the
+	// tests below still exercise the retry path through followStream.
+	original := stream.Backoff
+	stream.Backoff = func(int) time.Duration { return 0 }
+	t.Cleanup(func() { stream.Backoff = original })
 }
 
 func TestGivesUpAfterRepeatedOpenFailures(t *testing.T) {
@@ -228,8 +232,8 @@ func TestGivesUpAfterRepeatedOpenFailures(t *testing.T) {
 	if !strings.Contains(err.Error(), "connection refused") {
 		t.Errorf("error should preserve the cause, got %q", err)
 	}
-	if f.opens() != maxReconnectAttempts {
-		t.Errorf("expected %d attempts, got %d", maxReconnectAttempts, f.opens())
+	if f.opens() != stream.MaxReconnectAttempts {
+		t.Errorf("expected %d attempts, got %d", stream.MaxReconnectAttempts, f.opens())
 	}
 }
 
@@ -253,7 +257,7 @@ func TestStreamIdleTimeoutOverride(t *testing.T) {
 	}
 
 	t.Setenv("FOUNTAIN_STREAM_IDLE_TIMEOUT", "not-a-number")
-	if got := streamIdleTimeout(); got != defaultStreamIdle {
+	if got := streamIdleTimeout(); got != stream.DefaultIdle {
 		t.Errorf("garbage should fall back to the default, got %s", got)
 	}
 }

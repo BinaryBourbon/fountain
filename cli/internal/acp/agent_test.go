@@ -127,9 +127,15 @@ func TestInitializeDoesNotClaimCapabilitiesItCannotHonour(t *testing.T) {
 		t.Errorf("loadSession = %v, want false until #703 builds the replay", caps["loadSession"])
 	}
 	prompt := caps["promptCapabilities"].(map[string]any)
-	for _, k := range []string{"image", "audio", "embeddedContext"} {
+	if prompt["image"] != true {
+		t.Errorf("promptCapabilities.image = %v, want true — the prompt path carries images", prompt["image"])
+	}
+	// embeddedContext means the editor may inline a local file's contents, and
+	// the agent works on a sandbox's filesystem — accepting it would be
+	// accepting context about a machine the agent cannot see.
+	for _, k := range []string{"audio", "embeddedContext"} {
 		if prompt[k] != false {
-			t.Errorf("promptCapabilities.%s = %v, want false until #701 builds the prompt path", k, prompt[k])
+			t.Errorf("promptCapabilities.%s = %v, want false", k, prompt[k])
 		}
 	}
 }
@@ -248,7 +254,7 @@ func TestAuthenticateRejectsAnUnknownMethod(t *testing.T) {
 func TestSessionMethodsAreNotFoundYet(t *testing.T) {
 	a := newTestAgent(&fakeAuth{available: true})
 
-	for _, method := range []string{"session/prompt", "session/load", "session/cancel"} {
+	for _, method := range []string{"session/load", "session/cancel"} {
 		_, rpcErr := request(t, a, method, map[string]any{})
 		if rpcErr == nil || rpcErr.Code != CodeMethodNotFound {
 			t.Errorf("%s: want method-not-found, got %v", method, rpcErr)

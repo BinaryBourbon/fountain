@@ -15,6 +15,16 @@ type API interface {
 	Agent(ctx context.Context, target string) (AgentRef, error)
 	// CreateConversation starts a conversation for an agent and returns its id.
 	CreateConversation(ctx context.Context, agentID string) (string, error)
+	// StreamHead returns the conversation's current last event id, so a follow
+	// can skip the history. Called BEFORE a prompt is sent — see prompt.go.
+	StreamHead(ctx context.Context, convID string) (string, error)
+	// SendPrompt queues a turn. It returns as soon as the server accepts it;
+	// the turn's outcome arrives on the stream.
+	SendPrompt(ctx context.Context, convID, prompt string, images []Image) error
+	// Follow consumes the conversation's event stream from lastEventID until
+	// fn reports stop, reconnecting across the disconnects the server produces
+	// by design.
+	Follow(ctx context.Context, convID, lastEventID string, fn EventFunc) error
 }
 
 // AgentRef is what the adapter needs to know about a Fountain agent.
