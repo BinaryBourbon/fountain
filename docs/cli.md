@@ -121,7 +121,7 @@ fountain conv stream <conversation-id>
 ## Editor integration (ACP)
 
 ```bash
-fountain acp --agent <name-or-id> [--log-level debug]
+fountain acp --agent <name-or-id> [--vault <name-or-id>] [--log-level debug]
 ```
 
 Speaks the [Agent Client Protocol](https://agentclientprotocol.com) on stdio, so
