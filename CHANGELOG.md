@@ -16,6 +16,25 @@ upgrade, is in
 
 ## [Unreleased]
 
+## [0.9.1] — 2026-08-15
+
+### Fixed
+
+- **ACP clients could not add a Fountain agent.** Buzz refused one with
+  "unknown reported no models. Check that the CLI is installed and signed
+  in" — a message about a different problem. Two fields the protocol
+  expects were missing: `initialize` sent no `agentInfo`, so a client had
+  no name for us but "unknown", and `session/new` reported no model
+  state, which reads as an agent that cannot run anything. Both are now
+  sent; the model list is the agent's own model, since that is what every
+  conversation on it runs (#721).
+
+### Added
+
+- **`fountain --version`.** The binary had no version at all, which is
+  why the ACP handshake had none to report. Release builds stamp the tag
+  in; a build from source says `dev`.
+
 ## [0.9.0] — 2026-08-15
 
 ### Upgrade notes
