@@ -598,17 +598,11 @@ defmodule FountainWeb.ConversationController do
     end)
   end
 
-  # Match a freshly-broadcast event against the same allow-list the
-  # historical replay used.
-  defp event_in_streams?(_ev, nil), do: true
-
-  defp event_in_streams?(%LogEvent{kind: "stage"}, streams),
-    do: "stage" in streams
-
-  defp event_in_streams?(%LogEvent{stream: s}, streams) when is_binary(s),
-    do: s in streams
-
-  defp event_in_streams?(_ev, _streams), do: false
+  # Match a freshly-broadcast event against the same rule the historical
+  # replay uses — literally the same function now. This used to be a second
+  # copy that had drifted from the query filter, so `?streams=acp` matched
+  # live events and no replayed ones.
+  defp event_in_streams?(ev, streams), do: Conversations.event_in_streams?(ev, streams)
 
   defp sse_loop(conn, last_id, streams, monitor_ref) do
     receive do

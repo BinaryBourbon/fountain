@@ -6,6 +6,8 @@ defmodule Fountain.Conversations.LogEvent do
 
   @foreign_key_type :binary_id
 
+  @type t :: %__MODULE__{}
+
   @kinds ~w(output stage)
   # `acp` rows hold Agent Client Protocol `session/update` notifications, one
   # per line, exactly as `stdout` rows hold raw runtime output — what is on disk
