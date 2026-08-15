@@ -2,11 +2,13 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 
@@ -162,3 +164,76 @@ func TestFollowStopsWhenTheContextIsCancelled(t *testing.T) {
 // Compile-time proof that the CLI's own follow and the ACP adapter's are the
 // same loop. If they ever diverge, #398 has two places to come back.
 var _ stream.Opener = streamOpener(nil)
+
+// #725's fallout: an identity put in an *environment* is shared by every agent
+// on it, so a second Buzz agent published under the first one's name. A vault
+// is the per-entry primitive — its values win on collision — so this asserts
+// the flag actually reaches the conversation that gets created.
+func TestCreateConversationAttachesTheVault(t *testing.T) {
+	var body map[string]any
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/vaults":
+			_, _ = w.Write([]byte(`{"data":[{"id":"11111111-2222-3333-4444-555555555555","name":"buzz-philo"}]}`))
+		case "/api/conversations":
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"data":{"id":"conv-1"}}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	api := acpTestAPI(t, srv.URL)
+	api.vault = "buzz-philo"
+
+	id, err := api.CreateConversation(context.Background(), "agent-1")
+	if err != nil {
+		t.Fatalf("CreateConversation: %v", err)
+	}
+	if id != "conv-1" {
+		t.Errorf("conversation id = %q", id)
+	}
+	if body["vault_id"] != "11111111-2222-3333-4444-555555555555" {
+		t.Errorf("vault_id = %v, want the resolved vault", body["vault_id"])
+	}
+}
+
+// Without the flag the request must not carry a vault at all — an empty string
+// would be a request to attach a vault named "", not a request for none.
+func TestCreateConversationOmitsTheVaultWhenUnset(t *testing.T) {
+	var body map[string]any
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"data":{"id":"conv-1"}}`))
+	}))
+	defer srv.Close()
+
+	api := acpTestAPI(t, srv.URL)
+
+	if _, err := api.CreateConversation(context.Background(), "agent-1"); err != nil {
+		t.Fatalf("CreateConversation: %v", err)
+	}
+	if _, present := body["vault_id"]; present {
+		t.Errorf("vault_id was sent without --vault: %v", body["vault_id"])
+	}
+}
+
+func TestUnknownVaultNameIsReported(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"data":[]}`))
+	}))
+	defer srv.Close()
+
+	api := acpTestAPI(t, srv.URL)
+	api.vault = "not-a-vault"
+
+	_, err := api.CreateConversation(context.Background(), "agent-1")
+	if err == nil || !strings.Contains(err.Error(), "not-a-vault") {
+		t.Fatalf("want an error naming the vault, got %v", err)
+	}
+}

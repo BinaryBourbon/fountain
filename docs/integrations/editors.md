@@ -77,6 +77,22 @@ Use the agent's name or id in `--args`. To reach a non-default instance or
 profile, add `"--profile", "staging"` to `args`, or set `FOUNTAIN_BASE_URL` in
 `env`.
 
+### Per-entry secrets
+
+`--vault <name-or-id>` attaches a [vault](../primitives.md#vault) to every
+conversation the entry opens. Vault values override the agent's environment, so
+this is where a secret that belongs to *this entry* goes — an identity the
+agent posts under, a token scoped to one workspace.
+
+```json
+"args": ["acp", "--agent", "researcher", "--vault", "researcher-identity"]
+```
+
+The distinction matters as soon as there are two entries. An environment is
+shared by every agent attached to it, so a credential put there is used by all
+of them; a vault is attached per conversation, so two entries stay separate
+even when they point at the same agent.
+
 ### Any other ACP client
 
 There is nothing Zed-specific in the adapter. Whatever your client calls it,

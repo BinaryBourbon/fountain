@@ -24,6 +24,7 @@ import (
 var (
 	acpLogLevel string
 	acpAgent    string
+	acpVault    string
 )
 
 func init() {
@@ -40,6 +41,12 @@ else; diagnostics go to stderr.
 for it, so it is configured here. Point one editor entry at each agent you
 want to reach.
 
+--vault attaches a vault to every conversation this process opens. Vault
+values override the agent's environment, so this is where per-entry secrets
+belong — an identity the agent posts under, for instance. Two entries pointing
+at the same agent with different vaults stay separate; the same secret in a
+shared environment would not.
+
 What it is, and is not: a control surface for a conversation running in a
 Fountain sandbox — watch it, steer it, interrupt it. It has no access to the
 files open in your editor, and the paths it reports are inside the sandbox,
@@ -47,6 +54,7 @@ not on your machine.`,
 		RunE: func(cmd *cobra.Command, args []string) error { return runACP() },
 	}
 	acpCmd.Flags().StringVar(&acpAgent, "agent", "", "Fountain agent name or id to open sessions against")
+	acpCmd.Flags().StringVar(&acpVault, "vault", "", "vault name or id to attach to each session's conversation")
 	acpCmd.Flags().StringVar(&acpLogLevel, "log-level", "info", "stderr log level: debug, info, warn, error")
 	rootCmd.AddCommand(acpCmd)
 }
@@ -67,7 +75,13 @@ func runACP() error {
 	defer stop()
 
 	opts := activeOpts()
-	agent := acp.NewAgent(cliAuth{opts: opts}, fountainAPI{opts: opts, log: log}, acpAgent, Version, log)
+	agent := acp.NewAgent(
+		cliAuth{opts: opts},
+		fountainAPI{opts: opts, log: log, vault: acpVault},
+		acpAgent,
+		Version,
+		log,
+	)
 	conn := acp.NewConn(os.Stdin, os.Stdout, log)
 	// The connection is how a turn's updates reach the editor while the turn
 	// is still running; without it `session/prompt` would block in silence and
@@ -136,8 +150,9 @@ func (a cliAuth) Describe() string {
 // here: a failure inside a session method is a JSON-RPC error the editor
 // renders, not a reason to kill a process the editor is talking to.
 type fountainAPI struct {
-	opts credentials.Opts
-	log  *slog.Logger
+	opts  credentials.Opts
+	log   *slog.Logger
+	vault string
 }
 
 func (f fountainAPI) Agent(_ context.Context, target string) (acp.AgentRef, error) {
@@ -185,10 +200,24 @@ func (f fountainAPI) CreateConversation(_ context.Context, agentID string) (stri
 	var resp struct {
 		Data map[string]any `json:"data"`
 	}
+	body := map[string]any{"agent_id": agentID}
+
+	// A vault carries the secrets that belong to this entry rather than to the
+	// agent — its values win over the environment's on key collision, which is
+	// the point: two editor entries on one agent can hold different
+	// credentials without either leaking into the other.
+	if f.vault != "" {
+		vaultID, err := f.vaultID()
+		if err != nil {
+			return "", err
+		}
+		body["vault_id"] = vaultID
+	}
+
 	// No prompt: the conversation is created empty and the editor's first
 	// `session/prompt` becomes turn 1. Provisioning starts server-side either
 	// way, so the sandbox is warming while the developer types.
-	if err := api.New(f.opts).Post("/conversations", map[string]any{"agent_id": agentID}, &resp); err != nil {
+	if err := api.New(f.opts).Post("/conversations", body, &resp); err != nil {
 		return "", err
 	}
 	id := output.ToString(resp.Data["id"])
@@ -292,6 +321,26 @@ func (f fountainAPI) Interrupt(_ context.Context, convID string) error {
 		return nil
 	}
 	return err
+}
+
+// vaultID resolves --vault, which may be a name or an id.
+func (f fountainAPI) vaultID() (string, error) {
+	if isUUID(f.vault) {
+		return f.vault, nil
+	}
+
+	var resp struct {
+		Data []map[string]any `json:"data"`
+	}
+	if err := api.New(f.opts).Get("/vaults", &resp); err != nil {
+		return "", err
+	}
+	for _, v := range resp.Data {
+		if output.ToString(v["name"]) == f.vault {
+			return output.ToString(v["id"]), nil
+		}
+	}
+	return "", fmt.Errorf("no vault named %q", f.vault)
 }
 
 func (f fountainAPI) StreamHead(_ context.Context, convID string) (string, error) {
