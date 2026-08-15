@@ -16,6 +16,36 @@ upgrade, is in
 
 ## [Unreleased]
 
+## [0.10.2] — 2026-08-15
+
+### Fixed
+
+- **The CLI shows agent output again.** Since ACP became the only path
+  for claude, codex and opencode, `fountain run` printed a turn starting
+  and finishing with nothing in between: the renderer only understood
+  claude's own stream-json, so every protocol line rendered as empty.
+  Agent text, tool calls and thinking now appear, matching how the
+  legacy path always looked (#723).
+
+- **A lost wake race no longer strands a conversation on a dead
+  sandbox.** Waking a dormant conversation repointed it at its new
+  sandbox *before* the server started; when the start lost the race, the
+  loser terminated its own row without undoing that, leaving the
+  conversation naming a sandbox it had just retired while the winner
+  served turns on another. Visible as a conversation that reads
+  `terminated` through the API while it answers normally, an orphan
+  sandbox nothing references, and a quota slot spent twice. The row is
+  now repointed only after the server starts — which also means a loser
+  can no longer retire the sandbox a winner is reusing (#717).
+
+- **A model the runtime refuses is no longer invisible.** The turn still
+  continues on the runtime's default, but the notice went only to
+  `stderr` — the one stream `?streams=acp,stage` drops and `fountain
+  acp` treats as noise, so an editor never heard. It is now a
+  `model`/`failed` stage event carrying the requested model and the
+  runtime's own explanation, which the conversation view, the API, the
+  CLI and an editor's log all receive (#724).
+
 ## [0.10.1] — 2026-08-15
 
 ### Added
