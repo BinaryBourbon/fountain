@@ -27,4 +27,4 @@ images:
   # Released tags: vX.Y.Z (immutable) and vX.Y (newest patch in the line).
   # https://binarybourbon.github.io/fountain/self-hosting/#versioning-and-upgrades
   - name: ghcr.io/binarybourbon/fountain
-    newTag: v0.10.0
+    newTag: v0.10.1
