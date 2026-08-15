@@ -186,7 +186,57 @@ func (a *Agent) forwardUpdate(sess Session, line string) {
 		msg.Params = map[string]any{}
 	}
 	msg.Params["sessionId"] = sess.ID
+	a.moveSandboxLocations(msg.Params)
 	a.notify("session/update", msg.Params)
+}
+
+// MetaSandboxLocations is where a tool call's file locations go instead of
+// `locations`. An editor that learns to read it can show them as remote; every
+// other editor simply does not act on paths it never received.
+const MetaSandboxLocations = "fountain.sandboxLocations"
+
+// moveSandboxLocations takes `locations` off a tool call and files it under
+// `_meta`.
+//
+// ACP's `tool_call.locations` exists so an editor can follow along: open the
+// file, jump to the line. Every path a Fountain agent reports is a path in the
+// **sandbox**, on a checkout the sprite made, on a machine that is not the
+// developer's. An editor that takes `/workspace/lib/foo.ex` at face value
+// either opens the wrong file or silently fails, and the developer concludes
+// the agent is editing their project. ADR 0015: "Every design that pretends
+// otherwise produces an agent that appears to be editing the open project and
+// is not."
+//
+// The protocol has no way to say "this path is somewhere else", so the honest
+// options were to label or to remove. This removes — and keeps the paths under
+// `_meta`, so nothing is lost for a client that grows the ability to fetch a
+// sandbox file (the read-through escalation ADR 0015 parks as a separate
+// decision), and nothing is actionable for one that has not.
+//
+// The paths remain visible to the human either way: the sprite's own tool
+// title and raw input carry them, and the server's block translation already
+// falls back to `rawInput` when there are no locations.
+func (a *Agent) moveSandboxLocations(params map[string]any) {
+	update, ok := params["update"].(map[string]any)
+	if !ok {
+		return
+	}
+	locations, ok := update["locations"]
+	if !ok || locations == nil {
+		return
+	}
+
+	delete(update, "locations")
+
+	meta, ok := update["_meta"].(map[string]any)
+	if !ok {
+		meta = map[string]any{}
+	}
+	meta[MetaSandboxLocations] = locations
+	update["_meta"] = meta
+
+	a.log.Debug("moved sandbox paths out of tool_call.locations",
+		"why", "they name files in the sandbox, not on this machine")
 }
 
 type turnOutcome struct {
