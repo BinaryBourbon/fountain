@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync"
 	"testing"
 )
 
 type fakeAPI struct {
+	mu        sync.Mutex
 	ref       AgentRef
 	agentErr  error
 	createErr error
@@ -24,6 +26,17 @@ type fakeAPI struct {
 	events     []Event
 	prompts    []sentPrompt
 	followFrom []string
+
+	// cancel path
+	interruptErr error
+	interrupted  []string
+	onInterrupt  func()
+	// followBlock, when set, holds Follow open until it is closed — a stand-in
+	// for a turn that sits there until something stops it. followStarted, when
+	// set, is closed once Follow has been entered, so a test can send a cancel
+	// at the moment a real one would arrive.
+	followBlock   chan struct{}
+	followStarted chan struct{}
 }
 
 type sentPrompt struct {
@@ -63,8 +76,31 @@ func (f *fakeAPI) SendPrompt(_ context.Context, convID, text string, images []Im
 	return f.promptErr
 }
 
+func (f *fakeAPI) Interrupt(_ context.Context, convID string) error {
+	f.mu.Lock()
+	f.interrupted = append(f.interrupted, convID)
+	onInterrupt := f.onInterrupt
+	f.mu.Unlock()
+
+	if onInterrupt != nil {
+		onInterrupt()
+	}
+	return f.interruptErr
+}
+
 func (f *fakeAPI) Follow(_ context.Context, _, lastEventID string, fn EventFunc) error {
+	f.mu.Lock()
 	f.followFrom = append(f.followFrom, lastEventID)
+	block := f.followBlock
+	started := f.followStarted
+	f.mu.Unlock()
+
+	if started != nil {
+		close(started)
+	}
+	if block != nil {
+		<-block
+	}
 	if f.followErr != nil {
 		return f.followErr
 	}

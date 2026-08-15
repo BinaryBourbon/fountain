@@ -25,6 +25,9 @@ type API interface {
 	// fn reports stop, reconnecting across the disconnects the server produces
 	// by design.
 	Follow(ctx context.Context, convID, lastEventID string, fn EventFunc) error
+	// Interrupt stops the running turn. A conversation with no turn running is
+	// not an error — see cancel.
+	Interrupt(ctx context.Context, convID string) error
 }
 
 // AgentRef is what the adapter needs to know about a Fountain agent.

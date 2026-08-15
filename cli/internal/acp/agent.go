@@ -104,10 +104,19 @@ func (a *Agent) Request(ctx context.Context, method string, params json.RawMessa
 	}
 }
 
-// Notify handles client notifications. There are none this agent acts on yet;
-// `session/cancel` arrives here when it lands (#704).
-func (a *Agent) Notify(_ context.Context, method string, _ json.RawMessage) {
-	a.log.Debug("ignoring notification", "method", method)
+// Notify handles client notifications.
+//
+// `session/cancel` is a notification, not a request: ACP expects the *pending*
+// `session/prompt` to be what answers, with a `cancelled` stop reason. So this
+// asks the server to stop the turn and returns; the prompt's own follow sees
+// the interrupted stage and reports it.
+func (a *Agent) Notify(ctx context.Context, method string, params json.RawMessage) {
+	switch method {
+	case "session/cancel":
+		a.cancel(ctx, params)
+	default:
+		a.log.Debug("ignoring notification", "method", method)
+	}
 }
 
 func (a *Agent) initialize(raw json.RawMessage) (any, error) {
