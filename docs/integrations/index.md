@@ -12,6 +12,14 @@ provider side, which env vars result, and how to verify it works.
 | [Stripe](stripe.md) | Optional | `BILLING_ENABLED`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_ID` | No billing. Correct for most self-hosted instances — leave the gate off |
 | [Sentry](sentry.md) | Optional | `SENTRY_DSN`, `SENTRY_ENVIRONMENT` | No error tracking; the SDK is inert and nothing leaves the instance |
 
+## The integration with nothing to configure
+
+[**Editors**](editors.md) are the one integration an operator does not set up.
+An ACP-capable editor — Zed and friends — spawns `fountain acp` locally and
+talks to your instance with the credentials the developer already has. There is
+no env var, no server-side switch, and nothing for you to run: it works against
+any instance the CLI can reach.
+
 The sandbox providers — Sprites, E2B, Daytona — have
 [a section of their own](sandbox-contract.md): one contract, three
 implementations.
