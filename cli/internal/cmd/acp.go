@@ -197,6 +197,18 @@ func (f fountainAPI) CreateConversation(_ context.Context, agentID string) (stri
 	return id, nil
 }
 
+// Interrupt stops the running turn. A 409 means the turn had already ended —
+// the normal outcome of a cancel that raced the agent finishing — and is not
+// reported as a failure.
+func (f fountainAPI) Interrupt(_ context.Context, convID string) error {
+	err := api.New(f.opts).Post("/conversations/"+convID+"/interrupt", map[string]any{}, nil)
+	if api.StatusCode(err) == 409 {
+		f.log.Info("cancel arrived after the turn ended", "conversation", convID)
+		return nil
+	}
+	return err
+}
+
 func (f fountainAPI) StreamHead(_ context.Context, convID string) (string, error) {
 	return streamHead(api.New(f.opts), convID)
 }
