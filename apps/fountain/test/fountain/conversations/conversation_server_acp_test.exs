@@ -195,6 +195,8 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
       pid: pid,
       ref: ref
     } do
+      prompt_id = drive_to_prompt(pid, ref)
+
       send(pid, {:acp, ref, {:model_rejected, "claude-sonnet-4-6", "Invalid value for model"}})
 
       # handle_info is async; a sync call flushes the mailbox so the read below
@@ -214,6 +216,12 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
       # And the turn is still alive: a model we could not pin is not worth
       # failing a turn over.
       assert Process.alive?(pid)
+
+      # Finish it. A test that leaves a turn in flight leaves a live peer and a
+      # busy server behind, and the neighbours in this file are timing
+      # sensitive enough to have earned `settle/1`.
+      reply(pid, ref, prompt_id, %{"stopReason" => "end_turn"})
+      assert Conversations._unsafe_get_conversation!(conv.id).status == "idle"
     end
 
     test "the stop reason ends the turn and closes stdin", %{conv: conv, pid: pid, ref: ref} do
