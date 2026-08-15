@@ -9,9 +9,18 @@ import (
 
 var profileFlag string
 
+// Version is stamped at build time by release.yml:
+//
+//	go build -ldflags "-X .../internal/cmd.Version=v0.9.0"
+//
+// A source build says "dev", which is the honest answer and the one an editor
+// shows when it reports which agent it is talking to.
+var Version = "dev"
+
 var rootCmd = &cobra.Command{
-	Use:   "fountain",
-	Short: "Fountain CLI",
+	Use:     "fountain",
+	Version: Version,
+	Short:   "Fountain CLI",
 	Long: `Fountain CLI.
 
 Credentials are read from FOUNTAIN_API_KEY env var or ~/.fountain/credentials.

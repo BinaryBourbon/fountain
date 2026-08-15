@@ -66,11 +66,17 @@ jobs:
           CGO_ENABLED: "0"
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
+          # Stamped into the binary so `fountain --version` and the ACP
+          # handshake's `agentInfo` report what someone actually installed.
+          # A tag push gives GITHUB_REF_NAME; a manual dispatch names the tag.
+          VERSION: ${{ inputs.tag || github.ref_name }}
         working-directory: cli
         run: |
           set -euxo pipefail
           mkdir -p ../dist
-          go build -trimpath -ldflags "-s -w" -o "../dist/${{ matrix.artifact }}" ./cmd/fountain
+          go build -trimpath \
+            -ldflags "-s -w -X github.com/BinaryBourbon/fountain/cli/internal/cmd.Version=${VERSION}" \
+            -o "../dist/${{ matrix.artifact }}" ./cmd/fountain
           file "../dist/${{ matrix.artifact }}"
           du -h "../dist/${{ matrix.artifact }}"
 

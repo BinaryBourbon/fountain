@@ -58,6 +58,10 @@ type Agent struct {
 	// on one machine fight over it.
 	agentTarget string
 
+	// version is what `agentInfo` reports. Injected rather than read from a
+	// constant here so the protocol layer does not depend on the CLI package.
+	version string
+
 	sessions *sessions
 
 	mu            sync.Mutex
@@ -68,12 +72,13 @@ type Agent struct {
 }
 
 // NewAgent returns an agent bound to a credential source, the Fountain API,
-// and the agent sessions open against.
-func NewAgent(auth Auth, api API, agentTarget string, log *slog.Logger) *Agent {
+// the agent sessions open against, and the version it reports as `agentInfo`.
+func NewAgent(auth Auth, api API, agentTarget, version string, log *slog.Logger) *Agent {
 	return &Agent{
 		auth:        auth,
 		api:         api,
 		agentTarget: agentTarget,
+		version:     version,
 		sessions:    newSessions(),
 		log:         log,
 	}
@@ -160,9 +165,25 @@ func (a *Agent) initialize(raw json.RawMessage) (any, error) {
 
 	return map[string]any{
 		"protocolVersion":   negotiated,
+		"agentInfo":         agentInfo(a.version),
 		"agentCapabilities": agentCapabilities(),
 		"authMethods":       authMethods(authenticated),
 	}, nil
+}
+
+// agentInfo names the implementation. The spec says an agent SHOULD send it
+// and that it becomes required in a future version — and a client that does
+// not get it has nothing to call us but "unknown", which is what it then shows
+// its user when anything goes wrong.
+func agentInfo(version string) map[string]any {
+	if version == "" {
+		version = "dev"
+	}
+	return map[string]any{
+		"name":    "fountain",
+		"title":   "Fountain",
+		"version": version,
+	}
 }
 
 // agentCapabilities is deliberately the smallest honest set.

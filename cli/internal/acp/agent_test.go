@@ -26,7 +26,7 @@ func (f *fakeAuth) Describe() string { return "https://example.test (profile def
 // newTestAgent builds an agent with no Fountain agent configured — enough for
 // the handshake tests. The session tests build their own with an API.
 func newTestAgent(auth Auth) *Agent {
-	return NewAgent(auth, &fakeAPI{}, "", discardLogger())
+	return NewAgent(auth, &fakeAPI{}, "", "test", discardLogger())
 }
 
 func request(t *testing.T, a *Agent, method string, params any) (map[string]any, *Error) {
