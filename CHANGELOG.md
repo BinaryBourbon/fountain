@@ -16,6 +16,33 @@ upgrade, is in
 
 ## [Unreleased]
 
+## [0.10.0] — 2026-08-15
+
+### Upgrade notes
+
+- **Sprites sandboxes now expose their HTTP endpoint publicly.** Every
+  sprite already had a URL; it required a platform credential to open,
+  which meant a web service an agent started could not be reached by the
+  person who asked for it. Fountain now sets `url_settings.auth =
+  "public"` when it creates a sandbox, so **anything an agent serves is
+  reachable by anyone who has the URL** (a name plus a random suffix,
+  not guessable, but not secret either). Set
+  `config :fountain, :sprites_public_urls, false` to keep the previous
+  behaviour: sandboxes keep their URLs, and only a token holder can open
+  them. E2B and Daytona are unaffected — they expose per-port hostnames
+  rather than one sandbox URL, and report no URL at all.
+
+### Added
+
+- **A sandbox can tell you where it is running.** Agents asked "what's
+  the URL?" had no way to answer: the platform assigns the endpoint
+  outside the sandbox, and inside it the hostname is just `sprite`. The
+  URL is now stored on the sandbox, returned as `sandbox.url` on the
+  conversation API, and set inside the sandbox as **`SANDBOX_URL`**.
+  Providers that have no such endpoint report `:unsupported` rather than
+  a guess — a URL that does not resolve is worse than none, because the
+  agent hands it to a human who then blames the service.
+
 ## [0.9.1] — 2026-08-15
 
 ### Fixed
