@@ -197,6 +197,75 @@ func (f fountainAPI) CreateConversation(_ context.Context, agentID string) (stri
 	return id, nil
 }
 
+func (f fountainAPI) Conversation(_ context.Context, convID string) (acp.ConversationRef, error) {
+	var resp struct {
+		Data map[string]any `json:"data"`
+	}
+	if err := api.New(f.opts).Get("/conversations/"+convID, &resp); err != nil {
+		return acp.ConversationRef{}, err
+	}
+	acpOK, _ := resp.Data["acp"].(bool)
+	return acp.ConversationRef{
+		ID:      output.ToString(resp.Data["id"]),
+		Runtime: output.ToString(resp.Data["runtime"]),
+		Status:  output.ToString(resp.Data["status"]),
+		ACP:     acpOK,
+	}, nil
+}
+
+// Replay drains everything the conversation has stored on the `acp` stream and
+// closes, oldest first.
+//
+// `wait=false` is what makes it a drain: the server replays the history and
+// ends the response instead of holding the connection open (#398's sibling —
+// the same endpoint, the opposite need). `Last-Event-ID: 0` starts at the
+// beginning, which is exactly what `session/load` is for.
+func (f fountainAPI) Replay(ctx context.Context, convID string, fn acp.EventFunc) error {
+	req, err := api.New(f.opts).NewStreamRequest(ctx,
+		"/conversations/"+convID+"/stream?streams=acp&wait=false", "0")
+	if err != nil {
+		return err
+	}
+
+	resp, err := (&http.Client{}).Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("replay HTTP %d: %s", resp.StatusCode, body)
+	}
+
+	// The trailing blank line makes the final event parse even when the body
+	// did not end with one.
+	events, _ := sse.Feed(string(body) + "\n\n")
+	for _, ev := range events {
+		data, ok := ev.Data.(map[string]any)
+		if !ok {
+			continue
+		}
+		stop, err := fn(acp.Event{
+			Kind:   output.ToString(data["kind"]),
+			Stream: output.ToString(data["stream"]),
+			Data:   output.ToString(data["data"]),
+			Stage:  output.ToString(data["stage"]),
+			State:  output.ToString(data["state"]),
+		})
+		if err != nil {
+			return err
+		}
+		if stop {
+			return nil
+		}
+	}
+	return nil
+}
+
 // Interrupt stops the running turn. A 409 means the turn had already ended —
 // the normal outcome of a cancel that raced the agent finishing — and is not
 // reported as a failure.

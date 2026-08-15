@@ -37,6 +37,12 @@ type fakeAPI struct {
 	// at the moment a real one would arrive.
 	followBlock   chan struct{}
 	followStarted chan struct{}
+
+	// load path
+	conversation    ConversationRef
+	conversationErr error
+	replay          []Event
+	replayErr       error
 }
 
 type sentPrompt struct {
@@ -105,6 +111,29 @@ func (f *fakeAPI) Follow(_ context.Context, _, lastEventID string, fn EventFunc)
 		return f.followErr
 	}
 	for _, ev := range f.events {
+		stop, err := fn(ev)
+		if err != nil {
+			return err
+		}
+		if stop {
+			return nil
+		}
+	}
+	return nil
+}
+
+func (f *fakeAPI) Conversation(context.Context, string) (ConversationRef, error) {
+	if f.conversationErr != nil {
+		return ConversationRef{}, f.conversationErr
+	}
+	return f.conversation, nil
+}
+
+func (f *fakeAPI) Replay(_ context.Context, _ string, fn EventFunc) error {
+	if f.replayErr != nil {
+		return f.replayErr
+	}
+	for _, ev := range f.replay {
 		stop, err := fn(ev)
 		if err != nil {
 			return err

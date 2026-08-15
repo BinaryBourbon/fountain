@@ -123,8 +123,12 @@ func TestInitializeDoesNotClaimCapabilitiesItCannotHonour(t *testing.T) {
 	if !ok {
 		t.Fatalf("agentCapabilities missing: %v", result)
 	}
-	if caps["loadSession"] != false {
-		t.Errorf("loadSession = %v, want false until #703 builds the replay", caps["loadSession"])
+	// loadSession is a promise about ordering as much as ability: claiming it
+	// obliges the agent to replay the whole conversation as session/update
+	// notifications BEFORE answering. It went true with #703, which built the
+	// replay — see load_test.go.
+	if caps["loadSession"] != true {
+		t.Errorf("loadSession = %v, want true", caps["loadSession"])
 	}
 	prompt := caps["promptCapabilities"].(map[string]any)
 	if prompt["image"] != true {
@@ -254,7 +258,9 @@ func TestAuthenticateRejectsAnUnknownMethod(t *testing.T) {
 func TestSessionMethodsAreNotFoundYet(t *testing.T) {
 	a := newTestAgent(&fakeAuth{available: true})
 
-	for _, method := range []string{"session/load", "session/cancel"} {
+	// session/cancel is a notification, not a request — an editor never sends
+	// it with an id, and answering one would be the bug.
+	for _, method := range []string{"session/cancel"} {
 		_, rpcErr := request(t, a, method, map[string]any{})
 		if rpcErr == nil || rpcErr.Code != CodeMethodNotFound {
 			t.Errorf("%s: want method-not-found, got %v", method, rpcErr)

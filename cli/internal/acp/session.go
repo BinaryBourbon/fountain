@@ -28,6 +28,24 @@ type API interface {
 	// Interrupt stops the running turn. A conversation with no turn running is
 	// not an error — see cancel.
 	Interrupt(ctx context.Context, convID string) error
+	// Conversation looks up a conversation the adapter did not open, which is
+	// what `session/load` is: an editor handing back an id from last week.
+	Conversation(ctx context.Context, convID string) (ConversationRef, error)
+	// Replay drains the conversation's stored ACP events from the beginning,
+	// oldest first, and closes. Unlike Follow it does not wait for more.
+	Replay(ctx context.Context, convID string, fn EventFunc) error
+}
+
+// ConversationRef is what the adapter needs to know about a conversation it is
+// being asked to reopen.
+type ConversationRef struct {
+	ID      string
+	Runtime string
+	Status  string
+	// ACP reports whether this conversation's output was stored as protocol.
+	// A legacy-runtime conversation has a transcript, but not one this adapter
+	// can replay — see #702.
+	ACP bool
 }
 
 // AgentRef is what the adapter needs to know about a Fountain agent.
