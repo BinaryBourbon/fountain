@@ -330,3 +330,29 @@ func TestSpriteRequestsAreNotForwardedAsUpdates(t *testing.T) {
 		t.Errorf("forwarded %d messages that were not updates, want 0", notifier.rawCalls)
 	}
 }
+
+// #724: a refused model does not end the turn — the runtime answers on its
+// default — so the stage must not be treated as terminal. It is surfaced in
+// the adapter's log instead, which is where an editor's agent-server output
+// goes.
+func TestARefusedModelDoesNotEndTheTurn(t *testing.T) {
+	api := &fakeAPI{
+		events: []Event{
+			stageEvent("model", "failed", `{"requested":"claude-sonnet-4-6","detail":"Invalid value"}`),
+			{Kind: "output", Stream: "acp", Data: acpLine("sprite-session", "answered anyway")},
+			stageEvent("turn", "done", `{"stop_reason":"end_turn"}`),
+		},
+	}
+	a, notifier := promptAgent(t, api)
+
+	result, rpcErr := request(t, a, "session/prompt", textPrompt("conv-1", "go"))
+	if rpcErr != nil {
+		t.Fatalf("a refused model failed the turn: %v", rpcErr)
+	}
+	if result["stopReason"] != "end_turn" {
+		t.Errorf("stopReason = %v, want end_turn", result["stopReason"])
+	}
+	if len(notifier.methods) != 1 {
+		t.Errorf("forwarded %d updates, want the one that came after the refusal", len(notifier.methods))
+	}
+}
