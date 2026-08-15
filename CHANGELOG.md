@@ -16,7 +16,50 @@ upgrade, is in
 
 ## [Unreleased]
 
+## [0.9.0] — 2026-08-15
+
+### Upgrade notes
+
+- **ACP is now the only way Fountain talks to claude, codex and opencode.**
+  The legacy spawn path is deleted and the per-agent `metadata["acp"]`
+  opt-out is retired — see *Changed* below. Nothing is required of an
+  operator, but the change is worth knowing before you upgrade: those
+  runtimes now carry their MCP servers, session ids and tool spans over
+  the protocol rather than through argv and config files. Gemini agents
+  are untouched and stay on their legacy path (#658, #659).
+- **Sandbox backends are pluggable, and Sprites remains the default.** An
+  instance that sets nothing keeps behaving exactly as before.
+  `SANDBOX_PROVIDER` picks a different default (`sprites`, `e2b`,
+  `daytona`), each provider needs its own API key, and E2B and Daytona
+  need a prepared template/snapshot before they will run anything.
+- **Two additive migrations** (`sandboxes.provider`,
+  `agents.sandbox_provider`); both run automatically on boot per the
+  standard upgrade flow.
+
 ### Added
+
+- **Drive a Fountain conversation from your editor.** `fountain acp` is a
+  new CLI subcommand that speaks the
+  [Agent Client Protocol](https://agentclientprotocol.com) on stdio, so an
+  ACP-capable editor — Zed and friends — can open a conversation on one of
+  your agents, prompt it, watch messages, thoughts and tool calls stream in,
+  cancel a running turn, and reopen the transcript later. The turn runs in
+  Fountain, not in the editor: close the laptop mid-turn and it keeps going.
+  It is a control surface, not a workspace — the agent works on its sandbox's
+  files, declares no access to the ones open in your editor, and deliberately
+  does not send sandbox paths as clickable locations. Agents on a runtime
+  that does not speak ACP are refused by name. Setup and editor config are on
+  the new [Editors (ACP)](https://binarybourbon.github.io/fountain/integrations/editors/)
+  page (ADR 0015; #709, #698–#707).
+
+- **The conversation event stream is documented as the interface it now is.**
+  Both `GET /api/agents/:id` and `GET /api/conversations/:id` gained a derived
+  read-only `acp` boolean, and the SSE endpoint's `?streams=` parameter now
+  documents every stream it carries — including `acp`, one ACP
+  `session/update` notification per line — plus the event envelope's fields.
+  Two clients render from this stream now, so its shape carries compatibility
+  obligations (#702, #707).
+
 
 - **The documentation site is served in-app at `/docs`.** The same markdown
   GitHub Pages publishes is embedded at compile time and rendered through
@@ -86,6 +129,19 @@ upgrade, is in
   escape hatch, set over the API). Gemini agents stay on the legacy path
   until gemini's `session/load` is fixed upstream (#658, #659). ADR 0014
   gate 4 begins here.
+
+### Fixed
+
+- **A filtered replay dropped ACP events entirely.** `?streams=` has two
+  implementations — one for history, one for live events — and the history
+  one carried a list of stream names written before ACP existed, so
+  `?streams=acp` returned a conversation's future and none of its past. The
+  editor integration's `session/load` replayed an empty transcript and every
+  mid-turn reconnect silently lost the updates it missed. The filter no
+  longer keeps a list, and one test now runs the same cases through both
+  halves (#716). This is the API-side sibling of the rendering bug fixed in
+  0.8.1 (#669): both were a stale allow-list meeting a new stream name.
+
 
 ## [0.8.1] — 2026-08-13
 
