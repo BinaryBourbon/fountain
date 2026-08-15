@@ -51,6 +51,22 @@ defmodule FountainWeb.AgentControllerTest do
       assert body["data"]["name"] == agent.name
     end
 
+    # `fountain acp` asks this before opening a session, so an editor is
+    # refused a runtime whose output it could not render (#702). Deriving it
+    # here rather than hardcoding a runtime list in the Go CLI is the point:
+    # that list changes when a held-back runtime is converted, and a client
+    # shipping a copy of it would be wrong until its next release.
+    test "reports whether the runtime speaks ACP", %{conn: conn, user: user, raw_key: raw_key} do
+      acp_agent = insert_agent(user_id: user.id, runtime: "claude")
+      legacy_agent = insert_agent(user_id: user.id, runtime: "gemini")
+
+      for {agent, expected} <- [{acp_agent, true}, {legacy_agent, false}] do
+        conn = conn |> authed_with_key(raw_key) |> get("/api/agents/#{agent.id}")
+
+        assert json_response(conn, 200)["data"]["acp"] == expected
+      end
+    end
+
     test "returns 404 when the agent belongs to a different user", %{conn: conn, raw_key: raw_key} do
       other_user = insert_verified_user()
       other_agent = insert_agent(user_id: other_user.id)

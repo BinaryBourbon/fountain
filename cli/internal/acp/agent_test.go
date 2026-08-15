@@ -23,6 +23,12 @@ func (f *fakeAuth) Verify(context.Context) error {
 
 func (f *fakeAuth) Describe() string { return "https://example.test (profile default)" }
 
+// newTestAgent builds an agent with no Fountain agent configured — enough for
+// the handshake tests. The session tests build their own with an API.
+func newTestAgent(auth Auth) *Agent {
+	return NewAgent(auth, &fakeAPI{}, "", discardLogger())
+}
+
 func request(t *testing.T, a *Agent, method string, params any) (map[string]any, *Error) {
 	t.Helper()
 
@@ -55,7 +61,7 @@ func request(t *testing.T, a *Agent, method string, params any) (map[string]any,
 }
 
 func TestInitializeAnswersWithOurProtocolVersion(t *testing.T) {
-	a := NewAgent(&fakeAuth{available: true}, discardLogger())
+	a := newTestAgent(&fakeAuth{available: true})
 
 	result, rpcErr := request(t, a, "initialize", map[string]any{"protocolVersion": ProtocolVersion})
 	if rpcErr != nil {
@@ -72,7 +78,7 @@ func TestInitializeAnswersWithOurProtocolVersion(t *testing.T) {
 // A client newer than us must be answered with a version we can actually
 // speak, not with its own echoed back.
 func TestInitializeNegotiatesDownFromANewerClient(t *testing.T) {
-	a := NewAgent(&fakeAuth{}, discardLogger())
+	a := newTestAgent(&fakeAuth{})
 
 	result, _ := request(t, a, "initialize", map[string]any{"protocolVersion": ProtocolVersion + 5})
 	if result["protocolVersion"] != ProtocolVersion {
@@ -84,7 +90,7 @@ func TestInitializeNegotiatesDownFromANewerClient(t *testing.T) {
 // on a different machine from the editor's, and an agent that claims fs or
 // terminal capability appears to be editing the open project and is not.
 func TestInitializeDeclaresNoWorkspaceCapabilities(t *testing.T) {
-	a := NewAgent(&fakeAuth{available: true}, discardLogger())
+	a := newTestAgent(&fakeAuth{available: true})
 
 	result, _ := request(t, a, "initialize", map[string]any{
 		"protocolVersion": ProtocolVersion,
@@ -109,7 +115,7 @@ func TestInitializeDeclaresNoWorkspaceCapabilities(t *testing.T) {
 // answering. Claiming it before that exists (#703) leaves an editor showing an
 // empty transcript for a conversation that has one.
 func TestInitializeDoesNotClaimCapabilitiesItCannotHonour(t *testing.T) {
-	a := NewAgent(&fakeAuth{available: true}, discardLogger())
+	a := newTestAgent(&fakeAuth{available: true})
 
 	result, _ := request(t, a, "initialize", map[string]any{"protocolVersion": ProtocolVersion})
 
@@ -129,7 +135,7 @@ func TestInitializeDoesNotClaimCapabilitiesItCannotHonour(t *testing.T) {
 }
 
 func TestInitializeOffersLoginWhenThereAreNoCredentials(t *testing.T) {
-	a := NewAgent(&fakeAuth{available: false}, discardLogger())
+	a := newTestAgent(&fakeAuth{available: false})
 
 	result, _ := request(t, a, "initialize", map[string]any{"protocolVersion": ProtocolVersion})
 
@@ -151,7 +157,7 @@ func TestInitializeOffersLoginWhenThereAreNoCredentials(t *testing.T) {
 // An editor shown a login prompt for a CLI that is already logged in has been
 // told something false about its own state.
 func TestInitializeOffersNoLoginWhenCredentialsExist(t *testing.T) {
-	a := NewAgent(&fakeAuth{available: true}, discardLogger())
+	a := newTestAgent(&fakeAuth{available: true})
 
 	result, _ := request(t, a, "initialize", map[string]any{"protocolVersion": ProtocolVersion})
 
@@ -167,7 +173,7 @@ func TestInitializeOffersNoLoginWhenCredentialsExist(t *testing.T) {
 // decide whether to show a login prompt.
 func TestInitializeDoesNotHitTheNetwork(t *testing.T) {
 	auth := &fakeAuth{available: true}
-	a := NewAgent(auth, discardLogger())
+	a := newTestAgent(auth)
 
 	request(t, a, "initialize", map[string]any{"protocolVersion": ProtocolVersion})
 
@@ -178,7 +184,7 @@ func TestInitializeDoesNotHitTheNetwork(t *testing.T) {
 
 func TestAuthenticateVerifiesTheCredentials(t *testing.T) {
 	auth := &fakeAuth{available: true}
-	a := NewAgent(auth, discardLogger())
+	a := newTestAgent(auth)
 
 	if _, rpcErr := request(t, a, "authenticate", map[string]any{"methodId": AuthMethodID}); rpcErr != nil {
 		t.Fatalf("authenticate failed: %v", rpcErr)
@@ -195,7 +201,7 @@ func TestAuthenticateVerifiesTheCredentials(t *testing.T) {
 // by someone who cannot see a 401.
 func TestAuthenticateRejectionNamesTheFixAndTheInstance(t *testing.T) {
 	auth := &fakeAuth{available: true, verifyErr: errors.New("http 401")}
-	a := NewAgent(auth, discardLogger())
+	a := newTestAgent(auth)
 
 	_, rpcErr := request(t, a, "authenticate", map[string]any{"methodId": AuthMethodID})
 	if rpcErr == nil {
@@ -217,7 +223,7 @@ func TestAuthenticateRejectionNamesTheFixAndTheInstance(t *testing.T) {
 
 func TestAuthenticateWithNoCredentialsSaysSo(t *testing.T) {
 	auth := &fakeAuth{available: false}
-	a := NewAgent(auth, discardLogger())
+	a := newTestAgent(auth)
 
 	_, rpcErr := request(t, a, "authenticate", map[string]any{"methodId": AuthMethodID})
 	if rpcErr == nil || rpcErr.Code != CodeAuthRequired {
@@ -229,7 +235,7 @@ func TestAuthenticateWithNoCredentialsSaysSo(t *testing.T) {
 }
 
 func TestAuthenticateRejectsAnUnknownMethod(t *testing.T) {
-	a := NewAgent(&fakeAuth{available: true}, discardLogger())
+	a := newTestAgent(&fakeAuth{available: true})
 
 	_, rpcErr := request(t, a, "authenticate", map[string]any{"methodId": "oauth"})
 	if rpcErr == nil || rpcErr.Code != CodeInvalidParams {
@@ -237,12 +243,12 @@ func TestAuthenticateRejectsAnUnknownMethod(t *testing.T) {
 	}
 }
 
-// The session methods are the next three issues. Until they exist, saying so
-// is better than a silent success an editor would sit and wait on.
+// The remaining session methods are the next issues. Until they exist, saying
+// so is better than a silent success an editor would sit and wait on.
 func TestSessionMethodsAreNotFoundYet(t *testing.T) {
-	a := NewAgent(&fakeAuth{available: true}, discardLogger())
+	a := newTestAgent(&fakeAuth{available: true})
 
-	for _, method := range []string{"session/new", "session/prompt", "session/load", "session/cancel"} {
+	for _, method := range []string{"session/prompt", "session/load", "session/cancel"} {
 		_, rpcErr := request(t, a, method, map[string]any{})
 		if rpcErr == nil || rpcErr.Code != CodeMethodNotFound {
 			t.Errorf("%s: want method-not-found, got %v", method, rpcErr)
@@ -251,7 +257,7 @@ func TestSessionMethodsAreNotFoundYet(t *testing.T) {
 }
 
 func TestMalformedParamsAreInvalidParamsNotACrash(t *testing.T) {
-	a := NewAgent(&fakeAuth{available: true}, discardLogger())
+	a := newTestAgent(&fakeAuth{available: true})
 
 	_, err := a.Request(context.Background(), "initialize", json.RawMessage(`{"protocolVersion":`))
 	var rpcErr *Error
@@ -262,7 +268,7 @@ func TestMalformedParamsAreInvalidParamsNotACrash(t *testing.T) {
 
 // Some clients send initialize with no params at all.
 func TestInitializeWithNoParamsStillAnswers(t *testing.T) {
-	a := NewAgent(&fakeAuth{available: true}, discardLogger())
+	a := newTestAgent(&fakeAuth{available: true})
 
 	result, rpcErr := request(t, a, "initialize", nil)
 	if rpcErr != nil {

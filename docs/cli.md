@@ -121,7 +121,7 @@ fountain conv stream <conversation-id>
 ## Editor integration (ACP)
 
 ```bash
-fountain acp [--log-level debug]
+fountain acp --agent <name-or-id> [--log-level debug]
 ```
 
 Speaks the [Agent Client Protocol](https://agentclientprotocol.com) on stdio, so
@@ -130,9 +130,18 @@ yourself — the editor spawns it and talks JSON-RPC over the pipe. stdout carri
 the protocol and nothing else; diagnostics go to stderr, which is where to look
 first when an editor reports a problem.
 
+`--agent` names the Fountain agent that sessions run: the protocol has no field
+for it, so it is configured on the command line. Add one editor entry per agent
+you want to reach. Each session the editor opens creates its own conversation
+for that agent.
+
 It authenticates with the same credentials as every other command
 (`FOUNTAIN_API_KEY`, then the active profile), so `fountain auth login` is the
 only setup step. `--profile` selects the instance.
+
+Agents whose runtime does not speak ACP are refused when the editor opens a
+session, with the runtime named — today that is `gemini`. Use those from the web
+UI or `fountain run`.
 
 **What it is not:** a way for a remote agent to edit your local files. The agent
 works inside a Fountain sandbox, on a checkout that is not yours, and this

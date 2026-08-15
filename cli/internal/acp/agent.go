@@ -42,7 +42,23 @@ type Auth interface {
 // separate decisions with their own ADRs — they do not arrive through here.
 type Agent struct {
 	auth Auth
+	api  API
 	log  *slog.Logger
+
+	// agentTarget is the Fountain agent (name or id) this process opens
+	// sessions against. ACP's `session/new` carries a `cwd` and a list of MCP
+	// servers but no notion of *which* agent, and the unit an editor is
+	// reaching for here is a provisioned Fountain agent — an environment,
+	// vault overrides, skills, MCP servers and inference credentials that
+	// never touch the developer's machine. So the choice is made where the
+	// editor already configures things: one agent-server entry per agent,
+	// `fountain acp --agent <name-or-id>`. Carrying it in `session/new`'s
+	// `_meta` instead would put the decision in a field most clients do not
+	// surface, and a default in the credentials file would make two editors
+	// on one machine fight over it.
+	agentTarget string
+
+	sessions *sessions
 
 	mu            sync.Mutex
 	initialized   bool
@@ -50,9 +66,16 @@ type Agent struct {
 	negotiated    int
 }
 
-// NewAgent returns an agent bound to a credential source.
-func NewAgent(auth Auth, log *slog.Logger) *Agent {
-	return &Agent{auth: auth, log: log}
+// NewAgent returns an agent bound to a credential source, the Fountain API,
+// and the agent sessions open against.
+func NewAgent(auth Auth, api API, agentTarget string, log *slog.Logger) *Agent {
+	return &Agent{
+		auth:        auth,
+		api:         api,
+		agentTarget: agentTarget,
+		sessions:    newSessions(),
+		log:         log,
+	}
 }
 
 type initializeParams struct {
@@ -71,6 +94,8 @@ func (a *Agent) Request(ctx context.Context, method string, params json.RawMessa
 		return a.initialize(params)
 	case "authenticate":
 		return a.authenticate(ctx, params)
+	case "session/new":
+		return a.newSession(ctx, params)
 	default:
 		return nil, Errorf(CodeMethodNotFound, "method not found: %s", method)
 	}

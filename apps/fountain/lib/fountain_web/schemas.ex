@@ -250,6 +250,16 @@ defmodule FountainWeb.Schemas do
           pattern: "^[a-z0-9_-]+/[a-z0-9._-]+$"
         },
         runtime: %Schema{type: :string, enum: ~w(claude codex gemini opencode)},
+        acp: %Schema{
+          type: :boolean,
+          readOnly: true,
+          description:
+            "Whether this agent's runtime speaks the Agent Client Protocol. Derived " <>
+              "from the runtime, never stored. When false, the conversation's output " <>
+              "is the runtime's own dialect on the `stdout` stream rather than ACP " <>
+              "`session/update` notifications on the `acp` stream, and a protocol " <>
+              "client such as `fountain acp` cannot render it."
+        },
         sandbox_provider: %Schema{
           type: :string,
           enum: ~w(sprites e2b daytona),
