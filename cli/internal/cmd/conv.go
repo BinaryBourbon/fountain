@@ -490,6 +490,21 @@ func formatOutput(data map[string]any) string {
 	if raw == "" {
 		return ""
 	}
+	// ACP conversations store the protocol itself, one `session/update` per
+	// line. Since #674 made ACP the only path for claude, codex and opencode,
+	// this is what a turn's output *is* — and rendering it as stream-json
+	// produced nothing at all, so `fountain run` printed a turn starting and
+	// finishing with silence in between (#723).
+	if stream == "acp" {
+		var b strings.Builder
+		for _, line := range strings.Split(raw, "\n") {
+			if strings.TrimSpace(line) == "" {
+				continue
+			}
+			b.WriteString(formatACPLine(line))
+		}
+		return b.String()
+	}
 	// Only turn output is runtime stream-JSON. The setup script and the
 	// provisioning stages (packages, network, clone) log raw text under
 	// their own stage — formatStreamJSONLine returns "" for anything that
@@ -514,6 +529,72 @@ func formatOutput(data map[string]any) string {
 
 // formatStreamJSONLine renders a single line from the assistant/user/result
 // JSON Lines stream. Mirrors conv.ex's format_stream_json_line/1.
+// formatACPLine renders one stored `session/update` for a human.
+//
+// This is not the dialect parser ADR 0015 forbids in `cli/`: ACP is the
+// protocol every supported runtime now speaks, not a vendor's format, and the
+// alternative is a CLI that shows nothing. The rendering deliberately matches
+// the stream-json path above — assistant text plain, tool calls in cyan — so
+// a gemini conversation and a claude one read the same in a terminal.
+func formatACPLine(line string) string {
+	var msg struct {
+		Method string `json:"method"`
+		Params struct {
+			Update map[string]any `json:"update"`
+		} `json:"params"`
+	}
+	if json.Unmarshal([]byte(line), &msg) != nil || msg.Method != "session/update" {
+		return ""
+	}
+
+	update := msg.Params.Update
+	kind, _ := update["sessionUpdate"].(string)
+
+	switch kind {
+	case "agent_message_chunk":
+		return acpContentText(update)
+
+	case "agent_thought_chunk":
+		// Thinking is dimmed rather than dropped: it is often the only output
+		// a long tool-heavy turn produces, and a silent terminal reads as a
+		// hung agent.
+		if text := acpContentText(update); text != "" {
+			return "\x1b[2m" + text + "\x1b[0m"
+		}
+
+	case "tool_call":
+		title, _ := update["title"].(string)
+		if title == "" {
+			title, _ = update["kind"].(string)
+		}
+		return "\n\x1b[36m[" + title + "]\x1b[0m\n"
+
+	case "tool_call_update":
+		// Only terminal statuses: in-flight updates carry progress, and a line
+		// per `in_progress` would bury the agent's own words.
+		status, _ := update["status"].(string)
+		switch status {
+		case "failed":
+			return "\x1b[31m  ✗ " + status + "\x1b[0m\n"
+		case "completed", "cancelled":
+			return "\x1b[2m  ✓ " + status + "\x1b[0m\n"
+		}
+	}
+
+	return ""
+}
+
+// acpContentText pulls the text out of an update's `content` block, which ACP
+// shapes as `{"type": "text", "text": "..."}`.
+func acpContentText(update map[string]any) string {
+	content, ok := update["content"].(map[string]any)
+	if !ok {
+		return ""
+	}
+	text, _ := content["text"].(string)
+	return text
+}
+
 func formatStreamJSONLine(line string) string {
 	var msg map[string]any
 	if json.Unmarshal([]byte(line), &msg) != nil {
