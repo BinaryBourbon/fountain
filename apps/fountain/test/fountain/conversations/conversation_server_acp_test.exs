@@ -186,6 +186,36 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
       assert event.data =~ "the answer"
     end
 
+    # #724: the refusal used to go to `stderr`, the one stream a protocol
+    # client filters out — so an editor (and anyone reading `?streams=acp,stage`)
+    # had no way to know the agent was answering on a different model than the
+    # one configured. A stage event reaches every surface.
+    test "a refused model becomes a stage event, and the turn continues", %{
+      conv: conv,
+      pid: pid,
+      ref: ref
+    } do
+      send(pid, {:acp, ref, {:model_rejected, "claude-sonnet-4-6", "Invalid value for model"}})
+
+      # handle_info is async; a sync call flushes the mailbox so the read below
+      # sees the event rather than racing it.
+      _ = :sys.get_state(pid)
+
+      stage =
+        conv.id
+        |> Conversations._unsafe_list_log_events()
+        |> Enum.find(&(&1.kind == "stage" and &1.stage == "model"))
+
+      assert stage, "the refusal never reached the transcript as a stage event"
+      assert stage.state == "failed"
+      assert stage.data =~ "claude-sonnet-4-6"
+      assert stage.data =~ "Invalid value for model"
+
+      # And the turn is still alive: a model we could not pin is not worth
+      # failing a turn over.
+      assert Process.alive?(pid)
+    end
+
     test "the stop reason ends the turn and closes stdin", %{conv: conv, pid: pid, ref: ref} do
       prompt_id = drive_to_prompt(pid, ref)
 

@@ -128,7 +128,17 @@ func (a *Agent) followTurn(ctx context.Context, sess Session, head string) (any,
 		case ev.Kind == "stage":
 			out, terminal := classifyStage(ev)
 			if !terminal {
-				a.log.Debug("stage", "stage", ev.Stage, "state", ev.State)
+				// A refused model is the one non-terminal stage worth raising:
+				// the turn continues on the runtime's default, so the editor
+				// would otherwise have no way to know a different model
+				// answered (#724).
+				if ev.Stage == "model" && ev.State == "failed" {
+					meta := decodeMeta(ev.Data)
+					a.log.Warn("the runtime refused the agent's model; its default is in use",
+						"requested", meta["requested"], "detail", meta["detail"])
+				} else {
+					a.log.Debug("stage", "stage", ev.Stage, "state", ev.State)
+				}
 				return false, nil
 			}
 			outcome = out

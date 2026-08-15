@@ -556,8 +556,11 @@ defmodule Fountain.Runtimes.ACP.PeerTest do
         }) <> "\n"
       )
 
-      assert_receive {:acp, _ref, {:lines, "stderr", msg}}
-      assert msg =~ "could not select model"
+      # Reported as a structured event, not an stderr line: stderr is the one
+      # stream `?streams=acp,stage` and `fountain acp` both drop, so the
+      # warning was invisible to protocol clients (#724).
+      assert_receive {:acp, _ref, {:model_rejected, "not-a-real-model", detail}}
+      assert detail =~ "Invalid value for config option model"
 
       # The turn still runs.
       assert %{"method" => "session/prompt"} = next_write()

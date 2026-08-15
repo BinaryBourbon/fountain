@@ -76,6 +76,7 @@ defmodule Fountain.Runtimes.ACP.Peer do
   @type payload ::
           {:lines, stream :: String.t(), data :: String.t()}
           | {:session, String.t()}
+          | {:model_rejected, requested :: String.t(), detail :: String.t()}
           | {:handshake_ms, non_neg_integer(), method :: String.t()}
           | {:done, stop_reason :: String.t()}
           | {:failed, term()}
@@ -237,13 +238,16 @@ defmodule Fountain.Runtimes.ACP.Peer do
 
   # A model we could not pin is not worth failing a turn over — but it is worth
   # the tenant seeing, because the alternative is their agent quietly running a
-  # model they did not choose. It lands in the transcript as ordinary output.
+  # model they did not choose.
+  #
+  # Reported upward rather than written to `stderr` (#724). stderr is the one
+  # stream every protocol client filters out: `?streams=acp,stage` drops it,
+  # and `fountain acp` treats it as the adapter's own noise. So the warning was
+  # invisible to exactly the surfaces that had no other way to know — the
+  # server turns this into a stage event, which every surface renders.
   defp handle_message({:error_response, _id, error}, %State{phase: :setting_model} = state) do
     state
-    |> persist("stderr", [
-      "fountain: could not select model #{state.model} over ACP (#{inspect(error)}); ",
-      "the runtime's default is in use for this turn\n"
-    ])
+    |> report_model_rejected(error)
     |> send_prompt()
   end
 
@@ -590,6 +594,18 @@ defmodule Fountain.Runtimes.ACP.Peer do
       {:error, reason} -> fail(state, {:acp_write_failed, reason})
     end
   end
+
+  defp report_model_rejected(state, error) do
+    report(state, {:model_rejected, state.model, error_detail(error)})
+    state
+  end
+
+  # Adapters put the useful sentence in different places: claude's is under
+  # `data.details` ("Invalid value for config option model: …"), while the
+  # top-level `message` is a generic "Internal error". Prefer the specific one.
+  defp error_detail(%{"data" => %{"details" => details}}) when is_binary(details), do: details
+  defp error_detail(%{"message" => message}) when is_binary(message), do: message
+  defp error_detail(other), do: inspect(other)
 
   defp persist(state, stream, iodata) do
     report(state, {:lines, stream, IO.iodata_to_binary(iodata)})

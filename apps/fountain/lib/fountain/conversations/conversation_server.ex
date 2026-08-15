@@ -1282,6 +1282,27 @@ defmodule Fountain.Conversations.ConversationServer do
     {:noreply, %{new_state | stream_tracer: tracer}}
   end
 
+  # The runtime refused the agent's model. Published as a stage event so it
+  # reaches every surface — the conversation view, the API, the CLI and an
+  # editor's log — rather than only the `stderr` stream, which is the one
+  # thing a protocol client filters out (#724). The turn continues on the
+  # runtime's default, which is the peer's call and the right one mid-turn;
+  # what changes here is that nobody has to guess which model answered.
+  def handle_info(
+        {:acp, ref, {:model_rejected, requested, detail}},
+        %{current_command_ref: ref} = state
+      ) do
+    Logger.warning("conv #{state.conversation_id}: runtime refused model #{requested}: #{detail}")
+
+    publish_stage(state.conversation_id, "model", "failed", %{
+      requested: requested,
+      detail: detail,
+      using: "the runtime's default for this turn"
+    })
+
+    {:noreply, state}
+  end
+
   # `session/new` chose an id. Persisted immediately, exactly as the legacy path
   # persists one before spawning: it is what the next turn resumes by, and a
   # server restart between here and the end of the turn must not lose it.
