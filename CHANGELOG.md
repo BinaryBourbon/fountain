@@ -16,6 +16,18 @@ upgrade, is in
 
 ## [Unreleased]
 
+## [0.10.1] — 2026-08-15
+
+### Added
+
+- **`fountain acp --vault <name-or-id>`** attaches a vault to every
+  conversation an editor entry opens. Vault values override the agent's
+  environment, so this is where a secret belonging to *that entry* goes —
+  an identity the agent posts under, a token scoped to one workspace. Two
+  entries pointing at the same agent stay separate; the same secret in a
+  shared environment would be used by every agent attached to it, which
+  is a good way to have one agent publish under another's name.
+
 ## [0.10.0] — 2026-08-15
 
 ### Upgrade notes
