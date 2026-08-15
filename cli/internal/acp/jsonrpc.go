@@ -82,7 +82,8 @@ type Conn struct {
 	out io.Writer
 	log *slog.Logger
 
-	mu sync.Mutex // guards out
+	mu       sync.Mutex // guards out
+	inflight sync.WaitGroup
 }
 
 // NewConn wires a connection to the given streams. For `fountain acp` these
@@ -98,6 +99,18 @@ func NewConn(in io.Reader, out io.Writer, log *slog.Logger) *Conn {
 // A closed stdin is how an editor says "we're done" — it is a clean exit, not
 // an error. Serve returns nil for it, and for a cancelled context.
 func (c *Conn) Serve(ctx context.Context, h Handler) error {
+	// Handlers run on their own goroutines (see dispatch). When Serve ends —
+	// the editor closed stdin, or the process was signalled — their context is
+	// cancelled first, so a `session/prompt` blocked on a stream stops reading
+	// one nobody is listening to, and then we wait for them rather than
+	// returning while goroutines still hold the output pipe. The turn itself
+	// keeps running server-side; that is the whole point of Fountain.
+	hctx, cancel := context.WithCancel(ctx)
+	defer func() {
+		cancel()
+		c.inflight.Wait()
+	}()
+
 	for {
 		if err := ctx.Err(); err != nil {
 			return nil
@@ -105,7 +118,7 @@ func (c *Conn) Serve(ctx context.Context, h Handler) error {
 
 		line, err := c.in.ReadString('\n')
 		if len(line) > 0 {
-			c.dispatch(ctx, h, line)
+			c.dispatch(hctx, h, line)
 		}
 		if err != nil {
 			if errors.Is(err, io.EOF) {
@@ -148,8 +161,18 @@ func (c *Conn) dispatch(ctx context.Context, h Handler, line string) {
 		h.Notify(ctx, msg.Method, msg.Params)
 
 	default:
-		result, err := h.Request(ctx, msg.Method, msg.Params)
-		c.respond(msg, result, err)
+		// Each request runs on its own goroutine because `session/prompt`
+		// blocks for the whole turn — minutes, sometimes — and a connection
+		// that stopped reading during it would be deaf to exactly the messages
+		// a developer sends when a turn is taking too long: `session/cancel`
+		// (#704), or a prompt in another session. Responses may then be
+		// written out of order, which JSON-RPC allows: the id correlates them.
+		c.inflight.Add(1)
+		go func() {
+			defer c.inflight.Done()
+			result, err := h.Request(ctx, msg.Method, msg.Params)
+			c.respond(msg, result, err)
+		}()
 	}
 }
 

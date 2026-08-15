@@ -148,8 +148,10 @@ works inside a Fountain sandbox, on a checkout that is not yours, and this
 integration declares no filesystem or terminal access to your editor at all.
 Paths it reports are paths inside the sandbox.
 
-Status: in progress. Today the process handshakes and authenticates; the session
-methods that carry a conversation are being built
+Status: in progress. Prompting works — text and images go up, the agent's
+messages, thoughts and tool calls stream back, and the turn ends with a real
+stop reason. Reopening a closed session (`session/load`) and cancelling a
+running turn from the editor are still being built
 ([tracker](https://github.com/BinaryBourbon/fountain/issues/709)).
 
 ## Apply manifests

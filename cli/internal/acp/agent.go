@@ -61,6 +61,7 @@ type Agent struct {
 	sessions *sessions
 
 	mu            sync.Mutex
+	notifier      Notifier
 	initialized   bool
 	authenticated bool
 	negotiated    int
@@ -96,6 +97,8 @@ func (a *Agent) Request(ctx context.Context, method string, params json.RawMessa
 		return a.authenticate(ctx, params)
 	case "session/new":
 		return a.newSession(ctx, params)
+	case "session/prompt":
+		return a.prompt(ctx, params)
 	default:
 		return nil, Errorf(CodeMethodNotFound, "method not found: %s", method)
 	}
@@ -157,13 +160,17 @@ func (a *Agent) initialize(raw json.RawMessage) (any, error) {
 // obliges us to replay a whole conversation as session/update notifications
 // before answering, and an agent that claims it and does not do it leaves an
 // editor showing an empty transcript for a conversation that has one.
-// Prompt capabilities stay false for the same reason — the prompt path is
-// #701 — even though the API behind them already carries images.
+//
+// `image` is true because the prompt path carries images to the API, which has
+// taken them since before this adapter existed. `embeddedContext` stays false:
+// it means the editor may inline a local file's contents, and this agent works
+// on a sandbox's filesystem, so accepting them would be accepting context
+// about a machine the agent cannot see.
 func agentCapabilities() map[string]any {
 	return map[string]any{
 		"loadSession": false,
 		"promptCapabilities": map[string]any{
-			"image":           false,
+			"image":           true,
 			"audio":           false,
 			"embeddedContext": false,
 		},

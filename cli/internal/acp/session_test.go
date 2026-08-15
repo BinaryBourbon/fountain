@@ -15,6 +15,21 @@ type fakeAPI struct {
 	resolved []string
 	created  []string
 	convID   string
+
+	// prompt path
+	head       string
+	headErr    error
+	promptErr  error
+	followErr  error
+	events     []Event
+	prompts    []sentPrompt
+	followFrom []string
+}
+
+type sentPrompt struct {
+	convID string
+	text   string
+	images []Image
 }
 
 func (f *fakeAPI) Agent(_ context.Context, target string) (AgentRef, error) {
@@ -34,6 +49,35 @@ func (f *fakeAPI) CreateConversation(_ context.Context, agentID string) (string,
 		return "conv-1", nil
 	}
 	return f.convID, nil
+}
+
+func (f *fakeAPI) StreamHead(context.Context, string) (string, error) {
+	if f.headErr != nil {
+		return "", f.headErr
+	}
+	return f.head, nil
+}
+
+func (f *fakeAPI) SendPrompt(_ context.Context, convID, text string, images []Image) error {
+	f.prompts = append(f.prompts, sentPrompt{convID: convID, text: text, images: images})
+	return f.promptErr
+}
+
+func (f *fakeAPI) Follow(_ context.Context, _, lastEventID string, fn EventFunc) error {
+	f.followFrom = append(f.followFrom, lastEventID)
+	if f.followErr != nil {
+		return f.followErr
+	}
+	for _, ev := range f.events {
+		stop, err := fn(ev)
+		if err != nil {
+			return err
+		}
+		if stop {
+			return nil
+		}
+	}
+	return nil
 }
 
 func acpAgentRef() AgentRef {
