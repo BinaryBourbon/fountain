@@ -57,6 +57,25 @@ defmodule FountainWeb.ConversationControllerTest do
       assert body["data"]["id"] == conv.id
     end
 
+    # `fountain acp` asks before replaying a conversation an editor handed
+    # back: a legacy-runtime conversation has a transcript, but not one stored
+    # as protocol, so there is nothing a protocol client can render (#703).
+    test "reports whether the runtime speaks ACP", %{conn: conn, user: user, raw_key: raw_key} do
+      acp_agent = insert_agent(user_id: user.id, runtime: "claude")
+      legacy_agent = insert_agent(user_id: user.id, runtime: "gemini")
+
+      acp_conv = insert_conversation(user_id: user.id, agent_id: acp_agent.id, runtime: "claude")
+
+      legacy_conv =
+        insert_conversation(user_id: user.id, agent_id: legacy_agent.id, runtime: "gemini")
+
+      for {conv, expected} <- [{acp_conv, true}, {legacy_conv, false}] do
+        conn = conn |> authed_with_key(raw_key) |> get("/api/conversations/#{conv.id}")
+
+        assert json_response(conn, 200)["data"]["acp"] == expected
+      end
+    end
+
     test "returns 404 when the conversation belongs to a different user", %{
       conn: conn,
       raw_key: raw_key

@@ -99,6 +99,8 @@ func (a *Agent) Request(ctx context.Context, method string, params json.RawMessa
 		return a.newSession(ctx, params)
 	case "session/prompt":
 		return a.prompt(ctx, params)
+	case "session/load":
+		return a.loadSession(ctx, params)
 	default:
 		return nil, Errorf(CodeMethodNotFound, "method not found: %s", method)
 	}
@@ -165,10 +167,10 @@ func (a *Agent) initialize(raw json.RawMessage) (any, error) {
 
 // agentCapabilities is deliberately the smallest honest set.
 //
-// loadSession stays false until the replay path exists (#703): claiming it
-// obliges us to replay a whole conversation as session/update notifications
-// before answering, and an agent that claims it and does not do it leaves an
-// editor showing an empty transcript for a conversation that has one.
+// loadSession is true because the replay exists (#703): the conversation's
+// stored `session/update` notifications are re-emitted before the response.
+// The capability is a promise about ordering as much as ability, which is why
+// it was false until the drain was written.
 //
 // `image` is true because the prompt path carries images to the API, which has
 // taken them since before this adapter existed. `embeddedContext` stays false:
@@ -177,7 +179,7 @@ func (a *Agent) initialize(raw json.RawMessage) (any, error) {
 // about a machine the agent cannot see.
 func agentCapabilities() map[string]any {
 	return map[string]any{
-		"loadSession": false,
+		"loadSession": true,
 		"promptCapabilities": map[string]any{
 			"image":           true,
 			"audio":           false,

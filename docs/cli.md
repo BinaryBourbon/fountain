@@ -158,8 +158,14 @@ after 60 seconds, and the adapter reconnects and resumes from where it left
 off, so a long silence is never mistaken for a finished turn. Cancelling in the
 editor stops the turn.
 
-Status: in progress. Reopening a closed session (`session/load`) is still being
-built ([tracker](https://github.com/BinaryBourbon/fountain/issues/709)).
+Close the editor and reopen it later and the conversation comes back — the
+transcript is replayed from the server, and the next prompt continues the same
+conversation. The work does not live in the editor, which is the reason to run
+an agent here rather than as a local subprocess.
+
+One caveat worth knowing: if the sandbox was reclaimed while you were away, the
+transcript still replays in full but the agent's own memory of it is gone
+([#649](https://github.com/BinaryBourbon/fountain/issues/649)).
 
 ## Apply manifests
 

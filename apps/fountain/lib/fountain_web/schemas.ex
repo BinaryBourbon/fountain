@@ -49,6 +49,15 @@ defmodule FountainWeb.Schemas do
         agent_id: %Schema{type: :string, format: :uuid, nullable: true},
         vault_id: %Schema{type: :string, format: :uuid, nullable: true},
         runtime: %Schema{type: :string, enum: ~w(claude codex gemini opencode)},
+        acp: %Schema{
+          type: :boolean,
+          readOnly: true,
+          description:
+            "Whether this conversation's runtime speaks the Agent Client Protocol. " <>
+              "When true its output is stored as ACP `session/update` notifications on " <>
+              "the `acp` event stream, which is what a protocol client replays; when " <>
+              "false the output is the runtime's own dialect on `stdout`."
+        },
         status: %Schema{
           type: :string,
           enum: ~w(pending running idle failed terminated)
