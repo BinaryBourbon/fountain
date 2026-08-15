@@ -1905,11 +1905,30 @@ defmodule Fountain.ConversationsContextTest do
         :ok
       end)
 
+      before = Fountain.Repo.all(Fountain.Conversations.Sandbox) |> MapSet.new(& &1.id)
+
       assert {:ok, _conv} = Conversations.wake_conversation(conv.id, "hi")
 
-      # No slot held: the old sandbox was retired by the wake, and the row the
-      # loser created for itself is terminated, not pending.
-      assert Fountain.Quotas.active_sandbox_count(user.id) == 0
+      # The row the loser created for itself is terminated, not pending —
+      # which is what #330 is about: a double-click must not strand a quota
+      # slot until the reaper's next pass.
+      created =
+        Fountain.Conversations.Sandbox
+        |> Fountain.Repo.all()
+        |> Enum.reject(&MapSet.member?(before, &1.id))
+
+      assert created != []
+
+      for sandbox <- created do
+        assert sandbox.status == "terminated"
+      end
+
+      # The conversation's *existing* sandbox is deliberately left alone now
+      # (#717). The loser does not know what the winner is running on, and
+      # `wake_conversation`'s reuse arm starts a server against exactly this
+      # sandbox — so retiring it here could terminate the one the winner is
+      # using. The winner retires it if it provisioned a replacement.
+      assert Fountain.Quotas.active_sandbox_count(user.id) == 1
     end
 
     test "the loser forwards its prompt to the winner" do
