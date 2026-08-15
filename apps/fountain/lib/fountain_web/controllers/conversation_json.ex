@@ -58,7 +58,12 @@ defmodule FountainWeb.ConversationJSON do
     %{
       id: s.id,
       sprite_name: s.sprite_name,
-      status: s.status
+      status: s.status,
+      # The sandbox's own HTTP endpoint, for providers that give it one. Read
+      # from the row rather than the provider so listing conversations stays a
+      # single query; null means the provider has no such concept (or the
+      # sandbox predates the field).
+      url: s.provider_meta["public_url"]
     }
   end
 

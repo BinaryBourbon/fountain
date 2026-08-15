@@ -82,8 +82,36 @@ defmodule Fountain.SandboxConformanceCase.Identity do
           caps = @adapter.capabilities()
           assert %MapSet{} = caps
 
-          known = MapSet.new([:suspend, :network_policy, :checkpoint, :attach, :tty])
+          known = MapSet.new([:suspend, :network_policy, :checkpoint, :attach, :tty, :public_url])
           assert MapSet.subset?(caps, known)
+        end
+
+        # The capability is a promise about the answer, not just about the
+        # function existing: an adapter that advertises :public_url must return
+        # a URL, and one that does not must say :unsupported rather than
+        # inventing an address a human would then be sent to.
+        test "public_url/1 agrees with the advertised capability" do
+          name = "conformance-url-#{System.unique_integer([:positive])}"
+          {:ok, handle} = @adapter.create(name, [])
+          on_exit(fn -> @adapter.destroy(handle) end)
+
+          case @adapter.public_url(handle) do
+            {:ok, url} ->
+              assert MapSet.member?(@adapter.capabilities(), :public_url),
+                     "returned a URL without advertising :public_url"
+
+              assert String.starts_with?(url, "http"),
+                     "public_url must be openable, got: #{inspect(url)}"
+
+            {:error, :unsupported} ->
+              refute MapSet.member?(@adapter.capabilities(), :public_url),
+                     "advertises :public_url but answers :unsupported"
+
+            {:error, _other} ->
+              # A provider that is reachable but has no sandbox by that name is
+              # allowed to fail; the capability claim is what is under test.
+              :ok
+          end
         end
       end
     end

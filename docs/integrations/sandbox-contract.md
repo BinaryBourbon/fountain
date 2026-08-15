@@ -42,7 +42,8 @@ every conversation fails at provision time.
 ## What the contract guarantees
 
 - **Capabilities are honest.** Adapters advertise what they can actually do
-  (`:suspend`, `:network_policy`, `:attach`, `:tty`, `:checkpoint`), and the
+  (`:suspend`, `:network_policy`, `:attach`, `:tty`, `:checkpoint`,
+  `:public_url`), and the
   lifecycle degrades accordingly: a provider without `:suspend` destroys on
   idle rather than faking a park — agent memory lives on the sandbox disk,
   and resume-with-a-fresh-disk would be silent data loss.
@@ -54,6 +55,20 @@ every conversation fails at provision time.
   destroyed on a flaky network call.
 - **Network policy means what it says.** For a `limited` environment,
   `allow: []` is deny-all on every provider, never a no-op.
+- **A sandbox URL is real or absent, never a guess.** Providers that give a
+  sandbox its own HTTP endpoint advertise `:public_url`; the URL is stored on
+  the sandbox row, returned as `sandbox.url` on the conversation API, and set
+  inside the sandbox as **`SANDBOX_URL`** so an agent asked "where is it
+  running?" can answer. Providers that expose per-port hostnames instead
+  report `:unsupported` rather than an address that would not resolve.
+
+  On Sprites the endpoint defaults to requiring a platform credential, so
+  Fountain opens it (`url_settings.auth = "public"`) when the sandbox is
+  created — an agent serving a page is doing it for a human who has no such
+  credential. **Anything an agent serves is therefore reachable by anyone with
+  the URL.** Set `config :fountain, :sprites_public_urls, false` to keep the
+  default instead; sandboxes then keep their URLs but only a token holder can
+  open them.
 
 ## Where to go next
 

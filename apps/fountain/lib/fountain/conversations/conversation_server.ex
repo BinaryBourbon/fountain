@@ -58,8 +58,14 @@ defmodule Fountain.Conversations.ConversationServer do
   @doc """
   Send another prompt. If the conversation's GenServer is gone (e.g. server
   restart), transparently wake the conversation — provision a fresh sprite
-  and queue this prompt as the first turn of the new sandbox. claude
-  `--resume` preserves the chat via the persisted runtime_session_id.
+  and queue this prompt as the first turn of the new sandbox.
+
+  The persisted `runtime_session_id` is what the next turn resumes by
+  (`session/resume` under ACP). Note that it only carries the conversation
+  while the *sandbox* survives: a runtime session lives in the sandbox
+  filesystem, so a wake that provisions a fresh sprite resumes against a
+  session that is not there — see #649. `log_events` still render the whole
+  transcript, which is what makes that failure quiet.
   """
   def send_prompt(conv_id, prompt, images \\ [], opts \\ []) do
     result =
@@ -576,7 +582,11 @@ defmodule Fountain.Conversations.ConversationServer do
 
         {state, conv} = rotate_callback_api_key(state, conv)
 
-        sprite_env = build_sprite_env(state, agent, env, secrets)
+        # Looked up once, here, because it is stable for the sandbox's life and
+        # the agent needs it in its environment before the first turn runs.
+        sandbox_url = record_sandbox_url(sandbox, handle)
+
+        sprite_env = build_sprite_env(state, agent, env, secrets, sandbox_url)
 
         write_runtime_config(handle, state.runtime_module, agent)
         Fountain.Conversations.Provisioning.write_env_file(handle, sprite_env)
@@ -925,9 +935,9 @@ defmodule Fountain.Conversations.ConversationServer do
     )
   end
 
-  defp build_sprite_env(state, agent, env, secrets) do
+  defp build_sprite_env(state, agent, env, secrets, sandbox_url \\ nil) do
     state
-    |> do_build_sprite_env(agent, env, secrets)
+    |> do_build_sprite_env(agent, env, secrets, sandbox_url)
     |> tap(fn sprite_env ->
       # Register before anything can log. Provisioning writes output from its
       # very first step, and the secrets are already in the sprite by then.
@@ -935,10 +945,11 @@ defmodule Fountain.Conversations.ConversationServer do
     end)
   end
 
-  defp do_build_sprite_env(state, agent, env, secrets) do
+  defp do_build_sprite_env(state, agent, env, secrets, sandbox_url) do
     (state.runtime_module.default_env(agent, state.inference_credentials) || []) ++
       fountain_callback_env(state.callback_token) ++
       conversation_env(state.conversation_id) ++
+      sandbox_url_env(sandbox_url) ++
       otel_propagation_env() ++
       git_author_env() ++
       if(env,
@@ -946,6 +957,42 @@ defmodule Fountain.Conversations.ConversationServer do
         else: []
       ) ++
       Enum.map(secrets, fn {k, v} -> {k, v} end)
+  end
+
+  # The sandbox's own HTTP endpoint, so an agent asked "what's the URL?" can
+  # answer. Without it the agent has no way to know: the platform assigns the
+  # URL outside the sandbox, and inside it the hostname is just "sprite".
+  #
+  # `SANDBOX_URL` rather than `SPRITE_URL` because the value is provider-
+  # neutral; a provider that has no such endpoint simply sets nothing, and an
+  # unset variable is the honest answer to "no URL".
+  defp sandbox_url_env(nil), do: []
+  defp sandbox_url_env(url) when is_binary(url), do: [{"SANDBOX_URL", url}]
+
+  # Best-effort, and deliberately not fatal: a sandbox with no reportable URL
+  # is still a working sandbox. Stored on the row so the API and the UI can
+  # show it without a provider round trip.
+  defp record_sandbox_url(sandbox, handle) do
+    case Fountain.Sandbox.public_url(handle) do
+      {:ok, url} ->
+        meta = Map.put(sandbox.provider_meta || %{}, "public_url", url)
+        {:ok, _} = Conversations.update_sandbox(sandbox, %{provider_meta: meta})
+        url
+
+      {:error, :unsupported} ->
+        nil
+
+      {:error, reason} ->
+        Logger.warning("could not read the sandbox URL for #{handle.name}: #{inspect(reason)}")
+        nil
+    end
+  rescue
+    # The URL is a convenience; provisioning is not. An adapter that raises
+    # here — a provider SDK surprise, a probe against a sandbox that has not
+    # settled — must not cost the user their conversation.
+    error ->
+      Logger.warning("sandbox URL lookup raised for #{handle.name}: #{inspect(error)}")
+      nil
   end
 
   # Inject the current conversation ID so the bundled fountain skill can
@@ -1855,8 +1902,14 @@ defmodule Fountain.Conversations.ConversationServer do
       case state.runtime_session_id do
         nil ->
           # Generate one and persist immediately so a server restart can resume.
-          # claude uses --session-id <X> verbatim, so this is the value claude
-          # will know us by; turn 2+ will pass --resume <X>.
+          # Under ACP this value is a placeholder, not an identity: the spec
+          # makes the *agent* mint the session id, so `session/new` proposes
+          # nothing and the id that comes back overwrites this one (see the
+          # `{:acp, ref, {:session, id}}` handler). What the row still buys is
+          # the `mode` decision above — a persisted id means "a turn has
+          # happened", which is the only thing gemini's legacy `--resume`
+          # needs, since `Gemini.build_command/5` ignores the id and re-enters
+          # the most recent conversation in the workspace.
           new_id = Ecto.UUID.generate()
           {:ok, _} = Conversations.update_conversation(conv, %{runtime_session_id: new_id})
           new_id
@@ -1865,11 +1918,15 @@ defmodule Fountain.Conversations.ConversationServer do
           existing
       end
 
-    # 0014 gate 2: when the agent has opted in and its runtime is one gate 1
-    # cleared, the turn spawns an ACP adapter instead of the CLI. Everything
-    # about the turn — the prompt, the images, the session id, the mode —
-    # travels over the protocol rather than in argv, so `build_command/5` is
-    # not consulted at all on this path.
+    # 0014: a supported runtime spawns an ACP adapter instead of the CLI, and
+    # everything about the turn — the prompt, the images, the session id, the
+    # mode — travels over the protocol rather than in argv, so
+    # `build_command/5` is not consulted at all on this path. There is no
+    # opt-in left to check: gate 4 deleted the legacy spawn path for claude,
+    # codex and opencode along with the per-agent flag, so `acp?` is a
+    # property of `conv.runtime` alone. The `else` branch survives for gemini,
+    # the one runtime held back (#659), and for it the CLI is not a fallback —
+    # it is the only path.
     {cmd, args, build_opts} =
       if acp? do
         {c, a} = Fountain.Runtimes.ACP.command(conv.runtime)

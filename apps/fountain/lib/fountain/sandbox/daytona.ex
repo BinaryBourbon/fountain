@@ -76,6 +76,12 @@ defmodule Fountain.Sandbox.Daytona do
   end
 
   @impl true
+  # Daytona exposes per-port hostnames rather than one sandbox URL, and nothing here
+  # asks it to open a port yet. Reporting a guess would send someone to an
+  # address that does not answer, which is worse than reporting nothing.
+  def public_url(%Handle{}), do: {:error, :unsupported}
+
+  @impl true
   def get(%Handle{name: name}) do
     case Api.get_sandbox(name) do
       {:ok, info} -> {:ok, %{status: normalize_state(info), raw: info}}

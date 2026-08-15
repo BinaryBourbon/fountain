@@ -36,7 +36,9 @@ defmodule Fountain.Sandbox.Sprites do
 
   @impl true
   def capabilities do
-    MapSet.new([:suspend, :network_policy, :attach, :tty] ++ checkpoint_capabilities())
+    MapSet.new(
+      [:suspend, :network_policy, :attach, :tty, :public_url] ++ checkpoint_capabilities()
+    )
   end
 
   defp checkpoint_capabilities do
@@ -58,6 +60,7 @@ defmodule Fountain.Sandbox.Sprites do
 
     case Sprites.create(client, name, opts) do
       {:ok, %Sprites.Sprite{} = sprite} ->
+        open_url(sprite)
         {:ok, wrap(sprite)}
 
       # The sprite already exists — adopt it. Names are unique per token and
@@ -68,6 +71,44 @@ defmodule Fountain.Sandbox.Sprites do
 
       {:error, reason} ->
         {:error, Errors.normalize(reason)}
+    end
+  end
+
+  @impl true
+  @spec public_url(Handle.t()) :: {:ok, String.t()} | {:error, :unsupported | term()}
+  def public_url(%Handle{} = handle) do
+    client = Client.get!()
+
+    case Sprites.get_sprite(client, handle.name) do
+      {:ok, %{"url" => url}} when is_binary(url) and url != "" -> {:ok, url}
+      {:ok, _no_url} -> {:error, :unsupported}
+      {:error, reason} -> {:error, Errors.normalize(reason)}
+    end
+  end
+
+  # Sprites hands every sandbox a URL, but `url_settings.auth` defaults to
+  # `sprite` — reachable only with a platform credential, which the person the
+  # agent is talking to does not have. An agent that starts a web server is
+  # doing it for a human to open, so the URL is made public at create time.
+  #
+  # Best-effort by design: a sandbox that provisions but cannot be made public
+  # is still a working sandbox, and failing the whole conversation over the
+  # URL setting would trade a large capability for a small one. The log line
+  # is what makes the degraded case visible.
+  defp open_url(sprite) do
+    if Application.get_env(:fountain, :sprites_public_urls, true) do
+      case Sprites.update_url_settings(sprite, %{auth: "public"}) do
+        :ok ->
+          :ok
+
+        {:error, reason} ->
+          Logger.warning(
+            "sprites: could not make #{sprite.name}'s URL public " <>
+              "(#{inspect(reason)}); it will only be reachable with a platform token"
+          )
+
+          :ok
+      end
     end
   end
 
