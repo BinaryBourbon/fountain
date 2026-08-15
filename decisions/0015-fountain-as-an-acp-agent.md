@@ -1,10 +1,23 @@
 # 0015 — Fountain as an ACP agent, reachable from a code editor
 
-**Status:** Proposed — **nothing described here is built.** No ACP code exists
-in this repo. This is the second of two ADRs about the Agent Client Protocol
-and covers the opposite direction from
-[0014](0014-agent-client-protocol.md); the PR that builds each gate removes
-its caveat.
+**Status:** Accepted — **gates 1–3 are built.** `fountain acp` exists in
+`cli/internal/acp`, and an editor can open a conversation on a Fountain agent,
+prompt it, watch it stream, cancel it, and reopen it later
+([#709](https://github.com/BinaryBourbon/fountain/issues/709): gate 1 in
+#710/#711/#712, gate 2 in #713/#714/#715, gate 3 in #718 and the PR carrying
+this line). **Gate 4 — permission forwarding — is not built** and remains
+blocked on #643; the *Consequences* section below states what it needs first.
+
+This is the second of two ADRs about the Agent Client Protocol and covers the
+opposite direction from [0014](0014-agent-client-protocol.md).
+
+What the build changed about the design as written, all recorded in the gates
+below: the ACP session id **is** the conversation id rather than a minted one,
+because an editor must be able to hand back an id from last week; the sandbox
+paths in `tool_call.locations` are removed rather than labelled, because the
+protocol has no way to say "this path is on another machine"; and the adapter
+turned out to be a forwarder rather than a translator, which is the best case
+this ADR hoped for from 0014 and the reason it stayed small.
 
 ## Context
 
@@ -198,15 +211,36 @@ land in `cli/`.**
 
 ### Gates
 
-1. **Transcript-only prototype, one runtime.** `fountain acp` renders a live
-   remote conversation in a real editor: message chunks, thoughts, tool calls
-   with status. No `fs/*`, no `terminal/*`. Proves the shape end to end.
-2. **Session lifecycle.** `session/load`, `session/cancel`, correct stop
-   reasons, and survival across a dropped SSE connection — reattaching to a
-   turn that kept running is the entire pitch, so it is a gate, not a polish
-   item.
-3. **Auth and distribution.** `authMethods`, editor config snippets, docs.
-4. **Permission forwarding** — blocked on 0014 gate 3. See below.
+1. ~~**Transcript-only prototype, one runtime.**~~ **Built.** `fountain acp`
+   renders a live remote conversation: message chunks, thoughts, tool calls
+   with status. No `fs/*`, no `terminal/*`. Verified against prod, not only in
+   tests — the run returned a tool call and a real stop reason.
+2. ~~**Session lifecycle.**~~ **Built.** `session/load`, `session/cancel`,
+   stop reasons taken from the sandbox's own adapter, and survival across a
+   dropped SSE connection. Verified live: a cancel answered a blocked prompt
+   with `cancelled` in 0.1s, and a load replayed 31 updates before responding.
+3. ~~**Auth and distribution.**~~ **Built.** `authMethods`, the editor page in
+   `docs/integrations/editors.md`, and the event stream documented as the
+   interface it now is (#707).
+4. **Permission forwarding** — not built, blocked on 0014 gate 3 (#643). See
+   below.
+
+**Two things found by running gates 1–3 against production, which the tests
+could not see.** Both are worth keeping here because they are properties of
+this design, not accidents. The filtered *replay* of the event stream had
+never included the `acp` stream, so `session/load` returned an empty
+transcript and every mid-turn reconnect silently dropped what it missed
+(#716) — a proxy that forwards stored events depends on the store's filter as
+much as on the protocol. And a lost wake race leaves a conversation pointing
+at a sandbox it just terminated (#717), which this adapter reproduces on every
+session because `session/new` and the first `session/prompt` arrive a second
+apart.
+
+**On the remote transport, which this gate said to revisit:** ACP's own
+introduction still documents it as work in progress, and nothing in the build
+argued for waiting. The local process kept earning its place — it is where
+`fountain auth login`'s credentials already are, and where the instance and
+profile are chosen.
 
 ## Consequences
 

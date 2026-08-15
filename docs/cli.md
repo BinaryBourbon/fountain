@@ -131,41 +131,13 @@ the protocol and nothing else; diagnostics go to stderr, which is where to look
 first when an editor reports a problem.
 
 `--agent` names the Fountain agent that sessions run: the protocol has no field
-for it, so it is configured on the command line. Add one editor entry per agent
-you want to reach. Each session the editor opens creates its own conversation
-for that agent.
+for it, so it is configured on the command line, one editor entry per agent.
+Credentials are the ones `fountain auth login` already saved, and `--profile`
+selects the instance.
 
-It authenticates with the same credentials as every other command
-(`FOUNTAIN_API_KEY`, then the active profile), so `fountain auth login` is the
-only setup step. `--profile` selects the instance.
-
-Agents whose runtime does not speak ACP are refused when the editor opens a
-session, with the runtime named — today that is `gemini`. Use those from the web
-UI or `fountain run`.
-
-**What it is not:** a way for a remote agent to edit your local files. The agent
-works inside a Fountain sandbox, on a checkout that is not yours, and this
-integration declares no filesystem or terminal access to your editor at all.
-
-Tool calls name files in the sandbox, so those paths are deliberately not sent
-as editor-clickable locations — clicking one would open the wrong file on your
-machine, or nothing. The file a tool touched is still named in the tool call
-itself, and the full paths travel under `_meta.fountain.sandboxLocations` for
-clients that know what to do with a remote path.
-
-A turn survives a dropped connection: the server closes an idle SSE stream
-after 60 seconds, and the adapter reconnects and resumes from where it left
-off, so a long silence is never mistaken for a finished turn. Cancelling in the
-editor stops the turn.
-
-Close the editor and reopen it later and the conversation comes back — the
-transcript is replayed from the server, and the next prompt continues the same
-conversation. The work does not live in the editor, which is the reason to run
-an agent here rather than as a local subprocess.
-
-One caveat worth knowing: if the sandbox was reclaimed while you were away, the
-transcript still replays in full but the agent's own memory of it is gone
-([#649](https://github.com/BinaryBourbon/fountain/issues/649)).
+**[Editors (ACP)](integrations/editors.md)** has the setup, the editor config
+snippets, and the limits worth knowing before you start — chief among them that
+the agent works on a sandbox's files, not the ones open in your editor.
 
 ## Apply manifests
 

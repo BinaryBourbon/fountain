@@ -46,6 +46,7 @@ defmodule Fountain.Docs do
     {"Integrations",
      [
        {"Overview", "integrations/index.md"},
+       {"Editors (ACP)", "integrations/editors.md"},
        {"GitHub OAuth", "integrations/github-oauth.md"},
        {"Stripe", "integrations/stripe.md"},
        {"Sentry", "integrations/sentry.md"},
