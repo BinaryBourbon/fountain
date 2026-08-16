@@ -1,11 +1,11 @@
 ---
 type: ADR
 title: "Buzz as a client of the ACP gateway: hosted harness + brokered signing"
-description: "Fountain hosts the Buzz harness and brokers the Buzz Nostr signature at the gateway, so the sandbox holds neither the relay connection nor the identity key. Nothing here is built."
+description: "Fountain hosts the Buzz harness and brokers the Buzz Nostr signature at the gateway, so the sandbox holds neither the relay connection nor the identity key. Phases 1-3 are built and ship in the image; PDP gating of publishes and the mem/thread tools are not."
 tags: [acp, buzz, nostr, gateway]
-status: draft
+status: stable
 adr: "0020"
-adr_status: "Proposed"
+adr_status: "Accepted"
 date: 2026-08-16
 generated: { by: human:jhgaylor, at: 2026-08-16T00:08:11-04:00 }
 verified: { by: human:jhgaylor, at: 2026-08-16T00:08:11-04:00 }
@@ -14,11 +14,26 @@ stale_after: 2026-11-16
 
 # 0020 — Buzz as a client of the ACP gateway: hosted harness + brokered signing
 
-**Status:** Proposed — **nothing here is built.** No hosted-harness supervisor,
-no Buzz signer, and no `buzz-backend-fountain` provider exist in this repo. This
-ADR records a direction and the gates that decide whether we take it; the PR
-that builds each gate removes the caveat on that section. The starting commit is
-tagged `pre-buzz-gateway` (last commit before any of this work).
+**Status:** Accepted — **Phases 1–3 are built.** The hosted-harness supervisor
+(Phase 1, [#739](https://github.com/BinaryBourbon/fountain/pull/739)/[#740](https://github.com/BinaryBourbon/fountain/pull/740)/[#742](https://github.com/BinaryBourbon/fountain/pull/742)),
+the Fountain-hosted signer and its `buzz_*` MCP tools (Phase 2,
+[#750](https://github.com/BinaryBourbon/fountain/pull/750)–[#752](https://github.com/BinaryBourbon/fountain/pull/752),
+[#756](https://github.com/BinaryBourbon/fountain/pull/756)), and the
+`buzz-backend-fountain` provider (Phase 3,
+[#753](https://github.com/BinaryBourbon/fountain/pull/753)/[#755](https://github.com/BinaryBourbon/fountain/pull/755))
+all exist and ship in the image; the integration self-enables on any prod image
+carrying the `buzz-acp` binary. User-facing docs are at
+[`integrations/buzz.md`](https://github.com/BinaryBourbon/fountain/blob/main/docs/integrations/buzz.md).
+The starting commit is tagged `pre-buzz-gateway`.
+
+> **Status update — 2026-08-16.** This block previously read "nothing here is
+> built," and the per-section caveats promised to lift as each gate landed were
+> never removed — so the ADR asserted the whole integration was unbuilt while
+> the code shipped it. Corrected here. **Two things this ADR describes as part of
+> the plan are still *not* built, and must not be read as done:** the
+> **PDP/governance _gating_** of publishes — they are **audited, not**
+> allowed/denied/escalated (see the corrected *Consequences* bullet) — and the
+> **`mem`/thread MCP tools**; only `buzz_send_message` and `buzz_react` exist.
 
 This is the first ADR about integrating with a *specific* external client
 ([block/buzz](https://github.com/block/buzz)) rather than a protocol. It sits on
@@ -150,9 +165,13 @@ without it.
   lives in a vault, decrypted only server-side; the sandbox holds neither key nor
   relay connection for the brokered path. This is the 0019 inversion applied to
   Nostr: the sandbox becomes untrusted with respect to the agent's identity.
-- **Every Buzz publish becomes governable.** Phase 2 routes replies through the
-  PDP and the audit trail — the first time Fountain can see and gate what an
-  agent says on Nostr, not just what it ran.
+- **Every Buzz publish becomes visible.** Phase 2 routes replies through a
+  Fountain-hosted tool, so each publish is recorded in the audit trail
+  (`buzz.published` — the tool and channel, never the content) — the first time
+  Fountain can see what an agent says on Nostr, not just what it ran. **As
+  built, this is audit only:** the publish path does **not** call a PDP and
+  cannot allow/deny/escalate a message. Routing publishes through the PDP (0016)
+  so they can be *gated*, not just logged, remains future work.
 - **We inherit Buzz's protocol quirks and must not fight them.** `buzz-acp`
   auto-answers `session/request_permission` by selecting the `allow_once` option
   — Buzz-the-client is never a human escalation surface, so any human approval
@@ -198,14 +217,20 @@ without it.
 
 1. **Phase 1 spike (done, 2026-08-15).** `buzz-acp` off the desktop drives
    `fountain acp` end-to-end; inbound proven live, the outbound gap measured.
-2. **Phase 1 supervisor.** A Fountain-managed process that starts/stops/heals a
+2. **Phase 1 supervisor. Built** ([#740](https://github.com/BinaryBourbon/fountain/pull/740)).
+   A Fountain-managed process that starts/stops/heals a
    `buzz-acp` per (agent × identity) from vault-held env, with presence surviving
    sandbox suspend. Owns pinning and the amd64 constraint. *Decided 2026-08-16:
    lives **inside the Fountain OTP app** (DynamicSupervisor + per-identity
    GenServer running `buzz-acp` as a Port), not a separate sidecar.*
-3. **Phase 2 signer.** HTTP-MCP `buzz_*` tools with the key server-side, a
-   base-prompt override, and PDP + audit hooks on every publish. *Decided
+3. **Phase 2 signer. Built** ([#750](https://github.com/BinaryBourbon/fountain/pull/750)–[#752](https://github.com/BinaryBourbon/fountain/pull/752)).
+   HTTP-MCP `buzz_*` tools with the key server-side and a base-prompt override;
+   **every publish is audited** (`buzz.published`). *Decided
    2026-08-16: go straight to native tools; the interim sandbox shim is skipped.*
-4. **Phase 3 provider (optional).** `buzz-backend-fountain` in `cli/` mapping
+   **Not built as worded:** the PDP allow/deny/escalate *gate* on publishes
+   (audit only, no gate), and the `mem`/thread tools — only `buzz_send_message`
+   and `buzz_react` ship.
+4. **Phase 3 provider (optional). Built** ([#753](https://github.com/BinaryBourbon/fountain/pull/753)/[#755](https://github.com/BinaryBourbon/fountain/pull/755)).
+   `buzz-backend-fountain` in `cli/` mapping
    Buzz's `deploy` onto the Phase 1 supervisor; conforms to block/buzz's
    remote-agents [L1]/[L2] checklist and documents its own binding.
