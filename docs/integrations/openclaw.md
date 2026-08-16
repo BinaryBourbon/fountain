@@ -95,7 +95,27 @@ OpenClaw runs on Node — it requires **Node ≥ 22.22.3** (or ≥ 24.15 / ≥ 2
     }
     ```
 
-4. Spawn it from a channel, or bind a channel to it:
+4. Give OpenClaw an agent of its own that runs on that entry. The block above
+   is acpx's *harness alias*; OpenClaw's routing, `sessions_spawn` and channel
+   bindings address an **OpenClaw agent id**, and the two are tied together
+   with `runtime.type: "acp"`. Same name in both places keeps it readable:
+
+    ```json5
+    acp: { enabled: true, backend: "acpx" },
+    agents: {
+      list: [
+        { id: "fountain",
+          runtime: { type: "acp",
+                     acp: { agent: "fountain", backend: "acpx", mode: "persistent" } } }
+      ]
+    }
+    ```
+
+    `mode: "persistent"` matters — see the two-conversations note under
+    Limits. If you have set `acp.allowedAgents`, add `"fountain"` to it; an
+    empty list means no restriction.
+
+5. Spawn it from a channel, or bind a channel to it:
 
     ```
     /acp spawn fountain
@@ -108,6 +128,17 @@ OpenClaw runs on Node — it requires **Node ≥ 22.22.3** (or ≥ 24.15 / ≥ 2
         match: { channel: "discord", peer: { kind: "channel", id: "…" } } }
     ]
     ```
+
+    A binding routes the channel straight to the harness — no OpenClaw model
+    is involved. The other front doors — `sessions_spawn(runtime: "acp",
+    agentId: "fountain")` from a turn, or `openclaw agent --agent fountain` —
+    go through OpenClaw's own model first, which then delegates; those need
+    OpenClaw's model provider configured, the harness never does. Thread-bound
+    bindings also need the channel's thread bindings enabled
+    (`session.threadBindings`, and per adapter e.g.
+    `channels.discord.threadBindings.spawnSessions`) — OpenClaw's
+    [ACP agents](https://docs.openclaw.ai/tools/acp-agents) page has the
+    per-channel detail.
 
 ### Per-entry secrets
 
@@ -151,16 +182,21 @@ two entries stay separate even when they point at the same agent.
   above — an OpenClaw channel is not asked to approve a tool call
   ([#643](https://github.com/BinaryBourbon/fountain/issues/643),
   [#708](https://github.com/BinaryBourbon/fountain/issues/708)).
-- **A gateway spawn opens two conversations, and uses one.** OpenClaw's
-  `sessions_spawn(runtime: "acp", mode: "run")` asks acpx to ensure the session
-  twice — once when the spawn is initialised, once when the turn runs — and in
-  one-shot mode acpx answers each with a fresh `session/new`. On Fountain that
-  is two conversations per spawn, each with a provisioned sandbox; the first is
-  never prompted and sits `pending` until the idle reaper parks it. This is
-  OpenClaw/acpx behaviour, not something the adapter can prevent
-  ([#760](https://github.com/BinaryBourbon/fountain/issues/760)). Sessions
-  bound to a channel thread (`mode: "session"`) reuse their record and do not
-  pay this.
+- **The model, and thinking level, are the Fountain agent's.** OpenClaw's
+  `--model`, `sessions_spawn`'s `model`/`thinking`, and the `/acp` model
+  controls are accepted and ignored — a Fountain agent's model is set on the
+  agent and shared by every conversation it runs. Change it there. (OpenClaw's
+  own docs say the same for any harness without `session/set_model`.)
+- **A one-shot spawn opens two conversations, and uses one.** OpenClaw ensures
+  the acpx session twice — when the spawn is initialised and again when the
+  turn runs — and in `oneshot` mode acpx answers each with a fresh
+  `session/new`. On Fountain that is two conversations per spawn, each with a
+  provisioned sandbox; the first is never prompted and sits `pending` until
+  the idle reaper parks it. This is OpenClaw/acpx behaviour, not something the
+  adapter can prevent
+  ([#760](https://github.com/BinaryBourbon/fountain/issues/760)). Set
+  `mode: "persistent"` (as in Setup) — a persistent session reuses its record
+  and pays this once per channel thread, not once per message.
 - **A reclaimed sandbox loses the agent's memory.** If a conversation's sandbox
   was reclaimed while you were away, resuming still replays the full transcript,
   but the agent itself does not remember it
@@ -183,6 +219,12 @@ the real acpx (0.11.2) and OpenClaw (2026.7.1) — with the brain pushing its
 model and a `thinking` level at the harness on the way, which is the case that
 used to abort the turn ([#759](https://github.com/BinaryBourbon/fountain/issues/759),
 [#760](https://github.com/BinaryBourbon/fountain/issues/760)).
+
+When you test through `openclaw agent` or a prompt that should delegate, check
+that the harness actually ran: OpenClaw's own model will happily answer a
+"reply with X" prompt itself and report success. The tell is a `sessions_spawn`
+call in the tool summary and a new conversation on the Fountain agent —
+`fountain conv list` shows it, with the turn, from the Fountain side.
 
 If a session does not start, `fountain acp` writes the protocol to stdout and
 **everything else to stderr**, which is where OpenClaw's `acpx` log shows it.
