@@ -927,7 +927,9 @@ if config_env() == :prod do
     config :fountain, :buzz_acp_path, buzz_acp_path
   end
 
-  config :fountain, :fountain_cli_path, System.get_env("FOUNTAIN_CLI_PATH", "/usr/local/bin/fountain")
+  config :fountain,
+         :fountain_cli_path,
+         System.get_env("FOUNTAIN_CLI_PATH", "/usr/local/bin/fountain")
 
   config :fountain,
          :buzz_acp_base_url,
