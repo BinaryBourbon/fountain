@@ -13,11 +13,11 @@ defmodule Fountain.Buzz.BootSweepTest do
     File.chmod!(fake, 0o755)
 
     prev_path = Application.get_env(:fountain, :buzz_acp_path)
-    prev_url = Application.get_env(:fountain, :public_base_url)
+    prev_url = Application.get_env(:fountain, :buzz_acp_base_url)
 
     on_exit(fn ->
       restore(:buzz_acp_path, prev_path)
-      restore(:public_base_url, prev_url)
+      restore(:buzz_acp_base_url, prev_url)
 
       for {_, pid, _, _} <- Horde.DynamicSupervisor.which_children(Fountain.BuzzSupervisor),
           is_pid(pid) do
@@ -43,7 +43,7 @@ defmodule Fountain.Buzz.BootSweepTest do
 
   test "run starts a harness for each enabled identity and skips disabled ones", %{fake: fake} do
     Application.put_env(:fountain, :buzz_acp_path, fake)
-    Application.put_env(:fountain, :public_base_url, "https://fountain.test")
+    Application.put_env(:fountain, :buzz_acp_base_url, "https://fountain.test")
 
     a = insert_buzz_identity(%{"enabled" => true})
     b = insert_buzz_identity(%{"enabled" => true})
@@ -64,7 +64,7 @@ defmodule Fountain.Buzz.BootSweepTest do
     on_exit(fn -> File.rm(fake) end)
 
     Application.put_env(:fountain, :buzz_acp_path, fake)
-    Application.put_env(:fountain, :public_base_url, "https://fountain.test")
+    Application.put_env(:fountain, :buzz_acp_base_url, "https://fountain.test")
 
     identity = insert_buzz_identity(%{"enabled" => true})
 

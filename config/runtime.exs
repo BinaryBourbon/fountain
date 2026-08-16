@@ -911,3 +911,28 @@ if config_env() == :prod and server? do
     otlp_endpoint: otel_endpoint,
     otlp_headers: otel_headers
 end
+
+# Hosted Buzz harnesses (ADR 0020, gate #736). The `buzz-acp` binary is baked
+# into the amd64 image only and the `fountain` CLI into both; point config at
+# them here so `Fountain.Buzz.BootSweep` can stand up enabled identities. On an
+# arch without buzz-acp the path stays unset and the sweep is inert.
+#
+# The harness's ACP child (`fountain acp`) talks back to THIS server, so its
+# base URL defaults to the loopback endpoint — no egress, no TLS, no dependence
+# on PUBLIC_URL resolving inside the pod. Override with BUZZ_ACP_BASE_URL.
+if config_env() == :prod do
+  buzz_acp_path = "/usr/local/lib/fountain-buzz/buzz-acp"
+
+  if File.exists?(buzz_acp_path) do
+    config :fountain, :buzz_acp_path, buzz_acp_path
+  end
+
+  config :fountain,
+         :fountain_cli_path,
+         System.get_env("FOUNTAIN_CLI_PATH", "/usr/local/bin/fountain")
+
+  config :fountain,
+         :buzz_acp_base_url,
+         System.get_env("BUZZ_ACP_BASE_URL") ||
+           "http://127.0.0.1:#{System.get_env("PORT", "4000")}"
+end
