@@ -54,7 +54,11 @@ defmodule FountainWeb.ApiSpecTest do
       {"/api/stripe/webhook", :post},
       # A browser-session route that happens to live under /api/ — CSRF-
       # protected, session-authenticated, and driven by the theme toggle.
-      {"/api/settings/theme", :patch}
+      {"/api/settings/theme", :patch},
+      # A JSON-RPC 2.0 (MCP) endpoint, not a REST operation: its body is a
+      # polymorphic MCP message, and its caller is a sandboxed agent's MCP
+      # client, which discovers tools via `tools/list`, not our OpenAPI spec.
+      {"/api/mcp/buzz/{conversation_id}", :post}
     ]
 
     setup do
