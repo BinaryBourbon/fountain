@@ -16,6 +16,13 @@ upgrade, is in
 
 ## [Unreleased]
 
+### Fixed
+
+- **In-app docs anchor links land on their section.** `/docs` and `/help`
+  headings now carry GFM-style ids, so the docs' `#anchor` cross-links
+  (e.g. `/docs/architecture#the-secrets-model`) scroll to the heading
+  instead of the top of the page, matching the public MkDocs site (#765).
+
 ### Changed
 
 - **Markdown rendering moved from Earmark to MDEx.** Earmark is retired
