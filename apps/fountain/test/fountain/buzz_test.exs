@@ -121,6 +121,71 @@ defmodule Fountain.BuzzTest do
     end
   end
 
+  describe "provision_identity/2" do
+    setup do
+      user = insert_verified_user()
+      agent = insert_agent(%{"user_id" => user.id})
+      pub = String.duplicate("a", 64)
+
+      params = %{
+        "name" => "philo",
+        "relay_url" => "wss://relay.example",
+        "agent_id" => agent.id,
+        "pubkey" => pub,
+        "private_key_nsec" => "nsec1secret",
+        "auth_tag" => "[\"auth\",\"owner\"]",
+        "display_name" => "Philo"
+      }
+
+      %{user: user, agent: agent, params: params, pub: pub}
+    end
+
+    test "creates the vault, secrets and an enabled identity", %{
+      user: user,
+      params: params,
+      pub: pub
+    } do
+      assert {:ok, identity} = Buzz.provision_identity(user.id, params)
+      assert identity.pubkey == pub
+      assert identity.enabled
+
+      # The vault holds the BUZZ_* secrets, decryptable server-side.
+      {:ok, dek} = Fountain.Crypto.load_tenant_key(user.id)
+      vault = Fountain.Vaults.get_vault(identity.vault_id, user.id)
+      env = Fountain.Vaults.decrypted_env(vault, dek)
+      assert env["BUZZ_PRIVATE_KEY"] == "nsec1secret"
+      assert env["BUZZ_RELAY_URL"] == "wss://relay.example"
+    end
+
+    test "converges on the pubkey — a second call returns the same identity, no duplicate", %{
+      user: user,
+      params: params
+    } do
+      assert {:ok, first} = Buzz.provision_identity(user.id, params)
+      assert {:ok, second} = Buzz.provision_identity(user.id, params)
+      assert first.id == second.id
+      assert [_only_one] = Buzz.list_identities(user.id)
+    end
+
+    test "re-provision refreshes the vault secrets", %{user: user, params: params} do
+      {:ok, identity} = Buzz.provision_identity(user.id, params)
+
+      {:ok, _} =
+        Buzz.provision_identity(user.id, Map.put(params, "private_key_nsec", "nsec1rotated"))
+
+      {:ok, dek} = Fountain.Crypto.load_tenant_key(user.id)
+      vault = Fountain.Vaults.get_vault(identity.vault_id, user.id)
+      assert Fountain.Vaults.decrypted_env(vault, dek)["BUZZ_PRIVATE_KEY"] == "nsec1rotated"
+    end
+
+    test "missing required fields is an error", %{user: user, params: params} do
+      assert {:error, {:missing, missing}} =
+               Buzz.provision_identity(user.id, Map.delete(params, "private_key_nsec"))
+
+      assert "private_key_nsec" in missing
+    end
+  end
+
   describe "harness_launch/2" do
     setup do
       user = insert_verified_user()
