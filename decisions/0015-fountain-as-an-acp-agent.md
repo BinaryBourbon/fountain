@@ -22,6 +22,12 @@ prompt it, watch it stream, cancel it, and reopen it later
 this line). **Gate 4 — permission forwarding — is not built** and remains
 blocked on #643; the *Consequences* section below states what it needs first.
 
+**A third client validated the reusability bet — see the
+[2026-08-16 addendum](#addendum--2026-08-16-openclaw-is-another-acp-client-spike-verified):
+[OpenClaw](https://docs.openclaw.ai) drives `fountain acp` as a custom ACP
+harness, no new architecture, docs at
+[`integrations/openclaw.md`](https://github.com/BinaryBourbon/fountain/blob/main/docs/integrations/openclaw.md).**
+
 This is the second of two ADRs about the Agent Client Protocol and covers the
 opposite direction from [0014](0014-agent-client-protocol.md).
 
@@ -308,3 +314,68 @@ that showed a spinner and a log.
   CLI already does most of it. Rejected because the only way to emit
   `session/update` from today's API is to reimplement four dialect parsers in
   Go, which is strictly worse than the status quo it would be fixing.
+
+## Addendum — 2026-08-16: OpenClaw is another ACP client (spike verified)
+
+The bet this ADR made — that being an ACP *agent* means any ACP *client* can
+drive a Fountain agent, not just the editors named in the gates — paid out a
+third time. After Zed (the editor gates) and [Buzz](0020-buzz-as-a-client-of-the-acp-gateway.md)
+(an ACP-native harness), [OpenClaw](https://docs.openclaw.ai) — a self-hosted
+assistant that fronts chat surfaces (Telegram, Discord, Slack, Signal) and
+routes them to coding harnesses over ACP — reaches Fountain through the **same
+`fountain acp` adapter, with no code change on our side.** OpenClaw's `acpx`
+plugin supports a custom-command harness, so registering Fountain is a config
+block:
+
+```json5
+plugins: { entries: { acpx: { enabled: true, config: {
+  agents: { fountain: { command: "fountain", args: ["acp", "--agent", "researcher"] } },
+  permissionMode: "approve-all"
+}}}}
+```
+
+Then `/acp spawn fountain` from a channel, or a `bindings[]` entry pinning a
+channel to it. The integration page is
+[`docs/integrations/openclaw.md`](https://github.com/BinaryBourbon/fountain/blob/main/docs/integrations/openclaw.md).
+
+**What was proven.** OpenClaw's custom-command harness is, mechanically, a Node
+child-process spawn plus line-delimited JSON-RPC over stdio, with the host
+environment inherited. That contract was reproduced exactly — an acpx-identical
+client spawning `fountain acp --agent acp-proof-659` against production — and it
+drove `initialize → session/new → session/prompt` to completion: a real
+conversation, provisioned in a sandbox, streaming the agent's reply back as
+`agent_message_chunk` updates and ending on a real stop reason. `authMethods`
+came back empty (already authenticated from the inherited `~/.fountain/
+credentials`), so the client skipped `authenticate` as a well-behaved one does.
+The load-bearing half — *a generic ACP client can spawn `fountain acp` and drive
+a live turn, with auth flowing from the host env* — is demonstrated, not
+asserted.
+
+Worth naming: the reply path is **simpler than the editor case**. There is no
+impedance mismatch to manage from a chat surface — no open project to confuse a
+sandbox path with — so the "control surface, not a workspace" limit this ADR
+argues for lands as a natural fit rather than a stated constraint, and the reply
+returns over ACP's own `agent_message_chunk` stream with no publish step.
+
+**What is not yet closed — do not read this as a shipped, verified integration.**
+
+- **The literal `acpx` path was not run against a real OpenClaw install.** The
+  config block comes from OpenClaw's own docs; two OpenClaw-internal details —
+  that its config parser accepts this block, and that `acpx` forwards process
+  env to the spawned child — were simulated (env was inherited exactly as a
+  subprocess does), not confirmed end to end. The confirming smoke needs a host
+  on **Node ≥ 22.22.3**, which OpenClaw requires and the spike host lacked;
+  that is why simulating `acpx` was the faithful move rather than a shortcut.
+- **Permission forwarding is still gate 4 / #643.** Nothing here changes that.
+  OpenClaw runs the turn under `permissionMode: "approve-all"` and the sandbox's
+  own policy; per-tool approvals do not round-trip to a channel any more than
+  they do to an editor. The two-hop failure mode in *Consequences* applies
+  unchanged, and this addendum is more reason to answer it, not less.
+- **One identity per host.** OpenClaw is single-user, so every session
+  authenticates as the host's Fountain login. Per-channel-user identities are
+  out of scope.
+
+This addendum records a proven adapter and a documented, config-only path — not
+a verified-against-OpenClaw release. It does not alter the decision or the
+gates; it is evidence for the central claim that the dialects stop at the server
+boundary and every ACP client past it is the same forwarder.
