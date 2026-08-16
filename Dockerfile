@@ -88,15 +88,19 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH="${TARGETARCH:-amd64}" \
 FROM debian:trixie-slim AS buzzacp
 ARG TARGETARCH
 ARG BUZZ_ACP_VERSION=0.5.14
+# buzz-acp: the hosted harness (gate 2). buzz: the CLI the server-side MCP tools
+# shell out to for signed publishes (gate 3, #737). Both from our own release.
 RUN apt-get update -y \
  && apt-get install -y --no-install-recommends curl ca-certificates \
  && mkdir -p /out \
  && base="https://github.com/BinaryBourbon/fountain/releases/download/buzz-acp-v${BUZZ_ACP_VERSION}" \
- && asset="buzz-acp-linux-${TARGETARCH:-amd64}" \
- && curl -fsSL -o /out/buzz-acp "${base}/${asset}" \
- && curl -fsSL -o /tmp/sha "${base}/${asset}.sha256" \
- && echo "$(cat /tmp/sha)  /out/buzz-acp" | sha256sum -c - \
- && chmod 0755 /out/buzz-acp \
+ && for bin in buzz-acp buzz; do \
+      asset="${bin}-linux-${TARGETARCH:-amd64}" \
+      && curl -fsSL -o "/out/${bin}" "${base}/${asset}" \
+      && curl -fsSL -o /tmp/sha "${base}/${asset}.sha256" \
+      && echo "$(cat /tmp/sha)  /out/${bin}" | sha256sum -c - \
+      && chmod 0755 "/out/${bin}" ; \
+    done \
  && rm -rf /var/lib/apt/lists/* /tmp/sha
 
 # ---
@@ -126,15 +130,18 @@ WORKDIR /app
 
 COPY --chown=fountain:fountain --from=build /app/_build/prod/rel/fountain_server ./
 
-# Hosted Buzz harness binaries (ADR 0020). The `fountain` CLI is the harness's
-# ACP child; buzz-acp is our own build (see the buzzacp stage) for both arches.
+# Hosted Buzz binaries (ADR 0020, #737). The `fountain` CLI is the harness's ACP
+# child; buzz-acp is the harness; buzz is the CLI the server-side MCP tools shell
+# out to for signed publishes. All our own builds (see the stages) for both arches.
 COPY --from=gocli /out/fountain /usr/local/bin/fountain
 COPY --from=buzzacp /out/buzz-acp /usr/local/lib/fountain-buzz/buzz-acp
+COPY --from=buzzacp /out/buzz /usr/local/lib/fountain-buzz/buzz
 
 # Fail the build now if a baked binary will not run in this image, rather than
-# at the first harness start.
+# at the first harness start or publish.
 RUN /usr/local/bin/fountain --version >/dev/null 2>&1 \
  && /usr/local/lib/fountain-buzz/buzz-acp --help >/dev/null 2>&1 \
+ && /usr/local/lib/fountain-buzz/buzz --help >/dev/null 2>&1 \
       || { echo "a baked binary will not run in this image" >&2; exit 1; }
 
 EXPOSE 4000
