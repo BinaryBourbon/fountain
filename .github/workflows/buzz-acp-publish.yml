@@ -1,0 +1,89 @@
+name: Publish buzz-acp
+
+# block/buzz ships buzz-acp as an amd64 .deb only, and our cluster is arm64
+# (ADR 0020, #743). We build the harness binary ourselves from the block/buzz
+# Rust source at a pinned tag, for both arches, and publish it as a release
+# asset the Fountain image downloads. This runs only when the pin changes or on
+# demand — the heavy Rust build stays out of every deploy's image build.
+#
+# The pin lives in buzz-acp.version (e.g. `0.5.14`); the upstream tag is
+# `desktop-v<version>` and the release we publish is `buzz-acp-v<version>`.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ["buzz-acp.version"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build buzz-acp ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - name: Checkout Fountain (for the pin)
+        uses: actions/checkout@v4
+
+      - name: Read the pin
+        id: pin
+        run: echo "version=$(tr -d '[:space:]' < buzz-acp.version)" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout block/buzz at the pinned tag
+        uses: actions/checkout@v4
+        with:
+          repository: block/buzz
+          ref: desktop-v${{ steps.pin.outputs.version }}
+          path: buzz
+
+      - name: Build deps
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y --no-install-recommends \
+            build-essential pkg-config libssl-dev cmake perl clang
+
+      - name: Rust toolchain (honours buzz/rust-toolchain.toml)
+        run: |
+          cd buzz
+          rustup show
+
+      - name: Build buzz-acp
+        run: |
+          cd buzz
+          cargo build --release -p buzz-acp
+          strip target/release/buzz-acp
+
+      - name: Stage artifact + checksum
+        run: |
+          mkdir -p dist
+          cp buzz/target/release/buzz-acp "dist/buzz-acp-linux-${{ matrix.arch }}"
+          ( cd dist && sha256sum "buzz-acp-linux-${{ matrix.arch }}" | cut -d' ' -f1 \
+              > "buzz-acp-linux-${{ matrix.arch }}.sha256" )
+          file "dist/buzz-acp-linux-${{ matrix.arch }}"
+
+      - name: Upload to the buzz-acp release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.pin.outputs.version }}
+        run: |
+          tag="buzz-acp-v${VERSION}"
+          # Create the release once (idempotent across the two arch jobs).
+          if ! gh release view "$tag" >/dev/null 2>&1; then
+            gh release create "$tag" \
+              --title "buzz-acp v${VERSION}" \
+              --notes "buzz-acp built from block/buzz \`desktop-v${VERSION}\` for linux/amd64 and linux/arm64. See ADR 0020 / #743. Upstream is Apache-2.0." \
+              || true
+          fi
+          gh release upload "$tag" \
+            "dist/buzz-acp-linux-${{ matrix.arch }}" \
+            "dist/buzz-acp-linux-${{ matrix.arch }}.sha256" \
+            --clobber
