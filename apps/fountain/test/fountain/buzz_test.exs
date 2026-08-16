@@ -242,6 +242,7 @@ defmodule Fountain.BuzzTest do
       assert env["BUZZ_ACP_AGENT_ARGS"] == "acp,--agent,#{agent.id},--vault,#{vault.id}"
       assert env["BUZZ_ACP_AGENTS"] == "1"
       assert env["BUZZ_ACP_BASE_PROMPT_FILE"] =~ "buzz-base-prompt.md"
+      assert env["BUZZ_ACP_RELAY_OBSERVER"] == "true"
 
       # The child authenticates back with a freshly minted key.
       assert env["FOUNTAIN_BASE_URL"] == "https://fountain.example"
