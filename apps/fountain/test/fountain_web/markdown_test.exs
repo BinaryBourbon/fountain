@@ -137,4 +137,66 @@ defmodule FountainWeb.MarkdownTest do
       assert Markdown.to_html(123) == ""
     end
   end
+
+  describe "to_trusted_html/1 — the docs corpus keeps a sanitized SVG subset" do
+    test "a clean figure/svg block renders as real markup, not escaped text" do
+      md = ~s|intro
+
+<figure>
+<svg viewBox="0 0 10 10"><rect fill="#b3760f"/><text fill="currentColor">hi</text></svg>
+<figcaption>cap</figcaption>
+</figure>
+
+end|
+      html = Markdown.to_trusted_html(md)
+
+      assert html =~ ~s|<svg viewBox="0 0 10 10">|
+      assert html =~ ~s|<rect fill="#b3760f"/>|
+      assert html =~ "<figcaption>cap</figcaption>"
+      refute html =~ "&lt;svg"
+    end
+
+    test "script, style and foreignObject are stripped from a trusted svg" do
+      md =
+        ~s|<figure><svg><script>alert(1)</script><style>x{}</style><foreignObject><b>y</b></foreignObject><rect/></svg></figure>|
+
+      html = Markdown.to_trusted_html(md)
+
+      refute html =~ "<script"
+      refute html =~ "<style"
+      refute html =~ "foreignObject"
+      assert html =~ "<rect/>"
+    end
+
+    test "event handlers and javascript/data URLs are stripped from a trusted svg" do
+      md =
+        ~s|<figure><svg onload="steal()"><a xlink:href="javascript:alert(1)">x</a><image href="data:text/html,evil"/></svg></figure>|
+
+      html = Markdown.to_trusted_html(md)
+
+      refute html =~ "onload"
+      refute html =~ "javascript:"
+      refute html =~ "data:text/html"
+      assert html =~ "<svg>"
+    end
+
+    test "raw HTML that is not a figure/svg is still neutralized on the trusted path" do
+      html = Markdown.to_trusted_html("para\n\n<img src=x onerror=alert(1)>\n\nend")
+
+      refute html =~ "onerror=alert"
+      assert html =~ "&lt;img"
+    end
+
+    test "the untrusted path never renders svg, even the same clean block" do
+      md = ~s|<figure><svg><rect fill="#000"/></svg></figure>|
+      html = Markdown.to_html(md)
+
+      refute html =~ "<svg>"
+      assert html =~ "&lt;svg&gt;"
+    end
+
+    test "non-binary input renders as empty" do
+      assert Markdown.to_trusted_html(nil) == ""
+    end
+  end
 end

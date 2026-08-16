@@ -33,36 +33,101 @@ defmodule FountainWeb.Markdown do
   nothing else.
   """
   def to_html(text) when is_binary(text) do
-    case Earmark.as_ast(text, smartypants: false) do
-      {:ok, ast, _warnings} -> render(ast)
-      {:error, ast, _warnings} -> render(ast)
-    end
+    render(text, allow_svg: false)
   end
 
   def to_html(_), do: ""
 
-  defp render(ast) do
+  @doc """
+  Renders **trusted** markdown (the in-repo docs corpus, compiled from
+  `docs/*.md` and reviewed in a PR) exactly like `to_html/1`, with one
+  addition: a `<figure>`/`<svg>` block is kept as real markup so hand-authored
+  diagrams render, after scrubbing the script-bearing subset (`<script>`,
+  `<style>`, `<foreignObject>`, `on*` handlers, and `javascript:`/`data:`/
+  `vbscript:` URLs). Everything else — every other raw-HTML block — is still
+  neutralized to text, and the untrusted `to_html/1` path is untouched.
+
+  This is only ever fed authored documentation. Never pass agent- or
+  user-supplied markdown here; use `to_html/1` for that.
+  """
+  def to_trusted_html(text) when is_binary(text) do
+    render(text, allow_svg: true)
+  end
+
+  def to_trusted_html(_), do: ""
+
+  defp render(text, opts) do
+    allow_svg = Keyword.fetch!(opts, :allow_svg)
+
+    case Earmark.as_ast(text, smartypants: false) do
+      {:ok, ast, _warnings} -> transform(ast, allow_svg)
+      {:error, ast, _warnings} -> transform(ast, allow_svg)
+    end
+  end
+
+  defp transform(ast, allow_svg) do
     ast
-    |> sanitize()
+    |> sanitize(allow_svg)
     |> Earmark.transform(compact_output: true)
   end
 
-  defp sanitize(nodes) when is_list(nodes), do: Enum.map(nodes, &sanitize/1)
+  defp sanitize(nodes, allow_svg) when is_list(nodes),
+    do: Enum.map(nodes, &sanitize(&1, allow_svg))
 
-  # Block-level raw HTML. Re-serialized to a plain string so Transform
-  # escapes it as text instead of emitting it verbatim into the DOM.
-  defp sanitize({_tag, _attrs, _children, %{verbatim: true}} = node), do: reserialize(node)
+  # A block-level `<figure>`/`<svg>` in the trusted corpus is kept as real
+  # markup — scrubbed of the script-bearing subset — so the diagram renders.
+  # Its verbatim children are raw source strings; Transform emits a kept
+  # verbatim node into the DOM unescaped, which is the whole point here.
+  defp sanitize({tag, attrs, children, %{verbatim: true} = meta}, true)
+       when tag in ~w(figure svg) do
+    {tag, drop_event_attrs(attrs), Enum.map(children, &scrub_svg/1), meta}
+  end
 
-  defp sanitize({"a", attrs, children, meta}),
-    do: {"a", filter_url(attrs, "href", ~w(http https mailto)), sanitize(children), meta}
+  # Every other block-level raw HTML — and all of it on the untrusted path —
+  # is re-serialized to a plain string so Transform escapes it as text.
+  defp sanitize({_tag, _attrs, _children, %{verbatim: true}} = node, _allow_svg),
+    do: reserialize(node)
 
-  defp sanitize({"img", attrs, children, meta}),
-    do: {"img", filter_url(attrs, "src", ~w(http https)), sanitize(children), meta}
+  defp sanitize({"a", attrs, children, meta}, allow_svg),
+    do:
+      {"a", filter_url(attrs, "href", ~w(http https mailto)), sanitize(children, allow_svg), meta}
 
-  defp sanitize({tag, attrs, children, meta}), do: {tag, attrs, sanitize(children), meta}
+  defp sanitize({"img", attrs, children, meta}, allow_svg),
+    do: {"img", filter_url(attrs, "src", ~w(http https)), sanitize(children, allow_svg), meta}
+
+  defp sanitize({tag, attrs, children, meta}, allow_svg),
+    do: {tag, attrs, sanitize(children, allow_svg), meta}
 
   # Text nodes (escaped by Transform) and comment nodes.
-  defp sanitize(other), do: other
+  defp sanitize(other, _allow_svg), do: other
+
+  # Belt-and-suspenders scrub of an authored SVG block: the corpus is trusted,
+  # but the executable surface is removed anyway so a bad paste can't become
+  # live script. Element removals run before the on*/URL passes so their
+  # contents cannot re-introduce a handler.
+  defp scrub_svg(str) when is_binary(str) do
+    str
+    |> drop_elements(~w(script style foreignObject))
+    |> String.replace(~r/\son[a-z]+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/i, "")
+    |> String.replace(
+      ~r/(href|xlink:href|src)\s*=\s*("(?:javascript|data|vbscript):[^"]*"|'(?:javascript|data|vbscript):[^']*')/i,
+      ""
+    )
+  end
+
+  defp scrub_svg(other), do: other
+
+  defp drop_elements(str, tags) do
+    Enum.reduce(tags, str, fn tag, acc ->
+      acc
+      |> String.replace(~r/<#{tag}\b[^>]*>.*?<\/#{tag}\s*>/is, "")
+      |> String.replace(~r/<#{tag}\b[^>]*\/?>/is, "")
+    end)
+  end
+
+  defp drop_event_attrs(attrs) do
+    Enum.reject(attrs, fn {k, _v} -> String.match?(k, ~r/^on[a-z]+$/i) end)
+  end
 
   # Verbatim children are the raw source lines as strings; nested markup
   # arrives inside those strings, so joining them reconstructs the block.

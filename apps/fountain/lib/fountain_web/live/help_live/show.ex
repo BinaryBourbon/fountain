@@ -51,9 +51,10 @@ defmodule FountainWeb.HelpLive.Show do
     end
   end
 
-  # Help topics are repo-controlled markdown, but rendering through the same
-  # sanitizing pipeline as agent output keeps one code path (#323).
-  defp render_markdown(text), do: FountainWeb.Markdown.to_html(text)
+  # Help topics are repo-controlled markdown (the trusted corpus), so they
+  # render through the trusted path — same scrubbing as agent output (#323),
+  # plus a sanitized <svg>/<figure> subset so authored diagrams draw.
+  defp render_markdown(text), do: FountainWeb.Markdown.to_trusted_html(text)
 
   @impl true
   def render(assigns) do

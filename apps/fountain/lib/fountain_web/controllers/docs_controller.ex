@@ -21,7 +21,7 @@ defmodule FountainWeb.DocsController do
           nav: Fountain.Docs.nav(),
           slug: slug,
           title: page.title,
-          body_html: FountainWeb.Markdown.to_html(page.body)
+          body_html: FountainWeb.Markdown.to_trusted_html(page.body)
         )
 
       :error ->
