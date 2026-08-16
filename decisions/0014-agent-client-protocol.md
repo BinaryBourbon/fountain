@@ -189,6 +189,24 @@ That is the shape we already run, with the protocol swapped in underneath it:
 | process exit ends the turn | the `session/prompt` response ends it; exit is the backstop |
 | idle sprite reclaimed at 60m, any sprite at 24h | unchanged |
 
+> **Addendum, 2026-08-16 — the connection is scoped to the turn, but the
+> server is not.** Every deploy restarts every `ConversationServer`, and the
+> adapter in the sprite is a detachable session that keeps running with
+> `session/prompt` outstanding. The reattach path (`attempt_session_attach`)
+> re-hooked the command and logged its stdout raw — no peer — so nobody
+> answered `session/request_permission` and nobody saw the prompt response;
+> with 24 deploys in a day, every ACP turn in flight across one hung until the
+> user prompted again or the sandbox hit its 24h ceiling (eight found stuck in
+> production, one 15 hours in). Two things now hold: the peer reports the
+> prompt's JSON-RPC id and the server persists it on the turn
+> (`turns.acp_prompt_id`), and a reattach starts a peer with `attach:
+> prompt_id` that resumes exactly that request — no handshake, replayed
+> handshake ignored, live requests answered. A turn without the id (the peer
+> died mid-handshake) is orphaned and its adapter stopped rather than left to
+> hang. Sprites replays only the last 16 KiB of the session, mid-line, so
+> replayed lines are de-duplicated by content, not by the byte count the
+> legacy path still uses.
+
 **The rule that keeps this from eroding one optimisation at a time: no ACP
 state may become a reason to keep a sandbox alive.** A connection may be
 scoped to the turn (v1) or, if per-turn `initialize` proves too slow, to the

@@ -930,6 +930,27 @@ defmodule Fountain.Conversations do
     |> Map.new()
   end
 
+  @doc """
+  The most recent persisted output lines of one stream for a turn, as a set.
+
+  Feeds the ACP reattach path: sprites replays the tail of the session buffer
+  (measured at 16 KiB), and the peer re-encodes protocol lines so a byte count
+  cannot align the replay with what is already stored — content can. `limit`
+  rows is comfortably more than 16 KiB of `session/update` lines.
+  """
+  def _unsafe_recent_output_lines(conversation_id, turn_id, stream, limit \\ 400) do
+    from(e in LogEvent,
+      where:
+        e.conversation_id == ^conversation_id and e.turn_id == ^turn_id and
+          e.kind == "output" and e.stream == ^stream,
+      order_by: [desc: e.id],
+      limit: ^limit,
+      select: e.data
+    )
+    |> Repo.all()
+    |> MapSet.new()
+  end
+
   # ── high-level lifecycle ──────────────────────────────────────────────────────────
 
   alias Fountain.Agents

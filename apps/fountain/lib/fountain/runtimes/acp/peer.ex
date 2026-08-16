@@ -52,6 +52,29 @@ defmodule Fountain.Runtimes.ACP.Peer do
   version, and discovering at runtime that this build cannot resume is better
   handled by taking the expensive path than by failing the turn.
 
+  ## Reattaching after a restart
+
+  A deploy restarts every `ConversationServer`, and with it every peer — but
+  the adapter in the sprite is a detachable session that keeps running,
+  mid-turn, with a `session/prompt` still outstanding. `attach: prompt_id`
+  starts a peer for that turn without a handshake: it joins the stream already
+  in flight, answers the agent's requests (a `session/request_permission`
+  nobody answers is a turn that never ends), and closes the turn on the
+  response to `prompt_id`. Everything else in the replayed prefix — the
+  handshake responses, a model rejection the previous peer already reported —
+  is history and is dropped rather than re-acted-on.
+
+  The prompt id has to come from the caller because it is the only way to
+  tell the prompt's answer from a replayed handshake response; the peer
+  reports `{:prompt_sent, id}` the moment it writes the prompt so the server
+  can persist it for exactly this purpose. Without it a reattached turn cannot
+  be resumed at all, and the caller orphans it instead.
+
+  Sprites replays the **tail** of the session buffer (measured: one 16 KiB
+  chunk, starting mid-line — not from the beginning), so an attached peer
+  drops the partial first line and the server de-duplicates the replayed
+  lines it already holds by content, not by byte count.
+
   ## What it sends back
 
   Everything goes to the owner as `{:acp, ref, payload}` so the server can keep
@@ -76,6 +99,7 @@ defmodule Fountain.Runtimes.ACP.Peer do
   @type payload ::
           {:lines, stream :: String.t(), data :: String.t()}
           | {:session, String.t()}
+          | {:prompt_sent, pos_integer()}
           | {:model_rejected, requested :: String.t(), detail :: String.t()}
           | {:handshake_ms, non_neg_integer(), method :: String.t()}
           | {:done, stop_reason :: String.t()}
@@ -109,7 +133,12 @@ defmodule Fountain.Runtimes.ACP.Peer do
       replay_until_ms: nil,
       capabilities: %{},
       auth_methods: [],
-      authenticated?: false
+      authenticated?: false,
+      # `attach: prompt_id` mode: joined a turn already in flight, so replayed
+      # responses to ids we never sent are expected, and the first chunk may
+      # start mid-line.
+      attached?: false,
+      drop_partial_line?: false
     ]
   end
 
@@ -120,6 +149,11 @@ defmodule Fountain.Runtimes.ACP.Peer do
 
   Required opts: `:owner`, `:command`, `:ref`, `:prompt`, `:mode`,
   `:session_id`, `:cwd`.
+
+  `attach: prompt_id` skips the handshake and resumes a turn whose
+  `session/prompt` (with that JSON-RPC id) is already outstanding on the
+  attached command — see the moduledoc. `:session_id` must be the live
+  session's id so `cancel/1` still works.
   """
   def start(opts), do: GenServer.start(__MODULE__, opts)
 
@@ -158,7 +192,21 @@ defmodule Fountain.Runtimes.ACP.Peer do
       started_mono: System.monotonic_time(:millisecond)
     }
 
-    {:ok, state, {:continue, :initialize}}
+    case Keyword.get(opts, :attach) do
+      nil ->
+        {:ok, state, {:continue, :initialize}}
+
+      prompt_id when is_integer(prompt_id) ->
+        {:ok,
+         %{
+           state
+           | phase: :prompting,
+             pending: %{prompt_id => :prompt},
+             next_id: prompt_id + 1,
+             attached?: true,
+             drop_partial_line?: true
+         }}
+    end
   end
 
   @impl true
@@ -168,6 +216,24 @@ defmodule Fountain.Runtimes.ACP.Peer do
   end
 
   @impl true
+  def handle_cast({:stdout, data}, %State{drop_partial_line?: true} = state) do
+    # The replay starts wherever the sprite's buffer happens to start, which is
+    # mid-line unless we are lucky. A fragment that does not open a JSON object
+    # can only be the tail of a line we cannot parse: drop through its newline.
+    # A chunk with no newline yet is the same fragment still arriving.
+    cond do
+      String.starts_with?(data, "{") ->
+        handle_cast({:stdout, data}, %{state | drop_partial_line?: false})
+
+      String.contains?(data, "\n") ->
+        [_partial, rest] = String.split(data, "\n", parts: 2)
+        handle_cast({:stdout, rest}, %{state | drop_partial_line?: false})
+
+      true ->
+        {:noreply, state}
+    end
+  end
+
   def handle_cast({:stdout, data}, state) do
     {messages, buffer} = Protocol.feed(state.buffer, data)
 
@@ -227,6 +293,10 @@ defmodule Fountain.Runtimes.ACP.Peer do
 
   defp handle_message({:response, id, result}, state) do
     case pop_pending(state, id) do
+      {nil, %State{attached?: true} = state} ->
+        # A replayed answer to the previous peer's handshake. Expected.
+        state
+
       {nil, state} ->
         Logger.warning("acp peer: response to unknown request #{inspect(id)}")
         state
@@ -250,6 +320,14 @@ defmodule Fountain.Runtimes.ACP.Peer do
     |> report_model_rejected(error)
     |> send_prompt()
   end
+
+  # Attached mid-turn: an error for an id we never sent is a replay of one the
+  # previous peer already handled — a `session/set_config_option` refusal is the
+  # common one, and it was reported as a stage event at the time. Only the
+  # prompt's own error can fail this turn.
+  defp handle_message({:error_response, id, _error}, %State{attached?: true} = state)
+       when not is_map_key(state.pending, id),
+       do: state
 
   # Backstop for an agent that advertises no auth method at `initialize` and
   # then refuses anyway. The eager path above covers everything measured; this
@@ -550,7 +628,12 @@ defmodule Fountain.Runtimes.ACP.Peer do
       prompt: [%{type: "text", text: state.prompt} | image_blocks(state.images)]
     }
 
-    send_request(%{state | phase: :prompting}, :prompt, "session/prompt", params)
+    id = state.next_id
+    state = send_request(%{state | phase: :prompting}, :prompt, "session/prompt", params)
+
+    # Reported after the write so the server never persists an id for a prompt
+    # that did not go out. Reattach reads it back — see the moduledoc.
+    if state.phase == :failed, do: state, else: tap(state, &report(&1, {:prompt_sent, id}))
   end
 
   # ACP carries images in the prompt itself, so the legacy dance — write the

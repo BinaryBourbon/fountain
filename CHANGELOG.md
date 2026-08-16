@@ -16,6 +16,21 @@ upgrade, is in
 
 ## [Unreleased]
 
+### Fixed
+
+- **An ACP turn in flight across a deploy no longer hangs.** Every deploy
+  restarts every `ConversationServer`; the agent in the sandbox keeps running
+  and the server reattached to its session — but on the ACP path it reattached
+  with no peer, so nobody answered the agent's `session/request_permission`
+  and nobody saw the `session/prompt` response. The turn sat `running` until
+  the user prompted again (which interrupts it) or the sandbox hit its
+  lifetime ceiling. The peer now records the prompt's JSON-RPC id on the turn
+  and a reattach starts a peer in attach mode that resumes exactly that
+  request; a turn whose prompt was never sent is orphaned cleanly instead of
+  left to hang. Replayed output is de-duplicated by content: sprites replays
+  the last 16 KiB of the session, not the whole buffer, so the byte-count
+  skip could not apply.
+
 ## [0.11.0] — 2026-08-16
 
 Fountain can now **host a Buzz agent** — a Nostr identity whose coding-agent
