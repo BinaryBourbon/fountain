@@ -17,7 +17,7 @@ defmodule Fountain.Buzz do
 
   import Ecto.Query, only: [from: 2]
 
-  alias Fountain.{Accounts, Audit, Crypto, Repo, Vaults}
+  alias Fountain.{Accounts, Audit, Conversations, Crypto, Repo, Vaults}
   alias Fountain.Buzz.BuzzIdentity
 
   # ── identities (tenant-scoped) ─────────────────────────────────────────────
@@ -52,6 +52,47 @@ defmodule Fountain.Buzz do
   """
   def get_identity_by_vault(vault_id, user_id) when is_binary(vault_id) and is_binary(user_id) do
     Repo.get_by(BuzzIdentity, vault_id: vault_id, user_id: user_id)
+  end
+
+  @doc """
+  The MCP server entries to inject into a conversation's `session/new` so the
+  sandboxed agent can post to its channel (gate #737). Returns `[]` unless the
+  conversation is Buzz-driven (its vault belongs to a BuzzIdentity); otherwise a
+  one-element list pointing the agent's MCP client at Fountain's buzz endpoint,
+  authenticated with the conversation's own sprite `token`.
+
+  Ownership: a system-level call from `ConversationServer`, which established
+  ownership of the conversation at provision; the `_unsafe_` fetch is scoped
+  again by the `get_identity_by_vault` that follows.
+  """
+  def conversation_mcp_servers(conversation_id, token)
+      when is_binary(conversation_id) and is_binary(token) and token != "" do
+    with %Conversations.Conversation{vault_id: vid, user_id: uid}
+         when is_binary(vid) <- fetch_conv(conversation_id),
+         %BuzzIdentity{} <- get_identity_by_vault(vid, uid) do
+      [
+        %{
+          name: "fountain-buzz",
+          type: "http",
+          url: Fountain.PublicUrl.base() <> "/api/mcp/buzz/" <> conversation_id,
+          headers: [%{name: "Authorization", value: "Bearer " <> token}]
+        }
+      ]
+    else
+      _ -> []
+    end
+  end
+
+  def conversation_mcp_servers(_conversation_id, _token), do: []
+
+  # A malformed id must yield [] (no tools), not a crash — the cast raises.
+  defp fetch_conv(conversation_id) do
+    # ownership: system-level call from ConversationServer, which owns the
+    # conversation; the identity fetched next is re-scoped by user_id, and the
+    # result only ever authorises publishing under that same tenant's key.
+    Conversations._unsafe_get_conversation(conversation_id)
+  rescue
+    Ecto.Query.CastError -> nil
   end
 
   @doc """
@@ -219,13 +260,21 @@ defmodule Fountain.Buzz do
     %{
       "BUZZ_ACP_AGENT_COMMAND" => fountain_bin,
       "BUZZ_ACP_AGENT_ARGS" => args,
-      "BUZZ_ACP_AGENTS" => Integer.to_string(agents)
+      "BUZZ_ACP_AGENTS" => Integer.to_string(agents),
+      # Steer the model to the Fountain-hosted buzz_* MCP tools (which sign
+      # server-side) instead of a `buzz` CLI it has no key for (#737).
+      "BUZZ_ACP_BASE_PROMPT_FILE" => base_prompt_file()
     }
   end
 
   # The ACP child authenticates back to this instance with the minted key.
   defp fountain_child_env(raw_key, base_url) do
     %{"FOUNTAIN_API_KEY" => raw_key, "FOUNTAIN_BASE_URL" => base_url}
+  end
+
+  defp base_prompt_file do
+    Application.get_env(:fountain, :buzz_base_prompt_file) ||
+      Application.app_dir(:fountain, "priv/buzz-base-prompt.md")
   end
 
   defp maybe_put(map, _key, nil), do: map
