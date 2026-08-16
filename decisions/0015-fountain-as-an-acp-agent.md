@@ -357,15 +357,30 @@ sandbox path with — so the "control surface, not a workspace" limit this ADR
 argues for lands as a natural fit rather than a stated constraint, and the reply
 returns over ACP's own `agent_message_chunk` stream with no publish step.
 
-**What is not yet closed — do not read this as a shipped, verified integration.**
+**Update — 2026-08-16: the acpx smoke ran, on Node 24. Residual #1 is closed.**
+Against the **real acpx binary (v0.11.2)** — the engine OpenClaw's gateway drives
+harnesses with — both registration paths drove `fountain acp` to a real reply
+from agent `acp-proof-659`: the `--agent` escape hatch
+(`acpx --agent "fountain acp --agent …" exec …` → `OPENCLAW-SMOKE-OK`) and a
+named agent resolved from acpx's `agents` config map
+(`{command, args}` → `OPENCLAW-CONFIG-OK`). Env inheritance is confirmed —
+`fountain` was found on PATH and authenticated from the inherited
+`~/.config/fountain/credentials`, with no secret in the acpx config. And
+OpenClaw's `acpx` plugin config schema (`openclaw.plugin.json`) declares
+`plugins.entries.acpx.config.agents.<id> = { command (required), args }` and a
+`permissionMode` enum including `approve-all` — exactly the block the docs page
+ships. Node ≥ 22.22.3 was the only gate, and Node 24.19.0 cleared it; simulating
+`acpx` beforehand was the faithful move, and running the real binary confirmed
+it rather than overturning it.
 
-- **The literal `acpx` path was not run against a real OpenClaw install.** The
-  config block comes from OpenClaw's own docs; two OpenClaw-internal details —
-  that its config parser accepts this block, and that `acpx` forwards process
-  env to the spawned child — were simulated (env was inherited exactly as a
-  subprocess does), not confirmed end to end. The confirming smoke needs a host
-  on **Node ≥ 22.22.3**, which OpenClaw requires and the spike host lacked;
-  that is why simulating `acpx` was the faithful move rather than a shortcut.
+**What is still open — do not read this as a shipped, gateway-verified integration.**
+
+- **The full OpenClaw *gateway* path was not exercised end to end.** The smoke
+  drove the acpx engine directly (escape hatch and config file); it did not run a
+  turn through a live gateway daemon via `sessions_spawn` with channel delivery.
+  That wrapper is a thin OpenClaw-owned layer over the exact engine and config
+  schema verified above — but it is not the same as a green
+  channel-to-reply round trip, and a channel binding remains unproven.
 - **Permission forwarding is still gate 4 / #643.** Nothing here changes that.
   OpenClaw runs the turn under `permissionMode: "approve-all"` and the sandbox's
   own policy; per-tool approvals do not round-trip to a channel any more than
@@ -375,7 +390,8 @@ returns over ACP's own `agent_message_chunk` stream with no publish step.
   authenticates as the host's Fountain login. Per-channel-user identities are
   out of scope.
 
-This addendum records a proven adapter and a documented, config-only path — not
-a verified-against-OpenClaw release. It does not alter the decision or the
-gates; it is evidence for the central claim that the dialects stop at the server
-boundary and every ACP client past it is the same forwarder.
+This addendum records a proven adapter and a config-only path now verified
+against the real acpx binary — but not a full gateway-daemon round trip, and not
+permission forwarding. It does not alter the decision or the gates; it is
+evidence for the central claim that the dialects stop at the server boundary and
+every ACP client past it is the same forwarder.
