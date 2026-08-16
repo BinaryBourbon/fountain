@@ -54,6 +54,105 @@ defmodule Fountain.Buzz do
     Repo.get_by(BuzzIdentity, vault_id: vault_id, user_id: user_id)
   end
 
+  @doc "Fetch an identity by its Nostr pubkey, scoped to a user. The convergence key."
+  def get_identity_by_pubkey(pubkey, user_id) when is_binary(pubkey) and is_binary(user_id) do
+    Repo.get_by(BuzzIdentity, pubkey: pubkey, user_id: user_id)
+  end
+
+  @doc """
+  Provision a Buzz identity from a caller that holds the Nostr key — the
+  Fountain-side of the remote-agents provider deploy (ADR 0020 Phase 3, #738).
+
+  Creates the identity's vault (holding `BUZZ_PRIVATE_KEY` / `BUZZ_AUTH_TAG` /
+  `BUZZ_RELAY_URL`) and the `BuzzIdentity` that points an agent at it. **Converges
+  on the pubkey**: called again for the same pubkey it returns the existing
+  identity and refreshes the vault secrets, so a provider's repeated `deploy` is
+  idempotent. Deliberately not wrapped in a transaction — audits must record
+  outside one (ADR 0013) — and safe to retry because convergence heals a
+  partial run.
+
+  `params` (string-keyed): `"name"`, `"relay_url"`, `"agent_id"`, `"pubkey"`,
+  `"private_key_nsec"`, `"auth_tag"` (required); `"display_name"` (optional).
+  Returns `{:ok, %BuzzIdentity{}}` or `{:error, reason}`.
+  """
+  def provision_identity(user_id, params, opts \\ []) when is_binary(user_id) do
+    with {:ok, fields} <- validate_provision(params),
+         {:ok, dek} <- Crypto.load_tenant_key(user_id),
+         {:ok, vault} <- ensure_vault(user_id, fields, dek, opts),
+         :ok <- write_buzz_secrets(vault, fields, dek, opts) do
+      upsert_identity(user_id, vault, fields, opts)
+    end
+  end
+
+  @provision_required ~w(name relay_url agent_id pubkey private_key_nsec auth_tag)
+
+  defp validate_provision(params) do
+    missing = Enum.filter(@provision_required, &blank?(Map.get(params, &1)))
+
+    if missing == [] do
+      {:ok,
+       %{
+         name: params["name"],
+         relay_url: params["relay_url"],
+         agent_id: params["agent_id"],
+         pubkey: params["pubkey"],
+         nsec: params["private_key_nsec"],
+         auth_tag: params["auth_tag"],
+         display_name: params["display_name"]
+       }}
+    else
+      {:error, {:missing, missing}}
+    end
+  end
+
+  defp blank?(v), do: is_nil(v) or v == ""
+
+  # One vault per identity, named for it. Reused on re-provision.
+  defp ensure_vault(user_id, fields, _dek, opts) do
+    name = "buzz:" <> fields.name
+
+    case Vaults.get_vault_by_name(name, user_id) do
+      %Vaults.Vault{} = vault ->
+        {:ok, vault}
+
+      nil ->
+        Vaults.create_vault(%{"name" => name, "user_id" => user_id}, opts)
+    end
+  end
+
+  defp write_buzz_secrets(vault, fields, dek, opts) do
+    secrets = [
+      {"BUZZ_PRIVATE_KEY", fields.nsec},
+      {"BUZZ_AUTH_TAG", fields.auth_tag},
+      {"BUZZ_RELAY_URL", fields.relay_url}
+    ]
+
+    Enum.reduce_while(secrets, :ok, fn {k, v}, :ok ->
+      case Vaults.upsert_secret(vault, %{"key" => k, "value" => v}, dek, opts) do
+        {:ok, _} -> {:cont, :ok}
+        {:error, reason} -> {:halt, {:error, reason}}
+      end
+    end)
+  end
+
+  defp upsert_identity(user_id, vault, fields, opts) do
+    attrs = %{
+      "user_id" => user_id,
+      "agent_id" => fields.agent_id,
+      "vault_id" => vault.id,
+      "name" => fields.name,
+      "relay_url" => fields.relay_url,
+      "pubkey" => fields.pubkey,
+      "display_name" => fields.display_name,
+      "enabled" => true
+    }
+
+    case get_identity_by_pubkey(fields.pubkey, user_id) do
+      %BuzzIdentity{} = existing -> update_identity(existing, attrs, opts)
+      nil -> create_identity(attrs, opts)
+    end
+  end
+
   @doc """
   The MCP server entries to inject into a conversation's `session/new` so the
   sandboxed agent can post to its channel (gate #737). Returns `[]` unless the
