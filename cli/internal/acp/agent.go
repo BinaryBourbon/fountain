@@ -106,9 +106,51 @@ func (a *Agent) Request(ctx context.Context, method string, params json.RawMessa
 		return a.prompt(ctx, params)
 	case "session/load":
 		return a.loadSession(ctx, params)
+	case "session/set_config_option":
+		return a.setConfigOption(params)
 	default:
 		return nil, Errorf(CodeMethodNotFound, "method not found: %s", method)
 	}
+}
+
+type setConfigOptionParams struct {
+	SessionID string          `json:"sessionId"`
+	ConfigID  string          `json:"configId"`
+	Value     json.RawMessage `json:"value"`
+}
+
+// setConfigOption accepts a client's request to change a session config option
+// — but does not apply it. Every option a Fountain conversation has, its model
+// above all, is a property of the *agent*: chosen once, server-side, and shared
+// by every conversation the agent runs. Changing it here would silently edit
+// the agent, which is why `session/set_model` is absent too (see modelState).
+//
+// The method exists rather than returning "method not found" because some ACP
+// clients set the model at session start and treat a rejection as fatal —
+// OpenClaw's acpx pushes its own model over `session/set_config_option` and
+// aborts the whole turn on a -32601 here (found standing up the gateway round
+// trip). So the request is acknowledged and the unchanged state reported back,
+// leaving the agent's configuration authoritative.
+func (a *Agent) setConfigOption(raw json.RawMessage) (any, error) {
+	var params setConfigOptionParams
+	if len(raw) > 0 {
+		if err := json.Unmarshal(raw, &params); err != nil {
+			return nil, Errorf(CodeInvalidParams, "session/set_config_option: %s", err)
+		}
+	}
+
+	sess, ok := a.sessions.get(params.SessionID)
+	if !ok {
+		return nil, Errorf(CodeInvalidParams, "unknown session %q", params.SessionID)
+	}
+
+	a.log.Info("ignoring client session config change",
+		"sessionId", params.SessionID,
+		"configId", params.ConfigID,
+		"value", string(params.Value),
+		"why", "session options are properties of the Fountain agent, not the conversation")
+
+	return map[string]any{"configOptions": configOptions(sess.Agent)}, nil
 }
 
 // Notify handles client notifications.
