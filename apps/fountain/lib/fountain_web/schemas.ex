@@ -355,6 +355,66 @@ defmodule FountainWeb.Schemas do
 
   list_response(AgentListResponse, of: Agent)
 
+  defmodule BuzzIdentity do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "BuzzIdentity",
+      description:
+        "A hosted Buzz agent: a Nostr identity (key held server-side in a vault) " <>
+          "bound to a Fountain agent. Its harness runs on the gateway (ADR 0020).",
+      type: :object,
+      properties: %{
+        id: %Schema{type: :string, format: :uuid},
+        name: %Schema{type: :string},
+        display_name: %Schema{type: :string, nullable: true},
+        relay_url: %Schema{type: :string, description: "wss:// relay URL"},
+        pubkey: %Schema{type: :string, description: "Nostr public key (hex)", nullable: true},
+        agent_id: %Schema{type: :string, format: :uuid},
+        vault_id: %Schema{type: :string, format: :uuid},
+        enabled: %Schema{type: :boolean},
+        inserted_at: %Schema{type: :string, format: :"date-time"},
+        updated_at: %Schema{type: :string, format: :"date-time"}
+      },
+      required: [:id, :name, :agent_id, :vault_id, :enabled]
+    })
+  end
+
+  defmodule BuzzProvisionRequest do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "BuzzProvisionRequest",
+      description:
+        "Provision (or converge on) a hosted Buzz agent. The Nostr secret key is " <>
+          "accepted here and stored server-side in the identity's vault; it is never " <>
+          "returned and never enters a sandbox. Idempotent on `pubkey`.",
+      type: :object,
+      properties: %{
+        name: %Schema{type: :string, minLength: 1, maxLength: 200},
+        relay_url: %Schema{type: :string, description: "wss:// relay URL"},
+        agent_id: %Schema{type: :string, format: :uuid, description: "The Fountain agent to run"},
+        pubkey: %Schema{
+          type: :string,
+          description: "Nostr public key (hex) — the convergence key"
+        },
+        private_key_nsec: %Schema{
+          type: :string,
+          description: "Nostr secret key (nsec/hex). Stored, never returned"
+        },
+        auth_tag: %Schema{type: :string, description: "NIP-OA owner attestation tag (JSON array)"},
+        display_name: %Schema{type: :string, nullable: true}
+      },
+      required: [:name, :relay_url, :agent_id, :pubkey, :private_key_nsec, :auth_tag]
+    })
+  end
+
+  item_response(BuzzIdentityResponse, of: BuzzIdentity)
+
+  list_response(BuzzIdentityListResponse, of: BuzzIdentity)
+
   defmodule AgentRequest do
     @moduledoc false
     require OpenApiSpex

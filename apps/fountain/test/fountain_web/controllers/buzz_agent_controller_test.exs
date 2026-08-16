@@ -1,0 +1,114 @@
+defmodule FountainWeb.BuzzAgentControllerTest do
+  use FountainWeb.ConnCase, async: true
+
+  alias Fountain.{Crypto, Vaults}
+
+  setup do
+    user = insert_verified_user()
+    {_rec, raw_key} = insert_api_key(user)
+    agent = insert_agent(user_id: user.id)
+    %{user: user, raw_key: raw_key, agent: agent}
+  end
+
+  defp params(agent) do
+    %{
+      "name" => "philo",
+      "relay_url" => "wss://relay.example",
+      "agent_id" => agent.id,
+      "pubkey" => String.duplicate("a", 64),
+      "private_key_nsec" => "nsec1secret",
+      "auth_tag" => ~s(["auth","owner"])
+    }
+  end
+
+  test "POST provisions a hosted Buzz agent and never returns the nsec", %{
+    conn: conn,
+    user: user,
+    raw_key: raw_key,
+    agent: agent
+  } do
+    conn =
+      conn
+      |> authed_with_key(raw_key)
+      |> put_req_header("content-type", "application/json")
+      |> post("/api/buzz/agents", params(agent))
+
+    data = json_response(conn, 201)["data"]
+    assert data["name"] == "philo"
+    assert data["enabled"] == true
+    assert data["agent_id"] == agent.id
+    refute json_response(conn, 201) |> inspect() =~ "nsec1secret"
+
+    # The key landed in the vault, server-side.
+    {:ok, dek} = Crypto.load_tenant_key(user.id)
+    vault = Vaults.get_vault(data["vault_id"], user.id)
+    assert Vaults.decrypted_env(vault, dek)["BUZZ_PRIVATE_KEY"] == "nsec1secret"
+  end
+
+  test "POST is idempotent on the pubkey (converge)", %{
+    conn: conn,
+    raw_key: raw_key,
+    agent: agent
+  } do
+    first =
+      conn
+      |> authed_with_key(raw_key)
+      |> put_req_header("content-type", "application/json")
+      |> post("/api/buzz/agents", params(agent))
+      |> json_response(201)
+
+    second =
+      build_conn()
+      |> authed_with_key(raw_key)
+      |> put_req_header("content-type", "application/json")
+      |> post("/api/buzz/agents", params(agent))
+      |> json_response(201)
+
+    assert first["data"]["id"] == second["data"]["id"]
+  end
+
+  test "GET lists the tenant's Buzz agents", %{conn: conn, raw_key: raw_key, agent: agent} do
+    build_conn()
+    |> authed_with_key(raw_key)
+    |> put_req_header("content-type", "application/json")
+    |> post("/api/buzz/agents", params(agent))
+
+    data = conn |> authed_with_key(raw_key) |> get("/api/buzz/agents") |> json_response(200)
+    assert Enum.any?(data["data"], &(&1["name"] == "philo"))
+  end
+
+  test "DELETE tears it down (identity and vault gone)", %{
+    conn: conn,
+    user: user,
+    raw_key: raw_key,
+    agent: agent
+  } do
+    created =
+      build_conn()
+      |> authed_with_key(raw_key)
+      |> put_req_header("content-type", "application/json")
+      |> post("/api/buzz/agents", params(agent))
+      |> json_response(201)
+
+    id = created["data"]["id"]
+    vault_id = created["data"]["vault_id"]
+
+    conn |> authed_with_key(raw_key) |> delete("/api/buzz/agents/#{id}") |> response(204)
+
+    assert Fountain.Buzz.get_identity(id, user.id) == nil
+    assert Vaults.get_vault(vault_id, user.id) == nil
+  end
+
+  test "missing required fields is a 422", %{conn: conn, raw_key: raw_key, agent: agent} do
+    bad = Map.delete(params(agent), "private_key_nsec")
+
+    conn =
+      conn
+      |> authed_with_key(raw_key)
+      |> put_req_header("content-type", "application/json")
+      |> post("/api/buzz/agents", bad)
+
+    # OpenApiSpex CastAndValidate rejects the missing required field before the action.
+    assert conn.status in [422, 400]
+  end
+end
