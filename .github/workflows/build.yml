@@ -66,11 +66,18 @@ jobs:
 
       - name: Skip paths that never affect the OCI image
         id: filter
-        # The old push-trigger paths-ignore list (k8s/**, deploy/**, docs/**,
-        # decisions/**, **/*.md — deploy/ is the portable self-hosting
+        # The old push-trigger paths-ignore list (k8s/**, deploy/**,
+        # decisions/**, root-level *.md — deploy/ is the portable self-hosting
         # manifests, never part of the image), re-implemented as a diff from
         # the newest first-parent ancestor whose image EXISTS in the registry
-        # (#414) — not HEAD^. Diffing one commit back assumed every ancestor
+        # (#414) — not HEAD^.
+        #
+        # docs/** and CHANGELOG.md are NOT on the list, deliberately: since
+        # the in-app docs site, Fountain.Docs embeds both at compile time, so
+        # a docs-only commit changes the image. With them ignored, prod's
+        # /docs sat on the previous code commit's copy until the next code
+        # change happened to ship (found at v0.11.0: the changelog and the
+        # OpenClaw page went stale on prod while the release image had them). Diffing one commit back assumed every ancestor
         # got built; a cancelled CI run plus a docs-only follow-up broke that
         # assumption, and the follow-up's one-commit diff reported "nothing
         # image-affecting" while the cancelled commit's code sat un-built.
@@ -101,8 +108,12 @@ jobs:
           fi
 
           echo "diffing against newest built ancestor ${base:0:7}"
-          if git diff --name-only "${base}" HEAD \
-              | grep -qvE '^(k8s|deploy|docs|decisions)/|\.md$'; then
+          changed="$(git diff --name-only "${base}" HEAD)"
+          # Anything outside the ignore list, or CHANGELOG.md itself (a
+          # root-level .md that IS in the image), means a build.
+          if [ -n "${changed}" ] && printf '%s\n' "${changed}" \
+               | grep -qvE '^(k8s|deploy|decisions)/|^[^/]*\.md$' \
+             || printf '%s\n' "${changed}" | grep -qx 'CHANGELOG.md'; then
             echo "image-affecting changes since ${base:0:7} — building"
             echo "build=true" >> "$GITHUB_OUTPUT"
           else
