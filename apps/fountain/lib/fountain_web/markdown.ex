@@ -33,7 +33,7 @@ defmodule FountainWeb.Markdown do
   nothing else.
   """
   def to_html(text) when is_binary(text) do
-    render(text, allow_svg: false)
+    render(text, &sanitize/1)
   end
 
   def to_html(_), do: ""
@@ -51,55 +51,67 @@ defmodule FountainWeb.Markdown do
   user-supplied markdown here; use `to_html/1` for that.
   """
   def to_trusted_html(text) when is_binary(text) do
-    render(text, allow_svg: true)
+    render(text, &sanitize_trusted/1)
   end
 
   def to_trusted_html(_), do: ""
 
-  defp render(text, opts) do
-    allow_svg = Keyword.fetch!(opts, :allow_svg)
-
+  # `sanitizer` is `&sanitize/1` (untrusted) or `&sanitize_trusted/1` (the docs
+  # corpus). It is passed as a direct function capture, and each sanitizer
+  # recurses through its own direct capture — threading the mode as a parameter
+  # instead defeats Dialyzer's success typing of the recursive AST walk.
+  defp render(text, sanitizer) do
     case Earmark.as_ast(text, smartypants: false) do
-      {:ok, ast, _warnings} -> transform(ast, allow_svg)
-      {:error, ast, _warnings} -> transform(ast, allow_svg)
+      {:ok, ast, _warnings} -> emit(ast, sanitizer)
+      {:error, ast, _warnings} -> emit(ast, sanitizer)
     end
   end
 
-  defp transform(ast, allow_svg) do
-    ast
-    |> sanitize(allow_svg)
-    |> Earmark.transform(compact_output: true)
-  end
+  defp emit(ast, sanitizer), do: ast |> sanitizer.() |> Earmark.transform(compact_output: true)
 
-  defp sanitize(nodes, allow_svg) when is_list(nodes),
-    do: Enum.map(nodes, &sanitize(&1, allow_svg))
+  # --- untrusted: every raw-HTML block is neutralized to text (#323) ---
 
-  # A block-level `<figure>`/`<svg>` in the trusted corpus is kept as real
-  # markup — scrubbed of the script-bearing subset — so the diagram renders.
-  # Its verbatim children are raw source strings; Transform emits a kept
-  # verbatim node into the DOM unescaped, which is the whole point here.
-  defp sanitize({tag, attrs, children, %{verbatim: true} = meta}, true)
-       when tag in ~w(figure svg) do
-    {tag, drop_event_attrs(attrs), Enum.map(children, &scrub_svg/1), meta}
-  end
+  defp sanitize(nodes) when is_list(nodes), do: Enum.map(nodes, &sanitize/1)
 
-  # Every other block-level raw HTML — and all of it on the untrusted path —
-  # is re-serialized to a plain string so Transform escapes it as text.
-  defp sanitize({_tag, _attrs, _children, %{verbatim: true}} = node, _allow_svg),
-    do: reserialize(node)
+  # Block-level raw HTML. Re-serialized to a plain string so Transform
+  # escapes it as text instead of emitting it verbatim into the DOM.
+  defp sanitize({_tag, _attrs, _children, %{verbatim: true}} = node), do: reserialize(node)
 
-  defp sanitize({"a", attrs, children, meta}, allow_svg),
-    do:
-      {"a", filter_url(attrs, "href", ~w(http https mailto)), sanitize(children, allow_svg), meta}
+  defp sanitize({"a", attrs, children, meta}),
+    do: {"a", filter_url(attrs, "href", ~w(http https mailto)), sanitize(children), meta}
 
-  defp sanitize({"img", attrs, children, meta}, allow_svg),
-    do: {"img", filter_url(attrs, "src", ~w(http https)), sanitize(children, allow_svg), meta}
+  defp sanitize({"img", attrs, children, meta}),
+    do: {"img", filter_url(attrs, "src", ~w(http https)), sanitize(children), meta}
 
-  defp sanitize({tag, attrs, children, meta}, allow_svg),
-    do: {tag, attrs, sanitize(children, allow_svg), meta}
+  defp sanitize({tag, attrs, children, meta}), do: {tag, attrs, sanitize(children), meta}
 
   # Text nodes (escaped by Transform) and comment nodes.
-  defp sanitize(other, _allow_svg), do: other
+  defp sanitize(other), do: other
+
+  # --- trusted docs corpus: identical, except a <figure>/<svg> block is kept
+  # as real markup after scrubbing its script-bearing subset ---
+
+  defp sanitize_trusted(nodes) when is_list(nodes), do: Enum.map(nodes, &sanitize_trusted/1)
+
+  # The one difference from `sanitize/1`: a verbatim figure/svg is kept (its raw
+  # source strings scrubbed) so Transform emits the diagram into the DOM.
+  defp sanitize_trusted({tag, attrs, children, %{verbatim: true} = meta})
+       when tag in ~w(figure svg),
+       do: {tag, drop_event_attrs(attrs), Enum.map(children, &scrub_svg/1), meta}
+
+  defp sanitize_trusted({_tag, _attrs, _children, %{verbatim: true}} = node),
+    do: reserialize(node)
+
+  defp sanitize_trusted({"a", attrs, children, meta}),
+    do: {"a", filter_url(attrs, "href", ~w(http https mailto)), sanitize_trusted(children), meta}
+
+  defp sanitize_trusted({"img", attrs, children, meta}),
+    do: {"img", filter_url(attrs, "src", ~w(http https)), sanitize_trusted(children), meta}
+
+  defp sanitize_trusted({tag, attrs, children, meta}),
+    do: {tag, attrs, sanitize_trusted(children), meta}
+
+  defp sanitize_trusted(other), do: other
 
   # Belt-and-suspenders scrub of an authored SVG block: the corpus is trusted,
   # but the executable surface is removed anyway so a bad paste can't become
