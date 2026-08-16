@@ -110,9 +110,18 @@ defmodule Fountain.Buzz.Manager do
       command: launch.command,
       args: launch.args,
       env: launch.env,
+      launcher: launcher_path(),
       label: identity.id,
       on_stop: fn -> Buzz.revoke_launch_key(identity, launch.api_key_id) end
     ]
+  end
+
+  # The port middleman that reaps buzz-acp on stop (priv/buzz-acp-launch.sh,
+  # shipped in the release). Config can override the path; the app-dir default
+  # resolves in dev, test and the release alike.
+  defp launcher_path do
+    Application.get_env(:fountain, :buzz_acp_launcher) ||
+      Application.app_dir(:fountain, "priv/buzz-acp-launch.sh")
   end
 
   defp revoke_orphaned_key(%BuzzIdentity{} = identity, launch) do

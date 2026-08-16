@@ -54,6 +54,13 @@ defmodule Fountain.Buzz.Harness do
       command: Keyword.fetch!(opts, :command),
       args: Keyword.get(opts, :args, []),
       env: Keyword.get(opts, :env, []),
+      # The port middleman that ties buzz-acp's lifetime to the port and reaps it
+      # on close (see priv/buzz-acp-launch.sh). Without it, buzz-acp closes its
+      # stdio to us, the port reports a false EOF, and we leak a still-live
+      # process that stays on the relay. `nil` spawns the command directly (only
+      # for callers that do not need teardown — real harnesses always set it).
+      launcher: Keyword.get(opts, :launcher),
+      shell: Keyword.get(opts, :shell, "/bin/sh"),
       on_stop: Keyword.get(opts, :on_stop),
       backoff_ms: Keyword.get(opts, :restart_backoff_ms, @default_backoff_ms),
       label: Keyword.get(opts, :label, "buzz-acp"),
@@ -111,24 +118,33 @@ defmodule Fountain.Buzz.Harness do
   # ── internals ────────────────────────────────────────────────────────────────
 
   defp open(state) do
+    {exec, args} = spawn_argv(state)
+
     port =
-      Port.open({:spawn_executable, state.command}, [
+      Port.open({:spawn_executable, exec}, [
         :binary,
         :exit_status,
         :hide,
-        {:args, state.args},
+        {:args, args},
         {:env, charlist_env(state.env)}
       ])
 
     %{state | port: port, starts: state.starts + 1}
   end
 
+  # Through the launcher (`/bin/sh <launcher> <command> <args…>`) so buzz-acp is
+  # reaped on port close; direct only when no launcher is configured.
+  defp spawn_argv(%{launcher: nil} = state), do: {state.command, state.args}
+
+  defp spawn_argv(%{launcher: launcher, shell: shell} = state),
+    do: {shell, [launcher, state.command | state.args]}
+
   defp close(nil), do: :ok
 
-  # Closing a spawn_executable port terminates its OS process. Reliable teardown
-  # of the ACP *child* (`fountain acp` beneath `buzz-acp`) needs a process-group
-  # kill, which in turn needs the port spawned in its own session — that arrives
-  # with the real binary in increment 2. For now, close the port.
+  # Closing the port EOFs the launcher's held pipe, which TERMs buzz-acp (and,
+  # if it will not go, KILLs it) and reaps its `fountain acp` child — see
+  # priv/buzz-acp-launch.sh. Without the launcher this only closes the pipe and
+  # a bare buzz-acp would be orphaned.
   defp close(port) do
     Port.close(port)
     :ok
