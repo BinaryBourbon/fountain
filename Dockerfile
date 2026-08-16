@@ -77,27 +77,27 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH="${TARGETARCH:-amd64}" \
       go build -trimpath -o /out/fountain ./cmd/fountain
 
 # ---
-# The hosted Buzz harness binary. block/buzz publishes an amd64 .deb only, so
-# this is baked on amd64 and skipped on arm64 — an arm64 image simply has no
-# buzz-acp, and runtime.exs leaves :buzz_acp_path unset there (the BootSweep is
-# inert). Pin is deliberate: a moved tag under an agent's key is not something
-# we want to float. Bump BUZZ_VERSION consciously.
+# The hosted Buzz harness binary. block/buzz publishes an amd64 .deb only, and
+# our cluster is arm64 (ADR 0020, #743), so we build buzz-acp ourselves for both
+# arches from the block/buzz source and publish it as a Fountain release asset
+# (`.github/workflows/buzz-acp-publish.yml`). Here we just download the
+# arch-matched binary and verify its checksum — no compile in the image build.
+# The pin lives in buzz-acp.version and is passed as BUZZ_ACP_VERSION by the
+# build workflow; the default below keeps a local `docker build` working.
 
-FROM debian:bookworm-slim AS buzzacp
+FROM debian:trixie-slim AS buzzacp
 ARG TARGETARCH
-ARG BUZZ_VERSION=0.5.14
+ARG BUZZ_ACP_VERSION=0.5.14
 RUN apt-get update -y \
- && apt-get install -y --no-install-recommends curl ca-certificates dpkg \
+ && apt-get install -y --no-install-recommends curl ca-certificates \
  && mkdir -p /out \
- && if [ "${TARGETARCH:-amd64}" = "amd64" ]; then \
-      curl -fsSL -o /tmp/buzz.deb \
-        "https://github.com/block/buzz/releases/download/desktop-v${BUZZ_VERSION}/Buzz_${BUZZ_VERSION}_amd64.deb" \
-      && dpkg-deb -x /tmp/buzz.deb /tmp/x \
-      && install -m 0755 /tmp/x/usr/bin/buzz-acp /out/buzz-acp ; \
-    else \
-      echo "buzz-acp: no ${TARGETARCH} build published upstream; skipping bake" ; \
-    fi \
- && rm -rf /var/lib/apt/lists/* /tmp/buzz.deb /tmp/x
+ && base="https://github.com/BinaryBourbon/fountain/releases/download/buzz-acp-v${BUZZ_ACP_VERSION}" \
+ && asset="buzz-acp-linux-${TARGETARCH:-amd64}" \
+ && curl -fsSL -o /out/buzz-acp "${base}/${asset}" \
+ && curl -fsSL -o /tmp/sha "${base}/${asset}.sha256" \
+ && echo "$(cat /tmp/sha)  /out/buzz-acp" | sha256sum -c - \
+ && chmod 0755 /out/buzz-acp \
+ && rm -rf /var/lib/apt/lists/* /tmp/sha
 
 # ---
 
@@ -127,20 +127,15 @@ WORKDIR /app
 COPY --chown=fountain:fountain --from=build /app/_build/prod/rel/fountain_server ./
 
 # Hosted Buzz harness binaries (ADR 0020). The `fountain` CLI is the harness's
-# ACP child; buzz-acp is present only on amd64 (see the buzzacp stage). Copying
-# an empty /out on arm64 is a no-op, so :buzz_acp_path stays unset there.
+# ACP child; buzz-acp is our own build (see the buzzacp stage) for both arches.
 COPY --from=gocli /out/fountain /usr/local/bin/fountain
-COPY --from=buzzacp /out/ /usr/local/lib/fountain-buzz/
+COPY --from=buzzacp /out/buzz-acp /usr/local/lib/fountain-buzz/buzz-acp
 
-ARG TARGETARCH
 # Fail the build now if a baked binary will not run in this image, rather than
-# at the first harness start. The CLI must run on every arch; buzz-acp only
-# where it was baked.
+# at the first harness start.
 RUN /usr/local/bin/fountain --version >/dev/null 2>&1 \
- && if [ -x /usr/local/lib/fountain-buzz/buzz-acp ]; then \
-      /usr/local/lib/fountain-buzz/buzz-acp --help >/dev/null 2>&1 \
-        || { echo "buzz-acp is present but will not run in this image" >&2; exit 1; } ; \
-    fi
+ && /usr/local/lib/fountain-buzz/buzz-acp --help >/dev/null 2>&1 \
+      || { echo "a baked binary will not run in this image" >&2; exit 1; }
 
 EXPOSE 4000
 

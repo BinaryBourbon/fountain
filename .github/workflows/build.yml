@@ -137,6 +137,9 @@ jobs:
         with:
           ref: ${{ env.SRC_SHA }}
 
+      - name: Read buzz-acp pin
+        run: echo "BUZZ_ACP_VERSION=$(tr -d '[:space:]' < buzz-acp.version)" >> "$GITHUB_ENV"
+
       - name: Set up Buildx
         uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
 
@@ -156,6 +159,7 @@ jobs:
           platforms: ${{ matrix.platform }}
           build-args: |
             BUILD_SHA=${{ env.SRC_SHA }}
+            BUZZ_ACP_VERSION=${{ env.BUZZ_ACP_VERSION }}
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.revision=${{ env.SRC_SHA }}
