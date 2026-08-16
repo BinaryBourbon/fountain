@@ -97,6 +97,36 @@ defmodule Fountain.Factory do
     vault
   end
 
+  # ── buzz identities ─────────────────────────────────────────────────────────
+
+  def insert_buzz_identity(overrides \\ %{}) do
+    overrides = to_string_map(overrides)
+
+    user_id =
+      Map.get_lazy(overrides, "user_id", fn -> insert_verified_user().id end)
+
+    agent_id =
+      Map.get_lazy(overrides, "agent_id", fn -> insert_agent(%{"user_id" => user_id}).id end)
+
+    vault_id =
+      Map.get_lazy(overrides, "vault_id", fn -> insert_vault(%{"user_id" => user_id}).id end)
+
+    attrs =
+      Map.merge(
+        %{
+          "user_id" => user_id,
+          "agent_id" => agent_id,
+          "vault_id" => vault_id,
+          "name" => "buzz-#{uniq()}",
+          "relay_url" => "wss://relay.test"
+        },
+        overrides
+      )
+
+    {:ok, identity} = Fountain.Buzz.create_identity(attrs)
+    identity
+  end
+
   def insert_vault_secret(vault, overrides \\ %{}) do
     attrs =
       %{"key" => "TEST_KEY_#{uniq()}", "value" => "test-value-#{uniq()}"}
