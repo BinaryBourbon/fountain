@@ -1,9 +1,15 @@
 # 0016 — Governance as an ACP proxy
 
-**Status:** Proposed — **nothing described here is built.** No ACP code, no
-policy engine, no sandbox abstraction and no inference proxy exist in this
-repo. This ADR records a product shape and the gates that decide whether we
-take it; the PR that builds each gate removes its caveat.
+**Status:** Proposed — **the governance layer described here is not built.**
+No policy engine and no inference proxy exist in this repo. Two things this
+ADR originally listed as missing have since landed: ACP is built, and is the
+only path to the agent for claude, codex and opencode
+([0014](0014-agent-client-protocol.md) gates 1–4); and the sandbox
+abstraction is `Fountain.Sandbox`
+([0018](0018-sandbox-provider-abstraction.md)). What remains unbuilt is the
+*answering* — Fountain still observes a turn it cannot intervene in. This ADR
+records a product shape and the gates that decide whether we take it; the PR
+that builds each gate removes its caveat.
 
 This is the third ACP ADR and the only one that is about what Fountain *is*.
 [0014](0014-agent-client-protocol.md) proposes Fountain as an ACP client of
