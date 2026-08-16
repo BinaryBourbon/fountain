@@ -56,19 +56,23 @@ jobs:
           cd buzz
           rustup show
 
-      - name: Build buzz-acp
+      - name: Build binaries
         run: |
           cd buzz
-          cargo build --release -p buzz-acp
-          strip target/release/buzz-acp
+          # buzz-acp: the hosted harness (gate 2). buzz: the CLI our server-side
+          # MCP tools shell out to for signed publishes (gate 3, #737).
+          cargo build --release -p buzz-acp -p buzz-cli
+          strip target/release/buzz-acp target/release/buzz
 
-      - name: Stage artifact + checksum
+      - name: Stage artifacts + checksums
         run: |
           mkdir -p dist
-          cp buzz/target/release/buzz-acp "dist/buzz-acp-linux-${{ matrix.arch }}"
-          ( cd dist && sha256sum "buzz-acp-linux-${{ matrix.arch }}" | cut -d' ' -f1 \
-              > "buzz-acp-linux-${{ matrix.arch }}.sha256" )
-          file "dist/buzz-acp-linux-${{ matrix.arch }}"
+          for bin in buzz-acp buzz; do
+            cp "buzz/target/release/${bin}" "dist/${bin}-linux-${{ matrix.arch }}"
+            ( cd dist && sha256sum "${bin}-linux-${{ matrix.arch }}" | cut -d' ' -f1 \
+                > "${bin}-linux-${{ matrix.arch }}.sha256" )
+            file "dist/${bin}-linux-${{ matrix.arch }}"
+          done
 
       - name: Upload to the buzz-acp release
         env:
@@ -80,10 +84,12 @@ jobs:
           if ! gh release view "$tag" >/dev/null 2>&1; then
             gh release create "$tag" \
               --title "buzz-acp v${VERSION}" \
-              --notes "buzz-acp built from block/buzz \`desktop-v${VERSION}\` for linux/amd64 and linux/arm64. See ADR 0020 / #743. Upstream is Apache-2.0." \
+              --notes "buzz-acp and buzz built from block/buzz \`desktop-v${VERSION}\` for linux/amd64 and linux/arm64. See ADR 0020 / #743 / #737. Upstream is Apache-2.0." \
               || true
           fi
           gh release upload "$tag" \
             "dist/buzz-acp-linux-${{ matrix.arch }}" \
             "dist/buzz-acp-linux-${{ matrix.arch }}.sha256" \
+            "dist/buzz-linux-${{ matrix.arch }}" \
+            "dist/buzz-linux-${{ matrix.arch }}.sha256" \
             --clobber
