@@ -186,10 +186,12 @@ without it.
    `fountain acp` end-to-end; inbound proven live, the outbound gap measured.
 2. **Phase 1 supervisor.** A Fountain-managed process that starts/stops/heals a
    `buzz-acp` per (agent × identity) from vault-held env, with presence surviving
-   sandbox suspend. Owns pinning and the amd64 constraint.
+   sandbox suspend. Owns pinning and the amd64 constraint. *Decided 2026-08-16:
+   lives **inside the Fountain OTP app** (DynamicSupervisor + per-identity
+   GenServer running `buzz-acp` as a Port), not a separate sidecar.*
 3. **Phase 2 signer.** HTTP-MCP `buzz_*` tools with the key server-side, a
-   base-prompt override, and PDP + audit hooks on every publish. Interim: a
-   sandbox `buzz` shim that remote-execs argv against Fountain.
+   base-prompt override, and PDP + audit hooks on every publish. *Decided
+   2026-08-16: go straight to native tools; the interim sandbox shim is skipped.*
 4. **Phase 3 provider (optional).** `buzz-backend-fountain` in `cli/` mapping
    Buzz's `deploy` onto the Phase 1 supervisor; conforms to block/buzz's
    remote-agents [L1]/[L2] checklist and documents its own binding.
