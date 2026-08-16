@@ -60,6 +60,23 @@ defmodule Fountain.Application do
              max_restarts: 100,
              max_seconds: 10
            ]},
+          # Hosted buzz-acp harnesses (ADR 0020, gate #736). Same Horde shape as
+          # the conversation tree: one harness per Buzz identity, addressable
+          # cluster-wide, surviving node loss. The BootSweep stands the enabled
+          # ones up after both are ready, and is inert until a `buzz-acp` binary
+          # path is configured (increment 2b), so this adds nothing at runtime on
+          # an instance that has not opted in.
+          {Horde.Registry, [name: Fountain.BuzzRegistry, keys: :unique, members: :auto]},
+          {Horde.DynamicSupervisor,
+           [
+             name: Fountain.BuzzSupervisor,
+             strategy: :one_for_one,
+             distribution_strategy: Horde.UniformDistribution,
+             members: :auto,
+             max_restarts: 100,
+             max_seconds: 10
+           ]},
+          Fountain.Buzz.BootSweep,
           FountainWeb.Endpoint
         ]
 
