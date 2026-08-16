@@ -285,6 +285,11 @@ defmodule FountainWeb.Router do
     # The tenant's own trail (#526). Cross-tenant listing is an admin concern.
     get "/audit", AuditController, :index
 
+    # MCP tools a hosted Buzz agent's sandbox calls to post to its channel
+    # (ADR 0020, #737). One JSON-RPC message per POST; the nsec is resolved
+    # server-side and never enters the sandbox.
+    post "/mcp/buzz/:conversation_id", BuzzMcpController, :handle
+
     resources "/environments", EnvironmentController, except: [:new, :edit] do
       resources "/secrets", SecretController, only: [:index, :create, :delete]
     end

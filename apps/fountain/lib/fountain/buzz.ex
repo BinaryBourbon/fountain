@@ -45,6 +45,16 @@ defmodule Fountain.Buzz do
   end
 
   @doc """
+  Fetch the identity that drives a given vault, scoped to a user. This is how
+  a Buzz-driven conversation is recognised: the hosted harness runs
+  `fountain acp --agent … --vault <vault>`, so its conversations carry that
+  vault. Returns nil if the vault is not a Buzz identity vault (or not owned).
+  """
+  def get_identity_by_vault(vault_id, user_id) when is_binary(vault_id) and is_binary(user_id) do
+    Repo.get_by(BuzzIdentity, vault_id: vault_id, user_id: user_id)
+  end
+
+  @doc """
   Create a Buzz identity. `attrs` must carry `user_id`, `agent_id`, `vault_id`,
   `name` and `relay_url`. Records `buzz_identity.created`.
   """
