@@ -1,7 +1,7 @@
 defmodule FountainWeb.HelpLive.Show do
   @moduledoc """
   In-app docs. Each topic is a markdown file under `priv/help/<slug>.md`,
-  rendered via Earmark. Default topic is `quickstart`. The `/api/docs`
+  rendered via `FountainWeb.Markdown` (MDEx). Default topic is `quickstart`. The `/api/docs`
   Swagger UI is linked out separately as the API reference.
 
   Topic order + display names are hard-coded here so the nav stays

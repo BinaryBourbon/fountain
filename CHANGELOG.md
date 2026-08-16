@@ -16,6 +16,18 @@ upgrade, is in
 
 ## [Unreleased]
 
+### Changed
+
+- **Markdown rendering moved from Earmark to MDEx.** Earmark is retired
+  upstream (`mix hex.audit` flags it as unmaintained), and it sat under
+  the XSS-hardened renderer for agent output and the in-app docs. The
+  same guarantees hold on MDEx (comrak): raw HTML is neutralized to text
+  on the untrusted path, `javascript:`/`data:` URLs are dropped, and the
+  docs corpus keeps its scrubbed SVG diagrams. Two visible differences:
+  a link or image with a dropped URL is now unwrapped to its text/alt
+  instead of rendered as an element with no `href`/`src`, and an
+  HTML-comment block is dropped rather than shown as escaped text (#762).
+
 ## [0.10.2] — 2026-08-15
 
 ### Fixed

@@ -56,7 +56,7 @@ defmodule Fountain.MixProject do
       {:telemetry_metrics_prometheus_core, "~> 1.2"},
       {:telemetry_poller, "~> 1.0"},
       {:jason, "~> 1.2"},
-      {:earmark, "~> 1.4"},
+      {:mdex, "~> 0.13.5"},
       {:dns_cluster, "~> 0.2.0"},
       {:bandit, "~> 1.5"},
       {:remote_ip, "~> 1.2"},
