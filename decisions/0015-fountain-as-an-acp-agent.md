@@ -373,14 +373,43 @@ ships. Node ≥ 22.22.3 was the only gate, and Node 24.19.0 cleared it; simulati
 `acpx` beforehand was the faithful move, and running the real binary confirmed
 it rather than overturning it.
 
-**What is still open — do not read this as a shipped, gateway-verified integration.**
+**Update — 2026-08-16 (later): the gateway round trip is green.** A live
+`--dev` gateway daemon (OpenClaw 2026.7.1, acpx 0.11.2) ran
+`openclaw agent` → OpenClaw's own brain → `sessions_spawn(runtime: "acp",
+agentId: "fountain")` → acpx → `fountain acp` → sandbox → reply relayed back,
+against production. Two things had to change in the adapter, both about
+**session controls OpenClaw pushes at spawn** — its brain sends the model it
+chose (`anthropic/claude-haiku-4-5-…`) as a `sessions_spawn` argument, OpenClaw
+derives a `thinking` level from it, and acpx delivers both over
+`session/set_config_option`, treating any rejection as fatal:
 
-- **The full OpenClaw *gateway* path was not exercised end to end.** The smoke
-  drove the acpx engine directly (escape hatch and config file); it did not run a
-  turn through a live gateway daemon via `sessions_spawn` with channel delivery.
-  That wrapper is a thin OpenClaw-owned layer over the exact engine and config
-  schema verified above — but it is not the same as a green
-  channel-to-reply round trip, and a channel binding remains unproven.
+- [#759](https://github.com/BinaryBourbon/fountain/pull/759) implemented the
+  method as accept-but-do-not-apply (the agent's model is authoritative — the
+  same reason `session/set_model` is absent).
+- [#760](https://github.com/BinaryBourbon/fountain/issues/760): that reply must
+  **not** carry a `configOptions` list. acpx narrows the controls it will send
+  to whatever list the last reply advertised, so the honest list — empty, or the
+  fixed model alone — makes the *next* control fail with "does not advertise
+  config option 'thinking'" and the turn dies anyway. `fountain acp` therefore
+  advertises no session config options at all (`session/new` never did) and
+  answers `set_config_option` with `_meta.fountain.applied: false`. Advertising
+  `thinking`/`fast` to satisfy the check was considered and rejected: a
+  Fountain agent has neither, and saying otherwise is the "describes unbuilt
+  behaviour" failure this repo's guidance forbids.
+
+One cost is OpenClaw's, and stays: a `mode: "run"` spawn ensures the acpx
+session twice (spawn init, then turn) and one-shot acpx answers each with a
+fresh `session/new`, so every gateway spawn opens **two** Fountain
+conversations and prompts one; the orphan sits `pending` with a provisioned
+sandbox until the idle reaper parks it. Documented on the integration page;
+worth an upstream report, not an adapter workaround.
+
+**What is still open.**
+
+- **A channel binding remains unproven.** The round trip above was driven from
+  `openclaw agent` (the CLI front door to the gateway); a Telegram/Discord
+  binding is the same gateway path with a delivery step on the end, and has not
+  been run.
 - **Permission forwarding is still gate 4 / #643.** Nothing here changes that.
   OpenClaw runs the turn under `permissionMode: "approve-all"` and the sandbox's
   own policy; per-tool approvals do not round-trip to a channel any more than
@@ -390,8 +419,8 @@ it rather than overturning it.
   authenticates as the host's Fountain login. Per-channel-user identities are
   out of scope.
 
-This addendum records a proven adapter and a config-only path now verified
-against the real acpx binary — but not a full gateway-daemon round trip, and not
-permission forwarding. It does not alter the decision or the gates; it is
+This addendum records a proven adapter, a config-only path verified against
+the real acpx binary, and a green gateway-daemon round trip — but not a channel
+binding, and not permission forwarding. It does not alter the decision or the gates; it is
 evidence for the central claim that the dialects stop at the server boundary and
 every ACP client past it is the same forwarder.

@@ -18,6 +18,16 @@ upgrade, is in
 
 ### Fixed
 
+- **`fountain acp` no longer trips OpenClaw's session-control sync.** The
+  `session/set_config_option` reply advertised a config-option list, and
+  acpx narrows the controls it will push to whatever that list says — so the
+  next control (`thinking`) failed with "does not advertise config option"
+  and the gateway turn died. The reply now carries no list (Fountain has no
+  per-session options; the agent's model is authoritative) and says
+  `_meta.fountain.applied: false`. The full OpenClaw gateway round trip —
+  brain → `sessions_spawn` → acpx → `fountain acp` → sandbox → reply — is
+  green against the real acpx 0.11.2 (#760).
+
 - **In-app docs anchor links land on their section.** `/docs` and `/help`
   headings now carry GFM-style ids, so the docs' `#anchor` cross-links
   (e.g. `/docs/architecture#the-secrets-model`) scroll to the heading

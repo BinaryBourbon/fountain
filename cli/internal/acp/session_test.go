@@ -349,15 +349,23 @@ func TestSetConfigOptionIsAcceptedRatherThanRejected(t *testing.T) {
 		t.Fatalf("set_config_option returned an error: %v", rpcErr)
 	}
 
-	// The push is accepted but not applied: the agent's model is authoritative,
-	// so the echoed option still reports the agent's own value (here "default",
-	// since the test ref sets no model), never the client's.
-	opts, ok := result["configOptions"].([]map[string]any)
-	if !ok || len(opts) == 0 {
-		t.Fatalf("configOptions = %#v, want a non-empty list", result["configOptions"])
+	// The push is accepted but not applied: the agent's model is authoritative.
+	// The reply says so in _meta and — deliberately — advertises no
+	// configOptions list: acpx narrows the controls it will send to whatever
+	// list the last reply carried, so an honest empty (or model-only) list makes
+	// its next control fail with "does not advertise config option 'thinking'"
+	// and the turn dies anyway (#760).
+	if _, present := result["configOptions"]; present {
+		t.Errorf("configOptions = %#v, want the key absent (a list, even an honest one, makes acpx abort the next control)", result["configOptions"])
 	}
-	if got := opts[0]["currentValue"]; got != "default" {
-		t.Errorf("model currentValue = %v, want the agent's value \"default\" (the client's push must not apply)", got)
+	meta, _ := result["_meta"].(map[string]any)
+	fountainMeta, _ := meta["fountain"].(map[string]any)
+	if got := fountainMeta["applied"]; got != false {
+		t.Errorf("_meta.fountain.applied = %v, want false", got)
+	}
+	sess, _ := a.sessions.get("conv-9")
+	if sess.Agent.Model != "" {
+		t.Errorf("agent model = %q after the push, want unchanged (empty in this fixture)", sess.Agent.Model)
 	}
 }
 

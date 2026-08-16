@@ -205,24 +205,6 @@ func modelState(ref AgentRef) map[string]any {
 	}
 }
 
-// configOptions reports a session's settable options as an ACP config-option
-// list, echoed back from setConfigOption so a client that pushed one sees the
-// resulting state. A Fountain agent exposes exactly one option, its model, and
-// it is fixed — chosen on the agent, shared by every conversation — so the list
-// has a single entry that is also the current value. See setConfigOption for
-// why the set is accepted but never applied.
-func configOptions(ref AgentRef) []map[string]any {
-	model := ref.Model
-	if model == "" {
-		model = "default"
-	}
-	return []map[string]any{{
-		"configId": "model", "id": "model", "name": "Model",
-		"currentValue": model, "value": model,
-		"options": []map[string]any{{"optionId": model, "id": model, "name": model}},
-	}}
-}
-
 // requireReady is the gate the session methods share: a client that has not
 // handshaked, or has no working credentials, gets a protocol error naming
 // which of the two it is rather than an authorization failure from three
