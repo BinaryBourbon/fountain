@@ -20,6 +20,11 @@ talks to your instance with the credentials the developer already has. There is
 no env var, no server-side switch, and nothing for you to run: it works against
 any instance the CLI can reach.
 
+[**OpenClaw**](openclaw.md) reaches the same `fountain acp` adapter from a chat
+surface — Telegram, Discord, Slack — by registering Fountain as a custom ACP
+agent in its `acpx` plugin. Again there is nothing to change on the Fountain
+side; the configuration is client-side, on the OpenClaw host.
+
 The sandbox providers — Sprites, E2B, Daytona — have
 [a section of their own](sandbox-contract.md): one contract, three
 implementations.
