@@ -33,19 +33,43 @@ defmodule FountainWeb.Markdown do
   nothing else.
   """
   def to_html(text) when is_binary(text) do
-    case Earmark.as_ast(text, smartypants: false) do
-      {:ok, ast, _warnings} -> render(ast)
-      {:error, ast, _warnings} -> render(ast)
-    end
+    render(text, &sanitize/1)
   end
 
   def to_html(_), do: ""
 
-  defp render(ast) do
-    ast
-    |> sanitize()
-    |> Earmark.transform(compact_output: true)
+  @doc """
+  Renders **trusted** markdown (the in-repo docs corpus, compiled from
+  `docs/*.md` and reviewed in a PR) exactly like `to_html/1`, with one
+  addition: a `<figure>`/`<svg>` block is kept as real markup so hand-authored
+  diagrams render, after scrubbing the script-bearing subset (`<script>`,
+  `<style>`, `<foreignObject>`, `on*` handlers, and `javascript:`/`data:`/
+  `vbscript:` URLs). Everything else — every other raw-HTML block — is still
+  neutralized to text, and the untrusted `to_html/1` path is untouched.
+
+  This is only ever fed authored documentation. Never pass agent- or
+  user-supplied markdown here; use `to_html/1` for that.
+  """
+  def to_trusted_html(text) when is_binary(text) do
+    render(text, &sanitize_trusted/1)
   end
+
+  def to_trusted_html(_), do: ""
+
+  # `sanitizer` is `&sanitize/1` (untrusted) or `&sanitize_trusted/1` (the docs
+  # corpus). It is passed as a direct function capture, and each sanitizer
+  # recurses through its own direct capture — threading the mode as a parameter
+  # instead defeats Dialyzer's success typing of the recursive AST walk.
+  defp render(text, sanitizer) do
+    case Earmark.as_ast(text, smartypants: false) do
+      {:ok, ast, _warnings} -> emit(ast, sanitizer)
+      {:error, ast, _warnings} -> emit(ast, sanitizer)
+    end
+  end
+
+  defp emit(ast, sanitizer), do: ast |> sanitizer.() |> Earmark.transform(compact_output: true)
+
+  # --- untrusted: every raw-HTML block is neutralized to text (#323) ---
 
   defp sanitize(nodes) when is_list(nodes), do: Enum.map(nodes, &sanitize/1)
 
@@ -63,6 +87,59 @@ defmodule FountainWeb.Markdown do
 
   # Text nodes (escaped by Transform) and comment nodes.
   defp sanitize(other), do: other
+
+  # --- trusted docs corpus: identical, except a <figure>/<svg> block is kept
+  # as real markup after scrubbing its script-bearing subset ---
+
+  defp sanitize_trusted(nodes) when is_list(nodes), do: Enum.map(nodes, &sanitize_trusted/1)
+
+  # The one difference from `sanitize/1`: a verbatim figure/svg is kept (its raw
+  # source strings scrubbed) so Transform emits the diagram into the DOM.
+  defp sanitize_trusted({tag, attrs, children, %{verbatim: true} = meta})
+       when tag in ~w(figure svg),
+       do: {tag, drop_event_attrs(attrs), Enum.map(children, &scrub_svg/1), meta}
+
+  defp sanitize_trusted({_tag, _attrs, _children, %{verbatim: true}} = node),
+    do: reserialize(node)
+
+  defp sanitize_trusted({"a", attrs, children, meta}),
+    do: {"a", filter_url(attrs, "href", ~w(http https mailto)), sanitize_trusted(children), meta}
+
+  defp sanitize_trusted({"img", attrs, children, meta}),
+    do: {"img", filter_url(attrs, "src", ~w(http https)), sanitize_trusted(children), meta}
+
+  defp sanitize_trusted({tag, attrs, children, meta}),
+    do: {tag, attrs, sanitize_trusted(children), meta}
+
+  defp sanitize_trusted(other), do: other
+
+  # Belt-and-suspenders scrub of an authored SVG block: the corpus is trusted,
+  # but the executable surface is removed anyway so a bad paste can't become
+  # live script. Element removals run before the on*/URL passes so their
+  # contents cannot re-introduce a handler.
+  defp scrub_svg(str) when is_binary(str) do
+    str
+    |> drop_elements(~w(script style foreignObject))
+    |> String.replace(~r/\son[a-z]+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/i, "")
+    |> String.replace(
+      ~r/(href|xlink:href|src)\s*=\s*("(?:javascript|data|vbscript):[^"]*"|'(?:javascript|data|vbscript):[^']*')/i,
+      ""
+    )
+  end
+
+  defp scrub_svg(other), do: other
+
+  defp drop_elements(str, tags) do
+    Enum.reduce(tags, str, fn tag, acc ->
+      acc
+      |> String.replace(~r/<#{tag}\b[^>]*>.*?<\/#{tag}\s*>/is, "")
+      |> String.replace(~r/<#{tag}\b[^>]*\/?>/is, "")
+    end)
+  end
+
+  defp drop_event_attrs(attrs) do
+    Enum.reject(attrs, fn {k, _v} -> String.match?(k, ~r/^on[a-z]+$/i) end)
+  end
 
   # Verbatim children are the raw source lines as strings; nested markup
   # arrives inside those strings, so joining them reconstructs the block.

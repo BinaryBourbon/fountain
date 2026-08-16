@@ -25,6 +25,12 @@ surface — Telegram, Discord, Slack — by registering Fountain as a custom ACP
 agent in its `acpx` plugin. Again there is nothing to change on the Fountain
 side; the configuration is client-side, on the OpenClaw host.
 
+[**Buzz**](buzz.md) is the other direction: Fountain *hosts* a Buzz agent —
+a Nostr identity that lives on a relay — running its coding agent in a sandbox
+and holding its signing key in a vault. Provision one from the Buzz desktop or
+`POST /api/buzz/agents`; it self-enables on any image that ships the `buzz-acp`
+binary.
+
 The sandbox providers — Sprites, E2B, Daytona — have
 [a section of their own](sandbox-contract.md): one contract, three
 implementations.
