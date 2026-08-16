@@ -33,6 +33,13 @@ defmodule Fountain.Buzz.ManagerTest do
 
   defp launch_opts(fake), do: [buzz_acp_path: fake, base_url: "https://fountain.test"]
 
+  defp active_keys(user_id) do
+    Repo.all(
+      from k in ApiKey,
+        where: k.user_id == ^user_id and is_nil(k.revoked_at) and like(k.name, "buzz-acp:%")
+    )
+  end
+
   defp active_key_count(user_id) do
     Repo.one(
       from k in ApiKey,
@@ -92,5 +99,66 @@ defmodule Fountain.Buzz.ManagerTest do
 
     assert active_key_count(identity.user_id) == 0
     refute Manager.running?(identity.id)
+  end
+
+  describe "the launch is resolved by the child's start, not frozen in the spec" do
+    # Horde replays a stored child spec on every deploy, node loss and rebalance.
+    # If the spec carried the launch, a replay would reuse a launcher path from a
+    # previous release and an API key the old node revoked in terminate/2 —
+    # which is exactly what took the FizzTheShark harness down on 2026-08-16.
+    # `start_harness_link/2` is what the spec invokes; calling it directly is
+    # calling it the way Horde does.
+
+    test "each start mints its own key and a stop revokes only that one", %{fake: fake} do
+      identity = insert_buzz_identity()
+
+      assert {:ok, pid1} = Manager.start_harness_link(identity.id, launch_opts(fake))
+      assert active_key_count(identity.user_id) == 1
+      [key1] = active_keys(identity.user_id)
+
+      # The old node going away: terminate runs, the key is revoked.
+      GenServer.stop(pid1)
+      assert active_key_count(identity.user_id) == 0
+
+      # The new node replaying the same spec: a fresh key, not the dead one.
+      assert {:ok, pid2} = Manager.start_harness_link(identity.id, launch_opts(fake))
+      assert [key2] = active_keys(identity.user_id)
+      refute key2.id == key1.id
+      GenServer.stop(pid2)
+    end
+
+    test "the launcher path is read at start, so a version bump cannot strand it", %{
+      fake: fake
+    } do
+      identity = insert_buzz_identity()
+      dir = Path.dirname(fake)
+      old = Path.join(dir, "old-launch.sh")
+      new = Path.join(dir, "new-launch.sh")
+      for l <- [old, new], do: File.write!(l, "#!/bin/sh\nexec \"$@\"\n") && File.chmod!(l, 0o755)
+
+      Application.put_env(:fountain, :buzz_acp_launcher, old)
+      on_exit(fn -> Application.delete_env(:fountain, :buzz_acp_launcher) end)
+
+      assert {:ok, pid1} = Manager.start_harness_link(identity.id, launch_opts(fake))
+      assert :sys.get_state(pid1).launcher == old
+      GenServer.stop(pid1)
+
+      # "The next release": the launcher lives somewhere else now.
+      Application.put_env(:fountain, :buzz_acp_launcher, new)
+      assert {:ok, pid2} = Manager.start_harness_link(identity.id, launch_opts(fake))
+      assert :sys.get_state(pid2).launcher == new
+      GenServer.stop(pid2)
+    end
+
+    test "an identity that was disabled or deleted is dropped, not restarted forever", %{
+      fake: fake
+    } do
+      identity = insert_buzz_identity()
+      {:ok, _} = Fountain.Buzz.update_identity(identity, %{enabled: false}, actor: "system:test")
+      assert :ignore = Manager.start_harness_link(identity.id, launch_opts(fake))
+      assert active_key_count(identity.user_id) == 0
+
+      assert :ignore = Manager.start_harness_link(Ecto.UUID.generate(), launch_opts(fake))
+    end
   end
 end

@@ -18,6 +18,16 @@ upgrade, is in
 
 ### Fixed
 
+- **A hosted Buzz harness survives deploys and version bumps.** Horde replays
+  a harness's child spec on every deploy, and the spec carried the launch:
+  the launcher path (`/app/lib/fountain-<version>/priv/buzz-acp-launch.sh`,
+  stale after the next version bump — the harness crash-looped on `No such
+  file`) and the minted `FOUNTAIN_API_KEY` (revoked by the old node's
+  `terminate/2`, then replayed by the new one). The spec now carries only the
+  identity id; the launch — key, env, launcher — is resolved by the child's
+  start on whichever node runs it. **One-time step after upgrading:** a
+  harness started before this fix keeps its old spec until it is stopped and
+  started once (disable and re-enable the Buzz agent).
 - **An ACP turn in flight across a deploy no longer hangs.** Every deploy
   restarts every `ConversationServer`; the agent in the sandbox keeps running
   and the server reattached to its session — but on the ACP path it reattached
