@@ -11,11 +11,28 @@ defmodule Fountain.Buzz.Manager do
 
   This module is the seam between the tenant-aware context and the process tree:
   it calls `Fountain.Buzz.harness_launch/2` (which mints the API key and decrypts
-  the vault) and hands the resulting spec to the supervisor. It also owns the one
-  correctness subtlety that split introduces — a launch mints a credential
-  *before* the supervisor can say whether a harness already exists, so every path
-  that does not end in a running harness revokes the key it minted, or a race
-  would leak standing credentials.
+  the vault) and hands the resulting spec to the supervisor.
+
+  ## The child spec carries the identity id and nothing else
+
+  Horde stores every child spec in a CRDT and **replays it** — on a node loss,
+  on a rebalance, and on every deploy, when the old node's supervisor terminates
+  the harness and the new node's starts it again from the stored spec. So
+  anything resolved at `start_harness/2` time and put in the spec is frozen at
+  that moment, for the life of the identity. Two things bit (2026-08-16, the
+  FizzTheShark identity): the launcher path
+  (`/app/lib/fountain-<version>/priv/buzz-acp-launch.sh`) went stale on the next
+  version bump and the harness crash-looped on `No such file` after every
+  restart; and the minted `FOUNTAIN_API_KEY` was **revoked by the old node's
+  `terminate/2`** and then replayed by the new node, so a harness that did start
+  drove `fountain acp` with a dead credential. The `ConversationServer` learned
+  the same lesson about its initial prompt.
+
+  So the spec is `{Manager, :start_harness_link, [identity_id, opts]}` and the
+  launch — identity re-read, vault decrypted, key minted, launcher path resolved
+  — happens inside that function, on whichever node is starting the child, every
+  time it starts. `opts` are the config overrides only (`:buzz_acp_path`,
+  `:base_url`, `:agents`, `:actor`); they are safe to store.
   """
 
   require Logger
@@ -42,22 +59,50 @@ defmodule Fountain.Buzz.Manager do
 
   @doc """
   Ensure a harness is running for `identity`. Idempotent: if one already runs,
-  returns it without minting a credential. Otherwise mints the launch's API key,
-  builds the env, and starts the supervised harness.
+  returns it without minting a credential. Otherwise starts the supervised
+  harness, whose start resolves the launch (mints the API key, decrypts the
+  vault, builds the env) — see the moduledoc for why that happens in the child
+  and not here.
 
   `opts` are forwarded to `Fountain.Buzz.harness_launch/2` (`:buzz_acp_path`,
-  `:base_url`, `:agents`, attribution). Returns `{:ok, pid}` or `{:error, reason}`.
+  `:base_url`, `:agents`, attribution) and stored in the child spec, so they must
+  not carry anything that goes stale. Returns `{:ok, pid}` or `{:error, reason}`;
+  a launch error (`:no_buzz_acp_path`, `:vault_not_found`, …) surfaces here.
   """
   @spec start_harness(BuzzIdentity.t(), keyword()) :: {:ok, pid()} | {:error, term()}
   def start_harness(%BuzzIdentity{} = identity, opts \\ []) do
     case whereis(identity.id) do
-      pid when is_pid(pid) ->
-        {:ok, pid}
+      pid when is_pid(pid) -> {:ok, pid}
+      nil -> start_child(identity, opts)
+    end
+  end
 
-      nil ->
+  @doc false
+  # The child's start function. Runs under `Fountain.BuzzSupervisor` on whichever
+  # node is starting this child — first start, restart after a crash, or Horde
+  # replaying the spec after a deploy — so everything here is resolved fresh
+  # each time. `:ignore` drops the spec for an identity that no longer exists or
+  # is disabled; Horde would otherwise carry it forever.
+  def start_harness_link(identity_id, opts) do
+    # ownership: a supervisor start has no requester; the identity was
+    # tenant-scoped when it was enabled, and every launch is scoped to its
+    # user_id inside harness_launch/2.
+    case Buzz._unsafe_get_identity(identity_id) do
+      %BuzzIdentity{enabled: true} = identity ->
         with {:ok, launch} <- Buzz.harness_launch(identity, opts) do
-          start_child(identity, launch)
+          case Harness.start_link(harness_opts(identity, launch)) do
+            {:ok, pid} ->
+              {:ok, pid}
+
+            other ->
+              # The key was minted for a harness that never came up.
+              revoke_orphaned_key(identity, launch)
+              other
+          end
         end
+
+      _ ->
+        :ignore
     end
   end
 
@@ -72,10 +117,10 @@ defmodule Fountain.Buzz.Manager do
     end
   end
 
-  defp start_child(%BuzzIdentity{} = identity, launch) do
+  defp start_child(%BuzzIdentity{} = identity, opts) do
     child = %{
       id: identity.id,
-      start: {Harness, :start_link, [harness_opts(identity, launch)]},
+      start: {__MODULE__, :start_harness_link, [identity.id, opts]},
       # The harness restarts its own port; if the harness process itself dies we
       # want Horde to bring it back, but a deliberate stop is terminal.
       restart: :transient,
@@ -87,15 +132,15 @@ defmodule Fountain.Buzz.Manager do
       {:ok, pid} ->
         {:ok, pid}
 
+      # Another node won the race between our `whereis` and this call. Nothing
+      # was minted on this side: the launch lives in the child's start.
       {:error, {:already_started, pid}} ->
-        # Another node won the race between our `whereis` and this call. The key
-        # we just minted has no harness to own it — revoke it rather than leak it.
-        revoke_orphaned_key(identity, launch)
         {:ok, pid}
 
-      {:error, reason} = err ->
-        revoke_orphaned_key(identity, launch)
+      :ignore ->
+        {:error, :identity_not_enabled}
 
+      {:error, reason} = err ->
         Logger.error(
           "buzz harness failed to start: identity=#{identity.id} reason=#{inspect(reason)}"
         )
