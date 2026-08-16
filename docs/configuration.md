@@ -150,3 +150,19 @@ default**: spans are exported only when `OTEL_EXPORTER_OTLP_ENDPOINT`,
 also honours its own standard variables, which take precedence — set
 `OTEL_TRACES_EXPORTER=otlp` or `=none` to force export on or off regardless
 of the above.
+
+## Hosted Buzz agents
+
+Fountain can host a [Buzz](https://github.com/block/buzz) agent's `buzz-acp`
+harness (ADR 0020), so a Buzz agent keeps a body on its relay without a running
+desktop. The harness binary is baked into the amd64 image; these tune where it
+runs and how its ACP child reaches back. Operators rarely set them — the
+defaults are correct for the packaged image.
+
+| Variable | Default | Required | Effect |
+|---|---|---|---|
+| `BUZZ_ACP_BASE_URL` | the loopback endpoint (`http://127.0.0.1:$PORT`) | — | Base URL the harness's ACP child (`fountain acp`) uses to reach this instance. Defaults to loopback so harness traffic never leaves the pod; override only to point the child at a different Fountain endpoint |
+| `FOUNTAIN_CLI_PATH` | `/usr/local/bin/fountain` | — | Path to the `fountain` CLI the harness runs as its ACP child. The image bakes it at the default; override only for a non-standard layout |
+
+There is no `buzz-acp` binary in the arm64 image (upstream publishes none), so
+on an arm64 node the harness path stays unset and no Buzz harness starts there.
