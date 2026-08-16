@@ -120,17 +120,28 @@ type setConfigOptionParams struct {
 }
 
 // setConfigOption accepts a client's request to change a session config option
-// — but does not apply it. Every option a Fountain conversation has, its model
-// above all, is a property of the *agent*: chosen once, server-side, and shared
-// by every conversation the agent runs. Changing it here would silently edit
-// the agent, which is why `session/set_model` is absent too (see modelState).
+// — but does not apply it, and does not pretend to. Every option a Fountain
+// conversation has, its model above all, is a property of the *agent*: chosen
+// once, server-side, and shared by every conversation the agent runs. Changing
+// it here would silently edit the agent, which is why `session/set_model` is
+// absent too (see modelState) and why `session/new` advertises no
+// `configOptions`: there is nothing a client can set.
 //
 // The method exists rather than returning "method not found" because some ACP
-// clients set the model at session start and treat a rejection as fatal —
-// OpenClaw's acpx pushes its own model over `session/set_config_option` and
-// aborts the whole turn on a -32601 here (found standing up the gateway round
-// trip). So the request is acknowledged and the unchanged state reported back,
-// leaving the agent's configuration authoritative.
+// clients push session controls at spawn and treat any rejection as fatal.
+// OpenClaw's acpx pushes the model its brain chose over
+// `session/set_config_option` (and, derived from that model, a `thinking`
+// level) and aborts the whole turn on a -32601 here — found standing up the
+// gateway round trip (#759, #760).
+//
+// The reply carries no `configOptions` list, deliberately. acpx narrows the
+// set of controls it will send to whatever list the last reply advertised
+// (`applyConfigOptionsToState` → `resolveSupportedConfigOptionId`), so echoing
+// the honest list — empty, or the fixed model alone — makes the *next* control
+// (`thinking`) fail with "does not advertise config option" and the turn dies
+// anyway. Saying nothing keeps acpx in its "not advertised, try it" mode, every
+// push lands here, and the agent's configuration stays authoritative. The
+// `_meta` block says so in as many words for a client that reads it.
 func (a *Agent) setConfigOption(raw json.RawMessage) (any, error) {
 	var params setConfigOptionParams
 	if len(raw) > 0 {
@@ -139,8 +150,7 @@ func (a *Agent) setConfigOption(raw json.RawMessage) (any, error) {
 		}
 	}
 
-	sess, ok := a.sessions.get(params.SessionID)
-	if !ok {
+	if _, ok := a.sessions.get(params.SessionID); !ok {
 		return nil, Errorf(CodeInvalidParams, "unknown session %q", params.SessionID)
 	}
 
@@ -150,7 +160,15 @@ func (a *Agent) setConfigOption(raw json.RawMessage) (any, error) {
 		"value", string(params.Value),
 		"why", "session options are properties of the Fountain agent, not the conversation")
 
-	return map[string]any{"configOptions": configOptions(sess.Agent)}, nil
+	return map[string]any{
+		"_meta": map[string]any{
+			"fountain": map[string]any{
+				"applied":  false,
+				"configId": params.ConfigID,
+				"reason":   "session options are properties of the Fountain agent; change them on the agent",
+			},
+		},
+	}, nil
 }
 
 // Notify handles client notifications.

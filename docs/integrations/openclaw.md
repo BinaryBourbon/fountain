@@ -134,6 +134,7 @@ two entries stay separate even when they point at the same agent.
 | `session/prompt` | Runs a turn; messages, thoughts and tool calls stream back to the channel as they happen |
 | `session/cancel` | `/acp cancel` interrupts the running turn |
 | `session/load` | Replays the conversation when a session is resumed |
+| `session/set_config_option` | Accepted, not applied. OpenClaw pushes the model its brain chose (and a `thinking` level derived from it) at every spawn; a Fountain agent's model is set on the agent, so the push is acknowledged and ignored, and the reply's `_meta.fountain.applied: false` says so |
 
 ## Limits, stated rather than discovered
 
@@ -150,6 +151,16 @@ two entries stay separate even when they point at the same agent.
   above — an OpenClaw channel is not asked to approve a tool call
   ([#643](https://github.com/BinaryBourbon/fountain/issues/643),
   [#708](https://github.com/BinaryBourbon/fountain/issues/708)).
+- **A gateway spawn opens two conversations, and uses one.** OpenClaw's
+  `sessions_spawn(runtime: "acp", mode: "run")` asks acpx to ensure the session
+  twice — once when the spawn is initialised, once when the turn runs — and in
+  one-shot mode acpx answers each with a fresh `session/new`. On Fountain that
+  is two conversations per spawn, each with a provisioned sandbox; the first is
+  never prompted and sits `pending` until the idle reaper parks it. This is
+  OpenClaw/acpx behaviour, not something the adapter can prevent
+  ([#760](https://github.com/BinaryBourbon/fountain/issues/760)). Sessions
+  bound to a channel thread (`mode: "session"`) reuse their record and do not
+  pay this.
 - **A reclaimed sandbox loses the agent's memory.** If a conversation's sandbox
   was reclaimed while you were away, resuming still replays the full transcript,
   but the agent itself does not remember it
@@ -164,6 +175,14 @@ JSON-RPC 2.0 over stdio — completed `initialize → session/new →
 session/prompt`, ran the turn in a real sandbox, and streamed the agent's reply
 back as `agent_message_chunk` updates with a real stop reason. That is exactly
 what `acpx` does when it spawns the command above.
+
+The full gateway round trip is also proven: `openclaw agent` (OpenClaw's own
+brain) → `sessions_spawn(runtime: "acp", agentId: "fountain")` → acpx →
+`fountain acp` → sandbox → the reply relayed back through the gateway, against
+the real acpx (0.11.2) and OpenClaw (2026.7.1) — with the brain pushing its
+model and a `thinking` level at the harness on the way, which is the case that
+used to abort the turn ([#759](https://github.com/BinaryBourbon/fountain/issues/759),
+[#760](https://github.com/BinaryBourbon/fountain/issues/760)).
 
 If a session does not start, `fountain acp` writes the protocol to stdout and
 **everything else to stderr**, which is where OpenClaw's `acpx` log shows it.
