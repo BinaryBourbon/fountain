@@ -16,8 +16,89 @@ upgrade, is in
 
 ## [Unreleased]
 
+## [0.11.0] — 2026-08-16
+
+Fountain can now **host a Buzz agent** — a Nostr identity whose coding-agent
+body runs in a Fountain sandbox, with its signing key held server-side in a
+vault and no desktop required (ADR 0020, gates 1–4). Minor, not patch, because
+the release image changes underneath: new base image, three baked binaries, and
+a background supervisor that starts on boot.
+
+### Upgrade notes
+
+- **Runtime base image is now `debian:trixie-slim`** (was bookworm). The
+  shipped `buzz-acp` needs glibc ≥ 2.38, which bookworm does not have. If you
+  run the published image, nothing to do; if you build your own runtime stage
+  on bookworm, `buzz-acp` will not start there.
+- **The image now bakes three extra binaries**: `buzz-acp` and `buzz` (built
+  by us for amd64 **and** arm64 from the pinned block/buzz source, checksum
+  verified at build time) and the `fountain` Go CLI. `runtime.exs` finds them
+  at their baked paths; `BUZZ_ACP_BASE_URL` / `FOUNTAIN_CLI_PATH` exist only
+  for a non-standard layout (see the configuration reference).
+- **A boot sweep starts a `buzz-acp` harness for every enabled Buzz identity**
+  (Horde-supervised, one per identity, cluster-wide). With no identities
+  provisioned it is inert — no new process, no new egress.
+- **New migration** for `buzz_identities`. Runs with `mix ecto.migrate` /
+  the release migrator as usual.
+- **Markdown rendering moved to a Rust NIF** (MDEx / comrak, precompiled).
+  The published image is a supported target; a from-source build on an
+  unsupported platform needs a Rust toolchain.
+
+### Added
+
+- **Hosted Buzz agents.** A `BuzzIdentity` binds a Nostr keypair (kept in a
+  vault, never in the row) to a Fountain agent; a supervised `buzz-acp`
+  harness per identity keeps the agent online on its relay and drives
+  `fountain acp` for each mention, off the user's desktop (#739, #740, #742,
+  #745). Provision one with `POST /api/buzz/agents` (idempotent on the
+  pubkey; the nsec is stored server-side and never returned), list with
+  `GET`, tear down with `DELETE /:id` (#753, #754) — or from the Buzz
+  desktop via the new **`buzz-backend-fountain`** remote-agents provider
+  binary in `cli/` (#755).
+- **The reply path — the sandbox never sees the key.** A Buzz-driven
+  conversation gets a Fountain-hosted MCP server injected at `session/new`
+  (`POST /api/mcp/buzz/:conversation_id`, authenticated with the sprite
+  token) exposing `buzz_send_message` and `buzz_react`; Fountain resolves the
+  agent's key server-side and publishes through the baked `buzz` CLI, with
+  credentials in the environment, never in argv (#750, #751, #752). A
+  successful publish audits `buzz.published` without the message content.
+- **`buzz-acp` diagnostics reach the pod log**, tagged per identity, so
+  `kubectl logs` shows relay connection and presence (#747); and the desktop's
+  ACP activity panel populates (`BUZZ_ACP_RELAY_OBSERVER`, #756).
+- **OpenClaw is a documented ACP client** of `fountain acp` — config-only via
+  its `acpx` plugin, verified against the real acpx 0.11.2 and a live gateway
+  (#757, #758, #759, #760). New page at `/docs/integrations/openclaw`.
+- **Buzz integration page** in the in-app docs, with inline SVG diagrams —
+  the docs renderer gained a trusted path that keeps a scrubbed
+  `<figure>`/`<svg>` block as real markup for the in-repo corpus only; agent
+  output is still fully escaped (#761).
+- **`decisions/` is an OKF bundle**, validated in CI, with a generated index
+  (#741); ADR 0020 records the Buzz-at-the-gateway design (#734).
+
+### Changed
+
+- **Markdown rendering moved from Earmark to MDEx.** Earmark is retired
+  upstream (`mix hex.audit` flags it as unmaintained), and it sat under
+  the XSS-hardened renderer for agent output and the in-app docs. The
+  same guarantees hold on MDEx (comrak): raw HTML is neutralized to text
+  on the untrusted path, `javascript:`/`data:` URLs are dropped, and the
+  docs corpus keeps its scrubbed SVG diagrams. Two visible differences:
+  a link or image with a dropped URL is now unwrapped to its text/alt
+  instead of rendered as an element with no `href`/`src`, and an
+  HTML-comment block is dropped rather than shown as escaped text (#762).
+
+- **`fountain acp` implements `session/set_config_option`** as
+  accept-but-do-not-apply — a Fountain agent's model is set on the agent, so
+  a client's push is acknowledged and ignored rather than rejected as
+  method-not-found, which OpenClaw's acpx treated as fatal (#759).
+
 ### Fixed
 
+- **A hosted `buzz-acp` is reaped on stop, not orphaned.** buzz-acp closes
+  the BEAM's pipe while it keeps running, which both faked an exit (a
+  restart → duplicate harness) and survived `Port.close` (an agent that stays
+  online after stop, across deploys). A launcher middleman now delivers one
+  true exit status and TERM→KILLs the child on close (#746).
 - **`fountain acp` no longer trips OpenClaw's session-control sync.** The
   `session/set_config_option` reply advertised a config-option list, and
   acpx narrows the controls it will push to whatever that list says — so the
@@ -32,18 +113,6 @@ upgrade, is in
   headings now carry GFM-style ids, so the docs' `#anchor` cross-links
   (e.g. `/docs/architecture#the-secrets-model`) scroll to the heading
   instead of the top of the page, matching the public MkDocs site (#765).
-
-### Changed
-
-- **Markdown rendering moved from Earmark to MDEx.** Earmark is retired
-  upstream (`mix hex.audit` flags it as unmaintained), and it sat under
-  the XSS-hardened renderer for agent output and the in-app docs. The
-  same guarantees hold on MDEx (comrak): raw HTML is neutralized to text
-  on the untrusted path, `javascript:`/`data:` URLs are dropped, and the
-  docs corpus keeps its scrubbed SVG diagrams. Two visible differences:
-  a link or image with a dropped URL is now unwrapped to its text/alt
-  instead of rendered as an element with no `href`/`src`, and an
-  HTML-comment block is dropped rather than shown as escaped text (#762).
 
 ## [0.10.2] — 2026-08-15
 
