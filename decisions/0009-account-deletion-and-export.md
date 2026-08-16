@@ -1,3 +1,16 @@
+---
+type: ADR
+title: "Account deletion and data export"
+description: "Account deletion is immediate and ordered, aborting only if Stripe cancellation fails; export covers what deletion erases. Documents behavior built in #170, #288 and #450."
+tags: [accounts, privacy, billing]
+status: stable
+adr: "0009"
+adr_status: "Accepted"
+date: 2026-08-03
+generated: { by: human:jhgaylor, at: 2026-08-03T16:55:10-04:00 }
+verified: { by: human:jhgaylor, at: 2026-08-03T16:55:10-04:00 }
+---
+
 # 0009 — Account deletion and data export
 
 **Status:** Accepted (documents behavior built in #170/#288 and refined through #450; nothing described here is unbuilt)

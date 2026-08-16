@@ -1,3 +1,15 @@
+---
+type: ADR
+title: "Fountain targets Option B: API + Hosted UI with Self-Serve Onboarding"
+description: "G0: Fountain targets Option B, a multi-tenant REST API plus hosted LiveView UI plus self-serve onboarding; org/team features are deferred."
+tags: [framing, scope, gates]
+status: stable
+adr: "0003"
+adr_status: "Accepted"
+date: 2026-05-10
+generated: { by: human:jhgaylor, at: 2026-05-09T22:38:48-04:00 }
+---
+
 # 0003 — Fountain targets Option B: API + Hosted UI with Self-Serve Onboarding
 
 **Status:** Accepted — 2026-05-10.

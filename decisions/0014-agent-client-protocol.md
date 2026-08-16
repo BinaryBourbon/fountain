@@ -1,3 +1,17 @@
+---
+type: ADR
+title: "Speaking the Agent Client Protocol to runtimes"
+description: "ACP is the only runtime I/O path for claude, codex and opencode, adopted behind gates; Fountain.Runtimes stays the provisioning layer. Gates 1 and 2 built, gate 4 in progress, gate 3 not built."
+tags: [acp, runtimes]
+status: stable
+adr: "0014"
+adr_status: "Partially accepted"
+date: 2026-08-09
+generated: { by: human:jhgaylor, at: 2026-08-14T00:25:23-04:00 }
+verified: { by: human:jhgaylor, at: 2026-08-14T00:25:23-04:00 }
+stale_after: 2026-11-14
+---
+
 # 0014 — Speaking the Agent Client Protocol to runtimes
 
 **Status:** Partially accepted — **gates 1 and 2 are built; gate 4 is in
@@ -506,7 +520,7 @@ being *unavoidable* — sandboxes are bounded whatever the protocol does — and
 ACP at least failing loudly, with a session id it was actually asked for,
 where the legacy path fails on an id it guessed.
 
-> **Correction, 2026-08-13 (decisions/0017).** The idle bound no longer
+> **Correction, 2026-08-13 ([decisions/0017](0017-suspend-idle-sandboxes.md)).** The idle bound no longer
 > destroys the sprite: an idle sandbox is *suspended* — the sprite stays,
 > scaled to zero, and the next prompt reattaches to the same disk, so the
 > session survives and this section's failure mode applies only to the

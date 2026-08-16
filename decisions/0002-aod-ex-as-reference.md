@@ -1,3 +1,15 @@
+---
+type: ADR
+title: "`jhgaylor/aod-ex` is the reference implementation Fountain forks from"
+description: "jhgaylor/aod-ex is the single-tenant reference implementation Fountain rebuilds from; design work focuses on the multi-tenant delta, not the baseline."
+tags: [framing, reference-implementation]
+status: stable
+adr: "0002"
+adr_status: "Accepted"
+date: 2026-05-09
+generated: { by: human:jhgaylor, at: 2026-05-09T21:18:50-04:00 }
+---
+
 # 0002 — `jhgaylor/aod-ex` is the reference implementation Fountain forks from
 
 **Status:** Accepted — 2026-05-09.

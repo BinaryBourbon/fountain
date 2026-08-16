@@ -1,0 +1,33 @@
+# Decisions
+
+Architecture Decision Records for Fountain, one per file, numbered in the
+order they were opened. Every file carries OKF frontmatter (`type`, `status`,
+`adr_status`, `description`, `verified`, `stale_after`); `okf validate .`
+checks it and `okf backlinks . <id>` shows what depends on a decision.
+`adr_status` is the ADR's own lifecycle (Proposed / Accepted / Partially
+accepted / Superseded by NNNN); `status` is the OKF lifecycle derived from it
+(draft / stable / deprecated). Gaps in the numbering are ADRs still on open
+branches.
+
+## ADRs
+
+| # | Title | ADR status | Verified | Stale after | Description |
+|---|-------|------------|----------|-------------|-------------|
+| 0001 | [ADR template (copy this when writing a real ADR)](0001-template.md) | Template | no |  | Copy this file to write a new ADR; it fixes the frontmatter, the section shape, and the rule that unbuilt behavior is never described as built. |
+| 0002 | [`jhgaylor/aod-ex` is the reference implementation Fountain forks from](0002-aod-ex-as-reference.md) | Accepted | no |  | jhgaylor/aod-ex is the single-tenant reference implementation Fountain rebuilds from; design work focuses on the multi-tenant delta, not the baseline. |
+| 0003 | [Fountain targets Option B: API + Hosted UI with Self-Serve Onboarding](0003-direction-option-b-api-ui-onboarding.md) | Accepted | no |  | G0: Fountain targets Option B, a multi-tenant REST API plus hosted LiveView UI plus self-serve onboarding; org/team features are deferred. |
+| 0004 | [Postgres from day one (drop the SQLite path)](0004-postgres-day-one.md) | Accepted | yes |  | Managed Postgres is the only relational store from launch; the SQLite/Litestream path is dropped. UUID v7 primary keys were never built (2026-08-02 addendum). |
+| 0005 | [Platform-shared SPRITES_TOKEN; per-tenant concurrency cap as noisy-neighbor mitigation](0005-platform-shared-sprites-token.md) | Accepted | yes |  | One platform-level Sprites credential provisions every tenant sandbox; a per-tenant concurrent-sandbox cap is the noisy-neighbor mitigation. Amended by 0018 to one credential per provider. |
+| 0006 | [Hard Stripe billing gate at launch with a 14-day trial](0006-hard-stripe-billing-gate-at-launch.md) | Accepted | yes |  | Hard Stripe billing gate at launch with a 14-day trial; past_due is read-only, canceled is blocked with 402. The gate protects spend, not features. |
+| 0007 | [G3: Go for public launch](0007-g3-launch-go.md) | Accepted | yes |  | G3: go for public launch as of 2026-05-10 with gates G0 through G2 cleared; the 2026-08-03 addendum records what of the post-launch backlog was built. |
+| 0008 | [BYO inference credentials per tenant](0008-byo-inference-credentials.md) | Accepted | no |  | Tenants supply their own inference provider credentials, encrypted with the per-tenant DEK; Fountain holds no platform inference keys and pays nothing for inference. |
+| 0009 | [Account deletion and data export](0009-account-deletion-and-export.md) | Accepted | yes |  | Account deletion is immediate and ordered, aborting only if Stripe cancellation fails; export covers what deletion erases. Documents behavior built in #170, #288 and #450. |
+| 0010 | [Top-level `ee/` directory boundary for billing and transactional email](0010-ee-directory-boundary.md) | Accepted | yes |  | Billing and billing-adjacent growth mail live in a top-level ee/ directory compiled into the same OTP app; the license change and the core/ee seam are not yet built. |
+| 0011 | [Self-host first login without release tasks](0011-self-host-first-admin-bootstrap.md) | Accepted | no |  | A self-hosted instance's first login needs no release tasks: EMAIL_DELIVERY=none implies auto-verification and FIRST_USER_ADMIN=true promotes the first verified account. |
+| 0013 | [Where auditing happens, and who the actor is](0013-audit-trail.md) | Accepted | yes |  | Mutations audit inside the context function with an explicit actor, so every surface is covered by construction. Documents behavior built by the #540 campaign. |
+| 0014 | [Speaking the Agent Client Protocol to runtimes](0014-agent-client-protocol.md) | Partially accepted | yes | 2026-11-14 | ACP is the only runtime I/O path for claude, codex and opencode, adopted behind gates; Fountain.Runtimes stays the provisioning layer. Gates 1 and 2 built, gate 4 in progress, gate 3 not built. |
+| 0015 | [Fountain as an ACP agent, reachable from a code editor](0015-fountain-as-an-acp-agent.md) | Accepted | yes | 2026-11-14 | fountain acp speaks ACP over stdio to an editor and HTTP+SSE to the API, so an editor can drive a Fountain agent. Gates 1 through 3 built; gate 4 (permission forwarding) not built. |
+| 0016 | [Governance as an ACP proxy](0016-governance-as-an-acp-proxy.md) | Proposed | yes | 2026-11-15 | Fountain becomes a policy decision point speaking ACP on both sides; the governance proxy in the middle is the product. No policy engine or inference proxy is built. |
+| 0017 | [Suspend idle sandboxes instead of destroying them](0017-suspend-idle-sandboxes.md) | Accepted | yes |  | Idle timeout suspends the sandbox and parks it for reattach; only max lifetime destroys it. Built in the PR that added this ADR. |
+| 0018 | [Pluggable sandbox backends: the `Fountain.Sandbox` abstraction](0018-sandbox-provider-abstraction.md) | Accepted | yes |  | Fountain.Sandbox is one behaviour, one facade and one error taxonomy; Sprites is an adapter behind it. Built and merged in #676 through #686. Amends 0005 to one platform credential per provider. |
+| 0020 | [Buzz as a client of the ACP gateway: hosted harness + brokered signing](0020-buzz-as-a-client-of-the-acp-gateway.md) | Proposed | yes | 2026-11-16 | Fountain hosts the Buzz harness and brokers the Buzz Nostr signature at the gateway, so the sandbox holds neither the relay connection nor the identity key. Nothing here is built. |

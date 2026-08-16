@@ -1,3 +1,17 @@
+---
+type: ADR
+title: "Governance as an ACP proxy"
+description: "Fountain becomes a policy decision point speaking ACP on both sides; the governance proxy in the middle is the product. No policy engine or inference proxy is built."
+tags: [acp, governance, product]
+status: draft
+adr: "0016"
+adr_status: "Proposed"
+date: 2026-08-09
+generated: { by: human:jhgaylor, at: 2026-08-15T21:03:19-04:00 }
+verified: { by: human:jhgaylor, at: 2026-08-15T21:03:19-04:00 }
+stale_after: 2026-11-15
+---
+
 # 0016 — Governance as an ACP proxy
 
 **Status:** Proposed — **the governance layer described here is not built.**

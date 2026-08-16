@@ -1,3 +1,16 @@
+---
+type: ADR
+title: "Where auditing happens, and who the actor is"
+description: "Mutations audit inside the context function with an explicit actor, so every surface is covered by construction. Documents behavior built by the #540 campaign."
+tags: [audit, security]
+status: stable
+adr: "0013"
+adr_status: "Accepted"
+date: 2026-08-07
+generated: { by: human:jhgaylor, at: 2026-08-07T15:03:06-04:00 }
+verified: { by: human:jhgaylor, at: 2026-08-07T15:03:06-04:00 }
+---
+
 # 0013 — Where auditing happens, and who the actor is
 
 **Status:** Accepted (documents behavior built by the #540 campaign and the
@@ -163,13 +176,13 @@ existed to remove.
 
 `audit_events.user_id` is `on_delete: :nilify_all`. Deleting an account does
 not delete its audit rows; it detaches them, leaving operational history that
-names nobody (ADR 0009). One row is exempt: `account.deleted` denormalises the
+names nobody ([ADR 0009](0009-account-deletion-and-export.md)). One row is exempt: `account.deleted` denormalises the
 email and user id into `metadata`, because the event describing a deletion is
 the one that must still stand alone afterwards.
 
 The tempting generalisation — denormalising ids into other rows so the trail
 stays correlatable — is **rejected**. It would defeat the nilify on every path
-and quietly undo ADR 0009's erasure promise. `Audit.record/1`'s
+and quietly undo [ADR 0009](0009-account-deletion-and-export.md)'s erasure promise. `Audit.record/1`'s
 `record_unattributed` fallback follows the same line: when the account
 disappears mid-write, the row is kept and attributed to nobody, rather than
 kept with the id put back.

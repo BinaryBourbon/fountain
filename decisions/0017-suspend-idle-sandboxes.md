@@ -1,3 +1,16 @@
+---
+type: ADR
+title: "Suspend idle sandboxes instead of destroying them"
+description: "Idle timeout suspends the sandbox and parks it for reattach; only max lifetime destroys it. Built in the PR that added this ADR."
+tags: [sandbox, lifecycle]
+status: stable
+adr: "0017"
+adr_status: "Accepted"
+date: 2026-08-13
+generated: { by: human:jhgaylor, at: 2026-08-13T19:28:44-04:00 }
+verified: { by: human:jhgaylor, at: 2026-08-13T19:28:44-04:00 }
+---
+
 # 0017 — Suspend idle sandboxes instead of destroying them
 
 **Status:** Accepted (built in the PR that added this document)

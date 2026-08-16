@@ -1,3 +1,17 @@
+---
+type: ADR
+title: "Fountain as an ACP agent, reachable from a code editor"
+description: "fountain acp speaks ACP over stdio to an editor and HTTP+SSE to the API, so an editor can drive a Fountain agent. Gates 1 through 3 built; gate 4 (permission forwarding) not built."
+tags: [acp, cli, editor]
+status: stable
+adr: "0015"
+adr_status: "Accepted"
+date: 2026-08-09
+generated: { by: human:jhgaylor, at: 2026-08-14T22:24:48-04:00 }
+verified: { by: human:jhgaylor, at: 2026-08-14T22:24:48-04:00 }
+stale_after: 2026-11-14
+---
+
 # 0015 — Fountain as an ACP agent, reachable from a code editor
 
 **Status:** Accepted — **gates 1–3 are built.** `fountain acp` exists in

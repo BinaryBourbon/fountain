@@ -1,3 +1,16 @@
+---
+type: ADR
+title: "Hard Stripe billing gate at launch with a 14-day trial"
+description: "Hard Stripe billing gate at launch with a 14-day trial; past_due is read-only, canceled is blocked with 402. The gate protects spend, not features."
+tags: [billing, stripe]
+status: stable
+adr: "0006"
+adr_status: "Accepted"
+date: 2026-05-09
+generated: { by: human:jhgaylor, at: 2026-08-05T02:16:38-04:00 }
+verified: { by: human:jhgaylor, at: 2026-08-05T02:16:38-04:00 }
+---
+
 # 0006 — Hard Stripe billing gate at launch with a 14-day trial
 
 **Status:** Accepted — 2026-05-09.
@@ -6,7 +19,7 @@
 
 The Phase 2 engineering plan raised OQ-5b: ship a hard billing gate at launch (block users without an active subscription from creating sandboxes), or ship a usage-tracking stub and add the gate later? OQ-5a asked which payment provider; OQ-5c asked the usage period.
 
-The case for a stub at launch was reduced sprint scope: skip Stripe integration, leave `BILLING_WEBHOOK_URL` empty, ship the rest. The case for a hard gate was that Fountain pays for tenants' sandbox usage on a shared Sprites account (ADR 0005), so every free user is a direct cost line on the Sprites bill. Without a gate, scaling users without scaling revenue is the default behavior of the system.
+The case for a stub at launch was reduced sprint scope: skip Stripe integration, leave `BILLING_WEBHOOK_URL` empty, ship the rest. The case for a hard gate was that Fountain pays for tenants' sandbox usage on a shared Sprites account ([ADR 0005](0005-platform-shared-sprites-token.md)), so every free user is a direct cost line on the Sprites bill. Without a gate, scaling users without scaling revenue is the default behavior of the system.
 
 Two related calls fall out of "hard gate": choice of provider (Stripe — best Elixir tooling via `stripity_stripe`, fastest path to ship a Checkout flow) and how to avoid locking users out the moment a payment fails (a `past_due` window with read-only access).
 
@@ -30,7 +43,7 @@ Pricing tier shape (Free / Pro / etc.) is **not** decided here — that's growth
 
 - Sprint scope grows by the Stripe integration: customer creation flow, webhook endpoint, Checkout + Portal links, `assert_active!` enforcement at three call sites (`ConversationServer.init/1`, `POST /api/conversations`, `:require_active_subscription` LiveView hook). Recommend treating it as its own sprint or a clearly-scoped track within the auth/billing sprint.
 - Revenue exists from day 14 of the first paying user. Without the gate, revenue would be zero until a future sprint added it; the runway implication of that gap was the dispositive argument.
-- Users who registered, did the wizard, and never paid silently consume Sprites resources during the 14-day trial. Mitigation: trial users are still bound by the per-tenant concurrency cap (default 5, ADR 0005). If trial-period costs surprise on the Sprites bill, drop the trial cap separately from the paid cap.
+- Users who registered, did the wizard, and never paid silently consume Sprites resources during the 14-day trial. Mitigation: trial users are still bound by the per-tenant concurrency cap (default 5, [ADR 0005](0005-platform-shared-sprites-token.md)). If trial-period costs surprise on the Sprites bill, drop the trial cap separately from the paid cap.
 - Pricing decisions become unblocking: growth/marketing must propose tier prices before launch, even if "Free tier = blocked after trial" is the simplest opening position. The ADR does not require multiple tiers; one paid tier + the trial is enough to ship.
 - `past_due` UX must be tested explicitly — it's the most common churn-inducing state and the easiest to get wrong (false lockouts on transient declines, or true lockouts when the read-only window is too short).
 - Stripe is now a launch-blocking dependency. If Stripe is down, no new subscriptions complete and webhooks queue. `stripity_stripe` and Stripe's own retry behavior on webhook delivery are the mitigations; document the behavior when webhooks are delayed (subscription state lags reality by minutes — acceptable).
@@ -65,10 +78,10 @@ secrets. Only conversation start, wake, and per-turn processing call
 
 Decision (2026-08-05): that is the invariant, not an accident of where the
 checks landed. **The gate protects spend, not features.** Every conversation
-consumes sprite cost on the shared Sprites account (ADR 0005), so the
+consumes sprite cost on the shared Sprites account ([ADR 0005](0005-platform-shared-sprites-token.md)), so the
 conversation lifecycle is the enforced boundary. Configuration CRUD costs
 nothing to serve, and leaving it open means an expired user can still reach
-and manage their own data (consistent with ADR 0009 — payment state never
+and manage their own data (consistent with [ADR 0009](0009-account-deletion-and-export.md) — payment state never
 holds data hostage) and a returning subscriber's configs are intact when they
 reactivate.
 
@@ -99,7 +112,7 @@ a card decline must not hide the user's data. The code now matches it:
 - `terminate` and `interrupt` stay available to lapsed users deliberately:
   they *stop* spend, and blocking a lapsed user from ending a running sprite
   would protect spend in reverse. `delete` stays available too — removing
-  data is not consumption (consistent with ADR 0009).
+  data is not consumption (consistent with [ADR 0009](0009-account-deletion-and-export.md)).
 - The API surface is unchanged: conversation start/wake/turn processing
   remain gated by `Billing.check_active/1`; conversation *reads* over the API
   were and are governed by the addendum above, not this one.

@@ -1,3 +1,16 @@
+---
+type: ADR
+title: "Platform-shared SPRITES_TOKEN; per-tenant concurrency cap as noisy-neighbor mitigation"
+description: "One platform-level Sprites credential provisions every tenant sandbox; a per-tenant concurrent-sandbox cap is the noisy-neighbor mitigation. Amended by 0018 to one credential per provider."
+tags: [sandbox, secrets, quotas]
+status: stable
+adr: "0005"
+adr_status: "Accepted"
+date: 2026-05-10
+generated: { by: human:jhgaylor, at: 2026-08-03T13:41:32-04:00 }
+verified: { by: human:jhgaylor, at: 2026-08-03T13:41:32-04:00 }
+---
+
 # 0005 — Platform-shared SPRITES_TOKEN; per-tenant concurrency cap as noisy-neighbor mitigation
 
 **Status:** Accepted — 2026-05-10.

@@ -1,3 +1,16 @@
+---
+type: ADR
+title: "Top-level `ee/` directory boundary for billing and transactional email"
+description: "Billing and billing-adjacent growth mail live in a top-level ee/ directory compiled into the same OTP app; the license change and the core/ee seam are not yet built."
+tags: [licensing, ee, billing]
+status: stable
+adr: "0010"
+adr_status: "Accepted"
+date: 2026-08-04
+generated: { by: human:jhgaylor, at: 2026-08-07T02:39:02-04:00 }
+verified: { by: human:jhgaylor, at: 2026-08-07T02:39:02-04:00 }
+---
+
 # 0010 — Top-level `ee/` directory boundary for billing and transactional email
 
 **Status:** Accepted (documents the file move built in the PR that adds this
