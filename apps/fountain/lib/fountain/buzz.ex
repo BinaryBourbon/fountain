@@ -119,7 +119,7 @@ defmodule Fountain.Buzz do
   Options:
   * `:buzz_acp_path` — path to the binary (defaults to app env `:buzz_acp_path`)
   * `:base_url`      — this instance's base URL for the ACP child
-                       (defaults to app env `:public_base_url`)
+                       (defaults to app env `:buzz_acp_base_url`)
   * `:fountain_bin`  — path to the `fountain` CLI in the harness image
                        (defaults to app env `:fountain_cli_path`, else `"fountain"`)
   * `:agents`        — `BUZZ_ACP_AGENTS` pool size (default 1; the desktop's 10 is
@@ -133,7 +133,7 @@ defmodule Fountain.Buzz do
   @spec harness_launch(BuzzIdentity.t(), keyword()) :: {:ok, launch()} | {:error, term()}
   def harness_launch(%BuzzIdentity{} = identity, opts \\ []) do
     command = opts[:buzz_acp_path] || Application.get_env(:fountain, :buzz_acp_path)
-    base_url = opts[:base_url] || Application.get_env(:fountain, :public_base_url)
+    base_url = opts[:base_url] || Application.get_env(:fountain, :buzz_acp_base_url)
 
     fountain_bin =
       opts[:fountain_bin] || Application.get_env(:fountain, :fountain_cli_path) || "fountain"
