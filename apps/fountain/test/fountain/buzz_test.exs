@@ -88,6 +88,39 @@ defmodule Fountain.BuzzTest do
     end
   end
 
+  describe "conversation_mcp_servers/2" do
+    test "returns the buzz MCP entry for a Buzz-driven conversation" do
+      user = insert_verified_user()
+      agent = insert_agent(%{"user_id" => user.id})
+      vault = insert_vault(%{"user_id" => user.id})
+
+      insert_buzz_identity(%{
+        "user_id" => user.id,
+        "agent_id" => agent.id,
+        "vault_id" => vault.id
+      })
+
+      conv = insert_conversation(user_id: user.id, agent_id: agent.id, vault_id: vault.id)
+
+      assert [entry] = Buzz.conversation_mcp_servers(conv.id, "sprite-tok")
+      assert entry.name == "fountain-buzz"
+      assert entry.type == "http"
+      assert entry.url =~ "/api/mcp/buzz/#{conv.id}"
+      assert [%{name: "Authorization", value: "Bearer sprite-tok"}] = entry.headers
+    end
+
+    test "returns [] for a non-Buzz conversation" do
+      user = insert_verified_user()
+      conv = insert_conversation(user_id: user.id)
+      assert Buzz.conversation_mcp_servers(conv.id, "tok") == []
+    end
+
+    test "returns [] for an unknown conversation or blank token" do
+      assert Buzz.conversation_mcp_servers("00000000-0000-0000-0000-000000000000", "tok") == []
+      assert Buzz.conversation_mcp_servers("x", "") == []
+    end
+  end
+
   describe "harness_launch/2" do
     setup do
       user = insert_verified_user()
@@ -143,6 +176,7 @@ defmodule Fountain.BuzzTest do
       assert env["BUZZ_ACP_AGENT_COMMAND"] == "/usr/local/bin/fountain"
       assert env["BUZZ_ACP_AGENT_ARGS"] == "acp,--agent,#{agent.id},--vault,#{vault.id}"
       assert env["BUZZ_ACP_AGENTS"] == "1"
+      assert env["BUZZ_ACP_BASE_PROMPT_FILE"] =~ "buzz-base-prompt.md"
 
       # The child authenticates back with a freshly minted key.
       assert env["FOUNTAIN_BASE_URL"] == "https://fountain.example"

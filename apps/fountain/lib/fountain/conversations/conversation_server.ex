@@ -1771,6 +1771,16 @@ defmodule Fountain.Conversations.ConversationServer do
     end
   end
 
+  # The Buzz reply tools (#737), injected into `session/new` only for a
+  # Buzz-driven conversation and only once a callback token has been minted —
+  # `Fountain.Buzz` decides both. `[]` for every other conversation.
+  defp buzz_mcp_servers(%{callback_token: token, conversation_id: conv_id})
+       when is_binary(token) and is_binary(conv_id) do
+    Fountain.Buzz.conversation_mcp_servers(conv_id, token)
+  end
+
+  defp buzz_mcp_servers(_state), do: []
+
   # How long a sprite's callback key stays valid.
   #
   # This is a backstop, not the primary control: the key is revoked at
@@ -2055,7 +2065,9 @@ defmodule Fountain.Conversations.ConversationServer do
                   start_acp_peer(command, prompt, mode, runtime_session_id,
                     cwd: cwd,
                     images: images,
-                    mcp_servers: Fountain.Runtimes.ACP.mcp_servers(agent),
+                    mcp_servers:
+                      Fountain.Runtimes.ACP.mcp_servers(agent) ++
+                        buzz_mcp_servers(state),
                     model: agent && Fountain.Runtimes.Model.id(agent.model)
                   )
                 else
