@@ -35,7 +35,7 @@ defmodule FountainWeb.Markdown do
   link/image URLs removed.
   """
   def to_html(text) when is_binary(text) do
-    render(text, &sanitize/1, unsafe: false, escape: true)
+    render(text, &sanitize/1, [], unsafe: false, escape: true)
   end
 
   def to_html(_), do: ""
@@ -55,7 +55,11 @@ defmodule FountainWeb.Markdown do
   def to_trusted_html(text) when is_binary(text) do
     # `unsafe: true` is what lets the kept figure/svg block through; every
     # other raw-HTML node has already been turned into text by the walk.
-    render(text, &sanitize_trusted/1, unsafe: true)
+    # `header_id_prefix` gives every heading a GFM-style id (plus GitHub's
+    # empty self-link) so the docs' `#anchor` cross-links resolve in-app the
+    # way they do on the MkDocs site (#765). Trusted path only: ids on agent
+    # output would be surface with no reader.
+    render(text, &sanitize_trusted/1, [header_id_prefix: ""], unsafe: true)
   end
 
   def to_trusted_html(_), do: ""
@@ -64,11 +68,13 @@ defmodule FountainWeb.Markdown do
   # corpus). Each recurses through its own direct capture rather than
   # threading the mode as a parameter, which keeps Dialyzer's success typing of
   # the recursive walk intact.
-  defp render(text, sanitizer, render_opts) do
-    case MDEx.parse_document(text, extension: @extension) do
+  defp render(text, sanitizer, extra_extensions, render_opts) do
+    extension = @extension ++ extra_extensions
+
+    case MDEx.parse_document(text, extension: extension) do
       {:ok, %Document{nodes: nodes} = doc} ->
         MDEx.to_html!(%{doc | nodes: sanitizer.(nodes)},
-          extension: @extension,
+          extension: extension,
           render: render_opts
         )
 

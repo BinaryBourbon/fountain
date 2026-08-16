@@ -71,6 +71,28 @@ defmodule Fountain.DocsTest do
       end
     end
 
+    # The rendered target must carry the anchor as a heading id — MDEx emits
+    # them on the trusted path (#765). MkDocs slugs the same headings for the
+    # public site; the two differ only for *duplicate* headings (comrak
+    # `-1`, python-markdown `_1`), so avoid linking to those.
+    test "every internal /docs anchor link targets a heading on that page" do
+      rendered =
+        Map.new(Docs.slugs(), fn slug ->
+          {:ok, %{body: body}} = Docs.get(slug)
+          {slug, FountainWeb.Markdown.to_trusted_html(body)}
+        end)
+
+      for {slug, _html} <- rendered,
+          {:ok, %{body: body}} = Docs.get(slug),
+          [_, target, anchor] <- Regex.scan(~r{\]\(/docs(/[^)#]+)?#([^)]+)\)}, body) do
+        target_slug = String.trim_leading(target, "/")
+        target_html = Map.fetch!(rendered, if(target == "", do: slug, else: target_slug))
+
+        assert target_html =~ ~s( id="#{anchor}"),
+               "#{inspect(slug)} links to /docs/#{target_slug}##{anchor}, but that page has no heading with that id"
+      end
+    end
+
     test "the changelog page carries the repo-root CHANGELOG" do
       {:ok, %{body: body}} = Docs.get("changelog")
       assert body =~ "Keep a Changelog"

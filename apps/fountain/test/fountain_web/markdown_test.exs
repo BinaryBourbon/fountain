@@ -208,12 +208,25 @@ end|
       assert html =~ "&lt;img"
     end
 
+    test "headings carry GFM-style ids so #anchor links resolve" do
+      html = Markdown.to_trusted_html("## Back up `MASTER_SECRETS_KEY`\n\n## Crons: alerting")
+      assert html =~ ~s(<h2 id="back-up-master_secrets_key">)
+      assert html =~ ~s(<h2 id="crons-alerting">)
+      # comrak also emits GitHub's self-link inside the heading; it is empty
+      # and invisible, but pin its shape so a change shows up here.
+      assert html =~ ~s(<a href="#crons-alerting" aria-label="Link to heading 'Crons: alerting'")
+    end
+
+    test "the untrusted path emits no heading ids" do
+      refute Markdown.to_html("## Title") =~ "id="
+    end
+
     test "an HTML comment block is dropped on the trusted path too" do
       html =
         Markdown.to_trusted_html("<!-- The changelog lives in the repo root -->\n\n# Changelog")
 
       refute html =~ "changelog lives"
-      assert html =~ "<h1>Changelog</h1>"
+      assert html =~ ~s(<h1 id="changelog">Changelog)
     end
 
     test "the untrusted path never renders svg, even the same clean block" do
