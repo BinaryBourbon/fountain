@@ -1,12 +1,13 @@
 defmodule Fountain.Buzz.HarnessTest do
-  # async: false — writes a fake executable to a tmp dir and spawns OS processes.
+  # async: false — writes fake executables and spawns OS processes.
   use ExUnit.Case, async: false
 
   alias Fountain.Buzz.Harness
 
-  # A fake `buzz-acp`: writes its invocation marker to a file (so the test can
-  # prove the port opened with the right env) and then behaves as the scenario
-  # asks — either sleep forever, or exit after a beat to exercise restart.
+  # The real port middleman, shipped in priv. Every harness spawns through it,
+  # so the tests exercise the exact teardown path production uses.
+  @launcher Path.expand("../../../priv/buzz-acp-launch.sh", __DIR__)
+
   defp write_fake(dir, name, body) do
     path = Path.join(dir, name)
     File.write!(path, "#!/bin/sh\n" <> body)
@@ -14,39 +15,38 @@ defmodule Fountain.Buzz.HarnessTest do
     path
   end
 
+  defp alive?(pid), do: match?({_, 0}, System.cmd("sh", ["-c", "kill -0 #{pid} 2>/dev/null"]))
+
   setup do
+    assert File.exists?(@launcher), "launcher missing at #{@launcher}"
     dir = Path.join(System.tmp_dir!(), "buzz-harness-#{System.unique_integer([:positive])}")
     File.mkdir_p!(dir)
     on_exit(fn -> File.rm_rf(dir) end)
     %{dir: dir}
   end
 
+  defp start(opts) do
+    start_supervised!({Harness, Keyword.put_new(opts, :launcher, @launcher)})
+  end
+
   test "opens the port with the given env and stays running", %{dir: dir} do
     marker = Path.join(dir, "marker")
-    # Record BUZZ_RELAY_URL so we can prove env made it through, then idle.
     cmd = write_fake(dir, "buzz-acp", "printf '%s' \"$BUZZ_RELAY_URL\" > #{marker}\nsleep 30\n")
 
-    pid =
-      start_supervised!(
-        {Harness, command: cmd, env: [{"BUZZ_RELAY_URL", "wss://relay.example"}], label: "t"}
-      )
+    pid = start(command: cmd, env: [{"BUZZ_RELAY_URL", "wss://relay.example"}], label: "t")
 
     assert Harness.running?(pid)
     assert Harness.starts_count(pid) == 1
-
     wait_until(fn -> File.exists?(marker) end)
     assert File.read!(marker) == "wss://relay.example"
   end
 
-  test "restarts the process when it exits, with backoff", %{dir: dir} do
+  test "restarts the process when it really exits, with backoff", %{dir: dir} do
     counter = Path.join(dir, "count")
-    # Append a line each launch, then exit immediately — forces restarts.
     cmd = write_fake(dir, "buzz-acp", "echo x >> #{counter}\nexit 0\n")
 
-    pid =
-      start_supervised!({Harness, command: cmd, env: [], restart_backoff_ms: 20, label: "t"})
+    pid = start(command: cmd, restart_backoff_ms: 20, label: "t")
 
-    # Three launches means at least two restarts happened after the first exit.
     wait_until(fn ->
       File.exists?(counter) and length(File.stream!(counter) |> Enum.to_list()) >= 3
     end)
@@ -54,18 +54,49 @@ defmodule Fountain.Buzz.HarnessTest do
     assert Harness.starts_count(pid) >= 3
   end
 
-  test "runs the on_stop callback and closes the port on shutdown", %{dir: dir} do
+  # The bug this whole change exists to fix (#736): buzz-acp closes its stdio to
+  # the BEAM, which a bare port reads as a false exit and restarts — leaking a
+  # still-live process. Through the launcher the port stays open, so no restart.
+  test "does NOT restart when the child merely closes its stdio", %{dir: dir} do
+    # Close stdin/stdout/stderr toward the port, then keep running.
+    cmd = write_fake(dir, "buzz-acp", "exec 0<&- 1>&- 2>&-\nsleep 30\n")
+
+    pid = start(command: cmd, restart_backoff_ms: 20, label: "t")
+
+    Process.sleep(700)
+    assert Harness.running?(pid)
+    assert Harness.starts_count(pid) == 1, "the harness restarted a still-live child"
+  end
+
+  # The other half of the fix: on shutdown the OS process must actually die, not
+  # orphan onto the relay. The fake closes its stdio (like the real one) so only
+  # the launcher's teardown can reap it.
+  test "reaps the child OS process on shutdown", %{dir: dir} do
+    pidfile = Path.join(dir, "childpid")
+    cmd = write_fake(dir, "buzz-acp", "echo $$ > #{pidfile}\nexec 0<&- 1>&- 2>&-\nsleep 300\n")
+
+    start(command: cmd, label: "t")
+    wait_until(fn -> File.exists?(pidfile) end)
+    child = File.read!(pidfile) |> String.trim() |> String.to_integer()
+    assert alive?(child)
+
+    :ok = stop_supervised(Harness)
+
+    reaped =
+      Enum.reduce_while(1..80, false, fn _, _ ->
+        Process.sleep(100)
+        if alive?(child), do: {:cont, false}, else: {:halt, true}
+      end)
+
+    assert reaped, "child OS process #{child} survived shutdown (leaked)"
+  end
+
+  test "runs the on_stop callback on shutdown", %{dir: dir} do
     cmd = write_fake(dir, "buzz-acp", "sleep 30\n")
     test_pid = self()
 
-    pid =
-      start_supervised!(
-        {Harness, command: cmd, env: [], label: "t", on_stop: fn -> send(test_pid, :stopped) end}
-      )
-
-    assert Harness.running?(pid)
+    start(command: cmd, label: "t", on_stop: fn -> send(test_pid, :stopped) end)
     :ok = stop_supervised(Harness)
-
     assert_receive :stopped, 2_000
   end
 
@@ -73,11 +104,12 @@ defmodule Fountain.Buzz.HarnessTest do
   defp wait_until(_fun, 0), do: flunk("condition not met in time")
 
   defp wait_until(fun, tries) do
-    if fun.() do
-      :ok
-    else
-      Process.sleep(10)
-      wait_until(fun, tries - 1)
-    end
+    if fun.(),
+      do: :ok,
+      else:
+        (
+          Process.sleep(10)
+          wait_until(fun, tries - 1)
+        )
   end
 end
