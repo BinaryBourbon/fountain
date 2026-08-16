@@ -362,7 +362,12 @@ defmodule Fountain.Buzz do
       "BUZZ_ACP_AGENTS" => Integer.to_string(agents),
       # Steer the model to the Fountain-hosted buzz_* MCP tools (which sign
       # server-side) instead of a `buzz` CLI it has no key for (#737).
-      "BUZZ_ACP_BASE_PROMPT_FILE" => base_prompt_file()
+      "BUZZ_ACP_BASE_PROMPT_FILE" => base_prompt_file(),
+      # Mirror every ACP frame as NIP-44 kind-24200 telemetry encrypted to the
+      # owner, so the Buzz desktop's "ACP activity" panel shows the agent's work.
+      # The desktop sets this when it spawns buzz-acp itself; a gateway-hosted
+      # harness must too, or the panel stays empty.
+      "BUZZ_ACP_RELAY_OBSERVER" => "true"
     }
   end
 
