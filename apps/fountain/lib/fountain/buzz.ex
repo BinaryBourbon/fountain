@@ -87,6 +87,9 @@ defmodule Fountain.Buzz do
 
   # A malformed id must yield [] (no tools), not a crash — the cast raises.
   defp fetch_conv(conversation_id) do
+    # ownership: system-level call from ConversationServer, which owns the
+    # conversation; the identity fetched next is re-scoped by user_id, and the
+    # result only ever authorises publishing under that same tenant's key.
     Conversations._unsafe_get_conversation(conversation_id)
   rescue
     Ecto.Query.CastError -> nil
