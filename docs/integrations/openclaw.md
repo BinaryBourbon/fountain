@@ -111,9 +111,11 @@ OpenClaw runs on Node — it requires **Node ≥ 22.22.3** (or ≥ 24.15 / ≥ 2
     }
     ```
 
-    `mode: "persistent"` matters — see the two-conversations note under
-    Limits. If you have set `acp.allowedAgents`, add `"fountain"` to it; an
-    empty list means no restriction.
+    `mode: "persistent"` matters on OpenClaw ≤ 2026.7.1 — see the
+    two-conversations note under Limits. If you have set `acp.allowedAgents`,
+    add `"fountain"` to it; an empty list means no restriction. The 2026.8
+    beta keys agents by id (`agents.entries.fountain = { runtime: … }`) instead
+    of `agents.list[]`; `openclaw doctor --fix` migrates a list-style config.
 
 5. Spawn it from a channel, or bind a channel to it:
 
@@ -165,7 +167,7 @@ two entries stay separate even when they point at the same agent.
 | `session/prompt` | Runs a turn; messages, thoughts and tool calls stream back to the channel as they happen |
 | `session/cancel` | `/acp cancel` interrupts the running turn |
 | `session/load` | Replays the conversation when a session is resumed |
-| `session/set_config_option` | Accepted, not applied. OpenClaw pushes the model its brain chose (and a `thinking` level derived from it) at every spawn; a Fountain agent's model is set on the agent, so the push is acknowledged and ignored, and the reply's `_meta.fountain.applied: false` says so |
+| `session/set_config_option` | Accepted, not applied. OpenClaw pushes the model its brain chose (and a `thinking` level derived from it) at every spawn — verified on 2026.7.1 and 2026.8.1-beta.2; a Fountain agent's model is set on the agent, so the push is acknowledged and ignored, and the reply's `_meta.fountain.applied: false` says so |
 
 ## Limits, stated rather than discovered
 
@@ -187,16 +189,18 @@ two entries stay separate even when they point at the same agent.
   controls are accepted and ignored — a Fountain agent's model is set on the
   agent and shared by every conversation it runs. Change it there. (OpenClaw's
   own docs say the same for any harness without `session/set_model`.)
-- **A one-shot spawn opens two conversations, and uses one.** OpenClaw ensures
-  the acpx session twice — when the spawn is initialised and again when the
-  turn runs — and in `oneshot` mode acpx answers each with a fresh
-  `session/new`. On Fountain that is two conversations per spawn, each with a
-  provisioned sandbox; the first is never prompted and sits `pending` until
-  the idle reaper parks it. This is OpenClaw/acpx behaviour, not something the
-  adapter can prevent
-  ([#760](https://github.com/BinaryBourbon/fountain/issues/760)). Set
-  `mode: "persistent"` (as in Setup) — a persistent session reuses its record
-  and pays this once per channel thread, not once per message.
+- **On OpenClaw ≤ 2026.7.1 (acpx 0.11), a one-shot spawn opens two
+  conversations and uses one.** That OpenClaw ensured the acpx session twice —
+  when the spawn was initialised and again when the turn ran — and in
+  `oneshot` mode acpx answered each with a fresh `session/new`. On Fountain
+  that was two conversations per spawn, each with a provisioned sandbox; the
+  first never prompted, sitting `pending` until the idle reaper parked it.
+  Re-run on 2026.8.1-beta.2 (acpx 0.13) it no longer happens — one
+  `session/new` per spawn. Reported upstream as
+  [openclaw#124852](https://github.com/openclaw/openclaw/issues/124852) /
+  [acpx#504](https://github.com/openclaw/acpx/issues/504); on the older
+  versions, `mode: "persistent"` (as in Setup) reuses its record and pays it
+  once per channel thread, not once per message.
 - **A reclaimed sandbox loses the agent's memory.** If a conversation's sandbox
   was reclaimed while you were away, resuming still replays the full transcript,
   but the agent itself does not remember it
@@ -215,9 +219,9 @@ what `acpx` does when it spawns the command above.
 The full gateway round trip is also proven: `openclaw agent` (OpenClaw's own
 brain) → `sessions_spawn(runtime: "acp", agentId: "fountain")` → acpx →
 `fountain acp` → sandbox → the reply relayed back through the gateway, against
-the real acpx (0.11.2) and OpenClaw (2026.7.1) — with the brain pushing its
-model and a `thinking` level at the harness on the way, which is the case that
-used to abort the turn ([#759](https://github.com/BinaryBourbon/fountain/issues/759),
+the real acpx (0.11.2 and 0.13.0) and OpenClaw (2026.7.1 and 2026.8.1-beta.2)
+— with the brain pushing its model and a `thinking` level at the harness on
+the way, which is the case that used to abort the turn ([#759](https://github.com/BinaryBourbon/fountain/issues/759),
 [#760](https://github.com/BinaryBourbon/fountain/issues/760)).
 
 When you test through `openclaw agent` or a prompt that should delegate, check
