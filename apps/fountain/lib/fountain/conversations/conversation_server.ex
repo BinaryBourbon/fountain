@@ -273,6 +273,11 @@ defmodule Fountain.Conversations.ConversationServer do
       # Bytes of replayed output to drop on reattach, keyed by stream.
       # Empty map outside a reattach window. See attempt_session_attach.
       replay_skip: %{},
+      # ACP reattach: the `acp` lines already persisted for the in-flight
+      # turn, so the sprite's replayed tail is not written twice. Consumed as
+      # matches arrive and cleared on a timer; empty outside a reattach
+      # window. See attempt_session_attach.
+      replay_dedup: MapSet.new(),
       # Per-tenant DEK + decrypted inference credentials. Loaded in
       # handle_continue(:provision) once the conversation row tells us the
       # owning user_id; held for the conversation lifetime; dropped on
@@ -864,23 +869,45 @@ defmodule Fountain.Conversations.ConversationServer do
   end
 
   defp attempt_session_attach(state, running_turn, [session | _]) do
+    conv = Conversations._unsafe_get_conversation!(state.conversation_id)
+    acp? = Fountain.Runtimes.ACP.enabled?(conv.runtime)
+
     case Fountain.Sandbox.attach(state.handle, session.id, owner: self(), stdin: true) do
+      {:ok, idle_command} when acp? and is_nil(running_turn.acp_prompt_id) ->
+        # The previous peer died before it wrote `session/prompt` (or the turn
+        # predates the column). The adapter is sitting idle in its handshake
+        # with nothing to answer, and no peer can pick that up: the ids it
+        # would need are gone with the process. Stop it — otherwise it lingers
+        # as a session the next reattach could bind to — and orphan the turn.
+        Fountain.Sandbox.stop_command(idle_command)
+        mark_orphan(state, running_turn, "acp_prompt_not_sent")
+        state
+
       {:ok, command} ->
-        # sprites replays the session's buffered output before live-tailing.
-        # Count the bytes we already persisted for this turn so the
-        # stdout/stderr handlers can drop the replayed prefix.
+        # sprites replays the tail of the session's buffered output before
+        # live-tailing. On the legacy path, count the bytes we already
+        # persisted for this turn so the stdout/stderr handlers can drop the
+        # replayed prefix. On the ACP path the peer re-encodes protocol lines
+        # so byte counts do not line up; the replayed lines are matched by
+        # content instead (`replay_dedup`).
         replay_skip =
-          Conversations._unsafe_output_bytes_by_stream(state.conversation_id, running_turn.id)
+          if acp?,
+            do: %{},
+            else:
+              Conversations._unsafe_output_bytes_by_stream(
+                state.conversation_id,
+                running_turn.id
+              )
 
         publish_stage(state.conversation_id, "reattach", "done", %{
           outcome: "session_attached",
           session_id: session.id,
           turn_id: running_turn.id,
           turn_number: running_turn.turn_number,
-          replay_skip_bytes: replay_skip
+          replay_skip_bytes: replay_skip,
+          acp_prompt_id: running_turn.acp_prompt_id
         })
 
-        conv = Conversations._unsafe_get_conversation!(state.conversation_id)
         {:ok, _} = Conversations.update_conversation(conv, %{status: "running"})
 
         # turn_metrics stays nil on purpose, so this turn contributes no
@@ -888,7 +915,7 @@ defmodule Fountain.Conversations.ConversationServer do
         # monotonic time isn't comparable across a restart, and measuring
         # from the row's started_at would fold the whole deploy gap into the
         # histogram. A missing sample beats a wrong one.
-        %{
+        state = %{
           state
           | current_command: command,
             current_command_ref: command.ref,
@@ -896,11 +923,50 @@ defmodule Fountain.Conversations.ConversationServer do
             replay_skip: replay_skip
         }
 
+        if acp?, do: reattach_acp_peer(state, running_turn, conv), else: state
+
       {:error, reason} ->
         Logger.warning("attach_session failed: #{inspect(reason)}")
         mark_orphan(state, running_turn, "attach_failed")
         state
     end
+  end
+
+  @replay_dedup_ttl_ms 10_000
+
+  # An ACP turn is only alive while something answers the agent: a
+  # `session/request_permission` left unanswered blocks it forever, and the
+  # `session/prompt` response is the only thing that ends it — the adapter
+  # keeps running until stdin closes. Before this, a reattached ACP turn had
+  # its stdout logged raw and no peer, so every turn in flight across a deploy
+  # hung until the user prompted again (which interrupts it) or the sandbox
+  # hit its lifetime ceiling.
+  #
+  # No tracer: the turn span belongs to a previous BEAM lifetime.
+  defp reattach_acp_peer(state, running_turn, conv) do
+    {:ok, peer} =
+      Fountain.Runtimes.ACP.Peer.start(
+        owner: self(),
+        command: state.current_command,
+        ref: state.current_command_ref,
+        prompt: running_turn.prompt,
+        mode: :continue,
+        session_id: conv.runtime_session_id,
+        attach: running_turn.acp_prompt_id
+      )
+
+    dedup =
+      Conversations._unsafe_recent_output_lines(state.conversation_id, running_turn.id, "acp")
+
+    Process.send_after(self(), :clear_replay_dedup, @replay_dedup_ttl_ms)
+
+    %{
+      state
+      | acp_peer: peer,
+        acp_peer_mon: Process.monitor(peer),
+        stream_tracer: nil,
+        replay_dedup: dedup
+    }
   end
 
   defp mark_orphan(state, running_turn, why) do
@@ -1267,19 +1333,13 @@ defmodule Fountain.Conversations.ConversationServer do
   # the log budget, the redaction pass and the replay skip. A peer writing rows
   # itself would bypass all three.
   def handle_info({:acp, ref, {:lines, stream, data}}, %{current_command_ref: ref} = state) do
-    new_state = log_with_replay_skip(state, stream, data)
-
-    # Each "acp" report is one session/update line; the tracer turns tool_call
-    # / tool_call_update into child spans. Peer-relayed lines never replay (a
-    # peer lives for exactly one turn), so no replay-suffix arithmetic here.
-    tracer =
-      if stream == "acp" do
-        Fountain.Runtimes.ACP.Tracer.handle_line(new_state.stream_tracer, data)
-      else
-        new_state.stream_tracer
-      end
-
-    {:noreply, %{new_state | stream_tracer: tracer}}
+    if stream == "acp" and MapSet.member?(state.replay_dedup, data) do
+      # A replayed line we already hold (ACP reattach). Each persisted line
+      # suppresses at most one arrival, so a legitimate later repeat survives.
+      {:noreply, %{state | replay_dedup: MapSet.delete(state.replay_dedup, data)}}
+    else
+      {:noreply, persist_acp_lines(state, stream, data)}
+    end
   end
 
   # The runtime refused the agent's model. Published as a stage event so it
@@ -1310,6 +1370,15 @@ defmodule Fountain.Conversations.ConversationServer do
     conv = Conversations._unsafe_get_conversation!(state.conversation_id)
     {:ok, _} = Conversations.update_conversation(conv, %{runtime_session_id: id})
     {:noreply, %{state | runtime_session_id: id}}
+  end
+
+  # The peer wrote `session/prompt` under this JSON-RPC id. Persisted at once:
+  # it is what a reattach after a restart needs to tell the prompt's answer
+  # from the replayed handshake, and a turn without it cannot be resumed at
+  # all — see `reattach_acp_peer/3`.
+  def handle_info({:acp, ref, {:prompt_sent, id}}, %{current_command_ref: ref} = state) do
+    {:ok, turn} = Conversations._unsafe_update_turn(state.current_turn, %{acp_prompt_id: id})
+    {:noreply, %{state | current_turn: turn}}
   end
 
   # The number gate 2 exists to produce: what a turn pays for `initialize` plus
@@ -1484,6 +1553,12 @@ defmodule Fountain.Conversations.ConversationServer do
   def handle_info({:error, _ref, reason}, state) do
     Logger.error("sprite command error: #{inspect(reason)}")
     {:noreply, state}
+  end
+
+  # The ACP reattach window is over; anything still in the set is a persisted
+  # line the replay did not repeat, and must not suppress a genuine repeat.
+  def handle_info(:clear_replay_dedup, state) do
+    {:noreply, %{state | replay_dedup: MapSet.new()}}
   end
 
   # ── sandbox lifetime ──────────────────────────────────────────────────────
@@ -2340,6 +2415,26 @@ defmodule Fountain.Conversations.ConversationServer do
       :ok -> Fountain.Sandbox.close_stdin(command)
       {:error, reason} -> {:error, reason}
     end
+  end
+
+  # Persistence for peer-relayed lines: the log budget, redaction and the
+  # legacy replay skip all live on this path; the tracer reads protocol lines
+  # from the peer's reports, never raw chunks.
+  defp persist_acp_lines(state, stream, data) do
+    new_state = log_with_replay_skip(state, stream, data)
+
+    # Each "acp" report is one session/update line; the tracer turns tool_call
+    # / tool_call_update into child spans. Peer-relayed lines carry no byte
+    # replay-suffix arithmetic: a fresh peer's lines never replay, and an
+    # attached peer's replayed lines were matched by content before this.
+    tracer =
+      if stream == "acp" do
+        Fountain.Runtimes.ACP.Tracer.handle_line(new_state.stream_tracer, data)
+      else
+        new_state.stream_tracer
+      end
+
+    %{new_state | stream_tracer: tracer}
   end
 
   defp start_acp_peer(command, prompt, mode, runtime_session_id, opts) do

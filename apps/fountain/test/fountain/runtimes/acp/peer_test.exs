@@ -109,9 +109,15 @@ defmodule Fountain.Runtimes.ACP.PeerTest do
 
       assert_receive {:acp, _ref, {:session, "sess_abc"}}
 
-      assert %{"method" => "session/prompt", "params" => prompt_params} = next_write()
+      assert %{"method" => "session/prompt", "id" => prompt_id, "params" => prompt_params} =
+               next_write()
+
       assert prompt_params["sessionId"] == "sess_abc"
       assert [%{"type" => "text", "text" => "do the thing"}] = prompt_params["prompt"]
+
+      # The id is reported the moment the prompt is on the wire: it is what a
+      # reattach after a restart resumes the turn by.
+      assert_receive {:acp, _ref, {:prompt_sent, ^prompt_id}}
     end
 
     test "a session response with no id fails the turn rather than prompting blind", ctx do
@@ -728,6 +734,119 @@ defmodule Fountain.Runtimes.ACP.PeerTest do
 
       send_response(pid, set_id, %{})
       assert %{"method" => "session/prompt"} = next_write()
+    end
+  end
+
+  describe "attach — resuming a turn already in flight" do
+    # A deploy restarts the peer while the adapter, a detachable session in the
+    # sprite, keeps running with `session/prompt` outstanding. The new peer is
+    # handed the prompt's id and joins the stream: no handshake, replayed
+    # history ignored, live requests answered, the prompt's answer ends it.
+
+    defp attached_peer(ctx, prompt_id \\ 4) do
+      start_peer(ctx, mode: :continue, session_id: "sess_live", attach: prompt_id)
+    end
+
+    test "writes nothing on start — no initialize, no session call, no second prompt", ctx do
+      pid = attached_peer(ctx)
+      _ = :sys.get_state(pid)
+      refute_receive {:wrote, _}, 100
+    end
+
+    test "the replayed handshake — responses and a model refusal — is ignored", ctx do
+      pid = attached_peer(ctx, 4)
+
+      # initialize, session/resume, then the set_config_option the previous
+      # peer already reported as a `model failed` stage event.
+      send_response(pid, 1, %{"agentCapabilities" => caps()})
+      send_response(pid, 2, %{"configOptions" => [%{"id" => "model"}]})
+
+      Peer.stdout(
+        pid,
+        Jason.encode!(%{
+          "jsonrpc" => "2.0",
+          "id" => 3,
+          "error" => %{"code" => -32_603, "data" => %{"details" => "Invalid value"}}
+        }) <> "\n"
+      )
+
+      _ = :sys.get_state(pid)
+      refute_received {:acp, _, {:failed, _}}
+      refute_received {:acp, _, {:done, _}}
+      refute_received {:acp, _, {:model_rejected, _, _}}
+    end
+
+    test "a live permission request is answered — the reason the turn used to hang", ctx do
+      pid = attached_peer(ctx)
+
+      Peer.stdout(
+        pid,
+        Jason.encode!(%{
+          "jsonrpc" => "2.0",
+          "id" => 5,
+          "method" => "session/request_permission",
+          "params" => %{"options" => [%{"optionId" => "allow", "kind" => "allow_once"}]}
+        }) <> "\n"
+      )
+
+      assert %{"id" => 5, "result" => %{"outcome" => %{"optionId" => "allow"}}} = next_write()
+    end
+
+    test "updates are relayed for persistence", ctx do
+      pid = attached_peer(ctx)
+      Peer.stdout(pid, update_line(%{"sessionUpdate" => "agent_message_chunk"}))
+      assert_receive {:acp, _ref, {:lines, "acp", line}}
+      assert line =~ "agent_message_chunk"
+    end
+
+    test "the response to the prompt id ends the turn; an error to it fails the turn", ctx do
+      pid = attached_peer(ctx, 4)
+      send_response(pid, 4, %{"stopReason" => "end_turn"})
+      assert_receive {:acp, _ref, {:done, "end_turn"}}
+
+      pid2 = attached_peer(ctx, 7)
+
+      Peer.stdout(
+        pid2,
+        Jason.encode!(%{"jsonrpc" => "2.0", "id" => 7, "error" => %{"message" => "gone"}}) <>
+          "\n"
+      )
+
+      assert_receive {:acp, _ref, {:failed, {:acp_error, :prompt, %{"message" => "gone"}}}}
+    end
+
+    test "cancel still reaches the agent, addressed to the live session", ctx do
+      pid = attached_peer(ctx)
+      Peer.cancel(pid)
+
+      assert %{"method" => "session/cancel", "params" => %{"sessionId" => "sess_live"}} =
+               next_write()
+    end
+
+    test "the replay's partial first line is dropped, not persisted as noise", ctx do
+      # Sprites replays the tail of its buffer, which starts wherever it starts.
+      pid = attached_peer(ctx)
+      good = update_line(%{"sessionUpdate" => "usage_update", "used" => 1})
+      Peer.stdout(pid, ~s(le":"garbage"}}}\n) <> good)
+
+      assert_receive {:acp, _ref, {:lines, "acp", line}}
+      assert line =~ "usage_update"
+      refute_receive {:acp, _ref, {:lines, "stdout", _}}, 100
+    end
+
+    test "a first chunk that opens a JSON line is kept whole", ctx do
+      pid = attached_peer(ctx)
+      Peer.stdout(pid, update_line(%{"sessionUpdate" => "usage_update", "used" => 2}))
+      assert_receive {:acp, _ref, {:lines, "acp", line}}
+      assert line =~ ~s("used":2)
+    end
+
+    test "a first fragment with no newline yet is held until the line boundary arrives", ctx do
+      pid = attached_peer(ctx)
+      Peer.stdout(pid, "tail-of-a-line")
+      Peer.stdout(pid, "-still-going\n" <> update_line(%{"sessionUpdate" => "usage_update"}))
+      assert_receive {:acp, _ref, {:lines, "acp", _}}
+      refute_receive {:acp, _ref, {:lines, "stdout", _}}, 100
     end
   end
 end

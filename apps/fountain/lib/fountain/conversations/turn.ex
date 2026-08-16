@@ -16,6 +16,9 @@ defmodule Fountain.Conversations.Turn do
     field :exit_code, :integer
     field :started_at, :utc_datetime
     field :ended_at, :utc_datetime
+    # JSON-RPC id of the ACP `session/prompt` in flight; nil on the legacy
+    # path and until the peer has written the prompt. See the migration.
+    field :acp_prompt_id, :integer
     belongs_to :conversation, Conversation
     has_many :images, TurnImage, preload_order: [asc: :position]
     timestamps(type: :utc_datetime, updated_at: false)
@@ -32,6 +35,7 @@ defmodule Fountain.Conversations.Turn do
       :exit_code,
       :started_at,
       :ended_at,
+      :acp_prompt_id,
       :conversation_id
     ])
     |> validate_required([:turn_number, :prompt, :status, :conversation_id])

@@ -163,6 +163,17 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
       assert Conversations._unsafe_get_conversation!(conv.id).runtime_session_id == "sess_1"
     end
 
+    test "persists the prompt's JSON-RPC id so a restart can resume the turn", %{
+      conv: conv,
+      pid: pid,
+      ref: ref
+    } do
+      prompt_id = drive_to_prompt(pid, ref)
+
+      assert [turn] = Conversations._unsafe_list_turns(conv.id)
+      assert turn.acp_prompt_id == prompt_id
+    end
+
     test "protocol chatter never reaches the transcript", %{conv: conv, pid: pid, ref: ref} do
       drive_to_prompt(pid, ref)
 
@@ -422,6 +433,175 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
       settle(pid)
 
       refute_receive {:fs_write, "/tmp/aod_turn_" <> _}, 100
+    end
+  end
+
+  describe "reattach — a deploy lands mid-turn" do
+    # Every deploy restarts every ConversationServer; the adapter in the sprite
+    # is a detachable session and keeps running. Before this describe existed
+    # the reattach path re-hooked the command and logged its stdout raw: no
+    # peer, so nobody answered `session/request_permission` and nobody saw the
+    # `session/prompt` response. Every ACP turn in flight across a deploy hung
+    # until the user prompted again (interrupting it) or the sandbox hit its
+    # lifetime ceiling — 8 such turns were found stuck in production the day
+    # this was written, one of them 15 hours in.
+
+    # A conversation with a `ready` sandbox and a `running` turn, which is
+    # exactly what the server finds after a restart. `attach` hands back a
+    # command with our ref; every stdin write reaches the test process.
+    defp reattach_fixture(prompt_id) do
+      user = insert_verified_user()
+      agent = acp_agent(user)
+      sandbox = insert_sandbox(user_id: user.id, status: "ready")
+
+      conv =
+        insert_conversation(
+          agent: agent,
+          user_id: user.id,
+          sandbox: sandbox,
+          status: "running",
+          runtime_session_id: "sess_live"
+        )
+
+      turn =
+        insert_turn(conv, %{
+          status: "running",
+          prompt: "long task",
+          started_at: DateTime.utc_now() |> DateTime.truncate(:second),
+          acp_prompt_id: prompt_id
+        })
+
+      stub_happy_sprite()
+      test = self()
+      ref = make_ref()
+
+      Mimic.stub(Fountain.Sandbox.Sprites, :list_sessions, fn _h ->
+        {:ok, [%Fountain.Sandbox.Session{id: "9350"}]}
+      end)
+
+      Mimic.stub(Fountain.Sandbox.Sprites, :attach, fn _h, "9350", _opts ->
+        {:ok, %Fountain.Sandbox.Command{provider: :sprites, ref: ref}}
+      end)
+
+      Mimic.stub(Fountain.Sandbox.Sprites, :write_stdin, fn _c, data ->
+        send(test, {:wrote, IO.iodata_to_binary(data)})
+        :ok
+      end)
+
+      Mimic.stub(Fountain.Sandbox.Sprites, :close_stdin, fn _c ->
+        send(test, :stdin_closed)
+        :ok
+      end)
+
+      Mimic.stub(Fountain.Sandbox.Sprites, :stop_command, fn _c ->
+        send(test, :command_stopped)
+        :ok
+      end)
+
+      {conv, turn, ref}
+    end
+
+    defp start_reattached(conv) do
+      {pid, _mon, :alive} = start_server(conv)
+      on_exit(fn -> if Process.alive?(pid), do: GenServer.stop(pid) end)
+      pid
+    end
+
+    defp raw_update(update) do
+      Jason.encode!(%{
+        "jsonrpc" => "2.0",
+        "method" => "session/update",
+        "params" => %{"sessionId" => "sess_live", "update" => update}
+      }) <> "\n"
+    end
+
+    test "a peer joins the running turn: permission answered, prompt response ends it", %{} do
+      {conv, turn, ref} = reattach_fixture(4)
+      pid = start_reattached(conv)
+
+      assert is_pid(:sys.get_state(pid).acp_peer)
+      # Attach mode is silent on start: no initialize, no second prompt.
+      refute_receive {:wrote, _}, 100
+
+      # The sprite replays a mid-line tail, then live-tails. Here the agent
+      # asks permission mid-tool-call — the exact frame found at the end of the
+      # hung production turn.
+      send(pid, {:stdout, %{ref: ref}, ~s(le":"tail-of-a-replayed-line"}}}\n)})
+
+      send(
+        pid,
+        {:stdout, %{ref: ref},
+         Jason.encode!(%{
+           "jsonrpc" => "2.0",
+           "id" => 5,
+           "method" => "session/request_permission",
+           "params" => %{"options" => [%{"optionId" => "allow", "kind" => "allow_once"}]}
+         }) <> "\n"}
+      )
+
+      assert_receive {:wrote, answer}, 1_000
+
+      assert %{"id" => 5, "result" => %{"outcome" => %{"optionId" => "allow"}}} =
+               Jason.decode!(answer)
+
+      reply(pid, ref, 4, %{"stopReason" => "end_turn"})
+
+      assert_receive :stdin_closed, 1_000
+      assert Fountain.Repo.reload!(turn).status == "completed"
+      assert Conversations._unsafe_get_conversation!(conv.id).status == "idle"
+      assert :sys.get_state(pid).current_command == nil
+    end
+
+    test "replayed lines already persisted are not written twice; new ones are", %{} do
+      {conv, turn, ref} = reattach_fixture(4)
+
+      already = raw_update(%{"sessionUpdate" => "usage_update", "used" => 100})
+
+      # What the previous peer persisted for this turn: the peer's own
+      # re-encoding of the line, which is what a fresh peer produces again.
+      {:notification, "session/update", params} =
+        Fountain.Runtimes.ACP.Protocol.classify_line(String.trim_trailing(already, "\n"))
+
+      Conversations.log!(%{
+        conversation_id: conv.id,
+        turn_id: turn.id,
+        kind: "output",
+        stream: "acp",
+        stage: "turn",
+        data:
+          IO.iodata_to_binary(
+            Fountain.Runtimes.ACP.Protocol.notification("session/update", params)
+          )
+      })
+
+      pid = start_reattached(conv)
+      fresh = raw_update(%{"sessionUpdate" => "usage_update", "used" => 250})
+
+      # The replay repeats the persisted line and brings one the old server
+      # never saw (emitted during the deploy gap).
+      send(pid, {:stdout, %{ref: ref}, already <> fresh})
+      settle(pid)
+
+      acp = Enum.filter(Conversations._unsafe_list_log_events(conv.id), &(&1.stream == "acp"))
+      assert Enum.count(acp, &(&1.data =~ ~s("used":100))) == 1
+      assert Enum.count(acp, &(&1.data =~ ~s("used":250))) == 1
+    end
+
+    test "a turn whose prompt was never sent is orphaned and its adapter stopped", %{} do
+      # The previous peer died mid-handshake: the adapter is idle waiting for a
+      # prompt no peer can now write. Nothing to resume — end it cleanly rather
+      # than leave a session the next reattach would bind to.
+      {conv, turn, _ref} = reattach_fixture(nil)
+      pid = start_reattached(conv)
+
+      assert_receive :command_stopped, 1_000
+      assert :sys.get_state(pid).acp_peer == nil
+      assert :sys.get_state(pid).current_command == nil
+      assert Fountain.Repo.reload!(turn).status == "interrupted"
+      assert Conversations._unsafe_get_conversation!(conv.id).status == "idle"
+
+      stages = Enum.filter(Conversations._unsafe_list_log_events(conv.id), &(&1.kind == "stage"))
+      assert Enum.any?(stages, &(&1.stage == "reattach" and &1.data =~ "acp_prompt_not_sent"))
     end
   end
 
