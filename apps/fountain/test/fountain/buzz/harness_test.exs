@@ -91,6 +91,27 @@ defmodule Fountain.Buzz.HarnessTest do
     assert reaped, "child OS process #{child} survived shutdown (leaked)"
   end
 
+  test "surfaces buzz-acp output on the Logger, tagged with the label", %{dir: dir} do
+    import ExUnit.CaptureLog
+
+    cmd = write_fake(dir, "buzz-acp", "echo 'connected to relay'\nsleep 30\n")
+
+    # Test config filters :info at the primary level; prod logs at :info. Lower
+    # the level for this test so the info line is dispatched to the capture.
+    prev = Logger.level()
+    Logger.configure(level: :info)
+    on_exit(fn -> Logger.configure(level: prev) end)
+
+    log =
+      capture_log(fn ->
+        start(command: cmd, label: "philo-xyz")
+        Process.sleep(400)
+      end)
+
+    assert log =~ "[buzz-acp philo-xyz]"
+    assert log =~ "connected to relay"
+  end
+
   test "runs the on_stop callback on shutdown", %{dir: dir} do
     cmd = write_fake(dir, "buzz-acp", "sleep 30\n")
     test_pid = self()

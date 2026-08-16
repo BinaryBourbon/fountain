@@ -31,6 +31,9 @@ defmodule Fountain.Buzz.Harness do
   require Logger
 
   @default_backoff_ms 1_000
+  # Line-frame buzz-acp's output at the port so a single log line is bounded and
+  # a chatty process cannot deliver one unbounded binary.
+  @max_line 4_096
 
   # ── API ────────────────────────────────────────────────────────────────────
 
@@ -86,10 +89,18 @@ defmodule Fountain.Buzz.Harness do
   # A late message from a port we already replaced or closed. Ignore it.
   def handle_info({_stale_port, {:exit_status, _status}}, state), do: {:noreply, state}
 
-  def handle_info({port, {:data, _data}}, %{port: port} = state) do
-    # buzz-acp writes protocol/diagnostics to its own stdio toward its ACP
-    # child, not to us; anything arriving here is noise. Increment 2 wires
-    # captured output to log_events — for now, drop it.
+  # buzz-acp's own stdout/stderr (its relay/handshake diagnostics) flow through
+  # the launcher to this port. Surface them on the Elixir Logger tagged with the
+  # identity, so `kubectl logs` shows why a harness is (or isn't) connected — the
+  # thing the first prod smoke could not see. Not log_events: those are
+  # conversation-scoped, and a harness is identity-scoped.
+  def handle_info({port, {:data, {:eol, line}}}, %{port: port} = state) do
+    log_line(state.label, line)
+    {:noreply, state}
+  end
+
+  def handle_info({port, {:data, {:noeol, chunk}}}, %{port: port} = state) do
+    log_line(state.label, chunk)
     {:noreply, state}
   end
 
@@ -125,11 +136,18 @@ defmodule Fountain.Buzz.Harness do
         :binary,
         :exit_status,
         :hide,
+        {:line, @max_line},
         {:args, args},
         {:env, charlist_env(state.env)}
       ])
 
     %{state | port: port, starts: state.starts + 1}
+  end
+
+  defp log_line(_label, ""), do: :ok
+
+  defp log_line(label, line) do
+    Logger.info("[buzz-acp #{label}] #{line}")
   end
 
   # Through the launcher (`/bin/sh <launcher> <command> <args…>`) so buzz-acp is
