@@ -328,3 +328,52 @@ func TestTwoSessionsAreTrackedIndependently(t *testing.T) {
 		}
 	}
 }
+
+func TestSetConfigOptionIsAcceptedRatherThanRejected(t *testing.T) {
+	api := &fakeAPI{ref: acpAgentRef(), convID: "conv-9"}
+	a := sessionAgent(t, api, "researcher")
+
+	if _, rpcErr := request(t, a, "session/new", map[string]any{}); rpcErr != nil {
+		t.Fatalf("session/new failed: %v", rpcErr)
+	}
+
+	// A client that pushes a model at session start — as OpenClaw's acpx does —
+	// must not get "method not found". Rejecting it makes acpx abort the whole
+	// turn; the method is implemented so the request is accepted.
+	result, rpcErr := request(t, a, "session/set_config_option", map[string]any{
+		"sessionId": "conv-9",
+		"configId":  "model",
+		"value":     "anthropic/claude-something-else",
+	})
+	if rpcErr != nil {
+		t.Fatalf("set_config_option returned an error: %v", rpcErr)
+	}
+
+	// The push is accepted but not applied: the agent's model is authoritative,
+	// so the echoed option still reports the agent's own value (here "default",
+	// since the test ref sets no model), never the client's.
+	opts, ok := result["configOptions"].([]map[string]any)
+	if !ok || len(opts) == 0 {
+		t.Fatalf("configOptions = %#v, want a non-empty list", result["configOptions"])
+	}
+	if got := opts[0]["currentValue"]; got != "default" {
+		t.Errorf("model currentValue = %v, want the agent's value \"default\" (the client's push must not apply)", got)
+	}
+}
+
+func TestSetConfigOptionOnAnUnknownSessionIsRefused(t *testing.T) {
+	api := &fakeAPI{ref: acpAgentRef(), convID: "conv-9"}
+	a := sessionAgent(t, api, "researcher")
+
+	_, rpcErr := request(t, a, "session/set_config_option", map[string]any{
+		"sessionId": "nope",
+		"configId":  "model",
+		"value":     "x",
+	})
+	if rpcErr == nil {
+		t.Fatal("expected an error for an unknown session")
+	}
+	if rpcErr.Code != CodeInvalidParams {
+		t.Errorf("code = %d, want CodeInvalidParams (%d)", rpcErr.Code, CodeInvalidParams)
+	}
+}
