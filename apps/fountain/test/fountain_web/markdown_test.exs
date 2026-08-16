@@ -86,10 +86,11 @@ defmodule FountainWeb.MarkdownTest do
       refute Markdown.to_html("[x](vbscript:msgbox)") =~ "href"
     end
 
-    test "data: image sources are dropped" do
-      html = Markdown.to_html("![i](data:image/svg+xml;base64,AAAA)")
+    test "data: image sources are dropped, leaving the alt text" do
+      html = Markdown.to_html("![diagram](data:image/svg+xml;base64,AAAA)")
       refute html =~ "src"
-      assert html =~ "img"
+      refute html =~ "<img"
+      assert html =~ "diagram"
     end
 
     test "mailto is not an allowed image scheme" do
@@ -99,8 +100,8 @@ defmodule FountainWeb.MarkdownTest do
 
   describe "to_html/1 — raw HTML is neutralized" do
     test "block-level script tags are escaped, not emitted verbatim" do
-      # Plain Earmark.as_html passes block-level raw HTML through unescaped —
-      # this was live XSS from agent output before #323.
+      # A plain markdown-to-HTML call passes block-level raw HTML through
+      # unescaped — this was live XSS from agent output before #323.
       html = Markdown.to_html("<script>alert(1)</script>")
       refute html =~ "<script>"
       assert html =~ "&lt;script&gt;"
@@ -130,6 +131,26 @@ defmodule FountainWeb.MarkdownTest do
       html = Markdown.to_html("# Title\n\nSome **bold** text")
       assert html =~ "<h1>"
       assert html =~ "<strong>"
+    end
+
+    test "GFM tables and strikethrough render" do
+      html = Markdown.to_html("| a | b |\n|---|---|\n| 1 | ~~2~~ |")
+      assert html =~ "<table>"
+      assert html =~ "<td>1</td>"
+      assert html =~ "<del>2</del>"
+    end
+
+    test "an HTML comment block is dropped, not shown as text" do
+      html = Markdown.to_html("before\n\n<!-- authored note -->\n\nafter")
+      refute html =~ "authored note"
+      assert html =~ "<p>before</p>"
+      assert html =~ "<p>after</p>"
+    end
+
+    test "markup trailing a comment on the same line is still escaped" do
+      html = Markdown.to_html("<!-- x --><script>alert(1)</script>")
+      refute html =~ "<script>"
+      assert html =~ "&lt;script&gt;"
     end
 
     test "non-binary input renders as empty" do
@@ -183,8 +204,16 @@ end|
     test "raw HTML that is not a figure/svg is still neutralized on the trusted path" do
       html = Markdown.to_trusted_html("para\n\n<img src=x onerror=alert(1)>\n\nend")
 
-      refute html =~ "onerror=alert"
+      refute html =~ "<img"
       assert html =~ "&lt;img"
+    end
+
+    test "an HTML comment block is dropped on the trusted path too" do
+      html =
+        Markdown.to_trusted_html("<!-- The changelog lives in the repo root -->\n\n# Changelog")
+
+      refute html =~ "changelog lives"
+      assert html =~ "<h1>Changelog</h1>"
     end
 
     test "the untrusted path never renders svg, even the same clean block" do

@@ -802,7 +802,7 @@ defmodule FountainWeb.ConversationsLive.Show do
 
   # Agent output is untrusted by construction (sandboxed code, prompt
   # injection) — FountainWeb.Markdown strips javascript:-style URL schemes
-  # that survive Earmark's HTML escaping (#323).
+  # and neutralizes the raw HTML a plain markdown render lets through (#323).
   defp render_markdown(text), do: FountainWeb.Markdown.to_html(text)
 
   defp format_chat_time(nil), do: ""
