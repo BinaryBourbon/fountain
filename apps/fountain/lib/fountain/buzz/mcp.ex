@@ -148,6 +148,9 @@ defmodule Fountain.Buzz.Mcp do
     end
   end
 
+  # sobelow_skip ["CI.System"] — no shell: System.cmd execs `bin` directly with
+  # `argv` as a list, so message content (an argv element) cannot inject a
+  # command. `bin` is a config path, and the credentials travel in `env`.
   defp default_exec(bin, argv, env) do
     System.cmd(bin, argv, env: env, stderr_to_stdout: true)
   end
