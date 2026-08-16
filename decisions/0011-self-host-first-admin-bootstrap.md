@@ -1,3 +1,15 @@
+---
+type: ADR
+title: "Self-host first login without release tasks"
+description: "A self-hosted instance's first login needs no release tasks: EMAIL_DELIVERY=none implies auto-verification and FIRST_USER_ADMIN=true promotes the first verified account."
+tags: [self-host, auth]
+status: stable
+adr: "0011"
+adr_status: "Accepted"
+date: 2026-08-04
+generated: { by: human:jhgaylor, at: 2026-08-04T21:35:27-04:00 }
+---
+
 # 0011 — Self-host first login without release tasks
 
 **Status:** Accepted

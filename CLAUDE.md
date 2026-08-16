@@ -300,4 +300,6 @@ See `.env.example` for the full list. Key ones for local dev:
 
 Architecturally significant choices live in `decisions/NNNN-<title>.md`. When a decision is contentious or needs to constrain future work, write an ADR. Use `decisions/0001-template.md` as the template.
 
+`decisions/` is an [OKF](https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md) bundle. Start at `decisions/index.md`, which lists every ADR with its status, whether it has been verified against the code, and when its status block goes stale. Each ADR's frontmatter carries `adr_status`, `verified` and `stale_after`; the template explains the fields. CI runs `okf validate decisions` and regenerates the index (`scripts/decisions-index.sh`), so a new ADR needs frontmatter and an index refresh in the same PR. `okf backlinks decisions <id>` lists the ADRs that depend on one before you amend it.
+
 **ADRs and docstrings must not describe unbuilt behavior as existing.** The 2026-07 audit found three mechanisms asserted as implemented (a quota check, metering call sites, a gate backstop) that did not exist — anyone reading the ADRs concluded the system was metered, capped and gated when it was none of those. If a document describes behavior that is not yet in code, say so explicitly (`**Status:** Proposed`, "not yet built"), and remove the caveat in the PR that builds it.

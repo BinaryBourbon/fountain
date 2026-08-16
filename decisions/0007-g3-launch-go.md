@@ -1,3 +1,16 @@
+---
+type: ADR
+title: "G3: Go for public launch"
+description: "G3: go for public launch as of 2026-05-10 with gates G0 through G2 cleared; the 2026-08-03 addendum records what of the post-launch backlog was built."
+tags: [gates, launch]
+status: stable
+adr: "0007"
+adr_status: "Accepted"
+date: 2026-05-10
+generated: { by: human:jhgaylor, at: 2026-08-03T13:41:32-04:00 }
+verified: { by: human:jhgaylor, at: 2026-08-03T13:41:32-04:00 }
+---
+
 # 0007 — G3: Go for public launch
 
 **Status:** Accepted — 2026-05-10.
@@ -40,7 +53,7 @@ Validation report: `plan/phase-3-release-validation/validation-report.md`.
 
 - The success metric is 100 weekly active users by month 6 (2026-11-10).
 - The product-analyst and growth-marketer roles are now available for post-launch measurement and growth experiments.
-- Revisit org/team features (deferred per ADR 0003) once solo-user multi-tenancy is validated.
+- Revisit org/team features (deferred per [ADR 0003](0003-direction-option-b-api-ui-onboarding.md)) once solo-user multi-tenancy is validated.
 
 ## Addendum — 2026-08-03
 

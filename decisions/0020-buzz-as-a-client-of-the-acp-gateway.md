@@ -1,3 +1,17 @@
+---
+type: ADR
+title: "Buzz as a client of the ACP gateway: hosted harness + brokered signing"
+description: "Fountain hosts the Buzz harness and brokers the Buzz Nostr signature at the gateway, so the sandbox holds neither the relay connection nor the identity key. Nothing here is built."
+tags: [acp, buzz, nostr, gateway]
+status: draft
+adr: "0020"
+adr_status: "Proposed"
+date: 2026-08-16
+generated: { by: human:jhgaylor, at: 2026-08-16T00:08:11-04:00 }
+verified: { by: human:jhgaylor, at: 2026-08-16T00:08:11-04:00 }
+stale_after: 2026-11-16
+---
+
 # 0020 — Buzz as a client of the ACP gateway: hosted harness + brokered signing
 
 **Status:** Proposed — **nothing here is built.** No hosted-harness supervisor,
@@ -13,7 +27,7 @@ ACP *client* of the runtimes), [0015](0015-fountain-as-an-acp-agent.md)
 (Fountain as an ACP *agent* an editor drives), and
 [0016](0016-governance-as-an-acp-proxy.md) (the governance plane in the middle).
 It also depends on the egress/credential thinking in
-[0019](0019-egress-credential-brokerage.md), and it explains why that ADR's
+[0019](https://github.com/BinaryBourbon/fountain/pull/690), and it explains why that ADR's
 placeholder-swap mechanism does **not** extend to Nostr.
 
 ## Context
@@ -60,7 +74,7 @@ env. So all of the agent's Nostr surface lives on the laptop and in the sandbox.
 
 ### Why the 0019 egress trick does not extend to this
 
-[0019](0019-egress-credential-brokerage.md) brokers API credentials by injecting
+[0019](https://github.com/BinaryBourbon/fountain/pull/690) brokers API credentials by injecting
 *placeholder* values into the sandbox and swapping the real secret onto the
 outbound HTTP request at an egress proxy. That works because an API key is a
 bearer token the proxy can substitute. A Nostr event carries a **Schnorr

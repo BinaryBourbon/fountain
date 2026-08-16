@@ -1,3 +1,16 @@
+---
+type: ADR
+title: "Pluggable sandbox backends: the `Fountain.Sandbox` abstraction"
+description: "Fountain.Sandbox is one behaviour, one facade and one error taxonomy; Sprites is an adapter behind it. Built and merged in #676 through #686. Amends 0005 to one platform credential per provider."
+tags: [sandbox, architecture]
+status: stable
+adr: "0018"
+adr_status: "Accepted"
+date: 2026-08-14
+generated: { by: human:jhgaylor, at: 2026-08-14T04:34:34-04:00 }
+verified: { by: human:jhgaylor, at: 2026-08-14T04:34:34-04:00 }
+---
+
 # 0018 — Pluggable sandbox backends: the `Fountain.Sandbox` abstraction
 
 **Status:** Accepted (2026-08-14). Everything described here is built and

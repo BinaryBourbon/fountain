@@ -1,0 +1,57 @@
+name: Decisions
+
+# The ADRs in decisions/ are an OKF bundle: frontmatter declares each
+# decision's status, trust and staleness, and cross-links are the dependency
+# graph. This job fails on a spec violation, a link to an ADR that is not on
+# the branch, or a stale committed index. See decisions/0001-template.md.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'decisions/**'
+      - 'scripts/decisions-index.sh'
+      - '.github/workflows/decisions.yml'
+  pull_request:
+    paths:
+      - 'decisions/**'
+      - 'scripts/decisions-index.sh'
+      - '.github/workflows/decisions.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: okf validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      OKF_VERSION: 0.3.0
+      OKF_SHA256: 43b4eb96974d409cc228326bf7976217391454b7d98f18016b00104cf5777509
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v5
+
+      - name: Install okf
+        run: |
+          set -euo pipefail
+          curl -fsSL -o okf.tar.gz \
+            "https://github.com/okfcli/okf/releases/download/v${OKF_VERSION}/okf_${OKF_VERSION}_linux_amd64.tar.gz"
+          echo "${OKF_SHA256}  okf.tar.gz" | sha256sum -c -
+          tar -xzf okf.tar.gz okf
+          install -m 0755 okf /usr/local/bin/okf
+          okf version
+
+      - name: Validate the decisions bundle
+        run: okf validate decisions
+
+      - name: Lint (warnings only)
+        run: okf lint decisions
+
+      - name: Committed index matches frontmatter
+        run: |
+          scripts/decisions-index.sh
+          git diff --exit-code -- decisions/index.md || {
+            echo "::error::decisions/index.md is stale; run scripts/decisions-index.sh and commit" >&2
+            exit 1
+          }

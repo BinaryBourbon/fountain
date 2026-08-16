@@ -1,3 +1,16 @@
+---
+type: ADR
+title: "Postgres from day one (drop the SQLite path)"
+description: "Managed Postgres is the only relational store from launch; the SQLite/Litestream path is dropped. UUID v7 primary keys were never built (2026-08-02 addendum)."
+tags: [data, infra]
+status: stable
+adr: "0004"
+adr_status: "Accepted"
+date: 2026-05-09
+generated: { by: human:jhgaylor, at: 2026-08-02T23:13:41-04:00 }
+verified: { by: human:jhgaylor, at: 2026-08-02T23:13:41-04:00 }
+---
+
 # 0004 — Postgres from day one (drop the SQLite path)
 
 **Status:** Accepted — 2026-05-09.
@@ -11,7 +24,7 @@ Two facts pushed the decision the other way at G2:
 1. **The cutover has a real cost and risk profile.** A SQLite→Postgres migration mid-product means coordinating a downtime window, validating data parity, and reworking infra (replace persistent disk, add managed Postgres, swap `DATABASE_URL`, retest backups). Done well it's a sprint; done badly it's an incident. Doing it once, at G2, while the schema is still ink-on-paper, removes that risk entirely.
 2. **The SQLite path required Litestream for any meaningful PITR.** OQ-9b would have added Litestream + S3 to the launch infrastructure list. Managed Postgres backups are a single line of `render.yaml` configuration and a known commodity for the operator. Strictly less infrastructure to learn.
 
-aod-ex's reference value (ADR 0002) is in the schema and the contexts, not the storage adapter. Ecto abstracts both backends; the migration files differ only in field types where Postgres-specific features (`jsonb`, `uuid`, `bytea`) are clearly preferable.
+aod-ex's reference value ([ADR 0002](0002-aod-ex-as-reference.md)) is in the schema and the contexts, not the storage adapter. Ecto abstracts both backends; the migration files differ only in field types where Postgres-specific features (`jsonb`, `uuid`, `bytea`) are clearly preferable.
 
 ## Decision
 
@@ -35,7 +48,7 @@ Concretely:
 ## Alternatives considered
 
 - **SQLite + Litestream at launch, Postgres cutover later.** The original engineering-plan default. Rejected: pushes a known migration into a future sprint, requires Litestream tuning the operator hasn't done before, and saves only the cost of a managed Postgres line item — not enough to justify the future-toil debt.
-- **SQLite at launch, no Litestream, accept the backup gap.** Rejected: Render persistent disks are not cross-AZ replicated; a disk failure would lose data between snapshots. Unacceptable for a paid product (G2 chose a hard billing gate, ADR 0006).
+- **SQLite at launch, no Litestream, accept the backup gap.** Rejected: Render persistent disks are not cross-AZ replicated; a disk failure would lose data between snapshots. Unacceptable for a paid product (G2 chose a hard billing gate, [ADR 0006](0006-hard-stripe-billing-gate-at-launch.md)).
 - **Postgres-compatible managed serverless (Neon, Supabase) instead of Render-managed Postgres.** Rejected for launch: adds a vendor relationship and egress considerations that aren't justified before there's evidence Render's managed Postgres is the bottleneck. Easy to revisit if it becomes one.
 
 ## Addendum — 2026-08-02
