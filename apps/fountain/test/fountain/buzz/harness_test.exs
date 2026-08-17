@@ -112,6 +112,43 @@ defmodule Fountain.Buzz.HarnessTest do
     assert log =~ "connected to relay"
   end
 
+  # 2026-08-17: two pods ran the boot sweep before the cluster formed, both
+  # registered a harness for FizzTheShark, and the Horde loser ignored the
+  # name-conflict exit — two buzz-acp processes answered one channel.
+  test "a Horde name-conflict exit stops the loser: port reaped, on_stop run", %{dir: dir} do
+    pidfile = Path.join(dir, "childpid")
+    cmd = write_fake(dir, "buzz-acp", "echo $$ > #{pidfile}\nsleep 300\n")
+    test_pid = self()
+
+    pid = start(command: cmd, label: "t", on_stop: fn -> send(test_pid, :stopped) end)
+    wait_until(fn -> File.exists?(pidfile) end)
+    child = File.read!(pidfile) |> String.trim() |> String.to_integer()
+    ref = Process.monitor(pid)
+
+    # What Horde.Registry sends the losing process (registry_impl.ex).
+    Process.exit(pid, {:name_conflict, {"identity-id", nil}, Fountain.BuzzRegistry, self()})
+
+    assert_receive {:DOWN, ^ref, :process, ^pid, {:shutdown, :name_conflict}}, 2_000
+    assert_receive :stopped, 2_000
+
+    reaped =
+      Enum.reduce_while(1..80, false, fn _, _ ->
+        Process.sleep(100)
+        if alive?(child), do: {:cont, false}, else: {:halt, true}
+      end)
+
+    assert reaped, "the loser's buzz-acp #{child} survived (leaked)"
+  end
+
+  test "a :normal linked exit is ignored — the harness keeps running", %{dir: dir} do
+    cmd = write_fake(dir, "buzz-acp", "sleep 30\n")
+    pid = start(command: cmd, label: "t")
+    # What a linked helper that exits normally would deliver to a trapping process.
+    send(pid, {:EXIT, self(), :normal})
+    _ = :sys.get_state(pid)
+    assert Process.alive?(pid)
+  end
+
   test "runs the on_stop callback on shutdown", %{dir: dir} do
     cmd = write_fake(dir, "buzz-acp", "sleep 30\n")
     test_pid = self()

@@ -30,6 +30,13 @@ upgrade, is in
 
 ### Fixed
 
+- **Two hosted harnesses for one Buzz identity no longer both run.** When two
+  nodes ran the boot sweep before the cluster formed, both registered a
+  harness and Horde told the loser to exit — but the harness traps exits and
+  swallowed the `:name_conflict` message, so two `buzz-acp` processes
+  answered the same channel and raced one conversation (`conversation_busy`
+  on every second prompt). The loser now stops: port closed, buzz-acp
+  reaped, its launch key revoked.
 - **A hosted Buzz harness survives deploys and version bumps.** Horde replays
   a harness's child spec on every deploy, and the spec carried the launch:
   the launcher path (`/app/lib/fountain-<version>/priv/buzz-acp-launch.sh`,
