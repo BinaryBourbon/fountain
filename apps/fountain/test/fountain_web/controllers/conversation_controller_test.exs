@@ -1037,6 +1037,40 @@ defmodule FountainWeb.ConversationControllerTest do
                second["data"]["id"]
     end
 
+    test "fresh: true opens a new conversation despite the binding, and it takes over",
+         %{conn: conn, raw_key: raw_key, agent: agent} do
+      body = %{"agent_id" => agent.id, "channel_id" => "chan-r"}
+      first = create(conn, raw_key, body) |> json_response(201)
+
+      assert create(conn, raw_key, body) |> json_response(200) |> get_in(["data", "id"]) ==
+               first["data"]["id"]
+
+      # The harness's owner rotated the channel (ACP _meta.freshSession).
+      rotated = create(conn, raw_key, Map.put(body, "fresh", true)) |> json_response(201)
+      refute rotated["data"]["id"] == first["data"]["id"]
+      assert rotated["data"]["channel_id"] == "chan-r"
+      assert rotated["meta"]["resumed"] == false
+
+      # From now on the new one is what an ordinary session/new resumes, and
+      # the old one is unbound (not terminated — it may be mid-turn).
+      assert create(conn, raw_key, body) |> json_response(200) |> get_in(["data", "id"]) ==
+               rotated["data"]["id"]
+
+      old = Fountain.Conversations._unsafe_get_conversation!(first["data"]["id"])
+      assert old.channel_id == nil
+      refute old.status in ["terminated", "failed"]
+
+      # fresh: false / absent / a non-boolean does not rotate.
+      assert create(conn, raw_key, Map.put(body, "fresh", false))
+             |> json_response(200)
+             |> get_in(["data", "id"]) == rotated["data"]["id"]
+
+      # Without a channel key fresh is meaningless — creates like any other.
+      assert %{"data" => %{"channel_id" => nil}} =
+               create(conn, raw_key, %{"agent_id" => agent.id, "fresh" => true})
+               |> json_response(201)
+    end
+
     test "another user's binding is invisible", %{conn: conn, agent: agent} do
       other = insert_verified_user()
       {_k, other_key} = insert_api_key(other)

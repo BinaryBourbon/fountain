@@ -205,6 +205,14 @@ defmodule FountainWeb.Schemas do
             "Opaque key for the external channel this conversation is bound to (for example a " <>
               "Buzz channel id). When set, the latest live conversation for the same agent, vault " <>
               "and channel is resumed (200) instead of a new one being opened (201)."
+        },
+        fresh: %Schema{
+          type: :boolean,
+          nullable: true,
+          description:
+            "With channel_id: skip the resume and open a new conversation (201), which then " <>
+              "becomes the channel's binding. Sent by a chat harness relaying its owner's " <>
+              "rotate command. Ignored without channel_id."
         }
       },
       required: [:agent_id]

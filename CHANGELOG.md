@@ -16,7 +16,26 @@ upgrade, is in
 
 ## [Unreleased]
 
+### Added
+
+- **`!rotate` from a Buzz channel opens a new conversation.** The channel-bound
+  resume (#774) meant a rotated harness's next `session/new` landed straight
+  back on the same conversation, so rotation did nothing on a hosted agent.
+  The harness now sends `_meta.freshSession: true` on that one `session/new`
+  (block/buzz#6103); `fountain acp` forwards it as `fresh: true` on
+  `POST /api/conversations`, which unbinds the current conversation from the
+  channel (it keeps running and is retired like any other idle one) and opens
+  a new one as the binding. `fresh` is documented in the OpenAPI schema and
+  ignored without `channel_id`.
+
 ### Fixed
+
+- **`!shutdown` no longer restart-loops a hosted harness.** The supervisor
+  restarts `buzz-acp` on any exit and the fresh process replayed the same
+  `!shutdown` from its subscription backlog — five exits per command before
+  the message aged out, ending *online*. The harness now ignores owner
+  control commands created before it started (block/buzz#6104). The pin moves
+  to `buzz-acp-v0.5.14-fountain.3` for both changes.
 
 - **Owner control commands (`!rotate`, `!cancel`, `!shutdown`) now work from
   the Buzz Desktop composer.** The hosted `buzz-acp` required the message body
