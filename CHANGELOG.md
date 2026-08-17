@@ -16,6 +16,28 @@ upgrade, is in
 
 ## [Unreleased]
 
+## [0.12.0] — 2026-08-17
+
+One agent config, many baselines: a conversation can now be provisioned from
+an environment other than its agent's, from the API, the CLI, and a hosted
+Buzz identity. Also the channel-bound conversations that keep a restarted
+`buzz-acp` on the same sandbox, and three fixes for hosted harnesses and ACP
+turns across deploys.
+
+### Upgrade notes
+
+- **A migration adds `conversations.environment_id`,
+  `buzz_identities.environment_id` and `agents.allowed_environment_ids`.**
+  Additive and nullable; runs on boot as usual. Existing conversations and
+  identities keep behaving exactly as before (nil = the agent's environment).
+- **One-time step for hosted Buzz harnesses started before this release**:
+  a harness that predates the launch-in-child fix below keeps its old Horde
+  spec (stale launcher path + revoked key) until it is stopped and started
+  once. Disable and re-enable each Buzz agent after the upgrade.
+- **`buzz-backend-fountain` provider settings gain an optional
+  `environment` selector.** Rebuild/reinstall the provider binary to see it in
+  the Buzz desktop; existing deploys need nothing.
+
 ### Added
 
 - **Per-launch environment override (#783).** A conversation may be provisioned
