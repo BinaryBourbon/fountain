@@ -11,8 +11,8 @@ name: Publish buzz-acp
 #
 # buzz-acp.source (optional, `owner/repo@ref`) overrides WHERE the source comes
 # from — a fork carrying a change upstream has not merged yet (block/buzz#6088,
-# #774). When it is present the version is only the release name; delete the
-# file and set the version back to an upstream tag once the change ships.
+# #774). When it is present the version is only the release name. **#776 says
+# when it is safe to delete the file and repin to an upstream tag, and how.**
 
 on:
   workflow_dispatch:
@@ -45,7 +45,7 @@ jobs:
           version="$(tr -d '[:space:]' < buzz-acp.version)"
           echo "version=${version}" >> "$GITHUB_OUTPUT"
           if [ -s buzz-acp.source ]; then
-            source="$(tr -d '[:space:]' < buzz-acp.source)"
+            source="$(grep -v '^#' buzz-acp.source | tr -d '[:space:]')"
             echo "repository=${source%@*}" >> "$GITHUB_OUTPUT"
             echo "ref=${source##*@}" >> "$GITHUB_OUTPUT"
           else

@@ -85,7 +85,8 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH="${TARGETARCH:-amd64}" \
 # The pin lives in buzz-acp.version and is passed as BUZZ_ACP_VERSION by the
 # build workflow; the default below keeps a local `docker build` working.
 # (buzz-acp.source may point the publish workflow at a fork — the version is
-# then only the release name; see that workflow.)
+# then only the release name; see that workflow. #776 tracks repinning to
+# upstream once block/buzz#6088 ships.)
 
 FROM debian:trixie-slim AS buzzacp
 ARG TARGETARCH
