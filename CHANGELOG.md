@@ -16,6 +16,17 @@ upgrade, is in
 
 ## [Unreleased]
 
+### Fixed
+
+- **Owner control commands (`!rotate`, `!cancel`, `!shutdown`) now work from
+  the Buzz Desktop composer.** The hosted `buzz-acp` required the message body
+  to be *exactly* the command, but Desktop renders the `@Name` mention into the
+  body, so `@Fountain Maintainer !rotate` reached the agent as an ordinary
+  prompt and a bare `!rotate` was dropped for lacking the `p` tag. The fork pin
+  moves to a build carrying block/buzz#6101 (`buzz-acp-v0.5.14-fountain.2`),
+  which matches the command with mention text around it. #776 still tracks
+  the repin to upstream — it now waits on #6101 as well as #6088.
+
 ## [0.12.0] — 2026-08-17
 
 One agent config, many baselines: a conversation can now be provisioned from
