@@ -26,6 +26,7 @@ defmodule FountainWeb.AgentJSON do
       mcp_servers: a.mcp_servers,
       metadata: a.metadata,
       allowed_vault_ids: a.allowed_vault_ids,
+      allowed_environment_ids: a.allowed_environment_ids,
       conversation_count: a.conversation_count,
       avatar_media_type: a.avatar_media_type,
       inserted_at: a.inserted_at,

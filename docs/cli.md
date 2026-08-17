@@ -93,9 +93,13 @@ fountain conv delete <id>
 ```bash
 fountain run <agent-name-or-id> -p "Audit the auth module"
 fountain run <agent-name-or-id> -p "Run the test suite" --vault staging-creds
+fountain run <agent-name-or-id> -p "Run the test suite" --environment staging
 ```
 
 `run` creates a conversation and streams until the turn reaches a terminal state.
+`--vault` layers a vault's secrets over the agent's environment (vault wins on
+collision); `--environment` provisions from that environment instead of the
+agent's own.
 
 ### Long-running turns
 
@@ -121,7 +125,7 @@ fountain conv stream <conversation-id>
 ## Editor integration (ACP)
 
 ```bash
-fountain acp --agent <name-or-id> [--vault <name-or-id>] [--log-level debug]
+fountain acp --agent <name-or-id> [--vault <name-or-id>] [--environment <name-or-id>] [--log-level debug]
 ```
 
 Speaks the [Agent Client Protocol](https://agentclientprotocol.com) on stdio, so

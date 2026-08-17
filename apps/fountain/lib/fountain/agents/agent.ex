@@ -34,6 +34,11 @@ defmodule Fountain.Agents.Agent do
     # on env-var collision, so an attached vault can override reviewed
     # agent config — this is the lever that scopes who can do that.
     field :allowed_vault_ids, {:array, :binary_id}
+    # Environments a conversation may launch this agent under instead of its
+    # own (#783). Same shape: nil = any tenant environment, [] = none,
+    # non-empty = allowlist. An override *replaces* the reviewed environment
+    # wholesale, so it is scoped the same way a vault override is.
+    field :allowed_environment_ids, {:array, :binary_id}
     field :avatar_media_type, :string
     field :conversation_count, :integer, virtual: true, default: 0
     belongs_to :user, User
@@ -56,6 +61,7 @@ defmodule Fountain.Agents.Agent do
       :mcp_servers,
       :metadata,
       :allowed_vault_ids,
+      :allowed_environment_ids,
       :user_id,
       :environment_id
     ])

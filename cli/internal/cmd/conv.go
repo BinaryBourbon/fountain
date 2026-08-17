@@ -83,6 +83,7 @@ func init() {
 	}
 	runCmd.Flags().StringP("prompt", "p", "", "prompt text (required)")
 	runCmd.Flags().String("vault", "", "vault name or id")
+	runCmd.Flags().String("environment", "", "environment name or id to provision from, instead of the agent's own")
 	rootCmd.AddCommand(runCmd)
 }
 
@@ -267,11 +268,15 @@ func runAgent(cmd *cobra.Command, target string) error {
 		Fatal("missing -p <prompt>")
 	}
 	vault, _ := cmd.Flags().GetString("vault")
+	environment, _ := cmd.Flags().GetString("environment")
 
 	agentID := resolveAgentID(target)
 	body := map[string]any{"agent_id": agentID, "prompt": prompt}
 	if vault != "" {
 		body["vault_id"] = resolveVaultID(vault)
+	}
+	if environment != "" {
+		body["environment_id"] = resolveEnvironmentID(environment)
 	}
 
 	c := activeClient()

@@ -99,7 +99,7 @@ spec:
 
 A **Conversation** is a running session of an Agent inside a sandboxed VM. It starts with one prompt and can continue over multiple turns:
 
-1. POST to `/api/conversations` with `agent_id` (and optional `vault_id`, `prompt`, `images`)
+1. POST to `/api/conversations` with `agent_id` (and optional `vault_id`, `environment_id` — an environment to provision from instead of the agent's own — `prompt`, `images`)
 2. Fountain resolves the full env-var set and spawns a Sprites sandbox
 3. The agent runs; log events stream in real time over SSE (`GET /api/conversations/:id/stream`)
 4. Follow-up prompts go to `POST /api/conversations/:id/prompts`; a running turn can be interrupted (`POST .../interrupt`) and the whole conversation ended early (`POST .../terminate`)

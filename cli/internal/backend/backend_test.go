@@ -2,18 +2,33 @@ package backend
 
 import (
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 )
 
+var errNoEnv = errors.New("no environment named \"nope\"")
+
 // fakeFountain records calls and returns canned results.
 type fakeFountain struct {
-	resolveTo  string
-	resolveErr error
-	gotBody    ProvisionBody
-	provID     string
-	provErr    error
-	provably   bool
+	resolveTo     string
+	resolveErr    error
+	resolveEnvTo  string
+	resolveEnvErr error
+	gotBody       ProvisionBody
+	provID        string
+	provErr       error
+	provably      bool
+}
+
+func (f *fakeFountain) ResolveEnvironment(sel string) (string, error) {
+	if f.resolveEnvErr != nil {
+		return "", f.resolveEnvErr
+	}
+	if f.resolveEnvTo != "" {
+		return f.resolveEnvTo, nil
+	}
+	return sel, nil
 }
 
 func (f *fakeFountain) ResolveAgent(sel string) (string, error) {
@@ -81,6 +96,39 @@ func TestDeployProvisionsWithDerivedPubkey(t *testing.T) {
 	}
 	if f.gotBody.PrivateKeyNsec != testNsec {
 		t.Fatalf("the nsec must pass through to Fountain, which holds it server-side")
+	}
+}
+
+// #783: the optional environment selector resolves and rides as environment_id;
+// blank means "the agent's own" and sends nothing.
+func TestDeployPassesTheEnvironmentSelector(t *testing.T) {
+	f := &fakeFountain{resolveTo: "agent-uuid", resolveEnvTo: "env-uuid"}
+	resp := Deploy(deployReq(`{"agent":"my-agent","environment":"buzz-env"}`), f)
+	if !resp.OK {
+		t.Fatalf("deploy failed: %+v", resp)
+	}
+	if f.gotBody.EnvironmentID != "env-uuid" {
+		t.Fatalf("environment_id = %q, want the resolved environment", f.gotBody.EnvironmentID)
+	}
+
+	f = &fakeFountain{resolveTo: "agent-uuid"}
+	resp = Deploy(deployReq(`{"agent":"my-agent","environment":"  "}`), f)
+	if !resp.OK || f.gotBody.EnvironmentID != "" {
+		t.Fatalf("a blank environment must send none: %+v / %q", resp, f.gotBody.EnvironmentID)
+	}
+	if b, _ := json.Marshal(f.gotBody); strings.Contains(string(b), "environment_id") {
+		t.Fatalf("environment_id must be omitted when unset: %s", b)
+	}
+}
+
+func TestDeployRefusesAnUnknownEnvironment(t *testing.T) {
+	f := &fakeFountain{resolveTo: "agent-uuid", resolveEnvErr: errNoEnv}
+	resp := Deploy(deployReq(`{"agent":"my-agent","environment":"nope"}`), f)
+	if resp.OK || !strings.Contains(resp.Error, "nope") {
+		t.Fatalf("want an in-band refusal naming the environment, got %+v", resp)
+	}
+	if f.provably {
+		t.Fatalf("must not provision when the environment does not resolve")
 	}
 }
 

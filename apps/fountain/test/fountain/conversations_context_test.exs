@@ -2,7 +2,7 @@ defmodule Fountain.ConversationsContextTest do
   use Fountain.DataCase, async: true
   use Mimic
 
-  alias Fountain.Conversations
+  alias Fountain.{Agents, Conversations}
   alias Fountain.Conversations.{Conversation, LogEvent, Sandbox, Turn}
 
   # ────────────────────────────────────────────────────────────────────────────
@@ -1625,6 +1625,145 @@ defmodule Fountain.ConversationsContextTest do
       attrs = %{"agent_id" => agent.id, "user_id" => user.id}
       assert {:ok, conv} = Conversations.start_conversation(attrs)
       assert is_nil(conv.vault_id)
+    end
+  end
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # start_conversation/2 — per-launch environment override (#783)
+  # ────────────────────────────────────────────────────────────────────────────
+
+  describe "start_conversation/2 environment_id override" do
+    setup do
+      stub(Horde.DynamicSupervisor, :start_child, fn _sup, _spec ->
+        {:ok, spawn(fn -> :ok end)}
+      end)
+
+      user = insert_verified_user()
+      agent_env = insert_env(user_id: user.id)
+      other_env = insert_env(user_id: user.id)
+      agent = insert_agent(user_id: user.id, environment_id: agent_env.id)
+      %{user: user, agent: agent, agent_env: agent_env, other_env: other_env}
+    end
+
+    test "pins the conversation and its sandbox to the named environment", ctx do
+      attrs = %{
+        "agent_id" => ctx.agent.id,
+        "user_id" => ctx.user.id,
+        "environment_id" => ctx.other_env.id
+      }
+
+      assert {:ok, conv} = Conversations.start_conversation(attrs)
+      assert conv.environment_id == ctx.other_env.id
+
+      assert Conversations._unsafe_get_sandbox!(conv.sandbox_id).environment_id ==
+               ctx.other_env.id
+    end
+
+    test "nil and blank mean the agent's environment", ctx do
+      for value <- [nil, ""] do
+        attrs = %{
+          "agent_id" => ctx.agent.id,
+          "user_id" => ctx.user.id,
+          "environment_id" => value
+        }
+
+        assert {:ok, conv} = Conversations.start_conversation(attrs)
+        assert is_nil(conv.environment_id)
+
+        assert Conversations._unsafe_get_sandbox!(conv.sandbox_id).environment_id ==
+                 ctx.agent_env.id
+      end
+    end
+
+    test "a foreign environment reads as not found — same as an unknown id", ctx do
+      stranger = insert_verified_user()
+      foreign = insert_env(user_id: stranger.id)
+
+      for id <- [foreign.id, Ecto.UUID.generate()] do
+        attrs = %{"agent_id" => ctx.agent.id, "user_id" => ctx.user.id, "environment_id" => id}
+        assert {:error, :environment_not_found} = Conversations.start_conversation(attrs)
+      end
+    end
+
+    test "allowed_environment_ids: a listed environment passes, an unlisted one is refused",
+         ctx do
+      third = insert_env(user_id: ctx.user.id)
+
+      {:ok, agent} =
+        Agents.update_agent(ctx.agent, %{allowed_environment_ids: [ctx.other_env.id]})
+
+      ok = %{
+        "agent_id" => agent.id,
+        "user_id" => ctx.user.id,
+        "environment_id" => ctx.other_env.id
+      }
+
+      assert {:ok, conv} = Conversations.start_conversation(ok)
+      assert conv.environment_id == ctx.other_env.id
+
+      refused = %{"agent_id" => agent.id, "user_id" => ctx.user.id, "environment_id" => third.id}
+      assert {:error, :environment_not_allowed} = Conversations.start_conversation(refused)
+    end
+
+    test "an empty allowlist forbids every override but still permits the agent's own", ctx do
+      {:ok, agent} = Agents.update_agent(ctx.agent, %{allowed_environment_ids: []})
+
+      refused = %{
+        "agent_id" => agent.id,
+        "user_id" => ctx.user.id,
+        "environment_id" => ctx.other_env.id
+      }
+
+      assert {:error, :environment_not_allowed} = Conversations.start_conversation(refused)
+
+      # Naming the agent's own environment is not an override — it is pinned
+      # (a later change of the agent's environment does not move it), but it
+      # needs no allowlist entry.
+      own = %{
+        "agent_id" => agent.id,
+        "user_id" => ctx.user.id,
+        "environment_id" => ctx.agent_env.id
+      }
+
+      assert {:ok, conv} = Conversations.start_conversation(own)
+      assert conv.environment_id == ctx.agent_env.id
+    end
+
+    test "the allowlist is checked before the fetch, so a foreign id is refused not probed",
+         ctx do
+      stranger = insert_verified_user()
+      foreign = insert_env(user_id: stranger.id)
+      {:ok, agent} = Agents.update_agent(ctx.agent, %{allowed_environment_ids: []})
+
+      attrs = %{"agent_id" => agent.id, "user_id" => ctx.user.id, "environment_id" => foreign.id}
+      assert {:error, :environment_not_allowed} = Conversations.start_conversation(attrs)
+    end
+
+    test "channel resume keys on the override: a different environment is a different binding",
+         ctx do
+      base = %{"agent_id" => ctx.agent.id, "user_id" => ctx.user.id, "channel_id" => "chan-783"}
+
+      assert {:ok, first, :created} =
+               Conversations.start_or_resume_conversation(
+                 Map.put(base, "environment_id", ctx.other_env.id)
+               )
+
+      # Same channel, same environment: resumed.
+      assert {:ok, again, :resumed} =
+               Conversations.start_or_resume_conversation(
+                 Map.put(base, "environment_id", ctx.other_env.id)
+               )
+
+      assert again.id == first.id
+
+      # Same channel, no override: a fresh conversation, not the pinned one.
+      assert {:ok, plain, :created} = Conversations.start_or_resume_conversation(base)
+      refute plain.id == first.id
+      assert is_nil(plain.environment_id)
+
+      # And the plain one is now what a plain launch resumes.
+      assert {:ok, resumed, :resumed} = Conversations.start_or_resume_conversation(base)
+      assert resumed.id == plain.id
     end
   end
 

@@ -5,6 +5,7 @@ defmodule Fountain.Conversations.Conversation do
   alias Fountain.Accounts.User
   alias Fountain.Agents.Agent
   alias Fountain.Conversations.{Sandbox, Turn}
+  alias Fountain.Environments.Environment
   alias Fountain.Vaults.Vault
 
   @primary_key {:id, :binary_id, autogenerate: true}
@@ -44,6 +45,12 @@ defmodule Fountain.Conversations.Conversation do
     belongs_to :sandbox, Sandbox
     belongs_to :agent, Agent
     belongs_to :vault, Vault
+    # Per-launch environment override (#783). nil means "the agent's
+    # environment" — resolved at provision, so a conversation whose agent
+    # later changes environments follows the agent, as before. Set, it is the
+    # baseline this conversation's sandboxes are provisioned from instead,
+    # every time (a wake provisions a fresh sandbox from it too).
+    belongs_to :environment, Environment
 
     belongs_to :parent_conversation, __MODULE__,
       foreign_key: :parent_conversation_id,
@@ -73,6 +80,7 @@ defmodule Fountain.Conversations.Conversation do
       :sandbox_id,
       :agent_id,
       :vault_id,
+      :environment_id,
       :channel_id
     ])
     |> validate_required([:runtime, :status, :sandbox_id, :user_id])
@@ -82,6 +90,7 @@ defmodule Fountain.Conversations.Conversation do
     |> foreign_key_constraint(:sandbox_id)
     |> foreign_key_constraint(:agent_id)
     |> foreign_key_constraint(:vault_id)
+    |> foreign_key_constraint(:environment_id)
     |> foreign_key_constraint(:parent_conversation_id)
   end
 end

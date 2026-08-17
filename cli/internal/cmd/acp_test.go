@@ -223,6 +223,57 @@ func TestCreateConversationOmitsTheVaultWhenUnset(t *testing.T) {
 	}
 }
 
+// #783: --environment resolves by name and rides as `environment_id`, so one
+// agent config can be launched under a different environment per entry.
+func TestCreateConversationAttachesTheEnvironment(t *testing.T) {
+	var body map[string]any
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/environments":
+			_, _ = w.Write([]byte(`{"data":[{"id":"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee","name":"buzz-env"}]}`))
+		case "/api/conversations":
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"data":{"id":"conv-1"}}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	api := acpTestAPI(t, srv.URL)
+	api.environment = "buzz-env"
+
+	if _, _, err := api.CreateConversation(context.Background(), "agent-1", ""); err != nil {
+		t.Fatalf("CreateConversation: %v", err)
+	}
+	if body["environment_id"] != "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee" {
+		t.Errorf("environment_id = %v, want the resolved environment", body["environment_id"])
+	}
+}
+
+// Same omit rule as the vault: no flag, no key.
+func TestCreateConversationOmitsTheEnvironmentWhenUnset(t *testing.T) {
+	var body map[string]any
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"data":{"id":"conv-1"}}`))
+	}))
+	defer srv.Close()
+
+	api := acpTestAPI(t, srv.URL)
+
+	if _, _, err := api.CreateConversation(context.Background(), "agent-1", ""); err != nil {
+		t.Fatalf("CreateConversation: %v", err)
+	}
+	if _, present := body["environment_id"]; present {
+		t.Errorf("environment_id was sent without --environment: %v", body["environment_id"])
+	}
+}
+
 // #774: the channel key rides as `channel_id`, and a 200 with
 // `meta.resumed: true` comes back as resumed.
 func TestCreateConversationSendsTheChannelKeyAndReadsResumed(t *testing.T) {
@@ -269,6 +320,21 @@ func TestCreateConversationOmitsTheChannelKeyWhenEmpty(t *testing.T) {
 	}
 	if _, present := body["channel_id"]; present {
 		t.Errorf("channel_id was sent without a key: %v", body["channel_id"])
+	}
+}
+
+func TestUnknownEnvironmentNameIsReported(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"data":[]}`))
+	}))
+	defer srv.Close()
+
+	api := acpTestAPI(t, srv.URL)
+	api.environment = "not-an-env"
+
+	_, _, err := api.CreateConversation(context.Background(), "agent-1", "")
+	if err == nil || !strings.Contains(err.Error(), "not-an-env") {
+		t.Fatalf("want an error naming the environment, got %v", err)
 	}
 }
 

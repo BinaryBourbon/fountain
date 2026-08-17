@@ -93,6 +93,16 @@ shared by every agent attached to it, so a credential put there is used by all
 of them; a vault is attached per conversation, so two entries stay separate
 even when they point at the same agent.
 
+### Per-entry environments
+
+`--environment <name-or-id>` provisions every conversation the entry opens from
+that [environment](../primitives.md#environment) instead of the agent's own.
+Use it when one agent config should run under several baselines — the same
+"engineer" against a `fountain` environment in one entry and a `buzz`
+environment in another — without duplicating the agent. The vault, if any,
+still wins over it on key collision, and an agent can restrict which
+environments may stand in for its own via `allowed_environment_ids`.
+
 ### Any other ACP client
 
 There is nothing Zed-specific in the adapter. Whatever your client calls it,
