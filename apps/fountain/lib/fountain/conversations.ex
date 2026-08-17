@@ -1009,6 +1009,10 @@ defmodule Fountain.Conversations do
     end
   end
 
+  def start_or_resume_conversation(attrs, opts) do
+    with {:ok, conv} <- start_conversation(attrs, opts), do: {:ok, conv, :created}
+  end
+
   # `true` or `"true"` — the ACP adapter sends a JSON boolean, a hand-built
   # request may send a string. Anything else is not a request.
   defp fresh_requested?(%{"fresh" => fresh}), do: fresh in [true, "true"]
@@ -1021,10 +1025,6 @@ defmodule Fountain.Conversations do
     conv
     |> Ecto.Changeset.change(channel_id: nil)
     |> Repo.update()
-  end
-
-  def start_or_resume_conversation(attrs, opts) do
-    with {:ok, conv} <- start_conversation(attrs, opts), do: {:ok, conv, :created}
   end
 
   # The newest conversation still worth resuming for this binding. `vault_id`
