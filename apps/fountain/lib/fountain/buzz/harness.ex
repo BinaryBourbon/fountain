@@ -115,7 +115,29 @@ defmodule Fountain.Buzz.Harness do
     {:noreply, %{state | port: nil}}
   end
 
-  def handle_info({:EXIT, _other, _reason}, state), do: {:noreply, state}
+  # Horde.Registry found two harnesses registered under one identity — two
+  # nodes each ran the boot sweep before the cluster formed — and named this
+  # one the loser with `Process.exit(pid, {:name_conflict, …})`. Because this
+  # process traps exits, that arrives as a message, not a kill; the old
+  # catch-all below swallowed it and the loser lived on unregistered, so two
+  # `buzz-acp` processes answered the same channel and raced one conversation
+  # (`conversation_busy` on every second prompt, 2026-08-17). Stop, so
+  # `terminate/2` closes the port, reaps buzz-acp and revokes this launch's key.
+  # `{:shutdown, _}` is a clean reason: `:transient` does not restart it.
+  def handle_info({:EXIT, _from, {:name_conflict, _key, _registry, winner}}, state) do
+    Logger.warning(
+      "buzz harness #{state.label}: duplicate of #{inspect(winner)} — stopping this one"
+    )
+
+    {:stop, {:shutdown, :name_conflict}, state}
+  end
+
+  # Any other linked exit: a :normal one is noise; anything else is a reason
+  # to go down through terminate/2 rather than to keep running blind, exactly
+  # as ConversationServer treats it. Nothing but the port and the supervisor
+  # links to a harness today, so in practice this clause is a backstop.
+  def handle_info({:EXIT, _other, :normal}, state), do: {:noreply, state}
+  def handle_info({:EXIT, _other, reason}, state), do: {:stop, reason, state}
 
   def handle_info(_msg, state), do: {:noreply, state}
 
