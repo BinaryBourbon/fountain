@@ -78,6 +78,13 @@ defmodule Fountain.Buzz do
   and becomes the baseline every conversation this identity opens is
   provisioned from instead of the agent's own (#783). Re-provisioning without
   it clears a previously set one: the provider's `deploy` is the whole truth.
+
+  `"respond_to"` and `"respond_to_allowlist"` (optional, #790) are the harness's
+  inbound author gate — one of `owner-only` / `allowlist` / `anyone` / `nobody`
+  and the 64-hex pubkeys admitted in `allowlist` mode. Omitted means
+  `owner-only` with an empty list, again because the deploy is the whole truth;
+  `allowlist` with no pubkeys is `{:error, %Ecto.Changeset{}}` rather than a
+  harness that refuses to start.
   Returns `{:ok, %BuzzIdentity{}}` or `{:error, reason}`.
   """
   def provision_identity(user_id, params, opts \\ []) when is_binary(user_id) do
@@ -105,7 +112,9 @@ defmodule Fountain.Buzz do
          nsec: params["private_key_nsec"],
          auth_tag: params["auth_tag"],
          display_name: params["display_name"],
-         environment_id: presence(params["environment_id"])
+         environment_id: presence(params["environment_id"]),
+         respond_to: presence(params["respond_to"]) || "owner-only",
+         respond_to_allowlist: allowlist(params["respond_to_allowlist"])
        }}
     else
       {:error, {:missing, missing}}
@@ -115,6 +124,22 @@ defmodule Fountain.Buzz do
   defp blank?(v), do: is_nil(v) or v == ""
 
   defp presence(v), do: if(blank?(v), do: nil, else: v)
+
+  # Normalise the allowlist the way buzz-acp does: trim, lowercase, dedupe. A
+  # non-list is left as-is so the changeset reports it instead of a crash.
+  defp allowlist(nil), do: []
+
+  defp allowlist(list) when is_list(list) do
+    list
+    |> Enum.map(fn
+      v when is_binary(v) -> v |> String.trim() |> String.downcase()
+      v -> v
+    end)
+    |> Enum.reject(&blank?/1)
+    |> Enum.uniq()
+  end
+
+  defp allowlist(other), do: other
 
   # Scoped fetch: the environment's secrets materialise in this identity's
   # sandboxes, so a pointer at another tenant's must never be stored.
@@ -165,6 +190,8 @@ defmodule Fountain.Buzz do
       "relay_url" => fields.relay_url,
       "pubkey" => fields.pubkey,
       "display_name" => fields.display_name,
+      "respond_to" => fields.respond_to,
+      "respond_to_allowlist" => fields.respond_to_allowlist,
       "enabled" => true
     }
 
@@ -172,6 +199,22 @@ defmodule Fountain.Buzz do
       %BuzzIdentity{} = existing -> update_identity(existing, attrs, opts)
       nil -> create_identity(attrs, opts)
     end
+  end
+
+  # Every identity field that ends up in the harness env or the ACP child's argv.
+  @launch_fields ~w(agent_id relay_url display_name environment_id respond_to respond_to_allowlist)a
+
+  @doc """
+  Whether a re-provision changed anything the running harness was launched
+  with — the relay, the display name, the agent, the environment override, or
+  the author gate (#790). `harness_launch/2` reads these from the identity row
+  at start, so a change only takes effect on a restart; the controller uses
+  this to decide whether a converging deploy must bounce the harness. Vault
+  secrets are not compared: a rotated key is the owner's `!rotate` to apply.
+  """
+  @spec launch_config_changed?(BuzzIdentity.t(), BuzzIdentity.t()) :: boolean()
+  def launch_config_changed?(%BuzzIdentity{} = before, %BuzzIdentity{} = after_) do
+    Enum.any?(@launch_fields, &(Map.get(before, &1) != Map.get(after_, &1)))
   end
 
   @doc """
@@ -283,9 +326,10 @@ defmodule Fountain.Buzz do
   Mints a `["sprite"]`-scoped API key for the owning user (the resource surface a
   sandbox-adjacent process needs, without key management), decrypts the vault's
   `BUZZ_PRIVATE_KEY` / `BUZZ_AUTH_TAG` / `BUZZ_RELAY_URL` server-side, and lays
-  out the environment: the Buzz identity vars, the `BUZZ_ACP_*` wiring that
-  points the harness's ACP child at `fountain acp --agent … --vault …
-  [--environment …]`, and the
+  out the environment: the Buzz identity vars, the inbound author gate
+  (`BUZZ_ACP_RESPOND_TO` and, in allowlist mode, `BUZZ_ACP_RESPOND_TO_ALLOWLIST`,
+  #790), the `BUZZ_ACP_*` wiring that points the harness's ACP child at
+  `fountain acp --agent … --vault … [--environment …]`, and the
   `FOUNTAIN_*` vars that let that child authenticate back to this instance.
 
   Options:
@@ -367,11 +411,24 @@ defmodule Fountain.Buzz do
 
   # The vault provides BUZZ_PRIVATE_KEY / BUZZ_AUTH_TAG (and may provide
   # BUZZ_RELAY_URL); the identity row is authoritative for the relay, so it wins.
+  # The author gate is the identity's too: without BUZZ_ACP_RESPOND_TO the
+  # harness defaults to owner-only whatever the desktop's record says (#790).
   defp buzz_identity_env(vault_env, %BuzzIdentity{} = identity) do
     vault_env
     |> Map.put("BUZZ_RELAY_URL", identity.relay_url)
     |> maybe_put("BUZZ_ACP_DISPLAY_NAME", identity.display_name)
+    |> Map.put("BUZZ_ACP_RESPOND_TO", identity.respond_to || "owner-only")
+    |> maybe_put_allowlist(identity)
   end
+
+  # buzz-acp warns and ignores the allowlist var outside allowlist mode; only
+  # set it where it means something.
+  defp maybe_put_allowlist(env, %BuzzIdentity{respond_to: "allowlist", respond_to_allowlist: list})
+       when is_list(list) and list != [] do
+    Map.put(env, "BUZZ_ACP_RESPOND_TO_ALLOWLIST", Enum.join(list, ","))
+  end
+
+  defp maybe_put_allowlist(env, _identity), do: env
 
   # Point the harness's ACP child at this Fountain agent + vault (+ environment
   # override, #783), and keep the pool to one (the desktop's 10 is not our

@@ -109,7 +109,9 @@ curl -X POST https://fountain.example.com/api/buzz/agents \
     "relay_url": "wss://relay.example.com",
     "pubkey": "<64-hex nostr pubkey>",
     "private_key_nsec": "nsec1…",
-    "auth_tag": "<owner attestation>"
+    "auth_tag": "<owner attestation>",
+    "respond_to": "anyone",
+    "respond_to_allowlist": []
   }'
 ```
 
@@ -124,6 +126,20 @@ curl -X POST https://fountain.example.com/api/buzz/agents \
 - `environment_id` is optional and must be yours (404 otherwise); it is the
   environment the identity's conversations are provisioned from instead of the
   agent's own, and re-provisioning without it clears it.
+- `respond_to` / `respond_to_allowlist` are the harness's **inbound author
+  gate** — who may `@`-mention the agent and fire a turn. `respond_to` is one of
+  `buzz-acp`'s modes (`owner-only`, `allowlist`, `anyone`, `nobody`) and the
+  allowlist the 64-hex pubkeys admitted in `allowlist` mode (required non-empty
+  there). Omitted means `owner-only`. Fountain sets these on the hosted harness
+  as `BUZZ_ACP_RESPOND_TO` / `BUZZ_ACP_RESPOND_TO_ALLOWLIST` — the same
+  translation the Buzz desktop performs for a harness it spawns itself, so the
+  policy the desktop shows on the agent record is the one the hosted harness
+  runs. Note that inside a DM the harness admits only the owner and same-owner
+  siblings whatever the mode; that is `buzz-acp`'s rule, not Fountain's.
+- A re-provision that changes anything the harness was launched with — the
+  author gate, the environment override, the relay URL, the display name or the
+  agent — **restarts the running harness** so the new launch takes effect. A
+  re-provision that changes nothing leaves it running.
 - The relay URL must be `ws://` or `wss://`, and the pubkey 64 lowercase hex — a
   common `https://` paste is rejected up front.
 
@@ -240,6 +256,10 @@ as `buzz.published` — the tool and channel, never the message content.
   unique per `(user, name)` and per `(user, pubkey)`; convergence is by pubkey.
 - **Publishes are audited, not policy-gated.** The trail records that a publish
   happened; there is no per-publish approval or allow/deny gate in this path.
+- **Who may talk to it is the desktop's call.** The provider forwards the
+  agent record's `respond_to` policy on every deploy; change it on the desktop
+  and re-deploy, and the hosted harness restarts with the new gate. There is no
+  Fountain-side override.
 - **Permission prompts are auto-answered.** The harness answers a runtime
   permission request with "allow once" — Buzz is not a human approval surface.
 - **The runtime is the Fountain agent's.** A Buzz agent runs whatever runtime

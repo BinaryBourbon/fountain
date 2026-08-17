@@ -37,6 +37,21 @@ upgrade, is in
   control commands created before it started (block/buzz#6104). The pin moves
   to `buzz-acp-v0.5.14-fountain.3` for both changes.
 
+- **A hosted Buzz agent now honors the desktop's "respond to" policy — anyone
+  (or an allowlist) can `@`-mention it, not just its owner.** `buzz-acp` takes
+  its inbound author gate from `BUZZ_ACP_RESPOND_TO` and defaults to
+  `owner-only`; the desktop sets that when it spawns the harness itself, but the
+  Fountain-hosted harness never got it, so every hosted agent silently dropped
+  mentions from anyone but the owner whatever the record said. The
+  `buzz-backend-fountain` provider now forwards the desktop's `respond_to` /
+  `respond_to_allowlist`, `POST /api/buzz/agents` accepts and stores them on the
+  identity, and the launch sets `BUZZ_ACP_RESPOND_TO` (and the allowlist var in
+  `allowlist` mode). A converging deploy that changes a launch-relevant field
+  (the gate, the environment override, relay, display name or agent) now
+  restarts the running harness so it takes effect — previously a re-deploy onto
+  a running harness was a no-op. Rebuild the provider binary to pick this up.
+  (#790)
+
 - **Owner control commands (`!rotate`, `!cancel`, `!shutdown`) now work from
   the Buzz Desktop composer.** The hosted `buzz-acp` required the message body
   to be *exactly* the command, but Desktop renders the `@Name` mention into the

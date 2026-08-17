@@ -47,14 +47,21 @@ defmodule FountainWeb.BuzzAgentController do
     attrs =
       Map.take(
         params,
-        ~w(name relay_url agent_id pubkey private_key_nsec auth_tag display_name environment_id)
+        ~w(name relay_url agent_id pubkey private_key_nsec auth_tag display_name environment_id
+           respond_to respond_to_allowlist)
       )
+
+    # A converging deploy may change what the harness was launched with; the
+    # identity as it was before tells us whether the running one must bounce.
+    before = Buzz.get_identity_by_pubkey(params["pubkey"] || "", user.id)
 
     case Buzz.provision_identity(user.id, attrs, actor: "api") do
       {:ok, %BuzzIdentity{} = identity} ->
         # Best-effort eager start so a provider `deploy` sees it running; the
         # boot sweep also stands enabled identities up, so this is not load-bearing.
-        _ = Manager.start_harness(identity)
+        # When the deploy changed a launch-relevant field (author gate, environment,
+        # relay, name — #790) the harness restarts so the new env takes effect.
+        _ = ensure_harness(before, identity)
 
         conn
         |> put_status(:created)
@@ -69,6 +76,14 @@ defmodule FountainWeb.BuzzAgentController do
       # cannot be used to probe which ids exist.
       {:error, :environment_not_found} ->
         conn |> put_status(:not_found) |> json(%{error: "environment_not_found"})
+
+      # Field errors — an empty allowlist in allowlist mode, a malformed pubkey —
+      # so a provider deploy can say *why* it was refused, not a bare 422.
+      {:error, %Ecto.Changeset{} = changeset} ->
+        conn
+        |> put_status(:unprocessable_entity)
+        |> put_view(json: FountainWeb.ChangesetJSON)
+        |> render(:error, changeset: changeset)
 
       {:error, _reason} ->
         conn
@@ -101,6 +116,14 @@ defmodule FountainWeb.BuzzAgentController do
     end
   end
 
+  defp ensure_harness(%BuzzIdentity{} = before, %BuzzIdentity{} = identity) do
+    if Buzz.launch_config_changed?(before, identity),
+      do: Manager.restart_harness(identity),
+      else: Manager.start_harness(identity)
+  end
+
+  defp ensure_harness(nil, %BuzzIdentity{} = identity), do: Manager.start_harness(identity)
+
   defp delete_vault(%BuzzIdentity{vault_id: vault_id}, user_id) do
     case Vaults.get_vault(vault_id, user_id) do
       %Vaults.Vault{} = vault -> Vaults.delete_vault(vault, actor: "api")
@@ -118,6 +141,8 @@ defmodule FountainWeb.BuzzAgentController do
       agent_id: i.agent_id,
       vault_id: i.vault_id,
       environment_id: i.environment_id,
+      respond_to: i.respond_to,
+      respond_to_allowlist: i.respond_to_allowlist,
       enabled: i.enabled,
       inserted_at: i.inserted_at,
       updated_at: i.updated_at

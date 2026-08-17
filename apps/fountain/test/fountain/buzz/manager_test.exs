@@ -84,6 +84,39 @@ defmodule Fountain.Buzz.ManagerTest do
     assert active_key_count(identity.user_id) == 0
   end
 
+  # #790: a converging deploy that changes the author gate (or any launch field)
+  # must bounce the harness — a running one keeps the env it started with.
+  test "restart_harness bounces a running harness onto a fresh launch", %{fake: fake} do
+    identity = insert_buzz_identity()
+
+    {:ok, old_pid} = Manager.start_harness(identity, launch_opts(fake))
+    [old_key] = active_keys(identity.user_id)
+
+    {:ok, identity} = Fountain.Buzz.update_identity(identity, %{"respond_to" => "anyone"})
+    assert {:ok, new_pid} = Manager.restart_harness(identity, launch_opts(fake))
+
+    assert is_pid(new_pid)
+    assert new_pid != old_pid
+    refute Process.alive?(old_pid)
+    assert Manager.whereis(identity.id) == new_pid
+
+    # The old launch key was revoked by the stop; exactly one fresh key is live.
+    assert [new_key] = active_keys(identity.user_id)
+    assert new_key.id != old_key.id
+
+    Manager.stop_harness(identity.id)
+  end
+
+  test "restart_harness with nothing running is just a start", %{fake: fake} do
+    identity = insert_buzz_identity()
+
+    assert {:ok, pid} = Manager.restart_harness(identity, launch_opts(fake))
+    assert Manager.whereis(identity.id) == pid
+    assert active_key_count(identity.user_id) == 1
+
+    Manager.stop_harness(identity.id)
+  end
+
   test "stop_harness is a no-op when nothing is running" do
     identity = insert_buzz_identity()
     assert Manager.stop_harness(identity.id) == :ok

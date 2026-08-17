@@ -48,6 +48,12 @@ type AgentPayload struct {
 	AuthTag        string `json:"auth_tag"`
 	Provider       string `json:"provider"`
 	Launch         Launch `json:"launch"`
+	// The inbound author gate the desktop projects from the agent record —
+	// buzz-acp's --respond-to mode and its allowlist. Fountain sets these on the
+	// hosted harness; dropping them here left every hosted agent owner-only
+	// whatever the record said (#790).
+	RespondTo          string   `json:"respond_to"`
+	RespondToAllowlist []string `json:"respond_to_allowlist"`
 }
 
 // Launch is the normative launch block; we read only the owner attestation.
@@ -97,6 +103,10 @@ type ProvisionBody struct {
 	// Optional per-identity environment override (#783): the environment this
 	// identity's conversations are provisioned from instead of the agent's own.
 	EnvironmentID string `json:"environment_id,omitempty"`
+	// The harness's inbound author gate (#790). Omitted when the desktop sent
+	// none, so Fountain applies its own owner-only default.
+	RespondTo          string   `json:"respond_to,omitempty"`
+	RespondToAllowlist []string `json:"respond_to_allowlist,omitempty"`
 }
 
 // Info returns the provider descriptor. config_schema is the desktop's settings
@@ -181,6 +191,10 @@ func Deploy(req Request, f Fountain) DeployResponse {
 		AuthTag:        req.Agent.AuthTag,
 		DisplayName:    req.Agent.Name,
 		EnvironmentID:  envID,
+		// Pass the author gate through verbatim; Fountain validates the mode and
+		// the pubkeys and refuses an allowlist with nothing on it.
+		RespondTo:          strings.TrimSpace(req.Agent.RespondTo),
+		RespondToAllowlist: trimmedList(req.Agent.RespondToAllowlist),
 	})
 	if err != nil {
 		return fail(fmt.Sprintf("provisioning failed: %v", err))
@@ -230,6 +244,18 @@ func providerConfig(raw json.RawMessage) (providerConfigFields, error) {
 		return cfg, fmt.Errorf("no Fountain agent configured — set the `agent` field")
 	}
 	return cfg, nil
+}
+
+// trimmedList drops blank entries; nil when nothing remains so the field is
+// omitted from the provision body rather than sent as [].
+func trimmedList(in []string) []string {
+	var out []string
+	for _, v := range in {
+		if v = strings.TrimSpace(v); v != "" {
+			out = append(out, v)
+		}
+	}
+	return out
 }
 
 func fail(msg string) DeployResponse { return DeployResponse{OK: false, Error: msg} }

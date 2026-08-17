@@ -117,6 +117,35 @@ defmodule Fountain.Buzz.Manager do
     end
   end
 
+  @doc """
+  Bounce the harness for `identity` so a launch resolved from the *current*
+  identity row takes effect — a converging deploy that changed the author gate,
+  the environment override, the relay or the display name (#790). Stops any
+  running harness (its `terminate` revokes the old key), waits for the registry
+  to drop it, then starts afresh. When none was running this is just
+  `start_harness/2`. Returns what `start_harness/2` returns.
+  """
+  @spec restart_harness(BuzzIdentity.t(), keyword()) :: {:ok, pid()} | {:error, term()}
+  def restart_harness(%BuzzIdentity{} = identity, opts \\ []) do
+    :ok = stop_harness(identity.id)
+    await_unregistered(identity.id, 50)
+    start_harness(identity, opts)
+  end
+
+  # `terminate_child` is synchronous, but the registry learns of the exit by
+  # monitor; give it a moment so `start_harness`'s `whereis` does not hand back
+  # the dead pid.
+  defp await_unregistered(_identity_id, 0), do: :ok
+
+  defp await_unregistered(identity_id, tries) do
+    if running?(identity_id) do
+      Process.sleep(20)
+      await_unregistered(identity_id, tries - 1)
+    else
+      :ok
+    end
+  end
+
   defp start_child(%BuzzIdentity{} = identity, opts) do
     child = %{
       id: identity.id,

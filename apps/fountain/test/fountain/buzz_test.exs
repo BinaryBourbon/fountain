@@ -204,6 +204,54 @@ defmodule Fountain.BuzzTest do
       assert is_nil(again.environment_id)
     end
 
+    # #790: the author gate the desktop sends rides onto the identity, and an
+    # omission means owner-only — the deploy is the whole truth.
+    test "stores the author gate, defaulting to owner-only", %{user: user, params: params} do
+      pk = String.duplicate("b", 64)
+
+      assert {:ok, identity} =
+               Buzz.provision_identity(
+                 user.id,
+                 Map.merge(params, %{
+                   "respond_to" => "allowlist",
+                   "respond_to_allowlist" => [" " <> String.upcase(pk) <> " ", pk, ""]
+                 })
+               )
+
+      assert identity.respond_to == "allowlist"
+      # trimmed, lowercased, deduped
+      assert identity.respond_to_allowlist == [pk]
+
+      assert {:ok, again} = Buzz.provision_identity(user.id, params)
+      assert again.id == identity.id
+      assert again.respond_to == "owner-only"
+      assert again.respond_to_allowlist == []
+    end
+
+    test "allowlist mode with no pubkeys, an unknown mode, or a bad pubkey is refused",
+         %{user: user, params: params} do
+      assert {:error, %Ecto.Changeset{} = cs} =
+               Buzz.provision_identity(user.id, Map.put(params, "respond_to", "allowlist"))
+
+      assert %{respond_to_allowlist: [_]} = errors_on(cs)
+
+      assert {:error, %Ecto.Changeset{} = cs} =
+               Buzz.provision_identity(user.id, Map.put(params, "respond_to", "everyone"))
+
+      assert %{respond_to: [_]} = errors_on(cs)
+
+      assert {:error, %Ecto.Changeset{} = cs} =
+               Buzz.provision_identity(
+                 user.id,
+                 Map.merge(params, %{
+                   "respond_to" => "allowlist",
+                   "respond_to_allowlist" => ["npub1notahexkey"]
+                 })
+               )
+
+      assert %{respond_to_allowlist: [_]} = errors_on(cs)
+    end
+
     test "a foreign or unknown environment_id is not stored", %{user: user, params: params} do
       other = insert_verified_user()
       foreign = insert_env(user_id: other.id)
@@ -309,6 +357,52 @@ defmodule Fountain.BuzzTest do
 
       assert Map.new(launch.env)["BUZZ_ACP_AGENT_ARGS"] ==
                "acp,--agent,#{agent.id},--vault,#{vault.id},--environment,#{env.id}"
+    end
+
+    # #790: without BUZZ_ACP_RESPOND_TO the harness runs owner-only whatever the
+    # desktop's record says; the identity's gate must reach the env.
+    test "the author gate is set on the harness env",
+         %{identity: identity} do
+      opts = [buzz_acp_path: "/opt/buzz-acp", base_url: "https://f.example"]
+
+      assert {:ok, launch} = Buzz.harness_launch(identity, opts)
+      env = Map.new(launch.env)
+      assert env["BUZZ_ACP_RESPOND_TO"] == "owner-only"
+      refute Map.has_key?(env, "BUZZ_ACP_RESPOND_TO_ALLOWLIST")
+
+      {:ok, identity} = Buzz.update_identity(identity, %{"respond_to" => "anyone"})
+      assert {:ok, launch} = Buzz.harness_launch(identity, opts)
+      assert Map.new(launch.env)["BUZZ_ACP_RESPOND_TO"] == "anyone"
+
+      a = String.duplicate("a", 64)
+      b = String.duplicate("b", 64)
+
+      {:ok, identity} =
+        Buzz.update_identity(identity, %{
+          "respond_to" => "allowlist",
+          "respond_to_allowlist" => [a, b]
+        })
+
+      assert {:ok, launch} = Buzz.harness_launch(identity, opts)
+      env = Map.new(launch.env)
+      assert env["BUZZ_ACP_RESPOND_TO"] == "allowlist"
+      assert env["BUZZ_ACP_RESPOND_TO_ALLOWLIST"] == "#{a},#{b}"
+    end
+
+    test "launch_config_changed? spots the fields a running harness was launched with",
+         %{identity: identity, user: user} do
+      refute Buzz.launch_config_changed?(identity, identity)
+
+      {:ok, gated} = Buzz.update_identity(identity, %{"respond_to" => "anyone"})
+      assert Buzz.launch_config_changed?(identity, gated)
+
+      env = insert_env(user_id: user.id)
+      {:ok, moved} = Buzz.update_identity(identity, %{"environment_id" => env.id})
+      assert Buzz.launch_config_changed?(identity, moved)
+
+      # A field the harness never reads at launch is not a reason to bounce it.
+      {:ok, disabled} = Buzz.update_identity(identity, %{"enabled" => false})
+      refute Buzz.launch_config_changed?(identity, disabled)
     end
 
     test "the identity's relay_url overrides a BUZZ_RELAY_URL in the vault",
