@@ -189,7 +189,7 @@ func TestCreateConversationAttachesTheVault(t *testing.T) {
 	api := acpTestAPI(t, srv.URL)
 	api.vault = "buzz-philo"
 
-	id, err := api.CreateConversation(context.Background(), "agent-1")
+	id, _, err := api.CreateConversation(context.Background(), "agent-1", "")
 	if err != nil {
 		t.Fatalf("CreateConversation: %v", err)
 	}
@@ -215,11 +215,60 @@ func TestCreateConversationOmitsTheVaultWhenUnset(t *testing.T) {
 
 	api := acpTestAPI(t, srv.URL)
 
-	if _, err := api.CreateConversation(context.Background(), "agent-1"); err != nil {
+	if _, _, err := api.CreateConversation(context.Background(), "agent-1", ""); err != nil {
 		t.Fatalf("CreateConversation: %v", err)
 	}
 	if _, present := body["vault_id"]; present {
 		t.Errorf("vault_id was sent without --vault: %v", body["vault_id"])
+	}
+}
+
+// #774: the channel key rides as `channel_id`, and a 200 with
+// `meta.resumed: true` comes back as resumed.
+func TestCreateConversationSendsTheChannelKeyAndReadsResumed(t *testing.T) {
+	var body map[string]any
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"data":{"id":"conv-old","channel_id":"chan-1"},"meta":{"resumed":true}}`))
+	}))
+	defer srv.Close()
+
+	api := acpTestAPI(t, srv.URL)
+
+	id, resumed, err := api.CreateConversation(context.Background(), "agent-1", "chan-1")
+	if err != nil {
+		t.Fatalf("CreateConversation: %v", err)
+	}
+	if id != "conv-old" || !resumed {
+		t.Errorf("got (%q, %v), want (conv-old, true)", id, resumed)
+	}
+	if body["channel_id"] != "chan-1" {
+		t.Errorf("channel_id = %v, want chan-1", body["channel_id"])
+	}
+}
+
+func TestCreateConversationOmitsTheChannelKeyWhenEmpty(t *testing.T) {
+	var body map[string]any
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"data":{"id":"conv-1"}}`))
+	}))
+	defer srv.Close()
+
+	api := acpTestAPI(t, srv.URL)
+	_, resumed, err := api.CreateConversation(context.Background(), "agent-1", "")
+	if err != nil {
+		t.Fatalf("CreateConversation: %v", err)
+	}
+	if resumed {
+		t.Error("a 201 with no meta must not read as resumed")
+	}
+	if _, present := body["channel_id"]; present {
+		t.Errorf("channel_id was sent without a key: %v", body["channel_id"])
 	}
 }
 
@@ -232,7 +281,7 @@ func TestUnknownVaultNameIsReported(t *testing.T) {
 	api := acpTestAPI(t, srv.URL)
 	api.vault = "not-a-vault"
 
-	_, err := api.CreateConversation(context.Background(), "agent-1")
+	_, _, err := api.CreateConversation(context.Background(), "agent-1", "")
 	if err == nil || !strings.Contains(err.Error(), "not-a-vault") {
 		t.Fatalf("want an error naming the vault, got %v", err)
 	}

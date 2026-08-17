@@ -16,6 +16,18 @@ upgrade, is in
 
 ## [Unreleased]
 
+### Added
+
+- **Channel-bound conversations (#774).** `POST /api/conversations` accepts
+  an opaque `channel_id`; when set, the latest live conversation for the same
+  agent, vault and channel is resumed (200, `meta.resumed: true`) instead of
+  a new one being opened (201). `fountain acp` forwards `_meta.channelId`
+  from `session/new`, so a chat harness that forgets its sessions on restart
+  — `buzz-acp`, on every hosted deploy — lands back on the same conversation
+  and sandbox. The hosted `buzz-acp` is built from a fork carrying the
+  upstream change that sends the channel id (block/buzz#6088;
+  `buzz-acp.source`) until it merges.
+
 ### Fixed
 
 - **A hosted Buzz harness survives deploys and version bumps.** Horde replays

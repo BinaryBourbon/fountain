@@ -31,6 +31,10 @@ defmodule Fountain.Conversations.Conversation do
     field :callback_api_key_id, :binary_id
     field :title, :string
     field :last_read_at, :utc_datetime_usec
+    # Client-supplied key for the external channel this conversation is bound
+    # to (a Buzz channel id via ACP `session/new` `_meta.channelId`, #774).
+    # `start_or_resume_conversation/2` resumes by it. Opaque to Fountain.
+    field :channel_id, :string
 
     # Populated by list_conversations_by_activity/1 — not persisted.
     field :turn_count, :integer, virtual: true, default: 0
@@ -68,9 +72,11 @@ defmodule Fountain.Conversations.Conversation do
       :user_id,
       :sandbox_id,
       :agent_id,
-      :vault_id
+      :vault_id,
+      :channel_id
     ])
     |> validate_required([:runtime, :status, :sandbox_id, :user_id])
+    |> validate_length(:channel_id, max: 255)
     |> validate_inclusion(:status, @statuses)
     |> validate_inclusion(:source, @sources)
     |> foreign_key_constraint(:sandbox_id)

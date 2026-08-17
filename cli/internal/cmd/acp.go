@@ -196,11 +196,20 @@ func agentRef(data map[string]any) acp.AgentRef {
 	}
 }
 
-func (f fountainAPI) CreateConversation(_ context.Context, agentID string) (string, error) {
+func (f fountainAPI) CreateConversation(_ context.Context, agentID, channelID string) (string, bool, error) {
 	var resp struct {
 		Data map[string]any `json:"data"`
+		Meta map[string]any `json:"meta"`
 	}
 	body := map[string]any{"agent_id": agentID}
+
+	// The channel key makes the create a find-or-create on the server: the
+	// latest live conversation for this agent + vault + channel comes back
+	// with `meta.resumed: true` instead of a new one (#774). Omitted when the
+	// client sent none — an empty key would be a binding to "".
+	if channelID != "" {
+		body["channel_id"] = channelID
+	}
 
 	// A vault carries the secrets that belong to this entry rather than to the
 	// agent — its values win over the environment's on key collision, which is
@@ -209,7 +218,7 @@ func (f fountainAPI) CreateConversation(_ context.Context, agentID string) (stri
 	if f.vault != "" {
 		vaultID, err := f.vaultID()
 		if err != nil {
-			return "", err
+			return "", false, err
 		}
 		body["vault_id"] = vaultID
 	}
@@ -218,13 +227,14 @@ func (f fountainAPI) CreateConversation(_ context.Context, agentID string) (stri
 	// `session/prompt` becomes turn 1. Provisioning starts server-side either
 	// way, so the sandbox is warming while the developer types.
 	if err := api.New(f.opts).Post("/conversations", body, &resp); err != nil {
-		return "", err
+		return "", false, err
 	}
 	id := output.ToString(resp.Data["id"])
 	if id == "" {
-		return "", fmt.Errorf("conversation created but the response carried no id")
+		return "", false, fmt.Errorf("conversation created but the response carried no id")
 	}
-	return id, nil
+	resumed, _ := resp.Meta["resumed"].(bool)
+	return id, resumed, nil
 }
 
 func (f fountainAPI) Conversation(_ context.Context, convID string) (acp.ConversationRef, error) {
