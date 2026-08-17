@@ -1332,7 +1332,23 @@ defmodule Fountain.Conversations do
           with :ok <- Fountain.Accounts.check_not_suspended(conv.user_id),
                :ok <- Fountain.Billing.check_active(conv.user_id),
                {:ok, _} <- wake_suspended_sandbox(conv.user_id, sandbox_id) do
-            start_conversation_server(conv, sandbox_id, runtime_module, initial_prompt)
+            case start_conversation_server(conv, sandbox_id, runtime_module, initial_prompt) do
+              {:error, {:already_started, winner_pid}} ->
+                # Lost a concurrent wake of the same conversation to another
+                # caller reusing the same sandbox. Mirrors the handoff in
+                # create_fresh_sandbox_and_start/4 (#330), but reuse provisions
+                # no row of its own, so there is nothing here to clean up —
+                # just hand the prompt to the winner, which drops it if a turn
+                # is already running.
+                if is_binary(initial_prompt) and initial_prompt != "" do
+                  ConversationServer.queue_initial_prompt(winner_pid, initial_prompt)
+                end
+
+                {:ok, _unsafe_get_conversation!(conv.id)}
+
+              other ->
+                other
+            end
           end
 
         :create_new ->

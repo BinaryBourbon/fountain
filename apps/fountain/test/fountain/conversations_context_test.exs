@@ -1194,6 +1194,41 @@ defmodule Fountain.ConversationsContextTest do
       assert {:ok, _conv} = Conversations.wake_conversation(conv.id)
     end
 
+    test "a reuse that loses the start race hands the prompt to the winner (#667)" do
+      # Two concurrent wakes of the same suspended/ready sandbox: the loser
+      # used to get the raw {:error, {:already_started, pid}} back from
+      # start_conversation_server, so the prompt was silently dropped instead
+      # of reaching the winner's server.
+      user = insert_verified_user()
+      agent = insert_agent(user_id: user.id)
+      sandbox = insert_sandbox(user_id: user.id, sprite_name: "test-sprite-race")
+      {:ok, sandbox} = Conversations.update_sandbox(sandbox, %{status: "ready"})
+      conv = insert_conversation(user_id: user.id, agent: agent, sandbox: sandbox, status: "idle")
+
+      winner = spawn(fn -> Process.sleep(:infinity) end)
+      test_pid = self()
+
+      stub(Fountain.Sandbox.Sprites, :get, fn _handle ->
+        {:ok, %{status: :running, raw: %{name: "test-sprite-race"}}}
+      end)
+
+      stub(Horde.DynamicSupervisor, :start_child, fn _supervisor, _child_spec ->
+        {:error, {:already_started, winner}}
+      end)
+
+      stub(Fountain.Conversations.ConversationServer, :queue_initial_prompt, fn pid, prompt ->
+        send(test_pid, {:queued, pid, prompt})
+        :ok
+      end)
+
+      assert {:ok, woken} = Conversations.wake_conversation(conv.id, "hello")
+      assert_receive {:queued, ^winner, "hello"}
+
+      # Reuse touches no row — the conversation still names the sandbox it
+      # started with.
+      assert woken.sandbox_id == sandbox.id
+    end
+
     test "waking a suspended sandbox flips it to ready and stamps the clock" do
       # The core of decisions/0017: the parked sprite is reused, re-added to
       # the quota, and the max-lifetime ceiling restarts from the wake.
