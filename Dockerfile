@@ -90,7 +90,7 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH="${TARGETARCH:-amd64}" \
 
 FROM debian:trixie-slim AS buzzacp
 ARG TARGETARCH
-ARG BUZZ_ACP_VERSION=0.5.14-fountain.1
+ARG BUZZ_ACP_VERSION=0.5.14-fountain.2
 # buzz-acp: the hosted harness (gate 2). buzz: the CLI the server-side MCP tools
 # shell out to for signed publishes (gate 3, #737). Both from our own release.
 RUN apt-get update -y \
