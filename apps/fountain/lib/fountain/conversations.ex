@@ -205,6 +205,36 @@ defmodule Fountain.Conversations do
     )
   end
 
+  # `suspended → ready`: the wake side of a park/wake cycle (0017). No
+  # sandbox_provisioned here — the provision was already recorded before the
+  # sandbox parked (see above) — but the parked interval needs a start and an
+  # end of its own so the duration roll-up can subtract it from
+  # sandbox_terminated's duration_ms instead of billing parked time (#665).
+  defp record_sandbox_usage("suspended", %Sandbox{status: "ready"} = sandbox) do
+    Fountain.Billing.record_usage(
+      sandbox.user_id,
+      "sandbox_resumed",
+      sandbox.id,
+      "sandbox",
+      %{"sprite_name" => sandbox.sprite_name, "provider" => sandbox.provider}
+    )
+  end
+
+  # `ready → suspended`: the sandbox is parked, not destroyed, and stops
+  # billing compute from here (0017). Paired with sandbox_resumed (or, for a
+  # sandbox that never wakes again, with sandbox_terminated) so the duration
+  # roll-up can tell parked time apart from run time (#665).
+  defp record_sandbox_usage(was, %Sandbox{status: "suspended"} = sandbox)
+       when was not in @billable_terminal do
+    Fountain.Billing.record_usage(
+      sandbox.user_id,
+      "sandbox_suspended",
+      sandbox.id,
+      "sandbox",
+      %{"sprite_name" => sandbox.sprite_name, "provider" => sandbox.provider}
+    )
+  end
+
   defp record_sandbox_usage(was, %Sandbox{status: status} = sandbox)
        when status in @billable_terminal and was not in @billable_terminal do
     # A sandbox that dies before reaching "ready" never emitted

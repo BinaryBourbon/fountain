@@ -85,6 +85,55 @@ defmodule Fountain.UsageMeteringTest do
     end
   end
 
+  describe "sandbox_suspended / sandbox_resumed (#665)" do
+    test "sandbox_suspended is emitted when a ready sandbox parks" do
+      user = insert_verified_user()
+      sandbox = insert_sandbox(user_id: user.id, status: "ready")
+
+      {:ok, _} = Conversations.update_sandbox(sandbox, %{status: "suspended"})
+
+      assert [event] = events_for(user.id, "sandbox_suspended")
+      assert event.resource_id == sandbox.id
+      assert event.resource_type == "sandbox"
+    end
+
+    test "sandbox_resumed is emitted when a suspended sandbox wakes" do
+      user = insert_verified_user()
+      sandbox = insert_sandbox(user_id: user.id, status: "ready")
+
+      {:ok, parked} = Conversations.update_sandbox(sandbox, %{status: "suspended"})
+      {:ok, _} = Conversations.update_sandbox(parked, %{status: "ready"})
+
+      assert [event] = events_for(user.id, "sandbox_resumed")
+      assert event.resource_id == sandbox.id
+    end
+
+    test "a full park/wake/terminate cycle emits exactly one of each" do
+      user = insert_verified_user()
+      sandbox = insert_sandbox(user_id: user.id, status: "ready")
+
+      {:ok, parked} = Conversations.update_sandbox(sandbox, %{status: "suspended"})
+      {:ok, woken} = Conversations.update_sandbox(parked, %{status: "ready"})
+      {:ok, _} = Conversations.update_sandbox(woken, %{status: "terminated"})
+
+      assert length(events_for(user.id, "sandbox_suspended")) == 1
+      assert length(events_for(user.id, "sandbox_resumed")) == 1
+      assert length(events_for(user.id, "sandbox_terminated")) == 1
+    end
+
+    test "a sandbox torn down while still parked emits sandbox_suspended with no matching resume" do
+      user = insert_verified_user()
+      sandbox = insert_sandbox(user_id: user.id, status: "ready")
+
+      {:ok, parked} = Conversations.update_sandbox(sandbox, %{status: "suspended"})
+      {:ok, _} = Conversations.update_sandbox(parked, %{status: "terminated"})
+
+      assert length(events_for(user.id, "sandbox_suspended")) == 1
+      assert events_for(user.id, "sandbox_resumed") == []
+      assert [_] = events_for(user.id, "sandbox_terminated")
+    end
+  end
+
   describe "sandbox_terminated" do
     test "is emitted with a duration when a sandbox is terminated" do
       user = insert_verified_user()

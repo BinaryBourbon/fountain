@@ -51,6 +51,18 @@ upgrade, is in
   `BUZZ_ACP_DISPLAY_NAME` becomes the advertised name. #776 now waits on #6097
   too. (#790)
 
+- **Suspend-aware usage metering: parked sandbox time no longer inflates
+  sandbox-minutes (#665).** A sandbox that suspended and later terminated
+  billed its entire parked interval as run time. New `sandbox_suspended` /
+  `sandbox_resumed` usage events now bracket each parked span, and the
+  `usage_summary`/`usage_summaries` roll-up subtracts it from the
+  `sandbox_terminated` `duration_ms` — including the case where a parked
+  sandbox is torn down (account deletion, tenant reap) without ever waking
+  again, closed against the terminated event itself. A `suspended → ready`
+  wake still emits no second `sandbox_provisioned`. Understated minutes for a
+  sandbox that stays suspended forever (no `sandbox_terminated` at all) are
+  unchanged — see decisions/0017.
+
 - **`!shutdown` no longer restart-loops a hosted harness.** The supervisor
   restarts `buzz-acp` on any exit and the fresh process replayed the same
   `!shutdown` from its subscription backlog — five exits per command before

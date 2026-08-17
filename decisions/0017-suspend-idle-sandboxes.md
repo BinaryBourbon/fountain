@@ -72,13 +72,15 @@ destroyed the moment it is woken.
   being ignorable — or a sprites.dev account-level sprite cap starts binding —
   a retention bound for `suspended` rows is the knob to add, with the #649
   caveat attached.
-- **Usage metering blurs at the edges, in both directions.** A sandbox that
-  suspends and later terminates includes its parked time in the
-  `sandbox_terminated` `duration_ms`; one that stays suspended forever emits
-  no `sandbox_terminated` at all, so billed sandbox-minutes understate. The ee
-  usage-event vocabulary is closed and suspend-aware metering was not worth
-  new event types while the cost is treated as zero. A `suspended → ready`
-  wake deliberately emits no second `sandbox_provisioned`.
+- **Usage metering blurs at the edges, in both directions — half-fixed by
+  #665.** `sandbox_suspended`/`sandbox_resumed` events now bracket each parked
+  interval, and the `usage_summary`/`usage_summaries` roll-up subtracts that
+  interval (or, for a sandbox torn down while still parked, the span up to
+  its `sandbox_terminated`) from `duration_ms`, so the overstating direction
+  is corrected. The understating direction stands: a sandbox that stays
+  suspended forever still emits no `sandbox_terminated`, so its time never
+  enters `sandbox_minutes` at all. A `suspended → ready` wake still
+  deliberately emits no second `sandbox_provisioned`.
 - **A rolling deploy has a one-time loss window.** An old node waking a
   suspended row does not recognise the status, provisions a fresh sprite, and
   the parked disk is destroyed by the reaper. Old nodes cannot *write*
