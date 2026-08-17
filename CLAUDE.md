@@ -46,7 +46,7 @@ fountain/                  umbrella root
 
 | Primitive | Purpose |
 |---|---|
-| **Environment** | Baseline set of encrypted env vars + runtime config (packages, repos, scripts) attached to an agent |
+| **Environment** | Baseline set of encrypted env vars + runtime config (packages, repos, scripts) attached to an agent. A conversation may name a different one at launch (`environment_id`; scoped by `agent.allowed_environment_ids`) — the agent's is the default, not the only choice |
 | **Vault** | Free-floating bag of env-var overrides. Vault values **win on key collision** when merged with an environment at sprite spawn time |
 | **Agent** | A named, re-runnable agent config — model, runtime, skills, MCP servers, optional environment |
 | **Conversation** | A single run of an agent inside a Sprites sandbox. Has turns, log events, and a status lifecycle |

@@ -17,7 +17,7 @@ defmodule Fountain.Buzz do
 
   import Ecto.Query, only: [from: 2]
 
-  alias Fountain.{Accounts, Audit, Conversations, Crypto, Repo, Vaults}
+  alias Fountain.{Accounts, Audit, Conversations, Crypto, Environments, Repo, Vaults}
   alias Fountain.Buzz.BuzzIdentity
 
   # ── identities (tenant-scoped) ─────────────────────────────────────────────
@@ -72,11 +72,17 @@ defmodule Fountain.Buzz do
   partial run.
 
   `params` (string-keyed): `"name"`, `"relay_url"`, `"agent_id"`, `"pubkey"`,
-  `"private_key_nsec"`, `"auth_tag"` (required); `"display_name"` (optional).
+  `"private_key_nsec"`, `"auth_tag"` (required); `"display_name"` and
+  `"environment_id"` (optional). The environment, when named, must be owned by
+  `user_id` — a foreign or unknown id is `{:error, :environment_not_found}` —
+  and becomes the baseline every conversation this identity opens is
+  provisioned from instead of the agent's own (#783). Re-provisioning without
+  it clears a previously set one: the provider's `deploy` is the whole truth.
   Returns `{:ok, %BuzzIdentity{}}` or `{:error, reason}`.
   """
   def provision_identity(user_id, params, opts \\ []) when is_binary(user_id) do
     with {:ok, fields} <- validate_provision(params),
+         :ok <- check_environment(fields.environment_id, user_id),
          {:ok, dek} <- Crypto.load_tenant_key(user_id),
          {:ok, vault} <- ensure_vault(user_id, fields, dek, opts),
          :ok <- write_buzz_secrets(vault, fields, dek, opts) do
@@ -98,7 +104,8 @@ defmodule Fountain.Buzz do
          pubkey: params["pubkey"],
          nsec: params["private_key_nsec"],
          auth_tag: params["auth_tag"],
-         display_name: params["display_name"]
+         display_name: params["display_name"],
+         environment_id: presence(params["environment_id"])
        }}
     else
       {:error, {:missing, missing}}
@@ -106,6 +113,19 @@ defmodule Fountain.Buzz do
   end
 
   defp blank?(v), do: is_nil(v) or v == ""
+
+  defp presence(v), do: if(blank?(v), do: nil, else: v)
+
+  # Scoped fetch: the environment's secrets materialise in this identity's
+  # sandboxes, so a pointer at another tenant's must never be stored.
+  defp check_environment(nil, _user_id), do: :ok
+
+  defp check_environment(id, user_id) do
+    case Environments.get_environment(id, user_id) do
+      nil -> {:error, :environment_not_found}
+      _env -> :ok
+    end
+  end
 
   # One vault per identity, named for it. Reused on re-provision.
   defp ensure_vault(user_id, fields, _dek, opts) do
@@ -140,6 +160,7 @@ defmodule Fountain.Buzz do
       "user_id" => user_id,
       "agent_id" => fields.agent_id,
       "vault_id" => vault.id,
+      "environment_id" => fields.environment_id,
       "name" => fields.name,
       "relay_url" => fields.relay_url,
       "pubkey" => fields.pubkey,
@@ -263,7 +284,8 @@ defmodule Fountain.Buzz do
   sandbox-adjacent process needs, without key management), decrypts the vault's
   `BUZZ_PRIVATE_KEY` / `BUZZ_AUTH_TAG` / `BUZZ_RELAY_URL` server-side, and lays
   out the environment: the Buzz identity vars, the `BUZZ_ACP_*` wiring that
-  points the harness's ACP child at `fountain acp --agent … --vault …`, and the
+  points the harness's ACP child at `fountain acp --agent … --vault …
+  [--environment …]`, and the
   `FOUNTAIN_*` vars that let that child authenticate back to this instance.
 
   Options:
@@ -351,10 +373,16 @@ defmodule Fountain.Buzz do
     |> maybe_put("BUZZ_ACP_DISPLAY_NAME", identity.display_name)
   end
 
-  # Point the harness's ACP child at this Fountain agent + vault, and keep the
-  # pool to one (the desktop's 10 is not our assumption).
+  # Point the harness's ACP child at this Fountain agent + vault (+ environment
+  # override, #783), and keep the pool to one (the desktop's 10 is not our
+  # assumption).
   defp acp_wiring_env(%BuzzIdentity{} = identity, fountain_bin, agents) do
-    args = "acp,--agent,#{identity.agent_id},--vault,#{identity.vault_id}"
+    args =
+      ["acp", "--agent", identity.agent_id, "--vault", identity.vault_id]
+      |> Kernel.++(
+        if identity.environment_id, do: ["--environment", identity.environment_id], else: []
+      )
+      |> Enum.join(",")
 
     %{
       "BUZZ_ACP_AGENT_COMMAND" => fountain_bin,

@@ -36,6 +36,22 @@ defmodule FountainWeb.FallbackController do
     })
   end
 
+  # Same two shapes for a per-launch environment override (#783).
+  def call(conn, {:error, :environment_not_found}) do
+    conn
+    |> put_status(:not_found)
+    |> json(%{error: "environment_not_found"})
+  end
+
+  def call(conn, {:error, :environment_not_allowed}) do
+    conn
+    |> put_status(:unprocessable_entity)
+    |> json(%{
+      error: "environment_not_allowed",
+      message: "environment is not in the agent's allowed_environment_ids"
+    })
+  end
+
   # An unknown or cross-tenant parent conversation. 404 rather than 403 so the
   # caller cannot use the response to probe which conversation ids exist.
   def call(conn, {:error, :parent_not_found}) do

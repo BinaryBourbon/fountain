@@ -15,7 +15,7 @@ defmodule Fountain.Conversations.ConversationServerTest do
 
   use Fountain.ConversationServerCase
 
-  alias Fountain.Accounts
+  alias Fountain.{Accounts, Environments}
   alias Fountain.Repo
 
   setup do
@@ -133,6 +133,79 @@ defmodule Fountain.Conversations.ConversationServerTest do
       assert turn.prompt == "first prompt"
 
       GenServer.stop(pid)
+    end
+  end
+
+  describe "provisioning — per-launch environment override (#783)" do
+    # The observable difference between two environments at provision is which
+    # checkpoint is restored, so that is what the assertion reads.
+    test "the conversation's environment_id is provisioned from, not the agent's", %{
+      user: user,
+      env: agent_env
+    } do
+      {:ok, _} = Environments.update_environment(agent_env, %{"checkpoint_id" => "cp_agent"})
+      override = insert_env(user_id: user.id, checkpoint_id: "cp_override")
+
+      agent = insert_agent(user_id: user.id, environment_id: agent_env.id, runtime: "gemini")
+      sandbox = insert_sandbox(user_id: user.id, status: "pending")
+
+      conv =
+        insert_conversation(
+          user_id: user.id,
+          agent: agent,
+          sandbox_id: sandbox.id,
+          environment_id: override.id,
+          status: "pending"
+        )
+
+      stub_happy_sprite()
+      test_pid = self()
+
+      Mimic.stub(Fountain.Conversations.Provisioning, :restore_checkpoint, fn _s, id ->
+        send(test_pid, {:restore_checkpoint, id})
+        :ok
+      end)
+
+      {pid, _ref, :alive} = start_server(conv)
+
+      assert_received {:restore_checkpoint, "cp_override"}
+      refute_received {:restore_checkpoint, "cp_agent"}
+      assert Conversations._unsafe_get_sandbox!(sandbox.id).status == "ready"
+      GenServer.stop(pid)
+    end
+
+    test "a cross-tenant environment_id on the conversation is not materialised", %{
+      user: attacker,
+      conv: conv,
+      sandbox: sandbox
+    } do
+      victim = insert_verified_user()
+      victim_env = insert_env(user_id: victim.id, checkpoint_id: "cp_victim")
+
+      # Inserted through the bare changeset — start_conversation refuses this,
+      # so only a row that bypassed it could carry a foreign id.
+      {:ok, conv} =
+        conv
+        |> Fountain.Conversations.Conversation.changeset(%{"environment_id" => victim_env.id})
+        |> Repo.update()
+
+      stub_happy_sprite()
+      test_pid = self()
+
+      Mimic.stub(Fountain.Conversations.Provisioning, :restore_checkpoint, fn _s, id ->
+        send(test_pid, {:restore_checkpoint, id})
+        :ok
+      end)
+
+      log =
+        ExUnit.CaptureLog.capture_log(fn ->
+          {pid, _ref, :alive} = start_server(conv)
+          refute_received {:restore_checkpoint, "cp_victim"}
+          assert Conversations._unsafe_get_sandbox!(sandbox.id).status == "ready"
+          GenServer.stop(pid)
+        end)
+
+      assert log =~ "not owned by user #{attacker.id}"
     end
   end
 

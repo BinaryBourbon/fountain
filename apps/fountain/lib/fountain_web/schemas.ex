@@ -56,6 +56,12 @@ defmodule FountainWeb.Schemas do
         sandbox: %Schema{oneOf: [Sandbox], nullable: true},
         agent_id: %Schema{type: :string, format: :uuid, nullable: true},
         vault_id: %Schema{type: :string, format: :uuid, nullable: true},
+        environment_id: %Schema{
+          type: :string,
+          format: :uuid,
+          nullable: true,
+          description: "Per-launch environment override; null means the agent's environment."
+        },
         runtime: %Schema{type: :string, enum: ~w(claude codex gemini opencode)},
         acp: %Schema{
           type: :boolean,
@@ -168,6 +174,17 @@ defmodule FountainWeb.Schemas do
           description:
             "Optional vault whose secrets override the environment's baseline at sprite spawn. " <>
               "Must satisfy the agent's allowed_vault_ids when that allowlist is set."
+        },
+        environment_id: %Schema{
+          type: :string,
+          format: :uuid,
+          nullable: true,
+          description:
+            "Optional environment to provision from instead of the agent's own; the " <>
+              "conversation stays pinned to it across wakes. Must be owned by the caller " <>
+              "(404 otherwise) and satisfy the agent's allowed_environment_ids when that " <>
+              "allowlist is set (422 environment_not_allowed). Part of the channel_id " <>
+              "resume key."
         },
         prompt: %Schema{type: :string, description: "Optional first turn prompt."},
         images: %Schema{
@@ -347,6 +364,16 @@ defmodule FountainWeb.Schemas do
               "a non-empty list is an allowlist. Vault values override the agent's " <>
               "environment on key collision, so this scopes who can override reviewed config."
         },
+        allowed_environment_ids: %Schema{
+          type: :array,
+          items: %Schema{type: :string, format: :uuid},
+          nullable: true,
+          description:
+            "Environments a conversation may launch this agent under instead of its own " <>
+              "(environment_id on create). Same shape as allowed_vault_ids: null (default) " <>
+              "allows any environment the tenant owns; an empty list forbids overriding; " <>
+              "a non-empty list is an allowlist. The agent's own environment always passes."
+        },
         conversation_count: %Schema{
           type: :integer,
           description: "Conversations started from this agent."
@@ -388,6 +415,14 @@ defmodule FountainWeb.Schemas do
         pubkey: %Schema{type: :string, description: "Nostr public key (hex)", nullable: true},
         agent_id: %Schema{type: :string, format: :uuid},
         vault_id: %Schema{type: :string, format: :uuid},
+        environment_id: %Schema{
+          type: :string,
+          format: :uuid,
+          nullable: true,
+          description:
+            "Environment this identity's conversations are provisioned from instead of " <>
+              "the agent's own; null means the agent's."
+        },
         enabled: %Schema{type: :boolean},
         inserted_at: %Schema{type: :string, format: :"date-time"},
         updated_at: %Schema{type: :string, format: :"date-time"}
@@ -420,7 +455,18 @@ defmodule FountainWeb.Schemas do
           description: "Nostr secret key (nsec/hex). Stored, never returned"
         },
         auth_tag: %Schema{type: :string, description: "NIP-OA owner attestation tag (JSON array)"},
-        display_name: %Schema{type: :string, nullable: true}
+        display_name: %Schema{type: :string, nullable: true},
+        environment_id: %Schema{
+          type: :string,
+          format: :uuid,
+          nullable: true,
+          description:
+            "Optional environment to provision this identity's conversations from instead " <>
+              "of the agent's own — one agent config, one environment per identity. Must be " <>
+              "owned by the caller (404 otherwise) and, when the agent sets " <>
+              "allowed_environment_ids, on that list (checked at conversation start). " <>
+              "Omitted on a re-provision clears a previously set one."
+        }
       },
       required: [:name, :relay_url, :agent_id, :pubkey, :private_key_nsec, :auth_tag]
     })
@@ -529,6 +575,16 @@ defmodule FountainWeb.Schemas do
             "Sandbox backend override; null inherits the instance default " <>
               "(SANDBOX_PROVIDER). Only providers configured on this instance are accepted"
         },
+        allowed_environment_ids: %Schema{
+          type: :array,
+          items: %Schema{type: :string, format: :uuid},
+          nullable: true,
+          description:
+            "Environments a conversation may launch this agent under instead of its own " <>
+              "(environment_id on create). Same shape as allowed_vault_ids: null (default) " <>
+              "allows any environment the tenant owns; an empty list forbids overriding; " <>
+              "a non-empty list is an allowlist. The agent's own environment always passes."
+        },
         environment_id: %Schema{type: :string, format: :uuid, nullable: true},
         skills: %Schema{
           type: :array,
@@ -625,6 +681,16 @@ defmodule FountainWeb.Schemas do
             }
           },
           additionalProperties: true
+        },
+        allowed_environment_ids: %Schema{
+          type: :array,
+          items: %Schema{type: :string, format: :uuid},
+          nullable: true,
+          description:
+            "Environments a conversation may launch this agent under instead of its own " <>
+              "(environment_id on create). Same shape as allowed_vault_ids: null (default) " <>
+              "allows any environment the tenant owns; an empty list forbids overriding; " <>
+              "a non-empty list is an allowlist. The agent's own environment always passes."
         },
         repositories: %Schema{type: :array, items: Repository},
         metadata: %Schema{type: :object, additionalProperties: true},

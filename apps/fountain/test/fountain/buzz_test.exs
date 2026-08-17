@@ -184,6 +184,42 @@ defmodule Fountain.BuzzTest do
 
       assert "private_key_nsec" in missing
     end
+
+    # #783: an identity may name the environment its conversations launch
+    # under, so one agent config runs under one environment per identity.
+    test "stores an environment override, and a re-provision without one clears it", %{
+      user: user,
+      params: params
+    } do
+      env = insert_env(user_id: user.id)
+
+      assert {:ok, identity} =
+               Buzz.provision_identity(user.id, Map.put(params, "environment_id", env.id))
+
+      assert identity.environment_id == env.id
+
+      # The provider's deploy is the whole truth: omitting it is "none".
+      assert {:ok, again} = Buzz.provision_identity(user.id, params)
+      assert again.id == identity.id
+      assert is_nil(again.environment_id)
+    end
+
+    test "a foreign or unknown environment_id is not stored", %{user: user, params: params} do
+      other = insert_verified_user()
+      foreign = insert_env(user_id: other.id)
+
+      assert {:error, :environment_not_found} =
+               Buzz.provision_identity(user.id, Map.put(params, "environment_id", foreign.id))
+
+      assert {:error, :environment_not_found} =
+               Buzz.provision_identity(
+                 user.id,
+                 Map.put(params, "environment_id", Ecto.UUID.generate())
+               )
+
+      # And nothing was half-created on the way to the refusal.
+      assert Buzz.list_identities(user.id) == []
+    end
   end
 
   describe "harness_launch/2" do
@@ -255,6 +291,24 @@ defmodule Fountain.BuzzTest do
       # The launch reports the key id so the caller can revoke it on stop.
       assert launch.api_key_id == key.id
       assert launch.command == "/opt/buzz-acp"
+    end
+
+    # #783: the override reaches the ACP child as --environment, so every
+    # conversation the harness opens is provisioned from it.
+    test "an environment override is passed to the ACP child",
+         %{identity: identity, agent: agent, vault: vault, user: user} do
+      env = insert_env(user_id: user.id)
+      {:ok, identity} = Buzz.update_identity(identity, %{"environment_id" => env.id})
+
+      assert {:ok, launch} =
+               Buzz.harness_launch(identity,
+                 buzz_acp_path: "/opt/buzz-acp",
+                 base_url: "https://fountain.example",
+                 fountain_bin: "fountain"
+               )
+
+      assert Map.new(launch.env)["BUZZ_ACP_AGENT_ARGS"] ==
+               "acp,--agent,#{agent.id},--vault,#{vault.id},--environment,#{env.id}"
     end
 
     test "the identity's relay_url overrides a BUZZ_RELAY_URL in the vault",

@@ -68,3 +68,25 @@ func envShow(id string) error {
 	envResp.Data["secrets"] = secResp.Data
 	return output.PrintJSON(envResp.Data)
 }
+
+// resolveEnvironmentID accepts a UUID or an environment name and returns the id,
+// exactly as resolveVaultID does for vaults. Fatal on an unknown name.
+func resolveEnvironmentID(target string) string {
+	if isUUID(target) {
+		return target
+	}
+	c := activeClient()
+	var resp struct {
+		Data []map[string]any `json:"data"`
+	}
+	if err := c.Get("/environments", &resp); err != nil {
+		Fatal(err.Error())
+	}
+	for _, e := range resp.Data {
+		if output.ToString(e["name"]) == target {
+			return output.ToString(e["id"])
+		}
+	}
+	Fatalf("no environment named %q", target)
+	return ""
+}

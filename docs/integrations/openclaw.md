@@ -157,6 +157,16 @@ The distinction matters as soon as there are two entries. An environment is
 shared by every agent attached to it; a vault is attached per conversation, so
 two entries stay separate even when they point at the same agent.
 
+### Per-entry environments
+
+`--environment <name-or-id>` provisions every conversation the entry opens from
+that [environment](../primitives.md#environment) instead of the agent's own.
+Use it when one agent config should run under several baselines — the same
+"engineer" against a `fountain` environment in one entry and a `buzz`
+environment in another — without duplicating the agent. The vault, if any,
+still wins over it on key collision, and an agent can restrict which
+environments may stand in for its own via `allowed_environment_ids`.
+
 ## What you get
 
 | ACP | What happens |

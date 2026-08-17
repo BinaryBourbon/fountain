@@ -99,6 +99,41 @@ defmodule FountainWeb.BuzzAgentControllerTest do
     assert Vaults.get_vault(vault_id, user.id) == nil
   end
 
+  # #783: an identity may name the environment its conversations launch under.
+  test "POST stores an environment override and echoes it", %{
+    conn: conn,
+    user: user,
+    raw_key: raw_key,
+    agent: agent
+  } do
+    env = insert_env(user_id: user.id)
+
+    conn =
+      conn
+      |> authed_with_key(raw_key)
+      |> put_req_header("content-type", "application/json")
+      |> post("/api/buzz/agents", Map.put(params(agent), "environment_id", env.id))
+
+    assert json_response(conn, 201)["data"]["environment_id"] == env.id
+  end
+
+  test "POST with a foreign environment_id is a 404, and nothing is provisioned", %{
+    conn: conn,
+    raw_key: raw_key,
+    agent: agent
+  } do
+    foreign = insert_env(user_id: insert_verified_user().id)
+
+    conn =
+      conn
+      |> authed_with_key(raw_key)
+      |> put_req_header("content-type", "application/json")
+      |> post("/api/buzz/agents", Map.put(params(agent), "environment_id", foreign.id))
+
+    assert json_response(conn, 404)["error"] == "environment_not_found"
+    assert Fountain.Buzz.list_identities(agent.user_id) == []
+  end
+
   test "missing required fields is a 422", %{conn: conn, raw_key: raw_key, agent: agent} do
     bad = Map.delete(params(agent), "private_key_nsec")
 

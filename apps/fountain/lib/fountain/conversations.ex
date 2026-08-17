@@ -966,8 +966,8 @@ defmodule Fountain.Conversations do
   the same sandbox and workspace, rather than opening a fresh one per restart.
 
   Resumes the **latest live** conversation for the same user + agent + vault
-  + channel — `terminated` and `failed` ones are past resuming, so a new one
-  is opened and becomes the binding. Returns `{:ok, conv, :resumed}` or
+  + environment override + channel — `terminated` and `failed` ones are past
+  resuming, so a new one is opened and becomes the binding. Returns `{:ok, conv, :resumed}` or
   `{:ok, conv, :created}`; without a `channel_id` it always creates.
 
   Two concurrent first calls for one channel can both create; the next call
@@ -982,8 +982,9 @@ defmodule Fountain.Conversations do
       )
       when is_binary(channel_id) and channel_id != "" do
     with %Agents.Agent{} = agent <- Agents.get_agent(agent_id, user_id) || {:error, :not_found},
-         {:ok, vault_id} <- resolve_vault_id(attrs["vault_id"], user_id, agent) do
-      case find_channel_conversation(user_id, agent.id, vault_id, channel_id) do
+         {:ok, vault_id} <- resolve_vault_id(attrs["vault_id"], user_id, agent),
+         {:ok, env_id} <- resolve_environment_id(attrs["environment_id"], user_id, agent) do
+      case find_channel_conversation(user_id, agent.id, vault_id, env_id, channel_id) do
         %Conversation{} = conv ->
           {:ok, conv, :resumed}
 
@@ -999,8 +1000,10 @@ defmodule Fountain.Conversations do
 
   # The newest conversation still worth resuming for this binding. `vault_id`
   # is part of the key: two entries on one agent with different vaults are
-  # different identities (#727) and must not share a conversation.
-  defp find_channel_conversation(user_id, agent_id, vault_id, channel_id) do
+  # different identities (#727) and must not share a conversation. So is the
+  # environment override (#783): an identity that switches environments must
+  # not resume a conversation provisioned from the old one.
+  defp find_channel_conversation(user_id, agent_id, vault_id, env_id, channel_id) do
     from(c in Conversation,
       where:
         c.user_id == ^user_id and c.agent_id == ^agent_id and c.channel_id == ^channel_id and
@@ -1009,11 +1012,15 @@ defmodule Fountain.Conversations do
       limit: 1
     )
     |> where_vault(vault_id)
+    |> where_environment(env_id)
     |> Repo.one()
   end
 
   defp where_vault(query, nil), do: from(c in query, where: is_nil(c.vault_id))
   defp where_vault(query, vault_id), do: from(c in query, where: c.vault_id == ^vault_id)
+
+  defp where_environment(query, nil), do: from(c in query, where: is_nil(c.environment_id))
+  defp where_environment(query, id), do: from(c in query, where: c.environment_id == ^id)
 
   @doc """
   Create a new sandbox + conversation pair, start a ConversationServer
@@ -1025,6 +1032,8 @@ defmodule Fountain.Conversations do
     - `prompt`                — optional first prompt (sends turn 1 immediately)
     - `sprite_name`           — optional override; defaults to "fountain-<short-user-id>-<short-id>"
     - `vault_id`              — optional vault whose secrets override the env's
+    - `environment_id`        — optional environment to provision from instead of the
+                                agent's own (#783); subject to `agent.allowed_environment_ids`
     - `source`                — optional; one of "ui", "api", "agent" (default "api")
     - `parent_conversation_id` — optional; UUID of the conversation that spawned this one
   """
@@ -1033,6 +1042,7 @@ defmodule Fountain.Conversations do
     with %Agents.Agent{} = agent <- Agents.get_agent(agent_id, user_id) || {:error, :not_found},
          {:ok, runtime_module} <- Fountain.Runtimes.for_runtime(agent.runtime),
          {:ok, vault_id} <- resolve_vault_id(attrs["vault_id"], user_id, agent),
+         {:ok, env_id} <- resolve_environment_id(attrs["environment_id"], user_id, agent),
          {:ok, parent_id} <- resolve_parent_id(attrs["parent_conversation_id"], user_id),
          :ok <- Fountain.Accounts.check_not_suspended(user_id),
          :ok <- Fountain.Billing.check_active(user_id),
@@ -1043,7 +1053,7 @@ defmodule Fountain.Conversations do
          {:ok, sandbox} <-
            Fountain.Quotas.with_sandbox_reservation(user_id, fn ->
              create_sandbox(%{
-               environment_id: agent.environment_id,
+               environment_id: env_id || agent.environment_id,
                sprite_name:
                  attrs["sprite_name"] || "fountain-#{tenant_prefix(user_id)}-#{short_id()}",
                status: "pending",
@@ -1056,6 +1066,7 @@ defmodule Fountain.Conversations do
              sandbox_id: sandbox.id,
              agent_id: agent.id,
              vault_id: vault_id,
+             environment_id: env_id,
              user_id: user_id,
              runtime: agent.runtime,
              status: "pending",
@@ -1223,6 +1234,35 @@ defmodule Fountain.Conversations do
 
   defp check_vault_allowed(vault_id, %Agents.Agent{allowed_vault_ids: allowed}) do
     if vault_id in allowed, do: :ok, else: {:error, :vault_not_allowed}
+  end
+
+  # A per-launch environment override (#783): the conversation is provisioned
+  # from this environment instead of the agent's own, and stays pinned to it
+  # across wakes. Resolved exactly like the vault — a scoped fetch (a foreign
+  # id reads as not found, so it cannot be probed) behind the agent's allowlist.
+  defp resolve_environment_id(nil, _user_id, _agent), do: {:ok, nil}
+  defp resolve_environment_id("", _user_id, _agent), do: {:ok, nil}
+
+  defp resolve_environment_id(id, user_id, agent) when is_binary(id) and is_binary(user_id) do
+    with :ok <- check_environment_allowed(id, agent) do
+      case Fountain.Environments.get_environment(id, user_id) do
+        nil -> {:error, :environment_not_found}
+        env -> {:ok, env.id}
+      end
+    end
+  end
+
+  # An override replaces the reviewed environment wholesale, so it is scoped
+  # the same way as a vault: nil = any tenant environment, [] = none, a
+  # non-empty list is an allowlist. Default nil is deliberate — a caller who
+  # can attach a vault can already override every key, so a stricter default
+  # here would guard nothing (#783). Naming the agent's own environment is not
+  # an override, so it passes regardless of the list.
+  defp check_environment_allowed(_id, %Agents.Agent{allowed_environment_ids: nil}), do: :ok
+  defp check_environment_allowed(id, %Agents.Agent{environment_id: id}), do: :ok
+
+  defp check_environment_allowed(id, %Agents.Agent{allowed_environment_ids: allowed}) do
+    if id in allowed, do: :ok, else: {:error, :environment_not_allowed}
   end
 
   @doc """
@@ -1468,7 +1508,7 @@ defmodule Fountain.Conversations do
              [exclude: conv.sandbox_id],
              fn ->
                create_sandbox(%{
-                 environment_id: agent.environment_id,
+                 environment_id: conv.environment_id || agent.environment_id,
                  sprite_name: "fountain-#{tenant_prefix(conv.user_id)}-#{short_id()}",
                  status: "pending",
                  provider: Atom.to_string(provider),

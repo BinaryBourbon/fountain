@@ -345,6 +345,7 @@ defmodule Fountain.Exports do
         "mcp_servers" => agent.mcp_servers,
         "metadata" => agent.metadata,
         "allowed_vault_ids" => agent.allowed_vault_ids,
+        "allowed_environment_ids" => agent.allowed_environment_ids,
         "environment_id" => agent.environment_id,
         "created_at" => agent.inserted_at,
         "updated_at" => agent.updated_at
@@ -432,6 +433,7 @@ defmodule Fountain.Exports do
         "source" => conv.source,
         "agent_id" => conv.agent_id,
         "vault_id" => conv.vault_id,
+        "environment_id" => conv.environment_id,
         "parent_conversation_id" => conv.parent_conversation_id,
         "created_at" => conv.inserted_at,
         "updated_at" => conv.updated_at,

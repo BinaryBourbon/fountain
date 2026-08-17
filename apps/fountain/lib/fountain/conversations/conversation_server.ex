@@ -420,16 +420,21 @@ defmodule Fountain.Conversations.ConversationServer do
       Logger.warning("conv #{conv.id}: agent #{conv.agent_id} is gone; provisioning without it")
     end
 
-    # Scoped by the conversation's owner even though create/update_agent
-    # already validates ownership: a cross-tenant environment_id that
-    # predates that check (or slips in through a future path) must not
-    # materialise another tenant's secrets or checkpoint here.
+    # The conversation's own override wins over the agent's environment (#783);
+    # nil falls back to the agent's, resolved fresh each provision.
+    #
+    # Scoped by the conversation's owner even though create/update_agent and
+    # start_conversation already validate ownership: a cross-tenant
+    # environment_id that predates that check (or slips in through a future
+    # path) must not materialise another tenant's secrets or checkpoint here.
+    env_id = conv.environment_id || (agent && agent.environment_id)
+
     env =
-      if agent && agent.environment_id do
-        case Environments.get_environment(agent.environment_id, conv.user_id) do
+      if env_id do
+        case Environments.get_environment(env_id, conv.user_id) do
           nil ->
             Logger.warning(
-              "Agent #{agent.id} references environment #{agent.environment_id} " <>
+              "conv #{conv.id}: environment #{env_id} " <>
                 "not owned by user #{conv.user_id}; provisioning without it"
             )
 

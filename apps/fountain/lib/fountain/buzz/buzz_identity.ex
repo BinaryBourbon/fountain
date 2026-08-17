@@ -11,12 +11,19 @@ defmodule Fountain.Buzz.BuzzIdentity do
   The public key is stored (it is public); the secret is not. Deleting the user,
   the agent, or the vault cascades the identity away — a harness with no agent to
   run or no key to sign with is not a state worth keeping.
+
+  An identity may also name an **environment** (#783): the baseline its
+  conversations are provisioned from instead of the agent's own, so one agent
+  config can run under N environments — one per identity. Optional; nil means
+  the agent's environment, and deleting the environment nilifies rather than
+  cascades, because losing an override is not losing the identity.
   """
   use Ecto.Schema
   import Ecto.Changeset
 
   alias Fountain.Accounts.User
   alias Fountain.Agents.Agent
+  alias Fountain.Environments.Environment
   alias Fountain.Vaults.Vault
 
   @primary_key {:id, :binary_id, autogenerate: true}
@@ -34,6 +41,7 @@ defmodule Fountain.Buzz.BuzzIdentity do
     belongs_to :user, User
     belongs_to :agent, Agent
     belongs_to :vault, Vault
+    belongs_to :environment, Environment
 
     timestamps(type: :utc_datetime)
   end
@@ -46,7 +54,8 @@ defmodule Fountain.Buzz.BuzzIdentity do
     :enabled,
     :user_id,
     :agent_id,
-    :vault_id
+    :vault_id,
+    :environment_id
   ]
 
   def changeset(identity, attrs) do
@@ -60,6 +69,7 @@ defmodule Fountain.Buzz.BuzzIdentity do
     |> unique_constraint(:pubkey, name: :buzz_identities_user_id_pubkey_index)
     |> foreign_key_constraint(:agent_id)
     |> foreign_key_constraint(:vault_id)
+    |> foreign_key_constraint(:environment_id)
   end
 
   # `buzz-acp` connects over a WebSocket, so the relay URL must be ws(s). A

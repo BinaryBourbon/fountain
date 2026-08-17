@@ -22,9 +22,10 @@ import (
 )
 
 var (
-	acpLogLevel string
-	acpAgent    string
-	acpVault    string
+	acpLogLevel    string
+	acpAgent       string
+	acpVault       string
+	acpEnvironment string
 )
 
 func init() {
@@ -47,6 +48,11 @@ belong — an identity the agent posts under, for instance. Two entries pointing
 at the same agent with different vaults stay separate; the same secret in a
 shared environment would not.
 
+--environment provisions every conversation this process opens from that
+environment instead of the agent's own. One agent config can then run under
+several environments — one entry per environment — without duplicating the
+agent. The vault still wins over it on key collision.
+
 What it is, and is not: a control surface for a conversation running in a
 Fountain sandbox — watch it, steer it, interrupt it. It has no access to the
 files open in your editor, and the paths it reports are inside the sandbox,
@@ -55,6 +61,7 @@ not on your machine.`,
 	}
 	acpCmd.Flags().StringVar(&acpAgent, "agent", "", "Fountain agent name or id to open sessions against")
 	acpCmd.Flags().StringVar(&acpVault, "vault", "", "vault name or id to attach to each session's conversation")
+	acpCmd.Flags().StringVar(&acpEnvironment, "environment", "", "environment name or id to provision each session's conversation from, instead of the agent's own")
 	acpCmd.Flags().StringVar(&acpLogLevel, "log-level", "info", "stderr log level: debug, info, warn, error")
 	rootCmd.AddCommand(acpCmd)
 }
@@ -77,7 +84,7 @@ func runACP() error {
 	opts := activeOpts()
 	agent := acp.NewAgent(
 		cliAuth{opts: opts},
-		fountainAPI{opts: opts, log: log, vault: acpVault},
+		fountainAPI{opts: opts, log: log, vault: acpVault, environment: acpEnvironment},
 		acpAgent,
 		Version,
 		log,
@@ -150,9 +157,10 @@ func (a cliAuth) Describe() string {
 // here: a failure inside a session method is a JSON-RPC error the editor
 // renders, not a reason to kill a process the editor is talking to.
 type fountainAPI struct {
-	opts  credentials.Opts
-	log   *slog.Logger
-	vault string
+	opts        credentials.Opts
+	log         *slog.Logger
+	vault       string
+	environment string
 }
 
 func (f fountainAPI) Agent(_ context.Context, target string) (acp.AgentRef, error) {
@@ -221,6 +229,17 @@ func (f fountainAPI) CreateConversation(_ context.Context, agentID, channelID st
 			return "", false, err
 		}
 		body["vault_id"] = vaultID
+	}
+
+	// An environment override is the baseline the sandbox is provisioned from
+	// instead of the agent's own (#783). Same omit-when-unset rule as the
+	// vault: an empty string would name an environment called "".
+	if f.environment != "" {
+		envID, err := f.environmentID()
+		if err != nil {
+			return "", false, err
+		}
+		body["environment_id"] = envID
 	}
 
 	// No prompt: the conversation is created empty and the editor's first
@@ -351,6 +370,25 @@ func (f fountainAPI) vaultID() (string, error) {
 		}
 	}
 	return "", fmt.Errorf("no vault named %q", f.vault)
+}
+
+func (f fountainAPI) environmentID() (string, error) {
+	if isUUID(f.environment) {
+		return f.environment, nil
+	}
+
+	var resp struct {
+		Data []map[string]any `json:"data"`
+	}
+	if err := api.New(f.opts).Get("/environments", &resp); err != nil {
+		return "", err
+	}
+	for _, e := range resp.Data {
+		if output.ToString(e["name"]) == f.environment {
+			return output.ToString(e["id"]), nil
+		}
+	}
+	return "", fmt.Errorf("no environment named %q", f.environment)
 }
 
 func (f fountainAPI) StreamHead(_ context.Context, convID string) (string, error) {

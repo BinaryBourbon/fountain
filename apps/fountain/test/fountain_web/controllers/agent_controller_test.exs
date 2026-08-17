@@ -168,6 +168,30 @@ defmodule FountainWeb.AgentControllerTest do
       body = json_response(conn, 201)
       assert body["data"]["environment_id"] == env.id
     end
+
+    # #783: the allowlist that scopes per-launch environment overrides round-trips.
+    test "accepts and reports allowed_environment_ids", %{
+      conn: conn,
+      user: user,
+      raw_key: raw_key
+    } do
+      env = insert_env(user_id: user.id)
+
+      payload = %{
+        name: "with-env-allowlist",
+        model: "anthropic/claude-sonnet-4-6",
+        runtime: "claude",
+        allowed_environment_ids: [env.id]
+      }
+
+      body =
+        conn
+        |> authed_with_key(raw_key)
+        |> post_json("/api/agents", payload)
+        |> json_response(201)
+
+      assert body["data"]["allowed_environment_ids"] == [env.id]
+    end
   end
 
   describe "PUT /api/agents/:id" do

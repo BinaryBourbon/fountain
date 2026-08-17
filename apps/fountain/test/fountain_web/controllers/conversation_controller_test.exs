@@ -896,6 +896,73 @@ defmodule FountainWeb.ConversationControllerTest do
     end
   end
 
+  describe "POST /api/conversations with environment_id (#783)" do
+    setup %{user: user} do
+      stub(Horde.DynamicSupervisor, :start_child, fn _s, _spec -> {:ok, spawn(fn -> :ok end)} end)
+      agent_env = insert_env(user_id: user.id)
+      other_env = insert_env(user_id: user.id)
+      agent = insert_agent(user_id: user.id, environment_id: agent_env.id)
+      %{agent: agent, other_env: other_env}
+    end
+
+    test "provisions from the named environment and reports it", %{
+      conn: conn,
+      raw_key: raw_key,
+      agent: agent,
+      other_env: other_env
+    } do
+      body = %{"agent_id" => agent.id, "environment_id" => other_env.id}
+
+      data =
+        conn
+        |> authed_with_key(raw_key)
+        |> post_json("/api/conversations", body)
+        |> json_response(201)
+        |> Map.fetch!("data")
+
+      assert data["environment_id"] == other_env.id
+    end
+
+    test "a foreign environment is a 404 — indistinguishable from an unknown one", %{
+      conn: conn,
+      raw_key: raw_key,
+      agent: agent
+    } do
+      foreign = insert_env(user_id: insert_verified_user().id)
+
+      for id <- [foreign.id, Ecto.UUID.generate()] do
+        assert conn
+               |> authed_with_key(raw_key)
+               |> post_json("/api/conversations", %{
+                 "agent_id" => agent.id,
+                 "environment_id" => id
+               })
+               |> json_response(404)
+               |> Map.fetch!("error") == "environment_not_found"
+      end
+    end
+
+    test "an environment outside the agent's allowlist is a 422 environment_not_allowed", %{
+      conn: conn,
+      raw_key: raw_key,
+      agent: agent,
+      other_env: other_env
+    } do
+      {:ok, agent} = Fountain.Agents.update_agent(agent, %{allowed_environment_ids: []})
+
+      resp =
+        conn
+        |> authed_with_key(raw_key)
+        |> post_json("/api/conversations", %{
+          "agent_id" => agent.id,
+          "environment_id" => other_env.id
+        })
+        |> json_response(422)
+
+      assert resp["error"] == "environment_not_allowed"
+    end
+  end
+
   describe "POST /api/conversations with channel_id (#774)" do
     # A client that forgets its sessions — a restarted buzz-acp — must land back
     # on the same conversation, and so the same sandbox, rather than opening a

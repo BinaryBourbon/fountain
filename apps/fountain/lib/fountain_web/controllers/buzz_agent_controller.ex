@@ -45,7 +45,10 @@ defmodule FountainWeb.BuzzAgentController do
     user = conn.assigns.current_user
 
     attrs =
-      Map.take(params, ~w(name relay_url agent_id pubkey private_key_nsec auth_tag display_name))
+      Map.take(
+        params,
+        ~w(name relay_url agent_id pubkey private_key_nsec auth_tag display_name environment_id)
+      )
 
     case Buzz.provision_identity(user.id, attrs, actor: "api") do
       {:ok, %BuzzIdentity{} = identity} ->
@@ -61,6 +64,11 @@ defmodule FountainWeb.BuzzAgentController do
         conn
         |> put_status(:unprocessable_entity)
         |> json(%{error: "missing required fields: #{Enum.join(fields, ", ")}"})
+
+      # 404 like every other unknown-or-foreign environment id, so the response
+      # cannot be used to probe which ids exist.
+      {:error, :environment_not_found} ->
+        conn |> put_status(:not_found) |> json(%{error: "environment_not_found"})
 
       {:error, _reason} ->
         conn
@@ -109,6 +117,7 @@ defmodule FountainWeb.BuzzAgentController do
       pubkey: i.pubkey,
       agent_id: i.agent_id,
       vault_id: i.vault_id,
+      environment_id: i.environment_id,
       enabled: i.enabled,
       inserted_at: i.inserted_at,
       updated_at: i.updated_at
