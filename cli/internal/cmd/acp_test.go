@@ -189,7 +189,7 @@ func TestCreateConversationAttachesTheVault(t *testing.T) {
 	api := acpTestAPI(t, srv.URL)
 	api.vault = "buzz-philo"
 
-	id, _, err := api.CreateConversation(context.Background(), "agent-1", "")
+	id, _, err := api.CreateConversation(context.Background(), "agent-1", "", false)
 	if err != nil {
 		t.Fatalf("CreateConversation: %v", err)
 	}
@@ -215,7 +215,7 @@ func TestCreateConversationOmitsTheVaultWhenUnset(t *testing.T) {
 
 	api := acpTestAPI(t, srv.URL)
 
-	if _, _, err := api.CreateConversation(context.Background(), "agent-1", ""); err != nil {
+	if _, _, err := api.CreateConversation(context.Background(), "agent-1", "", false); err != nil {
 		t.Fatalf("CreateConversation: %v", err)
 	}
 	if _, present := body["vault_id"]; present {
@@ -245,7 +245,7 @@ func TestCreateConversationAttachesTheEnvironment(t *testing.T) {
 	api := acpTestAPI(t, srv.URL)
 	api.environment = "buzz-env"
 
-	if _, _, err := api.CreateConversation(context.Background(), "agent-1", ""); err != nil {
+	if _, _, err := api.CreateConversation(context.Background(), "agent-1", "", false); err != nil {
 		t.Fatalf("CreateConversation: %v", err)
 	}
 	if body["environment_id"] != "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee" {
@@ -266,7 +266,7 @@ func TestCreateConversationOmitsTheEnvironmentWhenUnset(t *testing.T) {
 
 	api := acpTestAPI(t, srv.URL)
 
-	if _, _, err := api.CreateConversation(context.Background(), "agent-1", ""); err != nil {
+	if _, _, err := api.CreateConversation(context.Background(), "agent-1", "", false); err != nil {
 		t.Fatalf("CreateConversation: %v", err)
 	}
 	if _, present := body["environment_id"]; present {
@@ -288,7 +288,7 @@ func TestCreateConversationSendsTheChannelKeyAndReadsResumed(t *testing.T) {
 
 	api := acpTestAPI(t, srv.URL)
 
-	id, resumed, err := api.CreateConversation(context.Background(), "agent-1", "chan-1")
+	id, resumed, err := api.CreateConversation(context.Background(), "agent-1", "chan-1", false)
 	if err != nil {
 		t.Fatalf("CreateConversation: %v", err)
 	}
@@ -297,6 +297,9 @@ func TestCreateConversationSendsTheChannelKeyAndReadsResumed(t *testing.T) {
 	}
 	if body["channel_id"] != "chan-1" {
 		t.Errorf("channel_id = %v, want chan-1", body["channel_id"])
+	}
+	if _, ok := body["fresh"]; ok {
+		t.Errorf("fresh sent = %v, want absent when not rotated", body["fresh"])
 	}
 }
 
@@ -311,7 +314,7 @@ func TestCreateConversationOmitsTheChannelKeyWhenEmpty(t *testing.T) {
 	defer srv.Close()
 
 	api := acpTestAPI(t, srv.URL)
-	_, resumed, err := api.CreateConversation(context.Background(), "agent-1", "")
+	_, resumed, err := api.CreateConversation(context.Background(), "agent-1", "", false)
 	if err != nil {
 		t.Fatalf("CreateConversation: %v", err)
 	}
@@ -320,6 +323,41 @@ func TestCreateConversationOmitsTheChannelKeyWhenEmpty(t *testing.T) {
 	}
 	if _, present := body["channel_id"]; present {
 		t.Errorf("channel_id was sent without a key: %v", body["channel_id"])
+	}
+}
+
+// A rotated channel (`_meta.freshSession`) rides as `fresh: true` next to the
+// channel key, so the server opens a new conversation instead of resuming.
+func TestCreateConversationSendsFreshWithTheChannelKey(t *testing.T) {
+	var body map[string]any
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"data":{"id":"conv-new","channel_id":"chan-1"},"meta":{"resumed":false}}`))
+	}))
+	defer srv.Close()
+
+	api := acpTestAPI(t, srv.URL)
+
+	id, resumed, err := api.CreateConversation(context.Background(), "agent-1", "chan-1", true)
+	if err != nil {
+		t.Fatalf("CreateConversation: %v", err)
+	}
+	if id != "conv-new" || resumed {
+		t.Errorf("got (%q, %v), want (conv-new, false)", id, resumed)
+	}
+	if body["channel_id"] != "chan-1" || body["fresh"] != true {
+		t.Errorf("body = %v, want channel_id chan-1 and fresh true", body)
+	}
+
+	// fresh without a channel key is meaningless and must not be sent.
+	body = nil
+	if _, _, err := api.CreateConversation(context.Background(), "agent-1", "", true); err != nil {
+		t.Fatalf("CreateConversation: %v", err)
+	}
+	if _, ok := body["fresh"]; ok {
+		t.Errorf("fresh sent = %v without a channel key, want absent", body["fresh"])
 	}
 }
 
@@ -332,7 +370,7 @@ func TestUnknownEnvironmentNameIsReported(t *testing.T) {
 	api := acpTestAPI(t, srv.URL)
 	api.environment = "not-an-env"
 
-	_, _, err := api.CreateConversation(context.Background(), "agent-1", "")
+	_, _, err := api.CreateConversation(context.Background(), "agent-1", "", false)
 	if err == nil || !strings.Contains(err.Error(), "not-an-env") {
 		t.Fatalf("want an error naming the environment, got %v", err)
 	}
@@ -347,7 +385,7 @@ func TestUnknownVaultNameIsReported(t *testing.T) {
 	api := acpTestAPI(t, srv.URL)
 	api.vault = "not-a-vault"
 
-	_, _, err := api.CreateConversation(context.Background(), "agent-1", "")
+	_, _, err := api.CreateConversation(context.Background(), "agent-1", "", false)
 	if err == nil || !strings.Contains(err.Error(), "not-a-vault") {
 		t.Fatalf("want an error naming the vault, got %v", err)
 	}

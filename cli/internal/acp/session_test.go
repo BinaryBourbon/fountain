@@ -17,6 +17,7 @@ type fakeAPI struct {
 	resolved []string
 	created  []string
 	channels []string
+	fresh    []bool
 	convID   string
 	resumed  bool
 
@@ -61,9 +62,10 @@ func (f *fakeAPI) Agent(_ context.Context, target string) (AgentRef, error) {
 	return f.ref, nil
 }
 
-func (f *fakeAPI) CreateConversation(_ context.Context, agentID, channelID string) (string, bool, error) {
+func (f *fakeAPI) CreateConversation(_ context.Context, agentID, channelID string, fresh bool) (string, bool, error) {
 	f.created = append(f.created, agentID)
 	f.channels = append(f.channels, channelID)
+	f.fresh = append(f.fresh, fresh)
 	if f.createErr != nil {
 		return "", false, f.createErr
 	}
@@ -341,6 +343,34 @@ func TestNewSessionForwardsTheChannelKeyAndAcceptsAResumedConversation(t *testin
 	}
 	if _, ok := a.sessions.get("conv-old"); !ok {
 		t.Error("the resumed conversation is not registered as this session")
+	}
+}
+
+// The first session/new after the harness's owner rotated the channel
+// (`!rotate`) carries `_meta.freshSession: true`. That must reach the server as
+// a request to skip the resume — otherwise the channel-bound resume hands the
+// same conversation straight back and rotation is a no-op.
+func TestNewSessionForwardsFreshSessionAfterARotate(t *testing.T) {
+	api := &fakeAPI{ref: acpAgentRef(), convID: "conv-new"}
+	a := sessionAgent(t, api, "researcher")
+
+	if _, rpcErr := request(t, a, "session/new", map[string]any{
+		"_meta": map[string]any{"channelId": "chan-002b49f3", "freshSession": true},
+	}); rpcErr != nil {
+		t.Fatalf("session/new failed: %v", rpcErr)
+	}
+	if len(api.fresh) != 1 || !api.fresh[0] {
+		t.Errorf("fresh forwarded = %v, want [true]", api.fresh)
+	}
+
+	// Absent → false: an ordinary (or restarted) session/new still resumes.
+	if _, rpcErr := request(t, a, "session/new", map[string]any{
+		"_meta": map[string]any{"channelId": "chan-002b49f3"},
+	}); rpcErr != nil {
+		t.Fatalf("session/new failed: %v", rpcErr)
+	}
+	if len(api.fresh) != 2 || api.fresh[1] {
+		t.Errorf("fresh forwarded = %v, want [true false]", api.fresh)
 	}
 }
 

@@ -970,6 +970,15 @@ defmodule Fountain.Conversations do
   resuming, so a new one is opened and becomes the binding. Returns `{:ok, conv, :resumed}` or
   `{:ok, conv, :created}`; without a `channel_id` it always creates.
 
+  `attrs["fresh"]` (`true`) skips the resume this once: the conversation
+  currently bound to the channel is unbound (its `channel_id` cleared — it
+  keeps running, and the sandbox reaper retires it like any other idle one)
+  and a new one is opened as the binding. It is how a chat harness relays its
+  owner's `!rotate` — ACP `session/new` `_meta.freshSession` — through a
+  binding that would otherwise hand the old conversation straight back.
+  Unbinding, rather than relying on "newest wins", keeps the outcome
+  independent of `inserted_at`'s one-second precision.
+
   Two concurrent first calls for one channel can both create; the next call
   resumes whichever is newer. Nothing is audited on the resume path — nothing
   changed.
@@ -986,12 +995,32 @@ defmodule Fountain.Conversations do
          {:ok, env_id} <- resolve_environment_id(attrs["environment_id"], user_id, agent) do
       case find_channel_conversation(user_id, agent.id, vault_id, env_id, channel_id) do
         %Conversation{} = conv ->
-          {:ok, conv, :resumed}
+          if fresh_requested?(attrs) do
+            with {:ok, _} <- unbind_channel(conv),
+                 {:ok, fresh} <- start_conversation(attrs, opts),
+                 do: {:ok, fresh, :created}
+          else
+            {:ok, conv, :resumed}
+          end
 
         nil ->
           with {:ok, conv} <- start_conversation(attrs, opts), do: {:ok, conv, :created}
       end
     end
+  end
+
+  # `true` or `"true"` — the ACP adapter sends a JSON boolean, a hand-built
+  # request may send a string. Anything else is not a request.
+  defp fresh_requested?(%{"fresh" => fresh}), do: fresh in [true, "true"]
+  defp fresh_requested?(_attrs), do: false
+
+  # The rotated-away conversation stops being the channel's binding. Nothing
+  # else about it changes: if it is mid-turn it finishes, and it stays in the
+  # user's list under its own id.
+  defp unbind_channel(%Conversation{} = conv) do
+    conv
+    |> Ecto.Changeset.change(channel_id: nil)
+    |> Repo.update()
   end
 
   def start_or_resume_conversation(attrs, opts) do

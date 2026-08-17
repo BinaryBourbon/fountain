@@ -204,7 +204,7 @@ func agentRef(data map[string]any) acp.AgentRef {
 	}
 }
 
-func (f fountainAPI) CreateConversation(_ context.Context, agentID, channelID string) (string, bool, error) {
+func (f fountainAPI) CreateConversation(_ context.Context, agentID, channelID string, fresh bool) (string, bool, error) {
 	var resp struct {
 		Data map[string]any `json:"data"`
 		Meta map[string]any `json:"meta"`
@@ -217,6 +217,11 @@ func (f fountainAPI) CreateConversation(_ context.Context, agentID, channelID st
 	// client sent none — an empty key would be a binding to "".
 	if channelID != "" {
 		body["channel_id"] = channelID
+		// The harness's owner rotated the channel: open a new conversation
+		// even though one is bound. Only meaningful with a channel key.
+		if fresh {
+			body["fresh"] = true
+		}
 	}
 
 	// A vault carries the secrets that belong to this entry rather than to the
