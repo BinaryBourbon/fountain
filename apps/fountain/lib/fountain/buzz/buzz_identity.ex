@@ -17,6 +17,14 @@ defmodule Fountain.Buzz.BuzzIdentity do
   config can run under N environments — one per identity. Optional; nil means
   the agent's environment, and deleting the environment nilifies rather than
   cascades, because losing an override is not losing the identity.
+
+  It also carries the harness's **inbound author gate** (#790): `respond_to` is
+  one of `buzz-acp`'s `--respond-to` modes and `respond_to_allowlist` the
+  pubkeys admitted in `allowlist` mode. These become `BUZZ_ACP_RESPOND_TO` /
+  `BUZZ_ACP_RESPOND_TO_ALLOWLIST` in the harness env — the same translation the
+  desktop performs when it spawns `buzz-acp` itself. The default is `owner-only`,
+  which is also the harness's own default, so an identity that never set a
+  policy behaves as before.
   """
   use Ecto.Schema
   import Ecto.Changeset
@@ -31,12 +39,19 @@ defmodule Fountain.Buzz.BuzzIdentity do
 
   @type t :: %__MODULE__{}
 
+  @respond_to_modes ~w(owner-only allowlist anyone nobody)
+
+  @doc "The `buzz-acp` `--respond-to` modes an identity may carry."
+  def respond_to_modes, do: @respond_to_modes
+
   schema "buzz_identities" do
     field :name, :string
     field :relay_url, :string
     field :pubkey, :string
     field :display_name, :string
     field :enabled, :boolean, default: true
+    field :respond_to, :string, default: "owner-only"
+    field :respond_to_allowlist, {:array, :string}, default: []
 
     belongs_to :user, User
     belongs_to :agent, Agent
@@ -52,6 +67,8 @@ defmodule Fountain.Buzz.BuzzIdentity do
     :pubkey,
     :display_name,
     :enabled,
+    :respond_to,
+    :respond_to_allowlist,
     :user_id,
     :agent_id,
     :vault_id,
@@ -65,6 +82,8 @@ defmodule Fountain.Buzz.BuzzIdentity do
     |> validate_length(:name, min: 1, max: 200)
     |> validate_relay_url()
     |> validate_pubkey()
+    |> validate_inclusion(:respond_to, @respond_to_modes)
+    |> validate_respond_to_allowlist()
     |> unique_constraint(:name, name: :buzz_identities_user_id_name_index)
     |> unique_constraint(:pubkey, name: :buzz_identities_user_id_pubkey_index)
     |> foreign_key_constraint(:agent_id)
@@ -81,6 +100,30 @@ defmodule Fountain.Buzz.BuzzIdentity do
         []
       else
         [relay_url: "must be a ws:// or wss:// URL"]
+      end
+    end)
+  end
+
+  # The allowlist is only meaningful in `allowlist` mode, where buzz-acp refuses
+  # to start without at least one entry — catch that here rather than in a
+  # crash loop. Every entry is a 64-hex pubkey, as buzz-acp validates them.
+  defp validate_respond_to_allowlist(changeset) do
+    mode = get_field(changeset, :respond_to)
+    list = get_field(changeset, :respond_to_allowlist) || []
+
+    changeset
+    |> validate_change(:respond_to_allowlist, fn :respond_to_allowlist, entries ->
+      if Enum.all?(entries, &(&1 =~ ~r/\A[0-9a-f]{64}\z/)) do
+        []
+      else
+        [respond_to_allowlist: "every entry must be a 64 lowercase hex pubkey"]
+      end
+    end)
+    |> then(fn cs ->
+      if mode == "allowlist" and list == [] do
+        add_error(cs, :respond_to_allowlist, "must name at least one pubkey in allowlist mode")
+      else
+        cs
       end
     end)
   end

@@ -134,6 +134,55 @@ defmodule FountainWeb.BuzzAgentControllerTest do
     assert Fountain.Buzz.list_identities(agent.user_id) == []
   end
 
+  # #790: the provider passes the desktop's author gate through; it is stored,
+  # echoed, and an omission on re-provision means owner-only.
+  test "POST stores the author gate and echoes it", %{conn: conn, raw_key: raw_key, agent: agent} do
+    pk = String.duplicate("b", 64)
+
+    data =
+      conn
+      |> authed_with_key(raw_key)
+      |> put_req_header("content-type", "application/json")
+      |> post(
+        "/api/buzz/agents",
+        Map.merge(params(agent), %{
+          "respond_to" => "allowlist",
+          "respond_to_allowlist" => [pk]
+        })
+      )
+      |> json_response(201)
+      |> Map.fetch!("data")
+
+    assert data["respond_to"] == "allowlist"
+    assert data["respond_to_allowlist"] == [pk]
+
+    again =
+      build_conn()
+      |> authed_with_key(raw_key)
+      |> put_req_header("content-type", "application/json")
+      |> post("/api/buzz/agents", params(agent))
+      |> json_response(201)
+      |> Map.fetch!("data")
+
+    assert again["id"] == data["id"]
+    assert again["respond_to"] == "owner-only"
+    assert again["respond_to_allowlist"] == []
+  end
+
+  test "POST with allowlist mode and no pubkeys is a 422 naming the field", %{
+    conn: conn,
+    raw_key: raw_key,
+    agent: agent
+  } do
+    conn =
+      conn
+      |> authed_with_key(raw_key)
+      |> put_req_header("content-type", "application/json")
+      |> post("/api/buzz/agents", Map.put(params(agent), "respond_to", "allowlist"))
+
+    assert %{"errors" => %{"respond_to_allowlist" => [_]}} = json_response(conn, 422)
+  end
+
   test "missing required fields is a 422", %{conn: conn, raw_key: raw_key, agent: agent} do
     bad = Map.delete(params(agent), "private_key_nsec")
 

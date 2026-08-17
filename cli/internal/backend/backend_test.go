@@ -121,6 +121,53 @@ func TestDeployPassesTheEnvironmentSelector(t *testing.T) {
 	}
 }
 
+// #790: the desktop's respond_to / respond_to_allowlist ride through to
+// Fountain, which sets them on the hosted harness. Dropping them left every
+// hosted agent owner-only whatever the desktop's record said.
+func TestDeployPassesTheAuthorGate(t *testing.T) {
+	f := &fakeFountain{}
+	req := deployReq(`{"agent":"my-agent"}`)
+	req.Agent.RespondTo = "allowlist"
+	req.Agent.RespondToAllowlist = []string{" " + testPub + " ", ""}
+	resp := Deploy(req, f)
+	if !resp.OK {
+		t.Fatalf("deploy failed: %+v", resp)
+	}
+	if f.gotBody.RespondTo != "allowlist" {
+		t.Fatalf("respond_to = %q, want allowlist", f.gotBody.RespondTo)
+	}
+	if len(f.gotBody.RespondToAllowlist) != 1 || f.gotBody.RespondToAllowlist[0] != testPub {
+		t.Fatalf("respond_to_allowlist = %v, want the trimmed pubkey only", f.gotBody.RespondToAllowlist)
+	}
+
+	// An older desktop that sends neither must not invent a mode: Fountain
+	// applies its own owner-only default, so the fields are omitted.
+	f = &fakeFountain{}
+	resp = Deploy(deployReq(`{"agent":"my-agent"}`), f)
+	if !resp.OK {
+		t.Fatalf("deploy failed: %+v", resp)
+	}
+	b, _ := json.Marshal(f.gotBody)
+	if strings.Contains(string(b), "respond_to") {
+		t.Fatalf("respond_to fields must be omitted when the desktop sent none: %s", b)
+	}
+}
+
+// The wire shape the desktop actually sends: both fields at the top level of
+// "agent", next to the legacy bookkeeping fields, not inside launch.
+func TestRequestDecodesTheAuthorGate(t *testing.T) {
+	raw := `{"op":"deploy","agent":{"name":"philo","relay_url":"wss://r","private_key_nsec":"x",` +
+		`"auth_tag":"t","respond_to":"anyone","respond_to_allowlist":["` + testPub + `"],` +
+		`"launch":{"owner_pubkey":"o"}},"provider_config":{"agent":"a"}}`
+	var req Request
+	if err := json.Unmarshal([]byte(raw), &req); err != nil {
+		t.Fatal(err)
+	}
+	if req.Agent.RespondTo != "anyone" || len(req.Agent.RespondToAllowlist) != 1 {
+		t.Fatalf("author gate not decoded: %+v", req.Agent)
+	}
+}
+
 func TestDeployRefusesAnUnknownEnvironment(t *testing.T) {
 	f := &fakeFountain{resolveTo: "agent-uuid", resolveEnvErr: errNoEnv}
 	resp := Deploy(deployReq(`{"agent":"my-agent","environment":"nope"}`), f)

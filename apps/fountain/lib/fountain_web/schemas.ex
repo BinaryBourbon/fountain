@@ -431,6 +431,16 @@ defmodule FountainWeb.Schemas do
             "Environment this identity's conversations are provisioned from instead of " <>
               "the agent's own; null means the agent's."
         },
+        respond_to: %Schema{
+          type: :string,
+          enum: ~w(owner-only allowlist anyone nobody),
+          description: "The harness's inbound author gate (buzz-acp --respond-to)."
+        },
+        respond_to_allowlist: %Schema{
+          type: :array,
+          items: %Schema{type: :string},
+          description: "64-hex pubkeys admitted in allowlist mode."
+        },
         enabled: %Schema{type: :boolean},
         inserted_at: %Schema{type: :string, format: :"date-time"},
         updated_at: %Schema{type: :string, format: :"date-time"}
@@ -474,6 +484,23 @@ defmodule FountainWeb.Schemas do
               "owned by the caller (404 otherwise) and, when the agent sets " <>
               "allowed_environment_ids, on that list (checked at conversation start). " <>
               "Omitted on a re-provision clears a previously set one."
+        },
+        respond_to: %Schema{
+          type: :string,
+          enum: ~w(owner-only allowlist anyone nobody),
+          nullable: true,
+          description:
+            "Who may @-mention the agent and fire a turn — buzz-acp's --respond-to mode, " <>
+              "set as BUZZ_ACP_RESPOND_TO on the hosted harness. Omitted means owner-only. " <>
+              "A re-provision that changes it restarts a running harness."
+        },
+        respond_to_allowlist: %Schema{
+          type: :array,
+          items: %Schema{type: :string},
+          nullable: true,
+          description:
+            "64-hex pubkeys admitted in allowlist mode (BUZZ_ACP_RESPOND_TO_ALLOWLIST). " <>
+              "Required non-empty when respond_to is allowlist; ignored otherwise."
         }
       },
       required: [:name, :relay_url, :agent_id, :pubkey, :private_key_nsec, :auth_tag]
