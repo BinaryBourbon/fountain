@@ -21,8 +21,9 @@ upgrade, is in
 - **Per-launch environment override (#783).** A conversation may be provisioned
   from an environment other than its agent's: `environment_id` on
   `POST /api/conversations`, `--environment` on `fountain acp` and
-  `fountain run`, and `environment_id` on the hosted-Buzz provision request
-  (the identity's harness passes it through). One agent config can now run
+  `fountain run`, `environment_id` on the hosted-Buzz provision request
+  (the identity's harness passes it through), and an optional `environment`
+  selector in the `buzz-backend-fountain` provider's settings. One agent config can now run
   under N environments — a "fountain engineer" and a "buzz engineer" no longer
   need to be two agents. The override is pinned to the conversation across
   wakes and is part of the `channel_id` resume key. Agents get

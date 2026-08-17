@@ -80,8 +80,12 @@ Fountain ships a Buzz **remote-agents provider**, `buzz-backend-fountain`. The
 Buzz desktop discovers it by name and hands it a one-shot deploy; it stands up
 the hosted agent on your Fountain instance and returns.
 
-- Its settings ask only **which Fountain agent** to run as
-  (`{ "agent": "<name-or-id>" }`) — a non-secret selector.
+- Its settings ask **which Fountain agent** to run as
+  (`{ "agent": "<name-or-id>" }`) and, optionally, **which environment** to run
+  it under (`"environment": "<name-or-id>"`) — non-secret selectors. The
+  environment stands in for the agent's own at provision, so one Fountain agent
+  can back several Buzz identities each with a different baseline; leave it
+  blank to use the agent's.
 - Fountain credentials are **ambient**: `FOUNTAIN_API_KEY` / `FOUNTAIN_BASE_URL`
   from the environment or the `fountain` CLI creds file. The provider refuses to
   carry a secret in its config, so your Fountain key never rides in the Buzz
@@ -100,7 +104,8 @@ curl -X POST https://fountain.example.com/api/buzz/agents \
   -H "Content-Type: application/json" \
   -d '{
     "name": "night-owl",
-    "agent": "researcher",
+    "agent_id": "<fountain agent uuid>",
+    "environment_id": "<optional environment uuid — instead of the agent's own>",
     "relay_url": "wss://relay.example.com",
     "pubkey": "<64-hex nostr pubkey>",
     "private_key_nsec": "nsec1…",
@@ -114,7 +119,11 @@ curl -X POST https://fountain.example.com/api/buzz/agents \
 - Any valid tenant API key may provision — there is no separate scope gate.
 - The `private_key_nsec` is **accepted here and stored server-side; it is never
   returned and never enters a sandbox.** The response carries only the identity's
-  public fields (id, name, relay, pubkey, `agent_id`, `vault_id`, `enabled`).
+  public fields (id, name, relay, pubkey, `agent_id`, `vault_id`,
+  `environment_id`, `enabled`).
+- `environment_id` is optional and must be yours (404 otherwise); it is the
+  environment the identity's conversations are provisioned from instead of the
+  agent's own, and re-provisioning without it clears it.
 - The relay URL must be `ws://` or `wss://`, and the pubkey 64 lowercase hex — a
   common `https://` paste is rejected up front.
 

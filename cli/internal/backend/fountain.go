@@ -38,6 +38,26 @@ func (a *apiFountain) ResolveAgent(sel string) (string, error) {
 	return "", fmt.Errorf("no agent named %q", sel)
 }
 
+func (a *apiFountain) ResolveEnvironment(sel string) (string, error) {
+	if uuidRe.MatchString(sel) {
+		return sel, nil
+	}
+
+	var resp struct {
+		Data []map[string]any `json:"data"`
+	}
+	if err := a.c.Get("/environments", &resp); err != nil {
+		return "", err
+	}
+
+	for _, env := range resp.Data {
+		if fmt.Sprint(env["name"]) == sel {
+			return fmt.Sprint(env["id"]), nil
+		}
+	}
+	return "", fmt.Errorf("no environment named %q", sel)
+}
+
 func (a *apiFountain) Provision(body ProvisionBody) (string, error) {
 	var out struct {
 		Data struct {

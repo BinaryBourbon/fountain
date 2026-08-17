@@ -79,6 +79,8 @@ type DeployResponse struct {
 type Fountain interface {
 	// ResolveAgent maps a user-supplied agent name or id to its id.
 	ResolveAgent(nameOrID string) (string, error)
+	// ResolveEnvironment maps a user-supplied environment name or id to its id.
+	ResolveEnvironment(nameOrID string) (string, error)
 	// Provision creates or converges a hosted Buzz agent, returning its id.
 	Provision(body ProvisionBody) (string, error)
 }
@@ -92,12 +94,16 @@ type ProvisionBody struct {
 	PrivateKeyNsec string `json:"private_key_nsec"`
 	AuthTag        string `json:"auth_tag"`
 	DisplayName    string `json:"display_name,omitempty"`
+	// Optional per-identity environment override (#783): the environment this
+	// identity's conversations are provisioned from instead of the agent's own.
+	EnvironmentID string `json:"environment_id,omitempty"`
 }
 
 // Info returns the provider descriptor. config_schema is the desktop's settings
-// form: only a non-secret selector (which Fountain agent to run as). Credentials
-// are deliberately NOT here — the desktop rejects a provider_config key named
-// like a secret, so Fountain auth is ambient (env / the fountain CLI creds).
+// form: non-secret selectors only — which Fountain agent to run as, and
+// optionally which environment to run it under. Credentials are deliberately
+// NOT here — the desktop rejects a provider_config key named like a secret, so
+// Fountain auth is ambient (env / the fountain CLI creds).
 func Info() InfoResponse {
 	schema := json.RawMessage(`{
   "type": "object",
@@ -106,6 +112,11 @@ func Info() InfoResponse {
       "type": "string",
       "title": "Fountain agent",
       "description": "Name or id of the Fountain agent this Buzz identity runs as."
+    },
+    "environment": {
+      "type": "string",
+      "title": "Fountain environment (optional)",
+      "description": "Name or id of a Fountain environment to provision this identity's conversations from, instead of the agent's own. Leave blank to use the agent's."
     }
   },
   "required": ["agent"]
@@ -140,14 +151,25 @@ func Deploy(req Request, f Fountain) DeployResponse {
 		return fail(fmt.Sprintf("could not derive the agent pubkey from its key: %v", err))
 	}
 
-	agentSel, err := providerAgent(req.ProviderConfig)
+	cfg, err := providerConfig(req.ProviderConfig)
 	if err != nil {
 		return fail(err.Error())
 	}
 
-	agentID, err := f.ResolveAgent(agentSel)
+	agentID, err := f.ResolveAgent(cfg.Agent)
 	if err != nil {
-		return fail(fmt.Sprintf("no such Fountain agent %q: %v", agentSel, err))
+		return fail(fmt.Sprintf("no such Fountain agent %q: %v", cfg.Agent, err))
+	}
+
+	// The environment selector is optional; blank means the agent's own. A
+	// selector that names nothing is a refusal, not a silent fallback — the
+	// user asked for a specific baseline and would otherwise get another.
+	envID := ""
+	if cfg.Environment != "" {
+		envID, err = f.ResolveEnvironment(cfg.Environment)
+		if err != nil {
+			return fail(fmt.Sprintf("no such Fountain environment %q: %v", cfg.Environment, err))
+		}
 	}
 
 	id, err := f.Provision(ProvisionBody{
@@ -158,6 +180,7 @@ func Deploy(req Request, f Fountain) DeployResponse {
 		PrivateKeyNsec: req.Agent.PrivateKeyNsec,
 		AuthTag:        req.Agent.AuthTag,
 		DisplayName:    req.Agent.Name,
+		EnvironmentID:  envID,
 	})
 	if err != nil {
 		return fail(fmt.Sprintf("provisioning failed: %v", err))
@@ -189,17 +212,24 @@ func derivePubkey(key string) (string, error) {
 	return nostr.GetPublicKey(sk)
 }
 
-func providerAgent(raw json.RawMessage) (string, error) {
-	var cfg struct {
-		Agent string `json:"agent"`
-	}
+// providerConfigFields is the desktop's provider_config as this provider reads
+// it — the two selectors from Info's config_schema, trimmed.
+type providerConfigFields struct {
+	Agent       string `json:"agent"`
+	Environment string `json:"environment"`
+}
+
+func providerConfig(raw json.RawMessage) (providerConfigFields, error) {
+	var cfg providerConfigFields
 	if len(raw) > 0 {
 		_ = json.Unmarshal(raw, &cfg)
 	}
-	if strings.TrimSpace(cfg.Agent) == "" {
-		return "", fmt.Errorf("no Fountain agent configured — set the `agent` field")
+	cfg.Agent = strings.TrimSpace(cfg.Agent)
+	cfg.Environment = strings.TrimSpace(cfg.Environment)
+	if cfg.Agent == "" {
+		return cfg, fmt.Errorf("no Fountain agent configured — set the `agent` field")
 	}
-	return cfg.Agent, nil
+	return cfg, nil
 }
 
 func fail(msg string) DeployResponse { return DeployResponse{OK: false, Error: msg} }
