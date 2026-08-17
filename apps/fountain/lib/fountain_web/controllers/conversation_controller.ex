@@ -225,11 +225,16 @@ defmodule FountainWeb.ConversationController do
     description:
       "Creates a sandbox + conversation pair, starts the runtime in a fresh sprite, " <>
         "and (if `prompt` is supplied) sends it as turn 1. " <>
+        "With `channel_id`, resumes the latest live conversation already bound to that " <>
+        "channel for the same agent and vault (200, `meta.resumed: true`) instead of " <>
+        "opening a new one (201). " <>
         "Pass `X-Fountain-Parent-Conversation-Id` header to record which conversation spawned this one. " <>
         "Legacy `X-AoD-Parent-Conversation-Id` is still accepted for sprites provisioned before the rename.",
     request_body: {"Conversation attrs", "application/json", Schemas.ConversationCreateRequest},
     responses: [
       created: {"Conversation", "application/json", Schemas.ConversationResponse},
+      ok:
+        {"Conversation (resumed by channel_id)", "application/json", Schemas.ConversationResponse},
       not_found: {"Agent not found", "application/json", Schemas.Error},
       unprocessable_entity: {"Validation error", "application/json", Schemas.ChangesetError},
       payment_required:
@@ -267,10 +272,14 @@ defmodule FountainWeb.ConversationController do
       |> Map.put("user_id", user.id)
 
     with :ok <- gate_subscription(user),
-         {:ok, conv} <- Conversations.start_conversation(params, Audited.attribution(conn)) do
+         {:ok, conv, outcome} <-
+           Conversations.start_or_resume_conversation(params, Audited.attribution(conn)) do
+      # 201 when a conversation was opened; 200 when `channel_id` resumed an
+      # existing one (#774). Same body either way, so a client that ignores
+      # the status still gets the id it needs.
       conn
-      |> put_status(:created)
-      |> render(:show, conversation: conv)
+      |> put_status(if(outcome == :created, do: :created, else: :ok))
+      |> render(:show, conversation: conv, resumed: outcome == :resumed)
     else
       {:error, :subscription_required} ->
         conn

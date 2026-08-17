@@ -84,10 +84,12 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH="${TARGETARCH:-amd64}" \
 # arch-matched binary and verify its checksum — no compile in the image build.
 # The pin lives in buzz-acp.version and is passed as BUZZ_ACP_VERSION by the
 # build workflow; the default below keeps a local `docker build` working.
+# (buzz-acp.source may point the publish workflow at a fork — the version is
+# then only the release name; see that workflow.)
 
 FROM debian:trixie-slim AS buzzacp
 ARG TARGETARCH
-ARG BUZZ_ACP_VERSION=0.5.14
+ARG BUZZ_ACP_VERSION=0.5.14-fountain.1
 # buzz-acp: the hosted harness (gate 2). buzz: the CLI the server-side MCP tools
 # shell out to for signed publishes (gate 3, #737). Both from our own release.
 RUN apt-get update -y \

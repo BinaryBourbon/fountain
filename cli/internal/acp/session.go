@@ -14,7 +14,10 @@ type API interface {
 	// Agent resolves a name or id to the agent it names.
 	Agent(ctx context.Context, target string) (AgentRef, error)
 	// CreateConversation starts a conversation for an agent and returns its id.
-	CreateConversation(ctx context.Context, agentID string) (string, error)
+	// With a non-empty channelID the server resumes the latest live conversation
+	// already bound to that channel for the same agent and vault instead of
+	// opening a new one (#774); resumed reports which happened.
+	CreateConversation(ctx context.Context, agentID, channelID string) (id string, resumed bool, err error)
 	// StreamHead returns the conversation's current last event id, so a follow
 	// can skip the history. Called BEFORE a prompt is sent — see prompt.go.
 	StreamHead(ctx context.Context, convID string) (string, error)
@@ -109,6 +112,14 @@ func (s *sessions) get(id string) (Session, bool) {
 type newSessionParams struct {
 	Cwd        string            `json:"cwd"`
 	MCPServers []json.RawMessage `json:"mcpServers"`
+	// Meta is the out-of-band bag ACP lets a client attach. `channelId` is
+	// what a chat harness (buzz-acp) sends to name the channel this session
+	// serves — the one thing the server can key a resume on, since the same
+	// harness forgets its sessions on every restart. Anything else in _meta
+	// is ignored here.
+	Meta struct {
+		ChannelID string `json:"channelId"`
+	} `json:"_meta"`
 }
 
 func (a *Agent) newSession(ctx context.Context, raw json.RawMessage) (any, error) {
@@ -158,7 +169,13 @@ func (a *Agent) newSession(ctx context.Context, raw json.RawMessage) (any, error
 			ref.Name, ref.Runtime)
 	}
 
-	convID, err := a.api.CreateConversation(ctx, ref.ID)
+	// A channel-bound session lands on the conversation already bound to that
+	// channel when there is one. From the client's side this is still a new
+	// session with a fresh id (it did not know the old one — that is the
+	// point); from Fountain's side it is the same conversation, sandbox and
+	// runtime session, which is what makes a chat harness's restart invisible
+	// to the people in the channel (#774).
+	convID, resumed, err := a.api.CreateConversation(ctx, ref.ID, params.Meta.ChannelID)
 	if err != nil {
 		return nil, Errorf(CodeInternalError, "could not start a conversation for %q: %s", ref.Name, err)
 	}
@@ -166,7 +183,8 @@ func (a *Agent) newSession(ctx context.Context, raw json.RawMessage) (any, error
 	sess := Session{ID: convID, Agent: ref}
 	a.sessions.put(sess)
 	a.log.Info("session opened",
-		"sessionId", sess.ID, "agent", ref.Name, "runtime", ref.Runtime, "model", ref.Model)
+		"sessionId", sess.ID, "agent", ref.Name, "runtime", ref.Runtime, "model", ref.Model,
+		"channelId", params.Meta.ChannelID, "resumed", resumed)
 
 	return map[string]any{
 		"sessionId": sess.ID,

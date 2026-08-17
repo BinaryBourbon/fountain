@@ -957,6 +957,65 @@ defmodule Fountain.Conversations do
   alias Fountain.Conversations.ConversationServer
 
   @doc """
+  Like `start_conversation/2`, but a conversation already bound to
+  `attrs["channel_id"]` is resumed instead of a new one being opened.
+
+  The channel key is opaque and client-supplied — a Buzz channel id from ACP
+  `session/new` `_meta.channelId` (#774). A client that forgets its sessions
+  (a restarted `buzz-acp`) then lands back on the same conversation, and so
+  the same sandbox and workspace, rather than opening a fresh one per restart.
+
+  Resumes the **latest live** conversation for the same user + agent + vault
+  + channel — `terminated` and `failed` ones are past resuming, so a new one
+  is opened and becomes the binding. Returns `{:ok, conv, :resumed}` or
+  `{:ok, conv, :created}`; without a `channel_id` it always creates.
+
+  Two concurrent first calls for one channel can both create; the next call
+  resumes whichever is newer. Nothing is audited on the resume path — nothing
+  changed.
+  """
+  def start_or_resume_conversation(attrs, opts \\ [])
+
+  def start_or_resume_conversation(
+        %{"channel_id" => channel_id, "agent_id" => agent_id, "user_id" => user_id} = attrs,
+        opts
+      )
+      when is_binary(channel_id) and channel_id != "" do
+    with %Agents.Agent{} = agent <- Agents.get_agent(agent_id, user_id) || {:error, :not_found},
+         {:ok, vault_id} <- resolve_vault_id(attrs["vault_id"], user_id, agent) do
+      case find_channel_conversation(user_id, agent.id, vault_id, channel_id) do
+        %Conversation{} = conv ->
+          {:ok, conv, :resumed}
+
+        nil ->
+          with {:ok, conv} <- start_conversation(attrs, opts), do: {:ok, conv, :created}
+      end
+    end
+  end
+
+  def start_or_resume_conversation(attrs, opts) do
+    with {:ok, conv} <- start_conversation(attrs, opts), do: {:ok, conv, :created}
+  end
+
+  # The newest conversation still worth resuming for this binding. `vault_id`
+  # is part of the key: two entries on one agent with different vaults are
+  # different identities (#727) and must not share a conversation.
+  defp find_channel_conversation(user_id, agent_id, vault_id, channel_id) do
+    from(c in Conversation,
+      where:
+        c.user_id == ^user_id and c.agent_id == ^agent_id and c.channel_id == ^channel_id and
+          c.status not in ["terminated", "failed"],
+      order_by: [desc: c.inserted_at],
+      limit: 1
+    )
+    |> where_vault(vault_id)
+    |> Repo.one()
+  end
+
+  defp where_vault(query, nil), do: from(c in query, where: is_nil(c.vault_id))
+  defp where_vault(query, vault_id), do: from(c in query, where: c.vault_id == ^vault_id)
+
+  @doc """
   Create a new sandbox + conversation pair, start a ConversationServer
   to drive it, optionally seed with the first prompt. Returns the
   persisted Conversation (preloaded).
@@ -1001,7 +1060,8 @@ defmodule Fountain.Conversations do
              runtime: agent.runtime,
              status: "pending",
              source: attrs["source"] || "api",
-             parent_conversation_id: parent_id
+             parent_conversation_id: parent_id,
+             channel_id: attrs["channel_id"]
            }) do
       # Recorded here rather than in either branch below: both of them return
       # {:ok, conv}. The row exists and the sandbox reservation is spent even

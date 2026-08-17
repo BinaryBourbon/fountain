@@ -73,6 +73,12 @@ defmodule FountainWeb.Schemas do
         runtime_session_id: %Schema{type: :string, nullable: true},
         source: %Schema{type: :string, enum: ~w(ui api agent)},
         parent_conversation_id: %Schema{type: :string, format: :uuid, nullable: true},
+        channel_id: %Schema{
+          type: :string,
+          nullable: true,
+          description:
+            "The external channel key this conversation is bound to, if it was created with one."
+        },
         turn_count: %Schema{type: :integer},
         last_active_at: %Schema{
           type: :string,
@@ -173,6 +179,15 @@ defmodule FountainWeb.Schemas do
         sprite_name: %Schema{
           type: :string,
           description: "Override the auto-generated sprite name."
+        },
+        channel_id: %Schema{
+          type: :string,
+          maxLength: 255,
+          nullable: true,
+          description:
+            "Opaque key for the external channel this conversation is bound to (for example a " <>
+              "Buzz channel id). When set, the latest live conversation for the same agent, vault " <>
+              "and channel is resumed (200) instead of a new one being opened (201)."
         }
       },
       required: [:agent_id]

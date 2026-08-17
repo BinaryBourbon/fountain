@@ -3,6 +3,10 @@ defmodule FountainWeb.ConversationJSON do
   alias Fountain.Conversations.{Conversation, LogEvent, Sandbox, Turn}
 
   def index(%{conversations: convs}), do: %{data: Enum.map(convs, &data/1)}
+
+  def show(%{conversation: conv, resumed: resumed?}),
+    do: %{data: data(conv), meta: %{resumed: resumed?}}
+
   def show(%{conversation: conv}), do: %{data: data(conv)}
   def turns(%{turns: turns}), do: %{data: Enum.map(turns, &turn_data/1)}
 
@@ -39,6 +43,7 @@ defmodule FountainWeb.ConversationJSON do
       runtime_session_id: c.runtime_session_id,
       source: c.source,
       parent_conversation_id: c.parent_conversation_id,
+      channel_id: c.channel_id,
       turn_count: c.turn_count,
       last_active_at: c.last_active_at,
       last_read_at: c.last_read_at,

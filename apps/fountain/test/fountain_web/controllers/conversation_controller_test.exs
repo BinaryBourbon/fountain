@@ -896,6 +896,107 @@ defmodule FountainWeb.ConversationControllerTest do
     end
   end
 
+  describe "POST /api/conversations with channel_id (#774)" do
+    # A client that forgets its sessions — a restarted buzz-acp — must land back
+    # on the same conversation, and so the same sandbox, rather than opening a
+    # fresh one per restart. The key is opaque; Fountain only matches it.
+    setup %{user: user} do
+      stub(Horde.DynamicSupervisor, :start_child, fn _s, _spec -> {:ok, spawn(fn -> :ok end)} end)
+      %{agent: insert_agent(user_id: user.id)}
+    end
+
+    defp create(conn, raw_key, body) do
+      conn |> authed_with_key(raw_key) |> post_json("/api/conversations", body)
+    end
+
+    test "first call creates (201), second resumes the same conversation (200, meta.resumed)",
+         %{conn: conn, raw_key: raw_key, agent: agent} do
+      body = %{"agent_id" => agent.id, "channel_id" => "chan-abc"}
+
+      first = create(conn, raw_key, body) |> json_response(201)
+      assert first["data"]["channel_id"] == "chan-abc"
+      assert first["meta"]["resumed"] == false
+
+      second = create(conn, raw_key, body) |> json_response(200)
+      assert second["data"]["id"] == first["data"]["id"]
+      assert second["meta"]["resumed"] == true
+
+      # Only one conversation exists for it.
+      assert [_] = Fountain.Conversations.list_conversations(agent.user_id)
+    end
+
+    test "different channels, and different vaults on one channel, are different conversations",
+         %{conn: conn, raw_key: raw_key, agent: agent, user: user} do
+      vault = insert_vault(user_id: user.id)
+
+      a =
+        create(conn, raw_key, %{"agent_id" => agent.id, "channel_id" => "chan-a"})
+        |> json_response(201)
+
+      b =
+        create(conn, raw_key, %{"agent_id" => agent.id, "channel_id" => "chan-b"})
+        |> json_response(201)
+
+      a_vault =
+        create(conn, raw_key, %{
+          "agent_id" => agent.id,
+          "channel_id" => "chan-a",
+          "vault_id" => vault.id
+        })
+        |> json_response(201)
+
+      ids = [a, b, a_vault] |> Enum.map(& &1["data"]["id"])
+      assert length(Enum.uniq(ids)) == 3
+
+      # And each binding resumes its own.
+      assert create(conn, raw_key, %{"agent_id" => agent.id, "channel_id" => "chan-a"})
+             |> json_response(200)
+             |> get_in(["data", "id"]) == a["data"]["id"]
+    end
+
+    test "a terminated conversation is not resumed — a new one takes over the binding",
+         %{conn: conn, raw_key: raw_key, agent: agent} do
+      body = %{"agent_id" => agent.id, "channel_id" => "chan-t"}
+      first = create(conn, raw_key, body) |> json_response(201)
+
+      conv = Fountain.Conversations._unsafe_get_conversation!(first["data"]["id"])
+      {:ok, _} = Fountain.Conversations.update_conversation(conv, %{status: "terminated"})
+
+      second = create(conn, raw_key, body) |> json_response(201)
+      refute second["data"]["id"] == first["data"]["id"]
+
+      # From now on the new one is what resumes.
+      assert create(conn, raw_key, body) |> json_response(200) |> get_in(["data", "id"]) ==
+               second["data"]["id"]
+    end
+
+    test "another user's binding is invisible", %{conn: conn, agent: agent} do
+      other = insert_verified_user()
+      {_k, other_key} = insert_api_key(other)
+      other_agent = insert_agent(user_id: other.id)
+
+      mine = create(conn, other_key, %{"agent_id" => other_agent.id, "channel_id" => "shared"})
+      assert json_response(mine, 201)
+
+      # Same channel key, different tenant and agent: a fresh conversation.
+      {_k, my_key} = insert_api_key(Fountain.Repo.get!(Fountain.Accounts.User, agent.user_id))
+
+      assert create(conn, my_key, %{"agent_id" => agent.id, "channel_id" => "shared"})
+             |> json_response(201)
+    end
+
+    test "without channel_id nothing changes: every call creates", %{
+      conn: conn,
+      raw_key: raw_key,
+      agent: agent
+    } do
+      a = create(conn, raw_key, %{"agent_id" => agent.id}) |> json_response(201)
+      b = create(conn, raw_key, %{"agent_id" => agent.id}) |> json_response(201)
+      refute a["data"]["id"] == b["data"]["id"]
+      assert a["data"]["channel_id"] == nil
+    end
+  end
+
   describe "POST /api/conversations with images" do
     test "returns 201 with conversation when images array is provided (decode_images non-empty branch)",
          %{conn: conn, user: user, raw_key: raw_key} do

@@ -8,12 +8,17 @@ name: Publish buzz-acp
 #
 # The pin lives in buzz-acp.version (e.g. `0.5.14`); the upstream tag is
 # `desktop-v<version>` and the release we publish is `buzz-acp-v<version>`.
+#
+# buzz-acp.source (optional, `owner/repo@ref`) overrides WHERE the source comes
+# from — a fork carrying a change upstream has not merged yet (block/buzz#6088,
+# #774). When it is present the version is only the release name; delete the
+# file and set the version back to an upstream tag once the change ships.
 
 on:
   workflow_dispatch:
   push:
     branches: [main]
-    paths: ["buzz-acp.version"]
+    paths: ["buzz-acp.version", "buzz-acp.source"]
 
 permissions:
   contents: write
@@ -36,13 +41,23 @@ jobs:
 
       - name: Read the pin
         id: pin
-        run: echo "version=$(tr -d '[:space:]' < buzz-acp.version)" >> "$GITHUB_OUTPUT"
+        run: |
+          version="$(tr -d '[:space:]' < buzz-acp.version)"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          if [ -s buzz-acp.source ]; then
+            source="$(tr -d '[:space:]' < buzz-acp.source)"
+            echo "repository=${source%@*}" >> "$GITHUB_OUTPUT"
+            echo "ref=${source##*@}" >> "$GITHUB_OUTPUT"
+          else
+            echo "repository=block/buzz" >> "$GITHUB_OUTPUT"
+            echo "ref=desktop-v${version}" >> "$GITHUB_OUTPUT"
+          fi
 
-      - name: Checkout block/buzz at the pinned tag
+      - name: Checkout the buzz source at the pin
         uses: actions/checkout@v4
         with:
-          repository: block/buzz
-          ref: desktop-v${{ steps.pin.outputs.version }}
+          repository: ${{ steps.pin.outputs.repository }}
+          ref: ${{ steps.pin.outputs.ref }}
           path: buzz
 
       - name: Build deps
@@ -78,13 +93,15 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.pin.outputs.version }}
+          SOURCE_REPO: ${{ steps.pin.outputs.repository }}
+          SOURCE_REF: ${{ steps.pin.outputs.ref }}
         run: |
           tag="buzz-acp-v${VERSION}"
           # Create the release once (idempotent across the two arch jobs).
           if ! gh release view "$tag" >/dev/null 2>&1; then
             gh release create "$tag" \
               --title "buzz-acp v${VERSION}" \
-              --notes "buzz-acp and buzz built from block/buzz \`desktop-v${VERSION}\` for linux/amd64 and linux/arm64. See ADR 0020 / #743 / #737. Upstream is Apache-2.0." \
+              --notes "buzz-acp and buzz built from ${SOURCE_REPO} \`${SOURCE_REF}\` for linux/amd64 and linux/arm64. See ADR 0020 / #743 / #737. Upstream is Apache-2.0." \
               || true
           fi
           gh release upload "$tag" \

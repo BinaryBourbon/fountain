@@ -16,7 +16,9 @@ type fakeAPI struct {
 
 	resolved []string
 	created  []string
+	channels []string
 	convID   string
+	resumed  bool
 
 	// prompt path
 	head       string
@@ -59,15 +61,16 @@ func (f *fakeAPI) Agent(_ context.Context, target string) (AgentRef, error) {
 	return f.ref, nil
 }
 
-func (f *fakeAPI) CreateConversation(_ context.Context, agentID string) (string, error) {
+func (f *fakeAPI) CreateConversation(_ context.Context, agentID, channelID string) (string, bool, error) {
 	f.created = append(f.created, agentID)
+	f.channels = append(f.channels, channelID)
 	if f.createErr != nil {
-		return "", f.createErr
+		return "", false, f.createErr
 	}
 	if f.convID == "" {
-		return "conv-1", nil
+		return "conv-1", f.resumed, nil
 	}
-	return f.convID, nil
+	return f.convID, f.resumed, nil
 }
 
 func (f *fakeAPI) StreamHead(context.Context, string) (string, error) {
@@ -311,6 +314,47 @@ func TestClientSideSessionParametersAreIgnoredNotFatal(t *testing.T) {
 	}
 	if result["sessionId"] != "conv-7" {
 		t.Errorf("sessionId = %v, want conv-7", result["sessionId"])
+	}
+}
+
+// #774: a chat harness (buzz-acp) forgets its sessions on every restart and
+// opens `session/new` again for each channel. It names the channel in
+// `_meta.channelId`; that key goes to the server, which hands back the
+// conversation already bound to it — same sandbox, same runtime session — as
+// this session's id.
+func TestNewSessionForwardsTheChannelKeyAndAcceptsAResumedConversation(t *testing.T) {
+	api := &fakeAPI{ref: acpAgentRef(), convID: "conv-old", resumed: true}
+	a := sessionAgent(t, api, "researcher")
+
+	result, rpcErr := request(t, a, "session/new", map[string]any{
+		"cwd":   "/home/dev/proj",
+		"_meta": map[string]any{"channelId": "chan-002b49f3", "sessionTitle": "Fizz"},
+	})
+	if rpcErr != nil {
+		t.Fatalf("session/new failed: %v", rpcErr)
+	}
+	if result["sessionId"] != "conv-old" {
+		t.Errorf("sessionId = %v, want the resumed conversation", result["sessionId"])
+	}
+	if len(api.channels) != 1 || api.channels[0] != "chan-002b49f3" {
+		t.Errorf("channel forwarded = %v, want [chan-002b49f3]", api.channels)
+	}
+	if _, ok := a.sessions.get("conv-old"); !ok {
+		t.Error("the resumed conversation is not registered as this session")
+	}
+}
+
+// No _meta.channelId → no channel key: an editor's session/new must not
+// accidentally bind to "" and start resuming across unrelated projects.
+func TestNewSessionWithoutAChannelKeySendsNone(t *testing.T) {
+	api := &fakeAPI{ref: acpAgentRef(), convID: "conv-1"}
+	a := sessionAgent(t, api, "researcher")
+
+	if _, rpcErr := request(t, a, "session/new", map[string]any{"cwd": "/p"}); rpcErr != nil {
+		t.Fatalf("session/new failed: %v", rpcErr)
+	}
+	if len(api.channels) != 1 || api.channels[0] != "" {
+		t.Errorf("channel forwarded = %v, want [\"\"]", api.channels)
 	}
 }
 
