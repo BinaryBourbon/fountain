@@ -66,9 +66,23 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
   # casts it to the peer, the peer acts and reports back, and the server acts on
   # the report. Syncing only the server would assert against a state one hop
   # behind, which is what made these tests pass alone and fail together.
+  #
+  # The peer is stopped by the server the moment it reports `{:done, _}`, so
+  # between reading `acp_peer` and syncing on it the peer may already be gone
+  # (a `noproc` exit from `:sys.get_state/1`, seen in CI on 2026-08-17). That
+  # is the state we wanted anyway — the report was handled — so a dead peer
+  # is not a failure here.
   defp settle(pid) do
     peer = :sys.get_state(pid).acp_peer
-    if is_pid(peer) and Process.alive?(peer), do: :sys.get_state(peer)
+
+    if is_pid(peer) do
+      try do
+        _ = :sys.get_state(peer)
+      catch
+        :exit, _ -> :ok
+      end
+    end
+
     _ = :sys.get_state(pid)
     :ok
   end
