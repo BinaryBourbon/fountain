@@ -31,6 +31,7 @@ Mimic.copy(Stripe.Subscription)
 Mimic.copy(Stripe.Invoice)
 
 Mimic.copy(Fountain.Conversations.ConversationServer)
+Mimic.copy(Fountain.Conversations.TitleGenerator)
 Mimic.copy(Fountain.Conversations.Provisioning)
 Mimic.copy(Fountain.SandboxSkills)
 Mimic.copy(Fountain.Accounts)

@@ -575,6 +575,44 @@ defmodule Fountain.Conversations.ConversationServerTest do
       GenServer.stop(pid)
     end
 
+    test "the first turn generates a title — except on a teammate's conversation (#807)",
+         %{conv: conv, user: user, agent: agent} do
+      test = self()
+
+      Mimic.stub(Fountain.Conversations.TitleGenerator, :generate, fn prompt, _creds ->
+        send(test, {:title_requested, prompt})
+        {:ok, "A Generated Summary"}
+      end)
+
+      # An ordinary conversation: the sidebar gets a title.
+      {pid, ref} = start_with_turn(conv)
+      send(pid, {:exit, %{ref: ref}, 0})
+      _ = :sys.get_state(pid)
+      assert_receive {:title_requested, "first"}, 1_000
+      GenServer.stop(pid)
+
+      # A teammate's conversation: its title is the teammate's name, so no
+      # summary is generated over it.
+      team_sandbox = insert_sandbox(user_id: user.id, status: "pending")
+
+      team_conv =
+        insert_conversation(
+          user_id: user.id,
+          agent: agent,
+          sandbox_id: team_sandbox.id,
+          status: "pending",
+          channel_id: Fountain.Team.channel(),
+          title: "Ada"
+        )
+
+      {pid, ref} = start_with_turn(team_conv)
+      send(pid, {:exit, %{ref: ref}, 0})
+      _ = :sys.get_state(pid)
+      refute_receive {:title_requested, _}, 300
+      assert Conversations._unsafe_get_conversation!(team_conv.id).title == "Ada"
+      GenServer.stop(pid)
+    end
+
     test "a non-zero exit marks the turn failed but keeps the conversation usable", %{conv: conv} do
       {pid, ref} = start_with_turn(conv)
 

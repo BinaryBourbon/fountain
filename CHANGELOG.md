@@ -91,6 +91,15 @@ upgrade, is in
 
 ### Fixed
 
+- **Team page: a teammate stayed named after its agent, not its first
+  message.** The first turn's auto-generated conversation title (a summary
+  like "Elixir Tic Tac Toe Game Development") is what #807 shows as the
+  teammate's name when one was given — and it was being generated over team
+  conversations too, so every teammate got renamed after its first message.
+  Title generation now skips team-bound conversations (their title is only
+  ever the given name), and a migration clears the summaries already
+  stamped on them, so the roster shows the agent's name again.
+
 - **A transient sandbox-provider error no longer retires a live sandbox.**
   Both places that probe a sprite before reusing it — the reattach a
   `ConversationServer` runs when it starts against a `ready` row, and the
