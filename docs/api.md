@@ -234,6 +234,41 @@ Since sub-conversations are created over the API (`X-Fountain-Parent-Conversatio
 
 Page by passing the previous response's `meta.next_cursor` as `after`; keep going while `meta.has_more` is true. `limit` defaults to 100 and caps at 1000. The `id` is the same value the SSE route uses as `Last-Event-ID`, so a client can drain history as JSON and then attach the stream from where it left off.
 
+`?blocks=true` — on `/events`, on `/stream` and on `/api/events/stream` — adds
+`blocks` to every event: its `data` parsed server-side into the structured
+blocks a transcript renders, the same parse the web UI uses
+(`Fountain.Conversations.Blocks`). A client never re-implements a runtime's
+dialect (ADR 0014, applied to the wire). Kinds and their fields:
+
+| kind | fields |
+|---|---|
+| `text`, `thinking` | `body` |
+| `tool_use` | `id`, `name`, `summary`, `body` (the input) |
+| `tool_result` | `tool_id`, `body`, `error` — pair it with the `tool_use` of the same id |
+| `init` | `summary`, `body` |
+| `result` | `body`, `raw` |
+| `error` | `body` |
+| `raw` | `body`, `summary` — an unrecognised line, shown rather than dropped |
+
+Non-output events carry `blocks: []`; without the flag the field is absent.
+
+### Every conversation on one stream
+
+```
+GET /api/events/stream          # SSE (?streams=  ?blocks=true)
+```
+
+One `text/event-stream` for every conversation the caller owns that is not
+finished — what a conversation list with live status and unread dots needs
+instead of a socket per conversation. Each event is the per-conversation
+stream's payload plus `conversation_id`. A `conversations` event
+(`{"reason":"changed"}`) is sent, debounced to one per second, when the list
+changes (created, titled, read, deleted, finished); the stream follows a new
+conversation on its own and the client re-lists. `Last-Event-ID` replays what
+was missed across every followed conversation; the first byte is a
+`: connected` comment; heartbeats every 15 s; closes after 60 s idle so the
+client reconnects.
+
 ## Team
 
 The roster [`/team`](primitives.md#the-team-page-agents-as-teammates) shows, for

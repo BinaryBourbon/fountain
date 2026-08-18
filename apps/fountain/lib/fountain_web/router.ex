@@ -286,6 +286,8 @@ defmodule FountainWeb.Router do
     pipe_through :api
 
     get "/team/stream", TeamController, :stream, as: :team_stream
+    # Every conversation of the caller on one connection (#813).
+    get "/events/stream", EventsController, :stream, as: :events_stream
   end
 
   scope "/api", FountainWeb do

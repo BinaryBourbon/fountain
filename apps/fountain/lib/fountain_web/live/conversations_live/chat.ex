@@ -217,32 +217,12 @@ defmodule FountainWeb.ConversationsLive.Chat do
 
   # ── event → blocks ──────────────────────────────────────────────
 
-  # Splits an event's `data` (which may be a stream-json chunk with N
-  # lines) into a flat list of structured blocks. Each block is a map
-  # with at least `:kind`, plus kind-specific fields.
-  # ACP rows carry a specified protocol rather than a vendor's dialect, so the
-  # translation lives on the server in `Fountain.Runtimes.ACP.Blocks` — with its
-  # own tests, and outside the render path where a point release becomes a
-  # rendering bug. That relocation is the point of 0014; this clause is the
-  # seam, and it is deliberately the only ACP knowledge in this module.
-  #
-  # Keyed on the event's stream, not the conversation's runtime: the per-agent
-  # flag can flip between turns, and the turns before it flipped must keep
-  # rendering through the parser that produced them.
-  def blocks_for(%{stream: "acp", data: data}, _runtime) when is_binary(data) do
-    data
-    |> String.split("\n", trim: true)
-    |> Enum.flat_map(&Fountain.Runtimes.ACP.Blocks.from_line/1)
-  end
-
-  # Legacy stdout rows: gemini's live dialect (#659) and pre-ACP history for
-  # the converted runtimes. The parsers live in `LegacyBlocks`, out of the
-  # render path, with their own tests — this clause is the whole seam (#642).
-  def blocks_for(%{data: data}, runtime) when is_binary(data) do
-    data
-    |> String.split("\n", trim: true)
-    |> Enum.flat_map(&FountainWeb.ConversationsLive.LegacyBlocks.from_line(&1, runtime))
-  end
-
-  def blocks_for(_, _), do: []
+  @doc """
+  The blocks one log event's data holds. Delegates to
+  `Fountain.Conversations.Blocks.for_event/2` — the parsers live in the
+  runtimes namespace with their own tests, and the API serves the same
+  blocks (`?blocks=true`), so this LiveView and a client on another origin
+  render one transcript from one parse.
+  """
+  def blocks_for(event, runtime), do: Fountain.Conversations.Blocks.for_event(event, runtime)
 end

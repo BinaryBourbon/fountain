@@ -1,4 +1,4 @@
-defmodule FountainWeb.ConversationsLive.LegacyBlocks do
+defmodule Fountain.Runtimes.LegacyBlocks do
   @moduledoc """
   Translate stored legacy-dialect stdout lines into the block maps the
   conversation view renders.

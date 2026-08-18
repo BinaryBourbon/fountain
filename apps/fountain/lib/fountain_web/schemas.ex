@@ -994,6 +994,38 @@ defmodule FountainWeb.Schemas do
     })
   end
 
+  defmodule Block do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "Block",
+      description:
+        "One structured piece of a log event's output — the same parse the web UI " <>
+          "renders (`Fountain.Conversations.Blocks`). `kind` decides the other fields: " <>
+          "`text`/`thinking` carry `body`; `tool_use` carries `id`, `name`, `summary`, " <>
+          "`body` (the input); `tool_result` carries `tool_id`, `body`, `error` and pairs " <>
+          "with the `tool_use` of the same id; `init` carries `summary`, `body`; `result` " <>
+          "carries `body`, `raw`; `error` carries `body`; `raw` carries `body`, `summary`.",
+      type: :object,
+      properties: %{
+        kind: %Schema{
+          type: :string,
+          enum: Fountain.Conversations.Blocks.kinds()
+        },
+        body: %Schema{type: :string, nullable: true},
+        summary: %Schema{type: :string, nullable: true},
+        id: %Schema{type: :string, nullable: true},
+        name: %Schema{type: :string, nullable: true},
+        tool_id: %Schema{type: :string, nullable: true},
+        error: %Schema{type: :boolean, nullable: true},
+        raw: %Schema{type: :string, nullable: true}
+      },
+      required: [:kind],
+      additionalProperties: true
+    })
+  end
+
   defmodule LogEvent do
     @moduledoc false
     require OpenApiSpex
@@ -1022,7 +1054,14 @@ defmodule FountainWeb.Schemas do
         state: %Schema{type: :string, enum: ~w(started done failed interrupted), nullable: true},
         duration_ms: %Schema{type: :integer, nullable: true},
         turn_id: %Schema{type: :string, format: :uuid, nullable: true},
-        ts: %Schema{type: :string, format: :"date-time"}
+        ts: %Schema{type: :string, format: :"date-time"},
+        blocks: %Schema{
+          type: :array,
+          items: Block,
+          description:
+            "Only with `?blocks=true`: `data` parsed server-side into the blocks a " <>
+              "transcript renders. Empty for non-output events."
+        }
       },
       required: [:id, :kind, :ts]
     })
