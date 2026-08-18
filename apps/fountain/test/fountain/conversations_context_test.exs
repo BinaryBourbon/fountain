@@ -1359,7 +1359,9 @@ defmodule Fountain.ConversationsContextTest do
       user = insert_verified_user()
       agent = insert_agent(user_id: user.id)
 
-      # sandbox remains "pending" (not "ready"), so maybe_reuse_sandbox hits the _ -> :create_new branch
+      # A `pending` sandbox with no server anywhere: the provision died with
+      # its BEAM. After the registry settle window (#800) the wake gives up
+      # waiting and provisions fresh.
       sandbox = insert_sandbox(user_id: user.id)
       conv = insert_conversation(user_id: user.id, agent: agent, sandbox: sandbox, status: "idle")
 
@@ -1367,7 +1369,57 @@ defmodule Fountain.ConversationsContextTest do
         {:ok, spawn(fn -> :ok end)}
       end)
 
-      assert {:ok, _conv} = Conversations.wake_conversation(conv.id)
+      assert {:ok, woken} = Conversations.wake_conversation(conv.id)
+      assert woken.sandbox_id != sandbox.id
+    end
+
+    test "a pending sandbox whose server appears during the settle window is handed the prompt, not raced (#800)" do
+      # `session/new` (POST /api/conversations) starts the server via Horde,
+      # which may place it on another pod; the first prompt arrives ~30 ms
+      # later on this pod, sees a `pending` row and — before #800 — missed
+      # the registry and took :create_new: two servers, two sprites, ~21 s of
+      # provisioning each, and a name conflict that killed the loser after
+      # the fact, leaving an orphan `ready` row. The prompt path now waits
+      # for the registry to catch up and hands the prompt to the server it
+      # finds.
+      user = insert_verified_user()
+      agent = insert_agent(user_id: user.id)
+      sandbox = insert_sandbox(user_id: user.id)
+      conv = insert_conversation(user_id: user.id, agent: agent, sandbox: sandbox, status: "idle")
+
+      test = self()
+
+      # A stand-in for the first server: registers under the conversation's
+      # name a beat after the wake starts looking, then relays the prompt
+      # cast it receives.
+      late_server =
+        spawn_link(fn ->
+          Process.sleep(40)
+          {:ok, _} = Horde.Registry.register(Fountain.ConversationRegistry, conv.id, nil)
+          send(test, :registered)
+
+          receive do
+            {:"$gen_cast", {:initial_prompt, prompt, images}} ->
+              send(test, {:handed_off, prompt, images})
+          end
+        end)
+
+      # No second server, no second sandbox.
+      reject(&Horde.DynamicSupervisor.start_child/2)
+
+      assert {:ok, woken} = Conversations.wake_conversation(conv.id, "hello")
+      assert_receive :registered
+      assert_receive {:handed_off, "hello", []}, 500
+
+      assert woken.sandbox_id == sandbox.id
+      assert Repo.reload(sandbox).status == "pending"
+
+      assert Repo.aggregate(
+               from(s in Fountain.Conversations.Sandbox, where: s.user_id == ^user.id),
+               :count
+             ) == 1
+
+      Process.exit(late_server, :kill)
     end
 
     test "returns {:ok, conv} when old sandbox is already terminated (mark_old_sandbox_terminated no-op)" do

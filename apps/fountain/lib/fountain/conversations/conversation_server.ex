@@ -55,6 +55,49 @@ defmodule Fountain.Conversations.ConversationServer do
     end
   end
 
+  @registry_settle_ms 3_000
+  @registry_poll_ms 50
+
+  @doc """
+  `whereis/1`, but willing to wait for the registry to catch up.
+
+  Horde's registry is a CRDT: a server started on another node is visible
+  here only once the delta has synced, which is milliseconds normally and
+  longer under load. A caller that already knows a server *should* exist —
+  the conversation's sandbox row is `pending`, so someone is provisioning it —
+  polls for up to `:conversation_registry_settle_ms` (#{@registry_settle_ms} ms by
+  default) before concluding there is none. Returns `{:ok, pid}` or `:timeout`.
+
+  This is what keeps a `session/new` + first-prompt pair from provisioning
+  two sprites for one conversation when the two requests land on different
+  pods (#800): the prompt used to see a `pending` row, miss the registry, and
+  take the `:create_new` arm while the first server was still 20 s from
+  finishing.
+  """
+  def await_registered(conv_id, timeout_ms \\ nil) do
+    timeout_ms =
+      timeout_ms ||
+        Application.get_env(:fountain, :conversation_registry_settle_ms, @registry_settle_ms)
+
+    deadline = System.monotonic_time(:millisecond) + timeout_ms
+    do_await_registered(conv_id, deadline)
+  end
+
+  defp do_await_registered(conv_id, deadline) do
+    case whereis(conv_id) do
+      pid when is_pid(pid) ->
+        {:ok, pid}
+
+      nil ->
+        if System.monotonic_time(:millisecond) >= deadline do
+          :timeout
+        else
+          Process.sleep(@registry_poll_ms)
+          do_await_registered(conv_id, deadline)
+        end
+    end
+  end
+
   @doc """
   Send another prompt. If the conversation's GenServer is gone (e.g. server
   restart), transparently wake the conversation — provision a fresh sprite

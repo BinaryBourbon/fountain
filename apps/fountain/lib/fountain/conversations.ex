@@ -1384,6 +1384,31 @@ defmodule Fountain.Conversations do
             end
           end
 
+        {:provisioning, sandbox_id} ->
+          # The row says a server is (or was) provisioning this sandbox. The
+          # registry may simply not have caught up with a server started on
+          # another node — `session/new` and the first prompt arrive ~30 ms
+          # apart and can land on different pods — so wait for it before
+          # concluding it is dead. If it turns up, hand it the prompt exactly
+          # as the `already_started` branches do; if it does not, the
+          # provision died with its BEAM and a fresh one is right (#800).
+          case ConversationServer.await_registered(conv.id) do
+            {:ok, pid} ->
+              Logger.info(
+                "conv #{conv.id}: server for pending sandbox #{sandbox_id} " <>
+                  "appeared during the registry settle window; handing off the prompt"
+              )
+
+              if is_binary(initial_prompt) and initial_prompt != "" do
+                ConversationServer.queue_initial_prompt(pid, initial_prompt)
+              end
+
+              {:ok, _unsafe_get_conversation!(conv.id)}
+
+            :timeout ->
+              create_fresh_sandbox_and_start(conv, agent, runtime_module, initial_prompt)
+          end
+
         :create_new ->
           create_fresh_sandbox_and_start(conv, agent, runtime_module, initial_prompt)
 
@@ -1406,6 +1431,11 @@ defmodule Fountain.Conversations do
       %{status: status, sprite_name: name} = sandbox
       when status in ["ready", "suspended"] and is_binary(name) ->
         probe_reusable_sandbox(sandbox, sandbox_id)
+
+      # A provision is in flight — or was, in a BEAM that is gone. The
+      # caller waits for the registry before deciding which (#800).
+      %{status: status} when status in ["pending", "starting"] ->
+        {:provisioning, sandbox_id}
 
       _ ->
         :create_new
@@ -1611,6 +1641,12 @@ defmodule Fountain.Conversations do
       # and the row being updated — in which the row still names the old
       # sandbox. That one is transient and self-correcting; the old one was
       # permanent.
+      #
+      # #800 closed the other half: a prompt that finds a `pending` row now
+      # waits for the registry (`ConversationServer.await_registered/2`)
+      # before coming here, so the first server — often on another pod, and
+      # so invisible to this node's registry for a beat — is found and
+      # handed the prompt instead of being raced by a second provision.
       case start_conversation_server(conv, new_sandbox.id, runtime_module, initial_prompt) do
         {:ok, _} ->
           _ = mark_old_sandbox_terminated(conv.sandbox_id)
