@@ -1,7 +1,7 @@
 ---
 type: ADR
 title: "A persistent sandbox per agent, offered beside the sandbox-per-conversation model"
-description: "Sketch only — nothing here is built. Adds a second sandbox mode where one long-lived sandbox serves every conversation of an agent (the 'grokbot' shape), keeps the per-conversation mode as the default, and names the seven places the code hard-codes 1:1 today."
+description: "Sketch only — nothing here is built. Adds a second sandbox mode, chosen per launch and defaulted per agent, where one long-lived sandbox serves many conversations of an agent (the 'grokbot' shape); keeps the per-conversation mode as the default; names the seven places the code hard-codes 1:1 today. Companion design note: #805."
 tags: [sandbox, lifecycle, conversations, product]
 status: draft
 adr: "0021"
@@ -17,7 +17,14 @@ stale_after: 2026-10-01
 The 1:1 model of today is the only one that exists; every mechanism below is
 a proposal, and the "what breaks today" section is a survey of the current
 code, not a list of fixed defects.
-**Date:** 2026-08-17
+**Date:** 2026-08-17 (amended 2026-08-18: mode is chosen per launch and
+defaulted per agent, not fixed per agent; the machine carries a lease/refcount;
+`sandbox_id` attach — see #805 for the holistic picture this converges on)
+
+**Companion:** #805 is the "if we had designed it this way from the start"
+sketch — the sandbox as a first-class machine, a conversation as a binding of
+an agent to one. This ADR is the incremental proposal; #805 is what it should
+be measured against.
 
 ## Context
 
@@ -107,25 +114,44 @@ disabled *because* names are fresh each time (`conversation_server.ex:748`).
 
 ## Decision (proposed)
 
-Add a per-agent **sandbox mode** with two values, defaulting to today's:
+Add a **sandbox mode** with two values. The mode is a property of the
+**launch**, defaulted from the agent — the same shape `environment_id` has had
+since #783: the agent's setting is the default, a conversation may name another
+at launch. The agent is the brain (model, runtime, skills, MCP); it holds an
+opinion about *where* it runs only as a default.
 
-- `ephemeral` — a sandbox per conversation. Unchanged.
+- `ephemeral` — a sandbox per conversation. Unchanged, and the default.
 - `persistent` — one sandbox per **agent identity**, where the identity is
   `(agent_id, environment_id, vault_id)`: the same key `find_channel_conversation`
   already resumes by, for the same reasons (#727: two vaults on one agent are
   two identities; #783: an environment override is a different baseline). A
   persistent sandbox is a "home" — the agent's computer.
 
+So agent `foo` may run ephemeral in one conversation and on its home in
+another; a persistent-by-default agent may fan out ephemeral children; a
+second conversation may be opened *onto* an existing home by `sandbox_id`.
+Which of these a launch does is decided at the door, not baked into the agent.
+
 Concretely, in the order the pieces depend on each other:
 
 **1. Make the sandbox row findable by identity.** `sandboxes` gains
 `agent_id`, `vault_id`, `mode`, and a partial unique index on
 `(user_id, agent_id, environment_id, vault_id) WHERE mode = 'persistent' AND
-status NOT IN ('terminated','failed')`. `start_conversation` in persistent
-mode does `find_or_create_home/4` under the existing per-user advisory lock
-instead of `create_sandbox`. Wake stops repointing: a persistent conversation
-resolves its sandbox by identity, so if the home has to be re-provisioned
-(sprite gone), every conversation on it follows automatically.
+status NOT IN ('terminated','failed')`. The row is designed as if it were a
+first-class machine — its identity does not depend on any conversation.
+`start_conversation` takes `sandbox_mode` (launch attr, default
+`agent.sandbox_mode`) and optionally `sandbox_id`:
+
+- `sandbox_id` given → attach to that home (tenant-scoped; must be
+  `persistent`, must belong to the same agent identity — a home is never
+  shared across agents).
+- mode `persistent` → `find_or_create_home/4` under the existing per-user
+  advisory lock.
+- mode `ephemeral` → `create_sandbox` as today.
+
+Wake stops repointing: a persistent conversation resolves its sandbox by
+identity, so if the home has to be re-provisioned (sprite gone), every
+conversation on it follows automatically.
 
 **2. Move per-conversation identity off the shared disk.** `FOUNTAIN_TOKEN`,
 `FOUNTAIN_CONVERSATION_ID` and `TRACEPARENT` become **per-turn process env**
@@ -140,11 +166,15 @@ command line, or provider metadata where the adapter supports it), and make
 reattach filter `list_sessions` by it instead of taking the head. Also correct
 for ephemeral mode (it closes a latent bug that only 1:1 hides).
 
-**4. Serialize turns per home.** One machine, one agent process at a time —
-this is the grokbot semantics and it sidesteps every shared-cwd, shared-sqlite,
-shared-port problem in one move. Mechanism: a per-sandbox lease
-(`Horde.Registry` keyed by `{:sandbox, sandbox_id}`, or a small `SandboxServer`
-that hands out one turn slot). A ConversationServer that wants to `kick_turn`
+**4. Serialize turns per home, and make the lease the machine's refcount.** One
+machine, one agent process at a time — this is the grokbot semantics and it
+sidesteps every shared-cwd, shared-sqlite, shared-port problem in one move.
+Mechanism: a per-sandbox lease (`Horde.Registry` keyed by
+`{:sandbox, sandbox_id}`, or a small `SandboxServer` that hands out one turn
+slot). The same registry answers "does any conversation hold this machine
+right now?", which is what every lifecycle decision in (5) needs — park, ceiling
+and destroy become **machine operations guarded by the lease**, not per-row
+flips made on one conversation's say-so. A ConversationServer that wants to `kick_turn`
 on a persistent home acquires the lease or queues; queued turns surface as a
 `queued` stage in the log so the UI/Buzz can show "waiting for the agent".
 Bound the queue (per-home depth, e.g. 8) and reject beyond it. Concurrent turns
@@ -175,16 +205,26 @@ serialized (sessions resumed by explicit id). opencode works once serialized
 is on the ACP path (#659) — its legacy `--resume` is exactly the guess that
 breaks. Enforce with `Runtimes.ACP.supported_runtimes/0` at agent save time.
 
-**8. Surface.** `PATCH /api/agents/:id` gets `sandbox_mode`; the agent form
-gets a radio with the table above as copy; the conversation list shows a
-"home" badge and the sandbox row gets its own detail (status, last resumed,
-disk age, reset button). Buzz needs nothing new: `channel_id` resume already
-lands each channel on one conversation, and persistent mode makes those
-conversations share a disk — which is what a channel bot wants.
+**8. Surface — every launch door, the same shape.** `PATCH /api/agents/:id`
+gets `sandbox_mode` (the default); the agent form gets a radio with the table
+above as copy. Every door that starts a conversation accepts the override:
+`POST /api/conversations` (`sandbox_mode`, `sandbox_id`), `fountain run` /
+`fountain conversations create` (`--sandbox-mode`, `--sandbox`), ACP
+`session/new` `_meta`, Buzz provision, and the `fountain` skill's fan-out. No
+allowlist for the override — unlike `environment_id`, the mode is not a
+security boundary; the tenant scope on `sandbox_id` is. **Channel resume takes
+the agent default**, not a per-message override: a channel identity should be
+stable, and `find_channel_conversation` already lands each channel on one
+conversation, so persistent mode makes those conversations share a disk —
+which is what a channel bot wants. The conversation list shows a "home" badge
+and the sandbox row gets its own detail (status, last resumed, disk age,
+conversations on it, reset button).
 
-Not a fifth primitive. The sandbox row already exists as the record; giving it
-`agent_id` and a mode is enough. Promote it to a user-facing "Machine" only if
-the UI needs to show something a conversation-centric view cannot.
+Not a fifth primitive *in the UI* — yet. The sandbox row already exists as the
+record; giving it `agent_id`, a mode and a lease is enough, and it should be
+designed as if it were one (#805): a machine whose identity does not depend on
+any conversation. Promote it to a user-facing "Machine" only if the UI needs
+to show something a conversation-centric view cannot.
 
 ## Consequences
 
@@ -194,11 +234,13 @@ the UI needs to show something a conversation-centric view cannot.
   is the trade the user makes by choosing it; the mode-selection copy must say
   so, and it is one more reason the identity key includes the vault (a
   compromised home never holds two identities' credentials).
-- **Fan-out and persistence compose.** Children spawned via the `fountain`
-  skill go through `start_conversation`, so a persistent parent can fan out
-  ephemeral children if the child agent is ephemeral. Two agents can never
-  share a home (identity includes `agent_id`), so per-agent skill mounts at
-  the runtime-global skills path do not collide.
+- **Fan-out and persistence compose, per launch.** Children spawned via the
+  `fountain` skill go through `start_conversation`, so a persistent parent can
+  fan out ephemeral children (fresh disks, parallel) or, by passing its own
+  `sandbox_id`, children onto its home (shared disk, serialized) — the choice
+  is the launch's, not the agent's. Two agents can never share a home
+  (identity includes `agent_id`), so per-agent skill mounts at the
+  runtime-global skills path do not collide.
 - **Steps 2 and 3 improve the ephemeral mode on their own** and should ship
   first as bug fixes; nothing else in this ADR is needed to justify them.
 - **Checkpointing becomes meaningful.** With a stable, named home the
@@ -242,8 +284,15 @@ the UI needs to show something a conversation-centric view cannot.
   four hours)?
 - Whether the identity key should ignore `environment_id` (one home per agent,
   environment override refused in persistent mode) — simpler mental model,
-  fewer homes, at the cost of #783's flexibility.
-- Pricing: mode-based (always-on agent) vs sandbox-minutes as today.
+  fewer homes, at the cost of #783's flexibility. Put differently (#805):
+  should a home be re-materializable in place with a different environment or
+  vault, or is that always a different machine?
+- Pricing: mode-based (always-on agent) vs sandbox-minutes as today (#798).
+- Concurrency: is serialized-turns-per-home acceptable for v1, or does the
+  target user expect parallel turns on one machine?
+- Should `sandbox_id` attach be allowed onto a home that is currently
+  `suspended` (wake it) — probably yes — and onto one whose agent has since
+  changed runtime (probably refuse; the disk was shaped by the old one)?
 
 ## Gates (if accepted)
 
@@ -252,6 +301,8 @@ the UI needs to show something a conversation-centric view cannot.
 2. `sandboxes.agent_id/vault_id/mode` + partial unique index + `find_or_create_home`.
 3. Per-home turn lease + queued stage.
 4. Lifecycle split (terminate / park / ceiling / reset / agent-delete).
-5. Agent setting, API field, UI copy, docs; gemini exclusion.
+5. Agent default + per-launch `sandbox_mode` / `sandbox_id` on every door
+   (API, CLI, ACP `_meta`, Buzz provision, `fountain` skill), UI copy, docs;
+   gemini exclusion.
 6. Live smoke: two Buzz channels on one persistent agent, prove shared disk
    and correct per-channel transcripts under interleaved turns.
