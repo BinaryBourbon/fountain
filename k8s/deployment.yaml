@@ -120,6 +120,12 @@ spec:
             # unverified-account pruner (#258).
             - name: UNVERIFIED_PRUNE_EXEMPT
               value: jhgaylor
+            # The standalone team app (jhgaylor/fountain-team, #810) is a
+            # static site on GitHub Pages behind jakegaylor.com; a browser
+            # there calls /api with a pasted API key. Only that origin, and
+            # only bearer keys — the plug never lets a session cookie cross.
+            - name: API_CORS_ORIGINS
+              value: https://jakegaylor.com
             # SANDBOX_IDLE_TIMEOUT_MINUTES is back at the stock 60m default.
             # The 240m override (#664) existed because idle reclaim used to
             # destroy the sandbox — and the agent's working memory — while a
