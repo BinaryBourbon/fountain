@@ -427,8 +427,15 @@ func handleStageEvent(data map[string]any) (bool, error) {
 
 	case stage == "reattach" && state == "failed":
 		// The server stops after this (conversation_server.ex); no more
-		// events are coming. The conversation itself stays promptable —
-		// the next prompt auto-wakes a fresh sandbox.
+		// events are coming. The conversation itself stays promptable.
+		// Since #799 the event says which kind of failure it was: a
+		// transient one (provider unreachable) left the sandbox as it was
+		// and the next prompt reattaches again; a definitive not-found
+		// retired it and the next prompt provisions fresh.
+		if innerDataString(data, "retryable") == "true" {
+			fmt.Fprintf(os.Stderr, "▸ reattach failed (%s) — the sandbox is untouched; prompt again to retry\n", innerDataString(data, "reason"))
+			return true, errReattachFailed
+		}
 		fmt.Fprintf(os.Stderr, "▸ reattach failed — prompt again to provision a fresh sandbox\n")
 		return true, errReattachFailed
 

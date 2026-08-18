@@ -25,7 +25,7 @@ var (
 	// success for a crashed agent or a sandbox that never came up.
 	errTurnFailed      = errors.New("turn failed")
 	errProvisionFailed = errors.New("provisioning failed — the sandbox never started")
-	errReattachFailed  = errors.New("reattach failed — the sandbox was marked failed")
+	errReattachFailed  = errors.New("reattach failed — the sandbox could not be re-armed")
 	errSandboxExpired  = errors.New("sandbox hit its max lifetime")
 )
 

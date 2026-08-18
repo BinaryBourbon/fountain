@@ -455,6 +455,86 @@ defmodule Fountain.Conversations.ConversationServerTest do
     end
   end
 
+  describe "reattach — failure paths (#799)" do
+    # A `ready` sandbox routes the server down the reattach branch: probe the
+    # sprite, then re-arm. Only a definitive not-found may retire the row —
+    # on 2026-08-18 a 70 s DNS outage during a Horde failover ran this path
+    # for nine live sandboxes at once, every probe answered nxdomain, and the
+    # old error arm marked all nine `failed`, which is what the reaper's
+    # destroy pass keys on.
+    setup %{sandbox: sandbox, conv: conv} do
+      {:ok, sandbox} = Conversations.update_sandbox(sandbox, %{status: "ready"})
+      {:ok, conv} = Conversations.update_conversation(conv, %{status: "idle"})
+      {:ok, sandbox: sandbox, conv: conv}
+    end
+
+    defp reattach_stage(conv_id) do
+      conv_id
+      |> Conversations._unsafe_list_log_events()
+      |> Enum.find(&(&1.kind == "stage" and &1.stage == "reattach" and &1.state == "failed"))
+    end
+
+    test "a transient probe failure leaves the sandbox row untouched", %{
+      conv: conv,
+      sandbox: sandbox
+    } do
+      stub_happy_sprite()
+
+      Mimic.stub(Fountain.Sandbox.Sprites, :get, fn _handle ->
+        {:error, {:unavailable, %Req.TransportError{reason: :nxdomain}}}
+      end)
+
+      # The whole point: the disk is still there, so nothing may route it to
+      # the reaper's destroy pass.
+      Mimic.reject(&Fountain.Sandbox.Sprites.destroy/1)
+
+      {_pid, ref, _} = start_server(conv)
+      assert :normal = assert_stopped(ref)
+
+      reloaded = Conversations._unsafe_get_sandbox!(sandbox.id)
+      assert reloaded.status == "ready"
+      assert is_nil(reloaded.terminated_at)
+      assert Conversations._unsafe_get_conversation!(conv.id).status == "idle"
+
+      # The operator can still see it happened, and that it will be retried.
+      assert %{data: data} = reattach_stage(conv.id)
+      assert %{"retryable" => true, "reason" => reason} = Jason.decode!(data)
+      assert reason =~ "nxdomain"
+    end
+
+    test "a 5xx from the provider is transient too", %{conv: conv, sandbox: sandbox} do
+      stub_happy_sprite()
+
+      Mimic.stub(Fountain.Sandbox.Sprites, :get, fn _handle ->
+        {:error, {:unavailable, {:http, 503, %{}}}}
+      end)
+
+      {_pid, ref, _} = start_server(conv)
+      assert :normal = assert_stopped(ref)
+      assert Conversations._unsafe_get_sandbox!(sandbox.id).status == "ready"
+    end
+
+    test "a definitive not-found retires the sandbox so the next prompt provisions fresh", %{
+      conv: conv,
+      sandbox: sandbox
+    } do
+      stub_happy_sprite()
+      Mimic.stub(Fountain.Sandbox.Sprites, :get, fn _handle -> {:error, :not_found} end)
+
+      {_pid, ref, _} = start_server(conv)
+      assert :normal = assert_stopped(ref)
+
+      reloaded = Conversations._unsafe_get_sandbox!(sandbox.id)
+      assert reloaded.status == "failed"
+      refute is_nil(reloaded.terminated_at)
+      # The conversation itself is not failed — the user can still prompt it.
+      assert Conversations._unsafe_get_conversation!(conv.id).status == "idle"
+
+      assert %{data: data} = reattach_stage(conv.id)
+      assert %{"retryable" => false, "reason" => "not_found"} = Jason.decode!(data)
+    end
+  end
+
   describe "turn lifecycle on a running server" do
     defp start_with_turn(conv) do
       stub_happy_sprite()

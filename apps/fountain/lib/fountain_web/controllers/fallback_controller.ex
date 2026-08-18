@@ -122,6 +122,20 @@ defmodule FountainWeb.FallbackController do
     })
   end
 
+  # The wake path could not reach the sandbox provider to check whether the
+  # conversation's sandbox is still there (#799). Nothing was changed — the
+  # row is deliberately left as it was rather than retired on a transport
+  # error — so the caller should simply retry, same as :provisioning.
+  def call(conn, {:error, :sprite_probe_failed}) do
+    conn
+    |> put_resp_header("retry-after", "10")
+    |> put_status(:service_unavailable)
+    |> json(%{
+      error: "sandbox_probe_failed",
+      message: "could not reach the sandbox provider to wake the conversation; retry shortly"
+    })
+  end
+
   # Prompting a terminated conversation. 410 rather than 404: the id was
   # real, the resource is gone for good, and the caller should stop retrying.
   def call(conn, {:error, :gone}) do
