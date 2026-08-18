@@ -256,7 +256,10 @@ defmodule FountainWeb.TeamLiveMutationsTest do
 
     {:ok, view, _html} = live(conn, ~p"/team")
     view |> element("#add-teammate-button") |> render_click()
-    view |> element("button[phx-click=add_teammate][phx-value-agent_id='#{ada.id}']") |> render_click()
+
+    view
+    |> element("button[phx-click=add_teammate][phx-value-agent_id='#{ada.id}']")
+    |> render_click()
 
     assert_patch(view, ~p"/team/#{ada.id}")
     assert has_element?(view, "#teammate-#{ada.id}")

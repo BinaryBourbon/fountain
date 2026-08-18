@@ -219,8 +219,11 @@ defmodule FountainWeb.TeamLive do
     now = DateTime.utc_now()
 
     Enum.map(teammates, fn
-      %{conversation: %{id: ^conv_id} = conv} = t -> %{t | conversation: %{conv | last_read_at: now}}
-      t -> t
+      %{conversation: %{id: ^conv_id} = conv} = t ->
+        %{t | conversation: %{conv | last_read_at: now}}
+
+      t ->
+        t
     end)
   end
 
@@ -346,7 +349,10 @@ defmodule FountainWeb.TeamLive do
         # header facts refreshed.
         socket =
           if conv.id == selected.conversation.id do
-            socket |> assign(:prompt, "") |> push_event("clear_composer", %{}) |> refresh_teammates()
+            socket
+            |> assign(:prompt, "")
+            |> push_event("clear_composer", %{})
+            |> refresh_teammates()
           else
             Phoenix.PubSub.subscribe(Fountain.PubSub, "conv:#{conv.id}")
             socket = refresh_teammates(socket)
@@ -532,7 +538,9 @@ defmodule FountainWeb.TeamLive do
           >
             <span class="font-medium">Read-only:</span>
             your subscription is inactive.
-            <.link navigate={~p"/account/billing"} class="underline font-medium">Update billing</.link>
+            <.link navigate={~p"/account/billing"} class="underline font-medium">
+              Update billing
+            </.link>
           </div>
 
           <form
@@ -711,7 +719,11 @@ defmodule FountainWeb.TeamLive do
   defp agent_picker(assigns) do
     ~H"""
     <div id="add-teammate" class="relative z-50">
-      <div class="fixed inset-0 bg-black/50 backdrop-blur-sm" phx-click="close_picker" aria-hidden="true" />
+      <div
+        class="fixed inset-0 bg-black/50 backdrop-blur-sm"
+        phx-click="close_picker"
+        aria-hidden="true"
+      />
       <div
         class="fixed inset-0 overflow-y-auto flex items-center justify-center p-4"
         role="dialog"
