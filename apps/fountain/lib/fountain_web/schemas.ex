@@ -1612,10 +1612,7 @@ defmodule FountainWeb.Schemas do
         presence: %Schema{
           type: :object,
           properties: %{
-            state: %Schema{
-              type: :string,
-              enum: ~w(working starting online asleep away failed offline)
-            },
+            state: %Schema{type: :string, enum: FountainWeb.TeamPresenter.presence_states()},
             label: %Schema{type: :string}
           },
           required: [:state, :label]
@@ -1639,7 +1636,7 @@ defmodule FountainWeb.Schemas do
             "The roster line: `you` (the last prompt, no reply yet), `them` (the last " <>
               "reply), or `typing` (a turn is in flight). Null with no messages.",
           properties: %{
-            kind: %Schema{type: :string, enum: ~w(you them typing)},
+            kind: %Schema{type: :string, enum: FountainWeb.TeamPresenter.preview_kinds()},
             text: %Schema{type: :string, nullable: true}
           }
         }
@@ -1708,7 +1705,7 @@ defmodule FountainWeb.Schemas do
       title: "TeamMessageResponse",
       type: :object,
       properties: %{
-        status: %Schema{type: :string, enum: ["queued"]},
+        status: %Schema{type: :string, example: "queued"},
         conversation_id: %Schema{
           type: :string,
           format: :uuid,

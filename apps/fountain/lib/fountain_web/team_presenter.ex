@@ -16,6 +16,15 @@ defmodule FountainWeb.TeamPresenter do
   @typedoc "`state` is the vocabulary a client switches on; `label` is what a human reads."
   @type presence :: %{state: String.t(), label: String.t()}
 
+  @presence_states ~w(working starting online asleep away failed offline)
+  @preview_kinds ~w(you them typing)
+
+  @doc "Every `state` `presence/1` can answer — the wire enum."
+  def presence_states, do: @presence_states
+
+  @doc "Every `kind` the JSON preview can carry — the wire enum."
+  def preview_kinds, do: @preview_kinds
+
   @doc """
   What the teammate's computer is doing, from the conversation and its
   sandbox. States: `working`, `starting`, `online`, `asleep`, `away`,
