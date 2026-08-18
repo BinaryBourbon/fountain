@@ -158,7 +158,8 @@ for it, so it is configured on the command line, one editor entry per agent.
 Credentials are the ones `fountain auth login` already saved, and `--profile`
 selects the instance.
 
-**[Editors (ACP)](integrations/editors.md)** has the setup, the editor config
+**[`fountain acp` (reference)](integrations/acp.md)** documents the protocol
+surface and flags in full; **[Editors (ACP)](integrations/editors.md)** has the setup, the editor config
 snippets, and the limits worth knowing before you start — chief among them that
 the agent works on a sandbox's files, not the ones open in your editor.
 

@@ -18,6 +18,15 @@ upgrade, is in
 
 ### Added
 
+- **Docs: a [`fountain acp` reference](https://binarybourbon.github.io/fountain/integrations/acp/)
+  and an "Operating a hosted agent" section on the Buzz page.** The three ACP
+  clients (editors, OpenClaw, Buzz) now point at one page for the adapter's
+  protocol surface, `_meta` extensions (`channelId`, `freshSession`), what
+  streams back and what is ignored. The Buzz page gains the day-2 material:
+  who may talk to an agent and how to change it, how other people's clients
+  discover it (the kind:10100 entry), what a re-deploy restarts, the owner
+  control commands, where to look, and a symptom table.
+
 - **`fountain buzz agents set-access` / `PATCH /api/buzz/agents/:id`.** Change
   who may `@`-mention a hosted Buzz agent (`--respond-to owner-only | allowlist
   | anyone | nobody`, `--allowlist <hex,…>`) after it is deployed; the harness

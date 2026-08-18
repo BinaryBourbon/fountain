@@ -46,6 +46,7 @@ defmodule Fountain.Docs do
     {"Integrations",
      [
        {"Overview", "integrations/index.md"},
+       {"fountain acp (reference)", "integrations/acp.md"},
        {"Editors (ACP)", "integrations/editors.md"},
        {"OpenClaw (ACP)", "integrations/openclaw.md"},
        {"Buzz (Nostr)", "integrations/buzz.md"},
