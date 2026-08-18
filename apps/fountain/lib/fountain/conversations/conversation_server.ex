@@ -2080,7 +2080,11 @@ defmodule Fountain.Conversations.ConversationServer do
     end
 
     # On the first turn, asynchronously generate a short title for the sidebar.
-    if turn.turn_number == 1 do
+    # Not for a teammate's conversation: there the title is the name the user
+    # gave the teammate when adding it (or nothing, and the agent's name
+    # shows), and a generated summary would rename the teammate on the team
+    # page after its first message (#807).
+    if turn.turn_number == 1 and conv.channel_id != Fountain.Team.channel() do
       conv_id = state.conversation_id
       creds = state.inference_credentials
 
