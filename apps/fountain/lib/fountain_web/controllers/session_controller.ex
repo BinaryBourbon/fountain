@@ -39,7 +39,7 @@ defmodule FountainWeb.SessionController do
         |> configure_session(renew: true)
         |> put_session(:user_id, user.id)
         |> put_session(:session_version, user.session_version)
-        |> redirect(to: after_login_path(user))
+        |> redirect_after_login(user)
 
       {:error, reason} ->
         # Failures matter more than successes here: a run of them against one
@@ -102,6 +102,13 @@ defmodule FountainWeb.SessionController do
     do: "This account is currently unavailable. Contact support if you believe this is an error."
 
   defp login_error(_), do: "Invalid email or password."
+
+  # A request that needed a session and did not have one (the OAuth consent
+  # page, #817) stashed itself; go back to it. Otherwise the usual landing.
+  defp redirect_after_login(conn, user) do
+    {conn, path} = FountainWeb.ReturnTo.pop(conn, after_login_path(user))
+    redirect(conn, to: path)
+  end
 
   defp after_login_path(user) do
     if user.onboarding_completed_at do

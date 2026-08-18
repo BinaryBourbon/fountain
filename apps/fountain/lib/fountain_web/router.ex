@@ -196,6 +196,16 @@ defmodule FountainWeb.Router do
     get "/email/confirm/:token", AccountSecurityController, :confirm_email_change
   end
 
+  # OAuth 2.0 consent page (#817): the browser half of Fountain as an
+  # authorization server for its own apps. Optional session auth — the
+  # controller stashes the request and sends a signed-out user to login.
+  scope "/oauth", FountainWeb do
+    pipe_through [:browser, :browser_optional_auth]
+
+    get "/authorize", OAuthAuthorizeController, :show
+    post "/authorize", OAuthAuthorizeController, :create
+  end
+
   ## ─── Public JSON auth endpoints ───────────────────────────────────────────────────────────────────────
 
   scope "/api/auth", FountainWeb do
@@ -229,6 +239,19 @@ defmodule FountainWeb.Router do
     pipe_through [:accepts_json, :api]
 
     get "/me", AuthMeController, :show
+  end
+
+  # OAuth token endpoint (#817): unauthenticated by design — the code, the
+  # PKCE verifier and the exact redirect_uri are the proof; rate-limited in
+  # the controller. Revoke needs the token it revokes.
+  scope "/api/oauth", FountainWeb do
+    pipe_through :api_public
+    post "/token", OAuthTokenController, :token
+  end
+
+  scope "/api/oauth", FountainWeb do
+    pipe_through [:accepts_json, :api]
+    post "/revoke", OAuthTokenController, :revoke
   end
 
   # Key management is scope-gated: the per-conversation token a sprite holds

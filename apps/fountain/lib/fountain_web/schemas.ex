@@ -1841,6 +1841,55 @@ defmodule FountainWeb.Schemas do
     })
   end
 
+  defmodule OAuthTokenRequest do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "OAuthTokenRequest",
+      type: :object,
+      properties: %{
+        grant_type: %Schema{
+          type: :string,
+          description: "`authorization_code` (anything else is 400 `unsupported_grant_type`)."
+        },
+        code: %Schema{
+          type: :string,
+          description: "The code from the `/oauth/authorize` redirect."
+        },
+        code_verifier: %Schema{
+          type: :string,
+          description: "The PKCE verifier whose S256 challenge was sent to `/oauth/authorize`."
+        },
+        client_id: %Schema{type: :string},
+        redirect_uri: %Schema{
+          type: :string,
+          description: "Exactly the redirect_uri the authorization request used."
+        }
+      },
+      required: [:grant_type, :code, :code_verifier, :client_id, :redirect_uri]
+    })
+  end
+
+  defmodule OAuthTokenResponse do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "OAuthTokenResponse",
+      type: :object,
+      properties: %{
+        access_token: %Schema{
+          type: :string,
+          description: "A Fountain API key; use it as the bearer token."
+        },
+        token_type: %Schema{type: :string, example: "bearer"},
+        expires_in: %Schema{type: :integer, description: "Seconds until the key expires."}
+      },
+      required: [:access_token, :token_type, :expires_in]
+    })
+  end
+
   defmodule Error do
     @moduledoc false
     require OpenApiSpex

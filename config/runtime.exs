@@ -948,3 +948,24 @@ config :fountain,
        |> System.get_env("")
        |> String.split(",", trim: true)
        |> Enum.map(&String.trim/1)
+
+# ── OAuth clients ─────────────────────────────────────────────────────────
+#
+# The public browser apps allowed to sign in with Fountain (#817), as JSON:
+#   OAUTH_CLIENTS='[{"id":"fountain-conversations","name":"Fountain Conversations",
+#                    "redirect_uris":["https://jakegaylor.com/fountain-conversations/"]}]'
+# Unset (or invalid) means no clients — /oauth/authorize refuses everything —
+# except in dev and test, whose config files register the local apps.
+case System.get_env("OAUTH_CLIENTS") do
+  blank when blank in [nil, ""] ->
+    :ok
+
+  json ->
+    case Jason.decode(json) do
+      {:ok, list} when is_list(list) ->
+        config :fountain, :oauth_clients, list
+
+      _ ->
+        raise "OAUTH_CLIENTS must be a JSON array of {id, name, redirect_uris}"
+    end
+end

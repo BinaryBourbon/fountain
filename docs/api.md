@@ -58,6 +58,26 @@ The email endpoint answers identically whether or not the address is free — it
 
 **Session cookie:** Obtained via OAuth at `/auth/oauth/:provider` or email/password login. Used by the web UI.
 
+### Sign in with Fountain (OAuth 2.0 for browser apps)
+
+Fountain's own browser apps on other origins ([team](https://github.com/jhgaylor/fountain-team),
+[conversations](https://github.com/jhgaylor/fountain-conversations)) do not
+paste a key: they use the **authorization code grant with PKCE (S256)** as
+public clients, and the token they get *is* an API key (`decisions/0021`).
+
+```
+GET  /oauth/authorize?client_id=…&redirect_uri=…&code_challenge=…&code_challenge_method=S256&state=…
+     # browser: consent page (login round-trips back here) → 302 redirect_uri?code=…&state=…
+POST /api/oauth/token    # {grant_type: "authorization_code", code, code_verifier, client_id, redirect_uri}
+                         # → {access_token, token_type: "bearer", expires_in}   (400 invalid_grant otherwise)
+POST /api/oauth/revoke   # bearer: revoke the presented token (sign-out)
+```
+
+Clients are registered on the server (`OAUTH_CLIENTS`, exact redirect URIs);
+an unregistered client or redirect renders an error page and never
+redirects. Codes live five minutes and are single-use. The key is full-scope,
+expires in 30 days, and lists under Account → API keys as `oauth:<client_id>`.
+
 ## Account state
 
 ```

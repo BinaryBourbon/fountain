@@ -113,11 +113,13 @@ defmodule FountainWeb.UeberauthController do
             metadata: %{"provider" => provider}
           )
 
+          {conn, path} = FountainWeb.ReturnTo.pop(conn, ~p"/conversations")
+
           conn
           |> configure_session(renew: true)
           |> put_session(:user_id, user.id)
           |> put_session(:session_version, user.session_version)
-          |> redirect(to: ~p"/conversations")
+          |> redirect(to: path)
         end
 
       {:error, reason} when reason in [:registration_closed, :email_domain_not_allowed] ->
