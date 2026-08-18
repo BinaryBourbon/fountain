@@ -2,7 +2,7 @@ defmodule Fountain.OAuth do
   @moduledoc """
   Fountain as the OAuth 2.0 authorization server for its own first-party
   browser apps — the standalone team and conversations clients on another
-  origin (#817).
+  origin (#818).
 
   The problem it solves: those apps authenticate every API call with a
   bearer API key, and until now the key had to be pasted in. This turns a

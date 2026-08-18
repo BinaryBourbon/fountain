@@ -196,7 +196,7 @@ defmodule FountainWeb.Router do
     get "/email/confirm/:token", AccountSecurityController, :confirm_email_change
   end
 
-  # OAuth 2.0 consent page (#817): the browser half of Fountain as an
+  # OAuth 2.0 consent page (#818): the browser half of Fountain as an
   # authorization server for its own apps. Optional session auth — the
   # controller stashes the request and sends a signed-out user to login.
   scope "/oauth", FountainWeb do
@@ -241,7 +241,7 @@ defmodule FountainWeb.Router do
     get "/me", AuthMeController, :show
   end
 
-  # OAuth token endpoint (#817): unauthenticated by design — the code, the
+  # OAuth token endpoint (#818): unauthenticated by design — the code, the
   # PKCE verifier and the exact redirect_uri are the proof; rate-limited in
   # the controller. Revoke needs the token it revokes.
   scope "/api/oauth", FountainWeb do

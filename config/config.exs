@@ -120,7 +120,7 @@ config :ueberauth, Ueberauth.Strategy.Github.OAuth,
   client_id: System.get_env("GITHUB_OAUTH_CLIENT_ID"),
   client_secret: System.get_env("GITHUB_OAUTH_CLIENT_SECRET")
 
-# OAuth clients (#817): none by default; dev/test/runtime set them.
+# OAuth clients (#818): none by default; dev/test/runtime set them.
 config :fountain, :oauth_clients, []
 
 import_config "#{config_env()}.exs"

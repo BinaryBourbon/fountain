@@ -78,7 +78,7 @@ config :fountain, :migrate_on_boot, true
 # Jobs are asserted with Oban.Testing rather than executed as a side effect.
 config :fountain, Oban, testing: :manual
 
-# OAuth clients (#817) the controller tests register against.
+# OAuth clients (#818) the controller tests register against.
 config :fountain, :oauth_clients, [
   %{
     id: "test-app",

@@ -1,6 +1,6 @@
 defmodule FountainWeb.OAuthTokenController do
   @moduledoc """
-  The token half of Fountain's OAuth 2.0 authorization server (#817):
+  The token half of Fountain's OAuth 2.0 authorization server (#818):
   `POST /api/oauth/token` exchanges a consent code (with its PKCE verifier)
   for an API key; `POST /api/oauth/revoke` revokes the key an app presents
   when it signs out. Public clients — no client secret, so the token route

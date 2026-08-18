@@ -127,7 +127,7 @@ spec:
             - name: API_CORS_ORIGINS
               value: https://jakegaylor.com
             # The same apps may "Sign in with Fountain" (OAuth code + PKCE,
-            # #817). Redirect URIs are exact.
+            # #818). Redirect URIs are exact.
             - name: OAUTH_CLIENTS
               value: '[{"id":"fountain-conversations","name":"Fountain Conversations","redirect_uris":["https://jakegaylor.com/fountain-conversations/"]},{"id":"fountain-team","name":"Fountain Team","redirect_uris":["https://jakegaylor.com/fountain-team/"]}]'
             # SANDBOX_IDLE_TIMEOUT_MINUTES is back at the stock 60m default.

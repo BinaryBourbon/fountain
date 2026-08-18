@@ -104,7 +104,7 @@ defmodule FountainWeb.SessionController do
   defp login_error(_), do: "Invalid email or password."
 
   # A request that needed a session and did not have one (the OAuth consent
-  # page, #817) stashed itself; go back to it. Otherwise the usual landing.
+  # page, #818) stashed itself; go back to it. Otherwise the usual landing.
   defp redirect_after_login(conn, user) do
     {conn, path} = FountainWeb.ReturnTo.pop(conn, after_login_path(user))
     redirect(conn, to: path)

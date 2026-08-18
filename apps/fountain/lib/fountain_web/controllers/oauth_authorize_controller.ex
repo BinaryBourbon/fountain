@@ -1,6 +1,6 @@
 defmodule FountainWeb.OAuthAuthorizeController do
   @moduledoc """
-  The consent page of Fountain's OAuth 2.0 authorization server (#817):
+  The consent page of Fountain's OAuth 2.0 authorization server (#818):
   `GET /oauth/authorize` shows which registered app is asking; `POST` with
   the decision either issues a one-time code and redirects to the app's
   registered URI, or redirects there with `error=access_denied`.

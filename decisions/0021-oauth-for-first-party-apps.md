@@ -14,7 +14,7 @@ stale_after: 2026-11-18
 
 # 0021 — Fountain is the OAuth 2.0 authorization server for its own browser apps
 
-**Status:** Accepted — built in [#818](https://github.com/BinaryBourbon/fountain/pull/818):
+**Status:** Accepted — built in [#819](https://github.com/BinaryBourbon/fountain/pull/819):
 `Fountain.OAuth`, `GET/POST /oauth/authorize`, `POST /api/oauth/token`,
 `POST /api/oauth/revoke`, `OAUTH_CLIENTS`.
 

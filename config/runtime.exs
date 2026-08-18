@@ -951,7 +951,7 @@ config :fountain,
 
 # ── OAuth clients ─────────────────────────────────────────────────────────
 #
-# The public browser apps allowed to sign in with Fountain (#817), as JSON:
+# The public browser apps allowed to sign in with Fountain (#818), as JSON:
 #   OAUTH_CLIENTS='[{"id":"fountain-conversations","name":"Fountain Conversations",
 #                    "redirect_uris":["https://jakegaylor.com/fountain-conversations/"]}]'
 # Unset (or invalid) means no clients — /oauth/authorize refuses everything —

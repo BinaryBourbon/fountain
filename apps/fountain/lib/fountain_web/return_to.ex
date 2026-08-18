@@ -1,7 +1,7 @@
 defmodule FountainWeb.ReturnTo do
   @moduledoc """
   Where to land after login when a request needed a session it did not have
-  — the OAuth consent page is the first such request (#817): an app sends the
+  — the OAuth consent page is the first such request (#818): an app sends the
   browser to `/oauth/authorize?…`, the user is not signed in, signs in, and
   must come back to that exact request rather than the dashboard.
 

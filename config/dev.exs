@@ -26,7 +26,7 @@ config :logger, :default_formatter, format: "[$level] $message\n"
 config :phoenix, :stacktrace_depth, 20
 config :phoenix, :plug_init_mode, :runtime
 
-# OAuth clients (#817): the standalone apps served by `bunx vite` locally.
+# OAuth clients (#818): the standalone apps served by `bunx vite` locally.
 config :fountain, :oauth_clients, [
   %{
     id: "fountain-team",
