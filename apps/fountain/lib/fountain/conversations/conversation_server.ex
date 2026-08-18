@@ -63,9 +63,10 @@ defmodule Fountain.Conversations.ConversationServer do
   The persisted `runtime_session_id` is what the next turn resumes by
   (`session/resume` under ACP). Note that it only carries the conversation
   while the *sandbox* survives: a runtime session lives in the sandbox
-  filesystem, so a wake that provisions a fresh sprite resumes against a
-  session that is not there — see #649. `log_events` still render the whole
-  transcript, which is what makes that failure quiet.
+  filesystem, so a wake that provisions a fresh sprite cannot resume it. The
+  server clears the id when it provisions fresh (#778, `forget_runtime_session`)
+  and the next turn starts a new session on the new disk; `log_events` still
+  render the whole transcript.
   """
   def send_prompt(conv_id, prompt, images \\ [], opts \\ []) do
     result =
@@ -612,6 +613,8 @@ defmodule Fountain.Conversations.ConversationServer do
           # conversations on this env can warm-start from it. Async so it
           # doesn't block the user's first turn.
           maybe_create_checkpoint_async(handle, env)
+
+          state = forget_runtime_session(state, conv)
 
           # Dated from the sandbox row, not from now, so the absolute lifetime
           # ceiling survives a restart and a reattach rather than resetting.
@@ -1845,6 +1848,33 @@ defmodule Fountain.Conversations.ConversationServer do
   defp redact(_present), do: "[REDACTED]"
 
   # ── helpers ───────────────────────────────────────────────────────────────
+
+  # A runtime session lives in the sandbox filesystem, so it cannot follow the
+  # conversation onto a freshly provisioned one. Until #778 a wake that took
+  # the `:create_new` arm kept the old id, the next turn ran in `:continue`
+  # mode, and the ACP peer's `session/resume` failed `-32002 Resource not
+  # found` against a disk that had never seen the session — on every prompt,
+  # until the conversation was terminated. Clearing it here makes the next
+  # turn `:run` → `session/new`: the same conversation, transcript and title,
+  # a new runtime session on the new disk. The agent's in-context memory is
+  # lost either way; the difference is a working turn instead of a failing
+  # one, and a stage event that says so.
+  #
+  # Done inside the server rather than by the wake caller: the caller's row
+  # update races this server's own read of the row in handle_continue.
+  defp forget_runtime_session(%{runtime_session_id: nil} = state, _conv), do: state
+
+  defp forget_runtime_session(state, conv) do
+    {:ok, _} = Conversations.update_conversation(conv, %{runtime_session_id: nil})
+
+    publish_stage(state.conversation_id, "session", "done", %{
+      event: "reset",
+      reason: "fresh_sandbox",
+      detail: "the previous runtime session lived on a sandbox that no longer exists"
+    })
+
+    %{state | runtime_session_id: nil}
+  end
 
   # The row's provider decides where the sandbox is created; adopt-on-
   # already-exists is the adapter's job.

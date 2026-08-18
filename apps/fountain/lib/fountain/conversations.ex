@@ -1334,9 +1334,12 @@ defmodule Fountain.Conversations do
      server will go through reattach mode and pick up any running
      detachable session.
   2. Otherwise, provision a fresh sprite, mark the old sandbox
-     terminated, and start the server pointing at the new sandbox.
-     `claude --resume` keeps the chat via the persisted
-     `runtime_session_id`.
+     terminated, and start the server pointing at the new sandbox. The
+     runtime session does not follow — it lived on the old disk — so the
+     server clears `runtime_session_id` once the fresh sprite is up and the
+     next turn starts a new one (#778). The Fountain conversation, its
+     transcript and its title carry over; the agent's in-context memory
+     does not.
 
   Returns `{:error, :gone}` if the conversation is in a terminal status
   (`terminated`, `failed`) — those don't auto-resume.

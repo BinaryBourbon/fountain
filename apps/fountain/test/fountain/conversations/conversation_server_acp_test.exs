@@ -319,9 +319,23 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
     test "resumes by the persisted id rather than guessing" do
       # The hazard 0014 names: gemini's `--resume` and codex's `--last` re-enter
       # "the most recent conversation in the workspace". ACP names the session.
+      #
+      # On the sandbox that minted the id: a `ready` row routes the server
+      # through reattach, which is what a second turn after a server restart
+      # looks like. (This test used to start from a `pending` sandbox with a
+      # prior id — a fresh provision — which is the #778 shape and now,
+      # correctly, does not resume; see the describe below.)
       user = insert_verified_user()
-      conv = insert_conversation(agent: acp_agent(user), user_id: user.id)
-      {:ok, _} = Conversations.update_conversation(conv, %{runtime_session_id: "sess_prior"})
+      sandbox = insert_sandbox(user_id: user.id, status: "ready")
+
+      conv =
+        insert_conversation(
+          agent: acp_agent(user),
+          user_id: user.id,
+          sandbox: sandbox,
+          status: "idle",
+          runtime_session_id: "sess_prior"
+        )
 
       {pid, ref} = start_acp_turn(conv)
 
@@ -331,6 +345,71 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
       decoded = next_write()
       assert decoded["method"] == "session/resume"
       assert decoded["params"]["sessionId"] == "sess_prior"
+    end
+  end
+
+  describe "a wake onto a fresh sandbox (#778)" do
+    test "starts a new runtime session instead of resuming one the disk never saw" do
+      # The conversation's previous sandbox is gone (ceiling destroy, failed
+      # probe, …) and the wake took the :create_new arm: a `pending` row and
+      # a fresh provision, but the row still names the session that lived on
+      # the old disk. Resuming it fails `-32002 Resource not found` on every
+      # prompt until the conversation is terminated. The server must forget
+      # the id when it provisions fresh, so the next turn is `session/new`.
+      user = insert_verified_user()
+      sandbox = insert_sandbox(user_id: user.id, status: "pending")
+
+      conv =
+        insert_conversation(
+          agent: acp_agent(user),
+          user_id: user.id,
+          sandbox: sandbox,
+          status: "idle",
+          runtime_session_id: "sess_on_the_old_disk"
+        )
+
+      {pid, ref} = start_acp_turn(conv)
+
+      %{"id" => init_id} = next_write()
+      reply(pid, ref, init_id, %{"agentCapabilities" => @caps})
+
+      decoded = next_write()
+      assert decoded["method"] == "session/new"
+      refute Map.has_key?(decoded["params"], "sessionId")
+
+      # The stale id is gone from the row (the turn start persists a fresh
+      # placeholder, which `session/new` overwrites below), and the transcript
+      # says why the agent's memory did not follow.
+      refute Conversations._unsafe_get_conversation!(conv.id).runtime_session_id ==
+               "sess_on_the_old_disk"
+
+      assert %{data: data} =
+               conv.id
+               |> Conversations._unsafe_list_log_events()
+               |> Enum.find(&(&1.kind == "stage" and &1.stage == "session"))
+
+      assert %{"event" => "reset", "reason" => "fresh_sandbox"} = Jason.decode!(data)
+
+      # And the id the agent mints on the new disk is what the next turn
+      # resumes by — the same round trip as a brand-new conversation.
+      reply(pid, ref, decoded["id"], %{"sessionId" => "sess_new_disk"})
+
+      assert Conversations._unsafe_get_conversation!(conv.id).runtime_session_id ==
+               "sess_new_disk"
+    end
+
+    test "a conversation that never had a session does not get a spurious reset event" do
+      user = insert_verified_user()
+      conv = insert_conversation(agent: acp_agent(user), user_id: user.id)
+
+      {pid, ref} = start_acp_turn(conv)
+      %{"id" => init_id} = next_write()
+      reply(pid, ref, init_id, %{"agentCapabilities" => @caps})
+      %{"method" => "session/new"} = next_write()
+
+      refute conv.id
+             |> Conversations._unsafe_list_log_events()
+             |> Enum.any?(&(&1.kind == "stage" and &1.stage == "session"))
     end
   end
 
