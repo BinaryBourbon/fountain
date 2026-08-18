@@ -92,6 +92,15 @@ func TestHandleStageEvent(t *testing.T) {
 			wantErr:  errReattachFailed,
 		},
 		{
+			// #799: a transient failure leaves the sandbox untouched. Still
+			// terminal for the stream — the server stopped — and still an
+			// error exit, but the message tells the caller to just retry.
+			name:     "transient reattach failure is terminal and fails",
+			data:     map[string]any{"stage": "reattach", "state": "failed", "data": `{"reason":"{:unavailable, :nxdomain}","retryable":true}`},
+			terminal: true,
+			wantErr:  errReattachFailed,
+		},
+		{
 			// The server falls back to cold provisioning after a failed
 			// checkpoint restore — the stream must keep going.
 			name:     "checkpoint restore failed is not terminal (cold provision follows)",
