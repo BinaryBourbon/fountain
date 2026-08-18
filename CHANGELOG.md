@@ -30,6 +30,18 @@ upgrade, is in
 
 ### Fixed
 
+- **A hosted Buzz agent now shows up in other people's `@`-mention
+  autocomplete.** Buzz Desktop admits a non-owned agent to autocomplete only if
+  the relay carries a kind:10100 directory entry for it saying which channels
+  it listens in and whom it answers — and nothing published one, so even with
+  `respond_to: anyone` a hosted agent was mentionable by its owner alone (the
+  owner's desktop knows it locally). The pin moves to
+  `buzz-acp-v0.5.14-fountain.4`, carrying block/buzz#6097: the harness
+  publishes that entry at startup and again on every membership change, from
+  the channels it actually subscribes to and its real author gate. Fountain's
+  `BUZZ_ACP_DISPLAY_NAME` becomes the advertised name. #776 now waits on #6097
+  too. (#790)
+
 - **`!shutdown` no longer restart-loops a hosted harness.** The supervisor
   restarts `buzz-acp` on any exit and the fresh process replayed the same
   `!shutdown` from its subscription backlog — five exits per command before
