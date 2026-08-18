@@ -18,6 +18,21 @@ upgrade, is in
 
 ### Added
 
+- **Team page (`/team`): your agents as teammates, one conversation each,
+  laid out like a messaging app.** The roster on the left, the selected
+  teammate's thread on the right, Enter to send. Adding an agent to the team
+  opens its one persistent conversation — which provisions the agent its own
+  sandbox, its computer — bound to the reserved channel `fountain:team`
+  exactly the way a Buzz channel binds one (`Fountain.Team`; a teammate is a
+  conversation, not a new kind of thing). A message is a turn on it; a parked
+  or reaped sandbox wakes on the next message as before, and a terminated one
+  is replaced by a fresh conversation under the same binding, so the teammate
+  is always reachable. Removing a teammate terminates the live conversation
+  and unbinds every conversation the agent had under the channel; the rows
+  stay in `/conversations`. Audited as `team.member.added` / `.removed`.
+  The chat bubbles moved out of `ConversationsLive.Show` into
+  `ConversationsLive.Chat` so both surfaces render a turn the same way.
+
 - **Docs: a [`fountain acp` reference](https://binarybourbon.github.io/fountain/integrations/acp/)
   and an "Operating a hosted agent" section on the Buzz page.** The three ACP
   clients (editors, OpenClaw, Buzz) now point at one page for the adapter's

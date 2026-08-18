@@ -640,7 +640,6 @@ defmodule FountainWeb.ConversationsLive.Show do
     """
   end
 
-
   attr :name, :string, required: true
   attr :label, :string, required: true
   attr :active, :boolean, required: true
@@ -1075,7 +1074,6 @@ defmodule FountainWeb.ConversationsLive.Show do
     </details>
     """
   end
-
 
   # Flatten a turn section's children into a single ordered block list,
   # then collapse each tool_use ↔ tool_result pair (matched by id) into

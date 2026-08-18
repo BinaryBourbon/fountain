@@ -533,6 +533,27 @@ defmodule Fountain.Conversations do
   end
 
   @doc """
+  Every conversation of `user_id` bound to `channel_id`, live or not, newest
+  activity first, with the read-model annotations (`turn_count`,
+  `last_active_at`) populated and `:agent` + `:sandbox` preloaded.
+
+  The channel-bound counterpart of `list_conversations/2`. Terminated and
+  failed conversations are included on purpose: a binding outlives its
+  sandbox (`start_or_resume_conversation/2` opens a new one next time), and
+  the surface reading a channel — the team page — wants the last transcript
+  even when nothing is running.
+  """
+  def list_channel_conversations(user_id, channel_id)
+      when is_binary(user_id) and is_binary(channel_id) do
+    from(c in annotated_query(user_id),
+      where: c.channel_id == ^channel_id,
+      order_by: [desc: c.inserted_at, desc: c.id]
+    )
+    |> Repo.all()
+    |> Repo.preload([:agent, :sandbox])
+  end
+
+  @doc """
   Scoped fetch that also populates the read-model annotations —
   `turn_count` and `last_active_at` — which `get_conversation/2` leaves at
   their defaults.
@@ -857,6 +878,15 @@ defmodule Fountain.Conversations do
     Phoenix.PubSub.broadcast(Fountain.PubSub, "conv:#{conv_id}", {:log_event, event})
 
     event
+  end
+
+  @doc """
+  One turn's log events, oldest first — the events a single reply is rendered
+  from. Ownership rides on the turn: reach it through a tenant-scoped
+  conversation first.
+  """
+  def _unsafe_list_turn_log_events(turn_id) when is_binary(turn_id) do
+    Repo.all(from e in LogEvent, where: e.turn_id == ^turn_id, order_by: [asc: e.id])
   end
 
   @doc """
