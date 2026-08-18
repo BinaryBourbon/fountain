@@ -1522,7 +1522,10 @@ defmodule Fountain.Billing do
     diverge for exactly the accounts where provisioning is failing.
   - `:turns` — count of `turn_started` events
   - `:sandbox_minutes` — total wall-clock sandbox time in minutes, derived
-    from `duration_ms` metadata on `sandbox_terminated` events
+    from `duration_ms` metadata on `sandbox_terminated` events, minus any
+    parked interval bracketed by `sandbox_suspended`/`sandbox_resumed` (or, for
+    a sandbox that parks and is torn down without ever waking again,
+    `sandbox_suspended` paired with the terminated event itself) (#665).
   """
   @spec usage_summary(binary(), DateTime.t(), DateTime.t()) ::
           %{conversations: non_neg_integer(), turns: non_neg_integer(), sandbox_minutes: float()}
@@ -1541,18 +1544,7 @@ defmodule Fountain.Billing do
 
     turns = Enum.count(events, &(&1.event_type == "turn_started"))
 
-    sandbox_minutes =
-      events
-      |> Enum.filter(&(&1.event_type == "sandbox_terminated"))
-      |> Enum.reduce(0.0, fn ev, acc ->
-        ms =
-          get_in(ev.metadata, ["duration_ms"]) ||
-            get_in(ev.metadata, [:duration_ms]) || 0
-
-        acc + ms / 60_000.0
-      end)
-
-    %{conversations: conversations, turns: turns, sandbox_minutes: sandbox_minutes}
+    %{conversations: conversations, turns: turns, sandbox_minutes: sandbox_minutes(events)}
   end
 
   @doc """
@@ -1566,42 +1558,108 @@ defmodule Fountain.Billing do
   def usage_summaries(%DateTime{} = period_start, %DateTime{} = period_end) do
     empty = %{conversations: 0, turns: 0, sandbox_minutes: 0.0}
 
+    counted =
+      from(e in UsageEvent,
+        where:
+          e.inserted_at >= ^period_start and e.inserted_at < ^period_end and
+            e.event_type in ["sandbox_provisioned", "sandbox_provision_failed", "turn_started"],
+        group_by: [e.user_id, e.event_type],
+        select: {e.user_id, e.event_type, count(e.id)}
+      )
+      |> Repo.all()
+      |> Enum.reduce(%{}, fn {user_id, type, count}, acc ->
+        summary = Map.get(acc, user_id, empty)
+
+        summary =
+          case type do
+            "sandbox_provisioned" ->
+              %{summary | conversations: summary.conversations + count}
+
+            "sandbox_provision_failed" ->
+              %{summary | conversations: summary.conversations + count}
+
+            "turn_started" ->
+              %{summary | turns: count}
+          end
+
+        Map.put(acc, user_id, summary)
+      end)
+
+    # Separate pass, in its own (still single) query: pairing suspend/resume
+    # intervals against a sandbox's terminated duration (#665) needs the raw
+    # per-sandbox event timeline, which a `sum(duration_ms)` aggregate throws
+    # away. These three event types are a small slice of `usage_events`
+    # compared to `turn_started`, so pulling their rows is cheap next to the
+    # one-query-per-admin-refresh constraint above.
     from(e in UsageEvent,
-      where: e.inserted_at >= ^period_start and e.inserted_at < ^period_end,
-      group_by: [e.user_id, e.event_type],
-      select:
-        {e.user_id, e.event_type, count(e.id),
-         sum(coalesce(fragment("(? ->> 'duration_ms')::numeric", e.metadata), 0))}
+      where:
+        e.inserted_at >= ^period_start and e.inserted_at < ^period_end and
+          e.event_type in ["sandbox_suspended", "sandbox_resumed", "sandbox_terminated"]
     )
     |> Repo.all()
-    |> Enum.reduce(%{}, fn {user_id, type, count, duration_ms}, acc ->
+    |> Enum.group_by(& &1.user_id)
+    |> Enum.reduce(counted, fn {user_id, user_events}, acc ->
       summary = Map.get(acc, user_id, empty)
-
-      summary =
-        case type do
-          "sandbox_provisioned" ->
-            %{summary | conversations: summary.conversations + count}
-
-          "sandbox_provision_failed" ->
-            %{summary | conversations: summary.conversations + count}
-
-          "turn_started" ->
-            %{summary | turns: count}
-
-          "sandbox_terminated" ->
-            %{summary | sandbox_minutes: to_minutes(duration_ms)}
-
-          _ ->
-            summary
-        end
-
-      Map.put(acc, user_id, summary)
+      Map.put(acc, user_id, %{summary | sandbox_minutes: sandbox_minutes(user_events)})
     end)
   end
 
-  defp to_minutes(nil), do: 0.0
-  defp to_minutes(%Decimal{} = ms), do: Decimal.to_float(ms) / 60_000.0
-  defp to_minutes(ms) when is_number(ms), do: ms / 60_000.0
+  # Shared by usage_summary/3 (one user's events) and usage_summaries/2 (one
+  # user's slice of the all-users pull) — sums sandbox_terminated's
+  # duration_ms, minus whatever of that span was parked rather than running.
+  defp sandbox_minutes(events) do
+    parked_ms_by_sandbox = parked_ms_by_sandbox(events)
+
+    events
+    |> Enum.filter(&(&1.event_type == "sandbox_terminated"))
+    |> Enum.reduce(0.0, fn ev, acc ->
+      ms =
+        get_in(ev.metadata, ["duration_ms"]) ||
+          get_in(ev.metadata, [:duration_ms]) || 0
+
+      parked_ms = Map.get(parked_ms_by_sandbox, ev.resource_id, 0)
+      acc + max(ms - parked_ms, 0) / 60_000.0
+    end)
+  end
+
+  # A sandbox's parked time, in milliseconds, keyed by resource_id (the
+  # sandbox id). Pairs each `sandbox_suspended` with the `sandbox_resumed` (or,
+  # failing that, the `sandbox_terminated`) that closes it, in event order —
+  # a `sandbox_suspended` with neither in this event set is still parked as of
+  # `period_end` and contributes nothing yet, matching `sandbox_terminated`'s
+  # own absence from the minutes total until it fires.
+  defp parked_ms_by_sandbox(events) do
+    events
+    |> Enum.filter(
+      &(&1.event_type in ["sandbox_suspended", "sandbox_resumed", "sandbox_terminated"])
+    )
+    |> Enum.group_by(& &1.resource_id)
+    |> Map.new(fn {resource_id, resource_events} ->
+      parked_ms =
+        resource_events
+        |> Enum.sort_by(& &1.inserted_at, DateTime)
+        |> sum_parked_intervals()
+
+      {resource_id, parked_ms}
+    end)
+  end
+
+  defp sum_parked_intervals(sorted_events) do
+    {total_ms, _suspended_since} =
+      Enum.reduce(sorted_events, {0, nil}, fn
+        %{event_type: "sandbox_suspended", inserted_at: at}, {total_ms, nil} ->
+          {total_ms, at}
+
+        %{event_type: type, inserted_at: at}, {total_ms, since}
+        when type in ["sandbox_resumed", "sandbox_terminated"] and not is_nil(since) ->
+          {total_ms + DateTime.diff(at, since, :millisecond), nil}
+
+        _event, acc ->
+          acc
+      end)
+
+    total_ms
+  end
 
   # ─── Admin billing overview (#286) ──────────────────────────────────────────
 

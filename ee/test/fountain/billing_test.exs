@@ -509,6 +509,126 @@ defmodule Fountain.BillingTest do
     end
   end
 
+  describe "usage_summary/3 — suspend-aware sandbox_minutes (#665)" do
+    @period_start ~U[2026-05-01 00:00:00Z]
+    @period_end ~U[2026-06-01 00:00:00Z]
+    @sandbox_id Ecto.UUID.generate()
+
+    setup do
+      {:ok, user: insert_verified_user()}
+    end
+
+    test "subtracts a closed suspend/resume interval from the terminated duration", %{
+      user: user
+    } do
+      # Alive 12:00 -> 13:00 (1h = 3_600_000ms), parked 12:20 -> 12:50 (30min).
+      # Net run time: 30 minutes.
+      insert_event(user, "sandbox_suspended", ~U[2026-05-10 12:20:00Z], %{}, @sandbox_id)
+      insert_event(user, "sandbox_resumed", ~U[2026-05-10 12:50:00Z], %{}, @sandbox_id)
+
+      insert_event(
+        user,
+        "sandbox_terminated",
+        ~U[2026-05-10 13:00:00Z],
+        %{"duration_ms" => 3_600_000},
+        @sandbox_id
+      )
+
+      summary = Billing.usage_summary(user.id, @period_start, @period_end)
+
+      assert summary.sandbox_minutes == 30.0
+    end
+
+    test "closes a dangling suspend against the terminated event itself", %{user: user} do
+      # A sandbox that parks and is torn down (account deletion, tenant reap)
+      # without ever waking again: no sandbox_resumed at all. The whole parked
+      # span (12:20 -> 13:00, 40 minutes) must come off the hour.
+      insert_event(user, "sandbox_suspended", ~U[2026-05-10 12:20:00Z], %{}, @sandbox_id)
+
+      insert_event(
+        user,
+        "sandbox_terminated",
+        ~U[2026-05-10 13:00:00Z],
+        %{"duration_ms" => 3_600_000},
+        @sandbox_id
+      )
+
+      summary = Billing.usage_summary(user.id, @period_start, @period_end)
+
+      assert summary.sandbox_minutes == 20.0
+    end
+
+    test "sums multiple park cycles on the same sandbox", %{user: user} do
+      # Two separate suspend/resume cycles of 10 minutes each = 20 minutes
+      # parked out of the hour.
+      insert_event(user, "sandbox_suspended", ~U[2026-05-10 12:10:00Z], %{}, @sandbox_id)
+      insert_event(user, "sandbox_resumed", ~U[2026-05-10 12:20:00Z], %{}, @sandbox_id)
+      insert_event(user, "sandbox_suspended", ~U[2026-05-10 12:40:00Z], %{}, @sandbox_id)
+      insert_event(user, "sandbox_resumed", ~U[2026-05-10 12:50:00Z], %{}, @sandbox_id)
+
+      insert_event(
+        user,
+        "sandbox_terminated",
+        ~U[2026-05-10 13:00:00Z],
+        %{"duration_ms" => 3_600_000},
+        @sandbox_id
+      )
+
+      summary = Billing.usage_summary(user.id, @period_start, @period_end)
+
+      assert summary.sandbox_minutes == 40.0
+    end
+
+    test "never goes negative when parked time would exceed the recorded duration", %{
+      user: user
+    } do
+      insert_event(user, "sandbox_suspended", ~U[2026-05-10 11:00:00Z], %{}, @sandbox_id)
+
+      insert_event(
+        user,
+        "sandbox_terminated",
+        ~U[2026-05-10 13:00:00Z],
+        %{"duration_ms" => 60_000},
+        @sandbox_id
+      )
+
+      summary = Billing.usage_summary(user.id, @period_start, @period_end)
+
+      assert summary.sandbox_minutes == 0.0
+    end
+
+    test "keys parked intervals per sandbox — one sandbox's suspend does not bleed into another's",
+         %{user: user} do
+      other_sandbox_id = Ecto.UUID.generate()
+
+      insert_event(user, "sandbox_suspended", ~U[2026-05-10 12:20:00Z], %{}, other_sandbox_id)
+      insert_event(user, "sandbox_resumed", ~U[2026-05-10 12:50:00Z], %{}, other_sandbox_id)
+
+      insert_event(
+        user,
+        "sandbox_terminated",
+        ~U[2026-05-10 13:00:00Z],
+        %{"duration_ms" => 3_600_000},
+        @sandbox_id
+      )
+
+      summary = Billing.usage_summary(user.id, @period_start, @period_end)
+
+      # The suspend/resume pair belongs to a different sandbox; the terminated
+      # sandbox's full hour still counts.
+      assert summary.sandbox_minutes == 60.0
+    end
+
+    test "a suspend still parked at period end (no resume, no terminated event) contributes nothing",
+         %{user: user} do
+      insert_event(user, "sandbox_suspended", ~U[2026-05-10 12:20:00Z], %{}, @sandbox_id)
+
+      summary = Billing.usage_summary(user.id, @period_start, @period_end)
+
+      assert summary.sandbox_minutes == 0.0
+    end
+  end
+
   describe "sync_subscription/1 — trial_end nil branch" do
     setup do
       user = insert_verified_user()
@@ -697,13 +817,14 @@ defmodule Fountain.BillingTest do
     Ecto.Changeset.change(user, stripe_customer_id: customer_id) |> Repo.update!()
   end
 
-  defp insert_event(user, event_type, inserted_at, metadata \\ %{}) do
+  defp insert_event(user, event_type, inserted_at, metadata \\ %{}, resource_id \\ nil) do
     %UsageEvent{}
     |> UsageEvent.changeset(%{
       user_id: user.id,
       event_type: event_type,
       inserted_at: inserted_at,
-      metadata: metadata
+      metadata: metadata,
+      resource_id: resource_id
     })
     |> Repo.insert!()
   end
@@ -970,6 +1091,40 @@ defmodule Fountain.BillingTest do
       summaries = Billing.usage_summaries(DateTime.add(now, -1, :day), DateTime.add(now, 1, :day))
 
       assert summaries[a.id].conversations == 2
+    end
+
+    test "subtracts parked time per sandbox, per user (#665)" do
+      a = insert_verified_user()
+      b = insert_verified_user()
+      sandbox_a = Ecto.UUID.generate()
+      sandbox_b = Ecto.UUID.generate()
+
+      # a: alive an hour, parked 30 of those minutes -> nets 30.
+      insert_event(a, "sandbox_suspended", ~U[2026-05-10 12:20:00Z], %{}, sandbox_a)
+      insert_event(a, "sandbox_resumed", ~U[2026-05-10 12:50:00Z], %{}, sandbox_a)
+
+      insert_event(
+        a,
+        "sandbox_terminated",
+        ~U[2026-05-10 13:00:00Z],
+        %{"duration_ms" => 3_600_000},
+        sandbox_a
+      )
+
+      # b: alive an hour, never suspended -> nets the full 60.
+      insert_event(
+        b,
+        "sandbox_terminated",
+        ~U[2026-05-10 13:00:00Z],
+        %{"duration_ms" => 3_600_000},
+        sandbox_b
+      )
+
+      summaries =
+        Billing.usage_summaries(~U[2026-05-01 00:00:00Z], ~U[2026-06-01 00:00:00Z])
+
+      assert summaries[a.id].sandbox_minutes == 30.0
+      assert summaries[b.id].sandbox_minutes == 60.0
     end
   end
 
