@@ -94,7 +94,8 @@ for the sandbox privilege-escalation fix make them distinguishable.
 
 `system:<worker>` names are snake_case and match the module doing the work:
 `conversation_server`, `sandbox_reaper`, `retention_pruner`, `release_task`,
-`provisioning`, `account_export`, `unverified_pruner`, `verify_lifecycle`, and
+`provisioning`, `account_export`, `unverified_pruner`, `verify_lifecycle`,
+`team_scheduler`, and
 in `ee/` the billing sources `webhook`, `stripe`, `local`, `trial_sweeper`.
 
 Two rules keep the list from fraying:

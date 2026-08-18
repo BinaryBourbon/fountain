@@ -22,6 +22,7 @@ defmodule FountainWeb.TeamLive do
 
   alias Fountain.{Conversations, Team}
   alias Fountain.Conversations.{ConversationServer, LogEvent}
+  alias Fountain.Team.{Schedule, Schedules}
 
   @empty_add_form %{"agent_id" => nil, "name" => "", "environment_id" => "", "vault_id" => ""}
 
@@ -47,6 +48,10 @@ defmodule FountainWeb.TeamLive do
       |> assign(:picker_open, false)
       |> assign(:add_form, @empty_add_form)
       |> assign(:add_options, %{environments: [], vaults: []})
+      |> assign(:schedules_open, false)
+      |> assign(:schedules, [])
+      |> assign(:schedule_form, nil)
+      |> assign(:editing_schedule, nil)
 
     # `/team` with no teammate named lands on the most recently active one,
     # the way a messaging app opens on the top thread; `/team/:agent_id` is
@@ -92,6 +97,10 @@ defmodule FountainWeb.TeamLive do
     |> assign(:prompt, "")
     |> assign(:teammates, mark_read_locally(socket.assigns.teammates, conv.id))
     |> assign(:page_title, "#{teammate.name} · Team")
+    |> assign(:schedules, Schedules.list_schedules(user_id, teammate.agent.id))
+    |> assign(:schedules_open, false)
+    |> assign(:schedule_form, nil)
+    |> assign(:editing_schedule, nil)
   end
 
   defp load_turns(conv_id) do
@@ -236,7 +245,7 @@ defmodule FountainWeb.TeamLive do
   # Read-only for a lapsed subscription (#505, ADR 0006): viewing stays open,
   # the events that create spend do not. Interrupt and remove still work —
   # they stop spend.
-  @spend_events ~w(send update_prompt add_teammate open_picker)
+  @spend_events ~w(send update_prompt add_teammate open_picker run_schedule)
 
   @impl true
   def handle_event(event, _params, %{assigns: %{subscription_active: false}} = socket)
@@ -320,6 +329,112 @@ defmodule FountainWeb.TeamLive do
   end
 
   # Mobile: back from the thread to the roster.
+  # ── schedules: a cron that runs this teammate with a prompt ────────────────
+
+  def handle_event("open_schedules", _, %{assigns: %{selected: %{} = selected}} = socket) do
+    {:noreply,
+     socket
+     |> assign(:schedules, Schedules.list_schedules(socket.assigns.user_id, selected.agent.id))
+     |> assign(:schedules_open, true)
+     |> assign(:editing_schedule, nil)
+     |> assign(:schedule_form, new_schedule_form())}
+  end
+
+  def handle_event("open_schedules", _, socket), do: {:noreply, socket}
+
+  def handle_event("close_schedules", _, socket) do
+    {:noreply,
+     socket
+     |> assign(:schedules_open, false)
+     |> assign(:editing_schedule, nil)
+     |> assign(:schedule_form, nil)}
+  end
+
+  def handle_event("validate_schedule", %{"schedule" => params}, socket) do
+    base = socket.assigns.editing_schedule || %Schedule{}
+    changeset = base |> Schedule.changeset(params) |> Map.put(:action, :validate)
+    {:noreply, assign(socket, :schedule_form, to_form(changeset, as: :schedule))}
+  end
+
+  def handle_event("save_schedule", %{"schedule" => params}, socket) do
+    %{user_id: user_id, selected: selected} = socket.assigns
+    attribution = FountainWeb.Audited.attribution(socket)
+
+    result =
+      case socket.assigns.editing_schedule do
+        nil ->
+          Schedules.create_schedule(
+            user_id,
+            Map.put(params, "agent_id", selected.agent.id),
+            attribution
+          )
+
+        %Schedule{} = schedule ->
+          Schedules.update_schedule(schedule, params, attribution)
+      end
+
+    case result do
+      {:ok, _schedule} ->
+        {:noreply,
+         socket
+         |> assign(:schedules, Schedules.list_schedules(user_id, selected.agent.id))
+         |> assign(:editing_schedule, nil)
+         |> assign(:schedule_form, new_schedule_form())
+         |> put_flash(:info, "Schedule saved")}
+
+      {:error, %Ecto.Changeset{} = changeset} ->
+        {:noreply, assign(socket, :schedule_form, to_form(changeset, as: :schedule))}
+
+      {:error, reason} ->
+        {:noreply, flash_error(socket, reason)}
+    end
+  end
+
+  def handle_event("edit_schedule", %{"id" => id}, socket) do
+    case Schedules.get_schedule(id, socket.assigns.user_id) do
+      nil ->
+        {:noreply, socket}
+
+      schedule ->
+        {:noreply,
+         socket
+         |> assign(:editing_schedule, schedule)
+         |> assign(:schedule_form, to_form(Schedule.changeset(schedule, %{}), as: :schedule))}
+    end
+  end
+
+  def handle_event("cancel_edit_schedule", _, socket) do
+    {:noreply,
+     socket
+     |> assign(:editing_schedule, nil)
+     |> assign(:schedule_form, new_schedule_form())}
+  end
+
+  def handle_event("toggle_schedule", %{"id" => id}, socket) do
+    with_schedule(socket, id, fn schedule ->
+      Schedules.update_schedule(
+        schedule,
+        %{"enabled" => !schedule.enabled},
+        FountainWeb.Audited.attribution(socket)
+      )
+    end)
+  end
+
+  def handle_event("delete_schedule", %{"id" => id}, socket) do
+    with_schedule(socket, id, fn schedule ->
+      Schedules.delete_schedule(schedule, FountainWeb.Audited.attribution(socket))
+    end)
+  end
+
+  def handle_event("run_schedule", %{"id" => id}, socket) do
+    with_schedule(socket, id, fn schedule ->
+      case Schedules.run_schedule(schedule, FountainWeb.Audited.attribution(socket)) do
+        {:ok, conv} -> {:ok, conv}
+        {:error, _} = err -> err
+      end
+    end)
+  end
+
   def handle_event("deselect", _, socket) do
     {:noreply,
      socket
@@ -411,6 +526,61 @@ defmodule FountainWeb.TeamLive do
 
   defp keep_if_offered(id, offered) do
     if Enum.any?(offered, &(&1.id == id)), do: id, else: ""
+  end
+
+  defp new_schedule_form do
+    to_form(Schedule.changeset(%Schedule{}, %{}), as: :schedule)
+  end
+
+  # Fetch the schedule tenant-scoped, act on it, refresh the list; the
+  # teammate stays selected. A run that opened or fed a conversation also
+  # refreshes the roster, since the thread may have a new turn or a new
+  # computer.
+  defp with_schedule(socket, id, fun) do
+    %{user_id: user_id, selected: selected} = socket.assigns
+
+    case Schedules.get_schedule(id, user_id) do
+      nil ->
+        {:noreply, socket}
+
+      schedule ->
+        socket =
+          case fun.(schedule) do
+            {:ok, %Fountain.Conversations.Conversation{} = conv} ->
+              Phoenix.PubSub.subscribe(Fountain.PubSub, "conv:#{conv.id}")
+
+              socket
+              |> put_flash(:info, "Sent — running now")
+              |> refresh_teammates()
+              |> reselect_after_run(conv)
+
+            {:ok, _} ->
+              socket
+
+            {:error, reason} ->
+              flash_error(socket, reason)
+          end
+
+        agent_id = (selected && selected.agent.id) || schedule.agent_id
+        {:noreply, assign(socket, :schedules, Schedules.list_schedules(user_id, agent_id))}
+    end
+  end
+
+  # A run into the teammate's thread may have replaced its computer; follow
+  # the current conversation the way send_message does. A one-off run is
+  # its own conversation and leaves the thread alone.
+  defp reselect_after_run(socket, conv) do
+    case socket.assigns.selected do
+      %{agent: %{id: agent_id}, conversation: %{id: prev_id}} when prev_id != conv.id ->
+        case Enum.find(socket.assigns.teammates, &(&1.agent.id == agent_id)) do
+          %{conversation: %{id: ^prev_id}} -> socket
+          nil -> socket
+          teammate -> socket |> select_teammate(teammate) |> assign(:schedules_open, true)
+        end
+
+      _ ->
+        socket
+    end
   end
 
   defp flash_error(socket, :busy),
@@ -555,7 +725,7 @@ defmodule FountainWeb.TeamLive do
         </div>
 
         <%= if @selected do %>
-          <.thread_header teammate={@selected} />
+          <.thread_header teammate={@selected} schedule_count={length(@schedules)} />
 
           <div
             id={"team-thread-#{@selected.conversation.id}"}
@@ -633,6 +803,14 @@ defmodule FountainWeb.TeamLive do
         agents={@addable_agents}
         form={@add_form}
         options={@add_options}
+      />
+      <.schedules_panel
+        :if={@schedules_open && @selected}
+        teammate={@selected}
+        schedules={@schedules}
+        form={@schedule_form}
+        editing={@editing_schedule}
+        subscription_active={@subscription_active}
       />
     </div>
     """
@@ -714,6 +892,7 @@ defmodule FountainWeb.TeamLive do
   end
 
   attr :teammate, :map, required: true
+  attr :schedule_count, :integer, default: 0
 
   defp thread_header(assigns) do
     conv = assigns.teammate.conversation
@@ -754,6 +933,15 @@ defmodule FountainWeb.TeamLive do
           class="rounded-md border border-[var(--color-border)] px-2.5 py-1 hover:bg-[var(--color-bg-2)]"
         >
           Interrupt
+        </button>
+        <button
+          id="open-schedules-button"
+          type="button"
+          phx-click="open_schedules"
+          class="rounded-md border border-[var(--color-border)] px-2.5 py-1 hover:bg-[var(--color-bg-2)]"
+          title="Scheduled prompts: run this teammate on a cron"
+        >
+          Schedules<span :if={@schedule_count > 0} class="ml-1 text-[var(--color-text-muted)]">{@schedule_count}</span>
         </button>
         <.link
           navigate={~p"/conversations/#{@conv.id}"}
@@ -961,4 +1149,281 @@ defmodule FountainWeb.TeamLive do
     </div>
     """
   end
+
+  # ── schedules panel ─────────────────────────────────────────────────────────
+
+  attr :teammate, :map, required: true
+  attr :schedules, :list, required: true
+  attr :form, :any, required: true
+  attr :editing, :any, default: nil
+  attr :subscription_active, :boolean, default: true
+
+  defp schedules_panel(assigns) do
+    ~H"""
+    <div id="team-schedules" class="relative z-50">
+      <div
+        class="fixed inset-0 bg-black/50 backdrop-blur-sm"
+        phx-click="close_schedules"
+        aria-hidden="true"
+      />
+      <div
+        class="fixed inset-0 overflow-y-auto flex items-start sm:items-center justify-center p-4"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="team-schedules-title"
+        phx-window-keydown="close_schedules"
+        phx-key="escape"
+      >
+        <div class="relative w-full max-w-2xl rounded-xl shadow-xl bg-[var(--color-bg-1)] border border-[var(--color-border)]">
+          <div class="flex items-center justify-between px-6 py-4 border-b border-[var(--color-border)]">
+            <h2 id="team-schedules-title" class="text-base font-semibold">
+              Schedules · {@teammate.name}
+            </h2>
+            <button
+              type="button"
+              phx-click="close_schedules"
+              aria-label="Close"
+              class="rounded p-1 text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-2)]"
+            >
+              &times;
+            </button>
+          </div>
+
+          <div class="px-6 py-4 text-sm space-y-5 max-h-[80vh] overflow-y-auto">
+            <p class="text-[var(--color-text-secondary)]">
+              A schedule sends {@teammate.name} a prompt on a cron. By default it goes into
+              this conversation, like a message from you; a schedule set to run on a
+              <span class="font-medium">one-off computer</span>
+              opens a fresh conversation for each run instead — same agent, environment and vault —
+              and leaves this thread alone. Times are UTC.
+            </p>
+
+            <div :if={@schedules == []} class="text-[var(--color-text-muted)] italic">
+              No schedules yet.
+            </div>
+
+            <ul :if={@schedules != []} class="divide-y divide-[var(--color-border)]" role="list">
+              <li
+                :for={s <- @schedules}
+                id={"schedule-#{s.id}"}
+                class={["py-3 flex items-start justify-between gap-3", !s.enabled && "opacity-60"]}
+              >
+                <div class="min-w-0 space-y-0.5">
+                  <div class="flex items-center gap-2 min-w-0">
+                    <span class="font-medium truncate">{s.name || s.cron}</span>
+                    <span class="shrink-0 rounded px-1.5 py-0.5 text-[10px] uppercase tracking-wide bg-[var(--color-bg-2)] text-[var(--color-text-secondary)]">
+                      {if s.one_off, do: "one-off computer", else: "in thread"}
+                    </span>
+                    <span
+                      :if={!s.enabled}
+                      class="shrink-0 rounded px-1.5 py-0.5 text-[10px] uppercase tracking-wide bg-amber-100 text-amber-800"
+                    >
+                      paused
+                    </span>
+                  </div>
+                  <div class="text-xs text-[var(--color-text-secondary)] font-mono">{s.cron}</div>
+                  <div class="text-xs text-[var(--color-text-muted)] truncate" title={s.prompt}>
+                    {s.prompt}
+                  </div>
+                  <div class="text-xs text-[var(--color-text-muted)]">
+                    <span :if={s.enabled && s.next_run_at}>
+                      next {format_run_time(s.next_run_at)}
+                    </span>
+                    <span :if={s.last_run_at}>
+                      &middot; last {format_run_time(s.last_run_at)}
+                      <.link
+                        :if={s.last_conversation_id && is_nil(s.last_error)}
+                        navigate={~p"/conversations/#{s.last_conversation_id}"}
+                        class="underline"
+                      >
+                        view
+                      </.link>
+                      <span :if={s.last_error} class="text-rose-600">— {s.last_error}</span>
+                    </span>
+                  </div>
+                </div>
+                <div class="flex items-center gap-1.5 shrink-0 text-xs">
+                  <button
+                    :if={@subscription_active}
+                    type="button"
+                    phx-click="run_schedule"
+                    phx-value-id={s.id}
+                    phx-disable-with="…"
+                    class="rounded-md border border-[var(--color-border)] px-2 py-1 hover:bg-[var(--color-bg-2)]"
+                    title="Run this prompt now"
+                  >
+                    Run now
+                  </button>
+                  <button
+                    type="button"
+                    phx-click="toggle_schedule"
+                    phx-value-id={s.id}
+                    class="rounded-md border border-[var(--color-border)] px-2 py-1 hover:bg-[var(--color-bg-2)]"
+                  >
+                    {if s.enabled, do: "Pause", else: "Resume"}
+                  </button>
+                  <button
+                    type="button"
+                    phx-click="edit_schedule"
+                    phx-value-id={s.id}
+                    class="rounded-md border border-[var(--color-border)] px-2 py-1 hover:bg-[var(--color-bg-2)]"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    type="button"
+                    phx-click="delete_schedule"
+                    phx-value-id={s.id}
+                    data-confirm="Delete this schedule?"
+                    class="rounded-md border border-rose-200 text-rose-700 px-2 py-1 hover:bg-rose-50"
+                  >
+                    Delete
+                  </button>
+                </div>
+              </li>
+            </ul>
+
+            <.form
+              :if={@form}
+              for={@form}
+              id="schedule-form"
+              phx-change="validate_schedule"
+              phx-submit="save_schedule"
+              class="rounded-lg border border-[var(--color-border)] p-4 space-y-3 bg-[var(--color-bg-0)]"
+            >
+              <div class="font-medium">
+                {if @editing, do: "Edit schedule", else: "New schedule"}
+              </div>
+
+              <div class="grid sm:grid-cols-2 gap-3">
+                <label class="block">
+                  <span class="text-xs text-[var(--color-text-secondary)]">Name (optional)</span>
+                  <input
+                    type="text"
+                    name={@form[:name].name}
+                    value={@form[:name].value}
+                    placeholder="Morning standup"
+                    class="mt-1 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-bg-1)] px-3 py-1.5 text-sm"
+                  />
+                  <.schedule_errors field={@form[:name]} />
+                </label>
+                <label class="block">
+                  <span class="text-xs text-[var(--color-text-secondary)]">
+                    Cron (UTC) — <span class="font-mono">min hour day month weekday</span>
+                  </span>
+                  <input
+                    type="text"
+                    name={@form[:cron].name}
+                    value={@form[:cron].value}
+                    list="cron-presets"
+                    placeholder="0 9 * * 1-5"
+                    required
+                    class="mt-1 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-bg-1)] px-3 py-1.5 text-sm font-mono"
+                  />
+                  <datalist id="cron-presets">
+                    <option value="0 * * * *">every hour</option>
+                    <option value="0 9 * * *">daily at 09:00 UTC</option>
+                    <option value="0 9 * * 1-5">weekdays at 09:00 UTC</option>
+                    <option value="0 9 * * 1">Mondays at 09:00 UTC</option>
+                    <option value="0 0 1 * *">first of the month</option>
+                  </datalist>
+                  <.schedule_errors field={@form[:cron]} />
+                </label>
+              </div>
+
+              <label class="block">
+                <span class="text-xs text-[var(--color-text-secondary)]">Prompt</span>
+                <textarea
+                  name={@form[:prompt].name}
+                  rows="3"
+                  required
+                  placeholder={"What should #{@teammate.name} do each time?"}
+                  class="mt-1 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-bg-1)] px-3 py-1.5 text-sm"
+                >{@form[:prompt].value}</textarea>
+                <.schedule_errors field={@form[:prompt]} />
+              </label>
+
+              <label class="flex items-start gap-2">
+                <input type="hidden" name={@form[:one_off].name} value="false" />
+                <input
+                  type="checkbox"
+                  name={@form[:one_off].name}
+                  value="true"
+                  checked={truthy?(@form[:one_off].value)}
+                  class="mt-0.5 rounded border-[var(--color-border)]"
+                />
+                <span>
+                  <span class="font-medium">Run in a one-off computer</span>
+                  <span class="block text-xs text-[var(--color-text-secondary)]">
+                    Each run opens a fresh conversation on a new computer with the same agent,
+                    environment and vault, instead of messaging {@teammate.name} here.
+                  </span>
+                </span>
+              </label>
+
+              <label :if={@editing} class="flex items-center gap-2">
+                <input type="hidden" name={@form[:enabled].name} value="false" />
+                <input
+                  type="checkbox"
+                  name={@form[:enabled].name}
+                  value="true"
+                  checked={truthy?(@form[:enabled].value)}
+                  class="rounded border-[var(--color-border)]"
+                />
+                <span>Enabled</span>
+              </label>
+
+              <div class="flex items-center gap-2 pt-1">
+                <button
+                  type="submit"
+                  phx-disable-with="Saving…"
+                  class="rounded-md px-3 py-1.5 text-sm font-medium bg-[var(--color-brand)] text-white hover:bg-[var(--color-brand-hover)]"
+                >
+                  {if @editing, do: "Save changes", else: "Add schedule"}
+                </button>
+                <button
+                  :if={@editing}
+                  type="button"
+                  phx-click="cancel_edit_schedule"
+                  class="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-sm hover:bg-[var(--color-bg-2)]"
+                >
+                  Cancel
+                </button>
+              </div>
+            </.form>
+          </div>
+        </div>
+      </div>
+    </div>
+    """
+  end
+
+  attr :field, Phoenix.HTML.FormField, required: true
+
+  defp schedule_errors(assigns) do
+    errors =
+      if Phoenix.Component.used_input?(assigns.field),
+        do: Enum.map(assigns.field.errors, &format_error/1),
+        else: []
+
+    assigns = assign(assigns, :errors, errors)
+
+    ~H"""
+    <p :for={msg <- @errors} class="mt-1 text-xs text-rose-600">{msg}</p>
+    """
+  end
+
+  # Changeset errors carry `%{count}`-style placeholders; fill them in.
+  defp format_error({msg, opts}) do
+    Enum.reduce(opts, msg, fn {key, value}, acc ->
+      String.replace(acc, "%{#{key}}", to_string(value))
+    end)
+  end
+
+  defp truthy?(true), do: true
+  defp truthy?("true"), do: true
+  defp truthy?(_), do: false
+
+  defp format_run_time(%DateTime{} = dt), do: Calendar.strftime(dt, "%b %-d %H:%M UTC")
+  defp format_run_time(_), do: ""
 end

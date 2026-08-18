@@ -8,7 +8,7 @@ config :fountain, Oban,
   # exports is its own queue so a user-requested data export is never stuck
   # behind a maintenance sweep; concurrency 1 because each job reads every row
   # an account owns and two at once doubles that memory.
-  queues: [maintenance: 1, billing: 5, exports: 1, mailer: 5],
+  queues: [maintenance: 1, billing: 5, exports: 1, mailer: 5, schedules: 5],
   plugins: [
     # Oban's own job-table pruning: completed jobs older than 7 days.
     {Oban.Plugins.Pruner, max_age: 7 * 24 * 60 * 60},
@@ -29,7 +29,11 @@ config :fountain, Oban,
        # 48h grace inside the sweep means Stripe's webhook retries always get
        # the first shot; daily is fast enough for a backstop. The worker
        # no-ops when billing is disabled.
-       {"53 6 * * *", Fountain.Workers.TrialSweeper}
+       {"53 6 * * *", Fountain.Workers.TrialSweeper},
+       # Every minute: the tick for user-defined team schedules. Cheap — one
+       # indexed query, usually empty — and a minute is the cron grain the
+       # schedules are written in.
+       {"* * * * *", Fountain.Workers.TeamScheduler}
      ]}
   ]
 
