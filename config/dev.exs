@@ -25,3 +25,17 @@ config :logger, :default_formatter, format: "[$level] $message\n"
 
 config :phoenix, :stacktrace_depth, 20
 config :phoenix, :plug_init_mode, :runtime
+
+# OAuth clients (#818): the standalone apps served by `bunx vite` locally.
+config :fountain, :oauth_clients, [
+  %{
+    id: "fountain-team",
+    name: "Fountain Team",
+    redirect_uris: ["http://localhost:5173/", "http://localhost:5174/"]
+  },
+  %{
+    id: "fountain-conversations",
+    name: "Fountain Conversations",
+    redirect_uris: ["http://localhost:5173/", "http://localhost:5174/"]
+  }
+]

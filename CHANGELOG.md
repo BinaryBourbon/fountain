@@ -18,6 +18,15 @@ upgrade, is in
 
 ### Added
 
+- **"Sign in with Fountain" for the browser apps — Fountain as an OAuth 2.0
+  authorization server (ADR 0021).** `GET /oauth/authorize` (consent page
+  behind the session; a signed-out user logs in — password or GitHub — and
+  returns to it), `POST /api/oauth/token` (authorization code + PKCE S256,
+  public clients, one `invalid_grant` for every wrong grant, rate-limited)
+  and `POST /api/oauth/revoke`. Clients are registered with `OAUTH_CLIENTS`
+  (exact redirect URIs); the token is an ordinary 30-day API key named
+  `oauth:<client_id>` that lists and revokes under Account → API keys.
+
 - **`GET /api/catalog` and `POST /api/avatars/generate`.** The vocabulary the
   agent and environment forms are built from — runtimes and model
   suggestions per runtime, sandbox providers usable on the instance and the
