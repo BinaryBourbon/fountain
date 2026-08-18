@@ -119,6 +119,11 @@ in an issue would be welcome.
 
 ## What you get
 
+The adapter's full protocol surface — every method, the `_meta` extensions
+chat harnesses use, what is forwarded and what is deliberately ignored — is on
+the [`fountain acp` reference](acp.md). The short version:
+
+
 | ACP | What happens |
 |---|---|
 | `initialize` | Capability handshake. Protocol version 1 |

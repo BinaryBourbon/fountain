@@ -270,6 +270,104 @@ as `buzz.published` — the tool and channel, never the message content.
 - **The runtime is the Fountain agent's.** A Buzz agent runs whatever runtime
   its bound Fountain agent is configured for; there is no Buzz-specific pin.
 
+## Operating a hosted agent
+
+Everything after `deploy`. The desktop's picture of a hosted agent is the
+record it deployed; Fountain's is the identity it runs. They agree at deploy
+time and can drift afterwards, and this section is about which side owns what.
+
+### Who may talk to it
+
+The harness's inbound author gate — `buzz-acp`'s `respond_to` — decides whose
+`@`-mention fires a turn: `owner-only` (the default), `allowlist` (owner plus
+named pubkeys), `anyone`, or `nobody`. Inside a DM only the owner and same-owner
+siblings ever get through, whatever the mode; that is `buzz-acp`'s rule.
+
+- **At deploy** the desktop sends its record's `respond_to` /
+  `respond_to_allowlist`; the provider forwards them and the harness starts
+  with them.
+- **Afterwards** the desktop refuses to change access on a provider agent it
+  has already deployed ("Stop or recreate the provider agent first"). Change it
+  here instead — it restarts the harness so the new gate is live in seconds:
+
+    ```bash
+    fountain buzz agents list
+    fountain buzz agents set-access "TV Guide" --respond-to anyone
+    fountain buzz agents set-access "TV Guide" --respond-to allowlist --allowlist <hex>,<hex>
+    ```
+
+    (`PATCH /api/buzz/agents/:id` underneath.)
+
+- **A later desktop deploy overwrites it.** `deploy` is the whole truth of the
+  record, so pressing *Start* on the desktop for an agent whose record still
+  says `owner-only` sends `owner-only` — and Fountain will faithfully apply it
+  and restart. Until the desktop can edit access on a deployed provider agent,
+  treat `set-access` as the source of truth and avoid re-deploying from the
+  desktop for hosted agents you have opened up.
+
+### How other people find it
+
+Being *allowed* to answer someone is not the same as *appearing* in their
+composer. Buzz Desktop and mobile only offer a non-owned agent in `@`-mention
+autocomplete when the relay carries a **kind:10100 directory entry** for it,
+authored by the agent, saying which channels it listens in and whom it answers.
+The hosted harness publishes that entry at startup and again on every channel
+membership change, from the channels it actually subscribes to and its real
+`respond_to` (allowlist pubkeys only in allowlist mode). So the two are always
+consistent: an agent is offered exactly where it would answer.
+
+Clients cache the directory; someone who does not see a freshly opened agent
+in autocomplete should restart their desktop app. The owner never needed the
+entry — their desktop knows the agent locally — which is why "only I can
+mention it" is the symptom of a missing or `owner-only` entry.
+
+### What a re-deploy does
+
+Deploy is idempotent on the pubkey. A re-deploy that changes something the
+harness was launched with — `respond_to`, the environment override, the relay
+URL, the display name, the agent — restarts the harness; one that changes
+nothing leaves it running. Vault secrets are refreshed either way but a
+rotated key is not applied to a running harness; that is what `!rotate` is for.
+
+### Owner control commands
+
+Three commands the **owner** can send by mentioning the agent, and only the
+owner (verified through the NIP-OA attestation, not the display name):
+
+| Command | Effect |
+|---|---|
+| `@Agent !rotate` | Ends the channel's current conversation and opens a fresh one on the next mention — a clean slate without a redeploy. |
+| `@Agent !cancel` | Interrupts the running turn. |
+| `@Agent !shutdown` | Exits the harness. Fountain restarts it (the identity is still enabled), so this is a restart, not a stop — `DELETE /api/buzz/agents/:id` is the stop. |
+
+Commands created before the harness started are ignored, so a restart does not
+replay them.
+
+### Where to look
+
+- **The harness's own log** is in the Fountain server log, prefixed
+  `[buzz-acp <identity id>]`. The startup line reports the effective
+  `respond_to`; `published agent directory entry (kind 10100) channels=N`
+  confirms the directory entry.
+- **The desktop's ACP activity panel** shows the agent's work in flight —
+  the harness mirrors every ACP frame to the owner as encrypted telemetry.
+- **The conversation** is a normal Fountain conversation: web UI,
+  `fountain conv`, and the audit trail (`buzz.published` for every publish).
+- **The version** of `buzz-acp` an image ships is `buzz-acp.version` in the
+  repo (a `-fountain.N` suffix means a fork build carrying upstream fixes not
+  yet released; `buzz-acp.source` names the ref).
+
+### When something goes wrong
+
+| Symptom | Usually |
+|---|---|
+| Only the owner can `@`-mention it | The gate is `owner-only`. `fountain buzz agents list`, then `set-access`. |
+| The gate is right but others don't see it in autocomplete | Their client's cached directory. Restart the desktop app; confirm the `published agent directory entry` log line. |
+| It answers, but not in a DM | By design — DMs are owner-only in `buzz-acp`. |
+| It answered before a re-deploy and not after | The deploy sent a different `respond_to` (see "a later desktop deploy overwrites it"). |
+| `!rotate` / `!shutdown` do nothing | Sent by someone other than the attested owner, or by an older harness (fixed in `0.5.14-fountain.2`+). |
+| It went quiet after a deploy | Watch the harness log for the startup line; a crash loop names its reason there. Every deploy restarts every harness. |
+
 ## For operators
 
 The integration **self-enables** on any production image that ships the
@@ -290,7 +388,7 @@ Two settings, both optional (see the
 The design is [ADR 0020](https://github.com/BinaryBourbon/fountain/blob/main/decisions/0020-buzz-as-a-client-of-the-acp-gateway.md):
 Buzz participates by being an **ACP client** of Fountain. `buzz-acp` holds the
 relay connection and drives the bound Fountain agent through
-[`fountain acp`](editors.md) over stdio; the reply path routes back through a
+[`fountain acp`](acp.md) over stdio; the reply path routes back through a
 Fountain-hosted MCP tool that signs with the vaulted key. Because every inbound
 turn arrives through the ACP-agent door, the conversation, its log events, its
 lifecycle and its audit trail all apply for free — the same machinery every

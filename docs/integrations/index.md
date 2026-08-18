@@ -14,6 +14,10 @@ provider side, which env vars result, and how to verify it works.
 
 ## The integration with nothing to configure
 
+All three ACP clients below spawn the same adapter; its protocol surface,
+`_meta` extensions and failure modes are on one page,
+[**`fountain acp` (reference)**](acp.md), so the client pages only cover setup.
+
 [**Editors**](editors.md) are the one integration an operator does not set up.
 An ACP-capable editor — Zed and friends — spawns `fountain acp` locally and
 talks to your instance with the credentials the developer already has. There is
