@@ -818,12 +818,18 @@ defmodule Fountain.Conversations.ConversationServer do
 
         {:noreply, new_state}
 
-      {:error, reason} ->
+      {:error, :not_found} ->
+        # The provider says the sandbox is gone. That is the one answer that
+        # justifies retiring the row: the disk no longer exists, so the next
+        # prompt must provision fresh.
         Logger.warning(
-          "reattach failed for sprite #{sandbox.sprite_name}: #{inspect(reason)} — marking sandbox failed"
+          "reattach failed for sprite #{sandbox.sprite_name}: not found — marking sandbox failed"
         )
 
-        publish_stage(state.conversation_id, "reattach", "failed", %{reason: inspect(reason)})
+        publish_stage(state.conversation_id, "reattach", "failed", %{
+          reason: "not_found",
+          retryable: false
+        })
 
         {:ok, _} =
           Conversations.update_sandbox(sandbox, %{
@@ -833,6 +839,32 @@ defmodule Fountain.Conversations.ConversationServer do
 
         # Don't mark the conversation failed — the user can still send a
         # prompt and auto-wake will spin a fresh sandbox.
+        {:stop, :normal, state}
+
+      {:error, reason} ->
+        # Anything else — a transport error, a timeout, a 5xx, a credential
+        # problem — says nothing about the sandbox, only about our ability to
+        # reach the provider right now. The row is left exactly as it was and
+        # the server stops; the next prompt takes the same reattach path again.
+        #
+        # This arm used to mark the row `failed` too. On 2026-08-18 a 70-second
+        # DNS outage did exactly that to nine live sandboxes at once (a Horde
+        # failover re-ran reattach for every conversation on the partitioned
+        # pod, and every probe answered nxdomain), and `SandboxReaper`'s
+        # destroy pass would have taken the sprites — one of them holding a
+        # completed turn and a live ACP session — an hour later (#799). A
+        # transient failure must not become a destroyed disk; the same rule
+        # `probe_sandbox/4` applies on the wake path.
+        Logger.warning(
+          "reattach failed for sprite #{sandbox.sprite_name}: #{inspect(reason)} — " <>
+            "transient; sandbox row left untouched"
+        )
+
+        publish_stage(state.conversation_id, "reattach", "failed", %{
+          reason: inspect(reason),
+          retryable: true
+        })
+
         {:stop, :normal, state}
     end
   end

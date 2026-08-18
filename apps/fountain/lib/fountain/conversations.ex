@@ -1438,20 +1438,22 @@ defmodule Fountain.Conversations do
       {:error, :not_found} ->
         :create_new
 
-      {:error, reason} when status == "suspended" ->
-        # A transient probe failure must not cost the parked disk: falling
-        # to :create_new retires this row, and the reaper then destroys the
+      {:error, reason} ->
+        # A transient probe failure must not cost the disk: falling to
+        # :create_new retires this row, and the reaper then destroys the
         # still-live sprite — with the agent's memory on it. Only a
-        # definitive not-found gives up the suspended sandbox; anything
-        # else fails the wake retryably.
+        # definitive not-found gives up the sandbox; anything else fails the
+        # wake retryably (503 + Retry-After at the API).
+        #
+        # This clause was `suspended`-only until #799: a `ready` row is the
+        # same parked disk once its server is gone (a deploy, a crash, a
+        # partition), and the 2026-08-18 incident showed the provider going
+        # unreachable for 70 s with nine `ready` rows behind it.
         Logger.warning(
-          "sprite probe failed for suspended sandbox #{sandbox_id}: #{inspect(reason)}"
+          "sprite probe failed for #{status} sandbox #{sandbox_id}: #{inspect(reason)}"
         )
 
         {:error, :sprite_probe_failed}
-
-      _ ->
-        :create_new
     end
   end
 

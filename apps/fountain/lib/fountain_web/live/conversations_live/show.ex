@@ -1409,6 +1409,14 @@ defmodule FountainWeb.ConversationsLive.Show do
         {:noreply,
          put_flash(socket, :error, "The conversation is still provisioning — try again shortly.")}
 
+      {:error, :sprite_probe_failed} ->
+        {:noreply,
+         put_flash(
+           socket,
+           :error,
+           "Couldn't reach the sandbox provider to wake the conversation — try again shortly."
+         )}
+
       {:error, reason} ->
         {:noreply, put_flash(socket, :error, "Couldn't send: #{inspect(reason)}")}
     end

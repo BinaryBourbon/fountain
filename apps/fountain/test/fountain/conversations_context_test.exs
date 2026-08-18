@@ -1295,6 +1295,30 @@ defmodule Fountain.ConversationsContextTest do
       assert Repo.reload(sandbox).status == "suspended"
     end
 
+    test "a transient sprite probe failure does not give up a ready sandbox either (#799)" do
+      # A `ready` row whose server is gone (deploy, crash, partition) is the
+      # same parked disk as a suspended one. Until #799 only `suspended` was
+      # protected; a `ready` row fell to :create_new, was marked terminated,
+      # and the reaper destroyed a sprite that was fine.
+      user = insert_verified_user()
+      agent = insert_agent(user_id: user.id)
+      sandbox = insert_sandbox(user_id: user.id, sprite_name: "test-sprite-blip-ready")
+      {:ok, sandbox} = Conversations.update_sandbox(sandbox, %{status: "ready"})
+      conv = insert_conversation(user_id: user.id, agent: agent, sandbox: sandbox, status: "idle")
+
+      stub(Fountain.Sandbox.Sprites, :get, fn _handle ->
+        {:error, {:unavailable, %Req.TransportError{reason: :nxdomain}}}
+      end)
+
+      reject(&Horde.DynamicSupervisor.start_child/2)
+
+      assert {:error, :sprite_probe_failed} = Conversations.wake_conversation(conv.id)
+      reloaded = Repo.reload(sandbox)
+      assert reloaded.status == "ready"
+      assert is_nil(reloaded.terminated_at)
+      assert Repo.reload(conv).sandbox_id == sandbox.id
+    end
+
     test "a definitively gone sprite retires the suspended sandbox and provisions fresh" do
       user = insert_verified_user()
       agent = insert_agent(user_id: user.id)

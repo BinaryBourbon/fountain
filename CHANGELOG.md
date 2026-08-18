@@ -48,6 +48,19 @@ upgrade, is in
 
 ### Fixed
 
+- **A transient sandbox-provider error no longer retires a live sandbox.**
+  Both places that probe a sprite before reusing it — the reattach a
+  `ConversationServer` runs when it starts against a `ready` row, and the
+  wake path's probe — now give the sandbox up only on a definitive
+  not-found. Anything else (DNS, timeouts, 5xx, a credential problem) leaves
+  the row exactly as it was: reattach stops and the next prompt tries again;
+  a wake answers `503 sandbox_probe_failed` with `Retry-After`. On 2026-08-18
+  a 70-second cluster DNS outage during a Horde failover ran reattach for
+  nine live sandboxes at once, every probe answered `nxdomain`, and all nine
+  rows were marked `failed` — which is exactly what the reaper's destroy
+  pass keys on; one of them held a completed turn and a live ACP session.
+  The `reattach failed` stage event now carries `retryable`. (#799)
+
 - **A hosted Buzz agent now shows up in other people's `@`-mention
   autocomplete.** Buzz Desktop admits a non-owned agent to autocomplete only if
   the relay carries a kind:10100 directory entry for it saying which channels
