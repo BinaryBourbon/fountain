@@ -88,6 +88,20 @@ upgrade, is in
   changed — but the conversation, its transcript and its title carry over,
   and the transcript says why the agent does not remember. (#778)
 
+- **A conversation's first prompt no longer races its own creation into a
+  second sandbox.** `session/new` (`POST /api/conversations`) starts the
+  server through Horde, which may place it on another pod; the first prompt
+  arrives ~30 ms later, and if it lands on a pod whose registry has not yet
+  synced it saw a `pending` sandbox, missed the server, and took the
+  fresh-provision arm — two servers, two sprites, ~21 s of provisioning
+  each, a Horde name conflict that killed the loser after the fact, and an
+  orphan `ready` sandbox row per occurrence. A prompt that finds a `pending`
+  or `starting` row now waits for the registry to catch up
+  (`ConversationServer.await_registered/2`, `:conversation_registry_settle_ms`,
+  3 s by default) and hands the prompt to the server it finds; only if none
+  appears — the provision died with its BEAM — does it provision fresh.
+  (#800)
+
 - **A hosted Buzz agent now shows up in other people's `@`-mention
   autocomplete.** Buzz Desktop admits a non-owned agent to autocomplete only if
   the relay carries a kind:10100 directory entry for it saying which channels
