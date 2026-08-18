@@ -51,6 +51,12 @@ markdown_extensions:
   - toc:
       permalink: true
 
+# ── Adding or renaming a page? Two places must change together ─────────────
+# The app serves these same pages at /docs and mirrors this nav in
+# apps/fountain/lib/fountain/docs.ex (`@nav`). docs_test.exs diffs the two and
+# CI fails on any drift — a new entry here without one there is the usual way
+# a docs-only PR goes red. Also: `mkdocs build --strict` fails on a broken
+# relative link, and docs/cli.md is diffed against the real CLI command tree.
 nav:
   - Home: index.md
   - Setup: setup.md

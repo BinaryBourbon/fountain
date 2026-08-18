@@ -296,6 +296,30 @@ See `.env.example` for the full list. Key ones for local dev:
 | `STRIPE_*` | Billing integration |
 | `RESEND_API_KEY` | Transactional email |
 
+## Docs (`docs/`)
+
+`docs/` is both the public MkDocs site (`.github/workflows/docs.yml`) and the
+in-app manual at `/docs` — the same markdown is embedded at compile time by
+`Fountain.Docs`. Three guardrails trip people who only edit markdown:
+
+- **The nav is mirrored in code.** `mkdocs.yml` `nav:` and `@nav` in
+  `apps/fountain/lib/fountain/docs.ex` must list the same pages in the same
+  order; `apps/fountain/test/fountain/docs_test.exs` fails on any drift. Adding,
+  renaming or moving a page means editing both. (This has broken docs-only PRs
+  more than once — the failing test is in *partition 3* of CI, not the Docs
+  workflow, so it looks unrelated.)
+- **`mkdocs build --strict`** is what CI runs; a broken relative link or a page
+  not in the nav is an error. Run it locally (`pip install -r
+  docs/requirements.txt`).
+- **`docs/cli.md` is diffed against the CLI.** `cli/internal/cmd/docs_test.go`
+  fails if a command exists that the page does not mention, or the page
+  mentions one that does not exist. Add a CLI command → add it to `docs/cli.md`
+  in a fenced `bash` block.
+
+The MkDocs dialect the in-app renderer understands is small (snippet includes,
+admonitions, relative `.md` links); check a page at `/docs` if it uses anything
+fancier.
+
 ## Decisions
 
 Architecturally significant choices live in `decisions/NNNN-<title>.md`. When a decision is contentious or needs to constrain future work, write an ADR. Use `decisions/0001-template.md` as the template.
