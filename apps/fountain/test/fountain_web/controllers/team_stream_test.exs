@@ -108,6 +108,15 @@ defmodule FountainWeb.TeamStreamTest do
     assert decoded["kind"] == "output"
   end
 
+  test "the first byte is a comment, sent before any event or heartbeat", %{
+    user: user,
+    raw_key: key
+  } do
+    insert_teammate_conv(user, insert_agent(user_id: user.id))
+    conn = stream_async(key) |> Task.await(5_000)
+    assert String.starts_with?(conn.resp_body, ": connected\n\n")
+  end
+
   test "Last-Event-ID replays what was missed across the team", %{user: user, raw_key: key} do
     ada = insert_agent(user_id: user.id, name: "Ada")
     linus = insert_agent(user_id: user.id, name: "Linus")

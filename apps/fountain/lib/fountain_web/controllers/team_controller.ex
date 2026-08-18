@@ -187,6 +187,17 @@ defmodule FountainWeb.TeamController do
       |> put_resp_header("connection", "keep-alive")
       |> send_chunked(200)
 
+    # A first byte straight away. A proxy that buffers a chunked response
+    # until data flows (Cloudflare does) would otherwise hold the headers
+    # back until the first heartbeat, 15 s later, and a browser client that
+    # shows "connected" when the response opens would sit on "reconnecting"
+    # for that long on every connect.
+    conn =
+      case Plug.Conn.chunk(conn, ": connected\n\n") do
+        {:ok, conn} -> conn
+        {:error, _} -> conn
+      end
+
     case replay(conn, followed, last_event_id, streams) do
       {:ok, conn, last_id} ->
         Process.send_after(self(), :heartbeat, heartbeat_ms())
