@@ -74,6 +74,25 @@ fountain vault set-secret <id-or-name> <key> <value>
 fountain vault delete-secret <id-or-name> <key>
 ```
 
+## Hosted Buzz agents
+
+The one knob a hosted [Buzz](integrations/buzz.md) agent needs after it is
+deployed: who may `@`-mention it. The Buzz desktop refuses to change access on
+a provider agent it has already deployed, so this is where the policy changes.
+Setting it restarts the agent's harness so the new gate is live.
+
+```bash
+fountain buzz agents list [--json]
+fountain buzz agents set-access <name-or-id> --respond-to anyone
+fountain buzz agents set-access <name-or-id> --respond-to allowlist --allowlist <hex>,<hex>
+fountain buzz agents set-access <name-or-id> --respond-to owner-only
+```
+
+`--respond-to` is one of `owner-only`, `allowlist`, `anyone`, `nobody`
+(`buzz-acp`'s own modes). Only the flags you pass change; `--respond-to` alone
+keeps the stored allowlist. Note that a later provider deploy from the desktop
+resends the desktop's own record and overwrites what is set here.
+
 ## Conversations
 
 ```bash

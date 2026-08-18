@@ -507,6 +507,34 @@ defmodule FountainWeb.Schemas do
     })
   end
 
+  defmodule BuzzAccessUpdateRequest do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "BuzzAccessUpdateRequest",
+      description:
+        "Change who may @-mention a hosted Buzz agent. Sets buzz-acp's inbound author " <>
+          "gate on the identity and restarts its harness. At least one field is required. " <>
+          "A later provider deploy from the desktop resends the desktop's record and " <>
+          "overwrites this.",
+      type: :object,
+      properties: %{
+        respond_to: %Schema{
+          type: :string,
+          enum: ~w(owner-only allowlist anyone nobody),
+          nullable: true
+        },
+        respond_to_allowlist: %Schema{
+          type: :array,
+          items: %Schema{type: :string},
+          nullable: true,
+          description: "64-hex pubkeys; required non-empty when respond_to is allowlist."
+        }
+      }
+    })
+  end
+
   item_response(BuzzIdentityResponse, of: BuzzIdentity)
 
   list_response(BuzzIdentityListResponse, of: BuzzIdentity)

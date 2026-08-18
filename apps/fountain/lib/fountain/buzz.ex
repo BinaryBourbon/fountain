@@ -277,6 +277,41 @@ defmodule Fountain.Buzz do
     |> audited("buzz_identity.updated", opts)
   end
 
+  @doc """
+  Change an identity's inbound author gate without a full re-provision (#790):
+  `params` (string-keyed) may carry `"respond_to"` and `"respond_to_allowlist"`,
+  validated and normalised exactly as `provision_identity/3` does. Nothing else
+  on the identity changes. Records `buzz_identity.updated`. The caller restarts
+  the harness (`Fountain.Buzz.Manager.restart_harness/2`) when
+  `launch_config_changed?/2` says so — this function only persists.
+
+  This is the operator's knob for the desktop's `respond_to` when the desktop
+  cannot resend it (it refuses to change access on an already-deployed
+  provider agent). Note a later provider deploy sends the desktop's record as
+  the whole truth and will overwrite what is set here.
+  """
+  def update_access(%BuzzIdentity{} = identity, params, opts \\ []) when is_map(params) do
+    attrs =
+      %{}
+      |> maybe_attr("respond_to", presence(params["respond_to"]))
+      |> maybe_attr(
+        "respond_to_allowlist",
+        if(Map.has_key?(params, "respond_to_allowlist"),
+          do: allowlist(params["respond_to_allowlist"]),
+          else: nil
+        )
+      )
+
+    if attrs == %{} do
+      {:error, :nothing_to_update}
+    else
+      update_identity(identity, attrs, opts)
+    end
+  end
+
+  defp maybe_attr(attrs, _key, nil), do: attrs
+  defp maybe_attr(attrs, key, value), do: Map.put(attrs, key, value)
+
   @doc "Delete a Buzz identity. Records `buzz_identity.deleted`."
   def delete_identity(%BuzzIdentity{} = identity, opts \\ []) do
     identity

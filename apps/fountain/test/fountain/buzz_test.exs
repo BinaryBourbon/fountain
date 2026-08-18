@@ -252,6 +252,35 @@ defmodule Fountain.BuzzTest do
       assert %{respond_to_allowlist: [_]} = errors_on(cs)
     end
 
+    test "update_access changes only the gate, and refuses an empty or invalid change",
+         %{user: user, params: params} do
+      {:ok, identity} = Buzz.provision_identity(user.id, params)
+      pk = String.duplicate("c", 64)
+
+      assert {:ok, updated} =
+               Buzz.update_access(identity, %{
+                 "respond_to" => "allowlist",
+                 "respond_to_allowlist" => [String.upcase(pk)]
+               })
+
+      assert updated.respond_to == "allowlist"
+      assert updated.respond_to_allowlist == [pk]
+      assert updated.name == identity.name
+      assert updated.environment_id == identity.environment_id
+
+      # Only the fields sent change: mode alone keeps the list.
+      assert {:ok, again} = Buzz.update_access(updated, %{"respond_to" => "anyone"})
+      assert again.respond_to_allowlist == [pk]
+
+      assert {:error, :nothing_to_update} = Buzz.update_access(again, %{})
+
+      assert {:error, %Ecto.Changeset{}} =
+               Buzz.update_access(again, %{
+                 "respond_to" => "allowlist",
+                 "respond_to_allowlist" => []
+               })
+    end
+
     test "a foreign or unknown environment_id is not stored", %{user: user, params: params} do
       other = insert_verified_user()
       foreign = insert_env(user_id: other.id)

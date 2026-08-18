@@ -125,6 +125,11 @@ func (c *Client) Put(path string, body, out any) error {
 	return c.do(http.MethodPut, path, body, out)
 }
 
+// Patch performs PATCH /api<path> with a JSON body.
+func (c *Client) Patch(path string, body, out any) error {
+	return c.do(http.MethodPatch, path, body, out)
+}
+
 // Delete performs DELETE /api<path>.
 func (c *Client) Delete(path string, out any) error {
 	return c.do(http.MethodDelete, path, nil, out)
