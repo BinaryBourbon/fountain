@@ -53,6 +53,31 @@ defmodule Fountain.OAuth do
     end)
   end
 
+  @doc """
+  The distinct origins (`scheme://host[:port]`) of every registered client's
+  redirect URIs — what the consent page's `form-action` CSP must allow, since
+  a successful consent POST redirects the browser to the app's origin (#818).
+  """
+  @spec redirect_origins() :: [String.t()]
+  def redirect_origins do
+    clients()
+    |> Enum.flat_map(& &1.redirect_uris)
+    |> Enum.map(&origin_of/1)
+    |> Enum.reject(&is_nil/1)
+    |> Enum.uniq()
+  end
+
+  defp origin_of(uri) do
+    case URI.parse(uri) do
+      %URI{scheme: s, host: h} = u when is_binary(s) and is_binary(h) ->
+        port = if u.port && u.port != URI.default_port(s), do: ":#{u.port}", else: ""
+        "#{s}://#{h}#{port}"
+
+      _ ->
+        nil
+    end
+  end
+
   @doc "The client with `id`, or nil."
   @spec get_client(String.t()) :: client() | nil
   def get_client(id) when is_binary(id), do: Enum.find(clients(), &(&1.id == id))

@@ -16,6 +16,7 @@ defmodule FountainWeb.OAuthAuthorizeController do
   alias FountainWeb.ReturnTo
 
   plug :put_layout, false
+  plug :allow_redirect_form_action
   plug :require_user
 
   def show(conn, params) do
@@ -75,6 +76,20 @@ defmodule FountainWeb.OAuthAuthorizeController do
       existing |> Map.merge(Map.reject(extra, fn {_, v} -> is_nil(v) end)) |> URI.encode_query()
 
     URI.to_string(%{parsed | query: query})
+  end
+
+  # The base browser CSP is `form-action 'self'`; a successful consent POST
+  # redirects the browser to the app's own origin, which Chrome enforces
+  # form-action against on the redirect. Widen it — only here — to the
+  # registered clients' redirect origins (#818).
+  defp allow_redirect_form_action(conn, _opts) do
+    origins = Enum.join(["'self'" | OAuth.redirect_origins()], " ")
+
+    update_resp_header(conn, "content-security-policy", "", fn csp ->
+      if String.contains?(csp, "form-action"),
+        do: Regex.replace(~r/form-action[^;]*/, csp, "form-action #{origins}"),
+        else: csp <> "; form-action #{origins}"
+    end)
   end
 
   # `:browser_optional_auth` loaded the user if there is a session; without

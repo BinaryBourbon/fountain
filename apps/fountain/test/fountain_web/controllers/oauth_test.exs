@@ -58,6 +58,14 @@ defmodule FountainWeb.OAuthControllerTest do
       assert html =~ ~s(name="decision" value="allow")
     end
 
+    test "the consent page's form-action CSP allows the client's redirect origin", %{conn: conn} do
+      user = insert_verified_user()
+      {_v, c} = pkce()
+      conn = conn |> login_user(user) |> get("/oauth/authorize?" <> authorize_qs(c))
+      [csp] = get_resp_header(conn, "content-security-policy")
+      assert csp =~ "form-action 'self' https://app.test"
+    end
+
     test "an unregistered client or redirect renders, never redirects", %{conn: conn} do
       user = insert_verified_user()
       {_v, c} = pkce()
