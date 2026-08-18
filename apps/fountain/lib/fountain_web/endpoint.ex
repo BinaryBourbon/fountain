@@ -111,6 +111,9 @@ defmodule FountainWeb.Endpoint do
   # from a trusted proxy — see the plug's moduledoc for why that check cannot be
   # left to RemoteIp.
   plug FountainWeb.Plugs.ClientIp
+  # CORS for /api, off unless API_CORS_ORIGINS is set. Before the router so a
+  # preflight from an allowed origin is answered instead of 404ing.
+  plug FountainWeb.Plugs.Cors
   plug Plug.RequestId
   plug Plug.Telemetry, event_prefix: [:phoenix, :endpoint]
 

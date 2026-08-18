@@ -118,6 +118,7 @@ The identity rendered on `/terms` and `/privacy` — the operator's, not the Fou
 |---|---|---|---|
 | `TRUSTED_PROXIES` | — | behind a proxy | Comma-separated CIDRs stepped over when resolving the client IP from `X-Forwarded-For`. Without it, per-IP rate limits collapse into one bucket keyed on the proxy; over-broad, it lets a client spoof past rate limiting |
 | `CHECK_ORIGIN_EXTRA` | — | — | Comma-separated extra origins allowed to open a LiveView websocket. Your own host is always included |
+| `API_CORS_ORIGINS` | — | — | Comma-separated browser origins (or `*`) allowed to call `/api` with a bearer key from another site — what a standalone client such as the team app needs. Off when unset; cookies never cross origins regardless |
 
 ## Clustering
 

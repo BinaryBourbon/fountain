@@ -1590,6 +1590,137 @@ defmodule FountainWeb.Schemas do
     })
   end
 
+  defmodule Teammate do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "Teammate",
+      description:
+        "One agent on the team: the agent, its current team conversation (the newest " <>
+          "live one, else the newest finished one), and what the roster shows for it.",
+      type: :object,
+      properties: %{
+        agent_id: %Schema{type: :string, format: :uuid},
+        name: %Schema{
+          type: :string,
+          description:
+            "What the teammate is called: the conversation's title, else the agent's name."
+        },
+        agent: Agent,
+        conversation: Conversation,
+        presence: %Schema{
+          type: :object,
+          properties: %{
+            state: %Schema{
+              type: :string,
+              enum: ~w(working starting online asleep away failed offline)
+            },
+            label: %Schema{type: :string}
+          },
+          required: [:state, :label]
+        },
+        unread: %Schema{type: :boolean},
+        last_turn: %Schema{
+          type: :object,
+          nullable: true,
+          properties: %{
+            id: %Schema{type: :string, format: :uuid},
+            turn_number: %Schema{type: :integer},
+            prompt: %Schema{type: :string},
+            status: %Schema{type: :string},
+            inserted_at: %Schema{type: :string, format: :"date-time"}
+          }
+        },
+        preview: %Schema{
+          type: :object,
+          nullable: true,
+          description:
+            "The roster line: `you` (the last prompt, no reply yet), `them` (the last " <>
+              "reply), or `typing` (a turn is in flight). Null with no messages.",
+          properties: %{
+            kind: %Schema{type: :string, enum: ~w(you them typing)},
+            text: %Schema{type: :string, nullable: true}
+          }
+        }
+      },
+      required: [:agent_id, :name, :agent, :conversation, :presence, :unread]
+    })
+  end
+
+  item_response(TeammateResponse, of: Teammate)
+  list_response(TeammateListResponse, of: Teammate)
+
+  defmodule TeamAddRequest do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "TeamAddRequest",
+      type: :object,
+      properties: %{
+        agent_id: %Schema{type: :string, format: :uuid},
+        name: %Schema{
+          type: :string,
+          nullable: true,
+          maxLength: 120,
+          description: "What to call the teammate. Blank means the agent's name."
+        },
+        environment_id: %Schema{
+          type: :string,
+          format: :uuid,
+          nullable: true,
+          description:
+            "Provision the teammate's computer from this environment instead of the " <>
+              "agent's own. Must satisfy the agent's allowed_environment_ids."
+        },
+        vault_id: %Schema{
+          type: :string,
+          format: :uuid,
+          nullable: true,
+          description: "Layer this vault's secrets on top. Must satisfy allowed_vault_ids."
+        }
+      },
+      required: [:agent_id]
+    })
+  end
+
+  defmodule TeamMessageRequest do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "TeamMessageRequest",
+      type: :object,
+      properties: %{
+        prompt: %Schema{type: :string},
+        images: %Schema{type: :array, items: ImageInput, nullable: true}
+      },
+      required: [:prompt]
+    })
+  end
+
+  defmodule TeamMessageResponse do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "TeamMessageResponse",
+      type: :object,
+      properties: %{
+        status: %Schema{type: :string, enum: ["queued"]},
+        conversation_id: %Schema{
+          type: :string,
+          format: :uuid,
+          description:
+            "The conversation the message went to — a fresh one when the teammate's " <>
+              "previous conversation was past resuming."
+        }
+      },
+      required: [:status, :conversation_id]
+    })
+  end
+
   defmodule Error do
     @moduledoc false
     require OpenApiSpex

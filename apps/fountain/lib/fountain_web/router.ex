@@ -279,6 +279,15 @@ defmodule FountainWeb.Router do
     delete "/inference-credentials/:provider", InferenceCredentialController, :delete
   end
 
+  # The team's SSE stream (#810). Declared before the JSON team routes so
+  # `/team/stream` is not swallowed by `/team/:agent_id`; no `:accepts_json`
+  # for the same reason as the conversation stream below.
+  scope "/api", FountainWeb do
+    pipe_through :api
+
+    get "/team/stream", TeamController, :stream, as: :team_stream
+  end
+
   scope "/api", FountainWeb do
     pipe_through [:accepts_json, :api]
 
@@ -306,6 +315,14 @@ defmodule FountainWeb.Router do
 
     # Bulk apply for compiled fountain.yml manifests (`fountain apply`).
     post "/apply", ApplyController, :create
+
+    # The team (#810): the roster `/team` shows, for clients that are not this
+    # web app. Every action wraps Fountain.Team.
+    get "/team", TeamController, :index
+    post "/team", TeamController, :create
+    get "/team/:agent_id", TeamController, :show
+    delete "/team/:agent_id", TeamController, :delete
+    post "/team/:agent_id/messages", TeamController, :message
 
     resources "/conversations", ConversationController, only: [:index, :show, :create, :delete] do
       post "/prompts", ConversationController, :prompt, as: :prompt

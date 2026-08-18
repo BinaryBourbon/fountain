@@ -18,6 +18,20 @@ upgrade, is in
 
 ### Added
 
+- **The team over the API: `/api/team`, plus one SSE stream for the whole
+  team and opt-in CORS.** `GET /api/team` (roster with name, presence,
+  unread, preview), `POST /api/team` (add, with name/environment/vault),
+  `GET`/`DELETE /api/team/:agent_id`, `POST /api/team/:agent_id/messages`
+  and `GET /api/team/stream` — every teammate's events on one connection,
+  labelled with `conversation_id`/`agent_id`, plus a `team` event when the
+  roster changes so the client re-lists. Each route wraps `Fountain.Team`,
+  so a standalone client gets the `/team` page's exact semantics (idempotent
+  add, wake-or-replace on message, terminate-and-unbind on remove) rather
+  than rebuilding them over `/api/conversations`. Presence and the roster
+  preview moved into `FountainWeb.TeamPresenter`, shared by the page and the
+  JSON. `API_CORS_ORIGINS` (off by default) lets a browser client on another
+  origin call `/api` with a bearer key; cookies never cross origins.
+
 - **Team page: name a teammate, pick its environment and vault when adding
   it.** The add dialog is a small form now — agent, an optional name, the
   environment its computer is set up from (the agent's own by default) and
