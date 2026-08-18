@@ -11,6 +11,7 @@ end
 # facade); the raw SDK copies below it exist only for the adapter's own unit
 # tests and the full-stack provisioning/checkpoint pins.
 Mimic.copy(Fountain.Sandbox.Sprites)
+Mimic.copy(Fountain.AvatarGenerator)
 Mimic.copy(Fountain.Sandbox.Sprites.Client)
 Mimic.copy(Fountain.Sandbox.Daytona.LogStream)
 Mimic.copy(Sprites)

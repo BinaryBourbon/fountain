@@ -142,6 +142,21 @@ Avatars accept `image/png`, `image/jpeg`, `image/gif`, `image/webp`, up to 5 MB.
 
 Agent objects carry `conversation_count`; environments carry `secret_count` and `agent_count`; vaults carry `secret_count`. They are on both the list and single-resource reads, so "is this environment in use / safe to delete" is one request.
 
+## Catalog
+
+```
+GET  /api/catalog             # runtimes, model suggestions per runtime, sandbox providers, package managers, avatar bases/moods
+POST /api/avatars/generate    # {base, mood} → {data (base64 PNG), media_type}; attach with PUT /api/agents/:id/avatar
+```
+
+The vocabulary the agent and environment forms are built from, so a client
+elsewhere does not hard-code it. Model lists are suggestions, not an
+allowlist — any `provider/model` under a known provider is accepted.
+`package_managers` is what provisioning actually installs from an
+environment's `packages` (`apt`, `npm`); other keys are stored and ignored.
+Avatar generation uses the tenant's own OpenAI credential (`422
+no_openai_key` without one).
+
 ## Environments
 
 ```

@@ -18,6 +18,21 @@ upgrade, is in
 
 ### Added
 
+- **`GET /api/catalog` and `POST /api/avatars/generate`.** The vocabulary the
+  agent and environment forms are built from — runtimes and model
+  suggestions per runtime, sandbox providers usable on the instance and the
+  default, the package managers provisioning installs, the avatar
+  generator's bases and moods — and the generator itself over the API, so
+  the standalone conversations app can carry the agents / environments /
+  vaults pages without hard-coding any of it (#815).
+
+### Fixed
+
+- **The environment form offers only the package managers provisioning
+  installs (`apt`, `npm`).** pip, cargo, gem and go were offered, stored and
+  never installed; an environment that already carries one of those keys
+  still shows it (#815).
+
 - **Blocks over the API, and every conversation on one stream.**
   `?blocks=true` on `GET /api/conversations/:id/events`, on its `/stream`
   and on the new `GET /api/events/stream` adds `blocks` to each event — its

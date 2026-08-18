@@ -310,6 +310,10 @@ defmodule FountainWeb.Router do
     end
 
     resources "/agents", AgentController, except: [:new, :edit]
+    # The form vocabulary and the avatar generator, for clients that build
+    # the agent/environment forms elsewhere (#815).
+    get "/catalog", CatalogController, :show
+    post "/avatars/generate", AvatarGenerateController, :create
 
     # Hosted Buzz agents (ADR 0020, #738). `create` is the Fountain side of a
     # remote-agents provider deploy — idempotent on the Nostr pubkey.

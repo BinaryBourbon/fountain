@@ -5,7 +5,10 @@ defmodule FountainWeb.EnvironmentsLive.Form do
   alias Fountain.{Crypto, Environments}
   alias Fountain.Environments.Environment
 
-  @supported_managers ~w(apt npm pip cargo gem go)
+  # Only what provisioning installs (#815). pip/cargo/gem/go used to be
+  # offered here and were stored but never installed; an environment that
+  # already has such a key still shows it, so nothing disappears silently.
+  @supported_managers Fountain.Conversations.Provisioning.package_managers()
 
   @impl true
   def mount(params, _session, socket) do
