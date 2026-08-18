@@ -18,6 +18,15 @@ upgrade, is in
 
 ### Added
 
+- **`fountain buzz agents set-access` / `PATCH /api/buzz/agents/:id`.** Change
+  who may `@`-mention a hosted Buzz agent (`--respond-to owner-only | allowlist
+  | anyone | nobody`, `--allowlist <hex,…>`) after it is deployed; the harness
+  restarts with the new gate. The Buzz desktop refuses to change access on a
+  provider agent it has already deployed, so without this the only way to open
+  an agent up was a re-create under a new key. `fountain buzz agents list`
+  shows the current gate per agent. A later desktop deploy still sends the
+  desktop's record as the whole truth. (#790)
+
 - **`!rotate` from a Buzz channel opens a new conversation.** The channel-bound
   resume (#774) meant a rotated harness's next `session/new` landed straight
   back on the same conversation, so rotation did nothing on a hosted agent.

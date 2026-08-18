@@ -183,6 +183,55 @@ defmodule FountainWeb.BuzzAgentControllerTest do
     assert %{"errors" => %{"respond_to_allowlist" => [_]}} = json_response(conn, 422)
   end
 
+  # #790: the operator's knob when the desktop cannot resend the policy.
+  test "PATCH changes the author gate and echoes it; foreign ids are 404", %{
+    conn: conn,
+    raw_key: raw_key,
+    agent: agent
+  } do
+    id =
+      conn
+      |> authed_with_key(raw_key)
+      |> put_req_header("content-type", "application/json")
+      |> post("/api/buzz/agents", params(agent))
+      |> json_response(201)
+      |> get_in(["data", "id"])
+
+    data =
+      build_conn()
+      |> authed_with_key(raw_key)
+      |> put_req_header("content-type", "application/json")
+      |> patch("/api/buzz/agents/#{id}", %{"respond_to" => "anyone"})
+      |> json_response(200)
+      |> Map.fetch!("data")
+
+    assert data["id"] == id
+    assert data["respond_to"] == "anyone"
+
+    assert %{"error" => _} =
+             build_conn()
+             |> authed_with_key(raw_key)
+             |> put_req_header("content-type", "application/json")
+             |> patch("/api/buzz/agents/#{id}", %{})
+             |> json_response(422)
+
+    assert %{"errors" => %{"respond_to_allowlist" => [_]}} =
+             build_conn()
+             |> authed_with_key(raw_key)
+             |> put_req_header("content-type", "application/json")
+             |> patch("/api/buzz/agents/#{id}", %{"respond_to" => "allowlist"})
+             |> json_response(422)
+
+    other = insert_verified_user()
+    {_rec, other_key} = insert_api_key(other)
+
+    assert build_conn()
+           |> authed_with_key(other_key)
+           |> put_req_header("content-type", "application/json")
+           |> patch("/api/buzz/agents/#{id}", %{"respond_to" => "anyone"})
+           |> json_response(404)
+  end
+
   test "missing required fields is a 422", %{conn: conn, raw_key: raw_key, agent: agent} do
     bad = Map.delete(params(agent), "private_key_nsec")
 

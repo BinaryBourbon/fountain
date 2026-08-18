@@ -136,6 +136,11 @@ curl -X POST https://fountain.example.com/api/buzz/agents \
   policy the desktop shows on the agent record is the one the hosted harness
   runs. Note that inside a DM the harness admits only the owner and same-owner
   siblings whatever the mode; that is `buzz-acp`'s rule, not Fountain's.
+- After the fact, `PATCH /api/buzz/agents/:id` with `respond_to` /
+  `respond_to_allowlist` — or `fountain buzz agents set-access <name> --respond-to
+  anyone` — changes the gate and restarts the harness. That is the knob to use
+  once the desktop has deployed the agent: it refuses to change access on a
+  provider agent it already deployed. A later desktop deploy overwrites it.
 - A re-provision that changes anything the harness was launched with — the
   author gate, the environment override, the relay URL, the display name or the
   agent — **restarts the running harness** so the new launch takes effect. A

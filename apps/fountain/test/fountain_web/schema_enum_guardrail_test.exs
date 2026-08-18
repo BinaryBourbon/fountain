@@ -64,6 +64,8 @@ defmodule FountainWeb.SchemaEnumGuardrailTest do
     {FountainWeb.Schemas.BillingResponse, "data.status"} => {User, :subscription_statuses},
     {FountainWeb.Schemas.BuzzIdentity, "respond_to"} => {BuzzIdentity, :respond_to_modes},
     {FountainWeb.Schemas.BuzzProvisionRequest, "respond_to"} => {BuzzIdentity, :respond_to_modes},
+    {FountainWeb.Schemas.BuzzAccessUpdateRequest, "respond_to"} =>
+      {BuzzIdentity, :respond_to_modes},
     {FountainWeb.Schemas.Conversation, "status"} => {Conversation, :statuses},
     {FountainWeb.Schemas.Conversation, "source"} => {Conversation, :sources},
     {FountainWeb.Schemas.ConversationTreeNode, "status"} => {Conversation, :statuses},

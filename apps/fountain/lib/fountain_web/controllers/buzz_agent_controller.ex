@@ -92,6 +92,49 @@ defmodule FountainWeb.BuzzAgentController do
     end
   end
 
+  operation(:update,
+    summary: "Change who may talk to a hosted Buzz agent",
+    parameters: [id: [in: :path, type: :string, description: "Buzz agent id"]],
+    request_body: {"Access attributes", "application/json", Schemas.BuzzAccessUpdateRequest},
+    responses: [
+      ok: {"Buzz agent", "application/json", Schemas.BuzzIdentityResponse},
+      not_found: {"Not found", "application/json", Schemas.Error},
+      unprocessable_entity: {"Validation error", "application/json", Schemas.Error}
+    ]
+  )
+
+  # The operator's knob for the inbound author gate (#790): sets `respond_to`
+  # / `respond_to_allowlist` on the identity and restarts its harness so the
+  # new gate is live. Exists because the desktop refuses to change access on a
+  # provider agent it has already deployed, so the record's policy cannot be
+  # resent from there.
+  def update(conn, %{"id" => id} = params) do
+    user = conn.assigns.current_user
+
+    with %BuzzIdentity{} = identity <- Buzz.get_identity(id, user.id),
+         {:ok, %BuzzIdentity{} = updated} <-
+           Buzz.update_access(identity, Map.take(params, ~w(respond_to respond_to_allowlist)),
+             actor: "api"
+           ) do
+      if Buzz.launch_config_changed?(identity, updated), do: Manager.restart_harness(updated)
+      json(conn, %{data: identity_json(updated)})
+    else
+      nil ->
+        conn |> put_status(:not_found) |> json(%{error: "not found"})
+
+      {:error, :nothing_to_update} ->
+        conn
+        |> put_status(:unprocessable_entity)
+        |> json(%{error: "nothing to update: send respond_to and/or respond_to_allowlist"})
+
+      {:error, %Ecto.Changeset{} = changeset} ->
+        conn
+        |> put_status(:unprocessable_entity)
+        |> put_view(json: FountainWeb.ChangesetJSON)
+        |> render(:error, changeset: changeset)
+    end
+  end
+
   operation(:delete,
     summary: "Tear down a hosted Buzz agent",
     parameters: [id: [in: :path, type: :string, description: "Buzz agent id"]],

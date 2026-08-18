@@ -302,7 +302,7 @@ defmodule FountainWeb.Router do
 
     # Hosted Buzz agents (ADR 0020, #738). `create` is the Fountain side of a
     # remote-agents provider deploy — idempotent on the Nostr pubkey.
-    resources "/buzz/agents", BuzzAgentController, only: [:index, :create, :delete]
+    resources "/buzz/agents", BuzzAgentController, only: [:index, :create, :update, :delete]
 
     # Bulk apply for compiled fountain.yml manifests (`fountain apply`).
     post "/apply", ApplyController, :create
