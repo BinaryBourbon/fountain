@@ -67,13 +67,13 @@ defmodule Fountain.TeamTest do
     end
   end
 
-  describe "add_teammate/3" do
+  describe "add_teammate/4" do
     test "opens a channel-bound conversation and records the membership" do
       user = insert_verified_user()
       agent = insert_agent(user_id: user.id)
       inert_start_child()
 
-      assert {:ok, conv} = Team.add_teammate(user.id, agent.id, actor: "ui")
+      assert {:ok, conv} = Team.add_teammate(user.id, agent.id, %{}, actor: "ui")
       assert conv.channel_id == Team.channel()
       assert conv.agent_id == agent.id
       assert [%{agent: %{id: id}}] = Team.list_teammates(user.id)
@@ -102,6 +102,126 @@ defmodule Fountain.TeamTest do
       agent = insert_agent(user_id: other.id)
 
       assert {:error, :not_found} = Team.add_teammate(user.id, agent.id)
+    end
+
+    test "a name, an environment and a vault land on the conversation" do
+      user = insert_verified_user()
+      agent = insert_agent(user_id: user.id, name: "Ada")
+      env = insert_env(user_id: user.id, name: "staging")
+      vault = insert_vault(user_id: user.id, name: "ada-keys")
+      inert_start_child()
+
+      assert {:ok, conv} =
+               Team.add_teammate(user.id, agent.id, %{
+                 "name" => "  Ada (staging)  ",
+                 "environment_id" => env.id,
+                 "vault_id" => vault.id
+               })
+
+      assert conv.title == "Ada (staging)"
+      assert conv.environment_id == env.id
+      assert conv.vault_id == vault.id
+      # The sandbox was provisioned from the override, not the agent's own.
+      assert Repo.reload(conv.sandbox).environment_id == env.id
+
+      assert [%{name: "Ada (staging)", agent: %{name: "Ada"}}] = Team.list_teammates(user.id)
+    end
+
+    test "a blank name means the agent's name; blank ids mean the defaults" do
+      user = insert_verified_user()
+      agent = insert_agent(user_id: user.id, name: "Ada")
+      inert_start_child()
+
+      assert {:ok, conv} =
+               Team.add_teammate(user.id, agent.id, %{
+                 "name" => "   ",
+                 "environment_id" => "",
+                 "vault_id" => ""
+               })
+
+      assert conv.title == nil
+      assert conv.environment_id == nil
+      assert conv.vault_id == nil
+      assert [%{name: "Ada"}] = Team.list_teammates(user.id)
+    end
+
+    test "the agent's allowlists gate the environment and the vault" do
+      user = insert_verified_user()
+      env = insert_env(user_id: user.id)
+      vault = insert_vault(user_id: user.id)
+
+      agent =
+        insert_agent(user_id: user.id, allowed_environment_ids: [], allowed_vault_ids: [])
+
+      assert {:error, :environment_not_allowed} =
+               Team.add_teammate(user.id, agent.id, %{"environment_id" => env.id})
+
+      assert {:error, :vault_not_allowed} =
+               Team.add_teammate(user.id, agent.id, %{"vault_id" => vault.id})
+
+      assert Team.list_teammates(user.id) == []
+    end
+
+    test "another tenant's environment or vault reads as not found" do
+      user = insert_verified_user()
+      other = insert_verified_user()
+      agent = insert_agent(user_id: user.id)
+      env = insert_env(user_id: other.id)
+      vault = insert_vault(user_id: other.id)
+
+      assert {:error, :environment_not_found} =
+               Team.add_teammate(user.id, agent.id, %{"environment_id" => env.id})
+
+      assert {:error, :vault_not_found} =
+               Team.add_teammate(user.id, agent.id, %{"vault_id" => vault.id})
+    end
+
+    test "an agent already on the team keeps its conversation, whatever the new attrs" do
+      user = insert_verified_user()
+      agent = insert_agent(user_id: user.id)
+      vault = insert_vault(user_id: user.id)
+      inert_start_child()
+
+      {:ok, first} = Team.add_teammate(user.id, agent.id, %{"name" => "One"})
+
+      assert {:ok, again} =
+               Team.add_teammate(user.id, agent.id, %{"name" => "Two", "vault_id" => vault.id})
+
+      assert again.id == first.id
+      assert [%{name: "One"}] = Team.list_teammates(user.id)
+    end
+  end
+
+  describe "addable_options/2" do
+    test "the user's environments and vaults, narrowed by the agent's allowlists" do
+      user = insert_verified_user()
+      own = insert_env(user_id: user.id, name: "own")
+      allowed = insert_env(user_id: user.id, name: "allowed")
+      _other = insert_env(user_id: user.id, name: "other")
+      _foreign = insert_env(user_id: insert_verified_user().id, name: "foreign")
+      v1 = insert_vault(user_id: user.id, name: "v1")
+      _v2 = insert_vault(user_id: user.id, name: "v2")
+
+      open = insert_agent(user_id: user.id, environment_id: own.id)
+      assert %{environments: envs, vaults: vaults} = Team.addable_options(user.id, open)
+      assert envs |> Enum.map(& &1.name) |> Enum.sort() == ["allowed", "other", "own"]
+      assert vaults |> Enum.map(& &1.name) |> Enum.sort() == ["v1", "v2"]
+
+      narrow =
+        insert_agent(
+          user_id: user.id,
+          environment_id: own.id,
+          allowed_environment_ids: [allowed.id],
+          allowed_vault_ids: [v1.id]
+        )
+
+      assert %{environments: envs, vaults: vaults} = Team.addable_options(user.id, narrow)
+      # The agent's own environment is always offered — naming it is not an override.
+      assert envs |> Enum.map(& &1.name) |> Enum.sort() == ["allowed", "own"]
+      assert Enum.map(vaults, & &1.name) == ["v1"]
+
+      closed = insert_agent(user_id: user.id, allowed_environment_ids: [], allowed_vault_ids: [])
+      assert %{environments: [], vaults: []} = Team.addable_options(user.id, closed)
     end
   end
 
@@ -169,6 +289,30 @@ defmodule Fountain.TeamTest do
 
       assert agent_id == ada.id
       assert conv_id == fresh.id
+    end
+
+    test "a fresh conversation inherits the teammate's name, environment and vault" do
+      user = insert_verified_user()
+      ada = insert_agent(user_id: user.id, name: "Ada")
+      env = insert_env(user_id: user.id)
+      vault = insert_vault(user_id: user.id)
+
+      _dead =
+        insert_teammate_conv(user, ada,
+          status: "terminated",
+          title: "Ada (staging)",
+          environment_id: env.id,
+          vault_id: vault.id
+        )
+
+      inert_start_child()
+
+      assert {:ok, fresh} = Team.send_message(user.id, ada.id, "are you there?")
+      assert fresh.title == "Ada (staging)"
+      assert fresh.environment_id == env.id
+      assert fresh.vault_id == vault.id
+      assert Repo.reload(fresh.sandbox).environment_id == env.id
+      assert [%{name: "Ada (staging)"}] = Team.list_teammates(user.id)
     end
 
     test "a server that answers :gone also gets a fresh conversation" do

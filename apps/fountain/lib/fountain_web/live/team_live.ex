@@ -23,6 +23,8 @@ defmodule FountainWeb.TeamLive do
   alias Fountain.{Conversations, Team}
   alias Fountain.Conversations.{ConversationServer, LogEvent}
 
+  @empty_add_form %{"agent_id" => nil, "name" => "", "environment_id" => "", "vault_id" => ""}
+
   @impl true
   def mount(params, _session, socket) do
     user_id = socket.assigns.current_user.id
@@ -43,6 +45,8 @@ defmodule FountainWeb.TeamLive do
       |> assign(:turns_by_id, %{})
       |> assign(:prompt, "")
       |> assign(:picker_open, false)
+      |> assign(:add_form, @empty_add_form)
+      |> assign(:add_options, %{environments: [], vaults: []})
 
     # `/team` with no teammate named lands on the most recently active one,
     # the way a messaging app opens on the top thread; `/team/:agent_id` is
@@ -87,7 +91,7 @@ defmodule FountainWeb.TeamLive do
     |> assign(:turns_by_id, load_turns(conv.id))
     |> assign(:prompt, "")
     |> assign(:teammates, mark_read_locally(socket.assigns.teammates, conv.id))
-    |> assign(:page_title, "#{teammate.agent.name} · Team")
+    |> assign(:page_title, "#{teammate.name} · Team")
   end
 
   defp load_turns(conv_id) do
@@ -246,18 +250,30 @@ defmodule FountainWeb.TeamLive do
   end
 
   def handle_event("open_picker", _, socket) do
+    agents = Team.list_addable_agents(socket.assigns.user_id)
+    first = List.first(agents)
+
     {:noreply,
      socket
-     |> assign(:addable_agents, Team.list_addable_agents(socket.assigns.user_id))
-     |> assign(:picker_open, true)}
+     |> assign(:addable_agents, agents)
+     |> assign(:picker_open, true)
+     |> set_add_form(%{@empty_add_form | "agent_id" => first && first.id})}
   end
 
   def handle_event("close_picker", _, socket), do: {:noreply, assign(socket, :picker_open, false)}
 
-  def handle_event("add_teammate", %{"agent_id" => agent_id}, socket) do
-    user_id = socket.assigns.user_id
+  # The picker form as it is typed into. A change of agent re-derives the
+  # environment and vault choices from that agent's allowlists.
+  def handle_event("validate_add", %{"add" => params}, socket) do
+    {:noreply, set_add_form(socket, Map.merge(socket.assigns.add_form, params))}
+  end
 
-    case Team.add_teammate(user_id, agent_id, FountainWeb.Audited.attribution(socket)) do
+  def handle_event("add_teammate", %{"add" => %{"agent_id" => agent_id} = params}, socket)
+      when is_binary(agent_id) and agent_id != "" do
+    user_id = socket.assigns.user_id
+    attrs = Map.take(params, ["name", "environment_id", "vault_id"])
+
+    case Team.add_teammate(user_id, agent_id, attrs, FountainWeb.Audited.attribution(socket)) do
       {:ok, conv} ->
         Phoenix.PubSub.subscribe(Fountain.PubSub, "conv:#{conv.id}")
 
@@ -272,6 +288,8 @@ defmodule FountainWeb.TeamLive do
         {:noreply, socket |> assign(:picker_open, false) |> flash_error(reason)}
     end
   end
+
+  def handle_event("add_teammate", _params, socket), do: {:noreply, socket}
 
   def handle_event("remove_teammate", %{"agent_id" => agent_id}, socket) do
     user_id = socket.assigns.user_id
@@ -370,6 +388,31 @@ defmodule FountainWeb.TeamLive do
     end
   end
 
+  # Keep the form and its option lists in step: the environment and vault
+  # choices belong to the agent picked, and a pick that the new agent does not
+  # offer falls back to the default (blank).
+  defp set_add_form(socket, form) do
+    agent = Enum.find(socket.assigns.addable_agents, &(&1.id == form["agent_id"]))
+
+    options =
+      if agent,
+        do: Team.addable_options(socket.assigns.user_id, agent),
+        else: %{environments: [], vaults: []}
+
+    form =
+      form
+      |> Map.update("environment_id", "", &keep_if_offered(&1, options.environments))
+      |> Map.update("vault_id", "", &keep_if_offered(&1, options.vaults))
+
+    socket
+    |> assign(:add_form, form)
+    |> assign(:add_options, options)
+  end
+
+  defp keep_if_offered(id, offered) do
+    if Enum.any?(offered, &(&1.id == id)), do: id, else: ""
+  end
+
   defp flash_error(socket, :busy),
     do: put_flash(socket, :error, "They're still working on the last message")
 
@@ -377,6 +420,17 @@ defmodule FountainWeb.TeamLive do
     do: put_flash(socket, :error, "Their computer is still starting — try again shortly")
 
   defp flash_error(socket, :not_found), do: put_flash(socket, :error, "Agent not found")
+
+  defp flash_error(socket, :environment_not_found),
+    do: put_flash(socket, :error, "Environment not found")
+
+  defp flash_error(socket, :environment_not_allowed),
+    do: put_flash(socket, :error, "That agent may not use that environment")
+
+  defp flash_error(socket, :vault_not_found), do: put_flash(socket, :error, "Vault not found")
+
+  defp flash_error(socket, :vault_not_allowed),
+    do: put_flash(socket, :error, "That agent may not use that vault")
 
   defp flash_error(socket, :subscription_required) do
     socket
@@ -517,13 +571,13 @@ defmodule FountainWeb.TeamLive do
               <div class="text-sm">
                 <%= case @selected.conversation.status do %>
                   <% "pending" -> %>
-                    Starting <span class="font-medium text-zinc-600">{@selected.agent.name}</span>'s
+                    Starting <span class="font-medium text-zinc-600">{@selected.name}</span>'s
                     computer&hellip;
                   <% "failed" -> %>
-                    <span class="font-medium text-zinc-600">{@selected.agent.name}</span>'s computer
+                    <span class="font-medium text-zinc-600">{@selected.name}</span>'s computer
                     failed to start — a message tries a new one.
                   <% _ -> %>
-                    Say hello to <span class="font-medium text-zinc-600">{@selected.agent.name}</span>.
+                    Say hello to <span class="font-medium text-zinc-600">{@selected.name}</span>.
                 <% end %>
               </div>
               <div class="text-xs">
@@ -554,7 +608,7 @@ defmodule FountainWeb.TeamLive do
               id={"team-prompt-#{@selected.conversation.id}"}
               name="prompt"
               rows="1"
-              placeholder={"Message #{@selected.agent.name}…"}
+              placeholder={"Message #{@selected.name}…"}
               phx-hook="SubmitOnEnter"
               autofocus
               class="flex-1 resize-none rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-0)] px-4 py-2 text-sm leading-6 max-h-40 focus:outline-none focus:ring-2 focus:ring-[var(--color-focus-ring)]"
@@ -574,7 +628,12 @@ defmodule FountainWeb.TeamLive do
         <% end %>
       </section>
 
-      <.agent_picker :if={@picker_open} agents={@addable_agents} />
+      <.agent_picker
+        :if={@picker_open}
+        agents={@addable_agents}
+        form={@add_form}
+        options={@add_options}
+      />
     </div>
     """
   end
@@ -607,7 +666,7 @@ defmodule FountainWeb.TeamLive do
       <div class="relative shrink-0">
         <div class="size-11 rounded-full overflow-hidden flex items-center justify-center text-sm font-semibold bg-zinc-200 text-zinc-700">
           <img :if={@avatar_url} src={@avatar_url} class="w-full h-full object-cover" alt="" />
-          <span :if={is_nil(@avatar_url)}>{initials(@teammate.agent.name)}</span>
+          <span :if={is_nil(@avatar_url)}>{initials(@teammate.name)}</span>
         </div>
         <span
           class={["absolute bottom-0 right-0 size-3 rounded-full ring-2 ring-white", @dot]}
@@ -616,7 +675,7 @@ defmodule FountainWeb.TeamLive do
       </div>
       <div class="flex-1 min-w-0">
         <div class="flex items-baseline justify-between gap-2">
-          <span class="font-medium truncate">{@teammate.agent.name}</span>
+          <span class="font-medium truncate">{@teammate.name}</span>
           <span class={[
             "text-[11px] shrink-0",
             @selected && "text-blue-100",
@@ -672,8 +731,11 @@ defmodule FountainWeb.TeamLive do
         &lsaquo; Team
       </button>
       <div class="min-w-0 flex-1">
-        <div class="font-semibold truncate">{@teammate.agent.name}</div>
+        <div class="font-semibold truncate">{@teammate.name}</div>
         <div class="flex items-center gap-1.5 text-xs text-[var(--color-text-secondary)] whitespace-nowrap min-w-0">
+          <span :if={@teammate.name != @teammate.agent.name} class="truncate">
+            {@teammate.agent.name} &middot;
+          </span>
           <span class={["size-2 rounded-full shrink-0", @dot]} />
           <span class="truncate">{@presence_label}</span>
           <span
@@ -704,7 +766,7 @@ defmodule FountainWeb.TeamLive do
           type="button"
           phx-click="remove_teammate"
           phx-value-agent_id={@teammate.agent.id}
-          data-confirm={"Remove #{@teammate.agent.name} from the team? Their computer is shut down; the conversation stays in your history."}
+          data-confirm={"Remove #{@teammate.name} from the team? Their computer is shut down; the conversation stays in your history."}
           class="rounded-md border border-rose-200 text-rose-700 px-2.5 py-1 hover:bg-rose-50"
         >
           Remove
@@ -715,8 +777,25 @@ defmodule FountainWeb.TeamLive do
   end
 
   attr :agents, :list, required: true
+  attr :form, :map, required: true
+  attr :options, :map, required: true
 
   defp agent_picker(assigns) do
+    agent = Enum.find(assigns.agents, &(&1.id == assigns.form["agent_id"]))
+
+    own_env =
+      agent && agent.environment_id &&
+        Enum.find(assigns.options.environments, &(&1.id == agent.environment_id))
+
+    assigns =
+      assign(assigns,
+        agent: agent,
+        own_env: own_env,
+        # The agent's own environment is the blank pick, not a row of its own.
+        other_envs:
+          Enum.reject(assigns.options.environments, &(agent && &1.id == agent.environment_id))
+      )
+
     ~H"""
     <div id="add-teammate" class="relative z-50">
       <div
@@ -752,25 +831,130 @@ defmodule FountainWeb.TeamLive do
               Every agent you have is already on the team.
               <.link navigate={~p"/agents/new"} class="underline not-italic">Create another</.link>
             </div>
-            <ul :if={@agents != []} class="divide-y divide-[var(--color-border)]" role="list">
-              <li :for={a <- @agents} class="py-2 flex items-center justify-between gap-3">
-                <div class="min-w-0">
-                  <div class="font-medium truncate">{a.name}</div>
-                  <div class="text-xs text-[var(--color-text-muted)] truncate">
-                    {a.runtime} &middot; {a.model}
-                  </div>
-                </div>
+            <form
+              :if={@agents != []}
+              id="add-teammate-form"
+              phx-change="validate_add"
+              phx-submit="add_teammate"
+              class="space-y-4"
+            >
+              <div class="space-y-1">
+                <label
+                  for="add-agent"
+                  class="block text-xs font-medium text-[var(--color-text-secondary)]"
+                >
+                  Agent
+                </label>
+                <select
+                  id="add-agent"
+                  name="add[agent_id]"
+                  class="w-full rounded-md border border-[var(--color-border)] bg-[var(--color-bg-0)] px-3 py-2 text-sm"
+                >
+                  <option :for={a <- @agents} value={a.id} selected={@form["agent_id"] == a.id}>
+                    {a.name} ({a.runtime} &middot; {a.model})
+                  </option>
+                </select>
+              </div>
+
+              <div class="space-y-1">
+                <label
+                  for="add-name"
+                  class="block text-xs font-medium text-[var(--color-text-secondary)]"
+                >
+                  Name <span class="font-normal text-[var(--color-text-muted)]">(optional)</span>
+                </label>
+                <input
+                  id="add-name"
+                  type="text"
+                  name="add[name]"
+                  value={@form["name"]}
+                  maxlength="120"
+                  placeholder={(@agent && @agent.name) || "Teammate"}
+                  autocomplete="off"
+                  class="w-full rounded-md border border-[var(--color-border)] bg-[var(--color-bg-0)] px-3 py-2 text-sm"
+                />
+                <p class="text-xs text-[var(--color-text-muted)]">
+                  How they show up on the team. Blank uses the agent's name.
+                </p>
+              </div>
+
+              <div :if={@other_envs != []} class="space-y-1">
+                <label
+                  for="add-environment"
+                  class="block text-xs font-medium text-[var(--color-text-secondary)]"
+                >
+                  Environment
+                </label>
+                <select
+                  id="add-environment"
+                  name="add[environment_id]"
+                  class="w-full rounded-md border border-[var(--color-border)] bg-[var(--color-bg-0)] px-3 py-2 text-sm"
+                >
+                  <option value="" selected={@form["environment_id"] in [nil, ""]}>
+                    <%= if @own_env do %>
+                      Agent's default ({@own_env.name})
+                    <% else %>
+                      Agent's default
+                    <% end %>
+                  </option>
+                  <option
+                    :for={e <- @other_envs}
+                    value={e.id}
+                    selected={@form["environment_id"] == e.id}
+                  >
+                    {e.name}
+                  </option>
+                </select>
+                <p class="text-xs text-[var(--color-text-muted)]">
+                  Their computer is set up from this environment instead of the agent's own.
+                </p>
+              </div>
+
+              <div :if={@options.vaults != []} class="space-y-1">
+                <label
+                  for="add-vault"
+                  class="block text-xs font-medium text-[var(--color-text-secondary)]"
+                >
+                  Vault <span class="font-normal text-[var(--color-text-muted)]">(optional)</span>
+                </label>
+                <select
+                  id="add-vault"
+                  name="add[vault_id]"
+                  class="w-full rounded-md border border-[var(--color-border)] bg-[var(--color-bg-0)] px-3 py-2 text-sm"
+                >
+                  <option value="" selected={@form["vault_id"] in [nil, ""]}>
+                    &#8212; none &#8212;
+                  </option>
+                  <option
+                    :for={v <- @options.vaults}
+                    value={v.id}
+                    selected={@form["vault_id"] == v.id}
+                  >
+                    {v.name}
+                  </option>
+                </select>
+                <p class="text-xs text-[var(--color-text-muted)]">
+                  Layered on top of the environment's secrets. Vault values win on key collision.
+                </p>
+              </div>
+
+              <div class="flex justify-end gap-2 pt-1">
                 <button
                   type="button"
-                  phx-click="add_teammate"
-                  phx-value-agent_id={a.id}
-                  phx-disable-with="Adding…"
-                  class="shrink-0 rounded-md px-3 py-1 text-xs font-medium bg-[var(--color-brand)] text-white hover:bg-[var(--color-brand-hover)]"
+                  phx-click="close_picker"
+                  class="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-sm hover:bg-[var(--color-bg-2)]"
                 >
-                  Add
+                  Cancel
                 </button>
-              </li>
-            </ul>
+                <button
+                  type="submit"
+                  phx-disable-with="Adding…"
+                  class="rounded-md px-3 py-1.5 text-sm font-medium bg-[var(--color-brand)] text-white hover:bg-[var(--color-brand-hover)]"
+                >
+                  Add to team
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       </div>

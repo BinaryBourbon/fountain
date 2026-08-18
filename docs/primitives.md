@@ -141,6 +141,14 @@ conversation and unbinds the agent's conversations from the channel; the
 rows stay in the ordinary conversation list. "Details" on a thread opens the
 full conversation view (stages, tool calls, raw output).
 
+When you add a teammate you can give it a name of its own, pick the
+environment its computer is set up from, and attach a vault. These are the
+conversation's `title`, its per-launch environment override and its
+`vault_id` — nothing new — and the environment and vault pickers only offer
+what the agent's `allowed_environment_ids` / `allowed_vault_ids` allow. They
+belong to the teammate, not the computer: a fresh conversation opened after
+the old one is terminated inherits all three.
+
 ---
 
 ## Substitution

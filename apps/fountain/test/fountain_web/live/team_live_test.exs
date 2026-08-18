@@ -58,8 +58,60 @@ defmodule FountainWeb.TeamLiveTest do
 
       assert html =~ "Add a teammate"
       assert html =~ "Ada"
-      # Linus is on the team already: exactly one Add button, and it is Ada's.
-      assert [_one] = Regex.scan(~r/phx-click="add_teammate"/, html)
+      # Linus is on the team already: the agent select offers only Ada.
+      assert [_one] = Regex.scan(~r/<option[^>]*value="[0-9a-f-]{36}"[^>]*>\s*Ada/, html)
+      refute html =~ ~r/<option[^>]*>\s*Linus/
+    end
+
+    test "the picker offers the environments and vaults the chosen agent may use", %{
+      conn: conn
+    } do
+      user = insert_verified_user()
+      own = insert_env(user_id: user.id, name: "own-env")
+      allowed = insert_env(user_id: user.id, name: "allowed-env")
+      _other = insert_env(user_id: user.id, name: "other-env")
+      v1 = insert_vault(user_id: user.id, name: "vault-one")
+      _v2 = insert_vault(user_id: user.id, name: "vault-two")
+
+      narrow =
+        insert_agent(
+          user_id: user.id,
+          name: "Narrow",
+          environment_id: own.id,
+          allowed_environment_ids: [allowed.id],
+          allowed_vault_ids: [v1.id]
+        )
+
+      _open = insert_agent(user_id: user.id, name: "Open")
+      conn = login_user(conn, user)
+
+      {:ok, view, _html} = live(conn, ~p"/team")
+      view |> element("#add-teammate-button") |> render_click()
+
+      html =
+        view
+        |> form("#add-teammate-form", %{"add" => %{"agent_id" => narrow.id}})
+        |> render_change()
+
+      # Own environment is the blank default; only the allowlisted other one is a row.
+      assert html =~ "Agent&#39;s default (own-env)"
+      assert html =~ "allowed-env"
+      refute html =~ "other-env"
+      assert html =~ "vault-one"
+      refute html =~ "vault-two"
+    end
+
+    test "the picker without vaults or other environments shows neither select", %{conn: conn} do
+      user = insert_verified_user()
+      insert_agent(user_id: user.id, name: "Ada")
+      conn = login_user(conn, user)
+
+      {:ok, view, _html} = live(conn, ~p"/team")
+      html = view |> element("#add-teammate-button") |> render_click()
+
+      assert html =~ "add[name]"
+      refute html =~ "add[environment_id]"
+      refute html =~ "add[vault_id]"
     end
   end
 
@@ -258,13 +310,67 @@ defmodule FountainWeb.TeamLiveMutationsTest do
     view |> element("#add-teammate-button") |> render_click()
 
     view
-    |> element("button[phx-click=add_teammate][phx-value-agent_id='#{ada.id}']")
-    |> render_click()
+    |> form("#add-teammate-form", %{"add" => %{"agent_id" => ada.id}})
+    |> render_submit()
 
     assert_patch(view, ~p"/team/#{ada.id}")
     assert has_element?(view, "#teammate-#{ada.id}")
-    assert [%{agent: %{id: id}}] = Team.list_teammates(user.id)
+    assert [%{agent: %{id: id}, name: "Ada"}] = Team.list_teammates(user.id)
     assert id == ada.id
+  end
+
+  test "adding a teammate with a name, environment and vault shows the name everywhere", %{
+    conn: conn
+  } do
+    user = insert_verified_user()
+    ada = insert_agent(user_id: user.id, name: "Ada")
+    env = insert_env(user_id: user.id, name: "staging")
+    vault = insert_vault(user_id: user.id, name: "ada-keys")
+    conn = login_user(conn, user)
+
+    {:ok, view, _html} = live(conn, ~p"/team")
+    view |> element("#add-teammate-button") |> render_click()
+
+    view
+    |> form("#add-teammate-form", %{
+      "add" => %{
+        "agent_id" => ada.id,
+        "name" => "Ada (staging)",
+        "environment_id" => env.id,
+        "vault_id" => vault.id
+      }
+    })
+    |> render_submit()
+
+    assert_patch(view, ~p"/team/#{ada.id}")
+    html = render(view)
+    assert html =~ "Ada (staging)"
+    assert html =~ "Message Ada (staging)…"
+    assert page_title(view) =~ "Ada (staging) · Team"
+
+    assert [%{conversation: conv, name: "Ada (staging)"}] = Team.list_teammates(user.id)
+    assert conv.environment_id == env.id
+    assert conv.vault_id == vault.id
+  end
+
+  test "an environment the agent may not use is refused with a flash", %{conn: conn} do
+    user = insert_verified_user()
+    env = insert_env(user_id: user.id, name: "forbidden")
+    ada = insert_agent(user_id: user.id, name: "Ada", allowed_environment_ids: [])
+    conn = login_user(conn, user)
+
+    {:ok, view, _html} = live(conn, ~p"/team")
+    view |> element("#add-teammate-button") |> render_click()
+
+    # The picker never offers it, so this is a hand-built submit — the guard
+    # is the context's, not the form's.
+    html =
+      render_submit(view, "add_teammate", %{
+        "add" => %{"agent_id" => ada.id, "environment_id" => env.id}
+      })
+
+    assert html =~ "may not use that environment"
+    assert Team.list_teammates(user.id) == []
   end
 
   test "sending a message hands it to the conversation server and clears the box", %{conn: conn} do

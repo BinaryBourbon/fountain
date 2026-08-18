@@ -85,6 +85,7 @@ defmodule Fountain.Conversations.Conversation do
     ])
     |> validate_required([:runtime, :status, :sandbox_id, :user_id])
     |> validate_length(:channel_id, max: 255)
+    |> validate_length(:title, max: 120)
     |> validate_inclusion(:status, @statuses)
     |> validate_inclusion(:source, @sources)
     |> foreign_key_constraint(:sandbox_id)

@@ -1125,6 +1125,7 @@ defmodule Fountain.Conversations do
                                 agent's own (#783); subject to `agent.allowed_environment_ids`
     - `source`                — optional; one of "ui", "api", "agent" (default "api")
     - `parent_conversation_id` — optional; UUID of the conversation that spawned this one
+    - `title`                 — optional display title (the team page names a teammate with it)
   """
   def start_conversation(%{"agent_id" => agent_id, "user_id" => user_id} = attrs, opts \\ [])
       when is_binary(user_id) do
@@ -1161,7 +1162,8 @@ defmodule Fountain.Conversations do
              status: "pending",
              source: attrs["source"] || "api",
              parent_conversation_id: parent_id,
-             channel_id: attrs["channel_id"]
+             channel_id: attrs["channel_id"],
+             title: attrs["title"]
            }) do
       # Recorded here rather than in either branch below: both of them return
       # {:ok, conv}. The row exists and the sandbox reservation is spent even
