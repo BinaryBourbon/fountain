@@ -18,6 +18,13 @@ defmodule Fountain.Team do
   on every conversation this agent had under it, so the rows stay in the
   user's history (`/conversations`) but leave the team.
 
+  A teammate can be given a name of its own, an environment and a vault when
+  it is added. None of these is a new column: the name is the conversation's
+  `title`, the other two are the per-launch `environment_id` override (#783)
+  and `vault_id` every conversation already carries. They belong to the
+  teammate, not the computer, so a fresh conversation opened when the old one
+  is past resuming inherits all three.
+
   Every function is tenant-scoped by `user_id`; the `_unsafe_` reads inside
   are legitimate because they follow the scoped fetch in the same function.
   """
@@ -36,10 +43,12 @@ defmodule Fountain.Team do
   One entry per agent on the team, most recently active first.
 
   Each entry is `%{agent: %Agent{}, conversation: %Conversation{}, last_turn:
-  %Turn{} | nil}` — the conversation is the newest live one for that agent,
-  or, when none is live, the newest terminated/failed one (so the last
-  transcript still shows). The conversation carries `turn_count` and
-  `last_active_at`; `last_turn` is what the list previews.
+  %Turn{} | nil, name: String.t()}` — the conversation is the newest live one
+  for that agent, or, when none is live, the newest terminated/failed one (so
+  the last transcript still shows). The conversation carries `turn_count` and
+  `last_active_at`; `last_turn` is what the list previews; `name` is what the
+  teammate is called — the conversation's title when it was given one at add
+  time, else the agent's name.
   """
   def list_teammates(user_id) when is_binary(user_id) do
     convs =
@@ -52,9 +61,20 @@ defmodule Fountain.Team do
     last_turns = last_turns_by_conversation(Enum.map(convs, & &1.id))
 
     convs
-    |> Enum.map(&%{agent: &1.agent, conversation: &1, last_turn: Map.get(last_turns, &1.id)})
+    |> Enum.map(
+      &%{
+        agent: &1.agent,
+        conversation: &1,
+        last_turn: Map.get(last_turns, &1.id),
+        name: teammate_name(&1)
+      }
+    )
     |> Enum.sort_by(& &1.conversation.last_active_at, {:desc, DateTime})
   end
+
+  @doc "What the teammate is called: the conversation's title, else the agent's name."
+  def teammate_name(%Conversation{title: title}) when is_binary(title) and title != "", do: title
+  def teammate_name(%Conversation{agent: %{name: name}}), do: name
 
   # The newest turn of each conversation in one query (DISTINCT ON). The ids
   # come from the tenant-scoped listing above, which is what scopes this.
@@ -89,18 +109,40 @@ defmodule Fountain.Team do
   @doc """
   Add `agent_id` to the team: open its conversation (and so its sandbox).
 
-  Idempotent — an agent already on the team gets its existing conversation
-  back and nothing is recorded, since nothing changed. Returns `{:ok, conv}`
-  or the `start_conversation/2` error (`:not_found`, `:subscription_required`,
-  `{:sandbox_quota_exceeded, _}`, ...). `opts` is audit attribution.
+  `attrs` is optional and string-keyed: `"name"` (what the teammate is
+  called; blank means the agent's name), `"environment_id"` (provision from
+  this environment instead of the agent's own) and `"vault_id"` (layer this
+  vault's secrets on top). The two ids go through the same checks as any
+  launch — owned by the user, and on the agent's allowlist when it has one —
+  so the errors are `start_conversation/2`'s: `:environment_not_found`,
+  `:environment_not_allowed`, `:vault_not_found`, `:vault_not_allowed`.
+
+  Idempotent — an agent already on the team gets its existing live
+  conversation back, `attrs` ignored, and nothing is recorded, since nothing
+  changed. Returns `{:ok, conv}` or the `start_conversation/2` error
+  (`:not_found`, `:subscription_required`, `{:sandbox_quota_exceeded, _}`,
+  ...). `opts` is audit attribution.
   """
-  def add_teammate(user_id, agent_id, opts \\ [])
-      when is_binary(user_id) and is_binary(agent_id) do
+  def add_teammate(user_id, agent_id, attrs \\ %{}, opts \\ [])
+      when is_binary(user_id) and is_binary(agent_id) and is_map(attrs) and is_list(opts) do
+    case get_teammate(user_id, agent_id) do
+      %{conversation: conv} ->
+        if live?(conv), do: {:ok, conv}, else: open_teammate(user_id, agent_id, attrs, opts)
+
+      nil ->
+        open_teammate(user_id, agent_id, attrs, opts)
+    end
+  end
+
+  defp open_teammate(user_id, agent_id, attrs, opts) do
     attrs = %{
       "agent_id" => agent_id,
       "user_id" => user_id,
       "channel_id" => @channel,
-      "source" => "ui"
+      "source" => "ui",
+      "title" => blank_to_nil(attrs["name"]),
+      "environment_id" => blank_to_nil(attrs["environment_id"]),
+      "vault_id" => blank_to_nil(attrs["vault_id"])
     }
 
     case Conversations.start_or_resume_conversation(attrs, opts) do
@@ -115,6 +157,41 @@ defmodule Fountain.Team do
         err
     end
   end
+
+  defp blank_to_nil(nil), do: nil
+
+  defp blank_to_nil(value) when is_binary(value) do
+    case String.trim(value) do
+      "" -> nil
+      trimmed -> trimmed
+    end
+  end
+
+  @doc """
+  The environments and vaults a teammate built on `agent` may be given at add
+  time: `%{environments: [%Environment{}], vaults: [%Vault{}]}`.
+
+  Both lists are the user's own, narrowed by the agent's allowlists the way
+  `start_conversation/2` will enforce them (nil = all, `[]` = none, a list =
+  those). The agent's own environment is always offered — naming it is not an
+  override — and is what a blank pick means.
+  """
+  def addable_options(user_id, %Agents.Agent{} = agent) when is_binary(user_id) do
+    %{
+      environments:
+        user_id
+        |> Fountain.Environments.list_environments()
+        |> Enum.filter(&allowed?(&1.id, agent.allowed_environment_ids, agent.environment_id)),
+      vaults:
+        user_id
+        |> Fountain.Vaults.list_vaults()
+        |> Enum.filter(&allowed?(&1.id, agent.allowed_vault_ids, nil))
+    }
+  end
+
+  defp allowed?(_id, nil, _own), do: true
+  defp allowed?(id, _allowed, id), do: true
+  defp allowed?(id, allowed, _own), do: id in allowed
 
   @doc """
   Remove `agent_id` from the team.
@@ -172,11 +249,11 @@ defmodule Fountain.Team do
         if live?(conv) do
           case ConversationServer.send_prompt(conv.id, text, images, opts) do
             :ok -> {:ok, Conversations.get_conversation(conv.id, user_id) || conv}
-            {:error, :gone} -> start_fresh(user_id, agent_id, text, images, opts)
+            {:error, :gone} -> start_fresh(user_id, agent_id, conv, text, images, opts)
             {:error, _} = err -> err
           end
         else
-          start_fresh(user_id, agent_id, text, images, opts)
+          start_fresh(user_id, agent_id, conv, text, images, opts)
         end
     end
   end
@@ -184,8 +261,9 @@ defmodule Fountain.Team do
   # A new conversation under the team binding, seeded with the message. Not
   # `start_or_resume`: we are here precisely because the bound conversation
   # cannot be resumed, and `find_channel_conversation` would agree — but
-  # saying so directly keeps the intent readable.
-  defp start_fresh(user_id, agent_id, text, images, opts) do
+  # saying so directly keeps the intent readable. The name, environment and
+  # vault are the teammate's, not the dead computer's, so they carry over.
+  defp start_fresh(user_id, agent_id, %Conversation{} = prev, text, images, opts) do
     Conversations.start_conversation(
       %{
         "agent_id" => agent_id,
@@ -193,7 +271,10 @@ defmodule Fountain.Team do
         "channel_id" => @channel,
         "source" => "ui",
         "prompt" => text,
-        "images" => images
+        "images" => images,
+        "title" => prev.title,
+        "environment_id" => prev.environment_id,
+        "vault_id" => prev.vault_id
       },
       opts
     )

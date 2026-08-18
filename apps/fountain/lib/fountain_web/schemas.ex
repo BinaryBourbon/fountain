@@ -187,6 +187,12 @@ defmodule FountainWeb.Schemas do
               "resume key."
         },
         prompt: %Schema{type: :string, description: "Optional first turn prompt."},
+        title: %Schema{
+          type: :string,
+          nullable: true,
+          maxLength: 120,
+          description: "Optional display title. The team page names a teammate with it."
+        },
         images: %Schema{
           type: :array,
           items: ImageInput,

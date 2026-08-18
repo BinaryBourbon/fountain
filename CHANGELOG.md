@@ -18,6 +18,19 @@ upgrade, is in
 
 ### Added
 
+- **Team page: name a teammate, pick its environment and vault when adding
+  it.** The add dialog is a small form now — agent, an optional name, the
+  environment its computer is set up from (the agent's own by default) and
+  an optional vault — instead of a bare list with Add buttons. Nothing new
+  is stored: the name is the conversation's `title`, the other two are the
+  per-launch environment override and `vault_id` every conversation already
+  has, so `Team.add_teammate/4` takes them as attrs and the pickers only
+  offer what the agent's allowlists permit. A named teammate shows its name
+  in the roster, the thread header, the composer and the tab title, with
+  the agent's name beside it; a fresh conversation opened when the old one
+  is past resuming inherits all three, so a teammate keeps its identity when
+  its computer is replaced. `POST /api/conversations` accepts `title` too.
+
 - **Team page (`/team`): your agents as teammates, one conversation each,
   laid out like a messaging app.** The roster on the left, the selected
   teammate's thread on the right, Enter to send. Adding an agent to the team
