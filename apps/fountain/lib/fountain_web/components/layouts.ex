@@ -146,6 +146,7 @@ defmodule FountainWeb.Layouts do
             class="px-2 pt-1 pb-0.5 text-sm space-y-0.5 shrink-0"
             aria-label="Primary navigation"
           >
+            <.nav_link href={~p"/team"} label="Team" current={@current_path} />
             <.nav_link href={~p"/conversations"} label="Conversations" current={@current_path} />
           </nav>
 

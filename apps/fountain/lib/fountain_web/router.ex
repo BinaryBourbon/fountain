@@ -430,6 +430,8 @@ defmodule FountainWeb.Router do
       live "/dashboard", DashboardLive.Index, :index
       live "/onboarding", OnboardingLive.Wizard, :index
       live "/onboarding/:step", OnboardingLive.Wizard, :show
+      live "/team", TeamLive, :index
+      live "/team/:agent_id", TeamLive, :show
       live "/conversations", ConversationsLive.Index, :index
       live "/conversations/:id", ConversationsLive.Show, :show
       live "/conversations/:id/logs", LogViewerLive.Show, :show

@@ -167,6 +167,32 @@
             },
             destroyed() { this.el.removeEventListener("keydown", this.handler); }
           },
+          // Messaging-app composer: Enter sends, Shift+Enter is a newline; the
+          // box grows with its content and empties when the server says the
+          // message went ("clear_composer"), so a refused send keeps the text.
+          SubmitOnEnter: {
+            mounted() {
+              this.grow = () => {
+                this.el.style.height = "auto";
+                this.el.style.height = Math.min(this.el.scrollHeight, 160) + "px";
+              };
+              this.handler = (e) => {
+                if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+                  e.preventDefault();
+                  const form = this.el.closest("form");
+                  if (form) form.requestSubmit();
+                }
+              };
+              this.el.addEventListener("keydown", this.handler);
+              this.el.addEventListener("input", this.grow);
+              this.handleEvent("clear_composer", () => { this.el.value = ""; this.grow(); this.el.focus(); });
+              this.grow();
+            },
+            destroyed() {
+              this.el.removeEventListener("keydown", this.handler);
+              this.el.removeEventListener("input", this.grow);
+            }
+          },
           ImagePicker: {
             mounted() {
               this.el.addEventListener("change", (e) => {

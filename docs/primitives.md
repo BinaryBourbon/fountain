@@ -125,6 +125,22 @@ pending -> running -> idle -> running   (idle between turns; a follow-up prompt 
 
 Any non-terminal state can move to `terminated` via `POST /api/conversations/:id/terminate`.
 
+### The team page: agents as teammates
+
+`/team` in the web UI lays conversations out like a messaging app — the
+roster on the left, one thread on the right — and treats each agent as a
+teammate with **one** ongoing conversation. There is no fifth primitive
+behind it: a teammate *is* a Conversation, bound to the reserved channel
+`fountain:team` the same way a Buzz channel binds one through `channel_id`.
+Adding an agent to the team opens that conversation, which provisions the
+agent its own sandbox — its computer. A message is a follow-up turn on it; a
+suspended or reaped sandbox wakes on the next message as usual, and a
+terminated conversation is replaced by a fresh one under the same binding,
+so the teammate stays reachable. Removing a teammate terminates the live
+conversation and unbinds the agent's conversations from the channel; the
+rows stay in the ordinary conversation list. "Details" on a thread opens the
+full conversation view (stages, tool calls, raw output).
+
 ---
 
 ## Substitution

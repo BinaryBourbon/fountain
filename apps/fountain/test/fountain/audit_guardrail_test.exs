@@ -22,6 +22,7 @@ defmodule Fountain.AuditGuardrailTest do
   """
 
   use Fountain.DataCase, async: true
+  use Mimic
 
   alias Fountain.{Agents, Audit, Buzz, Conversations, Environments, InferenceCredentials, Vaults}
 
@@ -62,7 +63,11 @@ defmodule Fountain.AuditGuardrailTest do
     {"email verification", &__MODULE__.do_verify_email/1, "auth.email.verified"},
     {"buzz identity create", &__MODULE__.do_buzz_create/1, "buzz_identity.created"},
     {"buzz identity update", &__MODULE__.do_buzz_update/1, "buzz_identity.updated"},
-    {"buzz identity delete", &__MODULE__.do_buzz_delete/1, "buzz_identity.deleted"}
+    {"buzz identity delete", &__MODULE__.do_buzz_delete/1, "buzz_identity.deleted"},
+    # Team membership: a teammate is a channel-bound conversation, so add also
+    # leaves conversation.created underneath; these are the team-side events.
+    {"team member add", &__MODULE__.do_team_add/1, "team.member.added"},
+    {"team member remove", &__MODULE__.do_team_remove/1, "team.member.removed"}
   ]
 
   # Documented non-coverage. Mirrors the `Fountain.Audit` moduledoc; if the two
@@ -217,6 +222,29 @@ defmodule Fountain.AuditGuardrailTest do
     sandbox = insert_sandbox(user_id: user.id, status: "ready")
     conv = insert_conversation(user_id: user.id, agent: agent, sandbox_id: sandbox.id)
     {:ok, _} = Conversations.delete_conversation(conv)
+  end
+
+  def do_team_add(user) do
+    agent = insert_agent(user_id: user.id)
+
+    stub(Horde.DynamicSupervisor, :start_child, fn _sup, _spec ->
+      {:ok, spawn(fn -> Process.sleep(:infinity) end)}
+    end)
+
+    {:ok, _} = Fountain.Team.add_teammate(user.id, agent.id)
+  end
+
+  def do_team_remove(user) do
+    agent = insert_agent(user_id: user.id)
+
+    insert_conversation(
+      user_id: user.id,
+      agent: agent,
+      status: "idle",
+      channel_id: Fountain.Team.channel()
+    )
+
+    :ok = Fountain.Team.remove_teammate(user.id, agent.id)
   end
 
   def do_role_change(user), do: {:ok, _} = Fountain.Accounts.update_user_role(user, "admin")
