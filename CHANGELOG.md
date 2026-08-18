@@ -61,6 +61,18 @@ upgrade, is in
   pass keys on; one of them held a completed turn and a live ACP session.
   The `reattach failed` stage event now carries `retryable`. (#799)
 
+- **A conversation whose sandbox is gone works again on the next prompt.**
+  When a wake provisions a fresh sandbox — the old one hit the 24 h ceiling,
+  or was retired as failed — the server now clears `runtime_session_id` and
+  publishes a `session` stage event (`event: reset, reason: fresh_sandbox`),
+  so the next turn is `session/new` on the new disk. It used to keep the old
+  id and run `session/resume` against a disk that had never seen the
+  session, which failed `-32002 Resource not found` on that prompt and on
+  every prompt after it, until the conversation was terminated. The agent's
+  in-context memory is still lost when its sandbox is — that has not
+  changed — but the conversation, its transcript and its title carry over,
+  and the transcript says why the agent does not remember. (#778)
+
 - **A hosted Buzz agent now shows up in other people's `@`-mention
   autocomplete.** Buzz Desktop admits a non-owned agent to autocomplete only if
   the relay carries a kind:10100 directory entry for it saying which channels

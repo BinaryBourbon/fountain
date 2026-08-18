@@ -548,6 +548,15 @@ where the legacy path fails on an id it guessed.
 > connection stays correct on 0017's terms too: nothing is attached between
 > turns, whether the sandbox is parked or destroyed.
 
+> **Correction, 2026-08-18 (#778).** The *loud* failure is gone too. A
+> `ConversationServer` that provisions a fresh sandbox now clears
+> `runtime_session_id` (`forget_runtime_session/2`) and publishes a `session`
+> stage event (`event: reset, reason: fresh_sandbox`), so the next turn is
+> `session/new` on the new disk rather than a `session/resume` that fails
+> `-32002` on every prompt until the conversation is terminated. The agent's
+> memory is still lost when its sandbox is — that is unchanged — but the
+> conversation keeps working and the transcript says why.
+
 ### Gate 3 — permissions — **not built**
 
 Implement `session/request_permission` against the conversation LiveView: a
