@@ -234,6 +234,15 @@ defmodule Fountain.Conversations.Provisioning do
 
   def build_package_commands(_), do: []
 
+  @package_managers ~w(apt npm)
+
+  @doc """
+  The package managers `install_packages/4` acts on. An environment's
+  `packages` map may carry other keys (the form used to offer pip, cargo, gem
+  and go); they are stored and ignored — nothing installs them (#815).
+  """
+  def package_managers, do: @package_managers
+
   @doc false
   def build_apt_commands([]), do: []
 

@@ -1757,6 +1757,90 @@ defmodule FountainWeb.Schemas do
     })
   end
 
+  defmodule CatalogResponse do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "CatalogResponse",
+      type: :object,
+      properties: %{
+        data: %Schema{
+          type: :object,
+          properties: %{
+            runtimes: %Schema{type: :array, items: %Schema{type: :string}},
+            models: %Schema{
+              type: :object,
+              additionalProperties: %Schema{type: :array, items: %Schema{type: :string}},
+              description:
+                "Suggested `provider/model` ids per runtime. Suggestions, not an allowlist."
+            },
+            model_providers: %Schema{type: :array, items: %Schema{type: :string}},
+            sandbox_providers: %Schema{
+              type: :object,
+              properties: %{
+                enabled: %Schema{type: :array, items: %Schema{type: :string}},
+                default: %Schema{type: :string}
+              },
+              required: [:enabled, :default]
+            },
+            package_managers: %Schema{
+              type: :array,
+              items: %Schema{type: :string},
+              description: "The managers provisioning installs from an environment's `packages`."
+            },
+            avatar: %Schema{
+              type: :object,
+              properties: %{
+                bases: %Schema{type: :array, items: %Schema{type: :string}},
+                moods: %Schema{type: :array, items: %Schema{type: :string}}
+              },
+              required: [:bases, :moods]
+            }
+          },
+          required: [:runtimes, :models, :sandbox_providers, :package_managers, :avatar]
+        }
+      },
+      required: [:data]
+    })
+  end
+
+  defmodule AvatarGenerateRequest do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "AvatarGenerateRequest",
+      type: :object,
+      properties: %{
+        base: %Schema{type: :string, description: "One of `GET /api/catalog` `avatar.bases`."},
+        mood: %Schema{type: :string, description: "One of `GET /api/catalog` `avatar.moods`."}
+      },
+      required: [:base, :mood]
+    })
+  end
+
+  defmodule AvatarGenerateResponse do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "AvatarGenerateResponse",
+      type: :object,
+      properties: %{
+        data: %Schema{
+          type: :object,
+          properties: %{
+            data: %Schema{type: :string, description: "Base64 PNG bytes."},
+            media_type: %Schema{type: :string, example: "image/png"}
+          },
+          required: [:data, :media_type]
+        }
+      },
+      required: [:data]
+    })
+  end
+
   defmodule Error do
     @moduledoc false
     require OpenApiSpex
