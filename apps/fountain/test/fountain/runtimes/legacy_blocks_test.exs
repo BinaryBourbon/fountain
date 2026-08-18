@@ -1,7 +1,7 @@
-defmodule FountainWeb.ConversationsLive.LegacyBlocksTest do
+defmodule Fountain.Runtimes.LegacyBlocksTest do
   use ExUnit.Case, async: true
 
-  alias FountainWeb.ConversationsLive.LegacyBlocks
+  alias Fountain.Runtimes.LegacyBlocks
 
   # First tests these parsers have ever had: they spent their whole life as
   # private clauses of a LiveView (#642). Gemini's dialect is live; the other

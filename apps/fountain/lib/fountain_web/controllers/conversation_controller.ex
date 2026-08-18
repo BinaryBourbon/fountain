@@ -164,6 +164,16 @@ defmodule FountainWeb.ConversationController do
         type: :integer,
         required: false,
         description: "Page size, 1..#{@max_event_limit}. Defaults to #{@default_event_limit}."
+      ],
+      blocks: [
+        in: :query,
+        type: :boolean,
+        required: false,
+        description:
+          "Add `blocks` to each event: its `data` parsed server-side into the " <>
+            "structured blocks a transcript renders (text, thinking, tool_use, " <>
+            "tool_result, init, result, error, raw) — the same parse the web UI uses, " <>
+            "so no client re-implements a runtime's dialect. Defaults to false."
       ]
     ],
     responses: [
@@ -179,10 +189,11 @@ defmodule FountainWeb.ConversationController do
       nil ->
         {:error, :not_found}
 
-      _ ->
+      conv ->
         limit = parse_limit(params["limit"])
         after_id = parse_after(params["after"])
         streams = parse_streams_param(params["streams"])
+        blocks_runtime = if parse_bool_param(params["blocks"], false), do: conv.runtime
 
         # Ownership: established by the scoped get_conversation above.
         # One extra row decides has_more without a second count query.
@@ -194,7 +205,12 @@ defmodule FountainWeb.ConversationController do
 
         {page, has_more?} = split_page(events, limit)
 
-        render(conn, :events, events: page, has_more: has_more?, limit: limit)
+        render(conn, :events,
+          events: page,
+          has_more: has_more?,
+          limit: limit,
+          blocks_runtime: blocks_runtime
+        )
     end
   end
 
@@ -502,6 +518,15 @@ defmodule FountainWeb.ConversationController do
           "`false`/`0` drains the buffered events and closes immediately, " <>
             "rather than holding the connection open for the live tail. " <>
             "Defaults to true."
+      ],
+      blocks: [
+        in: :query,
+        type: :boolean,
+        required: false,
+        description:
+          "Add `blocks` to each event payload — its `data` parsed server-side into " <>
+            "the structured blocks a transcript renders, as on `/events?blocks=true`. " <>
+            "Defaults to false."
       ]
     ],
     responses: [
@@ -529,7 +554,7 @@ defmodule FountainWeb.ConversationController do
       nil ->
         {:error, :not_found}
 
-      _ ->
+      conv ->
         last_event_id =
           conn
           |> get_req_header("last-event-id")
@@ -538,6 +563,7 @@ defmodule FountainWeb.ConversationController do
 
         streams = parse_streams_param(params["streams"])
         wait? = parse_bool_param(params["wait"], true)
+        blocks_runtime = if parse_bool_param(params["blocks"], false), do: conv.runtime
 
         if wait? do
           Phoenix.PubSub.subscribe(Fountain.PubSub, "conv:#{id}")
@@ -567,11 +593,11 @@ defmodule FountainWeb.ConversationController do
           |> send_chunked(200)
 
         # Replay buffered events the client missed.
-        {status, conn, last_id} = replay(conn, id, last_event_id, streams)
+        {status, conn, last_id} = replay(conn, id, last_event_id, streams, blocks_runtime)
 
         if wait? and status == :ok do
           Process.send_after(self(), :heartbeat, heartbeat_ms())
-          sse_loop(conn, last_id, streams, monitor_ref)
+          sse_loop(conn, last_id, streams, monitor_ref, blocks_runtime)
         else
           # `?wait=false` → close immediately after replay. Useful when
           # the caller already knows the conversation is finished and
@@ -616,12 +642,12 @@ defmodule FountainWeb.ConversationController do
   # closed tab, an EventSource reconnect against a long backlog), not an
   # error. This used to `throw` the chunk error with no catch anywhere in
   # the module, producing a crash report and a Sentry event per disconnect.
-  defp replay(conn, conv_id, after_id, streams) do
+  defp replay(conn, conv_id, after_id, streams, blocks_runtime) do
     # Ownership: only called from stream/2, after its scoped get_conversation.
     conv_id
     |> Conversations._unsafe_list_log_events(after_id, streams: streams)
     |> Enum.reduce_while({:ok, conn, after_id}, fn ev, {:ok, acc_conn, last_id} ->
-      case write_event(acc_conn, ev) do
+      case write_event(acc_conn, ev, blocks_runtime) do
         {:ok, c} -> {:cont, {:ok, c, ev.id}}
         {:error, _} -> {:halt, {:closed, acc_conn, last_id}}
       end
@@ -634,28 +660,28 @@ defmodule FountainWeb.ConversationController do
   # live events and no replayed ones.
   defp event_in_streams?(ev, streams), do: Conversations.event_in_streams?(ev, streams)
 
-  defp sse_loop(conn, last_id, streams, monitor_ref) do
+  defp sse_loop(conn, last_id, streams, monitor_ref, blocks_runtime) do
     receive do
       {:log_event, %LogEvent{id: ev_id} = ev} when ev_id > last_id ->
         cond do
           not event_in_streams?(ev, streams) ->
-            sse_loop(conn, ev_id, streams, monitor_ref)
+            sse_loop(conn, ev_id, streams, monitor_ref, blocks_runtime)
 
           true ->
-            case write_event(conn, ev) do
-              {:ok, conn} -> sse_loop(conn, ev_id, streams, monitor_ref)
+            case write_event(conn, ev, blocks_runtime) do
+              {:ok, conn} -> sse_loop(conn, ev_id, streams, monitor_ref, blocks_runtime)
               {:error, _} -> conn
             end
         end
 
       {:log_event, _stale} ->
-        sse_loop(conn, last_id, streams, monitor_ref)
+        sse_loop(conn, last_id, streams, monitor_ref, blocks_runtime)
 
       :heartbeat ->
         case Plug.Conn.chunk(conn, ": heartbeat\n\n") do
           {:ok, conn} ->
             Process.send_after(self(), :heartbeat, heartbeat_ms())
-            sse_loop(conn, last_id, streams, monitor_ref)
+            sse_loop(conn, last_id, streams, monitor_ref, blocks_runtime)
 
           {:error, _} ->
             conn
@@ -709,7 +735,9 @@ defmodule FountainWeb.ConversationController do
     end
   end
 
-  defp write_event(conn, %LogEvent{} = ev) do
+  # `blocks_runtime` nil means no blocks; a runtime string means "add the
+  # server-parsed blocks for this event, for that runtime's legacy dialect".
+  defp write_event(conn, %LogEvent{} = ev, blocks_runtime) do
     payload =
       %{
         kind: ev.kind,
@@ -720,6 +748,7 @@ defmodule FountainWeb.ConversationController do
         turn_id: ev.turn_id,
         ts: ev.inserted_at
       }
+      |> FountainWeb.ConversationJSON.put_blocks(ev, blocks_runtime)
       |> Jason.encode!()
 
     chunk = "id: #{ev.id}\nevent: #{ev.kind}\ndata: #{payload}\n\n"

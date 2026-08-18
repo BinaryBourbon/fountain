@@ -18,6 +18,19 @@ upgrade, is in
 
 ### Added
 
+- **Blocks over the API, and every conversation on one stream.**
+  `?blocks=true` on `GET /api/conversations/:id/events`, on its `/stream`
+  and on the new `GET /api/events/stream` adds `blocks` to each event — its
+  `data` parsed server-side into the text / thinking / tool_use /
+  tool_result / init / result / error / raw blocks a transcript renders,
+  the same parse the web UI uses (`Fountain.Conversations.Blocks`, with
+  `LegacyBlocks` moved out of the LiveView into `Fountain.Runtimes`), so a
+  client on another origin never re-implements a runtime's dialect (ADR
+  0014 applied to the wire). `GET /api/events/stream` carries every
+  unfinished conversation of the caller on one SSE connection, labelled with
+  `conversation_id`, plus a debounced `conversations` event when the list
+  changes. Groundwork for the standalone conversation UI (#813).
+
 - **The team over the API: `/api/team`, plus one SSE stream for the whole
   team and opt-in CORS.** `GET /api/team` (roster with name, presence,
   unread, preview), `POST /api/team` (add, with name/environment/vault),

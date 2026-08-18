@@ -10,9 +10,11 @@ defmodule FountainWeb.ConversationJSON do
   def show(%{conversation: conv}), do: %{data: data(conv)}
   def turns(%{turns: turns}), do: %{data: Enum.map(turns, &turn_data/1)}
 
-  def events(%{events: events, has_more: has_more?, limit: limit}) do
+  def events(%{events: events, has_more: has_more?, limit: limit} = assigns) do
+    blocks_runtime = Map.get(assigns, :blocks_runtime)
+
     %{
-      data: Enum.map(events, &log_event_data/1),
+      data: Enum.map(events, &(&1 |> log_event_data() |> put_blocks(&1, blocks_runtime))),
       meta: %{
         limit: limit,
         has_more: has_more?,
@@ -91,6 +93,24 @@ defmodule FountainWeb.ConversationJSON do
       ts: e.inserted_at
     }
   end
+
+  @doc """
+  Add `blocks` — the event's data parsed into the blocks a transcript renders
+  — to an event's JSON when a runtime is given; unchanged when nil. Output
+  events only: a stage event has no dialect to parse, and gets `[]`.
+  """
+  def put_blocks(json, _event, nil), do: json
+
+  def put_blocks(json, %LogEvent{kind: "output"} = ev, runtime) do
+    blocks =
+      ev
+      |> Fountain.Conversations.Blocks.for_event(runtime)
+      |> Enum.map(&Fountain.Conversations.Blocks.to_json/1)
+
+    Map.put(json, :blocks, blocks)
+  end
+
+  def put_blocks(json, _event, _runtime), do: Map.put(json, :blocks, [])
 
   defp event_id(%LogEvent{id: id}), do: id
   defp event_id(nil), do: nil
