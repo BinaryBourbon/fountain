@@ -19,8 +19,33 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
   # Starts a server whose turn speaks ACP, with the sprite side wired to this
   # process: every byte written to stdin arrives as `{:wrote, line}`, and the
   # command's ref is ours so tests can feed stdout back.
-  defp start_acp_turn(conv) do
+  #
+  # `credentials` overrides `stub_happy_sprite/1`'s empty
+  # `InferenceCredentials.decrypted_for_user/2` stub — set after, since
+  # `stub_happy_sprite/1` would otherwise clobber it back to `%{}`.
+  #
+  # `runtime` matches `start_server/2`'s own default (`FakeRuntime`) so every
+  # existing call site is unaffected; a test asserting on real runtime-module
+  # behaviour (credential env mapping, #655) passes the real module — `conv`'s
+  # `runtime` string alone is not enough, since `state.runtime_module` is
+  # this arg, independent of it (see `start_server/2`).
+  defp start_acp_turn(conv, credentials \\ %{}, runtime \\ Fountain.Test.FakeRuntime) do
     stub_happy_sprite()
+
+    Mimic.stub(Fountain.InferenceCredentials, :decrypted_for_user, fn _u, _k ->
+      {:ok, credentials}
+    end)
+
+    # Turn 1 fires title generation, which is a live HTTPS call to the model
+    # provider. Every other test here leaves `credentials` empty, so it used to
+    # bail at `:no_credentials` before reaching the network — the moment a test
+    # supplies a key-shaped credential it dials out for real. Nothing in this
+    # file asserts on titles, so stub the boundary rather than let an offline
+    # or egress-restricted runner decide how long the call takes to fail.
+    Mimic.stub(Fountain.Conversations.TitleGenerator, :generate, fn _prompt, _creds ->
+      {:error, :stubbed_in_test}
+    end)
+
     test = self()
     ref = make_ref()
 
@@ -39,7 +64,7 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
       :ok
     end)
 
-    {pid, _mon, :alive} = start_server(conv, initial_prompt: "first")
+    {pid, _mon, :alive} = start_server(conv, initial_prompt: "first", runtime: runtime)
 
     # Unconditional teardown. A test that fails an assertion would otherwise
     # skip its own `GenServer.stop`, leaving a server running into the next
@@ -341,6 +366,112 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
       assert [turn] = Conversations._unsafe_list_turns(conv.id)
       assert turn.status == "failed"
       assert Conversations._unsafe_get_conversation!(conv.id).status == "idle"
+    end
+  end
+
+  describe "org-disallowed oauth (#655)" do
+    setup do
+      user = insert_verified_user()
+      conv = insert_conversation(agent: acp_agent(user), user_id: user.id)
+      {:ok, conv: conv}
+    end
+
+    defp oauth_error_reply(pid, ref, id) do
+      line =
+        Jason.encode!(%{
+          "jsonrpc" => "2.0",
+          "id" => id,
+          "error" => %{
+            "code" => -32_603,
+            "message" => "Internal error",
+            "data" => %{
+              "details" =>
+                "oauth_org_not_allowed: Your organization has disabled Claude subscription access"
+            }
+          }
+        }) <> "\n"
+
+      send(pid, {:stdout, %{ref: ref}, line})
+      settle(pid)
+    end
+
+    defp failed_turn_stage(conv_id) do
+      conv_id
+      |> Conversations._unsafe_list_log_events()
+      |> Enum.find(&(&1.kind == "stage" and &1.stage == "turn" and &1.state == "failed"))
+    end
+
+    test "falls back to the api key for the rest of the conversation, when one is on file", %{
+      conv: conv
+    } do
+      {pid, ref} =
+        start_acp_turn(
+          conv,
+          %{claude_code_oauth_token: "oauth-token", anthropic_api_key: "api-key"},
+          Fountain.Runtimes.Claude
+        )
+
+      # Drain turn 1's own spawn message — otherwise the `assert_receive` below
+      # would match this stale one (still carrying the doomed oauth token)
+      # rather than turn 2's fresh spawn.
+      assert_receive {:spawned, _cmd, _args, _turn_1_opts}
+
+      prompt_id = drive_to_prompt(pid, ref)
+      oauth_error_reply(pid, ref, prompt_id)
+
+      assert [turn] = Conversations._unsafe_list_turns(conv.id)
+      assert turn.status == "failed"
+
+      stage = failed_turn_stage(conv.id)
+      assert stage.data =~ "Switched to the Anthropic API key"
+
+      # The conversation is usable again — the next turn spawns with the
+      # fallback credential, not the one the org already refused.
+      assert :ok = GenServer.call(pid, {:send_prompt, "again", []})
+      assert_receive {:spawned, _cmd, _args, opts}
+
+      env = Keyword.fetch!(opts, :env)
+      assert {"ANTHROPIC_API_KEY", "api-key"} in env
+      refute List.keymember?(env, "CLAUDE_CODE_OAUTH_TOKEN", 0)
+    end
+
+    test "the swapped-in api key is registered for output redaction", %{conv: conv} do
+      # Only `build_sprite_env/5` registers secrets with the redaction table,
+      # and the fallback never goes through it — so without an explicit
+      # registration the one credential this fix puts into the sandbox is the
+      # one credential that would print in plaintext into `log_events`. The
+      # refused OAuth token stays registered too: it is still in the sprite's
+      # `.env` on disk until a wake rewrites the file.
+      {pid, ref} =
+        start_acp_turn(
+          conv,
+          %{
+            claude_code_oauth_token: "oauth-token-long-enough",
+            anthropic_api_key: "api-key-long-enough"
+          },
+          Fountain.Runtimes.Claude
+        )
+
+      prompt_id = drive_to_prompt(pid, ref)
+      oauth_error_reply(pid, ref, prompt_id)
+
+      registered = Fountain.Conversations.Redaction.lookup(conv.id)
+      assert "api-key-long-enough" in registered
+      assert "oauth-token-long-enough" in registered
+    end
+
+    test "says so plainly when there is no api key to fall back to", %{conv: conv} do
+      {pid, ref} =
+        start_acp_turn(conv, %{claude_code_oauth_token: "oauth-token"}, Fountain.Runtimes.Claude)
+
+      prompt_id = drive_to_prompt(pid, ref)
+      oauth_error_reply(pid, ref, prompt_id)
+
+      assert [turn] = Conversations._unsafe_list_turns(conv.id)
+      assert turn.status == "failed"
+
+      stage = failed_turn_stage(conv.id)
+      assert stage.data =~ "no Anthropic API key is on file"
     end
   end
 

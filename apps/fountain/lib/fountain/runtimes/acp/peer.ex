@@ -335,19 +335,31 @@ defmodule Fountain.Runtimes.ACP.Peer do
   defp handle_message({:error_response, id, error}, state) do
     {tag, state} = pop_pending(state, id)
 
-    if session_setup?(tag) and auth_error?(error) and not state.authenticated? and
-         auth_method(state) do
-      method = auth_method(state)
-      Logger.info("acp peer: #{tag} needs authentication; retrying with #{method}")
+    cond do
+      session_setup?(tag) and auth_error?(error) and not state.authenticated? and
+          auth_method(state) ->
+        method = auth_method(state)
+        Logger.info("acp peer: #{tag} needs authentication; retrying with #{method}")
 
-      send_request(
-        %{state | authenticated?: true},
-        :authenticate,
-        "authenticate",
-        %{methodId: method}
-      )
-    else
-      fail(state, {:acp_error, tag, error})
+        send_request(
+          %{state | authenticated?: true},
+          :authenticate,
+          "authenticate",
+          %{methodId: method}
+        )
+
+      # Claude's own error kind for "the Anthropic org owning this OAuth token
+      # has disabled subscription (Claude Code) access" (#655). It arrives
+      # over ACP as a generic JSON-RPC -32603 "Internal error" — nothing in
+      # `code` marks it, so the kind has to be found in the error body's text
+      # rather than read off a field. Scoped to the `:prompt` call: session
+      # setup can fail for unrelated reasons, and the auth-retry clause above
+      # already owns those.
+      tag == :prompt and oauth_org_not_allowed?(error) ->
+        fail(state, {:oauth_org_not_allowed, error_detail(error)})
+
+      true ->
+        fail(state, {:acp_error, tag, error})
     end
   end
 
@@ -483,6 +495,14 @@ defmodule Fountain.Runtimes.ACP.Peer do
     do: String.contains?(String.downcase(message), "auth")
 
   defp auth_error?(_), do: false
+
+  # inspect/1 rather than pattern-matching a specific key: the adapter's exact
+  # placement of the kind (top-level, `data.details`, `data.kind`, ...) has
+  # not been pinned down against a live org-disallowed account, and a
+  # substring search over the whole payload is total — it cannot raise on a
+  # shape we did not anticipate, unlike a `get_in` chain would.
+  defp oauth_org_not_allowed?(error),
+    do: error |> inspect() |> String.contains?("oauth_org_not_allowed")
 
   # Prefer a method naming an API key in its `_meta`: that is what an agent
   # offers for "there is a key in the environment, use it", as against an
