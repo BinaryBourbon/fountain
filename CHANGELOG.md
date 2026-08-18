@@ -30,6 +30,21 @@ upgrade, is in
   the agent's name beside it; a fresh conversation opened when the old one
   is past resuming inherits all three, so a teammate keeps its identity when
   its computer is replaced. `POST /api/conversations` accepts `title` too.
+- **Team schedules: a cron that runs a teammate with a prompt.** "Schedules"
+  in a `/team` thread header: a cron expression (UTC), a prompt, and where
+  it runs. By default the prompt goes into the teammate's own conversation
+  as a message from you; **Run in a one-off computer** opens a fresh
+  conversation on a new sandbox per run — same agent, environment and vault
+  as the teammate — and leaves the thread alone. Pause/resume, edit, "Run
+  now", delete; the row shows the next run, the last run (linked) and the
+  last error. Removing the teammate deletes its schedules. Under the hood a
+  `team_schedules` table (`Fountain.Team.Schedules`), a minute tick
+  (`Fountain.Workers.TeamScheduler`, Oban Cron) that claims what is due
+  with a compare-and-swap on `next_run_at` and enqueues one
+  `Fountain.Workers.TeamScheduleRun` per firing (new `schedules` queue; a
+  busy teammate is snoozed for up to 30 minutes). Audited as
+  `team.schedule.created` / `.updated` / `.deleted` / `.fired`, runs as
+  `system:team_scheduler`.
 
 - **Team page (`/team`): your agents as teammates, one conversation each,
   laid out like a messaging app.** The roster on the left, the selected

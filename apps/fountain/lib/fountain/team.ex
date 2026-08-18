@@ -16,7 +16,9 @@ defmodule Fountain.Team do
 
   Removing a teammate terminates the live conversation and clears the binding
   on every conversation this agent had under it, so the rows stay in the
-  user's history (`/conversations`) but leave the team.
+  user's history (`/conversations`) but leave the team. Its schedules
+  (`Fountain.Team.Schedules` — a cron that runs the teammate with a prompt)
+  are deleted with it.
 
   A teammate can be given a name of its own, an environment and a vault when
   it is added. None of these is a new column: the name is the conversation's
@@ -220,6 +222,13 @@ defmodule Fountain.Team do
             ),
             set: [channel_id: nil]
           )
+
+        # The teammate's schedules go with it: they name this teammate, and a
+        # schedule that fires "not on the team" every morning is a defect,
+        # not a record. Covered by the membership event, not per row.
+        # ownership: the scoped get_teammate above found this agent for user_id;
+        # the delete is bounded by the same user_id + agent_id.
+        _ = Fountain.Team.Schedules._unsafe_delete_for_teammate(user_id, agent_id)
 
         record(user_id, "team.member.removed", conv, opts)
         :ok

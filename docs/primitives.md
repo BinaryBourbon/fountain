@@ -148,6 +148,18 @@ conversation's `title`, its per-launch environment override and its
 what the agent's `allowed_environment_ids` / `allowed_vault_ids` allow. They
 belong to the teammate, not the computer: a fresh conversation opened after
 the old one is terminated inherits all three.
+**Schedules.** "Schedules" in a thread's header sets up a cron that runs
+the teammate with a prompt — `0 9 * * 1-5` and "What's on today?", say.
+Cron times are UTC. By default the prompt goes into the teammate's own
+conversation, as if you had typed it, so the reply lands in the thread and
+the teammate's working memory. Tick **Run in a one-off computer** and each
+run opens a fresh conversation on a new sandbox instead — the same agent,
+environment and vault the teammate was added with — leaving the thread
+alone; the run shows up in the conversation list like any other, and the
+schedule keeps a link to its last one. A schedule can be paused, edited,
+run on demand ("Run now") and deleted; the last error, if a run could not
+be delivered (the teammate was busy for half an hour, the sandbox quota was
+full), shows on the schedule. Removing the teammate deletes its schedules.
 
 ---
 

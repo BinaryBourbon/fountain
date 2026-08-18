@@ -421,3 +421,158 @@ defmodule FountainWeb.TeamLiveMutationsTest do
     assert render(view) =~ "No one on the team yet"
   end
 end
+
+# Schedules: a cron that runs a teammate with a prompt, from the thread
+# header. Create/pause/delete need no server; "Run now" does, so this is
+# also a global-Mimic, async: false module.
+defmodule FountainWeb.TeamLiveSchedulesTest do
+  use FountainWeb.ConnCase, async: false
+  use Mimic
+
+  import Phoenix.LiveViewTest
+
+  alias Fountain.Conversations.ConversationServer
+  alias Fountain.Team
+  alias Fountain.Team.Schedules
+
+  setup :set_mimic_global
+
+  defp insert_teammate_conv(user, agent, overrides \\ %{}) do
+    insert_conversation(
+      Map.merge(
+        %{user_id: user.id, agent: agent, status: "idle", channel_id: Team.channel()},
+        Map.new(overrides)
+      )
+    )
+  end
+
+  defp open_panel(conn, user, agent) do
+    conn = login_user(conn, user)
+    {:ok, view, _html} = live(conn, ~p"/team/#{agent.id}")
+    view |> element("#open-schedules-button") |> render_click()
+    view
+  end
+
+  test "creating a schedule from the panel, and a bad cron is refused inline", %{conn: conn} do
+    user = insert_verified_user()
+    ada = insert_agent(user_id: user.id, name: "Ada")
+    insert_teammate_conv(user, ada)
+
+    view = open_panel(conn, user, ada)
+    assert has_element?(view, "#team-schedules", "No schedules yet")
+
+    html =
+      view
+      |> form("#schedule-form", %{
+        "schedule" => %{"cron" => "not a cron", "prompt" => "hi", "one_off" => "false"}
+      })
+      |> render_submit()
+
+    assert html =~ "cron"
+    assert Schedules.list_schedules(user.id) == []
+
+    html =
+      view
+      |> form("#schedule-form", %{
+        "schedule" => %{
+          "name" => "Standup",
+          "cron" => "0 9 * * 1-5",
+          "prompt" => "What's on today?",
+          "one_off" => "true"
+        }
+      })
+      |> render_submit()
+
+    assert html =~ "Schedule saved"
+
+    assert [%{name: "Standup", cron: "0 9 * * 1-5", one_off: true, agent_id: agent_id}] =
+             Schedules.list_schedules(user.id)
+
+    assert agent_id == ada.id
+    assert has_element?(view, "#team-schedules li", "Standup")
+    assert has_element?(view, "#team-schedules li", "one-off computer")
+    # The header counts it.
+    assert has_element?(view, "#open-schedules-button", "1")
+  end
+
+  test "pause, edit and delete", %{conn: conn} do
+    user = insert_verified_user()
+    ada = insert_agent(user_id: user.id, name: "Ada")
+    insert_teammate_conv(user, ada)
+
+    {:ok, s} =
+      Schedules.create_schedule(user.id, %{
+        "agent_id" => ada.id,
+        "cron" => "@hourly",
+        "prompt" => "ping"
+      })
+
+    view = open_panel(conn, user, ada)
+
+    view |> element("#schedule-#{s.id} button", "Pause") |> render_click()
+    refute Schedules.get_schedule(s.id, user.id).enabled
+    assert has_element?(view, "#schedule-#{s.id}", "paused")
+
+    view |> element("#schedule-#{s.id} button", "Edit") |> render_click()
+
+    view
+    |> form("#schedule-form", %{
+      "schedule" => %{"cron" => "30 8 * * *", "prompt" => "ping", "enabled" => "true"}
+    })
+    |> render_submit()
+
+    updated = Schedules.get_schedule(s.id, user.id)
+    assert updated.cron == "30 8 * * *" and updated.enabled
+
+    view |> element("#schedule-#{s.id} button", "Delete") |> render_click()
+    assert Schedules.list_schedules(user.id) == []
+    assert has_element?(view, "#team-schedules", "No schedules yet")
+  end
+
+  test "Run now sends the prompt into the thread", %{conn: conn} do
+    user = insert_verified_user()
+    ada = insert_agent(user_id: user.id, name: "Ada")
+    conv = insert_teammate_conv(user, ada)
+
+    {:ok, s} =
+      Schedules.create_schedule(user.id, %{
+        "agent_id" => ada.id,
+        "cron" => "@daily",
+        "prompt" => "nightly report"
+      })
+
+    test_pid = self()
+
+    stub(ConversationServer, :send_prompt, fn id, text, _images, _opts ->
+      send(test_pid, {:sent, id, text})
+      :ok
+    end)
+
+    view = open_panel(conn, user, ada)
+    view |> element("#schedule-#{s.id} button", "Run now") |> render_click()
+
+    conv_id = conv.id
+    assert_received {:sent, ^conv_id, "nightly report"}
+    assert Schedules.get_schedule(s.id, user.id).last_conversation_id == conv.id
+    assert has_element?(view, "#schedule-#{s.id}", "last")
+  end
+
+  test "another tenant's schedule id is ignored", %{conn: conn} do
+    user = insert_verified_user()
+    other = insert_verified_user()
+    ada = insert_agent(user_id: user.id, name: "Ada")
+    insert_teammate_conv(user, ada)
+    theirs = insert_agent(user_id: other.id)
+
+    {:ok, s} =
+      Schedules.create_schedule(other.id, %{
+        "agent_id" => theirs.id,
+        "cron" => "@daily",
+        "prompt" => "x"
+      })
+
+    view = open_panel(conn, user, ada)
+    render_click(view, "delete_schedule", %{"id" => s.id})
+    assert Schedules.get_schedule(s.id, other.id)
+  end
+end

@@ -67,7 +67,13 @@ defmodule Fountain.AuditGuardrailTest do
     # Team membership: a teammate is a channel-bound conversation, so add also
     # leaves conversation.created underneath; these are the team-side events.
     {"team member add", &__MODULE__.do_team_add/1, "team.member.added"},
-    {"team member remove", &__MODULE__.do_team_remove/1, "team.member.removed"}
+    {"team member remove", &__MODULE__.do_team_remove/1, "team.member.removed"},
+    # Team schedules: a cron that runs a teammate with a prompt. A run leaves
+    # conversation events underneath; `.fired` is the schedule-side record.
+    {"team schedule create", &__MODULE__.do_schedule_create/1, "team.schedule.created"},
+    {"team schedule update", &__MODULE__.do_schedule_update/1, "team.schedule.updated"},
+    {"team schedule delete", &__MODULE__.do_schedule_delete/1, "team.schedule.deleted"},
+    {"team schedule run", &__MODULE__.do_schedule_run/1, "team.schedule.fired"}
   ]
 
   # Documented non-coverage. Mirrors the `Fountain.Audit` moduledoc; if the two
@@ -245,6 +251,35 @@ defmodule Fountain.AuditGuardrailTest do
     )
 
     :ok = Fountain.Team.remove_teammate(user.id, agent.id)
+  end
+
+  defp insert_schedule(user) do
+    agent = insert_agent(user_id: user.id)
+
+    {:ok, s} =
+      Fountain.Team.Schedules.create_schedule(user.id, %{
+        "agent_id" => agent.id,
+        "cron" => "0 9 * * *",
+        "prompt" => "hello"
+      })
+
+    s
+  end
+
+  def do_schedule_create(user), do: insert_schedule(user)
+
+  def do_schedule_update(user),
+    do:
+      {:ok, _} =
+        Fountain.Team.Schedules.update_schedule(insert_schedule(user), %{"cron" => "@hourly"})
+
+  def do_schedule_delete(user),
+    do: {:ok, _} = Fountain.Team.Schedules.delete_schedule(insert_schedule(user))
+
+  def do_schedule_run(user) do
+    # Off the team, so the in-thread run fails fast — the firing is what
+    # must be recorded, however it went.
+    {:error, :not_found} = Fountain.Team.Schedules.run_schedule(insert_schedule(user))
   end
 
   def do_role_change(user), do: {:ok, _} = Fountain.Accounts.update_user_role(user, "admin")
