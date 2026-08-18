@@ -234,6 +234,55 @@ Since sub-conversations are created over the API (`X-Fountain-Parent-Conversatio
 
 Page by passing the previous response's `meta.next_cursor` as `after`; keep going while `meta.has_more` is true. `limit` defaults to 100 and caps at 1000. The `id` is the same value the SSE route uses as `Last-Event-ID`, so a client can drain history as JSON and then attach the stream from where it left off.
 
+## Team
+
+The roster [`/team`](primitives.md#the-team-page-agents-as-teammates) shows, for
+clients that are not this web app. A teammate is a conversation bound to the
+reserved channel `fountain:team`; every route here wraps the same
+`Fountain.Team` the page uses, so a standalone client gets the page's exact
+semantics — add is idempotent, a message wakes a parked computer or opens a
+fresh conversation when the old one is past resuming, remove terminates and
+unbinds — without reimplementing them over `/api/conversations`.
+
+```
+GET    /api/team                    # roster: agent, conversation, presence, unread, preview
+POST   /api/team                    # add (agent_id; optional name, environment_id, vault_id)
+GET    /api/team/:agent_id
+DELETE /api/team/:agent_id          # remove: terminate the live conversation, unbind history
+POST   /api/team/:agent_id/messages # a turn (prompt; optional images) → {conversation_id}
+GET    /api/team/stream             # SSE: every teammate's events on one connection
+```
+
+`POST /api/team` answers `201` with the teammate, or `200` when the agent was
+already on the team (its live conversation, the attributes ignored). `name`
+becomes the conversation's `title`; `environment_id` and `vault_id` go through
+the agent's `allowed_environment_ids` / `allowed_vault_ids` exactly as on
+`POST /api/conversations` (`404` unknown or foreign, `422` not allowed).
+
+Each roster entry carries `name` (title, else the agent's name), the full
+`agent` and `conversation` objects, `presence` (`state` in `working`,
+`starting`, `online`, `asleep`, `away`, `failed`, `offline`, plus a human
+`label`), `unread`, `last_turn`, and `preview` — `{kind: "you"|"them"|"typing",
+text}` or null with no messages.
+
+`/messages` returns `202 {status: "queued", conversation_id}`; the id is the
+conversation the message went to, which is a new one when the teammate's
+previous conversation was terminated. `400 conversation_busy` while the last
+turn is still running, `503` while the computer is starting.
+
+`/stream` is one `text/event-stream` for the whole team: each event is the
+per-conversation stream's payload plus `conversation_id` and `agent_id`, so a
+client routes it to a roster row without a socket per teammate. A `team`
+event (`{"reason":"changed"}`) is sent when the roster changes — a teammate
+added or removed, or a fresh conversation opened for one — and the stream
+starts following the new conversation itself; the client re-lists. It honours
+`Last-Event-ID` (replayed across every teammate) and `?streams=`, heartbeats
+every 15 s and closes after 60 s idle so the client reconnects.
+
+Browser clients on another origin need `API_CORS_ORIGINS` set on the server
+(see [configuration](configuration.md)); a bearer key is the only credential
+that crosses origins.
+
 ## Admin
 
 For operator accounts (`role: "admin"`) holding a `full`-scoped key. Every action mirrors the admin UI, including its refusals, and records the same privilege-trail event.

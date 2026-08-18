@@ -17,8 +17,8 @@ defmodule FountainWeb.TeamLive do
   """
   use FountainWeb, :live_view
 
-  import FountainWeb.ConversationsLive.Chat,
-    only: [chat_view: 1, chat_assistant_reply: 2, agent_glyph: 1]
+  import FountainWeb.ConversationsLive.Chat, only: [chat_view: 1, agent_glyph: 1]
+  alias FountainWeb.TeamPresenter
 
   alias Fountain.{Conversations, Team}
   alias Fountain.Conversations.{ConversationServer, LogEvent}
@@ -116,22 +116,7 @@ defmodule FountainWeb.TeamLive do
   defp load_teammates(user_id) do
     user_id
     |> Team.list_teammates()
-    |> Enum.map(&Map.put(&1, :preview, preview_for(&1)))
-  end
-
-  defp preview_for(%{last_turn: nil}), do: nil
-
-  defp preview_for(%{last_turn: %{status: status}}) when status in ["pending", "running"],
-    do: :typing
-
-  defp preview_for(%{last_turn: turn, conversation: conv}) do
-    # Ownership: `turn` belongs to a conversation from the scoped listing.
-    reply =
-      turn.id
-      |> Conversations._unsafe_list_turn_log_events()
-      |> chat_assistant_reply(conv.runtime)
-
-    if reply == "", do: {:you, turn.prompt}, else: {:them, reply}
+    |> Enum.map(&Map.put(&1, :preview, TeamPresenter.preview(&1)))
   end
 
   defp subscribe_teammate(%{conversation: conv}) do
@@ -621,20 +606,19 @@ defmodule FountainWeb.TeamLive do
 
   # ── presence ────────────────────────────────────────────────────────────────
 
-  # What the teammate's computer is doing, from the conversation and sandbox
-  # rows. `{label, dot_class}`.
-  defp presence(%{status: "running"}), do: {"working", "bg-emerald-500 animate-pulse"}
-  defp presence(%{status: "pending"}), do: {"starting computer", "bg-amber-400 animate-pulse"}
+  # The presence label and its dot, from the shared presenter's state.
+  defp presence(conv) do
+    %{state: state, label: label} = TeamPresenter.presence(conv)
+    {label, presence_dot(state)}
+  end
 
-  defp presence(%{status: "idle", sandbox: %{status: s}}) when s in ["ready", "starting"],
-    do: {"online", "bg-emerald-500"}
-
-  defp presence(%{status: "idle", sandbox: %{status: "suspended"}}),
-    do: {"asleep · wakes on message", "bg-zinc-400"}
-
-  defp presence(%{status: "idle"}), do: {"away · wakes on message", "bg-zinc-400"}
-  defp presence(%{status: "failed"}), do: {"offline · failed", "bg-rose-500"}
-  defp presence(_), do: {"offline · new computer on message", "bg-zinc-300"}
+  defp presence_dot("working"), do: "bg-emerald-500 animate-pulse"
+  defp presence_dot("starting"), do: "bg-amber-400 animate-pulse"
+  defp presence_dot("online"), do: "bg-emerald-500"
+  defp presence_dot("asleep"), do: "bg-zinc-400"
+  defp presence_dot("away"), do: "bg-zinc-400"
+  defp presence_dot("failed"), do: "bg-rose-500"
+  defp presence_dot(_), do: "bg-zinc-300"
 
   defp avatar_url(%{id: id, avatar_media_type: mt}) when is_binary(mt), do: "/agents/#{id}/avatar"
   defp avatar_url(_), do: nil

@@ -80,7 +80,10 @@ defmodule FountainWeb.SchemaEnumGuardrailTest do
     {FountainWeb.Schemas.ManifestResource, "kind"} => {Manifest, :kinds},
     {FountainWeb.Schemas.OnboardingResponse, "data.state"} => {Accounts, :onboarding_states},
     {FountainWeb.Schemas.Sandbox, "status"} => {Sandbox, :statuses},
-    {FountainWeb.Schemas.Turn, "status"} => {Turn, :statuses}
+    {FountainWeb.Schemas.Turn, "status"} => {Turn, :statuses},
+    {FountainWeb.Schemas.Teammate, "presence.state"} =>
+      {FountainWeb.TeamPresenter, :presence_states},
+    {FountainWeb.Schemas.Teammate, "preview.kind"} => {FountainWeb.TeamPresenter, :preview_kinds}
   }
 
   # Enums with no domain list behind them. Each entry needs a reason: the

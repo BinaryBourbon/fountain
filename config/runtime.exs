@@ -936,3 +936,15 @@ if config_env() == :prod do
          System.get_env("BUZZ_ACP_BASE_URL") ||
            "http://127.0.0.1:#{System.get_env("PORT", "4000")}"
 end
+
+# ── CORS for /api ─────────────────────────────────────────────────────────
+#
+# Browser clients on other origins (the standalone team app, #809). Empty —
+# the default — leaves CORS off. See FountainWeb.Plugs.Cors. Read in every
+# env so a dev server can allow its Vite origin the same way prod does.
+config :fountain,
+       :api_cors_origins,
+       "API_CORS_ORIGINS"
+       |> System.get_env("")
+       |> String.split(",", trim: true)
+       |> Enum.map(&String.trim/1)

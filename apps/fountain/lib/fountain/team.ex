@@ -42,6 +42,21 @@ defmodule Fountain.Team do
   def channel, do: @channel
 
   @doc """
+  Subscribe the caller to `{:team_changed, user_id}`, broadcast whenever the
+  roster's membership changes — a teammate added or removed, or a fresh
+  conversation opened for one — so a client following the team knows to
+  re-list and to follow the new conversation. Per-conversation events keep
+  riding `conv:<id>`.
+  """
+  def subscribe(user_id) when is_binary(user_id),
+    do: Phoenix.PubSub.subscribe(Fountain.PubSub, topic(user_id))
+
+  defp topic(user_id), do: "team:#{user_id}"
+
+  defp broadcast_changed(user_id),
+    do: Phoenix.PubSub.broadcast(Fountain.PubSub, topic(user_id), {:team_changed, user_id})
+
+  @doc """
   One entry per agent on the team, most recently active first.
 
   Each entry is `%{agent: %Agent{}, conversation: %Conversation{}, last_turn:
@@ -123,7 +138,8 @@ defmodule Fountain.Team do
   conversation back, `attrs` ignored, and nothing is recorded, since nothing
   changed. Returns `{:ok, conv}` or the `start_conversation/2` error
   (`:not_found`, `:subscription_required`, `{:sandbox_quota_exceeded, _}`,
-  ...). `opts` is audit attribution.
+  ...). `opts` is audit attribution, plus an optional `:source` (`"ui"` or
+  `"api"`, default `"ui"`) recorded on the conversation.
   """
   def add_teammate(user_id, agent_id, attrs \\ %{}, opts \\ [])
       when is_binary(user_id) and is_binary(agent_id) and is_map(attrs) and is_list(opts) do
@@ -141,7 +157,7 @@ defmodule Fountain.Team do
       "agent_id" => agent_id,
       "user_id" => user_id,
       "channel_id" => @channel,
-      "source" => "ui",
+      "source" => Keyword.get(opts, :source, "ui"),
       "title" => blank_to_nil(attrs["name"]),
       "environment_id" => blank_to_nil(attrs["environment_id"]),
       "vault_id" => blank_to_nil(attrs["vault_id"])
@@ -150,6 +166,7 @@ defmodule Fountain.Team do
     case Conversations.start_or_resume_conversation(attrs, opts) do
       {:ok, conv, :created} ->
         record(user_id, "team.member.added", conv, opts)
+        broadcast_changed(user_id)
         {:ok, conv}
 
       {:ok, conv, :resumed} ->
@@ -231,6 +248,7 @@ defmodule Fountain.Team do
         _ = Fountain.Team.Schedules._unsafe_delete_for_teammate(user_id, agent_id)
 
         record(user_id, "team.member.removed", conv, opts)
+        broadcast_changed(user_id)
         :ok
     end
   end
@@ -273,20 +291,24 @@ defmodule Fountain.Team do
   # saying so directly keeps the intent readable. The name, environment and
   # vault are the teammate's, not the dead computer's, so they carry over.
   defp start_fresh(user_id, agent_id, %Conversation{} = prev, text, images, opts) do
-    Conversations.start_conversation(
-      %{
-        "agent_id" => agent_id,
-        "user_id" => user_id,
-        "channel_id" => @channel,
-        "source" => "ui",
-        "prompt" => text,
-        "images" => images,
-        "title" => prev.title,
-        "environment_id" => prev.environment_id,
-        "vault_id" => prev.vault_id
-      },
-      opts
-    )
+    result =
+      Conversations.start_conversation(
+        %{
+          "agent_id" => agent_id,
+          "user_id" => user_id,
+          "channel_id" => @channel,
+          "source" => Keyword.get(opts, :source, "ui"),
+          "prompt" => text,
+          "images" => images,
+          "title" => prev.title,
+          "environment_id" => prev.environment_id,
+          "vault_id" => prev.vault_id
+        },
+        opts
+      )
+
+    with {:ok, _} <- result, do: broadcast_changed(user_id)
+    result
   end
 
   @doc "Agents of `user_id` that are not on the team yet — the add picker."
