@@ -2051,6 +2051,13 @@ defmodule Fountain.Conversations.ConversationServer do
 
   defp buzz_mcp_servers(_state), do: []
 
+  # The team tools (#851), for conversations on the team channel.
+  defp team_mcp_servers(%{callback_token: token, conversation_id: conv_id})
+       when is_binary(token) and is_binary(conv_id),
+       do: Fountain.Team.conversation_mcp_servers(conv_id, token)
+
+  defp team_mcp_servers(_state), do: []
+
   # How long a sprite's callback key stays valid.
   #
   # This is a backstop, not the primary control: the key is revoked at
@@ -2348,7 +2355,7 @@ defmodule Fountain.Conversations.ConversationServer do
                     images: images,
                     mcp_servers:
                       Fountain.Runtimes.ACP.mcp_servers(agent) ++
-                        buzz_mcp_servers(state),
+                        buzz_mcp_servers(state) ++ team_mcp_servers(state),
                     model: agent && Fountain.Runtimes.Model.id(agent.model)
                   )
                 else
