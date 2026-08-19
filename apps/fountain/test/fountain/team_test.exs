@@ -342,6 +342,77 @@ defmodule Fountain.TeamTest do
     end
   end
 
+  describe "rename_teammate/4 (#831)" do
+    test "sets the current conversation's title, audits the field, broadcasts" do
+      user = insert_verified_user()
+      ada = insert_agent(user_id: user.id, name: "Ada")
+      conv = insert_teammate_conv(user, ada)
+      Team.subscribe(user.id)
+
+      assert {:ok, %{title: "Ada (staging)"}} =
+               Team.rename_teammate(user.id, ada.id, "  Ada (staging) ", actor: "api")
+
+      assert Repo.reload(conv).title == "Ada (staging)"
+      assert [%{name: "Ada (staging)"}] = Team.list_teammates(user.id)
+      assert_receive {:team_changed, _}
+
+      assert [ev] =
+               Enum.filter(Audit.list_recent_for_user(user.id), &(&1.action == "team.renamed"))
+
+      assert ev.actor == "api"
+      assert ev.metadata["fields"] == ["name"]
+      assert ev.metadata["cleared"] == false
+      refute inspect(ev.metadata) =~ "staging"
+    end
+
+    test "blank clears the name back to the agent's; an unchanged name records nothing" do
+      user = insert_verified_user()
+      ada = insert_agent(user_id: user.id, name: "Ada")
+      insert_teammate_conv(user, ada, title: "Old")
+
+      assert {:ok, %{title: nil}} = Team.rename_teammate(user.id, ada.id, "  ")
+      assert [%{name: "Ada"}] = Team.list_teammates(user.id)
+
+      assert {:ok, _} = Team.rename_teammate(user.id, ada.id, nil)
+
+      assert [%{metadata: %{"cleared" => true}}] =
+               Enum.filter(Audit.list_recent_for_user(user.id), &(&1.action == "team.renamed"))
+    end
+
+    test "the renamed title carries onto a fresh conversation; off the team is not found" do
+      user = insert_verified_user()
+      ada = insert_agent(user_id: user.id, name: "Ada")
+      dead = insert_teammate_conv(user, ada, status: "terminated")
+      assert {:ok, _} = Team.rename_teammate(user.id, ada.id, "Renamed")
+      assert Repo.reload(dead).title == "Renamed"
+
+      inert_start_child()
+      assert {:ok, fresh} = Team.send_message(user.id, ada.id, "hi")
+      assert fresh.title == "Renamed"
+
+      loner = insert_agent(user_id: user.id)
+      assert {:error, :not_found} = Team.rename_teammate(user.id, loner.id, "x")
+
+      assert {:error, %Ecto.Changeset{}} =
+               Team.rename_teammate(user.id, ada.id, String.duplicate("x", 121))
+    end
+  end
+
+  describe "list_teammate_conversations/2 (#832)" do
+    test "every conversation the agent had on the team, newest first; none off the team" do
+      user = insert_verified_user()
+      ada = insert_agent(user_id: user.id, name: "Ada")
+      old = insert_teammate_conv(user, ada, status: "terminated")
+      current = insert_teammate_conv(user, ada)
+      _unbound = insert_conversation(user_id: user.id, agent: ada)
+      _other = insert_teammate_conv(user, insert_agent(user_id: user.id))
+
+      ids = user.id |> Team.list_teammate_conversations(ada.id) |> Enum.map(& &1.id)
+      assert ids == [current.id, old.id]
+      assert Team.list_teammate_conversations(user.id, insert_agent(user_id: user.id).id) == []
+    end
+  end
+
   describe "list_addable_agents/1" do
     test "the user's agents not yet on the team" do
       user = insert_verified_user()

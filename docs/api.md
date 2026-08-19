@@ -232,7 +232,7 @@ Resources are upserted by name in a fixed order (environments, then vaults, then
 Conversations are multi-turn: create one with an initial prompt, then keep prompting it.
 
 ```
-GET    /api/conversations                  # list (?roots_only=true hides sub-conversations)
+GET    /api/conversations                  # list (?roots_only=true; ?agent_id= ?channel_id= ?status=idle,terminated)
 POST   /api/conversations                  # start (agent_id; optional vault_id, prompt, images)
 GET    /api/conversations/:id
 DELETE /api/conversations/:id
@@ -248,6 +248,12 @@ GET    /api/conversations/:id/turns/:turn_id/images/:position   # image bytes
 ```
 
 Turns carry `image_count`; the image endpoint takes a zero-based `position` into that count and returns the raw bytes with the stored media type. Anything that does not resolve — unknown conversation, a turn from a different conversation, an absent position, a stored media type that is not an image — is a `404`, so it is not a probe for ids.
+
+The list takes `agent_id`, `channel_id` (the *bound* channel — `fountain:team`
+for the team; a conversation unbound by removing its teammate no longer
+matches, so a teammate's full history is `GET /api/team/:agent_id/conversations`)
+and `status` (comma-separated; `400 invalid_status` on a value outside the
+vocabulary), all combinable with `roots_only`. The list is unpaged.
 
 Conversation objects carry `title`, `turn_count`, `last_active_at`, `last_read_at` and a computed `unread` alongside the lifecycle fields. `unread` is true when `last_active_at` is later than `last_read_at` (and for a conversation never read); `POST /api/conversations/:id/read` clears it.
 
@@ -361,10 +367,21 @@ unbinds — without reimplementing them over `/api/conversations`.
 GET    /api/team                    # roster: agent, conversation, presence, unread, preview
 POST   /api/team                    # add (agent_id; optional name, environment_id, vault_id)
 GET    /api/team/:agent_id
+PATCH  /api/team/:agent_id          # rename ({name}; null or blank → the agent's name)
 DELETE /api/team/:agent_id          # remove: terminate the live conversation, unbind history
 POST   /api/team/:agent_id/messages # a turn (prompt; optional images) → {conversation_id}
+GET    /api/team/:agent_id/conversations  # history: every conversation on the team, newest first, `current` flagged
 GET    /api/team/stream             # SSE: every teammate's events on one connection
 ```
+
+`PATCH /api/team/:agent_id` sets what the teammate is called — its
+conversation's `title` — and the name carries onto the fresh conversation
+opened when that one is past resuming; `team.renamed` is audited and the
+stream sends `team`. `GET /api/team/:agent_id/conversations` is the
+teammate's history: a retired conversation (a previous computer's thread)
+stays bound to the team channel until the teammate is removed, so it is
+listed behind the current one with `current: false`; read it with
+`GET /api/conversations/:id/events`.
 
 `POST /api/team` answers `201` with the teammate, or `200` when the agent was
 already on the team (its live conversation, the attributes ignored). `name`

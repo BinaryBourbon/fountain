@@ -338,6 +338,65 @@ defmodule Fountain.Team do
     result
   end
 
+  @doc """
+  Rename the teammate for `agent_id` (#831): `name` becomes its current
+  conversation's title — what the roster shows and what `start_fresh/6`
+  carries onto the next conversation when this one is past resuming. Blank
+  or nil clears it, so the teammate reads as its agent's name again.
+  `{:error, :not_found}` when the agent is not on the team; a changeset
+  error when the name is too long. Audited as `team.renamed` (the field,
+  never the value); broadcasts the roster change.
+  """
+  def rename_teammate(user_id, agent_id, name, opts \\ [])
+      when is_binary(user_id) and is_binary(agent_id) do
+    case get_teammate(user_id, agent_id) do
+      nil ->
+        {:error, :not_found}
+
+      %{conversation: conv} ->
+        title = blank_to_nil(name)
+
+        # Ownership: `conv` came from the tenant-scoped get_teammate above.
+        case Conversations.update_conversation(conv, %{"title" => title}) do
+          {:ok, updated} ->
+            if updated.title != conv.title do
+              record(user_id, "team.renamed", updated, opts, %{
+                "fields" => ["name"],
+                "cleared" => is_nil(title)
+              })
+
+              broadcast_changed(user_id)
+            end
+
+            {:ok, updated}
+
+          {:error, _} = err ->
+            err
+        end
+    end
+  end
+
+  @doc """
+  Every conversation `agent_id` has had on the team (#832): the current one
+  first (`live?/1`, else the newest), then the retired ones newest first — a previous computer's thread, still bound to the channel until the
+  teammate is removed. `[]` when the agent is not on the team.
+  """
+  def list_teammate_conversations(user_id, agent_id)
+      when is_binary(user_id) and is_binary(agent_id) do
+    case user_id
+         |> Conversations.list_channel_conversations(@channel)
+         |> Enum.filter(&(&1.agent_id == agent_id)) do
+      [] ->
+        []
+
+      convs ->
+        # The current one first, whatever its age — the roster's pick — then
+        # the rest as listed (newest first).
+        current = pick_current(convs)
+        [current | Enum.reject(convs, &(&1.id == current.id))]
+    end
+  end
+
   @doc "Agents of `user_id` that are not on the team yet — the add picker."
   def list_addable_agents(user_id) when is_binary(user_id) do
     on_team = user_id |> list_teammates() |> MapSet.new(& &1.agent.id)
@@ -351,7 +410,7 @@ defmodule Fountain.Team do
   # conversation events (`conversation.created`, `.terminated`) still fire
   # underneath where they apply, and describe the sandbox side of the same
   # action; these describe the team side.
-  defp record(user_id, action, %Conversation{} = conv, opts) do
+  defp record(user_id, action, %Conversation{} = conv, opts, extra \\ %{}) do
     Audit.record(%{
       user_id: user_id,
       action: action,
@@ -359,10 +418,14 @@ defmodule Fountain.Team do
       resource_id: conv.id,
       actor: Keyword.get(opts, :actor, "self"),
       request_ip: Keyword.get(opts, :request_ip),
-      metadata: %{
-        "agent_id" => conv.agent_id,
-        "agent_name" => conv.agent && conv.agent.name
-      }
+      metadata:
+        Map.merge(
+          %{
+            "agent_id" => conv.agent_id,
+            "agent_name" => conv.agent && conv.agent.name
+          },
+          extra
+        )
     })
   end
 end

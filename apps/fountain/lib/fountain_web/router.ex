@@ -355,8 +355,11 @@ defmodule FountainWeb.Router do
     # Before `/team/:agent_id`, or "schedules" would be read as an agent id.
     get "/team/schedules", TeamScheduleController, :index_all
     get "/team/:agent_id", TeamController, :show
+    patch "/team/:agent_id", TeamController, :update
     delete "/team/:agent_id", TeamController, :delete
     post "/team/:agent_id/messages", TeamController, :message
+    # The teammate's history (#832): every conversation it has had on the team.
+    get "/team/:agent_id/conversations", TeamController, :conversations
 
     # Team schedules (#825): the routines `/team` offers, per teammate.
     get "/team/:agent_id/schedules", TeamScheduleController, :index

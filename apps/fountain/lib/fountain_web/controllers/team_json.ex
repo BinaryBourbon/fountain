@@ -6,6 +6,15 @@ defmodule FountainWeb.TeamJSON do
   def index(%{teammates: teammates}), do: %{data: Enum.map(teammates, &data/1)}
   def show(%{teammate: teammate}), do: %{data: data(teammate)}
 
+  def conversations(%{conversations: convs, current_id: current_id}) do
+    %{
+      data:
+        Enum.map(convs, fn conv ->
+          conv |> ConversationJSON.data() |> Map.put(:current, conv.id == current_id)
+        end)
+    }
+  end
+
   @doc "One roster entry: the agent, its current conversation, and what the roster line shows."
   def data(%{agent: agent, conversation: conv, last_turn: last_turn, name: name} = teammate) do
     %{

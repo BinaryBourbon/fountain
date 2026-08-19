@@ -25,10 +25,33 @@ defmodule FountainWeb.ConversationController do
         description:
           "Exclude sub-conversations (those with a `parent_conversation_id`), " <>
             "leaving only top-level sessions. Defaults to false."
+      ],
+      agent_id: [
+        in: :query,
+        type: :string,
+        required: false,
+        description: "Only this agent's conversations (#832)."
+      ],
+      channel_id: [
+        in: :query,
+        type: :string,
+        required: false,
+        description:
+          "Only conversations bound to this channel — `fountain:team` for the team's. " <>
+            "A conversation unbound by removing its teammate no longer matches; a " <>
+            "teammate's full history is `GET /api/team/:agent_id/conversations`."
+      ],
+      status: [
+        in: :query,
+        type: :string,
+        required: false,
+        description:
+          "Comma-separated statuses to keep (`idle,terminated`); 400 on a value outside the vocabulary."
       ]
     ],
     responses: [
-      ok: {"Conversations", "application/json", Schemas.ConversationListResponse}
+      ok: {"Conversations", "application/json", Schemas.ConversationListResponse},
+      bad_request: {"Unknown status", "application/json", Schemas.Error}
     ]
   )
 
@@ -36,9 +59,31 @@ defmodule FountainWeb.ConversationController do
     user = conn.assigns.current_user
     roots_only = parse_bool_param(params["roots_only"], false)
 
-    render(conn, :index,
-      conversations: Conversations.list_conversations(user.id, roots_only: roots_only)
-    )
+    with {:ok, statuses} <- parse_statuses(params["status"]) do
+      render(conn, :index,
+        conversations:
+          Conversations.list_conversations(user.id,
+            roots_only: roots_only,
+            agent_id: params["agent_id"],
+            channel_id: params["channel_id"],
+            status: statuses
+          )
+      )
+    end
+  end
+
+  # A status the vocabulary does not have is a 400, not a silent "match
+  # nothing" (or worse, "match everything"): a client that typos `terminted`
+  # should find out.
+  defp parse_statuses(nil), do: {:ok, []}
+  defp parse_statuses(""), do: {:ok, []}
+
+  defp parse_statuses(s) when is_binary(s) do
+    statuses = s |> String.split(",", trim: true) |> Enum.map(&String.trim/1)
+
+    if Enum.all?(statuses, &(&1 in Fountain.Conversations.Conversation.statuses())),
+      do: {:ok, statuses},
+      else: {:error, "invalid_status"}
   end
 
   operation(:read,

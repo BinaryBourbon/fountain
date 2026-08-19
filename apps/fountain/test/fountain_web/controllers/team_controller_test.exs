@@ -202,6 +202,82 @@ defmodule FountainWeb.TeamControllerTest do
     end
   end
 
+  describe "PATCH /api/team/:agent_id (#831)" do
+    test "renames; blank clears; 404 off the team; 422 too long", %{
+      conn: conn,
+      user: user,
+      raw_key: key
+    } do
+      ada = insert_agent(user_id: user.id, name: "Ada")
+      insert_teammate_conv(user, ada)
+
+      body =
+        conn
+        |> authed_with_key(key)
+        |> patch_json("/api/team/#{ada.id}", %{name: "Ada (staging)"})
+        |> json_response(200)
+
+      assert body["data"]["name"] == "Ada (staging)"
+      assert body["data"]["conversation"]["title"] == "Ada (staging)"
+
+      assert [%{actor: "api"}] =
+               Enum.filter(Audit.list_recent_for_user(user.id), &(&1.action == "team.renamed"))
+
+      body =
+        conn
+        |> authed_with_key(key)
+        |> patch_json("/api/team/#{ada.id}", %{name: nil})
+        |> json_response(200)
+
+      assert body["data"]["name"] == "Ada"
+
+      loner = insert_agent(user_id: user.id)
+
+      assert conn
+             |> authed_with_key(key)
+             |> patch_json("/api/team/#{loner.id}", %{name: "x"})
+             |> json_response(404)
+
+      assert conn
+             |> authed_with_key(key)
+             |> patch_json("/api/team/#{ada.id}", %{name: String.duplicate("x", 121)})
+             |> json_response(422)
+    end
+  end
+
+  describe "GET /api/team/:agent_id/conversations (#832)" do
+    test "the teammate's history newest first, the live one flagged; 404 off the team", %{
+      conn: conn,
+      user: user,
+      raw_key: key
+    } do
+      ada = insert_agent(user_id: user.id, name: "Ada")
+      old = insert_teammate_conv(user, ada, status: "terminated")
+      current = insert_teammate_conv(user, ada)
+      insert_conversation(user_id: user.id, agent: ada)
+
+      body =
+        conn
+        |> authed_with_key(key)
+        |> get("/api/team/#{ada.id}/conversations")
+        |> json_response(200)
+
+      assert Enum.map(body["data"], &{&1["id"], &1["current"]}) == [
+               {current.id, true},
+               {old.id, false}
+             ]
+
+      assert hd(body["data"])["channel_id"] == "fountain:team"
+
+      loner = insert_agent(user_id: user.id)
+
+      assert conn
+             |> authed_with_key(key)
+             |> get("/api/team/#{loner.id}/conversations")
+             |> json_response(404)
+    end
+  end
+
   describe "DELETE /api/team/:agent_id" do
     test "removes the teammate; 404 when not on the team", %{conn: conn, user: user, raw_key: key} do
       ada = insert_agent(user_id: user.id, name: "Ada")
