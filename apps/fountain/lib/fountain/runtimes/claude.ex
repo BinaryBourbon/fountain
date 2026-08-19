@@ -38,6 +38,18 @@ defmodule Fountain.Runtimes.Claude do
     end
   end
 
-  # MCP servers travel in `session/new`'s `mcpServers` param (#636); nothing
-  # MCP-shaped to prepare in the sandbox.
+  # MCP servers travel in `session/new`'s `mcpServers` param (#636), so there is
+  # nothing to provision into the sandbox for them.
+  #
+  # KNOWN BROKEN (#837): `claude-agent-acp` (0.66–0.70) receives a correct,
+  # non-empty `mcpServers` from us in `session/new` and never launches the
+  # stdio servers — reproduced standalone, so it is upstream of Fountain, not
+  # an emit bug on our side (`test/fountain/runtimes/acp/peer_mcp_test.exs`
+  # pins that we emit it). And unlike Gemini — whose `write_config/2` below
+  # provisions MCP into `~/.gemini/settings.json` because gemini-cli reads it
+  # — the Claude Agent SDK driving `claude` here does **not** pick up
+  # sandbox-provisioned MCP config either: `.claude.json` (global and project)
+  # and `~/.claude/settings.json` were all measured and none launched the
+  # server. So there is no `write_config/2` here to add — the fix is upstream.
+  # See #837.
 end
