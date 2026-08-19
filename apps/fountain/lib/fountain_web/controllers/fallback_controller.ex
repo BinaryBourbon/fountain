@@ -150,6 +150,20 @@ defmodule FountainWeb.FallbackController do
     })
   end
 
+  # A runner-backed sandbox whose machine is not connected (#834). Same
+  # shape as the probe failure — nothing was changed, retry — but named, so
+  # a client can say "the machine is off" and the retry hint is honest: it
+  # comes back when the runner reconnects, not in ten seconds.
+  def call(conn, {:error, :runner_offline}) do
+    conn
+    |> put_resp_header("retry-after", "30")
+    |> put_status(:service_unavailable)
+    |> json(%{
+      error: "runner_offline",
+      message: "the teammate's machine is offline; it wakes when the runner reconnects"
+    })
+  end
+
   # Prompting a terminated conversation. 410 rather than 404: the id was
   # real, the resource is gone for good, and the caller should stop retrying.
   def call(conn, {:error, :gone}) do

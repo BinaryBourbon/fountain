@@ -16,7 +16,7 @@ defmodule FountainWeb.TeamPresenter do
   @typedoc "`state` is the vocabulary a client switches on; `label` is what a human reads."
   @type presence :: %{state: String.t(), label: String.t()}
 
-  @presence_states ~w(working starting online asleep away failed offline)
+  @presence_states ~w(working starting online asleep away machine_offline failed offline)
   @preview_kinds ~w(you them typing)
 
   @doc "Every `state` `presence/1` can answer — the wire enum."
@@ -36,15 +36,29 @@ defmodule FountainWeb.TeamPresenter do
   def presence(%{status: "pending"}),
     do: %{state: "starting", label: "starting computer"}
 
-  def presence(%{status: "idle", sandbox: %{status: s}}) when s in ["ready", "starting"],
+  # A teammate on the user's own machine whose runner is not connected
+  # (#834): not asleep — a message cannot wake it — and not gone either; the
+  # directory is intact and it comes back when the daemon reconnects.
+  def presence(%{status: "idle", sandbox: %{provider: "runner"} = sandbox} = conv) do
+    if Fountain.Runners.sandbox_online?(sandbox),
+      do: hosted_presence(conv),
+      else: %{
+        state: "machine_offline",
+        label: "machine offline · wakes when the runner reconnects"
+      }
+  end
+
+  def presence(conv), do: hosted_presence(conv)
+
+  defp hosted_presence(%{status: "idle", sandbox: %{status: s}}) when s in ["ready", "starting"],
     do: %{state: "online", label: "online"}
 
-  def presence(%{status: "idle", sandbox: %{status: "suspended"}}),
+  defp hosted_presence(%{status: "idle", sandbox: %{status: "suspended"}}),
     do: %{state: "asleep", label: "asleep · wakes on message"}
 
-  def presence(%{status: "idle"}), do: %{state: "away", label: "away · wakes on message"}
-  def presence(%{status: "failed"}), do: %{state: "failed", label: "offline · failed"}
-  def presence(_), do: %{state: "offline", label: "offline · new computer on message"}
+  defp hosted_presence(%{status: "idle"}), do: %{state: "away", label: "away · wakes on message"}
+  defp hosted_presence(%{status: "failed"}), do: %{state: "failed", label: "offline · failed"}
+  defp hosted_presence(_), do: %{state: "offline", label: "offline · new computer on message"}
 
   @doc """
   The roster's one-line preview of a teammate's thread: `nil` when there are

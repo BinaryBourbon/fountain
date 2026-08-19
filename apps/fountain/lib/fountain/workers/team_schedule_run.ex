@@ -3,8 +3,9 @@ defmodule Fountain.Workers.TeamScheduleRun do
   One firing of one team schedule: `Fountain.Team.Schedules.run_schedule/2`
   as a job, so it retries sensibly and never blocks the ticker.
 
-  A teammate that is busy (`:busy`) or whose computer is still starting
-  (`:provisioning`) is worth waiting for: the job snoozes and tries again,
+  A teammate that is busy (`:busy`), whose computer is still starting
+  (`:provisioning`) or whose own machine is off (`:runner_offline`) is worth
+  waiting for: the job snoozes and tries again,
   for up to `@wait_for` after the scheduled time, then gives up with the
   error on the row — the next scheduled run is a better use of the prompt
   than a stale one delivered an hour late. Every other error is final for
@@ -44,7 +45,9 @@ defmodule Fountain.Workers.TeamScheduleRun do
           {:ok, _conv} ->
             :ok
 
-          {:error, reason} when reason in [:busy, :provisioning] ->
+          # A runner-backed teammate whose machine is off (#834) is the
+          # same wait: it may come back within the window.
+          {:error, reason} when reason in [:busy, :provisioning, :runner_offline] ->
             if stale?(args), do: :ok, else: {:snooze, @snooze}
 
           {:error, reason} ->

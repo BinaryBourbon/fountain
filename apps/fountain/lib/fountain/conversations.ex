@@ -1635,6 +1635,12 @@ defmodule Fountain.Conversations do
       {:error, :not_found} ->
         :create_new
 
+      # The machine behind a runner-backed sandbox is not connected (#834):
+      # the same protect-the-disk rule as below, named, so the caller can say
+      # "the machine is off" rather than "the provider is unreachable".
+      {:error, {:unavailable, :runner_offline}} ->
+        {:error, :runner_offline}
+
       {:error, reason} ->
         # A transient probe failure must not cost the disk: falling to
         # :create_new retires this row, and the reaper then destroys the

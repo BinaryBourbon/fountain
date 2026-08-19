@@ -391,21 +391,28 @@ the agent's `allowed_environment_ids` / `allowed_vault_ids` exactly as on
 
 Each roster entry carries `name` (title, else the agent's name), the full
 `agent` and `conversation` objects, `presence` (`state` in `working`,
-`starting`, `online`, `asleep`, `away`, `failed`, `offline`, plus a human
-`label`), `unread`, `last_turn`, and `preview` — `{kind: "you"|"them"|"typing",
-text}` or null with no messages.
+`starting`, `online`, `asleep`, `away`, `machine_offline`, `failed`, `offline`,
+plus a human `label`), `unread`, `last_turn`, and `preview` — `{kind:
+"you"|"them"|"typing", text}` or null with no messages. `machine_offline` is
+a teammate on a [self-hosted runner](integrations/runners.md) whose machine
+is not connected: a message cannot wake it (`503 runner_offline`), it comes
+back when the daemon reconnects. The conversation's `sandbox` carries
+`provider` and, on a runner, `runner: {id, name, hostname, online, path}`.
 
 `/messages` returns `202 {status: "queued", conversation_id}`; the id is the
 conversation the message went to, which is a new one when the teammate's
 previous conversation was terminated. `400 conversation_busy` while the last
-turn is still running, `503` while the computer is starting.
+turn is still running, `503 provisioning` while the computer is starting,
+`503 runner_offline` while a runner-backed teammate's machine is off.
 
 `/stream` is one `text/event-stream` for the whole team: each event is the
 per-conversation stream's payload plus `conversation_id` and `agent_id`, so a
 client routes it to a roster row without a socket per teammate. A `team`
 event (`{"reason":"changed"}`) is sent when the roster changes — a teammate
-added or removed, or a fresh conversation opened for one — and the stream
-starts following the new conversation itself; the client re-lists. It honours
+added or removed, a fresh conversation opened for one, or a self-hosted
+runner connecting or dropping (presence changes for the teammates on it) —
+and the stream starts following the new conversation itself; the client
+re-lists. It honours
 `Last-Event-ID` (replayed across every teammate) and `?streams=`, heartbeats
 every 15 s and closes after 60 s idle so the client reconnects.
 

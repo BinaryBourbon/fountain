@@ -168,6 +168,74 @@ defmodule Fountain.Runners do
     end
   end
 
+  # ── presence broadcasts ────────────────────────────────────────────────────
+
+  @doc """
+  Subscribe to `{:runner_online, runner_id}` / `{:runner_offline, runner_id}`
+  for `user_id`'s runners — sent by the connection process as it registers
+  and as it goes away (#834). A roster of runner-backed teammates re-reads
+  presence on either rather than polling.
+  """
+  def subscribe(user_id) when is_binary(user_id),
+    do: Phoenix.PubSub.subscribe(Fountain.PubSub, topic(user_id))
+
+  @doc false
+  def broadcast_presence(user_id, runner_id, :online)
+      when is_binary(user_id) and is_binary(runner_id),
+      do: Phoenix.PubSub.broadcast(Fountain.PubSub, topic(user_id), {:runner_online, runner_id})
+
+  def broadcast_presence(user_id, runner_id, :offline)
+      when is_binary(user_id) and is_binary(runner_id),
+      do: Phoenix.PubSub.broadcast(Fountain.PubSub, topic(user_id), {:runner_offline, runner_id})
+
+  defp topic(user_id), do: "runners:#{user_id}"
+
+  # ── sandboxes on runners ───────────────────────────────────────────────────
+
+  @doc """
+  What a runner-backed sandbox sits on (#834): `%{runner: %Runner{} | nil,
+  online: boolean, path: String.t() | nil}` — the row (nil when the runner
+  was forgotten), whether its connection is up right now, and the sandbox
+  directory on that machine (`<root>/<name>`, the daemon's layout; nil when
+  the row does not know its root). `nil` for any other provider. Ownership:
+  the sandbox row carries its `user_id`, and the runner is fetched under it.
+  """
+  @spec for_sandbox(map() | nil) ::
+          %{runner: Runner.t() | nil, online: boolean(), path: String.t() | nil} | nil
+  def for_sandbox(%{provider: "runner", sprite_name: name, user_id: user_id})
+      when is_binary(name) do
+    case parse_sandbox_name(name) do
+      {:ok, runner_id} ->
+        runner = get_runner(runner_id, user_id)
+
+        %{
+          runner: runner,
+          online: online?(runner_id),
+          path: runner && runner.root && Path.join(runner.root, name)
+        }
+
+      :error ->
+        nil
+    end
+  end
+
+  def for_sandbox(_), do: nil
+
+  @doc """
+  Whether the machine behind a runner-backed sandbox is connected right now;
+  `true` for every other provider (a hosted sandbox has no machine to be
+  off). Registry only — no query — so presence can ask per roster row.
+  """
+  @spec sandbox_online?(map() | nil) :: boolean()
+  def sandbox_online?(%{provider: "runner", sprite_name: name}) when is_binary(name) do
+    case parse_sandbox_name(name) do
+      {:ok, runner_id} -> online?(runner_id)
+      :error -> true
+    end
+  end
+
+  def sandbox_online?(_), do: true
+
   # ── sandbox names ──────────────────────────────────────────────────────────
 
   @doc """

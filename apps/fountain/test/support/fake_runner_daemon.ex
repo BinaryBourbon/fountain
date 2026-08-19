@@ -101,12 +101,16 @@ defmodule Fountain.Runners.FakeDaemon do
     end
   end
 
-  @doc "Disconnect: the socket process exits normally, the daemon is killed."
+  @doc """
+  Disconnect: the socket process stops through `terminate/2` — as Bandit
+  runs a WebSock handler's on close — so the offline broadcast and the
+  pending-reply failures fire as they do live; the daemon is killed.
+  """
   def stop(%{socket: socket, daemon: daemon}) do
     Process.unlink(socket)
     Process.unlink(daemon)
     ref = Process.monitor(socket)
-    Process.exit(socket, :shutdown)
+    if Process.alive?(socket), do: GenServer.stop(socket, :shutdown, 1_000)
 
     receive do
       {:DOWN, ^ref, :process, _, _} -> :ok

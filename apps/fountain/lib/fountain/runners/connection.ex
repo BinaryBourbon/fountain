@@ -107,6 +107,7 @@ defmodule Fountain.Runners.Connection do
       {:ok, _} ->
         Process.send_after(self(), :heartbeat, @heartbeat_ms)
         Logger.info("runner #{init[:name]} (#{runner_id}) connected for user #{user_id}")
+        Runners.broadcast_presence(user_id, runner_id, :online)
 
         {:ok,
          %{
@@ -217,6 +218,15 @@ defmodule Fountain.Runners.Connection do
   @impl WebSock
   def terminate(reason, state) do
     Logger.info("runner #{state[:name]} (#{state.runner_id}) disconnected: #{inspect(reason)}")
+
+    # Only a registered connection was ever "online"; the 4409 duplicate
+    # above never was, and has no user_id in its state. Unregister before
+    # broadcasting so a subscriber that asks `online?/1` on receipt sees the
+    # truth rather than racing the registry's own DOWN handling.
+    if state[:user_id] do
+      Horde.Registry.unregister(Runners.registry(), {:runner, state.runner_id})
+      Runners.broadcast_presence(state.user_id, state.runner_id, :offline)
+    end
 
     Enum.each(state.pending, fn {_id, {from, ref, _sub}} ->
       send(from, {:runner_reply, ref, {:error, {:unavailable, :runner_disconnected}}})

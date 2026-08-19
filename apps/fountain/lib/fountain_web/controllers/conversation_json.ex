@@ -69,15 +69,32 @@ defmodule FountainWeb.ConversationJSON do
       id: s.id,
       sprite_name: s.sprite_name,
       status: s.status,
+      provider: s.provider,
       # The sandbox's own HTTP endpoint, for providers that give it one. Read
       # from the row rather than the provider so listing conversations stays a
       # single query; null means the provider has no such concept (or the
       # sandbox predates the field).
-      url: s.provider_meta["public_url"]
+      url: s.provider_meta["public_url"],
+      # Where a runner-backed sandbox lives (#834): the machine and the
+      # directory, so a client says "on mac-mini · ~/…" without parsing the
+      # name. Null for hosted providers.
+      runner: runner_data(Fountain.Runners.for_sandbox(s))
     }
   end
 
   defp sandbox_data(_), do: nil
+
+  defp runner_data(nil), do: nil
+
+  defp runner_data(%{runner: runner, online: online, path: path}) do
+    %{
+      id: runner && runner.id,
+      name: runner && runner.name,
+      hostname: runner && runner.hostname,
+      online: online,
+      path: path
+    }
+  end
 
   # Field-for-field the SSE payload, plus `id` (the pagination cursor and the
   # SSE `Last-Event-ID`) and `duration_ms`, which stage events carry and the
