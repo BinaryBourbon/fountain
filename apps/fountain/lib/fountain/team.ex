@@ -77,6 +77,40 @@ defmodule Fountain.Team do
       )
 
   @doc """
+  The MCP server a team conversation's turns carry (#851): `fountain-team`,
+  served by Fountain at `/api/mcp/team/:conversation_id`, authenticated with
+  the sandbox's own token. Only conversations on the team channel get it —
+  the tools are "the team", and a conversation outside it has no team.
+  """
+  def conversation_mcp_servers(conversation_id, token)
+      when is_binary(conversation_id) and is_binary(token) and token != "" do
+    case fetch_conv(conversation_id) do
+      %Conversation{channel_id: @channel} ->
+        [
+          %{
+            name: Fountain.Team.Mcp.mcp_name(),
+            type: "http",
+            url: Fountain.PublicUrl.base() <> "/api/mcp/team/" <> conversation_id,
+            headers: [%{name: "Authorization", value: "Bearer " <> token}]
+          }
+        ]
+
+      _ ->
+        []
+    end
+  end
+
+  def conversation_mcp_servers(_conversation_id, _token), do: []
+
+  # ownership: system-level call from ConversationServer, which owns the
+  # conversation; the tools re-scope every read/write by the token's user.
+  defp fetch_conv(conversation_id) do
+    Conversations._unsafe_get_conversation(conversation_id)
+  rescue
+    Ecto.Query.CastError -> nil
+  end
+
+  @doc """
   One entry per agent on the team, most recently active first.
 
   Each entry is `%{agent: %Agent{}, conversation: %Conversation{}, last_turn:

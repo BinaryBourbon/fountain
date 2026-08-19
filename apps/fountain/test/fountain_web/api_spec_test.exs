@@ -58,7 +58,9 @@ defmodule FountainWeb.ApiSpecTest do
       # A JSON-RPC 2.0 (MCP) endpoint, not a REST operation: its body is a
       # polymorphic MCP message, and its caller is a sandboxed agent's MCP
       # client, which discovers tools via `tools/list`, not our OpenAPI spec.
-      {"/api/mcp/buzz/{conversation_id}", :post}
+      {"/api/mcp/buzz/{conversation_id}", :post},
+      # Same: the team tools a teammate's sandbox calls (#851).
+      {"/api/mcp/team/{conversation_id}", :post}
     ]
 
     setup do

@@ -32,6 +32,9 @@ defmodule Fountain.SandboxSkills do
 
   @bundle_root "sprite_skills"
   @fountain_skill_name "fountain"
+  # Every sandbox gets these, in this order: the API skill, then the team
+  # set-up Q&A (#851) — so a first teammate can answer "/create-team".
+  @bundled_skills [@fountain_skill_name, "create-team"]
 
   @doc """
   Mount `skills` (a list of inline/github maps) on the sandbox behind
@@ -49,7 +52,7 @@ defmodule Fountain.SandboxSkills do
     skills_root = runtime_module.skills_root()
     sh_agent = runtime_module.skills_sh_agent()
 
-    all = [fountain_inline_skill() | normalize(skills || [])]
+    all = bundled_inline_skills() ++ normalize(skills || [])
 
     {inline, github} =
       Enum.split_with(all, fn s -> is_binary(s["content"]) end)
@@ -77,11 +80,10 @@ defmodule Fountain.SandboxSkills do
   # priv_dir and a module attribute; no user input.
   # sobelow_skip ["Traversal.FileModule"] — fixed path assembled from
   # priv_dir and a module attribute; no user input.
-  defp fountain_inline_skill do
-    %{
-      "name" => @fountain_skill_name,
-      "content" => File.read!(Path.join([priv_dir(), @fountain_skill_name, "SKILL.md"]))
-    }
+  defp bundled_inline_skills do
+    Enum.map(@bundled_skills, fn name ->
+      %{"name" => name, "content" => File.read!(Path.join([priv_dir(), name, "SKILL.md"]))}
+    end)
   end
 
   defp write_inline_skills(_handle, _root, []), do: :ok

@@ -346,6 +346,8 @@ defmodule FountainWeb.Router do
     # (ADR 0020, #737). One JSON-RPC message per POST; the nsec is resolved
     # server-side and never enters the sandbox.
     post "/mcp/buzz/:conversation_id", BuzzMcpController, :handle
+    # The team tools a teammate's sandbox calls to see and message the team (#851).
+    post "/mcp/team/:conversation_id", TeamMcpController, :handle
 
     resources "/environments", EnvironmentController, except: [:new, :edit] do
       resources "/secrets", SecretController, only: [:index, :create, :delete]

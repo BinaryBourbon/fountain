@@ -422,6 +422,16 @@ previous conversation was terminated. `400 conversation_busy` while the last
 turn is still running, `503 provisioning` while the computer is starting,
 `503 runner_offline` while a runner-backed teammate's machine is off.
 
+**Teammates know each other.** Every conversation on the team channel carries
+an MCP server, `fountain-team`, served by Fountain at
+`POST /api/mcp/team/:conversation_id` and authenticated with the sandbox's
+own token: `list_teammates`, `get_teammate` (by name, role or keyword —
+"the engineer"), `send_to_teammate` (lands in their thread prefixed with who
+sent it; busy/starting/machine-offline come back as tool errors to retry)
+and `read_teammate` (recent prompts and replies). So "send this to the
+steward" inside one teammate's turn is two tool calls, and the exchange is
+visible in both threads on the team page.
+
 `/stream` is one `text/event-stream` for the whole team: each event is the
 per-conversation stream's payload plus `conversation_id` and `agent_id`, so a
 client routes it to a roster row without a socket per teammate. A `team`
