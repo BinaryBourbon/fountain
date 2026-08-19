@@ -402,6 +402,7 @@ defmodule FountainWeb.Router do
     post "/team/:agent_id/conversations", TeamController, :fresh_conversation
     # The teammate's own email address and phone number (flag `team_comms`).
     post "/team/:agent_id/contact", TeamController, :provision_contact
+    patch "/team/:agent_id/contact", TeamController, :update_contact
     delete "/team/:agent_id/contact", TeamController, :release_contact
 
     # Team schedules (#825): the routines `/team` offers, per teammate.

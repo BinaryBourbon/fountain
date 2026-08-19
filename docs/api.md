@@ -372,6 +372,7 @@ DELETE /api/team/:agent_id          # remove: terminate the live conversation, u
 POST   /api/team/:agent_id/messages # a turn (prompt; optional images) → {conversation_id}
 GET    /api/team/:agent_id/conversations  # history: every conversation on the team, newest first, `current` flagged
 POST   /api/team/:agent_id/contact  # give the teammate an email address + phone number ({prompt_from_number}; flag `team_comms`)
+PATCH  /api/team/:agent_id/contact  # change prompt_from_number (nothing bought or released)
 DELETE /api/team/:agent_id/contact  # release them
 GET    /api/team/comms              # {enabled, configured}: may this caller, and can this instance
 GET    /api/team/stream             # SSE: every teammate's events on one connection

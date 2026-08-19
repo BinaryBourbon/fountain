@@ -63,6 +63,14 @@ defmodule Fountain.Team.Contact do
     |> normalize_number(:prompt_from_number)
   end
 
+  @doc "Change the user-supplied part of an existing contact: `prompt_from_number`, required."
+  def update_changeset(%__MODULE__{} = contact, attrs) do
+    contact
+    |> cast(attrs, [:prompt_from_number])
+    |> validate_required([:prompt_from_number])
+    |> normalize_number(:prompt_from_number)
+  end
+
   defp normalize_number(changeset, field) do
     case get_change(changeset, field) do
       nil ->

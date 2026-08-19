@@ -127,6 +127,36 @@ defmodule Fountain.Team.Comms do
   end
 
   @doc """
+  Change what the user supplied for the teammate's contact — today the
+  number whose texts become prompts (`"prompt_from_number"`). Nothing is
+  bought or released. `{:ok, %Contact{}}`, `{:error, :not_found}` (no
+  contact, or not on the team), or `{:error, %Ecto.Changeset{}}`.
+  """
+  def update_contact(user_id, agent_id, attrs, opts \\ [])
+      when is_binary(user_id) and is_binary(agent_id) and is_map(attrs) do
+    case get_contact(user_id, agent_id) do
+      nil ->
+        {:error, :not_found}
+
+      %Contact{} = contact ->
+        changeset = Contact.update_changeset(contact, attrs)
+
+        case Repo.update(changeset) do
+          {:ok, updated} ->
+            record("team.contact.updated", updated, opts, %{
+              "fields" => Audit.changed_fields(changeset)
+            })
+
+            Team.broadcast_changed(user_id)
+            {:ok, updated}
+
+          {:error, cs} ->
+            {:error, cs}
+        end
+    end
+  end
+
+  @doc """
   Take the teammate's email address and phone number away: the inbox and the
   number are deleted upstream and the contact row removed. A provider that
   no longer knows the resource (404) counts as released; any other provider

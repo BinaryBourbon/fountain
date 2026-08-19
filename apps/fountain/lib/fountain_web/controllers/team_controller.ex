@@ -250,6 +250,35 @@ defmodule FountainWeb.TeamController do
     end
   end
 
+  operation(:update_contact,
+    summary: "Change which number's texts reach the teammate",
+    description:
+      "Sets `prompt_from_number` on an existing contact. Nothing is bought or released — " <>
+        "the teammate keeps its address and number.",
+    parameters: [agent_id: [in: :path, type: :string, required: true]],
+    request_body:
+      {"The number whose texts become prompts", "application/json", Schemas.TeamContactRequest,
+       required: true},
+    responses: [
+      ok: {"Teammate", "application/json", Schemas.TeammateResponse},
+      not_found: {"No contact, or not on the team", "application/json", Schemas.Error},
+      unprocessable_entity: {"Bad prompt_from_number", "application/json", Schemas.Error}
+    ]
+  )
+
+  def update_contact(conn, %{"agent_id" => agent_id} = params) do
+    user = conn.assigns.current_user
+    opts = [source: "api"] ++ Audited.attribution(conn)
+    attrs = Map.take(params, ["prompt_from_number"])
+
+    with {:ok, _contact} <- Comms.update_contact(user.id, agent_id, attrs, opts),
+         %{} = teammate <- Team.get_teammate(user.id, agent_id) || {:error, :not_found} do
+      render(conn, :show, teammate: teammate)
+    else
+      {:error, reason} -> comms_error(conn, reason)
+    end
+  end
+
   operation(:release_contact,
     summary: "Take a teammate's email address and phone number away",
     description:
