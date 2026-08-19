@@ -146,6 +146,42 @@ defmodule Fountain.InferenceCredentials do
   end
 
   @doc """
+  The credentials that let a model's provider run: a model `provider/id`
+  names a provider; any one of these credentials serves it. Unknown
+  providers (a local model, a gateway) need none — Fountain cannot know.
+
+      iex> credentials_for_provider("anthropic")
+      [:anthropic_api_key, :claude_code_oauth_token]
+  """
+  @spec credentials_for_provider(String.t() | nil) :: [atom()]
+  def credentials_for_provider("anthropic"), do: [:anthropic_api_key, :claude_code_oauth_token]
+  def credentials_for_provider("openai"), do: [:openai_api_key]
+  def credentials_for_provider("google"), do: [:gemini_api_key]
+  def credentials_for_provider(_), do: []
+
+  @doc """
+  What a model would be missing on this account: `nil` when one of the
+  credentials its provider accepts is set (or the provider needs none),
+  else `{provider, credentials}` — the provider's name and the credentials
+  that would do. The onboarding wizard asks only for Anthropic; this is how
+  the agent form and the API ask for the rest the first time a model needs
+  them, rather than failing inside the sandbox.
+  """
+  @spec missing_for_model(binary(), String.t() | nil) :: nil | {String.t(), [atom()]}
+  def missing_for_model(user_id, model) when is_binary(user_id) do
+    provider = Fountain.Runtimes.Model.provider(model)
+
+    case credentials_for_provider(provider) do
+      [] ->
+        nil
+
+      accepted ->
+        status = status_for_user(user_id)
+        if Enum.any?(accepted, &Map.get(status, &1, false)), do: nil, else: {provider, accepted}
+    end
+  end
+
+  @doc """
   Returns a map `%{provider => boolean}` of which providers the user has set.
   Cheap — does not decrypt; just checks for non-nil ciphertext.
   """

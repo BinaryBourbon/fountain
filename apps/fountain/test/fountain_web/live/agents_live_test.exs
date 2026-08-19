@@ -73,6 +73,59 @@ defmodule FountainWeb.AgentsLive.IndexTest do
       assert path =~ "/auth/login"
     end
 
+    # Onboarding asks for Anthropic only; the first model that needs another
+    # provider is where its key is collected.
+    test "prompts for the provider's key when the chosen model has none on the account", %{
+      conn: conn
+    } do
+      user = insert_verified_user()
+      {:ok, dek} = Fountain.Crypto.load_tenant_key(user.id)
+
+      {:ok, _} =
+        Fountain.InferenceCredentials.put_credential(user.id, dek, :anthropic_api_key, "sk-ant")
+
+      conn = login_user(conn, user)
+
+      {:ok, view, html} = live(conn, ~p"/agents/new")
+      # default model is Anthropic → nothing to ask
+      refute html =~ "No OpenAI API key"
+      refute html =~ "credential on this account yet"
+
+      html =
+        view
+        |> element("form[phx-change=validate]")
+        |> render_change(%{
+          "agent" => %{"name" => "x", "runtime" => "codex", "model" => "openai/gpt-5"}
+        })
+
+      assert html =~ "No OpenAI credential on this account yet"
+      assert html =~ ~s(value="openai_api_key")
+
+      # back to an Anthropic model: the card goes away
+      html =
+        view
+        |> element("form[phx-change=validate]")
+        |> render_change(%{
+          "agent" => %{
+            "name" => "x",
+            "runtime" => "claude",
+            "model" => "anthropic/claude-sonnet-5"
+          }
+        })
+
+      refute html =~ "credential on this account yet"
+
+      # a model from a provider Fountain doesn't know needs nothing
+      html =
+        view
+        |> element("form[phx-change=validate]")
+        |> render_change(%{
+          "agent" => %{"name" => "x", "runtime" => "opencode", "model" => "ollama/llama3"}
+        })
+
+      refute html =~ "credential on this account yet"
+    end
+
     # #554: the model field was a bare text input, so nothing in the UI said
     # what a valid value looked like until the sprite failed at spawn time.
     test "model field offers the curated models for the selected runtime", %{conn: conn} do
