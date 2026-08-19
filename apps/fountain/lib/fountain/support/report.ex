@@ -38,6 +38,7 @@ defmodule Fountain.Support.Report do
   end
 
   def categories, do: @categories
+  def statuses, do: @statuses
 
   def changeset(report, attrs) do
     report

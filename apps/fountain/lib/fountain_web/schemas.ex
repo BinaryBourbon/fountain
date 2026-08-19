@@ -1977,13 +1977,13 @@ defmodule FountainWeb.Schemas do
       type: :object,
       properties: %{
         id: %Schema{type: :string, format: :uuid},
-        category: %Schema{type: :string, enum: ["bug", "stuck", "question", "idea", "other"]},
+        category: %Schema{type: :string, enum: Fountain.Support.Report.categories()},
         message: %Schema{type: :string},
         context: %Schema{type: :object, additionalProperties: true},
         client: %Schema{type: :string, nullable: true},
         has_screenshot: %Schema{type: :boolean},
         screenshot_media_type: %Schema{type: :string, nullable: true},
-        status: %Schema{type: :string, enum: ["new", "forwarded", "failed"]},
+        status: %Schema{type: :string, enum: Fountain.Support.Report.statuses()},
         forwarded_at: %Schema{type: :string, format: :"date-time", nullable: true},
         external_url: %Schema{
           type: :string,
@@ -1997,29 +1997,8 @@ defmodule FountainWeb.Schemas do
     })
   end
 
-  defmodule SupportReportResponse do
-    @moduledoc false
-    require OpenApiSpex
-
-    OpenApiSpex.schema(%{
-      title: "SupportReportResponse",
-      type: :object,
-      properties: %{data: SupportReport},
-      required: [:data]
-    })
-  end
-
-  defmodule SupportReportListResponse do
-    @moduledoc false
-    require OpenApiSpex
-
-    OpenApiSpex.schema(%{
-      title: "SupportReportListResponse",
-      type: :object,
-      properties: %{data: %Schema{type: :array, items: SupportReport}},
-      required: [:data]
-    })
-  end
+  item_response(SupportReportResponse, of: SupportReport)
+  list_response(SupportReportListResponse, of: SupportReport)
 
   defmodule SupportReportCreateRequest do
     @moduledoc false
@@ -2029,7 +2008,7 @@ defmodule FountainWeb.Schemas do
       title: "SupportReportCreateRequest",
       type: :object,
       properties: %{
-        category: %Schema{type: :string, enum: ["bug", "stuck", "question", "idea", "other"]},
+        category: %Schema{type: :string, enum: Fountain.Support.Report.categories()},
         message: %Schema{type: :string, minLength: 1, maxLength: 20_000},
         context: %Schema{
           type: :object,
