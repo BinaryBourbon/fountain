@@ -56,7 +56,7 @@ defmodule Fountain.Team.McpTest do
 
   defp payload(resp), do: resp["result"].content |> hd() |> Map.fetch!(:text) |> Jason.decode!()
 
-  test "initialize / tools/list advertise the four tools" do
+  test "initialize / tools/list advertise the five tools" do
     resp =
       Mcp.handle(%{"jsonrpc" => "2.0", "id" => 1, "method" => "tools/list"}, %{
         user_id: "x",
@@ -64,7 +64,7 @@ defmodule Fountain.Team.McpTest do
       })
 
     assert Enum.map(resp["result"].tools, & &1.name) ==
-             ~w(list_teammates get_teammate send_to_teammate read_teammate)
+             ~w(list_teammates get_teammate send_to_teammate wait_for_teammate read_teammate)
 
     assert :noreply =
              Mcp.handle(%{"jsonrpc" => "2.0", "method" => "notifications/initialized"}, %{})
@@ -151,6 +151,95 @@ defmodule Fountain.Team.McpTest do
              %{"turn" => 1, "reply" => "hi there", "status" => "completed"},
              %{"turn" => 2, "status" => "running"}
            ] = p["turns"]
+  end
+
+  test "tools/list includes wait_for_teammate" do
+    resp =
+      Mcp.handle(%{"jsonrpc" => "2.0", "id" => 1, "method" => "tools/list"}, %{
+        user_id: "x",
+        self: nil
+      })
+
+    assert "wait_for_teammate" in Enum.map(resp["result"].tools, & &1.name)
+  end
+
+  test "wait_for_teammate returns immediately when the latest turn is terminal", %{
+    ctx: ctx,
+    eng: eng,
+    user: user
+  } do
+    conv = Team.get_teammate(user.id, eng.id).conversation
+
+    insert_turn(conv, %{
+      turn_number: 1,
+      prompt: "hello",
+      status: "completed",
+      reply_text: "hi there"
+    })
+
+    p =
+      payload(call(ctx, "wait_for_teammate", %{"teammate" => "engineer", "timeout_seconds" => 5}))
+
+    assert p["done"] == true
+    assert p["turn"]["reply"] == "hi there"
+  end
+
+  test "wait_for_teammate waits for the turn after since_turn, and times out honestly", %{
+    ctx: ctx,
+    eng: eng,
+    user: user
+  } do
+    conv = Team.get_teammate(user.id, eng.id).conversation
+
+    insert_turn(conv, %{
+      turn_number: 1,
+      prompt: "old",
+      status: "completed",
+      reply_text: "old reply"
+    })
+
+    running = insert_turn(conv, %{turn_number: 2, prompt: "new", status: "running"})
+    ticks = :counters.new(1, [])
+
+    sleep = fn _ms ->
+      :counters.add(ticks, 1, 1)
+
+      if :counters.get(ticks, 1) == 2 do
+        {:ok, _} =
+          Fountain.Repo.update(
+            Ecto.Changeset.change(running, status: "completed", reply_text: "new reply")
+          )
+      end
+
+      :ok
+    end
+
+    p =
+      payload(
+        call(Map.put(ctx, :sleep, sleep), "wait_for_teammate", %{
+          "teammate" => "engineer",
+          "since_turn" => 1,
+          "timeout_seconds" => 30
+        })
+      )
+
+    assert p["done"] == true
+    assert p["turn"]["turn"] == 2
+    assert p["turn"]["reply"] == "new reply"
+
+    insert_turn(conv, %{turn_number: 3, prompt: "stuck", status: "running"})
+
+    p =
+      payload(
+        call(Map.put(ctx, :sleep, fn _ -> :ok end), "wait_for_teammate", %{
+          "teammate" => "engineer",
+          "since_turn" => 2,
+          "timeout_seconds" => 1
+        })
+      )
+
+    assert p["timed_out"] == true
+    assert p["latest_turn"]["turn"] == 3
   end
 
   test "conversation_mcp_servers is only for team conversations", %{user: user, eng: eng} do
