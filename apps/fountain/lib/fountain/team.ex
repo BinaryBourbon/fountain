@@ -14,6 +14,12 @@ defmodule Fountain.Team do
   a fresh one under the same binding — the agent gets a new computer, and the
   team list keeps showing the same teammate.
 
+  A teammate can also start over without losing its computer:
+  `open_fresh_conversation/3` retires the current conversation (it stays in
+  the teammate's history, past resuming) and opens a new one on the same
+  sandbox — the next message runs a fresh runtime session on the same disk,
+  the files and installed tools still there.
+
   Removing a teammate terminates the live conversation and clears the binding
   on every conversation this agent had under it, so the rows stay in the
   user's history (`/conversations`) but leave the team. Its schedules
@@ -374,6 +380,146 @@ defmodule Fountain.Team do
             err
         end
     end
+  end
+
+  @doc """
+  Open a fresh conversation for the teammate on its current computer.
+
+  The current conversation is released — `terminated`, past resuming, listed
+  behind the new one in `list_teammate_conversations/2` — and a new one is
+  opened under the same binding, carrying the teammate's name, environment
+  and vault, and pointing at the **same sandbox**: the agent's next message
+  wakes it through the ordinary reattach path and starts a new runtime
+  session there, so the context is fresh but the disk is not. Nothing is
+  provisioned, and the sandbox is not touched at all (a parked one stays
+  parked until that message).
+
+  When the computer is gone — the sandbox `terminated` or `failed`, or the
+  current conversation already past resuming — there is nothing to keep, and
+  the new conversation is opened the way `add_teammate/4` opens one: a fresh
+  sandbox, provisioning now. Either way the caller gets the conversation that
+  is current from here on.
+
+  Returns `{:ok, conv}`; `{:error, :not_found}` off the team; `{:error,
+  :busy}` while a turn is running (nothing is interrupted — interrupt first);
+  `{:error, :provisioning}` while the computer is still starting; else the
+  `start_conversation/2` errors on the fallback path. Audited as
+  `team.conversation.rotated` (with `conversation.created` underneath);
+  broadcasts the roster change, so a client following the stream re-lists
+  and follows the new conversation.
+  """
+  def open_fresh_conversation(user_id, agent_id, opts \\ [])
+      when is_binary(user_id) and is_binary(agent_id) and is_list(opts) do
+    case get_teammate(user_id, agent_id) do
+      nil ->
+        {:error, :not_found}
+
+      %{conversation: conv} ->
+        # Ownership: `conv` (and its preloaded sandbox) came from the
+        # tenant-scoped get_teammate above.
+        with :ok <- releasable(conv) do
+          rotate(user_id, agent_id, conv, opts)
+        end
+    end
+  end
+
+  # A computer mid-provision cannot change hands: the server holding it is
+  # inside the provision and will mark the row ready or failed on its own.
+  defp releasable(%Conversation{sandbox: %{status: s}}) when s in ["pending", "starting"],
+    do: {:error, :provisioning}
+
+  defp releasable(_conv), do: :ok
+
+  defp rotate(user_id, agent_id, %Conversation{} = prev, opts) do
+    keep? = live?(prev) and reusable_sandbox?(prev.sandbox)
+
+    # Release the live one first (a running turn refuses here, before anything
+    # is created); a conversation already past resuming has nothing to release.
+    # `audit: false`: the rotation below is what the user asked for.
+    release =
+      if live?(prev),
+        do: ConversationServer.release_conversation(prev.id, audit: false),
+        else: :ok
+
+    result =
+      case release do
+        :ok when keep? -> open_on_sandbox(user_id, agent_id, prev, opts)
+        :ok -> open_on_new_sandbox(user_id, agent_id, prev, opts)
+        {:error, _} = err -> err
+      end
+
+    with {:ok, conv} <- result do
+      record(user_id, "team.conversation.rotated", conv, opts, %{
+        "previous_conversation_id" => prev.id,
+        "computer_kept" => keep?
+      })
+
+      broadcast_changed(user_id)
+    end
+
+    result
+  end
+
+  defp reusable_sandbox?(%{status: s}) when s in ["ready", "suspended"], do: true
+  defp reusable_sandbox?(_sandbox), do: false
+
+  # The same sandbox, a new conversation row: `idle` with no server, which is
+  # exactly what a parked teammate looks like — `ConversationServer.send_prompt/4`
+  # finds no server, `Conversations.wake_conversation/2` probes the sandbox and
+  # reattaches. The runtime session id is left nil on purpose: that is the
+  # fresh start. `runtime` is snapshotted from the agent as start_conversation
+  # does, so a later change of the agent's runtime does not rewrite history.
+  defp open_on_sandbox(user_id, agent_id, %Conversation{} = prev, opts) do
+    agent = Agents.get_agent(agent_id, user_id)
+
+    attrs = %{
+      sandbox_id: prev.sandbox_id,
+      agent_id: agent_id,
+      vault_id: prev.vault_id,
+      environment_id: prev.environment_id,
+      user_id: user_id,
+      runtime: (agent && agent.runtime) || prev.runtime,
+      status: "idle",
+      source: Keyword.get(opts, :source, "ui"),
+      channel_id: @channel,
+      title: prev.title
+    }
+
+    with {:ok, conv} <- Conversations.create_conversation(attrs) do
+      Audit.record(%{
+        user_id: user_id,
+        action: "conversation.created",
+        resource_type: "conversation",
+        resource_id: conv.id,
+        actor: Keyword.get(opts, :actor, "self"),
+        request_ip: Keyword.get(opts, :request_ip),
+        metadata: %{
+          "agent_id" => agent_id,
+          "agent_name" => agent && agent.name,
+          "source" => conv.source,
+          "with_prompt" => false,
+          "sandbox_reused_from" => prev.id
+        }
+      })
+
+      {:ok, Conversations.get_conversation(conv.id, user_id) || conv}
+    end
+  end
+
+  # The computer is gone: a new one, provisioning now — what add_teammate does.
+  defp open_on_new_sandbox(user_id, agent_id, %Conversation{} = prev, opts) do
+    Conversations.start_conversation(
+      %{
+        "agent_id" => agent_id,
+        "user_id" => user_id,
+        "channel_id" => @channel,
+        "source" => Keyword.get(opts, :source, "ui"),
+        "title" => prev.title,
+        "environment_id" => prev.environment_id,
+        "vault_id" => prev.vault_id
+      },
+      opts
+    )
   end
 
   @doc """

@@ -139,6 +139,42 @@ defmodule FountainWeb.TeamController do
     end
   end
 
+  operation(:fresh_conversation,
+    summary: "Open a fresh conversation on the teammate's computer",
+    description:
+      "Retires the teammate's current conversation — it stays in its history, past " <>
+        "resuming — and opens a new one on the **same sandbox**: the next message starts " <>
+        "a fresh runtime session on the same disk, files and installed tools intact. " <>
+        "Nothing is provisioned and nothing is interrupted: 400 `conversation_busy` " <>
+        "while a turn is running (interrupt first), 503 `provisioning` while the " <>
+        "computer is still starting. When the computer is gone (sandbox terminated or " <>
+        "failed, or the conversation already past resuming) a new sandbox is " <>
+        "provisioned instead, as `POST /api/team` does. 201 with the teammate and its " <>
+        "new conversation; the stream sends `team`. Audited as `team.conversation.rotated`.",
+    parameters: [agent_id: [in: :path, type: :string, required: true]],
+    responses: [
+      created: {"Teammate", "application/json", Schemas.TeammateResponse},
+      not_found: {"Not on the team", "application/json", Schemas.Error},
+      bad_request: {"A turn is still running", "application/json", Schemas.Error},
+      service_unavailable: {"The computer is still starting", "application/json", Schemas.Error}
+    ]
+  )
+
+  def fresh_conversation(conn, %{"agent_id" => agent_id}) do
+    user = conn.assigns.current_user
+    opts = [source: "api"] ++ Audited.attribution(conn)
+
+    with {:ok, _conv} <- Team.open_fresh_conversation(user.id, agent_id, opts),
+         %{} = teammate <- Team.get_teammate(user.id, agent_id) || {:error, :not_found} do
+      conn
+      |> put_status(:created)
+      |> render(:show, teammate: teammate)
+    else
+      {:error, :busy} -> {:error, "conversation_busy"}
+      {:error, _} = err -> err
+    end
+  end
+
   operation(:delete,
     summary: "Remove an agent from the team",
     description:

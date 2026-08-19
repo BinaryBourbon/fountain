@@ -380,6 +380,8 @@ defmodule FountainWeb.Router do
     post "/team/:agent_id/messages", TeamController, :message
     # The teammate's history (#832): every conversation it has had on the team.
     get "/team/:agent_id/conversations", TeamController, :conversations
+    # A fresh conversation on the same computer; the current one is retired.
+    post "/team/:agent_id/conversations", TeamController, :fresh_conversation
 
     # Team schedules (#825): the routines `/team` offers, per teammate.
     get "/team/:agent_id/schedules", TeamScheduleController, :index

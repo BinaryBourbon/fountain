@@ -51,6 +51,26 @@ defmodule Fountain.Conversations do
   def _unsafe_get_sandbox!(id), do: Repo.get!(Sandbox, id)
 
   @doc """
+  Whether a conversation other than `conv_id` still holds `sandbox_id` — one
+  that is not `terminated`/`failed`. A sandbox normally has one conversation;
+  it gets a second when a teammate starts a fresh conversation on the same
+  computer (`ConversationServer.release_conversation/2`, `Fountain.Team`),
+  and from then on the retired thread's lifecycle must not reach the disk
+  its successor is running on. `_unsafe_`: callers have established
+  ownership of `conv_id` already (a GenServer, or a scoped fetch before it).
+  """
+  def _unsafe_sandbox_held_by_other?(sandbox_id, conv_id)
+      when is_binary(sandbox_id) and is_binary(conv_id) do
+    Repo.exists?(
+      from(c in Conversation,
+        where:
+          c.sandbox_id == ^sandbox_id and c.id != ^conv_id and
+            c.status not in ["terminated", "failed"]
+      )
+    )
+  end
+
+  @doc """
   Load any tenant's conversation for the admin support view (#446).
 
   Returns the conversation with owner/agent/sandbox preloaded plus turn and

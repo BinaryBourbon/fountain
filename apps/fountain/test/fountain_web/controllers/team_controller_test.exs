@@ -356,6 +356,84 @@ defmodule FountainWeb.TeamControllerTest do
     end
   end
 
+  describe "POST /api/team/:agent_id/conversations" do
+    test "opens a fresh conversation on the same computer; the old one is retired", %{
+      conn: conn,
+      user: user,
+      raw_key: key
+    } do
+      ada = insert_agent(user_id: user.id, name: "Ada")
+      sandbox = insert_sandbox(user_id: user.id, status: "ready")
+      prev = insert_teammate_conv(user, ada, sandbox: sandbox, title: "Ada (staging)")
+
+      body =
+        conn
+        |> authed_with_key(key)
+        |> post("/api/team/#{ada.id}/conversations")
+        |> json_response(201)
+
+      entry = body["data"]
+      assert entry["agent_id"] == ada.id
+      assert entry["name"] == "Ada (staging)"
+      refute entry["conversation"]["id"] == prev.id
+      assert entry["conversation"]["sandbox_id"] == sandbox.id
+      assert entry["conversation"]["status"] == "idle"
+      # Same computer, no server yet: online, wakes on the next message.
+      assert entry["presence"]["state"] == "online"
+
+      assert Repo.reload(prev).status == "terminated"
+      assert Repo.reload(sandbox).status == "ready"
+
+      history =
+        conn
+        |> authed_with_key(key)
+        |> get("/api/team/#{ada.id}/conversations")
+        |> json_response(200)
+
+      assert Enum.map(history["data"], &{&1["id"], &1["current"]}) == [
+               {entry["conversation"]["id"], true},
+               {prev.id, false}
+             ]
+
+      assert Enum.any?(Audit.list_recent_for_user(user.id, 20), fn e ->
+               e.action == "team.conversation.rotated" and e.actor == "api" and
+                 e.metadata["previous_conversation_id"] == prev.id and
+                 e.metadata["computer_kept"] == true
+             end)
+    end
+
+    test "400 conversation_busy while a turn runs; 503 while the computer starts; 404 off the team",
+         %{conn: conn, user: user, raw_key: key} do
+      ada = insert_agent(user_id: user.id, name: "Ada")
+      sandbox = insert_sandbox(user_id: user.id, status: "ready")
+      insert_teammate_conv(user, ada, sandbox: sandbox, status: "running")
+      stub(ConversationServer, :release_conversation, fn _id, _opts -> {:error, :busy} end)
+
+      assert %{"error" => "conversation_busy"} =
+               conn
+               |> authed_with_key(key)
+               |> post("/api/team/#{ada.id}/conversations")
+               |> json_response(400)
+
+      linus = insert_agent(user_id: user.id, name: "Linus")
+      starting = insert_sandbox(user_id: user.id, status: "starting")
+      insert_teammate_conv(user, linus, sandbox: starting, status: "pending")
+
+      assert %{"error" => "provisioning"} =
+               conn
+               |> authed_with_key(key)
+               |> post("/api/team/#{linus.id}/conversations")
+               |> json_response(503)
+
+      loner = insert_agent(user_id: user.id)
+
+      assert conn
+             |> authed_with_key(key)
+             |> post("/api/team/#{loner.id}/conversations")
+             |> json_response(404)
+    end
+  end
+
   describe "DELETE /api/team/:agent_id" do
     test "removes the teammate; 404 when not on the team", %{conn: conn, user: user, raw_key: key} do
       ada = insert_agent(user_id: user.id, name: "Ada")

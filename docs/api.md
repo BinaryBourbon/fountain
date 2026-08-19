@@ -383,6 +383,23 @@ stays bound to the team channel until the teammate is removed, so it is
 listed behind the current one with `current: false`; read it with
 `GET /api/conversations/:id/events`.
 
+`POST /api/team/:agent_id/conversations` starts the teammate over without
+losing its computer: the current conversation is retired — `terminated`,
+listed behind the new one with `current: false` — and a new conversation is
+opened under the binding, carrying the name, environment and vault and
+pointing at the **same sandbox**. Nothing is provisioned or interrupted: the
+next message wakes that sandbox through the ordinary reattach path and
+starts a fresh runtime session on it, so the agent's context is new but its
+files, clones and installed tools are where it left them. `201` with the
+teammate and its new conversation; `400 conversation_busy` while a turn is
+running (interrupt first), `503 provisioning` while the computer is still
+starting. When the computer is gone (sandbox `terminated`/`failed`, or the
+conversation already past resuming) a new sandbox is provisioned instead,
+exactly as `POST /api/team` would. Audited as `team.conversation.rotated`;
+the stream sends `team`. To retire the thread *and* the computer, the old
+way still works: `POST /api/conversations/:id/terminate` on the current
+conversation, and the next message opens a fresh one on a new sandbox.
+
 `POST /api/team` answers `201` with the teammate, or `200` when the agent was
 already on the team (its live conversation, the attributes ignored). `name`
 becomes the conversation's `title`; `environment_id` and `vault_id` go through
