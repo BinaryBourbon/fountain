@@ -203,6 +203,41 @@ defmodule FountainWeb.TeamCommsControllerTest do
     end
   end
 
+  describe "PATCH /api/team/:agent_id/contact" do
+    test "changes the prompt number", %{conn: conn, user: user, raw_key: key} do
+      flag(true)
+      {agent, _} = teammate(user)
+      stub_providers_ok()
+      give(conn, key, agent.id) |> json_response(201)
+
+      body =
+        conn
+        |> authed_with_key(key)
+        |> put_req_header("content-type", "application/json")
+        |> patch("/api/team/#{agent.id}/contact", %{"prompt_from_number" => "+1 555 000 2222"})
+        |> json_response(200)
+
+      assert body["data"]["contact"]["prompt_from_number"] == "+15550002222"
+      assert body["data"]["contact"]["phone"] == "+15551234567"
+
+      conn
+      |> authed_with_key(key)
+      |> put_req_header("content-type", "application/json")
+      |> patch("/api/team/#{agent.id}/contact", %{"prompt_from_number" => "nope"})
+      |> json_response(422)
+    end
+
+    test "is 404 without a contact", %{conn: conn, user: user, raw_key: key} do
+      {agent, _} = teammate(user)
+
+      conn
+      |> authed_with_key(key)
+      |> put_req_header("content-type", "application/json")
+      |> patch("/api/team/#{agent.id}/contact", %{"prompt_from_number" => "+15550002222"})
+      |> json_response(404)
+    end
+  end
+
   describe "DELETE /api/team/:agent_id/contact" do
     test "releases the contact", %{conn: conn, user: user, raw_key: key} do
       flag(true)

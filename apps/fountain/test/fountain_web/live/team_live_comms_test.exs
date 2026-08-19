@@ -93,6 +93,20 @@ defmodule FountainWeb.TeamLiveCommsTest do
     refute html =~ "provision-contact-button"
     assert %Fountain.Team.Contact{} = Comms.get_contact(user.id, agent.id)
 
+    # Change the sender number without buying anything.
+    Req.Test.stub(AgentMail, fn _ -> flunk("no provider call on change") end)
+    Req.Test.stub(AgentPhone, fn _ -> flunk("no provider call on change") end)
+    view |> element("#change-contact-number") |> render_click()
+
+    html =
+      view |> form("#contact-form", %{"prompt_from_number" => "555 000 2222"}) |> render_submit()
+
+    assert html =~ "+15550002222"
+    refute html =~ "+15550001111"
+
+    stub_providers_ok()
+    Req.Test.allow(AgentMail, self(), view.pid)
+    Req.Test.allow(AgentPhone, self(), view.pid)
     html = view |> element("#release-contact-button") |> render_click()
     refute html =~ "ada-1@agentmail.to"
     assert html =~ "provision-contact-button"

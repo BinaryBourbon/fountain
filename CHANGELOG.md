@@ -36,6 +36,8 @@ upgrade, is in
   in the teammate's conversation (AgentPhone's master webhook at `POST
   /api/webhooks/agentphone`, HMAC-verified with `AGENTPHONE_WEBHOOK_SECRET`,
   deduplicated by delivery id); texts from anyone else are ignored.
+  `PATCH /api/team/:agent_id/contact` (and "change" on `/team`) moves that
+  number without buying or releasing anything.
 - **Per-user feature flags** (`Fountain.FeatureFlags`), evaluated by PostHog
   (`POSTHOG_PROJECT_API_KEY`, `POSTHOG_HOST`) with a one-minute per-user
   cache; when PostHog is unreachable the last answer it gave is reused and,

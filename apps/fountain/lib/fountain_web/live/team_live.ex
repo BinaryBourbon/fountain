@@ -45,6 +45,7 @@ defmodule FountainWeb.TeamLive do
       # (`Fountain.Team.Comms`, flag `team_comms`.) Read once at mount.
       |> assign(:comms, Comms.status(socket.assigns.current_user))
       |> assign(:contact_form_open, false)
+      |> assign(:contact_form_mode, :provision)
       |> assign(:contact_number, "")
       |> assign(:addable_agents, Team.list_addable_agents(user_id))
       |> assign(:selected, nil)
@@ -330,7 +331,53 @@ defmodule FountainWeb.TeamLive do
   # ── contact: the teammate's own email address and phone number ─────────────
 
   def handle_event("open_contact_form", _, socket),
-    do: {:noreply, assign(socket, contact_form_open: true)}
+    do: {:noreply, assign(socket, contact_form_open: true, contact_form_mode: :provision)}
+
+  def handle_event(
+        "open_change_number",
+        _,
+        %{assigns: %{selected: %{contact: %{} = c}}} = socket
+      ),
+      do:
+        {:noreply,
+         assign(socket,
+           contact_form_open: true,
+           contact_form_mode: :change,
+           contact_number: c.prompt_from_number || ""
+         )}
+
+  def handle_event("open_change_number", _, socket), do: {:noreply, socket}
+
+  def handle_event(
+        "update_contact",
+        %{"prompt_from_number" => number},
+        %{assigns: %{selected: %{} = selected}} = socket
+      ) do
+    opts = FountainWeb.Audited.attribution(socket)
+
+    case Comms.update_contact(
+           socket.assigns.user_id,
+           selected.agent.id,
+           %{"prompt_from_number" => number},
+           opts
+         ) do
+      {:ok, contact} ->
+        {:noreply,
+         socket
+         |> assign(contact_form_open: false, contact_number: "")
+         |> refresh_selected_teammate()
+         |> put_flash(
+           :info,
+           "Texts from #{contact.prompt_from_number} now reach #{selected.name}."
+         )}
+
+      {:error, reason} ->
+        {:noreply,
+         socket |> assign(:contact_number, number) |> put_flash(:error, comms_error(reason))}
+    end
+  end
+
+  def handle_event("update_contact", _, socket), do: {:noreply, socket}
 
   def handle_event("close_contact_form", _, socket),
     do: {:noreply, assign(socket, contact_form_open: false, contact_number: "")}
@@ -833,7 +880,12 @@ defmodule FountainWeb.TeamLive do
 
         <%= if @selected do %>
           <.thread_header teammate={@selected} schedule_count={length(@schedules)} comms={@comms} />
-          <.contact_form :if={@contact_form_open} number={@contact_number} teammate={@selected} />
+          <.contact_form
+            :if={@contact_form_open}
+            number={@contact_number}
+            teammate={@selected}
+            mode={@contact_form_mode}
+          />
 
           <div
             id={"team-thread-#{@selected.conversation.id}"}
@@ -1001,14 +1053,17 @@ defmodule FountainWeb.TeamLive do
 
   attr :teammate, :map, required: true
   attr :number, :string, default: ""
+  attr :mode, :atom, default: :provision
 
   # Collected whenever a teammate is given a number: the one phone whose
   # texts to it arrive as prompts. Nothing is bought until this is submitted.
+  # In :change mode the same form only moves that number — nothing is bought
+  # or released.
   defp contact_form(assigns) do
     ~H"""
     <form
       id="contact-form"
-      phx-submit="provision_contact"
+      phx-submit={if @mode == :change, do: "update_contact", else: "provision_contact"}
       phx-change="validate_contact"
       class="flex flex-wrap items-end gap-3 px-6 py-3 border-b border-[var(--color-border)] bg-[var(--color-bg-2)] text-sm"
     >
@@ -1031,7 +1086,7 @@ defmodule FountainWeb.TeamLive do
         type="submit"
         class="rounded-md bg-blue-600 text-white px-3 py-1.5 hover:bg-blue-700"
       >
-        Give email &amp; phone
+        {if @mode == :change, do: "Change number", else: "Give email & phone"}
       </button>
       <button
         type="button"
@@ -1040,8 +1095,11 @@ defmodule FountainWeb.TeamLive do
       >
         Cancel
       </button>
-      <span class="basis-full text-xs text-[var(--color-text-muted)]">
+      <span :if={@mode == :provision} class="basis-full text-xs text-[var(--color-text-muted)]">
         This provisions an AgentMail inbox and an AgentPhone number for this teammate only (both billed); texts from any other number are ignored.
+      </span>
+      <span :if={@mode == :change} class="basis-full text-xs text-[var(--color-text-muted)]">
+        Only the sender number changes; the teammate keeps its address and number.
       </span>
     </form>
     """
@@ -1104,7 +1162,17 @@ defmodule FountainWeb.TeamLive do
             class="truncate"
             title="Texts from this number to the teammate's number arrive as prompts"
           >
-            &middot; texts from <span class="font-mono">{@contact.prompt_from_number}</span> prompt
+            &middot; texts from <span class="font-mono">{@contact.prompt_from_number}</span>
+            prompt
+            <button
+              :if={@comms.enabled}
+              id="change-contact-number"
+              type="button"
+              phx-click="open_change_number"
+              class="ml-1 underline decoration-dotted hover:text-[var(--color-text)]"
+            >
+              change
+            </button>
           </span>
         </div>
       </div>

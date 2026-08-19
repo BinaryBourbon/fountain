@@ -234,6 +234,41 @@ defmodule Fountain.Team.CommsTest do
     end
   end
 
+  describe "update_contact/4" do
+    setup do
+      flag(true)
+      :ok
+    end
+
+    test "changes the prompt number without touching the providers" do
+      user = insert_verified_user()
+      agent = teammate(user)
+      stub_providers_ok()
+      {:ok, _} = Comms.provision_contact(user.id, agent.id, @req)
+      Req.Test.stub(AgentMail, fn _ -> flunk("no provider call on update") end)
+      Req.Test.stub(AgentPhone, fn _ -> flunk("no provider call on update") end)
+
+      assert {:ok, %Contact{prompt_from_number: "+15550002222"}} =
+               Comms.update_contact(user.id, agent.id, %{"prompt_from_number" => "555-000-2222"})
+
+      assert {:error, %Ecto.Changeset{}} =
+               Comms.update_contact(user.id, agent.id, %{"prompt_from_number" => ""})
+
+      assert [_] =
+               user.id
+               |> Audit.list_recent_for_user(10)
+               |> Enum.filter(&(&1.action == "team.contact.updated"))
+    end
+
+    test "no contact is not_found" do
+      user = insert_verified_user()
+      agent = teammate(user)
+
+      assert {:error, :not_found} =
+               Comms.update_contact(user.id, agent.id, %{"prompt_from_number" => "+15550002222"})
+    end
+  end
+
   describe "release_contact/3" do
     setup do
       flag(true)
