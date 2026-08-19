@@ -1083,9 +1083,10 @@ defmodule FountainWeb.TeamLive do
       <button
         id="contact-form-submit"
         type="submit"
-        class="rounded-md bg-blue-600 text-white px-3 py-1.5 hover:bg-blue-700"
+        disabled={String.trim(@number) == ""}
+        class="rounded-md bg-blue-600 text-white px-3 py-1.5 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
       >
-        {if @mode == :change, do: "Change number", else: "Give email & phone"}
+        {if @mode == :change, do: "Agree & change number", else: "Agree & give email & phone"}
       </button>
       <button
         type="button"
@@ -1094,6 +1095,14 @@ defmodule FountainWeb.TeamLive do
       >
         Cancel
       </button>
+      <p id="sms-consent" class="basis-full text-sm text-[var(--color-text-secondary)] max-w-prose">
+        By entering your number you agree to receive text messages from Fountain — your
+        teammate's replies and occasional notifications — at this number. Message frequency
+        varies. Msg &amp; data rates may apply. Reply <span class="font-mono">STOP</span>
+        to opt out at any time, <span class="font-mono">HELP</span>
+        for help. <.link href={~p"/privacy"} target="_blank" class="underline">Privacy Policy</.link>
+        &middot; <.link href={~p"/terms"} target="_blank" class="underline">Terms</.link>
+      </p>
       <span :if={@mode == :provision} class="basis-full text-xs text-[var(--color-text-muted)]">
         This provisions an AgentMail inbox and an AgentPhone number for this teammate only (both billed); texts from any other number are ignored.
       </span>
@@ -1162,7 +1171,9 @@ defmodule FountainWeb.TeamLive do
             title="Texts from this number to the teammate's number arrive as prompts"
           >
             &middot; texts from <span class="font-mono">{@contact.prompt_from_number}</span>
-            prompt
+            {if @contact.prompt_opted_out_at,
+              do: "paused (STOP received; text START to resume)",
+              else: "prompt"}
             <button
               :if={@comms.enabled}
               id="change-contact-number"

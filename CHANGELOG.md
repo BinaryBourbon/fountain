@@ -37,7 +37,10 @@ upgrade, is in
   /api/webhooks/agentphone`, HMAC-verified with `AGENTPHONE_WEBHOOK_SECRET`,
   deduplicated by delivery id); texts from anyone else are ignored.
   `PATCH /api/team/:agent_id/contact` (and "change" on `/team`) moves that
-  number without buying or releasing anything.
+  number without buying or releasing anything. The form carries the SMS
+  opt-in statement (frequency, rates, STOP/HELP, privacy + terms), and
+  `STOP`/`START`/`HELP` from the registered number are honoured in the
+  inbound path (`contact.prompt_opted_out_at`).
 - **Per-user feature flags** (`Fountain.FeatureFlags`), evaluated by PostHog
   (`POSTHOG_PROJECT_API_KEY`, `POSTHOG_HOST`) with a one-minute per-user
   cache; when PostHog is unreachable the last answer it gave is reused and,

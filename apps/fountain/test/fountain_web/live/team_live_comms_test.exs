@@ -80,6 +80,14 @@ defmodule FountainWeb.TeamLiveCommsTest do
     html = view |> element("#provision-contact-button") |> render_click()
     assert html =~ "contact-form"
     refute html =~ "ada-1@agentmail.to"
+    # The SMS opt-in copy an A2P reviewer looks for, with the legal links.
+    assert html =~ "agree to receive text messages from Fountain"
+    assert html =~ "Msg &amp; data rates may apply"
+    assert html =~ "STOP"
+    assert html =~ "HELP"
+    assert html =~ ~s(href="/privacy")
+    assert html =~ ~s(href="/terms")
+    assert html =~ "Agree &amp; give email &amp; phone"
 
     html =
       view

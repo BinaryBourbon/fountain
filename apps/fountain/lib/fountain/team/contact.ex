@@ -27,6 +27,9 @@ defmodule Fountain.Team.Contact do
     # only sends from an attached number. Ours, created per teammate.
     field :phone_agent_id, :string
     field :prompt_from_number, :string
+    # Set when the registered number texted STOP; cleared by START or by a
+    # fresh number (new consent). While set, its texts are not prompts.
+    field :prompt_opted_out_at, :utc_datetime
 
     belongs_to :user, Fountain.Accounts.User
     belongs_to :agent, Fountain.Agents.Agent
@@ -42,7 +45,8 @@ defmodule Fountain.Team.Contact do
     :phone_number,
     :phone_number_id,
     :phone_agent_id,
-    :prompt_from_number
+    :prompt_from_number,
+    :prompt_opted_out_at
   ]
 
   def changeset(contact, attrs) do
@@ -67,13 +71,20 @@ defmodule Fountain.Team.Contact do
     |> normalize_number(:prompt_from_number)
   end
 
-  @doc "Change the user-supplied part of an existing contact: `prompt_from_number`, required."
+  @doc """
+  Change the user-supplied part of an existing contact: `prompt_from_number`,
+  required. Entering a number is consent again, so a standing STOP is cleared.
+  """
   def update_changeset(%__MODULE__{} = contact, attrs) do
     contact
     |> cast(attrs, [:prompt_from_number])
     |> validate_required([:prompt_from_number])
     |> normalize_number(:prompt_from_number)
+    |> put_change(:prompt_opted_out_at, nil)
   end
+
+  @doc "Whether the registered number has opted out (texted STOP)."
+  def opted_out?(%__MODULE__{prompt_opted_out_at: at}), do: not is_nil(at)
 
   defp normalize_number(changeset, field) do
     case get_change(changeset, field) do

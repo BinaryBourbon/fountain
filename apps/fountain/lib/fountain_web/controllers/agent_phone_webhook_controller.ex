@@ -46,6 +46,7 @@ defmodule FountainWeb.AgentPhoneWebhookController do
               payload ->
                 case Inbound.handle(payload, delivery_id) do
                   {:ok, conv_id} -> %{status: "prompted", conversation_id: conv_id}
+                  {:handled, what} -> %{status: "handled", reason: to_string(what)}
                   {:ignored, reason} -> %{status: "ignored", reason: describe(reason)}
                 end
             end

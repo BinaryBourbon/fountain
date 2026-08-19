@@ -159,6 +159,27 @@ defmodule Fountain.Team.Comms do
   end
 
   @doc """
+  Record the registered number's SMS opt-out (`true`: it texted STOP) or
+  opt-in (`false`: START). Nothing is bought or released; while opted out
+  its texts are not prompts. Audited as `team.contact.opted_out` /
+  `team.contact.opted_in`.
+  """
+  def set_opt_out(%Contact{} = contact, opted_out?, opts \\ []) when is_boolean(opted_out?) do
+    at = if opted_out?, do: DateTime.utc_now() |> DateTime.truncate(:second)
+
+    case contact |> Ecto.Changeset.change(prompt_opted_out_at: at) |> Repo.update() do
+      {:ok, updated} ->
+        action = if opted_out?, do: "team.contact.opted_out", else: "team.contact.opted_in"
+        record(action, updated, opts, %{})
+        Team.broadcast_changed(updated.user_id)
+        {:ok, updated}
+
+      {:error, cs} ->
+        {:error, cs}
+    end
+  end
+
+  @doc """
   Take the teammate's email address and phone number away: the inbox and the
   number are deleted upstream and the contact row removed. A provider that
   no longer knows the resource (404) counts as released; any other provider
