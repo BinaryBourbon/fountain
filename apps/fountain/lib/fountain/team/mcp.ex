@@ -25,6 +25,12 @@ defmodule Fountain.Team.Mcp do
   @server_info %{name: "fountain-team", version: "1"}
   @mcp_name "fountain-team"
 
+  # wait_for_teammate: server-side poll, capped under the tunnel's idle limit.
+  @default_wait 60
+  @max_wait 90
+  @poll_ms 2_000
+  @terminal ~w(completed failed cancelled)
+
   def mcp_name, do: @mcp_name
 
   @doc "The tool catalogue advertised by `tools/list`."
@@ -277,11 +283,6 @@ defmodule Fountain.Team.Mcp do
   end
 
   defp call_tool(id, name, _args, _ctx), do: tool_error(id, "unknown tool: #{name}")
-
-  @default_wait 60
-  @max_wait 90
-  @poll_ms 2_000
-  @terminal ~w(completed failed cancelled)
 
   # ownership: the conversation id came from a teammate entry resolved through
   # Team.list_teammates(ctx.user_id) — a tenant-scoped read.
