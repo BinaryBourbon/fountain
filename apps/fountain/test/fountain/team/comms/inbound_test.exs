@@ -144,6 +144,101 @@ defmodule Fountain.Team.Comms.InboundTest do
     assert text =~ "(attachment: https://x/y.jpg)"
   end
 
+  describe "STOP / START / HELP from the registered number" do
+    setup do
+      # Keyword confirmations are texted back best-effort through AgentPhone.
+      test = self()
+
+      Req.Test.stub(Fountain.Team.Comms.AgentPhone, fn conn ->
+        send(test, {:confirm_sms, conn.body_params})
+        Req.Test.json(conn, %{"id" => "sms_c", "status" => "queued"})
+      end)
+
+      :ok
+    end
+
+    test "STOP opts the number out: no prompt, later texts dropped, audited", %{
+      user: user,
+      contact: contact
+    } do
+      assert {:handled, :opted_out} =
+               Inbound.handle(payload(%{"data" => %{"message" => " stop "}}), "k1")
+
+      refute_received {:sent, _, _, _, _}
+
+      assert_received {:confirm_sms,
+                       %{"number_id" => "num_1", "to_number" => @owner, "body" => body}}
+
+      assert body =~ "opted out"
+      assert body =~ "START"
+
+      assert %Contact{prompt_opted_out_at: %DateTime{}} = Fountain.Repo.get!(Contact, contact.id)
+
+      assert {:ignored, :opted_out} = Inbound.handle(payload(), "k2")
+      refute_received {:sent, _, _, _, _}
+
+      assert [_] =
+               user.id
+               |> Audit.list_recent_for_user(10)
+               |> Enum.filter(&(&1.action == "team.contact.opted_out"))
+    end
+
+    test "START opts back in", %{contact: contact} do
+      {:handled, :opted_out} = Inbound.handle(payload(%{"data" => %{"message" => "STOP"}}), "k3")
+
+      assert {:handled, :opted_in} =
+               Inbound.handle(payload(%{"data" => %{"message" => "START"}}), "k4")
+
+      assert %Contact{prompt_opted_out_at: nil} = Fountain.Repo.get!(Contact, contact.id)
+      assert {:ok, _} = Inbound.handle(payload(), "k5")
+      assert_received {:sent, _, _, _, _}
+    end
+
+    test "HELP is answered, not forwarded" do
+      assert {:handled, :help} =
+               Inbound.handle(payload(%{"data" => %{"message" => "help"}}), "k6")
+
+      assert_received {:confirm_sms, %{"body" => body}}
+      assert body =~ "STOP to opt out"
+      refute_received {:sent, _, _, _, _}
+    end
+
+    test "a keyword from a stranger is just ignored" do
+      assert {:ignored, :sender_not_allowed} =
+               Inbound.handle(
+                 payload(%{"data" => %{"from" => "+15559999999", "message" => "STOP"}}),
+                 "k7"
+               )
+
+      refute_received {:confirm_sms, _}
+    end
+
+    test "changing the number is new consent: the opt-out clears", %{
+      user: user,
+      agent: agent,
+      contact: _
+    } do
+      {:handled, :opted_out} = Inbound.handle(payload(%{"data" => %{"message" => "STOP"}}), "k8")
+      Application.put_env(:fountain, :feature_flag_overrides, %{"team_comms" => true})
+
+      assert {:ok, %Contact{prompt_opted_out_at: nil}} =
+               Fountain.Team.Comms.update_contact(user.id, agent.id, %{
+                 "prompt_from_number" => @owner
+               })
+    end
+
+    test "a refused confirmation changes nothing" do
+      Req.Test.stub(Fountain.Team.Comms.AgentPhone, fn conn ->
+        conn
+        |> Plug.Conn.put_status(403)
+        |> Req.Test.json(%{"detail" => "A2P registration required"})
+      end)
+
+      assert {:handled, :opted_out} =
+               Inbound.handle(payload(%{"data" => %{"message" => "STOP"}}), "k9")
+    end
+  end
+
   test "a send failure is reported, not raised" do
     stub(ConversationServer, :send_prompt, fn _, _, _, _ -> {:error, :busy} end)
     assert {:ignored, {:send_failed, :busy}} = Inbound.handle(payload(), "del_busy")

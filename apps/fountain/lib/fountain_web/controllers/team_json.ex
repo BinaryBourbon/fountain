@@ -41,6 +41,7 @@ defmodule FountainWeb.TeamJSON do
       email: (Fountain.Team.Contact.email?(c) && c.email_address) || nil,
       phone: (Fountain.Team.Contact.phone?(c) && c.phone_number) || nil,
       prompt_from_number: c.prompt_from_number,
+      prompt_opted_out_at: c.prompt_opted_out_at,
       inserted_at: c.inserted_at
     }
   end

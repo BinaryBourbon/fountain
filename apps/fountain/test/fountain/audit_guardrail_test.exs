@@ -81,6 +81,8 @@ defmodule Fountain.AuditGuardrailTest do
     # as `team.contact.sent` — an effect, not tenant state.
     {"team contact provision", &__MODULE__.do_contact_provision/1, "team.contact.provisioned"},
     {"team contact update", &__MODULE__.do_contact_update/1, "team.contact.updated"},
+    {"team contact opt-out", &__MODULE__.do_contact_opt_out/1, "team.contact.opted_out"},
+    {"team contact opt-in", &__MODULE__.do_contact_opt_in/1, "team.contact.opted_in"},
     {"team contact release", &__MODULE__.do_contact_release/1, "team.contact.released"},
     {"support report create", &__MODULE__.do_support_create/1, "support.report.created"},
     {"runner register", &__MODULE__.do_runner_register/1, "runner.registered"},
@@ -151,6 +153,7 @@ defmodule Fountain.AuditGuardrailTest do
           {Conversations, :delete_conversation, 2},
           {Fountain.Team.Comms, :provision_contact, 4},
           {Fountain.Team.Comms, :update_contact, 4},
+          {Fountain.Team.Comms, :set_opt_out, 3},
           {Fountain.Team.Comms, :release_contact, 3}
         ] do
       # `Code.ensure_loaded?/1` first: `function_exported?/3` answers about
@@ -380,6 +383,28 @@ defmodule Fountain.AuditGuardrailTest do
         Fountain.Team.Comms.update_contact(user.id, agent.id, %{
           "prompt_from_number" => "+15550002222"
         })
+    end)
+  end
+
+  def do_contact_opt_out(user) do
+    with_comms(user, fn agent ->
+      {:ok, c} =
+        Fountain.Team.Comms.provision_contact(user.id, agent.id, %{
+          "prompt_from_number" => "+15550001111"
+        })
+
+      {:ok, _} = Fountain.Team.Comms.set_opt_out(c, true)
+    end)
+  end
+
+  def do_contact_opt_in(user) do
+    with_comms(user, fn agent ->
+      {:ok, c} =
+        Fountain.Team.Comms.provision_contact(user.id, agent.id, %{
+          "prompt_from_number" => "+15550001111"
+        })
+
+      {:ok, _} = Fountain.Team.Comms.set_opt_out(c, false)
     end)
   end
 

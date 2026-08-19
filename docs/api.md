@@ -445,6 +445,11 @@ AgentPhone to `POST /api/webhooks/agentphone` (HMAC-verified with
 and can answer with its `sms_send` tool. Texts from any other number are
 acknowledged and ignored; deliveries are deduplicated by AgentPhone's
 `X-Webhook-ID`. Audited as `team.contact.prompted` (bytes, never the text).
+`STOP` (or `UNSUBSCRIBE`, `CANCEL`, `END`, `QUIT`) from that number opts it
+out — `contact.prompt_opted_out_at` is set and its texts are dropped until
+`START`, or until the number is changed (new consent); `HELP` is answered.
+Each keyword gets a confirmation texted back from the teammate's number,
+best-effort.
 
 `/messages` returns `202 {status: "queued", conversation_id}`; the id is the
 conversation the message went to, which is a new one when the teammate's

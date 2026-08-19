@@ -1723,6 +1723,14 @@ defmodule FountainWeb.Schemas do
             "E.164. The one number whose texts to `phone` arrive as prompts in the " <>
               "teammate's conversation; texts from anyone else are ignored."
         },
+        prompt_opted_out_at: %Schema{
+          type: :string,
+          format: :"date-time",
+          nullable: true,
+          description:
+            "Set when `prompt_from_number` texted STOP: its texts are dropped until it texts " <>
+              "START, or until the number is changed (new consent)."
+        },
         inserted_at: %Schema{type: :string, format: :"date-time"}
       },
       required: [:email, :phone]

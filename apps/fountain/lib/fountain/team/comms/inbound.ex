@@ -25,6 +25,15 @@ defmodule Fountain.Team.Comms.Inbound do
 
   Every prompt is audited as `team.contact.prompted` (bytes, never the
   text), actor `system:agentphone`.
+
+  **Opt-out keywords (A2P/10DLC).** From the registered number, a text that
+  is exactly `STOP` (or `STOPALL`, `UNSUBSCRIBE`, `CANCEL`, `END`, `QUIT`)
+  is not a prompt: it sets the contact's `prompt_opted_out_at`, and until
+  `START` (`UNSTOP`, `YES`) arrives — or the number is changed, which is new
+  consent — that number's texts are acknowledged and dropped. `HELP`
+  (`INFO`) is answered with a short help text. Each keyword gets a one-line
+  confirmation texted back from the teammate's number, best-effort (the
+  carrier may also answer STOP itself).
   """
 
   require Logger
@@ -36,6 +45,9 @@ defmodule Fountain.Team.Comms.Inbound do
 
   @actor "system:agentphone"
   @channels ~w(sms mms imessage)
+  @stop_words ~w(STOP STOPALL UNSUBSCRIBE CANCEL END QUIT)
+  @start_words ~w(START UNSTOP YES)
+  @help_words ~w(HELP INFO)
 
   @doc "The audit actor for prompts that came in by text."
   def actor, do: @actor
@@ -64,6 +76,8 @@ defmodule Fountain.Team.Comms.Inbound do
     with :ok <- fresh(delivery_id),
          {:ok, %Contact{} = contact} <- contact_for(to),
          :ok <- sender_allowed(contact, from),
+         :prompt <- keyword(contact, data, from),
+         :ok <- not_opted_out(contact),
          :ok <- available(contact),
          {:ok, text} <- body(data) do
       prompt = wrap(text, from, to, data)
@@ -85,6 +99,7 @@ defmodule Fountain.Team.Comms.Inbound do
       end
     else
       {:ignored, _} = ignored -> ignored
+      {:handled, _} = handled -> handled
     end
   end
 
@@ -115,6 +130,88 @@ defmodule Fountain.Team.Comms.Inbound do
   end
 
   defp sender_allowed(_contact, _from), do: {:ignored, :sender_not_allowed}
+
+  # STOP / START / HELP from the registered number are handled here, never
+  # forwarded. Returns `:prompt` for an ordinary text.
+  defp keyword(%Contact{} = contact, data, from) do
+    word = data |> Map.get("message", "") |> to_string() |> String.trim() |> String.upcase()
+
+    cond do
+      word in @stop_words ->
+        {:ok, updated} = Comms.set_opt_out(contact, true, actor: @actor)
+
+        confirm(
+          updated,
+          from,
+          "You've opted out: texts from this number no longer reach #{teammate_name(updated)} via Fountain. Reply START to resume."
+        )
+
+        {:handled, :opted_out}
+
+      word in @start_words ->
+        {:ok, updated} = Comms.set_opt_out(contact, false, actor: @actor)
+
+        confirm(
+          updated,
+          from,
+          "You're opted in: texts from this number reach #{teammate_name(updated)} via Fountain again. Reply STOP to opt out, HELP for help."
+        )
+
+        {:handled, :opted_in}
+
+      word in @help_words ->
+        confirm(
+          contact,
+          from,
+          "Fountain: texts from this number are forwarded to your teammate #{teammate_name(contact)} (#{contact.phone_number}). Msg & data rates may apply. Reply STOP to opt out. Help: #{help_url()}"
+        )
+
+        {:handled, :help}
+
+      true ->
+        :prompt
+    end
+  end
+
+  defp not_opted_out(%Contact{} = c) do
+    if Contact.opted_out?(c), do: {:ignored, :opted_out}, else: :ok
+  end
+
+  # Best-effort confirmation from the teammate's own number; a refusal
+  # (A2P registration pending, say) is logged and changes nothing.
+  defp confirm(%Contact{} = c, to, body) do
+    if Contact.phone?(c) do
+      case Comms.AgentPhone.send_message(%{
+             "number_id" => c.phone_number_id,
+             "to_number" => to,
+             "body" => body
+           }) do
+        {:ok, _} ->
+          :ok
+
+        {:error, reason} ->
+          Logger.info(
+            "team comms inbound: could not text a keyword confirmation: #{inspect(reason)}"
+          )
+      end
+    end
+
+    :ok
+  end
+
+  defp teammate_name(%Contact{user_id: uid, agent_id: aid}) do
+    case Team.get_teammate(uid, aid) do
+      %{name: name} -> name
+      _ -> "your teammate"
+    end
+  end
+
+  defp help_url do
+    case Application.get_env(:fountain, :support_email) do
+      email when is_binary(email) and email != "" -> email
+      _ -> Fountain.PublicUrl.base()
+    end
+  end
 
   defp available(%Contact{user_id: user_id}) do
     if Comms.available?(user_id), do: :ok, else: {:ignored, :unavailable}
