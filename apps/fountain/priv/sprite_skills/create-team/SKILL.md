@@ -68,7 +68,7 @@ cron, UTC).
 Reply with the roster as created (name, presence), who to message for what,
 and one concrete first message for each. Mention that teammates can reach
 each other (`fountain-team` tools: list_teammates, get_teammate,
-send_to_teammate, read_teammate) and that everything — brain, role, name —
+send_to_teammate, wait_for_teammate, read_teammate) and that everything — brain, role, name —
 is editable later from the team page. If you created a lead/gateway, say
 "send your asks to <lead> from now on."
 

@@ -25,6 +25,12 @@ defmodule Fountain.Team.Mcp do
   @server_info %{name: "fountain-team", version: "1"}
   @mcp_name "fountain-team"
 
+  # wait_for_teammate: server-side poll, capped under the tunnel's idle limit.
+  @default_wait 60
+  @max_wait 90
+  @poll_ms 2_000
+  @terminal ~w(completed failed cancelled)
+
   def mcp_name, do: @mcp_name
 
   @doc "The tool catalogue advertised by `tools/list`."
@@ -65,6 +71,30 @@ defmodule Fountain.Team.Mcp do
             }
           },
           required: ["teammate", "message"]
+        }
+      },
+      %{
+        name: "wait_for_teammate",
+        description:
+          "Block until a teammate's turn finishes, then return it (prompt, reply, status). Waits " <>
+            "up to timeout_seconds (default 60, max 90) — if it returns timed_out: true, just call " <>
+            "it again; do not end your own turn to wait. Pass since_turn (the `turn` number " <>
+            "send_to_teammate returned, minus one) to wait for that specific reply; without it, " <>
+            "waits for their latest turn.",
+        inputSchema: %{
+          type: "object",
+          properties: %{
+            teammate: %{type: "string", description: "Agent id, or a name/role to resolve"},
+            since_turn: %{
+              type: "integer",
+              description: "Wait for a terminal turn numbered above this"
+            },
+            timeout_seconds: %{
+              type: "integer",
+              description: "How long to block (default 60, max 90)"
+            }
+          },
+          required: ["teammate"]
         }
       },
       %{
@@ -154,7 +184,10 @@ defmodule Fountain.Team.Mcp do
                 sent: true,
                 teammate: t.name,
                 agent_id: t.agent.id,
-                conversation_id: conv.id
+                conversation_id: conv.id,
+                turn: conv.turn_count,
+                hint:
+                  "call wait_for_teammate with since_turn = #{max(conv.turn_count - 1, 0)} to block for the reply"
               })
             ],
             isError: false
@@ -216,7 +249,74 @@ defmodule Fountain.Team.Mcp do
     end
   end
 
+  defp call_tool(id, "wait_for_teammate", args, ctx) do
+    with {:ok, who} <- require_arg(args, "teammate"),
+         {:ok, t} <- resolve_one(ctx.user_id, who) do
+      since = Map.get(args, "since_turn")
+      timeout = args |> Map.get("timeout_seconds", @default_wait) |> clamp(1, @max_wait)
+      deadline = System.monotonic_time(:millisecond) + timeout * 1000
+
+      case wait_loop(t.conversation.id, since, deadline, ctx) do
+        {:ok, turn} ->
+          result(id, %{
+            content: [json(%{teammate: t.name, done: true, turn: turn_summary(turn)})],
+            isError: false
+          })
+
+        {:timeout, latest} ->
+          result(id, %{
+            content: [
+              json(%{
+                teammate: t.name,
+                timed_out: true,
+                waited_seconds: timeout,
+                latest_turn: latest && turn_summary(latest),
+                hint: "still working — call wait_for_teammate again"
+              })
+            ],
+            isError: false
+          })
+      end
+    else
+      {:error, msg} -> tool_error(id, msg)
+    end
+  end
+
   defp call_tool(id, name, _args, _ctx), do: tool_error(id, "unknown tool: #{name}")
+
+  # ownership: the conversation id came from a teammate entry resolved through
+  # Team.list_teammates(ctx.user_id) — a tenant-scoped read.
+  defp wait_loop(conv_id, since, deadline, ctx) do
+    turns = Conversations._unsafe_list_turns(conv_id)
+
+    candidate =
+      case since do
+        n when is_integer(n) -> Enum.find(turns, &(&1.turn_number > n and &1.status in @terminal))
+        _ -> turns |> List.last() |> then(fn t -> if t && t.status in @terminal, do: t end)
+      end
+
+    cond do
+      candidate ->
+        {:ok, candidate}
+
+      System.monotonic_time(:millisecond) >= deadline ->
+        {:timeout, List.last(turns)}
+
+      true ->
+        (Map.get(ctx, :sleep) || (&Process.sleep/1)).(@poll_ms)
+        wait_loop(conv_id, since, deadline, ctx)
+    end
+  end
+
+  defp turn_summary(turn) do
+    %{
+      turn: turn.turn_number,
+      status: turn.status,
+      at: turn.inserted_at,
+      prompt: String.slice(turn.prompt || "", 0, 2000),
+      reply: String.slice(turn.reply_text || "", 0, 6000)
+    }
+  end
 
   # ── resolving "the engineer" ───────────────────────────────────────────────
 

@@ -456,8 +456,11 @@ an MCP server, `fountain-team`, served by Fountain at
 `POST /api/mcp/team/:conversation_id` and authenticated with the sandbox's
 own token: `list_teammates`, `get_teammate` (by name, role or keyword —
 "the engineer"), `send_to_teammate` (lands in their thread prefixed with who
-sent it; busy/starting/machine-offline come back as tool errors to retry)
-and `read_teammate` (recent prompts and replies). So "send this to the
+sent it and a note that only the owner and their teammates can send such
+messages; busy/starting/machine-offline come back as tool errors to retry;
+returns the turn it created), `wait_for_teammate` (blocks up to 90 s for
+the reply — `since_turn` pins it to a specific turn; `timed_out: true` means
+call again) and `read_teammate` (recent prompts and replies). So "send this to the
 steward" inside one teammate's turn is two tool calls, and the exchange is
 visible in both threads on the team page.
 
