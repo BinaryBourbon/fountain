@@ -476,6 +476,34 @@ Browser clients on another origin need `API_CORS_ORIGINS` set on the server
 (see [configuration](configuration.md)); a bearer key is the only credential
 that crosses origins.
 
+## Support
+
+"Report a problem" from a client (#843): the report is stored with whatever
+context the client attaches — conversation, agent, sandbox, presence, recent
+events, app version, page URL; the facts triage needs, never secrets — and
+forwarded to the operator out of band.
+
+```
+POST   /api/support/reports         # {category, message, context?, client?, screenshot?} → 201 the report
+GET    /api/support/reports         # the caller's reports, newest first
+GET    /api/support/reports/:id
+```
+
+`category` is one of `bug`, `stuck`, `question`, `idea`, `other`; `message`
+up to 20 KB; `context` an object up to 64 KB; `client` a name/version
+string; `screenshot` the same `{data: base64, media_type}` shape prompt
+images use (png/jpeg/gif/webp, 5 MB). The response carries `status` (`new`
+→ `forwarded` or `failed`), `forwarded_at`, `external_url` (the GitHub issue
+when one was created) and `forward_error`; the screenshot is reported by
+presence, never inlined. Audited as `support.report.created` with category,
+sizes and context keys — not the message.
+
+Forwarding is an Oban job: a GitHub issue when the instance sets
+`SUPPORT_GITHUB_REPO` + `SUPPORT_GITHUB_TOKEN` (issues:write; labelled
+`support` and the category), and/or mail to `SUPPORT_EMAIL` with the
+screenshot attached. Neither configured is fine — the rows are the inbox.
+Rate-limited with the rest of `/api`.
+
 ## Admin
 
 For operator accounts (`role: "admin"`) holding a `full`-scoped key. Every action mirrors the admin UI, including its refusals, and records the same privilege-trail event.

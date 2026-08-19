@@ -629,6 +629,12 @@ if config_env() == :prod do
   # "reply to this email" would point somewhere replies go to die.
   config :fountain, :support_email, System.get_env("SUPPORT_EMAIL")
 
+  # Optional (#843): where "Report a problem" reports are forwarded besides
+  # SUPPORT_EMAIL — a GitHub issue in this repo, created with this token
+  # (needs `issues:write`). Unset, reports stay on the row and in the mail.
+  config :fountain, :support_github_repo, System.get_env("SUPPORT_GITHUB_REPO")
+  config :fountain, :support_github_token, System.get_env("SUPPORT_GITHUB_TOKEN")
+
   # "" counts as unset for the adapter choice (#396): docker-compose.yml passes
   # `${RESEND_API_KEY:-}` / `${SMTP_HOST:-}` / `${SMTP_USERNAME:-}`, which
   # deliver present-but-empty variables — and "" is truthy, so a blank

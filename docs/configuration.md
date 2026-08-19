@@ -83,7 +83,9 @@ signup with no visible error. See [Email](self-hosting.md#email).
 | `SMTP_TLS` | `always` | — | STARTTLS by default; `never` for a relay on a trusted network that does not offer it |
 | `EMAIL_DELIVERY` | — | one of three | `none` deliberately disables email. Accounts then self-verify at registration (ADR 0011), but password-reset email cannot be delivered, so a forgotten password is unrecoverable in this mode |
 | `EMAIL_FROM` | — | when mail is on | The From address. Required whenever a real delivery provider is configured — a prod instance refuses to boot without it, since mail from an unverified domain is rejected anyway. Unused under `EMAIL_DELIVERY=none` |
-| `SUPPORT_EMAIL` | — | — | Where "contact support" in account emails (suspension, deletion) points. Unset, the copy names no address |
+| `SUPPORT_EMAIL` | — | — | Where "contact support" in account emails (suspension, deletion) points, and where `POST /api/support/reports` reports are mailed. Unset, the copy names no address and reports are not mailed |
+| `SUPPORT_GITHUB_REPO` | — | — | `owner/repo`: each support report also becomes a GitHub issue there (labels `support` + category). Needs `SUPPORT_GITHUB_TOKEN` |
+| `SUPPORT_GITHUB_TOKEN` | — | — | A token with `issues:write` on `SUPPORT_GITHUB_REPO` |
 
 ## Authentication
 

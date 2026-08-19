@@ -391,6 +391,11 @@ defmodule FountainWeb.Router do
     delete "/team/:agent_id/schedules/:id", TeamScheduleController, :delete
     post "/team/:agent_id/schedules/:id/run", TeamScheduleController, :run
 
+    # Problem reports (#843): "Report a problem" from a client; forwarded to the operator.
+    post "/support/reports", SupportReportController, :create
+    get "/support/reports", SupportReportController, :index
+    get "/support/reports/:id", SupportReportController, :show
+
     resources "/conversations", ConversationController, only: [:index, :show, :create, :delete] do
       post "/prompts", ConversationController, :prompt, as: :prompt
       post "/interrupt", ConversationController, :interrupt, as: :interrupt
