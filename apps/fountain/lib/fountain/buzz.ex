@@ -285,10 +285,21 @@ defmodule Fountain.Buzz do
   the harness (`Fountain.Buzz.Manager.restart_harness/2`) when
   `launch_config_changed?/2` says so — this function only persists.
 
-  This is the operator's knob for the desktop's `respond_to` when the desktop
-  cannot resend it (it refuses to change access on an already-deployed
-  provider agent). Note a later provider deploy sends the desktop's record as
-  the whole truth and will overwrite what is set here.
+  This changes only what the *harness accepts* — the `BUZZ_ACP_RESPOND_TO`
+  gate and the kind-10100 profile buzz-acp publishes. It does not change what
+  other relay users' clients believe (#820): Buzz Desktop deploys a provider
+  agent with an owner-signed kind-30177 policy event, and Desktop ≥ 0.5.17
+  builds its agent directory from that event and ignores the 10100 when one
+  exists. So widening access here from `owner-only` to `anyone` lets the
+  harness answer, but a Desktop ≥ 0.5.17 user still cannot @-mention the agent
+  (no autocomplete entry, and a free-typed `@name` sends no `p` tag) until the
+  owner's desktop republishes the 30177 with the same access — the desktop UI
+  refuses to change access on an already-deployed provider agent, so today that
+  means editing the desktop's `managed-agents.json` and restarting, or
+  recreating the agent. Keep both sides in agreement.
+
+  A later provider deploy sends the desktop's record as the whole truth and
+  will overwrite what is set here.
   """
   def update_access(%BuzzIdentity{} = identity, params, opts \\ []) when is_map(params) do
     attrs =

@@ -107,7 +107,10 @@ defmodule FountainWeb.BuzzAgentController do
   # / `respond_to_allowlist` on the identity and restarts its harness so the
   # new gate is live. Exists because the desktop refuses to change access on a
   # provider agent it has already deployed, so the record's policy cannot be
-  # resent from there.
+  # resent from there. Harness-side only: the desktop's owner-signed kind-30177
+  # policy is what other users' clients (Desktop >= 0.5.17) trust for
+  # mentionability, and this does not touch it — see `Buzz.update_access/3`
+  # and #820.
   def update(conn, %{"id" => id} = params) do
     user = conn.assigns.current_user
 
