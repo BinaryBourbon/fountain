@@ -53,6 +53,8 @@ defmodule FountainWeb.ConversationJSON do
       # Served rather than left to each client: the rule has three cases and
       # the nil ones are easy to get backwards.
       unread: Fountain.Conversations.unread?(c),
+      # Running sums of the turns' usage (#827); zeros until a turn reports one.
+      usage_total: %{input: c.usage_input_tokens || 0, output: c.usage_output_tokens || 0},
       inserted_at: c.inserted_at,
       updated_at: c.updated_at
     }
@@ -125,7 +127,20 @@ defmodule FountainWeb.ConversationJSON do
       started_at: t.started_at,
       ended_at: t.ended_at,
       inserted_at: t.inserted_at,
-      image_count: length(t.images || [])
+      image_count: length(t.images || []),
+      # The end-of-turn figure as the runtime reported it (#827); null when
+      # it reported none or the turn predates the column.
+      usage: t.usage && usage_data(t.usage)
     }
   end
+
+  @doc "A turn's stored usage as the wire object: `input`, `output`, and the cache fields when present."
+  def usage_data(%{} = u) do
+    %{input: u["input"] || 0, output: u["output"] || 0}
+    |> put_present(:cache_read, u["cache_read"])
+    |> put_present(:cache_write, u["cache_write"])
+  end
+
+  defp put_present(map, _k, nil), do: map
+  defp put_present(map, k, v), do: Map.put(map, k, v)
 end

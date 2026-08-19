@@ -26,6 +26,15 @@ upgrade, is in
   `/api/team`. The team stream sends a `schedule` event when a schedule is
   created, updated, deleted or fired, so a client re-lists rather than polls.
 
+- **Token usage per turn and per conversation** (#827). The figure the
+  runtime reports on the ACP `session/prompt` response is stored on the turn
+  (`turns.usage`: input, output, cache read/write) and summed on the
+  conversation (`usage_total`); `GET /api/conversations/:id/turns`,
+  conversation objects and `/api/team` roster entries (per teammate, across
+  every conversation it has had on the team) carry it. Recorded once per turn,
+  never from the live `usage_update`s. Turns before this release have
+  `usage: null`.
+
 - **Hermes Agent plugin** (`integrations/hermes/`). Fountain agents as tools
   inside [Hermes Agent](https://github.com/NousResearch/hermes-agent):
   `fountain_agents`, `fountain_run`, `fountain_send`, `fountain_wait`,

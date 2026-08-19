@@ -53,6 +53,32 @@ defmodule FountainWeb.TeamControllerTest do
       assert is_boolean(entry["unread"])
     end
 
+    test "usage_total sums every conversation the agent had on the team (#827)", %{
+      conn: conn,
+      user: user,
+      raw_key: key
+    } do
+      ada = insert_agent(user_id: user.id, name: "Ada")
+      old = insert_teammate_conv(user, ada, status: "terminated")
+      current = insert_teammate_conv(user, ada)
+      t_old = insert_turn(old, prompt: "before", status: "completed")
+      t_new = insert_turn(current, prompt: "now", status: "completed")
+
+      {:ok, _} =
+        Fountain.Conversations._unsafe_record_turn_usage(t_old, %{"input" => 10, "output" => 1})
+
+      {:ok, _} =
+        Fountain.Conversations._unsafe_record_turn_usage(t_new, %{"input" => 5, "output" => 2})
+
+      body = conn |> authed_with_key(key) |> get("/api/team") |> json_response(200)
+
+      assert [entry] = body["data"]
+      assert entry["conversation"]["id"] == current.id
+      assert entry["conversation"]["usage_total"] == %{"input" => 5, "output" => 2}
+      assert entry["usage_total"] == %{"input" => 15, "output" => 3}
+      assert entry["last_turn"]["usage"] == %{"input" => 5, "output" => 2}
+    end
+
     test "is empty with no team", %{conn: conn, raw_key: key} do
       assert %{"data" => []} =
                conn |> authed_with_key(key) |> get("/api/team") |> json_response(200)

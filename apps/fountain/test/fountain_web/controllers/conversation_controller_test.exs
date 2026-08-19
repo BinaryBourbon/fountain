@@ -112,6 +112,42 @@ defmodule FountainWeb.ConversationControllerTest do
       assert turn.id in ids
     end
 
+    test "carries each turn's usage and the conversation's usage_total (#827)", %{
+      conn: conn,
+      user: user,
+      raw_key: raw_key
+    } do
+      conv = insert_conversation(user_id: user.id)
+      t1 = insert_turn(conv, status: "completed")
+      insert_turn(conv, status: "completed")
+
+      {:ok, _} =
+        Fountain.Conversations._unsafe_record_turn_usage(t1, %{
+          "input" => 120,
+          "output" => 30,
+          "cache_read" => 100
+        })
+
+      body =
+        conn
+        |> authed_with_key(raw_key)
+        |> get("/api/conversations/#{conv.id}/turns")
+        |> json_response(200)
+
+      assert [
+               %{"usage" => %{"input" => 120, "output" => 30, "cache_read" => 100}},
+               %{"usage" => nil}
+             ] = body["data"]
+
+      body =
+        conn
+        |> authed_with_key(raw_key)
+        |> get("/api/conversations/#{conv.id}")
+        |> json_response(200)
+
+      assert body["data"]["usage_total"] == %{"input" => 120, "output" => 30}
+    end
+
     test "returns 200 with an empty list when there are no turns", %{
       conn: conn,
       user: user,

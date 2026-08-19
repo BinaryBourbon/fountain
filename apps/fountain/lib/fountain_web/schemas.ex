@@ -37,6 +37,43 @@ defmodule FountainWeb.Schemas do
     })
   end
 
+  defmodule TurnUsage do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "TurnUsage",
+      description:
+        "The turn's token usage as the runtime reported it when the turn ended " <>
+          "(the ACP `session/prompt` response's `usage`). The cache fields appear " <>
+          "only when the runtime reports them.",
+      type: :object,
+      properties: %{
+        input: %Schema{type: :integer, minimum: 0},
+        output: %Schema{type: :integer, minimum: 0},
+        cache_read: %Schema{type: :integer, minimum: 0, nullable: true},
+        cache_write: %Schema{type: :integer, minimum: 0, nullable: true}
+      },
+      required: [:input, :output]
+    })
+  end
+
+  defmodule UsageTotal do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "UsageTotal",
+      description: "Running sums of `input` and `output` over the turns that reported a usage.",
+      type: :object,
+      properties: %{
+        input: %Schema{type: :integer, minimum: 0},
+        output: %Schema{type: :integer, minimum: 0}
+      },
+      required: [:input, :output]
+    })
+  end
+
   defmodule Conversation do
     @moduledoc false
     require OpenApiSpex
@@ -104,6 +141,7 @@ defmodule FountainWeb.Schemas do
           type: :boolean,
           description: "last_active_at is later than last_read_at (true if never read)."
         },
+        usage_total: UsageTotal,
         inserted_at: %Schema{type: :string, format: :"date-time"},
         updated_at: %Schema{type: :string, format: :"date-time"}
       },
@@ -280,6 +318,13 @@ defmodule FountainWeb.Schemas do
         image_count: %Schema{
           type: :integer,
           description: "Number of images attached to this turn."
+        },
+        usage: %Schema{
+          oneOf: [TurnUsage],
+          nullable: true,
+          description:
+            "The end-of-turn token figure; null while the turn runs, when the runtime " <>
+              "reported none, or on turns that predate the field."
         }
       },
       required: [:id, :turn_number, :prompt, :status]
@@ -1657,6 +1702,12 @@ defmodule FountainWeb.Schemas do
           required: [:state, :label]
         },
         unread: %Schema{type: :boolean},
+        usage_total: %Schema{
+          allOf: [UsageTotal],
+          description:
+            "Summed over every conversation this agent has had under the team " <>
+              "channel, not just the current one — the per-teammate figure."
+        },
         last_turn: %Schema{
           type: :object,
           nullable: true,
@@ -1665,7 +1716,8 @@ defmodule FountainWeb.Schemas do
             turn_number: %Schema{type: :integer},
             prompt: %Schema{type: :string},
             status: %Schema{type: :string},
-            inserted_at: %Schema{type: :string, format: :"date-time"}
+            inserted_at: %Schema{type: :string, format: :"date-time"},
+            usage: %Schema{oneOf: [TurnUsage], nullable: true}
           }
         },
         preview: %Schema{

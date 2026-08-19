@@ -88,7 +88,7 @@ defmodule Fountain.Runtimes.ACP.Peer do
   require Logger
 
   alias Fountain.Runtimes.ACP
-  alias Fountain.Runtimes.ACP.Protocol
+  alias Fountain.Runtimes.ACP.{Protocol, Usage}
 
   # How long the replay has to stay quiet before we believe it is over, and how
   # long we will wait for that in total. See `handle_response(:load_session, …)`.
@@ -102,7 +102,7 @@ defmodule Fountain.Runtimes.ACP.Peer do
           | {:prompt_sent, pos_integer()}
           | {:model_rejected, requested :: String.t(), detail :: String.t()}
           | {:handshake_ms, non_neg_integer(), method :: String.t()}
-          | {:done, stop_reason :: String.t()}
+          | {:done, stop_reason :: String.t(), usage :: map() | nil}
           | {:failed, term()}
 
   defmodule State do
@@ -464,9 +464,12 @@ defmodule Fountain.Runtimes.ACP.Peer do
   # Authenticated; open (or reopen) the session.
   defp handle_response(:authenticate, _result, state), do: start_session(state)
 
+  # The turn's usage rides along with the stop reason (#827): it is the one
+  # end-of-turn figure the runtime reports, and the response is the only place
+  # it appears. nil when the runtime reports none.
   defp handle_response(:prompt, result, state) do
     stop = Map.get(result, "stopReason") || "end_turn"
-    report(state, {:done, stop})
+    report(state, {:done, stop, Usage.from_prompt_result(result)})
     %{state | phase: :done}
   end
 

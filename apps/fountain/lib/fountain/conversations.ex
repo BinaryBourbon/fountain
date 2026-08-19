@@ -804,6 +804,38 @@ defmodule Fountain.Conversations do
     |> Repo.update()
   end
 
+  @doc """
+  Record a turn's end-of-turn token usage (#827): stamp `usage` on the turn
+  and add its `input` / `output` to the conversation's running sums, in one
+  transaction. `usage` is the normalised map `Fountain.Runtimes.ACP.Usage`
+  produces (`%{"input" => n, "output" => n, ...}`); nil records nothing.
+
+  Once per turn, by the ConversationServer when the `session/prompt`
+  response arrives — never from the live `usage_update`s, whose meaning
+  differs per runtime (a per-call delta, a thread total, a per-step figure).
+  A second call for the same turn would double-count the conversation, so
+  it refuses when the turn already carries a usage.
+  """
+  def _unsafe_record_turn_usage(%Turn{}, nil), do: :ok
+  def _unsafe_record_turn_usage(%Turn{usage: %{}}, _usage), do: {:error, :already_recorded}
+
+  def _unsafe_record_turn_usage(%Turn{} = turn, %{} = usage) do
+    input = Map.get(usage, "input", 0)
+    output = Map.get(usage, "output", 0)
+
+    Repo.transaction(fn ->
+      {:ok, updated} = turn |> Turn.changeset(%{usage: usage}) |> Repo.update()
+
+      {1, _} =
+        Repo.update_all(
+          from(c in Conversation, where: c.id == ^turn.conversation_id),
+          inc: [usage_input_tokens: input, usage_output_tokens: output]
+        )
+
+      updated
+    end)
+  end
+
   # ── log events ──────────────────────────────────────────────────────────────────────────
 
   @doc """

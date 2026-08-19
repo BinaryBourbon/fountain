@@ -1489,8 +1489,13 @@ defmodule Fountain.Conversations.ConversationServer do
   # The turn's first terminator: `session/prompt` answered with a stop reason.
   # Closing stdin here is what makes the adapter exit, and clearing the command
   # ref is what makes that exit a no-op instead of a second ending.
-  def handle_info({:acp, ref, {:done, stop_reason}}, %{current_command_ref: ref} = state) do
+  #
+  # `usage` is the turn's end-of-turn token figure (#827), recorded once here
+  # — the response is the only place the runtime reports it — before the turn
+  # row is closed. nil records nothing.
+  def handle_info({:acp, ref, {:done, stop_reason, usage}}, %{current_command_ref: ref} = state) do
     status = if stop_reason in ["refusal", "cancelled"], do: "failed", else: "completed"
+    record_turn_usage(state, usage)
 
     {:noreply,
      finish_acp_turn(state, status, %{"stop_reason" => stop_reason}, %{
@@ -2467,6 +2472,20 @@ defmodule Fountain.Conversations.ConversationServer do
   # opens with can't be mistaken for a first token (its real one arrived in
   # a previous BEAM lifetime).
   defp maybe_emit_first_output(state), do: state
+
+  defp record_turn_usage(%{current_turn: %{} = turn}, %{} = usage) do
+    case Conversations._unsafe_record_turn_usage(turn, usage) do
+      {:ok, _} ->
+        :ok
+
+      other ->
+        Logger.warning(
+          "conv #{turn.conversation_id}: turn #{turn.id} usage not recorded: #{inspect(other)}"
+        )
+    end
+  end
+
+  defp record_turn_usage(_state, _usage), do: :ok
 
   defp emit_turn_completed(%{turn_metrics: nil}, _status), do: :ok
 

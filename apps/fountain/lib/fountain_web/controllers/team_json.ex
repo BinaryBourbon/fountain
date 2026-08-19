@@ -15,6 +15,8 @@ defmodule FountainWeb.TeamJSON do
       conversation: ConversationJSON.data(conv),
       presence: TeamPresenter.presence(conv),
       unread: Fountain.Conversations.unread?(conv),
+      # Across every conversation the agent has had on the team (#827).
+      usage_total: teammate.usage_total,
       last_turn: last_turn && turn_summary(last_turn),
       preview: preview(TeamPresenter.preview(teammate))
     }
@@ -26,7 +28,8 @@ defmodule FountainWeb.TeamJSON do
       turn_number: turn.turn_number,
       prompt: turn.prompt,
       status: turn.status,
-      inserted_at: turn.inserted_at
+      inserted_at: turn.inserted_at,
+      usage: turn.usage && ConversationJSON.usage_data(turn.usage)
     }
   end
 

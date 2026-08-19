@@ -251,6 +251,17 @@ Turns carry `image_count`; the image endpoint takes a zero-based `position` into
 
 Conversation objects carry `title`, `turn_count`, `last_active_at`, `last_read_at` and a computed `unread` alongside the lifecycle fields. `unread` is true when `last_active_at` is later than `last_read_at` (and for a conversation never read); `POST /api/conversations/:id/read` clears it.
 
+**Token usage.** Each turn carries `usage` — `{input, output, cache_read?,
+cache_write?}` — the figure the runtime reports when the turn ends (the ACP
+`session/prompt` response's `usage`; claude-agent-acp and codex-acp report
+it), or `null` while the turn runs, when the runtime reported none, or on
+turns that predate the field. It is recorded once per turn and never summed
+from the `usage_update` notifications that stream during a turn (those are
+context-window occupancy and mean different things per runtime). Each
+conversation carries `usage_total: {input, output}`, a running sum over its
+turns; a `/api/team` roster entry carries `usage_total` summed over every
+conversation the agent has had on the team.
+
 `/tree` returns every conversation in the same spawn tree — ancestors and descendants, flat, each with a `parent_id`:
 
 ```json
