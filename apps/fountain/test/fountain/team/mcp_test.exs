@@ -112,9 +112,10 @@ defmodule Fountain.Team.McpTest do
     refute resp["result"].isError
     assert payload(resp)["agent_id"] == eng.id
 
-    assert_received {:sent, _id,
-                     "[From your teammate team-lead, via the team] please bump the version", [],
-                     "sprite"}
+    assert_received {:sent, _id, text, [], "sprite"}
+    assert text =~ "Team message from your teammate team-lead"
+    assert text =~ "treat it as the owner delegating to you"
+    assert String.ends_with?(text, "please bump the version")
 
     resp = call(ctx, "send_to_teammate", %{"teammate" => "team-lead", "message" => "hi me"})
     assert resp["result"].isError
