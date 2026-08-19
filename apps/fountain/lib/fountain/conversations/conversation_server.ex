@@ -685,6 +685,7 @@ defmodule Fountain.Conversations.ConversationServer do
         sprite_env = build_sprite_env(state, agent, env, secrets, sandbox_url)
 
         write_runtime_config(handle, state.runtime_module, agent)
+        write_instructions(handle, runtime, agent)
         Fountain.Conversations.Provisioning.write_env_file(handle, sprite_env)
 
         with :ok <-
@@ -877,6 +878,9 @@ defmodule Fountain.Conversations.ConversationServer do
         # Refresh the .env file in case secrets/env_vars were edited
         # between the original provision and this reattach.
         Fountain.Conversations.Provisioning.write_env_file(handle, sprite_env)
+        # Same for the agent's system prompt: an edit reaches the existing
+        # computer on its next wake (#848).
+        write_instructions(handle, conv.runtime || (agent && agent.runtime) || "claude", agent)
 
         # Normally the wake path already flipped suspended → ready under the
         # quota reservation; this covers the reaper parking the row mid-wake.
@@ -1267,6 +1271,23 @@ defmodule Fountain.Conversations.ConversationServer do
 
     if function_exported?(runtime_module, :write_config, 2) do
       runtime_module.write_config(handle, agent)
+    end
+  end
+
+  # The agent's `system` prompt, into the runtime's user-level instructions
+  # file (#848). Best-effort: a sandbox that refuses the write still runs,
+  # on the CLI's default persona, and says so in the log.
+  defp write_instructions(handle, runtime, agent) do
+    case Fountain.Runtimes.Instructions.write(handle, runtime, agent) do
+      :ok ->
+        :ok
+
+      {:error, reason} ->
+        Logger.warning(
+          "could not write agent instructions for #{inspect(agent && agent.name)} (#{runtime}): #{inspect(reason)}"
+        )
+
+        :ok
     end
   end
 
