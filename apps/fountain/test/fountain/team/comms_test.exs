@@ -122,7 +122,7 @@ defmodule Fountain.Team.CommsTest do
 
       assert_received {:agentmail_create, body}
       assert body["display_name"] == "Ada Lovelace"
-      assert body["client_id"] == "fountain-team:" <> agent.id
+      assert body["client_id"] == "fountain-team." <> agent.id
       assert_received {:agentphone_create, %{"country" => "US"}}
       assert_received {:team_changed, _}
 

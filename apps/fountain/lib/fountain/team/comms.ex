@@ -249,7 +249,8 @@ defmodule Fountain.Team.Comms do
       %{
         "username" => username(name, opts),
         "display_name" => name,
-        "client_id" => "fountain-team:" <> teammate.agent.id
+        # AgentMail client ids allow only [A-Za-z0-9._~-]; no colon.
+        "client_id" => "fountain-team." <> teammate.agent.id
       }
       |> put_present("domain", AgentMail.domain())
 

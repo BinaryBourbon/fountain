@@ -430,7 +430,7 @@ has `email_send`, `email_reply`, `email_list`, `email_get`, `sms_send`,
 token — no provider key enters the sandbox, and every send is audited
 (`team.contact.sent`, never the content). `404 team_comms_not_enabled` when
 the flag is off for the caller, `503 team_comms_not_configured` when the
-instance has no keys, `409` for a second contact, `502 provider_error`
+instance has no keys, `409` for a second contact, `424 provider_error`
 (`channel` names which) when a provider refuses — provisioning is all or
 nothing. `DELETE` releases both upstream and forgets them; `GET
 /api/team/comms` answers `{enabled, configured}` so a client knows whether
