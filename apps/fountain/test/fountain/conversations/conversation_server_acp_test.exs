@@ -249,6 +249,35 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
       assert Conversations._unsafe_get_conversation!(conv.id).status == "idle"
     end
 
+    test "the response's usage lands on the turn and the conversation's sums (#827)", %{
+      conv: conv,
+      pid: pid,
+      ref: ref
+    } do
+      prompt_id = drive_to_prompt(pid, ref)
+
+      reply(pid, ref, prompt_id, %{
+        "stopReason" => "end_turn",
+        "usage" => %{"inputTokens" => 100, "outputTokens" => 25, "totalTokens" => 125}
+      })
+
+      assert [turn] = Conversations._unsafe_list_turns(conv.id)
+      assert turn.status == "completed"
+      assert turn.usage == %{"input" => 100, "output" => 25}
+
+      conv = Conversations._unsafe_get_conversation!(conv.id)
+      assert conv.usage_input_tokens == 100
+      assert conv.usage_output_tokens == 25
+    end
+
+    test "a response without usage leaves the turn's usage nil", %{conv: conv, pid: pid, ref: ref} do
+      prompt_id = drive_to_prompt(pid, ref)
+      reply(pid, ref, prompt_id, %{"stopReason" => "end_turn"})
+
+      assert [%{usage: nil}] = Conversations._unsafe_list_turns(conv.id)
+      assert %{usage_input_tokens: 0} = Conversations._unsafe_get_conversation!(conv.id)
+    end
+
     test "the stop reason ends the turn and closes stdin", %{conv: conv, pid: pid, ref: ref} do
       prompt_id = drive_to_prompt(pid, ref)
 

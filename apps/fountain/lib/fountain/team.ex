@@ -74,7 +74,7 @@ defmodule Fountain.Team do
   One entry per agent on the team, most recently active first.
 
   Each entry is `%{agent: %Agent{}, conversation: %Conversation{}, last_turn:
-  %Turn{} | nil, name: String.t()}` — the conversation is the newest live one
+  %Turn{} | nil, name: String.t(), usage_total: %{input: n, output: n}}` — the conversation is the newest live one
   for that agent, or, when none is live, the newest terminated/failed one (so
   the last transcript still shows). The conversation carries `turn_count` and
   `last_active_at`; `last_turn` is what the list previews; `name` is what the
@@ -82,25 +82,38 @@ defmodule Fountain.Team do
   time, else the agent's name.
   """
   def list_teammates(user_id) when is_binary(user_id) do
-    convs =
+    groups =
       user_id
       |> Conversations.list_channel_conversations(@channel)
       |> Enum.reject(&is_nil(&1.agent))
       |> Enum.group_by(& &1.agent_id)
-      |> Enum.map(fn {_agent_id, convs} -> pick_current(convs) end)
+      |> Enum.map(fn {_agent_id, convs} -> {pick_current(convs), usage_total(convs)} end)
 
-    last_turns = last_turns_by_conversation(Enum.map(convs, & &1.id))
+    last_turns = last_turns_by_conversation(Enum.map(groups, fn {conv, _} -> conv.id end))
 
-    convs
-    |> Enum.map(
-      &%{
-        agent: &1.agent,
-        conversation: &1,
-        last_turn: Map.get(last_turns, &1.id),
-        name: teammate_name(&1)
+    groups
+    |> Enum.map(fn {conv, usage_total} ->
+      %{
+        agent: conv.agent,
+        conversation: conv,
+        last_turn: Map.get(last_turns, conv.id),
+        name: teammate_name(conv),
+        usage_total: usage_total
       }
-    )
+    end)
     |> Enum.sort_by(& &1.conversation.last_active_at, {:desc, DateTime})
+  end
+
+  # The teammate's tokens across every conversation it has had under the
+  # channel (#827) — a replaced conversation's turns still count for the
+  # teammate, even though the roster shows only the current one.
+  defp usage_total(convs) do
+    Enum.reduce(convs, %{input: 0, output: 0}, fn c, acc ->
+      %{
+        input: acc.input + (c.usage_input_tokens || 0),
+        output: acc.output + (c.usage_output_tokens || 0)
+      }
+    end)
   end
 
   @doc "What the teammate is called: the conversation's title, else the agent's name."

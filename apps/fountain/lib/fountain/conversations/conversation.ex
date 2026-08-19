@@ -36,6 +36,11 @@ defmodule Fountain.Conversations.Conversation do
     # to (a Buzz channel id via ACP `session/new` `_meta.channelId`, #774).
     # `start_or_resume_conversation/2` resumes by it. Opaque to Fountain.
     field :channel_id, :string
+    # Running sums of the turns' `usage.input` / `usage.output` (#827), kept
+    # by `Conversations._unsafe_record_turn_usage/2` as each turn ends. Not
+    # in `changeset/2`: nothing user-facing writes them.
+    field :usage_input_tokens, :integer, default: 0
+    field :usage_output_tokens, :integer, default: 0
 
     # Populated by list_conversations_by_activity/1 — not persisted.
     field :turn_count, :integer, virtual: true, default: 0

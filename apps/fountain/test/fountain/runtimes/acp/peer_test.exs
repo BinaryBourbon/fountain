@@ -330,7 +330,36 @@ defmodule Fountain.Runtimes.ACP.PeerTest do
 
       send_response(pid, prompt_id, %{"stopReason" => "end_turn"})
 
-      assert_receive {:acp, _ref, {:done, "end_turn"}}
+      assert_receive {:acp, _ref, {:done, "end_turn", nil}}
+    end
+
+    test "the response's usage rides along, normalised (#827)", ctx do
+      pid = start_peer(ctx, [])
+      %{"id" => init_id} = next_write()
+      send_response(pid, init_id, %{"agentCapabilities" => caps()})
+      %{"id" => new_id} = next_write()
+      send_response(pid, new_id, %{"sessionId" => "s"})
+      %{"id" => prompt_id} = next_write()
+
+      send_response(pid, prompt_id, %{
+        "stopReason" => "end_turn",
+        "usage" => %{
+          "inputTokens" => 1200,
+          "outputTokens" => 340,
+          "cachedReadTokens" => 900,
+          "cachedWriteTokens" => 0,
+          "totalTokens" => 2440
+        }
+      })
+
+      assert_receive {:acp, _ref,
+                      {:done, "end_turn",
+                       %{
+                         "input" => 1200,
+                         "output" => 340,
+                         "cache_read" => 900,
+                         "cache_write" => 0
+                       }}}
     end
 
     test "an error response fails the turn", ctx do
@@ -772,7 +801,7 @@ defmodule Fountain.Runtimes.ACP.PeerTest do
 
       _ = :sys.get_state(pid)
       refute_received {:acp, _, {:failed, _}}
-      refute_received {:acp, _, {:done, _}}
+      refute_received {:acp, _, {:done, _, _}}
       refute_received {:acp, _, {:model_rejected, _, _}}
     end
 
@@ -802,7 +831,7 @@ defmodule Fountain.Runtimes.ACP.PeerTest do
     test "the response to the prompt id ends the turn; an error to it fails the turn", ctx do
       pid = attached_peer(ctx, 4)
       send_response(pid, 4, %{"stopReason" => "end_turn"})
-      assert_receive {:acp, _ref, {:done, "end_turn"}}
+      assert_receive {:acp, _ref, {:done, "end_turn", nil}}
 
       pid2 = attached_peer(ctx, 7)
 
