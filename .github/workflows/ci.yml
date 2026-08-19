@@ -40,11 +40,90 @@ permissions:
 # third of the tests, so no partition's coverage means anything on its own.
 # Hence the `coverage` job: partitions export, it merges, and the 85% threshold
 # is enforced once against the union (see mix.exs / coverage.exs).
+#
+# On main, most of that is a re-run. PRs are squash-merged after a rebase, so
+# the commit that lands on main usually has the *same tree* as the PR head —
+# the exact tree the PR's CI run already passed (a rebased head contains
+# main's tip, so the merge ref GitHub tested was the head itself). 10 of 12
+# recent main commits were like that, and each spent ~10 minutes re-proving
+# it before build.yml was allowed to start. The `already-tested` job checks
+# for that case and, when it holds, lets every other job skip; the run still
+# concludes `success`, which is all build.yml's workflow_run gate asks. Any
+# doubt — no associated PR, a differing tree, no successful PR run, an API
+# hiccup — falls through to the full run, never to a skip.
 jobs:
+  already-tested:
+    name: Skip the re-run when a PR already tested this exact tree
+    # Push-to-main only. On pull_request this job is skipped, its outputs are
+    # empty, and the `!= 'true'` tests below let everything run as before.
+    if: ${{ github.event_name == 'push' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
+
+    outputs:
+      skip: ${{ steps.probe.outputs.skip }}
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v5
+
+      - name: Compare this tree with the tested PR head
+        id: probe
+        env:
+          GH_TOKEN: ${{ github.token }}
+        # Never fails: every branch of this script ends in a decision, and the
+        # decision on any error is "run the full CI".
+        run: |
+          set -u
+          skip=false
+          tree="$(git rev-parse 'HEAD^{tree}')"
+          echo "main tree: ${tree}"
+
+          heads="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/pulls" \
+                     --jq '.[] | select(.merged_at != null) | .head.sha' 2>/dev/null || true)"
+          if [ -z "${heads}" ]; then
+            echo "no merged PR is associated with ${GITHUB_SHA:0:7} — running the full CI"
+          fi
+
+          for head in ${heads}; do
+            if ! git fetch --quiet --depth=1 origin "${head}" 2>/dev/null; then
+              echo "PR head ${head:0:7} could not be fetched"
+              continue
+            fi
+            head_tree="$(git rev-parse "${head}^{tree}")"
+            if [ "${head_tree}" != "${tree}" ]; then
+              echo "PR head ${head:0:7} has tree ${head_tree:0:7} — differs; the merge produced a tree no PR run tested"
+              continue
+            fi
+            # A completed, successful CI run on that head, triggered by the PR.
+            # `status=success` excludes the cancelled runs that PR
+            # cancel-in-progress leaves behind.
+            run_id="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs?head_sha=${head}&event=pull_request&status=success&per_page=50" \
+                        --jq '[.workflow_runs[] | select(.name == "CI")] | first | .id // empty' 2>/dev/null || true)"
+            if [ -z "${run_id}" ]; then
+              echo "PR head ${head:0:7} has the same tree but no successful pull_request CI run"
+              continue
+            fi
+            echo "PR head ${head:0:7} has the same tree and CI run ${run_id} passed on it — skipping the re-run"
+            echo "tested by https://github.com/${GITHUB_REPOSITORY}/actions/runs/${run_id}" >> "$GITHUB_STEP_SUMMARY"
+            skip=true
+            break
+          done
+
+          echo "skip=${skip}" >> "$GITHUB_OUTPUT"
+
   test:
     name: Build and Test (partition ${{ matrix.partition }})
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    needs: already-tested
+    # `!cancelled()` rather than the implicit success(): on pull_request the
+    # gate job is skipped, and a skipped `needs` would skip this job too.
+    if: ${{ !cancelled() && needs.already-tested.outputs.skip != 'true' }}
 
     permissions:
       contents: read
@@ -176,6 +255,9 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     needs: test
+    # Still "after a green suite" — but spelled out, because test is skipped
+    # (not failed) on the already-tested path and must not drag this along.
+    if: ${{ !cancelled() && needs.test.result == 'success' }}
 
     permissions:
       contents: read
@@ -254,6 +336,8 @@ jobs:
     name: Static analysis and release checks
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    needs: already-tested
+    if: ${{ !cancelled() && needs.already-tested.outputs.skip != 'true' }}
 
     permissions:
       contents: read
@@ -489,6 +573,8 @@ jobs:
     name: Compose fresh-clone check
     runs-on: ubuntu-24.04
     timeout-minutes: 5
+    needs: already-tested
+    if: ${{ !cancelled() && needs.already-tested.outputs.skip != 'true' }}
 
     permissions:
       contents: read
@@ -517,6 +603,8 @@ jobs:
     name: Compose boots the pinned image
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    needs: already-tested
+    if: ${{ !cancelled() && needs.already-tested.outputs.skip != 'true' }}
 
     permissions:
       contents: read

@@ -213,6 +213,13 @@ wrap `record/1` in a way that makes it blocking for the user.
 11. Release boot check — builds a prod release, probes `/health` and `/health/ready`, runs a release task beside the live server
 12. `mix openapi.spec.json` + `jq empty` (OpenAPI spec validates)
 
+On `main` the run usually short-circuits: the `already-tested` job compares
+the pushed commit's tree with the head of the merged PR and, when they are
+identical and that head has a successful `pull_request` CI run, every other
+job is skipped and `build.yml` starts straight away (the run still concludes
+`success`, which is its gate). A rebased squash-merge is that case; anything
+else — a tree that differs, no PR, no green run — gets the full run.
+
 ### Coverage
 
 Coverage uses Elixir's built-in cover, not ExCoveralls — ExCoveralls cannot
