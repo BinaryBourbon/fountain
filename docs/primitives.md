@@ -67,7 +67,7 @@ An **Agent** is a named, re-runnable configuration for an AI coding assistant:
   the CLI as-is, so a model released since your Fountain version still works.
 - **`runtime`** - one of `claude`, `codex`, `gemini`, `opencode`
 - **`environment`** - optional Environment to attach
-- **`system`** / **`description`** - system prompt and human-readable description
+- **`system`** / **`description`** - system prompt and human-readable description. The system prompt is written into the runtime's user-level instructions file on the agent's computer at provision and again at every reattach (`~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md`, `~/.config/opencode/AGENTS.md`, `~/.gemini/GEMINI.md`), so an edit reaches an existing computer the next time it wakes
 - **`skills`** - each entry is either inline (`{name, content}` — a full SKILL.md written to the sandbox) or GitHub-sourced (`{source: "owner/repo"}` — installed via the skills.sh CLI)
 - **`mcp_servers`** - MCP server definitions, with `${VAR}` substitution in their env
 - **`metadata`** - free-form map for callers' own bookkeeping
