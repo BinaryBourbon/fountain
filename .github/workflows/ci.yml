@@ -372,6 +372,11 @@ jobs:
         working-directory: cli
         run: go vet ./...
 
+      # The Hermes plugin (integrations/hermes) is stdlib Python; its tests
+      # run against an in-process fake Fountain and need nothing installed.
+      - name: Hermes plugin tests
+        run: python3 -m unittest discover -s integrations/hermes/tests -v
+
       # `gofmt -l` prints offending files and exits 0, so the failure has to
       # come from the emptiness check — print the list first so the log says
       # which files to run gofmt on.
