@@ -349,6 +349,11 @@ defmodule FountainWeb.Router do
     # The team tools a teammate's sandbox calls to see and message the team (#851).
     post "/mcp/team/:conversation_id", TeamMcpController, :handle
 
+    # MCP tools a teammate's sandbox calls to use its email address and phone
+    # number (flag `team_comms`). Same transport; the AgentMail/AgentPhone
+    # keys stay server-side.
+    post "/mcp/team-comms/:conversation_id", TeamCommsMcpController, :handle
+
     resources "/environments", EnvironmentController, except: [:new, :edit] do
       resources "/secrets", SecretController, only: [:index, :create, :delete]
     end
@@ -376,6 +381,9 @@ defmodule FountainWeb.Router do
     post "/team", TeamController, :create
     # Before `/team/:agent_id`, or "schedules" would be read as an agent id.
     get "/team/schedules", TeamScheduleController, :index_all
+    # Likewise before `/team/:agent_id`: can teammates here get an email
+    # address and phone number (flag `team_comms`)?
+    get "/team/comms", TeamController, :comms_status
     get "/team/:agent_id", TeamController, :show
     patch "/team/:agent_id", TeamController, :update
     delete "/team/:agent_id", TeamController, :delete
@@ -384,6 +392,9 @@ defmodule FountainWeb.Router do
     get "/team/:agent_id/conversations", TeamController, :conversations
     # A fresh conversation on the same computer; the current one is retired.
     post "/team/:agent_id/conversations", TeamController, :fresh_conversation
+    # The teammate's own email address and phone number (flag `team_comms`).
+    post "/team/:agent_id/contact", TeamController, :provision_contact
+    delete "/team/:agent_id/contact", TeamController, :release_contact
 
     # Team schedules (#825): the routines `/team` offers, per teammate.
     get "/team/:agent_id/schedules", TeamScheduleController, :index

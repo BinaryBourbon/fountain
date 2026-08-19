@@ -38,6 +38,7 @@ defmodule Fountain.Team do
   """
 
   import Ecto.Query, warn: false
+  require Logger
 
   alias Fountain.{Agents, Audit, Conversations, Repo}
   alias Fountain.Conversations.{Conversation, ConversationServer, Turn}
@@ -59,7 +60,12 @@ defmodule Fountain.Team do
 
   defp topic(user_id), do: "team:#{user_id}"
 
-  defp broadcast_changed(user_id),
+  @doc """
+  Broadcast `{:team_changed, user_id}` on the team topic — the roster needs
+  re-listing. Also called by `Fountain.Team.Comms` when a teammate gains or
+  loses its email address and phone number.
+  """
+  def broadcast_changed(user_id),
     do: Phoenix.PubSub.broadcast(Fountain.PubSub, topic(user_id), {:team_changed, user_id})
 
   @doc """
@@ -131,6 +137,14 @@ defmodule Fountain.Team do
 
     last_turns = last_turns_by_conversation(Enum.map(groups, fn {conv, _} -> conv.id end))
 
+    # The teammate's email address and phone number, when it has them
+    # (`Fountain.Team.Comms`, flag `team_comms`); nil otherwise.
+    contacts =
+      Fountain.Team.Comms.contacts_by_agent(
+        user_id,
+        Enum.map(groups, fn {c, _} -> c.agent_id end)
+      )
+
     groups
     |> Enum.map(fn {conv, usage_total} ->
       %{
@@ -138,7 +152,8 @@ defmodule Fountain.Team do
         conversation: conv,
         last_turn: Map.get(last_turns, conv.id),
         name: teammate_name(conv),
-        usage_total: usage_total
+        usage_total: usage_total,
+        contact: Map.get(contacts, conv.agent_id)
       }
     end)
     |> Enum.sort_by(& &1.conversation.last_active_at, {:desc, DateTime})
@@ -313,6 +328,23 @@ defmodule Fountain.Team do
         # ownership: the scoped get_teammate above found this agent for user_id;
         # the delete is bounded by the same user_id + agent_id.
         _ = Fountain.Team.Schedules._unsafe_delete_for_teammate(user_id, agent_id)
+
+        # So does its email address and phone number, when it has them: the
+        # inbox and number are released upstream. A provider failure there
+        # keeps the contact row (nothing orphaned) and is logged, not raised —
+        # the removal the user asked for still happens.
+        case Fountain.Team.Comms.release_contact(user_id, agent_id, opts) do
+          :ok ->
+            :ok
+
+          {:error, :not_found} ->
+            :ok
+
+          {:error, reason} ->
+            Logger.warning(
+              "team: could not release the contact for agent #{agent_id} on removal: #{inspect(reason)}"
+            )
+        end
 
         record(user_id, "team.member.removed", conv, opts)
         broadcast_changed(user_id)

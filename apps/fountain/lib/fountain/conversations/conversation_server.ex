@@ -685,7 +685,6 @@ defmodule Fountain.Conversations.ConversationServer do
         sprite_env = build_sprite_env(state, agent, env, secrets, sandbox_url)
 
         write_runtime_config(handle, state.runtime_module, agent)
-        write_instructions(handle, runtime, agent)
         Fountain.Conversations.Provisioning.write_env_file(handle, sprite_env)
 
         with :ok <-
@@ -878,9 +877,6 @@ defmodule Fountain.Conversations.ConversationServer do
         # Refresh the .env file in case secrets/env_vars were edited
         # between the original provision and this reattach.
         Fountain.Conversations.Provisioning.write_env_file(handle, sprite_env)
-        # Same for the agent's system prompt: an edit reaches the existing
-        # computer on its next wake (#848).
-        write_instructions(handle, conv.runtime || (agent && agent.runtime) || "claude", agent)
 
         # Normally the wake path already flipped suspended → ready under the
         # quota reservation; this covers the reaper parking the row mid-wake.
@@ -1271,23 +1267,6 @@ defmodule Fountain.Conversations.ConversationServer do
 
     if function_exported?(runtime_module, :write_config, 2) do
       runtime_module.write_config(handle, agent)
-    end
-  end
-
-  # The agent's `system` prompt, into the runtime's user-level instructions
-  # file (#848). Best-effort: a sandbox that refuses the write still runs,
-  # on the CLI's default persona, and says so in the log.
-  defp write_instructions(handle, runtime, agent) do
-    case Fountain.Runtimes.Instructions.write(handle, runtime, agent) do
-      :ok ->
-        :ok
-
-      {:error, reason} ->
-        Logger.warning(
-          "could not write agent instructions for #{inspect(agent && agent.name)} (#{runtime}): #{inspect(reason)}"
-        )
-
-        :ok
     end
   end
 
@@ -2058,6 +2037,17 @@ defmodule Fountain.Conversations.ConversationServer do
 
   defp team_mcp_servers(_state), do: []
 
+  # A teammate's email + phone tools (flag `team_comms`), injected the same
+  # way: only for a team conversation whose teammate has a contact, and only
+  # once a callback token exists — `Fountain.Team.Comms` decides. Computed
+  # at every turn kick, so a contact given mid-session is there next turn.
+  defp team_comms_mcp_servers(%{callback_token: token, conversation_id: conv_id})
+       when is_binary(token) and is_binary(conv_id) do
+    Fountain.Team.Comms.conversation_mcp_servers(conv_id, token)
+  end
+
+  defp team_comms_mcp_servers(_state), do: []
+
   # How long a sprite's callback key stays valid.
   #
   # This is a backstop, not the primary control: the key is revoked at
@@ -2355,7 +2345,9 @@ defmodule Fountain.Conversations.ConversationServer do
                     images: images,
                     mcp_servers:
                       Fountain.Runtimes.ACP.mcp_servers(agent) ++
-                        buzz_mcp_servers(state) ++ team_mcp_servers(state),
+                        buzz_mcp_servers(state) ++
+                        team_mcp_servers(state) ++
+                        team_comms_mcp_servers(state),
                     model: agent && Fountain.Runtimes.Model.id(agent.model)
                   )
                 else

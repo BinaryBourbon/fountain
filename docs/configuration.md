@@ -171,3 +171,34 @@ set them — the defaults are correct for the packaged image.
 
 Upstream publishes `buzz-acp` for amd64 only, so Fountain builds it for both
 architectures from source and bakes it in (see `.github/workflows/buzz-acp-publish.yml`).
+
+## Feature flags
+
+Per-user flags (`Fountain.FeatureFlags`) are evaluated by PostHog when a
+project key is set. Answers are cached per user for a minute; when PostHog is
+unreachable the last answer it gave is reused, and with none every flag reads
+off — an outage never turns a feature on. Without PostHog, a flag can be forced
+on for every user.
+
+| Variable | Default | Required | Effect |
+|---|---|---|---|
+| `POSTHOG_PROJECT_API_KEY` | — | — | The PostHog *project* API key (the public `phc_…` token, not a personal key). Unset, no flag is looked up remotely |
+| `POSTHOG_HOST` | `https://us.i.posthog.com` | — | PostHog ingestion host; `https://eu.i.posthog.com` for EU Cloud, or a self-hosted instance |
+| `FEATURE_FLAGS_ON` | — | — | Comma-separated flag keys forced on for every user, e.g. `team_comms`. Wins over PostHog |
+
+## Teammate email and phone
+
+Behind the `team_comms` flag, a teammate can be given an email address
+([AgentMail](https://agentmail.to)) and a phone number
+([AgentPhone](https://agentphone.ai)), and gets MCP tools to send and read on
+both. Fountain holds the provider keys and serves the tools itself — the keys
+never enter a sandbox. With either key unset the feature reports itself
+unavailable even where the flag is on.
+
+| Variable | Default | Required | Effect |
+|---|---|---|---|
+| `AGENTMAIL_API_KEY` | — | — | AgentMail API key; teammate inboxes are created under it |
+| `AGENTMAIL_BASE_URL` | `https://api.agentmail.to` | — | AgentMail API host (`https://api.agentmail.eu` for the EU region) |
+| `AGENTMAIL_DOMAIN` | — | — | A verified custom domain for teammate addresses; unset uses AgentMail's shared domain |
+| `AGENTPHONE_API_KEY` | — | — | AgentPhone API key; teammate numbers are provisioned under it |
+| `AGENTPHONE_BASE_URL` | `https://api.agentphone.ai` | — | AgentPhone API host |

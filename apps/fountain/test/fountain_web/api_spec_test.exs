@@ -60,7 +60,9 @@ defmodule FountainWeb.ApiSpecTest do
       # client, which discovers tools via `tools/list`, not our OpenAPI spec.
       {"/api/mcp/buzz/{conversation_id}", :post},
       # Same: the team tools a teammate's sandbox calls (#851).
-      {"/api/mcp/team/{conversation_id}", :post}
+      {"/api/mcp/team/{conversation_id}", :post},
+      # Same: the teammate email/phone tools (flag `team_comms`).
+      {"/api/mcp/team-comms/{conversation_id}", :post}
     ]
 
     setup do

@@ -32,6 +32,7 @@ defmodule Fountain.Application do
         {Phoenix.PubSub, name: Fountain.PubSub},
         FountainWeb.Plugs.RateLimit.Sweeper,
         Fountain.Conversations.Redaction,
+        Fountain.FeatureFlags.Cache,
         {Oban, Application.fetch_env!(:fountain, Oban)}
       ] ++
         cluster_children(cluster_topologies) ++

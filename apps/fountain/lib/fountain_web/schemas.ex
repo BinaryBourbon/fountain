@@ -1702,6 +1702,26 @@ defmodule FountainWeb.Schemas do
     })
   end
 
+  defmodule TeammateContact do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "TeammateContact",
+      description:
+        "A teammate's own email address and phone number, provisioned by Fountain " <>
+          "(AgentMail + AgentPhone) behind the `team_comms` flag. The teammate reaches " <>
+          "both through MCP tools Fountain serves; no provider key enters its sandbox.",
+      type: :object,
+      properties: %{
+        email: %Schema{type: :string, nullable: true},
+        phone: %Schema{type: :string, nullable: true, description: "E.164"},
+        inserted_at: %Schema{type: :string, format: :"date-time"}
+      },
+      required: [:email, :phone]
+    })
+  end
+
   defmodule Teammate do
     @moduledoc false
     require OpenApiSpex
@@ -1758,6 +1778,13 @@ defmodule FountainWeb.Schemas do
             kind: %Schema{type: :string, enum: FountainWeb.TeamPresenter.preview_kinds()},
             text: %Schema{type: :string, nullable: true}
           }
+        },
+        contact: %Schema{
+          allOf: [TeammateContact],
+          nullable: true,
+          description:
+            "The teammate's own email address and phone number (flag `team_comms`), " <>
+              "or null when it has none."
         }
       },
       required: [:agent_id, :name, :agent, :conversation, :presence, :unread]
@@ -1766,6 +1793,27 @@ defmodule FountainWeb.Schemas do
 
   item_response(TeammateResponse, of: Teammate)
   list_response(TeammateListResponse, of: Teammate)
+
+  defmodule TeamCommsStatus do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "TeamCommsStatus",
+      description:
+        "Whether teammates can be given an email address and phone number here: `enabled` " <>
+          "is the per-user feature flag (`team_comms`), `configured` whether this instance " <>
+          "has the provider keys. Both must hold to provision.",
+      type: :object,
+      properties: %{
+        enabled: %Schema{type: :boolean},
+        configured: %Schema{type: :boolean}
+      },
+      required: [:enabled, :configured]
+    })
+  end
+
+  item_response(TeamCommsStatusResponse, of: TeamCommsStatus)
 
   defmodule TeamAddRequest do
     @moduledoc false

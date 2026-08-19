@@ -991,3 +991,59 @@ case System.get_env("OAUTH_CLIENTS") do
         raise "OAUTH_CLIENTS must be a JSON array of {id, name, redirect_uris}"
     end
 end
+
+# ── Feature flags ─────────────────────────────────────────────────────────
+#
+# Per-user flags are evaluated by PostHog (`Fountain.FeatureFlags`) when a
+# project API key is set; the module caches answers and falls back to the
+# last one it got when PostHog is unreachable, and to "off" when it has
+# none — an outage never turns a feature on. FEATURE_FLAGS_ON is the
+# no-PostHog path: a comma-separated list of flag keys forced on for every
+# user (a self-hoster, or dev). Read in every env.
+# Set only when present, so config/test.exs keeps its own value.
+case System.get_env("POSTHOG_PROJECT_API_KEY") do
+  blank when blank in [nil, ""] -> :ok
+  key -> config :fountain, :posthog_project_api_key, key
+end
+
+config :fountain,
+       :posthog_host,
+       System.get_env("POSTHOG_HOST", "https://us.i.posthog.com")
+
+config :fountain,
+       :feature_flag_overrides,
+       "FEATURE_FLAGS_ON"
+       |> System.get_env("")
+       |> String.split(",", trim: true)
+       |> Enum.map(&String.trim/1)
+       |> Enum.reject(&(&1 == ""))
+       |> Map.new(&{&1, true})
+
+# ── Teammate email + phone (flag `team_comms`) ───────────────────────────
+#
+# Fountain holds the AgentMail and AgentPhone keys; a teammate gets an inbox
+# and a number under them, and reaches both through MCP tools Fountain serves
+# (`Fountain.Team.Comms`). The keys never enter a sandbox. Unset, the feature
+# reports itself unavailable even when the flag is on.
+# Keys are set only when present, so config/test.exs keeps its own values.
+case System.get_env("AGENTMAIL_API_KEY") do
+  blank when blank in [nil, ""] -> :ok
+  key -> config :fountain, :agentmail_api_key, key
+end
+
+config :fountain,
+       :agentmail_base_url,
+       System.get_env("AGENTMAIL_BASE_URL", "https://api.agentmail.to")
+
+# Optional: a verified custom domain for teammate inboxes; unset uses
+# AgentMail's shared domain.
+config :fountain, :agentmail_domain, System.get_env("AGENTMAIL_DOMAIN")
+
+case System.get_env("AGENTPHONE_API_KEY") do
+  blank when blank in [nil, ""] -> :ok
+  key -> config :fountain, :agentphone_api_key, key
+end
+
+config :fountain,
+       :agentphone_base_url,
+       System.get_env("AGENTPHONE_BASE_URL", "https://api.agentphone.ai")

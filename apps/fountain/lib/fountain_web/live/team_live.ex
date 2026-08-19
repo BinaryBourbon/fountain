@@ -22,7 +22,7 @@ defmodule FountainWeb.TeamLive do
 
   alias Fountain.{Conversations, Team}
   alias Fountain.Conversations.{ConversationServer, LogEvent}
-  alias Fountain.Team.{Schedule, Schedules}
+  alias Fountain.Team.{Comms, Schedule, Schedules}
 
   @empty_add_form %{"agent_id" => nil, "name" => "", "environment_id" => "", "vault_id" => ""}
 
@@ -41,6 +41,9 @@ defmodule FountainWeb.TeamLive do
       |> assign(:page_title, "Team")
       |> assign(:user_id, user_id)
       |> assign(:teammates, teammates)
+      # Can teammates here be given an email address and phone number?
+      # (`Fountain.Team.Comms`, flag `team_comms`.) Read once at mount.
+      |> assign(:comms, Comms.status(socket.assigns.current_user))
       |> assign(:addable_agents, Team.list_addable_agents(user_id))
       |> assign(:selected, nil)
       |> assign(:events, [])
@@ -320,6 +323,48 @@ defmodule FountainWeb.TeamLive do
          |> push_patch(to: ~p"/team")}
   end
 
+  # ── contact: the teammate's own email address and phone number ─────────────
+
+  def handle_event("provision_contact", _, %{assigns: %{selected: %{} = selected}} = socket) do
+    user_id = socket.assigns.user_id
+    opts = FountainWeb.Audited.attribution(socket)
+
+    case Comms.provision_contact(user_id, selected.agent.id, opts) do
+      {:ok, contact} ->
+        {:noreply,
+         socket
+         |> refresh_selected_teammate()
+         |> put_flash(
+           :info,
+           "#{selected.name} now has #{contact.email_address} and #{contact.phone_number}. " <>
+             "The tools are there from its next turn."
+         )}
+
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, comms_error(reason))}
+    end
+  end
+
+  def handle_event("provision_contact", _, socket), do: {:noreply, socket}
+
+  def handle_event("release_contact", _, %{assigns: %{selected: %{} = selected}} = socket) do
+    user_id = socket.assigns.user_id
+    opts = FountainWeb.Audited.attribution(socket)
+
+    case Comms.release_contact(user_id, selected.agent.id, opts) do
+      :ok ->
+        {:noreply,
+         socket
+         |> refresh_selected_teammate()
+         |> put_flash(:info, "#{selected.name}'s email address and phone number are released.")}
+
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, comms_error(reason))}
+    end
+  end
+
+  def handle_event("release_contact", _, socket), do: {:noreply, socket}
+
   # Mobile: back from the thread to the roster.
   # ── schedules: a cron that runs this teammate with a prompt ────────────────
 
@@ -575,6 +620,44 @@ defmodule FountainWeb.TeamLive do
     end
   end
 
+  # Re-list the roster and point `selected` at the fresh copy of the same
+  # teammate (its contact changed); nothing else about the thread moves.
+  defp refresh_selected_teammate(socket) do
+    teammates = load_teammates(socket.assigns.user_id)
+
+    selected =
+      case socket.assigns.selected do
+        %{agent: %{id: id}} -> Enum.find(teammates, &(&1.agent.id == id))
+        _ -> nil
+      end
+
+    socket
+    |> assign(:teammates, teammates)
+    |> assign(:selected, selected || socket.assigns.selected)
+  end
+
+  defp comms_error(:not_enabled), do: "Teammate email and phone are not enabled for your account."
+
+  defp comms_error(:not_configured),
+    do: "This instance has no AgentMail/AgentPhone keys configured."
+
+  defp comms_error(:already_provisioned),
+    do: "This teammate already has an email address and phone number."
+
+  defp comms_error(:not_found), do: "That teammate is no longer on the team."
+
+  defp comms_error({:email, reason}), do: "AgentMail refused: #{describe_provider(reason)}"
+  defp comms_error({:phone, reason}), do: "AgentPhone refused: #{describe_provider(reason)}"
+  defp comms_error(other), do: "Could not update the contact: #{inspect(other)}"
+
+  defp describe_provider({:status, status, body}) when is_map(body),
+    do:
+      "HTTP #{status}: #{body["message"] || body["error"] || body["detail"] || Jason.encode!(body)}"
+
+  defp describe_provider({:status, status, body}), do: "HTTP #{status}: #{inspect(body)}"
+  defp describe_provider(%{__exception__: true} = e), do: Exception.message(e)
+  defp describe_provider(other), do: inspect(other)
+
   defp flash_error(socket, :busy),
     do: put_flash(socket, :error, "They're still working on the last message")
 
@@ -717,7 +800,7 @@ defmodule FountainWeb.TeamLive do
         </div>
 
         <%= if @selected do %>
-          <.thread_header teammate={@selected} schedule_count={length(@schedules)} />
+          <.thread_header teammate={@selected} schedule_count={length(@schedules)} comms={@comms} />
 
           <div
             id={"team-thread-#{@selected.conversation.id}"}
@@ -885,11 +968,19 @@ defmodule FountainWeb.TeamLive do
 
   attr :teammate, :map, required: true
   attr :schedule_count, :integer, default: 0
+  attr :comms, :map, default: %{enabled: false, configured: false}
 
   defp thread_header(assigns) do
     conv = assigns.teammate.conversation
     {label, dot} = presence(conv)
-    assigns = assign(assigns, conv: conv, presence_label: label, dot: dot)
+
+    assigns =
+      assign(assigns,
+        conv: conv,
+        presence_label: label,
+        dot: dot,
+        contact: Map.get(assigns.teammate, :contact)
+      )
 
     ~H"""
     <header class="flex items-center justify-between gap-3 px-6 py-3 border-b border-[var(--color-border)] bg-[var(--color-bg-1)]">
@@ -916,6 +1007,18 @@ defmodule FountainWeb.TeamLive do
             &middot; {@conv.sandbox.provider}/{@conv.sandbox.sprite_name}
           </span>
         </div>
+        <div
+          :if={@contact}
+          id="teammate-contact"
+          class="flex items-center gap-2 text-xs text-[var(--color-text-secondary)] min-w-0 mt-0.5"
+          title="This teammate's own email address and phone number"
+        >
+          <span :if={@contact.email_address} class="font-mono truncate">
+            {@contact.email_address}
+          </span>
+          <span :if={@contact.email_address && @contact.phone_number}>&middot;</span>
+          <span :if={@contact.phone_number} class="font-mono truncate">{@contact.phone_number}</span>
+        </div>
       </div>
       <div class="flex items-center gap-2 shrink-0 text-xs">
         <button
@@ -934,6 +1037,32 @@ defmodule FountainWeb.TeamLive do
           title="Scheduled prompts: run this teammate on a cron"
         >
           Schedules<span :if={@schedule_count > 0} class="ml-1 text-[var(--color-text-muted)]">{@schedule_count}</span>
+        </button>
+        <button
+          :if={@comms.enabled and is_nil(@contact)}
+          id="provision-contact-button"
+          type="button"
+          phx-click="provision_contact"
+          disabled={not @comms.configured}
+          class="rounded-md border border-[var(--color-border)] px-2.5 py-1 hover:bg-[var(--color-bg-2)] disabled:opacity-50 disabled:cursor-not-allowed"
+          title={
+            if @comms.configured,
+              do: "Give this teammate its own email address and phone number",
+              else: "This instance has no AgentMail/AgentPhone keys configured"
+          }
+        >
+          Give email &amp; phone
+        </button>
+        <button
+          :if={@comms.enabled and @contact}
+          id="release-contact-button"
+          type="button"
+          phx-click="release_contact"
+          data-confirm={"Take #{@teammate.name}'s email address and phone number away? The inbox and number are released."}
+          class="rounded-md border border-[var(--color-border)] px-2.5 py-1 hover:bg-[var(--color-bg-2)]"
+          title="Release this teammate's email address and phone number"
+        >
+          Release contact
         </button>
         <.link
           navigate={~p"/conversations/#{@conv.id}"}

@@ -76,6 +76,11 @@ defmodule Fountain.AuditGuardrailTest do
     {"team schedule update", &__MODULE__.do_schedule_update/1, "team.schedule.updated"},
     {"team schedule delete", &__MODULE__.do_schedule_delete/1, "team.schedule.deleted"},
     {"team schedule run", &__MODULE__.do_schedule_run/1, "team.schedule.fired"},
+    # Team contacts: a teammate's email address and phone number (flag
+    # `team_comms`). Sends through the MCP tools are audited by the controller
+    # as `team.contact.sent` — an effect, not tenant state.
+    {"team contact provision", &__MODULE__.do_contact_provision/1, "team.contact.provisioned"},
+    {"team contact release", &__MODULE__.do_contact_release/1, "team.contact.released"},
     {"support report create", &__MODULE__.do_support_create/1, "support.report.created"},
     {"runner register", &__MODULE__.do_runner_register/1, "runner.registered"},
     {"runner delete", &__MODULE__.do_runner_delete/1, "runner.deleted"}
@@ -142,7 +147,9 @@ defmodule Fountain.AuditGuardrailTest do
           {Vaults, :delete_vault, 2},
           {InferenceCredentials, :put_credential, 5},
           {Conversations, :start_conversation, 2},
-          {Conversations, :delete_conversation, 2}
+          {Conversations, :delete_conversation, 2},
+          {Fountain.Team.Comms, :provision_contact, 3},
+          {Fountain.Team.Comms, :release_contact, 3}
         ] do
       # `Code.ensure_loaded?/1` first: `function_exported?/3` answers about
       # *loaded* modules, so on a seed where this test ran before anything had
@@ -318,6 +325,51 @@ defmodule Fountain.AuditGuardrailTest do
           "message" => "it broke",
           "context" => %{"conversation_id" => "x"}
         })
+
+  # The flag is flipped for the duration of the call only; the providers are
+  # the Req.Test plugs from config/test.exs, stubbed in this process.
+  defp with_comms(user, fun) do
+    agent = insert_agent(user_id: user.id)
+
+    insert_conversation(
+      user_id: user.id,
+      agent: agent,
+      status: "idle",
+      channel_id: Fountain.Team.channel()
+    )
+
+    Req.Test.stub(Fountain.Team.Comms.AgentMail, fn conn ->
+      Req.Test.json(conn, %{"inbox_id" => "inbox_g", "email" => "g@agentmail.to"})
+    end)
+
+    Req.Test.stub(Fountain.Team.Comms.AgentPhone, fn conn ->
+      Req.Test.json(conn, %{"id" => "num_g", "phoneNumber" => "+15550000000"})
+    end)
+
+    previous = Application.get_env(:fountain, :feature_flag_overrides)
+    Application.put_env(:fountain, :feature_flag_overrides, %{"team_comms" => true})
+
+    try do
+      fun.(agent)
+    after
+      if previous,
+        do: Application.put_env(:fountain, :feature_flag_overrides, previous),
+        else: Application.delete_env(:fountain, :feature_flag_overrides)
+    end
+  end
+
+  def do_contact_provision(user) do
+    with_comms(user, fn agent ->
+      {:ok, _} = Fountain.Team.Comms.provision_contact(user.id, agent.id)
+    end)
+  end
+
+  def do_contact_release(user) do
+    with_comms(user, fn agent ->
+      {:ok, _} = Fountain.Team.Comms.provision_contact(user.id, agent.id)
+      :ok = Fountain.Team.Comms.release_contact(user.id, agent.id)
+    end)
+  end
 
   def do_schedule_create(user), do: insert_schedule(user)
 
