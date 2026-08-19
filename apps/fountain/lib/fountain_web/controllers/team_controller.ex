@@ -147,7 +147,9 @@ defmodule FountainWeb.TeamController do
         "plus `conversation_id` and `agent_id`. A `team` event (data `{reason: changed}`) " <>
         "is sent when the roster changes — a teammate added or removed, or a " <>
         "fresh conversation opened for one — and the stream follows the new " <>
-        "conversation on its own; the client re-lists. `Last-Event-ID` (a log event " <>
+        "conversation on its own; the client re-lists. A `schedule` event (same " <>
+        "data) is sent when a team schedule is created, updated, deleted or fired " <>
+        "(#825); the client re-lists `/api/team/schedules`. `Last-Event-ID` (a log event " <>
         "id) replays what was missed on each teammate's conversation. Heartbeats " <>
         "every 15s; closes after 60s idle so the client reconnects.",
     parameters: [
@@ -264,6 +266,19 @@ defmodule FountainWeb.TeamController do
                "event: team\ndata: #{Jason.encode!(%{reason: "changed"})}\n\n"
              ) do
           {:ok, conn} -> sse_loop(conn, %{state | followed: followed})
+          {:error, _} -> conn
+        end
+
+      # A schedule was created, updated, deleted or fired (#825): the client
+      # re-lists `/api/team/schedules`. Nothing to follow — a run's
+      # conversation is either a teammate's (already followed, or announced by
+      # `team`) or a one-off outside the team.
+      {:team_schedules_changed, _} ->
+        case Plug.Conn.chunk(
+               conn,
+               "event: schedule\ndata: #{Jason.encode!(%{reason: "changed"})}\n\n"
+             ) do
+          {:ok, conn} -> sse_loop(conn, state)
           {:error, _} -> conn
         end
 

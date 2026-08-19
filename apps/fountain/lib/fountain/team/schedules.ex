@@ -92,6 +92,7 @@ defmodule Fountain.Team.Schedules do
         {:ok, schedule} ->
           schedule = Repo.preload(schedule, :agent)
           record("team.schedule.created", schedule, opts, describe(schedule))
+          Team.broadcast_schedules_changed(schedule.user_id)
           {:ok, schedule}
 
         {:error, _} = err ->
@@ -118,8 +119,10 @@ defmodule Fountain.Team.Schedules do
       {:ok, updated} ->
         updated = Repo.preload(updated, :agent, force: true)
 
-        if changeset.changes != %{},
-          do: record("team.schedule.updated", updated, opts, Audit.changed_fields(changeset))
+        if changeset.changes != %{} do
+          record("team.schedule.updated", updated, opts, Audit.changed_fields(changeset))
+          Team.broadcast_schedules_changed(updated.user_id)
+        end
 
         {:ok, updated}
 
@@ -132,6 +135,7 @@ defmodule Fountain.Team.Schedules do
   def delete_schedule(%Schedule{} = schedule, opts \\ []) do
     with {:ok, deleted} <- Repo.delete(schedule) do
       record("team.schedule.deleted", deleted, opts, describe(schedule))
+      Team.broadcast_schedules_changed(deleted.user_id)
       {:ok, deleted}
     end
   end
@@ -148,6 +152,7 @@ defmodule Fountain.Team.Schedules do
         from(s in Schedule, where: s.user_id == ^user_id and s.agent_id == ^agent_id)
       )
 
+    if n > 0, do: Team.broadcast_schedules_changed(user_id)
     n
   end
 
@@ -179,6 +184,7 @@ defmodule Fountain.Team.Schedules do
       end
 
     {:ok, _} = schedule |> Schedule.run_changeset(run_attrs) |> Repo.update()
+    Team.broadcast_schedules_changed(schedule.user_id)
 
     record(
       "team.schedule.fired",

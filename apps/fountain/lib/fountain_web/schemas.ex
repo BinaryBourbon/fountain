@@ -1757,6 +1757,97 @@ defmodule FountainWeb.Schemas do
     })
   end
 
+  defmodule TeamSchedule do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "TeamSchedule",
+      description:
+        "A scheduled prompt for a teammate: on `cron` (five fields, UTC), send `prompt` " <>
+          "to the agent — into its team conversation, or (`one_off`) on a fresh computer.",
+      type: :object,
+      properties: %{
+        id: %Schema{type: :string, format: :uuid},
+        agent_id: %Schema{type: :string, format: :uuid},
+        name: %Schema{type: :string, nullable: true, maxLength: 120},
+        cron: %Schema{type: :string, example: "0 9 * * 1-5"},
+        prompt: %Schema{type: :string},
+        one_off: %Schema{
+          type: :boolean,
+          description:
+            "false: the prompt goes into the teammate's own conversation. true: each " <>
+              "run opens a fresh conversation with the teammate's agent, environment and vault."
+        },
+        enabled: %Schema{type: :boolean},
+        next_run_at: %Schema{
+          type: :string,
+          format: :"date-time",
+          nullable: true,
+          description: "The next fire time (UTC); null while disabled."
+        },
+        last_run_at: %Schema{type: :string, format: :"date-time", nullable: true},
+        last_conversation_id: %Schema{
+          type: :string,
+          format: :uuid,
+          nullable: true,
+          description: "The conversation the last run went to; null when it failed or never ran."
+        },
+        last_error: %Schema{
+          type: :string,
+          nullable: true,
+          description:
+            "Why the last run did not go out (`teammate was busy`, ...); null after a good run."
+        },
+        inserted_at: %Schema{type: :string, format: :"date-time"},
+        updated_at: %Schema{type: :string, format: :"date-time"}
+      },
+      required: [:id, :agent_id, :cron, :prompt, :one_off, :enabled]
+    })
+  end
+
+  item_response(TeamScheduleResponse, of: TeamSchedule)
+  list_response(TeamScheduleListResponse, of: TeamSchedule)
+
+  defmodule TeamScheduleCreateRequest do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "TeamScheduleCreateRequest",
+      type: :object,
+      properties: %{
+        name: %Schema{type: :string, nullable: true, maxLength: 120},
+        cron: %Schema{
+          type: :string,
+          description: "Five fields, UTC. `@daily`-style names work; `@reboot` does not.",
+          example: "0 9 * * 1-5"
+        },
+        prompt: %Schema{type: :string, minLength: 1, maxLength: 20_000},
+        one_off: %Schema{type: :boolean, default: false},
+        enabled: %Schema{type: :boolean, default: true}
+      },
+      required: [:cron, :prompt]
+    })
+  end
+
+  defmodule TeamScheduleUpdateRequest do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "TeamScheduleUpdateRequest",
+      type: :object,
+      properties: %{
+        name: %Schema{type: :string, nullable: true, maxLength: 120},
+        cron: %Schema{type: :string, example: "0 9 * * 1-5"},
+        prompt: %Schema{type: :string, minLength: 1, maxLength: 20_000},
+        one_off: %Schema{type: :boolean},
+        enabled: %Schema{type: :boolean}
+      }
+    })
+  end
+
   defmodule CatalogResponse do
     @moduledoc false
     require OpenApiSpex

@@ -349,9 +349,19 @@ defmodule FountainWeb.Router do
     # web app. Every action wraps Fountain.Team.
     get "/team", TeamController, :index
     post "/team", TeamController, :create
+    # Before `/team/:agent_id`, or "schedules" would be read as an agent id.
+    get "/team/schedules", TeamScheduleController, :index_all
     get "/team/:agent_id", TeamController, :show
     delete "/team/:agent_id", TeamController, :delete
     post "/team/:agent_id/messages", TeamController, :message
+
+    # Team schedules (#825): the routines `/team` offers, per teammate.
+    get "/team/:agent_id/schedules", TeamScheduleController, :index
+    post "/team/:agent_id/schedules", TeamScheduleController, :create
+    get "/team/:agent_id/schedules/:id", TeamScheduleController, :show
+    patch "/team/:agent_id/schedules/:id", TeamScheduleController, :update
+    delete "/team/:agent_id/schedules/:id", TeamScheduleController, :delete
+    post "/team/:agent_id/schedules/:id/run", TeamScheduleController, :run
 
     resources "/conversations", ConversationController, only: [:index, :show, :create, :delete] do
       post "/prompts", ConversationController, :prompt, as: :prompt

@@ -69,6 +69,12 @@ defmodule FountainWeb.ConnCase do
     |> Phoenix.ConnTest.dispatch(FountainWeb.Endpoint, :put, path, Jason.encode!(payload))
   end
 
+  def patch_json(conn, path, payload) do
+    conn
+    |> Plug.Conn.put_req_header("content-type", "application/json")
+    |> Phoenix.ConnTest.dispatch(FountainWeb.Endpoint, :patch, path, Jason.encode!(payload))
+  end
+
   @doc """
   DELETE with a JSON body — account deletion takes a typed confirmation, so
   the body matters on a verb that usually has none.

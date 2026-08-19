@@ -157,6 +157,24 @@ defmodule FountainWeb.TeamStreamTest do
     assert conn.resp_body =~ "from-new-linus"
   end
 
+  test "a schedule change sends a `schedule` event (#825)", %{user: user, raw_key: key} do
+    ada = insert_agent(user_id: user.id, name: "Ada")
+    insert_teammate_conv(user, ada)
+
+    task = stream_async(key)
+    Process.sleep(300)
+
+    {:ok, _} =
+      Fountain.Team.Schedules.create_schedule(user.id, %{
+        "agent_id" => ada.id,
+        "cron" => "0 9 * * *",
+        "prompt" => "standup"
+      })
+
+    conn = Task.await(task, 5_000)
+    assert conn.resp_body =~ "event: schedule\ndata: {\"reason\":\"changed\"}"
+  end
+
   test "Team.add_teammate and remove_teammate broadcast the roster change", %{user: user} do
     Team.subscribe(user.id)
     ada = insert_agent(user_id: user.id, name: "Ada")
