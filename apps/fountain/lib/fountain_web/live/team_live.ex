@@ -730,8 +730,7 @@ defmodule FountainWeb.TeamLive do
   defp comms_error(other), do: "Could not update the contact: #{inspect(other)}"
 
   defp describe_provider({:status, status, body}) when is_map(body),
-    do:
-      "HTTP #{status}: #{body["message"] || body["error"] || body["detail"] || Jason.encode!(body)}"
+    do: "HTTP #{status}: #{Fountain.Team.Comms.Mcp.error_text(body)}"
 
   defp describe_provider({:status, status, body}), do: "HTTP #{status}: #{inspect(body)}"
   defp describe_provider(%{__exception__: true} = e), do: Exception.message(e)

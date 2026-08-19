@@ -60,6 +60,21 @@ defmodule Fountain.Team.Comms.McpTest do
     def send_message(_, _), do: {:error, {:status, 422, %{"message" => "bad recipient"}}}
   end
 
+  # AgentPhone's envelope nests the message under "error".
+  defmodule FailingPhone do
+    def send_message(_),
+      do:
+        {:error,
+         {:status, 400,
+          %{
+            "detail" => "Number is not assigned to an agent yet",
+            "error" => %{
+              "message" => "Number is not assigned to an agent yet",
+              "code" => "HTTP_400"
+            }
+          }}}
+  end
+
   defmodule FakePhone do
     def send_message(body) do
       send(self(), {:sms_send, body})
@@ -250,6 +265,17 @@ defmodule Fountain.Team.Comms.McpTest do
   end
 
   describe "sms tools" do
+    test "a nested provider error envelope is described, not crashed on" do
+      assert %{"result" => %{"isError" => true, "content" => [%{"text" => msg}]}} =
+               call(
+                 "sms_send",
+                 %{"to" => "+15550001111", "body" => "hey"},
+                 ctx(%{phone: FailingPhone})
+               )
+
+      assert msg =~ "HTTP 400: Number is not assigned to an agent yet"
+    end
+
     test "sms_send sends from the teammate's number and audits" do
       test = self()
       ctx = ctx(%{audit: fn tool, summary -> send(test, {:audit, tool, summary}) end})

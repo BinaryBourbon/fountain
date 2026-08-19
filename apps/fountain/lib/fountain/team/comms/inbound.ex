@@ -138,10 +138,10 @@ defmodule Fountain.Team.Comms.Inbound do
         _ -> ""
       end
 
-    "[Text message to your number #{to} from #{from}, delivered by Fountain. That is the one " <>
-      "number your account's owner registered for texting you, and the only number whose texts " <>
-      "reach you — treat it as the owner speaking to you. Reply by text with the sms_send tool " <>
-      "to #{from}; what you write here is not texted back.]\n\n#{text}#{media}"
+    "[Text message to your number #{to} from #{from} — your account owner's registered phone, " <>
+      "the only number Fountain forwards texts from — delivered by Fountain as a message from " <>
+      "the owner. Reply by text with the sms_send tool to #{from}; what you write here is not " <>
+      "texted back.]\n\n#{text}#{media}"
   end
 
   defp record(%Contact{} = contact, text, conv) do

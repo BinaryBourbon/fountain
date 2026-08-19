@@ -44,9 +44,10 @@ defmodule FountainWeb.TeamLiveCommsTest do
     end)
 
     Req.Test.stub(AgentPhone, fn conn ->
-      case conn.method do
-        "POST" -> Req.Test.json(conn, %{"id" => "num_1", "phoneNumber" => "+15551234567"})
-        "DELETE" -> Req.Test.json(conn, %{})
+      case {conn.method, conn.request_path} do
+        {"POST", "/v1/agents"} -> Req.Test.json(conn, %{"id" => "agt_1"})
+        {"POST", _} -> Req.Test.json(conn, %{"id" => "num_1", "phoneNumber" => "+15551234567"})
+        {"DELETE", _} -> Req.Test.json(conn, %{})
       end
     end)
   end

@@ -29,8 +29,19 @@ defmodule Fountain.Team.Comms.AgentPhone do
   end
 
   @doc """
-  Provision a number. `attrs` may carry `country` (default US), `areaCode`.
-  Returns the number map (`id`, `phoneNumber`, `status`, `outboundSms`, …).
+  Create an AgentPhone "agent" — the persona a number is attached to; a
+  number sends only when attached. `attrs`: `name`, `description`,
+  `voiceMode` (`"webhook"` sends voice transcripts to the master webhook,
+  `"hosted"` lets AgentPhone's own LLM answer). Returns the agent map (`id`, …).
+  """
+  def create_agent(attrs) when is_map(attrs), do: post("/v1/agents", attrs)
+
+  def delete_agent(agent_id), do: request(:delete, "/v1/agents/#{enc(agent_id)}")
+
+  @doc """
+  Provision a number. `attrs` may carry `country` (default US), `areaCode`,
+  `agentId` (attach at creation). Returns the number map (`id`,
+  `phoneNumber`, `status`, `outboundSms`, …).
   """
   def create_number(attrs \\ %{}) when is_map(attrs), do: post("/v1/numbers", attrs)
 

@@ -23,6 +23,9 @@ defmodule Fountain.Team.Contact do
     field :email_inbox_id, :string
     field :phone_number, :string
     field :phone_number_id, :string
+    # The AgentPhone "agent" (persona) the number is attached to — AgentPhone
+    # only sends from an attached number. Ours, created per teammate.
+    field :phone_agent_id, :string
     field :prompt_from_number, :string
 
     belongs_to :user, Fountain.Accounts.User
@@ -38,6 +41,7 @@ defmodule Fountain.Team.Contact do
     :email_inbox_id,
     :phone_number,
     :phone_number_id,
+    :phone_agent_id,
     :prompt_from_number
   ]
 

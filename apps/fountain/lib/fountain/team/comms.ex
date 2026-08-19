@@ -95,7 +95,8 @@ defmodule Fountain.Team.Comms do
          {:ok, requested} <-
            Ecto.Changeset.apply_action(Contact.request_changeset(attrs), :insert),
          {:ok, inbox} <- create_inbox(name, teammate, opts),
-         {:ok, number} <- create_number(inbox, opts) do
+         {:ok, phone_agent} <- create_phone_agent(name, teammate, inbox),
+         {:ok, number} <- create_number(inbox, phone_agent, opts) do
       attrs = %{
         user_id: user_id,
         agent_id: agent_id,
@@ -103,6 +104,7 @@ defmodule Fountain.Team.Comms do
         email_inbox_id: inbox["inbox_id"],
         phone_number: number["phoneNumber"],
         phone_number_id: number["id"],
+        phone_agent_id: phone_agent["id"],
         prompt_from_number: requested.prompt_from_number
       }
 
@@ -120,7 +122,7 @@ defmodule Fountain.Team.Comms do
         {:error, changeset} ->
           # A race with a second provision, most likely. Release what we
           # just created so nothing is left unrecorded upstream.
-          release_upstream(inbox["inbox_id"], number["id"])
+          release_upstream(inbox["inbox_id"], number["id"], phone_agent["id"])
           {:error, changeset}
       end
     end
@@ -291,19 +293,45 @@ defmodule Fountain.Team.Comms do
     end
   end
 
-  defp create_number(inbox, opts) do
-    attrs = %{"country" => Keyword.get(opts, :country, "US")}
+  # AgentPhone sends only from a number attached to one of its "agents", so
+  # each teammate number gets a persona of its own. Webhook voice mode: a
+  # call reaches our master webhook, which declines it — nothing of
+  # AgentPhone's own LLM answers on a teammate's behalf.
+  defp create_phone_agent(name, teammate, inbox) do
+    attrs = %{
+      "name" => name,
+      "description" => "Fountain teammate #{teammate.agent.name} (#{teammate.agent.id})",
+      "voiceMode" => "webhook",
+      "enableMessaging" => true
+    }
+
+    case AgentPhone.create_agent(attrs) do
+      {:ok, %{"id" => _} = agent} ->
+        {:ok, agent}
+
+      {:ok, other} ->
+        release_upstream(inbox["inbox_id"], nil, nil)
+        {:error, {:phone, {:unexpected_response, other}}}
+
+      {:error, reason} ->
+        release_upstream(inbox["inbox_id"], nil, nil)
+        {:error, {:phone, reason}}
+    end
+  end
+
+  defp create_number(inbox, phone_agent, opts) do
+    attrs = %{"country" => Keyword.get(opts, :country, "US"), "agentId" => phone_agent["id"]}
 
     case AgentPhone.create_number(attrs) do
       {:ok, %{"id" => _, "phoneNumber" => _} = number} ->
         {:ok, number}
 
       {:ok, other} ->
-        release_upstream(inbox["inbox_id"], nil)
+        release_upstream(inbox["inbox_id"], nil, phone_agent["id"])
         {:error, {:phone, {:unexpected_response, other}}}
 
       {:error, reason} ->
-        release_upstream(inbox["inbox_id"], nil)
+        release_upstream(inbox["inbox_id"], nil, phone_agent["id"])
         {:error, {:phone, reason}}
     end
   end
@@ -336,9 +364,18 @@ defmodule Fountain.Team.Comms do
   end
 
   defp release_phone(%Contact{} = c) do
-    if Contact.phone?(c),
-      do: release_one(:phone, AgentPhone.delete_number(c.phone_number_id)),
-      else: :ok
+    number =
+      if Contact.phone?(c),
+        do: release_one(:phone, AgentPhone.delete_number(c.phone_number_id)),
+        else: :ok
+
+    # The persona goes with the number; a missing one (older contacts, or
+    # already gone) is nothing to report.
+    with :ok <- number do
+      if is_binary(c.phone_agent_id) and c.phone_agent_id != "",
+        do: release_one(:phone, AgentPhone.delete_agent(c.phone_agent_id)),
+        else: :ok
+    end
   end
 
   defp release_one(_channel, {:ok, _}), do: :ok
@@ -347,7 +384,7 @@ defmodule Fountain.Team.Comms do
 
   # Best-effort cleanup after a partial provision; a failure here is logged,
   # not raised — the caller is already returning the real error.
-  defp release_upstream(inbox_id, number_id) do
+  defp release_upstream(inbox_id, number_id, phone_agent_id) do
     if is_binary(inbox_id) do
       case AgentMail.delete_inbox(inbox_id) do
         {:ok, _} ->
@@ -368,6 +405,18 @@ defmodule Fountain.Team.Comms do
         {:error, reason} ->
           Logger.warning(
             "team comms: could not release number #{number_id} after a failed provision: #{inspect(reason)}"
+          )
+      end
+    end
+
+    if is_binary(phone_agent_id) do
+      case AgentPhone.delete_agent(phone_agent_id) do
+        {:ok, _} ->
+          :ok
+
+        {:error, reason} ->
+          Logger.warning(
+            "team comms: could not delete phone agent #{phone_agent_id} after a failed provision: #{inspect(reason)}"
           )
       end
     end

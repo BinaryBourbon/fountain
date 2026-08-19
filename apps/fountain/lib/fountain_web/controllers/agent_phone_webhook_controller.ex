@@ -36,9 +36,18 @@ defmodule FountainWeb.AgentPhoneWebhookController do
           delivery_id = first_header(conn, "x-webhook-id")
 
           result =
-            case Inbound.handle(conn.body_params, delivery_id) do
-              {:ok, conv_id} -> %{status: "prompted", conversation_id: conv_id}
-              {:ignored, reason} -> %{status: "ignored", reason: describe(reason)}
+            case conn.body_params do
+              # A voice event wants a spoken reply; a teammate's number does
+              # not take calls (voiceMode "webhook", see Comms), so say so
+              # and hang up rather than leaving the caller in silence.
+              %{"event" => "agent.message", "channel" => "voice"} ->
+                %{text: "This number only receives text messages. Goodbye.", hangup: true}
+
+              payload ->
+                case Inbound.handle(payload, delivery_id) do
+                  {:ok, conv_id} -> %{status: "prompted", conversation_id: conv_id}
+                  {:ignored, reason} -> %{status: "ignored", reason: describe(reason)}
+                end
             end
 
           json(conn, result)
