@@ -264,6 +264,26 @@ defmodule FountainWeb.Router do
     delete "/api-keys/:id", ApiKeyController, :delete
   end
 
+  # Self-hosted runners (ADR 0022). Full scope: a sandbox's per-conversation
+  # token must not be able to attach a machine that then runs the account's
+  # agents. `/ws` is the daemon's WebSocket; it authenticates like any other
+  # /api route (bearer key) and upgrades in the controller.
+  scope "/api/runners", FountainWeb do
+    pipe_through [:accepts_json, :api, :require_full_scope]
+
+    get "/", RunnerController, :index
+    delete "/:id", RunnerController, :delete
+  end
+
+  # The daemon's socket skips content negotiation like the SSE routes do: a
+  # WebSocket client sends no JSON `Accept`, and the upgrade is not a JSON
+  # response.
+  scope "/api/runners", FountainWeb do
+    pipe_through [:api, :require_full_scope]
+
+    get "/ws", RunnerController, :connect
+  end
+
   # Credential changes (#521) — same gate, same reason: a conversation-scoped
   # sprite token must not be able to rotate the account password or start an
   # email change. Both require the current password on top of the bearer token.
@@ -516,6 +536,9 @@ defmodule FountainWeb.Router do
 
       # ── BYO inference credentials (ADR 0008) ───────────────────────────────────────────────
       live "/account/inference-credentials", InferenceCredentialsLive.Index, :index
+
+      # ── Self-hosted runners (ADR 0022) ─────────────────────────────────────────────────────
+      live "/account/runners", RunnersLive.Index, :index
 
       # ── Credential management (#448) ───────────────────────────────────────────────────────
       live "/account/security", AccountSecurityLive, :index

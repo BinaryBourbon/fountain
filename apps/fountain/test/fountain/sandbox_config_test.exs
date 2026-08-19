@@ -30,6 +30,18 @@ defmodule Fountain.SandboxConfigTest do
     assert Sandbox.enabled_providers() == [:sprites]
   end
 
+  test "the runner provider needs no credential — only the opt-out disables it" do
+    previous = Application.get_env(:fountain, :runners_enabled)
+    on_exit(fn -> restore(:runners_enabled, previous) end)
+
+    Application.put_env(:fountain, :runners_enabled, true)
+    assert Sandbox.enabled?(:runner)
+    assert :runner in Sandbox.enabled_providers()
+
+    Application.put_env(:fountain, :runners_enabled, false)
+    refute Sandbox.enabled?(:runner)
+  end
+
   test "an e2b credential enables the provider now that its adapter ships" do
     refute Sandbox.enabled?(:e2b)
     Application.put_env(:fountain, :e2b_api_key, "e2b_x")

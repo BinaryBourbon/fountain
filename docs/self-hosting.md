@@ -10,7 +10,7 @@ is a different thing, and this page assumes you want an instance that stays up.
 | | |
 |---|---|
 | **Postgres 16+** | The compose file below runs one for you |
-| **A sandbox provider credential** | [sprites.dev](https://sprites.dev) by default; [E2B](integrations/e2b.md) and [Daytona](integrations/daytona.md) are alternatives. The app boots without one, but every conversation fails |
+| **A sandbox provider** | [sprites.dev](https://sprites.dev) by default; [E2B](integrations/e2b.md) and [Daytona](integrations/daytona.md) are hosted alternatives, and users can bring their own machines with [`fountain runner`](integrations/runners.md) (no credential). The app boots without one, but every conversation fails |
 | **A mail provider** | Resend or any SMTP server. Optional — see [Email](#email) |
 
 Sandboxes run on one of three backends, all hosted services — a Fountain

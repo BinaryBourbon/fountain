@@ -10,7 +10,7 @@ defmodule Fountain.SandboxTest do
 
   describe "provider resolution" do
     test "the known vocabulary is closed and sprites is the default" do
-      assert Sandbox.known_providers() == ~w(sprites e2b daytona)
+      assert Sandbox.known_providers() == ~w(sprites e2b daytona runner)
       assert Sandbox.default_provider() == :sprites
       assert Sandbox.adapter_for(:sprites) == Fountain.Sandbox.Sprites
     end

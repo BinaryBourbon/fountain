@@ -23,7 +23,9 @@ defmodule Fountain.SandboxConformanceCase do
       end
 
   `fixtures` supplies the adapter-appropriate command vocabulary (the Fake
-  speaks its scripted instructions; a live adapter would use `bash -lc`):
+  speaks its scripted instructions; a live adapter would use `bash -lc`), and
+  an optional `name: {Mod, :fun, args}` mints sandbox names when the adapter
+  needs a particular shape:
 
     * `exec_ok` — `{cmd, args, expected_stdout}`, exits 0
     * `exec_fail` — `{cmd, args, nonzero_exit_code}`
@@ -47,8 +49,13 @@ defmodule Fountain.SandboxConformanceCase do
       @adapter unquote(opts[:adapter])
       @fixtures unquote(opts[:fixtures])
 
+      # Adapters whose names carry routing (the runner adapter's names name
+      # the runner) supply `name: {Mod, :fun, args}` to mint routable ones.
       defp conformance_name do
-        "conformance-#{System.unique_integer([:positive])}"
+        case unquote(opts[:name]) do
+          nil -> "conformance-#{System.unique_integer([:positive])}"
+          {mod, fun, args} -> apply(mod, fun, args)
+        end
       end
 
       defp created_handle do
@@ -91,8 +98,7 @@ defmodule Fountain.SandboxConformanceCase.Identity do
         # a URL, and one that does not must say :unsupported rather than
         # inventing an address a human would then be sent to.
         test "public_url/1 agrees with the advertised capability" do
-          name = "conformance-url-#{System.unique_integer([:positive])}"
-          {:ok, handle} = @adapter.create(name, [])
+          {:ok, handle} = @adapter.create(conformance_name(), [])
           on_exit(fn -> @adapter.destroy(handle) end)
 
           case @adapter.public_url(handle) do

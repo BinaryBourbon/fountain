@@ -6,7 +6,7 @@ provider side, which env vars result, and how to verify it works.
 
 | Integration | Required? | Env vars | Without it |
 |---|---|---|---|
-| [A sandbox provider](sandbox-contract.md) | **Yes — one of three** | `SPRITES_TOKEN` *or* `E2B_API_KEY` *or* `DAYTONA_API_KEY`, plus `SANDBOX_PROVIDER` to pick the default | The app boots, but every conversation fails at provision time |
+| [A sandbox provider](sandbox-contract.md) | **Yes — one of four** | `SPRITES_TOKEN` *or* `E2B_API_KEY` *or* `DAYTONA_API_KEY` (or users' own machines via [`fountain runner`](runners.md), no credential), plus `SANDBOX_PROVIDER` to pick the default | The app boots, but every conversation fails at provision time |
 | [Mail](mail.md) | **A decision, yes** | `RESEND_API_KEY` *or* `SMTP_*` *or* `EMAIL_DELIVERY=none`, `EMAIL_FROM` | Production refuses to boot with none of the three set |
 | [GitHub OAuth](github-oauth.md) | Optional | `GITHUB_OAUTH_CLIENT_ID`, `GITHUB_OAUTH_CLIENT_SECRET` | Email + password auth only |
 | [Stripe](stripe.md) | Optional | `BILLING_ENABLED`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_ID` | No billing. Correct for most self-hosted instances — leave the gate off |

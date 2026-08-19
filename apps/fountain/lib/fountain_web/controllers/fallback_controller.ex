@@ -75,6 +75,20 @@ defmodule FountainWeb.FallbackController do
     })
   end
 
+  # The agent runs on the self-hosted runner provider (ADR 0022) and none of
+  # the user's runners is connected right now. 409: nothing is misconfigured,
+  # a machine just is not online — start `fountain runner` and retry.
+  def call(conn, {:error, :no_runner_online}) do
+    conn
+    |> put_status(:conflict)
+    |> json(%{
+      error: "no_runner_online",
+      message:
+        "this agent runs on a self-hosted runner and none of yours is connected — " <>
+          "start `fountain runner` on the machine and try again"
+    })
+  end
+
   # Subscription gate (ADR 0006). Raised from the context so every provisioning
   # path renders the same response, rather than each controller inventing one.
   def call(conn, {:error, :subscription_required}) do

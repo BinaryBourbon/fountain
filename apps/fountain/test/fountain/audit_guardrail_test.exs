@@ -73,7 +73,9 @@ defmodule Fountain.AuditGuardrailTest do
     {"team schedule create", &__MODULE__.do_schedule_create/1, "team.schedule.created"},
     {"team schedule update", &__MODULE__.do_schedule_update/1, "team.schedule.updated"},
     {"team schedule delete", &__MODULE__.do_schedule_delete/1, "team.schedule.deleted"},
-    {"team schedule run", &__MODULE__.do_schedule_run/1, "team.schedule.fired"}
+    {"team schedule run", &__MODULE__.do_schedule_run/1, "team.schedule.fired"},
+    {"runner register", &__MODULE__.do_runner_register/1, "runner.registered"},
+    {"runner delete", &__MODULE__.do_runner_delete/1, "runner.deleted"}
   ]
 
   # Documented non-coverage. Mirrors the `Fountain.Audit` moduledoc; if the two
@@ -81,6 +83,8 @@ defmodule Fountain.AuditGuardrailTest do
   @deliberately_silent %{
     "ConversationServer per-turn state" => "high-volume machine state; log_events covers it",
     "Accounts.touch_api_key/1" => "a last-used stamp on every authenticated request",
+    "Runners.touch/1 and reconnects" =>
+      "a last-seen stamp on every heartbeat; a reconnect refreshes the same row",
     "Conversations.mark_read/2" => "reading is not a state change anyone audits",
     "theme and display preferences" => "not tenant data anyone reconstructs an incident from"
   }
@@ -204,6 +208,15 @@ defmodule Fountain.AuditGuardrailTest do
       "name" => "buzz-#{System.unique_integer([:positive])}",
       "relay_url" => "wss://relay.test"
     }
+  end
+
+  def do_runner_register(user) do
+    {:ok, _} = Fountain.Runners.register(user.id, %{"name" => "guard"})
+  end
+
+  def do_runner_delete(user) do
+    {:ok, runner} = Fountain.Runners.register(user.id, %{"name" => "guard-delete"})
+    {:ok, _} = Fountain.Runners.delete_runner(runner)
   end
 
   def do_key_create(user), do: {:ok, {_, _}} = Fountain.Accounts.create_api_key(user.id, "guard")

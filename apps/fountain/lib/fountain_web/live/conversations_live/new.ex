@@ -55,6 +55,15 @@ defmodule FountainWeb.ConversationsLive.New do
          |> put_flash(:error, "An active subscription is required to start a conversation.")
          |> push_navigate(to: ~p"/account/billing")}
 
+      {:error, :no_runner_online} ->
+        {:noreply,
+         put_flash(
+           socket,
+           :error,
+           "This agent runs on a self-hosted runner and none of yours is connected. " <>
+             "Start `fountain runner` on the machine and try again."
+         )}
+
       {:error, {:sandbox_quota_exceeded, %{count: count, limit: limit}}} ->
         {:noreply,
          put_flash(

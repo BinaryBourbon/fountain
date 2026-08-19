@@ -301,6 +301,7 @@ defmodule FountainWeb.Layouts do
               <div class="px-2 pt-0.5 pb-2 space-y-0.5 border-t border-[var(--color-border)]">
                 <.nav_link href={~p"/account"} label="Account" current={@current_path} exact />
                 <.nav_link href={~p"/api-keys"} label="API Keys" current={@current_path} />
+                <.nav_link href={~p"/account/runners"} label="Runners" current={@current_path} />
                 <.nav_link
                   :if={Fountain.Billing.enabled?()}
                   href={~p"/account/billing"}
