@@ -458,13 +458,27 @@ defmodule Fountain.Team.Comms.Mcp do
   defp put_param(params, _k, nil), do: params
   defp put_param(params, k, v), do: Keyword.put(params, k, v)
 
+  # Provider error envelopes differ: AgentMail `{message}`, AgentPhone
+  # `{detail, error: {message, code}}`; some nest a map where a string is
+  # expected. Find the first string worth showing; never crash on the shape.
   defp describe({:status, status, body}) when is_map(body),
-    do:
-      "HTTP #{status}: #{body["message"] || body["error"] || body["detail"] || Jason.encode!(body)}"
+    do: "HTTP #{status}: #{error_text(body)}"
 
   defp describe({:status, status, body}), do: "HTTP #{status}: #{inspect(body)}"
+
   defp describe(%{__exception__: true} = e), do: Exception.message(e)
   defp describe(other), do: inspect(other)
+
+  @doc "The first human-readable string in a provider error envelope."
+  def error_text(body) when is_map(body) do
+    candidates = [body["detail"], body["message"], body["error"]]
+
+    Enum.find_value(candidates, Jason.encode!(body), fn
+      s when is_binary(s) and s != "" -> s
+      %{} = nested -> error_text(nested)
+      _ -> nil
+    end)
+  end
 
   defp text(str), do: %{type: "text", text: to_string(str)}
 

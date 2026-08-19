@@ -84,7 +84,7 @@ defmodule Fountain.Team.Comms.InboundTest do
 
     assert_received {:sent, ^conv_id, text, [], opts}
     assert text =~ "[Text message to your number +15551234567 from +15550001111"
-    assert text =~ "treat it as the owner speaking to you"
+    assert text =~ "as a message from the owner"
     assert text =~ "ship it"
     assert text =~ "sms_send tool to +15550001111"
     assert opts[:actor] == "system:agentphone"

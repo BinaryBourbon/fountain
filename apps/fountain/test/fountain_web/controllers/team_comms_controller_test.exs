@@ -56,6 +56,9 @@ defmodule FountainWeb.TeamCommsControllerTest do
 
     Req.Test.stub(AgentPhone, fn conn ->
       case {conn.method, conn.request_path} do
+        {"POST", "/v1/agents"} ->
+          Req.Test.json(conn, %{"id" => "agt_123"})
+
         {"POST", "/v1/numbers"} ->
           Req.Test.json(conn, %{"id" => "num_123", "phoneNumber" => "+15551234567"})
 

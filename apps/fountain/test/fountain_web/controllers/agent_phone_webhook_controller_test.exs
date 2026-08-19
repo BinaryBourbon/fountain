@@ -134,6 +134,33 @@ defmodule FountainWeb.AgentPhoneWebhookControllerTest do
              |> json_response(200)
   end
 
+  test "a voice event is declined with a spoken line and a hangup", %{conn: conn} do
+    body =
+      Jason.encode!(%{
+        "event" => "agent.message",
+        "channel" => "voice",
+        "data" => %{
+          "from" => "+15550001111",
+          "to" => "+15551234567",
+          "transcript" => "hello?",
+          "direction" => "inbound"
+        }
+      })
+
+    ts = to_string(System.os_time(:second))
+
+    assert %{"text" => text, "hangup" => true} =
+             conn
+             |> deliver(body, [
+               {"x-webhook-signature", sign(body, ts)},
+               {"x-webhook-timestamp", ts}
+             ])
+             |> json_response(200)
+
+    assert text =~ "text messages"
+    refute_received {:sent, _, _}
+  end
+
   test "a redelivery is 200 and not prompted twice", %{conn: conn} do
     ts = to_string(System.os_time(:second))
 

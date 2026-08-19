@@ -55,12 +55,20 @@ defmodule Fountain.Team.CommsTest do
 
     Req.Test.stub(AgentPhone, fn conn ->
       case {conn.method, conn.request_path} do
+        {"POST", "/v1/agents"} ->
+          send(test, {:agentphone_create_agent, conn.body_params})
+          Req.Test.json(conn, %{"id" => "agt_123", "name" => conn.body_params["name"]})
+
         {"POST", "/v1/numbers"} ->
           send(test, {:agentphone_create, conn.body_params})
           Req.Test.json(conn, %{"id" => "num_123", "phoneNumber" => "+15551234567"})
 
         {"DELETE", "/v1/numbers/num_123"} ->
           send(test, :agentphone_delete)
+          Req.Test.json(conn, %{})
+
+        {"DELETE", "/v1/agents/agt_123"} ->
+          send(test, :agentphone_delete_agent)
           Req.Test.json(conn, %{})
       end
     end)
@@ -123,7 +131,12 @@ defmodule Fountain.Team.CommsTest do
       assert_received {:agentmail_create, body}
       assert body["display_name"] == "Ada Lovelace"
       assert body["client_id"] == "fountain-team." <> agent.id
-      assert_received {:agentphone_create, %{"country" => "US"}}
+      # A persona per teammate number, and the number attached to it.
+      assert_received {:agentphone_create_agent,
+                       %{"name" => "Ada Lovelace", "voiceMode" => "webhook"}}
+
+      assert_received {:agentphone_create, %{"country" => "US", "agentId" => "agt_123"}}
+      assert contact.phone_agent_id == "agt_123"
       assert_received {:team_changed, _}
 
       assert Comms.get_contact(user.id, agent.id).id == contact.id
@@ -204,13 +217,27 @@ defmodule Fountain.Team.CommsTest do
       end)
 
       Req.Test.stub(AgentPhone, fn conn ->
-        conn |> Plug.Conn.put_status(402) |> Req.Test.json(%{"detail" => "insufficient balance"})
+        case {conn.method, conn.request_path} do
+          {"POST", "/v1/agents"} ->
+            Req.Test.json(conn, %{"id" => "agt_123"})
+
+          {"DELETE", "/v1/agents/agt_123"} ->
+            send(test, :agentphone_delete_agent)
+            Req.Test.json(conn, %{})
+
+          _ ->
+            conn
+            |> Plug.Conn.put_status(402)
+            |> Req.Test.json(%{"detail" => "insufficient balance"})
+        end
       end)
 
       assert {:error, {:phone, {:status, 402, %{"detail" => "insufficient balance"}}}} =
                Comms.provision_contact(user.id, agent.id, @req)
 
+      # The inbox and the persona are both undone.
       assert_received :agentmail_delete
+      assert_received :agentphone_delete_agent
       assert Comms.get_contact(user.id, agent.id) == nil
 
       assert [] =
@@ -284,6 +311,7 @@ defmodule Fountain.Team.CommsTest do
       assert :ok = Comms.release_contact(user.id, agent.id, actor: "api")
       assert_received :agentmail_delete
       assert_received :agentphone_delete
+      assert_received :agentphone_delete_agent
       assert Comms.get_contact(user.id, agent.id) == nil
 
       assert [event] =
