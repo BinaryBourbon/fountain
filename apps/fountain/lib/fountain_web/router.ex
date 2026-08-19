@@ -233,6 +233,14 @@ defmodule FountainWeb.Router do
     post "/webhook", StripeWebhookController, :create
   end
 
+  # AgentPhone's master webhook (flag `team_comms`): inbound texts to a
+  # teammate's number become prompts. Same shape as Stripe's — no bearer
+  # token, authenticated by the HMAC signature in the request.
+  scope "/api/webhooks", FountainWeb do
+    pipe_through :api_public
+    post "/agentphone", AgentPhoneWebhookController, :create
+  end
+
   ## ─── Authenticated JSON resource endpoints ──────────────────────────────────────────────────────────────
 
   scope "/api/auth", FountainWeb do

@@ -52,6 +52,9 @@ defmodule FountainWeb.ApiSpecTest do
       # Authenticated by Stripe-Signature, not a bearer token. Its caller is
       # Stripe, which does not read our spec.
       {"/api/stripe/webhook", :post},
+      # Likewise AgentPhone's webhook: authenticated by its HMAC signature,
+      # called by AgentPhone (flag `team_comms`).
+      {"/api/webhooks/agentphone", :post},
       # A browser-session route that happens to live under /api/ — CSRF-
       # protected, session-authenticated, and driven by the theme toggle.
       {"/api/settings/theme", :patch},

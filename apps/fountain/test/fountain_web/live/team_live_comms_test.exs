@@ -75,9 +75,20 @@ defmodule FountainWeb.TeamLiveCommsTest do
     Req.Test.allow(AgentMail, self(), view.pid)
     Req.Test.allow(AgentPhone, self(), view.pid)
 
+    # The button opens the form that collects the number; nothing is bought yet.
     html = view |> element("#provision-contact-button") |> render_click()
+    assert html =~ "contact-form"
+    refute html =~ "ada-1@agentmail.to"
+
+    html =
+      view
+      |> form("#contact-form", %{"prompt_from_number" => "(555) 000-1111"})
+      |> render_submit()
+
     assert html =~ "ada-1@agentmail.to"
     assert html =~ "+15551234567"
+    assert html =~ "texts from"
+    assert html =~ "+15550001111"
     assert html =~ "release-contact-button"
     refute html =~ "provision-contact-button"
     assert %Fountain.Team.Contact{} = Comms.get_contact(user.id, agent.id)

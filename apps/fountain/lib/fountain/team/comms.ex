@@ -71,6 +71,11 @@ defmodule Fountain.Team.Comms do
   @doc """
   Give the teammate for `agent_id` an email address and a phone number.
 
+  `attrs` is what the user supplies: `"prompt_from_number"`, required — the
+  one number whose texts to the teammate's new number arrive as prompts in
+  its conversation (`Fountain.Team.Comms.Inbound`). It is validated before
+  anything is bought.
+
   Creates the AgentMail inbox (display name = the teammate's name, username
   derived from it) and the AgentPhone number, then records both. All or
   nothing: if the number cannot be provisioned the inbox is deleted again and
@@ -78,14 +83,17 @@ defmodule Fountain.Team.Comms do
 
   Returns `{:ok, %Contact{}}`, or `{:error, reason}` with one of
   `:not_found` (not on the team), `:not_enabled` (flag off), `:not_configured`
-  (a provider key is missing), `:already_provisioned`, or
+  (a provider key is missing), `:already_provisioned`, an
+  `%Ecto.Changeset{}` (a bad `prompt_from_number`), or
   `{:email | :phone, provider_error}`.
   """
-  def provision_contact(user_id, agent_id, opts \\ [])
-      when is_binary(user_id) and is_binary(agent_id) do
+  def provision_contact(user_id, agent_id, attrs \\ %{}, opts \\ [])
+      when is_binary(user_id) and is_binary(agent_id) and is_map(attrs) do
     with :ok <- gate(user_id),
          %{name: name} = teammate <- Team.get_teammate(user_id, agent_id) || {:error, :not_found},
          :ok <- ensure_no_contact(user_id, agent_id),
+         {:ok, requested} <-
+           Ecto.Changeset.apply_action(Contact.request_changeset(attrs), :insert),
          {:ok, inbox} <- create_inbox(name, teammate, opts),
          {:ok, number} <- create_number(inbox, opts) do
       attrs = %{
@@ -94,14 +102,16 @@ defmodule Fountain.Team.Comms do
         email_address: inbox["email"],
         email_inbox_id: inbox["inbox_id"],
         phone_number: number["phoneNumber"],
-        phone_number_id: number["id"]
+        phone_number_id: number["id"],
+        prompt_from_number: requested.prompt_from_number
       }
 
       case %Contact{} |> Contact.changeset(attrs) |> Repo.insert() do
         {:ok, contact} ->
           record("team.contact.provisioned", contact, opts, %{
             "channels" => channels(contact),
-            "agent_name" => teammate.agent.name
+            "agent_name" => teammate.agent.name,
+            "prompt_from_number" => not is_nil(contact.prompt_from_number)
           })
 
           Team.broadcast_changed(user_id)
@@ -173,6 +183,19 @@ defmodule Fountain.Team.Comms do
   end
 
   def conversation_mcp_servers(_conversation_id, _token), do: []
+
+  @doc """
+  The contact that owns the teammate number `phone_number` (E.164), across
+  every tenant — or nil.
+
+  `_unsafe_`: no `user_id` scopes this; the inbound SMS webhook
+  (`Fountain.Team.Comms.Inbound`) has nothing but the number to go on. The
+  caller has already verified the provider's signature, and the result only
+  ever prompts the conversation that belongs to the contact's own user.
+  """
+  def _unsafe_get_contact_by_phone_number(phone_number) when is_binary(phone_number) do
+    Repo.one(from(c in Contact, where: c.phone_number == ^phone_number, limit: 1))
+  end
 
   @doc """
   Resolve a conversation the caller owns to the contact its MCP tools act

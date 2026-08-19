@@ -1047,3 +1047,11 @@ end
 config :fountain,
        :agentphone_base_url,
        System.get_env("AGENTPHONE_BASE_URL", "https://api.agentphone.ai")
+
+# The signing secret AgentPhone issued for this instance's master webhook
+# (POST /v1/webhooks → `secret`), which verifies POST /api/webhooks/agentphone.
+# Unset, the endpoint answers 503 and no inbound text becomes a prompt.
+case System.get_env("AGENTPHONE_WEBHOOK_SECRET") do
+  blank when blank in [nil, ""] -> :ok
+  secret -> config :fountain, :agentphone_webhook_secret, secret
+end

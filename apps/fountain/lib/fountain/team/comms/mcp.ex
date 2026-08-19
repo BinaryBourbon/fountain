@@ -161,6 +161,8 @@ defmodule Fountain.Team.Comms.Mcp do
       "You have your own contact details.",
       Contact.email?(c) && "Your email address is #{c.email_address}.",
       Contact.phone?(c) && "Your phone number is #{c.phone_number}.",
+      Contact.phone?(c) && is_binary(c.prompt_from_number) &&
+        "Texts from #{c.prompt_from_number} to your number reach you as messages; answer them with sms_send.",
       "Use the email_* and sms_* tools to send and read; nothing you write elsewhere is sent."
     ]
     |> Enum.reject(&(&1 == false))

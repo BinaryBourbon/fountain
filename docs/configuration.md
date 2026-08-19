@@ -202,3 +202,4 @@ unavailable even where the flag is on.
 | `AGENTMAIL_DOMAIN` | — | — | A verified custom domain for teammate addresses; unset uses AgentMail's shared domain |
 | `AGENTPHONE_API_KEY` | — | — | AgentPhone API key; teammate numbers are provisioned under it |
 | `AGENTPHONE_BASE_URL` | `https://api.agentphone.ai` | — | AgentPhone API host |
+| `AGENTPHONE_WEBHOOK_SECRET` | — | — | The signing secret AgentPhone returned when the account's master webhook was pointed at `POST /api/webhooks/agentphone` on this instance. Verifies inbound deliveries; a text from a teammate's `prompt_from_number` then becomes a prompt in its conversation. Unset, the endpoint answers 503 and nothing inbound is processed |

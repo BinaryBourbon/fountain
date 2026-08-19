@@ -16,6 +16,13 @@ defmodule FountainWeb.TeamCommsControllerTest do
     {:ok, user: user, raw_key: raw_key}
   end
 
+  defp give(conn, key, agent_id, body \\ %{"prompt_from_number" => "5550001111"}) do
+    conn
+    |> authed_with_key(key)
+    |> put_req_header("content-type", "application/json")
+    |> post("/api/team/#{agent_id}/contact", body)
+  end
+
   defp restore(key, nil), do: Application.delete_env(:fountain, key)
   defp restore(key, value), do: Application.put_env(:fountain, key, value)
 
@@ -81,14 +88,13 @@ defmodule FountainWeb.TeamCommsControllerTest do
       stub_providers_ok()
 
       body =
-        conn
-        |> authed_with_key(key)
-        |> post("/api/team/#{agent.id}/contact")
+        give(conn, key, agent.id)
         |> json_response(201)
 
       assert body["data"]["agent_id"] == agent.id
       assert body["data"]["contact"]["email"] == "ada-abc123@agentmail.to"
       assert body["data"]["contact"]["phone"] == "+15551234567"
+      assert body["data"]["contact"]["prompt_from_number"] == "+15550001111"
 
       [entry] =
         conn
@@ -106,9 +112,7 @@ defmodule FountainWeb.TeamCommsControllerTest do
       Req.Test.stub(AgentMail, fn _ -> flunk("no provider call with the flag off") end)
 
       body =
-        conn
-        |> authed_with_key(key)
-        |> post("/api/team/#{agent.id}/contact")
+        give(conn, key, agent.id)
         |> json_response(404)
 
       assert body["error"] == "team_comms_not_enabled"
@@ -122,24 +126,38 @@ defmodule FountainWeb.TeamCommsControllerTest do
       on_exit(fn -> Application.put_env(:fountain, :agentmail_api_key, previous) end)
 
       body =
-        conn
-        |> authed_with_key(key)
-        |> post("/api/team/#{agent.id}/contact")
+        give(conn, key, agent.id)
         |> json_response(503)
 
       assert body["error"] == "team_comms_not_configured"
+    end
+
+    test "is 422 without a usable prompt_from_number, and buys nothing", %{
+      conn: conn,
+      user: user,
+      raw_key: key
+    } do
+      flag(true)
+      {agent, _} = teammate(user)
+      Req.Test.stub(AgentMail, fn _ -> flunk("nothing is bought on a bad request") end)
+
+      # No body at all: the spec requires one (422 from the validator).
+      give(conn, key, agent.id, %{}) |> json_response(422)
+
+      give(conn, key, agent.id, %{"prompt_from_number" => "nope"})
+      |> json_response(422)
     end
 
     test "is 409 the second time", %{conn: conn, user: user, raw_key: key} do
       flag(true)
       {agent, _} = teammate(user)
       stub_providers_ok()
-      conn |> authed_with_key(key) |> post("/api/team/#{agent.id}/contact") |> json_response(201)
+
+      give(conn, key, agent.id)
+      |> json_response(201)
 
       body =
-        conn
-        |> authed_with_key(key)
-        |> post("/api/team/#{agent.id}/contact")
+        give(conn, key, agent.id)
         |> json_response(409)
 
       assert body["error"] == "contact_already_provisioned"
@@ -158,9 +176,7 @@ defmodule FountainWeb.TeamCommsControllerTest do
       end)
 
       body =
-        conn
-        |> authed_with_key(key)
-        |> post("/api/team/#{agent.id}/contact")
+        give(conn, key, agent.id)
         |> json_response(502)
 
       assert body == %{
@@ -179,8 +195,11 @@ defmodule FountainWeb.TeamCommsControllerTest do
       loose = insert_agent(user_id: user.id)
       {theirs, _} = teammate(insert_verified_user())
 
-      conn |> authed_with_key(key) |> post("/api/team/#{loose.id}/contact") |> json_response(404)
-      conn |> authed_with_key(key) |> post("/api/team/#{theirs.id}/contact") |> json_response(404)
+      give(conn, key, loose.id)
+      |> json_response(404)
+
+      give(conn, key, theirs.id)
+      |> json_response(404)
     end
   end
 
@@ -189,7 +208,9 @@ defmodule FountainWeb.TeamCommsControllerTest do
       flag(true)
       {agent, _} = teammate(user)
       stub_providers_ok()
-      conn |> authed_with_key(key) |> post("/api/team/#{agent.id}/contact") |> json_response(201)
+
+      give(conn, key, agent.id)
+      |> json_response(201)
 
       assert conn
              |> authed_with_key(key)
@@ -218,7 +239,10 @@ defmodule FountainWeb.TeamCommsControllerTest do
       flag(true)
       {agent, conv} = teammate(user)
       stub_providers_ok()
-      {:ok, contact} = Comms.provision_contact(user.id, agent.id)
+
+      {:ok, contact} =
+        Comms.provision_contact(user.id, agent.id, %{"prompt_from_number" => "+15550001111"})
+
       {:ok, agent: agent, conv: conv, contact: contact}
     end
 

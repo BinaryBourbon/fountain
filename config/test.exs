@@ -102,4 +102,5 @@ config :fountain, :agentmail_api_key, "am_test_key"
 config :fountain, :agentmail_req_options, plug: {Req.Test, Fountain.Team.Comms.AgentMail}
 config :fountain, :agentphone_api_key, "ap_test_key"
 config :fountain, :agentphone_req_options, plug: {Req.Test, Fountain.Team.Comms.AgentPhone}
+config :fountain, :agentphone_webhook_secret, "whsec_test"
 config :fountain, :posthog_req_options, plug: {Req.Test, Fountain.FeatureFlags}

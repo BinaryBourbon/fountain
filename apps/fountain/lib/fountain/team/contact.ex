@@ -7,6 +7,10 @@ defmodule Fountain.Team.Contact do
   survives the teammate's conversation being replaced. Either channel may be
   absent (the provider declined, or was not configured) — `email?/1` and
   `phone?/1` say which the teammate actually has.
+
+  `prompt_from_number` is the one number whose texts to the teammate's number
+  arrive as prompts in its conversation (`Fountain.Team.Comms.Inbound`) —
+  the owner's phone, collected whenever a number is given. Stored E.164.
   """
   use Ecto.Schema
   import Ecto.Changeset
@@ -19,6 +23,7 @@ defmodule Fountain.Team.Contact do
     field :email_inbox_id, :string
     field :phone_number, :string
     field :phone_number_id, :string
+    field :prompt_from_number, :string
 
     belongs_to :user, Fountain.Accounts.User
     belongs_to :agent, Fountain.Agents.Agent
@@ -26,15 +31,56 @@ defmodule Fountain.Team.Contact do
     timestamps(type: :utc_datetime)
   end
 
-  @fields [:user_id, :agent_id, :email_address, :email_inbox_id, :phone_number, :phone_number_id]
+  @fields [
+    :user_id,
+    :agent_id,
+    :email_address,
+    :email_inbox_id,
+    :phone_number,
+    :phone_number_id,
+    :prompt_from_number
+  ]
 
   def changeset(contact, attrs) do
     contact
     |> cast(attrs, @fields)
     |> validate_required([:user_id, :agent_id])
+    |> normalize_number(:prompt_from_number)
     |> foreign_key_constraint(:user_id)
     |> foreign_key_constraint(:agent_id)
     |> unique_constraint([:user_id, :agent_id])
+  end
+
+  @doc """
+  What the user supplies when giving a teammate a contact — today just the
+  number whose texts become prompts, required and E.164-normalized. Run
+  before anything is bought upstream, so a typo costs nothing.
+  """
+  def request_changeset(attrs) do
+    %__MODULE__{}
+    |> cast(attrs, [:prompt_from_number])
+    |> validate_required([:prompt_from_number])
+    |> normalize_number(:prompt_from_number)
+  end
+
+  defp normalize_number(changeset, field) do
+    case get_change(changeset, field) do
+      nil ->
+        changeset
+
+      value ->
+        case Fountain.Team.Comms.Phone.normalize(value) do
+          {:ok, e164} ->
+            put_change(changeset, field, e164)
+
+          :error ->
+            add_error(
+              changeset,
+              field,
+              "must be a phone number with country code, e.g. +15551234567"
+            )
+        end
+    end
   end
 
   def email?(%__MODULE__{email_inbox_id: id}), do: is_binary(id) and id != ""

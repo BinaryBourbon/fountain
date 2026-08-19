@@ -17,6 +17,8 @@ defmodule Fountain.Team.CommsTest do
   defp restore(key, nil), do: Application.delete_env(:fountain, key)
   defp restore(key, value), do: Application.put_env(:fountain, key, value)
 
+  @req %{"prompt_from_number" => "+1 (555) 000-1111"}
+
   defp flag(on?),
     do: Application.put_env(:fountain, :feature_flag_overrides, %{"team_comms" => on?})
 
@@ -79,7 +81,7 @@ defmodule Fountain.Team.CommsTest do
       flag(false)
       Req.Test.stub(AgentMail, fn _ -> flunk("AgentMail must not be called") end)
 
-      assert {:error, :not_enabled} = Comms.provision_contact(user.id, agent.id)
+      assert {:error, :not_enabled} = Comms.provision_contact(user.id, agent.id, @req)
       assert Comms.get_contact(user.id, agent.id) == nil
     end
 
@@ -92,7 +94,7 @@ defmodule Fountain.Team.CommsTest do
       on_exit(fn -> Application.put_env(:fountain, :agentphone_api_key, previous) end)
 
       refute Comms.configured?()
-      assert {:error, :not_configured} = Comms.provision_contact(user.id, agent.id)
+      assert {:error, :not_configured} = Comms.provision_contact(user.id, agent.id, @req)
     end
   end
 
@@ -108,12 +110,15 @@ defmodule Fountain.Team.CommsTest do
       stub_providers_ok()
       Team.subscribe(user.id)
 
-      assert {:ok, %Contact{} = contact} = Comms.provision_contact(user.id, agent.id, actor: "ui")
+      assert {:ok, %Contact{} = contact} =
+               Comms.provision_contact(user.id, agent.id, @req, actor: "ui")
 
       assert contact.email_inbox_id == "inbox_123"
       assert contact.email_address =~ ~r/^ada-lovelace-[0-9a-f]{6}@agentmail\.to$/
       assert contact.phone_number_id == "num_123"
       assert contact.phone_number == "+15551234567"
+      # The number whose texts become prompts, normalized to E.164.
+      assert contact.prompt_from_number == "+15550001111"
 
       assert_received {:agentmail_create, body}
       assert body["display_name"] == "Ada Lovelace"
@@ -139,7 +144,7 @@ defmodule Fountain.Team.CommsTest do
       user = insert_verified_user()
       agent = teammate(user)
       stub_providers_ok()
-      {:ok, contact} = Comms.provision_contact(user.id, agent.id)
+      {:ok, contact} = Comms.provision_contact(user.id, agent.id, @req)
 
       assert %{contact: %Contact{id: id}} = Team.get_teammate(user.id, agent.id)
       assert id == contact.id
@@ -149,21 +154,37 @@ defmodule Fountain.Team.CommsTest do
       user = insert_verified_user()
       agent = teammate(user)
       stub_providers_ok()
-      {:ok, _} = Comms.provision_contact(user.id, agent.id)
-      assert {:error, :already_provisioned} = Comms.provision_contact(user.id, agent.id)
+      {:ok, _} = Comms.provision_contact(user.id, agent.id, @req)
+      assert {:error, :already_provisioned} = Comms.provision_contact(user.id, agent.id, @req)
+    end
+
+    test "a missing or bad prompt_from_number is refused before anything is bought" do
+      user = insert_verified_user()
+      agent = teammate(user)
+      Req.Test.stub(AgentMail, fn _ -> flunk("nothing is bought on a bad request") end)
+      Req.Test.stub(AgentPhone, fn _ -> flunk("nothing is bought on a bad request") end)
+
+      assert {:error, %Ecto.Changeset{} = cs} = Comms.provision_contact(user.id, agent.id, %{})
+      assert %{prompt_from_number: ["can't be blank"]} = errors_on(cs)
+
+      assert {:error, %Ecto.Changeset{} = cs} =
+               Comms.provision_contact(user.id, agent.id, %{"prompt_from_number" => "call me"})
+
+      assert %{prompt_from_number: [_]} = errors_on(cs)
+      assert Comms.get_contact(user.id, agent.id) == nil
     end
 
     test "an agent not on the team gets not_found" do
       user = insert_verified_user()
       agent = insert_agent(user_id: user.id)
-      assert {:error, :not_found} = Comms.provision_contact(user.id, agent.id)
+      assert {:error, :not_found} = Comms.provision_contact(user.id, agent.id, @req)
     end
 
     test "another tenant's teammate is not_found" do
       user = insert_verified_user()
       other = insert_verified_user()
       agent = teammate(other)
-      assert {:error, :not_found} = Comms.provision_contact(user.id, agent.id)
+      assert {:error, :not_found} = Comms.provision_contact(user.id, agent.id, @req)
     end
 
     test "all or nothing: a failed number deletes the inbox again" do
@@ -187,7 +208,7 @@ defmodule Fountain.Team.CommsTest do
       end)
 
       assert {:error, {:phone, {:status, 402, %{"detail" => "insufficient balance"}}}} =
-               Comms.provision_contact(user.id, agent.id)
+               Comms.provision_contact(user.id, agent.id, @req)
 
       assert_received :agentmail_delete
       assert Comms.get_contact(user.id, agent.id) == nil
@@ -208,7 +229,8 @@ defmodule Fountain.Team.CommsTest do
 
       Req.Test.stub(AgentPhone, fn _ -> flunk("no number without an inbox") end)
 
-      assert {:error, {:email, {:status, 500, _}}} = Comms.provision_contact(user.id, agent.id)
+      assert {:error, {:email, {:status, 500, _}}} =
+               Comms.provision_contact(user.id, agent.id, @req)
     end
   end
 
@@ -222,7 +244,7 @@ defmodule Fountain.Team.CommsTest do
       user = insert_verified_user()
       agent = teammate(user)
       stub_providers_ok()
-      {:ok, _} = Comms.provision_contact(user.id, agent.id)
+      {:ok, _} = Comms.provision_contact(user.id, agent.id, @req)
 
       assert :ok = Comms.release_contact(user.id, agent.id, actor: "api")
       assert_received :agentmail_delete
@@ -241,7 +263,7 @@ defmodule Fountain.Team.CommsTest do
       user = insert_verified_user()
       agent = teammate(user)
       stub_providers_ok()
-      {:ok, _} = Comms.provision_contact(user.id, agent.id)
+      {:ok, _} = Comms.provision_contact(user.id, agent.id, @req)
 
       Req.Test.stub(AgentMail, fn conn ->
         conn |> Plug.Conn.put_status(404) |> Req.Test.json(%{})
@@ -259,7 +281,7 @@ defmodule Fountain.Team.CommsTest do
       user = insert_verified_user()
       agent = teammate(user)
       stub_providers_ok()
-      {:ok, _} = Comms.provision_contact(user.id, agent.id)
+      {:ok, _} = Comms.provision_contact(user.id, agent.id, @req)
 
       Req.Test.stub(AgentPhone, fn conn ->
         conn |> Plug.Conn.put_status(500) |> Req.Test.json(%{})
@@ -279,7 +301,7 @@ defmodule Fountain.Team.CommsTest do
       user = insert_verified_user()
       agent = teammate(user)
       stub_providers_ok()
-      {:ok, _} = Comms.provision_contact(user.id, agent.id)
+      {:ok, _} = Comms.provision_contact(user.id, agent.id, @req)
 
       assert :ok = Team.remove_teammate(user.id, agent.id)
       assert_received :agentmail_delete
@@ -294,7 +316,7 @@ defmodule Fountain.Team.CommsTest do
       user = insert_verified_user()
       agent = teammate(user)
       stub_providers_ok()
-      {:ok, _} = Comms.provision_contact(user.id, agent.id)
+      {:ok, _} = Comms.provision_contact(user.id, agent.id, @req)
       %{conversation: conv} = Team.get_teammate(user.id, agent.id)
 
       assert [%{name: "fountain-comms", type: "http", url: url, headers: headers}] =
@@ -312,7 +334,7 @@ defmodule Fountain.Team.CommsTest do
       assert [] = Comms.conversation_mcp_servers(conv.id, "tok")
 
       stub_providers_ok()
-      {:ok, _} = Comms.provision_contact(user.id, agent.id)
+      {:ok, _} = Comms.provision_contact(user.id, agent.id, @req)
       assert [_] = Comms.conversation_mcp_servers(conv.id, "tok")
       assert [] = Comms.conversation_mcp_servers(conv.id, "")
       assert [] = Comms.conversation_mcp_servers(conv.id, nil)

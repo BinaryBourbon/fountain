@@ -148,7 +148,7 @@ defmodule Fountain.AuditGuardrailTest do
           {InferenceCredentials, :put_credential, 5},
           {Conversations, :start_conversation, 2},
           {Conversations, :delete_conversation, 2},
-          {Fountain.Team.Comms, :provision_contact, 3},
+          {Fountain.Team.Comms, :provision_contact, 4},
           {Fountain.Team.Comms, :release_contact, 3}
         ] do
       # `Code.ensure_loaded?/1` first: `function_exported?/3` answers about
@@ -360,13 +360,20 @@ defmodule Fountain.AuditGuardrailTest do
 
   def do_contact_provision(user) do
     with_comms(user, fn agent ->
-      {:ok, _} = Fountain.Team.Comms.provision_contact(user.id, agent.id)
+      {:ok, _} =
+        Fountain.Team.Comms.provision_contact(user.id, agent.id, %{
+          "prompt_from_number" => "+15550001111"
+        })
     end)
   end
 
   def do_contact_release(user) do
     with_comms(user, fn agent ->
-      {:ok, _} = Fountain.Team.Comms.provision_contact(user.id, agent.id)
+      {:ok, _} =
+        Fountain.Team.Comms.provision_contact(user.id, agent.id, %{
+          "prompt_from_number" => "+15550001111"
+        })
+
       :ok = Fountain.Team.Comms.release_contact(user.id, agent.id)
     end)
   end

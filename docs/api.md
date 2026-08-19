@@ -371,7 +371,7 @@ PATCH  /api/team/:agent_id          # rename ({name}; null or blank → the agen
 DELETE /api/team/:agent_id          # remove: terminate the live conversation, unbind history
 POST   /api/team/:agent_id/messages # a turn (prompt; optional images) → {conversation_id}
 GET    /api/team/:agent_id/conversations  # history: every conversation on the team, newest first, `current` flagged
-POST   /api/team/:agent_id/contact  # give the teammate an email address + phone number (flag `team_comms`)
+POST   /api/team/:agent_id/contact  # give the teammate an email address + phone number ({prompt_from_number}; flag `team_comms`)
 DELETE /api/team/:agent_id/contact  # release them
 GET    /api/team/comms              # {enabled, configured}: may this caller, and can this instance
 GET    /api/team/stream             # SSE: every teammate's events on one connection
@@ -435,6 +435,15 @@ instance has no keys, `409` for a second contact, `502 provider_error`
 nothing. `DELETE` releases both upstream and forgets them; `GET
 /api/team/comms` answers `{enabled, configured}` so a client knows whether
 to offer it. See [configuration](configuration.md#teammate-email-and-phone).
+
+The request body carries `prompt_from_number` (required; any common format,
+stored E.164): **your** phone. A text from that number to the teammate's
+number arrives as a prompt in the teammate's conversation — delivered by
+AgentPhone to `POST /api/webhooks/agentphone` (HMAC-verified with
+`AGENTPHONE_WEBHOOK_SECRET`), wrapped so the teammate knows it came by SMS
+and can answer with its `sms_send` tool. Texts from any other number are
+acknowledged and ignored; deliveries are deduplicated by AgentPhone's
+`X-Webhook-ID`. Audited as `team.contact.prompted` (bytes, never the text).
 
 `/messages` returns `202 {status: "queued", conversation_id}`; the id is the
 conversation the message went to, which is a new one when the teammate's

@@ -221,21 +221,26 @@ defmodule FountainWeb.TeamController do
         "teammate without both. Behind the `team_comms` flag — 404 when it is off for " <>
         "the caller, 503 when this instance has no provider keys.",
     parameters: [agent_id: [in: :path, type: :string, required: true]],
+    request_body:
+      {"The number whose texts become prompts", "application/json", Schemas.TeamContactRequest,
+       required: true},
     responses: [
       created: {"Teammate, now with a contact", "application/json", Schemas.TeammateResponse},
       not_found: {"Not on the team, or the feature is off", "application/json", Schemas.Error},
       conflict: {"Already has a contact", "application/json", Schemas.Error},
+      unprocessable_entity: {"Bad prompt_from_number", "application/json", Schemas.Error},
       bad_gateway: {"A provider refused", "application/json", Schemas.Error},
       service_unavailable:
         {"No provider keys on this instance", "application/json", Schemas.Error}
     ]
   )
 
-  def provision_contact(conn, %{"agent_id" => agent_id}) do
+  def provision_contact(conn, %{"agent_id" => agent_id} = params) do
     user = conn.assigns.current_user
     opts = [source: "api"] ++ Audited.attribution(conn)
+    attrs = Map.take(params, ["prompt_from_number"])
 
-    with {:ok, _contact} <- Comms.provision_contact(user.id, agent_id, opts),
+    with {:ok, _contact} <- Comms.provision_contact(user.id, agent_id, attrs, opts),
          %{} = teammate <- Team.get_teammate(user.id, agent_id) || {:error, :not_found} do
       conn
       |> put_status(:created)
@@ -272,6 +277,7 @@ defmodule FountainWeb.TeamController do
   # like `billing_disabled` does — a client that did not ask about the flag
   # sees nothing to discover.
   defp comms_error(_conn, :not_found), do: {:error, :not_found}
+  defp comms_error(_conn, %Ecto.Changeset{} = cs), do: {:error, cs}
 
   defp comms_error(conn, :not_enabled),
     do: conn |> put_status(:not_found) |> json(%{error: "team_comms_not_enabled"})

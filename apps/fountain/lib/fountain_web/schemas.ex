@@ -1716,9 +1716,35 @@ defmodule FountainWeb.Schemas do
       properties: %{
         email: %Schema{type: :string, nullable: true},
         phone: %Schema{type: :string, nullable: true, description: "E.164"},
+        prompt_from_number: %Schema{
+          type: :string,
+          nullable: true,
+          description:
+            "E.164. The one number whose texts to `phone` arrive as prompts in the " <>
+              "teammate's conversation; texts from anyone else are ignored."
+        },
         inserted_at: %Schema{type: :string, format: :"date-time"}
       },
       required: [:email, :phone]
+    })
+  end
+
+  defmodule TeamContactRequest do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "TeamContactRequest",
+      type: :object,
+      properties: %{
+        prompt_from_number: %Schema{
+          type: :string,
+          description:
+            "Your phone number: texts from it to the teammate's new number become prompts " <>
+              "in its conversation. Any common format; stored E.164. Required."
+        }
+      },
+      required: [:prompt_from_number]
     })
   end
 

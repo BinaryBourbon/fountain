@@ -31,7 +31,11 @@ upgrade, is in
   token — no provider key ever enters a sandbox. Sends are audited
   (`team.contact.sent`, never the content). Configuration:
   `AGENTMAIL_API_KEY`, `AGENTPHONE_API_KEY` (+ optional base URLs and
-  `AGENTMAIL_DOMAIN`).
+  `AGENTMAIL_DOMAIN`). Giving a number also collects `prompt_from_number`
+  — your phone: a text from it to the teammate's number arrives as a prompt
+  in the teammate's conversation (AgentPhone's master webhook at `POST
+  /api/webhooks/agentphone`, HMAC-verified with `AGENTPHONE_WEBHOOK_SECRET`,
+  deduplicated by delivery id); texts from anyone else are ignored.
 - **Per-user feature flags** (`Fountain.FeatureFlags`), evaluated by PostHog
   (`POSTHOG_PROJECT_API_KEY`, `POSTHOG_HOST`) with a one-minute per-user
   cache; when PostHog is unreachable the last answer it gave is reused and,
