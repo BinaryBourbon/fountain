@@ -180,10 +180,13 @@ defmodule Fountain.Runners do
     do: Phoenix.PubSub.subscribe(Fountain.PubSub, topic(user_id))
 
   @doc false
-  def broadcast_presence(user_id, runner_id, state)
-      when is_binary(user_id) and is_binary(runner_id) and state in [:online, :offline] do
-    Phoenix.PubSub.broadcast(Fountain.PubSub, topic(user_id), {:"runner_#{state}", runner_id})
-  end
+  def broadcast_presence(user_id, runner_id, :online)
+      when is_binary(user_id) and is_binary(runner_id),
+      do: Phoenix.PubSub.broadcast(Fountain.PubSub, topic(user_id), {:runner_online, runner_id})
+
+  def broadcast_presence(user_id, runner_id, :offline)
+      when is_binary(user_id) and is_binary(runner_id),
+      do: Phoenix.PubSub.broadcast(Fountain.PubSub, topic(user_id), {:runner_offline, runner_id})
 
   defp topic(user_id), do: "runners:#{user_id}"
 
