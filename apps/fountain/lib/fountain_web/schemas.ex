@@ -31,6 +31,34 @@ defmodule FountainWeb.Schemas do
             "The sandbox's own HTTP endpoint, where a service the agent starts " <>
               "is reachable. Null for providers that expose no such URL. The " <>
               "same value is available inside the sandbox as `SANDBOX_URL`."
+        },
+        provider: %Schema{
+          type: :string,
+          enum: ~w(sprites e2b daytona runner),
+          description: "The sandbox backend this row lives on."
+        },
+        runner: %Schema{
+          type: :object,
+          nullable: true,
+          description:
+            "For `provider: runner` — the user's own machine the sandbox lives on, " <>
+              "and its directory there (#834). Null for hosted providers; the inner " <>
+              "fields are null when the runner row was forgotten.",
+          properties: %{
+            id: %Schema{type: :string, format: :uuid, nullable: true},
+            name: %Schema{type: :string, nullable: true},
+            hostname: %Schema{type: :string, nullable: true},
+            online: %Schema{
+              type: :boolean,
+              description: "Whether the runner daemon is connected right now."
+            },
+            path: %Schema{
+              type: :string,
+              nullable: true,
+              description: "The sandbox directory on the machine (`<root>/<name>`)."
+            }
+          },
+          required: [:online]
         }
       },
       required: [:id, :sprite_name, :status]

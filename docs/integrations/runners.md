@@ -92,6 +92,23 @@ shared across sandboxes, as they do inside a single Linux sandbox).
 | Listing | The union over the runners **online right now**. An offline runner's sandboxes are not in the view, which the reaper already treats as "skip, converge later" — it only destroys names it sees |
 | Network policy, TTY, checkpoints, public URL | Not advertised |
 
+## On the team page and API
+
+A teammate whose sandbox lives on a runner shows where it runs: the roster
+entry's (and every conversation object's) `sandbox` carries `provider`
+(`sprites|e2b|daytona|runner`) and, for runners, `runner: {id, name,
+hostname, online, path}` — the machine and the sandbox directory on it, so a
+client can say "on mac-mini · ~/…" without parsing the sandbox name.
+Presence tells "asleep" from "the machine is off": while the runner is not
+connected the teammate is `machine_offline` ("machine offline · wakes when
+the runner reconnects") rather than `asleep`/`away`, because a message
+cannot wake it — `POST /api/team/:agent_id/messages` (and `POST
+/api/conversations/:id/prompts`) answer `503 runner_offline` with
+`Retry-After` until the daemon is back, the same shape as `provisioning`. A
+scheduled run on such a teammate waits the same way a busy one does. A
+runner connecting or dropping sends a `team` event on `/api/team/stream`, so
+a roster notices the machine came back without polling.
+
 ## Configuration
 
 | Variable | Default | Effect |

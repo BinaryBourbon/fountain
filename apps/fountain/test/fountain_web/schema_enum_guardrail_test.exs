@@ -51,6 +51,7 @@ defmodule FountainWeb.SchemaEnumGuardrailTest do
     {FountainWeb.Schemas.AgentRequest, "runtime"} => {Agent, :runtimes},
     {FountainWeb.Schemas.AgentUpdate, "runtime"} => {Agent, :runtimes},
     {FountainWeb.Schemas.Agent, "sandbox_provider"} => {Fountain.Sandbox, :known_providers},
+    {FountainWeb.Schemas.Sandbox, "provider"} => {Fountain.Sandbox, :known_providers},
     {FountainWeb.Schemas.AgentRequest, "sandbox_provider"} =>
       {Fountain.Sandbox, :known_providers},
     {FountainWeb.Schemas.AgentUpdate, "sandbox_provider"} => {Fountain.Sandbox, :known_providers},

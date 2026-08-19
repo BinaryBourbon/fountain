@@ -33,6 +33,7 @@ defmodule FountainWeb.TeamLive do
 
     if connected?(socket) do
       Enum.each(teammates, &subscribe_teammate/1)
+      Fountain.Runners.subscribe(user_id)
     end
 
     socket =
@@ -148,6 +149,12 @@ defmodule FountainWeb.TeamLive do
 
     {:noreply, socket}
   end
+
+  # A runner connected or dropped (#834): presence changed for the teammates
+  # on that machine.
+  def handle_info({runner_event, _id}, socket)
+      when runner_event in [:runner_online, :runner_offline],
+      do: {:noreply, refresh_teammates(socket)}
 
   def handle_info(_msg, socket), do: {:noreply, socket}
 
@@ -617,6 +624,7 @@ defmodule FountainWeb.TeamLive do
   defp presence_dot("online"), do: "bg-emerald-500"
   defp presence_dot("asleep"), do: "bg-zinc-400"
   defp presence_dot("away"), do: "bg-zinc-400"
+  defp presence_dot("machine_offline"), do: "bg-amber-600"
   defp presence_dot("failed"), do: "bg-rose-500"
   defp presence_dot(_), do: "bg-zinc-300"
 

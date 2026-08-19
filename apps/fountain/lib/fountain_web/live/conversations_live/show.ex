@@ -1187,6 +1187,14 @@ defmodule FountainWeb.ConversationsLive.Show do
            "Couldn't reach the sandbox provider to wake the conversation — try again shortly."
          )}
 
+      {:error, :runner_offline} ->
+        {:noreply,
+         put_flash(
+           socket,
+           :error,
+           "This conversation's machine is offline — it wakes when the runner reconnects."
+         )}
+
       {:error, reason} ->
         {:noreply, put_flash(socket, :error, "Couldn't send: #{inspect(reason)}")}
     end

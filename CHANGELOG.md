@@ -18,6 +18,14 @@ upgrade, is in
 
 ### Added
 
+- **Runner-backed teammates on the team surface** (#834). Presence tells
+  "asleep" from "the machine is off": a teammate on a self-hosted runner whose
+  daemon is not connected is `machine_offline` (a message answers `503
+  runner_offline` rather than waking it; a scheduled run waits for it). The
+  sandbox object carries `provider` and, on a runner, `runner: {id, name,
+  hostname, online, path}` — where it runs — and a runner connecting or
+  dropping sends a `team` event on `/api/team/stream` and refreshes `/team`.
+
 - **Rename a teammate and list its history over the API** (#831, #832).
   `PATCH /api/team/:agent_id {name}` renames (null/blank → the agent's name;
   audited `team.renamed`; the name carries onto the next fresh conversation),

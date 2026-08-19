@@ -89,6 +89,84 @@ defmodule FountainWeb.TeamControllerTest do
     end
   end
 
+  describe "runner-backed teammates (#834)" do
+    test "presence is machine_offline while the runner is down, and the sandbox names the machine",
+         %{
+           conn: conn,
+           user: user,
+           raw_key: key
+         } do
+      {:ok, runner} =
+        Fountain.Runners.register(user.id, %{
+          "name" => "mini",
+          "hostname" => "mac-mini.local",
+          "root" => "/Users/j/sandboxes"
+        })
+
+      name = Fountain.Runners.sandbox_name_for(runner.id)
+
+      sandbox =
+        insert_sandbox(user_id: user.id, sprite_name: name, provider: "runner", status: "ready")
+
+      ada = insert_agent(user_id: user.id, name: "Ada")
+      insert_teammate_conv(user, ada, sandbox_id: sandbox.id)
+
+      [entry] =
+        conn
+        |> authed_with_key(key)
+        |> get("/api/team")
+        |> json_response(200)
+        |> Map.fetch!("data")
+
+      assert entry["presence"]["state"] == "machine_offline"
+      assert entry["presence"]["label"] =~ "machine offline"
+
+      assert %{
+               "provider" => "runner",
+               "runner" => %{
+                 "name" => "mini",
+                 "hostname" => "mac-mini.local",
+                 "online" => false,
+                 "path" => "/Users/j/sandboxes/" <> ^name
+               }
+             } = entry["conversation"]["sandbox"]
+
+      {:ok, daemon} = Fountain.Runners.FakeDaemon.start(runner.id, user.id, name: "mini")
+
+      [entry] =
+        conn
+        |> authed_with_key(key)
+        |> get("/api/team")
+        |> json_response(200)
+        |> Map.fetch!("data")
+
+      assert entry["presence"]["state"] == "online"
+      assert entry["conversation"]["sandbox"]["runner"]["online"] == true
+      Fountain.Runners.FakeDaemon.stop(daemon)
+    end
+
+    test "a hosted sandbox carries provider and a null runner", %{
+      conn: conn,
+      user: user,
+      raw_key: key
+    } do
+      ada = insert_agent(user_id: user.id, name: "Ada")
+      sandbox = insert_sandbox(user_id: user.id, status: "suspended")
+      insert_teammate_conv(user, ada, sandbox_id: sandbox.id)
+
+      [entry] =
+        conn
+        |> authed_with_key(key)
+        |> get("/api/team")
+        |> json_response(200)
+        |> Map.fetch!("data")
+
+      assert entry["presence"]["state"] == "asleep"
+      assert entry["conversation"]["sandbox"]["provider"] == "sprites"
+      assert entry["conversation"]["sandbox"]["runner"] == nil
+    end
+  end
+
   describe "GET /api/team/:agent_id" do
     test "one teammate, or 404 when the agent is not on the team", %{
       conn: conn,

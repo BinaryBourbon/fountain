@@ -77,6 +77,58 @@ defmodule Fountain.RunnersTest do
     end
   end
 
+  describe "presence for the team surface (#834)" do
+    test "for_sandbox/1 and sandbox_online?/1 describe a runner-backed sandbox" do
+      user = insert_verified_user()
+
+      {:ok, runner} =
+        Runners.register(user.id, %{
+          "name" => "mini",
+          "hostname" => "mac-mini",
+          "root" => "/Users/j/.fountain/sandboxes"
+        })
+
+      name = Runners.sandbox_name_for(runner.id)
+
+      sandbox =
+        insert_sandbox(user_id: user.id, sprite_name: name, provider: "runner", status: "ready")
+
+      hosted = insert_sandbox(user_id: user.id, status: "ready")
+
+      assert %{runner: %{id: rid, name: "mini", hostname: "mac-mini"}, online: false, path: path} =
+               Runners.for_sandbox(sandbox)
+
+      assert rid == runner.id
+      assert path == "/Users/j/.fountain/sandboxes/" <> name
+      refute Runners.sandbox_online?(sandbox)
+      assert Runners.for_sandbox(hosted) == nil
+      assert Runners.sandbox_online?(hosted)
+
+      {:ok, daemon} = FakeDaemon.start(runner.id, user.id, name: "mini")
+      assert %{online: true} = Runners.for_sandbox(sandbox)
+      assert Runners.sandbox_online?(sandbox)
+      FakeDaemon.stop(daemon)
+
+      # A forgotten runner: the name still routes, the row is gone.
+      {:ok, _} = Runners.delete_runner(runner)
+      assert %{runner: nil, online: false, path: nil} = Runners.for_sandbox(sandbox)
+    end
+
+    test "a connection coming and going broadcasts runner_online / runner_offline" do
+      user = insert_verified_user()
+      {:ok, runner} = Runners.register(user.id, %{"name" => "mini"})
+      Runners.subscribe(user.id)
+
+      {:ok, daemon} = FakeDaemon.start(runner.id, user.id, name: "mini")
+      assert_receive {:runner_online, id}
+      assert id == runner.id
+
+      FakeDaemon.stop(daemon)
+      assert_receive {:runner_offline, ^id}
+      refute Runners.online?(runner)
+    end
+  end
+
   describe "online status and placement" do
     test "a runner is online exactly while a connection is registered" do
       user = insert_verified_user()
