@@ -19,6 +19,8 @@ defmodule Fountain.Support.Report do
   @max_screenshot 5 * 1024 * 1024
   @image_types ~w(image/png image/jpeg image/gif image/webp)
 
+  @type t :: %__MODULE__{}
+
   schema "support_reports" do
     belongs_to :user, Fountain.Accounts.User
     field :category, :string
