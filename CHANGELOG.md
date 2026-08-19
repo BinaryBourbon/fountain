@@ -18,6 +18,19 @@ upgrade, is in
 
 ### Added
 
+- **A fresh conversation on the same computer.** `POST
+  /api/team/:agent_id/conversations` retires the teammate's current
+  conversation (it stays in its history, past resuming) and opens a new one
+  on the **same sandbox**: the next message starts a fresh runtime session on
+  the same disk — files, clones and installed tools intact — instead of
+  provisioning a new computer. Nothing is interrupted (400 `conversation_busy`
+  mid-turn; 503 `provisioning` while the computer is starting); when the
+  computer is gone a new one is provisioned, as adding does. Audited
+  `team.conversation.rotated`; the stream sends `team`. Underneath,
+  `ConversationServer.release_conversation/2` ends a conversation without
+  touching its sandbox, and terminating or deleting a retired thread no
+  longer reaches the sandbox its successor is running on.
+
 - **Runner-backed teammates on the team surface** (#834). Presence tells
   "asleep" from "the machine is off": a teammate on a self-hosted runner whose
   daemon is not connected is `machine_offline` (a message answers `503

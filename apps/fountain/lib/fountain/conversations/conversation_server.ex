@@ -216,7 +216,11 @@ defmodule Fountain.Conversations.ConversationServer do
               now = DateTime.utc_now() |> DateTime.truncate(:second)
               {:ok, _} = Conversations.update_conversation(conv, %{status: "terminated"})
 
-              if conv.sandbox_id do
+              # A sandbox handed on to a successor conversation
+              # (`release_conversation/2`) is that conversation's computer now;
+              # terminating the retired thread must not take it down.
+              if is_binary(conv.sandbox_id) and
+                   not Conversations._unsafe_sandbox_held_by_other?(conv.sandbox_id, conv.id) do
                 sb = Conversations._unsafe_get_sandbox!(conv.sandbox_id)
 
                 if sb.status not in ["terminated", "failed"] do
@@ -232,6 +236,44 @@ defmodule Fountain.Conversations.ConversationServer do
       end
 
     audit_lifecycle(conv_id, "conversation.terminated", result, opts)
+    result
+  end
+
+  @doc """
+  End the conversation but keep its computer: the conversation goes
+  `terminated` (past resuming, its transcript intact), the sandbox row and
+  the sprite behind it are left exactly as they are, and this server stops
+  holding them. The callback key this server minted is revoked on the way
+  out (`terminate/2`), so nothing on the sandbox can act as the retired
+  conversation.
+
+  This is how a teammate starts a fresh conversation on the same computer
+  (`Fountain.Team.open_fresh_conversation/3`): the successor conversation
+  takes the `sandbox_id`, and its first prompt reattaches through the
+  ordinary wake path — a new runtime session on the same disk.
+
+  `{:error, :busy}` while a turn is running; nothing is interrupted. With no
+  server alive the row alone is marked, the same as `terminate_conversation/2`.
+  Audited as `conversation.released` unless `audit: false`.
+  """
+  def release_conversation(conv_id, opts \\ []) do
+    result =
+      case whereis(conv_id) do
+        nil ->
+          case Conversations._unsafe_get_conversation(conv_id) do
+            nil ->
+              {:error, :not_running}
+
+            conv ->
+              {:ok, _} = Conversations.update_conversation(conv, %{status: "terminated"})
+              :ok
+          end
+
+        pid ->
+          call_server(pid, :release_conv)
+      end
+
+    audit_lifecycle(conv_id, "conversation.released", result, opts)
     result
   end
 
@@ -1335,6 +1377,23 @@ defmodule Fountain.Conversations.ConversationServer do
     {:ok, _} = Conversations.update_conversation(conv, %{status: "terminated"})
     publish_stage(state.conversation_id, "terminate", "done")
     {:stop, :normal, :ok, state}
+  end
+
+  # End the conversation, keep the sandbox — see release_conversation/2. A
+  # running turn is refused rather than interrupted: the caller decides
+  # whether to cut the agent off. `handle: nil` on the way out so no stop
+  # path (terminate/2 included) touches the sprite; the sandbox row is not
+  # written at all — it stays `ready`, a parked disk with no server, exactly
+  # what the wake path expects when the successor's first prompt arrives.
+  def handle_call(:release_conv, _from, %{current_turn: turn} = state) when not is_nil(turn) do
+    {:reply, {:error, :busy}, state}
+  end
+
+  def handle_call(:release_conv, _from, state) do
+    conv = Conversations._unsafe_get_conversation!(state.conversation_id)
+    {:ok, _} = Conversations.update_conversation(conv, %{status: "terminated"})
+    publish_stage(state.conversation_id, "terminate", "done", %{event: "released"})
+    {:stop, :normal, :ok, %{state | handle: nil}}
   end
 
   # Catch-all: an unmatched call must not die with a FunctionClauseError at

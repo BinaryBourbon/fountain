@@ -938,6 +938,89 @@ defmodule Fountain.Conversations.ConversationServerTest do
     end
   end
 
+  describe "release_conversation/2 — end the conversation, keep the computer" do
+    test "a live server stops without destroying the sprite; the rows say so",
+         %{conv: conv, sandbox: sandbox} do
+      stub_happy_sprite()
+      test = self()
+      Mimic.stub(Fountain.Sandbox.Sprites, :destroy, fn _h -> send(test, :destroyed) && :ok end)
+
+      {pid, ref, :alive} = start_server(conv)
+      key_id = Conversations._unsafe_get_conversation!(conv.id).callback_api_key_id
+
+      # The harness's servers are outside Horde, so the client function would
+      # not find this one; the call is what release_conversation/2 makes.
+      assert :ok = GenServer.call(pid, :release_conv)
+      assert_stopped(ref)
+
+      refute_received :destroyed
+      assert Conversations._unsafe_get_conversation!(conv.id).status == "terminated"
+      # The sandbox row is untouched: ready, no terminated_at — a parked disk.
+      reloaded = Conversations._unsafe_get_sandbox!(sandbox.id)
+      assert reloaded.status == "ready"
+      refute reloaded.terminated_at
+      # The retired conversation's credential does not outlive it.
+      assert Repo.get(Accounts.ApiKey, key_id).revoked_at
+      # The stage event names what happened so a client can tell it from a terminate.
+      assert Enum.any?(
+               Conversations._unsafe_list_log_events(conv.id),
+               &(&1.kind == "stage" and &1.stage == "terminate" and &1.state == "done" and
+                   &1.data =~ "released")
+             )
+    end
+
+    test "refuses while a turn is running and interrupts nothing", %{conv: conv, sandbox: sandbox} do
+      stub_happy_sprite()
+      ref = make_ref()
+
+      Mimic.stub(Fountain.Sandbox.Sprites, :spawn, fn _h, _cmd, _args, _opts ->
+        {:ok, %Fountain.Sandbox.Command{provider: :sprites, ref: ref}}
+      end)
+
+      Mimic.stub(Fountain.Sandbox.Sprites, :write_stdin, fn _cmd, _data -> :ok end)
+      Mimic.stub(Fountain.Sandbox.Sprites, :close_stdin, fn _cmd -> :ok end)
+
+      {pid, _mon, :alive} = start_server(conv, initial_prompt: "first")
+
+      assert {:error, :busy} = GenServer.call(pid, :release_conv)
+      assert Process.alive?(pid)
+      assert Conversations._unsafe_get_conversation!(conv.id).status == "running"
+      assert Conversations._unsafe_get_sandbox!(sandbox.id).status == "ready"
+      assert [%{status: "running"}] = Conversations._unsafe_list_turns(conv.id)
+
+      GenServer.stop(pid)
+    end
+
+    test "with no server, marks the conversation alone", %{conv: conv, sandbox: sandbox} do
+      {:ok, _} = Conversations.update_sandbox(sandbox, %{status: "ready"})
+
+      assert :ok = ConversationServer.release_conversation(conv.id)
+      assert Conversations._unsafe_get_conversation!(conv.id).status == "terminated"
+      assert Conversations._unsafe_get_sandbox!(sandbox.id).status == "ready"
+
+      assert {:error, :not_running} =
+               ConversationServer.release_conversation(Ecto.UUID.generate())
+    end
+
+    test "terminating the retired conversation later leaves its successor's sandbox alone",
+         %{conv: conv, sandbox: sandbox, user: user, agent: agent} do
+      {:ok, _} = Conversations.update_sandbox(sandbox, %{status: "ready"})
+      assert :ok = ConversationServer.release_conversation(conv.id)
+
+      successor =
+        insert_conversation(user_id: user.id, agent: agent, sandbox: sandbox, status: "idle")
+
+      # A terminate (or a delete, which cascades through it) of the old thread.
+      assert :ok = ConversationServer.terminate_conversation(conv.id)
+      assert Conversations._unsafe_get_sandbox!(sandbox.id).status == "ready"
+
+      # Once the successor is past resuming too, the sandbox goes with it.
+      {:ok, _} = Conversations.update_conversation(successor, %{status: "terminated"})
+      assert :ok = ConversationServer.terminate_conversation(conv.id)
+      assert Conversations._unsafe_get_sandbox!(sandbox.id).status == "terminated"
+    end
+  end
+
   describe "interrupt/1 and send_prompt/3 with no running server" do
     test "interrupt reports not_running", %{conv: conv} do
       assert {:error, :not_running} = ConversationServer.interrupt(conv.id)

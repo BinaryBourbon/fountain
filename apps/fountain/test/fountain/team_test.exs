@@ -398,6 +398,161 @@ defmodule Fountain.TeamTest do
     end
   end
 
+  describe "open_fresh_conversation/3" do
+    test "retires the current conversation and opens a new one on the same sandbox" do
+      user = insert_verified_user()
+      ada = insert_agent(user_id: user.id, name: "Ada")
+      env = insert_env(user_id: user.id)
+      vault = insert_vault(user_id: user.id)
+      sandbox = insert_sandbox(user_id: user.id, status: "ready")
+
+      prev =
+        insert_teammate_conv(user, ada,
+          sandbox: sandbox,
+          status: "idle",
+          title: "Ada (staging)",
+          environment_id: env.id,
+          vault_id: vault.id,
+          runtime_session_id: "sess-old"
+        )
+
+      Team.subscribe(user.id)
+
+      assert {:ok, fresh} = Team.open_fresh_conversation(user.id, ada.id, actor: "ui")
+
+      # A new conversation, same computer, fresh session, the teammate's attributes.
+      refute fresh.id == prev.id
+      assert fresh.sandbox_id == sandbox.id
+      assert fresh.status == "idle"
+      assert fresh.runtime_session_id == nil
+      assert fresh.channel_id == Team.channel()
+      assert fresh.title == "Ada (staging)"
+      assert fresh.environment_id == env.id
+      assert fresh.vault_id == vault.id
+      assert fresh.runtime == ada.runtime
+
+      # The old one is past resuming; the sandbox row was not touched.
+      assert Repo.reload(prev).status == "terminated"
+      assert Repo.reload(sandbox).status == "ready"
+      refute Repo.reload(sandbox).terminated_at
+
+      # The roster follows the new one; history lists both, the new one first.
+      assert [%{conversation: %{id: id}, name: "Ada (staging)"}] = Team.list_teammates(user.id)
+      assert id == fresh.id
+
+      assert [fresh.id, prev.id] ==
+               user.id |> Team.list_teammate_conversations(ada.id) |> Enum.map(& &1.id)
+
+      assert_received {:team_changed, _}
+
+      actions = user.id |> Audit.list_recent_for_user(20) |> Enum.map(& &1.action)
+      assert "team.conversation.rotated" in actions
+      assert "conversation.created" in actions
+    end
+
+    test "a parked computer is kept too, and stays parked" do
+      user = insert_verified_user()
+      ada = insert_agent(user_id: user.id)
+      sandbox = insert_sandbox(user_id: user.id, status: "suspended")
+      insert_teammate_conv(user, ada, sandbox: sandbox, status: "idle")
+
+      assert {:ok, fresh} = Team.open_fresh_conversation(user.id, ada.id)
+      assert fresh.sandbox_id == sandbox.id
+      assert Repo.reload(sandbox).status == "suspended"
+    end
+
+    test "releases through the server when one is running; a running turn refuses" do
+      user = insert_verified_user()
+      ada = insert_agent(user_id: user.id)
+      sandbox = insert_sandbox(user_id: user.id, status: "ready")
+      prev = insert_teammate_conv(user, ada, sandbox: sandbox, status: "running")
+      test_pid = self()
+
+      stub(ConversationServer, :release_conversation, fn id, opts ->
+        send(test_pid, {:released, id, opts})
+        {:error, :busy}
+      end)
+
+      assert {:error, :busy} = Team.open_fresh_conversation(user.id, ada.id)
+      assert_received {:released, id, opts}
+      assert id == prev.id
+      assert opts[:audit] == false
+
+      # Nothing was created or recorded.
+      assert [prev.id] ==
+               user.id |> Team.list_teammate_conversations(ada.id) |> Enum.map(& &1.id)
+
+      actions = user.id |> Audit.list_recent_for_user(20) |> Enum.map(& &1.action)
+      refute "team.conversation.rotated" in actions
+    end
+
+    test "a computer still starting cannot change hands" do
+      user = insert_verified_user()
+      ada = insert_agent(user_id: user.id)
+
+      for status <- ["pending", "starting"] do
+        agent = insert_agent(user_id: user.id)
+        sandbox = insert_sandbox(user_id: user.id, status: status)
+        insert_teammate_conv(user, agent, sandbox: sandbox, status: "pending")
+        assert {:error, :provisioning} = Team.open_fresh_conversation(user.id, agent.id)
+      end
+
+      _ = ada
+    end
+
+    test "a gone computer means a new one, provisioning now, with the teammate's attributes" do
+      user = insert_verified_user()
+      ada = insert_agent(user_id: user.id, name: "Ada")
+      env = insert_env(user_id: user.id)
+      dead_sandbox = insert_sandbox(user_id: user.id, status: "terminated")
+
+      prev =
+        insert_teammate_conv(user, ada,
+          sandbox: dead_sandbox,
+          status: "idle",
+          title: "Ada (staging)",
+          environment_id: env.id
+        )
+
+      inert_start_child()
+
+      assert {:ok, fresh} = Team.open_fresh_conversation(user.id, ada.id)
+      refute fresh.id == prev.id
+      refute fresh.sandbox_id == dead_sandbox.id
+      assert fresh.title == "Ada (staging)"
+      assert fresh.environment_id == env.id
+      assert Repo.reload(prev).status == "terminated"
+
+      actions = user.id |> Audit.list_recent_for_user(20) |> Enum.map(& &1.action)
+      assert "team.conversation.rotated" in actions
+    end
+
+    test "a conversation already past resuming is replaced the same way" do
+      user = insert_verified_user()
+      ada = insert_agent(user_id: user.id)
+      sandbox = insert_sandbox(user_id: user.id, status: "ready")
+      prev = insert_teammate_conv(user, ada, sandbox: sandbox, status: "terminated")
+      inert_start_child()
+
+      assert {:ok, fresh} = Team.open_fresh_conversation(user.id, ada.id)
+      refute fresh.id == prev.id
+      # Not reused: a terminated conversation's sandbox is not the teammate's
+      # computer any more, whatever the row says.
+      refute fresh.sandbox_id == sandbox.id
+    end
+
+    test "not on the team → :not_found; another tenant's teammate too" do
+      user = insert_verified_user()
+      other = insert_verified_user()
+      agent = insert_agent(user_id: user.id)
+      theirs = insert_agent(user_id: other.id)
+      insert_teammate_conv(other, theirs)
+
+      assert {:error, :not_found} = Team.open_fresh_conversation(user.id, agent.id)
+      assert {:error, :not_found} = Team.open_fresh_conversation(user.id, theirs.id)
+    end
+  end
+
   describe "list_teammate_conversations/2 (#832)" do
     test "every conversation the agent had on the team, newest first; none off the team" do
       user = insert_verified_user()
