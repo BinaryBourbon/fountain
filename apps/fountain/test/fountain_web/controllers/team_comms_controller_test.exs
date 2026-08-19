@@ -163,7 +163,7 @@ defmodule FountainWeb.TeamCommsControllerTest do
       assert body["error"] == "contact_already_provisioned"
     end
 
-    test "is 502 naming the channel when a provider refuses", %{
+    test "is 424 naming the channel when a provider refuses", %{
       conn: conn,
       user: user,
       raw_key: key
@@ -177,7 +177,7 @@ defmodule FountainWeb.TeamCommsControllerTest do
 
       body =
         give(conn, key, agent.id)
-        |> json_response(502)
+        |> json_response(424)
 
       assert body == %{
                "error" => "provider_error",

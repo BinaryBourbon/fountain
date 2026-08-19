@@ -254,12 +254,12 @@ defmodule FountainWeb.TeamController do
     summary: "Take a teammate's email address and phone number away",
     description:
       "Deletes the inbox and releases the number upstream, then forgets them. A provider " <>
-        "failure keeps the contact (nothing is orphaned) and is reported as 502.",
+        "failure keeps the contact (nothing is orphaned) and is reported as 424.",
     parameters: [agent_id: [in: :path, type: :string, required: true]],
     responses: [
       no_content: "Released",
       not_found: {"No contact, or not on the team", "application/json", Schemas.Error},
-      bad_gateway: {"A provider refused", "application/json", Schemas.Error}
+      failed_dependency: {"A provider refused", "application/json", Schemas.Error}
     ]
   )
 
@@ -294,9 +294,11 @@ defmodule FountainWeb.TeamController do
   defp comms_error(conn, :already_provisioned),
     do: conn |> put_status(:conflict) |> json(%{error: "contact_already_provisioned"})
 
+  # 424, not 502: Cloudflare swaps an origin 502's body for its own error
+  # page, which would hide which provider refused and why.
   defp comms_error(conn, {channel, reason}) when channel in [:email, :phone] do
     conn
-    |> put_status(:bad_gateway)
+    |> put_status(:failed_dependency)
     |> json(%{
       error: "provider_error",
       channel: to_string(channel),
