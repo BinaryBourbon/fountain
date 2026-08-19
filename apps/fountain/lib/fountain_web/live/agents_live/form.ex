@@ -2,7 +2,7 @@ defmodule FountainWeb.AgentsLive.Form do
   @moduledoc false
   use FountainWeb, :live_view
 
-  alias Fountain.{Agents, AvatarGenerator, Environments}
+  alias Fountain.{Agents, AvatarGenerator, Environments, InferenceCredentials}
   alias Fountain.Agents.Agent
   alias Fountain.Runtimes.Model
 
@@ -16,6 +16,14 @@ defmodule FountainWeb.AgentsLive.Form do
      socket
      |> assign(:page_title, page_title(action))
      |> assign(:user_id, user_id)
+     |> assign(
+       :missing_credential,
+       InferenceCredentials.missing_for_model(
+         user_id,
+         agent.model || "anthropic/claude-sonnet-4-6"
+       )
+     )
+     |> assign(:credential_message, nil)
      |> assign(:envs, envs)
      |> assign(:sandbox_providers, Fountain.Sandbox.enabled_providers())
      |> assign(:action, action)
@@ -117,7 +125,35 @@ defmodule FountainWeb.AgentsLive.Form do
      socket
      |> assign(:form, params)
      |> assign(:skills, skills)
-     |> assign(:mcp_servers, mcp_servers)}
+     |> assign(:mcp_servers, mcp_servers)
+     |> assign(
+       :missing_credential,
+       InferenceCredentials.missing_for_model(socket.assigns.user_id, params["model"])
+     )}
+  end
+
+  # The model needs a provider this account has no credential for: collect
+  # it right here, the first time it matters (#841), rather than after a
+  # conversation fails to start inside the sandbox.
+  def handle_event("save_credential", %{"provider" => provider_str, "value" => value}, socket) do
+    provider = String.to_existing_atom(provider_str)
+
+    case FountainWeb.InferenceCredentialSave.save(socket, provider, value) do
+      {:ok, msg} ->
+        {:noreply,
+         socket
+         |> assign(:credential_message, {:info, msg})
+         |> assign(
+           :missing_credential,
+           InferenceCredentials.missing_for_model(
+             socket.assigns.user_id,
+             socket.assigns.form["model"]
+           )
+         )}
+
+      {:error, msg} ->
+        {:noreply, assign(socket, :credential_message, {:error, msg})}
+    end
   end
 
   def handle_event("add_skill", _, socket) do
@@ -573,6 +609,11 @@ defmodule FountainWeb.AgentsLive.Form do
         >
           Not one of the models Fountain lists — it will be passed to the runtime as-is.
         </p>
+        <.missing_credential_card
+          :if={@missing_credential}
+          missing={@missing_credential}
+          message={@credential_message}
+        />
 
         <div :if={length(@sandbox_providers) > 1} class="space-y-1">
           <label class="block text-sm font-medium text-zinc-700">Sandbox provider</label>
@@ -1026,6 +1067,52 @@ defmodule FountainWeb.AgentsLive.Form do
     <p :if={Map.has_key?(@errors, @field)} class="text-rose-600 text-xs">
       {Map.get(@errors, @field)}
     </p>
+    """
+  end
+
+  attr :missing, :any, required: true
+  attr :message, :any, required: true
+
+  defp missing_credential_card(assigns) do
+    {provider, accepted} = assigns.missing
+    assigns = assign(assigns, provider: provider, accepted: accepted, first: hd(accepted))
+
+    ~H"""
+    <div class="rounded-md border border-amber-300 bg-amber-50 p-3 space-y-2">
+      <p class="text-sm text-amber-900">
+        <span class="font-medium">
+          No {FountainWeb.InferenceCredentialSave.label(@provider)} credential on this account yet.
+        </span>
+        The agent saves fine, but its conversations cannot start until one is set. Paste it here and it is validated and saved <span :if={
+          length(@accepted) > 1
+        }>
+          (a {Enum.map_join(tl(@accepted), " or ", &FountainWeb.InferenceCredentialSave.label/1)} works too — Settings → Inference credentials)
+        </span>:
+      </p>
+      <form phx-submit="save_credential" class="flex gap-2">
+        <input type="hidden" name="provider" value={Atom.to_string(@first)} />
+        <input
+          type="password"
+          name="value"
+          placeholder={"#{FountainWeb.InferenceCredentialSave.label(@first)} · from #{FountainWeb.InferenceCredentialSave.source(@first)}"}
+          autocomplete="off"
+          class="flex-1 rounded-md border border-amber-300 bg-white px-2 py-1.5 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-amber-500"
+        />
+        <button
+          type="submit"
+          class="rounded-md bg-zinc-900 text-white px-3 py-1.5 text-xs font-medium hover:bg-zinc-700"
+        >
+          Save key
+        </button>
+      </form>
+      <%= case @message do %>
+        <% nil -> %>
+        <% {:info, msg} -> %>
+          <p class="text-xs text-emerald-700">{msg}</p>
+        <% {:error, msg} -> %>
+          <p class="text-xs text-rose-700">{msg}</p>
+      <% end %>
+    </div>
     """
   end
 end

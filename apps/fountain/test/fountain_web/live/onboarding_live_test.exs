@@ -20,7 +20,7 @@ defmodule FountainWeb.OnboardingLiveTest do
 
       {:ok, _lv, html} = live(conn, ~p"/onboarding/step_1")
       assert html =~ "Step 1"
-      assert html =~ "Connect a provider"
+      assert html =~ "Connect Anthropic"
     end
 
     test "unauthenticated user is redirected to login", %{conn: conn} do
@@ -74,12 +74,34 @@ defmodule FountainWeb.OnboardingLiveTest do
       %{lv: lv, user: user}
     end
 
-    test "renders all four provider forms", %{lv: lv} do
+    test "asks for Anthropic first; the other providers are one click away", %{lv: lv} do
       html = render(lv)
-      assert html =~ "Anthropic"
-      assert html =~ "Claude OAuth"
-      assert html =~ "OpenAI"
-      assert html =~ "Gemini"
+      assert html =~ "Connect Anthropic"
+      assert html =~ ~s(value="anthropic_api_key")
+      refute html =~ ~s(value="openai_api_key")
+      refute html =~ ~s(value="gemini_api_key")
+      refute html =~ ~s(value="claude_code_oauth_token")
+
+      html =
+        lv
+        |> element("button", "Using a Claude OAuth token, OpenAI or Gemini instead?")
+        |> render_click()
+
+      assert html =~ ~s(value="claude_code_oauth_token")
+      assert html =~ ~s(value="openai_api_key")
+      assert html =~ ~s(value="gemini_api_key")
+    end
+
+    test "a provider already set shows even before the disclosure", %{user: user} do
+      {:ok, dek} = Fountain.Crypto.load_tenant_key(user.id)
+
+      {:ok, _} =
+        Fountain.InferenceCredentials.put_credential(user.id, dek, :openai_api_key, "sk-test")
+
+      conn = login_user(Phoenix.ConnTest.build_conn(), user)
+      {:ok, _lv, html} = live(conn, ~p"/onboarding/step_1")
+      assert html =~ ~s(value="openai_api_key")
+      refute html =~ ~s(value="gemini_api_key")
     end
 
     test "Continue is disabled until at least one provider is set", %{lv: lv} do

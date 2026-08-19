@@ -2,8 +2,7 @@ defmodule FountainWeb.OnboardingLive.Wizard do
   @moduledoc false
   use FountainWeb, :live_view
 
-  alias Fountain.{Accounts, Agents, Crypto, Environments, InferenceCredentials}
-  alias Fountain.InferenceCredentials.Validator
+  alias Fountain.{Accounts, Agents, Environments, InferenceCredentials}
 
   # ADR 0008 inserted "inference" as the new first step. Old step_1/2/3
   # shifted to step_2/3/4. Migration 20260510210001 bumps existing user
@@ -52,6 +51,7 @@ defmodule FountainWeb.OnboardingLive.Wizard do
     |> assign(:environments, Environments.list_environments(user.id))
     |> assign(:agents, Agents.list_agents(user.id, []))
     |> assign(:inference_providers, @inference_providers)
+    |> assign(:show_all_providers, false)
     |> assign(:inference_status, InferenceCredentials.status_for_user(user.id))
     |> assign(:inference_messages, %{})
   end
@@ -61,56 +61,24 @@ defmodule FountainWeb.OnboardingLive.Wizard do
   @impl true
   def handle_event("save_credential", %{"provider" => provider_str, "value" => value}, socket) do
     provider = String.to_existing_atom(provider_str)
-    value = String.trim(value || "")
 
-    if value == "" do
-      {:noreply, put_inference_message(socket, provider, :error, "Paste a value before saving.")}
-    else
-      case Validator.validate(provider, value) do
-        :ok ->
-          case persist_credential(socket, provider, value) do
-            {:ok, _} ->
-              {:noreply,
-               socket
-               |> assign(
-                 :inference_status,
-                 InferenceCredentials.status_for_user(socket.assigns.user_id)
-               )
-               |> put_inference_message(provider, :info, "Saved and validated.")}
+    case FountainWeb.InferenceCredentialSave.save(socket, provider, value) do
+      {:ok, msg} ->
+        {:noreply,
+         socket
+         |> assign(
+           :inference_status,
+           InferenceCredentials.status_for_user(socket.assigns.user_id)
+         )
+         |> put_inference_message(provider, :info, msg)}
 
-            {:error, reason} ->
-              {:noreply,
-               put_inference_message(
-                 socket,
-                 provider,
-                 :error,
-                 "Could not save: #{inspect(reason)}"
-               )}
-          end
-
-        {:error, :invalid, %{status: status}} ->
-          {:noreply,
-           put_inference_message(
-             socket,
-             provider,
-             :error,
-             "Provider rejected the credential (HTTP #{status}). Check that you copied the full token."
-           )}
-
-        {:error, :timeout} ->
-          {:noreply,
-           put_inference_message(socket, provider, :error, "Validation timed out. Try again.")}
-
-        {:error, reason} ->
-          {:noreply,
-           put_inference_message(
-             socket,
-             provider,
-             :error,
-             "Could not reach provider (#{inspect(reason)})."
-           )}
-      end
+      {:error, msg} ->
+        {:noreply, put_inference_message(socket, provider, :error, msg)}
     end
+  end
+
+  def handle_event("show_all_providers", _params, socket) do
+    {:noreply, assign(socket, :show_all_providers, true)}
   end
 
   def handle_event("continue_from_inference", _params, socket) do
@@ -183,24 +151,6 @@ defmodule FountainWeb.OnboardingLive.Wizard do
     {:noreply, socket |> assign(:user, user) |> push_navigate(to: ~p"/onboarding/#{next_step}")}
   end
 
-  # Takes the socket rather than a bare user_id so the credential save made
-  # during onboarding is attributed like every other one. This was the surface
-  # #546 found unaudited: the same context function, reached through a third
-  # door that nobody had added a recording call to.
-  defp persist_credential(socket, provider, value) do
-    user_id = socket.assigns.user_id
-
-    with {:ok, dek} <- Crypto.load_tenant_key(user_id) do
-      InferenceCredentials.put_credential(
-        user_id,
-        dek,
-        provider,
-        value,
-        FountainWeb.Audited.attribution(socket)
-      )
-    end
-  end
-
   defp put_inference_message(socket, provider, kind, msg) do
     update(socket, :inference_messages, fn map -> Map.put(map, provider, {kind, msg}) end)
   end
@@ -232,6 +182,7 @@ defmodule FountainWeb.OnboardingLive.Wizard do
             <% "step_1" -> %>
               <.step_inference
                 providers={@inference_providers}
+                show_all={@show_all_providers}
                 status={@inference_status}
                 messages={@inference_messages}
                 any_set?={Enum.any?(@inference_status, fn {_, set?} -> set? end)}
@@ -306,23 +257,41 @@ defmodule FountainWeb.OnboardingLive.Wizard do
   end
 
   attr :providers, :list, required: true
+  attr :show_all, :boolean, required: true
   attr :status, :map, required: true
   attr :messages, :map, required: true
   attr :any_set?, :boolean, required: true
 
+  # Anthropic first (#841): one key is all a Claude teammate needs, and every
+  # other provider is asked for the first time a model actually needs it —
+  # the agent form prompts inline. The rest stay one click away here for
+  # people who arrive with an OpenAI or Gemini key, or a Claude OAuth token.
   defp step_inference(assigns) do
+    assigns =
+      assign(
+        assigns,
+        :visible_providers,
+        if(assigns.show_all,
+          do: assigns.providers,
+          else:
+            Enum.filter(assigns.providers, fn {p, _, _} ->
+              p == :anthropic_api_key or Map.get(assigns.status, p, false)
+            end)
+        )
+      )
+
     ~H"""
     <div class="space-y-5">
       <div>
-        <h2 class="text-lg font-semibold">Step 1: Connect a provider</h2>
+        <h2 class="text-lg font-semibold">Step 1: Connect Anthropic</h2>
         <p class="mt-1 text-sm text-zinc-500">
-          Bring your own inference token. Sandboxes call providers directly with these — Fountain never sees your traffic and you pay providers directly. Set at least one to continue. You can add or change these anytime from Settings.
+          Paste an Anthropic API key — that is all a Claude agent needs. Sandboxes call the provider directly with it; Fountain never sees your traffic and you pay the provider. Other providers are asked for the first time an agent needs them, and you can add or change any of them from Settings.
         </p>
       </div>
 
       <div class="space-y-3">
         <div
-          :for={{provider, label, source} <- @providers}
+          :for={{provider, label, source} <- @visible_providers}
           class="rounded-md border border-zinc-200 p-3 space-y-2"
         >
           <div class="flex items-center justify-between">
@@ -367,6 +336,15 @@ defmodule FountainWeb.OnboardingLive.Wizard do
           <% end %>
         </div>
       </div>
+
+      <button
+        :if={!@show_all}
+        type="button"
+        phx-click="show_all_providers"
+        class="text-sm text-zinc-600 underline underline-offset-2 hover:text-zinc-900"
+      >
+        Using a Claude OAuth token, OpenAI or Gemini instead?
+      </button>
 
       <button
         phx-click="continue_from_inference"
