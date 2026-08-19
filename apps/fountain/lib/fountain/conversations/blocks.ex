@@ -59,6 +59,27 @@ defmodule Fountain.Conversations.Blocks do
 
   def for_event(_, _), do: []
 
+  @doc """
+  The assistant's text across `events` — every `:text` block of each output
+  event, joined, trimmed — for `runtime`'s dialect on legacy rows. What a
+  chat bubble shows for a turn's reply, what the roster previews, and what
+  `Fountain.Search` indexes (`turns.reply_text`). `""` when there is none.
+  """
+  @spec assistant_text([map()], String.t() | nil) :: String.t()
+  def assistant_text(events, runtime) do
+    events
+    |> Enum.filter(
+      &(&1.kind == "output" and &1.stream in ["stdout", "acp"] and is_binary(&1.data))
+    )
+    |> Enum.flat_map(&for_event(&1, runtime))
+    |> Enum.flat_map(fn
+      %{kind: :text, body: t} when is_binary(t) -> [t]
+      _ -> []
+    end)
+    |> Enum.join("")
+    |> String.trim()
+  end
+
   @doc "The wire form of a block: string `kind`, `error` for `error?`, everything else as is."
   @spec to_json(map()) :: map()
   def to_json(%{kind: kind} = block) do

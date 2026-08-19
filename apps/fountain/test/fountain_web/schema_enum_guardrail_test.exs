@@ -84,7 +84,8 @@ defmodule FountainWeb.SchemaEnumGuardrailTest do
     {FountainWeb.Schemas.Teammate, "presence.state"} =>
       {FountainWeb.TeamPresenter, :presence_states},
     {FountainWeb.Schemas.Teammate, "preview.kind"} => {FountainWeb.TeamPresenter, :preview_kinds},
-    {FountainWeb.Schemas.Block, "kind"} => {Fountain.Conversations.Blocks, :kinds}
+    {FountainWeb.Schemas.Block, "kind"} => {Fountain.Conversations.Blocks, :kinds},
+    {FountainWeb.Schemas.SearchHit, "kind"} => {Fountain.Search, :kinds}
   }
 
   # Enums with no domain list behind them. Each entry needs a reason: the

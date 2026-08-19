@@ -25,6 +25,11 @@ defmodule Fountain.Conversations.Turn do
     # never summed from the live `usage_update`s (their meaning differs per
     # runtime). nil when the runtime reported nothing.
     field :usage, :map
+    # The assistant's text for the turn — its events' `text` blocks, joined —
+    # materialised by `Conversations._unsafe_update_turn/2` when the turn
+    # ends, for `Fountain.Search` (#826). nil while the turn runs and on
+    # turns that predate the column (see `Fountain.Release.backfill_turn_replies/0`).
+    field :reply_text, :string
     belongs_to :conversation, Conversation
     has_many :images, TurnImage, preload_order: [asc: :position]
     timestamps(type: :utc_datetime, updated_at: false)
@@ -43,6 +48,7 @@ defmodule Fountain.Conversations.Turn do
       :ended_at,
       :acp_prompt_id,
       :usage,
+      :reply_text,
       :conversation_id
     ])
     |> validate_required([:turn_number, :prompt, :status, :conversation_id])

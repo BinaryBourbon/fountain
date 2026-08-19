@@ -11,7 +11,7 @@ defmodule Fountain.Conversations do
   require Logger
 
   alias Fountain.Audit
-  alias Fountain.Conversations.{Conversation, LogEvent, Sandbox, Turn, TurnImage}
+  alias Fountain.Conversations.{Blocks, Conversation, LogEvent, Sandbox, Turn, TurnImage}
   alias Fountain.Repo
 
   # ── on the _unsafe_ prefix ────────────────────────────────────────────────
@@ -798,9 +798,20 @@ defmodule Fountain.Conversations do
     end
   end
 
+  @doc """
+  Update a turn's row. When the update ends the turn — its status becomes
+  `completed`, `failed` or `interrupted` — the assistant's text for the
+  turn is materialised into `reply_text` in the same write (#826): every
+  turn ending goes through here, from the ConversationServer's six endings
+  to the orphan sweep, so search coverage is by construction rather than
+  by each ending remembering. A turn that already carries a `reply_text`
+  keeps it.
+  """
   def _unsafe_update_turn(%Turn{} = turn, attrs) do
-    turn
-    |> Turn.changeset(attrs)
+    changeset = Turn.changeset(turn, attrs)
+
+    changeset
+    |> maybe_put_reply_text(turn)
     |> Repo.update()
   end
 
@@ -834,6 +845,63 @@ defmodule Fountain.Conversations do
 
       updated
     end)
+  end
+
+  @terminal_turn_statuses ~w(completed failed interrupted)
+
+  defp maybe_put_reply_text(%Ecto.Changeset{valid?: false} = changeset, _turn), do: changeset
+
+  defp maybe_put_reply_text(changeset, %Turn{reply_text: nil} = turn) do
+    case Ecto.Changeset.get_change(changeset, :status) do
+      status when status in @terminal_turn_statuses ->
+        Ecto.Changeset.put_change(changeset, :reply_text, _unsafe_turn_reply_text(turn))
+
+      _ ->
+        changeset
+    end
+  end
+
+  defp maybe_put_reply_text(changeset, _turn), do: changeset
+
+  @doc """
+  Materialise `reply_text` on every ended turn that has none — the one-time
+  backfill for turns that predate the column (`Fountain.Release.backfill_turn_replies/0`).
+  Returns the number of turns written; a turn with no assistant text is
+  left null and visited again next run (there are few, and re-parsing them
+  is cheap). No tenant scope: a system sweep.
+  """
+  def _unsafe_backfill_reply_texts do
+    from(t in Turn,
+      where: t.status in ^@terminal_turn_statuses and is_nil(t.reply_text),
+      order_by: [asc: t.inserted_at]
+    )
+    |> Repo.all()
+    |> Enum.reduce(0, fn turn, n ->
+      case _unsafe_turn_reply_text(turn) do
+        nil ->
+          n
+
+        text ->
+          {:ok, _} = turn |> Turn.changeset(%{reply_text: text}) |> Repo.update()
+          n + 1
+      end
+    end)
+  end
+
+  @doc """
+  The assistant's text for `turn`, from its events through the same parse
+  the transcript uses (`Blocks.assistant_text/2`); nil when there is none.
+  Reads the conversation's runtime for the legacy dialects. Without tenant
+  scope: the caller holds the turn.
+  """
+  def _unsafe_turn_reply_text(%Turn{} = turn) do
+    runtime =
+      Repo.one(from c in Conversation, where: c.id == ^turn.conversation_id, select: c.runtime)
+
+    case turn.id |> _unsafe_list_turn_log_events() |> Blocks.assistant_text(runtime) do
+      "" -> nil
+      text -> text
+    end
   end
 
   # ── log events ──────────────────────────────────────────────────────────────────────────

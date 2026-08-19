@@ -18,6 +18,15 @@ upgrade, is in
 
 ### Added
 
+- **`GET /api/search`** (#826). Full-text search across the caller's
+  conversation titles, turn prompts and assistant replies, with `kind`,
+  ids and a plain-text snippet per hit; `websearch` syntax, `limit`/`offset`,
+  `agent_id`/`conversation_id`/`since`/`kinds` filters. Replies come from a
+  new `turns.reply_text`, materialised when a turn ends from the same block
+  parse the transcript uses (never tool noise); turns that ended before this
+  release are searchable by prompt until
+  `Fountain.Release.backfill_turn_replies/0` runs once on the server.
+
 - **Team schedules over the API** (#825). `GET /api/team/schedules`, and
   `GET|POST /api/team/:agent_id/schedules`, `GET|PATCH|DELETE
   /api/team/:agent_id/schedules/:id`, `POST .../:id/run` — the routines the

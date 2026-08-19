@@ -200,20 +200,11 @@ defmodule FountainWeb.ConversationsLive.Chat do
   # Walk this turn's events and pull out every `:text` block from each
   # runtime's stream-json. Joined so multi-message turns (claude can
   # emit several assistant messages, gemini streams deltas) read as
-  # one contiguous reply.
-  def chat_assistant_reply(events, runtime) do
-    events
-    |> Enum.filter(
-      &(&1.kind == "output" and &1.stream in ["stdout", "acp"] and is_binary(&1.data))
-    )
-    |> Enum.flat_map(&blocks_for(&1, runtime))
-    |> Enum.flat_map(fn
-      %{kind: :text, body: t} when is_binary(t) -> [t]
-      _ -> []
-    end)
-    |> Enum.join("")
-    |> String.trim()
-  end
+  # one contiguous reply. The walk lives in the context (it is also what
+  # `turns.reply_text` is materialised from, #826); this is the render path's
+  # name for it.
+  def chat_assistant_reply(events, runtime),
+    do: Fountain.Conversations.Blocks.assistant_text(events, runtime)
 
   # ── event → blocks ──────────────────────────────────────────────
 
