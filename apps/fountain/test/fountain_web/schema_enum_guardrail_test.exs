@@ -86,7 +86,13 @@ defmodule FountainWeb.SchemaEnumGuardrailTest do
       {FountainWeb.TeamPresenter, :presence_states},
     {FountainWeb.Schemas.Teammate, "preview.kind"} => {FountainWeb.TeamPresenter, :preview_kinds},
     {FountainWeb.Schemas.Block, "kind"} => {Fountain.Conversations.Blocks, :kinds},
-    {FountainWeb.Schemas.SearchHit, "kind"} => {Fountain.Search, :kinds}
+    {FountainWeb.Schemas.SearchHit, "kind"} => {Fountain.Search, :kinds},
+    {FountainWeb.Schemas.SupportReport, "category"} => {Fountain.Support.Report, :categories},
+    {FountainWeb.Schemas.SupportReport, "status"} => {Fountain.Support.Report, :statuses},
+    {FountainWeb.Schemas.SupportReportCreateRequest, "category"} =>
+      {Fountain.Support.Report, :categories},
+    {FountainWeb.Schemas.SupportReportCreateRequest, "screenshot.media_type"} =>
+      {Fountain.Images, :valid_media_types}
   }
 
   # Enums with no domain list behind them. Each entry needs a reason: the

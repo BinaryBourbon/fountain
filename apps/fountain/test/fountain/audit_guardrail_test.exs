@@ -76,6 +76,7 @@ defmodule Fountain.AuditGuardrailTest do
     {"team schedule update", &__MODULE__.do_schedule_update/1, "team.schedule.updated"},
     {"team schedule delete", &__MODULE__.do_schedule_delete/1, "team.schedule.deleted"},
     {"team schedule run", &__MODULE__.do_schedule_run/1, "team.schedule.fired"},
+    {"support report create", &__MODULE__.do_support_create/1, "support.report.created"},
     {"runner register", &__MODULE__.do_runner_register/1, "runner.registered"},
     {"runner delete", &__MODULE__.do_runner_delete/1, "runner.deleted"}
   ]
@@ -308,6 +309,15 @@ defmodule Fountain.AuditGuardrailTest do
 
     s
   end
+
+  def do_support_create(user),
+    do:
+      {:ok, _} =
+        Fountain.Support.create_report(user.id, %{
+          "category" => "bug",
+          "message" => "it broke",
+          "context" => %{"conversation_id" => "x"}
+        })
 
   def do_schedule_create(user), do: insert_schedule(user)
 
