@@ -86,3 +86,9 @@ config :fountain, :oauth_clients, [
     redirect_uris: ["https://app.test/callback", "http://localhost:5173/"]
   }
 ]
+
+# Self-hosted runners (ADR 0022) are enabled by default in every other env —
+# there is no credential to be missing. Off here so the suite's assumptions
+# about "which providers are enabled" (only what a test configures) hold;
+# runner tests switch it on explicitly.
+config :fountain, :runners_enabled, false

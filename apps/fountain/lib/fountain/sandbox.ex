@@ -219,7 +219,8 @@ defmodule Fountain.Sandbox do
   @default_adapters %{
     sprites: Fountain.Sandbox.Sprites,
     e2b: Fountain.Sandbox.E2B,
-    daytona: Fountain.Sandbox.Daytona
+    daytona: Fountain.Sandbox.Daytona,
+    runner: Fountain.Sandbox.Runner
   }
 
   @doc """
@@ -229,7 +230,7 @@ defmodule Fountain.Sandbox do
   for schema-level validation; runtime enabledness is a config concern.
   """
   @spec known_providers() :: [String.t()]
-  def known_providers, do: ~w(sprites e2b daytona)
+  def known_providers, do: ~w(sprites e2b daytona runner)
 
   @doc "The adapter module for a provider. Raises on an unknown provider."
   @spec adapter_for(provider()) :: module()
@@ -255,7 +256,8 @@ defmodule Fountain.Sandbox do
 
   @doc """
   Whether a provider is usable on this instance: its adapter is registered
-  **and** its credential is configured. Enabledness is runtime state — the
+  **and** its credential is configured (for `:runner`, which has none, that
+  it has not been switched off). Enabledness is runtime state — the
   schema validates against `known_providers/0`, selection validates against
   this.
   """
@@ -276,6 +278,11 @@ defmodule Fountain.Sandbox do
   defp credential_present?(:sprites), do: Application.get_env(:fountain, :sprites_token) != nil
   defp credential_present?(:e2b), do: Application.get_env(:fountain, :e2b_api_key) != nil
   defp credential_present?(:daytona), do: Application.get_env(:fountain, :daytona_api_key) != nil
+  # Self-hosted runners (ADR 0022) need no platform credential — every daemon
+  # authenticates with the user's own API key — so the switch is an operator
+  # opt-out rather than a key: `SANDBOX_RUNNERS_ENABLED=false` hides the
+  # provider from selection and refuses daemon connections.
+  defp credential_present?(:runner), do: Application.get_env(:fountain, :runners_enabled, true)
   # Non-production adapters (the in-memory Fake) carry no credentials; being
   # registered in :sandbox_adapters is what enables them.
   defp credential_present?(_other), do: true
@@ -393,6 +400,28 @@ defmodule Fountain.Sandbox do
   @spec restore_checkpoint(Handle.t(), String.t()) :: :ok | {:error, error()}
   def restore_checkpoint(%Handle{} = handle, checkpoint_id) do
     adapter(handle).restore_checkpoint(handle, checkpoint_id)
+  end
+
+  @doc """
+  Resolve an in-sandbox path to the path a process *inside* the sandbox
+  sees for it.
+
+  On every hosted provider a sandbox is a real Linux box whose paths are
+  literal (`/home/sprite` is `/home/sprite`), so this is the identity. A
+  self-hosted runner (ADR 0022) maps `/home/sprite` onto a directory on the
+  user's machine, and a path an agent CLI validates *in band* — the ACP
+  `cwd` — must be the real one. Adapters that need the translation export
+  `host_path/2`; everything else gets the path back unchanged.
+  """
+  @spec host_path(Handle.t(), String.t()) :: String.t()
+  def host_path(%Handle{} = handle, path) do
+    mod = adapter(handle)
+
+    if function_exported?(mod, :host_path, 2) do
+      mod.host_path(handle, path)
+    else
+      path
+    end
   end
 
   defp adapter(%Handle{provider: provider}), do: adapter_for(provider)

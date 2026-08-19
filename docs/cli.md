@@ -163,6 +163,23 @@ surface and flags in full; **[Editors (ACP)](integrations/editors.md)** has the 
 snippets, and the limits worth knowing before you start — chief among them that
 the agent works on a sandbox's files, not the ones open in your editor.
 
+## Self-hosted runner
+
+```bash
+fountain runner                          # this machine becomes a sandbox provider
+fountain runner --name mini --root ~/fountain-sandboxes --log-level debug
+```
+
+Dials out to Fountain, holds the connection, and serves sandboxes for agents
+whose `sandbox_provider` is `runner`: each sandbox is a directory under
+`--root` (default `~/.fountain/runners/<name>/sandboxes`), the agent's
+processes run on this machine as you with `HOME` pointed at that directory,
+and idle sandboxes park by stopping their processes with the directory left
+in place. Trusted mode — no VM or egress policy — so run it on a machine you
+would hand a capable colleague a shell on. Needs a full-scope key. Names are
+unique per account (default: the hostname); reconnects with backoff. See the
+[runners guide](integrations/runners.md).
+
 ## Apply manifests
 
 ```bash

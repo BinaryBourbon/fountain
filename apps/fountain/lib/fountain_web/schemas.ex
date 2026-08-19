@@ -370,7 +370,7 @@ defmodule FountainWeb.Schemas do
         },
         sandbox_provider: %Schema{
           type: :string,
-          enum: ~w(sprites e2b daytona),
+          enum: ~w(sprites e2b daytona runner),
           nullable: true,
           description:
             "Sandbox backend override; null inherits the instance default " <>
@@ -608,7 +608,7 @@ defmodule FountainWeb.Schemas do
         runtime: %Schema{type: :string, enum: ~w(claude codex gemini opencode)},
         sandbox_provider: %Schema{
           type: :string,
-          enum: ~w(sprites e2b daytona),
+          enum: ~w(sprites e2b daytona runner),
           nullable: true,
           description:
             "Sandbox backend override; null inherits the instance default " <>
@@ -683,7 +683,7 @@ defmodule FountainWeb.Schemas do
         runtime: %Schema{type: :string, enum: ~w(claude codex gemini opencode)},
         sandbox_provider: %Schema{
           type: :string,
-          enum: ~w(sprites e2b daytona),
+          enum: ~w(sprites e2b daytona runner),
           nullable: true,
           description:
             "Sandbox backend override; null inherits the instance default " <>
@@ -2341,6 +2341,40 @@ defmodule FountainWeb.Schemas do
   # ApiKey is referenced by the implicit alias the nested defmodule above
   # created; it only exists after that definition, hence the ordering.
   list_response(ApiKeyListResponse, of: ApiKey)
+
+  defmodule Runner do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "Runner",
+      description:
+        "A self-hosted runner: a machine of yours running `fountain runner`, " <>
+          "serving sandboxes for the `runner` provider (ADR 0022). `online` is " <>
+          "live — whether the daemon holds a connection right now.",
+      type: :object,
+      properties: %{
+        id: %Schema{type: :string, format: :uuid},
+        name: %Schema{type: :string, description: "The `--name` the daemon connected with."},
+        hostname: %Schema{type: :string, nullable: true},
+        os: %Schema{type: :string, nullable: true},
+        arch: %Schema{type: :string, nullable: true},
+        version: %Schema{type: :string, nullable: true, description: "The daemon's CLI version."},
+        root: %Schema{
+          type: :string,
+          nullable: true,
+          description: "The directory on the machine that holds its sandboxes."
+        },
+        online: %Schema{type: :boolean},
+        connected_at: %Schema{type: :string, format: :"date-time", nullable: true},
+        last_seen_at: %Schema{type: :string, format: :"date-time", nullable: true},
+        created_at: %Schema{type: :string, format: :"date-time"}
+      },
+      required: [:id, :name, :online, :created_at]
+    })
+  end
+
+  list_response(RunnerListResponse, of: Runner)
 
   defmodule ApiKeyRequest do
     @moduledoc false

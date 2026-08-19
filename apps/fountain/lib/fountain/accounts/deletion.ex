@@ -174,7 +174,12 @@ defmodule Fountain.Accounts.Deletion do
   end
 
   defp destroy_sprite(%Sandbox{sprite_name: name} = sandbox) when is_binary(name) do
-    handle = Fountain.Sandbox.build_handle(:sprites, name)
+    # The row's provider, never the instance default: a sandbox is destroyed
+    # on the backend that holds it (ADR 0018), and this path used to hardcode
+    # :sprites, which "destroyed" E2B/Daytona/runner sandboxes against the
+    # wrong adapter.
+    provider = Fountain.Conversations.sandbox_provider_atom(sandbox)
+    handle = Fountain.Sandbox.build_handle(provider, name)
 
     result =
       case Fountain.Sandbox.destroy(handle) do

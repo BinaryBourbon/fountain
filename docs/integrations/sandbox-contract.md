@@ -10,24 +10,26 @@ terminal frame per command, `allow: []` means deny-all, and the rest). The
 design rationale is
 [ADR 0018](https://github.com/BinaryBourbon/fountain/blob/main/decisions/0018-sandbox-provider-abstraction.md).
 
-So far, three providers implement it:
+So far, four providers implement it:
 
 | Provider | What it is | Suspend semantics |
 |---|---|---|
 | [Sprites](sprites.md) | [sprites.dev](https://sprites.dev) — the original backend and the instance default | Parks implicitly: the sprite scales to zero on its own, disk preserved |
 | [E2B](e2b.md) | [e2b.dev](https://e2b.dev) | Explicit `pause`: filesystem **and memory** snapshot, restored on resume |
 | [Daytona](daytona.md) | [daytona.io](https://daytona.io) — self-hostable via `DAYTONA_API_URL` | Explicit `stop`: disk preserved; long-parked sandboxes archive to object storage |
+| [Self-hosted runner](runners.md) | `fountain runner` on a machine the **user** owns; dials out to Fountain, no vendor account | Stops the sandbox's processes; the directory stays. Trusted mode — no isolation, no egress policy |
 
-All three advertise suspend, network policy and attach. TTY support is
-Sprites-only. Checkpoint-based warm starts exist only in the Sprites
+The three hosted providers advertise suspend, network policy and attach; a
+runner advertises suspend and attach only. TTY support is Sprites-only. Checkpoint-based warm starts exist only in the Sprites
 transport and are currently off by default — a checkpoint id is scoped to
 the sprite that created it, so cross-sprite warm starts cannot work (#654).
 
 ## Picking a provider
 
-- A provider is **enabled** by exactly one thing: its credential is present
-  (`SPRITES_TOKEN`, `E2B_API_KEY`, `DAYTONA_API_KEY`). There is no other
-  switch.
+- A hosted provider is **enabled** by exactly one thing: its credential is
+  present (`SPRITES_TOKEN`, `E2B_API_KEY`, `DAYTONA_API_KEY`). The runner
+  provider has no credential — every daemon authenticates with the user's
+  own API key — so it is enabled unless `SANDBOX_RUNNERS_ENABLED=false`.
 - `SANDBOX_PROVIDER` (default `sprites`) sets the instance default for
   newly-created sandboxes. Boot refuses an explicit default whose credential
   is missing.

@@ -67,6 +67,10 @@ defmodule Fountain.Application do
           # path is configured (increment 2b), so this adds nothing at runtime on
           # an instance that has not opted in.
           {Horde.Registry, [name: Fountain.BuzzRegistry, keys: :unique, members: :auto]},
+          # Self-hosted runner sockets (ADR 0022): a `fountain runner` daemon
+          # dials in and its connection process registers here under the
+          # runner id, so `Fountain.Sandbox.Runner` on any node can reach it.
+          {Horde.Registry, [name: Fountain.RunnerRegistry, keys: :unique, members: :auto]},
           {Horde.DynamicSupervisor,
            [
              name: Fountain.BuzzSupervisor,

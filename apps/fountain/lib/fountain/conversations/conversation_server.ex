@@ -2155,7 +2155,14 @@ defmodule Fountain.Conversations.ConversationServer do
     {cmd, args, build_opts} =
       if acp? do
         {c, a} = Fountain.Runtimes.ACP.command(conv.runtime)
-        {c, a, stdin?: true, dir: Fountain.Runtimes.ACP.cwd(conv.runtime)}
+        # The ACP `cwd` is validated in band by the agent CLI against the real
+        # filesystem, so it must be the path a process inside the sandbox sees
+        # — identity on hosted providers, the mapped directory on a runner
+        # (ADR 0022).
+        acp_cwd =
+          Fountain.Sandbox.host_path(state.handle, Fountain.Runtimes.ACP.cwd(conv.runtime))
+
+        {c, a, stdin?: true, dir: acp_cwd}
       else
         state.runtime_module.build_command(agent, prompt, mode, runtime_session_id,
           images: image_paths

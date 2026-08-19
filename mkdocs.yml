@@ -70,6 +70,7 @@ nav:
       - Sprites transport reference: integrations/sprites-contract.md
       - E2B: integrations/e2b.md
       - Daytona: integrations/daytona.md
+      - Self-hosted runners: integrations/runners.md
       - Adding a provider: integrations/adding-a-sandbox-provider.md
   - Integrations:
       - Overview: integrations/index.md

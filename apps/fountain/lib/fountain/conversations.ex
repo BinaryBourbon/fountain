@@ -1237,6 +1237,7 @@ defmodule Fountain.Conversations do
          :ok <- Fountain.Accounts.check_not_suspended(user_id),
          :ok <- Fountain.Billing.check_active(user_id),
          {:ok, provider} <- resolve_sandbox_provider(agent),
+         {:ok, sprite_name} <- mint_sprite_name(provider, user_id, attrs["sprite_name"]),
          # Quota check + row insert under one per-user advisory lock: checked
          # separately they are check-then-insert, and N concurrent requests at
          # the cap could each pass and provision N-1 sprites over it (#330).
@@ -1244,8 +1245,7 @@ defmodule Fountain.Conversations do
            Fountain.Quotas.with_sandbox_reservation(user_id, fn ->
              create_sandbox(%{
                environment_id: env_id || agent.environment_id,
-               sprite_name:
-                 attrs["sprite_name"] || "fountain-#{tenant_prefix(user_id)}-#{short_id()}",
+               sprite_name: sprite_name,
                status: "pending",
                provider: Atom.to_string(provider),
                user_id: user_id
@@ -1385,6 +1385,17 @@ defmodule Fountain.Conversations do
   defp first_turn_query, do: from(t in Turn, where: t.turn_number == 1)
 
   defp short_id, do: Ecto.UUID.generate() |> binary_part(0, 8)
+
+  # The sandbox name is minted here and stamped on the row; the adapter is
+  # handed nothing else (ADR 0018), which is why the runner provider's names
+  # carry the runner they live on (ADR 0022) — minting one is a placement
+  # decision, made now, and fails plainly when the user has no runner online.
+  # A caller-supplied name (test seams) is honored as before.
+  defp mint_sprite_name(:runner, user_id, nil), do: Fountain.Runners.mint_sandbox_name(user_id)
+  defp mint_sprite_name(_provider, _user_id, name) when is_binary(name), do: {:ok, name}
+
+  defp mint_sprite_name(_provider, user_id, nil),
+    do: {:ok, "fountain-#{tenant_prefix(user_id)}-#{short_id()}"}
 
   defp tenant_prefix(user_id) when is_binary(user_id), do: binary_part(user_id, 0, 8)
 
@@ -1743,6 +1754,7 @@ defmodule Fountain.Conversations do
          # the agent, so a conversation whose old sandbox died can migrate
          # providers naturally.
          {:ok, provider} <- resolve_sandbox_provider(agent),
+         {:ok, sprite_name} <- mint_sprite_name(provider, conv.user_id, nil),
          # Same reservation as start_conversation/1 — see the note there (#330).
          {:ok, new_sandbox} <-
            Fountain.Quotas.with_sandbox_reservation(
@@ -1751,7 +1763,7 @@ defmodule Fountain.Conversations do
              fn ->
                create_sandbox(%{
                  environment_id: conv.environment_id || agent.environment_id,
-                 sprite_name: "fountain-#{tenant_prefix(conv.user_id)}-#{short_id()}",
+                 sprite_name: sprite_name,
                  status: "pending",
                  provider: Atom.to_string(provider),
                  user_id: conv.user_id

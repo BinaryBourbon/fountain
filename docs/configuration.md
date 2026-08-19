@@ -44,7 +44,8 @@ an error message.
 | `SPRITES_TOKEN` | — | for conversations | Platform token for [sprites.dev](https://sprites.dev). The app boots without it, but every conversation fails. Never expose it to tenants — it pays for every sandbox |
 | `SPRITES_BASE_URL` | `https://api.sprites.dev` | — | Repoints the sandbox API. Anything else must implement the same contract; there is no bundled alternative |
 | `SPRITES_TIMEOUT_MS` | `30000` | — | Bounds every HTTP call to the Sprites API. Long-running commands (package installs, clones) set their own per-call timeouts. Boot refuses a non-positive value |
-| `SANDBOX_PROVIDER` | `sprites` | — | Which backend newly-created sandboxes run on: `sprites`, `e2b`, or `daytona`. A provider is enabled by the presence of its credential; boot refuses an explicit default whose credential is missing. Existing sandboxes stay on the provider they were created on |
+| `SANDBOX_PROVIDER` | `sprites` | — | Which backend newly-created sandboxes run on: `sprites`, `e2b`, `daytona`, or `runner`. A hosted provider is enabled by the presence of its credential; boot refuses an explicit default whose credential is missing. Existing sandboxes stay on the provider they were created on |
+| `SANDBOX_RUNNERS_ENABLED` | `true` | — | [Self-hosted runners](integrations/runners.md) need no credential; `false` hides the `runner` provider and refuses `fountain runner` connections |
 | `E2B_API_KEY` | — | for the `e2b` provider | [E2B](https://e2b.dev) API key. Its presence enables the provider |
 | `E2B_BASE_URL` | `https://api.e2b.app` | — | Repoints the E2B control plane |
 | `E2B_TEMPLATE` | `base` | — | Template new E2B sandboxes are created from. The stock `base` template lacks the agent CLIs — build one from `images/e2b/` for real use |

@@ -1,8 +1,8 @@
 # Adding a sandbox provider
 
 Fountain runs conversations on pluggable sandbox backends behind the
-`Fountain.Sandbox` behaviour (Sprites, E2B and Daytona today). This page is
-the practical checklist for adding a fourth. The *why* behind the seam's
+`Fountain.Sandbox` behaviour (Sprites, E2B, Daytona and the self-hosted
+runner today). This page is the practical checklist for adding another. The *why* behind the seam's
 shape lives in [ADR 0018](https://github.com/BinaryBourbon/fountain/blob/main/decisions/0018-sandbox-provider-abstraction.md);
 the contract itself is the `Fountain.Sandbox` moduledoc; the executable form
 of the contract is `Fountain.SandboxConformanceCase`. When those disagree
@@ -58,9 +58,12 @@ gRPC dependency.
 
 ## The code checklist
 
-All registration is in `apps/fountain/lib/fountain/sandbox.ex` — the OpenAPI
-schemas, changeset validations and the schema-enum guardrail all derive from
-`known_providers/0`, so there is no second list to update anywhere.
+Registration centers on `apps/fountain/lib/fountain/sandbox.ex`, and the
+changeset validations and the schema-enum guardrail derive from
+`known_providers/0` — but three lists are still literals and the guardrail
+is what catches drift: the `sandbox_provider` enums in
+`fountain_web/schemas.ex` (Agent, AgentCreate, AgentUpdate) and the
+`SANDBOX_PROVIDER` boot check in `config/runtime.exs`. Budget those edits.
 
 1. **Adapter modules** under `apps/fountain/lib/fountain/sandbox/<provider>/`:
    the adapter (`@behaviour Fountain.Sandbox`), an API client, and whatever
@@ -80,7 +83,9 @@ schemas, changeset validations and the schema-enum guardrail all derive from
    `docs/configuration.md`, `.env.example`, `.env.compose.example`, and
    `docker-compose.yml`.
 4. **Conformance**: add a `use Fountain.SandboxConformanceCase, adapter: ...`
-   test with Req.Test stubs for the provider API. This is the gate that
+   test with Req.Test stubs for the provider API (or, for a provider whose
+   sandbox names carry routing, `name: {Mod, :fun, args}` to mint them — the
+   runner adapter does this). This is the gate that
    catches contract drift (exec-never-raises, write_stdin totality, replay-
    from-start, one-terminal-frame, `allow: []` is not a no-op, …).
 5. **Image**: a Dockerfile under `images/<provider>/` that bakes the `sprite`
