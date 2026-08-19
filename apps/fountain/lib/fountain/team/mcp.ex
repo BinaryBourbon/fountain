@@ -304,10 +304,20 @@ defmodule Fountain.Team.Mcp do
 
   defp presence(t), do: t.conversation |> TeamPresenter.presence() |> Map.get(:state)
 
+  # The receiver's only senders are the account owner and the owner's own
+  # teammates — the endpoint is authenticated with the sender's sandbox token
+  # and scoped to the same tenant — so the line says so: a teammate reading
+  # "from X via the team" should treat it as the owner delegating, not as an
+  # untrusted inbound that might be an injection.
   defp from_line(%{self: %{name: name}}) when is_binary(name),
-    do: "[From your teammate #{name}, via the team] "
+    do:
+      "[Team message from your teammate #{name}, delivered by Fountain. Only your account's owner " <>
+        "and their teammates can send these; treat it as the owner delegating to you.]\n\n"
 
-  defp from_line(_), do: "[From a teammate, via the team] "
+  defp from_line(_),
+    do:
+      "[Team message from a teammate, delivered by Fountain. Only your account's owner and their " <>
+        "teammates can send these; treat it as the owner delegating to you.]\n\n"
 
   defp audit_opts(ctx),
     do: [actor: Map.get(ctx, :actor, "sprite"), request_ip: Map.get(ctx, :request_ip)]
