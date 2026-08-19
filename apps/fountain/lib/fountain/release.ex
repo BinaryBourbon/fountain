@@ -153,6 +153,30 @@ defmodule Fountain.Release do
   end
 
   @doc """
+  Materialise `turns.reply_text` for every ended turn that has none (#826):
+  the assistant's text of each, through the same parse the transcript uses,
+  so `GET /api/search` covers replies from before the column existed. Turns
+  ending after the migration are written as they end. Idempotent; prints a
+  count. Runs beside the live server:
+
+      PHX_SERVER=false METRICS_PORT=0 bin/fountain_server eval 'Fountain.Release.backfill_turn_replies()'
+  """
+  def backfill_turn_replies do
+    load_app()
+
+    for repo <- repos() do
+      # ownership: a system-level sweep over every tenant's ended turns,
+      # run by an operator beside the release — the same footing as migrate/0.
+      {:ok, n, _} =
+        Ecto.Migrator.with_repo(repo, fn _repo ->
+          Fountain.Conversations._unsafe_backfill_reply_texts()
+        end)
+
+      IO.puts("backfilled reply_text on #{n} turn(s)")
+    end
+  end
+
+  @doc """
   Gives accounts without a trial clock a status and a trial end date.
 
   Two cohorts land here, both of which the gate would otherwise handle badly

@@ -315,6 +315,38 @@ was missed across every followed conversation; the first byte is a
 `: connected` comment; heartbeats every 15 s; closes after 60 s idle so the
 client reconnects.
 
+## Search
+
+Full-text search across the caller's conversations, for a command palette
+("jump to the message"):
+
+```
+GET /api/search?q=<text>[&limit=20][&offset=0][&agent_id=][&conversation_id=][&since=][&kinds=title,prompt,reply]
+```
+
+```json
+{"data": [{"kind": "reply", "conversation_id": "…", "agent_id": "…", "turn_id": "…",
+           "turn_number": 3, "snippet": "… the gate lives in the billing plug …",
+           "ts": "2026-08-19T02:00:00Z"}],
+ "meta": {"limit": 20, "offset": 0, "has_more": false}}
+```
+
+Three sources, one shape: `title` (a conversation's title; `turn_id` null),
+`prompt` (a turn's prompt) and `reply` (a turn's assistant text — the `text`
+blocks of its events, materialised when the turn ends, so a turn in flight is
+searchable by its prompt but not yet by its reply). Postgres full-text with
+`websearch` syntax — `"quoted phrase"`, `-excluded`, `or` — and exact-token
+matching (no stemming), so identifiers and code fragments match as
+themselves. Hits are ranked, newest first among equals; `snippet` is plain
+text with no markup; `ts` is the turn's (or the conversation's) creation
+time. `limit` caps at 100. Every source is scoped to the caller in the query
+itself; nothing is indexed across tenants. Rate-limited with the rest of
+`/api`.
+
+Turns that ended before the `reply_text` column existed are searchable by
+prompt only until the one-time backfill runs on the server:
+`bin/fountain_server eval 'Fountain.Release.backfill_turn_replies()'`.
+
 ## Team
 
 The roster [`/team`](primitives.md#the-team-page-agents-as-teammates) shows, for

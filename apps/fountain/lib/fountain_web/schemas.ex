@@ -1900,6 +1900,62 @@ defmodule FountainWeb.Schemas do
     })
   end
 
+  defmodule SearchHit do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "SearchHit",
+      description: "One search hit: what matched, and where to jump.",
+      type: :object,
+      properties: %{
+        kind: %Schema{type: :string, enum: Fountain.Search.kinds()},
+        conversation_id: %Schema{type: :string, format: :uuid},
+        agent_id: %Schema{type: :string, format: :uuid, nullable: true},
+        turn_id: %Schema{
+          type: :string,
+          format: :uuid,
+          nullable: true,
+          description: "The turn (prompt / reply hits); null for a title hit."
+        },
+        turn_number: %Schema{type: :integer, nullable: true},
+        snippet: %Schema{
+          type: :string,
+          description: "The best-matching fragment, plain text — no markup to escape."
+        },
+        ts: %Schema{
+          type: :string,
+          format: :"date-time",
+          description: "The turn's creation time, or the conversation's for a title hit."
+        }
+      },
+      required: [:kind, :conversation_id, :snippet, :ts]
+    })
+  end
+
+  defmodule SearchResponse do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "SearchResponse",
+      type: :object,
+      properties: %{
+        data: %Schema{type: :array, items: SearchHit},
+        meta: %Schema{
+          type: :object,
+          properties: %{
+            limit: %Schema{type: :integer},
+            offset: %Schema{type: :integer},
+            has_more: %Schema{type: :boolean}
+          },
+          required: [:limit, :offset, :has_more]
+        }
+      },
+      required: [:data, :meta]
+    })
+  end
+
   defmodule CatalogResponse do
     @moduledoc false
     require OpenApiSpex
