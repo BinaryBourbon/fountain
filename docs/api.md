@@ -349,6 +349,45 @@ starts following the new conversation itself; the client re-lists. It honours
 `Last-Event-ID` (replayed across every teammate) and `?streams=`, heartbeats
 every 15 s and closes after 60 s idle so the client reconnects.
 
+### Schedules
+
+The routines the team page offers — a cron that runs a teammate with a
+prompt, either in its own thread or on a one-off computer — over the API.
+Every route wraps `Fountain.Team.Schedules`, so a standalone client gets the
+page's exact semantics.
+
+```
+GET    /api/team/schedules                       # every schedule of the caller, soonest first
+GET    /api/team/:agent_id/schedules
+POST   /api/team/:agent_id/schedules             # cron (5 fields, UTC), prompt; optional name, one_off, enabled
+GET    /api/team/:agent_id/schedules/:id
+PATCH  /api/team/:agent_id/schedules/:id
+DELETE /api/team/:agent_id/schedules/:id
+POST   /api/team/:agent_id/schedules/:id/run     # run now → 202 {status: "queued", conversation_id}
+```
+
+A schedule carries `id`, `agent_id`, `name`, `cron`, `prompt`, `one_off`,
+`enabled`, `next_run_at`, `last_run_at`, `last_conversation_id` and
+`last_error`. `cron` is evaluated in UTC (`0 9 * * 1-5` is 09:00 UTC on
+weekdays; `@daily`-style names work, `@reboot` does not). `one_off: false`
+(the default) sends the prompt into the teammate's own conversation as a
+typed message would; `one_off: true` opens a fresh conversation on a new
+computer each run, with the teammate's agent, environment and vault. The
+agent must be the caller's; it need not be on the team yet. A schedule is
+addressed by `(agent_id, id)`: the same row under another agent's path is a
+`404`, like another tenant's.
+
+`/run` takes the same path as the page's "Run now" and answers like
+`/messages`: `400 conversation_busy` while the teammate's previous turn is
+still running, `503` while its computer is starting, `404` when an in-thread
+schedule's agent is not on the team; `last_run_at` / `last_error` are stamped
+either way. Creates, updates, deletes and runs are audited
+(`team.schedule.*`) with the request's attribution.
+
+The team stream sends a `schedule` event (`{"reason":"changed"}`) whenever a
+schedule is created, updated, deleted or fired — by the API, the page or the
+scheduler — so a client re-lists rather than polls.
+
 Browser clients on another origin need `API_CORS_ORIGINS` set on the server
 (see [configuration](configuration.md)); a bearer key is the only credential
 that crosses origins.

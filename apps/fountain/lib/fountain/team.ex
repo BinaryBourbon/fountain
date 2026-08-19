@@ -57,6 +57,20 @@ defmodule Fountain.Team do
     do: Phoenix.PubSub.broadcast(Fountain.PubSub, topic(user_id), {:team_changed, user_id})
 
   @doc """
+  Broadcast `{:team_schedules_changed, user_id}` on the team topic — a
+  schedule was created, updated, deleted or fired (#825). Same subscribers
+  as `subscribe/1`; the API stream turns it into a `schedule` event so a
+  client re-lists its routines. Called by `Fountain.Team.Schedules`.
+  """
+  def broadcast_schedules_changed(user_id) when is_binary(user_id),
+    do:
+      Phoenix.PubSub.broadcast(
+        Fountain.PubSub,
+        topic(user_id),
+        {:team_schedules_changed, user_id}
+      )
+
+  @doc """
   One entry per agent on the team, most recently active first.
 
   Each entry is `%{agent: %Agent{}, conversation: %Conversation{}, last_turn:

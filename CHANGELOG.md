@@ -18,6 +18,14 @@ upgrade, is in
 
 ### Added
 
+- **Team schedules over the API** (#825). `GET /api/team/schedules`, and
+  `GET|POST /api/team/:agent_id/schedules`, `GET|PATCH|DELETE
+  /api/team/:agent_id/schedules/:id`, `POST .../:id/run` — the routines the
+  team page offers, for standalone clients, wrapping `Fountain.Team.Schedules`
+  under the same tenant scoping and audit attribution as the rest of
+  `/api/team`. The team stream sends a `schedule` event when a schedule is
+  created, updated, deleted or fired, so a client re-lists rather than polls.
+
 - **Hermes Agent plugin** (`integrations/hermes/`). Fountain agents as tools
   inside [Hermes Agent](https://github.com/NousResearch/hermes-agent):
   `fountain_agents`, `fountain_run`, `fountain_send`, `fountain_wait`,
