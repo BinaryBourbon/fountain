@@ -18,6 +18,14 @@ upgrade, is in
 
 ### Added
 
+- **Rename a teammate and list its history over the API** (#831, #832).
+  `PATCH /api/team/:agent_id {name}` renames (null/blank → the agent's name;
+  audited `team.renamed`; the name carries onto the next fresh conversation),
+  `GET /api/team/:agent_id/conversations` lists every conversation the agent
+  has had on the team newest first with the live one flagged `current`, and
+  `GET /api/conversations` takes `agent_id`, `channel_id` and `status`
+  filters.
+
 - **`GET /api/search`** (#826). Full-text search across the caller's
   conversation titles, turn prompts and assistant replies, with `kind`,
   ids and a plain-text snippet per hit; `websearch` syntax, `limit`/`offset`,

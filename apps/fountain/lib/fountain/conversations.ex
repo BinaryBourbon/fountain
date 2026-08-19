@@ -512,6 +512,12 @@ defmodule Fountain.Conversations do
   `parent_conversation_id`). Useful for hiding agent-spawned sub-conversations
   from the index when the user only wants to see top-level sessions.
 
+  Further filters (#832), all combinable: `agent_id: id`, `channel_id:
+  "fountain:team"` (the *bound* channel — a conversation unbound by
+  `Fountain.Team.remove_teammate/3` no longer matches; a teammate's full
+  history is `Team.list_teammate_conversations/2`), and `status: [..]` (a
+  list of conversation statuses). Unpaged, like the list always was.
+
   Populates the `last_active_at` virtual field using `kind: "output"` log
   events only — stage events (reconnects, lifecycle) are excluded so
   reconnects don't produce false unread indicators.
@@ -527,6 +533,21 @@ defmodule Fountain.Conversations do
       else
         base
       end
+
+    query =
+      Enum.reduce(opts, query, fn
+        {:agent_id, id}, q when is_binary(id) and id != "" ->
+          where(q, [conv: c], c.agent_id == ^id)
+
+        {:channel_id, id}, q when is_binary(id) and id != "" ->
+          where(q, [conv: c], c.channel_id == ^id)
+
+        {:status, [_ | _] = statuses}, q ->
+          where(q, [conv: c], c.status in ^statuses)
+
+        _, q ->
+          q
+      end)
 
     Repo.all(query)
     |> Repo.preload([:agent, turns: first_turn_query()])

@@ -83,6 +83,62 @@ defmodule FountainWeb.TeamController do
     end
   end
 
+  operation(:update,
+    summary: "Rename a teammate",
+    description:
+      "Sets what the teammate is called — its conversation's title (#831). `name` " <>
+        "null or blank goes back to the agent's name. The name carries over to the " <>
+        "fresh conversation opened when this one is past resuming. Audited as " <>
+        "`team.renamed`; the stream sends `team` so clients re-list.",
+    parameters: [agent_id: [in: :path, type: :string, required: true]],
+    request_body: {"Rename", "application/json", Schemas.TeamRenameRequest},
+    responses: [
+      ok: {"Teammate", "application/json", Schemas.TeammateResponse},
+      not_found: {"Not on the team", "application/json", Schemas.Error},
+      unprocessable_entity: {"Name too long", "application/json", Schemas.Error}
+    ]
+  )
+
+  def update(conn, %{"agent_id" => agent_id} = params) do
+    user = conn.assigns.current_user
+
+    with {:ok, _conv} <-
+           Team.rename_teammate(user.id, agent_id, params["name"], Audited.attribution(conn)),
+         %{} = teammate <- Team.get_teammate(user.id, agent_id) || {:error, :not_found} do
+      render(conn, :show, teammate: teammate)
+    end
+  end
+
+  operation(:conversations,
+    summary: "List a teammate's conversations",
+    description:
+      "Every conversation the agent has had on the team, newest first (#832): the " <>
+        "current one flagged `current: true`, the retired ones — a previous computer's " <>
+        "thread, read-only — behind it. Each is a full conversation object; read a " <>
+        "retired thread with `GET /api/conversations/:id/events`. 404 when the agent is " <>
+        "not on the team.",
+    parameters: [agent_id: [in: :path, type: :string, required: true]],
+    responses: [
+      ok: {"Conversations", "application/json", Schemas.TeammateConversationListResponse},
+      not_found: {"Not on the team", "application/json", Schemas.Error}
+    ]
+  )
+
+  def conversations(conn, %{"agent_id" => agent_id}) do
+    user = conn.assigns.current_user
+
+    case Team.get_teammate(user.id, agent_id) do
+      nil ->
+        {:error, :not_found}
+
+      %{conversation: current} ->
+        render(conn, :conversations,
+          conversations: Team.list_teammate_conversations(user.id, agent_id),
+          current_id: current.id
+        )
+    end
+  end
+
   operation(:delete,
     summary: "Remove an agent from the team",
     description:

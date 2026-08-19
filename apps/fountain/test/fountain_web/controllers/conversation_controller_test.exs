@@ -37,6 +37,55 @@ defmodule FountainWeb.ConversationControllerTest do
       refute other_conv.id in ids
     end
 
+    test "filters by agent_id, channel_id and status (#832)", %{
+      conn: conn,
+      user: user,
+      raw_key: raw_key
+    } do
+      ada = insert_agent(user_id: user.id)
+      linus = insert_agent(user_id: user.id)
+
+      team_idle =
+        insert_conversation(
+          user_id: user.id,
+          agent: ada,
+          channel_id: "fountain:team",
+          status: "idle"
+        )
+
+      team_dead =
+        insert_conversation(
+          user_id: user.id,
+          agent: ada,
+          channel_id: "fountain:team",
+          status: "terminated"
+        )
+
+      plain = insert_conversation(user_id: user.id, agent: linus, status: "idle")
+
+      ids = fn query ->
+        conn
+        |> authed_with_key(raw_key)
+        |> get("/api/conversations", query)
+        |> json_response(200)
+        |> Map.fetch!("data")
+        |> Enum.map(& &1["id"])
+        |> Enum.sort()
+      end
+
+      assert ids.(agent_id: ada.id) == Enum.sort([team_idle.id, team_dead.id])
+      assert ids.(channel_id: "fountain:team") == Enum.sort([team_idle.id, team_dead.id])
+      assert ids.(agent_id: ada.id, status: "terminated") == [team_dead.id]
+      assert ids.(status: "idle,terminated") == Enum.sort([team_idle.id, team_dead.id, plain.id])
+      assert ids.(agent_id: linus.id, channel_id: "fountain:team") == []
+
+      assert %{"error" => "invalid_status"} =
+               conn
+               |> authed_with_key(raw_key)
+               |> get("/api/conversations", status: "terminted")
+               |> json_response(400)
+    end
+
     test "returns 401 without authentication", %{conn: conn} do
       conn = get(conn, "/api/conversations")
       assert json_response(conn, 401)

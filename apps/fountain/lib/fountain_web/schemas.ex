@@ -1773,6 +1773,44 @@ defmodule FountainWeb.Schemas do
     })
   end
 
+  defmodule TeamRenameRequest do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "TeamRenameRequest",
+      type: :object,
+      properties: %{
+        name: %Schema{
+          type: :string,
+          nullable: true,
+          maxLength: 120,
+          description: "What to call the teammate. Null or blank means the agent's name."
+        }
+      }
+    })
+  end
+
+  defmodule TeammateConversation do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "TeammateConversation",
+      description: "A conversation object plus `current`: whether it is the teammate's live one.",
+      allOf: [
+        Conversation,
+        %Schema{
+          type: :object,
+          properties: %{current: %Schema{type: :boolean}},
+          required: [:current]
+        }
+      ]
+    })
+  end
+
+  list_response(TeammateConversationListResponse, of: TeammateConversation)
+
   defmodule TeamMessageRequest do
     @moduledoc false
     require OpenApiSpex
