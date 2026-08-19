@@ -33,6 +33,13 @@ defmodule FountainWeb.TeamPresenter do
   @spec presence(map()) :: presence()
   def presence(%{status: "running"}), do: %{state: "working", label: "working"}
 
+  # A conversation opened without a prompt (POST /api/team, the team page's
+  # add) stays `pending` until its first turn, but its computer may well be
+  # up by then: read the sandbox, or a client keeps saying "starting" for a
+  # teammate Fountain itself shows as waiting for a turn.
+  def presence(%{status: "pending", sandbox: %{status: "ready"}}),
+    do: %{state: "online", label: "ready · waiting for a turn"}
+
   def presence(%{status: "pending"}),
     do: %{state: "starting", label: "starting computer"}
 

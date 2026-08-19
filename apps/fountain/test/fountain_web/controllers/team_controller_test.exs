@@ -145,6 +145,31 @@ defmodule FountainWeb.TeamControllerTest do
       Fountain.Runners.FakeDaemon.stop(daemon)
     end
 
+    test "a pending conversation on a ready sandbox is online, not starting", %{
+      conn: conn,
+      user: user,
+      raw_key: key
+    } do
+      ada = insert_agent(user_id: user.id, name: "Ada")
+      ready = insert_sandbox(user_id: user.id, status: "ready")
+      insert_teammate_conv(user, ada, status: "pending", sandbox_id: ready.id)
+
+      bob = insert_agent(user_id: user.id, name: "Bob")
+      starting = insert_sandbox(user_id: user.id, status: "starting")
+      insert_teammate_conv(user, bob, status: "pending", sandbox_id: starting.id)
+
+      entries =
+        conn
+        |> authed_with_key(key)
+        |> get("/api/team")
+        |> json_response(200)
+        |> Map.fetch!("data")
+        |> Map.new(&{&1["agent"]["name"], &1["presence"]})
+
+      assert %{"state" => "online", "label" => "ready · waiting for a turn"} = entries["Ada"]
+      assert %{"state" => "starting"} = entries["Bob"]
+    end
+
     test "a hosted sandbox carries provider and a null runner", %{
       conn: conn,
       user: user,
