@@ -18,6 +18,20 @@ upgrade, is in
 
 ### Added
 
+- **Hermes Agent plugin** (`integrations/hermes/`). Fountain agents as tools
+  inside [Hermes Agent](https://github.com/NousResearch/hermes-agent):
+  `fountain_agents`, `fountain_run`, `fountain_send`, `fountain_wait`,
+  `fountain_status`, `fountain_conversations`, `fountain_terminate`, plus a
+  `fountain` skill and a `/fountain` slash command. Delegation over the HTTP
+  API — a Hermes turn hands a task to a named Fountain agent, the work runs in
+  a Fountain sandbox, the answer comes back as the tool result; multi-turn
+  via `fountain_send`, bounded waits with a resumable cursor so a long turn
+  never trips Hermes's tool deadline. Reads the log feed as blocks
+  (`?blocks=true`), so it never learns a runtime dialect. Stdlib Python, no
+  dependencies; credentials resolve like the CLI (`FOUNTAIN_API_KEY`,
+  in-sandbox `FOUNTAIN_TOKEN`, `~/.fountain/credentials`). Install with
+  `hermes plugins install BinaryBourbon/fountain/integrations/hermes/fountain
+  --enable`. Docs: `docs/integrations/hermes.md`; tests run in CI.
 - **"Sign in with Fountain" for the browser apps — Fountain as an OAuth 2.0
   authorization server (ADR 0021).** `GET /oauth/authorize` (consent page
   behind the session; a signed-out user logs in — password or GitHub — and

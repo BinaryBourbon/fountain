@@ -29,6 +29,13 @@ surface — Telegram, Discord, Slack — by registering Fountain as a custom ACP
 agent in its `acpx` plugin. Again there is nothing to change on the Fountain
 side; the configuration is client-side, on the OpenClaw host.
 
+[**Hermes Agent**](hermes.md) is a client of the HTTP API rather than of
+`fountain acp`: a Hermes plugin (shipped in this repo under
+`integrations/hermes/`) gives Hermes `fountain_run` and friends, so its model
+delegates a task to a named Fountain agent and reads the answer back. Nothing
+to configure server-side; the plugin authenticates with an API key or the
+CLI's saved login.
+
 [**Buzz**](buzz.md) is the other direction: Fountain *hosts* a Buzz agent —
 a Nostr identity that lives on a relay — running its coding agent in a sandbox
 and holding its signing key in a vault. Provision one from the Buzz desktop or
