@@ -92,3 +92,15 @@ config :fountain, :oauth_clients, [
 # about "which providers are enabled" (only what a test configures) hold;
 # runner tests switch it on explicitly.
 config :fountain, :runners_enabled, false
+
+# Teammate email + phone (flag `team_comms`) and the PostHog flag lookup:
+# every outbound call goes to a Req.Test plug, so a test that forgets to
+# stub fails loudly instead of reaching a real provider. The keys are set so
+# `Comms.configured?/0` holds; the flag itself stays off (no override, no
+# PostHog key) until a test flips `:feature_flag_overrides`.
+config :fountain, :agentmail_api_key, "am_test_key"
+config :fountain, :agentmail_req_options, plug: {Req.Test, Fountain.Team.Comms.AgentMail}
+config :fountain, :agentphone_api_key, "ap_test_key"
+config :fountain, :agentphone_req_options, plug: {Req.Test, Fountain.Team.Comms.AgentPhone}
+config :fountain, :agentphone_webhook_secret, "whsec_test"
+config :fountain, :posthog_req_options, plug: {Req.Test, Fountain.FeatureFlags}

@@ -18,6 +18,31 @@ upgrade, is in
 
 ### Added
 
+- **A teammate with its own email address and phone number** (proof of
+  concept, behind the `team_comms` feature flag). `POST
+  /api/team/:agent_id/contact` provisions an AgentMail inbox and an
+  AgentPhone number under Fountain's own keys and records them on the
+  teammate; `DELETE` releases them; `GET /api/team/comms` reports whether
+  the caller may. The `/team` page gains a "Give email & phone" button and
+  shows the contact. From its next turn the teammate has `email_send`,
+  `email_reply`, `email_list`, `email_get`, `sms_send`, `sms_list` and
+  `my_contact_info` MCP tools, served by Fountain at `POST
+  /api/mcp/team-comms/:conversation_id` with the conversation's own sprite
+  token — no provider key ever enters a sandbox. Sends are audited
+  (`team.contact.sent`, never the content). Configuration:
+  `AGENTMAIL_API_KEY`, `AGENTPHONE_API_KEY` (+ optional base URLs and
+  `AGENTMAIL_DOMAIN`). Giving a number also collects `prompt_from_number`
+  — your phone: a text from it to the teammate's number arrives as a prompt
+  in the teammate's conversation (AgentPhone's master webhook at `POST
+  /api/webhooks/agentphone`, HMAC-verified with `AGENTPHONE_WEBHOOK_SECRET`,
+  deduplicated by delivery id); texts from anyone else are ignored.
+- **Per-user feature flags** (`Fountain.FeatureFlags`), evaluated by PostHog
+  (`POSTHOG_PROJECT_API_KEY`, `POSTHOG_HOST`) with a one-minute per-user
+  cache; when PostHog is unreachable the last answer it gave is reused and,
+  with none, every flag reads off — an outage never turns a feature on.
+  `FEATURE_FLAGS_ON=team_comms` forces a flag on for everyone without
+  PostHog.
+
 - **A fresh conversation on the same computer.** `POST
   /api/team/:agent_id/conversations` retires the teammate's current
   conversation (it stays in its history, past resuming) and opens a new one
