@@ -1513,6 +1513,32 @@ defmodule Fountain.Billing do
   # ─── Usage summary ──────────────────────────────────────────────────────────
 
   @doc """
+  The calendar month `usage_summary/3` is normally asked about: the 1st at
+  00:00:00 UTC to the last day at 23:59:59.
+
+  Here rather than in each caller because the billing page, the billing API
+  and the console's dashboard all report "this month" and must mean the same
+  month — three copies of this arithmetic is three chances to disagree.
+  """
+  @spec current_month_range() :: {DateTime.t(), DateTime.t()}
+  def current_month_range do
+    now = DateTime.utc_now()
+    period_start = %DateTime{now | day: 1, hour: 0, minute: 0, second: 0, microsecond: {0, 0}}
+    last_day = :calendar.last_day_of_the_month(now.year, now.month)
+
+    period_end = %DateTime{
+      now
+      | day: last_day,
+        hour: 23,
+        minute: 59,
+        second: 59,
+        microsecond: {0, 0}
+    }
+
+    {period_start, period_end}
+  end
+
+  @doc """
   Returns a usage summary for `user_id` over the given period.
 
   Fields:

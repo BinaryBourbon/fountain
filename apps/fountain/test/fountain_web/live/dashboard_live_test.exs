@@ -8,7 +8,10 @@ defmodule FountainWeb.DashboardLiveTest do
 
   use FountainWeb.ConnCase, async: false
 
+  import Ecto.Query
   import Phoenix.LiveViewTest
+
+  defp max_dt(a, b), do: if(DateTime.compare(a, b) == :gt, do: a, else: b)
 
   setup %{conn: conn} do
     user = insert_verified_user()
@@ -122,6 +125,65 @@ defmodule FountainWeb.DashboardLiveTest do
     assert html =~ "picard"
     assert html =~ "https://apps.test/convs/#/c/#{conv.id}"
     refute html =~ ~s|href="/conversations/#{conv.id}"|
+  end
+
+  describe "this month" do
+    test "reports conversations, turns, sandbox time and tokens", %{conn: conn, user: user} do
+      now = DateTime.utc_now() |> DateTime.truncate(:second)
+      {period_start, _} = Fountain.Billing.current_month_range()
+      at = DateTime.add(period_start, 60, :second)
+
+      # Two usage events of each shape the summary counts.
+      Fountain.Billing.record_usage(
+        user.id,
+        "sandbox_provisioned",
+        Ecto.UUID.generate(),
+        "sandbox"
+      )
+
+      Fountain.Billing.record_usage(user.id, "turn_started", Ecto.UUID.generate(), "turn")
+      Fountain.Billing.record_usage(user.id, "turn_started", Ecto.UUID.generate(), "turn")
+
+      conv = insert_conversation(user_id: user.id)
+      turn = insert_turn(conv)
+
+      {:ok, _} =
+        Fountain.Conversations._unsafe_record_turn_usage(turn, %{"input" => 1500, "output" => 250})
+
+      Fountain.Repo.update_all(
+        from(t in Fountain.Conversations.Turn, where: t.id == ^turn.id),
+        set: [inserted_at: max_dt(at, now)]
+      )
+
+      {:ok, _lv, html} = live(conn, ~p"/dashboard")
+
+      assert html =~ "This month"
+      assert html =~ "Conversations"
+      assert html =~ "Turns"
+      assert html =~ "Sandbox time"
+      assert html =~ "Tokens"
+      # 1,500 in / 250 out, compacted.
+      assert html =~ "1.5k / 250"
+    end
+
+    test "an account that has done nothing this month says so", %{conn: conn} do
+      {:ok, _lv, html} = live(conn, ~p"/dashboard")
+
+      assert html =~ "Nothing yet this month."
+      # Tokens with nothing behind them read as a dash. (Asserting the dash
+      # itself would pass on the hint text's em-dash, so pin the absence.)
+      refute html =~ "0 / 0"
+    end
+
+    test "the billing link is there only when billing is on", %{conn: conn} do
+      {:ok, _lv, html} = live(conn, ~p"/dashboard")
+
+      if Fountain.Billing.enabled?() do
+        assert html =~ ~p"/account/billing"
+      else
+        refute html =~ ~s|href="/account/billing"|
+      end
+    end
   end
 
   test "a deployment with no conversations app links to none of it", %{conn: conn, user: user} do

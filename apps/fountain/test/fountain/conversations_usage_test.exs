@@ -1,0 +1,117 @@
+defmodule Fountain.ConversationsUsageTest do
+  @moduledoc """
+  What the console's dashboard reports (#871): tokens over a period, and the
+  two conversation counts, both computed in the database.
+  """
+  use Fountain.DataCase, async: true
+
+  alias Fountain.Conversations
+
+  setup do
+    user = insert_verified_user()
+    other = insert_verified_user()
+    {:ok, user: user, other: other}
+  end
+
+  defp turn_with_usage(conv, usage, at) do
+    turn = insert_turn(conv)
+    {:ok, _} = Conversations._unsafe_record_turn_usage(turn, usage)
+
+    # inserted_at is set by the DB; move it to place the turn in a period.
+    Fountain.Repo.update_all(
+      from(t in Fountain.Conversations.Turn, where: t.id == ^turn.id),
+      set: [inserted_at: at]
+    )
+
+    turn
+  end
+
+  describe "token_usage/3" do
+    test "sums the turns inside the period, and only this tenant's", %{user: user, other: other} do
+      conv = insert_conversation(user_id: user.id)
+      theirs = insert_conversation(user_id: other.id)
+
+      now = DateTime.utc_now() |> DateTime.truncate(:second)
+      inside = DateTime.add(now, -3600, :second)
+      outside = DateTime.add(now, -90 * 86_400, :second)
+
+      turn_with_usage(conv, %{"input" => 100, "output" => 20}, inside)
+      turn_with_usage(conv, %{"input" => 5, "output" => 1}, inside)
+      turn_with_usage(conv, %{"input" => 9_000, "output" => 9_000}, outside)
+      turn_with_usage(theirs, %{"input" => 7, "output" => 7}, inside)
+
+      from = DateTime.add(now, -86_400, :second)
+
+      assert Conversations.token_usage(user.id, from, now) == %{input: 105, output: 21}
+    end
+
+    test "no turns, and turns that reported no usage, are zero not nil", %{user: user} do
+      conv = insert_conversation(user_id: user.id)
+      insert_turn(conv)
+      now = DateTime.utc_now()
+      from = DateTime.add(now, -86_400, :second)
+
+      assert Conversations.token_usage(user.id, from, now) == %{input: 0, output: 0}
+    end
+
+    test "a usage map missing a key contributes nothing for it", %{user: user} do
+      conv = insert_conversation(user_id: user.id)
+      now = DateTime.utc_now() |> DateTime.truncate(:second)
+      turn_with_usage(conv, %{"input" => 50}, DateTime.add(now, -60, :second))
+
+      assert %{input: 50, output: 0} =
+               Conversations.token_usage(user.id, DateTime.add(now, -86_400, :second), now)
+    end
+
+    # `usage` is whatever the runtime reported; nothing validates its shape on
+    # the way in. A cast error here would take the dashboard down with it.
+    test "a runtime that reported nonsense is skipped, not fatal", %{user: user} do
+      conv = insert_conversation(user_id: user.id)
+      now = DateTime.utc_now() |> DateTime.truncate(:second)
+      at = DateTime.add(now, -60, :second)
+
+      turn_with_usage(conv, %{"input" => "lots", "output" => %{"nested" => 1}}, at)
+      turn_with_usage(conv, %{"input" => 10, "output" => 2}, at)
+
+      assert Conversations.token_usage(user.id, DateTime.add(now, -86_400, :second), now) ==
+               %{input: 10, output: 2}
+    end
+
+    # The same nonsense, on the write side: it used to raise inside the
+    # transaction, because the counters it increments are bigints.
+    test "recording nonsense counts as nothing rather than raising", %{user: user} do
+      conv = insert_conversation(user_id: user.id)
+      turn = insert_turn(conv)
+
+      assert {:ok, updated} =
+               Conversations._unsafe_record_turn_usage(turn, %{
+                 "input" => "lots",
+                 "output" => -5
+               })
+
+      # Stored as it came — the trail is what the runtime said…
+      assert updated.usage == %{"input" => "lots", "output" => -5}
+
+      # …but nothing unusable reached the counters.
+      reloaded = Conversations.get_conversation(conv.id, user.id)
+      assert reloaded.usage_input_tokens == 0
+      assert reloaded.usage_output_tokens == 0
+    end
+  end
+
+  describe "conversation_counts/1" do
+    test "counts the tenant's own, and which of them are live", %{user: user, other: other} do
+      insert_conversation(user_id: user.id, status: "running")
+      insert_conversation(user_id: user.id, status: "pending")
+      insert_conversation(user_id: user.id, status: "idle")
+      insert_conversation(user_id: user.id, status: "terminated")
+      insert_conversation(user_id: other.id, status: "running")
+
+      assert Conversations.conversation_counts(user.id) == %{total: 4, active: 2}
+    end
+
+    test "an account with nothing is zeroes, not nil", %{user: user} do
+      assert Conversations.conversation_counts(user.id) == %{total: 0, active: 0}
+    end
+  end
+end

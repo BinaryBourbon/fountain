@@ -25,7 +25,7 @@ defmodule FountainWeb.DashboardLive.Index do
     user = socket.assigns.current_user
 
     agents = Agents.list_agents(user.id, [])
-    convs = Conversations.list_conversations(user.id)
+    counts = Conversations.conversation_counts(user.id)
     has_credential? = InferenceCredentials.has_any_credential?(user.id)
 
     # `onboarding_completed_at` used to be stamped by the wizard's last step.
@@ -42,11 +42,26 @@ defmodule FountainWeb.DashboardLive.Index do
      |> assign(:environment_count, length(Environments.list_environments(user.id)))
      |> assign(:vault_count, length(Vaults.list_vaults(user.id)))
      |> assign(:has_credential?, has_credential?)
-     |> assign(:active_count, Enum.count(convs, &(&1.status in ["pending", "running"])))
-     |> assign(:conversation_count, length(convs))
-     |> assign(:recent_conversations, Enum.take(convs, 5))
+     |> assign(:active_count, counts.active)
+     |> assign(:conversation_count, counts.total)
+     |> assign(:recent_conversations, Conversations.list_conversations(user.id, limit: 5))
      |> assign(:conversations_app, Apps.conversations())
-     |> assign(:team_app, Apps.team())}
+     |> assign(:team_app, Apps.team())
+     |> assign_usage(user)}
+  end
+
+  # This month, on the same calendar the billing page uses. The counts come
+  # from usage events, which are written whether or not billing is switched
+  # on — so a self-hosted console, which has no billing page at all, still
+  # gets to see what its agents have been doing.
+  defp assign_usage(socket, user) do
+    {period_start, period_end} = Fountain.Billing.current_month_range()
+
+    socket
+    |> assign(:usage, Fountain.Billing.usage_summary(user.id, period_start, period_end))
+    |> assign(:tokens, Conversations.token_usage(user.id, period_start, period_end))
+    |> assign(:period_start, period_start)
+    |> assign(:billing_enabled?, Fountain.Billing.enabled?())
   end
 
   @impl true
@@ -112,6 +127,40 @@ defmodule FountainWeb.DashboardLive.Index do
             body="Your agents as teammates — one thread each, schedules, and their activity."
           />
         </div>
+      </section>
+
+      <section>
+        <div class="flex items-baseline justify-between mb-3">
+          <h2 class="text-lg font-medium">This month</h2>
+          <span class="text-xs text-[var(--color-text-muted)]">
+            since {Calendar.strftime(@period_start, "%-d %B")}
+            <a
+              :if={@billing_enabled?}
+              href={~p"/account/billing"}
+              class="ml-2 text-[var(--color-brand)] hover:underline"
+            >
+              Billing
+            </a>
+          </span>
+        </div>
+        <div class="grid gap-4 grid-cols-2 lg:grid-cols-4">
+          <.metric label="Conversations" value={format_count(@usage.conversations)} />
+          <.metric label="Turns" value={format_count(@usage.turns)} />
+          <.metric
+            label="Sandbox time"
+            value={format_minutes(@usage.sandbox_minutes)}
+            hint="Wall-clock time your agents' sandboxes were awake."
+          />
+          <.metric
+            label="Tokens"
+            value={format_tokens(@tokens)}
+            sub={if @tokens.input > 0 or @tokens.output > 0, do: "in / out"}
+            hint="On your own inference key — Fountain never bills for these."
+          />
+        </div>
+        <p :if={@usage.turns == 0} class="mt-2 text-xs text-[var(--color-text-muted)]">
+          Nothing yet this month.
+        </p>
       </section>
 
       <section>
@@ -210,6 +259,21 @@ defmodule FountainWeb.DashboardLive.Index do
     """
   end
 
+  attr :label, :string, required: true
+  attr :value, :string, required: true
+  attr :sub, :string, default: nil
+  attr :hint, :string, default: nil
+
+  defp metric(assigns) do
+    ~H"""
+    <div class="rounded-lg border border-[var(--color-border)] p-4" title={@hint}>
+      <p class="text-xs uppercase tracking-wide text-[var(--color-text-muted)]">{@label}</p>
+      <p class="mt-1 text-2xl font-semibold tabular-nums">{@value}</p>
+      <p :if={@sub} class="text-[11px] text-[var(--color-text-muted)]">{@sub}</p>
+    </div>
+    """
+  end
+
   attr :href, :string, required: true
   attr :title, :string, required: true
   attr :body, :string, required: true
@@ -273,6 +337,41 @@ defmodule FountainWeb.DashboardLive.Index do
     <span :if={is_nil(@app)} class="font-medium">{@name}</span>
     """
   end
+
+  # Thousands separators, because six figures of tokens is unreadable without.
+  defp format_count(n) when is_integer(n) do
+    n
+    |> Integer.to_string()
+    |> String.graphemes()
+    |> Enum.reverse()
+    |> Enum.chunk_every(3)
+    |> Enum.map_join(",", &Enum.join/1)
+    |> String.reverse()
+  end
+
+  defp format_count(n), do: to_string(n)
+
+  # Minutes until they stop being readable as minutes.
+  defp format_minutes(minutes) when is_number(minutes) do
+    cond do
+      minutes < 1 -> "<1m"
+      minutes < 60 -> "#{round(minutes)}m"
+      minutes < 60 * 24 -> "#{Float.round(minutes / 60, 1)}h"
+      true -> "#{Float.round(minutes / 60 / 24, 1)}d"
+    end
+  end
+
+  defp format_minutes(_), do: "—"
+
+  # Two numbers in one tile: what went up, what came back.
+  defp format_tokens(%{input: 0, output: 0}), do: "—"
+
+  defp format_tokens(%{input: input, output: output}),
+    do: "#{compact(input)} / #{compact(output)}"
+
+  defp compact(n) when n >= 1_000_000, do: "#{Float.round(n / 1_000_000, 1)}M"
+  defp compact(n) when n >= 1_000, do: "#{Float.round(n / 1_000, 1)}k"
+  defp compact(n), do: Integer.to_string(n)
 
   defp agent_name(%{agent: %{name: name}}), do: name
   defp agent_name(_), do: "(no agent)"

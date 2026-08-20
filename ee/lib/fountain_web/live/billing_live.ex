@@ -226,22 +226,7 @@ defmodule FountainWeb.Live.BillingLive do
 
   # ─── Private helpers ───────────────────────────────────────────────────────────
 
-  defp current_month_range do
-    now = DateTime.utc_now()
-    period_start = %DateTime{now | day: 1, hour: 0, minute: 0, second: 0, microsecond: {0, 0}}
-    last_day = :calendar.last_day_of_the_month(now.year, now.month)
-
-    period_end = %DateTime{
-      now
-      | day: last_day,
-        hour: 23,
-        minute: 59,
-        second: 59,
-        microsecond: {0, 0}
-    }
-
-    {period_start, period_end}
-  end
+  defp current_month_range, do: Billing.current_month_range()
 
   # Refused outright rather than relying on the button being hidden (#399):
   # a stale socket or a hand-sent event must not open Checkout for an
