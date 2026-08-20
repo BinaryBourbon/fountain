@@ -35,6 +35,28 @@ defmodule FountainWeb.Markdown do
   # a highlighted block sits on the same ground as the log viewer's.
   @theme "github_dark_high_contrast"
 
+  # Lumis fetches a language's tree-sitter parser from a CDN the first time it
+  # sees one and caches it under its own `priv/`. A release can do neither: the
+  # deployment runs with `readOnlyRootFilesystem: true`, so the first request
+  # for a highlighted block fails to load the parser and the code renders
+  # plain — which is exactly what shipped in #879 and reached production.
+  #
+  # So the parsers are baked into the image instead: the Dockerfile caches this
+  # list into `deps/lumis/priv/lumis` before `mix release`, which copies it in
+  # like any other dependency's priv. Nothing is fetched at runtime.
+  #
+  # `markdown_test.exs` fails if the docs corpus grows a fence in a language
+  # this list does not name — a highlighter that quietly degrades is worse than
+  # one that is off, because nobody notices.
+  @languages ~w(bash typescript json json5 yaml elixir ini)
+
+  @doc """
+  The languages whose parsers are baked into the image — see `@languages`.
+
+  Called by the Dockerfile, before `mix release`.
+  """
+  def languages, do: @languages
+
   @doc """
   Renders untrusted markdown to HTML with raw HTML neutralized and unsafe
   link/image URLs removed.

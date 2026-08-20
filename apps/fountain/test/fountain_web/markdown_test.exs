@@ -296,4 +296,51 @@ end|
       refute html =~ "style=\"color:"
     end
   end
+
+  describe "the baked parser list" do
+    @root Path.expand("../../../..", __DIR__)
+
+    test "every language name is one Lumis knows, by id" do
+      ids = MapSet.new(Lumis.available_languages(), & &1.id)
+
+      for name <- Markdown.languages() do
+        assert MapSet.member?(ids, name),
+               "#{name} is not a Lumis language id — the Dockerfile's cache step would fail the build"
+      end
+    end
+
+    test "covers every language the docs corpus and in-app help fence" do
+      # The parsers ship in the image (see `@languages` in FountainWeb.Markdown);
+      # a fence in a language that is not baked renders unhighlighted in
+      # production and nowhere else, which is how it goes unnoticed.
+      baked = MapSet.new(Markdown.languages())
+      by_alias = Map.new(Lumis.available_languages(), &{&1.id, &1.id})
+
+      aliases =
+        for l <- Lumis.available_languages(), a <- l.aliases, into: by_alias, do: {a, l.id}
+
+      for {file, info} <- fenced_languages(), info not in ~w(text txt plain plaintext) do
+        id = Map.get(aliases, info, info)
+
+        assert MapSet.member?(baked, id),
+               "#{file} fences ```#{info} (#{id}), which is not in FountainWeb.Markdown.languages()"
+      end
+    end
+
+    defp fenced_languages do
+      [
+        Path.wildcard(Path.join(@root, "docs/**/*.md")),
+        Path.wildcard(Path.join(@root, "apps/fountain/priv/help/**/*.md")),
+        [Path.join(@root, "CHANGELOG.md")]
+      ]
+      |> List.flatten()
+      |> Enum.filter(&File.exists?/1)
+      |> Enum.flat_map(fn file ->
+        ~r/^\s*```([a-zA-Z0-9_+-]+)\s*$/m
+        |> Regex.scan(File.read!(file))
+        |> Enum.map(fn [_, info] -> {Path.relative_to(file, @root), info} end)
+      end)
+      |> Enum.uniq()
+    end
+  end
 end
