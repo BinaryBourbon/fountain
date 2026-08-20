@@ -14,17 +14,34 @@ docker compose up -d
 Prefer Kubernetes? A portable baseline — plain manifests, `kubectl apply -k`,
 no operators assumed — lives in [`deploy/k8s/`](deploy/k8s/).
 
-## Three surfaces
+## Four surfaces
 
-Every public feature lives on all three:
+Every public feature lives on the first three; the SDK wraps the verbs most
+code actually reaches for.
 
 | Surface | Use it when |
 |---|---|
 | **Web UI** (`/dashboard`) | Getting started, debugging conversations, managing resources visually |
 | **REST API** (`/api/*`) | Scripting, CI/CD pipelines, integrating Fountain into your own tools |
 | **CLI** (`fountain`) | Local workflows, manifest-driven `apply`, shell scripting |
+| **TypeScript SDK** (`sdk/typescript`) | Running an agent from your own code: `fountain.run(prompt, { agent, vault })` |
 
-The CLI is a convenience wrapper over the REST API. Everything the CLI does, you can do with `curl`.
+The CLI and the SDK are convenience wrappers over the REST API. Everything they do, you can do with `curl`.
+
+```ts
+import { Fountain } from "fountain-sdk";
+
+const run = await new Fountain().run("Upgrade us to Phoenix 1.8 and open a PR", {
+  agent: "reposage",
+  vault: "github-bot",   // the token lands in the sandbox, never in the prompt
+});
+
+console.log(run.text, run.url);
+```
+
+The sandbox is still there afterwards: `fountain.resume(run.conversationId).send("...")`
+continues on the same machine, with the same checkout and the same session.
+See [`sdk/typescript/`](sdk/typescript/) or the [SDK docs](https://binarybourbon.github.io/fountain/sdk/).
 
 ## Get started with the CLI
 

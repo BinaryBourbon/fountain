@@ -16,6 +16,28 @@ upgrade, is in
 
 ## [Unreleased]
 
+### Added
+
+- **A TypeScript SDK** (`sdk/typescript`; not yet published to npm). Running
+  an agent is one call — `fountain.run(prompt, { agent, vault, environment })` —
+  which opens a conversation, follows the turn and hands back the answer, the
+  tools used and a URL a human can watch. The handle it returns can be awaited,
+  iterated for lifecycle events, or read as a text stream; `resume(id).send(...)`
+  continues in the same sandbox. Every integration that has ever talked to
+  Fountain wrote this wrapper first (the Hermes plugin, `fountain run`, the
+  bundled skill); this is that wrapper, once, with the turn-following rules and
+  the mid-turn reconnect in one place. Zero runtime dependencies, Node 20.19+.
+  Documented at `docs/sdk.md`.
+
+  The SDK also defines what it runs: `fountain.agents`, `fountain.environments`
+  and `fountain.vaults` each have `list`/`get`/`create`/`update`/`delete` taking
+  a name or an id, and the two latter carry `secrets.set`/`setAll`/`list`/
+  `delete`. `AgentInput` is the whole agent definition as one type — runtime,
+  model, system prompt, skills, MCP servers, sandbox provider and the two
+  allowlists — so `docs/sdk.md` can show a complete definition on one screen
+  instead of describing it. Payloads keep the API's own key names, so one
+  definition reads identically in the SDK, the REST API and a `fountain.yml`.
+
 ### Fixed
 
 - **The dashboard's token total counted only fresh input.** A coding agent

@@ -67,6 +67,7 @@ defmodule FountainWeb.LlmsController do
     - [OpenAPI 3 spec](#{base}/api/openapi.json): machine-readable contract
     - [Swagger UI](#{base}/api/docs): interactive try-it, click "Authorize" to set your bearer token
     - [Endpoint summary](#{base}/help/api): summary table and response envelope
+    - [TypeScript SDK](https://github.com/BinaryBourbon/fountain/tree/main/sdk/typescript): `fountain.run(prompt, {agent, vault})` over the conversation endpoints; awaitable, streamable, resumable
 
     ## For LLMs
 

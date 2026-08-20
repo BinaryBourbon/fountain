@@ -461,6 +461,33 @@ jobs:
       - name: Hermes plugin tests
         run: python3 -m unittest discover -s integrations/hermes/tests -v
 
+      # The TypeScript SDK (sdk/typescript). Node runs the .ts sources
+      # directly, so `npm test` needs nothing but the dev dependency on tsc —
+      # which is also what enforces `erasableSyntaxOnly`, the setting that
+      # keeps those sources runnable without a build step.
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: sdk/typescript/package-lock.json
+
+      - name: SDK install
+        working-directory: sdk/typescript
+        run: npm ci
+
+      - name: SDK typecheck
+        working-directory: sdk/typescript
+        run: npm run typecheck
+
+      - name: SDK tests
+        working-directory: sdk/typescript
+        run: npm test
+
+      - name: SDK build
+        working-directory: sdk/typescript
+        run: npm run build
+
       # `gofmt -l` prints offending files and exits 0, so the failure has to
       # come from the emptiness check — print the list first so the log says
       # which files to run gofmt on.
