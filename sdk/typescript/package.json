@@ -4,29 +4,52 @@
   "description": "Run a coding agent on a real computer, with your repos and your credentials, in one call.",
   "license": "MIT",
   "type": "module",
-  "engines": { "node": ">=20.19" },
+  "engines": {
+    "node": ">=20.19"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/BinaryBourbon/fountain.git",
     "directory": "sdk/typescript"
   },
   "homepage": "https://github.com/BinaryBourbon/fountain/tree/main/sdk/typescript",
-  "keywords": ["fountain", "agent", "sandbox", "coding-agent", "acp", "sdk"],
+  "keywords": [
+    "fountain",
+    "agent",
+    "sandbox",
+    "coding-agent",
+    "acp",
+    "sdk"
+  ],
   "exports": {
     ".": {
+      "types": "./dist/index.d.ts",
+      "node": "./dist/node.js",
+      "browser": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./browser": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     }
   },
-  "files": ["dist", "README.md"],
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
+    "generate": "openapi-typescript ${FOUNTAIN_OPENAPI:-/tmp/fountain-openapi.json} -o src/generated/openapi.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "node --test test/*.test.ts",
     "prepublishOnly": "npm run typecheck && npm test && npm run build"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
+    "openapi-typescript": "^7.13.0",
     "typescript": "^5.7.0"
+  },
+  "browser": {
+    "./dist/node.js": "./dist/index.js"
   }
 }

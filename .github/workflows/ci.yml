@@ -596,6 +596,28 @@ jobs:
       - name: Validate OpenAPI spec
         run: mix openapi.spec.json --spec FountainWeb.ApiSpec --output /tmp/openapi.json && jq empty /tmp/openapi.json
 
+      # The SDK's types are generated from that spec, not written by hand, so
+      # a schema change in Elixir must reach `sdk/typescript/src/generated`.
+      # Regenerating here and failing on a diff is what keeps them the same
+      # thing rather than two descriptions of the API that drift apart.
+      - name: SDK types match the spec
+        run: |
+          mix openapi.spec.json --spec FountainWeb.ApiSpec --vendor-extensions=false \
+            --output /tmp/sdk-openapi.json
+          cd sdk/typescript
+          FOUNTAIN_OPENAPI=/tmp/sdk-openapi.json npm run generate
+          if ! git diff --exit-code src/generated/openapi.ts; then
+            echo "::error::sdk/typescript/src/generated/openapi.ts is stale." >&2
+            echo "Run 'npm run generate' in sdk/typescript and commit the result." >&2
+            exit 1
+          fi
+
+      # Eleven browser applications are built on this API, so the SDK's default
+      # entry has to bundle for a browser — no Node built-ins reachable from it.
+      - name: SDK bundles for the browser
+        working-directory: sdk/typescript
+        run: npx --yes esbuild dist/index.js --bundle --platform=browser --format=esm --outfile=/dev/null
+
   compose-fresh-clone:
     name: Compose fresh-clone check
     runs-on: ubuntu-24.04

@@ -3,6 +3,7 @@ export { Run, type RunOptions } from "./run.ts";
 export { Conversation, type SendOptions } from "./conversation.ts";
 export { HttpClient, type FetchLike, type RequestOptions } from "./http.ts";
 export { Agents, Environments, Vaults } from "./resources.ts";
+export { Team, TeamSchedules, type MessageOptions } from "./team.ts";
 export {
   resolveConfig,
   conversationUrl,
@@ -11,7 +12,7 @@ export {
   type ConfigOptions,
   type ResolvedConfig,
 } from "./config.ts";
-export { streamEvents, parseSse, type StreamOptions, type SseMessage } from "./sse.ts";
+export { streamEvents, streamPath, parseSse, type StreamOptions, type SseMessage } from "./sse.ts";
 export { TurnFollower } from "./turn.ts";
 export {
   FountainError,
@@ -20,20 +21,26 @@ export {
   NotFoundError,
   ValidationError,
   RateLimitError,
+  ConversationBusyError,
+  NotReadyError,
+  QuotaExceededError,
+  ConnectionError,
   TimeoutError,
   ResolutionError,
+  type FountainErrorCode,
 } from "./errors.ts";
+export type * from "./schemas.ts";
 export type {
   Agent,
   AgentInput,
   Block,
-  Conversation as ConversationRecord,
+  ConversationRecord,
   ConversationStatus,
   Environment,
   EnvironmentInput,
   LogEvent,
   NamedResource,
-  NetworkingType,
+  Stream,
   Repository,
   Runtime,
   RunEvent,

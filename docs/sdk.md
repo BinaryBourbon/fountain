@@ -182,6 +182,73 @@ can put a credential into a sandbox and cannot read it back out.
     the SDK's own behaviour — `timeoutMs`, `signal` — are camelCase, because
     those are not data.
 
+## The team
+
+Ten of the eleven applications built on Fountain talk to `/api/team`, and some
+of them never touch `/api/conversations` at all. The reason is that a teammate
+is a *durable* thing — one agent, one long-running sandbox, one thread you keep
+messaging — where a conversation is something you open and close.
+
+```ts
+await fountain.team.add("watchtower", { name: "Watchtower" });
+
+const reply = await fountain.team.message("watchtower", "Any disks over 80%?");
+console.log(reply.text);
+```
+
+`message()` returns the same `Run` handle `run()` does: await it, iterate it,
+or ignore it and let the stream below carry the answer to your UI.
+
+```ts
+await fountain.team.list();                       // the roster, with unread counts
+await fountain.team.rename("watchtower", "Eyes"); // null restores the agent's name
+await fountain.team.history("watchtower");        // every thread it has had
+await fountain.team.freshConversation("watchtower"); // new computer, old one retired
+await fountain.team.remove("watchtower");         // off the team; the agent stays
+```
+
+Routines are cron for a teammate:
+
+```ts
+await fountain.team.schedules.create("watchtower", {
+  cron: "0 9 * * *",
+  prompt: "Check disk usage and say only what changed.",
+});
+```
+
+### One stream for everyone
+
+```ts
+for await (const event of fountain.team.stream({ streams: ["stage"] })) {
+  if (event.stage === "turn" && event.state === "done") refreshRoster();
+}
+```
+
+The stream reconnects from its last event id on its own, so a deploy or an
+idle timeout is invisible to the caller.
+
+!!! note "The team stream carries raw events"
+
+    `/api/team/stream` takes `streams` and nothing else — no `blocks` — so
+    events on it are the runtime's own dialect. Treat it as a notification
+    channel (something happened, to whom) and read the detail from the
+    conversation's own feed, which does parse blocks. `fountain.events()` is
+    the same idea across every conversation you own, and *does* take `blocks`.
+
+## Reading a thread
+
+Two calls cover what every application does when someone opens a thread:
+
+```ts
+const conversation = fountain.resume(conversationId);
+
+const events = await conversation.history({ streams: ["acp", "stage"] });  // paged until drained
+await conversation.markRead();                                            // clears the unread badge
+```
+
+`history()` pages the log feed to the end for you; every one of the eleven apps
+wrote that loop by hand first.
+
 ## Follow-ups
 
 ```ts
@@ -212,11 +279,56 @@ try {
 `run.interrupt()` asks the agent to stop the turn and leaves the sandbox up;
 `run.terminate()` tears the sandbox down.
 
+## Errors
+
+Branch on `code`, not on the status. `conversation_busy` is a 400,
+`sandbox_quota_exceeded` is a 429 and `provisioning` is a 503, and what you
+want to say about each has nothing to do with those numbers.
+
+```ts
+try {
+  await fountain.team.message("watchtower", prompt);
+} catch (error) {
+  if (error instanceof ConversationBusyError) return "Still working on the last one.";
+  if (error instanceof QuotaExceededError) return `Sandboxes full (${error.activeSandboxes}/${error.limit}).`;
+  if (error instanceof NotReadyError) return `Starting up — retry in ${error.retryAfter}s.`;
+  if (error instanceof ValidationError) return Object.entries(error.fieldErrors)[0]?.join(" ");
+  throw error;
+}
+```
+
+| Class | Code / status | Retryable |
+|---|---|---|
+| `ConversationBusyError` | `conversation_busy` (400) | yes — the turn in flight has to finish |
+| `NotReadyError` | `provisioning`, `sprite_probe_failed` (503) | yes — carries the server's `Retry-After` |
+| `QuotaExceededError` | `sandbox_quota_exceeded` (429) | yes — terminate a conversation first |
+| `SubscriptionRequiredError` | `subscription_required` (402) | no — carries `upgradeUrl` |
+| `ValidationError` | 422 | no — read `fieldErrors` |
+| `AuthError` / `NotFoundError` | 401 / 404 | no |
+| `ConnectionError` | never reached the server | — in a browser, usually CORS |
+
+Every one carries `status`, `code`, `body`, `retryAfter` and a `retryable`
+flag, so a generic retry wrapper needs no table of its own.
+
+## In a browser
+
+The SDK's default entry pulls in no Node built-in, so it bundles as-is; the
+credentials-file reader lives behind the `node` export condition. In a browser
+you pass what you have:
+
+```ts
+const fountain = new Fountain({ baseUrl, apiKey });   // from your own settings UI
+```
+
+The server must allow your origin — `API_CORS_ORIGINS` — or every call fails
+before it starts. `ConnectionError` says exactly that, because "Failed to
+fetch" has sent more than one person hunting through their own code.
+
 ## Everything else
 
-The SDK wraps the verbs worth wrapping. The rest of the API — audit, schedules,
-the team, API keys, conversations' images and trees — is one call away with the
-same auth and error handling:
+The SDK wraps the verbs worth wrapping. The rest of the API — audit, API keys,
+admin, billing, exports — is one call away with the same auth and error
+handling:
 
 ```ts
 await fountain.request("GET", "/api/audit", { query: { limit: 50 } });
@@ -224,6 +336,24 @@ await fountain.request("GET", "/api/audit", { query: { limit: 50 } });
 
 The [API reference](api.md) and the generated `GET /api/openapi.json` cover
 those.
+
+## Generated underneath
+
+The types are not hand-written. `src/generated/openapi.ts` comes from the same
+OpenAPI document the server serves at `GET /api/openapi.json`, and CI
+regenerates it and fails on a diff — so a field added to a schema in Elixir
+reaches the SDK on the next build, and a type here can never describe an API
+that no longer exists.
+
+```ts
+import type { components, paths } from "fountain-sdk";
+
+type Teammate = components["schemas"]["Teammate"];
+```
+
+What is hand-written is the part a spec cannot express: that many log events
+fold into one *turn*, that a run can be awaited or streamed, and which of 85
+paths are worth a verb.
 
 ## Other languages
 

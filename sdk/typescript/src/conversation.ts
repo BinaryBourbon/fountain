@@ -1,5 +1,5 @@
 import type { HttpClient } from "./http.ts";
-import type { Conversation as ConversationRecord, LogEvent, Turn } from "./types.ts";
+import type { ConversationRecord, LogEvent, Stream, Turn } from "./types.ts";
 import { Run, type RunOptions } from "./run.ts";
 import { streamEvents, type StreamOptions } from "./sse.ts";
 import { conversationUrl } from "./config.ts";
@@ -22,12 +22,12 @@ export class Conversation {
 
   private readonly http: HttpClient;
   /** Where the log feed has been read to, so a follow-up skips the history. */
-  private cursor: number;
+  private cursorValue: number;
 
   constructor(http: HttpClient, id: string, cursor = 0) {
     this.http = http;
     this.id = id;
-    this.cursor = cursor;
+    this.cursorValue = cursor;
   }
 
   /** Where a human watches this conversation. */
@@ -59,7 +59,7 @@ export class Conversation {
         start: async () => {
           // The cursor and the turn number both have to be taken *before* the
           // prompt goes in, or we race the events it produces.
-          const after = this.cursor > 0 ? this.cursor : await this.discoverCursor();
+          const after = await this.cursor();
           const turnNumber = (await this.lastTurnNumber()) + 1;
           await this.http.request("POST", `/api/conversations/${this.id}/prompts`, { body });
           const conversation = await this.get();
@@ -73,11 +73,60 @@ export class Conversation {
     // the next send starts where this one stopped.
     void run
       .finally(() => {
-        if (run.cursor > this.cursor) this.cursor = run.cursor;
+        if (run.cursor > this.cursorValue) this.cursorValue = run.cursor;
       })
       .catch(() => {});
 
     return run;
+  }
+
+  /**
+   * Mark everything so far as read, clearing the teammate's unread badge.
+   *
+   * Every application built on Fountain calls this — it is what stops a UI
+   * shouting about messages the person is currently looking at.
+   */
+  async markRead(): Promise<void> {
+    await this.http.request("POST", `/api/conversations/${this.id}/read`);
+  }
+
+  /**
+   * Everything the feed holds, oldest first, paged until drained.
+   *
+   * The other universal one: a UI opening a thread needs the transcript so
+   * far, and the JSON feed pages at 1000. `streams` narrows what comes back —
+   * `["acp"]` for a transcript, `["stage"]` for the lifecycle alone.
+   */
+  async history(
+    options: { streams?: Stream[] | string; after?: number; limit?: number } = {},
+  ): Promise<LogEvent[]> {
+    const streams = Array.isArray(options.streams) ? options.streams.join(",") : options.streams;
+    const limit = options.limit ?? 1000;
+    const out: LogEvent[] = [];
+    let after = options.after ?? 0;
+
+    for (;;) {
+      const page = await this.http.request<{
+        data?: LogEvent[];
+        meta?: { has_more?: boolean; next_cursor?: number | null };
+      }>("GET", `/api/conversations/${this.id}/events`, {
+        query: { after, limit, blocks: "true", streams },
+      });
+      const events = page?.data ?? [];
+      out.push(...events);
+      const meta = page?.meta ?? {};
+      if (!meta.has_more || meta.next_cursor === null || meta.next_cursor === undefined) break;
+      after = meta.next_cursor;
+    }
+
+    const last = out.at(-1)?.id;
+    if (typeof last === "number" && last > this.cursorValue) this.cursorValue = last;
+    return out;
+  }
+
+  /** The conversations this one spawned, as a tree. */
+  async tree(): Promise<unknown> {
+    return this.http.data("GET", `/api/conversations/${this.id}/tree`);
   }
 
   /** Ask the agent to stop the turn it is on. The sandbox stays up. */
@@ -118,9 +167,15 @@ export class Conversation {
     };
   }
 
-  private async lastTurnNumber(): Promise<number> {
+  /** The highest turn number so far; the next prompt is this plus one. */
+  async lastTurnNumber(): Promise<number> {
     const turns = await this.turns();
     return turns.reduce((max, turn) => Math.max(max, Number(turn.turn_number) || 0), 0);
+  }
+
+  /** Where this handle has read to, discovering it if nobody has looked yet. */
+  async cursor(): Promise<number> {
+    return this.cursorValue > 0 ? this.cursorValue : this.discoverCursor();
   }
 
   /**
@@ -145,7 +200,7 @@ export class Conversation {
       // Not worth failing a send over; 0 replays, which is correct if noisy.
       return 0;
     }
-    this.cursor = last;
+    this.cursorValue = last;
     return last;
   }
 }
