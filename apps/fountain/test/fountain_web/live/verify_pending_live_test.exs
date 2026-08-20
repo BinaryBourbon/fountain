@@ -67,7 +67,7 @@ defmodule FountainWeb.VerifyPendingLiveTest do
       # phone: verify_email/1 is what every verification route ends up calling.
       {:ok, _verified} = Accounts.verify_email(user)
 
-      assert_redirect(lv, "/onboarding/step_1")
+      assert_redirect(lv, "/dashboard")
     end
 
     test "an onboarded user is advanced to the conversation list", %{conn: conn, user: user} do
@@ -80,7 +80,7 @@ defmodule FountainWeb.VerifyPendingLiveTest do
 
       {:ok, _verified} = Accounts.verify_email(user)
 
-      assert_redirect(lv, "/conversations")
+      assert_redirect(lv, "/dashboard")
     end
 
     test "the poll advances even when the broadcast never arrives", %{conn: conn, user: user} do
@@ -96,7 +96,7 @@ defmodule FountainWeb.VerifyPendingLiveTest do
 
       send(lv.pid, :check_verification)
 
-      assert_redirect(lv, "/onboarding/step_1")
+      assert_redirect(lv, "/dashboard")
     end
 
     test "a broadcast that does not match the database does not advance", %{

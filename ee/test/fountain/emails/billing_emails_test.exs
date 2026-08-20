@@ -6,7 +6,7 @@ defmodule Fountain.Emails.BillingEmailsTest do
   alias Fountain.Emails.BillingEmails
 
   describe "deliver_welcome_email/1" do
-    test "welcomes the user with an onboarding link" do
+    test "welcomes the user and points at the console" do
       user = insert_verified_user()
 
       assert {:ok, _email} = BillingEmails.deliver_welcome_email(user)
@@ -14,8 +14,8 @@ defmodule Fountain.Emails.BillingEmailsTest do
       assert_email_sent(fn email ->
         assert email.subject == "Welcome to Fountain"
         assert email.to == [{user.email, user.email}]
-        assert email.html_body =~ "/onboarding/step_1"
-        assert email.text_body =~ "/onboarding/step_1"
+        assert email.html_body =~ "/dashboard"
+        assert email.text_body =~ "/dashboard"
       end)
     end
 

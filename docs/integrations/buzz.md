@@ -351,7 +351,7 @@ replay them.
   confirms the directory entry.
 - **The desktop's ACP activity panel** shows the agent's work in flight —
   the harness mirrors every ACP frame to the owner as encrypted telemetry.
-- **The conversation** is a normal Fountain conversation: web UI,
+- **The conversation** is a normal Fountain conversation: conversations app,
   `fountain conv`, and the audit trail (`buzz.published` for every publish).
 - **The version** of `buzz-acp` an image ships is `buzz-acp.version` in the
   repo (a `-fountain.N` suffix means a fork build carrying upstream fixes not

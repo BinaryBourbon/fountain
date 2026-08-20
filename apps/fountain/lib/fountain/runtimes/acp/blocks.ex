@@ -3,11 +3,12 @@ defmodule Fountain.Runtimes.ACP.Blocks do
   Translate ACP messages into the block maps the conversation view renders.
 
   This is the module that replaces a hand-written dialect parser, and the
-  reason it lives here rather than in `FountainWeb.ConversationsLive.Show` is
-  the whole point of [0014](decisions/0014-agent-client-protocol.md): the four
-  proprietary formats are parsed in the render path, where a vendor's point
-  release becomes a rendering bug. The ACP path parses on the server, in a
-  module with its own tests, and the LiveView delegates one clause to it.
+  reason it lives here rather than in a view is the whole point of
+  [0014](decisions/0014-agent-client-protocol.md): the four proprietary
+  formats used to be parsed in the render path, where a vendor's point release
+  becomes a rendering bug. The ACP path parses on the server, in a module with
+  its own tests, and every client — the API's `?blocks=true` included — reads
+  one parse.
 
   The block shapes are not ours to choose — they are what `show.ex` already
   renders, so that the ACP path and the legacy path can be compared on one

@@ -10,11 +10,11 @@ defmodule Fountain.Conversations.Blocks do
   it flipped must keep rendering through the parser that produced them
   (0014, #642).
 
-  This used to live in the LiveView (`ConversationsLive.Chat.blocks_for/2`).
-  It moved here so the API can serve blocks too (`?blocks=true` on
-  `/events` and the streams) and a client on another origin never re-parses a
-  vendor dialect — ADR 0014's principle applied to the wire, not just to the
-  render path.
+  This used to live in the web UI's transcript component. It moved here so the
+  API can serve blocks too (`?blocks=true` on `/events` and the streams) and a
+  client on another origin never re-parses a vendor dialect — ADR 0014's
+  principle applied to the wire, not just to a render path. Since #867 that is
+  the only path: the transcript itself is a client.
 
   ## Block shapes
 

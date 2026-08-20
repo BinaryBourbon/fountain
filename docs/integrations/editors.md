@@ -32,7 +32,7 @@ Why reach for this rather than a local agent, then:
   running. Reopen and the transcript is replayed from the server.
 - **The unit is a Fountain agent** — an environment, vault overrides, skills,
   MCP servers and inference credentials that never touch your machine.
-- **The same conversation is open in the web UI**, for you or a teammate,
+- **The same conversation is open in the conversations app**, for you or a teammate,
   while it runs.
 
 ## Setup
@@ -143,7 +143,7 @@ resumes from where it left off.
 - **Agents on the `gemini` runtime are refused** when the editor opens a
   session, by name. Gemini is not on ACP yet
   ([#659](https://github.com/BinaryBourbon/fountain/issues/659)); use those
-  agents from the web UI or `fountain run`.
+  agents from the conversations app or `fountain run`.
 - **Permission prompts are not forwarded yet.** Agents currently run with their
   own permission handling, so an editor will not be asked to approve a tool
   call ([#643](https://github.com/BinaryBourbon/fountain/issues/643),

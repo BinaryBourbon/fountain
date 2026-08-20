@@ -5,13 +5,12 @@ defmodule FountainWeb.TeamPresenter do
 
   Both are views over `Fountain.Team.list_teammates/1`; the presence reads
   the conversation and sandbox rows, the preview reads the last turn's
-  events through the same parser the chat bubbles use, so the roster line
+  events through the same parser a transcript renders, so the roster line
   and the thread agree on what the teammate last said.
   """
 
-  import FountainWeb.ConversationsLive.Chat, only: [chat_assistant_reply: 2]
-
   alias Fountain.Conversations
+  alias Fountain.Conversations.Blocks
 
   @typedoc "`state` is the vocabulary a client switches on; `label` is what a human reads."
   @type presence :: %{state: String.t(), label: String.t()}
@@ -85,7 +84,7 @@ defmodule FountainWeb.TeamPresenter do
     reply =
       turn.id
       |> Conversations._unsafe_list_turn_log_events()
-      |> chat_assistant_reply(conv.runtime)
+      |> Blocks.assistant_text(conv.runtime)
 
     if reply == "", do: {:you, turn.prompt}, else: {:them, reply}
   end

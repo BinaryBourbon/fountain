@@ -11,8 +11,8 @@ reachable at `$FOUNTAIN_BASE_URL` (under **`/api`**) with bearer
 each runs in its own fresh Sprite.
 
 > **Common mistake**: hitting `$FOUNTAIN_BASE_URL/conversations` returns 302
-> (the bare path is the LiveView UI). The right URL is
-> `$FOUNTAIN_BASE_URL/api/conversations`.
+> (the bare path redirects a browser to the conversations app). The right URL
+> is `$FOUNTAIN_BASE_URL/api/conversations`.
 
 ## The two patterns you'll use
 

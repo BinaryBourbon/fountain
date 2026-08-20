@@ -66,7 +66,7 @@ defmodule FountainWeb.EmailVerificationController do
 
                 conn
                 |> log_in_user(verified_user)
-                |> redirect(to: ~p"/onboarding/step_1")
+                |> redirect(to: ~p"/dashboard")
 
               {:error, _changeset} ->
                 conn
@@ -173,11 +173,5 @@ defmodule FountainWeb.EmailVerificationController do
     |> put_session(:session_version, user.session_version)
   end
 
-  defp destination(user) do
-    if user.onboarding_completed_at do
-      ~p"/"
-    else
-      ~p"/onboarding/step_1"
-    end
-  end
+  defp destination(_user), do: ~p"/dashboard"
 end

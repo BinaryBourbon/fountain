@@ -161,15 +161,20 @@ defmodule FountainWeb.AuditInferenceCredentialsUiTest do
     assert event.request_ip
   end
 
-  test "saving during onboarding is audited — the surface that recorded nothing", %{conn: conn} do
+  # #546 found the onboarding wizard's credential step recording nothing. That
+  # wizard is gone (#867) and its step is the settings page a new account is
+  # sent to, so the regression is re-pinned there: a first save, by an account
+  # that has set nothing up, is audited.
+  test "a first save by a brand-new account is audited — the surface that recorded nothing",
+       %{conn: conn} do
     user = insert_verified_user()
 
-    {:ok, lv, _html} = live(login_user(conn, user), ~p"/onboarding/step_1")
+    {:ok, lv, _html} = live(login_user(conn, user), ~p"/account/inference-credentials")
 
-    render_click(lv, "save_credential", %{"provider" => "anthropic_api_key", "value" => @token})
+    render_click(lv, "save", %{"provider" => "anthropic_api_key", "value" => @token})
 
     event = find_action(user.id, "inference_credential.write")
-    assert event, "saving during onboarding must be audited (#546)"
+    assert event, "a first credential save must be audited (#546)"
     assert event.actor == "ui"
   end
 

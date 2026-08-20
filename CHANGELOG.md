@@ -16,6 +16,31 @@ upgrade, is in
 
 ## [Unreleased]
 
+### Changed
+
+- **Fountain's web UI is a console.** The conversation pages
+  (`/conversations`, `/conversations/new`, `/conversations/:id`,
+  `/conversations/:id/logs`), the team page (`/team`) and the onboarding
+  wizard (`/onboarding`) are gone from the server. Conversations and the team
+  are their own apps on the API —
+  [fountain-conversations](https://github.com/jhgaylor/fountain-conversations)
+  and [fountain-team](https://github.com/jhgaylor/fountain-team) — and what
+  stays here is the operator console: dashboard, agents, environments,
+  vaults, audit, API keys, account, admin.
+  - The old paths **redirect** (302) to the app that replaced them, or to the
+    dashboard where a deployment has no such app. Nothing 404s.
+  - Login, OAuth and email verification all land on `/dashboard`, whose
+    checklist — an inference credential, an agent, a conversation — replaced
+    the wizard. It also stamps `onboarding_completed_at` when the account
+    genuinely has those things, which is what the lifecycle funnel's
+    "onboarded" stage reads.
+  - The sidebar's conversation list, its filters and the preference columns
+    behind them are gone, along with the LiveView JS hooks and the d3 CDN
+    script only those pages used.
+  - The session-authenticated turn-image route went with the chat bubbles
+    that used it; the bearer route (`/api/conversations/:id/turns/:id/images/:n`)
+    is unchanged.
+
 ### Added
 
 - **`Fountain.Apps` — one place that knows where the browser apps live.**

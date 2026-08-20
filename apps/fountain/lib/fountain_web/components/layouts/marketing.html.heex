@@ -15,7 +15,7 @@
         </a>
         <%= if @current_user do %>
           <a
-            href={~p"/conversations"}
+            href={~p"/dashboard"}
             class="text-sm font-medium bg-[var(--color-brand)] text-white px-4 py-1.5 rounded-md hover:bg-[var(--color-brand-hover)] transition-colors"
           >
             Go to app
@@ -66,7 +66,7 @@
         <% end %>
         <%= if @current_user do %>
           <a
-            href={~p"/conversations"}
+            href={~p"/dashboard"}
             class="hover:text-[var(--color-text-secondary)] transition-colors"
           >
             Go to app

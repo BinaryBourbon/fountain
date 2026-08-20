@@ -40,7 +40,7 @@ Why reach for this rather than a harness OpenClaw hosts locally:
   running. Re-open and the transcript replays from the server.
 - **The unit is a Fountain agent** — an environment, vault overrides, skills,
   MCP servers and inference credentials that never touch the OpenClaw host.
-- **The same conversation is open in the Fountain web UI**, for you or a
+- **The same conversation is open in the Fountain conversations app**, for you or a
   teammate, while it runs from the channel.
 
 ## Setup
@@ -188,7 +188,7 @@ environments may stand in for its own via `allowed_environment_ids`.
 - **Agents on the `gemini` runtime are refused** when a session opens, by name.
   Gemini is not on ACP yet
   ([#659](https://github.com/BinaryBourbon/fountain/issues/659)); use those
-  agents from the web UI or `fountain run`.
+  agents from the conversations app or `fountain run`.
 - **Permission prompts are not forwarded yet.** Agents currently run with their
   own permission handling, which is why `permissionMode: "approve-all"` is set
   above — an OpenClaw channel is not asked to approve a tool call

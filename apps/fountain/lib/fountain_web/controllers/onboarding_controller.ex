@@ -4,12 +4,13 @@ defmodule FountainWeb.OnboardingController do
 
   `complete_onboarding/1` and `advance_onboarding/2` were called only from the
   wizard LiveView, so an account driven entirely through the API stayed
-  permanently un-onboarded: `onboarding_state` never reached `"completed"`, and
-  a later browser visit to `/onboarding` dropped the user back into the wizard
-  they had no reason to see.
+  permanently un-onboarded: `onboarding_state` never reached `"completed"`.
 
-  Nothing hard-gates on the flag today — it drives the dashboard banner and the
-  post-login redirect — so this is a small write, not a new gate.
+  The wizard is gone (#867). The console's dashboard stamps the flag when the
+  account actually has what it needs — an inference credential and an agent —
+  and this endpoint lets a client say so itself. Nothing hard-gates on the
+  flag: it is the lifecycle funnel's "onboarded" stage, and this is a small
+  write, not a gate.
   """
 
   use FountainWeb, :controller

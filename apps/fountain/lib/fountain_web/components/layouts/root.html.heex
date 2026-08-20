@@ -48,8 +48,6 @@
       src="https://cdn.jsdelivr.net/npm/phoenix_live_view@1.1.30/priv/static/phoenix_live_view.min.js"
     >
     </script>
-    <script defer src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js">
-    </script>
     <script defer>
       document.addEventListener("DOMContentLoaded", () => {
         const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content");
@@ -104,7 +102,7 @@
           }
           if (gPending) {
             gPending = false; clearTimeout(gTimer);
-            const nav = { c: "/conversations/new", h: "/help", a: "/agents", e: "/environments", v: "/vaults" };
+            const nav = { d: "/dashboard", h: "/help", a: "/agents", e: "/environments", v: "/vaults" };
             if (nav[e.key]) { window.location.href = nav[e.key]; e.preventDefault(); }
           }
         });
@@ -112,7 +110,7 @@
         // ── Sidebar navigation ───────────────────────────────────────────────
         // LiveView registers a document-level bubble-phase click handler that
         // intercepts <a href> clicks on internal routes and routes them via the
-        // WebSocket. Cross-session navigation (e.g. conversations → agents) then
+        // WebSocket. Cross-session navigation (e.g. agents → admin) then
         // fails silently: LiveView's redirect can't cross live_session boundaries,
         // but it already called preventDefault() so the browser doesn't navigate
         // either.
@@ -137,84 +135,15 @@
 
         // ── LiveView hooks ───────────────────────────────────────────────────
         const Hooks = {
-          ScrollBottom: {
-            mounted() { this.el.scrollTop = this.el.scrollHeight; },
-            updated() { this.el.scrollTop = this.el.scrollHeight; }
-          },
           // Prevents a collapsed <details> section from staying closed when
           // LiveView adds new content to it. Because `open?` is always `true`
           // for turn/recursive sections, LiveView's diff never re-sends the
           // `open` attribute — so a user-collapsed section won't reopen on its
           // own. This hook restores `open` whenever the element's content is
           // updated and `data-force-open` says it should stay open.
-          KeepOpen: {
-            updated() {
-              if (this.el.dataset.forceOpen === "true" && !this.el.open) {
-                this.el.open = true;
-              }
-            }
-          },
-          SubmitOnCmdEnter: {
-            mounted() {
-              this.handler = (e) => {
-                if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
-                  e.preventDefault();
-                  const form = this.el.closest("form");
-                  if (form) form.requestSubmit();
-                }
-              };
-              this.el.addEventListener("keydown", this.handler);
-            },
-            destroyed() { this.el.removeEventListener("keydown", this.handler); }
-          },
           // Messaging-app composer: Enter sends, Shift+Enter is a newline; the
           // box grows with its content and empties when the server says the
           // message went ("clear_composer"), so a refused send keeps the text.
-          SubmitOnEnter: {
-            mounted() {
-              this.grow = () => {
-                this.el.style.height = "auto";
-                this.el.style.height = Math.min(this.el.scrollHeight, 160) + "px";
-              };
-              this.handler = (e) => {
-                if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
-                  e.preventDefault();
-                  const form = this.el.closest("form");
-                  if (form) form.requestSubmit();
-                }
-              };
-              this.el.addEventListener("keydown", this.handler);
-              this.el.addEventListener("input", this.grow);
-              this.handleEvent("clear_composer", () => { this.el.value = ""; this.grow(); this.el.focus(); });
-              this.grow();
-            },
-            destroyed() {
-              this.el.removeEventListener("keydown", this.handler);
-              this.el.removeEventListener("input", this.grow);
-            }
-          },
-          ImagePicker: {
-            mounted() {
-              this.el.addEventListener("change", (e) => {
-                const files = Array.from(e.target.files || []);
-                if (files.length === 0) return;
-                const readers = files.map(file => new Promise((resolve) => {
-                  const reader = new FileReader();
-                  reader.onload = (ev) => {
-                    const base64 = ev.target.result.split(",")[1];
-                    resolve({ data: base64, media_type: file.type, name: file.name, url: ev.target.result });
-                  };
-                  reader.readAsDataURL(file);
-                }));
-                Promise.all(readers).then(images => { this.pushEvent("images_selected", { images }); });
-              });
-            }
-          },
-          LogScroll: {
-            mounted() { this.scrollToBottom(); },
-            updated() { this.scrollToBottom(); },
-            scrollToBottom() { this.el.scrollTop = this.el.scrollHeight; }
-          },
           CopyToClipboard: {
             mounted() {
               this.el.addEventListener("click", () => {
@@ -226,62 +155,6 @@
                   setTimeout(() => { this.el.innerText = orig; }, 1500);
                 });
               });
-            }
-          },
-          ConversationGraph: {
-            mounted() { this.renderGraph(); },
-            updated() { this.renderGraph(); },
-            renderGraph() {
-              const nodes = JSON.parse(this.el.dataset.graph || "[]");
-              const currentId = this.el.dataset.currentId;
-              if (!nodes || nodes.length === 0) return;
-              const byId = {};
-              nodes.forEach(n => { byId[n.id] = { ...n, children: [] }; });
-              let root = null;
-              nodes.forEach(n => {
-                if (n.parent_id && byId[n.parent_id]) byId[n.parent_id].children.push(byId[n.id]);
-                else if (!n.parent_id) root = byId[n.id];
-              });
-              if (!root) return;
-              const W = this.el.offsetWidth || 600;
-              const H = this.el.offsetHeight || 150;
-              const padding = { top: 20, right: 50, bottom: 10, left: 50 };
-              const innerW = W - padding.left - padding.right;
-              const innerH = H - padding.top - padding.bottom;
-              const hier = d3.hierarchy(root);
-              const treeLayout = d3.tree().size([innerW, innerH]);
-              treeLayout(hier);
-              hier.descendants().forEach(d => { if (d.y < 13) d.y = 13; });
-              this.el.innerHTML = "";
-              const svg = d3.select(this.el).append("svg")
-                .attr("width", "100%").attr("height", H)
-                .attr("viewBox", `0 0 ${W} ${H}`).attr("preserveAspectRatio", "xMidYMid meet");
-              const defs = svg.append("defs");
-              const filt = defs.append("filter").attr("id", "cg-glow");
-              filt.append("feGaussianBlur").attr("in", "SourceGraphic").attr("stdDeviation", "3").attr("result", "blur");
-              const merge = filt.append("feMerge");
-              merge.append("feMergeNode").attr("in", "blur");
-              merge.append("feMergeNode").attr("in", "SourceGraphic");
-              const g = svg.append("g").attr("transform", `translate(${padding.left},${padding.top})`);
-              g.selectAll(".cg-link").data(hier.links()).join("path")
-                .attr("fill", "none").attr("stroke", "#334155").attr("stroke-width", 1.5)
-                .attr("d", d3.linkVertical().x(d => d.x).y(d => d.y));
-              const NW = 90, NH = 26;
-              const node = g.selectAll(".cg-node").data(hier.descendants()).join("g")
-                .attr("transform", d => `translate(${d.x},${d.y})`)
-                .style("cursor", "pointer")
-                .on("click", (_e, d) => { window.location.href = `/conversations/${d.data.id}`; });
-              node.append("rect")
-                .attr("x", -NW/2).attr("y", -NH/2).attr("width", NW).attr("height", NH).attr("rx", 4)
-                .attr("fill", d => d.data.source === "ui" ? "#172554" : d.data.source === "agent" ? "#451a03" : "#1c1917")
-                .attr("stroke", d => d.data.id === currentId ? "#38bdf8" : d.data.source === "ui" ? "#3b82f6" : d.data.source === "agent" ? "#d97706" : "#52525b")
-                .attr("stroke-width", d => d.data.id === currentId ? 2 : 1)
-                .attr("filter", d => d.data.id === currentId ? "url(#cg-glow)" : null);
-              node.append("text")
-                .attr("text-anchor", "middle").attr("dy", "0.35em")
-                .attr("fill", d => d.data.id === currentId ? "#e2e8f0" : "#94a3b8")
-                .attr("font-size", "10px").attr("font-family", "ui-monospace, monospace")
-                .text(d => d.data.id.substring(0, 8));
             }
           },
           // ── Theme toggle ────────────────────────────────────────────────────
@@ -344,35 +217,6 @@
               document.addEventListener("keydown", this.trap);
             },
             destroyed() { document.removeEventListener("keydown", this.trap); }
-          },
-          // ── View mode persistence — DB is now the source of truth for the
-          // initial render. This hook only keeps localStorage in sync for
-          // informational purposes; it no longer pushes restore_view_mode on
-          // mount since the server reads the preference from
-          // user.conversation_view_mode at mount time.
-          ViewModePersist: {
-            mounted() {
-              this._viewModeRef = this.handleEvent("view_mode_changed", ({ mode }) => {
-                localStorage.setItem("fountain-view-mode", mode);
-              });
-            },
-            destroyed() {
-              this.removeHandleEvent(this._viewModeRef);
-            }
-          },
-          // ── Roots filter — DB is now the source of truth for the initial render.
-          // This hook only keeps localStorage in sync for informational purposes;
-          // it no longer pushes restore_roots_only on mount since the server reads
-          // the preference from user.conversations_roots_only at mount time.
-          RootsFilterPersist: {
-            mounted() {
-              this._rootsOnlyRef = this.handleEvent("roots_only_changed", ({ value }) => {
-                localStorage.setItem("fountain-sidebar-roots-only", value);
-              });
-            },
-            destroyed() {
-              this.removeHandleEvent(this._rootsOnlyRef);
-            }
           }
         };
 
@@ -422,13 +266,13 @@
             </div>
             <div class="space-y-2">
               <div class="flex items-center justify-between">
-                <span class="text-[var(--color-text-secondary)]">New conversation</span>
+                <span class="text-[var(--color-text-secondary)]">Dashboard</span>
                 <span class="flex gap-1">
                   <kbd class="px-2 py-0.5 bg-[var(--color-bg-2)] border border-[var(--color-border)] rounded text-xs font-mono">
                     g
                   </kbd>
                   <kbd class="px-2 py-0.5 bg-[var(--color-bg-2)] border border-[var(--color-border)] rounded text-xs font-mono">
-                    c
+                    d
                   </kbd>
                 </span>
               </div>

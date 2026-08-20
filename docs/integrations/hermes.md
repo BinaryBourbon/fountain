@@ -28,7 +28,7 @@ Why reach for it:
   Hermes model just picks one by name.
 - **Conversations are multi-turn and durable.** Hermes gets a
   `conversation_id`, can follow up in the same sandbox, and the same
-  conversation is open in the Fountain web UI while it runs.
+  conversation is open in the Fountain conversations app while it runs.
 - **Fan-out is a loop of tool calls**, not orchestration code.
 
 ## Setup
@@ -128,7 +128,7 @@ environment's setup script.
   from the environment's repo, or ask the agent to print them). Images in
   prompts are not passed through.
 - **Agents are chosen, not managed.** Creating or editing agents, environments
-  and vaults is the web UI, the CLI or `fountain apply`; the plugin lists and
+  and vaults is Fountain's console, the CLI or `fountain apply`; the plugin lists and
   runs what exists.
 
 The plugin source and its tests are at

@@ -1,0 +1,138 @@
+defmodule FountainWeb.DashboardLiveTest do
+  @moduledoc """
+  The console's home (#867). It is what a new account lands on, so it carries
+  what the onboarding wizard used to: the three things that have to be true
+  before an agent can run, ticked as they are done — but as a list the
+  account can ignore, not four pages it cannot leave.
+  """
+
+  use FountainWeb.ConnCase, async: false
+
+  import Phoenix.LiveViewTest
+
+  setup %{conn: conn} do
+    user = insert_verified_user()
+
+    original = Application.fetch_env(:fountain, :conversations_app_url)
+
+    on_exit(fn ->
+      case original do
+        {:ok, v} -> Application.put_env(:fountain, :conversations_app_url, v)
+        :error -> Application.delete_env(:fountain, :conversations_app_url)
+      end
+    end)
+
+    Application.put_env(:fountain, :conversations_app_url, "https://apps.test/convs/")
+
+    {:ok, conn: login_user(conn, user), user: user}
+  end
+
+  test "a brand-new account is told what is missing, and where to do it", %{conn: conn} do
+    {:ok, _lv, html} = live(conn, ~p"/dashboard")
+
+    assert html =~ "Before an agent can run"
+    assert html =~ "An inference credential"
+    assert html =~ "/account/inference-credentials"
+    assert html =~ "An agent"
+    assert html =~ "/agents/new"
+    assert html =~ "https://apps.test/convs/#/new"
+  end
+
+  test "a step that is done is ticked and loses its call to action", %{conn: conn, user: user} do
+    insert_agent(user_id: user.id)
+
+    {:ok, _lv, html} = live(conn, ~p"/dashboard")
+
+    assert html =~ "Before an agent can run"
+    refute html =~ "/agents/new"
+  end
+
+  test "the checklist disappears once there is nothing left in it", %{conn: conn, user: user} do
+    insert_agent(user_id: user.id)
+    insert_conversation(user_id: user.id)
+
+    {:ok, dek} = Fountain.Crypto.load_tenant_key(user.id)
+
+    {:ok, _} =
+      Fountain.InferenceCredentials.put_credential(
+        user.id,
+        dek,
+        :anthropic_api_key,
+        "sk-ant-test-key-000000000000",
+        actor: "ui"
+      )
+
+    {:ok, _lv, html} = live(conn, ~p"/dashboard")
+
+    refute html =~ "Before an agent can run"
+  end
+
+  # The wizard's last step used to stamp this; the funnel's "onboarded" stage
+  # reads it, so the console has to keep it true (#867).
+  test "an account with a credential and an agent is marked onboarded", %{conn: conn, user: user} do
+    refute user.onboarding_completed_at
+
+    insert_agent(user_id: user.id)
+    {:ok, dek} = Fountain.Crypto.load_tenant_key(user.id)
+
+    {:ok, _} =
+      Fountain.InferenceCredentials.put_credential(
+        user.id,
+        dek,
+        :anthropic_api_key,
+        "sk-ant-test-key-000000000000",
+        actor: "ui"
+      )
+
+    {:ok, _lv, _html} = live(conn, ~p"/dashboard")
+
+    assert Fountain.Accounts.get_user(user.id).onboarding_completed_at
+  end
+
+  test "an account still missing a piece is not", %{conn: conn, user: user} do
+    insert_agent(user_id: user.id)
+
+    {:ok, _lv, _html} = live(conn, ~p"/dashboard")
+
+    refute Fountain.Accounts.get_user(user.id).onboarding_completed_at
+  end
+
+  test "the apps are linked out to, and the primitives linked in to", %{conn: conn, user: user} do
+    insert_agent(user_id: user.id)
+    insert_env(user_id: user.id)
+    insert_vault(user_id: user.id)
+
+    {:ok, _lv, html} = live(conn, ~p"/dashboard")
+
+    assert html =~ "https://apps.test/convs/"
+    assert html =~ ~p"/agents"
+    assert html =~ ~p"/environments"
+    assert html =~ ~p"/vaults"
+  end
+
+  test "a recent conversation links into the app, not to a page that is gone", %{
+    conn: conn,
+    user: user
+  } do
+    agent = insert_agent(user_id: user.id, name: "picard")
+    conv = insert_conversation(user_id: user.id, agent_id: agent.id)
+
+    {:ok, _lv, html} = live(conn, ~p"/dashboard")
+
+    assert html =~ "picard"
+    assert html =~ "https://apps.test/convs/#/c/#{conv.id}"
+    refute html =~ ~s|href="/conversations/#{conv.id}"|
+  end
+
+  test "a deployment with no conversations app links to none of it", %{conn: conn, user: user} do
+    Application.put_env(:fountain, :conversations_app_url, "")
+    insert_agent(user_id: user.id)
+    insert_conversation(user_id: user.id)
+
+    {:ok, _lv, html} = live(conn, ~p"/dashboard")
+
+    refute html =~ "apps.test/convs"
+    # And it does not ask for a conversation it has nowhere to start.
+    refute html =~ "Start one"
+  end
+end

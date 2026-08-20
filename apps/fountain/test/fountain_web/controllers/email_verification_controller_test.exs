@@ -8,14 +8,16 @@ defmodule FountainWeb.EmailVerificationControllerTest do
   alias Fountain.Workers.WelcomeEmail
 
   describe "GET /users/confirm/:token" do
-    test "verifies email, sets session, and redirects to onboarding for new user", %{conn: conn} do
+    test "verifies email, sets session, and redirects to the dashboard for a new user", %{
+      conn: conn
+    } do
       user = insert_user()
       assert is_nil(user.email_verified_at)
 
       token = Phoenix.Token.sign(FountainWeb.Endpoint, "email_verification", user.id)
       conn = get(conn, ~p"/users/confirm/#{token}")
 
-      assert redirected_to(conn) == ~p"/onboarding/step_1"
+      assert redirected_to(conn) == ~p"/dashboard"
       assert get_session(conn, :user_id) == user.id
 
       # User should be verified in DB
@@ -53,7 +55,7 @@ defmodule FountainWeb.EmailVerificationControllerTest do
       refute_enqueued(worker: WelcomeEmail)
     end
 
-    test "redirects already-verified user without onboarding_completed_at to onboarding", %{
+    test "redirects an already-verified user to the dashboard", %{
       conn: conn
     } do
       user = insert_verified_user()
@@ -62,11 +64,11 @@ defmodule FountainWeb.EmailVerificationControllerTest do
       token = Phoenix.Token.sign(FountainWeb.Endpoint, "email_verification", user.id)
       conn = get(conn, ~p"/users/confirm/#{token}")
 
-      assert redirected_to(conn) == ~p"/onboarding/step_1"
+      assert redirected_to(conn) == ~p"/dashboard"
       assert get_session(conn, :user_id) == user.id
     end
 
-    test "redirects already-verified user with onboarding_completed_at to dashboard", %{
+    test "redirects an already-verified, onboarded user to the dashboard too", %{
       conn: conn
     } do
       user = insert_verified_user()
@@ -80,7 +82,7 @@ defmodule FountainWeb.EmailVerificationControllerTest do
 
       conn = get(conn, ~p"/users/confirm/#{token}")
 
-      assert redirected_to(conn) == ~p"/"
+      assert redirected_to(conn) == ~p"/dashboard"
       assert get_session(conn, :user_id) == user_with_onboarding.id
     end
 

@@ -110,11 +110,8 @@ defmodule FountainWeb.SessionController do
     redirect(conn, to: path)
   end
 
-  defp after_login_path(user) do
-    if user.onboarding_completed_at do
-      ~p"/conversations"
-    else
-      ~p"/onboarding/step_1"
-    end
-  end
+  # One landing, whatever the account's state: the console's dashboard says
+  # what is still missing (a credential, an agent) without the wizard's
+  # taking the account hostage until it is done (#867).
+  defp after_login_path(_user), do: ~p"/dashboard"
 end

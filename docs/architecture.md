@@ -14,7 +14,7 @@ sidecars, and scaling out means running more replicas of the same image.
 
 | Piece | Job |
 |---|---|
-| **Phoenix endpoint** | The one public listener: the LiveView UI, the REST API, and SSE streaming, all on the same port |
+| **Phoenix endpoint** | The one public listener: the operator console, the REST API, and SSE streaming, all on the same port |
 | **Conversation server** | One process per active conversation. Owns the sandbox: provisions it, spawns turns in it, streams output back, enforces lifecycle bounds. Holds the decrypted tenant key in memory for the duration. Registered cluster-wide, so exactly one exists per conversation no matter how many replicas run |
 | **Rehydrator** | Runs once at boot. Finds conversations that were live before the restart and restarts their servers, which reattach to the still-running sprite — a deploy does not kill running work |
 | **Oban** | Background jobs (billing syncs, lifecycle emails, account exports on the `exports` queue) and the cron schedule below |
@@ -118,7 +118,7 @@ Progress is recorded as **stage events**. The stage names below are the exact
 strings shown in the UI, the SSE stream and the log rows, each with a state of
 `started`, `done`, `failed` or `interrupted`.
 
-1. **Gates.** A prompt arrives — UI, or `POST /api/conversations`. In order:
+1. **Gates.** A prompt arrives — `POST /api/conversations`, or a client on it. In order:
    the agent must exist *and belong to you* (every query in the system is
    tenant-scoped); the vault must be on the agent's allowlist; the
    subscription gate, when billing is enabled (`402` otherwise); the

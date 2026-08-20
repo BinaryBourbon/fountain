@@ -115,17 +115,50 @@ Environments.upsert_secret(env, %{"key" => "TOKEN", "value" => "plaintext"}, dek
 - Returns `{:ok, result}` or `{:error, {:missing_vars, sorted_list}}`
 - Recursively walks maps and lists; collects **all** missing vars, not just the first
 
+## The web UI is a console
+
+Fountain's own browser UI is an **operator console**: the dashboard, agents,
+environments, vaults, audit, API keys, account and admin. It is deliberately
+not an interactive application.
+
+Watching an agent work and messaging a teammate are separate single-page apps
+on `/api`, on their own origins with their own OAuth clients:
+
+| App | Repo | Replaced |
+|---|---|---|
+| Conversations | [jhgaylor/fountain-conversations](https://github.com/jhgaylor/fountain-conversations) | `/conversations`, `/conversations/new`, `/conversations/:id`, `/conversations/:id/logs` |
+| Team | [jhgaylor/fountain-team](https://github.com/jhgaylor/fountain-team) | `/team`, `/team/:agent_id` |
+
+`Fountain.Apps` is the only place that knows where they live
+(`CONVERSATIONS_APP_URL` / `TEAM_APP_URL`, defaulting to the hosted builds;
+`""` means this deployment has none). Anything that links a human to a
+transcript — the console, an email, a forwarded support report, `/api/catalog`
+— reads it from there. The old paths redirect (`FountainWeb.MovedController`)
+rather than 404, and `/onboarding*` goes to the dashboard, whose checklist
+replaced the wizard.
+
+**Building a conversation-facing feature? It goes in the app, not here.** The
+server's job is to serve it: `?blocks=true` on `/events` and the streams means
+no client re-parses a runtime dialect.
+
 ## LiveView auth hooks
 
-`FountainWeb.Live.Hooks` provides three `on_mount` guards:
+`FountainWeb.Live.Hooks` provides these `on_mount` guards:
 
 | Hook | Unauthenticated | Authenticated but ineligible |
 |---|---|---|
 | `require_authenticated_user` | `redirect` to `/auth/login` | — |
-| `require_active_subscription` | `redirect` to `/auth/login` (via `require_authenticated_user`, which must run first) | `redirect` to `/account/billing` |
 | `require_admin` | `redirect` to `/auth/login` | `push_navigate` to `/dashboard` |
+| `assign_subscription_state` | — | never halts; assigns `@subscription_active` |
 
-The distinction matters in tests: plain `redirect` yields `{:redirect, _}` (login and billing redirects), while `push_navigate` yields `{:live_redirect, _}` (the non-admin case in `require_admin`).
+The distinction matters in tests: plain `redirect` yields `{:redirect, _}` (the
+login redirect), while `push_navigate` yields `{:live_redirect, _}` (the
+non-admin case in `require_admin`).
+
+There is no router-level subscription gate. It guarded exactly one page,
+`/conversations/new`, which moved out to the app. The gate that protects spend
+is `Billing.assert_active!/1` **in the context** (ADR 0006), so every door gets
+it — see `ee/test/fountain/billing_gate_test.exs`.
 
 ## Rate limiter
 
