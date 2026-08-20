@@ -149,7 +149,7 @@ defmodule Fountain.Workers.SupportForward do
   defp context_lines(ctx, base) do
     [
       ctx["conversation_id"] &&
-        "**Conversation:** #{base}/conversations/#{ctx["conversation_id"]} (`#{ctx["conversation_id"]}`)",
+        "**Conversation:** #{conversation_link(ctx["conversation_id"], base)} (`#{ctx["conversation_id"]}`)",
       ctx["agent_id"] &&
         "**Agent:** #{ctx["agent_name"] || ""} `#{ctx["agent_id"]}` · #{ctx["runtime"] || ""} #{ctx["model"] || ""}",
       ctx["sandbox"] && "**Sandbox:** `#{inspect(ctx["sandbox"])}`",
@@ -158,6 +158,12 @@ defmodule Fountain.Workers.SupportForward do
     ]
     |> Enum.reject(&(&1 in [nil, false]))
     |> Enum.join("\n")
+  end
+
+  # The transcript lives in the conversations app, not in Fountain's console;
+  # a deployment without one gets the API URL, which is at least fetchable.
+  defp conversation_link(id, base) do
+    Fountain.Apps.conversation_url(id) || "#{base}/api/conversations/#{id}"
   end
 
   defp first_line(message) do

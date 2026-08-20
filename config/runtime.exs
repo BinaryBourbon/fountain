@@ -971,6 +971,21 @@ config :fountain,
        |> String.split(",", trim: true)
        |> Enum.map(&String.trim/1)
 
+# ── The browser apps on top of the API ────────────────────────────────────
+#
+# Fountain's own UI is a console; conversations and the team roster are
+# separate single-page apps (Fountain.Apps). Both default to the builds
+# hosted at jakegaylor.com, which work against any Fountain the reader types
+# in — provided this server admits that origin in API_CORS_ORIGINS. Point
+# these at your own deployment instead, or set one to "" to say this
+# deployment has no such app.
+for {key, env} <- [conversations_app_url: "CONVERSATIONS_APP_URL", team_app_url: "TEAM_APP_URL"] do
+  case System.get_env(env) do
+    nil -> :ok
+    value -> config :fountain, key, String.trim(value)
+  end
+end
+
 # ── OAuth clients ─────────────────────────────────────────────────────────
 #
 # The public browser apps allowed to sign in with Fountain (#818), as JSON:

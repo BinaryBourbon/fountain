@@ -158,7 +158,7 @@ class RunTests(unittest.TestCase):
             self.assertEqual(out["tools_used"], ["read_file", "terminal"])
             self.assertEqual(out["exit_code"], 0)
             self.assertEqual(out["agent"]["name"], "reviewer")
-            self.assertEqual(out["url"], f"{fake.base_url}/conversations/c-1")
+            self.assertEqual(out["url"], "https://jakegaylor.com/fountain-conversations/#/c/c-1")
             create = next(b for m, p, b, _ in st.requests if m == "POST" and p == "/api/conversations")
             self.assertEqual(create, {"agent_id": "a-1", "prompt": "say hi", "vault_id": "v-1"})
 

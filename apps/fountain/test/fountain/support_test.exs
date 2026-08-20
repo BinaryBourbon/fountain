@@ -110,7 +110,9 @@ defmodule Fountain.SupportTest do
       assert_received {:github, "https://api.github.com/repos/o/r/issues", opts}
       assert opts[:json].title == "[bug] first line"
       assert opts[:json].body =~ "coo"
-      assert opts[:json].body =~ "/conversations/c1"
+      # The transcript link goes to the conversations app, not to a console
+      # route that no longer exists (#866).
+      assert opts[:json].body =~ Fountain.Apps.conversation_url("c1")
       assert opts[:json].body =~ user.email
       assert {"authorization", "Bearer tok"} in opts[:headers]
     end

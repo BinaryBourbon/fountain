@@ -16,11 +16,15 @@ the whole life of a long turn.
 from __future__ import annotations
 
 import json
+import os
 import threading
 import time
 from typing import Any, Callable
 
 from .client import FountainClient, FountainError
+
+# The standalone conversations app Fountain sends people to for a transcript.
+DEFAULT_APP_URL = "https://jakegaylor.com/fountain-conversations/"
 
 TERMINAL_TURN_STATES = ("done", "failed", "interrupted")
 TERMINAL_CONVERSATION_STATUSES = ("failed", "terminated")
@@ -153,7 +157,7 @@ class FountainTools:
             "conversation_id": conv_id,
             "agent": {"id": agent.get("id"), "name": agent.get("name"), "runtime": agent.get("runtime")},
             "turn_number": 1,
-            "url": f"{client.base_url}/conversations/{conv_id}",
+            "url": conversation_url(conv_id, client.base_url),
         }
         if args.get("wait") is False:
             return {**base, "status": conv.get("status"), "done": False,
@@ -169,7 +173,7 @@ class FountainTools:
         client.send_prompt(conv_id, prompt)
         self.tracker.follow(conv_id, next_turn)
         base = {"conversation_id": conv_id, "turn_number": next_turn,
-                "url": f"{client.base_url}/conversations/{conv_id}"}
+                "url": conversation_url(conv_id, client.base_url)}
         if args.get("wait") is False:
             return {**base, "status": "queued", "done": False,
                     "note": "Not waiting. Call fountain_wait with this conversation_id to collect the answer."}
@@ -188,7 +192,7 @@ class FountainTools:
                         "output": "", "note": "This conversation has no turns yet."}
             self.tracker.follow(conv_id, latest)
         return {"conversation_id": conv_id, "turn_number": st["turn_number"],
-                "url": f"{client.base_url}/conversations/{conv_id}",
+                "url": conversation_url(conv_id, client.base_url),
                 **self._follow(client, conv_id, self._timeout(args))}
 
     def _status(self, args: dict) -> dict:
@@ -387,6 +391,20 @@ def _clip(text: str, limit: int) -> str:
     return text[:head] + f"\n…[{len(text) - limit} chars elided]…\n" + text[-tail:]
 
 
+def conversation_url(conv_id: str, base_url: str) -> str:
+    """Where a human reads this conversation.
+
+    Fountain's own UI is a console; the transcript lives in the standalone
+    conversations app, which routes on the fragment. `FOUNTAIN_APP_URL`
+    points at a different deployment of it (or at "" to fall back to the
+    API URL, which is at least fetchable).
+    """
+    app = os.environ.get("FOUNTAIN_APP_URL", DEFAULT_APP_URL).strip()
+    if not app:
+        return f"{base_url}/api/conversations/{conv_id}"
+    return f"{app.rstrip('/')}/#/c/{conv_id}"
+
+
 def _conversation_summary(c: dict, base_url: str) -> dict:
     return {
         "id": c.get("id"),
@@ -397,5 +415,5 @@ def _conversation_summary(c: dict, base_url: str) -> dict:
         "turn_count": c.get("turn_count"),
         "last_active_at": c.get("last_active_at"),
         "unread": c.get("unread"),
-        "url": f"{base_url}/conversations/{c.get('id')}",
+        "url": conversation_url(str(c.get("id")), base_url),
     }

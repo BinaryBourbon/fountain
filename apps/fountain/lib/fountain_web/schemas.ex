@@ -2226,9 +2226,27 @@ defmodule FountainWeb.Schemas do
                 moods: %Schema{type: :array, items: %Schema{type: :string}}
               },
               required: [:bases, :moods]
+            },
+            apps: %Schema{
+              type: :object,
+              description:
+                "Where this instance sends a human to watch a conversation or " <>
+                  "message a teammate. Null for an app this deployment does not have.",
+              properties: %{
+                conversations: %Schema{type: :string, nullable: true},
+                team: %Schema{type: :string, nullable: true}
+              },
+              required: [:conversations, :team]
             }
           },
-          required: [:runtimes, :models, :sandbox_providers, :package_managers, :avatar]
+          required: [
+            :runtimes,
+            :models,
+            :sandbox_providers,
+            :package_managers,
+            :avatar,
+            :apps
+          ]
         }
       },
       required: [:data]
