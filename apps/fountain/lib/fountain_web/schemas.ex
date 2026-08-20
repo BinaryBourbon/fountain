@@ -151,6 +151,14 @@ defmodule FountainWeb.Schemas do
             "The external channel key this conversation is bound to, if it was created with one."
         },
         turn_count: %Schema{type: :integer},
+        first_prompt: %Schema{
+          type: :string,
+          nullable: true,
+          readOnly: true,
+          description:
+            "The first turn's prompt — what to title an untitled conversation " <>
+              "with. Null until the first turn exists."
+        },
         last_active_at: %Schema{
           type: :string,
           format: :"date-time",

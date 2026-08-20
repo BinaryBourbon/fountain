@@ -18,6 +18,11 @@ upgrade, is in
 
 ### Added
 
+- **`first_prompt` on conversation JSON.** `GET /api/conversations` and
+  `GET /api/conversations/:id` carry the first turn's prompt, so a client
+  can title an untitled conversation the way the web sidebar does without
+  a `/turns` call per row. Null until the first turn exists.
+
 - **A teammate with its own email address and phone number** (proof of
   concept, behind the `team_comms` feature flag). `POST
   /api/team/:agent_id/contact` provisions an AgentMail inbox and an
