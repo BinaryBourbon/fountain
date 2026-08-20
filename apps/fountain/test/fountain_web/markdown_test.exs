@@ -241,4 +241,59 @@ end|
       assert Markdown.to_trusted_html(nil) == ""
     end
   end
+
+  describe "to_trusted_html/1 — fenced code is highlighted" do
+    test "a labelled fence is coloured and keeps its language" do
+      html = Markdown.to_trusted_html("```elixir\ndef run(x), do: x\n```")
+
+      assert html =~ ~s(class="language-elixir")
+      assert html =~ "style=\"color:"
+      assert html =~ "run"
+    end
+
+    test "an unlabelled fence still renders, as plaintext" do
+      html = Markdown.to_trusted_html("```\njust some output\n```")
+
+      assert html =~ ~s(class="language-plaintext")
+      assert html =~ "just some output"
+    end
+
+    test "an unknown language falls back rather than dropping the block" do
+      html = Markdown.to_trusted_html("```notalanguage\nkeep me\n```")
+
+      assert html =~ "keep me"
+    end
+
+    test "an info string with more than a language uses the first word" do
+      html = Markdown.to_trusted_html(~s(```bash title="setup"\necho hi\n```))
+
+      assert html =~ ~s(class="language-bash")
+    end
+
+    test "the closing fence does not leave a trailing blank line" do
+      html = Markdown.to_trusted_html("```ts\nconst x = 1;\n```")
+
+      assert html =~ ~s(data-line="1")
+      refute html =~ ~s(data-line="2")
+    end
+
+    test "code is escaped, so a fence cannot break out of its own block" do
+      html = Markdown.to_trusted_html("```html\n</code></pre><script>alert(1)</script>\n```")
+
+      # The highlighter colours per token, so the escaped source arrives split
+      # across spans — what matters is that no live tag is emitted and the
+      # block is still a single <pre>.
+      refute html =~ "<script"
+      assert html =~ "&lt;"
+      assert html =~ "alert"
+      assert length(String.split(html, "<pre")) == 2
+    end
+
+    test "the untrusted path leaves code blocks unhighlighted" do
+      html = Markdown.to_html("```elixir\ndef run(x), do: x\n```")
+
+      assert html =~ ~s(<code class="language-elixir">)
+      refute html =~ "style=\"color:"
+    end
+  end
 end

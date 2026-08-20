@@ -61,6 +61,7 @@ defmodule Fountain.Docs do
     {"CLI reference", "cli.md"},
     {"API reference", "api.md"},
     {"TypeScript SDK", "sdk.md"},
+    {"Guided tour — opening a PR", "tour.md"},
     {"LLM integration", "llm-integration.md"},
     {"Changelog", "changelog.md"}
   ]
