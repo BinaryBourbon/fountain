@@ -3,7 +3,8 @@ import { resolveConfig, type ConfigOptions, type ResolvedConfig } from "./config
 import { Resolver } from "./resolve.ts";
 import { Run, type RunOptions } from "./run.ts";
 import { Conversation } from "./conversation.ts";
-import type { Agent, Conversation as ConversationRecord, NamedResource } from "./types.ts";
+import { Agents, Environments, Vaults } from "./resources.ts";
+import type { Conversation as ConversationRecord } from "./types.ts";
 
 export interface FountainOptions extends ConfigOptions {
   /** Swap the fetch implementation — a test server, a proxy, an instrumented one. */
@@ -59,6 +60,13 @@ export class Fountain {
   readonly api: HttpClient;
   readonly config: ResolvedConfig;
 
+  /** Define, read, change and delete agents. */
+  readonly agents: Agents;
+  /** Environments and their secrets. */
+  readonly environments: Environments;
+  /** Vaults and their secrets. */
+  readonly vaults: Vaults;
+
   private readonly resolver: Resolver;
 
   constructor(options: FountainOptions = {}) {
@@ -68,6 +76,9 @@ export class Fountain {
       timeoutMs: options.timeoutMs,
     });
     this.resolver = new Resolver(this.api);
+    this.agents = new Agents(this.api, this.resolver);
+    this.environments = new Environments(this.api, this.resolver);
+    this.vaults = new Vaults(this.api, this.resolver);
   }
 
   /**
@@ -126,26 +137,6 @@ export class Fountain {
    */
   resume(conversationId: string): Conversation {
     return new Conversation(this.api, conversationId);
-  }
-
-  /** The agents on this account. */
-  async agents(search?: string): Promise<Agent[]> {
-    return this.api.list<Agent>("/api/agents", { query: { search } });
-  }
-
-  /** One agent, by name or id. */
-  async agent(nameOrId: string): Promise<Agent> {
-    return (await this.resolver.resolve("/api/agents", "agent", nameOrId)) as Agent;
-  }
-
-  /** The vaults on this account. */
-  async vaults(): Promise<NamedResource[]> {
-    return this.api.list<NamedResource>("/api/vaults");
-  }
-
-  /** The environments on this account. */
-  async environments(): Promise<NamedResource[]> {
-    return this.api.list<NamedResource>("/api/environments");
   }
 
   /** The account's conversations, newest first. */

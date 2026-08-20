@@ -29,6 +29,15 @@ upgrade, is in
   the mid-turn reconnect in one place. Zero runtime dependencies, Node 20.19+.
   Documented at `docs/sdk.md`.
 
+  The SDK also defines what it runs: `fountain.agents`, `fountain.environments`
+  and `fountain.vaults` each have `list`/`get`/`create`/`update`/`delete` taking
+  a name or an id, and the two latter carry `secrets.set`/`setAll`/`list`/
+  `delete`. `AgentInput` is the whole agent definition as one type — runtime,
+  model, system prompt, skills, MCP servers, sandbox provider and the two
+  allowlists — so `docs/sdk.md` can show a complete definition on one screen
+  instead of describing it. Payloads keep the API's own key names, so one
+  definition reads identically in the SDK, the REST API and a `fountain.yml`.
+
 ### Fixed
 
 - **The dashboard's token total counted only fresh input.** A coding agent

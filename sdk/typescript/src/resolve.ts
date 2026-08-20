@@ -26,9 +26,14 @@ export class Resolver {
     this.http = http;
   }
 
-  /** Drop the memoized listings — call after creating an agent elsewhere. */
+  /** Drop every memoized listing. */
   clear(): void {
     this.cache.clear();
+  }
+
+  /** Drop one memoized listing — after a create, rename or delete. */
+  forget(path: string): void {
+    this.cache.delete(path);
   }
 
   list(path: string): Promise<Named[]> {

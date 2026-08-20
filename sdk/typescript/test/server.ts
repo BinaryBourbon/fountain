@@ -36,12 +36,16 @@ export interface FakeConversation {
 }
 
 export class FakeFountain {
-  readonly agents = [
+  agents: Record<string, unknown>[] = [
     { id: "11111111-1111-1111-1111-111111111111", name: "reposage", runtime: "claude", model: "opus" },
     { id: "22222222-2222-2222-2222-222222222222", name: "reporter", runtime: "codex", model: "gpt" },
   ];
-  readonly vaults = [{ id: "aaaaaaaa-1111-1111-1111-111111111111", name: "github-bot" }];
-  readonly environments = [{ id: "bbbbbbbb-1111-1111-1111-111111111111", name: "monorepo" }];
+  vaults: Record<string, unknown>[] = [{ id: "aaaaaaaa-1111-1111-1111-111111111111", name: "github-bot" }];
+  environments: Record<string, unknown>[] = [
+    { id: "bbbbbbbb-1111-1111-1111-111111111111", name: "monorepo" },
+  ];
+  /** Secrets by `${collection}:${parentId}` → key → value. Never read back out. */
+  readonly secrets = new Map<string, Map<string, string>>();
 
   readonly conversations = new Map<string, FakeConversation>();
   /** Every request the SDK made, for assertions about the wire. */
@@ -154,10 +158,19 @@ export class FakeFountain {
 
     const path = url.pathname;
 
-    if (path === "/api/agents") return json(res, 200, { data: this.agents });
-    if (path === "/api/vaults") return json(res, 200, { data: this.vaults });
-    if (path === "/api/environments") return json(res, 200, { data: this.environments });
     if (path === "/api/auth/me") return json(res, 200, { data: { email: "test@example.com" } });
+
+    const collection = /^\/api\/(agents|vaults|environments)(?:\/([^/]+))?(?:\/(secrets)(?:\/(.+))?)?$/.exec(path);
+    if (collection) {
+      return this.collection(req, res, {
+        name: collection[1] as "agents" | "vaults" | "environments",
+        id: collection[2],
+        secrets: collection[3] === "secrets",
+        key: collection[4],
+        body,
+        search: url.searchParams.get("search"),
+      });
+    }
 
     if (path === "/api/conversations" && req.method === "POST") {
       return json(res, 201, { data: this.createConversation(body as Record<string, unknown>) });
@@ -188,6 +201,84 @@ export class FakeFountain {
     }
 
     json(res, 404, { error: "no route" });
+  }
+
+  /** The agent/vault/environment endpoints, including their secrets. */
+  private collection(
+    req: IncomingMessage,
+    res: ServerResponse,
+    q: {
+      name: "agents" | "vaults" | "environments";
+      id?: string | undefined;
+      secrets: boolean;
+      key?: string | undefined;
+      body: unknown;
+      search: string | null;
+    },
+  ): void {
+    const items = this[q.name];
+    const method = req.method ?? "GET";
+    const singular = { agents: "agent", vaults: "vault", environments: "environment" }[q.name];
+
+    if (!q.id) {
+      if (method === "GET") {
+        const data = q.search
+          ? items.filter((item) => String(item.name ?? "").includes(q.search as string))
+          : items;
+        return json(res, 200, { data });
+      }
+      if (method === "POST") {
+        const attrs = (q.body ?? {}) as Record<string, unknown>;
+        if (!attrs.name) return json(res, 422, { error: "name is required" });
+        // The API takes attributes flat, not wrapped under a resource key —
+        // asserted here so a wrapped payload fails loudly.
+        if (attrs[singular]) return json(res, 422, { error: `unexpected ${singular} wrapper` });
+        const created = { id: `${q.name}-${items.length + 1}`, ...attrs };
+        items.push(created);
+        return json(res, 201, { data: created });
+      }
+      return json(res, 405, { error: "method not allowed" });
+    }
+
+    const index = items.findIndex((item) => item.id === q.id);
+    if (index === -1) return json(res, 404, { error: "not found" });
+    const item = items[index] as Record<string, unknown>;
+
+    if (q.secrets) {
+      const bag = this.secrets.get(`${q.name}:${q.id}`) ?? new Map<string, string>();
+      this.secrets.set(`${q.name}:${q.id}`, bag);
+
+      if (method === "GET") {
+        // Keys only, never values.
+        return json(res, 200, {
+          data: [...bag.keys()].map((key) => ({ id: `sec-${key}`, key })),
+        });
+      }
+      if (method === "POST") {
+        const attrs = (q.body ?? {}) as Record<string, unknown>;
+        if (typeof attrs.key !== "string" || typeof attrs.value !== "string") {
+          return json(res, 422, { error: "key and value are required" });
+        }
+        bag.set(attrs.key, attrs.value);
+        return json(res, 201, { data: { id: `sec-${attrs.key}`, key: attrs.key } });
+      }
+      if (method === "DELETE" && q.key) {
+        if (!bag.delete(decodeURIComponent(q.key))) return json(res, 404, { error: "not found" });
+        return json(res, 204, null);
+      }
+      return json(res, 405, { error: "method not allowed" });
+    }
+
+    if (method === "GET") return json(res, 200, { data: item });
+    if (method === "PATCH") {
+      Object.assign(item, (q.body ?? {}) as Record<string, unknown>);
+      return json(res, 200, { data: item });
+    }
+    if (method === "DELETE") {
+      items.splice(index, 1);
+      return json(res, 204, null);
+    }
+    return json(res, 405, { error: "method not allowed" });
   }
 
   private createConversation(body: Record<string, unknown>): FakeConversation {

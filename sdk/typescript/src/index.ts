@@ -2,6 +2,7 @@ export { Fountain, type FountainOptions, type RunConfig } from "./client.ts";
 export { Run, type RunOptions } from "./run.ts";
 export { Conversation, type SendOptions } from "./conversation.ts";
 export { HttpClient, type FetchLike, type RequestOptions } from "./http.ts";
+export { Agents, Environments, Vaults } from "./resources.ts";
 export {
   resolveConfig,
   conversationUrl,
@@ -24,15 +25,26 @@ export {
 } from "./errors.ts";
 export type {
   Agent,
+  AgentInput,
   Block,
   Conversation as ConversationRecord,
   ConversationStatus,
+  Environment,
+  EnvironmentInput,
   LogEvent,
   NamedResource,
+  NetworkingType,
+  Repository,
+  Runtime,
   RunEvent,
   RunResult,
+  SandboxProvider,
+  Secret,
+  SkillInput,
   Turn,
   TurnState,
+  Vault,
+  VaultInput,
 } from "./types.ts";
 
 import { Fountain } from "./client.ts";

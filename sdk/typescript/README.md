@@ -42,6 +42,14 @@ in the model's context, and never in the log feed this SDK reads. Swapping
 `vault: "github-bot"` for `vault: "github-readonly"` changes what the agent can
 do without changing a word of the task.
 
+There is a second layer under that, and it is worth knowing about because it
+changes what you can safely let an agent do: Fountain redacts every value of 8
+bytes or more that it placed in the sandbox's environment out of the
+conversation's output, on the single write path every log event goes through.
+An `env`, a `set -x`, a `cat .env`, or an agent simply asked to print its token
+persists as `[REDACTED]`. The secret reaches the process that needs it and not
+the transcript, the database, or this SDK.
+
 ## What it replaces
 
 Every integration that ever talked to Fountain wrote the same wrapper first —
@@ -159,6 +167,65 @@ A turn that **fails** is a result, not an exception — the agent ran and has
 something to say about it. Check `state`. Only a transport failure, a rejected
 request or a timeout throws.
 
+## Defining what you run
+
+`run()` names an agent; this is where the agent comes from. The whole
+vocabulary fits on one screen:
+
+```ts
+const environment = await fountain.environments.create({
+  name: "fountain-ci",
+  packages: { apt: ["ripgrep"] },
+  env_vars: { MIX_ENV: "test" },
+  repositories: [
+    { url: "https://github.com/BinaryBourbon/fountain", mount_path: "/work/fountain" },
+  ],
+  setup_script: "cd /work/fountain && mix deps.get",
+  networking_type: "limited",
+  networking_config: { allowed_hosts: ["github.com", "hex.pm", "api.anthropic.com"] },
+});
+
+const vault = await fountain.vaults.create({ name: "github-bot" });
+await fountain.vaults.secrets.set("github-bot", "GITHUB_TOKEN", process.env.GITHUB_TOKEN!);
+
+const agent = await fountain.agents.create({
+  name: "reposage",
+  runtime: "claude",
+  model: "anthropic/claude-sonnet-5",
+  system: "You are a careful reader of other people's code.",
+  environment_id: environment.id,
+  skills: [
+    { source: "obra/superpowers", ref: "v2.1.0" },
+    { name: "house-style", content: "# House style\n\nPrefer small diffs." },
+  ],
+  mcp_servers: { linear: { command: "npx", args: ["-y", "linear-mcp"] } },
+  allowed_vault_ids: [vault.id],   // this agent may attach that vault, and no other
+});
+
+await fountain.run("Find every N+1 query and open a PR", {
+  agent: "reposage",
+  vault: "github-bot",
+});
+```
+
+`agents`, `environments` and `vaults` all have the same five verbs — `list`,
+`get`, `create`, `update`, `delete` — and take a name or an id:
+
+```ts
+await fountain.agents.update("reposage", { model: "anthropic/claude-opus-5" });
+await fountain.environments.secrets.set("fountain-ci", "HEX_API_KEY", "…");
+await fountain.vaults.secrets.list("github-bot");   // keys only — never values
+await fountain.vaults.secrets.delete("github-bot", "GITHUB_USER");
+```
+
+Secret values are write-only. `list` returns keys and nothing else: the SDK can
+put a credential into a sandbox and cannot read it back out.
+
+**Why `environment_id` and not `environmentId`.** Resource payloads use the
+API's own key names, so one definition reads identically in the SDK, in the
+REST API and in a `fountain.yml` manifest. Options that control the SDK's own
+behaviour — `timeoutMs`, `signal` — are camelCase, because those are not data.
+
 ## Follow-ups
 
 ```ts
@@ -213,8 +280,8 @@ one-line fix rather than a trip to the console.
 ## The rest of the API
 
 The verbs above are the ones worth wrapping. Everything else Fountain exposes —
-61 paths and counting: environments, secrets, audit, schedules, the team, API
-keys — is one call away, with the same auth, retries and error mapping:
+61 paths and counting: audit, schedules, the team, API keys, conversation trees
+and images — is one call away, with the same auth and error mapping:
 
 ```ts
 await fountain.request("GET", "/api/audit", { query: { limit: 50 } });
