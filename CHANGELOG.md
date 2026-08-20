@@ -41,6 +41,23 @@ upgrade, is in
     that used it; the bearer route (`/api/conversations/:id/turns/:id/images/:n`)
     is unchanged.
 
+  **Upgrade notes — self-hosted.** `/conversations` and `/team` now send a
+  browser to the hosted apps at `https://jakegaylor.com`. They are static
+  builds that take *your* Fountain's URL as input, so they work against your
+  server — but only once it admits that origin:
+
+  ```
+  API_CORS_ORIGINS=https://jakegaylor.com          # add to what you already set
+  ```
+
+  Add `https://jakegaylor.com/fountain-conversations/` and
+  `.../fountain-team/` to `OAUTH_CLIENTS` too if you want "Sign in with
+  Fountain" rather than pasting an API key. Prefer to host your own copies?
+  Point `CONVERSATIONS_APP_URL` / `TEAM_APP_URL` at them. Prefer neither? Set
+  both to `""`: the console stops offering them and the old paths land on the
+  dashboard instead of sending anyone off-site. Nothing about the API
+  changes — a deployment driven by the CLI or `/api` is unaffected either way.
+
 ### Added
 
 - **`Fountain.Apps` — one place that knows where the browser apps live.**

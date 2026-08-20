@@ -1,6 +1,6 @@
 # Fountain
 
-Fountain is a **multi-tenant API and UI** for managing agents, repos, secrets, and conversations. It's for people who want to create sandboxed coding agent instances with preconfigured sets of env vars, MCP servers, skills, repos, and packages.
+Fountain is a **multi-tenant API** for managing agents, repos, secrets, and conversations, with an operator console over it and standalone apps for watching an agent work. It's for people who want to create sandboxed coding agent instances with preconfigured sets of env vars, MCP servers, skills, repos, and packages.
 
 !!! tip "In a hurry?"
     Install the CLI and point it at a Fountain instance:
