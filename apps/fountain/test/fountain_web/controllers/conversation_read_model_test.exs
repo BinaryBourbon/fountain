@@ -60,6 +60,37 @@ defmodule FountainWeb.ConversationReadModelTest do
       assert json["last_active_at"]
     end
 
+    test "index and show carry the first turn's prompt; null before it exists", %{
+      conn: conn,
+      user: user,
+      key: key
+    } do
+      titled = insert_conversation(user_id: user.id)
+      insert_turn(titled, prompt: "Fix the flaky test in CI")
+      insert_turn(titled, turn_number: 2, prompt: "Now the other one")
+      fresh = insert_conversation(user_id: user.id)
+
+      by_id =
+        conn
+        |> authed_with_key(key)
+        |> get("/api/conversations")
+        |> json_response(200)
+        |> Map.fetch!("data")
+        |> Map.new(&{&1["id"], &1})
+
+      assert by_id[titled.id]["first_prompt"] == "Fix the flaky test in CI"
+      assert by_id[fresh.id]["first_prompt"] == nil
+
+      json =
+        conn
+        |> authed_with_key(key)
+        |> get("/api/conversations/#{titled.id}")
+        |> json_response(200)
+        |> Map.fetch!("data")
+
+      assert json["first_prompt"] == "Fix the flaky test in CI"
+    end
+
     test "a read conversation reports unread false", %{conn: conn, user: user, key: key} do
       conv = insert_conversation(user_id: user.id)
       :ok = Conversations.mark_read(conv.id, user.id)

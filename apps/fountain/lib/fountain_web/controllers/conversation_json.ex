@@ -32,6 +32,11 @@ defmodule FountainWeb.ConversationJSON do
     %{
       id: c.id,
       title: c.title,
+      # The first turn's prompt, for clients that title an untitled
+      # conversation the way the console's sidebar did. Only served where the
+      # first turn was preloaded (index and show); null elsewhere and for a
+      # conversation that has no turn yet.
+      first_prompt: first_prompt(c),
       sandbox_id: c.sandbox_id,
       sandbox: sandbox_data(c.sandbox),
       agent_id: c.agent_id,
@@ -59,6 +64,9 @@ defmodule FountainWeb.ConversationJSON do
       updated_at: c.updated_at
     }
   end
+
+  defp first_prompt(%Conversation{turns: [%Turn{turn_number: 1, prompt: prompt} | _]}), do: prompt
+  defp first_prompt(_), do: nil
 
   defp tree_node(%{id: id, source: source, status: status, parent_id: parent_id}) do
     %{id: id, source: source, status: status, parent_id: parent_id}
