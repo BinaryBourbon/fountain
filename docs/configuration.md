@@ -123,6 +123,8 @@ The identity rendered on `/terms` and `/privacy` — the operator's, not the Fou
 | `CHECK_ORIGIN_EXTRA` | — | — | Comma-separated extra origins allowed to open a LiveView websocket. Your own host is always included |
 | `OAUTH_CLIENTS` | — | — | JSON array of `{id, name, redirect_uris}` — the browser apps allowed to "Sign in with Fountain" (OAuth code + PKCE, public clients; `decisions/0021`). Redirect URIs match exactly. Unset means none |
 | `API_CORS_ORIGINS` | — | — | Comma-separated browser origins (or `*`) allowed to call `/api` with a bearer key from another site — what a standalone client such as the team app needs. Off when unset; cookies never cross origins regardless |
+| `CONVERSATIONS_APP_URL` | `https://jakegaylor.com/fountain-conversations/` | — | Where the console sends people to watch a conversation. The default is a static build that takes *your* Fountain's URL as input, so it works for a self-hosted server as soon as `API_CORS_ORIGINS` admits `https://jakegaylor.com`. Point it at your own copy instead, or set it to `""` to say this deployment has no such app |
+| `TEAM_APP_URL` | `https://jakegaylor.com/fountain-team/` | — | The same, for the team roster |
 
 ## Clustering
 
