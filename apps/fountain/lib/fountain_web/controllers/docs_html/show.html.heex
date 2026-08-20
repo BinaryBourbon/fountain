@@ -48,7 +48,25 @@
   </aside>
 
   <article class="flex-1 min-w-0 bg-[var(--color-bg-1)] border border-[var(--color-border)] rounded-lg shadow-sm p-8">
-    <div class="prose prose-zinc dark:prose-invert max-w-none prose-headings:font-semibold prose-headings:tracking-tight prose-pre:bg-zinc-900 prose-pre:text-zinc-100 prose-pre:text-xs prose-code:text-zinc-800 prose-code:bg-zinc-100 dark:prose-code:text-zinc-200 dark:prose-code:bg-zinc-800 prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:before:content-none prose-code:after:content-none prose-a:text-blue-600 dark:prose-a:text-indigo-400">
+    <%!-- The `prose-code:` chip (background, padding, rounding) is for *inline*
+    code; Tailwind Typography's `code` variant also matches the `<code>` inside
+    a `<pre>`, which paints a light box behind every line of every code block.
+    The `[&_pre_code]:` resets below undo it inside a fence, where the
+    highlighter's own colours and the block's background are what should show.
+    Admonitions arrive as blockquotes (docs/*.md `!!! note`), so the blockquote
+    is styled as a note: no italics, no typographic quote marks. --%>
+    <div class={[
+      "prose prose-zinc dark:prose-invert max-w-none",
+      "prose-headings:font-semibold prose-headings:tracking-tight",
+      "prose-a:text-blue-600 dark:prose-a:text-indigo-400",
+      "prose-pre:bg-[var(--color-code-bg)] prose-pre:text-[var(--color-code-text)] prose-pre:text-xs",
+      "prose-code:text-zinc-800 prose-code:bg-zinc-100 dark:prose-code:text-zinc-200 dark:prose-code:bg-zinc-800",
+      "prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:font-normal",
+      "prose-code:before:content-none prose-code:after:content-none",
+      "[&_pre_code]:bg-transparent [&_pre_code]:text-inherit [&_pre_code]:p-0 [&_pre_code]:rounded-none",
+      "prose-blockquote:not-italic prose-blockquote:font-normal",
+      "[&_blockquote_p]:before:content-none [&_blockquote_p]:after:content-none"
+    ]}>
       {Phoenix.HTML.raw(@body_html)}
     </div>
   </article>

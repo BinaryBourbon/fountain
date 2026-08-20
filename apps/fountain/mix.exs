@@ -57,6 +57,10 @@ defmodule Fountain.MixProject do
       {:telemetry_poller, "~> 1.0"},
       {:jason, "~> 1.2"},
       {:mdex, "~> 0.13.5"},
+      # Syntax highlighting for the docs corpus. Called directly rather than
+      # through MDEx's integration, which needs a NIF build an order of
+      # magnitude larger — see `FountainWeb.Markdown`.
+      {:lumis, "~> 0.7"},
       {:dns_cluster, "~> 0.2.0"},
       {:bandit, "~> 1.5"},
       {:remote_ip, "~> 1.2"},

@@ -53,6 +53,16 @@ upgrade, is in
 
 ### Fixed
 
+- **Every line of every code block in `/docs` and `/help` had a light box
+  painted behind it.** Tailwind Typography's `code` variant matches the
+  `<code>` inside a `<pre>` as well as inline code, so the inline-code chip —
+  pale background, padding, rounded corners — was applied line by line inside
+  the dark code blocks. The chip is now scoped to inline code. While there:
+  fenced code is syntax highlighted (Lumis, `github_dark_high_contrast`,
+  whose background matches the console's `--color-code-bg`), as it already was
+  on the published MkDocs site, and admonitions — which arrive as blockquotes —
+  no longer render in italics wrapped in typographic quote marks.
+
 - **`Repository` declared neither `secret_key` nor `ref`.**
   `Provisioning.clone_https/4` reads both — `secret_key` names the secret the
   clone authenticates with, `ref` picks a branch — so a private repository

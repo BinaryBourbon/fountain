@@ -26,15 +26,22 @@ defmodule FountainWeb.Markdown do
   make the filter stricter.
   """
 
-  alias MDEx.{Document, HtmlBlock, HtmlInline, Image, Link, Paragraph, Text}
+  alias MDEx.{CodeBlock, Document, HtmlBlock, HtmlInline, Image, Link, Paragraph, Text}
 
   @extension [table: true, strikethrough: true, tasklist: true]
+
+  # Syntax highlighting theme for fenced code on the trusted path. Its near-black
+  # background (#0a0c10) is within a hair of the console's `--color-code-bg`, so
+  # a highlighted block sits on the same ground as the log viewer's.
+  @theme "github_dark_high_contrast"
 
   @doc """
   Renders untrusted markdown to HTML with raw HTML neutralized and unsafe
   link/image URLs removed.
   """
   def to_html(text) when is_binary(text) do
+    # No syntax highlighting here: untrusted input gets the smallest renderer
+    # surface that does the job, and agent output is read as prose, not code.
     render(text, &sanitize/1, [], unsafe: false, escape: true)
   end
 
@@ -49,6 +56,10 @@ defmodule FountainWeb.Markdown do
   `vbscript:` URLs). Everything else — every other raw-HTML block — is still
   neutralized to text, and the untrusted `to_html/1` path is untouched.
 
+  Fenced code is syntax highlighted here too, for the same reason: the fences
+  are authored, and a docs page whose whole job is showing code should show it
+  the way the published MkDocs site does.
+
   This is only ever fed authored documentation. Never pass agent- or
   user-supplied markdown here; use `to_html/1` for that.
   """
@@ -59,12 +70,14 @@ defmodule FountainWeb.Markdown do
     # empty self-link) so the docs' `#anchor` cross-links resolve in-app the
     # way they do on the MkDocs site (#765). Trusted path only: ids on agent
     # output would be surface with no reader.
-    render(text, &sanitize_trusted/1, [header_id_prefix: ""], unsafe: true)
+    render(text, &trusted_nodes/1, [header_id_prefix: ""], unsafe: true)
   end
 
   def to_trusted_html(_), do: ""
 
-  # `sanitizer` is `&sanitize/1` (untrusted) or `&sanitize_trusted/1` (the docs
+  defp trusted_nodes(nodes), do: nodes |> sanitize_trusted() |> highlight_code()
+
+  # `sanitizer` is `&sanitize/1` (untrusted) or `&trusted_nodes/1` (the docs
   # corpus). Each recurses through its own direct capture rather than
   # threading the mode as a parameter, which keeps Dialyzer's success typing of
   # the recursive walk intact.
@@ -132,6 +145,48 @@ defmodule FountainWeb.Markdown do
     do: [%{node | nodes: sanitize_trusted(children)}]
 
   defp sanitize_trusted(other), do: [other]
+
+  # --- trusted docs corpus: fenced code, highlighted ---
+  #
+  # MDEx can highlight during rendering, but only through a build of its NIF
+  # that bundles every tree-sitter grammar — 147 MB unpacked, against 12 MB for
+  # calling Lumis directly. So the walk swaps each code block for the
+  # highlighter's own markup instead.
+  #
+  # `:html_inline` writes the colours as `style` attributes rather than class
+  # names, so no stylesheet has to be kept in step with the theme; the CSP
+  # allows inline styles (`style-src 'self' 'unsafe-inline'`). Lumis escapes
+  # the source it is given, and this runs on the trusted path only — but the
+  # result is still raw HTML, so an unknown language or a highlighter error
+  # leaves the code block exactly as comrak parsed it.
+  defp highlight_code(nodes) when is_list(nodes), do: Enum.map(nodes, &highlight_code/1)
+
+  defp highlight_code(%CodeBlock{literal: source, info: info} = block) do
+    opts = [formatter: {:html_inline, theme: @theme, language: language(info)}]
+
+    # Comrak keeps the fence's closing newline; Lumis would render it as a
+    # trailing blank line inside every block.
+    case Lumis.highlight(String.trim_trailing(source, "\n"), opts) do
+      {:ok, html} -> %HtmlBlock{literal: html}
+      {:error, _} -> block
+    end
+  end
+
+  defp highlight_code(%{nodes: children} = node), do: %{node | nodes: highlight_code(children)}
+
+  defp highlight_code(other), do: other
+
+  # An info string can carry more than the language (```bash title="x"), and
+  # an empty one means an unlabelled fence — plaintext, which still gets the
+  # theme's background and foreground.
+  defp language(info) when is_binary(info) do
+    case String.split(info, ~r/\s+/, parts: 2) do
+      ["" | _] -> "plaintext"
+      [lang | _] -> lang
+    end
+  end
+
+  defp language(_), do: "plaintext"
 
   # A raw-HTML block becomes a paragraph of text — the renderer escapes text
   # nodes, so the source displays instead of executing. A block that is

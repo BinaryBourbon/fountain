@@ -102,7 +102,21 @@ defmodule FountainWeb.HelpLive.Show do
       </aside>
 
       <article class="flex-1 max-w-3xl bg-white border border-zinc-200 rounded-lg shadow-sm p-8">
-        <div class="prose prose-zinc max-w-none prose-headings:font-semibold prose-headings:tracking-tight prose-pre:bg-zinc-900 prose-pre:text-zinc-100 prose-pre:text-xs prose-code:text-zinc-800 prose-code:bg-zinc-100 prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:before:content-none prose-code:after:content-none prose-a:text-blue-600">
+        <%!-- Same class set as /docs (docs_html/show.html.heex), minus the dark
+        variants this page does not use — see the comment there for why the
+        `[&_pre_code]:` resets are needed. --%>
+        <div class={[
+          "prose prose-zinc max-w-none",
+          "prose-headings:font-semibold prose-headings:tracking-tight",
+          "prose-a:text-blue-600",
+          "prose-pre:bg-[var(--color-code-bg)] prose-pre:text-[var(--color-code-text)] prose-pre:text-xs",
+          "prose-code:text-zinc-800 prose-code:bg-zinc-100",
+          "prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:font-normal",
+          "prose-code:before:content-none prose-code:after:content-none",
+          "[&_pre_code]:bg-transparent [&_pre_code]:text-inherit [&_pre_code]:p-0 [&_pre_code]:rounded-none",
+          "prose-blockquote:not-italic prose-blockquote:font-normal",
+          "[&_blockquote_p]:before:content-none [&_blockquote_p]:after:content-none"
+        ]}>
           {Phoenix.HTML.raw(@body_html)}
         </div>
       </article>
