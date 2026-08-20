@@ -808,7 +808,25 @@ defmodule FountainWeb.Schemas do
       type: :object,
       properties: %{
         url: %Schema{type: :string, format: :uri, pattern: "^https://"},
-        mount_path: %Schema{type: :string, pattern: "^/"}
+        mount_path: %Schema{type: :string, pattern: "^/"},
+        # Both are read by `Provisioning.clone_https/4` and neither was
+        # declared, so a private repository could not be expressed by a client
+        # generated from this spec — and an unauthenticated clone of one fails
+        # inside the sandbox rather than at the API.
+        secret_key: %Schema{
+          type: :string,
+          description:
+            "Name of a secret — on the environment or on a vault attached at launch — " <>
+              "holding a token to clone with. The clone uses it as HTTPS " <>
+              "`x-access-token` auth. Required for a private repository; omit it for a " <>
+              "public one."
+        },
+        ref: %Schema{
+          type: :string,
+          description:
+            "Optional branch or tag to clone (`git clone -b`). Without it the default " <>
+              "branch is cloned."
+        }
       },
       required: [:url, :mount_path]
     })

@@ -28,6 +28,12 @@ upgrade, is in
   `conversation.history()`, `fountain.catalog()`, `fountain.search()` and
   `fountain.events()`.
 
+- **A guided tour** (`docs/tour.md`): an agent that clones a repository, opens
+  a pull request, and then amends the same PR on a follow-up turn thirteen
+  seconds later because the sandbox is still up. Every number and output on the
+  page came from running it; `sdk/typescript/examples/pull-request.ts` is the
+  same thing runnable.
+
   Errors are now keyed on the server's `error` code rather than the status,
   because that is how every app branches: `ConversationBusyError` (a 400),
   `QuotaExceededError` (a 429, carrying `activeSandboxes`/`limit`),
@@ -46,6 +52,13 @@ upgrade, is in
   exists. Generating it immediately found one: see below.
 
 ### Fixed
+
+- **`Repository` declared neither `secret_key` nor `ref`.**
+  `Provisioning.clone_https/4` reads both — `secret_key` names the secret the
+  clone authenticates with, `ref` picks a branch — so a private repository
+  could not be expressed by a client generated from the spec. Without
+  `secret_key` the clone fails *inside the sandbox*: provisioning continues,
+  and the agent opens on an empty directory.
 
 - **`AgentRequest` did not declare `allowed_environment_ids`.** `AgentUpdate`
   declared it and `Agent.changeset/2` has cast it since the allowlist shipped,

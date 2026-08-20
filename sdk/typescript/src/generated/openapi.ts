@@ -1971,6 +1971,10 @@ export interface components {
         /** Repository */
         Repository: {
             mount_path: string;
+            /** @description Optional branch or tag to clone (`git clone -b`). Without it the default branch is cloned. */
+            ref?: string;
+            /** @description Name of a secret — on the environment or on a vault attached at launch — holding a token to clone with. The clone uses it as HTTPS `x-access-token` auth. Required for a private repository; omit it for a public one. */
+            secret_key?: string;
             /** Format: uri */
             url: string;
         };
