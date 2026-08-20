@@ -154,8 +154,8 @@ defmodule FountainWeb.DashboardLive.Index do
           <.metric
             label="Tokens"
             value={format_tokens(@tokens)}
-            sub={if @tokens.input > 0 or @tokens.output > 0, do: "in / out"}
-            hint="On your own inference key — Fountain never bills for these."
+            sub={token_sub(@tokens)}
+            hint={token_hint(@tokens)}
           />
         </div>
         <p :if={@usage.turns == 0} class="mt-2 text-xs text-[var(--color-text-muted)]">
@@ -363,11 +363,37 @@ defmodule FountainWeb.DashboardLive.Index do
 
   defp format_minutes(_), do: "—"
 
-  # Two numbers in one tile: what went up, what came back.
-  defp format_tokens(%{input: 0, output: 0}), do: "—"
+  # Two numbers in one tile: what went in, what came back. "In" is every
+  # token the model read — a coding agent re-reads its context every turn, so
+  # nearly all of it arrives as cached reads, and `input` alone reads as
+  # nothing at all.
+  defp format_tokens(tokens) do
+    case {Conversations.total_input(tokens), tokens.output} do
+      {0, 0} -> "—"
+      {input, output} -> "#{compact(input)} / #{compact(output)}"
+    end
+  end
 
-  defp format_tokens(%{input: input, output: output}),
-    do: "#{compact(input)} / #{compact(output)}"
+  defp token_sub(tokens) do
+    if Conversations.total_input(tokens) > 0 or tokens.output > 0, do: "in / out"
+  end
+
+  # The breakdown belongs somewhere, and a tile is not it — but a reader who
+  # wonders why "in" is so large deserves the answer on hover.
+  defp token_hint(tokens) do
+    cached = tokens.cache_read + tokens.cache_write
+
+    base =
+      "On your own inference key — Fountain never bills for these."
+
+    if cached > 0 do
+      base <>
+        " In includes #{format_count(cached)} read from or written to the prompt cache," <>
+        " and #{format_count(tokens.input)} fresh."
+    else
+      base
+    end
+  end
 
   defp compact(n) when n >= 1_000_000, do: "#{Float.round(n / 1_000_000, 1)}M"
   defp compact(n) when n >= 1_000, do: "#{Float.round(n / 1_000, 1)}k"

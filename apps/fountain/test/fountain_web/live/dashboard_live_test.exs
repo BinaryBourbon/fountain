@@ -166,6 +166,32 @@ defmodule FountainWeb.DashboardLiveTest do
       assert html =~ "1.5k / 250"
     end
 
+    # The tile shipped reading `input` alone, which for a coding agent is a
+    # rounding error next to its cached reads.
+    test "the tokens tile counts the prompt cache, not just fresh input", %{
+      conn: conn,
+      user: user
+    } do
+      conv = insert_conversation(user_id: user.id)
+      turn = insert_turn(conv)
+
+      {:ok, _} =
+        Fountain.Conversations._unsafe_record_turn_usage(turn, %{
+          "input" => 1_471,
+          "cache_read" => 41_317_595,
+          "cache_write" => 3_120_406,
+          "output" => 545_912
+        })
+
+      {:ok, _lv, html} = live(conn, ~p"/dashboard")
+
+      # 1,471 + 41,317,595 + 3,120,406 = 44,439,472 in; 545,912 out.
+      assert html =~ "44.4M / 545.9k"
+      refute html =~ "1.5k / 545.9k"
+      # …and the breakdown is on hover rather than lost.
+      assert html =~ "read from or written to the prompt cache"
+    end
+
     test "an account that has done nothing this month says so", %{conn: conn} do
       {:ok, _lv, html} = live(conn, ~p"/dashboard")
 
