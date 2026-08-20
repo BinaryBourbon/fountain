@@ -59,7 +59,20 @@ COPY ee ./ee
 COPY docs ./docs
 COPY CHANGELOG.md ./
 
+# Lumis downloads a language's tree-sitter parser on first use and caches it
+# under its own priv/. The deployment runs read-only (deployment.yaml sets
+# `readOnlyRootFilesystem: true`), so at runtime that download can neither
+# happen nor be kept, and every fenced block in /docs and /help renders
+# unhighlighted — how #879 shipped. Caching the parsers here, before the
+# release is assembled, puts them in `deps/lumis/priv/lumis`, which `mix
+# release` copies in like any other dependency's priv. `{:ok, _}` is the point:
+# a parser that cannot be fetched fails the build rather than the page.
+# `elixir -e` rather than `mix run`: any mix task here evaluates
+# config/runtime.exs, which demands MASTER_SECRETS_KEY and the rest of the
+# production environment that does not exist during a build. Prepending the
+# compiled ebin paths gives the same code without the config.
 RUN mix compile \
+ && elixir -e 'Enum.each(Path.wildcard("_build/prod/lib/*/ebin"), &Code.prepend_path/1); {:ok, _} = Application.ensure_all_started(:lumis); {:ok, _} = Lumis.Languages.cache(FountainWeb.Markdown.languages())' \
  && mix release fountain_server
 
 # ---

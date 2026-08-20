@@ -61,7 +61,11 @@ upgrade, is in
   fenced code is syntax highlighted (Lumis, `github_dark_high_contrast`,
   whose background matches the console's `--color-code-bg`), as it already was
   on the published MkDocs site, and admonitions — which arrive as blockquotes —
-  no longer render in italics wrapped in typographic quote marks.
+  no longer render in italics wrapped in typographic quote marks. The
+  highlighter's tree-sitter parsers are baked into the image at build time:
+  it otherwise fetches them from a CDN on first use and caches them on disk,
+  and the deployment has neither the egress nor a writable filesystem, so a
+  self-hosted instance would render every fence plain.
 
 - **`Repository` declared neither `secret_key` nor `ref`.**
   `Provisioning.clone_https/4` reads both — `secret_key` names the secret the
