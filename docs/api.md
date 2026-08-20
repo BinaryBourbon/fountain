@@ -2,6 +2,12 @@
 
 Fountain exposes a REST API. All endpoints are under `/api/` and return JSON.
 
+!!! tip "Writing a script, not an integration?"
+
+    The [TypeScript SDK](sdk.md) is one call — `fountain.run(prompt, { agent, vault })` —
+    over the conversation endpoints below. Reach for the raw API when you need
+    a surface the SDK does not wrap, or a language it is not written in.
+
 The authoritative, always-current reference is the served OpenAPI spec:
 
 - `GET /api/openapi.json` - OpenAPI 3.1 spec, generated from the code (public, no auth)

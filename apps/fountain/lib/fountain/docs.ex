@@ -60,6 +60,7 @@ defmodule Fountain.Docs do
     {"The four primitives", "primitives.md"},
     {"CLI reference", "cli.md"},
     {"API reference", "api.md"},
+    {"TypeScript SDK", "sdk.md"},
     {"LLM integration", "llm-integration.md"},
     {"Changelog", "changelog.md"}
   ]

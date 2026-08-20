@@ -1,0 +1,32 @@
+{
+  "name": "fountain-sdk",
+  "version": "0.1.0",
+  "description": "Run a coding agent on a real computer, with your repos and your credentials, in one call.",
+  "license": "MIT",
+  "type": "module",
+  "engines": { "node": ">=20.19" },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/BinaryBourbon/fountain.git",
+    "directory": "sdk/typescript"
+  },
+  "homepage": "https://github.com/BinaryBourbon/fountain/tree/main/sdk/typescript",
+  "keywords": ["fountain", "agent", "sandbox", "coding-agent", "acp", "sdk"],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": ["dist", "README.md"],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node --test test/*.test.ts",
+    "prepublishOnly": "npm run typecheck && npm test && npm run build"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.0"
+  }
+}
