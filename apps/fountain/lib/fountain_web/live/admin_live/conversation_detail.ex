@@ -2,8 +2,10 @@ defmodule FountainWeb.AdminLive.ConversationDetail do
   @moduledoc """
   Admin support view of any tenant's conversation (#446). This is the page the
   admin sandbox table links to — until it existed, those links resolved
-  through the tenant-scoped `ConversationsLive.Show` and 404ed for every
-  conversation the admin didn't own.
+  through the tenant-scoped conversation page and 404ed for every conversation
+  the admin didn't own. That page is the standalone app's now (#867); this one
+  stays, because an operator has to be able to look at a conversation they do
+  not own.
 
   **Metadata only, by design.** Status, timing, turn numbers, exit codes and
   counts are visible; prompts, outputs and log content are not — support can

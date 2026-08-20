@@ -1,136 +1,281 @@
 defmodule FountainWeb.DashboardLive.Index do
-  @moduledoc false
+  @moduledoc """
+  The console's home, and what greets a new account (#867).
+
+  It replaced the onboarding wizard, which was four pages an account could
+  not leave until it finished. The same three things have to be true before
+  an agent can run — an inference credential, an agent, and somewhere to
+  watch it — so they are listed here, ticked as they are done, and the
+  account is free to do them in any order or not at all.
+  """
   use FountainWeb, :live_view
 
-  alias Fountain.{Agents, Conversations}
+  alias Fountain.{
+    Accounts,
+    Agents,
+    Apps,
+    Conversations,
+    Environments,
+    InferenceCredentials,
+    Vaults
+  }
 
   @impl true
   def mount(_params, _session, socket) do
     user = socket.assigns.current_user
-    recent_convs = Conversations.list_conversations(user.id) |> Enum.take(5)
+
     agents = Agents.list_agents(user.id, [])
+    convs = Conversations.list_conversations(user.id)
+    has_credential? = InferenceCredentials.has_any_credential?(user.id)
+
+    # `onboarding_completed_at` used to be stamped by the wizard's last step.
+    # Nothing else ever set it, so with the wizard gone the lifecycle funnel's
+    # "onboarded" stage would have flatlined (Fountain.Funnel). Stamp it here
+    # instead, off what the checklist actually asks for — a truer definition
+    # than "clicked through four pages", and idempotent.
+    maybe_complete_onboarding(user, has_credential?, agents)
 
     {:ok,
      socket
      |> assign(:page_title, "Dashboard")
-     |> assign(:recent_conversations, recent_convs)
      |> assign(:agent_count, length(agents))
-     |> assign(:show_onboarding_banner, not is_nil(user.onboarding_completed_at))}
-  end
-
-  @impl true
-  def handle_event("dismiss_banner", _params, socket) do
-    {:noreply, assign(socket, :show_onboarding_banner, false)}
+     |> assign(:environment_count, length(Environments.list_environments(user.id)))
+     |> assign(:vault_count, length(Vaults.list_vaults(user.id)))
+     |> assign(:has_credential?, has_credential?)
+     |> assign(:active_count, Enum.count(convs, &(&1.status in ["pending", "running"])))
+     |> assign(:conversation_count, length(convs))
+     |> assign(:recent_conversations, Enum.take(convs, 5))
+     |> assign(:conversations_app, Apps.conversations())
+     |> assign(:team_app, Apps.team())}
   end
 
   @impl true
   def render(assigns) do
     ~H"""
-    <div class="space-y-6">
-      <div
-        :if={@show_onboarding_banner}
-        class="rounded bg-green-50 border border-green-200 px-4 py-3 flex items-center justify-between"
-      >
-        <span class="text-sm text-green-800">
-          You're up and running. Explore Environments, Agents, and Vaults in the sidebar.
-        </span>
-        <button
-          phx-click="dismiss_banner"
-          class="text-green-600 hover:text-green-800 text-xs underline ml-4"
-        >
-          Dismiss
-        </button>
-      </div>
-
+    <div class="space-y-8">
       <div class="flex items-center justify-between">
         <h1 class="text-2xl font-semibold">Dashboard</h1>
-        <.link navigate={~p"/conversations/new"}>
-          <.btn>+ New conversation</.btn>
-        </.link>
+        <a :if={@conversations_app} href={@conversations_app <> "#/new"}>
+          <.btn>Start a conversation ↗</.btn>
+        </a>
       </div>
 
-      <div class="grid grid-cols-3 gap-4">
-        <.link
-          navigate={~p"/conversations"}
-          class="rounded border border-zinc-200 bg-white shadow p-4 hover:bg-zinc-50 block"
-        >
-          <p class="text-xs text-zinc-500 uppercase tracking-wide">Recent conversations</p>
-          <p class="text-2xl font-semibold mt-1">{length(@recent_conversations)}</p>
-        </.link>
-        <.link
-          navigate={~p"/agents"}
-          class="rounded border border-zinc-200 bg-white shadow p-4 hover:bg-zinc-50 block"
-        >
-          <p class="text-xs text-zinc-500 uppercase tracking-wide">Agents</p>
-          <p class="text-2xl font-semibold mt-1">{@agent_count}</p>
-        </.link>
-        <.link
-          navigate={~p"/environments"}
-          class="rounded border border-zinc-200 bg-white shadow p-4 hover:bg-zinc-50 block"
-        >
-          <p class="text-xs text-zinc-500 uppercase tracking-wide">Environments</p>
-          <p class="text-2xl font-semibold mt-1">→</p>
-        </.link>
-      </div>
+      <%!-- Setup, when something is still missing. Ticks disappear once
+            everything is in place rather than nagging forever. --%>
+      <section :if={not ready?(assigns)} class="rounded-lg border border-[var(--color-border)] p-5">
+        <h2 class="text-sm font-semibold">Before an agent can run</h2>
+        <p class="mt-1 text-sm text-[var(--color-text-secondary)]">
+          Three things, in any order.
+        </p>
+        <ul class="mt-4 space-y-3">
+          <.setup_step
+            done={@has_credential?}
+            label="An inference credential"
+            hint="Your own Anthropic, OpenAI or Google key — Fountain never bills you for tokens."
+            href={~p"/account/inference-credentials"}
+            cta="Add a key"
+          />
+          <.setup_step
+            done={@agent_count > 0}
+            label="An agent"
+            hint="A name, a runtime and a model — the thing that runs."
+            href={~p"/agents/new"}
+            cta="Create an agent"
+          />
+          <.setup_step
+            :if={@conversations_app}
+            done={@conversation_count > 0}
+            label="A conversation"
+            hint="Runs in an isolated sandbox and streams back live, in the conversations app."
+            href={@conversations_app <> "#/new"}
+            cta="Start one"
+            external
+          />
+        </ul>
+      </section>
 
-      <div :if={@recent_conversations != []}>
-        <h2 class="text-lg font-medium mb-2">Recent conversations</h2>
-        <table class="w-full text-sm bg-white rounded shadow border border-zinc-200">
-          <tbody>
-            <tr
-              :for={c <- @recent_conversations}
-              class="border-b border-zinc-100 last:border-0 hover:bg-zinc-50"
-            >
-              <td class="px-4 py-2">
-                <.link navigate={~p"/conversations/#{c.id}"} class="font-medium hover:underline">
-                  {if c.agent, do: c.agent.name, else: "(no agent)"}
-                </.link>
-              </td>
-              <td class="px-4 py-2"><.conversation_status_badge status={c.status} /></td>
-              <td class="px-4 py-2 text-zinc-500 text-xs">{relative_time(c.updated_at)}</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
+      <%!-- The apps. External on purpose: their own origins, their own
+            tokens, and a deployment may have neither. --%>
+      <section :if={@conversations_app || @team_app}>
+        <h2 class="text-lg font-medium mb-3">Apps</h2>
+        <div class="grid gap-4 sm:grid-cols-2">
+          <.app_card
+            :if={@conversations_app}
+            href={@conversations_app}
+            title="Conversations"
+            body="Start a run, watch it turn by turn, steer it, read the raw log."
+          />
+          <.app_card
+            :if={@team_app}
+            href={@team_app}
+            title="Team"
+            body="Your agents as teammates — one thread each, schedules, and their activity."
+          />
+        </div>
+      </section>
 
-      <div
-        :if={@recent_conversations == []}
-        class="rounded border border-dashed border-zinc-300 p-8 text-center text-zinc-500 space-y-2"
-      >
-        <p>No conversations yet.</p>
-        <.link navigate={~p"/conversations/new"} class="text-zinc-900 underline">
-          Start your first conversation
-        </.link>
-      </div>
+      <section>
+        <h2 class="text-lg font-medium mb-3">What you have</h2>
+        <div class="grid gap-4 grid-cols-2 lg:grid-cols-4">
+          <.stat_card label="Agents" value={@agent_count} href={~p"/agents"} />
+          <.stat_card label="Environments" value={@environment_count} href={~p"/environments"} />
+          <.stat_card label="Vaults" value={@vault_count} href={~p"/vaults"} />
+          <.stat_card label="Running now" value={@active_count} href={@conversations_app} external />
+        </div>
+      </section>
+
+      <section :if={@recent_conversations != []}>
+        <h2 class="text-lg font-medium mb-3">Recent conversations</h2>
+        <div class="overflow-hidden rounded-lg border border-[var(--color-border)]">
+          <table class="w-full text-sm">
+            <tbody>
+              <tr
+                :for={c <- @recent_conversations}
+                class="border-b border-[var(--color-border)] last:border-0"
+              >
+                <td class="px-4 py-2">
+                  <.conv_link conversation={c} app={@conversations_app} />
+                </td>
+                <td class="px-4 py-2"><.badge status={c.status} /></td>
+                <td class="px-4 py-2 text-[var(--color-text-muted)] text-xs">
+                  {relative_time(c.updated_at)}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="mt-2 text-xs text-[var(--color-text-muted)]">
+          Transcripts live in the conversations app; this console keeps the account and the
+          primitives a conversation runs on.
+        </p>
+      </section>
     </div>
     """
   end
 
-  attr :status, :string, required: true
+  defp maybe_complete_onboarding(%{onboarding_completed_at: nil} = user, true, [_ | _]) do
+    Accounts.complete_onboarding(user)
+  end
 
-  defp conversation_status_badge(assigns) do
-    color =
-      case assigns.status do
-        "ready" -> "bg-green-100 text-green-800 border-green-200"
-        # The resting state of every healthy conversation — it fell to the
-        # unrecognised-value grey before (#401).
-        "idle" -> "bg-green-100 text-green-800 border-green-200"
-        "running" -> "bg-blue-100 text-blue-800 border-blue-200"
-        "pending" -> "bg-zinc-100 text-zinc-600 border-zinc-200"
-        "starting" -> "bg-blue-50 text-blue-600 border-blue-200"
-        "terminated" -> "bg-zinc-100 text-zinc-500 border-zinc-200"
-        "failed" -> "bg-red-100 text-red-700 border-red-200"
-        _ -> "bg-zinc-100 text-zinc-500 border-zinc-200"
-      end
+  defp maybe_complete_onboarding(_user, _has_credential?, _agents), do: :ok
 
-    assigns = assign(assigns, :color, color)
+  defp ready?(assigns) do
+    assigns.has_credential? and assigns.agent_count > 0 and
+      (is_nil(assigns.conversations_app) or assigns.conversation_count > 0)
+  end
 
+  attr :done, :boolean, required: true
+  attr :label, :string, required: true
+  attr :hint, :string, required: true
+  attr :href, :string, required: true
+  attr :cta, :string, required: true
+  attr :external, :boolean, default: false
+
+  defp setup_step(assigns) do
     ~H"""
-    <span class={"inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium border #{@color}"}>
-      {@status}
-    </span>
+    <li class="flex items-start gap-3">
+      <span class={[
+        "mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full border text-xs",
+        if(@done,
+          do: "border-green-500 bg-green-500/15 text-green-600",
+          else: "border-[var(--color-border)] text-[var(--color-text-muted)]"
+        )
+      ]}>
+        {if @done, do: "✓", else: "•"}
+      </span>
+      <div class="min-w-0 flex-1">
+        <p class={[
+          "text-sm font-medium",
+          @done && "text-[var(--color-text-muted)] line-through"
+        ]}>
+          {@label}
+        </p>
+        <p :if={not @done} class="text-xs text-[var(--color-text-secondary)]">{@hint}</p>
+      </div>
+      <a
+        :if={not @done and @external}
+        href={@href}
+        class="shrink-0 text-sm text-[var(--color-brand)] hover:underline"
+      >
+        {@cta} ↗
+      </a>
+      <.link
+        :if={not @done and not @external}
+        navigate={@href}
+        class="shrink-0 text-sm text-[var(--color-brand)] hover:underline"
+      >
+        {@cta}
+      </.link>
+    </li>
     """
   end
+
+  attr :href, :string, required: true
+  attr :title, :string, required: true
+  attr :body, :string, required: true
+
+  defp app_card(assigns) do
+    ~H"""
+    <a
+      href={@href}
+      class="block rounded-lg border border-[var(--color-border)] p-4 hover:bg-[var(--color-bg-2)] transition-colors"
+    >
+      <p class="font-medium">{@title} ↗</p>
+      <p class="mt-1 text-sm text-[var(--color-text-secondary)]">{@body}</p>
+    </a>
+    """
+  end
+
+  attr :label, :string, required: true
+  attr :value, :integer, required: true
+  attr :href, :string, default: nil
+  attr :external, :boolean, default: false
+
+  defp stat_card(assigns) do
+    ~H"""
+    <div :if={is_nil(@href)} class="rounded-lg border border-[var(--color-border)] p-4">
+      <p class="text-xs uppercase tracking-wide text-[var(--color-text-muted)]">{@label}</p>
+      <p class="mt-1 text-2xl font-semibold">{@value}</p>
+    </div>
+    <a
+      :if={@href && @external}
+      href={@href}
+      class="block rounded-lg border border-[var(--color-border)] p-4 hover:bg-[var(--color-bg-2)] transition-colors"
+    >
+      <p class="text-xs uppercase tracking-wide text-[var(--color-text-muted)]">{@label} ↗</p>
+      <p class="mt-1 text-2xl font-semibold">{@value}</p>
+    </a>
+    <.link
+      :if={@href && not @external}
+      navigate={@href}
+      class="block rounded-lg border border-[var(--color-border)] p-4 hover:bg-[var(--color-bg-2)] transition-colors"
+    >
+      <p class="text-xs uppercase tracking-wide text-[var(--color-text-muted)]">{@label}</p>
+      <p class="mt-1 text-2xl font-semibold">{@value}</p>
+    </.link>
+    """
+  end
+
+  attr :conversation, :map, required: true
+  attr :app, :string, default: nil
+
+  defp conv_link(assigns) do
+    assigns = assign(assigns, :name, agent_name(assigns.conversation))
+
+    ~H"""
+    <a
+      :if={@app}
+      href={Fountain.Apps.conversation_url(@conversation.id)}
+      class="font-medium hover:underline"
+    >
+      {@name} ↗
+    </a>
+    <span :if={is_nil(@app)} class="font-medium">{@name}</span>
+    """
+  end
+
+  defp agent_name(%{agent: %{name: name}}), do: name
+  defp agent_name(_), do: "(no agent)"
 
   defp relative_time(nil), do: ""
 

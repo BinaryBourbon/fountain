@@ -62,15 +62,17 @@ defmodule FountainWeb.Live.HooksTest do
       assert html =~ "Check your email"
     end
 
-    test "bounces a verified user to onboarding so the page can't be camped on", %{conn: conn} do
+    test "bounces a verified user to the console so the page can't be camped on", %{conn: conn} do
       user = insert_verified_user()
       conn = login_user(conn, user)
 
       assert {:error, {:redirect, %{to: path}}} = live(conn, ~p"/auth/verify-pending")
-      assert path == "/onboarding/step_1"
+      assert path == "/dashboard"
     end
 
-    test "sends a verified, onboarded user to the conversation list", %{conn: conn} do
+    # One destination whatever the account has set up (#867): the wizard that
+    # used to claim a half-configured account is gone.
+    test "sends an onboarded user to the same place", %{conn: conn} do
       user = insert_verified_user()
 
       {:ok, user} =
@@ -81,7 +83,7 @@ defmodule FountainWeb.Live.HooksTest do
       conn = login_user(conn, user)
 
       assert {:error, {:redirect, %{to: path}}} = live(conn, ~p"/auth/verify-pending")
-      assert path == "/conversations"
+      assert path == "/dashboard"
     end
 
     test "redirects an unauthenticated visitor to login", %{conn: conn} do
@@ -90,63 +92,37 @@ defmodule FountainWeb.Live.HooksTest do
     end
   end
 
-  # ── :require_active_subscription ────────────────────────────────────────────
-
-  describe ":require_active_subscription hook" do
-    # Since #505 only /conversations/new is router-gated — viewing moved to
-    # the :authenticated live_session, tested below.
-    test "allows access for a user with trialing subscription", %{conn: conn} do
-      user = insert_verified_user()
-      # default subscription_status is "trialing"
-      conn = login_user(conn, user)
-      {:ok, _lv, html} = live(conn, ~p"/conversations/new")
-      assert html =~ ~r/conversation/i
-    end
-
-    test "redirects canceled user to /account/billing", %{conn: conn} do
-      user = insert_canceled_user()
-      conn = login_user(conn, user)
-
-      assert {:error, {:redirect, %{to: path}}} = live(conn, ~p"/conversations/new")
-      assert path == "/account/billing"
-    end
-
-    test "redirects past_due user to /account/billing", %{conn: conn} do
-      user = insert_past_due_user()
-      conn = login_user(conn, user)
-
-      assert {:error, {:redirect, %{to: path}}} = live(conn, ~p"/conversations/new")
-      assert path == "/account/billing"
-    end
-  end
-
-  # ── :assign_subscription_state — read-only conversation access (#505) ───────
+  # ── :assign_subscription_state — the console stays readable (#505, #867) ───
+  #
+  # There is no router-level subscription gate any more: it guarded exactly one
+  # page, /conversations/new, which moved out to the conversations app. The
+  # gate that protects spend is `Billing.assert_active!/1` in the context, so
+  # every door gets it — see ee/test/fountain/billing_gate_test.exs.
 
   describe ":assign_subscription_state hook" do
-    test "past_due user can view the conversation list", %{conn: conn} do
+    test "a past_due account still reaches the console", %{conn: conn} do
       user = insert_past_due_user()
-      insert_conversation(user_id: user.id)
       conn = login_user(conn, user)
 
-      {:ok, _lv, html} = live(conn, ~p"/conversations")
-      assert html =~ ~r/conversations/i
+      {:ok, _lv, html} = live(conn, ~p"/dashboard")
+      assert html =~ ~r/dashboard/i
     end
 
-    test "canceled user can view the conversation list", %{conn: conn} do
+    test "a canceled account still reaches the console", %{conn: conn} do
       user = insert_canceled_user()
       conn = login_user(conn, user)
 
-      {:ok, _lv, html} = live(conn, ~p"/conversations")
-      assert html =~ ~r/conversations/i
+      {:ok, _lv, html} = live(conn, ~p"/dashboard")
+      assert html =~ ~r/dashboard/i
     end
 
-    test "past_due user can open a conversation", %{conn: conn} do
-      user = insert_past_due_user()
-      conversation = insert_conversation(user_id: user.id)
+    test "and can still manage its agents", %{conn: conn} do
+      user = insert_canceled_user()
+      agent = insert_agent(user_id: user.id)
       conn = login_user(conn, user)
 
-      {:ok, _lv, html} = live(conn, ~p"/conversations/#{conversation.id}")
-      assert html =~ conversation.id
+      {:ok, _lv, html} = live(conn, ~p"/agents")
+      assert html =~ agent.name
     end
   end
 
@@ -209,64 +185,6 @@ defmodule FountainWeb.Live.HooksTest do
     end
   end
 
-  # ── sidebar roots filter persistence ────────────────────────────────────────
-
-  describe "sidebar roots filter persistence" do
-    setup do
-      user = insert_verified_user()
-      %{user: user}
-    end
-
-    @tag :restore_roots_only
-    test "restore_roots_only sets sidebar_roots_only to true", %{conn: conn, user: user} do
-      conn = login_user(conn, user)
-      {:ok, view, html} = live(conn, ~p"/conversations")
-
-      # default is false — button shows "Show root conversations only"
-      assert html =~ "Show root conversations only"
-
-      render_hook(view, "restore_roots_only", %{})
-
-      assert render(view) =~ "Showing roots only"
-    end
-
-    @tag :restore_roots_only
-    test "restore_roots_only is idempotent when already true", %{conn: conn, user: user} do
-      conn = login_user(conn, user)
-      {:ok, view, _html} = live(conn, ~p"/conversations")
-
-      render_hook(view, "restore_roots_only", %{})
-      render_hook(view, "restore_roots_only", %{})
-
-      assert render(view) =~ "Showing roots only"
-    end
-
-    @tag :push_roots_only_changed
-    test "sidebar_toggle_roots_only pushes roots_only_changed with value true", %{
-      conn: conn,
-      user: user
-    } do
-      conn = login_user(conn, user)
-      {:ok, view, _html} = live(conn, ~p"/conversations")
-
-      view |> element("[phx-click='sidebar_toggle_roots_only']") |> render_click()
-      assert_push_event(view, "roots_only_changed", %{value: "true"})
-    end
-
-    @tag :push_roots_only_changed
-    test "sidebar_toggle_roots_only pushes roots_only_changed with value false when toggled twice",
-         %{conn: conn, user: user} do
-      conn = login_user(conn, user)
-      {:ok, view, _html} = live(conn, ~p"/conversations")
-
-      view |> element("[phx-click='sidebar_toggle_roots_only']") |> render_click()
-      assert_push_event(view, "roots_only_changed", %{value: "true"})
-
-      view |> element("[phx-click='sidebar_toggle_roots_only']") |> render_click()
-      assert_push_event(view, "roots_only_changed", %{value: "false"})
-    end
-  end
-
   # ── Direct on_mount unit tests ───────────────────────────────────────────────
   # The :browser_authenticated plug redirects unauthenticated requests before
   # reaching LiveView, so the is_nil(user) branches are never triggered through
@@ -321,7 +239,7 @@ defmodule FountainWeb.Live.HooksTest do
       {:halt, socket} =
         FountainWeb.Live.Hooks.on_mount(:require_pending_verification, %{}, %{}, socket)
 
-      assert socket.redirected == {:redirect, %{status: 302, to: "/onboarding/step_1"}}
+      assert socket.redirected == {:redirect, %{status: 302, to: "/dashboard"}}
     end
 
     # The router pairs :require_admin after :require_authenticated_user, so

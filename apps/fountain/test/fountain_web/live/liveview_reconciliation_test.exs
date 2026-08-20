@@ -1,61 +1,24 @@
 defmodule FountainWeb.LiveviewReconciliationTest do
   use FountainWeb.ConnCase, async: true
 
-  import Mimic
   import Phoenix.LiveViewTest
 
   alias Fountain.{Agents, Conversations, Environments, Vaults}
 
   # Regression tests for #401: LiveView state loaded at mount and never
-  # reconciled — a log viewer subscribed to a topic nothing publishes on, a
-  # conversation header keyed off a mount-time struct, delete handlers that
-  # crashed on rows deleted elsewhere, and an unmapped `idle` badge.
+  # reconciled — delete handlers that crashed on rows deleted elsewhere, and
+  # an unmapped `idle` badge.
+  #
+  # Three of #401's six items lived on the conversation pages, which are the
+  # standalone app's now (#867). What they pinned did not go with them:
+  # the `conv:<id>` topic is what `GET /api/conversations/:id/stream` reads
+  # (conversation_events_controller_test.exs), and the lapsed-subscription
+  # refusal is the context's gate, tested at every door in
+  # ee/test/fountain/billing_gate_test.exs.
 
   setup %{conn: conn} do
     user = insert_verified_user()
     {:ok, conn: login_user(conn, user), user: user}
-  end
-
-  describe "log viewer topic (#401 item 1)" do
-    test "receives live log events", %{conn: conn, user: user} do
-      agent = insert_agent(user_id: user.id)
-      conv = insert_conversation(user_id: user.id, agent_id: agent.id)
-
-      {:ok, view, _html} = live(conn, ~p"/conversations/#{conv.id}/logs")
-
-      # The real publisher path — publish_stage broadcasts on
-      # "conv:<conversation_id>". The old subscription was on
-      # "conv:<user>:<conv>", which nothing publishes on, so this event
-      # never arrived and the page was a static snapshot.
-      Conversations.publish_stage(conv.id, "provision", "done", %{})
-
-      assert render(view) =~ "provision"
-    end
-  end
-
-  describe "conversation header reconciliation (#401 item 2)" do
-    test "the status badge and buttons track stage events", %{conn: conn, user: user} do
-      agent = insert_agent(user_id: user.id)
-      conv = insert_conversation(user_id: user.id, agent_id: agent.id, status: "pending")
-
-      {:ok, view, html} = live(conn, ~p"/conversations/#{conv.id}")
-      assert html =~ "pending"
-      refute html =~ "phx-click=\"interrupt\""
-
-      # The server's real sequence: write the row, then publish the stage
-      # event. Pre-#401 the handler updated :events but never :conv, so the
-      # badge said "pending" through the whole run and Interrupt never
-      # appeared.
-      {:ok, _} =
-        Conversations.get_conversation(conv.id, user.id)
-        |> Conversations.update_conversation(%{status: "running"})
-
-      Conversations.publish_stage(conv.id, "turn", "started", %{})
-
-      html = render(view)
-      assert html =~ "running"
-      assert html =~ "phx-click=\"interrupt\""
-    end
   end
 
   describe "delete handlers on stale rows (#401 item 3)" do
@@ -93,21 +56,6 @@ defmodule FountainWeb.LiveviewReconciliationTest do
       assert Process.alive?(view.pid)
     end
 
-    test "conversation show survives deleting an already-deleted conversation",
-         %{conn: conn, user: user} do
-      agent = insert_agent(user_id: user.id)
-      conv = insert_conversation(user_id: user.id, agent_id: agent.id)
-
-      {:ok, view, _html} = live(conn, ~p"/conversations/#{conv.id}")
-
-      {:ok, _} = Conversations.delete_conversation(conv)
-
-      # Pre-#401 this deleted the mount-time struct: StaleEntryError, dead
-      # LiveView, reconnect loop. Now: already gone is success.
-      assert {:error, {:live_redirect, %{to: "/conversations"}}} =
-               render_click(view, "delete", %{})
-    end
-
     test "admin actions flash instead of crashing on a deleted user", %{conn: conn} do
       admin = insert_verified_user(role: "admin")
       victim = insert_verified_user()
@@ -120,25 +68,6 @@ defmodule FountainWeb.LiveviewReconciliationTest do
       html = render_click(view, "toggle_admin", %{"id" => victim.id})
       assert html =~ "may have been deleted"
       assert Process.alive?(view.pid)
-    end
-  end
-
-  describe "mid-session refusal flashes (#401 item 5)" do
-    test "a lapsed subscription shows a real message, not a raw atom",
-         %{conn: conn, user: user} do
-      agent = insert_agent(user_id: user.id)
-      conv = insert_conversation(user_id: user.id, agent_id: agent.id, status: "idle")
-
-      {:ok, view, _html} = live(conn, ~p"/conversations/#{conv.id}")
-
-      stub(Fountain.Conversations.ConversationServer, :send_prompt, fn _id, _p, _i, _opts ->
-        {:error, :subscription_required}
-      end)
-
-      render_click(view, "send_prompt", %{"prompt" => "hello"})
-
-      flash = assert_redirect(view, "/account/billing")
-      refute inspect(flash) =~ ":subscription_required"
     end
   end
 

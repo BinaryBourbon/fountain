@@ -91,18 +91,6 @@ defmodule FountainWeb.CrossTenantIsolationTest do
       assert response(conn, 404)
     end
 
-    test "session-authenticated route returns 404 for another user's image", %{conn: conn} do
-      {user_a, user_b, _key_a, _key_b} = two_users()
-      {conv_a, turn_a} = conv_with_image(user_a)
-
-      conn =
-        conn
-        |> login_user(user_b)
-        |> get("/conversations/#{conv_a.id}/turns/#{turn_a.id}/images/0")
-
-      assert response(conn, 404)
-    end
-
     test "owner can still read their own image", %{conn: conn} do
       {user_a, _user_b, key_a, _key_b} = two_users()
       {conv_a, turn_a} = conv_with_image(user_a)

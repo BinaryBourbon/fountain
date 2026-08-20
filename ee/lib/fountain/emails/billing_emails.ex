@@ -27,21 +27,18 @@ defmodule Fountain.Emails.BillingEmails do
   Welcome a just-verified user (#449).
 
   The first email that isn't a chore: everything before it is a verification
-  link and everything after it is billing. Says what to do next (the
-  onboarding wizard) and, for trialing accounts, when the trial ends — the
-  same phrasing `deliver_trial_ending_email/2` will use later, so the two
-  emails agree on the date.
+  link and everything after it is billing. Says what to do next (the console,
+  which lists what is still missing) and, for trialing accounts, when the
+  trial ends — the same phrasing `deliver_trial_ending_email/2` will use
+  later, so the two emails agree on the date.
   """
   @spec deliver_welcome_email(User.t()) :: {:ok, term()} | {:error, term()}
   def deliver_welcome_email(%User{} = user) do
     base_url = Fountain.PublicUrl.base()
 
-    start_url =
-      if user.onboarding_completed_at do
-        base_url
-      else
-        "#{base_url}/onboarding/step_1"
-      end
+    # The console's dashboard, whatever the account has set up: it is the
+    # thing that says what is still missing (#867).
+    start_url = "#{base_url}/dashboard"
 
     trial_text = welcome_trial_phrase(user)
 

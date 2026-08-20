@@ -118,7 +118,7 @@ The same knobs exist on the API as `channel_id` / `fresh` on
   ([#649](https://github.com/BinaryBourbon/fountain/issues/649)).
 - **Closing the client does not stop anything.** The conversation is on the
   server; the process is a window onto it. Reopen with `session/load`, or from
-  the web UI, or `fountain conv`.
+  the conversations app, or `fountain conv`.
 
 ## When something goes wrong
 
@@ -128,7 +128,7 @@ are worded for a reader inside an editor rather than a terminal:
 | Message | Meaning |
 |---|---|
 | `no Fountain agent configured` | The entry has no `--agent`. |
-| `agent "x" runs the gemini runtime, which does not speak ACP` | Use that agent from the web UI or `fountain run`. |
+| `agent "x" runs the gemini runtime, which does not speak ACP` | Use that agent from the conversations app or `fountain run`. |
 | `credentials for … were rejected` | Run `fountain auth login`. The message names the instance it tried, which is usually the surprise. |
 | `could not resolve agent "x" on …` | Wrong name, or the right name on a different instance. |
 | `the sandbox never started: …` | Provisioning failed — the reason is the sandbox provider's. |

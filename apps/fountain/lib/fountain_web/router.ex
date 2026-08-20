@@ -509,43 +509,32 @@ defmodule FountainWeb.Router do
     post "/account/security/password", AccountSecurityController, :change_password
     post "/account/security/email", AccountSecurityController, :request_email_change
 
-    # ── Turn image serving — session-authenticated so <img> tags can load without a bearer token ──────────
-    get "/conversations/:conversation_id/turns/:turn_id/images/:position",
-        TurnImageController,
-        :show
+    # ── The pages that moved out (#867) ───────────────────────────────────────
+    # Conversations and the team roster are their own apps on the API now, and
+    # onboarding is the dashboard's own first-run guidance. These paths are in
+    # sent emails, filed issues, agents' skills and bookmarks, so they redirect
+    # rather than 404. `/conversations/new` is declared before `/:id` or "new"
+    # reads as a conversation id.
+    get "/conversations", MovedController, :conversations
+    get "/conversations/new", MovedController, :new_conversation
+    get "/conversations/:id", MovedController, :conversation
+    get "/conversations/:id/:logs", MovedController, :conversation
+    get "/team", MovedController, :team
+    get "/team/:agent_id", MovedController, :team
+    get "/onboarding", MovedController, :onboarding
+    get "/onboarding/:step", MovedController, :onboarding
 
-    # ── Phase-3-billing: starting a conversation requires an active subscription ────────────
-    # :require_active_subscription runs after :require_authenticated_user and
-    # redirects to /account/billing on SubscriptionRequiredError. Only /new
-    # lives here since #505 — viewing moved to :authenticated below.
-    live_session :active_subscription,
-      on_mount: [
-        {FountainWeb.Live.Hooks, :require_authenticated_user},
-        {FountainWeb.Live.Hooks, :require_active_subscription}
-      ] do
-      live "/conversations/new", ConversationsLive.New, :new
-    end
-
-    # ── Read-only and settings routes — no subscription gate ──────────────────────────────────
-    # Users can reach these routes even when past_due / canceled so they can
-    # view past conversations and logs, manage resources, complete onboarding,
-    # and update payment details. Conversation list/detail moved here in #505
-    # (the ADR 0006 read-only promise): the gate protects spend, so the
-    # spend-creating events inside ConversationsLive.Show are guarded
-    # per-event via @subscription_active instead of gating the whole view.
+    # ── The console ───────────────────────────────────────────────────────────
+    # What Fountain's own UI is for: the account, its keys and credentials, and
+    # the three primitives a conversation runs on. No subscription gate — a
+    # lapsed account can still read and manage what it has, and the gate that
+    # protects spend is in the context (ADR 0006), not here.
     live_session :authenticated,
       on_mount: [
         {FountainWeb.Live.Hooks, :require_authenticated_user},
         {FountainWeb.Live.Hooks, :assign_subscription_state}
       ] do
       live "/dashboard", DashboardLive.Index, :index
-      live "/onboarding", OnboardingLive.Wizard, :index
-      live "/onboarding/:step", OnboardingLive.Wizard, :show
-      live "/team", TeamLive, :index
-      live "/team/:agent_id", TeamLive, :show
-      live "/conversations", ConversationsLive.Index, :index
-      live "/conversations/:id", ConversationsLive.Show, :show
-      live "/conversations/:id/logs", LogViewerLive.Show, :show
       live "/agents", AgentsLive.Index, :index
       live "/agents/new", AgentsLive.Form, :new
       live "/agents/:id/edit", AgentsLive.Form, :edit

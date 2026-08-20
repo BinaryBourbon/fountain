@@ -16,7 +16,12 @@ defmodule Fountain.Funnel do
 
   - **registered** — a `users` row exists
   - **verified** — `email_verified_at` set
-  - **onboarded** — `onboarding_completed_at` set
+  - **onboarded** — `onboarding_completed_at` set. Since #867 that means the
+    account has an inference credential and an agent (the console stamps it),
+    rather than "clicked through the wizard". `by_onboarding_state` in the
+    stall breakdown is the vestige of that wizard — it now only distinguishes
+    `step_1` from `completed`; `built_agent` / `built_environment` /
+    `built_nothing` are the live signal.
   - **activated** — first conversation: the earliest of a `conversations` row
     or a `sandbox_provisioned` usage event. The union matters: conversations
     can be deleted, usage events predate nothing after metering (#213) — either

@@ -90,7 +90,7 @@ defmodule FountainWeb.UeberauthController do
         |> configure_session(renew: true)
         |> put_session(:user_id, user.id)
         |> put_session(:session_version, user.session_version)
-        |> redirect(to: ~p"/onboarding/step_1")
+        |> redirect(to: ~p"/dashboard")
 
       {:ok, user, :existing} ->
         if Fountain.Accounts.suspended?(user) do
@@ -113,7 +113,7 @@ defmodule FountainWeb.UeberauthController do
             metadata: %{"provider" => provider}
           )
 
-          {conn, path} = FountainWeb.ReturnTo.pop(conn, ~p"/conversations")
+          {conn, path} = FountainWeb.ReturnTo.pop(conn, ~p"/dashboard")
 
           conn
           |> configure_session(renew: true)

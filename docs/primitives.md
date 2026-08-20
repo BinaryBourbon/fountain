@@ -125,11 +125,12 @@ pending -> running -> idle -> running   (idle between turns; a follow-up prompt 
 
 Any non-terminal state can move to `terminated` via `POST /api/conversations/:id/terminate`.
 
-### The team page: agents as teammates
+### The team: agents as teammates
 
-`/team` in the web UI lays conversations out like a messaging app — the
-roster on the left, one thread on the right — and treats each agent as a
-teammate with **one** ongoing conversation. There is no fifth primitive
+The [team app](https://github.com/jhgaylor/fountain-team) lays conversations
+out like a messaging app — the roster on the left, one thread on the right —
+on `/api/team`, and treats each agent as a teammate with **one** ongoing
+conversation. There is no fifth primitive
 behind it: a teammate *is* a Conversation, bound to the reserved channel
 `fountain:team` the same way a Buzz channel binds one through `channel_id`.
 Adding an agent to the team opens that conversation, which provisions the
@@ -139,7 +140,9 @@ terminated conversation is replaced by a fresh one under the same binding,
 so the teammate stays reachable. Removing a teammate terminates the live
 conversation and unbinds the agent's conversations from the channel; the
 rows stay in the ordinary conversation list. "Details" on a thread opens the
-full conversation view (stages, tool calls, raw output).
+full transcript in the
+[conversations app](https://github.com/jhgaylor/fountain-conversations)
+(stages, tool calls, raw output).
 
 When you add a teammate you can give it a name of its own, pick the
 environment its computer is set up from, and attach a vault. These are the

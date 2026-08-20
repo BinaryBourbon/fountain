@@ -1,12 +1,15 @@
 defmodule FountainWeb.TurnImageServeTest do
   @moduledoc """
-  Content negotiation and spec coverage on the turn-image routes (#578).
+  Content negotiation and spec coverage on the turn-image route (#578).
 
-  The bearer route lived in the `:accepts_json` pipeline, so
-  `plug :accepts, ["json"]` refused an image Accept header with 406 before the
-  action ran: an endpoint returning PNG bytes worked only for a client that
-  did not ask for an image. Browsers hid it on the session route because they
-  append `*/*` to the Accept header they send for `<img>`.
+  The route lived in the `:accepts_json` pipeline, so `plug :accepts,
+  ["json"]` refused an image Accept header with 406 before the action ran: an
+  endpoint returning PNG bytes worked only for a client that did not ask for
+  an image.
+
+  There was a session-authenticated twin, for the `<img>` tags in the web
+  UI's chat bubbles. Those bubbles are the standalone app's now, and it sends
+  a bearer token like every other client, so the twin went with them (#867).
 
   Tenant scoping and the serve-time media-type guard are covered in
   `cross_tenant_isolation_test.exs`; these are about reaching the action at
@@ -92,36 +95,8 @@ defmodule FountainWeb.TurnImageServeTest do
     end
   end
 
-  describe "browser route — unchanged" do
-    test "the session route still serves with a browser-shaped Accept header", %{
-      conn: conn,
-      user: user,
-      path: path
-    } do
-      conn =
-        conn
-        |> login_user(user)
-        |> put_req_header("accept", "image/avif,image/webp,image/apng,image/*,*/*;q=0.8")
-        |> get(path)
-
-      assert response(conn, 200) == @png
-    end
-
-    test "the session route is not reachable with only a bearer token", %{
-      conn: conn,
-      key: key,
-      path: path
-    } do
-      conn = conn |> authed_with_key(key) |> get(path)
-
-      # Session-authenticated: a bearer token is not a session, so this
-      # redirects to login rather than serving.
-      assert conn.status in [302, 401, 403]
-    end
-  end
-
   describe "OpenAPI coverage" do
-    test "the bearer route is in the spec and the browser route is not" do
+    test "the route is in the spec, and the retired session twin is not" do
       paths = FountainWeb.ApiSpec.spec().paths
 
       assert %OpenApiSpex.Operation{} =

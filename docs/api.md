@@ -56,7 +56,7 @@ Changing the password signs out browser sessions (`session_version` bumps) but d
 
 The email endpoint answers identically whether or not the address is free — it is not an availability oracle — and the address only changes when the emailed token is submitted to `POST /api/auth/email/confirm`.
 
-**Session cookie:** Obtained via OAuth at `/auth/oauth/:provider` or email/password login. Used by the web UI.
+**Session cookie:** Obtained via OAuth at `/auth/oauth/:provider` or email/password login. Used by Fountain's own console.
 
 ### Sign in with Fountain (OAuth 2.0 for browser apps)
 
@@ -296,7 +296,7 @@ Page by passing the previous response's `meta.next_cursor` as `after`; keep goin
 
 `?blocks=true` — on `/events`, on `/stream` and on `/api/events/stream` — adds
 `blocks` to every event: its `data` parsed server-side into the structured
-blocks a transcript renders, the same parse the web UI uses
+blocks a transcript renders, the same parse the conversations app uses
 (`Fountain.Conversations.Blocks`). A client never re-implements a runtime's
 dialect (ADR 0014, applied to the wire). Kinds and their fields:
 
@@ -363,7 +363,7 @@ prompt only until the one-time backfill runs on the server:
 
 ## Team
 
-The roster [`/team`](primitives.md#the-team-page-agents-as-teammates) shows, for
+The roster [`/team`](primitives.md#the-team-agents-as-teammates) shows, for
 clients that are not this web app. A teammate is a conversation bound to the
 reserved channel `fountain:team`; every route here wraps the same
 `Fountain.Team` the page uses, so a standalone client gets the page's exact

@@ -42,8 +42,8 @@ Mint a key with `fountain auth login` (writes `~/.fountain/credentials`) or
 full blast radius of the owning user — treat them like passwords.
 
 > **Common mistake**: hitting `$FOUNTAIN_BASE_URL/conversations` returns 302
-> (the bare path is the LiveView UI). The API path is
-> `$FOUNTAIN_BASE_URL/api/conversations`.
+> (the bare path redirects a browser to the conversations app). The API path
+> is `$FOUNTAIN_BASE_URL/api/conversations`.
 
 ## The CLI is usually the right call
 
@@ -293,7 +293,7 @@ Errors:
 
 ## Important
 
-- **Use `/api/...`** — the bare `/conversations`, `/agents`, etc. are LiveView UI routes that 302 to `/login` for non-browser requests.
+- **Use `/api/...`** — the bare `/conversations`, `/agents`, etc. are browser routes that 302 (to the login page, or out to the app that replaced the page).
 - **`wait=false` for gather** — without it your `curl --max-time 5` sits idle for the full timeout. With it, the SSE stream closes the moment the replay drains.
 - **Parallelize spawn / poll / gather** with `xargs -P` — one provision takes ~5–15s, no reason to do them sequentially.
 - **Costs add up.** Every conversation provisions a real sandbox. Terminate when you're done if you don't need the sandbox to persist.

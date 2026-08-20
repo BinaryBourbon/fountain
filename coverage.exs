@@ -31,8 +31,6 @@
     ~r/^Fountain\.Runtimes\./,
     FountainWeb.SettingsController,
     ~r/^FountainWeb\.AgentsLive\./,
-    ~r/^FountainWeb\.ConversationsLive\./,
-    ~r/^FountainWeb\.DashboardLive\./,
     ~r/^FountainWeb\.EnvironmentsLive\./,
     ~r/^FountainWeb\.HelpLive\./,
     ~r/^FountainWeb\.InferenceCredentialsLive\./
