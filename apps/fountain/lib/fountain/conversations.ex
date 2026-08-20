@@ -526,6 +526,89 @@ defmodule Fountain.Conversations do
   end
 
   @doc """
+  What this tenant's agents spent, in tokens, over a period.
+
+  Summed from `turns.usage` — the figure the runtime reported when the turn
+  ended, which is also what `conversations.usage_input_tokens/_output_tokens`
+  are incremented by. Reading the turns rather than the conversation counters
+  is what makes a period possible: the counters are lifetime totals, and a
+  conversation started in March is still accruing in April.
+
+  Tokens are the tenant's own inference spend — Fountain runs on their key
+  (ADR 0008) and never bills for them — so this is reported, not charged.
+  Turns from before the usage column existed, and runtimes that report no
+  usage, contribute nothing rather than a guess.
+  """
+  @spec token_usage(binary(), DateTime.t(), DateTime.t()) ::
+          %{input: non_neg_integer(), output: non_neg_integer()}
+  def token_usage(user_id, %DateTime{} = from, %DateTime{} = to) when is_binary(user_id) do
+    # The sum happens in Postgres: a busy month is tens of thousands of turns,
+    # and this runs on a page load.
+    #
+    # `jsonb_typeof` before the cast, because `usage` is whatever the runtime
+    # reported and nothing validates its shape on the way in. One row with a
+    # string or an object where a number was expected would otherwise take
+    # the whole page down with a cast error.
+    query =
+      from(t in Turn,
+        join: c in Conversation,
+        on: c.id == t.conversation_id,
+        where: c.user_id == ^user_id and t.inserted_at >= ^from and t.inserted_at <= ^to,
+        where: not is_nil(t.usage),
+        select: %{
+          input:
+            sum(
+              fragment(
+                "CASE WHEN jsonb_typeof(?->'input') = 'number' THEN (?->>'input')::bigint ELSE 0 END",
+                t.usage,
+                t.usage
+              )
+            ),
+          output:
+            sum(
+              fragment(
+                "CASE WHEN jsonb_typeof(?->'output') = 'number' THEN (?->>'output')::bigint ELSE 0 END",
+                t.usage,
+                t.usage
+              )
+            )
+        }
+      )
+
+    case Repo.one(query) do
+      %{input: input, output: output} -> %{input: to_count(input), output: to_count(output)}
+      _ -> %{input: 0, output: 0}
+    end
+  end
+
+  # Postgres sums bigints as `numeric`, which arrives as a Decimal. The
+  # callers of this want an integer they can format, and the spec says so.
+  defp to_count(nil), do: 0
+  defp to_count(%Decimal{} = d), do: Decimal.to_integer(d)
+  defp to_count(n) when is_integer(n), do: n
+
+  @doc """
+  How many conversations this tenant has, and how many are live right now.
+
+  Counted in the database. The console's dashboard wants two numbers, not the
+  rows: loading a few hundred conversations with their agents and first turns
+  to arrive at "3" is a page load nobody needs.
+  """
+  @spec conversation_counts(binary()) :: %{total: non_neg_integer(), active: non_neg_integer()}
+  def conversation_counts(user_id) when is_binary(user_id) do
+    query =
+      from(c in Conversation,
+        where: c.user_id == ^user_id,
+        select: %{
+          total: count(c.id),
+          active: filter(count(c.id), c.status in ["pending", "running"])
+        }
+      )
+
+    Repo.one(query) || %{total: 0, active: 0}
+  end
+
+  @doc """
   List conversations for user, ordered by most recently updated.
 
   Pass `roots_only: true` to exclude child conversations (those with a
@@ -536,7 +619,9 @@ defmodule Fountain.Conversations do
   "fountain:team"` (the *bound* channel — a conversation unbound by
   `Fountain.Team.remove_teammate/3` no longer matches; a teammate's full
   history is `Team.list_teammate_conversations/2`), and `status: [..]` (a
-  list of conversation statuses). Unpaged, like the list always was.
+  list of conversation statuses). Unpaged, like the list always was, except
+  for `limit: n` — which the console's dashboard uses to ask for the five it
+  shows instead of every row a busy account has.
 
   Populates the `last_active_at` virtual field using `kind: "output"` log
   events only — stage events (reconnects, lifecycle) are excluded so
@@ -546,6 +631,12 @@ defmodule Fountain.Conversations do
     roots_only = Keyword.get(opts, :roots_only, false)
 
     base = from(c in annotated_query(user_id), order_by: [desc: c.updated_at, desc: c.id])
+
+    base =
+      case Keyword.get(opts, :limit) do
+        n when is_integer(n) and n > 0 -> limit(base, ^n)
+        _ -> base
+      end
 
     query =
       if roots_only do
@@ -874,8 +965,13 @@ defmodule Fountain.Conversations do
   def _unsafe_record_turn_usage(%Turn{usage: %{}}, _usage), do: {:error, :already_recorded}
 
   def _unsafe_record_turn_usage(%Turn{} = turn, %{} = usage) do
-    input = Map.get(usage, "input", 0)
-    output = Map.get(usage, "output", 0)
+    # `usage` is whatever the runtime reported. The map is stored as it came,
+    # but the counters it increments are bigints: a string or an object here
+    # used to raise inside the transaction and take the turn's usage
+    # recording with it. Anything that is not a non-negative integer counts
+    # as nothing, which is what an unreported figure already counts as.
+    input = counter_value(Map.get(usage, "input"))
+    output = counter_value(Map.get(usage, "output"))
 
     Repo.transaction(fn ->
       {:ok, updated} = turn |> Turn.changeset(%{usage: usage}) |> Repo.update()
@@ -889,6 +985,9 @@ defmodule Fountain.Conversations do
       updated
     end)
   end
+
+  defp counter_value(n) when is_integer(n) and n >= 0, do: n
+  defp counter_value(_), do: 0
 
   @terminal_turn_statuses ~w(completed failed interrupted)
 

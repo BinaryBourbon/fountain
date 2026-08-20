@@ -16,6 +16,16 @@ upgrade, is in
 
 ## [Unreleased]
 
+### Fixed
+
+- **A runtime reporting a malformed usage figure no longer breaks recording
+  it.** `turns.usage` is stored as the runtime sent it, but the conversation
+  counters it increments are bigints: a string or an object where a number
+  was expected raised inside the transaction. Anything that is not a
+  non-negative integer now counts as nothing, which is what an unreported
+  figure already counted as. Found while building the dashboard's token
+  total, which guards the same shape on the way out.
+
 ### Changed
 
 - **Fountain's web UI is a console.** The conversation pages
@@ -59,6 +69,18 @@ upgrade, is in
   changes — a deployment driven by the CLI or `/api` is unaffected either way.
 
 ### Added
+
+- **Usage on the console's dashboard.** A "This month" row — conversations,
+  turns, sandbox time, and tokens in/out — on the same calendar the billing
+  page uses (`Billing.current_month_range/0`, promoted out of two identical
+  private copies so the two pages cannot disagree about which month they
+  mean). Usage events are recorded whether or not billing is switched on, so
+  a self-hosted console, which has no billing page at all, sees this too.
+  Tokens are the tenant's own inference spend and are reported, never
+  charged. `Conversations.token_usage/3` sums them in Postgres over the
+  period; `conversation_counts/1` and a `limit:` option on
+  `list_conversations/2` mean the page no longer loads every conversation an
+  account has to render a count and five rows.
 
 - **`Fountain.Apps` — one place that knows where the browser apps live.**
   Conversations and the team roster are standalone single-page apps on the

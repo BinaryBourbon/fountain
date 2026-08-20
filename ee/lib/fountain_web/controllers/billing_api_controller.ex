@@ -172,20 +172,5 @@ defmodule FountainWeb.BillingApiController do
   defp return_url, do: FountainWeb.Endpoint.url() <> "/account/billing"
 
   # The same calendar-month window the billing page reports.
-  defp current_month_range do
-    now = DateTime.utc_now()
-    period_start = %DateTime{now | day: 1, hour: 0, minute: 0, second: 0, microsecond: {0, 0}}
-    last_day = :calendar.last_day_of_the_month(now.year, now.month)
-
-    period_end = %DateTime{
-      now
-      | day: last_day,
-        hour: 23,
-        minute: 59,
-        second: 59,
-        microsecond: {0, 0}
-    }
-
-    {period_start, period_end}
-  end
+  defp current_month_range, do: Billing.current_month_range()
 end
