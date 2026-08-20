@@ -52,6 +52,33 @@ login. With the compose defaults (`EMAIL_DELIVERY=none`,
 being the first, is promoted to admin, recorded in the admin audit trail
 like any other role grant (ADR 0011).
 
+### Watching an agent work
+
+Fountain's own UI is a console — the account, its keys, and the agents,
+environments and vaults a conversation runs on. Watching a conversation turn
+by turn, and messaging an agent as a teammate, are separate single-page apps
+that talk to your `/api`:
+
+| | |
+|---|---|
+| [Conversations](https://jakegaylor.com/fountain-conversations/) | start a run, watch it, steer it, read the raw log |
+| [Team](https://jakegaylor.com/fountain-team/) | your agents as teammates, one thread each |
+
+They are static builds with no server of their own: you type your Fountain's
+URL in, so the hosted copies above work against your deployment as soon as it
+admits the origin —
+
+```bash
+echo "API_CORS_ORIGINS=https://jakegaylor.com" >> .env
+```
+
+— and, if you would rather click "Sign in with Fountain" than paste an API
+key, register them in `OAUTH_CLIENTS` (see the
+[configuration reference](configuration.md)). The console links to whatever
+`CONVERSATIONS_APP_URL` and `TEAM_APP_URL` say, so pointing those at your own
+build of either repo works the same way; setting them to `""` tells the
+console this deployment has neither, and it stops offering them.
+
 Then close registration so nobody else can join:
 
 ```bash
