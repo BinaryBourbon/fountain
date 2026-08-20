@@ -42,7 +42,40 @@ defmodule Fountain.ConversationsUsageTest do
 
       from = DateTime.add(now, -86_400, :second)
 
-      assert Conversations.token_usage(user.id, from, now) == %{input: 105, output: 21}
+      assert Conversations.token_usage(user.id, from, now) ==
+               %{input: 105, cache_read: 0, cache_write: 0, output: 21}
+    end
+
+    # The bug this metric shipped with: a coding agent re-reads its context
+    # every turn, so nearly everything it consumes arrives as `cache_read`.
+    # Prod's first month was 1.5k input against 41M cache_read — reporting
+    # `input` alone as "what went in" was wrong by four orders of magnitude.
+    test "counts the prompt cache, which is where nearly all the input is", %{user: user} do
+      conv = insert_conversation(user_id: user.id)
+      now = DateTime.utc_now() |> DateTime.truncate(:second)
+      at = DateTime.add(now, -60, :second)
+
+      turn_with_usage(
+        conv,
+        %{
+          "input" => 1_471,
+          "cache_read" => 41_317_595,
+          "cache_write" => 3_120_406,
+          "output" => 545_912
+        },
+        at
+      )
+
+      usage = Conversations.token_usage(user.id, DateTime.add(now, -86_400, :second), now)
+
+      assert usage == %{
+               input: 1_471,
+               cache_read: 41_317_595,
+               cache_write: 3_120_406,
+               output: 545_912
+             }
+
+      assert Conversations.total_input(usage) == 44_439_472
     end
 
     test "no turns, and turns that reported no usage, are zero not nil", %{user: user} do
@@ -51,7 +84,8 @@ defmodule Fountain.ConversationsUsageTest do
       now = DateTime.utc_now()
       from = DateTime.add(now, -86_400, :second)
 
-      assert Conversations.token_usage(user.id, from, now) == %{input: 0, output: 0}
+      assert Conversations.token_usage(user.id, from, now) ==
+               %{input: 0, cache_read: 0, cache_write: 0, output: 0}
     end
 
     test "a usage map missing a key contributes nothing for it", %{user: user} do
@@ -59,7 +93,7 @@ defmodule Fountain.ConversationsUsageTest do
       now = DateTime.utc_now() |> DateTime.truncate(:second)
       turn_with_usage(conv, %{"input" => 50}, DateTime.add(now, -60, :second))
 
-      assert %{input: 50, output: 0} =
+      assert %{input: 50, cache_read: 0, cache_write: 0, output: 0} =
                Conversations.token_usage(user.id, DateTime.add(now, -86_400, :second), now)
     end
 
@@ -74,7 +108,7 @@ defmodule Fountain.ConversationsUsageTest do
       turn_with_usage(conv, %{"input" => 10, "output" => 2}, at)
 
       assert Conversations.token_usage(user.id, DateTime.add(now, -86_400, :second), now) ==
-               %{input: 10, output: 2}
+               %{input: 10, cache_read: 0, cache_write: 0, output: 2}
     end
 
     # The same nonsense, on the write side: it used to raise inside the

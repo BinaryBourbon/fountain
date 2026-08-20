@@ -525,22 +525,55 @@ defmodule Fountain.Conversations do
     |> Repo.preload([:sandbox, :agent, :vault])
   end
 
+  @typedoc """
+  A period's tokens, as the runtimes reported them. `cache_read` and
+  `cache_write` are prompt-cache traffic; see `total_input/1`.
+  """
+  @type token_usage :: %{
+          input: non_neg_integer(),
+          cache_read: non_neg_integer(),
+          cache_write: non_neg_integer(),
+          output: non_neg_integer()
+        }
+
+  @token_keys [:input, :cache_read, :cache_write, :output]
+
+  # Only a JSON number is cast. `usage` is whatever the runtime reported and
+  # nothing validates its shape on the way in, so one row with a string where
+  # a number belongs would otherwise take the whole page down with it.
+  defmacrop token_sum(usage, key) do
+    quote do
+      fragment(
+        "CASE WHEN jsonb_typeof(?->?) = 'number' THEN (?->>?)::bigint ELSE 0 END",
+        unquote(usage),
+        unquote(key),
+        unquote(usage),
+        unquote(key)
+      )
+    end
+  end
+
   @doc """
   What this tenant's agents spent, in tokens, over a period.
 
   Summed from `turns.usage` — the figure the runtime reported when the turn
-  ended, which is also what `conversations.usage_input_tokens/_output_tokens`
-  are incremented by. Reading the turns rather than the conversation counters
-  is what makes a period possible: the counters are lifetime totals, and a
+  ended. Reading the turns rather than `conversations.usage_input_tokens` is
+  what makes a period possible: those counters are lifetime totals, and a
   conversation started in March is still accruing in April.
+
+  **All four keys, not two.** A coding agent re-reads its context every turn,
+  so nearly everything it consumes arrives as `cache_read`: a month of real
+  work on this instance was 1.5k `input` against 41M `cache_read`. Reporting
+  `input` alone as "what went in" understates it by four orders of magnitude,
+  which is worse than not reporting it at all. Callers get the breakdown and
+  decide how to present it; `total_input/1` is the sum for the common case.
 
   Tokens are the tenant's own inference spend — Fountain runs on their key
   (ADR 0008) and never bills for them — so this is reported, not charged.
   Turns from before the usage column existed, and runtimes that report no
   usage, contribute nothing rather than a guess.
   """
-  @spec token_usage(binary(), DateTime.t(), DateTime.t()) ::
-          %{input: non_neg_integer(), output: non_neg_integer()}
+  @spec token_usage(binary(), DateTime.t(), DateTime.t()) :: token_usage()
   def token_usage(user_id, %DateTime{} = from, %DateTime{} = to) when is_binary(user_id) do
     # The sum happens in Postgres: a busy month is tens of thousands of turns,
     # and this runs on a page load.
@@ -556,30 +589,29 @@ defmodule Fountain.Conversations do
         where: c.user_id == ^user_id and t.inserted_at >= ^from and t.inserted_at <= ^to,
         where: not is_nil(t.usage),
         select: %{
-          input:
-            sum(
-              fragment(
-                "CASE WHEN jsonb_typeof(?->'input') = 'number' THEN (?->>'input')::bigint ELSE 0 END",
-                t.usage,
-                t.usage
-              )
-            ),
-          output:
-            sum(
-              fragment(
-                "CASE WHEN jsonb_typeof(?->'output') = 'number' THEN (?->>'output')::bigint ELSE 0 END",
-                t.usage,
-                t.usage
-              )
-            )
+          input: sum(token_sum(t.usage, "input")),
+          cache_read: sum(token_sum(t.usage, "cache_read")),
+          cache_write: sum(token_sum(t.usage, "cache_write")),
+          output: sum(token_sum(t.usage, "output"))
         }
       )
 
     case Repo.one(query) do
-      %{input: input, output: output} -> %{input: to_count(input), output: to_count(output)}
-      _ -> %{input: 0, output: 0}
+      %{} = row -> Map.new(@token_keys, &{&1, to_count(Map.get(row, &1))})
+      _ -> empty_token_usage()
     end
   end
+
+  @doc """
+  Everything the model read: fresh input plus what it wrote to and read from
+  the prompt cache. The cached reads dominate, and leaving them out is what
+  made the first version of this metric wrong.
+  """
+  @spec total_input(token_usage()) :: non_neg_integer()
+  def total_input(%{input: input, cache_read: read, cache_write: write}),
+    do: input + read + write
+
+  defp empty_token_usage, do: Map.new(@token_keys, &{&1, 0})
 
   # Postgres sums bigints as `numeric`, which arrives as a Decimal. The
   # callers of this want an integer they can format, and the spec says so.

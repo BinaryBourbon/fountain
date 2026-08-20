@@ -18,6 +18,14 @@ upgrade, is in
 
 ### Fixed
 
+- **The dashboard's token total counted only fresh input.** A coding agent
+  re-reads its context every turn, so nearly everything it consumes arrives
+  as a cached read: a month of real work on the hosted instance was 1.5k
+  `input` against 41M `cache_read`. The tile said "1.5k in" for 44M tokens.
+  `Conversations.token_usage/3` now reports all four keys the runtimes send
+  and `total_input/1` sums the three that went into the model; the tile shows
+  that, and names the split on hover.
+
 - **A runtime reporting a malformed usage figure no longer breaks recording
   it.** `turns.usage` is stored as the runtime sent it, but the conversation
   counters it increments are bigints: a string or an object where a number
