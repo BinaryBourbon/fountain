@@ -180,6 +180,21 @@ Swapping any one of them changes the job without touching the others: a
 read-only token turns the same agent into one that can only report, and a
 second environment points it at a different repository.
 
+## The whole thing, in one script
+
+Everything above, in one file you can copy and run. It is not a transcription
+of the steps — it is `sdk/typescript/examples/pull-request.ts`, included here
+verbatim, which is the same file that produced every output on this page.
+
+```ts title="pull-request.ts"
+--8<-- "sdk/typescript/examples/pull-request.ts"
+```
+
+```bash
+FOUNTAIN_API_KEY=…  GITHUB_TOKEN=…  REPO_URL=https://github.com/you/your-app \
+  node pull-request.ts
+```
+
 ## Making it yours
 
 - **Run it from CI.** The same forty lines work in an action; the agent needs

@@ -71,3 +71,57 @@
     </div>
   </article>
 </div>
+
+<%!-- A copy button on every fenced block, added client-side.
+
+The public MkDocs site gets this from Material's `content.code.copy`; the
+in-app docs render the same markdown through `Fountain.Docs` and had no
+equivalent, which matters most on the pages whose point is a script you are
+meant to take away (docs/tour.md). There is no asset pipeline here — the
+layout loads Tailwind and Phoenix from a CDN and everything else is inline —
+so this is inline too.
+
+The button is a sibling of the `<pre>`, never a child, so `innerText` cannot
+pick up the word "Copy". --%>
+<script>
+  (() => {
+    const article = document.querySelector("article");
+    if (!article || !navigator.clipboard) return;
+
+    for (const pre of article.querySelectorAll("pre")) {
+      const wrapper = document.createElement("div");
+      wrapper.className = "relative group";
+      pre.parentNode.insertBefore(wrapper, pre);
+      wrapper.appendChild(pre);
+
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = "Copy";
+      button.setAttribute("aria-label", "Copy code to clipboard");
+      button.className =
+        "absolute top-2 right-2 rounded border border-[var(--color-border)] " +
+        "bg-[var(--color-bg-2)] px-2 py-1 text-[11px] leading-none " +
+        "text-[var(--color-text-secondary)] opacity-0 transition-opacity " +
+        "group-hover:opacity-100 focus:opacity-100 hover:text-[var(--color-text-primary)]";
+
+      button.addEventListener("click", async () => {
+        try {
+          await navigator.clipboard.writeText(pre.innerText);
+          button.textContent = "Copied";
+        } catch {
+          // Denied permission, or an insecure origin. Say so rather than
+          // leaving the button looking like it worked.
+          button.textContent = "Press ⌘C";
+          const range = document.createRange();
+          range.selectNodeContents(pre);
+          const selection = window.getSelection();
+          selection.removeAllRanges();
+          selection.addRange(range);
+        }
+        setTimeout(() => (button.textContent = "Copy"), 2000);
+      });
+
+      wrapper.appendChild(button);
+    }
+  })();
+</script>
