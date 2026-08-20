@@ -201,6 +201,20 @@ defmodule FountainWeb.DashboardLiveTest do
       refute html =~ "0 / 0"
     end
 
+    # Usage events are best-effort, so turns can exist with no events behind
+    # them. "Nothing yet" over a populated tile reads as a bug.
+    test "it does not say nothing while a tile says something", %{conn: conn, user: user} do
+      conv = insert_conversation(user_id: user.id)
+      turn = insert_turn(conv)
+
+      {:ok, _} =
+        Fountain.Conversations._unsafe_record_turn_usage(turn, %{"input" => 10, "output" => 2})
+
+      {:ok, _lv, html} = live(conn, ~p"/dashboard")
+
+      refute html =~ "Nothing yet this month."
+    end
+
     test "the billing link is there only when billing is on", %{conn: conn} do
       {:ok, _lv, html} = live(conn, ~p"/dashboard")
 

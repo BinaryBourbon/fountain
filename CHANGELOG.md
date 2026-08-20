@@ -36,6 +36,14 @@ upgrade, is in
 
 ### Changed
 
+- **The console's sidebar shows where you can go.** Account, API keys,
+  inference keys, runners, billing, security, the audit log and admin were in
+  a popup behind the user's email address; they are sections now. A
+  destination you cannot see is one you do not know you have — and the
+  conversation list that used to own that space is gone, so there was room.
+  What stays at the bottom is what is not a destination: who you are, sign
+  out, the theme toggle, and the build version a bug report quotes.
+
 - **Fountain's web UI is a console.** The conversation pages
   (`/conversations`, `/conversations/new`, `/conversations/:id`,
   `/conversations/:id/logs`), the team page (`/team`) and the onboarding
