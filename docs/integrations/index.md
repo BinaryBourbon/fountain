@@ -36,6 +36,13 @@ delegates a task to a named Fountain agent and reads the answer back. Nothing
 to configure server-side; the plugin authenticates with an API key or the
 CLI's saved login.
 
+[**OpenBot**](openbot.md) needs no plugin at all, only a URL: Fountain answers
+[AG-UI](https://github.com/ag-ui-protocol/ag-ui) at `POST /api/agui/:agent_id`,
+and CopilotKit's OpenBot — or any other AG-UI host — registers a Fountain agent
+as a coworker with a channel of its own. One channel binds to one conversation,
+so the sandbox is the memory rather than the replayed transcript. Nothing to
+configure server-side; the coworker holds an API key.
+
 [**Buzz**](buzz.md) is the other direction: Fountain *hosts* a Buzz agent —
 a Nostr identity that lives on a relay — running its coding agent in a sandbox
 and holding its signing key in a vault. Provision one from the Buzz desktop or

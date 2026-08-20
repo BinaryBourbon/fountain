@@ -170,6 +170,19 @@ upgrade, is in
 
 ### Added
 
+- **Fountain speaks AG-UI.** `POST /api/agui/:agent_id` answers the
+  [AG-UI](https://github.com/ag-ui-protocol/ag-ui) protocol's `RunAgentInput`
+  with its SSE event stream, so any AG-UI host registers a Fountain agent with
+  a URL and a bearer token — CopilotKit's
+  [OpenBot](https://copilotkit.ai/openbot), where a coworker *is* an AG-UI
+  endpoint, is the host it was built against. The host's thread binds to one
+  conversation (`agui:<threadId>`), so one channel is one sandbox and the
+  agent's memory stays where it lives rather than being replayed as a
+  transcript each turn. Tool use and lifecycle stages relay as AG-UI thinking
+  events; no AG-UI *tool call* is emitted, because a Fountain agent runs its
+  tools in its own sandbox and already has the result. See
+  [OpenBot (AG-UI)](https://binarybourbon.github.io/fountain/integrations/openbot/).
+
 - **Usage on the console's dashboard.** A "This month" row — conversations,
   turns, sandbox time, and tokens in/out — on the same calendar the billing
   page uses (`Billing.current_month_range/0`, promoted out of two identical

@@ -463,6 +463,12 @@ defmodule FountainWeb.Router do
 
     get "/conversations/:conversation_id/stream", ConversationController, :stream,
       as: :conversation_stream
+
+    # AG-UI. Here rather than in the JSON scope for the same reason:
+    # the request body is JSON but the *response* is an event stream, and an
+    # AG-UI client sends `Accept: text/event-stream`, which `:accepts_json`
+    # would refuse with 406 before the action ran.
+    post "/agui/:agent_id", AguiController, :run, as: :agui_run
   end
 
   # Operator surface (#527). Three gates in order: :api authenticates the key,
