@@ -158,7 +158,11 @@ defmodule FountainWeb.DashboardLive.Index do
             hint={token_hint(@tokens)}
           />
         </div>
-        <p :if={@usage.turns == 0} class="mt-2 text-xs text-[var(--color-text-muted)]">
+        <%!-- Only when every tile is empty. Usage events are best-effort
+              (`Billing.record_usage/5` swallows its failures), so an instance
+              can have turns and tokens with no events behind them — and
+              "nothing yet" above four populated tiles reads as a bug. --%>
+        <p :if={nothing_this_month?(assigns)} class="mt-2 text-xs text-[var(--color-text-muted)]">
           Nothing yet this month.
         </p>
       </section>
@@ -207,6 +211,12 @@ defmodule FountainWeb.DashboardLive.Index do
   end
 
   defp maybe_complete_onboarding(_user, _has_credential?, _agents), do: :ok
+
+  defp nothing_this_month?(assigns) do
+    assigns.usage.conversations == 0 and assigns.usage.turns == 0 and
+      assigns.usage.sandbox_minutes == 0 and Conversations.total_input(assigns.tokens) == 0 and
+      assigns.tokens.output == 0
+  end
 
   defp ready?(assigns) do
     assigns.has_credential? and assigns.agent_count > 0 and
