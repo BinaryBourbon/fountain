@@ -58,19 +58,21 @@ describe("parseSse", () => {
   });
 });
 
-const stage = (state: string, meta: Record<string, unknown>): LogEvent => ({
+const stage = (state: LogEvent["state"], meta: Record<string, unknown>): LogEvent => ({
   id: 1,
   kind: "stage",
   stage: "turn",
   state,
+  ts: "2026-08-20T00:00:00Z",
   data: JSON.stringify(meta),
 });
 
-const output = (blocks: unknown[], turnId: string, stream = "acp"): LogEvent => ({
+const output = (blocks: unknown[], turnId: string, stream: LogEvent["stream"] = "acp"): LogEvent => ({
   id: 2,
   kind: "output",
   stream,
   turn_id: turnId,
+  ts: "2026-08-20T00:00:00Z",
   blocks: blocks as LogEvent["blocks"],
 });
 

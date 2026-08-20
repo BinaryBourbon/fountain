@@ -3,6 +3,9 @@ import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+// Importing the Node entry is what installs the credentials-file reader; the
+// browser entry deliberately has none. Doing it here tests that wiring too.
+import "../src/node.ts";
 import { resolveConfig, conversationUrl, DEFAULT_BASE_URL } from "../src/config.ts";
 
 const VARS = [
@@ -38,6 +41,26 @@ function credentials(contents: string): string {
   process.env.FOUNTAIN_CREDENTIALS_FILE = path;
   return path;
 }
+
+describe("browser safety", () => {
+  test("the browser entry pulls in no Node built-in", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { join, dirname } = await import("node:path");
+    const { fileURLToPath } = await import("node:url");
+    const src = join(dirname(fileURLToPath(import.meta.url)), "..", "src");
+
+    // Eleven of the applications built on Fountain are browser apps; a bare
+    // `import "node:fs"` anywhere reachable from the browser entry breaks
+    // their bundles, and it did until the reader was made injectable.
+    const files = ["index.ts", "config.ts", "client.ts", "http.ts", "sse.ts", "team.ts",
+                   "run.ts", "conversation.ts", "resources.ts", "resolve.ts", "turn.ts", "queue.ts"];
+    for (const file of files) {
+      const body = readFileSync(join(src, file), "utf8");
+      const offending = body.match(/^\s*import[^\n]*["']node:[^"']+["']/m);
+      assert.equal(offending, null, `${file} imports a Node built-in: ${offending?.[0]}`);
+    }
+  });
+});
 
 describe("resolveConfig", () => {
   test("an explicit option beats everything", () => {

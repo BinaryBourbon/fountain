@@ -1,6 +1,12 @@
 import type { HttpClient } from "./http.ts";
-import type { LogEvent } from "./types.ts";
+import type { LogEvent, Stream } from "./types.ts";
 import { FountainError, errorForStatus } from "./errors.ts";
+
+/**
+ * What a caller asks a stream for. `streams` takes the friendly array form
+ * here and is joined on the way to the query string.
+ */
+export type StreamRequest = Omit<StreamOptions, "streams"> & { streams?: Stream[] | string };
 
 /** One `id:`/`event:`/`data:` message off the wire. */
 export interface SseMessage {
@@ -89,10 +95,18 @@ export interface StreamOptions {
   maxRetries?: number;
   /** Wait between reconnects, in ms. Exposed so tests do not sleep. */
   retryDelayMs?: number;
-  /** Comma-separated subset of `stdout`, `stderr`, `acp`, `stage`. */
+  /** Which streams to carry. Omitted means everything. */
   streams?: string;
   /** `false` drains the buffered events and closes instead of tailing live. */
   wait?: boolean;
+  /**
+   * Ask for server-parsed `blocks` on each event.
+   *
+   * Not every stream takes it: `/api/team/stream` accepts `streams` and
+   * nothing else, and OpenApiSpex rejects an unexpected query parameter
+   * outright — so this is opt-in per endpoint rather than always-on.
+   */
+  blocks?: boolean;
 }
 
 /**
@@ -106,9 +120,28 @@ export interface StreamOptions {
  * replays buffered events after that id, then tails live — so this loop tracks
  * the last id it yielded and resumes there. A caller never sees the seam.
  */
-export async function* streamEvents(
+export function streamEvents(
   http: HttpClient,
   conversationId: string,
+  opts: StreamOptions = {},
+): AsyncGenerator<LogEvent> {
+  // A conversation stream supports blocks, and a turn cannot be followed
+  // without them, so it is the default here.
+  return streamPath(http, `/api/conversations/${conversationId}/stream`, {
+    blocks: true,
+    ...opts,
+  });
+}
+
+/**
+ * The same reader, pointed at any of Fountain's SSE endpoints: one
+ * conversation, the whole team (`/api/team/stream`), or every conversation the
+ * caller owns (`/api/events/stream`). They share a format, a cursor header and
+ * a heartbeat, so they share this loop.
+ */
+export async function* streamPath(
+  http: HttpClient,
+  path: string,
   opts: StreamOptions = {},
 ): AsyncGenerator<LogEvent> {
   let lastId = opts.after ?? 0;
@@ -119,9 +152,9 @@ export async function* streamEvents(
   while (true) {
     let response: Response;
     try {
-      response = await http.raw("GET", `/api/conversations/${conversationId}/stream`, {
+      response = await http.raw("GET", path, {
         query: {
-          blocks: "true",
+          blocks: opts.blocks ? "true" : undefined,
           streams: opts.streams,
           wait: opts.wait === false ? "false" : undefined,
         },
@@ -143,7 +176,7 @@ export async function* streamEvents(
       // 4xx will not fix itself: a bad key or a conversation this account
       // cannot see returns the same answer however many times we ask.
       if (response.status < 500 || ++attempt > maxRetries) {
-        throw errorForStatus(response.status, text ? safeJson(text) : null, "GET", `stream ${conversationId}`);
+        throw errorForStatus(response.status, text ? safeJson(text) : null, "GET", path, response.headers);
       }
       await delay(retryDelayMs * attempt, opts.signal);
       continue;
@@ -192,7 +225,9 @@ function decodeEvent(message: SseMessage): LogEvent | null {
   const event = payload as LogEvent;
   const id = Number(message.id);
   if (Number.isFinite(id) && id > 0) event.id = id;
-  if (!event.kind) event.kind = message.event;
+  if (!event.kind && (message.event === "output" || message.event === "stage")) {
+    event.kind = message.event;
+  }
   return event;
 }
 

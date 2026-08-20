@@ -1,5 +1,5 @@
 import type { HttpClient } from "./http.ts";
-import type { Conversation, LogEvent, RunEvent, RunResult } from "./types.ts";
+import type { ConversationRecord as Conversation, LogEvent, RunEvent, RunResult } from "./types.ts";
 import { TurnFollower } from "./turn.ts";
 import { streamEvents } from "./sse.ts";
 import { Broadcast, deferred } from "./queue.ts";

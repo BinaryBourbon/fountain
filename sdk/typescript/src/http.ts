@@ -1,4 +1,4 @@
-import { AuthError, FountainError, errorForStatus } from "./errors.ts";
+import { AuthError, ConnectionError, FountainError, errorForStatus } from "./errors.ts";
 import type { ResolvedConfig } from "./config.ts";
 
 export type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
@@ -69,7 +69,13 @@ export class HttpClient {
     const text = await response.text();
     const parsed = text ? safeJson(text) : null;
     if (!response.ok) {
-      throw errorForStatus(response.status, parsed, method, this.url(path, opts.query));
+      throw errorForStatus(
+        response.status,
+        parsed,
+        method,
+        this.url(path, opts.query),
+        response.headers,
+      );
     }
     return parsed as T;
   }
@@ -95,7 +101,12 @@ export class HttpClient {
       if (opts.signal?.aborted) {
         throw new FountainError(`${method} ${url} was aborted`, { cause });
       }
-      throw new FountainError(`${method} ${url} failed: ${describe(cause)}`, { cause });
+      throw new ConnectionError(
+        `${method} ${url} failed: ${describe(cause)}. ` +
+          "If this is a browser, check the base URL and that API_CORS_ORIGINS on the " +
+          "Fountain server includes this origin.",
+        { cause },
+      );
     }
   }
 

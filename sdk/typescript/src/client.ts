@@ -4,7 +4,9 @@ import { Resolver } from "./resolve.ts";
 import { Run, type RunOptions } from "./run.ts";
 import { Conversation } from "./conversation.ts";
 import { Agents, Environments, Vaults } from "./resources.ts";
-import type { Conversation as ConversationRecord } from "./types.ts";
+import { Team, normalizeStreams } from "./team.ts";
+import { streamPath, type StreamRequest } from "./sse.ts";
+import type { AuthMe, Catalog, ConversationRecord, LogEvent, SearchHit } from "./types.ts";
 
 export interface FountainOptions extends ConfigOptions {
   /** Swap the fetch implementation — a test server, a proxy, an instrumented one. */
@@ -66,6 +68,8 @@ export class Fountain {
   readonly environments: Environments;
   /** Vaults and their secrets. */
   readonly vaults: Vaults;
+  /** The team: teammates, their threads and their routines. */
+  readonly team: Team;
 
   private readonly resolver: Resolver;
 
@@ -79,6 +83,7 @@ export class Fountain {
     this.agents = new Agents(this.api, this.resolver);
     this.environments = new Environments(this.api, this.resolver);
     this.vaults = new Vaults(this.api, this.resolver);
+    this.team = new Team(this.api, this.resolver);
   }
 
   /**
@@ -147,8 +152,33 @@ export class Fountain {
   }
 
   /** Who this key belongs to. The cheapest way to check a key works. */
-  async me(): Promise<Record<string, unknown>> {
-    return this.api.request<Record<string, unknown>>("GET", "/api/auth/me");
+  async me(): Promise<AuthMe> {
+    return this.api.data<AuthMe>("GET", "/api/auth/me");
+  }
+
+  /**
+   * The form vocabulary: the runtimes, models and providers this deployment
+   * offers. A client that builds an agent form reads it from here rather than
+   * hard-coding a list that goes stale on the next Fountain release.
+   */
+  async catalog(): Promise<Catalog> {
+    return this.api.data<Catalog>("GET", "/api/catalog");
+  }
+
+  /** Full-text search across the caller's conversations. */
+  async search(query: string, opts: { limit?: number } = {}): Promise<SearchHit[]> {
+    return this.api.list<SearchHit>("/api/search", { query: { q: query, limit: opts.limit } });
+  }
+
+  /**
+   * Every conversation the caller owns, on one connection.
+   *
+   * `team.stream()` is the same idea narrowed to the team. Use this when the
+   * client cares about conversations that are not teammates' — a dashboard,
+   * or a process watching work it spawned itself.
+   */
+  events(options: StreamRequest = {}): AsyncIterable<LogEvent> {
+    return streamPath(this.api, "/api/events/stream", { blocks: true, ...normalizeStreams(options) });
   }
 
   /** Forget the memoized agent/vault/environment listings. */

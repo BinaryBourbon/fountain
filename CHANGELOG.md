@@ -18,6 +18,41 @@ upgrade, is in
 
 ### Added
 
+- **The SDK's surface, rebuilt from what the applications actually use.** The
+  eleven apps on the Fountain API each hand-wrote a client (2,644 lines
+  between them), and counting their methods says plainly what belongs in an
+  SDK: `markRead`, `listTurns`, a paged event drain and `createAgent` appear in
+  all eleven, and `/api/team` in ten. So the SDK gained `fountain.team`
+  (roster, `message()` returning a `Run`, history, fresh threads, routines and
+  the one-connection team stream), `conversation.markRead()`,
+  `conversation.history()`, `fountain.catalog()`, `fountain.search()` and
+  `fountain.events()`.
+
+  Errors are now keyed on the server's `error` code rather than the status,
+  because that is how every app branches: `ConversationBusyError` (a 400),
+  `QuotaExceededError` (a 429, carrying `activeSandboxes`/`limit`),
+  `NotReadyError` (a 503, carrying the server's `Retry-After`), plus
+  `fieldErrors` on 422 and a `retryable` flag on all of them.
+
+  The SDK also works in a browser now, which those apps all are: no module
+  reachable from the default entry imports a Node built-in, and the
+  credentials-file reader moved behind the `node` export condition. CI bundles
+  the entry for a browser to keep it that way.
+
+- **The SDK's types are generated from the OpenAPI spec.**
+  `sdk/typescript/src/generated/openapi.ts` comes from
+  `mix openapi.spec.json`; CI regenerates it and fails on a diff, so a schema
+  change in Elixir cannot leave the SDK describing an API that no longer
+  exists. Generating it immediately found one: see below.
+
+### Fixed
+
+- **`AgentRequest` did not declare `allowed_environment_ids`.** `AgentUpdate`
+  declared it and `Agent.changeset/2` has cast it since the allowlist shipped,
+  so `POST /api/agents` accepted the field while the spec said it did not — a
+  client generated from the spec could set the allowlist on `PATCH` and not on
+  `POST`.
+
 - **A TypeScript SDK** (`sdk/typescript`; not yet published to npm). Running
   an agent is one call — `fountain.run(prompt, { agent, vault, environment })` —
   which opens a conversation, follows the turn and hands back the answer, the

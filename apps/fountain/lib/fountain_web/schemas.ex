@@ -695,6 +695,20 @@ defmodule FountainWeb.Schemas do
             "Vaults a conversation may attach to this agent. null (default) allows " <>
               "any vault the tenant owns; an empty list forbids attaching any vault; " <>
               "a non-empty list is an allowlist."
+        },
+        # `Agent.changeset/2` has cast this since the allowlist shipped and
+        # `AgentUpdate` declares it, but this schema did not — so a client
+        # generated from the spec could set the allowlist on PATCH and not on
+        # POST, while the endpoint accepted it either way.
+        allowed_environment_ids: %Schema{
+          type: :array,
+          items: %Schema{type: :string, format: :uuid},
+          nullable: true,
+          description:
+            "Environments a conversation may launch this agent under instead of its " <>
+              "own. Same shape as allowed_vault_ids: null (default) allows any " <>
+              "environment the tenant owns; an empty list forbids overriding; a " <>
+              "non-empty list is an allowlist. The agent's own environment always passes."
         }
       },
       required: [:name, :model, :runtime]

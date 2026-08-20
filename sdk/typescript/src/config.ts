@@ -1,7 +1,3 @@
-import { homedir } from "node:os";
-import { join } from "node:path";
-import { readFileSync } from "node:fs";
-
 export const DEFAULT_BASE_URL = "https://fountain.inevitable.fyi";
 
 /** Where a human reads a transcript. Fountain's own UI is a console (see CLAUDE.md). */
@@ -35,19 +31,25 @@ function unquote(value: string): string {
 }
 
 /**
- * Read one profile out of the INI-ish file `fountain auth login` writes.
- * Absent or unreadable is not an error — it just contributes nothing.
+ * How to read `~/.fountain/credentials`, when there is a filesystem.
+ *
+ * The eleven apps built on Fountain so far are browser apps, and a bare
+ * `import "node:fs"` at the top of this module breaks their bundles. So the
+ * file reader is injected: `fountain-sdk` resolves to a Node entry that
+ * installs one, and to this browser-safe module everywhere else. Nothing here
+ * touches a Node built-in.
  */
-function readCredentials(profile: string): Record<string, string> {
-  const override = (process.env.FOUNTAIN_CREDENTIALS_FILE ?? "").trim();
-  const path = override || join(homedir(), ".fountain", "credentials");
-  let raw: string;
-  try {
-    raw = readFileSync(path, "utf8");
-  } catch {
-    return {};
-  }
+export type CredentialsReader = (profile: string) => Record<string, string>;
 
+let credentialsReader: CredentialsReader | null = null;
+
+/** Install a credentials-file reader. Called by the Node entry point. */
+export function setCredentialsReader(reader: CredentialsReader | null): void {
+  credentialsReader = reader;
+}
+
+/** Parse the INI-ish file `fountain auth login` writes. Exported for the Node entry. */
+export function parseCredentials(raw: string, profile: string): Record<string, string> {
   const out: Record<string, string> = {};
   let section = "";
   for (const line of raw.split("\n")) {
@@ -65,7 +67,20 @@ function readCredentials(profile: string): Record<string, string> {
   return out;
 }
 
-const env = (name: string): string => (process.env[name] ?? "").trim();
+/** Absent, unreadable, or no reader installed is not an error — it contributes nothing. */
+function readCredentials(profile: string): Record<string, string> {
+  try {
+    return credentialsReader?.(profile) ?? {};
+  } catch {
+    return {};
+  }
+}
+
+const env = (name: string): string => {
+  // `process` is absent in a browser and undefined-typed in a worker.
+  const vars = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env;
+  return (vars?.[name] ?? "").trim();
+};
 
 /**
  * Resolve credentials the way the `fountain` CLI does, so a script inherits

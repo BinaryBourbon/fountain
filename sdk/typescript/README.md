@@ -226,6 +226,72 @@ API's own key names, so one definition reads identically in the SDK, in the
 REST API and in a `fountain.yml` manifest. Options that control the SDK's own
 behaviour — `timeoutMs`, `signal` — are camelCase, because those are not data.
 
+## The team
+
+Ten of the eleven applications built on Fountain talk to `/api/team`, and some
+never touch `/api/conversations` at all — a teammate is durable (one agent, one
+long-running sandbox, one thread you keep messaging) where a conversation is
+something you open and close.
+
+```ts
+await fountain.team.add("watchtower", { name: "Watchtower" });
+
+const reply = await fountain.team.message("watchtower", "Any disks over 80%?");
+console.log(reply.text);          // `message()` returns the same Run handle as `run()`
+
+for await (const event of fountain.team.stream({ streams: ["stage"] })) {
+  if (event.stage === "turn" && event.state === "done") refreshRoster();
+}
+```
+
+`list`, `get`, `rename`, `remove`, `history`, `freshConversation`, and
+`team.schedules.*` for cron routines. The stream reconnects from its last event
+id on its own; note it carries raw events (the endpoint takes no `blocks`), so
+use it as a notification channel and read detail from the conversation feed.
+
+Opening a thread is two calls, and every app wrote both by hand first:
+
+```ts
+const conversation = fountain.resume(id);
+const events = await conversation.history({ streams: ["acp", "stage"] });  // paged to the end
+await conversation.markRead();
+```
+
+## Errors
+
+Branch on `code`, not status — `conversation_busy` is a 400,
+`sandbox_quota_exceeded` a 429, `provisioning` a 503:
+
+```ts
+if (error instanceof ConversationBusyError) …   // the turn in flight must finish
+if (error instanceof QuotaExceededError) …      // error.activeSandboxes / error.limit
+if (error instanceof NotReadyError) …           // error.retryAfter, from the server
+if (error instanceof ValidationError) …         // error.fieldErrors
+```
+
+Every error carries `status`, `code`, `body`, `retryAfter` and `retryable`.
+
+## In a browser
+
+The default entry imports no Node built-in, so it bundles as-is; the
+credentials-file reader lives behind the `node` export condition.
+
+```ts
+const fountain = new Fountain({ baseUrl, apiKey });   // from your own settings UI
+```
+
+Your origin has to be in the server's `API_CORS_ORIGINS`, or every call fails
+before it starts — `ConnectionError` says so, because "Failed to fetch" has
+sent more than one person hunting through their own code.
+
+## Generated underneath
+
+`src/generated/openapi.ts` is produced from the same OpenAPI document the
+server serves, and CI regenerates it and fails on a diff — so the types cannot
+drift from the API. `import type { components, paths } from "fountain-sdk"` for
+the raw shapes. What is hand-written is what a spec cannot express: that many
+log events fold into one turn, and which of 85 paths are worth a verb.
+
 ## Follow-ups
 
 ```ts
