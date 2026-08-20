@@ -3,7 +3,8 @@ defmodule FountainWeb.CatalogController do
   `GET /api/catalog`: the instance's vocabulary a client needs to build the
   agent and environment forms — runtimes and their model suggestions,
   the sandbox providers usable here and the default, the package managers
-  an environment accepts, the avatar generator's bases and moods (#815).
+  an environment accepts, the avatar generator's bases and moods (#815),
+  and where this instance's browser apps live (#866).
 
   Everything here is already public through the forms; this is the same
   lists over the API so a client on another origin does not hard-code them
@@ -26,7 +27,8 @@ defmodule FountainWeb.CatalogController do
       "Runtimes with model suggestions per runtime (suggestions, not an allowlist — " <>
         "any `provider/model` under a known provider is accepted), sandbox providers " <>
         "usable on this instance and the default, package managers an environment " <>
-        "accepts, and the avatar generator's bases and moods.",
+        "accepts, the avatar generator's bases and moods, and the URLs of the " <>
+        "browser apps this instance sends people to for conversations and the team.",
     responses: [ok: {"Catalog", "application/json", Schemas.CatalogResponse}]
   )
 
@@ -46,6 +48,12 @@ defmodule FountainWeb.CatalogController do
         avatar: %{
           bases: Fountain.AvatarGenerator.bases(),
           moods: Fountain.AvatarGenerator.moods()
+        },
+        # Where a human is sent to watch a conversation or message a teammate.
+        # Null for an app this deployment does not have.
+        apps: %{
+          conversations: Fountain.Apps.conversations(),
+          team: Fountain.Apps.team()
         }
       }
     })

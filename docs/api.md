@@ -165,7 +165,7 @@ Agent objects carry `conversation_count`; environments carry `secret_count` and 
 ## Catalog
 
 ```
-GET  /api/catalog             # runtimes, model suggestions per runtime, sandbox providers, package managers, avatar bases/moods
+GET  /api/catalog             # runtimes, model suggestions per runtime, sandbox providers, package managers, avatar bases/moods, app URLs
 POST /api/avatars/generate    # {base, mood} → {data (base64 PNG), media_type}; attach with PUT /api/agents/:id/avatar
 ```
 
@@ -176,6 +176,14 @@ allowlist — any `provider/model` under a known provider is accepted.
 environment's `packages` (`apt`, `npm`); other keys are stored and ignored.
 Avatar generation uses the tenant's own OpenAI credential (`422
 no_openai_key` without one).
+
+`apps` is where this instance sends a human to *read* something — the
+standalone [conversations](https://github.com/jhgaylor/fountain-conversations)
+and [team](https://github.com/jhgaylor/fountain-team) apps, which route on the
+fragment (`…/#/c/<conversation_id>`, `…/#/team/<agent_id>`). Either is null
+where the deployment has no such app. Use it instead of composing a URL
+against the API host: Fountain's own UI is a console and does not serve
+transcripts.
 
 ## Environments
 

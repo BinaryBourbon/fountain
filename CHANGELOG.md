@@ -18,6 +18,15 @@ upgrade, is in
 
 ### Added
 
+- **`Fountain.Apps` — one place that knows where the browser apps live.**
+  Conversations and the team roster are standalone single-page apps on the
+  API; `CONVERSATIONS_APP_URL` and `TEAM_APP_URL` say where (defaulting to
+  the builds hosted at jakegaylor.com, which work against any Fountain that
+  admits the origin in `API_CORS_ORIGINS`; `""` means this deployment has no
+  such app). `GET /api/catalog` now reports them as `apps`, and the links
+  that leave Fountain — a forwarded support report, the Hermes plugin's
+  `url` — point at the app rather than at a console route.
+
 - **`first_prompt` on conversation JSON.** `GET /api/conversations` and
   `GET /api/conversations/:id` carry the first turn's prompt, so a client
   can title an untitled conversation the way the web sidebar does without
