@@ -251,6 +251,38 @@ describe("run", () => {
     );
   });
 
+  test("a conversation that dies under the turn ends the wait, with the reason", async () => {
+    // provision/failed is the real shape: the server stops, so no turn event
+    // is ever coming. Waiting for one would hang forever.
+    fake.onTurn = (conversation) => {
+      fake.failConversation(conversation.id, "provision deadline exceeded");
+    };
+
+    const run = await client().run("go", { agent: "reposage" });
+    assert.equal(run.state, "failed");
+    assert.equal(run.status, "failed");
+    assert.match(String(run.reason), /provision deadline exceeded/);
+  });
+
+  test("a failure stage on a conversation that is still alive is not the end", async () => {
+    // setup/failed does not necessarily stop the conversation, which is why
+    // the SDK asks for the status rather than trusting the stage name.
+    fake.onTurn = (conversation, turnNumber) => {
+      fake.emit(conversation.id, {
+        kind: "stage",
+        stage: "setup",
+        state: "failed",
+        stream: "stage",
+        data: JSON.stringify({ exit_code: 1 }),
+      });
+      fake.scriptTurn(conversation.id, { turnNumber, turnId: "t1", text: ["carried on anyway"] });
+    };
+
+    const run = await client().run("go", { agent: "reposage", timeoutMs: 5_000 });
+    assert.equal(run.state, "done");
+    assert.equal(run.text, "carried on anyway");
+  });
+
   test("a torn-down sandbox ends the wait instead of hanging", async () => {
     fake.onTurn = (conversation, turnNumber) => {
       fake.emit(conversation.id, {
@@ -260,11 +292,13 @@ describe("run", () => {
         stream: "stage",
         data: JSON.stringify({ turn_number: turnNumber, turn_id: "t1" }),
       });
+      conversation.status = "terminated";
       fake.emit(conversation.id, { kind: "stage", stage: "terminate", state: "done", stream: "stage" });
     };
 
     const run = await client().run("go", { agent: "reposage", timeoutMs: 2_000 });
-    assert.equal(run.state, "timeout");
+    assert.equal(run.state, "failed");
+    assert.equal(run.status, "terminated");
     assert.equal(run.text, "");
   });
 });

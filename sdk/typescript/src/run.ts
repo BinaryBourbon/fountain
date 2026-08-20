@@ -145,6 +145,7 @@ export class Run implements Promise<RunResult>, AsyncIterable<RunEvent> {
       ? AbortSignal.any([options.signal, this.abort.signal])
       : this.abort.signal;
 
+    let failure: { reason: string | null } | null = null;
     let timedOut = false;
     const timeoutMs = options.timeoutMs ?? 0;
     const timer =
@@ -165,8 +166,19 @@ export class Run implements Promise<RunResult>, AsyncIterable<RunEvent> {
         for (const out of follower.apply(event)) this.events.push(out);
         if (follower.finished) break;
 
-        // The sandbox died, or someone tore it down: no turn event is coming.
-        if (isConversationOver(event)) break;
+        // A stage that can mean the conversation is over. Which stages those
+        // are is not a list worth hard-coding — `provision/failed` stops the
+        // server, `setup/failed` may not, and `sandbox/done` is a suspend
+        // (resumable) or a reclaim (not) depending on a field. So ask the
+        // conversation instead of guessing: if it is terminal, no turn event
+        // is ever coming and waiting for one hangs forever.
+        if (mayEndConversation(event)) {
+          const status = await this.currentStatus(conversation);
+          if (status && TERMINAL_CONVERSATION_STATUSES.has(status)) {
+            failure = { reason: stageReason(event) };
+            break;
+          }
+        }
       }
     } finally {
       if (timer) clearTimeout(timer);
@@ -183,8 +195,10 @@ export class Run implements Promise<RunResult>, AsyncIterable<RunEvent> {
 
     const status = await this.currentStatus(conversation);
     if (!follower.finished) {
-      // Aborted, or the stream ended with the conversation. Report what there is.
-      this.events.push({ type: "turn-end", state: "timeout", exitCode: null, reason: null });
+      // The conversation died under the turn, or the caller stopped waiting.
+      // Either way say so, rather than reporting an empty answer as normal.
+      const state = failure ? "failed" : "timeout";
+      this.events.push({ type: "turn-end", state, exitCode: null, reason: failure?.reason ?? null });
     }
 
     const result: RunResult = {
@@ -193,9 +207,9 @@ export class Run implements Promise<RunResult>, AsyncIterable<RunEvent> {
       turnNumber,
       text: follower.text,
       toolsUsed: follower.toolsUsed,
-      state: follower.state ?? "timeout",
+      state: follower.state ?? (failure ? "failed" : "timeout"),
       exitCode: follower.exitCode,
-      reason: follower.reason,
+      reason: follower.reason ?? failure?.reason ?? null,
       status,
     };
     if (options.collectEvents) result.events = collected;
@@ -221,14 +235,35 @@ export class Run implements Promise<RunResult>, AsyncIterable<RunEvent> {
   }
 }
 
-/** A `sandbox`/`terminate` stage event that means no turn event will arrive. */
-function isConversationOver(event: LogEvent): boolean {
+/**
+ * Stage events worth checking the conversation's status over.
+ *
+ * `state` is a closed vocabulary — started/done/failed/interrupted — so a
+ * destroyed sandbox and a parked one are both `sandbox`/`done`, told apart by
+ * a field in the payload. Rather than encode that, treat every one of these as
+ * "go and ask" and let the conversation's own status decide.
+ */
+function mayEndConversation(event: LogEvent): boolean {
   if (event.kind !== "stage") return false;
-  if (event.stage === "terminate") return true;
-  if (event.stage === "sandbox" && event.state && TERMINAL_CONVERSATION_STATUSES.has(event.state)) {
-    return true;
+  if (event.stage === "turn") return false; // the follower owns the turn's own fate
+  return event.state === "failed" || event.stage === "terminate" || event.stage === "sandbox";
+}
+
+/** Why a stage said it ended, when it said. */
+function stageReason(event: LogEvent): string | null {
+  let meta: unknown = event.data;
+  if (typeof meta === "string") {
+    try {
+      meta = JSON.parse(meta);
+    } catch {
+      return null;
+    }
   }
-  return false;
+  if (!meta || typeof meta !== "object") return null;
+  const record = meta as Record<string, unknown>;
+  const reason = record.message ?? record.reason;
+  const label = typeof reason === "string" && reason ? reason : null;
+  return label ? `${event.stage}/${event.state}: ${label}` : `${event.stage}/${event.state}`;
 }
 
 /** Mark a promise as handled without changing what it settles to. */

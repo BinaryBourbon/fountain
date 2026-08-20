@@ -74,6 +74,20 @@ export class FakeFountain {
     this.server = null;
   }
 
+  /** Fail a conversation the way a provisioning failure does. */
+  failConversation(conversationId: string, reason: string): void {
+    const conversation = this.conversations.get(conversationId);
+    if (!conversation) throw new Error(`no conversation ${conversationId}`);
+    conversation.status = "failed";
+    this.emit(conversationId, {
+      kind: "stage",
+      stage: "provision",
+      state: "failed",
+      stream: "stage",
+      data: JSON.stringify({ reason }),
+    });
+  }
+
   /** Append an event to a conversation's feed and wake every open stream. */
   emit(conversationId: string, event: FakeEvent): StoredEvent {
     const conversation = this.conversations.get(conversationId);
