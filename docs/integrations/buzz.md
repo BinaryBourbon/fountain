@@ -301,25 +301,59 @@ siblings ever get through, whatever the mode; that is `buzz-acp`'s rule.
 - **A later desktop deploy overwrites it.** `deploy` is the whole truth of the
   record, so pressing *Start* on the desktop for an agent whose record still
   says `owner-only` sends `owner-only`, and Fountain will faithfully apply it
-  and restart. Until the desktop can edit access on a deployed provider agent,
-  treat `set-access` as the source of truth and avoid re-deploying from the
-  desktop for hosted agents you have opened up.
+  and restart.
+
+!!! warning "`set-access` opens the gate. It does not make you mentionable."
+
+    This changes only what the **harness accepts**. It does not change what
+    other people's clients believe, and on Buzz Desktop 0.5.17 or newer those
+    are different things. Widening access here to `anyone` lets the harness
+    answer a mention it receives, while a Desktop user still cannot send one.
+
+    [How other people find it](#how-other-people-find-it) has the mechanism
+    and the fix.
 
 ### How other people find it
 
 Being *allowed* to answer someone is not the same as *appearing* in their
-composer. Buzz Desktop and mobile only offer a non-owned agent in `@`-mention
-autocomplete when the relay carries a **kind:10100 directory entry** for it,
-authored by the agent, saying which channels it listens in and whom it answers.
-The hosted harness publishes that entry at startup and again on every channel
-membership change, from the channels it actually subscribes to and its real
-`respond_to` (allowlist pubkeys only in allowlist mode). So the two are always
-consistent: an agent is offered exactly where it would answer.
+composer, and for a hosted agent these are governed by **two different
+events published by two different parties**.
 
-Clients cache the directory; someone who does not see a freshly opened agent
-in autocomplete should restart their desktop app. The owner never needed the
-entry, because their desktop knows the agent locally, which is why "only I can
-mention it" is the symptom of a missing or `owner-only` entry.
+| Event | Signed by | Says |
+|---|---|---|
+| kind **10100** | the agent, from the harness | which channels it listens in and whom it answers |
+| kind **30177** | the **owner**, from Buzz Desktop at deploy | the policy Desktop's own agent directory is built from |
+
+The harness publishes its 10100 at startup and on every channel membership
+change, from the channels it actually subscribes to and its real `respond_to`.
+That entry is accurate about the harness.
+
+**Buzz Desktop 0.5.17 and newer ignores it when a 30177 exists.** It builds
+its agent directory from the owner-signed policy instead. So the two events
+can disagree, and when they do the 30177 is what other people's clients act
+on.
+
+That is why `set-access` alone is not enough. It updates the harness gate and
+the 10100, and a Desktop user gets no autocomplete entry and, if they type
+`@name` by hand, their client sends no `p` tag, so the mention never reaches
+the agent at all.
+
+**To actually open an agent up, both sides have to agree.** The desktop UI
+refuses to change access on a provider agent it has already deployed, so today
+that means editing the desktop's `managed-agents.json` and restarting it, or
+recreating the agent.
+
+Two diagnostics tell you which side is refusing.
+
+- **No `p` tag on the kind-9** means the sender's client never resolved the
+  agent, which is the 30177 side, not the harness.
+- **A `p` tag arrives and nothing happens** means the harness gate refused it,
+  which is `respond_to` and `set-access`.
+
+Clients also cache the directory, so someone who cannot see a freshly opened
+agent should restart their desktop app before assuming a policy problem. The
+owner never needed either entry, because their desktop knows the agent
+locally, which is why "only I can mention it" is the normal symptom.
 
 ### What a re-deploy does
 
