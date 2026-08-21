@@ -52,12 +52,18 @@ COPY apps ./apps
 # email — decisions/0010). Mix SILENTLY skips missing elixirc_paths dirs:
 # without this COPY the release still builds but is missing those modules.
 COPY ee ./ee
-# Fountain.Docs embeds docs/ (and the CHANGELOG.md its changelog page
-# includes) at compile time to serve them at /docs — without these the
-# compile fails on File.read!. This is also the only way the content
+# Fountain.Docs embeds docs/ at compile time to serve it at /docs — without
+# it the compile fails on File.read!. This is also the only way the content
 # ships: the release never contains docs/ as files.
+#
+# Every path a page snippet-includes (`--8<-- "…"`) has to be here too, and
+# those paths reach outside docs/: the changelog page includes CHANGELOG.md,
+# and the tour page includes the SDK example it is written from. A missing one
+# is not a broken link, it is a failed image build — `docs_test.exs` checks
+# this list against the snippets so the failure lands in CI instead.
 COPY docs ./docs
 COPY CHANGELOG.md ./
+COPY sdk/typescript/examples ./sdk/typescript/examples
 
 RUN mix compile \
  && mix release fountain_server
