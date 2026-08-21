@@ -22,7 +22,7 @@ The requested scope is `user:email`.
 | `GITHUB_OAUTH_CLIENT_ID` | From the OAuth app |
 | `GITHUB_OAUTH_CLIENT_SECRET` | From the OAuth app |
 
-The button only renders when `GITHUB_OAUTH_CLIENT_ID` is set — an
+The button only renders when `GITHUB_OAUTH_CLIENT_ID` is set, so an
 unconfigured instance shows plain email + password auth, with no dead-end
 GitHub button.
 
@@ -30,10 +30,10 @@ GitHub button.
 
 - **Only a GitHub-verified email is accepted.** Fountain checks the address's
   `verified` flag with GitHub rather than trusting the primary email, because
-  sign-ins link to existing accounts by email — an unverified address set to
+  sign-ins link to existing accounts by email, so an unverified address set to
   someone else's email must not attach to their account. An unverified email
   is refused with a message telling the user to confirm it on GitHub first.
-- OAuth signups arrive with their email already verified — no verification
+- OAuth signups arrive with their email already verified, so no verification
   email is sent, so OAuth works fine on an instance with
   `EMAIL_DELIVERY=none`.
 - `REGISTRATION_ENABLED=false` and `REGISTRATION_ALLOWED_EMAIL_DOMAINS` apply
