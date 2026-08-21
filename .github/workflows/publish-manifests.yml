@@ -202,10 +202,11 @@ jobs:
         env:
           SHA: ${{ steps.tag.outputs.sha }}
           SHORT: ${{ steps.tag.outputs.short }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
 
-          echo "${{ secrets.GITHUB_TOKEN }}" \
+          echo "$GITHUB_TOKEN" \
             | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
 
           # Refuse to move `latest` backwards. Builds can finish out of order —
