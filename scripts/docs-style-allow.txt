@@ -30,4 +30,3 @@ docs/integrations/sprites-contract.md
 docs/integrations/sprites.md
 docs/integrations/stripe.md
 docs/llm-integration.md
-docs/sdk.md
