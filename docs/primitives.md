@@ -86,7 +86,10 @@ Conversation starts and reclaimed when it ends. See
   [Vault](concepts/vault.md),
   [Agent](concepts/agent.md),
   [Conversation](concepts/conversation.md).
-- **Understand the machinery.** [Architecture](architecture.md) follows a
+- **Understand the machinery.**
+  [Where a secret comes from](concepts/secrets.md) follows a value from the
+  master key to the process. [About sandboxes](concepts/sandboxes.md) covers
+  the machine a run happens on. [Architecture](architecture.md) follows a
   prompt from the API call to the first token.
 - **Look something up.** The [API reference](api.md) has every field,
   [Conversation states](reference/conversation-states.md) has the state table,

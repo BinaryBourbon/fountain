@@ -55,6 +55,11 @@ it goes quiet.
   [Conversation](concepts/conversation.md)
 - [Agents as teammates](concepts/teammates.md), why a teammate is not a fifth
   primitive
+- [Where a secret comes from](concepts/secrets.md), the chain from the master
+  key to the agent's process
+- [About sandboxes](concepts/sandboxes.md), the machine a conversation runs on
+- [The console, the apps, and the API](concepts/surfaces.md), why watching an
+  agent work happens somewhere else
 - [Architecture](architecture.md), what runs, what it talks to, and what breaks
   when a dependency is down
 - [Why a bot needs more than a chat UI](build/index.md), the case for the API
