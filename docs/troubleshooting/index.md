@@ -13,6 +13,7 @@ means. Commands are shown for both deploy paths where they differ.
 |---|---|
 | A conversation sits in `running` with no output, or went `failed` | [A conversation is stuck or failed](conversation-stuck-or-failed.md) |
 | Provisioning fails while everything else is healthy | [Sandbox errors](sandbox-errors.md) |
+| A turn fails saying your organization disabled subscription access | [Which credential claude uses](../catalog/runtimes/claude.md#which-credential-it-uses) |
 | Pods restart, or sit NotReady | [Pods restarting or not ready](pods-restarting.md) |
 | Registration completes but nobody gets past "check your email" | [Nobody can log in](nobody-can-log-in.md) |
 | Everyone is rate-limited at once | [Nobody can log in](nobody-can-log-in.md) |
