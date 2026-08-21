@@ -1,0 +1,88 @@
+# The Simplified Technical English backlog, from the ASD-STE100 rewrite.
+#
+# Files listed here are SKIPPED by scripts/docs-ste.py. The list only shrinks.
+# A file that is NOT listed is checked, so a page written tomorrow is covered
+# from the day it lands, and the rewrite goes in one page at a time without CI
+# going red in between.
+#
+# The standard is docs-redesign/08-simplified-technical-english.md.
+#
+# The list started at 75 files and 1,659 findings. Delete a line only when the
+# page passes the checker. The checker also fails if a line names a file that
+# no longer exists, so a rename cannot quietly re-exempt a page.
+docs/api.md
+docs/architecture.md
+docs/build/index.md
+docs/build/pieces.md
+docs/build/team-chat.md
+docs/catalog/index.md
+docs/catalog/mcp-servers/fountain-buzz.md
+docs/catalog/mcp-servers/fountain-comms.md
+docs/catalog/mcp-servers/fountain-team.md
+docs/catalog/mcp-servers/index.md
+docs/catalog/runtimes/claude.md
+docs/catalog/runtimes/codex.md
+docs/catalog/runtimes/gemini.md
+docs/catalog/runtimes/index.md
+docs/catalog/runtimes/opencode.md
+docs/catalog/skills/create-team.md
+docs/catalog/skills/fountain.md
+docs/catalog/skills/index.md
+docs/changelog.md
+docs/cli.md
+docs/cli/commands.md
+docs/concepts/agent.md
+docs/concepts/conversation.md
+docs/concepts/environment.md
+docs/concepts/sandboxes.md
+docs/concepts/secrets.md
+docs/concepts/surfaces.md
+docs/concepts/teammates.md
+docs/concepts/vault.md
+docs/configuration.md
+docs/guides/operate/back-up-and-restore.md
+docs/guides/operate/billing.md
+docs/guides/operate/database.md
+docs/guides/operate/deploy.md
+docs/guides/operate/email.md
+docs/guides/operate/kubernetes.md
+docs/guides/operate/observability.md
+docs/guides/operate/put-it-on-the-internet.md
+docs/guides/operate/run-a-release-task.md
+docs/guides/operate/sandbox-lifetime.md
+docs/guides/operate/upgrade.md
+docs/index.md
+docs/integrations/acp.md
+docs/integrations/adding-a-sandbox-provider.md
+docs/integrations/buzz.md
+docs/integrations/clients.md
+docs/integrations/daytona.md
+docs/integrations/e2b.md
+docs/integrations/editors.md
+docs/integrations/github-oauth.md
+docs/integrations/hermes.md
+docs/integrations/index.md
+docs/integrations/mail.md
+docs/integrations/openbot.md
+docs/integrations/openclaw.md
+docs/integrations/platform-requirements.md
+docs/integrations/runners.md
+docs/integrations/sandbox-contract.md
+docs/integrations/sentry.md
+docs/integrations/sprites-contract.md
+docs/integrations/sprites.md
+docs/integrations/stripe.md
+docs/llm-integration.md
+docs/operations.md
+docs/primitives.md
+docs/reference/conversation-states.md
+docs/reference/glossary.md
+docs/sdk.md
+docs/self-hosting.md
+docs/setup.md
+docs/tour.md
+docs/troubleshooting/conversation-stuck-or-failed.md
+docs/troubleshooting/index.md
+docs/troubleshooting/nobody-can-log-in.md
+docs/troubleshooting/pods-restarting.md
+docs/troubleshooting/sandbox-errors.md
