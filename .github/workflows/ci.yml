@@ -32,12 +32,20 @@ permissions:
 # and 55 of 198 modules are `async: false` for real reasons (Application.put_env
 # in the config tests, set_mimic_global in 13 files, the ETS rate-limit table).
 # No runner size crosses that floor; only separate OS processes do, because
-# separate partitions are separate BEAMs. Split three ways the serial tail
-# falls from 111.6s to roughly a third of it, and each partition gets its own
-# Postgres rather than 2,423 tests sharing one 20-connection pool.
+# separate partitions are separate BEAMs. Splitting N ways drops the serial
+# tail to roughly 1/N of it, and each partition gets its own Postgres rather
+# than the whole suite sharing one 20-connection pool.
+#
+# #894 took it from three to six, because this matrix is the critical path for
+# every commit: the slowest partition plus the serial coverage gate IS the
+# wall-clock of CI. At three, the slowest partition was ~5m of a ~5m54s run.
+# The limit is that ~60s of each job is fixed cost that does not divide
+# (Postgres container init dominates), so the marginal win shrinks: six roughly
+# halves the test work for two more jobs' worth of that cost, and eight would
+# buy only ~30s beyond six. Shrink the 60s before adding a seventh.
 #
 # The cost is that each partition instruments every module while exercising a
-# third of the tests, so no partition's coverage means anything on its own.
+# fraction of the tests, so no partition's coverage means anything on its own.
 # Hence the `coverage` job: partitions export, it merges, and the 85% threshold
 # is enforced once against the union (see mix.exs / coverage.exs).
 #
@@ -213,7 +221,7 @@ jobs:
       contents: read
 
     strategy:
-      # Each partition is an independent verdict and all three are wanted: a
+      # Each partition is an independent verdict and all six are wanted: a
       # cancelled sibling would leave the coverage merge without its export and
       # turn one test failure into two unrelated-looking ones.
       fail-fast: false
@@ -221,7 +229,15 @@ jobs:
         # The single source of truth for how many partitions there are — the
         # `--partitions` argument below is `strategy.job-total`, so adding an
         # entry here is the whole change.
-        partition: [1, 2, 3]
+        #
+        # Six, not three, because this matrix is the critical path for every
+        # commit: the slowest partition plus the serial coverage gate IS the
+        # wall-clock of CI, and at three the slowest was ~5m. Each job carries
+        # ~60s of fixed cost (Postgres container init dominates) that does not
+        # divide, so the win shrinks as the count grows — six roughly halves
+        # the test work while paying that cost twice more, and eight would buy
+        # only ~30s beyond it. Attack the 60s before adding a seventh.
+        partition: [1, 2, 3, 4, 5, 6]
 
     outputs:
       # Same value from every partition, so which one wins the race to set it
@@ -265,10 +281,10 @@ jobs:
       # deliberately-narrow restore-keys below: a cache whose contents depend
       # on who got there first is the failure mode being avoided.
       #
-      # The three partitions DO share a key, and that is not the same race:
+      # The partitions DO share a key, and that is not the same race:
       # they compile one identical :test tree and differ only in which test
       # files they load, so whichever wins the save has saved the same archive
-      # the others would have. Giving each partition its own key would triple
+      # the others would have. Giving each partition its own key would multiply
       # the storage for identical content and stop them warming each other.
       - name: Restore deps cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
@@ -325,7 +341,7 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
-  # The 85% gate, enforced once against all three partitions' data. It is a
+  # The 85% gate, enforced once against every partition's data. It is a
   # separate job because there is nowhere else it can live: no partition can
   # see the others' coverage, and ExCoveralls — which this replaced in #620 —
   # had no way to merge across machines at all. Elixir's built-in cover does,
