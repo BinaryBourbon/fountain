@@ -2,392 +2,71 @@
 
 Running your own Fountain instance.
 
-For a development environment on your own machine, see [Setup](setup.md) — that
-is a different thing, and this page assumes you want an instance that stays up.
+For a development environment on your own machine, see [Setup](setup.md). That
+is a different thing, and this section assumes you want an instance that stays
+up.
+
+Start with [Deploy an instance](guides/operate/deploy.md).
 
 ## What you need
 
 | | |
 |---|---|
-| **Postgres 16+** | The compose file below runs one for you |
-| **A sandbox provider** | [sprites.dev](https://sprites.dev) by default; [E2B](integrations/e2b.md) and [Daytona](integrations/daytona.md) are hosted alternatives, and users can bring their own machines with [`fountain runner`](integrations/runners.md) (no credential). The app boots without one, but every conversation fails |
-| **A mail provider** | Resend or any SMTP server. Optional — see [Email](#email) |
+| **Postgres 16+** | The compose file runs one for you |
+| **A sandbox provider** | [sprites.dev](https://sprites.dev) by default. [E2B](integrations/e2b.md) and [Daytona](integrations/daytona.md) are hosted alternatives, and users can bring their own machines with [`fountain runner`](integrations/runners.md), which needs no credential. The app boots without one, but every conversation fails |
+| **A mail provider** | Resend or any SMTP server. See [Configure email](guides/operate/email.md), which is a decision rather than an optional extra |
 
-Sandboxes run on one of three backends, all hosted services — a Fountain
-instance is not fully self-contained (self-hosted Daytona comes closest):
+Sandboxes run on one of three backends, all hosted services. A Fountain
+instance is not fully self-contained, and self-hosted Daytona comes closest.
 
 | Provider | Enabled by | Idle behavior | Notes |
 |---|---|---|---|
-| **Sprites** (default) | `SPRITES_TOKEN` | Parks — scales to zero on its own | The reference backend |
-| **E2B** | `E2B_API_KEY` | Parks — explicit pause (filesystem + memory snapshot) | Needs a template built from `images/e2b/`; see [E2B](integrations/e2b.md) |
-| **Daytona** | `DAYTONA_API_KEY` | Parks — explicit stop (disk preserved; archives when long-parked) | Self-hostable via `DAYTONA_API_URL`; see [Daytona](integrations/daytona.md) |
+| **Sprites** (default) | `SPRITES_TOKEN` | Parks, scaling to zero on its own | The reference backend |
+| **E2B** | `E2B_API_KEY` | Parks with an explicit pause, snapshotting filesystem and memory | Needs a template built from `images/e2b/`. See [E2B](integrations/e2b.md) |
+| **Daytona** | `DAYTONA_API_KEY` | Parks with an explicit stop, preserving disk, archiving when long-parked | Self-hostable via `DAYTONA_API_URL`. See [Daytona](integrations/daytona.md) |
 
-`SANDBOX_PROVIDER` picks the default for new sandboxes; an agent can pin a
+`SANDBOX_PROVIDER` picks the default for new sandboxes. An agent can pin a
 provider, and existing sandboxes always stay where they were created.
 
 For what each piece of the system does and what breaks when a dependency is
 down, see [Architecture](architecture.md).
 
-## Quick start
+## The guides
 
-```bash
-git clone https://github.com/BinaryBourbon/fountain
-cd fountain
+**Standing it up.**
 
-cp .env.compose.example .env
-echo "SECRET_KEY_BASE=$(openssl rand -base64 48 | tr -d '\n')" >> .env
-echo "MASTER_SECRETS_KEY=$(openssl rand 32 | base64 | tr '+/' '-_' | tr -d '=\n')" >> .env
-# add your SPRITES_TOKEN to .env
+- [Deploy an instance](guides/operate/deploy.md)
+- [Put it on the internet](guides/operate/put-it-on-the-internet.md)
+- [Connect a database](guides/operate/database.md)
+- [Deploy on Kubernetes](guides/operate/kubernetes.md)
 
-docker compose up -d
-```
+**Decisions it forces.**
 
-This page explains the variables that shape a deployment as they come up; the
-complete list — including the deploy-level ones the compose file never
-mentions — is the [configuration reference](configuration.md).
+- [Configure email](guides/operate/email.md)
+- [Change sandbox lifetimes](guides/operate/sandbox-lifetime.md)
+- [Turn on billing](guides/operate/billing.md)
 
-Then open <http://localhost:4000> and register — that's the whole first
-login. With the compose defaults (`EMAIL_DELIVERY=none`,
-`FIRST_USER_ADMIN=true`) your account self-verifies at registration and,
-being the first, is promoted to admin, recorded in the admin audit trail
-like any other role grant (ADR 0011).
+**Keeping it up.**
 
-### Watching an agent work
+- [Back up and restore](guides/operate/back-up-and-restore.md)
+- [Upgrade an instance](guides/operate/upgrade.md)
+- [Wire up observability](guides/operate/observability.md)
+- [Run a release task](guides/operate/run-a-release-task.md)
 
-Fountain's own UI is a console — the account, its keys, and the agents,
-environments and vaults a conversation runs on. Watching a conversation turn
-by turn, and messaging an agent as a teammate, are separate single-page apps
-that talk to your `/api`:
-
-| | |
-|---|---|
-| [Conversations](https://jakegaylor.com/fountain-conversations/) | start a run, watch it, steer it, read the raw log |
-| [Team](https://jakegaylor.com/fountain-team/) | your agents as teammates, one thread each |
-
-They are static builds with no server of their own: you type your Fountain's
-URL in, so the hosted copies above work against your deployment as soon as it
-admits the origin —
-
-```bash
-echo "API_CORS_ORIGINS=https://jakegaylor.com" >> .env
-```
-
-— and, if you would rather click "Sign in with Fountain" than paste an API
-key, register them in `OAUTH_CLIENTS` (see the
-[configuration reference](configuration.md)). The console links to whatever
-`CONVERSATIONS_APP_URL` and `TEAM_APP_URL` say, so pointing those at your own
-build of either repo works the same way; setting them to `""` tells the
-console this deployment has neither, and it stops offering them.
-
-Then close registration so nobody else can join:
-
-```bash
-echo "REGISTRATION_ENABLED=false" >> .env
-docker compose up -d
-```
-
-Register **before** exposing the instance to a network you don't trust:
-while no admin exists, the first verified account gets the role. Prefer the
-manual path? Set `FIRST_USER_ADMIN=false` and use `Fountain.Release`
-tasks — see [operations](operations.md):
-
-```bash
-docker compose exec app bin/fountain_server eval \
-  'Fountain.Release.promote_admin("you@example.com")'
-```
-
-## Versioning and upgrades
-
-Fountain follows [SemVer](https://semver.org/), pre-1.0: a patch release
-(`v0.3.0` → `v0.3.1`) is always safe to take; a minor release (`v0.3` → `v0.4`)
-may include breaking changes, and calls them out under **Upgrade notes** in the
-[changelog](changelog.md).
-
-Each release publishes the server image to `ghcr.io/binarybourbon/fountain`
-under two tags, alongside the tags that track development:
-
-| Tag | Moves? | Use it for |
-|---|---|---|
-| `vX.Y.Z` | Never | Pinning a known version — the recommended default |
-| `vX.Y` | To the newest patch in the line | Taking patches automatically without risking a breaking minor |
-| `latest` | On every merge to `main` | Nothing you keep running — it moves under you |
-| `sha-<commit>` | Never | Reproducing exactly what a given commit built |
-
-Releases v0.2.1 and earlier predate image tagging and exist only as `sha-`
-tags.
-
-The compose file reads `FOUNTAIN_IMAGE_TAG` from `.env`, and
-`.env.compose.example` ships it set to a pinned release — so the quick start
-above is pinned by construction. Even with the variable unset, the compose
-file falls back to a pinned release rather than `latest`.
-
-Upgrading is editing that value, then `docker compose pull && docker compose
-up -d`. Migrations run automatically at boot — idempotently, serialized by a
-Postgres advisory lock — so rolling replicas do not race each other, and there
-are no manual migration steps unless a release's upgrade notes say otherwise.
-(A migration that builds an index concurrently opts out of that lock by
-design; such migrations are written to be safe to re-run. And if you have
-moved migrations into a Job with `MIGRATE_ON_BOOT=false`, running the Job is
-the upgrade step — see [Running migrations in a
-Job](#running-migrations-in-a-job).) Downgrading is
-not supported once a newer version's migrations have run; restore from a
-backup instead.
-
-The CLI and the server are cut from the same tag, so matching versions are the
-tested pairing.
-
-The CLI's built-in default `base_url` is the hosted instance
-(`https://fountain.inevitable.fyi`), not yours. Point it at your instance
-before exporting an API key — otherwise the first unconfigured command sends
-that key to the hosted domain:
-
-```bash
-FOUNTAIN_BASE_URL=https://your-fountain.example.com fountain auth login
-```
-
-`auth login` records the URL in the saved profile, so this is a one-time step.
-
-## Back up `MASTER_SECRETS_KEY`
-
-Every environment and vault secret is encrypted with a per-tenant key that is
-itself wrapped with `MASTER_SECRETS_KEY`. **Lose it and every stored secret is
-unrecoverable; change it and the same is true.** It is not stored in the
-database, by design — so a database backup alone does not protect you.
-
-Keep it somewhere separate from your database backups, and treat rotating it as
-a migration rather than a config change.
-
-## Database
-
-The app runs its migrations at boot, so upgrading is `docker compose pull &&
-docker compose up -d`.
-
-`DATABASE_SSL` defaults to on and the compose file sets it to `false`, because a
-stock `postgres` image does not serve TLS. If you point Fountain at a managed
-database, remove that line. To verify the server certificate rather than merely
-encrypt to it:
-
-```bash
-DATABASE_SSL_VERIFY=true
-# optional, otherwise the OS trust store is used
-DATABASE_SSL_CA_FILE=/etc/ssl/certs/rds-ca.pem
-```
-
-### Running migrations in a Job
-
-Migrating at boot is right for one replica and is not the only shape. Set
-`MIGRATE_ON_BOOT=false` and the release starts without migrating; run the
-migration entrypoint yourself, once, before the new version serves:
-
-```bash
-bin/migrate     # in the image; equivalent to
-                # bin/fountain_server eval 'Fountain.Release.migrate()'
-```
-
-`bin/migrate` ignores `MIGRATE_ON_BOOT` — it is the thing you run *to*
-migrate. In Kubernetes that is a Job ordered before the rollout;
-[`deploy/k8s/README.md`](https://github.com/BinaryBourbon/fountain/blob/main/deploy/k8s/README.md)
-has the manifest.
-
-Worth knowing before you turn it off:
-
-- **Nothing verifies the Job ran.** A pod with the switch off boots happily
-  against an un-migrated database and fails on the first query that needs the
-  new column. Ordering the Job ahead of the rollout is your job, not the
-  app's.
-- **You do not need this to run several replicas.** Boot migrations are
-  serialized by a Postgres advisory lock — taken before `schema_migrations`
-  is touched, so even the first boot against an empty database does not race.
-- **What it buys you** is migrations as an explicitly reviewable step, app
-  pods that can run with a database role that cannot `ALTER`, and faster pod
-  starts on scale-up.
-
-### Backups
-
-The compose file ships a nightly `pg_dump` service, off unless you opt in:
-
-```bash
-docker compose --profile backup up -d
-```
-
-Dumps land in the `backup_data` volume and are pruned after
-`BACKUP_RETENTION_DAYS` (default 14; `BACKUP_INTERVAL_SECONDS` sets the
-cadence). **That volume is on the same host as the database** — it protects
-against bad migrations and fat fingers, not a dead machine. Copy dumps
-off-host on a schedule, and remember the standing rule: a database backup
-alone cannot decrypt itself — it pairs with the
-[`MASTER_SECRETS_KEY` you backed up separately](#back-up-master_secrets_key).
-
-On Kubernetes, `deploy/k8s/backup-cronjob.yaml` is the same discipline
-against any S3-compatible bucket — dump, size-check, upload, verify, then
-prune — commented out of the kustomization until you create its secret.
-
-Restoring, and proving you can, is in
-[Operations](operations.md#backup-and-restore). A backup nobody has restored
-is a hypothesis.
-
-## Email
-
-Fountain refuses to start in production without a mail setting, because a
-silently discarded verification email dead-ends signup with no visible error.
-Pick one:
-
-| Setting | Effect |
-|---|---|
-| `RESEND_API_KEY` | Delivery via Resend |
-| `SMTP_HOST` (+ `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`) | Any SMTP server. Port defaults to 587 with STARTTLS; omit the username for an unauthenticated relay |
-| `EMAIL_DELIVERY=none` | No email. Accounts self-verify at registration (ADR 0011) |
-
-Password reset also needs working mail. With `EMAIL_DELIVERY=none` the only
-route back into a locked-out account is the database. Provider-side setup —
-domain verification, SMTP details, what each mode means for signup — is in
-the [mail integration guide](integrations/mail.md).
-
-## Sandbox lifetime
-
-Two bounds, doing different things:
-
-| Setting | Default | |
-|---|---|---|
-| `SANDBOX_IDLE_TIMEOUT_MINUTES` | `60` | No turn activity for this long and the sandbox is **suspended** — the sprite stays, scaled to zero, and the next prompt wakes it with the agent's memory intact |
-| `SANDBOX_MAX_LIFETIME_HOURS` | `24` | Ceiling on a continuous run (from creation or the last wake). Crossing it **destroys** the sprite — the backstop for a conversation that never stops being busy |
-
-Set either to `0` to disable it. A value that is not a non-negative integer
-refuses to boot rather than quietly disabling the bound.
-
-Neither bound ends the conversation; it stays resumable either way. The idle
-bound is free to be aggressive — suspension loses nothing. The max-lifetime
-ceiling is not: the runtime session lives on the destroyed disk, so after a
-ceiling reclaim the next prompt provisions fresh and the agent starts without
-its memory of the earlier turns. Suspended sandboxes are never aged out —
-their sprites persist at sprites.dev until the conversation is terminated or
-the account deleted.
-
-## Billing
-
-Billing is off by default (`BILLING_ENABLED=false`; the compose file also pins
-it). The subscription gate exists for the hosted service; on your own instance
-it is a lock with no key. Leave it off
-unless you are running Fountain commercially and have configured Stripe — the
-[Stripe integration guide](integrations/stripe.md) covers that setup.
-
-With billing disabled, accounts carry no subscription status and no trial
-clock — nothing billing-shaped appears in the UI, the admin panel, or the API.
-If you later enable billing on an existing instance, those accounts have no
-trial to measure and **fail closed** at the subscription gate. Start their
-trial clocks explicitly with the release task:
-
-```bash
-# See who would be affected, change nothing:
-bin/fountain_server eval 'Fountain.Release.expire_legacy_trials(dry_run: true)'
-
-# Mark them trialing with 14 days from now:
-bin/fountain_server eval 'Fountain.Release.expire_legacy_trials(days: 14)'
-```
-
-## Putting it on the internet
-
-The compose file publishes port 4000 with no TLS. Terminate TLS in front of it
-with Caddy, nginx, or a tunnel, and then:
-
-- set `PUBLIC_URL` to the external URL, scheme included — it builds verification
-  links and is passed to every sandbox
-- set `TRUSTED_PROXIES` to your proxy's address range, or per-IP rate limits will
-  all collapse into one bucket keyed on the proxy
-- close registration, or set `REGISTRATION_ALLOWED_EMAIL_DOMAINS`
-
-An `https://` `PUBLIC_URL` also switches on HTTPS redirection, HSTS (one year,
-including subdomains — not preloaded) and the `secure` flag on the session
-cookie. All three are derived from the scheme rather than set separately,
-because none of them can be on for an `http://` instance: a cookie marked
-secure is never sent back, and the redirect would point at a port serving
-nothing. If you terminate TLS in front of Fountain, make sure your proxy sets
-`X-Forwarded-Proto` — the redirect uses it, and without it every request looks
-like plain http and loops.
-
-`CHECK_ORIGIN_EXTRA` adds origins allowed to open a LiveView websocket, as a
-comma-separated list. Your own host is always included; add to this only for
-something like a preview environment on a different domain.
-
-Registration is open by default. An instance on the public internet with
-registration open will be found.
-
-## Observability
-
-The app serves Prometheus metrics on port 9568, which the compose file does not
-publish. Add a port mapping if you are scraping it, and keep it off the public
-internet — it enumerates routes, request rates and database timings.
-
-You do not have to start from a blank scrape. The repo ships an observability
-pack built from running the hosted instance:
-
-- **Alerts** — `deploy/k8s/prometheusrule.yaml`: error rate, unhandled
-  exceptions, pool saturation, provisioning failures, and staleness watches
-  for the optional backup CronJob, each commented with what it means and what
-  to do. Needs the PrometheusRule CRD; commented out of the kustomization
-  until you enable it.
-- **A starter dashboard** — `deploy/grafana/fountain-dashboard.json`, built
-  only from metrics the app actually exports. Import it into Grafana and pick
-  your Prometheus datasource; on compose, point any Prometheus at the metrics
-  port and import the same file.
-
-Logs go to stdout: `docker compose logs -f app`.
-
-Error tracking is off unless you opt in: set `SENTRY_DSN` and crashes —
-including the ones that never touch a web request — are reported with stack
-traces, grouped, and correlated with releases. The endpoint can be sentry.io
-or anything Sentry-API-compatible (GlitchTip, for a fully self-hosted stack).
-Unset, nothing ever leaves your instance. Setup and the Crons pattern for
-backup-job alerting are in the [Sentry integration guide](integrations/sentry.md).
-
-### Health endpoints
-
-Two, because restarting a container and taking it out of a load balancer are
-different decisions:
-
-| | |
-|---|---|
-| `GET /health` | Always 200 while the app is running. Checks nothing. Point a **restart** check here — if it consulted the database, a Postgres blip would restart every container at once, which does not fix Postgres |
-| `GET /health/ready` | 200 when this instance can serve, 503 when it cannot reach its database. Point **load balancer** and deploy gates here |
-
-```bash
-curl -sS localhost:4000/health/ready
-# {"checks":{"database":"ok"},"status":"ok"}
-```
-
-Both are public and unauthenticated, and report `ok`/`error` per check with no
-further detail — a failing check does not describe your database to whoever
-asked.
-
-A healthy check takes about 2ms; an unreachable database takes a few seconds to
-give up, so give the check a timeout above one second if your platform defaults
-lower.
-
-## Kubernetes
-
-A portable baseline lives in
-[`deploy/k8s/`](https://github.com/BinaryBourbon/fountain/tree/main/deploy/k8s)
-— plain manifests applied with `kubectl apply -k`, no operators or CRDs
-assumed. You bring a Postgres, an ingress controller, and the
-`fountain-secrets` Secret; its README walks through the rest, and the probe
-and scaling reasoning is commented inline in the manifests.
-
-`k8s/` in this repository is a different thing: the maintainer's own cluster
-(CNPG, Traefik, cert-manager, Infisical, Flux, Longhorn, personal hostnames).
-It is worth reading — it shows the full Erlang-clustering wiring for running
-more than one replica — and is not worth applying.
+When something is wrong, start from
+[Troubleshooting](troubleshooting/index.md).
 
 ## Licence
 
-Fountain is MIT licensed — running your own instance is explicitly fine,
+Fountain is MIT licensed. Running your own instance is explicitly fine,
 including commercially.
 
 ## Known gaps
 
-Being straight about what self-hosting does not yet include:
+Being straight about what self-hosting does not yet include.
 
-- **Sandbox backends are hosted dependencies** — Sprites, E2B and Daytona
-  are all services (self-hosted Daytona narrows this). The contract a new
-  backend must satisfy is executable — `Fountain.Sandbox` plus its
-  conformance suite — and written down in
+- **Sandbox backends are hosted dependencies.** Sprites, E2B and Daytona are
+  all services, and self-hosted Daytona narrows this. The contract a new
+  backend must satisfy is executable, `Fountain.Sandbox` plus its conformance
+  suite, and written down in
   [the sandbox contract](integrations/sandbox-contract.md).

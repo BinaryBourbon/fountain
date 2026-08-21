@@ -35,7 +35,7 @@ an error message.
 | `DATABASE_SSL_VERIFY` | off | — | Unset, the connection is encrypted but the server certificate is **not** verified. `true` verifies it, against the OS trust store unless a CA file is given |
 | `DATABASE_SSL_CA_FILE` | OS trust store | — | CA bundle used when `DATABASE_SSL_VERIFY=true` |
 | `POOL_SIZE` | `10` | — | Database connection pool size |
-| `MIGRATE_ON_BOOT` | `true` | — | Whether a booting release runs pending migrations before it serves. `false` (also `0`, `no`) makes the pod only serve, for the deployment that runs migrations once in a Job — see [migrations in a Job](self-hosting.md#running-migrations-in-a-job). `bin/migrate` always migrates, whatever this is set to. **Nothing checks that the Job ran**: a pod that skips migrations against an un-migrated database boots and then fails on the first query |
+| `MIGRATE_ON_BOOT` | `true` | — | Whether a booting release runs pending migrations before it serves. `false` (also `0`, `no`) makes the pod only serve, for the deployment that runs migrations once in a Job — see [migrations in a Job](guides/operate/database.md#running-migrations-in-a-job). `bin/migrate` always migrates, whatever this is set to. **Nothing checks that the Job ran**: a pod that skips migrations against an un-migrated database boots and then fails on the first query |
 
 ## Sandboxes
 
@@ -53,7 +53,7 @@ an error message.
 | `DAYTONA_API_KEY` | — | for the `daytona` provider | [Daytona](https://daytona.io) API key. Its presence enables the provider |
 | `DAYTONA_API_URL` | `https://app.daytona.io/api` | — | Repoints the Daytona API (self-hosted Daytona) |
 | `DAYTONA_SNAPSHOT` | org default | — | Snapshot (image) new Daytona sandboxes are created from; must be registered with the organization. The default image lacks the agent CLIs — build one from `images/daytona/` for real use |
-| `SANDBOX_IDLE_TIMEOUT_MINUTES` | `60` | — | No turn activity for this long and the sandbox is reclaimed — the conversation stays [resumable](self-hosting.md#sandbox-lifetime). `0` disables the bound; boot refuses anything that is not a non-negative integer |
+| `SANDBOX_IDLE_TIMEOUT_MINUTES` | `60` | — | No turn activity for this long and the sandbox is reclaimed — the conversation stays [resumable](guides/operate/sandbox-lifetime.md). `0` disables the bound; boot refuses anything that is not a non-negative integer |
 | `SANDBOX_MAX_LIFETIME_HOURS` | `24` | — | Absolute sandbox age ceiling, regardless of activity. Same `0`-disables and boot-refusal rules |
 | `LOG_OUTPUT_BUDGET_MB` | `50` | — | Durable log volume per conversation. Once a conversation has persisted this much sandbox output, one truncation marker is written and further output is discarded (retention bounds age; this bounds rate). Same `0`-disables and boot-refusal rules |
 
@@ -71,7 +71,7 @@ an error message.
 
 Production **refuses to boot** unless exactly one of the three delivery
 options is configured — a silently discarded verification email dead-ends
-signup with no visible error. See [Email](self-hosting.md#email).
+signup with no visible error. See [Email](guides/operate/email.md).
 
 | Variable | Default | Required | Effect |
 |---|---|---|---|

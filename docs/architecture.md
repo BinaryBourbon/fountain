@@ -32,7 +32,7 @@ Scheduled work, all times UTC:
 
 One replica needs none of this. With more than one, replicas must form an
 Erlang cluster — `CLUSTER_DNS_QUERY` pointed at a headless service
-([`k8s/` shows the wiring](self-hosting.md#kubernetes)):
+([`k8s/` shows the wiring](guides/operate/kubernetes.md)):
 
 - The conversation registry places each conversation server on exactly one
   node and finds it from any node.
@@ -72,10 +72,10 @@ the key is half of that sentence.
 
 | Dependency | Needed for | When it is down |
 |---|---|---|
-| **Postgres** | Everything | `GET /health/ready` returns 503 and load balancers drain the instance; the app stays up and does not restart — restarting does not fix Postgres, so [the restart check deliberately checks nothing](self-hosting.md#health-endpoints). Recovery is automatic. A replica *booting* against a down database fails instead, because migrations run at boot |
+| **Postgres** | Everything | `GET /health/ready` returns 503 and load balancers drain the instance; the app stays up and does not restart — restarting does not fix Postgres, so [the restart check deliberately checks nothing](guides/operate/observability.md#health-endpoints). Recovery is automatic. A replica *booting* against a down database fails instead, because migrations run at boot |
 | **sprites.dev** | Conversations | New provisions and wakes fail — bounded retries with backoff, then the conversation is marked `failed` (or left resumable, if it was a wake). Everything else keeps serving: sign-in, dashboards, agent/environment/vault management, past logs. Deliberately excluded from the readiness check — a third party's uptime does not belong on the serving path |
 | **Stripe** | Billing — optional, `BILLING_ENABLED` | Checkout and the billing portal fail with a visible error; the billing page itself still renders from local state. Webhooks are redelivered by Stripe until acknowledged. Trial expiry is enforced against the local clock, so an outage delays revenue rather than opening the gate |
-| **Mail** (Resend or SMTP) | Signup verification, password reset | Both dead-end while the provider is down. Escape hatch: `Fountain.Release.verify_email/1` — see [Email](self-hosting.md#email). (`EMAIL_DELIVERY=none` is different: accounts self-verify, ADR 0011) |
+| **Mail** (Resend or SMTP) | Signup verification, password reset | Both dead-end while the provider is down. Escape hatch: `Fountain.Release.verify_email/1` — see [Email](guides/operate/email.md). (`EMAIL_DELIVERY=none` is different: accounts self-verify, ADR 0011) |
 | **GitHub OAuth** | The OAuth login button — optional | Only that button. Email/password auth is unaffected |
 | **Sentry** | Error reporting — optional | Inert without a DSN; nothing depends on it |
 | **Object storage** | Database backups — ops layer | The application never touches object storage; it exists only in a deployment's backup pipeline |
@@ -96,7 +96,7 @@ The blast radius follows from the layout:
 
 - **A database backup cannot decrypt itself.** Restoring secrets requires the
   same `MASTER_SECRETS_KEY` the backup was written under —
-  [keep it separate from the backups](self-hosting.md#back-up-master_secrets_key).
+  [keep it separate from the backups](guides/operate/back-up-and-restore.md#back-up-master_secrets_key).
 - Losing or changing the master key makes every stored secret unrecoverable.
   Nothing else is lost — accounts, configs and history are plain rows.
 - An attacker with only database access holds ciphertext and wrapped keys, not
@@ -146,7 +146,7 @@ strings shown in the UI, the SSE stream and the log rows, each with a state of
    memory. If the sprite is gone, the conversation re-provisions from step 2 —
    Fountain's transcript survives, the agent's session does not (#649).
 6. **`sandbox`** — the lifetime bounds. Every server checks its
-   [bounds](self-hosting.md#sandbox-lifetime) each minute, and they do
+   [bounds](guides/operate/sandbox-lifetime.md) each minute, and they do
    different things: crossing the **idle timeout** *suspends* — the server
    stops, the sprite stays (it scales itself to zero) and the sandbox parks in
    `suspended`, to be woken with everything intact by the next prompt.
@@ -182,6 +182,6 @@ level — what to run and what the output means — is [Operations](operations.m
 | UI down, `GET /health/ready` returns 503 | Postgres |
 | Container restarts in a loop at boot | Migrations cannot reach Postgres — boot fails before anything listens |
 | Streaming dead for some viewers, fine for others, multiple replicas | Erlang clustering — `CLUSTER_DNS_QUERY` |
-| Signups never complete | Mail delivery — see [Email](self-hosting.md#email) |
+| Signups never complete | Mail delivery — see [Email](guides/operate/email.md) |
 | `402 subscription_required` on a self-hosted instance | `BILLING_ENABLED` should be `false` |
-| Sandbox suspends between prompts, work resumes on the next one | Working as designed — [lifecycle bounds](self-hosting.md#sandbox-lifetime) |
+| Sandbox suspends between prompts, work resumes on the next one | Working as designed — [lifecycle bounds](guides/operate/sandbox-lifetime.md) |

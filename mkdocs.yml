@@ -77,8 +77,26 @@ nav:
       - Agents as teammates: concepts/teammates.md
       - Architecture: architecture.md
   - Setup: setup.md
-  - Self-hosting: self-hosting.md
-  - Operations: operations.md
+  - Run an instance:
+      - Self-hosting: self-hosting.md
+      - Deploy an instance: guides/operate/deploy.md
+      - Put it on the internet: guides/operate/put-it-on-the-internet.md
+      - Connect a database: guides/operate/database.md
+      - Deploy on Kubernetes: guides/operate/kubernetes.md
+      - Configure email: guides/operate/email.md
+      - Change sandbox lifetimes: guides/operate/sandbox-lifetime.md
+      - Turn on billing: guides/operate/billing.md
+      - Back up and restore: guides/operate/back-up-and-restore.md
+      - Upgrade an instance: guides/operate/upgrade.md
+      - Wire up observability: guides/operate/observability.md
+      - Run a release task: guides/operate/run-a-release-task.md
+      - Operations overview: operations.md
+  - Troubleshooting:
+      - Overview: troubleshooting/index.md
+      - A conversation is stuck or failed: troubleshooting/conversation-stuck-or-failed.md
+      - Sandbox errors: troubleshooting/sandbox-errors.md
+      - Pods restarting or not ready: troubleshooting/pods-restarting.md
+      - Nobody can log in: troubleshooting/nobody-can-log-in.md
   - Configuration reference: configuration.md
   - Sandbox providers:
       - The contract: integrations/sandbox-contract.md
