@@ -37,6 +37,13 @@ does not.
 
 ## Front matter, which is the whole point
 
+> **Deferred, and honestly so.** This section assumes index pages render from
+> front matter. Nothing in Fountain's MkDocs stack does that without a macros
+> plugin, which is not installed, so the catalog indexes that shipped in #915
+> and #920 are hand-written tables. Adding front matter now would be unused
+> metadata. The design below stands if a generator arrives; it is not a
+> prerequisite for writing entries.
+
 Every entry carries YAML front matter. The index pages, the badges, the
 filtering and the sort all read from it. Nothing about an entry is derived from
 its prose.

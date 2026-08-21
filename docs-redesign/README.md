@@ -1,5 +1,41 @@
 # Fountain docs: IA redesign and writing standards
 
+## Status
+
+**Mostly executed.** These were planning documents; `docs/` has since been
+rebuilt from them. Tracker: #903.
+
+| Shipped | Where |
+|---|---|
+| Concepts tree, tutorial promoted, `primitives.md` split | #901 |
+| `self-hosting.md` and `operations.md` split, Troubleshooting section | #913 |
+| The three missing explanation pages | #914 |
+| Catalog: runtimes and skills | #915 |
+| Catalog: the three MCP servers Fountain hosts | #920 |
+| Style checker, ratchet, and the whole backlog cleared | #917, #923 to #927 |
+| Generated flag-complete CLI reference | #928 |
+
+Still open: #906 (refile the 19 `integrations/` pages onto the entry
+template), #908 (a third-party MCP catalog, which needs a product decision),
+and the API half of #912.
+
+**Read these as the reasoning, not as the current state of `docs/`.** Where a
+plan below differs from what shipped, what shipped is right and the difference
+is noted inline. Two known divergences:
+
+- `03-nav-tree.md` groups Guides into sub-sections. The `mkdocs.yml` nav parser
+  takes **one level of sections** and raises on anything deeper, so those
+  flattened into sibling sections (`Run an instance`, `Troubleshooting`).
+- `05-catalog-template.md` treats YAML front matter as load-bearing, on the
+  assumption that index pages render from it. Nothing in this MkDocs stack
+  does that without a macros plugin, which is not installed. The catalog index
+  tables that shipped are hand-written. The front-matter design stands if a
+  generator ever arrives; until then it would be unused metadata.
+
+---
+
+The original note follows.
+
 Working documents, not yet a docs PR. Nothing under `docs/` has been changed.
 
 | File | What it is |

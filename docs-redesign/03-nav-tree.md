@@ -1,5 +1,10 @@
 # Deliverable 1: proposed nav tree
 
+> **Shipped with one change.** The `mkdocs.yml` nav parser takes one level of
+> sections and raises on anything deeper, so the Guides sub-groupings below
+> flattened into sibling sections. What shipped is `Concepts`, `Run an
+> instance`, `Troubleshooting`, `Catalog` and `Reference`. See #903.
+
 Every entry is labelled with its Diátaxis mode and its disposition.
 **KEEP**, **MOVE**, **SPLIT**, **MERGE**, **NEW**, **DELETE**.
 
