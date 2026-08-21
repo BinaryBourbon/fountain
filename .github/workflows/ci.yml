@@ -200,8 +200,12 @@ jobs:
           echo "changed against ${base:0:7}:"
           printf '%s\n' "${changed}" | sed 's/^/  /'
 
+          # Both halves of the CLI reference: the hand-written index and the
+          # generated docs/cli/commands.md. The generated one matters here
+          # because a docs-only PR that hand-edits it would otherwise skip the
+          # Go tests entirely, and the staleness check lives in them.
           cli_docs=false
-          if printf '%s\n' "${changed}" | grep -qx 'docs/cli.md'; then
+          if printf '%s\n' "${changed}" | grep -qE '^docs/cli\.md$|^docs/cli/'; then
             cli_docs=true
           fi
 
@@ -1075,4 +1079,4 @@ jobs:
       - name: CLI docs parity
         if: ${{ needs.changes.outputs.cli_docs == 'true' }}
         working-directory: cli
-        run: go test ./internal/cmd -run 'TestEveryCommandIsDocumented|TestNoDocumentedCommandIsInvented'
+        run: go test ./internal/cmd -run 'TestEveryCommandIsDocumented|TestNoDocumentedCommandIsInvented|TestGeneratedCLIReferenceIsCurrent'

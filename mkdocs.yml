@@ -132,6 +132,7 @@ nav:
       - Sentry: integrations/sentry.md
   - Reference:
       - CLI: cli.md
+      - All CLI commands: cli/commands.md
       - API: api.md
       - TypeScript SDK: sdk.md
       - Conversation states: reference/conversation-states.md
