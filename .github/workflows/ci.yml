@@ -59,6 +59,12 @@ permissions:
 # concludes `success`, which is all build.yml's workflow_run gate asks. Any
 # doubt — no associated PR, a differing tree, no successful PR run, an API
 # hiccup — falls through to the full run, never to a skip.
+# The one place the Postgres pin lives. The jobs that need a database start it
+# themselves (see "Start Postgres in the background"), so it is no longer
+# expressible as a `services:` image.
+env:
+  PG_IMAGE: postgres:16@sha256:287eced1f33b59ed265ed13a60d3680dd7646d70c4dc0e785f59a470ebc03eeb
+
 jobs:
   already-tested:
     name: Skip the re-run when a PR already tested this exact tree
@@ -245,25 +251,35 @@ jobs:
       # export from every partition rather than from whichever ones uploaded.
       partitions: ${{ steps.total.outputs.count }}
 
-    services:
-      postgres:
-        image: postgres:16@sha256:287eced1f33b59ed265ed13a60d3680dd7646d70c4dc0e785f59a470ebc03eeb
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: fountain_test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
     env:
       MIX_ENV: test
 
     steps:
+      # Postgres as a backgrounded step rather than a `services:` container.
+      # A service container is initialised before the first step runs, so all
+      # ~27s of it sat on the critical path of every job wanting a database:
+      # ~11.7s pulling the image, ~2s creating the container, then ~13.3s
+      # waiting on a health probe whose first poll does not fire for 10s.
+      # Started here it pulls and initialises alongside checkout, setup-beam,
+      # the cache restores and deps.get — work that has to happen anyway — and
+      # the wait below normally returns on its first poll.
+      #
+      # Nothing here tunes Postgres for throughput, and that is deliberate.
+      # The suite runs in Ecto's SQL Sandbox: every test is a transaction that
+      # gets rolled back, so almost nothing is committed or fsynced. A tmpfs
+      # PGDATA measured 58.8s against 57.8s on disk for one partition despite
+      # seven times the pgbench write throughput. Init was the only real cost.
+      - name: Start Postgres in the background
+        run: |
+          set -euo pipefail
+          nohup docker run -d --name postgres \
+            -p 5432:5432 \
+            -e POSTGRES_USER=postgres \
+            -e POSTGRES_PASSWORD=postgres \
+            -e POSTGRES_DB=fountain_test \
+            "${PG_IMAGE}" > "${RUNNER_TEMP}/postgres-start.log" 2>&1 &
+          echo "postgres starting; the wait step is what decides"
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v5
 
       - name: Set up Elixir
@@ -308,6 +324,34 @@ jobs:
 
       - name: Install dependencies
         run: mix deps.get
+
+      # Idempotent on purpose. The start above is backgrounded, and a step can
+      # finish before the pull it launched does; if the container is not there
+      # yet this starts it synchronously. Slower in that case, never wrong.
+      - name: Wait for Postgres
+        run: |
+          set -uo pipefail
+          if ! docker inspect postgres > /dev/null 2>&1; then
+            echo "background start had not created the container; starting it here"
+            cat "${RUNNER_TEMP}/postgres-start.log" 2>/dev/null || true
+            docker run -d --name postgres \
+              -p 5432:5432 \
+              -e POSTGRES_USER=postgres \
+              -e POSTGRES_PASSWORD=postgres \
+              -e POSTGRES_DB=fountain_test \
+              "${PG_IMAGE}" || true
+          fi
+          for _ in $(seq 1 120); do
+            if docker exec postgres pg_isready -U postgres -q 2>/dev/null; then
+              echo "postgres ready"
+              exit 0
+            fi
+            sleep 0.5
+          done
+          echo "::error::postgres never became ready"
+          cat "${RUNNER_TEMP}/postgres-start.log" 2>/dev/null || true
+          docker logs postgres 2>&1 | tail -50 || true
+          exit 1
 
       - name: Set up database
         run: mix ecto.create --quiet && mix ecto.migrate --quiet
@@ -446,25 +490,35 @@ jobs:
     # Postgres is here for the release boot check alone: /health/ready calls
     # Fountain.Health.database/0, and the release task that runs after it
     # queries users. Both need a migrated fountain_test to answer honestly.
-    services:
-      postgres:
-        image: postgres:16@sha256:287eced1f33b59ed265ed13a60d3680dd7646d70c4dc0e785f59a470ebc03eeb
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: fountain_test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
     env:
       MIX_ENV: test
 
     steps:
+      # Postgres as a backgrounded step rather than a `services:` container.
+      # A service container is initialised before the first step runs, so all
+      # ~27s of it sat on the critical path of every job wanting a database:
+      # ~11.7s pulling the image, ~2s creating the container, then ~13.3s
+      # waiting on a health probe whose first poll does not fire for 10s.
+      # Started here it pulls and initialises alongside checkout, setup-beam,
+      # the cache restores and deps.get — work that has to happen anyway — and
+      # the wait below normally returns on its first poll.
+      #
+      # Nothing here tunes Postgres for throughput, and that is deliberate.
+      # The suite runs in Ecto's SQL Sandbox: every test is a transaction that
+      # gets rolled back, so almost nothing is committed or fsynced. A tmpfs
+      # PGDATA measured 58.8s against 57.8s on disk for one partition despite
+      # seven times the pgbench write throughput. Init was the only real cost.
+      - name: Start Postgres in the background
+        run: |
+          set -euo pipefail
+          nohup docker run -d --name postgres \
+            -p 5432:5432 \
+            -e POSTGRES_USER=postgres \
+            -e POSTGRES_PASSWORD=postgres \
+            -e POSTGRES_DB=fountain_test \
+            "${PG_IMAGE}" > "${RUNNER_TEMP}/postgres-start.log" 2>&1 &
+          echo "postgres starting; the wait step is what decides"
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v5
 
       - name: Set up Elixir
@@ -604,6 +658,34 @@ jobs:
 
       # For the release boot check below, not for a test suite — this job runs
       # none. /health/ready and expire_legacy_trials both read the database.
+      # Idempotent on purpose. The start above is backgrounded, and a step can
+      # finish before the pull it launched does; if the container is not there
+      # yet this starts it synchronously. Slower in that case, never wrong.
+      - name: Wait for Postgres
+        run: |
+          set -uo pipefail
+          if ! docker inspect postgres > /dev/null 2>&1; then
+            echo "background start had not created the container; starting it here"
+            cat "${RUNNER_TEMP}/postgres-start.log" 2>/dev/null || true
+            docker run -d --name postgres \
+              -p 5432:5432 \
+              -e POSTGRES_USER=postgres \
+              -e POSTGRES_PASSWORD=postgres \
+              -e POSTGRES_DB=fountain_test \
+              "${PG_IMAGE}" || true
+          fi
+          for _ in $(seq 1 120); do
+            if docker exec postgres pg_isready -U postgres -q 2>/dev/null; then
+              echo "postgres ready"
+              exit 0
+            fi
+            sleep 0.5
+          done
+          echo "::error::postgres never became ready"
+          cat "${RUNNER_TEMP}/postgres-start.log" 2>/dev/null || true
+          docker logs postgres 2>&1 | tail -50 || true
+          exit 1
+
       - name: Set up database
         run: mix ecto.create --quiet && mix ecto.migrate --quiet
 
@@ -830,25 +912,35 @@ jobs:
     permissions:
       contents: read
 
-    services:
-      postgres:
-        image: postgres:16@sha256:287eced1f33b59ed265ed13a60d3680dd7646d70c4dc0e785f59a470ebc03eeb
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: fountain_test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
     env:
       MIX_ENV: test
 
     steps:
+      # Postgres as a backgrounded step rather than a `services:` container.
+      # A service container is initialised before the first step runs, so all
+      # ~27s of it sat on the critical path of every job wanting a database:
+      # ~11.7s pulling the image, ~2s creating the container, then ~13.3s
+      # waiting on a health probe whose first poll does not fire for 10s.
+      # Started here it pulls and initialises alongside checkout, setup-beam,
+      # the cache restores and deps.get — work that has to happen anyway — and
+      # the wait below normally returns on its first poll.
+      #
+      # Nothing here tunes Postgres for throughput, and that is deliberate.
+      # The suite runs in Ecto's SQL Sandbox: every test is a transaction that
+      # gets rolled back, so almost nothing is committed or fsynced. A tmpfs
+      # PGDATA measured 58.8s against 57.8s on disk for one partition despite
+      # seven times the pgbench write throughput. Init was the only real cost.
+      - name: Start Postgres in the background
+        run: |
+          set -euo pipefail
+          nohup docker run -d --name postgres \
+            -p 5432:5432 \
+            -e POSTGRES_USER=postgres \
+            -e POSTGRES_PASSWORD=postgres \
+            -e POSTGRES_DB=fountain_test \
+            "${PG_IMAGE}" > "${RUNNER_TEMP}/postgres-start.log" 2>&1 &
+          echo "postgres starting; the wait step is what decides"
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v5
 
       - name: Set up Elixir
@@ -888,6 +980,34 @@ jobs:
       # entirely.
       - name: Compile
         run: mix compile --warnings-as-errors
+
+      # Idempotent on purpose. The start above is backgrounded, and a step can
+      # finish before the pull it launched does; if the container is not there
+      # yet this starts it synchronously. Slower in that case, never wrong.
+      - name: Wait for Postgres
+        run: |
+          set -uo pipefail
+          if ! docker inspect postgres > /dev/null 2>&1; then
+            echo "background start had not created the container; starting it here"
+            cat "${RUNNER_TEMP}/postgres-start.log" 2>/dev/null || true
+            docker run -d --name postgres \
+              -p 5432:5432 \
+              -e POSTGRES_USER=postgres \
+              -e POSTGRES_PASSWORD=postgres \
+              -e POSTGRES_DB=fountain_test \
+              "${PG_IMAGE}" || true
+          fi
+          for _ in $(seq 1 120); do
+            if docker exec postgres pg_isready -U postgres -q 2>/dev/null; then
+              echo "postgres ready"
+              exit 0
+            fi
+            sleep 0.5
+          done
+          echo "::error::postgres never became ready"
+          cat "${RUNNER_TEMP}/postgres-start.log" 2>/dev/null || true
+          docker logs postgres 2>&1 | tail -50 || true
+          exit 1
 
       - name: Set up database
         run: mix ecto.create --quiet && mix ecto.migrate --quiet
