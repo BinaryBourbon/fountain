@@ -116,14 +116,98 @@ jobs:
 
           echo "skip=${skip}" >> "$GITHUB_OUTPUT"
 
+  changes:
+    name: Decide whether this is a docs-only change
+    # pull_request only, and deliberately so. On push, `already-tested` above
+    # already collapses a rebased squash-merge to a few seconds, and a main
+    # push that is NOT already-tested is precisely the case that must run
+    # everything. Skipped here means empty outputs, and the `!= 'true'` tests
+    # below let every job run exactly as before — the same shape the
+    # already-tested gate uses.
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+
+    permissions:
+      contents: read
+
+    outputs:
+      docs_only: ${{ steps.filter.outputs.docs_only }}
+      cli_docs: ${{ steps.filter.outputs.cli_docs }}
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v5
+        with:
+          fetch-depth: 0
+
+      - name: Classify the diff
+        id: filter
+        # An ALLOWLIST, not an ignore list, and that direction is the whole
+        # safety argument: a path is docs-only if it is under docs/ or is
+        # mkdocs.yml itself, and anything else — including this workflow —
+        # falls through to the full suite. A new top-level directory nobody
+        # thought about is therefore tested, not skipped. The failure mode is
+        # "ran too much", never "ran too little".
+        #
+        # Never fails: like the already-tested probe, every branch ends in a
+        # decision and the decision on any error is "run the full CI".
+        #
+        # CHANGELOG.md is NOT on the allowlist even though docs/changelog.md
+        # snippet-includes it — it is touched by the release-bump flow, where
+        # skipping the suite is not wanted.
+        run: |
+          set -u
+          decide() {
+            echo "docs_only=$1" >> "$GITHUB_OUTPUT"
+            echo "cli_docs=$2" >> "$GITHUB_OUTPUT"
+            exit 0
+          }
+
+          if ! git fetch --no-tags --quiet origin \
+               "+refs/heads/${GITHUB_BASE_REF}:refs/remotes/origin/${GITHUB_BASE_REF}" 2>/dev/null; then
+            echo "could not fetch base ${GITHUB_BASE_REF} — running the full CI"
+            decide false false
+          fi
+
+          base="$(git merge-base "refs/remotes/origin/${GITHUB_BASE_REF}" HEAD 2>/dev/null || true)"
+          if [ -z "${base}" ]; then
+            echo "no merge base with ${GITHUB_BASE_REF} — running the full CI"
+            decide false false
+          fi
+
+          changed="$(git diff --name-only "${base}" HEAD 2>/dev/null || true)"
+          if [ -z "${changed}" ]; then
+            echo "empty diff against ${base:0:7} — running the full CI"
+            decide false false
+          fi
+
+          echo "changed against ${base:0:7}:"
+          printf '%s\n' "${changed}" | sed 's/^/  /'
+
+          cli_docs=false
+          if printf '%s\n' "${changed}" | grep -qx 'docs/cli.md'; then
+            cli_docs=true
+          fi
+
+          # grep -qv succeeds when ANY line falls outside the allowlist, so
+          # the negation is "every changed path is a docs path".
+          if printf '%s\n' "${changed}" | grep -qvE '^docs/|^mkdocs\.yml$'; then
+            echo "non-docs paths changed — running the full CI"
+            decide false "${cli_docs}"
+          fi
+
+          echo "docs-only — running the docs job instead of the Elixir suite"
+          decide true "${cli_docs}"
+
   test:
     name: Build and Test (partition ${{ matrix.partition }})
     runs-on: ubuntu-24.04
     timeout-minutes: 20
-    needs: already-tested
+    needs: [already-tested, changes]
     # `!cancelled()` rather than the implicit success(): on pull_request the
     # gate job is skipped, and a skipped `needs` would skip this job too.
-    if: ${{ !cancelled() && needs.already-tested.outputs.skip != 'true' }}
+    if: ${{ !cancelled() && needs.already-tested.outputs.skip != 'true'
+         && needs.changes.outputs.docs_only != 'true' }}
 
     permissions:
       contents: read
@@ -336,8 +420,9 @@ jobs:
     name: Static analysis and release checks
     runs-on: ubuntu-24.04
     timeout-minutes: 15
-    needs: already-tested
-    if: ${{ !cancelled() && needs.already-tested.outputs.skip != 'true' }}
+    needs: [already-tested, changes]
+    if: ${{ !cancelled() && needs.already-tested.outputs.skip != 'true'
+         && needs.changes.outputs.docs_only != 'true' }}
 
     permissions:
       contents: read
@@ -622,8 +707,9 @@ jobs:
     name: Compose fresh-clone check
     runs-on: ubuntu-24.04
     timeout-minutes: 5
-    needs: already-tested
-    if: ${{ !cancelled() && needs.already-tested.outputs.skip != 'true' }}
+    needs: [already-tested, changes]
+    if: ${{ !cancelled() && needs.already-tested.outputs.skip != 'true'
+         && needs.changes.outputs.docs_only != 'true' }}
 
     permissions:
       contents: read
@@ -652,8 +738,9 @@ jobs:
     name: Compose boots the pinned image
     runs-on: ubuntu-24.04
     timeout-minutes: 10
-    needs: already-tested
-    if: ${{ !cancelled() && needs.already-tested.outputs.skip != 'true' }}
+    needs: [already-tested, changes]
+    if: ${{ !cancelled() && needs.already-tested.outputs.skip != 'true'
+         && needs.changes.outputs.docs_only != 'true' }}
 
     permissions:
       contents: read
@@ -702,3 +789,121 @@ jobs:
       - name: Dump container logs
         if: failure()
         run: docker compose logs --timestamps
+
+  # What a docs-only PR runs instead of the three test partitions, the
+  # coverage merge, static analysis and the two compose checks. It is not a
+  # weaker gate for docs, it is a stronger one: `mkdocs build --strict` never
+  # ran on a pull request at all before this job existed — docs.yml is
+  # push-to-main only — so a broken relative link or a page missing from the
+  # nav passed CI and failed after the merge, on main, where nobody was
+  # looking.
+  #
+  # The compile step is the load-bearing one. Fountain.Docs embeds every page
+  # at compile time, so a snippet include pointing at a file that is not there
+  # kills `mix compile` — and, in the image, `mix release`, which is how #884
+  # shipped a commit that built no image at all while CI stayed green. The
+  # Dockerfile-COPY coverage test that now guards that lives in docs_test.exs
+  # and runs here.
+  docs:
+    name: Docs
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.docs_only == 'true' }}
+
+    permissions:
+      contents: read
+
+    services:
+      postgres:
+        image: postgres:16@sha256:287eced1f33b59ed265ed13a60d3680dd7646d70c4dc0e785f59a470ebc03eeb
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: fountain_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      MIX_ENV: test
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v5
+
+      - name: Set up Elixir
+        id: beam
+        uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124 # v1.24.1
+        with:
+          elixir-version: "1.19.2"
+          otp-version: "28.3"
+
+      # Shares the `test` job's cache keys on purpose. The warning against
+      # sharing a key (see the `test` job) is about two jobs racing to save
+      # mutually incomplete trees under one name — that cannot happen here,
+      # because this job and the partitions are mutually exclusive by
+      # construction: docs_only gates one set or the other, never both. Same
+      # :test tree, so this job warms from their archive and back into it.
+      - name: Restore deps cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
+        with:
+          path: deps
+          key: ${{ runner.os }}-mix-test-${{ hashFiles('**/mix.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-mix-test-
+
+      - name: Restore build cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
+        with:
+          path: _build
+          key: ${{ runner.os }}-build-test-${{ steps.beam.outputs.otp-version }}-${{ steps.beam.outputs.elixir-version }}-${{ hashFiles('**/mix.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-build-test-${{ steps.beam.outputs.otp-version }}-${{ steps.beam.outputs.elixir-version }}-
+
+      - name: Install dependencies
+        run: mix deps.get
+
+      # Embedding happens here: a bad snippet path or an unreadable page fails
+      # this step, which is the whole reason a docs change cannot skip Elixir
+      # entirely.
+      - name: Compile
+        run: mix compile --warnings-as-errors
+
+      - name: Set up database
+        run: mix ecto.create --quiet && mix ecto.migrate --quiet
+
+      # docs_test.exs: the mkdocs.yml <-> @nav mirror, the snippet-to-Dockerfile
+      # COPY coverage, the MkDocs-dialect preprocessing and every internal
+      # /docs link. docs_controller_test.exs: that the pages actually serve.
+      - name: Docs tests
+        run: mix test apps/fountain/test/fountain/docs_test.exs apps/fountain/test/fountain_web/controllers/docs_controller_test.exs
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+
+      - name: Install MkDocs
+        run: pip install -r docs/requirements.txt
+
+      # The gate docs.yml only ever applied after the merge. A page missing
+      # from the nav, or a relative link that does not resolve, is an error.
+      - name: Build the site strictly
+        run: mkdocs build --strict
+
+      - name: Set up Go
+        if: ${{ needs.changes.outputs.cli_docs == 'true' }}
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: cli/go.mod
+          cache-dependency-path: cli/go.sum
+
+      # docs/cli.md is diffed against the real command tree, so it is the one
+      # docs page whose guard lives in the Go suite rather than the Elixir one.
+      - name: CLI docs parity
+        if: ${{ needs.changes.outputs.cli_docs == 'true' }}
+        working-directory: cli
+        run: go test ./internal/cmd -run 'TestEveryCommandIsDocumented|TestNoDocumentedCommandIsInvented'
