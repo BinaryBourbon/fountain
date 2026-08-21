@@ -3,6 +3,7 @@ package cmd
 import (
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 
@@ -125,13 +126,39 @@ func walkCommands(c *cobra.Command, path []string, fn func([]string)) {
 	}
 }
 
+// The CLI reference is docs/cli.md today. It is allowed to become a directory
+// of per-command pages without this test having to change again: both
+// docs/cli.md and every .md under docs/cli/ are concatenated, so a split moves
+// prose between files the scanners already read.
+//
+// The old version hardcoded docs/cli.md and nothing else, which made the page
+// unsplittable — the reference could not be reorganised without the parity
+// tests going red for a reason unrelated to the CLI.
 func readCLIDoc(t *testing.T) string {
 	t.Helper()
 	// cli/internal/cmd -> repo root
-	path := filepath.Join("..", "..", "..", "docs", "cli.md")
-	b, err := os.ReadFile(path)
-	if err != nil {
-		t.Skipf("docs/cli.md not readable from here (%v); skipping", err)
+	root := filepath.Join("..", "..", "..", "docs")
+
+	var parts []string
+	if b, err := os.ReadFile(filepath.Join(root, "cli.md")); err == nil {
+		parts = append(parts, string(b))
 	}
-	return string(b)
+
+	matches, err := filepath.Glob(filepath.Join(root, "cli", "*.md"))
+	if err != nil {
+		t.Fatalf("globbing docs/cli/: %v", err)
+	}
+	sort.Strings(matches)
+	for _, m := range matches {
+		b, err := os.ReadFile(m)
+		if err != nil {
+			t.Fatalf("reading %s: %v", m, err)
+		}
+		parts = append(parts, string(b))
+	}
+
+	if len(parts) == 0 {
+		t.Skip("no CLI reference found at docs/cli.md or docs/cli/*.md; skipping")
+	}
+	return strings.Join(parts, "\n")
 }
