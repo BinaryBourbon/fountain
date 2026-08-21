@@ -19,6 +19,73 @@ defmodule Fountain.Docs.Compiler do
     end
   end
 
+  @doc """
+  Parses the `nav:` block of `mkdocs.yml` into the shape `Fountain.Docs`
+  serves: `{title, file}` for a page and `{section_title, [{title, file}, ...]}`
+  for a section, in document order.
+
+  Deliberately not a YAML parser, and it does not need to be — the nav is a
+  hand-written two-level list, and this reads the two line shapes it can take.
+  What matters is the failure mode: a line it does not recognise **raises**
+  rather than being skipped. A page silently missing from `/docs` is exactly
+  the bug this parser exists to make impossible, so being unable to parse the
+  nav has to fail the compile, not shrink the site.
+
+  This replaced a hand-maintained copy of the nav in `Fountain.Docs`. Adding a
+  page to `mkdocs.yml` is now the whole change.
+  """
+  @spec parse_nav(String.t()) :: [{String.t(), String.t() | [{String.t(), String.t()}]}]
+  def parse_nav(yaml) do
+    case String.split(yaml, ~r/^nav:\n/m, parts: 2) do
+      [_before, block] -> block |> nav_lines() |> Enum.reduce([], &nav_entry/2) |> finish_nav()
+      _ -> raise ArgumentError, "mkdocs.yml has no `nav:` block"
+    end
+  end
+
+  # The block runs until the first line that is neither blank nor indented —
+  # the next top-level key. Comments inside it are ignored rather than fatal.
+  defp nav_lines(block) do
+    block
+    |> String.split("\n")
+    |> Enum.take_while(&(&1 == "" or String.starts_with?(&1, " ")))
+    |> Enum.reject(&(String.trim(&1) == "" or String.starts_with?(String.trim(&1), "#")))
+  end
+
+  defp nav_entry(line, acc) do
+    case Regex.run(~r/^(\s+)- ([^:]+):\s*(\S+)?\s*$/, line) do
+      # `  - Setup: setup.md` — a top-level page.
+      [_, indent, title, file] when byte_size(indent) == 2 ->
+        [{title, file} | acc]
+
+      # `  - Sandbox providers:` — a section header; its children follow.
+      [_, indent, title] when byte_size(indent) == 2 ->
+        [{title, []} | acc]
+
+      # `      - Sprites: integrations/sprites.md` — a child of the section
+      # currently being built.
+      [_, indent, title, file] when byte_size(indent) > 2 ->
+        case acc do
+          [{section, children} | rest] when is_list(children) ->
+            [{section, [{title, file} | children]} | rest]
+
+          _ ->
+            raise ArgumentError, "indented nav entry with no section above it: #{inspect(line)}"
+        end
+
+      _ ->
+        raise ArgumentError, "unparsed mkdocs.yml nav line: #{inspect(line)}"
+    end
+  end
+
+  defp finish_nav(acc) do
+    acc
+    |> Enum.map(fn
+      {section, children} when is_list(children) -> {section, Enum.reverse(children)}
+      entry -> entry
+    end)
+    |> Enum.reverse()
+  end
+
   @doc "Flattens a nav (sections one level deep) to `{title, file}` pairs in order."
   @spec flat_pages(list()) :: [{String.t(), String.t()}]
   def flat_pages(nav) do
