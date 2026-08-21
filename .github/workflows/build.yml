@@ -63,6 +63,11 @@ jobs:
           # Full history: the diff below walks ancestry for the newest
           # commit whose image actually exists.
           fetch-depth: 0
+          # Nothing after checkout needs the token: the filter step runs only
+          # local git (rev-list, diff) and the registry probe carries its own
+          # auth. Leaving it behind writes a push-capable credential into
+          # .git/config that every later step inherits.
+          persist-credentials: false
 
       - name: Skip paths that never affect the OCI image
         id: filter
@@ -147,6 +152,10 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4
         with:
           ref: ${{ env.SRC_SHA }}
+          # This job runs no authenticated git operation — GHCR gets an
+          # explicit token below — so the image build and everything it
+          # executes should not inherit one from .git/config.
+          persist-credentials: false
 
       - name: Read buzz-acp pin
         run: echo "BUZZ_ACP_VERSION=$(tr -d '[:space:]' < buzz-acp.version)" >> "$GITHUB_ENV"
