@@ -202,10 +202,12 @@ defmodule FountainWeb.Layouts do
   end
 
   # Deployment marker shown under the sidebar email popup. Combines the
-  # umbrella app version with the short git SHA the Docker image was
-  # built from. `FOUNTAIN_BUILD_SHA` is set in the runtime image via a
-  # docker build-arg wired up in .github/workflows/build.yml; local dev
-  # falls back to "dev".
+  # umbrella app version with the short git SHA this deployment is running.
+  # `FOUNTAIN_BUILD_SHA` comes from one of two places: a tagged release image
+  # bakes it in as a docker build-arg (release.yml), while a main-line image
+  # deliberately does not — that image is reusable across commits with the
+  # same tree, so k8s/deployment.yaml carries the value and
+  # publish-manifests.yml pins it per deploy. Local dev falls back to "dev".
   defp build_version do
     vsn = :fountain |> Application.spec(:vsn) |> to_string()
     sha = "FOUNTAIN_BUILD_SHA" |> System.get_env("dev") |> String.slice(0, 7)

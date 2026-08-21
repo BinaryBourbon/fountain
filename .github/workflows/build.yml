@@ -168,8 +168,20 @@ jobs:
           context: .
           file: ./Dockerfile
           platforms: ${{ matrix.platform }}
+          # No BUILD_SHA here, deliberately. Baking the commit into the
+          # image made two builds of the *same tree* different artifacts,
+          # which is what stops a main-line image from being reusable: an
+          # image built from tree T is correct for every commit with tree T,
+          # and it should not claim to be one of them. k8s/deployment.yaml
+          # carries FOUNTAIN_BUILD_SHA instead and publish-manifests.yml pins
+          # it to the commit actually being deployed — a pod env wins over the
+          # image's ENV, so the footer and the Sentry release still name a real
+          # commit on main.
+          #
+          # release.yml still passes BUILD_SHA: a tagged release image is
+          # pulled by self-hosters who never see our deployment.yaml, so it has
+          # to describe itself.
           build-args: |
-            BUILD_SHA=${{ env.SRC_SHA }}
             BUZZ_ACP_VERSION=${{ env.BUZZ_ACP_VERSION }}
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}

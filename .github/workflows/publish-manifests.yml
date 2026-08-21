@@ -153,10 +153,16 @@ jobs:
         run: |
           set -euo pipefail
           image=""
+          image_sha=""
           for candidate in $(git rev-list --first-parent -n 50 "${SRC_SHA}"); do
             if docker manifest inspect \
                  "ghcr.io/binarybourbon/fountain:sha-${candidate}" > /dev/null 2>&1; then
               image="ghcr.io/binarybourbon/fountain:sha-${candidate}"
+              # The commit the IMAGE was built from, which is not always
+              # SRC_SHA: on a manifest-only push this walk lands on an
+              # ancestor. FOUNTAIN_BUILD_SHA must name what is running, not
+              # the tree that triggered the publish.
+              image_sha="${candidate}"
               break
             fi
           done
@@ -171,11 +177,13 @@ jobs:
             echo "sha=${SRC_SHA}"
             echo "short=${SRC_SHA:0:7}"
             echo "image=${image}"
+            echo "image_sha=${image_sha}"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Pin the image tag in the working tree
+      - name: Pin the image tag and build sha in the working tree
         env:
           IMAGE: ${{ steps.tag.outputs.image }}
+          IMAGE_SHA: ${{ steps.tag.outputs.image_sha }}
         run: |
           set -euo pipefail
           sed -i -E \
@@ -186,6 +194,31 @@ jobs:
           # matching the regex, the old tag would otherwise ship silently.
           grep -qF "${IMAGE}" k8s/deployment.yaml || {
             echo "image pin substitution failed: ${IMAGE} not found in k8s/deployment.yaml" >&2
+            exit 1
+          }
+
+          # FOUNTAIN_BUILD_SHA is not baked into the image any more (build.yml),
+          # so this pin is the only thing that tells a running pod which commit
+          # it is — it reaches the console footer and the Sentry release. Same
+          # verify-or-fail shape as the image tag above: shipping the
+          # placeholder would misattribute every error to a commit that does
+          # not exist. `n` moves to the line after the name, so this cannot
+          # rewrite some other env's value.
+          # awk rather than sed: rewriting the line *after* a match needs
+          # GNU sed's `{n;s}`, which BSD sed rejects, so it could not be tried
+          # outside CI. This runs the same everywhere and counts what it did —
+          # exactly one substitution, or the publish fails.
+          awk -v sha="${IMAGE_SHA}" '
+            /- name: FOUNTAIN_BUILD_SHA/ {
+              print; if (getline <= 0) { exit 1 }
+              n += sub(/value: "[0-9a-f]+"/, "value: \"" sha "\"")
+            }
+            { print }
+            END { if (n != 1) { print "expected 1 pin, made " n+0 > "/dev/stderr"; exit 1 } }
+          ' k8s/deployment.yaml > k8s/deployment.yaml.pinned
+          mv k8s/deployment.yaml.pinned k8s/deployment.yaml
+          grep -qF "value: \"${IMAGE_SHA}\"" k8s/deployment.yaml || {
+            echo "FOUNTAIN_BUILD_SHA pin failed: ${IMAGE_SHA} not found in k8s/deployment.yaml" >&2
             exit 1
           }
           git diff --stat k8s/deployment.yaml
