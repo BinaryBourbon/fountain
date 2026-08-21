@@ -11,6 +11,7 @@ rest.
 |---|---|---|
 | [Runtimes](runtimes/index.md) | one coding-agent CLI a sandbox can run | 4 |
 | [Skills](skills/index.md) | one `SKILL.md` written into the sandbox | 2 bundled, plus anything on GitHub |
+| [MCP servers](mcp-servers/index.md) | one server giving the runtime tools | 3 hosted, plus anything you declare |
 
 ## Elsewhere in these docs
 
@@ -28,10 +29,11 @@ from outside. Editors, chat surfaces, plugin hosts, relays, your own code.
 
 ## What is not here yet
 
-**MCP servers.** `mcp_servers` is a first-class Agent field and there is no
-list of what works. Tracked in
+**A list of third-party MCP servers.** Fountain hosts three of its own and
+those are documented, but there is no curated list of which external servers
+work. Tracked in
 [#908](https://github.com/BinaryBourbon/fountain/issues/908), and it needs a
-decision about what "supported" means before it can be written honestly.
+decision about what "supported" would mean before such a list could be honest.
 
 If you want an entry that does not exist, open an issue. The entry template is
 in `docs-redesign/05-catalog-template.md` in the repository.
