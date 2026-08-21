@@ -44,29 +44,32 @@ defmodule Fountain.Docs do
        {"Self-hosted runners", "integrations/runners.md"},
        {"Adding a provider", "integrations/adding-a-sandbox-provider.md"}
      ]},
-    {"Integrations",
+    {"Services Fountain uses",
      [
        {"Overview", "integrations/index.md"},
-       {"fountain acp (reference)", "integrations/acp.md"},
-       {"Editors (ACP)", "integrations/editors.md"},
-       {"OpenClaw (ACP)", "integrations/openclaw.md"},
-       {"Hermes Agent (plugin)", "integrations/hermes.md"},
-       {"OpenBot (AG-UI)", "integrations/openbot.md"},
-       {"Buzz (Nostr)", "integrations/buzz.md"},
+       {"Mail", "integrations/mail.md"},
        {"GitHub OAuth", "integrations/github-oauth.md"},
        {"Stripe", "integrations/stripe.md"},
-       {"Sentry", "integrations/sentry.md"},
-       {"Mail", "integrations/mail.md"}
+       {"Sentry", "integrations/sentry.md"}
      ]},
     {"The four primitives", "primitives.md"},
     {"CLI reference", "cli.md"},
     {"API reference", "api.md"},
     {"TypeScript SDK", "sdk.md"},
     {"Guided tour — opening a PR", "tour.md"},
-    {"LLM integration", "llm-integration.md"},
+    {"Plugging into Fountain",
+     [
+       {"Overview", "integrations/clients.md"},
+       {"fountain acp (reference)", "integrations/acp.md"},
+       {"Editors (ACP)", "integrations/editors.md"},
+       {"OpenClaw (ACP)", "integrations/openclaw.md"},
+       {"Hermes Agent (plugin)", "integrations/hermes.md"},
+       {"OpenBot (AG-UI)", "integrations/openbot.md"},
+       {"Buzz (Nostr)", "integrations/buzz.md"},
+       {"LLM integration", "llm-integration.md"}
+     ]},
     {"Changelog", "changelog.md"}
   ]
-
   # docs/changelog.md pulls the repo-root CHANGELOG.md in via a snippet.
   @external_resource Path.join(@root, "CHANGELOG.md")
 

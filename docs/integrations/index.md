@@ -1,10 +1,16 @@
-# Integrations
+# Overview
 
-Every external service a Fountain instance can talk to, what it is for, and
-what breaks without it. One page per integration covers what to create on the
-provider side, which env vars result, and how to verify it works.
+The external services a Fountain instance talks to in order to run: where a
+sandbox is provisioned, how mail goes out, who signs users in, whether spend is
+metered, where errors land. These are the operator's business — one page per
+service covers what to create on the provider side, which env vars result, and
+how to verify it works.
 
-| Integration | Required? | Env vars | Without it |
+This is the *outbound* half. For the tools that talk **to** a running Fountain
+— editors, chat surfaces, plugins, SDKs — see
+[Plugging into Fountain](clients.md); nothing there needs an env var here.
+
+| Service | Required? | Env vars | Without it |
 |---|---|---|---|
 | [A sandbox provider](sandbox-contract.md) | **Yes — one of four** | `SPRITES_TOKEN` *or* `E2B_API_KEY` *or* `DAYTONA_API_KEY` (or users' own machines via [`fountain runner`](runners.md), no credential), plus `SANDBOX_PROVIDER` to pick the default | The app boots, but every conversation fails at provision time |
 | [Mail](mail.md) | **A decision, yes** | `RESEND_API_KEY` *or* `SMTP_*` *or* `EMAIL_DELIVERY=none`, `EMAIL_FROM` | Production refuses to boot with none of the three set |
@@ -12,48 +18,11 @@ provider side, which env vars result, and how to verify it works.
 | [Stripe](stripe.md) | Optional | `BILLING_ENABLED`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_ID` | No billing. Correct for most self-hosted instances — leave the gate off |
 | [Sentry](sentry.md) | Optional | `SENTRY_DSN`, `SENTRY_ENVIRONMENT` | No error tracking; the SDK is inert and nothing leaves the instance |
 
-## The integration with nothing to configure
+The sandbox providers — Sprites, E2B, Daytona, and users' own machines — have
+[a section of their own](sandbox-contract.md): one contract, four
+implementations. The row above is the short version.
 
-All three ACP clients below spawn the same adapter; its protocol surface,
-`_meta` extensions and failure modes are on one page,
-[**`fountain acp` (reference)**](acp.md), so the client pages only cover setup.
-
-[**Editors**](editors.md) are the one integration an operator does not set up.
-An ACP-capable editor — Zed and friends — spawns `fountain acp` locally and
-talks to your instance with the credentials the developer already has. There is
-no env var, no server-side switch, and nothing for you to run: it works against
-any instance the CLI can reach.
-
-[**OpenClaw**](openclaw.md) reaches the same `fountain acp` adapter from a chat
-surface — Telegram, Discord, Slack — by registering Fountain as a custom ACP
-agent in its `acpx` plugin. Again there is nothing to change on the Fountain
-side; the configuration is client-side, on the OpenClaw host.
-
-[**Hermes Agent**](hermes.md) is a client of the HTTP API rather than of
-`fountain acp`: a Hermes plugin (shipped in this repo under
-`integrations/hermes/`) gives Hermes `fountain_run` and friends, so its model
-delegates a task to a named Fountain agent and reads the answer back. Nothing
-to configure server-side; the plugin authenticates with an API key or the
-CLI's saved login.
-
-[**OpenBot**](openbot.md) needs no plugin at all, only a URL: Fountain answers
-[AG-UI](https://github.com/ag-ui-protocol/ag-ui) at `POST /api/agui/:agent_id`,
-and CopilotKit's OpenBot — or any other AG-UI host — registers a Fountain agent
-as a coworker with a channel of its own. One channel binds to one conversation,
-so the sandbox is the memory rather than the replayed transcript. Nothing to
-configure server-side; the coworker holds an API key.
-
-[**Buzz**](buzz.md) is the other direction: Fountain *hosts* a Buzz agent —
-a Nostr identity that lives on a relay — running its coding agent in a sandbox
-and holding its signing key in a vault. Provision one from the Buzz desktop or
-`POST /api/buzz/agents`; it self-enables on any image that ships the `buzz-acp`
-binary.
-
-The sandbox providers — Sprites, E2B, Daytona — have
-[a section of their own](sandbox-contract.md): one contract, three
-implementations.
-
-## The integration you do not configure
+## The service you do not configure
 
 **Inference providers — Anthropic, OpenAI, Gemini — are not set up by the
 operator.** There is no platform-level API key: each user brings their own

@@ -31,3 +31,5 @@ Running Claude instances with worktrees locally and shuffling MCP configurations
 - [**CLI reference**](cli.md) - `fountain` command surface
 - [**API reference**](api.md) - REST endpoints and auth
 - [**LLM integration**](llm-integration.md) - connect any agentic IDE via `/skill`
+- [**Plugging into Fountain**](integrations/clients.md) - editors, chat surfaces, plugins, SDKs
+- [**Services Fountain uses**](integrations/index.md) - what an operator configures: sandboxes, mail, OAuth, billing, errors
