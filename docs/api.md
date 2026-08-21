@@ -369,7 +369,7 @@ prompt only until the one-time backfill runs on the server:
 
 ## Team
 
-The roster [`/team`](primitives.md#the-team-agents-as-teammates) shows, for
+The roster [`/team`](concepts/teammates.md) shows, for
 clients that are not this web app. A teammate is a conversation bound to the
 reserved channel `fountain:team`; every route here wraps the same
 `Fountain.Team` the page uses, so a standalone client gets the page's exact

@@ -1,178 +1,93 @@
 # The four primitives
 
-Everything in Fountain is built from four concepts.
+This page explains what Fountain's four objects are and why there are four of
+them. For the fields on each one, see the [API reference](api.md). To build
+something with them, start with the [guided tour](tour.md).
 
----
+## The problem the four primitives divide up
 
-## Environment
+To run a coding agent on a machine that is not yours, four things have to be
+decided, and they change on four different schedules.
 
-An **Environment** is a named, reusable baseline for a coding agent:
+What the machine has on it changes rarely. Python 3.12, a checkout of your
+repo, a setup script. You decide it once for a team and leave it alone for
+months.
 
-- **Encrypted secrets** - key/value env vars, encrypted per-tenant with AES-256-GCM. Write-only: once stored, the API never returns a value (listing returns keys and timestamps only).
-- **Plain env vars** - a non-secret `env_vars` map for values that aren't sensitive (feature flags, endpoints). Returned by the API as-is; put anything sensitive in secrets instead.
-- **Runtime config** - packages to install, repos to clone, a setup script
-- **Networking policy** - `networking_type: unrestricted` or `limited`. Sprites are open by default, so `unrestricted` is a no-op. `limited` restricts egress to the domains in `networking_config.allowed_hosts` (the only `networking_config` key honored today); under `limited` with no `allowed_hosts`, nothing is allowlisted.
+Which credentials the agent runs with changes constantly. A staging database
+URL today, a customer's API key tomorrow, a rotated token an hour from now.
 
-Environments attach to Agents at creation time. Many agents can share one environment.
+How the agent behaves changes occasionally. Which model, which runtime, which
+skills, which MCP servers, what its system prompt says.
 
-```yaml
-apiVersion: fountain.dev/v1
-kind: Environment
-metadata:
-  name: python-data-env
-spec:
-  packages:
-    python: "3.12"
-  networking_type: limited
-  secrets:
-    - key: OPENAI_API_KEY
-      value: sk-...   # encrypted at rest, never returned by the API
-```
+What it is doing right now changes every few seconds.
 
----
+Put all four in one object and every credential rotation edits the machine
+image, and every prompt edits the credentials. Fountain splits them into four
+objects on purpose, and the split is the product.
 
-## Vault
+| Primitive | Answers | Changes |
+|---|---|---|
+| [Environment](concepts/environment.md) | what is on the machine | rarely |
+| [Vault](concepts/vault.md) | which credentials this run uses | constantly |
+| [Agent](concepts/agent.md) | how the agent behaves | occasionally |
+| [Conversation](concepts/conversation.md) | what it is doing right now | continuously |
 
-A **Vault** is a free-floating bag of env-var overrides.
+## How they compose
 
-**Key rule: vault values win on key collision.** When Fountain materializes env vars for a conversation, it merges `environment secrets -> vault secrets`. The vault always takes precedence.
-
-Typical uses: per-customer API keys, staging vs. production credentials, temporary overrides.
-
-```yaml
-apiVersion: fountain.dev/v1
-kind: Vault
-metadata:
-  name: staging-creds
-spec:
-  secrets:
-    - key: DATABASE_URL
-      value: postgres://staging-host/mydb
-```
-
----
-
-## Agent
-
-An **Agent** is a named, re-runnable configuration for an AI coding assistant:
-
-- **`model`** - `provider/model-id` (e.g. `anthropic/claude-sonnet-4-6`), passed
-  to the runtime's CLI. The provider must match the runtime: `anthropic` for
-  `claude`, `openai` for `codex`, `google` for `gemini`. `opencode` is
-  multi-provider and takes any of the three — it uses the prefix to pick which
-  API key to export. A provider outside that set is rejected at write time:
-  there is no credential for it, so the sandbox would have started with no
-  inference key at all. The model id itself is *not* checked against a list —
-  the agent form suggests current models, but anything you type is passed to
-  the CLI as-is, so a model released since your Fountain version still works.
-- **`runtime`** - one of `claude`, `codex`, `gemini`, `opencode`
-- **`environment`** - optional Environment to attach
-- **`system`** / **`description`** - system prompt and human-readable description. The system prompt is written into the runtime's user-level instructions file on the agent's computer at provision and again at every reattach (`~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md`, `~/.config/opencode/AGENTS.md`, `~/.gemini/GEMINI.md`), so an edit reaches an existing computer the next time it wakes
-- **`skills`** - each entry is either inline (`{name, content}` — a full SKILL.md written to the sandbox) or GitHub-sourced (`{source: "owner/repo"}` — installed via the skills.sh CLI). Two skills are bundled into every sandbox regardless: `fountain` (the API, for spawning sub-conversations) and `create-team` (a Q&A that sets up the user's team — a first teammate answers "/create-team")
-- **`mcp_servers`** - MCP server definitions, with `${VAR}` substitution in their env
-- **`metadata`** - free-form map for callers' own bookkeeping
-
-```yaml
-apiVersion: fountain.dev/v1
-kind: Agent
-metadata:
-  name: researcher
-spec:
-  model: anthropic/claude-sonnet-4-6
-  runtime: claude
-  environment: python-data-env
-  skills:
-    - source: BinaryBourbon/fountain-api-skill
-  mcp_servers:
-    github:
-      command: npx
-      args: ["-y", "@modelcontextprotocol/server-github"]
-      env:
-        GITHUB_PERSONAL_ACCESS_TOKEN: "${GITHUB_PAT}"
-```
-
-`${GITHUB_PAT}` is a substitution reference resolved from the merged env + vault secrets at spawn time.
-
----
-
-## Conversation
-
-A **Conversation** is a running session of an Agent inside a sandboxed VM. It starts with one prompt and can continue over multiple turns:
-
-1. POST to `/api/conversations` with `agent_id` (and optional `vault_id`, `environment_id` — an environment to provision from instead of the agent's own — `prompt`, `images`)
-2. Fountain resolves the full env-var set and spawns a Sprites sandbox
-3. The agent runs; log events stream in real time over SSE (`GET /api/conversations/:id/stream`)
-4. Follow-up prompts go to `POST /api/conversations/:id/prompts`; a running turn can be interrupted (`POST .../interrupt`) and the whole conversation ended early (`POST .../terminate`)
-5. After 60 minutes with no turn activity (default) the sandbox is **suspended**: it scales to zero, costs nothing while parked, and the next prompt wakes it with the agent's memory intact. At 24 hours of continuous running (default) it is **destroyed** — the ceiling for a conversation that never stops being busy.
-
-Neither bound ends the conversation — it stays resumable either way. Self-hosters can widen or disable both bounds with `SANDBOX_IDLE_TIMEOUT_MINUTES` and `SANDBOX_MAX_LIFETIME_HOURS` (`0` disables).
-
-!!! note "Suspend keeps the agent's memory; the max-lifetime ceiling does not"
-
-    The runtime keeps its session on the sandbox's disk. A suspended sandbox
-    keeps that disk, so waking it resumes the agent right where it left off.
-    A sandbox that hits the max-lifetime ceiling is destroyed, disk and all:
-    the stored transcript survives and the conversation stays resumable, but
-    the next turn starts a fresh session and the agent answers without the
-    earlier ones. Expect to restate context after a ceiling reclaim.
-
-### Status lifecycle
+An Agent names an Environment. A Conversation runs an Agent, and may name a
+different Environment and attach a Vault for that run alone.
 
 ```
-pending -> running -> idle -> running   (idle between turns; a follow-up prompt resumes it)
-                    -> failed
+ Environment  ----->  Agent  ----->  Conversation
+      ^                                   |
+      +---- overridden per run -----------+
+                                          |
+ Vault  ------------ attached per run ----+
 ```
 
-Any non-terminal state can move to `terminated` via `POST /api/conversations/:id/terminate`.
-
-### The team: agents as teammates
-
-The [team app](https://github.com/jhgaylor/fountain-team) lays conversations
-out like a messaging app — the roster on the left, one thread on the right —
-on `/api/team`, and treats each agent as a teammate with **one** ongoing
-conversation. There is no fifth primitive
-behind it: a teammate *is* a Conversation, bound to the reserved channel
-`fountain:team` the same way a Buzz channel binds one through `channel_id`.
-Adding an agent to the team opens that conversation, which provisions the
-agent its own sandbox — its computer. A message is a follow-up turn on it; a
-suspended or reaped sandbox wakes on the next message as usual, and a
-terminated conversation is replaced by a fresh one under the same binding,
-so the teammate stays reachable. Removing a teammate terminates the live
-conversation and unbinds the agent's conversations from the channel; the
-rows stay in the ordinary conversation list. "Details" on a thread opens the
-full transcript in the
-[conversations app](https://github.com/jhgaylor/fountain-conversations)
-(stages, tool calls, raw output).
-
-When you add a teammate you can give it a name of its own, pick the
-environment its computer is set up from, and attach a vault. These are the
-conversation's `title`, its per-launch environment override and its
-`vault_id` — nothing new — and the environment and vault pickers only offer
-what the agent's `allowed_environment_ids` / `allowed_vault_ids` allow. They
-belong to the teammate, not the computer: a fresh conversation opened after
-the old one is terminated inherits all three.
-**Schedules.** "Schedules" in a thread's header sets up a cron that runs
-the teammate with a prompt — `0 9 * * 1-5` and "What's on today?", say.
-Cron times are UTC. By default the prompt goes into the teammate's own
-conversation, as if you had typed it, so the reply lands in the thread and
-the teammate's working memory. Tick **Run in a one-off computer** and each
-run opens a fresh conversation on a new sandbox instead — the same agent,
-environment and vault the teammate was added with — leaving the thread
-alone; the run shows up in the conversation list like any other, and the
-schedule keeps a link to its last one. A schedule can be paused, edited,
-run on demand ("Run now") and deleted; the last error, if a run could not
-be delivered (the teammate was busy for half an hour, the sandbox quota was
-full), shows on the schedule. Removing the teammate deletes its schedules.
-
----
+At the moment a Conversation starts, Fountain merges the Environment's secrets
+with the Vault's secrets and hands the result to the sandbox as environment
+variables. **The Vault wins on key collision.** That one rule is why the split
+into four is usable rather than merely tidy, and it is set out in
+[About vaults](concepts/vault.md).
 
 ## Substitution
 
-All string values in Agent configs support `${VAR}` interpolation:
+All string values in Agent configs support `${VAR}` interpolation, resolved
+from the merged environment and vault secrets at spawn time.
 
 | Syntax | Result |
 |---|---|
-| `${VAR}` | Value of `VAR` from the merged env map |
-| `$$` | Literal `$` |
+| `${VAR}` | The value of `VAR` from the merged map |
+| `$$` | A literal `$` |
 
-Substitution is recursive (works inside maps and lists) and fail-complete - all missing variables are reported at once.
+Substitution is recursive, so it works inside maps and lists. It is also
+fail-complete. Every missing variable is reported at once rather than one per
+attempt.
+
+## What Fountain does not have
+
+There is no fifth primitive, and two things that look like one are not.
+
+A **team** is not an object. A teammate is a Conversation bound to the reserved
+channel `fountain:team`. See
+[Agents as teammates](concepts/teammates.md).
+
+A **sandbox** is not an object you create. It is provisioned when a
+Conversation starts and reclaimed when it ends. See
+[About conversations](concepts/conversation.md).
+
+## Where to go next
+
+- **Learn by doing.** The [guided tour](tour.md) uses all four to open a pull
+  request, in about forty lines.
+- **Understand one primitive.**
+  [Environment](concepts/environment.md),
+  [Vault](concepts/vault.md),
+  [Agent](concepts/agent.md),
+  [Conversation](concepts/conversation.md).
+- **Understand the machinery.** [Architecture](architecture.md) follows a
+  prompt from the API call to the first token.
+- **Look something up.** The [API reference](api.md) has every field,
+  [Conversation states](reference/conversation-states.md) has the state table,
+  and the [glossary](reference/glossary.md) has the overloaded words.

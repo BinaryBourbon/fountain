@@ -129,8 +129,22 @@ defmodule Fountain.DocsTest do
 
     test "keeps mkdocs.yml's order" do
       titles = Enum.map(Docs.nav_source(), &elem(&1, 0))
-      assert Enum.take(titles, 3) == ["Home", "Setup", "Self-hosting"]
+      assert Enum.take(titles, 3) == ["Home", "Guided tour — opening a PR", "Concepts"]
       assert List.last(titles) == "Changelog"
+    end
+
+    # The tutorial sits second and the concepts tree third, ahead of every
+    # reference page. It was position 15 of 34 and unlinked from the home page,
+    # so a newcomer met three reference pages before the lesson.
+    test "the tutorial and the concepts tree come before reference" do
+      titles = Enum.map(Docs.nav_source(), &elem(&1, 0))
+
+      tour = Enum.find_index(titles, &(&1 == "Guided tour — opening a PR"))
+      concepts = Enum.find_index(titles, &(&1 == "Concepts"))
+      reference = Enum.find_index(titles, &(&1 == "Reference"))
+
+      assert tour < concepts
+      assert concepts < reference
     end
 
     test "a page and a section are told apart by indentation" do

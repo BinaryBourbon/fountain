@@ -270,11 +270,19 @@ These are addressed in deliverable 4.
 
 Both are in `CLAUDE.md` and both are real gates, not conventions.
 
-1. **The nav is mirrored in code.** `mkdocs.yml` `nav:` and `@nav` in
-   `apps/fountain/lib/fountain/docs.ex` must list the same pages in the same
-   order, and `apps/fountain/test/fountain/docs_test.exs` fails on drift. Every
-   move, split and rename in deliverable 1 is a two-file edit, and the failing
-   test surfaces in CI partition 3 where it looks unrelated.
+1. **The nav lives only in `mkdocs.yml`, and its parser is strict.**
+   `Fountain.Docs` parses that file's `nav:` at compile time
+   (`docs.ex:43`), so there is nothing to mirror. Two real constraints remain.
+   The parser handles **one level of sections only** and raises on a line it
+   cannot read, so a nested sub-section fails the build. And
+   `docs_test.exs` renders every page and asserts each `](/docs/x#anchor)`
+   target is a real heading, so renaming a heading breaks its inbound links.
+
+   Note. `/Users/jake/CLAUDE.md`'s copy of the contributor guide still
+   describes a hand-mirrored `@nav`. The version on `main` was already
+   corrected. The stale copy is what the nav tree in deliverable 1 was
+   originally written against, and its "every nav edit is two files" claim is
+   wrong.
 2. **`docs/cli.md` is diffed against the CLI, by hardcoded path.** I read
    `cli/internal/cmd/docs_test.go`. `readCLIDoc` opens
    `../../../docs/cli.md` and nothing else. `TestEveryCommandIsDocumented`

@@ -1,6 +1,10 @@
 # Fountain
 
-Fountain is a **multi-tenant API** for managing agents, repos, secrets, and conversations, with an operator console over it and standalone apps for watching an agent work. It's for people who want to create sandboxed coding agent instances with preconfigured sets of env vars, MCP servers, skills, repos, and packages.
+Fountain is a **multi-tenant API** for managing agents, repos, secrets and
+conversations, with an operator console over it and standalone apps for
+watching an agent work. It is for people who want sandboxed coding agent
+instances with preconfigured sets of env vars, MCP servers, skills, repos and
+packages.
 
 !!! tip "In a hurry?"
     Install the CLI and point it at a Fountain instance:
@@ -10,27 +14,74 @@ Fountain is a **multi-tenant API** for managing agents, repos, secrets, and conv
     fountain apply -f agent-specs
     ```
 
-## Why Fountain?
+## The problem
 
-Running Claude instances with worktrees locally and shuffling MCP configurations and skill setups by hand is painful. [`jhgaylor/aod-ex`](https://github.com/jhgaylor/aod-ex) solves this for a single tenant; Fountain takes that core and rebuilds it around multi-tenant use.
+Running coding agents on your own machine works until there is more than one of
+you.
 
-## The four primitives
+Setup does not travel. A new engineer spends an afternoon reverse-engineering
+which MCP servers, skills and env vars the last person had, because the
+configuration lives in a laptop rather than anywhere shared.
 
-| Primitive | What it is |
-|---|---|
-| [**Environment**](primitives.md#environment) | Baseline set of encrypted env vars + runtime config |
-| [**Vault**](primitives.md#vault) | Free-floating bag of env-var overrides that layer on top of an environment |
-| [**Agent**](primitives.md#agent) | A named, re-runnable agent config with model, skills, MCP servers |
-| [**Conversation**](primitives.md#conversation) | A single run of an agent inside a sandboxed VM with streaming logs |
+Credentials drift. There is no single source of truth for a key, so the wrong
+`.env` silently breaks an agent and nobody finds out until a run fails
+strangely.
 
-## Get started
+Parallel work forces duplication. Two tasks needing different credentials means
+two checkouts, two configurations, and two things to keep in sync.
 
-- [**Local setup**](setup.md) - bootstrap a workstation in ~10 minutes
-- [**Architecture**](architecture.md) - what runs, what it talks to, what breaks when a dependency is down
-- [**Primitives deep-dive**](primitives.md) - understand the data model
-- [**CLI reference**](cli.md) - `fountain` command surface
-- [**API reference**](api.md) - REST endpoints and auth
-- [**LLM integration**](llm-integration.md) - connect any agentic IDE via `/skill`
-- [**Build a chat app**](build/index.md) - the bot-messenger everyone is cloning, on an API that brings the runtimes
-- [**Plugging into Fountain**](integrations/clients.md) - editors, chat surfaces, plugins, SDKs
-- [**Services Fountain uses**](integrations/index.md) - what an operator configures: sandboxes, mail, OAuth, billing, errors
+Sandboxing is nobody's afternoon project. Giving an agent a machine that is
+isolated, disposable and cheap when idle is real infrastructure work, and it is
+not the work you were trying to do.
+
+Fountain makes the configuration an API object, the credentials a layered
+merge, and the machine something that is provisioned per run and reclaimed when
+it goes quiet.
+
+## Start here
+
+- **[The guided tour](tour.md)** builds an agent that clones a repo, makes a
+  change and opens a pull request, then takes a revision that lands on the same
+  PR. About forty lines. Start here if you have not used Fountain.
+- **[The four primitives](primitives.md)** explains the data model and why it
+  is split four ways.
+
+## Understand it
+
+- [The four primitives](primitives.md), and one page each for
+  [Environment](concepts/environment.md),
+  [Vault](concepts/vault.md),
+  [Agent](concepts/agent.md) and
+  [Conversation](concepts/conversation.md)
+- [Agents as teammates](concepts/teammates.md), why a teammate is not a fifth
+  primitive
+- [Architecture](architecture.md), what runs, what it talks to, and what breaks
+  when a dependency is down
+- [Why a bot needs more than a chat UI](build/index.md), the case for the API
+  underneath
+
+## Build with it
+
+- [The guided tour](tour.md), an agent that opens a pull request
+- [Build a chat app](build/team-chat.md), a roster-and-threads app end to end
+- [Plugging into Fountain](integrations/clients.md), editors, chat surfaces,
+  plugins and SDKs
+- [LLM integration](llm-integration.md), connect any agentic IDE through
+  `/skill`
+
+## Run it
+
+- [Local setup](setup.md), bootstrap a workstation in about ten minutes
+- [Self-hosting](self-hosting.md), run your own instance
+- [Operations](operations.md), runbooks for when something is wrong
+- [Services Fountain uses](integrations/index.md), sandboxes, mail, OAuth,
+  billing and errors
+
+## Look it up
+
+- [CLI reference](cli.md), the `fountain` command surface
+- [API reference](api.md), REST endpoints and auth
+- [TypeScript SDK](sdk.md)
+- [Configuration reference](configuration.md), every environment variable
+- [Conversation states](reference/conversation-states.md)
+- [Glossary](reference/glossary.md), including the five overloaded words

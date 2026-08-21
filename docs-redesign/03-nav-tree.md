@@ -237,7 +237,9 @@ rest of this is adopted.
 that file scan only that string. The fix is small, which is to walk a directory
 and concatenate, but it is a Go change and belongs in its own PR before step 8.
 
-**Every nav edit is two files.** `mkdocs.yml` `nav:` and `@nav` in
-`apps/fountain/lib/fountain/docs.ex`, in the same order, or
-`apps/fountain/test/fountain/docs_test.exs` fails in CI partition 3 where it
-reads as unrelated.
+**Sections are one level deep, and that is enforced by a raise.** The
+`mkdocs.yml` nav parser in `Fountain.Docs` reads exactly two line shapes, and
+anything else raises at compile time. So `Guides > Operate > page` is not
+representable. The Guides sub-groupings above must flatten into sibling
+sections, for example `Guides: run agents` and `Guides: operate`, or become
+in-page headings on a hub.

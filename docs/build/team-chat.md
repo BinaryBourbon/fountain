@@ -31,7 +31,7 @@ allow your origin (`API_CORS_ORIGINS`). See [shipping it](#10-shipping-it).
 
 The **+** in these apps asks nothing. A name from a list, a sensible brain, a
 one-line brief, and the roster has a new row a second later. Two calls do it:
-one to define an [agent](../primitives.md#agent), one to put that agent on the
+one to define an [agent](../concepts/agent.md), one to put that agent on the
 team.
 
 ```ts
@@ -102,7 +102,7 @@ One call fills a roster row completely, with nothing assembled from three
 endpoints and a guess. Behind the label, `presence.state` is an enum:
 `working`, `starting`, `online`, `asleep`, `away`, `machine_offline`, `failed`
 and `offline`. A teammate reads as `asleep` when its computer has been
-[parked](../primitives.md#conversation) for want of anything to do. It wakes
+[parked](../concepts/conversation.md) for want of anything to do. It wakes
 on the next message with its memory intact, so your UI need do nothing about
 it beyond saying so.
 
@@ -302,7 +302,7 @@ being a mere convenience. A connector is an MCP server the teammate's runtime
 talks to, and it usually needs a real credential.
 
 The credential does not go in the agent config. It goes in the teammate's
-[environment](../primitives.md#environment) as a secret, and the server
+[environment](../concepts/environment.md) as a secret, and the server
 definition refers to it by name:
 
 ```ts

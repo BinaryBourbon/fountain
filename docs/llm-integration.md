@@ -30,24 +30,12 @@ curl $FOUNTAIN_URL/llms.txt
 curl $FOUNTAIN_URL/llms-full.txt
 ```
 
-## MCP server (coming soon)
+## There is no first-party MCP server
 
-Fountain will ship a first-party MCP server exposing all four primitives as tools:
-
-```json
-{
-  "mcpServers": {
-    "fountain": {
-      "command": "npx",
-      "args": ["-y", "@fountain/mcp-server"],
-      "env": {
-        "FOUNTAIN_API_KEY": "ftn_your_api_key",
-        "FOUNTAIN_BASE_URL": "https://your-fountain.example.com"
-      }
-    }
-  }
-}
-```
+**Not built.** A first-party MCP server exposing the four primitives as tools
+has been discussed and does not exist. There is no package to install and no
+config block that will work. Use the `/skill` file above, which gives an
+agentic IDE the whole API surface in one fetch.
 
 ## Using the API from an agent
 
