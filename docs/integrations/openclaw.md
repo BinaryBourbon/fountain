@@ -144,7 +144,7 @@ OpenClaw runs on Node — it requires **Node ≥ 22.22.3** (or ≥ 24.15 / ≥ 2
 
 ### Per-entry secrets
 
-`--vault <name-or-id>` attaches a [vault](../primitives.md#vault) to every
+`--vault <name-or-id>` attaches a [vault](../concepts/vault.md) to every
 conversation the entry opens. Vault values override the agent's environment, so
 this is where a secret that belongs to *this entry* goes — an identity the
 agent posts under, a token scoped to one channel.
@@ -160,7 +160,7 @@ two entries stay separate even when they point at the same agent.
 ### Per-entry environments
 
 `--environment <name-or-id>` provisions every conversation the entry opens from
-that [environment](../primitives.md#environment) instead of the agent's own.
+that [environment](../concepts/environment.md) instead of the agent's own.
 Use it when one agent config should run under several baselines — the same
 "engineer" against a `fountain` environment in one entry and a `buzz`
 environment in another — without duplicating the agent. The vault, if any,

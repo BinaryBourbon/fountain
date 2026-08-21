@@ -67,9 +67,17 @@ markdown_extensions:
 # docs/cli.md is diffed against the real CLI command tree.
 nav:
   - Home: index.md
+  - Guided tour — opening a PR: tour.md
+  - Concepts:
+      - The four primitives: primitives.md
+      - Environment: concepts/environment.md
+      - Vault: concepts/vault.md
+      - Agent: concepts/agent.md
+      - Conversation: concepts/conversation.md
+      - Agents as teammates: concepts/teammates.md
+      - Architecture: architecture.md
   - Setup: setup.md
   - Self-hosting: self-hosting.md
-  - Architecture: architecture.md
   - Operations: operations.md
   - Configuration reference: configuration.md
   - Sandbox providers:
@@ -86,11 +94,12 @@ nav:
       - GitHub OAuth: integrations/github-oauth.md
       - Stripe: integrations/stripe.md
       - Sentry: integrations/sentry.md
-  - The four primitives: primitives.md
-  - CLI reference: cli.md
-  - API reference: api.md
-  - TypeScript SDK: sdk.md
-  - Guided tour — opening a PR: tour.md
+  - Reference:
+      - CLI: cli.md
+      - API: api.md
+      - TypeScript SDK: sdk.md
+      - Conversation states: reference/conversation-states.md
+      - Glossary: reference/glossary.md
   - Build a chat app:
       - The shape everyone is cloning: build/index.md
       - A team chat, end to end: build/team-chat.md

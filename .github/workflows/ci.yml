@@ -147,6 +147,7 @@ jobs:
 
     outputs:
       docs_only: ${{ steps.filter.outputs.docs_only }}
+      docs_touched: ${{ steps.filter.outputs.docs_touched }}
       cli_docs: ${{ steps.filter.outputs.cli_docs }}
 
     steps:
@@ -174,25 +175,26 @@ jobs:
           decide() {
             echo "docs_only=$1" >> "$GITHUB_OUTPUT"
             echo "cli_docs=$2" >> "$GITHUB_OUTPUT"
+            echo "docs_touched=$3" >> "$GITHUB_OUTPUT"
             exit 0
           }
 
           if ! git fetch --no-tags --quiet origin \
                "+refs/heads/${GITHUB_BASE_REF}:refs/remotes/origin/${GITHUB_BASE_REF}" 2>/dev/null; then
             echo "could not fetch base ${GITHUB_BASE_REF} — running the full CI"
-            decide false false
+            decide false false true
           fi
 
           base="$(git merge-base "refs/remotes/origin/${GITHUB_BASE_REF}" HEAD 2>/dev/null || true)"
           if [ -z "${base}" ]; then
             echo "no merge base with ${GITHUB_BASE_REF} — running the full CI"
-            decide false false
+            decide false false true
           fi
 
           changed="$(git diff --name-only "${base}" HEAD 2>/dev/null || true)"
           if [ -z "${changed}" ]; then
             echo "empty diff against ${base:0:7} — running the full CI"
-            decide false false
+            decide false false true
           fi
 
           echo "changed against ${base:0:7}:"
@@ -203,15 +205,24 @@ jobs:
             cli_docs=true
           fi
 
+          # Whether ANY docs path moved, independent of whether the diff is
+          # docs-ONLY. A mixed PR takes the `checks` path, which had no strict
+          # build, so `mkdocs build --strict` ran on neither branch of the gate
+          # and a broken link surfaced on main after the merge.
+          docs_touched=false
+          if printf '%s\n' "${changed}" | grep -qE '^docs/|^mkdocs\.yml$'; then
+            docs_touched=true
+          fi
+
           # grep -qv succeeds when ANY line falls outside the allowlist, so
           # the negation is "every changed path is a docs path".
           if printf '%s\n' "${changed}" | grep -qvE '^docs/|^mkdocs\.yml$'; then
             echo "non-docs paths changed — running the full CI"
-            decide false "${cli_docs}"
+            decide false "${cli_docs}" "${docs_touched}"
           fi
 
           echo "docs-only — running the docs job instead of the Elixir suite"
-          decide true "${cli_docs}"
+          decide true "${cli_docs}" false
 
   test:
     name: Build and Test (partition ${{ matrix.partition }})
@@ -794,6 +805,25 @@ jobs:
         working-directory: sdk/typescript
         run: npx --yes esbuild dist/index.js --bundle --platform=browser --format=esm --outfile=/dev/null
 
+      # The complement of the `docs` job. That job carries the strict build for
+      # a docs-ONLY diff; this carries it for a diff that touches docs AND
+      # code, which took neither branch before and so went unchecked until
+      # docs.yml ran on main. The two jobs are mutually exclusive by the same
+      # docs_only gate, so neither the cache argument nor the "one set or the
+      # other, never both" claim in the `docs` job comment changes.
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        if: ${{ needs.changes.outputs.docs_touched == 'true' }}
+        with:
+          python-version: '3.12'
+
+      - name: Install MkDocs
+        if: ${{ needs.changes.outputs.docs_touched == 'true' }}
+        run: pip install -r docs/requirements.txt
+
+      - name: Build the site strictly
+        if: ${{ needs.changes.outputs.docs_touched == 'true' }}
+        run: mkdocs build --strict
+
   compose-fresh-clone:
     name: Compose fresh-clone check
     runs-on: ubuntu-24.04
@@ -1005,7 +1035,7 @@ jobs:
       - name: Set up database
         run: mix ecto.create --quiet && mix ecto.migrate --quiet
 
-      # docs_test.exs: the mkdocs.yml <-> @nav mirror, the snippet-to-Dockerfile
+      # docs_test.exs: the mkdocs.yml nav parser, the snippet-to-Dockerfile
       # COPY coverage, the MkDocs-dialect preprocessing and every internal
       # /docs link. docs_controller_test.exs: that the pages actually serve.
       - name: Docs tests
