@@ -16,6 +16,54 @@ defmodule Fountain.DocsTest do
   alias Fountain.Docs.Compiler
 
   @mkdocs_yml Path.expand("../../../../mkdocs.yml", __DIR__)
+  @repo_root Path.expand("../../../..", __DIR__)
+  @dockerfile Path.join(@repo_root, "Dockerfile")
+
+  describe "snippet includes ↔ Dockerfile" do
+    @doc """
+    `Fountain.Docs` inlines `--8<-- "path"` at *compile time*, reading from the
+    repo root. Inside the image that root is whatever the Dockerfile COPYed, so
+    a snippet pointing outside it does not degrade — `mix release` dies on
+    `File.read!` and no image is produced at all. That is a silent failure in
+    the worst place: CI is green, the PR merges, and the deploy simply never
+    happens. It has happened once (docs/tour.md including the SDK example).
+    """
+    test "every snippet path is copied into the image" do
+      copied =
+        @dockerfile
+        |> File.read!()
+        |> then(&Regex.scan(~r/^COPY\s+(?!--)(\S+)\s+\S+$/m, &1))
+        |> Enum.map(fn [_, source] -> source end)
+
+      for {page, path} <- snippet_paths() do
+        assert File.exists?(Path.join(@repo_root, path)),
+               "#{page} includes #{path}, which does not exist"
+
+        assert Enum.any?(copied, &covers?(&1, path)),
+               """
+               #{page} includes #{path}, which the Dockerfile does not COPY into
+               the build stage. The docs are embedded at compile time, so this
+               does not break a link — it breaks `mix release`, and no image is
+               built. Add a COPY for it beside `COPY docs ./docs`.
+               """
+      end
+    end
+
+    defp snippet_paths do
+      Path.join(@repo_root, "docs/**/*.md")
+      |> Path.wildcard()
+      |> Enum.flat_map(fn file ->
+        ~r/^--8<--\s+"([^"]+)"\s*$/m
+        |> Regex.scan(File.read!(file))
+        |> Enum.map(fn [_, path] -> {Path.relative_to(file, @repo_root), path} end)
+      end)
+    end
+
+    # `COPY docs ./docs` covers `docs/x.md`; `COPY CHANGELOG.md ./` covers itself.
+    defp covers?(source, path) do
+      path == source or String.starts_with?(path, source <> "/")
+    end
+  end
 
   describe "nav ↔ mkdocs.yml" do
     test "matches the nav: section of mkdocs.yml exactly, order included" do
