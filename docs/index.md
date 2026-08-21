@@ -86,6 +86,7 @@ it goes quiet.
 
 ## Look it up
 
+- [Catalog](catalog/index.md), runtimes and skills
 - [CLI reference](cli.md), the `fountain` command surface
 - [API reference](api.md), REST endpoints and auth
 - [TypeScript SDK](sdk.md)

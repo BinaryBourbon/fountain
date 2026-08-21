@@ -128,4 +128,6 @@ the process an editor spawns. See
 - [About conversations](conversation.md), which run an Agent.
 - [Agents as teammates](teammates.md), which is one Conversation per Agent.
 - [About environments](environment.md), which an Agent names.
+- [Runtimes](../catalog/runtimes/index.md), all four compared.
+- [Skills](../catalog/skills/index.md), including the two every sandbox gets.
 - [Glossary](../reference/glossary.md), for the three senses of "agent".

@@ -101,6 +101,16 @@ nav:
       - Pods restarting or not ready: troubleshooting/pods-restarting.md
       - Nobody can log in: troubleshooting/nobody-can-log-in.md
   - Configuration reference: configuration.md
+  - Catalog:
+      - Overview: catalog/index.md
+      - Runtimes: catalog/runtimes/index.md
+      - claude: catalog/runtimes/claude.md
+      - codex: catalog/runtimes/codex.md
+      - opencode: catalog/runtimes/opencode.md
+      - gemini: catalog/runtimes/gemini.md
+      - Skills: catalog/skills/index.md
+      - fountain (skill): catalog/skills/fountain.md
+      - create-team (skill): catalog/skills/create-team.md
   - Sandbox providers:
       - The contract: integrations/sandbox-contract.md
       - Sprites: integrations/sprites.md
