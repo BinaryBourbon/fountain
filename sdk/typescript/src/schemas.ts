@@ -15,6 +15,9 @@ import type { components } from "./generated/openapi.ts";
 
 type S = components["schemas"];
 
+/** `T` with `K` made optional — for fields the API defaults and the generator does not. */
+type Optional<T, K extends keyof T> = Omit<T, K> & Partial<Pick<T, K>>;
+
 // ── the four primitives ──────────────────────────────────────────────────────
 
 /** A named, re-runnable agent config — runtime, model, skills, environment. */
@@ -56,7 +59,12 @@ export type Teammate = S["Teammate"];
 export type TeamAddInput = S["TeamAddRequest"];
 /** A cron that runs a teammate with a prompt. */
 export type Schedule = S["TeamSchedule"];
-export type ScheduleInput = S["TeamScheduleCreateRequest"];
+/**
+ * Creating one. `enabled` and `one_off` are optional on the wire — the server
+ * defaults them to `true` and `false` — but the generator marks a property
+ * that carries a default as required, so they are relaxed back here.
+ */
+export type ScheduleInput = Optional<S["TeamScheduleCreateRequest"], "enabled" | "one_off">;
 export type SchedulePatch = S["TeamScheduleUpdateRequest"];
 export type TeamCommsStatus = S["TeamCommsStatus"];
 export type TeammateContact = S["TeammateContact"];

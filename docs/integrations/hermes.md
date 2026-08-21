@@ -36,7 +36,7 @@ Why reach for it:
 1. Credentials. On the Hermes host either export a key —
 
     ```bash
-    export FOUNTAIN_API_KEY=fk_…                       # from Settings → API keys, or the CLI
+    export FOUNTAIN_API_KEY=ftn_…                       # from Settings → API keys, or the CLI
     export FOUNTAIN_BASE_URL=https://fountain.example  # only for a self-hosted instance
     ```
 

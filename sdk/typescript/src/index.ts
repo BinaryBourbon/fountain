@@ -41,6 +41,7 @@ export type {
   LogEvent,
   NamedResource,
   Stream,
+  TeamEvent,
   Repository,
   Runtime,
   RunEvent,

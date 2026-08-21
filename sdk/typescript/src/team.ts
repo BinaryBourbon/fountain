@@ -6,13 +6,13 @@ import { streamPath, type StreamRequest } from "./sse.ts";
 import type {
   ConversationRecord,
   ImageInput,
-  LogEvent,
   Schedule,
   ScheduleInput,
   SchedulePatch,
   Stream,
   TeamAddInput,
   TeamCommsStatus,
+  TeamEvent,
   Teammate,
 } from "./types.ts";
 
@@ -162,13 +162,16 @@ export class Team {
    * it out of N per-conversation streams is what the apps did before this
    * endpoint existed. Reconnects from the last event id on its own.
    *
+   * Each payload is a conversation event plus `conversation_id` and
+   * `agent_id`, so a roster row can be found without a socket per teammate.
+   *
    * Note that this endpoint carries raw events only — it takes no `blocks`
    * parameter, so a client rendering a transcript from it either parses the
    * runtime's dialect itself or reads the conversation's own feed, which does
    * support blocks. Use it as a notification channel and fetch detail per
    * conversation.
    */
-  stream(options: StreamRequest = {}): AsyncIterable<LogEvent> {
+  stream(options: StreamRequest = {}): AsyncIterable<TeamEvent> {
     // No `blocks` here: the endpoint does not accept it and the spec
     // validator rejects unknown query parameters.
     return streamPath(this.http, "/api/team/stream", normalizeStreams(options));

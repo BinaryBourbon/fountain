@@ -199,6 +199,10 @@ console.log(reply.text);
 `message()` returns the same `Run` handle `run()` does: await it, iterate it,
 or ignore it and let the stream below carry the answer to your UI.
 
+An entire messaging client on these verbs — roster, threads, connectors,
+routines, and what each piece is doing — is
+[**Build a chat app**](build/index.md).
+
 ```ts
 await fountain.team.list();                       // the roster, with unread counts
 await fountain.team.rename("watchtower", "Eyes"); // null restores the agent's name

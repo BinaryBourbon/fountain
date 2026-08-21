@@ -52,7 +52,10 @@ holds an API key.
 
 Everything that plugin does is available directly — see the
 [API reference](../api.md), the [TypeScript SDK](../sdk.md) and the
-[CLI reference](../cli.md). [LLM integration](../llm-integration.md) covers the
+[CLI reference](../cli.md). If what you are building is a chat surface of your
+own — the roster-and-threads app currently being cloned everywhere —
+[**Build a chat app**](../build/index.md) walks the whole thing through in SDK
+calls. [LLM integration](../llm-integration.md) covers the
 discovery endpoints that let an agentic IDE learn the whole surface from one
 fetch.
 
