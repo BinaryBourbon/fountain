@@ -57,6 +57,12 @@ defmodule Fountain.Docs do
     {"API reference", "api.md"},
     {"TypeScript SDK", "sdk.md"},
     {"Guided tour — opening a PR", "tour.md"},
+    {"Build a chat app",
+     [
+       {"The shape everyone is cloning", "build/index.md"},
+       {"A team chat, end to end", "build/team-chat.md"},
+       {"What each piece does", "build/pieces.md"}
+     ]},
     {"Plugging into Fountain",
      [
        {"Overview", "integrations/clients.md"},
