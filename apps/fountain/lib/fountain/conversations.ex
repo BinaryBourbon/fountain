@@ -1164,6 +1164,24 @@ defmodule Fountain.Conversations do
   end
 
   @doc """
+  The id of a conversation's newest log event, or `0` when it has none.
+
+  A cursor for "everything from here on", which is what a caller about to
+  prompt a live conversation needs: the events its own turn produces, without
+  the ones a previous turn already wrote. Ownership rides on the conversation —
+  reach it through a tenant-scoped fetch first.
+  """
+  @spec _unsafe_latest_log_event_id(String.t()) :: integer()
+  def _unsafe_latest_log_event_id(conversation_id) when is_binary(conversation_id) do
+    from(e in LogEvent,
+      where: e.conversation_id == ^conversation_id,
+      select: max(e.id)
+    )
+    |> Repo.one()
+    |> Kernel.||(0)
+  end
+
+  @doc """
   List a conversation's log events after `after_id`, oldest first.
 
   Options:

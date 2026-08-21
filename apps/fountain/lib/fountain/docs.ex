@@ -51,6 +51,7 @@ defmodule Fountain.Docs do
        {"Editors (ACP)", "integrations/editors.md"},
        {"OpenClaw (ACP)", "integrations/openclaw.md"},
        {"Hermes Agent (plugin)", "integrations/hermes.md"},
+       {"OpenBot (AG-UI)", "integrations/openbot.md"},
        {"Buzz (Nostr)", "integrations/buzz.md"},
        {"GitHub OAuth", "integrations/github-oauth.md"},
        {"Stripe", "integrations/stripe.md"},
