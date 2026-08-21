@@ -56,12 +56,14 @@ COPY ee ./ee
 # it the compile fails on File.read!. This is also the only way the content
 # ships: the release never contains docs/ as files.
 #
-# Every path a page snippet-includes (`--8<-- "…"`) has to be here too, and
-# those paths reach outside docs/: the changelog page includes CHANGELOG.md,
-# and the tour page includes the SDK example it is written from. A missing one
-# is not a broken link, it is a failed image build — `docs_test.exs` checks
-# this list against the snippets so the failure lands in CI instead.
+# Every file Fountain.Docs reads at compile time has to be here too, and those
+# paths reach outside docs/: the nav is parsed from mkdocs.yml, the changelog
+# page snippet-includes CHANGELOG.md, and the tour page includes the SDK
+# example it is written from. A missing one is not a broken link, it is a
+# failed image build — `docs_test.exs` checks this list against the module's
+# @external_resource attributes so the failure lands in CI instead.
 COPY docs ./docs
+COPY mkdocs.yml ./
 COPY CHANGELOG.md ./
 COPY sdk/typescript/examples ./sdk/typescript/examples
 

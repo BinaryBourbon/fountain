@@ -342,12 +342,21 @@ See `.env.example` for the full list. Key ones for local dev:
 in-app manual at `/docs` — the same markdown is embedded at compile time by
 `Fountain.Docs`. Three guardrails trip people who only edit markdown:
 
-- **The nav is mirrored in code.** `mkdocs.yml` `nav:` and `@nav` in
-  `apps/fountain/lib/fountain/docs.ex` must list the same pages in the same
-  order; `apps/fountain/test/fountain/docs_test.exs` fails on any drift. Adding,
-  renaming or moving a page means editing both. (This has broken docs-only PRs
-  more than once — the failing test is in *partition 3* of CI, not the Docs
-  workflow, so it looks unrelated.)
+- **The nav lives only in `mkdocs.yml`.** `Fountain.Docs` parses that file's
+  `nav:` block at compile time, so adding, renaming or moving a page is a
+  one-file change. It used to be mirrored in `@nav` in
+  `apps/fountain/lib/fountain/docs.ex` with a drift test, which is exactly how
+  docs-only PRs kept going red in *partition 3* of CI, looking unrelated to
+  the docs. Keep to the two line shapes the parser reads — `  - Title: x.md`,
+  and a `  - Section:` header with six-space-indented children — because a
+  line it cannot read raises at compile time rather than being skipped.
+- **Anything `Fountain.Docs` reads at compile time must be `COPY`d into the
+  Docker build stage.** The release image contains no `docs/`, only strings
+  baked out of it, so a file outside the `COPY` list does not degrade to a
+  broken link: `mix release` dies, no image is built, CI stays green and the
+  deploy silently never happens (#884). `docs_test.exs` asserts the module's
+  `@external_resource` list against the Dockerfile, so adding a new
+  compile-time read fails there first.
 - **`mkdocs build --strict`** is what CI runs; a broken relative link or a page
   not in the nav is an error. Run it locally (`pip install -r
   docs/requirements.txt`).

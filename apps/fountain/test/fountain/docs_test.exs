@@ -15,7 +15,6 @@ defmodule Fountain.DocsTest do
   alias Fountain.Docs
   alias Fountain.Docs.Compiler
 
-  @mkdocs_yml Path.expand("../../../../mkdocs.yml", __DIR__)
   @repo_root Path.expand("../../../..", __DIR__)
   @dockerfile Path.join(@repo_root, "Dockerfile")
 
@@ -49,6 +48,49 @@ defmodule Fountain.DocsTest do
       end
     end
 
+    @doc """
+    The generalisation of the test above. Snippets are found by scanning
+    markdown; this one asks the module itself what it read, so a *new kind* of
+    compile-time dependency is covered without anyone remembering to extend a
+    scanner. `mkdocs.yml` is the case that motivated it — the nav is parsed
+    from it at compile time, and nothing about a snippet scan would ever have
+    noticed it was missing from the Dockerfile.
+    """
+    test "every file Fountain.Docs reads at compile time is copied into the image" do
+      copied = dockerfile_copies()
+
+      for path <- external_resources() do
+        assert File.exists?(Path.join(@repo_root, path)),
+               "Fountain.Docs reads #{path}, which does not exist"
+
+        assert Enum.any?(copied, &covers?(&1, path)),
+               """
+               Fountain.Docs reads #{path} at compile time, and the Dockerfile
+               does not COPY it into the build stage. This does not break a
+               link — it breaks `mix release`, so no image is built, CI stays
+               green and the deploy never happens. Add a COPY for it beside
+               `COPY docs ./docs`.
+               """
+      end
+    end
+
+    defp external_resources do
+      :attributes
+      |> Fountain.Docs.__info__()
+      |> Keyword.get_values(:external_resource)
+      |> List.flatten()
+      |> Enum.map(&to_string/1)
+      |> Enum.map(&Path.relative_to(&1, @repo_root))
+      |> Enum.uniq()
+    end
+
+    defp dockerfile_copies do
+      @dockerfile
+      |> File.read!()
+      |> then(&Regex.scan(~r/^COPY\s+(?!--)(\S+)\s+\S+$/m, &1))
+      |> Enum.map(fn [_, source] -> source end)
+    end
+
     defp snippet_paths do
       Path.join(@repo_root, "docs/**/*.md")
       |> Path.wildcard()
@@ -65,9 +107,99 @@ defmodule Fountain.DocsTest do
     end
   end
 
-  describe "nav ↔ mkdocs.yml" do
-    test "matches the nav: section of mkdocs.yml exactly, order included" do
-      assert Docs.nav_source() == mkdocs_nav()
+  describe "nav ← mkdocs.yml" do
+    @doc """
+    The nav is parsed from mkdocs.yml rather than mirrored in Elixir, so there
+    is no longer a drift test to write — drift is unrepresentable. What is
+    worth pinning is the parser's contract, and above all that it REFUSES a
+    line it does not understand. Silently dropping one would quietly shrink
+    /docs, which is the failure this whole arrangement exists to prevent.
+    """
+    test "parses the real mkdocs.yml into pages and one-level sections" do
+      nav = Docs.nav_source()
+
+      assert {"Home", "index.md"} in nav
+      assert {"Setup", "setup.md"} in nav
+
+      assert {"Sandbox providers", children} =
+               Enum.find(nav, &match?({"Sandbox providers", _}, &1))
+
+      assert {"Sprites", "integrations/sprites.md"} in children
+    end
+
+    test "keeps mkdocs.yml's order" do
+      titles = Enum.map(Docs.nav_source(), &elem(&1, 0))
+      assert Enum.take(titles, 3) == ["Home", "Setup", "Self-hosting"]
+      assert List.last(titles) == "Changelog"
+    end
+
+    test "a page and a section are told apart by indentation" do
+      yaml = """
+      nav:
+        - Home: index.md
+        - Section:
+            - Child: a/b.md
+        - Tail: t.md
+      """
+
+      assert Compiler.parse_nav(yaml) == [
+               {"Home", "index.md"},
+               {"Section", [{"Child", "a/b.md"}]},
+               {"Tail", "t.md"}
+             ]
+    end
+
+    test "blank lines and comments inside the block are ignored" do
+      yaml = """
+      nav:
+        # a comment
+        - Home: index.md
+
+        - Tail: t.md
+      extra:
+      """
+
+      assert Compiler.parse_nav(yaml) == [{"Home", "index.md"}, {"Tail", "t.md"}]
+    end
+
+    test "the block ends at the next top-level key" do
+      yaml = """
+      nav:
+        - Home: index.md
+      extra:
+        - Not: a/page.md
+      """
+
+      assert Compiler.parse_nav(yaml) == [{"Home", "index.md"}]
+    end
+
+    test "an unparsable nav line raises rather than being dropped" do
+      yaml = "nav:\n  - Home: index.md\n  this is not a nav entry\n"
+
+      assert_raise ArgumentError, ~r/unparsed mkdocs.yml nav line/, fn ->
+        Compiler.parse_nav(yaml)
+      end
+    end
+
+    test "an indented entry with no section above it raises" do
+      yaml = "nav:\n      - Orphan: a/b.md\n"
+
+      assert_raise ArgumentError, ~r/no section above it/, fn ->
+        Compiler.parse_nav(yaml)
+      end
+    end
+
+    test "a file with no nav: block raises" do
+      assert_raise ArgumentError, ~r/no `nav:` block/, fn ->
+        Compiler.parse_nav("site_name: Fountain\n")
+      end
+    end
+
+    test "every page the nav names exists on disk" do
+      for {_title, file} <- Compiler.flat_pages(Docs.nav_source()) do
+        assert File.exists?(Path.join([@repo_root, "docs", file])),
+               "mkdocs.yml nav lists #{file}, which does not exist"
+      end
     end
   end
 
@@ -204,33 +336,4 @@ defmodule Fountain.DocsTest do
   # `- Title: file.md` entries at two indent levels and `- Title:` section
   # headers. Anything it doesn't recognize fails the test, which is the point —
   # a new nav shape needs a decision here, not silent skipping.
-  defp mkdocs_nav do
-    [_before, nav_block] = @mkdocs_yml |> File.read!() |> String.split(~r/^nav:\n/m, parts: 2)
-
-    nav_block
-    |> String.split("\n")
-    |> Enum.take_while(&(&1 == "" or String.starts_with?(&1, " ")))
-    |> Enum.reject(&(String.trim(&1) == ""))
-    |> Enum.reduce([], fn line, acc ->
-      case Regex.run(~r/^(\s+)- ([^:]+):\s*(\S+)?\s*$/, line) do
-        [_, indent, title, file] when byte_size(indent) == 2 ->
-          [{title, file} | acc]
-
-        [_, indent, title] when byte_size(indent) == 2 ->
-          [{title, []} | acc]
-
-        [_, indent, title, file] when byte_size(indent) > 2 ->
-          [{section, children} | rest] = acc
-          [{section, [{title, file} | children]} | rest]
-
-        _ ->
-          flunk("unparsed mkdocs.yml nav line: #{inspect(line)}")
-      end
-    end)
-    |> Enum.map(fn
-      {section, children} when is_list(children) -> {section, Enum.reverse(children)}
-      entry -> entry
-    end)
-    |> Enum.reverse()
-  end
 end

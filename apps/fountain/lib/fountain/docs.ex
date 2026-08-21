@@ -14,11 +14,20 @@ defmodule Fountain.Docs do
   This is distinct from `Fountain.Help`, the curated in-app help under
   `priv/help/` — that stays as it is; `/docs` is the full public manual.
 
-  `@nav` mirrors the `nav:` section of `mkdocs.yml`; `docs_test.exs` parses
-  that file and fails on any drift, in either direction. The MkDocs dialect
-  the preprocessing covers is deliberately small (snippet includes,
-  admonitions, relative `.md` links) — if a doc page starts using an extension
-  beyond that, check the page at `/docs`, don't assume.
+  The nav is **read from `mkdocs.yml` at compile time**, not mirrored here.
+  It used to be a hand-maintained copy that `docs_test.exs` diffed against the
+  real file, and the diff is what people hit: adding a page to `mkdocs.yml`
+  without editing this module failed a test in CI partition 3, which looks
+  entirely unrelated to the docs. Adding a page to `mkdocs.yml` is now the
+  whole change.
+
+  Because `mkdocs.yml` is read at compile time it is also an
+  `@external_resource`, which means it must be COPYed into the Docker build
+  stage — see the note on the `@external_resource` list below.
+
+  The MkDocs dialect the preprocessing covers is deliberately small (snippet
+  includes, admonitions, relative `.md` links) — if a doc page starts using an
+  extension beyond that, check the page at `/docs`, don't assume.
   """
 
   alias Fountain.Docs.Compiler
@@ -26,56 +35,22 @@ defmodule Fountain.Docs do
   @root Path.expand("../../../..", __DIR__)
   @docs_dir Path.join(@root, "docs")
 
-  # Mirrors mkdocs.yml `nav:` — {title, file} or {section_title, [{title, file}]}.
-  @nav [
-    {"Home", "index.md"},
-    {"Setup", "setup.md"},
-    {"Self-hosting", "self-hosting.md"},
-    {"Architecture", "architecture.md"},
-    {"Operations", "operations.md"},
-    {"Configuration reference", "configuration.md"},
-    {"Sandbox providers",
-     [
-       {"The contract", "integrations/sandbox-contract.md"},
-       {"Sprites", "integrations/sprites.md"},
-       {"Sprites transport reference", "integrations/sprites-contract.md"},
-       {"E2B", "integrations/e2b.md"},
-       {"Daytona", "integrations/daytona.md"},
-       {"Self-hosted runners", "integrations/runners.md"},
-       {"Adding a provider", "integrations/adding-a-sandbox-provider.md"}
-     ]},
-    {"Services Fountain uses",
-     [
-       {"Overview", "integrations/index.md"},
-       {"Mail", "integrations/mail.md"},
-       {"GitHub OAuth", "integrations/github-oauth.md"},
-       {"Stripe", "integrations/stripe.md"},
-       {"Sentry", "integrations/sentry.md"}
-     ]},
-    {"The four primitives", "primitives.md"},
-    {"CLI reference", "cli.md"},
-    {"API reference", "api.md"},
-    {"TypeScript SDK", "sdk.md"},
-    {"Guided tour — opening a PR", "tour.md"},
-    {"Build a chat app",
-     [
-       {"The shape everyone is cloning", "build/index.md"},
-       {"A team chat, end to end", "build/team-chat.md"},
-       {"What each piece does", "build/pieces.md"}
-     ]},
-    {"Plugging into Fountain",
-     [
-       {"Overview", "integrations/clients.md"},
-       {"fountain acp (reference)", "integrations/acp.md"},
-       {"Editors (ACP)", "integrations/editors.md"},
-       {"OpenClaw (ACP)", "integrations/openclaw.md"},
-       {"Hermes Agent (plugin)", "integrations/hermes.md"},
-       {"OpenBot (AG-UI)", "integrations/openbot.md"},
-       {"Buzz (Nostr)", "integrations/buzz.md"},
-       {"LLM integration", "llm-integration.md"}
-     ]},
-    {"Changelog", "changelog.md"}
-  ]
+  @mkdocs_yml Path.join(@root, "mkdocs.yml")
+
+  # The nav, parsed from mkdocs.yml itself. `{title, file}` for a page,
+  # `{section_title, [{title, file}]}` for a section — the same shape the
+  # hand-maintained copy had, minus the maintaining.
+  @nav @mkdocs_yml |> File.read!() |> Compiler.parse_nav()
+
+  # Everything read at compile time is listed here, so an edit recompiles the
+  # module in dev — AND so `docs_test.exs` can assert the Dockerfile COPYs it
+  # into the build stage. That second job is the load-bearing one: the release
+  # image never contains these files, only the strings baked out of them, so a
+  # path outside what the Dockerfile COPYs does not degrade to a broken link.
+  # It kills `mix release`, no image is produced, CI stays green, and the
+  # deploy silently never happens (#884).
+  @external_resource @mkdocs_yml
+
   # docs/changelog.md pulls the repo-root CHANGELOG.md in via a snippet.
   @external_resource Path.join(@root, "CHANGELOG.md")
 
@@ -107,11 +82,16 @@ defmodule Fountain.Docs do
   @spec slugs() :: [String.t()]
   def slugs, do: Map.keys(@pages)
 
+  @doc """
+  The compiled nav in *source* shape — `{title, file}` rather than
+  `{title, slug}` — so tests can check the pages mkdocs.yml names against
+  what is on disk. This is what the module actually embedded, not a re-read
+  of the file.
+  """
+  @spec nav_source() :: [{String.t(), String.t() | [{String.t(), String.t()}]}]
+  def nav_source, do: @nav
+
   @doc "Fetch a page by slug: `{:ok, %{title: ..., body: markdown}}` or `:error`."
   @spec get(String.t()) :: {:ok, %{title: String.t(), body: String.t()}} | :error
   def get(slug) when is_binary(slug), do: Map.fetch(@pages, slug)
-
-  @doc "The nav source as `{title, file}` pairs — for the mkdocs.yml sync test."
-  @spec nav_source() :: [{String.t(), String.t() | [{String.t(), String.t()}]}]
-  def nav_source, do: @nav
 end

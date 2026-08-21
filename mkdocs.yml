@@ -51,12 +51,20 @@ markdown_extensions:
   - toc:
       permalink: true
 
-# ── Adding or renaming a page? Two places must change together ─────────────
-# The app serves these same pages at /docs and mirrors this nav in
-# apps/fountain/lib/fountain/docs.ex (`@nav`). docs_test.exs diffs the two and
-# CI fails on any drift — a new entry here without one there is the usual way
-# a docs-only PR goes red. Also: `mkdocs build --strict` fails on a broken
-# relative link, and docs/cli.md is diffed against the real CLI command tree.
+# ── This nav is the only copy ──────────────────────────────────────────────
+# The app serves these same pages at /docs and PARSES this block at compile
+# time (Fountain.Docs, via Compiler.parse_nav/1), so adding or renaming a page
+# is a one-file change. It used to be mirrored in @nav in
+# apps/fountain/lib/fountain/docs.ex with a test diffing the two, which is how
+# docs-only PRs kept going red in CI partition 3.
+#
+# A line this file's parser cannot read raises at compile time rather than
+# being skipped — a page silently missing from /docs is the failure being
+# prevented. Keep to the two shapes below: `  - Title: file.md` for a page and
+# a `  - Section:` header with six-space-indented children.
+#
+# Also: `mkdocs build --strict` fails on a broken relative link, and
+# docs/cli.md is diffed against the real CLI command tree.
 nav:
   - Home: index.md
   - Setup: setup.md
