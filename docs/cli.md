@@ -80,10 +80,17 @@ fountain vault delete-secret <id-or-name> <key>
 
 ## Hosted Buzz agents
 
-The one knob a hosted [Buzz](integrations/buzz.md) agent needs after it is
-deployed: who may `@`-mention it. The Buzz desktop refuses to change access on
-a provider agent it has already deployed, so this is where the policy changes.
-Setting it restarts the agent's harness so the new gate is live.
+Change the inbound gate on a hosted [Buzz](integrations/buzz.md) agent, meaning
+whose `@`-mention the harness will answer. The Buzz desktop refuses to change
+access on a provider agent it has already deployed, so this is where that gate
+changes. Setting it restarts the harness so the new gate is live.
+
+**This does not make the agent mentionable.** Buzz Desktop 0.5.17 and newer
+builds its agent directory from the owner-signed kind-30177 policy the desktop
+published at deploy, not from what the harness advertises, so opening the gate
+here without republishing that policy leaves other users unable to send the
+mention in the first place. See
+[Who may talk to it](integrations/buzz.md#who-may-talk-to-it).
 
 ```bash
 fountain buzz agents list [--json]
