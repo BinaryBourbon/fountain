@@ -8,6 +8,14 @@ defmodule Fountain.Buzz.HarnessTest do
   # so the tests exercise the exact teardown path production uses.
   @launcher Path.expand("../../../priv/buzz-acp-launch.sh", __DIR__)
 
+  # A fake that blocks must `exec` its last command, never background it behind
+  # the shell. The launcher TERMs the pid this script reports, which is the
+  # shell's; a plain `sleep 300` is the shell's *child* and `sh` does not
+  # forward the signal, so it orphans onto init still holding the stdio it
+  # inherited from the BEAM. `mix test | tee` (scripts/test-partition.sh) then
+  # cannot see EOF until that sleep expires — five silent minutes on the CI
+  # critical path, with every assertion green, because the pid the test watches
+  # really did die. `exec` makes the reported pid the process that blocks.
   defp write_fake(dir, name, body) do
     path = Path.join(dir, name)
     File.write!(path, "#!/bin/sh\n" <> body)
@@ -73,7 +81,9 @@ defmodule Fountain.Buzz.HarnessTest do
   # the launcher's teardown can reap it.
   test "reaps the child OS process on shutdown", %{dir: dir} do
     pidfile = Path.join(dir, "childpid")
-    cmd = write_fake(dir, "buzz-acp", "echo $$ > #{pidfile}\nexec 0<&- 1>&- 2>&-\nsleep 300\n")
+
+    cmd =
+      write_fake(dir, "buzz-acp", "echo $$ > #{pidfile}\nexec 0<&- 1>&- 2>&-\nexec sleep 300\n")
 
     start(command: cmd, label: "t")
     wait_until(fn -> File.exists?(pidfile) end)
@@ -117,7 +127,7 @@ defmodule Fountain.Buzz.HarnessTest do
   # name-conflict exit — two buzz-acp processes answered one channel.
   test "a Horde name-conflict exit stops the loser: port reaped, on_stop run", %{dir: dir} do
     pidfile = Path.join(dir, "childpid")
-    cmd = write_fake(dir, "buzz-acp", "echo $$ > #{pidfile}\nsleep 300\n")
+    cmd = write_fake(dir, "buzz-acp", "echo $$ > #{pidfile}\nexec sleep 300\n")
     test_pid = self()
 
     pid = start(command: cmd, label: "t", on_stop: fn -> send(test_pid, :stopped) end)
