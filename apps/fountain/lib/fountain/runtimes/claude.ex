@@ -97,4 +97,30 @@ defmodule Fountain.Runtimes.Claude do
   end
 
   def write_config(_handle, _agent), do: :ok
+
+  @doc """
+  Swaps `CLAUDE_CODE_OAUTH_TOKEN` for `ANTHROPIC_API_KEY` in an already-built
+  env list — what a live turn asks for after the org has refused the OAuth
+  token (#655). Left as-is (still carrying the doomed OAuth token) when no
+  API key is on file: the caller decides what to tell the tenant when there
+  is nothing to fall back to.
+
+  Deliberately not folded into `default_env/2` as a "skip oauth" flag: that
+  function runs at provisioning, before any turn has been attempted, so it
+  has no way to know the token is bad. This is reached only after the specific
+  ACP failure that says so.
+  """
+  @spec fall_back_to_api_key([{String.t(), String.t()}], %{atom() => String.t()}) ::
+          [{String.t(), String.t()}]
+  def fall_back_to_api_key(env, inference_credentials) do
+    case Map.get(inference_credentials, :anthropic_api_key) do
+      key when is_binary(key) and key != "" ->
+        env
+        |> Enum.reject(fn {k, _v} -> k == "CLAUDE_CODE_OAUTH_TOKEN" end)
+        |> List.keystore("ANTHROPIC_API_KEY", 0, {"ANTHROPIC_API_KEY", key})
+
+      _ ->
+        env
+    end
+  end
 end

@@ -51,4 +51,56 @@ defmodule Fountain.Runtimes.ClaudeTest do
     assert_receive {:wrote, "/home/sprite/.claude/settings.json", settings}
     assert %{"enableAllProjectMcpServers" => true} = Jason.decode!(settings)
   end
+
+  describe "default_env/2" do
+    test "prefers the oauth token over the api key" do
+      env =
+        Claude.default_env(nil, %{
+          claude_code_oauth_token: "oauth-token",
+          anthropic_api_key: "api-key"
+        })
+
+      assert env == [{"CLAUDE_CODE_OAUTH_TOKEN", "oauth-token"}]
+    end
+
+    test "falls back to the api key when there is no oauth token" do
+      env = Claude.default_env(nil, %{anthropic_api_key: "api-key"})
+
+      assert env == [{"ANTHROPIC_API_KEY", "api-key"}]
+    end
+
+    test "is empty when neither credential is on file" do
+      assert Claude.default_env(nil, %{}) == []
+    end
+  end
+
+  describe "fall_back_to_api_key/2 (#655)" do
+    test "swaps the oauth token for the api key when one is on file" do
+      env = [{"CLAUDE_CODE_OAUTH_TOKEN", "oauth-token"}, {"OTHER_VAR", "x"}]
+
+      result = Claude.fall_back_to_api_key(env, %{anthropic_api_key: "api-key"})
+
+      assert {"ANTHROPIC_API_KEY", "api-key"} in result
+      refute List.keymember?(result, "CLAUDE_CODE_OAUTH_TOKEN", 0)
+      assert {"OTHER_VAR", "x"} in result
+    end
+
+    test "leaves the env untouched when no api key is on file" do
+      env = [{"CLAUDE_CODE_OAUTH_TOKEN", "oauth-token"}]
+
+      assert Claude.fall_back_to_api_key(env, %{}) == env
+    end
+
+    test "does not duplicate an api key entry the env already carries" do
+      env = [
+        {"CLAUDE_CODE_OAUTH_TOKEN", "oauth-token"},
+        {"ANTHROPIC_API_KEY", "stale-key"}
+      ]
+
+      result = Claude.fall_back_to_api_key(env, %{anthropic_api_key: "fresh-key"})
+
+      assert Enum.count(result, fn {k, _v} -> k == "ANTHROPIC_API_KEY" end) == 1
+      assert {"ANTHROPIC_API_KEY", "fresh-key"} in result
+    end
+  end
 end

@@ -1583,6 +1583,66 @@ defmodule Fountain.Conversations.ConversationServer do
      })}
   end
 
+  # #655: the org has refused this account's Claude OAuth token. Left alone,
+  # every further turn on this conversation would fail the exact same way —
+  # nothing about the token changes between attempts — while the Anthropic
+  # API key sitting in the same `inference_credentials` row would work. Swap
+  # it in for the rest of this server's life (not just a silent retry of this
+  # one turn, so the failure and the fix are both visible in the transcript)
+  # rather than leave the tenant to rediscover the swap by hand. Scoped to
+  # this running conversation on purpose: a fresh conversation tries OAuth
+  # again, so a policy that later reverts self-heals instead of staying
+  # pinned to a credential this fix disabled.
+  def handle_info(
+        {:acp, ref, {:failed, {:oauth_org_not_allowed, detail}}},
+        %{current_command_ref: ref, runtime_module: Fountain.Runtimes.Claude} = state
+      ) do
+    Logger.warning("conv #{state.conversation_id}: Claude OAuth token refused by org: #{detail}")
+
+    fallback_env =
+      Fountain.Runtimes.Claude.fall_back_to_api_key(state.sprite_env, state.inference_credentials)
+
+    switched? = fallback_env != state.sprite_env
+
+    # The API key was never in the sprite env before now, so `build_sprite_env`
+    # never registered it for redaction — do it here, or the very value this
+    # fix injects prints in plaintext into `log_events`. Registered as a union
+    # with the outgoing env, not a replacement: the refused OAuth token is
+    # still sitting in the sprite's `/home/sprite/.env` until a wake rewrites
+    # it, so it stays worth scrubbing.
+    Fountain.Conversations.Redaction.put(
+      state.conversation_id,
+      state.sprite_env ++ fallback_env
+    )
+
+    state = %{
+      state
+      | sprite_env: fallback_env,
+        inference_credentials: Map.delete(state.inference_credentials, :claude_code_oauth_token)
+    }
+
+    message =
+      if switched? do
+        "Your organization has disabled Claude subscription (OAuth) access for Claude Code. " <>
+          "Switched to the Anthropic API key on this account for the rest of this " <>
+          "conversation — send your prompt again."
+      else
+        "Your organization has disabled Claude subscription (OAuth) access for Claude Code, " <>
+          "and no Anthropic API key is on file for this account. Add one in Settings, then " <>
+          "try again."
+      end
+
+    {:noreply,
+     finish_acp_turn(
+       state,
+       "failed",
+       %{"error" => message, "acp.oauth_org_not_allowed" => true},
+       %{
+         reason: message
+       }
+     )}
+  end
+
   def handle_info({:acp, ref, {:failed, reason}}, %{current_command_ref: ref} = state) do
     Logger.error("conv #{state.conversation_id}: acp peer failed: #{inspect(reason)}")
 

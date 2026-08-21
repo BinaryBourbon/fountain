@@ -438,6 +438,21 @@ upgrade, is in
 
 ### Fixed
 
+- **A Claude OAuth token the org disallows now falls back to the Anthropic
+  API key instead of failing every turn (#655).** `Fountain.Runtimes.Claude`
+  picks the OAuth token over the API key when both are on file — it bills a
+  subscription instead of metered usage — but an org that disables Claude
+  Code's subscription access rejected every turn with no way out short of a
+  human noticing and swapping credentials by hand, even though a working API
+  key sat in the same row. The ACP peer now recognizes Claude's
+  `oauth_org_not_allowed` error kind on the `session/prompt` call
+  specifically (session setup failing the same way is a different problem),
+  and `ConversationServer` swaps the OAuth token for the API key in the
+  running server's env for the rest of the conversation — the failed turn
+  says so plainly, and the next prompt succeeds without editing anything. A
+  fresh conversation still tries OAuth first, so a policy that later reverts
+  self-heals instead of staying pinned to a credential this fix disabled.
+
 - **Team page: a teammate stayed named after its agent, not its first
   message.** The first turn's auto-generated conversation title (a summary
   like "Elixir Tic Tac Toe Game Development") is what #807 shows as the

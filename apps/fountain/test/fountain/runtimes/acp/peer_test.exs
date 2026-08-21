@@ -378,6 +378,54 @@ defmodule Fountain.Runtimes.ACP.PeerTest do
       assert_receive {:acp, _ref, {:failed, {:acp_error, :initialize, %{"message" => "bad key"}}}}
     end
 
+    test "an org-disallowed oauth error at the prompt is distinguished from a generic error (#655)",
+         ctx do
+      pid = start_peer(ctx, [])
+      %{"id" => init_id} = next_write()
+      send_response(pid, init_id, %{"agentCapabilities" => caps()})
+      %{"id" => new_id} = next_write()
+      send_response(pid, new_id, %{"sessionId" => "s"})
+      %{"id" => prompt_id} = next_write()
+
+      Peer.stdout(
+        pid,
+        Jason.encode!(%{
+          "jsonrpc" => "2.0",
+          "id" => prompt_id,
+          "error" => %{
+            "code" => -32_603,
+            "message" => "Internal error",
+            "data" => %{
+              "details" =>
+                "oauth_org_not_allowed: Your organization has disabled Claude subscription access"
+            }
+          }
+        }) <> "\n"
+      )
+
+      assert_receive {:acp, _ref, {:failed, {:oauth_org_not_allowed, detail}}}
+      assert detail =~ "oauth_org_not_allowed"
+    end
+
+    test "the same error kind at session setup is not special-cased — only the prompt call is",
+         ctx do
+      pid = start_peer(ctx, [])
+      %{"id" => init_id} = next_write()
+
+      Peer.stdout(
+        pid,
+        Jason.encode!(%{
+          "jsonrpc" => "2.0",
+          "id" => init_id,
+          "error" => %{"code" => -32_603, "message" => "oauth_org_not_allowed"}
+        }) <> "\n"
+      )
+
+      assert_receive {:acp, _ref,
+                      {:failed,
+                       {:acp_error, :initialize, %{"message" => "oauth_org_not_allowed"}}}}
+    end
+
     test "a stdin write failure fails the turn rather than exiting the peer", ctx do
       # #603: the SDK write is a bare GenServer.call underneath, and the command
       # process stops :normal the moment the runtime's exit frame arrives. The
