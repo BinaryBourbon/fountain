@@ -25,15 +25,59 @@ partition="${MIX_TEST_PARTITION:?MIX_TEST_PARTITION must be set}"
 # `mix test.coverage` merges every *.coverdata it finds under the umbrella's
 # children. The count file lands beside it: the merge job sums the counts so a
 # human reading the log sees how many tests the gate actually stood on.
-cover_dir="apps/fountain/cover"
+cover_dir="apps/fountain/cover"  # repo-relative; the mix run below cds into apps/fountain
 coverdata="$cover_dir/$partition.coverdata"
 counts="$cover_dir/$partition.tests"
 
 log=$(mktemp)
 trap 'rm -f "$log"' EXIT
 
+# Explicit file list rather than `mix test --partitions`. That flag deals files
+# out by their index in the sorted list, so a partition's runtime is arbitrary:
+# six partitions of this suite ranged 24.5s to 66.5s, and adding one test file
+# reshuffled every one of them. scripts/partition-files.exs assigns by measured
+# cost instead, weighting a sync module at its full duration and an async one
+# at duration/max_cases, because ExUnit runs the async ones in parallel and the
+# sync ones strictly one at a time.
+files=$(elixir scripts/partition-files.exs "$partition" "$partitions")
+
+if [ -z "$files" ]; then
+  echo "partition $partition/$partitions was assigned no files" >&2
+  exit 1
+fi
+
+file_count=$(printf '%s\n' "$files" | wc -l | tr -d ' ')
+echo "partition $partition/$partitions: $file_count files"
+
+# `mix test` must run from apps/fountain, not the umbrella root. That app's
+# test_paths are ["test", "../../ee/test"], and an explicit path is resolved
+# against the working directory — from the root, `../../ee/...` points outside
+# the repo and `ee/...` matches nothing, which CLAUDE.md already warns about.
+cd apps/fountain
+
+# Every path is checked before mix sees it, because `mix test` reports
+# "did not match any directory/file" ONLY when NONE of its paths match: an
+# unresolvable path alongside resolvable ones is dropped in silence, exit 0.
+# That is how the first version of this ran green while skipping all 22 ee
+# files — 300 tests, and the 0-tests guard below could not see it because the
+# core files still ran. A path that does not exist is a failure here.
+missing=""
+while IFS= read -r f; do
+  [ -f "$f" ] || missing="$missing $f"
+done <<EOF
+$files
+EOF
+
+if [ -n "$missing" ]; then
+  echo "partition $partition/$partitions: these paths do not exist relative to apps/fountain," >&2
+  echo "  and mix would have skipped them without failing:" >&2
+  for f in $missing; do echo "    $f" >&2; done
+  exit 1
+fi
+
 set +e
-mix test --partitions "$partitions" --cover 2>&1 | tee "$log"
+# shellcheck disable=SC2086 # word splitting is how the file list is passed
+mix test --export-coverage "$partition" --cover $files 2>&1 | tee "$log"
 status=${PIPESTATUS[0]}
 set -e
 
@@ -55,6 +99,8 @@ if [ "$count" -eq 0 ]; then
   echo "partition $partition/$partitions ran 0 tests" >&2
   exit 1
 fi
+
+cd - > /dev/null
 
 if [ ! -f "$coverdata" ]; then
   echo "partition $partition/$partitions ran $count tests but exported no coverage" >&2
