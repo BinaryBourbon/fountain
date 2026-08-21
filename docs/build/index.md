@@ -4,8 +4,8 @@ The app on your timeline this month is the same app. A messaging client where
 the contacts are bots: a roster down the left, a thread on the right, a **+**
 that makes a new one with a name, a face and a one-line brief, and a settings
 panel where you connect it to GitHub or Notion so it can actually do
-something. Grok Bot shipped that shape; the clones arrived within weeks, and
-most of them are good.
+something. Grok Bot shipped that shape, the clones are everywhere, and most of
+them are good.
 
 The front end is a weekend. What takes longer is the half nobody screenshots.
 
