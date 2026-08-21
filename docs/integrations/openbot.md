@@ -2,13 +2,13 @@
 
 [OpenBot](https://copilotkit.ai/openbot) is CopilotKit's self-hosted agent
 platform: channels, a coworker roster, an audit trail, and a browser computer
-per bot. A "Bot" there is not a framework or an SDK — it is **any HTTP endpoint
+per bot. A "Bot" there is not a framework or an SDK. It is **any HTTP endpoint
 speaking [AG-UI](https://github.com/ag-ui-protocol/ag-ui)**, the open protocol
 for agent-to-user interaction.
 
 Fountain speaks it. `POST /api/agui/:agent_id` takes AG-UI's `RunAgentInput`
 and answers with its SSE event stream, so a Fountain agent arrives in OpenBot
-as a coworker with a channel of its own — no plugin, no sidecar, no code on the
+as a coworker with a channel of its own, with no plugin, no sidecar and no code on the
 OpenBot host.
 
 ```
@@ -17,9 +17,9 @@ OpenBot host.
     ◀── SSE: RUN_STARTED, TEXT_MESSAGE_*, THINKING_*, RUN_FINISHED
 ```
 
-The endpoint is not OpenBot-specific. Any AG-UI host — a hand-written client,
-another product built on the protocol — registers a Fountain agent the same
-way; OpenBot is simply the host it was built and verified against.
+The endpoint is not OpenBot-specific. Any AG-UI host, whether a hand-written
+client or another product built on the protocol, registers a Fountain agent the same
+way. OpenBot is the host it was built and verified against, nothing more.
 
 ## Set it up
 
@@ -35,7 +35,7 @@ In OpenBot, open `/agents`, create a coworker, and fill in:
 | Field | Value |
 |---|---|
 | Name / Title | Whatever the coworker should be called |
-| Role description | The standing role — see below |
+| Role description | The standing role, as below |
 | AG-UI endpoint | `https://your-fountain/api/agui/<agent_id>` |
 | Authorization header | `Authorization` / `Bearer ftn_...` |
 
@@ -45,7 +45,7 @@ rather than in a channel. It provisions a sandbox to answer, and that sandbox
 counts against your concurrency quota until it idles out.
 
 Running both on one laptop, OpenBot refuses a loopback endpoint unless its
-`.env` has `AGENT_COMPUTER_ALLOW_PRIVATE_HOSTS=true` — the same target check
+`.env` has `AGENT_COMPUTER_ALLOW_PRIVATE_HOSTS=true`, the same target check
 that governs browser navigation. It ships set for local development.
 
 Declaring the coworker in a tenant package works too:
@@ -68,8 +68,8 @@ favour.
 
 An AG-UI host holds the transcript. It replays the entire message list on every
 run and expects the endpoint to be stateless. A Fountain conversation is the
-opposite: the sandbox holds the context — the agent's files, its shell history,
-what it worked out last turn — and replaying the transcript into it each turn
+opposite. The sandbox holds the context, meaning the agent's files, its shell
+history and what it worked out last turn, and replaying the transcript into it each turn
 would feed the agent its own words back.
 
 So the thread is **mapped**, not replayed. OpenBot mints a stable thread id per
@@ -77,13 +77,13 @@ channel; that becomes the channel binding `agui:<threadId>`, and only the
 newest user message of each run is sent as a prompt. The first run on a thread
 opens a conversation, and every later run prompts the one already bound.
 
-The consequences are all the ones you would want:
+The consequences are all the ones you would want.
 
 - Starting a new channel in OpenBot starts a new sandbox.
 - Two channels with the same coworker are two sandboxes that know nothing of
   each other.
 - A channel picks up where it left off, including after the sandbox has idled
-  out and been suspended — the next message wakes it.
+  out and been suspended, and the next message wakes it.
 - The binding is per tenant, so two accounts whose hosts happen to mint the
   same thread id never share anything.
 
@@ -114,8 +114,8 @@ anything that should hold for every surface.
 |---|---|
 | `text` blocks | `TEXT_MESSAGE_START` / `CONTENT` / `END` |
 | `thinking` blocks | `THINKING_*` |
-| `tool_use` / `tool_result` | `THINKING_*` — one line per call (`→ Terminal`, `← ok`) |
-| `provision`, `setup`, … stages | `THINKING_*` — `provision: started` |
+| `tool_use` / `tool_result` | `THINKING_*`, one line per call (`→ Terminal`, `← ok`) |
+| `provision`, `setup`, … stages | `THINKING_*`, such as `provision: started` |
 | `turn`/`done` | `RUN_FINISHED` |
 | `turn`/`failed` | `RUN_ERROR`, carrying the reason |
 
@@ -133,12 +133,12 @@ The other side of that coin: **OpenBot's governance does not reach inside a
 Fountain sandbox.** Its boundary is the gateway that every browser, file and
 MCP tool call passes through, and a Fountain agent's `bash` never goes near it,
 so `/admin/audit` and `/admin/boundaries` have nothing to say about what the
-agent did. A Fountain agent is governed by Fountain — its own audit trail, its
+agent did. A Fountain agent is governed by Fountain, with its own audit trail, its
 environment, its vault, its sandbox provider. Register one as a coworker in the
 knowledge that you are trusting Fountain's boundary, not OpenBot's.
 
-Bridging OpenBot's tools *into* the sandbox — so its computer, components and
-MCP grants are things a Fountain agent can call and OpenBot can refuse — is the
+Bridging OpenBot's tools *into* the sandbox, so its computer, components and
+MCP grants are things a Fountain agent can call and OpenBot can refuse, is the
 other half of this integration and is not built.
 
 ## Timing, and a watchdog to know about
@@ -153,13 +153,13 @@ the lifecycle stages stream as thinking events, and the endpoint writes an SSE
 heartbeat comment every 15 seconds. Both are bytes on the wire, which is what
 the watchdog counts.
 
-Whether a host *renders* thinking events is its own business — OpenBot's
+Whether a host *renders* thinking events is its own business. OpenBot's
 channel view (CopilotKit 1.67.1) does not show them, so a first run looks quiet
 even though the connection is healthy. Subsequent runs on a warm sandbox answer
 in a couple of seconds.
 
-If a Fountain error arrives before the stream opens — an unknown agent, no
-subscription, the sandbox quota — it is an ordinary JSON response with a
+If a Fountain error arrives before the stream opens, such as an unknown agent,
+no subscription or the sandbox quota, it is an ordinary JSON response with a
 status, and OpenBot shows it in the channel. Once the stream is open, failure
 arrives as `RUN_ERROR`.
 
@@ -168,7 +168,7 @@ arrives as `RUN_ERROR`.
 The agent needs a model credential, as it does on every other surface: add one
 at `/account/inference-credentials` (an Anthropic API key or Claude Code OAuth
 token, an OpenAI key, a Gemini key). Without it the sandbox spawns, the ACP
-session initialises, and the turn fails with `Authentication required` — a
+session initialises, and the turn fails with `Authentication required`, which is a
 `RUN_ERROR` in the channel that names it.
 
 Fountain has no platform-level model key on purpose
@@ -200,5 +200,5 @@ curl -N -X POST "https://your-fountain/api/agui/<agent_id>" \
 ```
 
 A healthy run is `RUN_STARTED`, some `TEXT_MESSAGE_*`, then `RUN_FINISHED`.
-Each SSE message is `data: {"type": ...}` — the type is inside the JSON, which
+Each SSE message is `data: {"type": ...}`, so the type is inside the JSON, which
 is what the reference AG-UI encoder writes and every client parses.

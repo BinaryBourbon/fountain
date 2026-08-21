@@ -1,16 +1,12 @@
-# The pre-existing style backlog, tracked by #911.
+# The style backlog, tracked by #911. IT IS NOW EMPTY.
 #
-# Files listed here are SKIPPED by scripts/docs-style.py. This list is only
-# ever meant to shrink: clean a page, delete its line, and the checker starts
-# guarding it. A file NOT listed here is checked, so every new page is covered
-# by default and the cleanup can land one page at a time without leaving CI
-# red in between.
+# Files listed here are SKIPPED by scripts/docs-style.py. Every page under
+# docs/ now passes, so nothing is listed and every page is checked.
 #
-# The checker fails if a line here names a file that no longer exists, so a
-# rename cannot quietly re-exempt a page.
-docs/integrations/adding-a-sandbox-provider.md
-docs/integrations/buzz.md
-docs/integrations/openbot.md
-docs/integrations/openclaw.md
-docs/integrations/runners.md
-docs/integrations/sprites-contract.md
+# Keep this file. Its emptiness is the point: adding a line is how you park a
+# page you have not cleaned yet, and an empty list says there are none. The
+# checker also fails if a line names a file that no longer exists, so a rename
+# cannot quietly re-exempt a page.
+#
+# If you find yourself adding a line, prefer fixing the page. The whole
+# backlog was 32 files and ~560 violations, and it came down one PR at a time.

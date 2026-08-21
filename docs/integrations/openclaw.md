@@ -1,8 +1,8 @@
 # OpenClaw (Agent Client Protocol)
 
 [OpenClaw](https://docs.openclaw.ai) is a self-hosted personal assistant that
-fronts a set of chat surfaces — Telegram, Discord, Slack, Signal, iMessage and
-more — and routes them to coding harnesses over the
+fronts a set of chat surfaces, including Telegram, Discord, Slack, Signal and
+iMessage, and routes them to coding harnesses over the
 [Agent Client Protocol](https://agentclientprotocol.com) (ACP). Because
 Fountain already speaks ACP as an *agent* (`fountain acp`, see
 [Editors](editors.md)), OpenClaw can drive a Fountain agent the same way it
@@ -23,38 +23,38 @@ ACP over stdio. So the integration is a config block, not code.
 It is a **chat front-end for a remote conversation.** OpenClaw handles the
 channel (a Telegram thread, a Discord room); Fountain runs the agent in a
 sandbox, on a checkout the sandbox made, on a machine that is not the one
-OpenClaw runs on. The reply streams back to the channel over ACP — OpenClaw
+OpenClaw runs on. The reply streams back to the channel over ACP, and OpenClaw
 delivers the agent's message chunks to the chat as they arrive, so no publish
 tool or extra wiring is involved.
 
 It is **not** a way for the agent to touch OpenClaw's host or the files on it.
 The adapter declares no filesystem or terminal access, and the paths a tool
-call reports are paths *inside the sandbox* — carried under
+call reports are paths *inside the sandbox*, carried under
 `_meta.fountain.sandboxLocations` rather than as clickable locations. For a
 chat surface this is a clean fit rather than a caveat: there is no local
 project to confuse them with.
 
-Why reach for this rather than a harness OpenClaw hosts locally:
+Three reasons to reach for this rather than a harness OpenClaw hosts locally.
 
 - **The work outlives the channel.** Close the chat mid-turn; the turn keeps
   running. Re-open and the transcript replays from the server.
-- **The unit is a Fountain agent** — an environment, vault overrides, skills,
+- **The unit is a Fountain agent**, meaning an environment, vault overrides, skills,
   MCP servers and inference credentials that never touch the OpenClaw host.
 - **The same conversation is open in the Fountain conversations app**, for you or a
   teammate, while it runs from the channel.
 
 ## Setup
 
-OpenClaw runs on Node — it requires **Node ≥ 22.22.3** (or ≥ 24.15 / ≥ 25.9).
+OpenClaw runs on Node and requires **Node ≥ 22.22.3** (or ≥ 24.15 / ≥ 25.9).
 
-1. Install the Fountain CLI on the OpenClaw host and log in:
+1. Install the Fountain CLI on the OpenClaw host and log in.
 
     ```bash
     brew install BinaryBourbon/tap/fountain
     fountain auth login
     ```
 
-    For a self-hosted instance, point at it first — the CLI defaults to the
+    For a self-hosted instance, point at it first, because the CLI defaults to the
     hosted one:
 
     ```bash
@@ -65,7 +65,7 @@ OpenClaw runs on Node — it requires **Node ≥ 22.22.3** (or ≥ 24.15 / ≥ 2
     environment, so the credentials `fountain auth login` saved are what the
     session authenticates with. No key goes into OpenClaw's config.
 
-2. Install and enable the ACP backend plugin:
+2. Install and enable the ACP backend plugin.
 
     ```bash
     openclaw plugins install @openclaw/acpx
@@ -98,7 +98,7 @@ OpenClaw runs on Node — it requires **Node ≥ 22.22.3** (or ≥ 24.15 / ≥ 2
 4. Give OpenClaw an agent of its own that runs on that entry. The block above
    is acpx's *harness alias*; OpenClaw's routing, `sessions_spawn` and channel
    bindings address an **OpenClaw agent id**, and the two are tied together
-   with `runtime.type: "acp"`. Same name in both places keeps it readable:
+   with `runtime.type: "acp"`. Same name in both places keeps it readable.
 
     ```json5
     acp: { enabled: true, backend: "acpx" },
@@ -111,7 +111,7 @@ OpenClaw runs on Node — it requires **Node ≥ 22.22.3** (or ≥ 24.15 / ≥ 2
     }
     ```
 
-    `mode: "persistent"` matters on OpenClaw ≤ 2026.7.1 — see the
+    `mode: "persistent"` matters on OpenClaw ≤ 2026.7.1. See the
     two-conversations note under Limits. If you have set `acp.allowedAgents`,
     add `"fountain"` to it; an empty list means no restriction. The 2026.8
     beta keys agents by id (`agents.entries.fountain = { runtime: … }`) instead
@@ -131,14 +131,14 @@ OpenClaw runs on Node — it requires **Node ≥ 22.22.3** (or ≥ 24.15 / ≥ 2
     ]
     ```
 
-    A binding routes the channel straight to the harness — no OpenClaw model
-    is involved. The other front doors — `sessions_spawn(runtime: "acp",
-    agentId: "fountain")` from a turn, or `openclaw agent --agent fountain` —
+    A binding routes the channel straight to the harness, with no OpenClaw
+    model involved. The other front doors, `sessions_spawn(runtime: "acp",
+    agentId: "fountain")` from a turn and `openclaw agent --agent fountain`,
     go through OpenClaw's own model first, which then delegates; those need
     OpenClaw's model provider configured, the harness never does. Thread-bound
     bindings also need the channel's thread bindings enabled
     (`session.threadBindings`, and per adapter e.g.
-    `channels.discord.threadBindings.spawnSessions`) — OpenClaw's
+    `channels.discord.threadBindings.spawnSessions`), because OpenClaw's
     [ACP agents](https://docs.openclaw.ai/tools/acp-agents) page has the
     per-channel detail.
 
@@ -146,7 +146,7 @@ OpenClaw runs on Node — it requires **Node ≥ 22.22.3** (or ≥ 24.15 / ≥ 2
 
 `--vault <name-or-id>` attaches a [vault](../concepts/vault.md) to every
 conversation the entry opens. Vault values override the agent's environment, so
-this is where a secret that belongs to *this entry* goes — an identity the
+this is where a secret that belongs to *this entry* goes, such as an identity the
 agent posts under, a token scoped to one channel.
 
 ```json5
@@ -161,9 +161,9 @@ two entries stay separate even when they point at the same agent.
 
 `--environment <name-or-id>` provisions every conversation the entry opens from
 that [environment](../concepts/environment.md) instead of the agent's own.
-Use it when one agent config should run under several baselines — the same
+Use it when one agent config should run under several baselines, so the same
 "engineer" against a `fountain` environment in one entry and a `buzz`
-environment in another — without duplicating the agent. The vault, if any,
+environment in another, without duplicating the agent. The vault, if any,
 still wins over it on key collision, and an agent can restrict which
 environments may stand in for its own via `allowed_environment_ids`.
 
@@ -177,7 +177,7 @@ environments may stand in for its own via `allowed_environment_ids`.
 | `session/prompt` | Runs a turn; messages, thoughts and tool calls stream back to the channel as they happen |
 | `session/cancel` | `/acp cancel` interrupts the running turn |
 | `session/load` | Replays the conversation when a session is resumed |
-| `session/set_config_option` | Accepted, not applied. OpenClaw pushes the model its brain chose (and a `thinking` level derived from it) at every spawn — verified on 2026.7.1 and 2026.8.1-beta.2; a Fountain agent's model is set on the agent, so the push is acknowledged and ignored, and the reply's `_meta.fountain.applied: false` says so |
+| `session/set_config_option` | Accepted, not applied. OpenClaw pushes the model its brain chose (and a `thinking` level derived from it) at every spawn, verified on 2026.7.1 and 2026.8.1-beta.2. a Fountain agent's model is set on the agent, so the push is acknowledged and ignored, and the reply's `_meta.fountain.applied: false` says so |
 
 ## Limits, stated rather than discovered
 
@@ -191,21 +191,21 @@ environments may stand in for its own via `allowed_environment_ids`.
   agents from the conversations app or `fountain run`.
 - **Permission prompts are not forwarded yet.** Agents currently run with their
   own permission handling, which is why `permissionMode: "approve-all"` is set
-  above — an OpenClaw channel is not asked to approve a tool call
+  above, so an OpenClaw channel is not asked to approve a tool call
   ([#643](https://github.com/BinaryBourbon/fountain/issues/643),
   [#708](https://github.com/BinaryBourbon/fountain/issues/708)).
 - **The model, and thinking level, are the Fountain agent's.** OpenClaw's
   `--model`, `sessions_spawn`'s `model`/`thinking`, and the `/acp` model
-  controls are accepted and ignored — a Fountain agent's model is set on the
+  controls are accepted and ignored, because a Fountain agent's model is set on the
   agent and shared by every conversation it runs. Change it there. (OpenClaw's
   own docs say the same for any harness without `session/set_model`.)
 - **On OpenClaw ≤ 2026.7.1 (acpx 0.11), a one-shot spawn opens two
-  conversations and uses one.** That OpenClaw ensured the acpx session twice —
-  when the spawn was initialised and again when the turn ran — and in
+  conversations and uses one.** That OpenClaw ensured the acpx session twice,
+  once when the spawn was initialised and again when the turn ran, and in
   `oneshot` mode acpx answered each with a fresh `session/new`. On Fountain
   that was two conversations per spawn, each with a provisioned sandbox; the
   first never prompted, sitting `pending` until the idle reaper parked it.
-  Re-run on 2026.8.1-beta.2 (acpx 0.13) it no longer happens — one
+  Re-run on 2026.8.1-beta.2 (acpx 0.13) it no longer happens, and one
   `session/new` per spawn. Reported upstream as
   [openclaw#124852](https://github.com/openclaw/openclaw/issues/124852) /
   [acpx#504](https://github.com/openclaw/acpx/issues/504); on the older
@@ -219,9 +219,9 @@ environments may stand in for its own via `allowed_environment_ids`.
 ## Verification
 
 The ACP path here is the same one the [Editors](editors.md) integration uses,
-proven end to end against production: an acpx-identical spawn —
+proven end to end against production, with an acpx-identical spawn
 `fountain acp --agent <id>` with the host environment inherited, line-delimited
-JSON-RPC 2.0 over stdio — completed `initialize → session/new →
+(JSON-RPC 2.0 over stdio) completing `initialize → session/new →
 session/prompt`, ran the turn in a real sandbox, and streamed the agent's reply
 back as `agent_message_chunk` updates with a real stop reason. That is exactly
 what `acpx` does when it spawns the command above.
@@ -230,20 +230,20 @@ The full gateway round trip is also proven: `openclaw agent` (OpenClaw's own
 brain) → `sessions_spawn(runtime: "acp", agentId: "fountain")` → acpx →
 `fountain acp` → sandbox → the reply relayed back through the gateway, against
 the real acpx (0.11.2 and 0.13.0) and OpenClaw (2026.7.1 and 2026.8.1-beta.2)
-— with the brain pushing its model and a `thinking` level at the harness on
+with the brain pushing its model and a `thinking` level at the harness on
 the way, which is the case that used to abort the turn ([#759](https://github.com/BinaryBourbon/fountain/issues/759),
 [#760](https://github.com/BinaryBourbon/fountain/issues/760)).
 
 When you test through `openclaw agent` or a prompt that should delegate, check
 that the harness actually ran: OpenClaw's own model will happily answer a
 "reply with X" prompt itself and report success. The tell is a `sessions_spawn`
-call in the tool summary and a new conversation on the Fountain agent —
+call in the tool summary and a new conversation on the Fountain agent,
 `fountain conv list` shows it, with the turn, from the Fountain side.
 
 If a session does not start, `fountain acp` writes the protocol to stdout and
 **everything else to stderr**, which is where OpenClaw's `acpx` log shows it.
 `/acp doctor` reports backend health; running the command by hand is a fair
-diagnostic — it waits for JSON-RPC on stdin, which tells you the process starts
+diagnostic, since it waits for JSON-RPC on stdin, which tells you the process starts
 and finds its credentials:
 
 ```bash
@@ -263,9 +263,9 @@ Two ADRs cover the design:
 [0014](https://github.com/BinaryBourbon/fountain/blob/main/decisions/0014-agent-client-protocol.md)
 made Fountain an ACP *client* of the coding agents it runs in sandboxes;
 [0015](https://github.com/BinaryBourbon/fountain/blob/main/decisions/0015-fountain-as-an-acp-agent.md)
-makes it an ACP *agent* for any ACP client — an editor, [Buzz](https://github.com/block/buzz),
+makes it an ACP *agent* for any ACP client, such as an editor, [Buzz](https://github.com/block/buzz),
 or OpenClaw. Together they make Fountain a proxy: the same block vocabulary
 arrives from a sandbox on one side and leaves for the client on the other, so
 the adapter forwards updates rather than translating them. OpenClaw is one more
-client on that far side — see the
+client on that far side. See the
 [2026-08-16 addendum to 0015](https://github.com/BinaryBourbon/fountain/blob/main/decisions/0015-fountain-as-an-acp-agent.md#addendum--2026-08-16-openclaw-is-another-acp-client-spike-verified).
