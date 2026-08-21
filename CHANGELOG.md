@@ -18,6 +18,12 @@ upgrade, is in
 
 ### Added
 
+- **What we need from a sandbox platform** (`docs/integrations/platform-requirements.md`):
+  the ten things Fountain had to build itself because no backend promised them,
+  each with the workaround it costs us and an acceptance test a platform team can
+  run. Written for vendors rather than adapter authors, alongside a dated matrix
+  of where all four backends stand today.
+
 - **The SDK's surface, rebuilt from what the applications actually use.** The
   eleven apps on the Fountain API each hand-wrote a client (2,644 lines
   between them), and counting their methods says plainly what belongs in an

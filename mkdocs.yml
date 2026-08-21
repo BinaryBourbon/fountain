@@ -123,6 +123,7 @@ nav:
       - Daytona: integrations/daytona.md
       - Self-hosted runners: integrations/runners.md
       - Adding a provider: integrations/adding-a-sandbox-provider.md
+      - What we need from a platform: integrations/platform-requirements.md
   - Services Fountain uses:
       - Overview: integrations/index.md
       - Mail: integrations/mail.md

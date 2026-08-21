@@ -80,3 +80,5 @@ every conversation fails at provision time.
   [Adding a provider](adding-a-sandbox-provider.md).
 - The original backend's wire protocol, for building a Sprites-compatible
   replacement: [the Sprites transport reference](sprites-contract.md).
+- What we would ask a sandbox platform to support natively, and what each
+  gap costs: [what we need from a platform](platform-requirements.md).

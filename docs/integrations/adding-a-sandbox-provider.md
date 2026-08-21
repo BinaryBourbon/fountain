@@ -6,7 +6,10 @@ runner today). This page is the practical checklist for adding another. The *why
 shape lives in [ADR 0018](https://github.com/BinaryBourbon/fountain/blob/main/decisions/0018-sandbox-provider-abstraction.md);
 the contract itself is the `Fountain.Sandbox` moduledoc; the executable form
 of the contract is `Fountain.SandboxConformanceCase`. When those disagree
-with this page, they win.
+with this page, they win. For the same territory from the platform's side of
+the table — what we would ask a vendor to support natively, and what each
+gap costs us — see [what we need from a
+platform](platform-requirements.md).
 
 ## Before writing any code: answer six questions
 
