@@ -10,10 +10,7 @@
 # rename cannot quietly re-exempt a page.
 docs/integrations/adding-a-sandbox-provider.md
 docs/integrations/buzz.md
-docs/integrations/editors.md
-docs/integrations/hermes.md
 docs/integrations/openbot.md
 docs/integrations/openclaw.md
 docs/integrations/runners.md
 docs/integrations/sprites-contract.md
-docs/integrations/stripe.md

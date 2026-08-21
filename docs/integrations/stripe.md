@@ -2,16 +2,16 @@
 
 **Optional.** The subscription gate exists for the hosted service; billing is
 off by default (`BILLING_ENABLED=false`), and that is the right setting for
-most self-hosted instances — a gate with no checkout behind it is a lock with
+most self-hosted instances, because a gate with no checkout behind it is a lock with
 no key. Set this up only if you run Fountain commercially.
 
 ## Provider side
 
 1. **A product with a recurring price.** Its price ID (`price_…`) becomes
    `STRIPE_PRICE_ID`.
-2. **An API key** (Developers → API keys) — `STRIPE_SECRET_KEY`.
+2. **An API key** (Developers → API keys), as `STRIPE_SECRET_KEY`.
 3. **A webhook endpoint** pointed at `<PUBLIC_URL>/api/stripe/webhook`,
-   subscribed to:
+   subscribed to these events.
     - `checkout.session.completed`
     - `customer.subscription.created`
     - `customer.subscription.updated`
@@ -23,8 +23,8 @@ no key. Set this up only if you run Fountain commercially.
 
     Its signing secret becomes `STRIPE_WEBHOOK_SECRET`.
 
-    An existing endpoint keeps working without the three `invoice.*` events —
-    dunning state still syncs from the subscription events — but the SCA
+    An existing endpoint keeps working without the three `invoice.*` events,
+    since dunning state still syncs from the subscription events, but the SCA
     ("confirm your payment") email never fires and recovery notices depend
     solely on `customer.subscription.updated`. Add them when upgrading.
 
@@ -38,7 +38,7 @@ instance taking real money.
 | `BILLING_ENABLED` | `false` by default; `true` enforces the subscription gate on conversations |
 | `STRIPE_SECRET_KEY` | API key |
 | `STRIPE_WEBHOOK_SECRET` | Verifies webhook signatures; a bad signature is rejected with a 400 |
-| `STRIPE_PRICE_ID` | The price surfaced by Checkout. Unset with billing enabled, signups get a purely local 14-day trial and a logged warning — and Checkout is broken |
+| `STRIPE_PRICE_ID` | The price surfaced by Checkout. Unset with billing enabled, signups get a purely local 14-day trial and a logged warning, and Checkout is broken |
 
 ## Behavior worth knowing
 
@@ -52,7 +52,7 @@ instance taking real money.
   so Stripe redelivers.
 - Comped accounts are never overwritten by Stripe events.
 - `invoice.payment_failed` / `invoice.payment_action_required` drive dunning
-  and SCA emails but never write subscription status — that stays with the
+  and SCA emails but never write subscription status, which stays with the
   subscription events. `invoice.paid` writes status in exactly one case:
   `past_due → active` (dunning recovery), because Stripe also pays a $0
   invoice at trial creation and one per normal renewal, which must not touch
@@ -74,14 +74,14 @@ something you bolt onto an existing signup.
 
 ## Release verification: `mix fountain.verify_lifecycle`
 
-The Test Clock exercise above is automated as a repeatable command — run it
+The Test Clock exercise above is automated as a repeatable command. Run it
 before releasing **any billing-touching change**:
 
 ```bash
 STRIPE_SECRET_KEY=sk_test_... mix fountain.verify_lifecycle
 ```
 
-It creates a scratch user and a Test Clock, then walks the whole lifecycle —
+It creates a scratch user and a Test Clock, then walks the whole lifecycle,
 trial → T-3d warning email enqueued → expiry (gate refuses, trial-expired
 email) → paid subscription with a test card (gate opens) → cancel at period
 end (access retained, `cancel_at_period_end`/`current_period_end` synced) →
@@ -90,21 +90,21 @@ period end (gate refuses, cancellation email, flag cleared) → re-subscribe
 dunning: `past_due`, gate refuses, payment-failed email, and the real failed
 invoice fed through `invoice.payment_failed`) → dunning recovery (a working
 card pays the open invoice; `invoice.paid` flips `past_due → active`, the
-gate opens, payment-recovered email) — asserting the **Fountain-side** state
+gate opens, payment-recovered email), asserting the **Fountain-side** state
 at every step. Each fetched Stripe
 state is fed through `Billing.sync_subscription/1`, exactly what the webhook
 controller does after signature verification; webhook *delivery* needs a
 public endpoint and stays out of scope. Cleanup (clock + scratch user) runs
 even when a step fails.
 
-Notes:
+Four notes.
 
-- **Test-mode key only** — live keys are refused outright. The CLI's key
+- **Test-mode key only.** Live keys are refused outright. The CLI's key
   lives in `~/.config/stripe/config.toml` (`test_mode_api_key`) and expires
   every 90 days; an expired key fails the preflight with a `stripe login`
   hint rather than a misleading mid-run error.
 - Runs against the dev database; the scratch user is deleted afterwards.
-- Deliberately **not CI**: external, ~1–2 minutes of clock advances, needs a
+- Deliberately **not CI**, being external, about 1 to 2 minutes of clock advances, and needing a
   key. It is a release-check, run by a person (or an agent) with the result
   pasted into the PR that motivated it.
 - `STRIPE_PRICE_ID` is honored when set; otherwise a throwaway test-mode
