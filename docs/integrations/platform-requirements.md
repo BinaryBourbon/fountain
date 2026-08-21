@@ -19,7 +19,7 @@ correcting it is cheaper for us than working around it.
 
 An agent turn runs for minutes or hours. It streams output a human is
 watching in real time, it takes input mid-flight, and the filesystem it
-leaves behind **is the agent's memory** — the next turn resumes on that disk.
+leaves behind **is the agent's memory**, because the next turn resumes on that disk.
 Our control plane redeploys underneath running turns and has to rejoin them,
 and our reaper destroys sandboxes based on what a provider's API says exists.
 
@@ -52,7 +52,7 @@ code works. We would rather delete it.
 ### exit-truth
 
 **We need** exactly one terminal event per command, carrying the process's
-actual exit code — on the streaming path as well as the blocking one — and
+actual exit code, on the streaming path as well as the blocking one, and
 distinguishable from a transport failure that ended the stream early.
 
 **Because** a setup script that fails silently produces a sandbox that looks
@@ -79,8 +79,8 @@ Our own contract specifies replay-from-byte-zero purely because no platform
 offers a cursor; callers then de-duplicate by counting bytes already
 persisted per stream.
 
-**Acceptance:** attach to a running session twice — once from byte zero, once
-from a cursor — and the concatenated output is byte-identical to an
+**Acceptance:** attach to a running session twice, once from byte zero and
+once from a cursor, and the concatenated output is byte-identical to an
 uninterrupted read.
 
 ### detached-sessions
@@ -104,7 +104,7 @@ credential or a slow region never produces one of them.
 **Because** a parked sandbox's disk is the agent's memory. Our reaper
 reconciles the provider's listing against our database and destroys what the
 provider says is untracked. If a blip reads as absence, we delete a
-customer's work. This is not hypothetical — a control-plane partition on our
+customer's work. This is not hypothetical. A control-plane partition on our
 side once made nine live sandboxes look absent, and the next sweep destroyed
 them.
 
@@ -133,7 +133,7 @@ sandbox when the name is taken instead of minting a second one.
 
 **Because** idempotence under retry is the whole game for a control plane.
 With server-assigned identity, a timed-out create leaves an orphan we are
-paying for and cannot address — so we end up maintaining a second naming
+paying for and cannot address, so we end up maintaining a second naming
 system in provider metadata and reconciling the duplicates our own retries
 produced.
 
@@ -143,7 +143,7 @@ two identical handles.
 ### park-not-expire
 
 **We need** a pause or stop that keeps the filesystem at storage-only cost,
-with no TTL that destroys — and where a TTL is unavoidable, expiry must park
+with no TTL that destroys. Where a TTL is unavoidable, expiry must park
 rather than kill.
 
 **Because** our cost model is "park everything idle", and the disk being
@@ -184,7 +184,7 @@ fails to connect, including DNS and raw IP.
 ### url-or-nothing
 
 **We need** one HTTP endpoint per sandbox that a browser can open without a
-platform credential, reported by the API — or a clear statement that the
+platform credential, reported by the API, or a clear statement that the
 platform has no such concept.
 
 **Because** agents build things and then need to show a human. "Where is it
@@ -203,26 +203,26 @@ several entries are probably already stale.
 
 | Requirement | [Sprites](sprites.md) | [E2B](e2b.md) | [Daytona](daytona.md) | [Runner](runners.md) |
 |---|---|---|---|---|
-| exit-truth | No — exec reports 0 regardless | Yes | No — no exit code on session-command records | Yes |
-| replay-cursor | Partial — replays the last 16 KiB, starting mid-line | No — journaling shim + tail replayer | Yes — journal replays from byte zero | Yes |
-| detached-sessions | Yes | No — emulated by the adapter | Yes | Yes |
-| absence-definitive | Undocumented | Undocumented | Undocumented | Yes — every offline shape is transient by construction |
-| stdin-total | Yes | Yes | No — the FIFO EOFs after every write, and has no close | Yes |
-| named-create | Yes | No — names emulated via metadata | Yes | Yes |
-| park-not-expire | Yes — scales to zero | Partial — pause preserves the disk, but a TTL runs underneath | Yes — stop, then archive to object storage | Yes |
-| honest-listing | Yes — continuation tokens | Not measured | Not measured | Yes |
-| egress-deny | Partial — translated fail-open | Yes | Yes, but tier-gated | No — by design; the machine is the user's |
-| url-or-nothing | Yes | No — per-port hostnames only | No | No |
+| exit-truth | No, exec reports 0 regardless | Yes | No, no exit code on session-command records | Yes |
+| replay-cursor | Partial, replays the last 16 KiB starting mid-line | No, journaling shim plus tail replayer | Yes, journal replays from byte zero | Yes |
+| detached-sessions | Yes | No, emulated by the adapter | Yes | Yes |
+| absence-definitive | Undocumented | Undocumented | Undocumented | Yes, every offline shape is transient by construction |
+| stdin-total | Yes | Yes | No, the FIFO EOFs after every write and has no close | Yes |
+| named-create | Yes | No, names emulated via metadata | Yes | Yes |
+| park-not-expire | Yes, scales to zero | Partial, pause preserves the disk but a TTL runs underneath | Yes, stop then archive to object storage | Yes |
+| honest-listing | Yes, continuation tokens | Not measured | Not measured | Yes |
+| egress-deny | Partial, translated fail-open | Yes | Yes, but tier-gated | No, by design, since the machine is the user's |
+| url-or-nothing | Yes | No, per-port hostnames only | No | No |
 
 The fourth backend is our own daemon ([self-hosted
-runner](runners.md)) — worth reading as an existence proof rather than a
+runner](runners.md)), worth reading as an existence proof rather than a
 comparison. It meets nearly all of this because we wrote both ends, which is
 the only reason we know the list is implementable rather than merely
 desirable.
 
 ## The rule underneath all ten
 
-!!! note "Advertise or refuse — never pretend"
+!!! note "Advertise or refuse, never pretend"
 
     An orchestrator can degrade gracefully around a missing capability. It
     cannot degrade around a capability that is claimed and then quietly does
@@ -234,7 +234,7 @@ to an operator. A guessed preview URL is a support ticket for someone else's
 product.
 
 The whole abstraction rests on this: each adapter declares a capability set,
-and the lifecycle changes shape accordingly — a backend that cannot park gets
+and the lifecycle changes shape accordingly, so a backend that cannot park gets
 destroy-on-idle rather than a fake park. That only works if "I don't support
 this" is an answer the platform's API is willing to give.
 
@@ -243,7 +243,7 @@ this" is an answer the platform's API is willing to give.
 Naming the non-asks is half of making this a conversation rather than a wish
 list.
 
-- **A common wire format.** REST, gRPC, WebSocket, a vendor SDK — we write
+- **A common wire format.** REST, gRPC, WebSocket, a vendor SDK, because we write
   the adapter. This page is about semantics, not shapes.
 - **Images or provisioning.** We ship our own image per platform,
   deliberately, so that no provisioning logic is provider-specific.
@@ -265,8 +265,9 @@ cares about. A genuinely neutral contract needs another kind of customer in
 the room.
 
 The capability vocabulary is also doing more work than it should.
-`:suspend` currently means three different promises across our backends —
-scale-to-zero, an explicit pause, and stopping processes in a directory — and
+`:suspend` currently means three different promises across our backends,
+namely scale-to-zero, an explicit pause, and stopping processes in a
+directory, and
 they are not equivalent. If any of this became a shared specification, that
 word would need splitting first.
 
@@ -276,5 +277,5 @@ word would need splitting first.
 checklist: an in-memory reference adapter passes it in full, and it pins
 every semantic above, including the byte-exact replay test. The practical
 route for a platform team is [adding a
-provider](adding-a-sandbox-provider.md) — its verification ladder exists
+provider](adding-a-sandbox-provider.md), whose verification ladder exists
 because each rung caught something the previous one passed.
