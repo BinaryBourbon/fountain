@@ -246,6 +246,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/agui/{agent_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Run an agent over AG-UI (SSE)
+         * @description Answers a `RunAgentInput` with the AG-UI event stream: `RUN_STARTED`, the turn's output as `TEXT_MESSAGE_*` and `THINKING_*` events, then `RUN_FINISHED` or `RUN_ERROR`. Each SSE message is `data: {"type": ...}`, as the reference encoder writes it.
+         *
+         *     `threadId` binds to a conversation (`agui:<threadId>`): the first run opens one, later runs prompt it. Only the newest user message is sent — the agent's memory lives in its sandbox, not in the replayed transcript.
+         *
+         *     Errors before the stream opens are ordinary JSON responses (404 for an unknown agent, 402 without a subscription); once it is open, failure arrives as `RUN_ERROR`.
+         */
+        post: operations["FountainWeb.AguiController.run"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/environments/{environment_id}/secrets": {
         parameters: {
             query?: never;
@@ -2533,6 +2557,23 @@ export interface components {
             /** Format: uuid */
             vault_id?: string | null;
         };
+        /**
+         * RunAgentInput
+         * @description The AG-UI run envelope, as the protocol defines it. Extra fields are accepted and ignored: only `threadId`, `runId` and `messages` are read.
+         */
+        RunAgentInput: {
+            context?: Record<string, never>[];
+            forwardedProps?: Record<string, never>;
+            /** @description The thread so far. The newest `user` message becomes the prompt; `system`/`developer` messages become the standing role of a new conversation. */
+            messages: Record<string, never>[];
+            /** @description This run. Echoed in the events. */
+            runId: string;
+            state?: Record<string, never>;
+            /** @description The host's thread. Bound to one Fountain conversation as `agui:<threadId>`. */
+            threadId: string;
+            /** @description Accepted and ignored — see the module doc on why no tool call is emitted. */
+            tools?: Record<string, never>[];
+        };
         /** EnvironmentListResponse */
         EnvironmentListResponse: {
             data: components["schemas"]["Environment"][];
@@ -3876,6 +3917,67 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ChangesetError"];
+                };
+            };
+        };
+    };
+    "FountainWeb.AguiController.run": {
+        parameters: {
+            query?: {
+                /** @description `off` streams the reply text only. Default `thinking`: tool use and lifecycle stages are relayed as AG-UI thinking events too, which is also what keeps a host's stall watchdog fed while a sandbox provisions. */
+                activity?: string;
+            };
+            header?: never;
+            path: {
+                /** @description The agent to run. */
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        /** @description AG-UI run input */
+        requestBody?: {
+            content: {
+                "application/json": {
+                    context?: Record<string, never>[];
+                    forwardedProps?: Record<string, never>;
+                    /** @description The thread so far. The newest `user` message becomes the prompt; `system`/`developer` messages become the standing role of a new conversation. */
+                    messages: Record<string, never>[];
+                    /** @description This run. Echoed in the events. */
+                    runId: string;
+                    state?: Record<string, never>;
+                    /** @description The host's thread. Bound to one Fountain conversation as `agui:<threadId>`. */
+                    threadId: string;
+                    /** @description Accepted and ignored — see the module doc on why no tool call is emitted. */
+                    tools?: Record<string, never>[];
+                };
+            };
+        };
+        responses: {
+            /** @description AG-UI event stream */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": string;
+                };
+            };
+            /** @description Malformed run input */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No such agent */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
