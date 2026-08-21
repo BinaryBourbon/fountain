@@ -24,9 +24,9 @@ cd images/e2b
 e2b template build --name fountain --dockerfile e2b.Dockerfile
 ```
 
-It recreates the sandbox shape the provisioning pipeline assumes — a
+It recreates the sandbox shape the provisioning pipeline assumes, meaning a
 `sprite` user with passwordless sudo, `/home/sprite`, node/npm/bun/git and
-the four agent CLIs — so no per-provider provisioning code exists.
+the four agent CLIs, so no per-provider provisioning code exists.
 
 ## How the contract maps
 
@@ -35,9 +35,9 @@ the four agent CLIs — so no per-provider provisioning code exists.
 | Name-keyed create/adopt | E2B assigns ids; the minted name rides in sandbox `metadata` and lookups filter on it server-side. A create race leaves a duplicate the reaper converges |
 | Suspend / resume | Real calls: `pause` snapshots filesystem + memory (retained indefinitely, storage-only cost); `connect` restores. The idle bound genuinely parks |
 | TTL | Every running E2B sandbox has one. Live commands heartbeat it, and sandboxes are created with `autoPause: true`, so a missed heartbeat pauses (state preserved) rather than kills. Operations that find the sandbox auto-paused resume it first |
-| Exec / streaming | envd (the in-sandbox daemon) over Connect-RPC with the JSON codec — plain HTTPS, no gRPC |
+| Exec / streaming | envd (the in-sandbox daemon) over Connect-RPC with the JSON codec, which is plain HTTPS and not gRPC |
 | Reattach after a deploy | envd does not replay a reconnected process's output, so detachable commands run under a journaling shim (`tee` to `/tmp/fountain/<tag>.*`); reattach replays the journal from byte zero via a `tail` streamer and reads the real exit code from the shim's exit file |
-| Network policy | Native default-deny: `denyOut 0.0.0.0/0` plus the allowlist, updatable on a running sandbox — the provision-open-then-lock flow works unchanged |
+| Network policy | Native default-deny: `denyOut 0.0.0.0/0` plus the allowlist, updatable on a running sandbox, so the provision-open-then-lock flow works unchanged |
 | Checkpoints | Not supported (`:checkpoint` is not advertised) |
 
 ## Operational notes

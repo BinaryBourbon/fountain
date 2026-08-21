@@ -29,13 +29,13 @@ daytona snapshot create fountain --dockerfile Dockerfile
 
 | Fountain operation | Daytona mechanics |
 |---|---|
-| Name-keyed create/adopt | Native — sandboxes are name-addressable in API paths; a conflicting create adopts when a follow-up get succeeds |
+| Name-keyed create/adopt | Native. Sandboxes are name-addressable in API paths, and a conflicting create adopts when a follow-up get succeeds |
 | Suspend / resume | `stop` preserves the whole disk; `start` resumes it. Long-parked sandboxes auto-archive to object storage (still startable, slower) so they stop consuming disk quota |
-| TTL | None — sandboxes are created with `ttlMinutes: 0` and `autoStopInterval: 0`; Fountain's own lifecycle owns suspension. No heartbeat needed |
+| TTL | None. Sandboxes are created with `ttlMinutes: 0` and `autoStopInterval: 0`, and Fountain's own lifecycle owns suspension. No heartbeat needed |
 | Exec | One-shot toolbox `process/execute` with cwd/env/timeout |
-| Streaming / reattach | Daemon-side sessions journal output server-side, and the log websocket **replays from byte zero before following** — reattach is the same stream opened again. The daemon publishes no exit code and its follow stream is unreliable at both ends, so the adapter's shim writes an exit sentinel and the stream reconnects with a byte-exact skip |
-| Stdin | The daemon FIFO EOFs after every write, so stdin-consuming commands read from a `tail -f`-fed file; writes append via one-shot execs and `close_stdin` kills the tail — a real EOF |
-| Network policy | `networkBlockAll` + `domainAllowList` per sandbox, updatable on a running sandbox — genuinely default-deny, so `allow: []` needs no translation |
+| Streaming / reattach | Daemon-side sessions journal output server-side, and the log websocket **replays from byte zero before following**, so reattach is the same stream opened again. The daemon publishes no exit code and its follow stream is unreliable at both ends, so the adapter's shim writes an exit sentinel and the stream reconnects with a byte-exact skip |
+| Stdin | The daemon FIFO EOFs after every write, so stdin-consuming commands read from a `tail -f`-fed file; writes append via one-shot execs, and `close_stdin` kills the tail for a real EOF |
+| Network policy | `networkBlockAll` + `domainAllowList` per sandbox, updatable on a running sandbox. Genuinely default-deny, so `allow: []` needs no translation |
 | Checkpoints | Not supported (`:checkpoint` is not advertised) |
 
 ## Operational notes
@@ -44,7 +44,7 @@ daytona snapshot create fountain --dockerfile Dockerfile
   entries; a `limited` environment with a longer allowlist will be rejected
   by the API.
 - **Org tiers**: lower tiers restrict egress by default and may not honor
-  overrides — check the organization's network settings if `limited`
+  overrides, so check the organization's network settings if `limited`
   environments behave unexpectedly.
 - **Reaper**: reconciliation lists `fountain`-labeled sandboxes only; other
   sandboxes in the organization are never touched.
