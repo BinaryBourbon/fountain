@@ -1,0 +1,40 @@
+# The pre-existing style backlog, tracked by #911.
+#
+# Files listed here are SKIPPED by scripts/docs-style.py. This list is only
+# ever meant to shrink: clean a page, delete its line, and the checker starts
+# guarding it. A file NOT listed here is checked, so every new page is covered
+# by default and the cleanup can land one page at a time without leaving CI
+# red in between.
+#
+# The checker fails if a line here names a file that no longer exists, so a
+# rename cannot quietly re-exempt a page.
+docs/api.md
+docs/architecture.md
+docs/build/index.md
+docs/build/team-chat.md
+docs/configuration.md
+docs/integrations/acp.md
+docs/integrations/adding-a-sandbox-provider.md
+docs/integrations/buzz.md
+docs/integrations/clients.md
+docs/integrations/daytona.md
+docs/integrations/e2b.md
+docs/integrations/editors.md
+docs/integrations/github-oauth.md
+docs/integrations/hermes.md
+docs/integrations/index.md
+docs/integrations/mail.md
+docs/integrations/openbot.md
+docs/integrations/openclaw.md
+docs/integrations/runners.md
+docs/integrations/sandbox-contract.md
+docs/integrations/sentry.md
+docs/integrations/sprites-contract.md
+docs/integrations/sprites.md
+docs/integrations/stripe.md
+docs/llm-integration.md
+docs/sdk.md
+docs/superpowers/plans/2026-05-10-phase-3-foundation.md
+docs/superpowers/plans/2026-05-11-ci-checks.md
+docs/superpowers/plans/2026-05-13-conversation-titles.md
+docs/superpowers/specs/2026-05-11-ci-checks-design.md

@@ -1,7 +1,7 @@
 # CLI reference
 
 The `fountain` binary manages Fountain resources from the terminal or CI scripts.
-It is a convenience wrapper over the REST API — everything here can be done with
+It is a convenience wrapper over the REST API. Everything here can be done with
 `curl`.
 
 This page tracks the real command tree. If a command is not listed here it does
@@ -135,7 +135,7 @@ conversation, rather than reporting success. Widen the wait with
 FOUNTAIN_STREAM_IDLE_TIMEOUT=7200 fountain run researcher -p "large refactor"
 ```
 
-Disconnecting loses nothing — reattach at any time:
+Disconnecting loses nothing. Reattach at any time:
 
 ```bash
 fountain conv stream <conversation-id>
@@ -149,7 +149,7 @@ fountain acp --agent <name-or-id> [--vault <name-or-id>] [--environment <name-or
 
 Speaks the [Agent Client Protocol](https://agentclientprotocol.com) on stdio, so
 an ACP-capable editor can drive a Fountain conversation. You do not run this
-yourself — the editor spawns it and talks JSON-RPC over the pipe. stdout carries
+yourself. The editor spawns it and talks JSON-RPC over the pipe. stdout carries
 the protocol and nothing else; diagnostics go to stderr, which is where to look
 first when an editor reports a problem.
 
@@ -160,8 +160,8 @@ selects the instance.
 
 **[`fountain acp` (reference)](integrations/acp.md)** documents the protocol
 surface and flags in full; **[Editors (ACP)](integrations/editors.md)** has the setup, the editor config
-snippets, and the limits worth knowing before you start — chief among them that
-the agent works on a sandbox's files, not the ones open in your editor.
+snippets, and the limits worth knowing before you start. Chief among them is
+that the agent works on a sandbox's files, not the ones open in your editor.
 
 ## Self-hosted runner
 
@@ -175,8 +175,8 @@ whose `sandbox_provider` is `runner`: each sandbox is a directory under
 `--root` (default `~/.fountain/runners/<name>/sandboxes`), the agent's
 processes run on this machine as you with `HOME` pointed at that directory,
 and idle sandboxes park by stopping their processes with the directory left
-in place. Trusted mode — no VM or egress policy — so run it on a machine you
-would hand a capable colleague a shell on. Needs a full-scope key. Names are
+in place. Trusted mode, with no VM and no egress policy, so run it on a machine
+you would hand a capable colleague a shell on. Needs a full-scope key. Names are
 unique per account (default: the hostname); reconnects with backoff. See the
 [runners guide](integrations/runners.md).
 
@@ -188,23 +188,23 @@ fountain apply -f path/to/directory/          # walks all *.yml / *.yaml files
 fountain apply -f dir/ --var REGION=eu-west-1 # ${VAR} substitution, repeatable
 ```
 
-Apply is idempotent — create if new, update if changed. Supported kinds:
-`Environment`, `Vault`, `Agent`.
+Apply is idempotent, creating if new and updating if changed. The supported
+kinds are `Environment`, `Vault` and `Agent`.
 
-`--var`/`${VAR}` substitution applies to `spec.secrets` values only — a
+`--var`/`${VAR}` substitution applies to `spec.secrets` values only. A
 `${VAR}` anywhere else in the document (a `setup_script`, a name) is
 transmitted literally.
 
 The CLI compiles every document into a single manifest and sends it to
 `POST /api/apply` in one request; the server reconciles environments, then
-vaults, then agents, and resolves agent `environment:` name references —
+vaults, then agents, and resolves agent `environment:` name references,
 including environments that already exist on the server. Against older servers
 without `/api/apply`, the CLI falls back to per-resource calls.
 
 ### Secret references
 
 `spec.secrets` values can reference a secret manager instead of holding
-plaintext — this is what makes manifests committable to git. A value starting
+plaintext. That is what makes manifests committable to git. A value starting
 with one of these schemes is resolved client-side at apply time by shelling
 out to the manager's own CLI (which must be installed and authenticated):
 
@@ -270,7 +270,7 @@ FOUNTAIN_API_KEY=ftn_... FOUNTAIN_BASE_URL=https://other.example.com fountain ag
 ```
 
 Resolution order for both the key and the URL is: environment variable, then the
-active profile in the credentials file, then — for the URL only — the built-in
+active profile in the credentials file, then (for the URL only) the built-in
 default `https://fountain.inevitable.fyi`.
 
 **Self-hosting?** That built-in default is the hosted instance, not yours. Run

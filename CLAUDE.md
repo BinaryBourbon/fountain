@@ -368,6 +368,12 @@ in-app manual at `/docs` — the same markdown is embedded at compile time by
 - **`mkdocs build --strict`** is what CI runs; a broken relative link or a page
   not in the nav is an error. Run it locally (`pip install -r
   docs/requirements.txt`).
+- **`python3 scripts/docs-style.py`** enforces the style sheet
+  (`docs-redesign/06-voice-and-style.md`): no em dashes, no colon-introduced
+  lists, no "simply"/"obviously"/"coming soon". It skips the backlog in
+  `scripts/docs-style-allow.txt`, so a file **not** on that list is checked and
+  every new page is covered by default. Cleaning a page means deleting its
+  line; the list only shrinks (#911).
 - **`docs/cli.md` is diffed against the CLI.** `cli/internal/cmd/docs_test.go`
   fails if a command exists that the page does not mention, or the page
   mentions one that does not exist. Add a CLI command → add it to `docs/cli.md`

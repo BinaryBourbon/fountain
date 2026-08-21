@@ -132,7 +132,7 @@ Everything a sandbox writes to stdout or stderr is persisted verbatim into
 encryption above, and it outlives the conversation.
 
 So an `env`, a `set -x`, a `cat .env` in a setup script, or an agent that
-simply prints its environment would write plaintext credentials into Postgres.
+prints its own environment would write plaintext credentials into Postgres.
 Fountain removes every known secret value from output before it is stored.
 
 Two consequences worth knowing.
