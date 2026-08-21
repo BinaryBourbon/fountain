@@ -37,7 +37,7 @@ jobs:
             runner: ubuntu-24.04-arm
     steps:
       - name: Checkout Fountain (for the pin)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Read the pin
         id: pin
@@ -54,7 +54,7 @@ jobs:
           fi
 
       - name: Checkout the buzz source at the pin
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: ${{ steps.pin.outputs.repository }}
           ref: ${{ steps.pin.outputs.ref }}
