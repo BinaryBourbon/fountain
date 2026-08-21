@@ -242,7 +242,7 @@ wrap `record/1` in a way that makes it blocking for the user.
 7. `MIX_ENV=dev mix dialyzer`
 8. Go CLI checks: `go test ./...` and `go vet ./...` in `cli/`
 9. `mix ecto.create && mix ecto.migrate`
-10. The test suite, as six partitions in six parallel jobs (`scripts/test-partition.sh`), plus a `coverage` job that merges their exports with `mix test.coverage` and enforces the 85% threshold
+10. The test suite, as six partitions in six parallel jobs (`scripts/test-partition.sh`), plus a `coverage` job that merges their exports with `scripts/coverage-gate.exs` and enforces the 85% threshold
 11. Release boot check — builds a prod release, probes `/health` and `/health/ready`, runs a release task beside the live server
 12. `mix openapi.spec.json` + `jq empty` (OpenAPI spec validates)
 
@@ -264,6 +264,14 @@ which replaced `coveralls.json`'s `minimum_coverage` and `skip_files`.
 `:ignore_modules` matches **module names**, not source paths — a bare atom for
 one module, a regex against `inspect(module)` for what used to be a
 directory entry. Locally, `mix test --cover` reports and gates in one step.
+
+CI enforces the threshold with `scripts/coverage-gate.exs`, not
+`mix test.coverage`: ~90% of that task's time is rendering an HTML report the
+job never opens. The script reads the same `coverage.exs` and was verified to
+produce the identical total (85.46% on the same six exports). Run
+`mix test.coverage` locally when you want the per-module table or the HTML —
+and re-verify the two agree when bumping Elixir, since the script depends on
+`:cover` semantics the pin currently freezes.
 
 Run `mix precommit` locally before pushing — it covers the core gate (compile with warnings-as-errors, unused deps, format, `credo --strict`, sobelow, dialyzer, tests). CI additionally runs hex.audit, the Go CLI checks, the release boot check, and OpenAPI validation.
 

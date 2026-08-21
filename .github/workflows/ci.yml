@@ -425,28 +425,6 @@ jobs:
       # itself compiles nothing, but Mix runs loadpaths underneath it and will
       # build the whole dependency tree into an empty _build first. Measured on
       # a 10-core machine: 3.7s warm, 38.5s cold.
-      - name: Restore deps cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
-        with:
-          path: deps
-          key: ${{ runner.os }}-mix-test-${{ hashFiles('**/mix.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-mix-test-
-
-      - name: Restore build cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
-        with:
-          path: _build
-          key: ${{ runner.os }}-build-test-${{ steps.beam.outputs.otp-version }}-${{ steps.beam.outputs.elixir-version }}-${{ hashFiles('**/mix.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-build-test-${{ steps.beam.outputs.otp-version }}-${{ steps.beam.outputs.elixir-version }}-
-
-      - name: Install dependencies
-        run: mix deps.get
-
-      # Back into the directory the partitions wrote them from, which is where
-      # `mix test.coverage` looks: it merges every *.coverdata under the
-      # umbrella's children.
       - name: Download coverage exports
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
@@ -473,8 +451,23 @@ jobs:
           total=$(cat apps/fountain/cover/*.tests | awk '{s += $1} END {print s + 0}')
           echo "merging ${#exports[@]} partitions covering $total tests"
 
+      # Not `mix test.coverage`: ~90% of that task's time is rendering an
+      # HTML report — 530 files, 129MB — that this job never opens, since all
+      # it does is assert a threshold and exit. The script computes the same
+      # number from the same coverage.exs (verified identical, 85.46% both, on
+      # the same six exports), and prints the least-covered modules so a
+      # failure still says where to look.
+      #
+      # `elixir`, not `mix run`: the script reads .coverdata and coverage.exs
+      # and touches nothing else, so it needs no deps, no _build and no
+      # compile. Through `mix run` this step spent most of its time
+      # recompiling the app for a script that never calls it ("Compiling 10
+      # files" for a 12s step). That is also why this job no longer restores
+      # the deps/build caches or runs deps.get.
+      #
+      # Run `mix test.coverage` locally for the full table and the HTML.
       - name: Enforce the coverage threshold
-        run: mix test.coverage
+        run: elixir scripts/coverage-gate.exs
 
   checks:
     name: Static analysis and release checks
