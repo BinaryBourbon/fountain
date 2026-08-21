@@ -10,7 +10,6 @@
 # rename cannot quietly re-exempt a page.
 docs/build/index.md
 docs/build/team-chat.md
-docs/configuration.md
 docs/integrations/acp.md
 docs/integrations/adding-a-sandbox-provider.md
 docs/integrations/buzz.md
@@ -32,7 +31,3 @@ docs/integrations/sprites.md
 docs/integrations/stripe.md
 docs/llm-integration.md
 docs/sdk.md
-docs/superpowers/plans/2026-05-10-phase-3-foundation.md
-docs/superpowers/plans/2026-05-11-ci-checks.md
-docs/superpowers/plans/2026-05-13-conversation-titles.md
-docs/superpowers/specs/2026-05-11-ci-checks-design.md
