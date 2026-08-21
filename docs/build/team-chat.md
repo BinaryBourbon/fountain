@@ -49,7 +49,7 @@ const agent = await fountain.agents.create({
 const teammate = await fountain.team.add(agent.name, { name: "Watchtower" });
 
 teammate.conversation.id;      // the thread
-teammate.presence.state;       // "starting" — a computer is being provisioned
+teammate.presence.state;       // "starting", a computer is being provisioned
 ```
 
 `catalog()` is what stops the model dropdown going stale: the runtimes, the
@@ -324,7 +324,7 @@ await fountain.agents.update("watchtower", {
 
 [Substitution](../primitives.md#substitution) resolves `${GITHUB_TOKEN}` when
 the computer is set up. Three things follow, and together they are why this is
-more than a nicer way to store a string:
+more than a nicer way to store a string.
 
 - The token never appears in a prompt, a model's context, or the log feed your
   app reads.
@@ -365,7 +365,7 @@ Static hosting. The only server-side facts are on the Fountain instance:
 
 | What | Why |
 |---|---|
-| `API_CORS_ORIGINS` | a browser calling another origin's API is a CORS request; off by default, and it only ever admits a presented bearer key — cookies never cross origins |
+| `API_CORS_ORIGINS` | a browser calling another origin's API is a CORS request; off by default, and it only ever admits a presented bearer key, since cookies never cross origins |
 | `OAUTH_CLIENTS` | to offer **Sign in with Fountain** instead of asking for a pasted key |
 
 [Sign in with Fountain](../api.md#sign-in-with-fountain-oauth-20-for-browser-apps)

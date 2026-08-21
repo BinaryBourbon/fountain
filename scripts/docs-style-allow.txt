@@ -8,20 +8,12 @@
 #
 # The checker fails if a line here names a file that no longer exists, so a
 # rename cannot quietly re-exempt a page.
-docs/build/index.md
-docs/build/team-chat.md
-docs/integrations/acp.md
 docs/integrations/adding-a-sandbox-provider.md
 docs/integrations/buzz.md
-docs/integrations/clients.md
 docs/integrations/editors.md
 docs/integrations/hermes.md
-docs/integrations/index.md
-docs/integrations/mail.md
 docs/integrations/openbot.md
 docs/integrations/openclaw.md
 docs/integrations/runners.md
-docs/integrations/sandbox-contract.md
 docs/integrations/sprites-contract.md
 docs/integrations/stripe.md
-docs/llm-integration.md
