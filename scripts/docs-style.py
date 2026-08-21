@@ -16,6 +16,17 @@ Three rules, all from docs-redesign/06-voice-and-style.md:
 Code fences and inline code spans are exempt, because they quote the world
 rather than describe it.
 
+TWO EXEMPTIONS THE FIRST DRAFT OF THIS SCRIPT GOT WRONG.
+
+A table cell whose whole content is a dash is a placeholder meaning "none",
+not a hinge in a sentence. `configuration.md` has 84 of them in its
+default column. Forcing those to "n/a" would make the table worse, and the
+rule exists to stop a dash carrying a clause, which a lone cell cannot do.
+
+`docs/superpowers/` is internal planning material, not in the nav and not
+served at /docs or on the site. Style rules for published pages should not
+apply to a historical artifact nobody reads.
+
 THE RATCHET. Files listed in scripts/docs-style-allow.txt are skipped. That
 list is the pre-existing backlog (#911) and is only ever meant to shrink. A
 file NOT on the list is checked, so anything new is covered by default and
@@ -32,6 +43,13 @@ ALLOW = ROOT / "scripts" / "docs-style-allow.txt"
 
 FORBIDDEN = ["simply", "coming soon", "obviously"]
 LIST_ITEM = re.compile(r"^\s*(?:[-*+]\s|\d+\.\s)")
+
+# Not in the nav, not served, not published. Historical planning material.
+EXCLUDED_DIRS = ("docs/superpowers/",)
+
+# A table cell holding nothing but a dash: `| — |`, `|—|`, and the row-start
+# and row-end variants. This is a placeholder for "none", not prose.
+PLACEHOLDER_CELL = re.compile(r"\|\s*[—–]\s*(?=\|)")
 
 
 def load_allowlist():
@@ -67,8 +85,11 @@ def check(path, rel):
     problems = []
 
     for i, line in enumerate(text, 1):
+        # Drop placeholder cells before looking for prose dashes, so
+        # `| VAR | — | prod | ... — ... |` still reports the prose one.
+        prose = PLACEHOLDER_CELL.sub("|", line) if line.lstrip().startswith("|") else line
         for ch, name in (("—", "em dash"), ("–", "en dash")):
-            if ch in line:
+            if ch in prose:
                 problems.append((i, f"{name}: {raw[i - 1].strip()[:90]}"))
 
         low = line.lower()
@@ -96,7 +117,7 @@ def main():
 
     for path in sorted(DOCS.rglob("*.md")):
         rel = str(path.relative_to(ROOT))
-        if rel in allow:
+        if rel in allow or rel.startswith(EXCLUDED_DIRS):
             continue
         checked += 1
         failures.extend(check(path, rel))
