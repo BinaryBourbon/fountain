@@ -29,7 +29,9 @@ operator.** There is no platform-level API key: each user brings their own
 credentials, entered at `/account/inference-credentials` in the running app
 (an Anthropic API key or Claude Code OAuth token, an OpenAI API key, a Gemini
 API key, validated against the provider on save, stored encrypted per
-tenant, and never echoed back).
+tenant, and never echoed back). With both Anthropic credentials on file the
+OAuth token is the one used, which bills a subscription rather than metered
+usage. See [which credential claude uses](../catalog/runtimes/claude.md#which-credential-it-uses).
 
 This is a deliberate design
 ([ADR 0008](https://github.com/BinaryBourbon/fountain/blob/main/decisions/0008-byo-inference-credentials.md)):
