@@ -27,6 +27,12 @@ rule exists to stop a dash carrying a clause, which a lone cell cannot do.
 served at /docs or on the site. Style rules for published pages should not
 apply to a historical artifact nobody reads.
 
+A file whose first lines declare `<!-- GENERATED FILE` is skipped for the same
+reason code fences are: it quotes the world rather than describing it. Editing
+it would be undone by the next regeneration, and the fix belongs upstream in
+whatever renders it. Cleaning the *source* of a generated page is real work and
+belongs in its own change.
+
 THE RATCHET. Files listed in scripts/docs-style-allow.txt are skipped. That
 list is the pre-existing backlog (#911) and is only ever meant to shrink. A
 file NOT on the list is checked, so anything new is covered by default and
@@ -46,6 +52,10 @@ LIST_ITEM = re.compile(r"^\s*(?:[-*+]\s|\d+\.\s)")
 
 # Not in the nav, not served, not published. Historical planning material.
 EXCLUDED_DIRS = ("docs/superpowers/",)
+
+# Declared by a generated page in its own header, so adding one needs no edit
+# here. Checked against the first 2 KiB, which is past any front matter.
+GENERATED_MARKER = "<!-- GENERATED FILE"
 
 # A table cell holding nothing but a dash: `| — |`, `|—|`, and the row-start
 # and row-end variants. This is a placeholder for "none", not prose.
@@ -113,11 +123,15 @@ def check(path, rel):
 def main():
     allow = load_allowlist()
     failures = []
+    generated = []
     checked = 0
 
     for path in sorted(DOCS.rglob("*.md")):
         rel = str(path.relative_to(ROOT))
         if rel in allow or rel.startswith(EXCLUDED_DIRS):
+            continue
+        if GENERATED_MARKER in path.read_text()[:2048]:
+            generated.append(rel)
             continue
         checked += 1
         failures.extend(check(path, rel))
@@ -140,7 +154,11 @@ def main():
     if stale:
         return 1
 
-    print(f"docs style: clean ({checked} files checked, {len(allow)} on the backlog)")
+    note = f", {len(generated)} generated" if generated else ""
+    print(
+        f"docs style: clean ({checked} files checked, "
+        f"{len(allow)} on the backlog{note})"
+    )
     return 0
 
 

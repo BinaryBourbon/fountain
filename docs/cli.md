@@ -4,8 +4,12 @@ The `fountain` binary manages Fountain resources from the terminal or CI scripts
 It is a convenience wrapper over the REST API. Everything here can be done with
 `curl`.
 
-This page tracks the real command tree. If a command is not listed here it does
-not exist; `fountain <command> --help` is authoritative.
+This page is organised by what you are trying to do, and shows the useful
+invocations rather than every flag. For the flag-complete list, generated from
+the binary itself, see [All commands](cli/commands.md).
+
+If a command is not on one of these two pages it does not exist. A test walks
+the real command tree and fails either way round.
 
 ## Install
 
