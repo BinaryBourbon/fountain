@@ -72,8 +72,10 @@ it goes quiet.
 ## Run it
 
 - [Local setup](setup.md), bootstrap a workstation in about ten minutes
-- [Self-hosting](self-hosting.md), run your own instance
-- [Operations](operations.md), runbooks for when something is wrong
+- [Self-hosting](self-hosting.md), what you need and which guide to read
+- [Deploy an instance](guides/operate/deploy.md), the first one to read
+- [Troubleshooting](troubleshooting/index.md), start from the symptom
+- [Operations](operations.md), running one day to day
 - [Services Fountain uses](integrations/index.md), sandboxes, mail, OAuth,
   billing and errors
 
