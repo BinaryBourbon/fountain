@@ -8,7 +8,6 @@
 #
 # The checker fails if a line here names a file that no longer exists, so a
 # rename cannot quietly re-exempt a page.
-docs/api.md
 docs/build/index.md
 docs/build/team-chat.md
 docs/configuration.md
