@@ -101,6 +101,9 @@ spec:
               resources:
                 requests: { cpu: 50m, memory: 128Mi }
                 limits: { memory: 512Mi }
+              securityContext:
+                capabilities:
+                  drop: ["ALL"]
           containers:
             - name: upload
               image: amazon/aws-cli:2.31.19
@@ -194,3 +197,6 @@ spec:
               resources:
                 requests: { cpu: 50m, memory: 128Mi }
                 limits: { memory: 512Mi }
+              securityContext:
+                capabilities:
+                  drop: ["ALL"]
