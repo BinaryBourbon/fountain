@@ -1,8 +1,8 @@
 # A guided tour: an agent that opens a pull request
 
 By the end of this page you will have an agent that clones your repository,
-makes a change, and opens a pull request — and you will be able to ask it for a
-revision that lands on the same PR seconds later, because the computer it
+makes a change, and opens a pull request. You will then be able to ask it for
+a revision that lands on the same PR seconds later, because the computer it
 worked on is still running.
 
 It is about forty lines. Every number and every output below came from actually
@@ -14,7 +14,7 @@ running it.
 - A repository you are willing to let an agent push a branch to.
 - A GitHub token that can push to it. A
   [fine-grained token](https://github.com/settings/personal-access-tokens)
-  scoped to that one repository is the right thing here — the agent gets a real
+  scoped to that one repository is the right thing here. The agent gets a real
   credential, so give it the smallest one that works.
 
 ```bash
@@ -50,7 +50,7 @@ const environment = await fountain.environments.create({
 !!! warning "A private repository needs `secret_key`"
 
     `secret_key` names the secret the clone authenticates with. Leave it out on
-    a **private** repository and the clone fails inside the sandbox — the
+    a **private** repository and the clone fails inside the sandbox. The
     conversation still starts, and your agent opens on an empty directory and
     tells you it cannot find the repo. Writing this page cost one wasted run to
     exactly that. A public repository does not need it.
@@ -58,8 +58,8 @@ const environment = await fountain.environments.create({
 ## 2. The credential
 
 A [vault](primitives.md) is a bag of secrets chosen per run. Its values are
-decrypted into the sandbox when the sandbox spawns — they are never in the
-prompt, never in the model's context, and never in the log feed:
+decrypted into the sandbox when the sandbox spawns. They are never in the
+prompt, never in the model's context, and never in the log feed.
 
 ```ts
 const vault = await fountain.vaults.create({ name: "tour-github" });
@@ -72,7 +72,7 @@ Two keys because two things need it: `GITHUB_TOKEN` is what the clone reads
 (the `secret_key` above), and `gh` looks for `GH_TOKEN` when the agent opens
 the PR.
 
-You cannot read either one back — `secrets.list()` returns keys and nothing
+You cannot read either one back. `secrets.list()` returns keys and nothing
 else. And if the agent prints the token, Fountain redacts it out of the
 transcript before it is stored.
 
@@ -130,7 +130,7 @@ https://github.com/you/your-app/pull/1
 Forty-three seconds, most of it provisioning. The pull request is real: a
 `--version` branch, two files changed, ten lines added.
 
-If you would rather not watch, drop the loop — `await fountain.run(...)` gives
+If you would rather not watch, drop the loop. `await fountain.run(...)` gives
 you the same result. If you would rather not wait at all, don't await it: hand
 `run.conversationId` to whatever polls later.
 
@@ -164,7 +164,7 @@ await fountain.vaults.delete("tour-github");                // the credential fi
 await fountain.environments.delete("tour-workspace");
 ```
 
-In a script that can fail, delete the vault in a `finally` — a credential
+In a script that can fail, delete the vault in a `finally`. A credential
 should not outlive the run that needed it.
 
 ## What you just built
@@ -183,7 +183,7 @@ second environment points it at a different repository.
 ## The whole thing, in one script
 
 Everything above, in one file you can copy and run. It is not a transcription
-of the steps — it is `sdk/typescript/examples/pull-request.ts`, included here
+of the steps. It is `sdk/typescript/examples/pull-request.ts`, included here
 verbatim, which is the same file that produced every output on this page.
 
 ```ts title="pull-request.ts"
@@ -200,7 +200,7 @@ FOUNTAIN_API_KEY=…  GITHUB_TOKEN=…  REPO_URL=https://github.com/you/your-app
 - **Run it from CI.** The same forty lines work in an action; the agent needs
   no checkout on the runner, because the checkout is in the sandbox.
 - **Make it a teammate.** `fountain.team.add("tour-contributor")` gives it a
-  durable thread and a cron routine — "every Monday, open a PR bumping the
+  durable thread and a cron routine, so "every Monday, open a PR bumping the
   dependencies" is `team.schedules.create`. See the [SDK page](sdk.md#the-team).
 - **Fan it out.** `fountain.run()` per repository, awaited together; each gets
   its own sandbox.

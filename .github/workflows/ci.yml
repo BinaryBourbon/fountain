@@ -820,6 +820,10 @@ jobs:
         if: ${{ needs.changes.outputs.docs_touched == 'true' }}
         run: pip install -r docs/requirements.txt
 
+      - name: Docs style
+        if: ${{ needs.changes.outputs.docs_touched == 'true' }}
+        run: python3 scripts/docs-style.py
+
       - name: Build the site strictly
         if: ${{ needs.changes.outputs.docs_touched == 'true' }}
         run: mkdocs build --strict
@@ -1040,6 +1044,12 @@ jobs:
       # /docs link. docs_controller_test.exs: that the pages actually serve.
       - name: Docs tests
         run: mix test apps/fountain/test/fountain/docs_test.exs apps/fountain/test/fountain_web/controllers/docs_controller_test.exs
+
+      # The style sheet in docs-redesign/06-voice-and-style.md, enforced. It
+      # skips the backlog in scripts/docs-style-allow.txt, so a file NOT on
+      # that list is checked and every new page is covered by default.
+      - name: Docs style
+        run: python3 scripts/docs-style.py
 
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
