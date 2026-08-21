@@ -1,0 +1,535 @@
+defmodule Fountain.ConversationsStartTest do
+  use Fountain.DataCase, async: true
+  use Mimic
+
+  alias Fountain.{Agents, Conversations}
+
+  # start_conversation/1 and the per-launch environment override (#783).
+  # Split out of the 2,215-line conversations_context_test.exs (#899): ExUnit
+  # parallelises across modules, never within one, so that single module was a
+  # 29.4s floor for whichever partition drew it.
+
+  # start_conversation/1
+  # ────────────────────────────────────────────────────────────────────────────
+
+  describe "wake_conversation/2 — provider resume" do
+    test "a failed resume leaves the row suspended and fails retryably" do
+      user = insert_verified_user()
+      agent = insert_agent(user_id: user.id)
+      sandbox = insert_sandbox(user_id: user.id, sprite_name: "parked-wont-wake")
+      {:ok, sandbox} = Conversations.update_sandbox(sandbox, %{status: "suspended"})
+      conv = insert_conversation(user_id: user.id, agent: agent, sandbox: sandbox, status: "idle")
+
+      stub(Fountain.Sandbox.Sprites, :get, fn _handle ->
+        {:ok, %{status: :suspended, raw: %{}}}
+      end)
+
+      stub(Fountain.Sandbox.Sprites, :resume, fn _handle ->
+        {:error, {:unavailable, :timeout}}
+      end)
+
+      assert {:error, :sandbox_resume_failed} = Conversations.wake_conversation(conv.id)
+      assert Repo.reload(sandbox).status == "suspended"
+    end
+  end
+
+  describe "wake_conversation/2 — provider stickiness" do
+    test "a suspended sandbox on a disabled provider refuses to wake rather than retire" do
+      # Falling through to :create_new would retire the row and orphan (or
+      # lose) the parked disk; a retryable error keeps the agent's memory
+      # safe until the operator restores the provider's credentials.
+      user = insert_verified_user()
+      agent = insert_agent(user_id: user.id)
+      sandbox = insert_sandbox(user_id: user.id, sprite_name: "parked-on-e2b")
+
+      {:ok, sandbox} =
+        Conversations.update_sandbox(sandbox, %{status: "suspended", provider: "e2b"})
+
+      conv = insert_conversation(user_id: user.id, agent: agent, sandbox: sandbox, status: "idle")
+
+      assert {:error, {:sandbox_provider_disabled, :e2b}} =
+               Conversations.wake_conversation(conv.id)
+
+      assert Repo.reload(sandbox).status == "suspended"
+    end
+  end
+
+  describe "start_conversation/1" do
+    test "the sandbox row is stamped with the resolved provider" do
+      user = insert_verified_user()
+      agent = insert_agent(user_id: user.id)
+      stub(Horde.DynamicSupervisor, :start_child, fn _s, _spec -> {:ok, spawn(fn -> :ok end)} end)
+
+      assert {:ok, conv} =
+               Conversations.start_conversation(%{"agent_id" => agent.id, "user_id" => user.id})
+
+      sandbox = Conversations._unsafe_get_sandbox!(conv.sandbox_id)
+      assert sandbox.provider == "sprites"
+    end
+
+    test "an agent pinned to a disabled provider is refused before any row is allocated" do
+      user = insert_verified_user()
+      agent = insert_agent(user_id: user.id)
+
+      # Simulate drift: the override was saved while the provider was
+      # configured, and its credentials/adapter have since gone away. The
+      # changeset guards saves, so write the column directly.
+      {1, _} =
+        Repo.update_all(
+          Ecto.Query.from(a in Fountain.Agents.Agent, where: a.id == ^agent.id),
+          set: [sandbox_provider: "e2b"]
+        )
+
+      before = Fountain.Quotas.active_sandbox_count(user.id)
+
+      assert {:error, {:sandbox_provider_disabled, :e2b}} =
+               Conversations.start_conversation(%{"agent_id" => agent.id, "user_id" => user.id})
+
+      assert Fountain.Quotas.active_sandbox_count(user.id) == before
+    end
+
+    test "returns {:error, :vault_not_found} when vault_id belongs to a different user" do
+      user1 = insert_verified_user()
+      user2 = insert_verified_user()
+      agent = insert_agent(user_id: user1.id)
+      # vault belongs to user2, not user1
+      vault = insert_vault(user_id: user2.id)
+
+      attrs = %{
+        "agent_id" => agent.id,
+        "user_id" => user1.id,
+        "vault_id" => vault.id
+      }
+
+      assert {:error, :vault_not_found} = Conversations.start_conversation(attrs)
+    end
+
+    test "is refused once the tenant is at its concurrent-sandbox cap" do
+      user = insert_verified_user()
+      agent = insert_agent(user_id: user.id)
+
+      for _ <- 1..Fountain.Quotas.default_limit(),
+          do: insert_sandbox(user_id: user.id, status: "ready")
+
+      assert {:error, {:sandbox_quota_exceeded, %{count: 5, limit: 5}}} =
+               Conversations.start_conversation(%{"agent_id" => agent.id, "user_id" => user.id})
+    end
+
+    test "the cap is checked before any sandbox row is allocated" do
+      user = insert_verified_user()
+      agent = insert_agent(user_id: user.id)
+      for _ <- 1..5, do: insert_sandbox(user_id: user.id, status: "ready")
+
+      before = Fountain.Quotas.active_sandbox_count(user.id)
+
+      assert {:error, _} =
+               Conversations.start_conversation(%{"agent_id" => agent.id, "user_id" => user.id})
+
+      # A denial that still allocated would let a caller ratchet past the cap
+      # by retrying, which is the failure mode the cap exists to prevent.
+      assert Fountain.Quotas.active_sandbox_count(user.id) == before
+    end
+
+    test "one tenant at its cap does not block another" do
+      capped = insert_verified_user()
+      other = insert_verified_user()
+      for _ <- 1..5, do: insert_sandbox(user_id: capped.id, status: "ready")
+      agent = insert_agent(user_id: other.id)
+
+      stub(Horde.DynamicSupervisor, :start_child, fn _s, _spec -> {:ok, spawn(fn -> :ok end)} end)
+
+      assert {:ok, _} =
+               Conversations.start_conversation(%{"agent_id" => agent.id, "user_id" => other.id})
+    end
+
+    test "terminated sandboxes free capacity" do
+      user = insert_verified_user()
+      agent = insert_agent(user_id: user.id)
+      [first | _] = for _ <- 1..5, do: insert_sandbox(user_id: user.id, status: "ready")
+
+      assert {:error, _} =
+               Conversations.start_conversation(%{"agent_id" => agent.id, "user_id" => user.id})
+
+      {:ok, _} = Conversations.update_sandbox(first, %{status: "terminated"})
+      stub(Horde.DynamicSupervisor, :start_child, fn _s, _spec -> {:ok, spawn(fn -> :ok end)} end)
+
+      assert {:ok, _} =
+               Conversations.start_conversation(%{"agent_id" => agent.id, "user_id" => user.id})
+    end
+
+    test "creates sandbox, conversation, and starts server", %{} do
+      user = insert_verified_user()
+      agent = insert_agent(user_id: user.id)
+
+      stub(Horde.DynamicSupervisor, :start_child, fn _supervisor, _child_spec ->
+        {:ok, spawn(fn -> :ok end)}
+      end)
+
+      attrs = %{
+        "agent_id" => agent.id,
+        "user_id" => user.id,
+        "prompt" => "hello"
+      }
+
+      assert {:ok, conv} = Conversations.start_conversation(attrs)
+      assert conv.agent_id == agent.id
+      assert conv.user_id == user.id
+      assert conv.status == "pending"
+    end
+
+    test "broadcasts graph update when parent_conversation_id is set", %{} do
+      user = insert_verified_user()
+      agent = insert_agent(user_id: user.id)
+      parent_conv = insert_conversation(user_id: user.id)
+
+      stub(Horde.DynamicSupervisor, :start_child, fn _supervisor, _child_spec ->
+        {:ok, spawn(fn -> :ok end)}
+      end)
+
+      attrs = %{
+        "agent_id" => agent.id,
+        "user_id" => user.id,
+        "parent_conversation_id" => parent_conv.id
+      }
+
+      assert {:ok, conv} = Conversations.start_conversation(attrs)
+      assert conv.parent_conversation_id == parent_conv.id
+    end
+
+    test "succeeds when vault_id is empty string", %{} do
+      user = insert_verified_user()
+      agent = insert_agent(user_id: user.id)
+
+      stub(Horde.DynamicSupervisor, :start_child, fn _sup, _spec ->
+        {:ok, spawn(fn -> :ok end)}
+      end)
+
+      attrs = %{"agent_id" => agent.id, "user_id" => user.id, "vault_id" => ""}
+      assert {:ok, conv} = Conversations.start_conversation(attrs)
+      assert is_nil(conv.vault_id)
+    end
+
+    test "succeeds and links vault when valid vault_id provided", %{} do
+      user = insert_verified_user()
+      agent = insert_agent(user_id: user.id)
+      vault = insert_vault(user_id: user.id)
+
+      stub(Horde.DynamicSupervisor, :start_child, fn _sup, _spec ->
+        {:ok, spawn(fn -> :ok end)}
+      end)
+
+      attrs = %{"agent_id" => agent.id, "user_id" => user.id, "vault_id" => vault.id}
+      assert {:ok, conv} = Conversations.start_conversation(attrs)
+      assert conv.vault_id == vault.id
+    end
+
+    test "allows a vault on the agent's allowed_vault_ids list", %{} do
+      user = insert_verified_user()
+      vault = insert_vault(user_id: user.id)
+      agent = insert_agent(user_id: user.id, allowed_vault_ids: [vault.id])
+
+      stub(Horde.DynamicSupervisor, :start_child, fn _sup, _spec ->
+        {:ok, spawn(fn -> :ok end)}
+      end)
+
+      attrs = %{"agent_id" => agent.id, "user_id" => user.id, "vault_id" => vault.id}
+      assert {:ok, conv} = Conversations.start_conversation(attrs)
+      assert conv.vault_id == vault.id
+    end
+
+    test "returns {:error, :vault_not_allowed} for a vault outside the allowlist", %{} do
+      user = insert_verified_user()
+      allowed = insert_vault(user_id: user.id)
+      other = insert_vault(user_id: user.id)
+      agent = insert_agent(user_id: user.id, allowed_vault_ids: [allowed.id])
+
+      attrs = %{"agent_id" => agent.id, "user_id" => user.id, "vault_id" => other.id}
+      assert {:error, :vault_not_allowed} = Conversations.start_conversation(attrs)
+    end
+
+    test "returns {:error, :vault_not_allowed} for any vault when the allowlist is empty", %{} do
+      user = insert_verified_user()
+      vault = insert_vault(user_id: user.id)
+      agent = insert_agent(user_id: user.id, allowed_vault_ids: [])
+
+      attrs = %{"agent_id" => agent.id, "user_id" => user.id, "vault_id" => vault.id}
+      assert {:error, :vault_not_allowed} = Conversations.start_conversation(attrs)
+    end
+
+    test "empty allowlist still permits starting with no vault at all", %{} do
+      user = insert_verified_user()
+      agent = insert_agent(user_id: user.id, allowed_vault_ids: [])
+
+      stub(Horde.DynamicSupervisor, :start_child, fn _sup, _spec ->
+        {:ok, spawn(fn -> :ok end)}
+      end)
+
+      attrs = %{"agent_id" => agent.id, "user_id" => user.id}
+      assert {:ok, conv} = Conversations.start_conversation(attrs)
+      assert is_nil(conv.vault_id)
+    end
+  end
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # start_conversation/2 — per-launch environment override (#783)
+  # ────────────────────────────────────────────────────────────────────────────
+
+  describe "start_conversation/2 environment_id override" do
+    setup do
+      stub(Horde.DynamicSupervisor, :start_child, fn _sup, _spec ->
+        {:ok, spawn(fn -> :ok end)}
+      end)
+
+      user = insert_verified_user()
+      agent_env = insert_env(user_id: user.id)
+      other_env = insert_env(user_id: user.id)
+      agent = insert_agent(user_id: user.id, environment_id: agent_env.id)
+      %{user: user, agent: agent, agent_env: agent_env, other_env: other_env}
+    end
+
+    test "pins the conversation and its sandbox to the named environment", ctx do
+      attrs = %{
+        "agent_id" => ctx.agent.id,
+        "user_id" => ctx.user.id,
+        "environment_id" => ctx.other_env.id
+      }
+
+      assert {:ok, conv} = Conversations.start_conversation(attrs)
+      assert conv.environment_id == ctx.other_env.id
+
+      assert Conversations._unsafe_get_sandbox!(conv.sandbox_id).environment_id ==
+               ctx.other_env.id
+    end
+
+    test "nil and blank mean the agent's environment", ctx do
+      for value <- [nil, ""] do
+        attrs = %{
+          "agent_id" => ctx.agent.id,
+          "user_id" => ctx.user.id,
+          "environment_id" => value
+        }
+
+        assert {:ok, conv} = Conversations.start_conversation(attrs)
+        assert is_nil(conv.environment_id)
+
+        assert Conversations._unsafe_get_sandbox!(conv.sandbox_id).environment_id ==
+                 ctx.agent_env.id
+      end
+    end
+
+    test "a foreign environment reads as not found — same as an unknown id", ctx do
+      stranger = insert_verified_user()
+      foreign = insert_env(user_id: stranger.id)
+
+      for id <- [foreign.id, Ecto.UUID.generate()] do
+        attrs = %{"agent_id" => ctx.agent.id, "user_id" => ctx.user.id, "environment_id" => id}
+        assert {:error, :environment_not_found} = Conversations.start_conversation(attrs)
+      end
+    end
+
+    test "allowed_environment_ids: a listed environment passes, an unlisted one is refused",
+         ctx do
+      third = insert_env(user_id: ctx.user.id)
+
+      {:ok, agent} =
+        Agents.update_agent(ctx.agent, %{allowed_environment_ids: [ctx.other_env.id]})
+
+      ok = %{
+        "agent_id" => agent.id,
+        "user_id" => ctx.user.id,
+        "environment_id" => ctx.other_env.id
+      }
+
+      assert {:ok, conv} = Conversations.start_conversation(ok)
+      assert conv.environment_id == ctx.other_env.id
+
+      refused = %{"agent_id" => agent.id, "user_id" => ctx.user.id, "environment_id" => third.id}
+      assert {:error, :environment_not_allowed} = Conversations.start_conversation(refused)
+    end
+
+    test "an empty allowlist forbids every override but still permits the agent's own", ctx do
+      {:ok, agent} = Agents.update_agent(ctx.agent, %{allowed_environment_ids: []})
+
+      refused = %{
+        "agent_id" => agent.id,
+        "user_id" => ctx.user.id,
+        "environment_id" => ctx.other_env.id
+      }
+
+      assert {:error, :environment_not_allowed} = Conversations.start_conversation(refused)
+
+      # Naming the agent's own environment is not an override — it is pinned
+      # (a later change of the agent's environment does not move it), but it
+      # needs no allowlist entry.
+      own = %{
+        "agent_id" => agent.id,
+        "user_id" => ctx.user.id,
+        "environment_id" => ctx.agent_env.id
+      }
+
+      assert {:ok, conv} = Conversations.start_conversation(own)
+      assert conv.environment_id == ctx.agent_env.id
+    end
+
+    test "the allowlist is checked before the fetch, so a foreign id is refused not probed",
+         ctx do
+      stranger = insert_verified_user()
+      foreign = insert_env(user_id: stranger.id)
+      {:ok, agent} = Agents.update_agent(ctx.agent, %{allowed_environment_ids: []})
+
+      attrs = %{"agent_id" => agent.id, "user_id" => ctx.user.id, "environment_id" => foreign.id}
+      assert {:error, :environment_not_allowed} = Conversations.start_conversation(attrs)
+    end
+
+    test "channel resume keys on the override: a different environment is a different binding",
+         ctx do
+      base = %{"agent_id" => ctx.agent.id, "user_id" => ctx.user.id, "channel_id" => "chan-783"}
+
+      assert {:ok, first, :created} =
+               Conversations.start_or_resume_conversation(
+                 Map.put(base, "environment_id", ctx.other_env.id)
+               )
+
+      # Same channel, same environment: resumed.
+      assert {:ok, again, :resumed} =
+               Conversations.start_or_resume_conversation(
+                 Map.put(base, "environment_id", ctx.other_env.id)
+               )
+
+      assert again.id == first.id
+
+      # Same channel, no override: a fresh conversation, not the pinned one.
+      assert {:ok, plain, :created} = Conversations.start_or_resume_conversation(base)
+      refute plain.id == first.id
+      assert is_nil(plain.environment_id)
+
+      # And the plain one is now what a plain launch resumes.
+      assert {:ok, resumed, :resumed} = Conversations.start_or_resume_conversation(base)
+      assert resumed.id == plain.id
+    end
+  end
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # _unsafe_list_active_conversations/0 — ordering
+  # ────────────────────────────────────────────────────────────────────────────
+
+  describe "_unsafe_list_active_conversations/0 ordering" do
+    test "running conversations appear before idle conversations" do
+      user = insert_verified_user()
+      idle = insert_conversation(user_id: user.id, status: "idle")
+      running = insert_conversation(user_id: user.id, status: "running")
+
+      results = Conversations._unsafe_list_active_conversations()
+      active_ids = results |> Enum.map(& &1.id) |> Enum.filter(&(&1 in [idle.id, running.id]))
+      assert hd(active_ids) == running.id
+    end
+  end
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # _unsafe_list_turns/1 — image preloads
+  # ────────────────────────────────────────────────────────────────────────────
+
+  describe "_unsafe_list_turns/1 image preloads" do
+    test "preloads images association on each turn" do
+      user = insert_verified_user()
+      conv = insert_conversation(user_id: user.id)
+      turn = insert_turn(conv)
+
+      %Fountain.Conversations.TurnImage{}
+      |> Fountain.Conversations.TurnImage.changeset(%{
+        turn_id: turn.id,
+        position: 0,
+        media_type: "image/png",
+        data: <<1, 2, 3>>
+      })
+      |> Ecto.Changeset.put_change(:inserted_at, DateTime.utc_now() |> DateTime.truncate(:second))
+      |> Repo.insert!()
+
+      [loaded_turn] = Conversations._unsafe_list_turns(conv.id)
+      assert length(loaded_turn.images) == 1
+      [img] = loaded_turn.images
+      assert img.media_type == "image/png"
+      assert img.data == <<1, 2, 3>>
+    end
+
+    test "returns turns with empty images list when no images have been inserted" do
+      user = insert_verified_user()
+      conv = insert_conversation(user_id: user.id)
+      _turn = insert_turn(conv)
+
+      [loaded_turn] = Conversations._unsafe_list_turns(conv.id)
+      assert loaded_turn.images == []
+    end
+
+    test "orders images by position ascending when multiple images exist" do
+      user = insert_verified_user()
+      conv = insert_conversation(user_id: user.id)
+      turn = insert_turn(conv)
+
+      now = DateTime.utc_now() |> DateTime.truncate(:second)
+
+      for {mt, data, pos} <- [
+            {"image/png", <<10>>, 0},
+            {"image/jpeg", <<20>>, 1},
+            {"image/gif", <<30>>, 2}
+          ] do
+        %Fountain.Conversations.TurnImage{}
+        |> Fountain.Conversations.TurnImage.changeset(%{
+          turn_id: turn.id,
+          position: pos,
+          media_type: mt,
+          data: data
+        })
+        |> Ecto.Changeset.put_change(:inserted_at, now)
+        |> Repo.insert!()
+      end
+
+      [loaded_turn] = Conversations._unsafe_list_turns(conv.id)
+      positions = Enum.map(loaded_turn.images, & &1.position)
+      assert positions == Enum.sort(positions)
+    end
+  end
+
+  describe "insert_sandbox/1 factory — no explicit user_id" do
+    test "creates a new user when no user_id is provided" do
+      # Triggers the insert_verified_user().id fallback in insert_sandbox (factory.ex line 129)
+      sandbox = insert_sandbox()
+      assert is_binary(sandbox.user_id)
+    end
+  end
+
+  describe "insert_conversation/1 factory — agent without explicit user_id" do
+    test "derives user_id from agent when no user_id is provided" do
+      user = insert_verified_user()
+      agent = insert_agent(user_id: user.id)
+      conv = insert_conversation(agent: agent)
+      assert conv.user_id == user.id
+      assert conv.agent_id == agent.id
+    end
+
+    test "creates a new user when neither user_id nor agent is provided" do
+      # Triggers the insert_verified_user().id fallback (factory.ex line 147)
+      conv = insert_conversation()
+      assert is_binary(conv.user_id)
+      assert is_nil(conv.agent_id)
+    end
+  end
+
+  describe "factory to_atom_map — safe_to_existing_atom fallback" do
+    test "to_atom_map with an unknown string key does not crash and returns the string as fallback" do
+      # \"xyzquuxfoo_novel_key_never_an_atom\" is not an existing Elixir atom,
+      # so safe_to_existing_atom triggers its rescue clause and returns the string key.
+      result =
+        Fountain.Factory.to_atom_map(%{
+          "sprite_name" => "test-sprite",
+          "xyzquuxfoo_novel_key_never_an_atom" => "ignored_value"
+        })
+
+      assert Map.get(result, :sprite_name) == "test-sprite"
+      # The unknown key is preserved as a string (fallback)
+      assert Map.get(result, "xyzquuxfoo_novel_key_never_an_atom") == "ignored_value"
+    end
+  end
+
+  # ────────────────────────────────────────────────────────────────────────────
+end
