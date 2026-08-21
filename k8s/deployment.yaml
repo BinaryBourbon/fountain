@@ -45,6 +45,20 @@ spec:
             - name: erldist
               containerPort: 9100
           env:
+            # Which commit this pod is running. Not baked into the image:
+            # build.yml stopped passing BUILD_SHA so that an image built from
+            # a tree is reusable for any commit with that tree, and this env
+            # (which wins over the image's ENV) names the commit actually
+            # deployed. publish-manifests.yml rewrites the value in the
+            # artifact next to the image tag, and fails if it cannot — the
+            # literal below is whatever was last committed here and is not
+            # what runs, exactly like the image line above.
+            #
+            # It reaches the footer (FountainWeb.Layouts) and, more
+            # importantly, the Sentry release (config/runtime.exs) — so a
+            # wrong value here misattributes every error to the wrong commit.
+            - name: FOUNTAIN_BUILD_SHA
+              value: "0000000000000000000000000000000000000000"
             # --- Erlang clustering (required for >1 replica) ---
             # Pod IP via the downward API; RELEASE_NODE interpolates it
             # below. Must be declared before any env that references

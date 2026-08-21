@@ -16,7 +16,7 @@ stack — and take its DSN.
 |---|---|---|
 | `SENTRY_DSN` | — | Turns reporting on. Crashes — including ones that never touch a web request — are reported with stack traces, grouped, rate-limited to 20 events/minute |
 | `SENTRY_ENVIRONMENT` | the build env | Environment tag on events |
-| `FOUNTAIN_BUILD_SHA` | set by the image build | Correlates events with releases: "this started with `sha-…`" |
+| `FOUNTAIN_BUILD_SHA` | set by the image build (release images) or by the deployment (main-line images) | Correlates events with releases: "this started with `sha-…`" |
 
 Reporting is deliberately conservative: `send_default_pii` is off, so
 cookies, user IPs and request bodies are not attached — this app holds tenant

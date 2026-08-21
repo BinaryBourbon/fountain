@@ -144,7 +144,7 @@ Only needed for more than one replica — see
 | `METRICS_PORT` | `9568` in prod, off elsewhere | — | The private Prometheus listener (`/metrics`, `/health`). `""` or `0` disables it. Keep it off the public internet |
 | `SENTRY_DSN` | — | — | Error tracking. Unset, the SDK is inert and nothing leaves the instance. Accepts sentry.io or any Sentry-API-compatible endpoint (GlitchTip) |
 | `SENTRY_ENVIRONMENT` | the build env | — | Environment tag on reported errors |
-| `FOUNTAIN_BUILD_SHA` | set by the image build | — | Correlates errors and traces with deploys; also shown in the app footer |
+| `FOUNTAIN_BUILD_SHA` | set by the image build (release images) or by the deployment (main-line images) | — | Correlates errors and traces with deploys; also shown in the app footer |
 | `OTEL_SERVICE_NAME` | `fountain` | — | Service name on exported traces |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | `HONEYCOMB_ENDPOINT` | — | OTLP (HTTP/protobuf) trace export target |
 | `OTEL_EXPORTER_OTLP_HEADERS` | — | — | `key=val,key=val` headers on trace export |
