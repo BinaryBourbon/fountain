@@ -75,6 +75,9 @@ nav:
       - Agent: concepts/agent.md
       - Conversation: concepts/conversation.md
       - Agents as teammates: concepts/teammates.md
+      - Where a secret comes from: concepts/secrets.md
+      - About sandboxes: concepts/sandboxes.md
+      - The console, the apps, and the API: concepts/surfaces.md
       - Architecture: architecture.md
   - Setup: setup.md
   - Run an instance:
