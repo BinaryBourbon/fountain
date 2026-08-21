@@ -2,7 +2,7 @@
 
 Fountain is built to be consumed by AI coding tools. Every instance exposes machine-readable discovery endpoints so any agentic IDE can learn the full API from a single fetch.
 
-The examples below run against your own instance — point `FOUNTAIN_URL` at it:
+The examples below run against your own instance. Point `FOUNTAIN_URL` at it.
 
 ```bash
 FOUNTAIN_URL=http://localhost:4000

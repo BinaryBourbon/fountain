@@ -21,30 +21,30 @@ yours.
 
 It is **not** a way for the agent to edit the files open in your editor. The
 integration declares no filesystem or terminal access, and the file paths a
-tool call reports are paths inside the sandbox — they are deliberately not sent
+tool call reports are paths inside the sandbox, and they are deliberately not sent
 as clickable locations, because clicking one would open the wrong file on your
 machine or nothing at all. They travel under
 `_meta.fountain.sandboxLocations` instead.
 
-Why reach for this rather than a local agent, then:
+Three reasons to reach for this rather than a local agent.
 
 - **The work outlives the editor.** Close the laptop mid-turn; the turn keeps
   running. Reopen and the transcript is replayed from the server.
-- **The unit is a Fountain agent** — an environment, vault overrides, skills,
+- **The unit is a Fountain agent**, meaning an environment, vault overrides, skills,
   MCP servers and inference credentials that never touch your machine.
 - **The same conversation is open in the conversations app**, for you or a teammate,
   while it runs.
 
 ## Setup
 
-1. Install the CLI and log in:
+1. Install the CLI and log in.
 
     ```bash
     brew install BinaryBourbon/tap/fountain
     fountain auth login
     ```
 
-    For a self-hosted instance, point at it first — the CLI defaults to the
+    For a self-hosted instance, point at it first, because the CLI defaults to the
     hosted one:
 
     ```bash
@@ -81,7 +81,7 @@ profile, add `"--profile", "staging"` to `args`, or set `FOUNTAIN_BASE_URL` in
 
 `--vault <name-or-id>` attaches a [vault](../concepts/vault.md) to every
 conversation the entry opens. Vault values override the agent's environment, so
-this is where a secret that belongs to *this entry* goes — an identity the
+this is where a secret that belongs to *this entry* goes, such as an identity the
 agent posts under, a token scoped to one workspace.
 
 ```json
@@ -97,9 +97,9 @@ even when they point at the same agent.
 
 `--environment <name-or-id>` provisions every conversation the entry opens from
 that [environment](../concepts/environment.md) instead of the agent's own.
-Use it when one agent config should run under several baselines — the same
+Use it when one agent config should run under several baselines, so the same
 "engineer" against a `fountain` environment in one entry and a `buzz`
-environment in another — without duplicating the agent. The vault, if any,
+environment in another, without duplicating the agent. The vault, if any,
 still wins over it on key collision, and an agent can restrict which
 environments may stand in for its own via `allowed_environment_ids`.
 
@@ -114,13 +114,13 @@ fountain acp --agent <name-or-id>
 
 spoken to over stdin/stdout. [Buzz](https://github.com/block/buzz) is
 ACP-native and should work the same way, though its configuration format for a
-custom agent is not something we have verified — if you get it working, a note
+custom agent is not something we have verified. If you get it working, a note
 in an issue would be welcome.
 
 ## What you get
 
-The adapter's full protocol surface — every method, the `_meta` extensions
-chat harnesses use, what is forwarded and what is deliberately ignored — is on
+The adapter's full protocol surface, covering every method, the `_meta`
+extensions chat harnesses use, and what is forwarded or deliberately ignored, is on
 the [`fountain acp` reference](acp.md). The short version:
 
 
@@ -172,7 +172,7 @@ Errors are written to be readable inside an editor rather than in a terminal:
 | `credentials for … were rejected` | Run `fountain auth login`. The message names the instance it tried, which is usually the surprise |
 | `could not resolve agent "x" on …` | Wrong name, or the right name on a different instance |
 
-Running the binary by hand is a fair diagnostic — it will sit waiting for
+Running the binary by hand is a fair diagnostic, since it will sit waiting for
 JSON-RPC on stdin, which tells you the process starts and finds its
 credentials.
 

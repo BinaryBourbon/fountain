@@ -15,7 +15,7 @@ supply the machine:
 | Behind the bubble | What it actually means |
 |---|---|
 | a computer | a filesystem, a shell, a package manager, a network |
-| credentials | a GitHub token that works — not in the prompt, not in the transcript |
+| credentials | a GitHub token that works, not in the prompt and not in the transcript |
 | memory | the second message costs a sentence, not a re-explanation of the first |
 | isolation | one bot's token and files on a machine that is not the one serving your app |
 | a lifecycle | something starts that machine, parks it while nobody is typing, wakes it |
