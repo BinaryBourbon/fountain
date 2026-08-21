@@ -58,6 +58,13 @@ COPY ee ./ee
 # ships: the release never contains docs/ as files.
 COPY docs ./docs
 COPY CHANGELOG.md ./
+# A docs page can pull a file in with `--8<--` (docs/tour.md includes the SDK
+# example verbatim, so the page cannot drift from the script that produced its
+# output). Those paths are read at compile time from the repo root, so every
+# one of them has to be here too — docs_test.exs checks this list against the
+# snippet paths the corpus actually uses, because the failure is a compile
+# error inside `docker build` and nowhere else.
+COPY sdk/typescript/examples ./sdk/typescript/examples
 
 # Lumis downloads a language's tree-sitter parser on first use and caches it
 # under its own priv/. The deployment runs read-only (deployment.yaml sets

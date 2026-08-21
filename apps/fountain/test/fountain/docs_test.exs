@@ -152,6 +152,54 @@ defmodule Fountain.DocsTest do
     end
   end
 
+  describe "snippet includes vs the image build" do
+    @root Path.expand("../../../..", __DIR__)
+
+    test "every `--8<--` path is copied into the Dockerfile's build stage" do
+      # A snippet is read from the repo root at compile time, so a page that
+      # includes a file the image never copies fails `mix compile` inside
+      # `docker build` — green CI, no image, nothing deployed (docs/tour.md
+      # including the SDK example did exactly that). The suite cannot run a
+      # docker build, but it can check the two lists agree.
+      copied = dockerfile_build_sources()
+
+      for path <- snippet_paths() do
+        assert Enum.any?(copied, &(&1 == path or String.starts_with?(path, &1 <> "/"))),
+               """
+               docs/ includes #{path} with `--8<--`, but the Dockerfile's build stage
+               does not copy it. Add a COPY for it beside `COPY docs ./docs`, or the
+               image build fails on File.read! while CI stays green.
+               """
+      end
+    end
+
+    defp snippet_paths do
+      Path.join(@root, "docs/**/*.md")
+      |> Path.wildcard()
+      |> Enum.flat_map(fn file ->
+        ~r/^\s*--8<--\s+"([^"]+)"\s*$/m
+        |> Regex.scan(File.read!(file))
+        |> Enum.map(fn [_, path] -> path end)
+      end)
+      |> Enum.uniq()
+    end
+
+    # The COPY sources of the `AS build` stage, which is the only one that
+    # compiles Elixir. Sources are repo-relative; the destination is dropped.
+    defp dockerfile_build_sources do
+      @root
+      |> Path.join("Dockerfile")
+      |> File.read!()
+      |> String.split(~r/^FROM /m)
+      |> Enum.find(&String.starts_with?(&1, "hexpm/elixir"))
+      |> String.split("\n")
+      |> Enum.filter(&String.starts_with?(&1, "COPY "))
+      |> Enum.flat_map(fn line ->
+        line |> String.split() |> Enum.drop(1) |> Enum.drop(-1)
+      end)
+    end
+  end
+
   # A deliberately narrow parser for the two shapes mkdocs.yml's nav uses:
   # `- Title: file.md` entries at two indent levels and `- Title:` section
   # headers. Anything it doesn't recognize fails the test, which is the point —
