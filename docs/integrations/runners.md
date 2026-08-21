@@ -19,6 +19,18 @@ Three reasons to want one.
 
 The design is [ADR 0022](https://github.com/BinaryBourbon/fountain/blob/main/decisions/0022-self-hosted-runner-provider.md).
 
+## At a glance
+
+| | |
+|---|---|
+| Role | Sandbox provider, on a machine **you** own |
+| Enabled by | Nothing. On unless `SANDBOX_RUNNERS_ENABLED=false` |
+| Credential | None platform-side. Each daemon uses the user's own full-scope API key |
+| Suspend | Stops the sandbox's processes. The directory stays |
+| Capabilities advertised | `:suspend`, `:attach` |
+| Not advertised | Network policy, TTY, checkpoints, public URL |
+| Isolation | **None.** Trusted mode, agent processes run as you |
+
 ## Read this first: trusted mode
 
 A runner sandbox is a **directory** on the machine, and the agent's
@@ -144,3 +156,12 @@ stdin_close detach list_sessions attach`. Errors are the contract's codes
 `cli/internal/runner` the daemon, and `Fountain.Runners.FakeDaemon`, an
 in-BEAM daemon the conformance suite runs against, is the executable
 description both must agree with.
+
+## Related
+
+- [About sandboxes](../concepts/sandboxes.md), for why honest capabilities
+  change the lifecycle.
+- [The sandbox contract](sandbox-contract.md).
+- [Change sandbox lifetimes](../guides/operate/sandbox-lifetime.md), because a
+  provider without `:suspend` would destroy on idle. A runner does advertise
+  it.

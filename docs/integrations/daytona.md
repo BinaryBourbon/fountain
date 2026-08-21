@@ -15,6 +15,18 @@ DAYTONA_SNAPSHOT=fountain          # a snapshot built from images/daytona/ (unse
 # SANDBOX_PROVIDER=daytona
 ```
 
+## At a glance
+
+| | |
+|---|---|
+| Role | Sandbox provider, and the closest semantic match to the contract |
+| Enabled by | `DAYTONA_API_KEY` |
+| Env vars | `DAYTONA_API_KEY`, `DAYTONA_SNAPSHOT`, `DAYTONA_API_URL` |
+| Suspend | Explicit stop, disk preserved, archiving when long-parked |
+| Capabilities advertised | `:suspend`, `:network_policy`, `:attach` |
+| Self-hostable | Yes, via `DAYTONA_API_URL` |
+| Needs first | A snapshot built from `images/daytona/`. The stock image lacks the agent CLIs |
+
 ## Snapshot
 
 The stock image does not carry the agent CLIs. Build the reference snapshot
@@ -48,3 +60,15 @@ daytona snapshot create fountain --dockerfile Dockerfile
   environments behave unexpectedly.
 - **Reaper**: reconciliation lists `fountain`-labeled sandboxes only; other
   sandboxes in the organization are never touched.
+
+## Verify
+
+Create a conversation on an agent pinned to `daytona` and watch it reach its
+first turn. Anything short of that is a provisioning failure, and the stage
+events name the step.
+
+## Related
+
+- [About sandboxes](../concepts/sandboxes.md).
+- [The sandbox contract](sandbox-contract.md).
+- [Sandbox errors](../troubleshooting/sandbox-errors.md).

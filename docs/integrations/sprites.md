@@ -10,6 +10,17 @@ The exact API surface Fountain consumes, and what a compatible replacement
 behind `SPRITES_BASE_URL` would have to provide, is written down in
 [the Sprites transport reference](sprites-contract.md).
 
+## At a glance
+
+| | |
+|---|---|
+| Role | Sandbox provider, and the instance default |
+| Enabled by | `SPRITES_TOKEN` |
+| Env vars | `SPRITES_TOKEN`, `SPRITES_BASE_URL`, `SPRITES_TIMEOUT_MS` |
+| Suspend | Parks implicitly. The sprite scales itself to zero, disk preserved |
+| Capabilities advertised | `:suspend`, `:network_policy`, `:attach`, `:tty`, `:public_url`, and `:checkpoint` (off by default, #654) |
+| Billed to | One platform token, so the operator, not the tenant |
+
 ## Provider side
 
 Create a sprites.dev account and issue an API token. That token is the whole
@@ -47,3 +58,10 @@ missing token surfaces as the `provision` stage failing, visible in the
 conversation's log view. A Sprites outage does not affect anything else,
 sign-in, dashboards and configuration keep working, and the health endpoints
 deliberately do not consult Sprites.
+
+## Related
+
+- [About sandboxes](../concepts/sandboxes.md), for what a provider is.
+- [The sandbox contract](sandbox-contract.md), and the
+  [Sprites transport reference](sprites-contract.md) for the wire protocol.
+- [Sandbox errors](../troubleshooting/sandbox-errors.md).

@@ -55,6 +55,17 @@ inside Fountain and is used to sign; the sandbox never holds it.
 <figcaption><b>Four parties, and Fountain in the middle.</b> The owner provisions once; then Fountain speaks Nostr to the relay <em>as the agent</em>, drives the coding agent in a sandbox over ACP, and the sandbox asks Fountain to publish through an MCP tool, so it never touches the relay or the key itself.</figcaption>
 </figure>
 
+## At a glance
+
+| | |
+|---|---|
+| Direction | **Outbound.** Fountain hosts the agent and shows up on the relay |
+| Talks over | Nostr, with `buzz-acp` driving the runtime over ACP |
+| Provisioned from | The Buzz desktop, or `POST /api/buzz/agents` |
+| Credential | The agent's Nostr signing key, held in a [vault](../concepts/vault.md) |
+| Enabled by | Any image shipping the `buzz-acp` binary. No flag |
+| Publishing | Through the [fountain-buzz](../catalog/mcp-servers/fountain-buzz.md) MCP tools. The harness never publishes the agent's own text |
+
 ## What this is
 
 A Buzz agent on Fountain is a **`BuzzIdentity`**: a Nostr keypair bound to one of
@@ -427,3 +438,10 @@ Fountain-hosted MCP tool that signs with the vaulted key. Because every inbound
 turn arrives through the ACP-agent door, the conversation, its log events, its
 lifecycle and its audit trail all apply for free, being the same machinery every
 other Fountain surface uses.
+
+## Related
+
+- [fountain-buzz](../catalog/mcp-servers/fountain-buzz.md), the two publish
+  tools and why nothing is posted without them.
+- [About vaults](../concepts/vault.md), where the signing key lives.
+- [Plugging into Fountain](clients.md).

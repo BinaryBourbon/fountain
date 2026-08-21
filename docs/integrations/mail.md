@@ -4,6 +4,16 @@
 because a silently discarded verification email dead-ends signup with no
 visible error. There are exactly three options, checked in this order:
 
+## At a glance
+
+| | |
+|---|---|
+| Required | **A decision, yes.** Production refuses to boot without one of the three |
+| Options | Resend, any SMTP server, or none |
+| Env vars | `RESEND_API_KEY` *or* `SMTP_*` *or* `EMAIL_DELIVERY=none`, plus `EMAIL_FROM` |
+| Precedence | Checked in the order below. Resend wins if several are set |
+| Without it | Production will not start |
+
 ## Option 1: Resend
 
 | Variable | Effect |
@@ -59,3 +69,10 @@ Register a throwaway account and confirm the verification email arrives.
 check spam, which is where an unverified sending domain lands. On a running
 instance, boot logs state the chosen mode (`EMAIL_DELIVERY=none` prints its
 notice to stderr; a missing configuration refuses to boot and says so).
+
+## Related
+
+- [Configure email](../guides/operate/email.md), the operator guide.
+- [Nobody can log in](../troubleshooting/nobody-can-log-in.md), which is
+  usually this.
+- [Services Fountain uses](index.md).

@@ -13,6 +13,17 @@ the pipe. That process talks HTTP and SSE to your Fountain instance.
    (ACP over stdio)                                                  (the agent)
 ```
 
+## At a glance
+
+| | |
+|---|---|
+| Direction | Inbound. The editor drives Fountain |
+| Talks over | [`fountain acp`](acp.md), spawned locally |
+| Set up on | The developer's machine |
+| Credential | Whatever `fountain auth login` already saved |
+| Configured per | Agent. One editor entry per agent you want to reach |
+| Operator setup | None |
+
 ## What this is, and is not
 
 It is a **control surface for a remote conversation**. The agent runs in a
@@ -186,3 +197,9 @@ makes it an ACP *agent* for editors. Together they make Fountain a proxy: the
 same block vocabulary arrives from a sandbox on one side and leaves for an
 editor on the other, so the adapter forwards updates rather than translating
 them, and no runtime's output format is parsed twice.
+
+## Related
+
+- [`fountain acp`](acp.md), the protocol surface in full.
+- [OpenClaw](openclaw.md), the same adapter from a chat surface.
+- [Plugging into Fountain](clients.md).

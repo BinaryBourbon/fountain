@@ -18,6 +18,17 @@ ACP over stdio. So the integration is a config block, not code.
    (a chat channel)   (ACP over stdio)                                        (the agent)
 ```
 
+## At a glance
+
+| | |
+|---|---|
+| Direction | Inbound. OpenClaw drives Fountain |
+| Talks over | [`fountain acp`](acp.md), via OpenClaw's `acpx` plugin |
+| Set up on | The OpenClaw host |
+| Credential | Whatever `fountain auth login` saved there |
+| Needs | Node 22.22.3 or newer (or 24.15+, 25.9+) |
+| Operator setup | None. The configuration is client-side |
+
 ## What this is, and is not
 
 It is a **chat front-end for a remote conversation.** OpenClaw handles the
@@ -269,3 +280,9 @@ arrives from a sandbox on one side and leaves for the client on the other, so
 the adapter forwards updates rather than translating them. OpenClaw is one more
 client on that far side. See the
 [2026-08-16 addendum to 0015](https://github.com/BinaryBourbon/fountain/blob/main/decisions/0015-fountain-as-an-acp-agent.md#addendum--2026-08-16-openclaw-is-another-acp-client-spike-verified).
+
+## Related
+
+- [`fountain acp`](acp.md), the protocol surface in full.
+- [Editors](editors.md), the same adapter from an editor.
+- [Plugging into Fountain](clients.md).

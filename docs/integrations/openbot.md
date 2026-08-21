@@ -21,6 +21,17 @@ The endpoint is not OpenBot-specific. Any AG-UI host, whether a hand-written
 client or another product built on the protocol, registers a Fountain agent the same
 way. OpenBot is the host it was built and verified against, nothing more.
 
+## At a glance
+
+| | |
+|---|---|
+| Direction | Inbound. OpenBot drives Fountain |
+| Talks over | [AG-UI](https://github.com/ag-ui-protocol/ag-ui) at `POST /api/agui/:agent_id` |
+| Set up on | The OpenBot host |
+| Plugin | None. A URL is the whole integration |
+| Credential | An API key held by the coworker |
+| Binding | One channel is one conversation is one sandbox |
+
 ## Set it up
 
 You need two things from Fountain: the agent's id, and an API key.
@@ -202,3 +213,10 @@ curl -N -X POST "https://your-fountain/api/agui/<agent_id>" \
 A healthy run is `RUN_STARTED`, some `TEXT_MESSAGE_*`, then `RUN_FINISHED`.
 Each SSE message is `data: {"type": ...}`, so the type is inside the JSON, which
 is what the reference AG-UI encoder writes and every client parses.
+
+## Related
+
+- [Agents as teammates](../concepts/teammates.md), the same
+  one-channel-one-conversation idea inside Fountain.
+- [API reference](../api.md).
+- [Plugging into Fountain](clients.md).
