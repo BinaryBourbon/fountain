@@ -17,7 +17,7 @@ cross-compiles cleanly with stdlib tooling.
 
 ## Build
 
-Requires Go 1.25+.
+Requires Go 1.26+.
 
 ```sh
 cd cli
