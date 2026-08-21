@@ -14,6 +14,17 @@ E2B_TEMPLATE=fountain        # a template built from images/e2b/ (see below)
 # SANDBOX_PROVIDER=e2b       # make it the instance default
 ```
 
+## At a glance
+
+| | |
+|---|---|
+| Role | Sandbox provider |
+| Enabled by | `E2B_API_KEY` |
+| Env vars | `E2B_API_KEY`, `E2B_TEMPLATE`, `E2B_BASE_URL` |
+| Suspend | Explicit pause, snapshotting filesystem **and memory** |
+| Capabilities advertised | `:suspend`, `:network_policy`, `:attach` |
+| Needs first | A template built from `images/e2b/`. The stock `base` lacks the agent CLIs |
+
 ## Template
 
 The stock `base` template does not carry the agent CLIs. Build the reference
@@ -50,3 +61,15 @@ the four agent CLIs, so no per-provider provisioning code exists.
 - **Egress**: the callback host (`PUBLIC_URL`) must be reachable from
   inside; `limited` environments get it via the same allowlist mechanics as
   Sprites.
+
+## Verify
+
+Create a conversation on an agent pinned to `e2b` and watch it reach its first
+turn. Anything short of that is a provisioning failure, and the stage events
+name the step.
+
+## Related
+
+- [About sandboxes](../concepts/sandboxes.md).
+- [The sandbox contract](sandbox-contract.md).
+- [Sandbox errors](../troubleshooting/sandbox-errors.md).

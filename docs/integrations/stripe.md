@@ -5,6 +5,16 @@ off by default (`BILLING_ENABLED=false`), and that is the right setting for
 most self-hosted instances, because a gate with no checkout behind it is a lock with
 no key. Set this up only if you run Fountain commercially.
 
+## At a glance
+
+| | |
+|---|---|
+| Required | No, and off by default |
+| Provider | Stripe |
+| Env vars | `BILLING_ENABLED`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_ID` |
+| Webhook | `<PUBLIC_URL>/api/stripe/webhook` |
+| Without it | No billing, which is correct for most self-hosted instances |
+
 ## Provider side
 
 1. **A product with a recurring price.** Its price ID (`price_…`) becomes
@@ -109,3 +119,9 @@ Four notes.
   pasted into the PR that motivated it.
 - `STRIPE_PRICE_ID` is honored when set; otherwise a throwaway test-mode
   product/price is created under the clock's lifetime.
+
+## Related
+
+- [Turn on billing](../guides/operate/billing.md), the operator guide,
+  including the backfill existing accounts need.
+- [Services Fountain uses](index.md).

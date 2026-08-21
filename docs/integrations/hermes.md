@@ -32,6 +32,17 @@ Four reasons to reach for it.
   conversation is open in the Fountain conversations app while it runs.
 - **Fan-out is a loop of tool calls**, not orchestration code.
 
+## At a glance
+
+| | |
+|---|---|
+| Direction | Inbound. Hermes delegates to Fountain |
+| Talks over | The HTTP API, through a plugin |
+| Set up on | The Hermes host |
+| Plugin | Ships in this repo, under `integrations/hermes/` |
+| Credential | An API key, or the CLI's saved login |
+| Operator setup | None |
+
 ## Setup
 
 1. Credentials. On the Hermes host either export a key,
@@ -135,3 +146,9 @@ environment's setup script.
 The plugin source and its tests are at
 [`integrations/hermes/`](https://github.com/BinaryBourbon/fountain/tree/main/integrations/hermes)
 in the Fountain repo.
+
+## Related
+
+- [API reference](../api.md), which is everything the plugin wraps.
+- [TypeScript SDK](../sdk.md), if you are building the same thing in TS.
+- [Plugging into Fountain](clients.md).

@@ -3,6 +3,17 @@
 **Optional.** Adds "Continue with GitHub" to the login and registration pages.
 Email + password auth works without it.
 
+## At a glance
+
+| | |
+|---|---|
+| Required | No |
+| Provider | A GitHub OAuth app |
+| Env vars | `GITHUB_OAUTH_CLIENT_ID`, `GITHUB_OAUTH_CLIENT_SECRET` |
+| Scope requested | `user:email` |
+| Callback | `<PUBLIC_URL>/auth/oauth/github/callback` |
+| Without it | Email and password auth only, with no dead-end button |
+
 ## Provider side
 
 Create an OAuth app at
@@ -45,3 +56,18 @@ GitHub button.
 Sign in with the button. The audit log (`/audit`) records
 `auth.oauth.signup` or `auth.oauth.login`; rejections are recorded as
 `auth.oauth.rejected` with the reason.
+
+## Limits
+
+**A GitHub outage breaks the button and nothing else.** Email and password
+auth is unaffected, so an instance with both is not single-homed on GitHub.
+
+**The button is all-or-nothing.** There is no per-user or per-domain gate on
+who may use it, beyond `REGISTRATION_ALLOWED_EMAIL_DOMAINS`.
+
+## Related
+
+- [Nobody can log in](../troubleshooting/nobody-can-log-in.md), where OAuth is
+  the way back in when mail is broken.
+- [Put it on the internet](../guides/operate/put-it-on-the-internet.md).
+- [Services Fountain uses](index.md).
