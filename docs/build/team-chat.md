@@ -1,8 +1,8 @@
 # A team chat, end to end
 
 Everything below is the [TypeScript SDK](../sdk.md) against a live instance,
-in the order you would write it. It is the same sequence
-[fountain-team](https://github.com/jhgaylor/fountain-team) performs — that app
+in the order you would write it. It follows the same sequence
+[fountain-team](https://github.com/jhgaylor/fountain-team) performs. That app
 predates the SDK and calls `fetch` directly, so its hand-written API client is
 roughly what the SDK now wraps.
 
@@ -22,16 +22,17 @@ const fountain = new Fountain({
 const me = await fountain.me();               // the cheapest check that a key works
 ```
 
-In Node the arguments are optional — credentials resolve from the environment
-and `~/.fountain/credentials` exactly as the [CLI](../cli.md)'s do. In a
-browser you pass what the person gave you, and the server has to allow your
-origin (`API_CORS_ORIGINS`). See [shipping it](#10-shipping-it).
+In Node the arguments are optional, because credentials resolve from the
+environment and `~/.fountain/credentials` exactly as the [CLI](../cli.md)'s
+do. In a browser you pass what the person gave you, and the server has to
+allow your origin (`API_CORS_ORIGINS`). See [shipping it](#10-shipping-it).
 
 ## 2. Hire a teammate
 
 The **+** in these apps asks nothing. A name from a list, a sensible brain, a
-one-line brief, and the roster has a new row a second later. That is two calls:
-an [agent](../primitives.md#agent), and the agent put on the team.
+one-line brief, and the roster has a new row a second later. Two calls do it:
+one to define an [agent](../primitives.md#agent), one to put that agent on the
+team.
 
 ```ts
 const catalog = await fountain.catalog();          // this deployment's vocabulary
@@ -56,8 +57,8 @@ suggested `provider/model` ids and the avatar vocabulary come from the server,
 not from a list in your bundle.
 
 Adding is idempotent, so the **+** does not need to know whether this agent is
-already on the team. It is also the moment a machine appears: `team.add` opens
-the teammate's standing conversation, and that provisions its sandbox.
+already on the team. A machine appears at this point too: `team.add` opens the
+teammate's standing conversation, which provisions its sandbox.
 
 !!! note "The face"
 
@@ -97,13 +98,13 @@ for (const teammate of roster) {
 }
 ```
 
-One call fills a roster row completely — nothing here is assembled from three
-endpoints and a guess. `presence.state` is the enum behind the label:
-`working`, `starting`, `online`, `asleep`, `away`, `machine_offline`,
-`failed`, `offline`. `asleep` is a teammate whose computer has been
-[parked](../primitives.md#conversation) for want of anything to do; it wakes
-on the next message with its memory intact, and your UI does not have to do
-anything about it beyond saying so.
+One call fills a roster row completely, with nothing assembled from three
+endpoints and a guess. Behind the label, `presence.state` is an enum:
+`working`, `starting`, `online`, `asleep`, `away`, `machine_offline`, `failed`
+and `offline`. A teammate reads as `asleep` when its computer has been
+[parked](../primitives.md#conversation) for want of anything to do. It wakes
+on the next message with its memory intact, so your UI need do nothing about
+it beyond saying so.
 
 ## 4. Say something
 
@@ -128,7 +129,7 @@ transport failure or a rejected request throws, which is what §7 is about.
 ## 5. One connection for the whole app
 
 A chat app needs to know what everyone is doing, not just the thread that is
-open. That is one endpoint, not one socket per teammate:
+open. One endpoint covers that, rather than one socket per teammate:
 
 ```ts
 for await (const event of fountain.team.stream({ streams: ["stage"] })) {
@@ -151,20 +152,20 @@ for await (const event of fountain.team.stream({ streams: ["stage"] })) {
 
 Every payload is a conversation's log event plus `conversation_id` and
 `agent_id`, so it routes to a roster row without a lookup. The iterator
-reconnects from its own last event id, which means a Fountain deploy, a proxy
-timeout or a laptop lid does not lose events — and your reconnect logic is the
-`for await` you already wrote.
+reconnects from its own last event id, so a Fountain deploy, a proxy timeout
+or a laptop lid loses no events, and your reconnect logic is the `for await`
+you already wrote.
 
 The stages worth knowing are the ones a UI shows while nothing is being said
-yet — `provision`, `setup` and `reattach`, then `turn`, then `terminate` —
-each with a `state` of `started`, `done`, `failed` or `interrupted`.
+yet: `provision`, `setup` and `reattach`, then `turn`, then `terminate`. Each
+carries a `state` of `started`, `done`, `failed` or `interrupted`.
 
 !!! note "The team stream carries raw events"
 
-    `/api/team/stream` takes `streams` and nothing else — no `blocks` — so it
-    is a notification channel: *something happened, to whom*. Read the
-    transcript itself from the conversation's own feed, which does parse
-    blocks. That is the next section.
+    `/api/team/stream` takes `streams` and nothing else, with no `blocks`, so
+    treat it as a notification channel: *something happened, to whom*. Read
+    the transcript itself from the conversation's own feed, which does parse
+    blocks. The next section covers that.
 
 ## 6. Open a thread
 
@@ -204,9 +205,9 @@ function bubbles(turns: Turn[], events: LogEvent[]) {
 }
 ```
 
-And a reply is a handful of blocks, folded the way a chat bubble wants them —
-adjacent prose joined, a run of tool calls collapsed into one line you can
-expand:
+A reply is a handful of blocks, folded the way a chat bubble wants them.
+Adjacent prose joins up, and a run of tool calls collapses into one line you
+can expand:
 
 ```ts
 type Part = { kind: "text" | "thinking" | "tools"; body: string; tools: string[] };
@@ -227,13 +228,14 @@ function fold(blocks: Block[]): Part[] {
 }
 ```
 
-That is the entire transcript renderer, and the reason it fits on a screen is
-`blocks`. The log feed holds whatever dialect the runtime speaks — ACP
-`session/update` notifications for `claude`, `codex` and `opencode`, plain
-stdout for others — and `?blocks=true`, which `history()` sets for you, parses
-it server-side into `text`, `thinking`, `tool_use`, `tool_result`, `init`,
-`result`, `error` and `raw`. fountain-team shipped a 200-line port of
-Fountain's own ACP parser before this existed. Do not repeat that.
+Those two functions are the entire transcript renderer, and they fit on a
+screen because of `blocks`. The log feed holds whatever dialect the runtime
+speaks: ACP `session/update` notifications for `claude`, `codex` and
+`opencode`, plain stdout for the rest. Adding `?blocks=true`, which
+`history()` sets for you, parses that server-side into `text`, `thinking`,
+`tool_use`, `tool_result`, `init`, `result`, `error` and `raw`. fountain-team
+shipped a 200-line port of Fountain's own ACP parser before this existed. Do
+not repeat that.
 
 ## 7. The things a messaging app is judged on
 
@@ -252,8 +254,8 @@ try {
 ```
 
 Queue locally, flush on the `turn`/`done` event from §5, and several queued
-notes go as one turn. Branch on `error.code`, never on the status — see the
-[error table](../sdk.md#errors).
+notes go as one turn. Branch on `error.code` rather than on the status; the
+[error table](../sdk.md#errors) has the rest.
 
 **Stop.** Interrupt ends the turn and keeps the computer; terminate takes the
 computer down.
@@ -295,8 +297,8 @@ clones, installs and files are where it left them.
 
 ## 8. Give a teammate an app to use
 
-This is the part the clones call connectors, and it is where a hosted runtime
-stops being a convenience. A connector is an MCP server the teammate's runtime
+The clones call this part connectors, and it is where a hosted runtime stops
+being a mere convenience. A connector is an MCP server the teammate's runtime
 talks to, and it usually needs a real credential.
 
 The credential does not go in the agent config. It goes in the teammate's
@@ -320,18 +322,18 @@ await fountain.agents.update("watchtower", {
 });
 ```
 
-`${GITHUB_TOKEN}` is resolved by [substitution](../primitives.md#substitution)
-when the computer is set up. Three things follow, and they are the reason this
-is not just a nicer way to store a string:
+[Substitution](../primitives.md#substitution) resolves `${GITHUB_TOKEN}` when
+the computer is set up. Three things follow, and together they are why this is
+more than a nicer way to store a string:
 
-- The token is never in a prompt, a model's context, or the log feed your app
-  reads.
+- The token never appears in a prompt, a model's context, or the log feed your
+  app reads.
 - Fountain **redacts every environment value of 8 bytes or more out of the
   conversation's output**, on the single write path every log event takes. An
   agent asked to print its token persists `[REDACTED]`.
 - Secret values are write-only. `secrets.list()` returns keys. Your app can
-  give a teammate a credential and cannot read it back — which is exactly what
-  you want to be able to tell someone pasting a GitHub token into a web page.
+  give a teammate a credential and can never read it back, which is a useful
+  thing to be able to tell someone pasting a GitHub token into a web page.
 
 A connector applies when the computer is next set up, not to the machine
 already running.
@@ -369,7 +371,7 @@ Static hosting. The only server-side facts are on the Fountain instance:
 [Sign in with Fountain](../api.md#sign-in-with-fountain-oauth-20-for-browser-apps)
 is OAuth 2.0 authorization code + PKCE, and the token it returns *is* an API
 key: it lists and revokes under Account → API keys, and signing out revokes
-it. That is the whole authentication story for an app with no backend.
+it. For an app with no backend, that is the whole authentication story.
 
 ## The whole thing, runnable
 
@@ -385,15 +387,15 @@ FOUNTAIN_API_KEY=ftn_… node examples/chat.ts
 ```
 
 CI typechecks it against the SDK on every push, which is the only reason this
-page can promise the code on it compiles.
+page can promise that the code on it compiles.
 [`examples/team.ts`](https://github.com/BinaryBourbon/fountain/blob/main/sdk/typescript/examples/team.ts)
-is the smaller version — hire, say two things, watch the stream.
+is the smaller version: hire, say two things, watch the stream.
 
 ## Where this goes next
 
-- [**What each piece does**](pieces.md) — what happens between Enter and the
-  first word, and which primitive is responsible for what.
-- [**TypeScript SDK**](../sdk.md) — the full surface, including everything
+- [**What each piece does**](pieces.md) covers what happens between Enter and
+  the first word, and which primitive is responsible for what.
+- [**TypeScript SDK**](../sdk.md) has the full surface, including everything
   outside the team.
-- [**API reference**](../api.md#team) — the routes underneath, for a language
-  the SDK does not cover yet.
+- [**API reference**](../api.md#team) documents the routes underneath, for a
+  language the SDK does not cover yet.
