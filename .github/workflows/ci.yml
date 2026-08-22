@@ -828,10 +828,22 @@ jobs:
         if: ${{ needs.changes.outputs.docs_touched == 'true' }}
         run: python3 scripts/docs-style.py
 
-      # Go is already set up in this job for the CLI checks above.
+      # A pinned release binary, not `go install`. This job pins Go from
+      # cli/go.mod with GOTOOLCHAIN=local, so it cannot fetch the newer
+      # toolchain the linter's module requires, and `go install` fails before
+      # the linter ever runs. The tarball needs no toolchain and is verified
+      # against its published SHA256.
       - name: Install the STE linter
         if: ${{ needs.changes.outputs.docs_touched == 'true' }}
-        run: go install github.com/stuffbucket/vale/cmd/vale@v0.15.0
+        run: |
+          curl -fsSL -o "${RUNNER_TEMP}/vale.tar.gz" \
+            https://github.com/stuffbucket/vale/releases/download/v0.15.0/vale_0.15.0_linux_amd64.tar.gz
+          echo "c6b85fd4da8ca2b0f631b17556c3f38bc3f30e9ce636517c00ad507c522c2a5c  ${RUNNER_TEMP}/vale.tar.gz" \
+            | sha256sum -c -
+          mkdir -p "${RUNNER_TEMP}/vale"
+          tar -xzf "${RUNNER_TEMP}/vale.tar.gz" -C "${RUNNER_TEMP}/vale" vale
+          "${RUNNER_TEMP}/vale/vale" version
+          echo "${RUNNER_TEMP}/vale" >> "$GITHUB_PATH"
 
       - name: Docs Simplified Technical English
         if: ${{ needs.changes.outputs.docs_touched == 'true' }}
@@ -1064,17 +1076,24 @@ jobs:
       - name: Docs style
         run: python3 scripts/docs-style.py
 
-      - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: cli/go.mod
-          cache-dependency-path: cli/go.sum
-
       # ASD-STE100 Simplified Technical English, the standard in
       # docs-redesign/08-simplified-technical-english.md. Config in
       # .vale-ste.yml, backlog in .valeignore, and the backlog only shrinks.
+      # A pinned release binary, not `go install`. This job pins Go from
+      # cli/go.mod with GOTOOLCHAIN=local, so it cannot fetch the newer
+      # toolchain the linter's module requires, and `go install` fails before
+      # the linter ever runs. The tarball needs no toolchain and is verified
+      # against its published SHA256.
       - name: Install the STE linter
-        run: go install github.com/stuffbucket/vale/cmd/vale@v0.15.0
+        run: |
+          curl -fsSL -o "${RUNNER_TEMP}/vale.tar.gz" \
+            https://github.com/stuffbucket/vale/releases/download/v0.15.0/vale_0.15.0_linux_amd64.tar.gz
+          echo "c6b85fd4da8ca2b0f631b17556c3f38bc3f30e9ce636517c00ad507c522c2a5c  ${RUNNER_TEMP}/vale.tar.gz" \
+            | sha256sum -c -
+          mkdir -p "${RUNNER_TEMP}/vale"
+          tar -xzf "${RUNNER_TEMP}/vale.tar.gz" -C "${RUNNER_TEMP}/vale" vale
+          "${RUNNER_TEMP}/vale/vale" version
+          echo "${RUNNER_TEMP}/vale" >> "$GITHUB_PATH"
 
       - name: Docs Simplified Technical English
         run: vale lint docs
@@ -1090,6 +1109,13 @@ jobs:
       # from the nav, or a relative link that does not resolve, is an error.
       - name: Build the site strictly
         run: mkdocs build --strict
+
+      - name: Set up Go
+        if: ${{ needs.changes.outputs.cli_docs == 'true' }}
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: cli/go.mod
+          cache-dependency-path: cli/go.sum
 
       # docs/cli.md is diffed against the real command tree, so it is the one
       # docs page whose guard lives in the Go suite rather than the Elixir one.

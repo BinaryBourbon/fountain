@@ -171,17 +171,25 @@ only, so code, HTML, URLs and front matter are exempt by construction. It is
 not certified by ASD and it does not bundle the licensed dictionary. It
 approximates Part 1 from the MIT OpenSTE wordset.
 
-CI installs it with `go install github.com/stuffbucket/vale/cmd/vale@v0.15.0`
-and runs `vale lint docs` in the two jobs that already run
+CI installs the pinned `v0.15.0` release binary, verified against its
+published SHA256, and runs `vale lint docs` in the two jobs that already run
 `scripts/docs-style.py`. Configuration is `.vale-ste.yml` at the repo root.
 
-Locally, install it once and run it the same way.
+CI does not use `go install`. The jobs pin Go from `cli/go.mod` and set
+`GOTOOLCHAIN=local`, so Go cannot fetch the newer toolchain the linter's module
+needs, and the install fails before the linter runs at all. The release tarball
+needs no toolchain.
+
+Locally, either works. Install it once, then run it.
 
 ```sh
-go install github.com/stuffbucket/vale/cmd/vale@v0.15.0
+brew install stuffbucket/tap/vale          # or the v0.15.0 release binary
 vale lint docs                 # the gate
 vale lint --audit docs         # the gate, plus the vocabulary advice
 ```
+
+`go install github.com/stuffbucket/vale/cmd/vale@v0.15.0` also works on a
+workstation with Go 1.26.1 or newer.
 
 | Rule | Severity | Gated |
 |---|---|---|

@@ -383,8 +383,11 @@ in-app manual at `/docs` — the same markdown is embedded at compile time by
   published page is written in it. The standard is
   `docs-redesign/08-simplified-technical-english.md`; config is
   `.vale-ste.yml`; the backlog is `.valeignore` and is **empty**. The linter is
-  `go install github.com/stuffbucket/vale/cmd/vale@v0.15.0` — MIT, pure Go, and
-  the same binary CI runs. The gate is six rules: sentence length (20
+  [`stuffbucket/vale`](https://github.com/stuffbucket/vale) — MIT, pure Go.
+  Install it with `brew install stuffbucket/tap/vale`. CI uses the pinned
+  `v0.15.0` release binary, checksum-verified, **not** `go install`: the jobs
+  pin Go from `cli/go.mod` with `GOTOOLCHAIN=local` and cannot fetch the newer
+  toolchain the module wants. The gate is six rules: sentence length (20
   procedural / 25 descriptive), contractions, the passive voice, phrasal verbs,
   one instruction per sentence, and the -ing form. `STE.Vocabulary` advises and
   does not gate, because its wordset was built for aircraft maintenance. Read
