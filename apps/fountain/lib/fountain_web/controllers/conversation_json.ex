@@ -42,6 +42,7 @@ defmodule FountainWeb.ConversationJSON do
       agent_id: c.agent_id,
       vault_id: c.vault_id,
       environment_id: c.environment_id,
+      permission_policy: c.permission_policy,
       runtime: c.runtime,
       # Derived, never stored — the same signal as on an agent (#702). A
       # protocol client asks before reopening a conversation, because a

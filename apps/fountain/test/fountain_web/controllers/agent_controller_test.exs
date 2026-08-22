@@ -269,4 +269,54 @@ defmodule FountainWeb.AgentControllerTest do
       assert json_response(conn, 401)
     end
   end
+
+  describe "permission_policy over the API (#939/#940)" do
+    test "POST accepts a policy and round-trips it", %{conn: conn, raw_key: raw_key} do
+      # The agent is where a policy is normally set — a launch may only narrow
+      # it — so this is the path that matters, and it goes through
+      # CastAndValidate. A property missing from AgentRequest is invisible to
+      # every generated client even when the controller would have accepted it.
+      conn =
+        conn
+        |> authed_with_key(raw_key)
+        |> Plug.Conn.put_req_header("content-type", "application/json")
+        |> post("/api/agents", %{
+          "name" => "policy-agent",
+          "model" => "anthropic/claude-sonnet-4-6",
+          "runtime" => "claude",
+          "permission_policy" => %{"default" => "auto_allow", "Bash" => "ask"}
+        })
+
+      body = json_response(conn, 201)
+      assert body["data"]["permission_policy"] == %{"default" => "auto_allow", "Bash" => "ask"}
+    end
+
+    test "PUT updates a policy", %{conn: conn, user: user, raw_key: raw_key} do
+      agent = insert_agent(user_id: user.id)
+
+      conn =
+        conn
+        |> authed_with_key(raw_key)
+        |> Plug.Conn.put_req_header("content-type", "application/json")
+        |> put("/api/agents/#{agent.id}", %{"permission_policy" => %{"Bash" => "auto_deny"}})
+
+      body = json_response(conn, 200)
+      assert body["data"]["permission_policy"] == %{"Bash" => "auto_deny"}
+    end
+
+    test "an unknown verdict is refused", %{conn: conn, raw_key: raw_key} do
+      conn =
+        conn
+        |> authed_with_key(raw_key)
+        |> Plug.Conn.put_req_header("content-type", "application/json")
+        |> post("/api/agents", %{
+          "name" => "bad-policy",
+          "model" => "anthropic/claude-sonnet-4-6",
+          "runtime" => "claude",
+          "permission_policy" => %{"Bash" => "banana"}
+        })
+
+      assert json_response(conn, 422)
+    end
+  end
 end

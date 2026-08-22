@@ -359,6 +359,17 @@ defmodule Fountain.ConversationsStartTest do
       assert {:error, :permission_policy_invalid} = launch(ctx, agent, %{"Bash" => "banana"})
     end
 
+    test "the launch override is readable back on the conversation", ctx do
+      # A client that set a policy at launch has to be able to see what it got.
+      # The response schema promises this field; a view that never emitted it
+      # would make the spec a lie, which is how the agent side shipped in #939.
+      agent = insert_agent(user_id: ctx.user.id)
+      {:ok, conv} = launch(ctx, agent, %{"Bash" => "auto_deny"})
+
+      rendered = FountainWeb.ConversationJSON.show(%{conversation: conv})
+      assert rendered.data.permission_policy == %{"Bash" => "auto_deny"}
+    end
+
     test "an empty override is the same as none", ctx do
       agent = insert_agent(user_id: ctx.user.id)
       assert {:ok, conv} = launch(ctx, agent, %{})

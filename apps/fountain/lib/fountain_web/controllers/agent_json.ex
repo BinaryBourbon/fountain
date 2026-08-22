@@ -27,6 +27,7 @@ defmodule FountainWeb.AgentJSON do
       metadata: a.metadata,
       allowed_vault_ids: a.allowed_vault_ids,
       allowed_environment_ids: a.allowed_environment_ids,
+      permission_policy: a.permission_policy,
       conversation_count: a.conversation_count,
       avatar_media_type: a.avatar_media_type,
       inserted_at: a.inserted_at,

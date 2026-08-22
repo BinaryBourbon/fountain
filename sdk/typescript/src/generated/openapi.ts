@@ -2571,6 +2571,10 @@ export interface components {
             last_read_at?: string | null;
             /** Format: uuid */
             parent_conversation_id?: string | null;
+            /** @description The per-launch permission override this conversation was started with, or null if it had none. The policy actually in force is this merged with the agent's, taking the stricter of the two per tool. */
+            permission_policy?: {
+                [key: string]: "auto_allow" | "ask" | "auto_deny";
+            } | null;
             /** @enum {string} */
             runtime: "claude" | "codex" | "gemini" | "opencode";
             runtime_session_id?: string | null;
@@ -2856,6 +2860,10 @@ export interface components {
             };
             model?: string;
             name?: string;
+            /** @description Per-tool permission policy: a map of tool name (as the transcript labels it) to verdict, plus an optional "default" key. Unset tools fall back to the default, and an unset default is auto_allow. "ask" holds the tool until a human answers it on the conversation stream, and denies if nobody does before the timeout. A conversation may narrow this at launch, never widen it. */
+            permission_policy?: {
+                [key: string]: "auto_allow" | "ask" | "auto_deny";
+            } | null;
             /** @enum {string} */
             runtime?: "claude" | "codex" | "gemini" | "opencode";
             /**
@@ -3086,6 +3094,10 @@ export interface components {
             };
             model: string;
             name: string;
+            /** @description Per-tool permission policy: a map of tool name (as the transcript labels it) to verdict, plus an optional "default" key. Unset tools fall back to the default, and an unset default is auto_allow. "ask" holds the tool until a human answers it on the conversation stream, and denies if nobody does before the timeout. A conversation may narrow this at launch, never widen it. */
+            permission_policy?: {
+                [key: string]: "auto_allow" | "ask" | "auto_deny";
+            } | null;
             /** @enum {string} */
             runtime: "claude" | "codex" | "gemini" | "opencode";
             /**
