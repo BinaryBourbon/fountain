@@ -48,7 +48,7 @@ defmodule Fountain.Permissions do
   |---|---|
   | `auto_allow` | today's behaviour: `allow_always`, else `allow_once`, else the first option offered |
   | `auto_deny` | a `reject_*` option when the agent offered one, `cancelled` when it did not |
-  | `ask` | a human. **Not built** — see #940; rejected at the door until it is |
+  | `ask` | a human, over the stream, within the timeout — then deny (#940) |
 
   `auto_allow` is the default, so adopting a policy changes nothing until
   someone writes one.
@@ -76,6 +76,40 @@ defmodule Fountain.Permissions do
 
   @default_key "default"
 
+  # Well under `Lifecycle.idle_timeout_seconds/0` (60 minutes by default), and
+  # deliberately so: a held request suppresses only the idle verdict, so one
+  # that outlived the idle bound would be resolved by the max-lifetime ceiling
+  # instead — which destroys the sandbox rather than parking it (0017). The
+  # timeout has to fire first for an unanswered prompt to cost a turn rather
+  # than the agent's memory.
+  @default_ask_timeout_seconds 300
+
+  @doc """
+  How long a held `ask` waits for a human before it is denied.
+
+  Deny on expiry is the only safe default. Configurable with
+  `:permission_ask_timeout_seconds`; a value at or above the idle bound is a
+  misconfiguration, for the reason in the comment above this function.
+  """
+  @spec ask_timeout_ms() :: pos_integer()
+  def ask_timeout_ms do
+    :fountain
+    |> Application.get_env(:permission_ask_timeout_seconds, @default_ask_timeout_seconds)
+    |> to_positive_seconds(@default_ask_timeout_seconds)
+    |> Kernel.*(1000)
+  end
+
+  defp to_positive_seconds(n, _default) when is_integer(n) and n > 0, do: n
+
+  defp to_positive_seconds(n, default) when is_binary(n) do
+    case Integer.parse(n) do
+      {i, _} when i > 0 -> i
+      _ -> default
+    end
+  end
+
+  defp to_positive_seconds(_n, default), do: default
+
   @doc "Every verdict a policy may name."
   @spec verdicts() :: [String.t()]
   def verdicts, do: @verdicts
@@ -85,17 +119,22 @@ defmodule Fountain.Permissions do
   def default_verdict, do: @auto_allow
 
   @doc """
-  Verdicts that can be honoured today.
+  Verdicts that can be honoured.
 
-  `ask` is a valid policy value with nowhere to ask: #940 builds the stream
-  event and the answer endpoint. Until then it is refused where a policy is
-  written, rather than degrading to an allow (unsafe) or hanging the turn
-  forever (worse — see the note on the ceiling in 0014 gate 3).
+  All three, since #940 built somewhere to ask: the peer holds the request
+  open, the request renders as a `permission_request` block, and
+  `POST /api/conversations/:id/requests/:request_id` answers it. Before that
+  `ask` was a valid policy value with nowhere to ask, and both doors refused
+  it.
+
+  Kept as its own list rather than folded into `verdicts/0` because the
+  published OpenAPI enum reads from here: a verdict the API would 422 on must
+  not be advertised as accepted.
   """
   @spec buildable_verdicts() :: [String.t()]
-  def buildable_verdicts, do: [@auto_allow, @auto_deny]
+  def buildable_verdicts, do: @verdicts
 
-  @doc "Whether `verdict` can be honoured today. False for `ask` until #940."
+  @doc "Whether `verdict` can be honoured."
   @spec buildable?(String.t()) :: boolean()
   def buildable?(verdict), do: verdict in buildable_verdicts()
 
@@ -181,8 +220,10 @@ defmodule Fountain.Permissions do
 
     case verdict_for(normalize(policy), tool_name(params)) do
       @auto_deny -> deny(options)
-      # `ask` cannot reach here: it is refused where a policy is written, and
-      # clamping never invents it. Denying is the safe reading if it ever does.
+      # `ask` is not answered here — the peer holds the request open and a human
+      # answers it (#940). Denying is the safe reading if a caller asks this
+      # function for an outcome anyway, and `deny_outcome/1` is what the timeout
+      # and the turn's end use directly.
       @ask -> deny(options)
       _ -> allow(options)
     end
@@ -237,7 +278,17 @@ defmodule Fountain.Permissions do
   # would pick an *allow* on any adapter that lists its options that way, which
   # is the one thing `auto_deny` must never do. An adapter that offers no
   # rejection gets `cancelled` — the protocol's own "nothing was selected".
-  defp deny(options) do
+  defp deny(options), do: deny_outcome(options)
+
+  @doc """
+  The outcome that refuses a request, from the options the agent offered.
+
+  Public because #940's timeout and end-of-turn paths refuse a *held* request
+  directly, without a policy in hand — the policy already said `ask`, and what
+  is being decided at that point is only that nobody answered.
+  """
+  @spec deny_outcome([map()]) :: map()
+  def deny_outcome(options) do
     select(options, ~w(reject_always reject_once)) || cancelled()
   end
 

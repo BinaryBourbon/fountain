@@ -124,6 +124,11 @@ defmodule Fountain.Runtimes.ACP.Peer do
       # merged and clamped by `Permissions.effective/2` before it gets here —
       # the peer applies it, it does not resolve it.
       permission_policy: %{},
+      # `ask`: the JSON-RPC id of a `session/request_permission` the agent is
+      # still blocked on, with the options it offered. One at a time — the
+      # agent cannot proceed until it is answered — so a single slot is
+      # enough. nil whenever nothing is outstanding.
+      pending_permission: nil,
       buffer: "",
       next_id: 1,
       pending: %{},
@@ -173,6 +178,34 @@ defmodule Fountain.Runtimes.ACP.Peer do
   """
   def cancel(pid), do: GenServer.cast(pid, :cancel)
 
+  @doc """
+  Answer an outstanding `session/request_permission` with one of the options
+  the agent offered.
+
+  `option_id` must be an id from that request's own option list; anything else
+  is refused rather than forwarded, which is the fail-closed rule applied to
+  the answer side. Returns `{:error, :no_pending_permission}` when the request
+  has already been answered — by another client, by the timeout, or by the turn
+  ending — so a caller can tell "too late" from "wrong option".
+  """
+  @spec answer_permission(pid(), String.t(), String.t()) ::
+          :ok | {:error, :no_pending_permission | :unknown_option}
+  def answer_permission(pid, request_id, option_id) do
+    GenServer.call(pid, {:answer_permission, request_id, option_id})
+  end
+
+  @doc """
+  Refuse an outstanding permission request without a human answering.
+
+  This is what the timeout fires, and what the turn's end calls if a request is
+  still open. Picks a `reject_*` the agent offered, or `cancelled` when it
+  offered none — never an allow.
+  """
+  @spec deny_permission(pid(), String.t()) :: :ok
+  def deny_permission(pid, request_id) do
+    GenServer.cast(pid, {:deny_permission, request_id})
+  end
+
   # ── callbacks ─────────────────────────────────────────────────────────────
 
   @impl true
@@ -191,6 +224,7 @@ defmodule Fountain.Runtimes.ACP.Peer do
       images: Keyword.get(opts, :images, []),
       mcp_servers: Keyword.get(opts, :mcp_servers, []),
       permission_policy: Keyword.get(opts, :permission_policy) || %{},
+      pending_permission: restore_pending(Keyword.get(opts, :pending_permission)),
       model: Keyword.get(opts, :model),
       replay_quiet_ms: Keyword.get(opts, :replay_quiet_ms, @replay_quiet_ms),
       replay_max_ms: Keyword.get(opts, :replay_max_ms, @replay_max_ms),
@@ -254,6 +288,48 @@ defmodule Fountain.Runtimes.ACP.Peer do
   end
 
   def handle_cast(:cancel, state), do: {:noreply, state}
+
+  def handle_cast({:deny_permission, request_id}, state) do
+    case state.pending_permission do
+      %{request_id: ^request_id, id: id, options: options} ->
+        outcome = Fountain.Permissions.deny_outcome(options)
+
+        state
+        |> write(Protocol.response(id, %{outcome: outcome}))
+        |> Map.put(:pending_permission, nil)
+        |> noreply()
+
+      _ ->
+        {:noreply, state}
+    end
+  end
+
+  @impl true
+  # Answering is a `call` so the caller learns whether the answer landed: the
+  # request may already have been resolved by another attached client, by the
+  # timeout, or by the turn ending, and "too late" and "wrong option" are
+  # different things to tell a user.
+  def handle_call({:answer_permission, request_id, option_id}, _from, state) do
+    case state.pending_permission do
+      %{request_id: ^request_id, id: id, options: options} ->
+        if Enum.any?(options, &(&1["optionId"] == option_id)) do
+          state =
+            write(
+              state,
+              Protocol.response(id, %{outcome: %{outcome: "selected", optionId: option_id}})
+            )
+
+          {:reply, :ok, %{state | pending_permission: nil}}
+        else
+          # Never forward an id the agent did not offer. The adapter would at
+          # best error and at worst match something unrelated.
+          {:reply, {:error, :unknown_option}, state}
+        end
+
+      _ ->
+        {:reply, {:error, :no_pending_permission}, state}
+    end
+  end
 
   @impl true
   def handle_info({:DOWN, mon, :process, _pid, _reason}, %State{owner_mon: mon} = state) do
@@ -384,17 +460,25 @@ defmodule Fountain.Runtimes.ACP.Peer do
   # recorded: a turn makes dozens of tool calls, and a row each would make the
   # trail a transcript.
   defp handle_message({:request, id, "session/request_permission", params}, state) do
-    outcome = Fountain.Permissions.outcome(state.permission_policy, params)
     tool = Fountain.Permissions.tool_name(params)
     verdict = Fountain.Permissions.verdict_for(state.permission_policy, tool)
 
-    if verdict != "auto_allow", do: report(state, {:permission_denied, tool, verdict})
+    case verdict do
+      "ask" ->
+        hold_permission(state, id, tool, params)
 
-    write(state, Protocol.response(id, %{outcome: outcome}))
+      _ ->
+        if verdict != "auto_allow", do: report(state, {:permission_denied, tool, verdict})
+
+        write(
+          state,
+          Protocol.response(id, %{
+            outcome: Fountain.Permissions.outcome(state.permission_policy, params)
+          })
+        )
+    end
   end
 
-  # We declared no filesystem or terminal capabilities, so nothing should ask.
-  # If something does, it gets a JSON-RPC error rather than silence.
   defp handle_message({:request, id, method, _params}, state) do
     Logger.warning("acp peer: refusing unsupported client method #{method}")
     write(state, Protocol.error(id, Protocol.method_not_found(), "#{method} is not supported"))
@@ -404,6 +488,30 @@ defmodule Fountain.Runtimes.ACP.Peer do
   # stdout. Those are output, not protocol, and the transcript is more useful
   # with them in it.
   defp handle_message({:invalid, line}, state), do: persist(state, "stdout", [line, "\n"])
+
+  # `ask`: do not answer. The agent stays blocked while a human decides, which
+  # is the whole point, and is also why a timeout is not optional — see the
+  # owner, which arms one.
+  #
+  # The request line is persisted to the `acp` stream so it renders as a
+  # `permission_request` block inline in the transcript, exactly where the tool
+  # card it is about appears. The resolution is a separate `request` stage
+  # event: log events are immutable, so a block cannot become "answered" — the
+  # client pairs the two on `request_id`.
+  defp hold_permission(state, id, tool, params) do
+    options = Enum.filter(Map.get(params, "options") || [], &is_map/1)
+
+    state = persist(state, "acp", Protocol.request(id, "session/request_permission", params))
+    report(state, {:permission_ask, to_string(id), tool, options})
+
+    %{
+      state
+      | pending_permission: %{id: id, request_id: to_string(id), options: options, tool: tool}
+    }
+  end
+
+  # We declared no filesystem or terminal capabilities, so nothing should ask.
+  # If something does, it gets a JSON-RPC error rather than silence.
 
   # ── responses ─────────────────────────────────────────────────────────────
 
@@ -764,5 +872,26 @@ defmodule Fountain.Runtimes.ACP.Peer do
 
   # Prefer an option the agent itself marked as an allow. `optionId` is opaque
   # and adapter-defined, so picking by `kind` is the only portable choice.
+  # A held request handed back on reattach (#940). Stored as a string-keyed map
+  # on the turn row; the peer works in atoms. The JSON-RPC id has to come back
+  # as the integer the agent sent, because that is what it is blocked on.
+  defp restore_pending(%{"request_id" => request_id, "options" => options} = pending)
+       when is_binary(request_id) do
+    case Integer.parse(request_id) do
+      {id, ""} ->
+        %{
+          id: id,
+          request_id: request_id,
+          options: List.wrap(options),
+          tool: Map.get(pending, "tool")
+        }
+
+      _ ->
+        nil
+    end
+  end
+
+  defp restore_pending(_), do: nil
+
   defp noreply(state), do: {:noreply, state}
 end

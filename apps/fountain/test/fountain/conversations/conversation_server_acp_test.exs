@@ -871,4 +871,192 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
   #
   # When #659 lifts the block, a gemini conversation-level test belongs here
   # again.
+  describe "permission ask path (#940)" do
+    defp ask_agent(user) do
+      insert_agent(user_id: user.id, runtime: "claude", permission_policy: %{"Bash" => "ask"})
+    end
+
+    defp raise_permission(pid, ref, id) do
+      line =
+        Jason.encode!(%{
+          "jsonrpc" => "2.0",
+          "id" => id,
+          "method" => "session/request_permission",
+          "params" => %{
+            "toolCall" => %{"title" => "Bash", "kind" => "execute"},
+            "options" => [
+              %{"optionId" => "yes", "kind" => "allow_always"},
+              %{"optionId" => "no", "kind" => "reject_once"}
+            ]
+          }
+        }) <> "\n"
+
+      send(pid, {:stdout, %{ref: ref}, line})
+      settle(pid)
+    end
+
+    test "a held request is persisted on the turn and announced on the stream" do
+      user = insert_verified_user()
+      conv = insert_conversation(user_id: user.id, agent: ask_agent(user))
+      {pid, ref} = start_acp_turn(conv)
+      _init = next_write()
+
+      raise_permission(pid, ref, 301)
+
+      # Persisted first, so a deploy landing a millisecond later can still
+      # answer it.
+      turn = :sys.get_state(pid).current_turn
+      assert turn.pending_permission["request_id"] == "301"
+      assert turn.pending_permission["tool"] == "Bash"
+
+      # And announced, with the agent's own options.
+      events = Conversations._unsafe_list_log_events(conv.id)
+      stage = Enum.find(events, &(&1.kind == "stage" and &1.stage == "request"))
+      assert stage.state == "started"
+      assert Jason.decode!(stage.data)["request_id"] == "301"
+    end
+
+    test "the request renders as a permission_request block in the transcript" do
+      user = insert_verified_user()
+      conv = insert_conversation(user_id: user.id, agent: ask_agent(user))
+      {pid, ref} = start_acp_turn(conv)
+      _init = next_write()
+
+      raise_permission(pid, ref, 302)
+
+      blocks =
+        conv.id
+        |> Conversations._unsafe_list_log_events()
+        |> Enum.filter(&(&1.stream == "acp"))
+        |> Enum.flat_map(&Fountain.Conversations.Blocks.for_event(&1, "claude"))
+
+      assert block = Enum.find(blocks, &(&1.kind == :permission_request))
+      assert block.request_id == "302"
+      assert block.name == "Bash"
+      assert Enum.map(block.options, & &1["optionId"]) == ["yes", "no"]
+    end
+
+    test "answering writes the selected option and resolves the card" do
+      user = insert_verified_user()
+      conv = insert_conversation(user_id: user.id, agent: ask_agent(user))
+      {pid, ref} = start_acp_turn(conv)
+      _init = next_write()
+      raise_permission(pid, ref, 303)
+
+      assert :ok = GenServer.call(pid, {:answer_permission, "303", "yes"})
+
+      assert %{"id" => 303, "result" => %{"outcome" => %{"optionId" => "yes"}}} = next_write()
+
+      # The turn no longer holds it, and the stream says how it ended.
+      assert :sys.get_state(pid).current_turn.pending_permission == nil
+
+      done =
+        conv.id
+        |> Conversations._unsafe_list_log_events()
+        |> Enum.filter(&(&1.kind == "stage" and &1.stage == "request" and &1.state == "done"))
+
+      assert [event] = done
+      assert Jason.decode!(event.data)["outcome"] == "answered"
+    end
+
+    test "a resolution is state done, never failed, even for a refusal" do
+      # publish_stage's stage and status are the Prometheus counter's only tags
+      # and there is an alert on them. A deny emitting `failed` would page
+      # someone for a policy doing exactly what it was told.
+      user = insert_verified_user()
+      conv = insert_conversation(user_id: user.id, agent: ask_agent(user))
+      {pid, ref} = start_acp_turn(conv)
+      _init = next_write()
+      raise_permission(pid, ref, 304)
+
+      send(pid, {:permission_timeout, "304"})
+      settle(pid)
+
+      states =
+        conv.id
+        |> Conversations._unsafe_list_log_events()
+        |> Enum.filter(&(&1.kind == "stage" and &1.stage == "request"))
+        |> Enum.map(& &1.state)
+
+      assert "done" in states
+      refute "failed" in states
+    end
+
+    test "a timeout denies, and the denial is audited" do
+      user = insert_verified_user()
+      conv = insert_conversation(user_id: user.id, agent: ask_agent(user))
+      {pid, ref} = start_acp_turn(conv)
+      _init = next_write()
+      raise_permission(pid, ref, 305)
+
+      send(pid, {:permission_timeout, "305"})
+      settle(pid)
+
+      # Deny is the only safe default, and it picks the agent's own rejection.
+      assert %{"id" => 305, "result" => %{"outcome" => %{"optionId" => "no"}}} = next_write()
+
+      assert Enum.any?(
+               Fountain.Audit.list_recent_for_user(user.id, 20),
+               &(&1.action == "conversation.permission_denied")
+             )
+    end
+
+    test "answering an id that was never offered is refused, not forwarded" do
+      user = insert_verified_user()
+      conv = insert_conversation(user_id: user.id, agent: ask_agent(user))
+      {pid, ref} = start_acp_turn(conv)
+      _init = next_write()
+      raise_permission(pid, ref, 306)
+
+      assert {:error, :unknown_option} =
+               GenServer.call(pid, {:answer_permission, "306", "made-up"})
+
+      assert :sys.get_state(pid).current_turn.pending_permission["request_id"] == "306"
+    end
+
+    test "a sprite may not answer its own prompt" do
+      # It holds a FOUNTAIN_TOKEN and could otherwise approve the very tool it
+      # just asked for, which would make the policy decorative.
+      user = insert_verified_user()
+      conv = insert_conversation(user_id: user.id, agent: ask_agent(user))
+      {pid, ref} = start_acp_turn(conv)
+      _init = next_write()
+      raise_permission(pid, ref, 307)
+
+      assert {:error, :sprite_may_not_answer} =
+               Conversations.answer_permission_request(conv.id, user.id, "307", "yes",
+                 actor: "sprite"
+               )
+    end
+
+    test "another tenant cannot answer, and gets not_found rather than a hint" do
+      user = insert_verified_user()
+      other = insert_verified_user()
+      conv = insert_conversation(user_id: user.id, agent: ask_agent(user))
+      {pid, ref} = start_acp_turn(conv)
+      _init = next_write()
+      raise_permission(pid, ref, 308)
+
+      assert {:error, :not_found} =
+               Conversations.answer_permission_request(conv.id, other.id, "308", "yes")
+    end
+
+    test "a request still held when the turn ends is resolved, not left open" do
+      user = insert_verified_user()
+      conv = insert_conversation(user_id: user.id, agent: ask_agent(user))
+      {pid, ref} = start_acp_turn(conv)
+      prompt_id = drive_to_prompt(pid, ref)
+
+      raise_permission(pid, ref, 309)
+      reply(pid, ref, prompt_id, %{"stopReason" => "end_turn"})
+
+      done =
+        conv.id
+        |> Conversations._unsafe_list_log_events()
+        |> Enum.filter(&(&1.kind == "stage" and &1.stage == "request" and &1.state == "done"))
+
+      assert [event] = done
+      assert Jason.decode!(event.data)["outcome"] == "turn_ended"
+    end
+  end
 end

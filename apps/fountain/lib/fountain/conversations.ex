@@ -1664,6 +1664,58 @@ defmodule Fountain.Conversations do
   end
 
   @doc """
+  Answer a permission request a running agent is blocked on (#940).
+
+  Tenant-scoped: the conversation is fetched for `user_id` first, so a request
+  id from another tenant reads as not found rather than as a permission error.
+
+  **A sprite may not answer its own prompt.** It holds a `FOUNTAIN_TOKEN` and
+  could otherwise approve the very tool it just asked for, which would make the
+  policy decorative. The loop is closed by name here rather than left to the
+  actor vocabulary to imply.
+
+  Audited as a decision about tenant-owned state, per 0013: the tool and the
+  verdict, never the tool's input.
+  """
+  @spec answer_permission_request(binary(), binary(), String.t(), String.t(), keyword()) ::
+          :ok | {:error, term()}
+  def answer_permission_request(conv_id, user_id, request_id, option_id, opts \\ [])
+      when is_binary(conv_id) and is_binary(user_id) do
+    actor = Keyword.get(opts, :actor, "self")
+
+    cond do
+      actor == "sprite" ->
+        {:error, :sprite_may_not_answer}
+
+      is_nil(get_conversation(conv_id, user_id)) ->
+        {:error, :not_found}
+
+      true ->
+        do_answer_permission(conv_id, user_id, request_id, option_id, opts)
+    end
+  end
+
+  defp do_answer_permission(conv_id, user_id, request_id, option_id, opts) do
+    case ConversationServer.answer_permission(conv_id, request_id, option_id) do
+      :ok ->
+        Audit.record(%{
+          user_id: user_id,
+          action: "conversation.permission_answered",
+          resource_type: "conversation",
+          resource_id: conv_id,
+          actor: Keyword.get(opts, :actor, "self"),
+          request_ip: Keyword.get(opts, :request_ip),
+          metadata: %{"request_id" => request_id, "option_id" => option_id}
+        })
+
+        :ok
+
+      {:error, _} = err ->
+        err
+    end
+  end
+
+  @doc """
   Record that the permission policy withheld a tool from a running agent.
 
   Called by the `ConversationServer` when its peer reports a refusal (#939).

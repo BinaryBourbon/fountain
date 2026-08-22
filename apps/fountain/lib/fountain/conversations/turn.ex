@@ -19,6 +19,11 @@ defmodule Fountain.Conversations.Turn do
     # JSON-RPC id of the ACP `session/prompt` in flight; nil on the legacy
     # path and until the peer has written the prompt. See the migration.
     field :acp_prompt_id, :integer
+    # The `session/request_permission` this turn is blocked on (#940): the
+    # agent's JSON-RPC id, the tool, and the options it offered. nil whenever
+    # nothing is outstanding. Persisted so a request raised before a deploy is
+    # still answerable after one.
+    field :pending_permission, :map
     # The turn's token usage as the runtime reported it when the turn ended
     # (#827): `%{"input" => n, "output" => n, "cache_read" => n?,
     # "cache_write" => n?}`. Written once by `Conversations._unsafe_record_turn_usage/2`,
@@ -47,6 +52,7 @@ defmodule Fountain.Conversations.Turn do
       :started_at,
       :ended_at,
       :acp_prompt_id,
+      :pending_permission,
       :usage,
       :reply_text,
       :conversation_id

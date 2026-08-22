@@ -426,6 +426,9 @@ defmodule FountainWeb.Router do
       # The JSON read-model for the log feed; /stream below is the tail (#519).
       get "/events", ConversationController, :events, as: :events
       post "/read", ConversationController, :read, as: :read
+      # Answer a permission request the agent is blocked on (#940). Nested so
+      # the conversation is tenant-scoped before the request id is looked at.
+      post "/requests/:request_id", ConversationController, :answer_request, as: :answer_request
       get "/tree", ConversationController, :tree, as: :tree
     end
   end

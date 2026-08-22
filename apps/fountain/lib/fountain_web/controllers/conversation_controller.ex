@@ -352,6 +352,74 @@ defmodule FountainWeb.ConversationController do
     end
   end
 
+  operation(:answer_request,
+    summary: "Answer a permission request",
+    description:
+      "Answers a `session/request_permission` the agent is blocked on (#940). The " <>
+        "request and its options arrive as a `permission_request` block on the " <>
+        "conversation's event stream; `option_id` must be one of the `optionId` values " <>
+        "that block carried. Never send an option the agent did not offer.\n\n" <>
+        "First answer wins: another attached client, the timeout, or the turn ending " <>
+        "may already have resolved it, and all of those return 409. The resolution " <>
+        "appears on the stream as a `request` stage event with state `done`.",
+    parameters: [
+      conversation_id: [in: :path, type: :string, required: true],
+      request_id: [in: :path, type: :string, required: true]
+    ],
+    request_body: {"Answer", "application/json", Schemas.PermissionAnswerRequest},
+    responses: [
+      ok: {"Answered", "application/json", Schemas.PermissionAnswerResponse},
+      not_found: {"Not found", "application/json", Schemas.Error},
+      conflict: {"Already resolved", "application/json", Schemas.Error},
+      unprocessable_entity: {"Unknown option", "application/json", Schemas.Error}
+    ]
+  )
+
+  def answer_request(conn, %{"conversation_id" => id, "request_id" => request_id} = params) do
+    user = conn.assigns.current_user
+
+    case params["option_id"] do
+      option_id when is_binary(option_id) and option_id != "" ->
+        conn
+        |> Audited.attribution()
+        |> then(&Conversations.answer_permission_request(id, user.id, request_id, option_id, &1))
+        |> answer_response(conn)
+
+      _ ->
+        conn
+        |> put_status(:unprocessable_entity)
+        |> json(%{error: "option_id_required"})
+    end
+  end
+
+  defp answer_response(:ok, conn), do: json(conn, %{ok: true})
+
+  # Every "too late" is one status. A client that lost the race to another
+  # client and a client answering after the timeout are in the same position:
+  # the request is gone and the stream says how it ended.
+  defp answer_response({:error, reason}, conn)
+       when reason in [:no_pending_permission, :not_running] do
+    conn
+    |> put_status(:conflict)
+    |> json(%{error: "permission_request_resolved"})
+  end
+
+  defp answer_response({:error, :unknown_option}, conn) do
+    conn
+    |> put_status(:unprocessable_entity)
+    |> json(%{error: "unknown_option", message: "option_id was not offered for this request"})
+  end
+
+  defp answer_response({:error, :sprite_may_not_answer}, conn) do
+    conn
+    |> put_status(:forbidden)
+    |> json(%{error: "sprite_may_not_answer"})
+  end
+
+  defp answer_response({:error, :not_found}, conn) do
+    conn |> put_status(:not_found) |> json(%{error: "not_found"})
+  end
+
   @doc """
   Infer the conversation's `source` and `parent_conversation_id` from
   the `X-Fountain-Parent-Conversation-Id` (or legacy `X-AoD-Parent-Conversation-Id`)

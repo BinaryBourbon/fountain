@@ -171,18 +171,28 @@ defmodule Fountain.PermissionsTest do
   end
 
   describe "ask" do
-    test "is a verdict, but not one that can be honoured yet" do
+    test "is buildable since #940 gave it somewhere to ask" do
       assert "ask" in Permissions.verdicts()
-      refute Permissions.buildable?("ask")
+      assert Permissions.buildable?("ask")
       assert Permissions.buildable?("auto_allow")
       assert Permissions.buildable?("auto_deny")
     end
 
-    test "denies rather than allows if it ever reaches the peer" do
-      # It cannot today — refused where a policy is written, and clamping never
-      # invents it — but the safe reading is written down rather than assumed.
+    test "outcome/2 denies rather than allows, for a caller that asks anyway" do
+      # The peer does not route `ask` through outcome/2 — it holds the request
+      # open instead — but the safe reading is written down rather than assumed.
       assert %{outcome: "selected", optionId: "ro"} =
                Permissions.outcome(%{"default" => "ask"}, req([allow_always(), reject_once()]))
+    end
+
+    test "the timeout sits under the idle bound, or an unanswered prompt costs the disk" do
+      # Lifecycle.check/4 suppresses only the idle verdict while a turn is in
+      # flight, and per 0017 the idle bound suspends while the ceiling
+      # destroys. A timeout at or above the idle bound would mean an
+      # unanswered prompt is resolved by the ceiling instead — burning the
+      # whole lifetime and taking the agent's memory with it (#649).
+      assert Permissions.ask_timeout_ms() <
+               Fountain.Conversations.Lifecycle.idle_timeout_seconds() * 1000
     end
 
     test "is stricter than allow and looser than deny" do
