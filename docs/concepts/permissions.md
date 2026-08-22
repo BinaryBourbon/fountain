@@ -47,9 +47,9 @@ Fountain reads the keys in this order.
    `other`.
 3. The key `default`.
 
-**Prefer a kind.** The claude runtime puts the command itself in the title. A
-title key therefore matches one command, and nothing else. A kind means the
-same thing on each turn, and on each runtime.
+**Prefer a kind.** The claude and gemini runtimes put the command itself in the
+title, and codex sends no title. A title key therefore matches one command, and
+nothing else. A kind means the same thing on each turn, and on each runtime.
 
 ## When a human answers
 
@@ -81,7 +81,7 @@ Some rules keep that safe.
 | claude | Yes | Measured on claude-agent-acp 0.66. Safe commands that its own sandbox runs never reach Fountain. |
 | codex | Yes | Measured on codex-acp 1.1.14. |
 | opencode | **No** | It decides this in its own server, and sends nothing. Fountain refuses a policy stricter than `auto_allow` on this runtime, with 422 `permission_policy_unenforceable` ([#959](https://github.com/BinaryBourbon/fountain/issues/959)). |
-| gemini | n/a | Not available yet ([#659](https://github.com/BinaryBourbon/fountain/issues/659)). |
+| gemini | Yes | Measured on gemini 0.53 with `gemini-2.5-flash`. Its option ids are its own (`proceed_once`, `cancel`), so answer with an id from the request, never a name you know from another runtime. |
 
 ## What the audit trail keeps
 

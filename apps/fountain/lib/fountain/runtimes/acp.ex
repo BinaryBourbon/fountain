@@ -218,9 +218,14 @@ defmodule Fountain.Runtimes.ACP do
   someone writes a policy for it, rather than a policy that reads as
   protection and is not.
 
-  Measured 2026-08-22 against live agents: claude (claude-agent-acp 0.66) and
-  codex (codex-acp 1.1.14) both ask per tool call. opencode does not, ever.
-  gemini is not shippable (#659) and its own bypass flag is #941's.
+  Measured 2026-08-22 against live agents: claude (claude-agent-acp 0.66),
+  codex (codex-acp 1.1.14) and gemini (0.53, on the ACP path since #964) all ask
+  per tool call. opencode does not, ever.
+
+  Each runtime names its options differently — claude answers to `allow` and
+  `reject`, codex to `allow_once` and `reject_once`, gemini to `proceed_once`
+  and `cancel` — which is why every answer path picks from the list the agent
+  sent rather than from a name we know.
   """
   @spec asks_permission?(String.t()) :: boolean()
   def asks_permission?(runtime) do
