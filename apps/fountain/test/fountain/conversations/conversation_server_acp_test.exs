@@ -475,6 +475,67 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
     end
   end
 
+  describe "a model the provider refuses (#970)" do
+    setup do
+      user = insert_verified_user()
+
+      agent =
+        insert_agent(user_id: user.id, runtime: "gemini", model: "google/gemini-2.5-pro")
+
+      {:ok, conv: insert_conversation(agent: agent, user_id: user.id)}
+    end
+
+    defp model_gone_reply(pid, ref, id) do
+      line =
+        Jason.encode!(%{
+          "jsonrpc" => "2.0",
+          "id" => id,
+          "error" => %{
+            "code" => 500,
+            "message" =>
+              "This model models/gemini-2.5-pro is no longer available to new users. " <>
+                "Please update your code to use models/gemini-3.1-pro-preview for the " <>
+                "latest features and improvements."
+          }
+        }) <> "\n"
+
+      send(pid, {:stdout, %{ref: ref}, line})
+      settle(pid)
+    end
+
+    test "the turn fails with the provider's sentence, not an inspected tuple", %{conv: conv} do
+      {pid, ref} = start_acp_turn(conv)
+      prompt_id = drive_to_prompt(pid, ref)
+      model_gone_reply(pid, ref, prompt_id)
+
+      assert [turn] = Conversations._unsafe_list_turns(conv.id)
+      assert turn.status == "failed"
+
+      stage = failed_turn_stage(conv.id)
+      # The point of #970: what the tenant reads names the model, quotes the
+      # provider (which names the replacement) and says what to change.
+      assert stage.data =~ "gemini-2.5-pro"
+      assert stage.data =~ "no longer available to new users"
+      assert stage.data =~ "gemini-3.1-pro-preview"
+      assert stage.data =~ "Change the agent's model"
+      refute stage.data =~ ":acp_error"
+    end
+
+    test "publishes a model stage carrying the requested id as a field", %{conv: conv} do
+      {pid, ref} = start_acp_turn(conv)
+      prompt_id = drive_to_prompt(pid, ref)
+      model_gone_reply(pid, ref, prompt_id)
+
+      assert stage =
+               conv.id
+               |> Conversations._unsafe_list_log_events()
+               |> Enum.find(&(&1.kind == "stage" and &1.stage == "model"))
+
+      assert stage.state == "failed"
+      assert stage.data =~ "gemini-2.5-pro"
+    end
+  end
+
   describe "turn 2" do
     test "resumes by the persisted id rather than guessing" do
       # The hazard 0014 names: gemini's `--resume` and codex's `--last` re-enter

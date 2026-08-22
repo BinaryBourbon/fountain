@@ -42,6 +42,26 @@ defmodule Fountain.Runtimes.Model do
   # prefixes). A typo like `anthopic/...` used to reach the sprite with no
   # inference credentials at all and fail as an auth error in the conversation
   # log; `Agent.changeset/2` now rejects it at write time.
+  #
+  # #970 asked whether the picker should instead verify a model against the
+  # provider. It should not, and the reason is worth keeping:
+  #
+  #   * The listings lie. Google's `GET /v1beta/models` still returns
+  #     `gemini-2.5-pro` with `generateContent` among its supported methods,
+  #     months after the API stopped serving it to new keys. So does gemini's
+  #     own ACP adapter, which accepted `session/set_model` for that id and
+  #     failed only when the turn called it.
+  #   * The only authoritative check is a real inference call, per tenant key,
+  #     billed, at form time — for an answer that is true for one key at one
+  #     moment and that a retirement can invalidate the next day.
+  #   * A verified picker would still not have caught #970. The agent was saved
+  #     while the model worked.
+  #
+  # The catalog therefore stays advice, and the honest guarantee is made at the
+  # other end: when the provider does refuse a model, the peer names that as
+  # the kind of failure and the tenant reads the provider's own sentence, which
+  # names the replacement. See `Fountain.Runtimes.ACP.Peer`'s
+  # `model_unavailable?/1` and its handler in `ConversationServer`.
   @catalog %{
     "anthropic" => ~w(
       claude-opus-5

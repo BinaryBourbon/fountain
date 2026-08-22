@@ -1808,6 +1808,38 @@ defmodule Fountain.Conversations.ConversationServer do
      )}
   end
 
+  # #970: the provider refused the model, so this turn and every later one on
+  # this agent fail the same way until someone changes the field. The peer
+  # already read the kind out of the provider's sentence; what is left is to
+  # deliver it as a sentence rather than as an inspected tuple, and to publish
+  # the `model` stage so a client has the requested id as a field and can point
+  # at the agent that carries it.
+  #
+  # Nothing is swapped in, unlike the OAuth clause above. There is no second
+  # model to fall back to that the tenant did not choose, and picking one would
+  # answer their prompt with a model they never asked for.
+  def handle_info(
+        {:acp, ref, {:failed, {:model_unavailable, requested, detail}}},
+        %{current_command_ref: ref} = state
+      ) do
+    Logger.warning(
+      "conv #{state.conversation_id}: provider refused model #{requested || "(unset)"}: #{detail}"
+    )
+
+    publish_stage(state.conversation_id, "model", "failed", %{
+      requested: requested,
+      detail: detail,
+      using: "none, the turn failed"
+    })
+
+    message = model_unavailable_message(requested, detail)
+
+    {:noreply,
+     finish_acp_turn(state, "failed", %{"error" => message, "acp.model_unavailable" => true}, %{
+       reason: message
+     })}
+  end
+
   def handle_info({:acp, ref, {:failed, reason}}, %{current_command_ref: ref} = state) do
     Logger.error("conv #{state.conversation_id}: acp peer failed: #{inspect(reason)}")
 
@@ -3184,6 +3216,18 @@ defmodule Fountain.Conversations.ConversationServer do
 
   defp publish_stage(conv_id, stage, status, meta \\ %{}) do
     Conversations.publish_stage(conv_id, stage, status, meta)
+  end
+
+  # The provider's own sentence is the useful half, and it usually names the
+  # replacement, so it is quoted rather than summarised. Fountain adds only
+  # what the provider cannot know: which field holds the model, and that no
+  # retry helps until that field changes.
+  defp model_unavailable_message(requested, detail) do
+    named = if is_binary(requested) and requested != "", do: " (#{requested})", else: ""
+
+    "The provider refused this agent's model#{named}: #{String.trim(detail)} " <>
+      "Change the agent's model, then send your prompt again. " <>
+      "Every turn fails the same way until it changes."
   end
 
   # Every turn passes through here, whichever door it came in by — the

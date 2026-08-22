@@ -422,6 +422,57 @@ defmodule Fountain.Runtimes.ACP.PeerTest do
       assert detail =~ "oauth_org_not_allowed"
     end
 
+    test "a provider that refuses the model is distinguished from a generic error (#970)", ctx do
+      pid = start_peer(ctx, model: "gemini-2.5-pro")
+      %{"id" => init_id} = next_write()
+      send_response(pid, init_id, %{"agentCapabilities" => caps()})
+      %{"id" => new_id} = next_write()
+      # No `models` and no `configOptions`, so the model is never pinned — which
+      # is the #970 shape at its worst: nothing refuses the id until the turn
+      # calls it.
+      send_response(pid, new_id, %{"sessionId" => "s"})
+      %{"id" => prompt_id} = next_write()
+
+      Peer.stdout(
+        pid,
+        Jason.encode!(%{
+          "jsonrpc" => "2.0",
+          "id" => prompt_id,
+          "error" => %{
+            "code" => 500,
+            "message" =>
+              "This model models/gemini-2.5-pro is no longer available to new users. " <>
+                "Please update your code to use models/gemini-3.1-pro-preview for the " <>
+                "latest features and improvements."
+          }
+        }) <> "\n"
+      )
+
+      assert_receive {:acp, _ref, {:failed, {:model_unavailable, "gemini-2.5-pro", detail}}}
+      assert detail =~ "no longer available to new users"
+      assert detail =~ "gemini-3.1-pro-preview"
+    end
+
+    test "a not-found that is not about a model stays a generic error (#970)", ctx do
+      pid = start_peer(ctx, model: "gemini-3.1-pro-preview")
+      %{"id" => init_id} = next_write()
+      send_response(pid, init_id, %{"agentCapabilities" => caps()})
+      %{"id" => new_id} = next_write()
+      send_response(pid, new_id, %{"sessionId" => "s"})
+      %{"id" => prompt_id} = next_write()
+
+      Peer.stdout(
+        pid,
+        Jason.encode!(%{
+          "jsonrpc" => "2.0",
+          "id" => prompt_id,
+          "error" => %{"code" => -32_602, "message" => "session not found"}
+        }) <> "\n"
+      )
+
+      assert_receive {:acp, _ref, {:failed, {:acp_error, :prompt, _error}}}
+    end
+
     test "the same error kind at session setup is not special-cased — only the prompt call is",
          ctx do
       pid = start_peer(ctx, [])
