@@ -77,6 +77,22 @@ therefore not defence *in depth* — it is the only defence there is. ACP's
 the client answers. That is a channel we do not have and cannot build without
 forking four CLIs.
 
+> **Correction, 2026-08-21.** The paragraph above describes 2026-08-09 and is
+> kept for the reasoning that motivated the ADR, but three of its four flags no
+> longer exist: claude, codex and opencode lost theirs when the legacy spawn
+> path was deleted (#671-#675). Only `gemini.ex:50` still passes
+> `--approval-mode yolo`, and only because gemini is held back from ACP by an
+> upstream defect (#659).
+>
+> The rail is still off, but it is off in **one function Fountain owns**:
+> `permission_outcome/1` (`runtimes/acp/peer.ex:747`) answers every request by
+> picking `allow_always`, else `allow_once`, else the first option offered,
+> plus one pre-approval at session setup (`enableAllProjectMcpServers`,
+> `claude.ex:93`). That is a smaller and much more tractable problem than the
+> one this ADR was written against: the channel exists, the request arrives
+> with its tool name and option list intact, and what is missing is a policy
+> to consult instead of a constant. See gate 3.
+
 **Two runtimes resume by guessing.** `gemini.ex:14-17` documents that
 `--resume` re-enters "the most recent conversation in the workspace" because
 Gemini will not accept a session id; `codex.ex:24-26` documents the same for
@@ -130,8 +146,16 @@ Two things the boxes are there to make hard to misread.
 **The vertical edges are asymmetric, and the traffic runs both ways on each.**
 `session/prompt` travels down and its stop reason comes back up;
 `session/update` only ever travels up; `session/request_permission` originates
-at the *bottom* and is answered from the top, which is why gate 3 below is the
-gate that justifies the project.
+at the *bottom* and is answered from the top — the one place Fountain must
+carry a request upward and an answer back down.
+
+> **Amendment, 2026-08-21.** This sentence used to end "which is why gate 3
+> below is the gate that justifies the project". That claim is withdrawn. #644
+> departed from it on 2026-08-13 and gate 4 records the reasoning: if the
+> justification is deleting per-runtime code, permissions belong *after* the
+> conversions rather than gating them. The conversions have since landed and
+> paid for themselves without gate 3. The asymmetry described here is still
+> the interesting part of the protocol; it is not what the project rests on.
 
 **Placement is not on this diagram, and that is deliberate.** Which sandbox
 platform runs the sprite, and in whose cloud, is a separate axis that ACP says
@@ -559,12 +583,66 @@ where the legacy path fails on an id it guessed.
 
 ### Gate 3 — permissions — **not built**
 
-Implement `session/request_permission` against the conversation LiveView: a
-real approval prompt, per tool call, with the answer written back over the
-same connection. This is the gate that justifies the project. If gates 1-2
-land and gate 3 turns out to be blocked — by adapter support, by latency, by
-the reaper killing sessions mid-prompt — the honest outcome is to stop with
-one runtime converted and say so here.
+> **Rewritten 2026-08-21.** As drafted this gate said "implement
+> `session/request_permission` against the conversation LiveView". That
+> LiveView no longer exists — conversations and team are separate apps served
+> over the API (#865-#870) — and the request half is already built
+> (`peer.ex:372`). What follows replaces the original text, which claimed a
+> channel had to be created when what it needs is a policy and a door.
+
+Tracked as #643, split into #939 (the policy), #940 (the ask path) and #941
+(gemini's remaining flag).
+
+**The policy.** A per-tool permission map — `auto_allow` / `auto_deny` / `ask`
+— held on the agent and resolvable per launch, the shape `environment_id` took
+in #783. **A launch may narrow the agent's map; it may never widen it.** That
+single rule is what keeps a launch-time override from being an escalation
+path, and it is why no `allowed_*` list is needed alongside it. The global
+default stays `auto_allow`, so adopting the policy changes no existing
+conversation's behaviour.
+
+`auto_deny` selects a `reject_*` option when the agent offered one and
+`cancelled` when it did not. **Never synthesise an option the agent did not
+offer** — what a given adapter does on `cancelled` differs, and must be
+measured per adapter rather than assumed.
+
+**The wire.** The request surfaces as a `permission_request` **block** on the
+`acp` stream, so it renders inline in the transcript through the pipeline
+clients already run (`Blocks.for_event/2`); the resolution is a **stage
+event** (`stage: "request"`, `state: "done"`, verdict in `data`), because log
+events are immutable and resolution is the operationally meaningful
+transition the stage counter should see. Clients pair the two on `request_id`,
+exactly as they already pair `tool_result` to `tool_use` on `tool_id`. This
+needs no change to the closed `state` enum.
+
+**What answers when nobody is watching.** A permission timeout, defaulting
+well under `idle_timeout_seconds`, whose expiry is **deny**. The alternative —
+reporting a blocked turn as `busy?: false` so idle reclaim catches it — was
+rejected: it lies about busyness, and suspending a sandbox mid-request is its
+own failure. This matters more than the original text knew. `Lifecycle.check/4`
+suppresses only the *idle* verdict when busy, so a blocked turn today sails
+past the idle bound and is resolved by the ceiling — and per 0017 the idle
+bound suspends while the ceiling **destroys**. Left alone, an unanswered
+prompt does not hang forever; it burns the maximum lifetime and then takes the
+agent's memory with it (#649).
+
+**Survival across a restart.** The JSON-RPC request id lives in the peer and
+dies with it, so a request minted before a deploy cannot be answered after one
+unless the id is persisted the way `acp_prompt_id` already is — the same trap
+`attempt_session_attach` orphans a turn for today
+(`conversation_server.ex:1005`), and the one #772 was.
+
+**Audit.** Denials and policy changes are recorded, per 0013 — in the context,
+tool and verdict only, never values. Allows are not: a turn makes dozens of
+tool calls, and a row per allow would make the trail a transcript.
+
+**Not permitted:** a sprite answering its own permission request. It holds a
+`FOUNTAIN_TOKEN`, and that loop is closed by name rather than by accident.
+
+If this gate turns out to be blocked — by adapter support, by latency, by the
+reaper killing sessions mid-prompt — the honest outcome is to say so here. It
+is no longer a reason to stop the campaign; gates 2 and 4 have already paid
+for it.
 
 ### Gate 4 — remaining runtimes, and parser deletion — **in progress**
 
