@@ -1,10 +1,14 @@
 # Reference Daytona snapshot for Fountain sandboxes.
 #
-# Build and push with the Daytona CLI from this directory:
+# Build it, and smoke the result, with:
 #
-#     daytona snapshot create fountain --dockerfile Dockerfile
+#     DAYTONA_API_KEY=... scripts/sandbox-image/build-daytona.sh
 #
-# then point the instance at it with DAYTONA_SNAPSHOT=fountain.
+# then point the instance at it with DAYTONA_SNAPSHOT=fountain. CI runs the
+# same script on a change to this directory and once a week for the CLI
+# versions below (.github/workflows/sandbox-images.yml). A snapshot name
+# cannot be rebuilt in place, so that script deletes the name and creates it
+# again; the script's header has what that costs.
 #
 # Recreates the Sprites base-image shape the provisioning pipeline assumes:
 # a `sprite` user with passwordless sudo, HOME=/home/sprite, ~/.local/bin on

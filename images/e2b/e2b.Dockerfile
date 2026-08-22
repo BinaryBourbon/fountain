@@ -1,10 +1,12 @@
 # Reference E2B template for Fountain sandboxes.
 #
-# Build with the E2B CLI from this directory:
+# Build it, and smoke the result, with:
 #
-#     e2b template build --name fountain --dockerfile e2b.Dockerfile
+#     E2B_API_KEY=... scripts/sandbox-image/build-e2b.sh
 #
-# then point the instance at it with E2B_TEMPLATE=fountain.
+# then point the instance at it with E2B_TEMPLATE=fountain. CI runs the same
+# script on a change to this directory and once a week for the CLI versions
+# below (.github/workflows/sandbox-images.yml).
 #
 # The provisioning pipeline assumes the Sprites base-image shape: a `sprite`
 # user with passwordless sudo, HOME=/home/sprite, ~/.local/bin on PATH, bash,

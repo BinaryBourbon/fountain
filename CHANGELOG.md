@@ -78,6 +78,24 @@ upgrade, is in
   change in Elixir cannot leave the SDK describing an API that no longer
   exists. Generating it immediately found one: see below.
 
+- **The E2B template and the Daytona snapshot are rebuilt by CI** (#692). Both
+  were hand-built artifacts from one afternoon in August, and nothing rebuilt
+  them when `images/` changed or refreshed the four agent CLIs baked into
+  them. A stale sandbox image does not announce itself: every conversation
+  pinned to that provider quietly runs a months-old `claude`, `codex`,
+  `gemini` or `opencode`. The new `Sandbox images` workflow rebuilds both on a
+  change to `images/`, once a week for the CLI versions, and on dispatch.
+
+  Each rebuild is smoke-tested in a real sandbox against
+  `scripts/sandbox-image/smoke.sh`, which is one file both providers ship
+  in-guest so they are held to the same contract. It does the global npm
+  install rather than reading the prefix setting, because #691's failure mode
+  was exit 243 with no output and the setting looked right. Pull requests run
+  the same Dockerfiles through `docker build` and the same smoke, with no
+  provider account involved — which is also what stands between an upstream
+  apt or npm break and the minutes when the Daytona snapshot name, which
+  cannot be rebuilt in place, does not exist.
+
 ### Fixed
 
 - **Every line of every code block in `/docs` and `/help` had a light box
