@@ -115,10 +115,21 @@ at a dead end, with no error to see. Read [Email](guides/operate/email.md).
 | `BILLING_ENABLED` | `false` | — | The subscription gate. It is off by default, because on a self-hosted instance it is a lock with no key. Set `true` only if you run Fountain commercially, with Stripe configured. |
 | `STRIPE_SECRET_KEY` | — | For billing. | The Stripe API key. |
 | `STRIPE_WEBHOOK_SECRET` | — | For billing. | Verifies the signature on a `POST /api/stripe/webhook`. |
-| `STRIPE_PRICE_ID` | — | For checkout. | The subscription price that Checkout shows. Leave it unset with billing on, and a signup gets a purely local 14-day trial, with a logged warning. |
-| `STRIPE_PRICE_MONTHLY_CENTS` | — | No. | The monthly price in cents, such as `2900`. It is for display alone, and it feeds the MRR tile in the admin overview. Unset, the tile shows a placeholder, and not a number somebody invented. |
+| `STRIPE_PRICE_ID` | — | No. | The flat price that the plans replaced. Accounts that bought it stay on the closed `legacy` plan. A new deployment does not need it. |
+| `STRIPE_PRICE_ID_SOLO` | — | For the Solo plan. | The Stripe price for Solo. A plan with no price stays off the pricing table and off the plan picker. |
+| `STRIPE_PRICE_ID_TEAM` | — | For the Team plan. | The Stripe price for Team. |
+| `STRIPE_PRICE_ID_SCALE` | — | For the Scale plan. | The Stripe price for Scale. |
+| `STRIPE_PRICE_ID_CONTACT` | — | No. | The Stripe price for one teammate contact. Fountain sets the quantity of that subscription item to the number of contacts the tenant holds. Leave it unset, and teammate contacts cost the tenant nothing. |
+| `STRIPE_CONTACT_PRICE_CENTS` | `500` | No. | The monthly price of one teammate contact, in cents. It is for display alone. |
+| `STRIPE_PRICE_MONTHLY_CENTS` | — | No. | The monthly price of the `legacy` plan, in cents, such as `2900`. It is for display alone, and it feeds the MRR tile in the admin overview. Unset, the tile shows a placeholder, and not a number somebody invented. |
+| `DEFAULT_PLAN` | `solo` | No. | The plan for an account that has no plan of its own. On a self-hosted instance that is every account. Set `DEFAULT_PLAN=scale` to give every account the highest concurrency cap. |
 
 <!-- vale STE.IngForms = YES -->
+
+Each plan sets one number that Fountain enforces: how many sandboxes the tenant
+can run at the same time. Run `mix fountain.verify_plans` after you set a price
+variable. The task reads each price from Stripe and fails if the amount differs
+from the catalog.
 
 ## Legal pages
 

@@ -24,6 +24,12 @@
     Fountain.Repo,
     Fountain.Mailer,
     Fountain.Release,
+    # The release-verification commands (`fountain.verify_lifecycle`,
+    # `fountain.verify_plans`). Both exist to talk to a real Stripe account —
+    # a Test Clock walk and a live price check — which is exactly what CI
+    # cannot do, so the suite can never exercise them. They are run by hand
+    # before a billing-touching release; see docs/integrations/stripe.md.
+    ~r/^Mix\.Tasks\.Fountain\./,
     Fountain.Telemetry,
     Fountain.SandboxSkills,
     Fountain.Conversations.Provisioning,

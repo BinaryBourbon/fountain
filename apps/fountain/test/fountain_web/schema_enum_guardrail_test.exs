@@ -63,6 +63,8 @@ defmodule FountainWeb.SchemaEnumGuardrailTest do
     {FountainWeb.Schemas.AvatarRequest, "media_type"} => {Images, :valid_media_types},
     {FountainWeb.Schemas.ImageInput, "media_type"} => {Images, :valid_media_types},
     {FountainWeb.Schemas.BillingResponse, "data.status"} => {User, :subscription_statuses},
+    {FountainWeb.Schemas.AdminUser, "plan"} => {Fountain.Plans, :slugs},
+    {FountainWeb.Schemas.BillingResponse, "data.plan.slug"} => {Fountain.Plans, :slugs},
     {FountainWeb.Schemas.BuzzIdentity, "respond_to"} => {BuzzIdentity, :respond_to_modes},
     {FountainWeb.Schemas.BuzzProvisionRequest, "respond_to"} => {BuzzIdentity, :respond_to_modes},
     {FountainWeb.Schemas.BuzzAccessUpdateRequest, "respond_to"} =>

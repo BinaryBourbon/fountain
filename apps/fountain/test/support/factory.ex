@@ -23,8 +23,16 @@ defmodule Fountain.Factory do
   end
 
   def insert_user(overrides \\ %{}) do
-    {:ok, user} = Fountain.Accounts.register_user(user_attrs(overrides))
-    user
+    attrs = user_attrs(overrides)
+    {:ok, user} = Fountain.Accounts.register_user(Map.delete(attrs, "plan"))
+
+    # `plan` is not a registration field — it follows the Stripe price on the
+    # subscription — so a test asking for one gets it stamped afterwards, the
+    # same way the webhook sync does.
+    case attrs["plan"] do
+      nil -> user
+      plan -> user |> Fountain.Accounts.User.plan_changeset(%{plan: plan}) |> Repo.update!()
+    end
   end
 
   def insert_verified_user(overrides \\ %{}) do

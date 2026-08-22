@@ -18,14 +18,16 @@ no key. Set this up only if you run Fountain commercially.
 |---|---|
 | Required | No, and off by default. |
 | Provider | Stripe. |
-| Env vars | `BILLING_ENABLED`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_ID` |
+| Env vars | `BILLING_ENABLED`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_ID_SOLO`, `STRIPE_PRICE_ID_TEAM`, `STRIPE_PRICE_ID_SCALE` |
 | Webhook | `<PUBLIC_URL>/api/stripe/webhook` |
 | Without it | No billing, which is correct for most self-hosted instances. |
 
 ## The provider side
 
-1. **A product with a recurring price.** Its price ID (`price_…`) becomes
-   `STRIPE_PRICE_ID`.
+1. **A product with a recurring monthly price for each plan you sell.** The
+   price IDs (`price_…`) become `STRIPE_PRICE_ID_SOLO`, `STRIPE_PRICE_ID_TEAM`
+   and `STRIPE_PRICE_ID_SCALE`. See
+   [Launch plans and prices](../guides/operate/plans-and-prices.md).
 2. **An API key**, from Developers → API keys, as `STRIPE_SECRET_KEY`.
 3. **A webhook endpoint** pointed at `<PUBLIC_URL>/api/stripe/webhook`,
    subscribed to these events.
@@ -56,7 +58,10 @@ instance that takes real money.
 | `BILLING_ENABLED` | `false` by default. `true` enforces the subscription gate on conversations. |
 | `STRIPE_SECRET_KEY` | The API key. |
 | `STRIPE_WEBHOOK_SECRET` | Verifies a webhook signature. Fountain rejects a bad signature with a 400. |
-| `STRIPE_PRICE_ID` | The price that Checkout shows. Leave it unset with billing on, and a signup gets a purely local 14-day trial, with a logged warning. Checkout then does not work. |
+| `STRIPE_PRICE_ID_SOLO` | The price for the Solo plan, and the price a trial opens on by default. Leave every plan price unset with billing on, and a signup gets a purely local 14-day trial, with a logged warning. Checkout then does not work. |
+| `STRIPE_PRICE_ID_TEAM` | The price for the Team plan. |
+| `STRIPE_PRICE_ID_SCALE` | The price for the Scale plan. |
+| `STRIPE_PRICE_ID` | The flat price that the plans replaced. Accounts that bought it stay on the closed `legacy` plan. A new deployment does not need it. |
 
 ## Behavior worth knowing
 
