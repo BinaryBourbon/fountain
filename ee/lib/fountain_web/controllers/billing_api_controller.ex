@@ -83,7 +83,16 @@ defmodule FountainWeb.BillingApiController do
       "Starts a subscription. Refused for a comped account, and refused with " <>
         "`subscription_exists` when Stripe already holds a live subscription — " <>
         "Checkout on top of one creates a second, duplicate subscription. Use " <>
-        "the portal endpoint in that case.",
+        "the portal endpoint in that case. `plan` names the tier to buy; " <>
+        "omit it for this deployment's default.",
+    parameters: [
+      plan: [
+        in: :query,
+        type: %OpenApiSpex.Schema{type: :string, enum: Fountain.Plans.slugs()},
+        required: false,
+        description: "Plan slug to subscribe to."
+      ]
+    ],
     responses: [
       ok: {"Stripe URL", "application/json", Schemas.StripeUrlResponse},
       conflict: {"Live subscription exists", "application/json", Schemas.Error},
@@ -94,13 +103,13 @@ defmodule FountainWeb.BillingApiController do
     ]
   )
 
-  def checkout(conn, _params) do
+  def checkout(conn, params) do
     user = conn.assigns.current_user
 
     with :ok <- require_billing(),
          {:ok, false} <- live_subscription(user) do
       user
-      |> Billing.checkout_url(return_url())
+      |> Billing.checkout_url(return_url(), params["plan"])
       |> render_url(conn)
     else
       {:ok, true} ->

@@ -983,18 +983,37 @@ defmodule Fountain.Accounts do
   end
 
   @doc """
-  Set a user's concurrent-sandbox cap (ADR 0005). Admin-only.
+  Override a user's concurrent-sandbox cap (ADR 0005). Admin-only.
 
-  Without this the cap is only adjustable with direct database access, which
-  makes it unusable in the two situations it exists for: raising it for a
-  trusted tenant, and dropping it to zero during abuse.
+  The cap normally comes from the plan (`Fountain.Plans`). This is the
+  operator's override for the two things a plan cannot express: raising the
+  cap for a trusted tenant, and dropping it to zero during abuse. `nil` clears
+  the override and hands the cap back to the plan.
   """
   def update_sandbox_limit(%User{} = user, limit, opts \\ []) do
     user
-    |> User.sandbox_limit_changeset(%{max_concurrent_sandboxes: limit})
+    |> User.sandbox_limit_changeset(%{sandbox_limit_override: limit})
     |> Repo.update()
     |> audited_account("account.sandbox_limit_changed", "user", opts, fn updated ->
-      %{"from" => user.max_concurrent_sandboxes, "to" => updated.max_concurrent_sandboxes}
+      %{"from" => user.sandbox_limit_override, "to" => updated.sandbox_limit_override}
+    end)
+  end
+
+  @doc """
+  Set a user's plan slug (`Fountain.Plans`). Admin-only.
+
+  The subscription normally decides this: `Billing.sync_subscription/1` maps
+  the Stripe price on the subscription to a slug. This is the correction path
+  for when it has not, or cannot — a comped account, or a price Stripe knows
+  and this deployment does not. It changes what the tenant may consume; it
+  does not change what Stripe charges them.
+  """
+  def update_plan(%User{} = user, plan, opts \\ []) do
+    user
+    |> User.plan_changeset(%{plan: plan})
+    |> Repo.update()
+    |> audited_account("account.plan_changed", "user", opts, fn updated ->
+      %{"from" => user.plan, "to" => updated.plan}
     end)
   end
 

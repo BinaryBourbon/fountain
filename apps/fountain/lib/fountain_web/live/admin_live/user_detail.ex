@@ -182,9 +182,13 @@ defmodule FountainWeb.AdminLive.UserDetail do
         <div class="bg-white rounded shadow border border-zinc-200 px-4 py-3">
           <div class="text-xs text-zinc-500">Sandboxes</div>
           <div class="text-sm font-medium tabular-nums">
-            {@active_sandboxes} / {@user.max_concurrent_sandboxes}
+            {@active_sandboxes} / {Fountain.Quotas.sandbox_limit_for(@user)}
           </div>
-          <div class="text-xs text-zinc-500">active / limit</div>
+          <div class="text-xs text-zinc-500">
+            active / limit · {if @user.sandbox_limit_override,
+              do: "override",
+              else: "#{Fountain.Plans.resolve(@user.plan).name} plan"}
+          </div>
         </div>
         <div class="bg-white rounded shadow border border-zinc-200 px-4 py-3">
           <div class="text-xs text-zinc-500">Resources</div>

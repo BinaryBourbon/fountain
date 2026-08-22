@@ -246,7 +246,9 @@ defmodule Fountain.Analytics do
       "cancel_at_period_end" => user.cancel_at_period_end,
       "trial_ends_at" => iso(user.trial_ends_at),
       "current_period_end" => iso(user.current_period_end),
-      "max_concurrent_sandboxes" => user.max_concurrent_sandboxes,
+      "plan" => Fountain.Plans.resolve(user.plan).slug,
+      "max_concurrent_sandboxes" => Fountain.Quotas.sandbox_limit_for(user),
+      "sandbox_limit_override" => user.sandbox_limit_override,
       "has_stripe_customer" => not is_nil(user.stripe_customer_id)
     }
     |> with_pii(user)

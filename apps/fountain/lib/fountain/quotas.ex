@@ -7,8 +7,11 @@ defmodule Fountain.Quotas do
   concurrency cap is the primary defence against one account — whether abusive,
   scripted, or merely enthusiastic — consuming the platform's capacity.
 
-  The cap is `users.max_concurrent_sandboxes` (default 5) and is admin-adjustable
-  per user: raise it for a trusted tenant, lower it during abuse.
+  The cap comes from the tenant's plan (`Fountain.Plans`) — that is the axis
+  the tiers are sold on. `users.sandbox_limit_override` wins when it is set,
+  which is the admin lever the plan cannot express: raise it for a trusted
+  tenant, drop it to zero during abuse. A null override means "whatever the
+  plan says", so an upgrade takes effect without anyone touching the column.
 
   ## What counts
 
@@ -27,9 +30,9 @@ defmodule Fountain.Quotas do
 
   alias Fountain.Accounts.User
   alias Fountain.Conversations.Sandbox
+  alias Fountain.Plans
   alias Fountain.Repo
 
-  @default_limit 5
   @active_statuses ~w(pending starting ready)
 
   defmodule QuotaExceededError do
@@ -80,18 +83,33 @@ defmodule Fountain.Quotas do
   end
 
   @doc """
-  The concurrency cap for `user_id`.
+  The concurrency cap for `user_id`: the override if it has one, otherwise
+  the plan's.
 
-  Falls back to the default if the user is missing or the column is null, so a
+  A user who cannot be found at all falls back to the default plan's cap, so a
   lookup failure tightens rather than removes the limit.
   """
   @spec sandbox_limit(binary()) :: non_neg_integer()
   def sandbox_limit(user_id) when is_binary(user_id) do
-    case Repo.one(from u in User, where: u.id == ^user_id, select: u.max_concurrent_sandboxes) do
-      nil -> @default_limit
-      limit -> limit
+    query = from u in User, where: u.id == ^user_id, select: {u.sandbox_limit_override, u.plan}
+
+    case Repo.one(query) do
+      {override, plan} -> resolve_limit(override, plan)
+      nil -> Plans.concurrent_sandboxes(nil)
     end
   end
+
+  @doc """
+  The same answer as `sandbox_limit/1` for a user already loaded — for the
+  admin table, which shows the cap on every row and must not run a query per
+  row (the same contract as `active_sandbox_counts/0`).
+  """
+  @spec sandbox_limit_for(User.t()) :: non_neg_integer()
+  def sandbox_limit_for(%User{sandbox_limit_override: override, plan: plan}),
+    do: resolve_limit(override, plan)
+
+  defp resolve_limit(override, _plan) when is_integer(override), do: override
+  defp resolve_limit(_override, plan), do: Plans.concurrent_sandboxes(plan)
 
   @doc """
   Check `user_id` against the sandbox concurrency cap.
@@ -133,7 +151,7 @@ defmodule Fountain.Quotas do
         raise QuotaExceededError,
           message:
             "sandbox concurrency limit reached (#{count}/#{limit} active). " <>
-              "Terminate a conversation or ask an admin to raise max_concurrent_sandboxes.",
+              "Terminate a conversation, or upgrade the plan for a higher cap.",
           count: count,
           limit: limit
     end
@@ -175,8 +193,8 @@ defmodule Fountain.Quotas do
     end)
   end
 
-  @doc "Default cap applied when a user has none set."
-  def default_limit, do: @default_limit
+  @doc "Cap applied to a user on this deployment's default plan with no override."
+  def default_limit, do: Plans.concurrent_sandboxes(nil)
 
   @doc "Sandbox statuses that count against the cap."
   def active_statuses, do: @active_statuses

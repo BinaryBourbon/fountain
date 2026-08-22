@@ -165,6 +165,59 @@ upgrade, is in
   series at all, so every panel watching a rare failure ends in `or vector(0)`
   to read 0 rather than *No data*.
 
+- **Subscription plans, priced on concurrent sandboxes** (ADR 0026). Fountain
+  sold one flat price, and the only per-tenant entitlement — the
+  concurrent-sandbox cap — was a column an operator hand-set, tied to nothing
+  anybody paid. There are now three tiers that differ on exactly that axis and
+  on nothing else: Solo ($29, 5 at once), Team ($79, 15) and Scale ($199, 40).
+  Every plan still carries the whole product.
+
+  Accounts that bought the old flat price are on a fourth, closed plan,
+  `legacy`, pinned to the original `STRIPE_PRICE_ID`. It carries **Team's**
+  capacity at Solo's price, so nobody's cap fell at the changeover, and it
+  orders below every public plan, which makes it structurally upgrade-only.
+
+  `users.max_concurrent_sandboxes` is now the operator's *override* rather
+  than the entitlement, and null means "whatever the plan says". The Postgres
+  column keeps its name — the Elixir field is `sandbox_limit_override`, mapped
+  with Ecto's `:source` — because a rename breaks every pod still running the
+  previous release for the length of a rolling deploy, and making the column
+  nullable does not.
+
+  A tier switch reprices the existing subscription (`Billing.change_plan/3`)
+  rather than opening a second one, and writes nothing locally: the
+  `customer.subscription.updated` that comes back is what stamps
+  `users.plan`, so the entitlement always follows what Stripe actually
+  charges. A price this deployment does not recognise leaves the stored plan
+  alone rather than nulling a paying tenant's entitlement over an env var that
+  has not reached one replica yet.
+
+  New surfaces: a pricing table on `/`, a plan picker on `/account/billing`,
+  `plan` on `GET /api/account/billing` and on the admin user API, and a
+  `?plan=` on the checkout endpoint. Each shows only the plans whose price id
+  this deployment has, so they can be rolled out one at a time and a
+  self-hosted instance shows none. `DEFAULT_PLAN` (default `solo`) is the plan
+  for an account with no plan of its own, which is the one knob a self-hoster
+  needs.
+
+- **`mix fountain.verify_plans`.** The catalog holds a display price and
+  Stripe holds the charged price, with nothing linking them, so a mispointed
+  env var shows a customer one number and bills another. The task reads every
+  configured price from Stripe and fails if the amount, currency, interval or
+  active flag disagrees. Read-only, and safe against live mode.
+
+- **Teammate email and phone are billed per unit.** An AgentMail inbox and an
+  AgentPhone number are a recurring per-teammate cost, which is the wrong
+  shape for a flat tier. `Billing.sync_contact_addon/1` keeps a second
+  subscription item's quantity equal to the tenant's contact count — *set*
+  from the rows every time, never incremented, so a dropped call or a retry
+  converges rather than drifting. It runs after the row commits and is
+  best-effort: the providers have already been paid, and a Stripe hiccup must
+  not fail a provision they completed. A per-plan ceiling bounds the one
+  window that leaves open, refusing with 402 and buying nothing first.
+  Unset `STRIPE_PRICE_ID_CONTACT` keeps contacts free, which is what every
+  deployment does until it sets that variable.
+
 - **Product analytics in PostHog** (ADR 0025). Fountain has kept an audit
   trail, a billing meter and a set of OTel spans for a while, and none of them
   could say whether the accounts that verified last week came back. It now

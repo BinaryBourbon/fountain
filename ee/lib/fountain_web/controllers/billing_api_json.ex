@@ -5,6 +5,7 @@ defmodule FountainWeb.BillingApiJSON do
     %{
       data: %{
         status: user.subscription_status,
+        plan: plan_data(user),
         trial_ends_at: user.trial_ends_at,
         current_period_end: user.current_period_end,
         # Only an active subscription can be pending cancellation; once the
@@ -26,4 +27,20 @@ defmodule FountainWeb.BillingApiJSON do
   end
 
   def url(%{url: url}), do: %{data: %{url: url}}
+
+  # `concurrent_sandboxes` is the plan's number; `sandbox_limit` is what is
+  # actually enforced for this account. They differ when an operator has set
+  # an override, and a client showing "3 of 5 running" needs the second one.
+  defp plan_data(user) do
+    plan = Fountain.Plans.resolve(user.plan)
+
+    %{
+      slug: plan.slug,
+      name: plan.name,
+      monthly_cents: plan.monthly_cents,
+      concurrent_sandboxes: plan.concurrent_sandboxes,
+      sandbox_limit: Fountain.Quotas.sandbox_limit_for(user),
+      team_contacts: plan.team_contacts
+    }
+  end
 end

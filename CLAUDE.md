@@ -51,6 +51,45 @@ fountain/                  umbrella root
 | **Agent** | A named, re-runnable agent config — model, runtime, skills, MCP servers, optional environment |
 | **Conversation** | A single run of an agent inside a Sprites sandbox. Has turns, log events, and a status lifecycle |
 
+## Plans and entitlements
+
+`Fountain.Plans` is the catalog: three public tiers (`solo` / `team` /
+`scale`) plus a closed `legacy` one, differing on **one** axis — how many
+sandboxes a tenant may run at once. Everything else the product does is on
+every plan.
+
+| | solo | team | scale | legacy |
+|---|---|---|---|---|
+| concurrent sandboxes | 5 | 15 | 40 | 15 |
+| teammate contacts | 3 | 10 | 40 | 10 |
+| price | $29 | $79 | $199 | $29 (closed) |
+
+Three rules that are easy to get wrong:
+
+- **The plan is not the cap.** `Quotas.sandbox_limit/1` returns
+  `users.sandbox_limit_override` when it is set and the plan's number
+  otherwise. Anything that displays a cap must show the enforced one
+  (`Quotas.sandbox_limit_for/1` for an already-loaded user), never
+  `plan.concurrent_sandboxes`. Note the Postgres column is still
+  `max_concurrent_sandboxes` — the Elixir field is mapped with Ecto's
+  `:source`, deliberately, so a rolling deploy does not break (see the
+  migration).
+- **Only the webhook writes `users.plan`.** `Billing.change_plan/3` asks
+  Stripe to reprice the subscription and writes nothing locally; the
+  `customer.subscription.updated` that comes back is what stamps the slug. So
+  the entitlement follows what Stripe charges, not what we asked for. An
+  unrecognised price leaves the stored plan alone rather than nulling it.
+- **Teammate contacts are billed per unit, not included in a tier.**
+  `Billing.sync_contact_addon/1` *sets* an add-on subscription item's quantity
+  from the contact rows (never increments), best-effort, after the row
+  commits. The plan's `team_contacts` number is an abuse ceiling on top, not
+  an allowance.
+
+Price ids come from config (`STRIPE_PRICE_ID_SOLO` and friends), the display
+cents from the catalog. `mix fountain.verify_plans` is the only thing that
+stops those two drifting — run it after any price change.
+**decisions/0026-plans-and-entitlements.md** owns all of this.
+
 ## Tenant isolation contract
 
 Every user-facing query is scoped by `user_id`. The pattern is consistent:
