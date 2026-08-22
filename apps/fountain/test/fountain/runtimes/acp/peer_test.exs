@@ -574,20 +574,54 @@ defmodule Fountain.Runtimes.ACP.PeerTest do
       # is told so it can publish the stage event and arm a timeout.
       assert_receive {:acp, _ref, {:lines, "acp", line}}
       assert line =~ "session/request_permission"
-      assert_receive {:acp, _ref, {:permission_ask, "201", "Bash", options}}
+      assert_receive {:acp, _ref, {:permission_ask, request_id, "Bash", options}}
       assert Enum.map(options, & &1["optionId"]) == ["yes", "no"]
 
+      # The id a client answers with is minted here, not the adapter's own: it
+      # keeps the adapter id in front, then eight random bytes.
+      assert request_id =~ ~r/^201\.[0-9a-f]{16}$/
+
+      # And the block a client renders carries the same minted id, because the
+      # persisted line is the one we build.
+      assert %{"id" => ^request_id} = Jason.decode!(line)
+
       refute_receive {:wrote, _}, 50
+    end
+
+    test "two requests the adapter numbers alike get different ids", ctx do
+      # Measured against claude-agent-acp 0.66 in production (2026-08-22): it
+      # numbers `session/request_permission` from 0 *per turn*, so a
+      # conversation's second request arrives as id 0 again. Left as the public
+      # id, that pairs turn 2's resolution to turn 3's card — the card renders
+      # already-resolved — and lets a stale card answer a tool nobody saw.
+      pid = start_peer(ctx, permission_policy: %{"Bash" => "ask"})
+      _init = next_write()
+
+      Peer.stdout(pid, permission_line(0, "Bash"))
+      assert_receive {:acp, _ref, {:permission_ask, first, _, _}}
+      assert :ok = Peer.answer_permission(pid, first, "yes")
+      _answer = next_write()
+
+      Peer.stdout(pid, permission_line(0, "Bash"))
+      assert_receive {:acp, _ref, {:permission_ask, second, _, _}}
+
+      refute first == second
+
+      # The stale card misses, so it loses the race rather than answering the
+      # request that is open now.
+      assert {:error, :no_pending_permission} = Peer.answer_permission(pid, first, "yes")
+      assert :ok = Peer.answer_permission(pid, second, "yes")
+      assert %{"id" => 0, "result" => %{"outcome" => %{"optionId" => "yes"}}} = next_write()
     end
 
     test "an answer selects the option, and only an offered one", ctx do
       pid = start_peer(ctx, permission_policy: %{"Bash" => "ask"})
       _init = next_write()
       Peer.stdout(pid, permission_line(202, "Bash"))
-      assert_receive {:acp, _ref, {:permission_ask, "202", _, _}}
+      assert_receive {:acp, _ref, {:permission_ask, request_id, _, _}}
 
-      assert {:error, :unknown_option} = Peer.answer_permission(pid, "202", "made-up")
-      assert :ok = Peer.answer_permission(pid, "202", "yes")
+      assert {:error, :unknown_option} = Peer.answer_permission(pid, request_id, "made-up")
+      assert :ok = Peer.answer_permission(pid, request_id, "yes")
 
       assert %{"id" => 202, "result" => %{"outcome" => outcome}} = next_write()
       assert outcome["outcome"] == "selected"
@@ -600,12 +634,12 @@ defmodule Fountain.Runtimes.ACP.PeerTest do
       pid = start_peer(ctx, permission_policy: %{"Bash" => "ask"})
       _init = next_write()
       Peer.stdout(pid, permission_line(203, "Bash"))
-      assert_receive {:acp, _ref, {:permission_ask, "203", _, _}}
+      assert_receive {:acp, _ref, {:permission_ask, request_id, _, _}}
 
-      assert :ok = Peer.answer_permission(pid, "203", "yes")
+      assert :ok = Peer.answer_permission(pid, request_id, "yes")
       _answer = next_write()
 
-      assert {:error, :no_pending_permission} = Peer.answer_permission(pid, "203", "no")
+      assert {:error, :no_pending_permission} = Peer.answer_permission(pid, request_id, "no")
       refute_receive {:wrote, _}, 50
     end
 
@@ -613,9 +647,9 @@ defmodule Fountain.Runtimes.ACP.PeerTest do
       pid = start_peer(ctx, permission_policy: %{"Bash" => "ask"})
       _init = next_write()
       Peer.stdout(pid, permission_line(204, "Bash"))
-      assert_receive {:acp, _ref, {:permission_ask, "204", _, _}}
+      assert_receive {:acp, _ref, {:permission_ask, request_id, _, _}}
 
-      Peer.deny_permission(pid, "204")
+      Peer.deny_permission(pid, request_id)
 
       assert %{"id" => 204, "result" => %{"outcome" => outcome}} = next_write()
       assert outcome["optionId"] == "no"
@@ -629,7 +663,7 @@ defmodule Fountain.Runtimes.ACP.PeerTest do
         start_peer(ctx,
           permission_policy: %{"Bash" => "ask"},
           pending_permission: %{
-            "request_id" => "205",
+            "request_id" => "205.f00dcafef00dcafe",
             "tool" => "Bash",
             "options" => [%{"optionId" => "yes", "kind" => "allow_once"}]
           }
@@ -637,8 +671,49 @@ defmodule Fountain.Runtimes.ACP.PeerTest do
 
       _init = next_write()
 
-      assert :ok = Peer.answer_permission(pid, "205", "yes")
+      # Answered with the minted id the client is holding; the adapter is
+      # answered with the id it is actually blocked on, read back out of it.
+      assert :ok = Peer.answer_permission(pid, "205.f00dcafef00dcafe", "yes")
       assert %{"id" => 205, "result" => %{"outcome" => %{"optionId" => "yes"}}} = next_write()
+    end
+
+    test "a request written down before ids were minted is still answerable", ctx do
+      # Rows written before #955 hold the bare adapter id. A deploy landing on
+      # top of one must not orphan the request it describes.
+      pid =
+        start_peer(ctx,
+          permission_policy: %{"Bash" => "ask"},
+          pending_permission: %{
+            "request_id" => "206",
+            "tool" => "Bash",
+            "options" => [%{"optionId" => "yes", "kind" => "allow_once"}]
+          }
+        )
+
+      _init = next_write()
+
+      assert :ok = Peer.answer_permission(pid, "206", "yes")
+      assert %{"id" => 206, "result" => %{"outcome" => %{"optionId" => "yes"}}} = next_write()
+    end
+
+    test "an adapter that names its requests instead of numbering them is answerable", ctx do
+      # `Protocol.response/2` echoes the id's JSON type, so a string id has to
+      # come back a string. Before ids were minted this shape restored as nil
+      # and the request was orphaned on reattach.
+      pid =
+        start_peer(ctx,
+          permission_policy: %{"Bash" => "ask"},
+          pending_permission: %{
+            "request_id" => "req-7.f00dcafef00dcafe",
+            "tool" => "Bash",
+            "options" => [%{"optionId" => "yes", "kind" => "allow_once"}]
+          }
+        )
+
+      _init = next_write()
+
+      assert :ok = Peer.answer_permission(pid, "req-7.f00dcafef00dcafe", "yes")
+      assert %{"id" => "req-7", "result" => %{"outcome" => %{"optionId" => "yes"}}} = next_write()
     end
 
     test "an fs/* request is refused, not ignored", ctx do

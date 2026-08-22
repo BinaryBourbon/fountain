@@ -280,10 +280,13 @@ defmodule FountainWeb.Schemas do
             enum: Fountain.Permissions.buildable_verdicts()
           },
           description:
-            "Per-launch permission override (#939). Merged with the agent's own policy, " <>
-              "taking the stricter of the two per tool. It may only narrow: a policy that " <>
-              "would loosen any tool is refused with 422 permission_policy_widens rather " <>
-              "than silently clamped."
+            "Per-launch permission override (#939). Keys are matched against the tool " <>
+              "card's title first and then ACP's kind (execute, edit, read, fetch, …); " <>
+              "\"default\" covers the rest. Prefer a kind: claude titles a tool call with " <>
+              "the command it is about to run, so a title matches one invocation only. " <>
+              "Merged with the agent's own policy, taking the stricter of the two. It may " <>
+              "only narrow: a policy that would loosen any tool is refused with 422 " <>
+              "permission_policy_widens rather than silently clamped."
         },
         prompt: %Schema{type: :string, description: "Optional first turn prompt."},
         title: %Schema{
@@ -478,11 +481,13 @@ defmodule FountainWeb.Schemas do
             enum: Fountain.Permissions.buildable_verdicts()
           },
           description:
-            "Per-tool permission policy: a map of tool name (as the transcript labels it) " <>
-              "to verdict, plus an optional \"default\" key. Unset tools fall back to the " <>
-              "default, and an unset default is auto_allow \u2014 today's behaviour. " <>
-              "\"ask\" holds the tool until a human answers it on the conversation " <>
-              "stream, and denies if nobody does before the timeout."
+            "Per-tool permission policy: a map of key to verdict, plus an optional " <>
+              "\"default\" key. A key is matched against the tool card's title first and " <>
+              "then ACP's kind (execute, edit, read, fetch, \u2026); prefer a kind, because " <>
+              "claude titles a tool call with the command it is about to run. Unset keys " <>
+              "fall back to the default, and an unset default is auto_allow \u2014 today's " <>
+              "behaviour. \"ask\" holds the tool until a human answers it on the " <>
+              "conversation stream, and denies if nobody does before the timeout."
         },
         skills: %Schema{
           type: :array,
@@ -729,11 +734,14 @@ defmodule FountainWeb.Schemas do
             enum: Fountain.Permissions.buildable_verdicts()
           },
           description:
-            "Per-tool permission policy: a map of tool name (as the transcript labels it) " <>
-              "to verdict, plus an optional \"default\" key. Unset tools fall back to the " <>
-              "default, and an unset default is auto_allow. \"ask\" holds the tool until a " <>
-              "human answers it on the conversation stream, and denies if nobody does " <>
-              "before the timeout. A conversation may narrow this at launch, never widen it."
+            "Per-tool permission policy: a map of key to verdict, plus an optional " <>
+              "\"default\" key. A key is matched against the tool card's title first and " <>
+              "then ACP's kind (execute, edit, read, fetch, \u2026); prefer a kind, because " <>
+              "claude titles a tool call with the command it is about to run. Unset keys " <>
+              "fall back to the default, and an unset default is auto_allow. \"ask\" holds " <>
+              "the tool until a human answers it on the conversation stream, and denies if " <>
+              "nobody does before the timeout. A conversation may narrow this at launch, " <>
+              "never widen it."
         },
         environment_id: %Schema{type: :string, format: :uuid, nullable: true},
         skills: %Schema{
@@ -832,11 +840,14 @@ defmodule FountainWeb.Schemas do
             enum: Fountain.Permissions.buildable_verdicts()
           },
           description:
-            "Per-tool permission policy: a map of tool name (as the transcript labels it) " <>
-              "to verdict, plus an optional \"default\" key. Unset tools fall back to the " <>
-              "default, and an unset default is auto_allow. \"ask\" holds the tool until a " <>
-              "human answers it on the conversation stream, and denies if nobody does " <>
-              "before the timeout. A conversation may narrow this at launch, never widen it."
+            "Per-tool permission policy: a map of key to verdict, plus an optional " <>
+              "\"default\" key. A key is matched against the tool card's title first and " <>
+              "then ACP's kind (execute, edit, read, fetch, \u2026); prefer a kind, because " <>
+              "claude titles a tool call with the command it is about to run. Unset keys " <>
+              "fall back to the default, and an unset default is auto_allow. \"ask\" holds " <>
+              "the tool until a human answers it on the conversation stream, and denies if " <>
+              "nobody does before the timeout. A conversation may narrow this at launch, " <>
+              "never widen it."
         },
         allowed_environment_ids: %Schema{
           type: :array,

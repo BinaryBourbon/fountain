@@ -893,6 +893,11 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
 
       send(pid, {:stdout, %{ref: ref}, line})
       settle(pid)
+
+      # The id a client answers with is minted by the peer, not the adapter's
+      # own — claude and codex both number theirs from 0 per turn (#957). Tests
+      # read it back rather than assuming it.
+      :sys.get_state(pid).current_turn.pending_permission["request_id"]
     end
 
     test "a held request is persisted on the turn and announced on the stream" do
@@ -901,19 +906,20 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
       {pid, ref} = start_acp_turn(conv)
       _init = next_write()
 
-      raise_permission(pid, ref, 301)
+      request_id = raise_permission(pid, ref, 301)
 
       # Persisted first, so a deploy landing a millisecond later can still
       # answer it.
       turn = :sys.get_state(pid).current_turn
-      assert turn.pending_permission["request_id"] == "301"
+      assert turn.pending_permission["request_id"] == request_id
+      assert request_id =~ ~r/^301\./
       assert turn.pending_permission["tool"] == "Bash"
 
       # And announced, with the agent's own options.
       events = Conversations._unsafe_list_log_events(conv.id)
       stage = Enum.find(events, &(&1.kind == "stage" and &1.stage == "request"))
       assert stage.state == "started"
-      assert Jason.decode!(stage.data)["request_id"] == "301"
+      assert Jason.decode!(stage.data)["request_id"] == request_id
     end
 
     test "the request renders as a permission_request block in the transcript" do
@@ -922,7 +928,7 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
       {pid, ref} = start_acp_turn(conv)
       _init = next_write()
 
-      raise_permission(pid, ref, 302)
+      request_id = raise_permission(pid, ref, 302)
 
       blocks =
         conv.id
@@ -931,7 +937,7 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
         |> Enum.flat_map(&Fountain.Conversations.Blocks.for_event(&1, "claude"))
 
       assert block = Enum.find(blocks, &(&1.kind == :permission_request))
-      assert block.request_id == "302"
+      assert block.request_id == request_id
       assert block.name == "Bash"
       assert Enum.map(block.options, & &1["optionId"]) == ["yes", "no"]
     end
@@ -941,9 +947,9 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
       conv = insert_conversation(user_id: user.id, agent: ask_agent(user))
       {pid, ref} = start_acp_turn(conv)
       _init = next_write()
-      raise_permission(pid, ref, 303)
+      request_id = raise_permission(pid, ref, 303)
 
-      assert :ok = GenServer.call(pid, {:answer_permission, "303", "yes"})
+      assert :ok = GenServer.call(pid, {:answer_permission, request_id, "yes"})
 
       assert %{"id" => 303, "result" => %{"outcome" => %{"optionId" => "yes"}}} = next_write()
 
@@ -967,9 +973,9 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
       conv = insert_conversation(user_id: user.id, agent: ask_agent(user))
       {pid, ref} = start_acp_turn(conv)
       _init = next_write()
-      raise_permission(pid, ref, 304)
+      request_id = raise_permission(pid, ref, 304)
 
-      send(pid, {:permission_timeout, "304"})
+      send(pid, {:permission_timeout, request_id})
       settle(pid)
 
       states =
@@ -987,9 +993,9 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
       conv = insert_conversation(user_id: user.id, agent: ask_agent(user))
       {pid, ref} = start_acp_turn(conv)
       _init = next_write()
-      raise_permission(pid, ref, 305)
+      request_id = raise_permission(pid, ref, 305)
 
-      send(pid, {:permission_timeout, "305"})
+      send(pid, {:permission_timeout, request_id})
       settle(pid)
 
       # Deny is the only safe default, and it picks the agent's own rejection.
@@ -1006,12 +1012,12 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
       conv = insert_conversation(user_id: user.id, agent: ask_agent(user))
       {pid, ref} = start_acp_turn(conv)
       _init = next_write()
-      raise_permission(pid, ref, 306)
+      request_id = raise_permission(pid, ref, 306)
 
       assert {:error, :unknown_option} =
-               GenServer.call(pid, {:answer_permission, "306", "made-up"})
+               GenServer.call(pid, {:answer_permission, request_id, "made-up"})
 
-      assert :sys.get_state(pid).current_turn.pending_permission["request_id"] == "306"
+      assert :sys.get_state(pid).current_turn.pending_permission["request_id"] == request_id
     end
 
     test "a sprite may not answer its own prompt" do
@@ -1021,10 +1027,10 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
       conv = insert_conversation(user_id: user.id, agent: ask_agent(user))
       {pid, ref} = start_acp_turn(conv)
       _init = next_write()
-      raise_permission(pid, ref, 307)
+      request_id = raise_permission(pid, ref, 307)
 
       assert {:error, :sprite_may_not_answer} =
-               Conversations.answer_permission_request(conv.id, user.id, "307", "yes",
+               Conversations.answer_permission_request(conv.id, user.id, request_id, "yes",
                  actor: "sprite"
                )
     end
@@ -1035,10 +1041,10 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
       conv = insert_conversation(user_id: user.id, agent: ask_agent(user))
       {pid, ref} = start_acp_turn(conv)
       _init = next_write()
-      raise_permission(pid, ref, 308)
+      request_id = raise_permission(pid, ref, 308)
 
       assert {:error, :not_found} =
-               Conversations.answer_permission_request(conv.id, other.id, "308", "yes")
+               Conversations.answer_permission_request(conv.id, other.id, request_id, "yes")
     end
 
     test "a request still held when the turn ends is resolved, not left open" do
@@ -1047,7 +1053,7 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
       {pid, ref} = start_acp_turn(conv)
       prompt_id = drive_to_prompt(pid, ref)
 
-      raise_permission(pid, ref, 309)
+      _request_id = raise_permission(pid, ref, 309)
       reply(pid, ref, prompt_id, %{"stopReason" => "end_turn"})
 
       done =
