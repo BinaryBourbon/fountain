@@ -13,14 +13,14 @@ defmodule Fountain.Runtimes.ACP do
   `metadata["acp"]` flag is dead: it began as gate 2's opt-in, flipped to an
   opt-out when ACP became the default, and was removed when the legacy spawn
   path for these runtimes was deleted — there is nothing left to opt out
-  into. `build_command/5` survives only on runtimes that are not here
-  (gemini, #659).
+  into. `build_command/5` survives on no runtime that is here: all four are on
+  the ACP path since #659.
 
   ## Which runtimes
 
-  All four have adapter entries; claude, codex and opencode are shippable and
-  gemini is held back (#659). The two ends of the resumption story gate 1
-  mapped are claude and gemini:
+  All four have adapter entries and all four are shippable — gemini since #659,
+  behind the workaround described below. The two ends of the resumption story
+  gate 1 mapped are claude and gemini:
 
   Claude advertises `sessionCapabilities.resume`, so a turn costs a handshake
   and nothing else. Gemini advertises only `loadSession`, and `session/load`
@@ -35,9 +35,10 @@ defmodule Fountain.Runtimes.ACP do
   only while one conversation ever runs per workspace — an invariant held by
   accident and asserted by no test. ACP names the session.
 
-  **Gemini is converted but held back** (#659), and the reason is not ours to
-  fix. `supported_runtimes/0` excludes it, so the per-agent flag cannot switch
-  it on; the entry stays because the conversion is correct as far as it goes.
+  **Gemini was held back for eleven days** (#659) by a defect in its own
+  session store, and now ships behind a workaround for it. The mechanism is
+  worth keeping on record because the workaround is shaped by it, and because
+  it is the thing to delete when upstream lands.
 
   Diagnosed against a live 0.53.0 on 2026-08-11 (#658). Turn 1 does write a
   session, to `$HOME/.gemini/tmp/<project>/chats/session-<ISO minute>-<first 8
@@ -66,8 +67,23 @@ defmodule Fountain.Runtimes.ACP do
 
   It is also destructive rather than merely unreliable — a failed load leaves
   the session unloadable forever, so a user would lose the conversation, not
-  just a turn. Fountain cannot work around this without reaching into another
-  product's private store, so gemini stays blocked until upstream fixes it.
+  just a turn.
+
+  **Resolved by reaching into that store on purpose** (#659, 2026-08-22).
+  `Fountain.Runtimes.Gemini.SessionStore` consolidates the chats directory at
+  the end of every turn: keep the file with real content, delete the poisoned
+  duplicates a load leaves behind, and park the survivor under a timestamp the
+  recorder cannot produce. An earlier draft of this paragraph said Fountain
+  could not do this without reaching into another product's private store —
+  which is exactly what it does, deliberately and behind a comment naming
+  google-gemini/gemini-cli#28775 so it is deleted when that lands.
+
+  Renaming once is not enough, and this is why the "wait out the minute"
+  suggestion above also fails: after every load *two* files carry the same
+  session id, and gemini dedupes by id keeping the later `lastUpdated`, which
+  is the poisoned one. Verified live on 0.56.0 — five consecutive turns inside
+  one wall-clock minute, history growing 3 → 5 → 7 → 9 → 11, content planted
+  before the first reload recalled every turn.
 
   Codex and OpenCode both advertise `loadSession` *and*
   `sessionCapabilities.resume`, so they resume as cheaply as Claude does. What
@@ -119,18 +135,18 @@ defmodule Fountain.Runtimes.ACP do
     # `Gemini.prepare_sandbox/3` git-inits exactly this directory. Pointing it
     # at /home/sprite instead reintroduces the EACCES noise that workspace
     # exists to avoid.
-    # Converted, verified, and **not shippable** — see `blocked`. Left in the
-    # table rather than deleted because the conversion itself is correct: turn
-    # 1 works end to end against a live agent. What does not work is gemini's
-    # own session store, which erases a session in the act of loading it — the
-    # moduledoc has the mechanism.
+    # Shippable since #659. Gemini's own session store erases a session in the
+    # act of loading it (google-gemini/gemini-cli#28775, still open on 0.56.0 —
+    # the moduledoc has the mechanism), which held this entry back for eleven
+    # days. `Fountain.Runtimes.Gemini.SessionStore` consolidates the store at
+    # the end of every turn so the load cannot collide with what it is loading.
+    # Delete that module and this comment when upstream lands.
     "gemini" => %{
       bin: "gemini",
       args: ["--acp"],
       package: nil,
       version: nil,
-      cwd: "/tmp/gemini-workspace",
-      blocked: "#659"
+      cwd: "/tmp/gemini-workspace"
     },
     # Adapter, on the Codex App Server. The `zed-industries/codex-acp` that
     # earlier drafts named is archived; this is its successor under the

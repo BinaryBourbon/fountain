@@ -57,13 +57,16 @@ defmodule FountainWeb.AgentControllerTest do
     # that list changes when a held-back runtime is converted, and a client
     # shipping a copy of it would be wrong until its next release.
     test "reports whether the runtime speaks ACP", %{conn: conn, user: user, raw_key: raw_key} do
-      acp_agent = insert_agent(user_id: user.id, runtime: "claude")
-      legacy_agent = insert_agent(user_id: user.id, runtime: "gemini")
-
-      for {agent, expected} <- [{acp_agent, true}, {legacy_agent, false}] do
+      # gemini was the `false` case until #659 lifted its block. Every runtime
+      # an agent may name now speaks ACP, so the field is true for all of them
+      # — asserted across the whole vocabulary rather than dropped, because the
+      # day a fifth runtime lands without an adapter this should fail here.
+      for runtime <- Fountain.Agents.Agent.runtimes() do
+        agent = insert_agent(user_id: user.id, runtime: runtime)
         conn = conn |> authed_with_key(raw_key) |> get("/api/agents/#{agent.id}")
 
-        assert json_response(conn, 200)["data"]["acp"] == expected
+        assert json_response(conn, 200)["data"]["acp"] == true,
+               "expected #{runtime} to report acp: true"
       end
     end
 

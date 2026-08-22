@@ -18,21 +18,31 @@ defmodule Fountain.Conversations.ConversationServerTest do
   alias Fountain.{Accounts, Environments}
   alias Fountain.Repo
 
+  # A runtime with no ACP adapter entry, which is the only way to reach the
+  # legacy turn pipeline since #659. Not a real runtime name on purpose: the
+  # four an agent may name all speak ACP now.
+  @legacy_runtime "retired-runtime"
+
   setup do
     user = insert_verified_user()
     env = insert_env(user_id: user.id)
 
     # These tests drive the legacy (non-ACP) turn pipeline through FakeRuntime.
-    # ACP is on by default for claude/codex/opencode, so the agent is pinned to
-    # gemini — the runtime that actually still runs this pipeline (#659). The
-    # ACP turn pipeline has its own harness in conversation_server_acp_test.exs.
-    agent = insert_agent(user_id: user.id, environment_id: env.id, runtime: "gemini")
+    # gemini was the last runtime that still ran it, and #659 put gemini on ACP
+    # too — so **no runtime an agent may name is legacy any more**. The pipeline
+    # itself is still reachable (a conversation row whose runtime has no adapter
+    # entry, and the peer-died-mid-turn path in `handle_info({:stdout, …})`), so
+    # it stays covered here; the conversation's runtime carries no inclusion
+    # validation, which is what makes that expressible. The ACP turn pipeline
+    # has its own harness in conversation_server_acp_test.exs.
+    agent = insert_agent(user_id: user.id, environment_id: env.id, runtime: "claude")
     sandbox = insert_sandbox(user_id: user.id, status: "pending")
 
     conv =
       insert_conversation(
         user_id: user.id,
         agent: agent,
+        runtime: @legacy_runtime,
         sandbox_id: sandbox.id,
         status: "pending"
       )
@@ -146,13 +156,14 @@ defmodule Fountain.Conversations.ConversationServerTest do
       {:ok, _} = Environments.update_environment(agent_env, %{"checkpoint_id" => "cp_agent"})
       override = insert_env(user_id: user.id, checkpoint_id: "cp_override")
 
-      agent = insert_agent(user_id: user.id, environment_id: agent_env.id, runtime: "gemini")
+      agent = insert_agent(user_id: user.id, environment_id: agent_env.id, runtime: "claude")
       sandbox = insert_sandbox(user_id: user.id, status: "pending")
 
       conv =
         insert_conversation(
           user_id: user.id,
           agent: agent,
+          runtime: @legacy_runtime,
           sandbox_id: sandbox.id,
           environment_id: override.id,
           status: "pending"

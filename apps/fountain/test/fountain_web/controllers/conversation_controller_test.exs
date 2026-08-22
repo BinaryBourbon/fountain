@@ -111,12 +111,15 @@ defmodule FountainWeb.ConversationControllerTest do
     # as protocol, so there is nothing a protocol client can render (#703).
     test "reports whether the runtime speaks ACP", %{conn: conn, user: user, raw_key: raw_key} do
       acp_agent = insert_agent(user_id: user.id, runtime: "claude")
-      legacy_agent = insert_agent(user_id: user.id, runtime: "gemini")
-
       acp_conv = insert_conversation(user_id: user.id, agent_id: acp_agent.id, runtime: "claude")
 
+      # gemini was the `false` case until #659. No runtime an *agent* may name
+      # is legacy any more, but a conversation's runtime column carries no
+      # inclusion validation, so a row written before a runtime was retired —
+      # or by a future one with no adapter — still has to report false rather
+      # than crash.
       legacy_conv =
-        insert_conversation(user_id: user.id, agent_id: legacy_agent.id, runtime: "gemini")
+        insert_conversation(user_id: user.id, agent_id: acp_agent.id, runtime: "retired-runtime")
 
       for {conv, expected} <- [{acp_conv, true}, {legacy_conv, false}] do
         conn = conn |> authed_with_key(raw_key) |> get("/api/conversations/#{conv.id}")
