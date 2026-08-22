@@ -1,8 +1,13 @@
-# The Simplified Technical English backlog, from the ASD-STE100 rewrite.
+# The Simplified Technical English backlog. IT IS NOW EMPTY.
 #
-# `vale lint` skips these paths. The list only shrinks. A page that is NOT
-# listed is checked, so a page written tomorrow is covered from the day it
-# lands, and the rewrite goes in one page at a time without CI going red in
-# between.
+# `vale lint` skips the paths listed here. Every page under docs/ passes the
+# ASD-STE100 gate, so nothing is listed and every page is checked.
+#
+# Keep this file. Its emptiness is the point: adding a line is how you park a
+# page you have not rewritten yet, and an empty list says there are none.
+#
+# If you find yourself adding a line, prefer fixing the page. The whole backlog
+# was 76 pages, 219 errors and 343 warnings, and it came down page by page.
 #
 # The standard is docs-redesign/08-simplified-technical-english.md.
+# The config, including the permanent exemptions, is .vale-ste.yml.

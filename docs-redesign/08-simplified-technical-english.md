@@ -210,13 +210,39 @@ reviewer's job.
 names a thing in this system or in one Fountain talks to. A word does not go
 there to escape a rewrite.
 
+`vocabulary.allow` reaches `STE.Vocabulary` alone. `STE.IngForms` has no
+vocabulary hook, so a Technical Name that ends in "ing" needs a suppression
+comment instead. Use `<!-- vale disable-line STE.IngForms -->` at the end of
+the line for one word. Use a `<!-- vale STE.IngForms = NO -->` region, with a
+comment that says which words it covers and why, where a page is full of them.
+`billing`, in the Stripe pages, is the case that earns a region.
+
+Three traps the linter sets, all worth knowing before you fight it.
+
+- **It joins table cells until it meets a full stop.** A row of prose cells
+  therefore reads as one long sentence. End each cell with a full stop, and
+  each row becomes one sentence.
+- **It does not split on a full stop when a code span opens the next
+  sentence.** Write "The `snippet` is plain text", and not "`snippet` is plain
+  text".
+- **`STE.IngForms` matches any word that ends in "ing".** It fires on
+  "anything" and on "keyring". `STE.PhrasalVerbs` fires on "another turn on
+  the same machine". Reword where the reword is an improvement.
+
 ### The ratchet
 
 `.valeignore` is the backlog. A page listed there is skipped. A page not
 listed is checked, so a page written tomorrow is covered from the day it
 lands. The list only shrinks.
 
-The backlog started at 76 pages, 219 errors and 343 warnings.
+**It is empty.** The backlog started at 76 pages, 219 errors and 343 warnings,
+and it came down page by page. Keep the file, because an empty list is the
+claim that no page is parked.
+
+Two pages are exempt for good, in `files.exclude`, and neither is a backlog
+entry. `docs/cli/commands.md` is generated from the Cobra command tree, so its
+prose is the CLI's own help text and the fix belongs in `cli/internal/cmd/`.
+`CHANGELOG.md` is a record of what happened.
 
 ## What this does not claim
 
