@@ -12,7 +12,6 @@ docs/build/index.md
 docs/build/pieces.md
 docs/build/team-chat.md
 docs/cli.md
-docs/cli/commands.md
 docs/configuration.md
 docs/integrations/acp.md
 docs/integrations/adding-a-sandbox-provider.md
@@ -21,16 +20,12 @@ docs/integrations/clients.md
 docs/integrations/daytona.md
 docs/integrations/e2b.md
 docs/integrations/editors.md
-docs/integrations/github-oauth.md
 docs/integrations/hermes.md
-docs/integrations/index.md
-docs/integrations/mail.md
 docs/integrations/openbot.md
 docs/integrations/openclaw.md
 docs/integrations/platform-requirements.md
 docs/integrations/runners.md
 docs/integrations/sandbox-contract.md
-docs/integrations/sentry.md
 docs/integrations/sprites-contract.md
 docs/integrations/sprites.md
 docs/integrations/stripe.md

@@ -101,7 +101,7 @@ Two rules decide whether this works.
 A backup job that stops without a sound is the classic way backups rot.
 
 The Kubernetes CronJob has the
-[Sentry Crons check-in](../../integrations/sentry.md#crons-alerting-when-a-scheduled-job-stops-running)
+[Sentry Crons check-in](../../integrations/sentry.md#crons-an-alert-when-a-scheduled-job-stops)
 built in. Set `SENTRY_DSN`, then arm the monitor's schedule.
 
 On compose, read the dates on the service's log lines.

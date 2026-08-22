@@ -56,6 +56,13 @@ files:
     # A record of what happened, not a description of how the system works.
     # docs/changelog.md is a one-line snippet include of it.
     - "CHANGELOG.md"
+    # Generated from the Cobra command tree by
+    # cli/internal/cmd/docsgen_test.go. Its prose is the CLI's own help text,
+    # so an edit here is undone by the next regeneration and the fix belongs
+    # upstream in cli/internal/cmd/*.go. That is a change to what
+    # `fountain --help` prints, which is CLI work rather than docs work.
+    # scripts/docs-style.py makes the same exemption, for the same reason.
+    - "docs/cli/commands.md"
 
 vocabulary:
   builtinTechnicalTerms: true
