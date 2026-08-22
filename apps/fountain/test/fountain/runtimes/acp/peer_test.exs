@@ -716,6 +716,51 @@ defmodule Fountain.Runtimes.ACP.PeerTest do
       assert %{"id" => "req-7", "result" => %{"outcome" => %{"optionId" => "yes"}}} = next_write()
     end
 
+    test "the replay of a held request is not raised a second time", ctx do
+      # A reattached peer reads the sprite's buffer, which still holds the
+      # `session/request_permission` line the agent is blocked on (#967).
+      # Raising it again would publish a second card for one question, and
+      # would leave the card someone is looking at unanswerable, because the
+      # id a client answers with is minted per hold.
+      pid =
+        start_peer(ctx,
+          permission_policy: %{"Bash" => "ask"},
+          attach: 900,
+          pending_permission: %{
+            "request_id" => "210.abcdefabcdefabcd",
+            "tool" => "Bash",
+            "options" => [
+              %{"optionId" => "yes", "kind" => "allow_always"},
+              %{"optionId" => "no", "kind" => "reject_once"}
+            ]
+          }
+        )
+
+      Peer.stdout(pid, permission_line(210, "Bash"))
+
+      refute_receive {:acp, _ref, {:permission_ask, _, _, _}}, 100
+      refute_receive {:acp, _ref, {:lines, "acp", _}}, 50
+
+      # And the id the client is holding still answers the agent.
+      assert :ok = Peer.answer_permission(pid, "210.abcdefabcdefabcd", "yes")
+      assert %{"id" => 210, "result" => %{"outcome" => %{"optionId" => "yes"}}} = next_write()
+    end
+
+    test "a different request while one is held is still raised", ctx do
+      # The guard is about the id, not about holding: an adapter that asked
+      # again under a new id is asking a new question.
+      pid = start_peer(ctx, permission_policy: %{"Bash" => "ask"})
+      _init = next_write()
+
+      Peer.stdout(pid, permission_line(211, "Bash"))
+      assert_receive {:acp, _ref, {:permission_ask, first, _, _}}
+
+      Peer.stdout(pid, permission_line(212, "Bash"))
+      assert_receive {:acp, _ref, {:permission_ask, second, _, _}}
+
+      refute first == second
+    end
+
     test "an fs/* request is refused, not ignored", ctx do
       # Silence would block the agent forever. We declared no fs capability, so
       # the honest answer is method-not-found.
