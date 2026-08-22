@@ -77,6 +77,14 @@ out. That is deliberate, and it is not a defect. An empty allowlist that
 quietly meant "allow everything" would be the worst default for a policy whose
 whole purpose is restriction.
 
+Not every backend can hold egress. Sprites, E2B and Daytona can. A
+[self-hosted runner](../integrations/runners.md) cannot. The agent selects the
+backend, and the environment sets the policy. Fountain therefore compares the
+two at launch. It refuses a `limited` environment on a backend that cannot
+enforce one. The conversation fails with a `network` / `failed` event. The
+reason is `backend_lacks_network_policy`, and Fountain creates no sandbox. The
+agent form gives you the same warning before you save the agent.
+
 ## What an environment is not
 
 **Not a deployment tier.** "Environment" in Fountain never means dev, staging <!-- vale disable-line STE.IngForms -->

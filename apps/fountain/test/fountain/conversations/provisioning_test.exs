@@ -69,6 +69,60 @@ defmodule Fountain.Conversations.ProvisioningTest do
     end
   end
 
+  describe "check_network_policy_support/3" do
+    test "a limited environment on a backend without :network_policy is refused by name" do
+      env = insert_env(%{"networking_type" => "limited"})
+      conv = insert_conversation()
+
+      refute Fountain.Sandbox.supports?(:runner, :network_policy)
+
+      assert {:error, {:network_policy, :unsupported_by_backend}} =
+               Provisioning.check_network_policy_support(:runner, env, conv.id)
+
+      # The point of the check: the operator is told which backend and why,
+      # before a sandbox exists, instead of reading a transport-shaped error
+      # out of the middle of provisioning (#935).
+      assert [event] = stage_events(conv.id, "network")
+      assert event.state == "failed"
+
+      assert %{"reason" => "backend_lacks_network_policy", "provider" => "runner"} =
+               Jason.decode!(event.data)
+    end
+
+    test "a limited environment on a backend that advertises the capability passes" do
+      env = insert_env(%{"networking_type" => "limited"})
+      conv = insert_conversation()
+
+      assert Fountain.Sandbox.supports?(:sprites, :network_policy)
+      assert :ok = Provisioning.check_network_policy_support(:sprites, env, conv.id)
+      assert stage_events(conv.id, "network") == []
+    end
+
+    test "an unrestricted environment passes on a backend without the capability" do
+      env = insert_env(%{"networking_type" => "unrestricted"})
+      conv = insert_conversation()
+
+      assert :ok = Provisioning.check_network_policy_support(:runner, env, conv.id)
+      assert stage_events(conv.id, "network") == []
+    end
+
+    test "no environment at all passes" do
+      conv = insert_conversation()
+
+      assert :ok = Provisioning.check_network_policy_support(:runner, nil, conv.id)
+      assert stage_events(conv.id, "network") == []
+    end
+  end
+
+  defp stage_events(conv_id, stage) do
+    Fountain.Repo.all(
+      from(e in Fountain.Conversations.LogEvent,
+        where: e.conversation_id == ^conv_id and e.kind == "stage" and e.stage == ^stage,
+        order_by: e.id
+      )
+    )
+  end
+
   # ── .env quoting ───────────────────────────────────────────────────────────
 
   # The file exists to be `source`d by the user's setup_script, so the only

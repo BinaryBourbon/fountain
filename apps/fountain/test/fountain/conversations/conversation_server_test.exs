@@ -452,6 +452,56 @@ defmodule Fountain.Conversations.ConversationServerTest do
       assert Conversations._unsafe_get_conversation!(conv.id).status == "failed"
     end
 
+    test "a limited environment on a backend that cannot enforce it fails before any sandbox exists",
+         %{user: user} do
+      # `Fountain.Sandbox.Runner` does not advertise `:network_policy`, so this
+      # pairing could only ever fail. It used to fail several steps into
+      # provisioning, after a sandbox had been created and torn down, wearing
+      # the shape of a transport error. Now it is refused up front, by name
+      # (#935).
+      stub_happy_sprite()
+      test_pid = self()
+
+      Mimic.stub(Fountain.Sandbox.Sprites, :create, fn name, _opts ->
+        send(test_pid, {:created, name})
+        {:ok, Fountain.Sandbox.Sprites.build_handle(name)}
+      end)
+
+      limited =
+        insert_env(user_id: user.id, networking_type: "limited", networking_config: %{})
+
+      agent = insert_agent(user_id: user.id, environment_id: limited.id, runtime: "claude")
+      sandbox = insert_sandbox(user_id: user.id, status: "pending", provider: "runner")
+
+      conv =
+        insert_conversation(
+          user_id: user.id,
+          agent: agent,
+          runtime: @legacy_runtime,
+          sandbox_id: sandbox.id,
+          status: "pending"
+        )
+
+      {_pid, ref, _} = start_server(conv)
+      assert_stopped(ref)
+
+      assert Conversations._unsafe_get_sandbox!(sandbox.id).status == "failed"
+      assert Conversations._unsafe_get_conversation!(conv.id).status == "failed"
+
+      # Nothing was provisioned, so there is nothing to bill or to leak.
+      refute_received {:created, _}
+
+      events =
+        Fountain.Repo.all(
+          from(e in Fountain.Conversations.LogEvent,
+            where: e.conversation_id == ^conv.id and e.kind == "stage" and e.stage == "network"
+          )
+        )
+
+      assert [%{state: "failed"} = event] = events
+      assert Jason.decode!(event.data)["reason"] == "backend_lacks_network_policy"
+    end
+
     test "unreadable tenant credentials fail the conversation rather than provisioning blind", %{
       conv: conv,
       sandbox: sandbox
