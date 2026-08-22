@@ -88,7 +88,9 @@ defmodule FountainWeb.BillingApiController do
     parameters: [
       plan: [
         in: :query,
-        type: %OpenApiSpex.Schema{type: :string, enum: Fountain.Plans.slugs()},
+        # Public slugs only: `legacy` is a closed price nobody can buy, and
+        # publishing it here would advertise a value Checkout cannot honour.
+        type: %OpenApiSpex.Schema{type: :string, enum: Fountain.Plans.public_slugs()},
         required: false,
         description: "Plan slug to subscribe to."
       ]

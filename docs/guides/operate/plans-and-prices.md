@@ -34,6 +34,15 @@ keep it, at Team capacity.
 The contact ceiling bounds teammate email and phone contacts. It is an abuse
 bound, not an allowance. Fountain charges for each contact separately.
 
+### A downgrade does not stop work in progress
+
+The cap applies when a sandbox starts. A tenant who moves to a smaller plan
+keeps every sandbox that already runs. Fountain refuses the next one until the
+count falls below the new cap.
+
+This is deliberate. A downgrade must not destroy an agent mid-task. Tell a
+tenant who downgrades that the new cap applies to their next conversation.
+
 ## Create the prices in Stripe
 
 Create one recurring monthly price for each plan you want to sell. Use USD.

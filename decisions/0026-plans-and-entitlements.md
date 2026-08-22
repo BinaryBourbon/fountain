@@ -192,6 +192,12 @@ is where it is worth running.
 * Two numbers now describe an account's capacity — the plan's and the enforced
   one. Every surface that shows a cap has to show the enforced one, and the
   admin views say which it is.
+* **A downgrade does not reclaim capacity already in use.** The cap is checked
+  at sandbox creation, so a tenant who moves from Scale to Solo keeps the
+  sandboxes already running and is refused the next one until the count falls
+  below the new cap. Killing an agent mid-task to enforce a billing change is
+  the wrong trade, but it does mean a downgrade can leave an account
+  temporarily over its cap, and any capacity report has to tolerate that.
 * Teammate contacts stop being free to Fountain and start being metered by
   count. A tenant on the flag today will see a line item appear on their next
   invoice once `STRIPE_PRICE_ID_CONTACT` is set; setting that variable is
