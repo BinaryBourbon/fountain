@@ -107,7 +107,10 @@ defmodule FountainWeb.SchemaEnumGuardrailTest do
     {FountainWeb.Schemas.SupportReportCreateRequest, "category"} =>
       {Fountain.Support.Report, :categories},
     {FountainWeb.Schemas.SupportReportCreateRequest, "screenshot.media_type"} =>
-      {Fountain.Images, :valid_media_types}
+      {Fountain.Images, :valid_media_types},
+    {FountainWeb.Schemas.WebhookEndpoint, "status"} => {Fountain.Webhooks.Endpoint, :statuses},
+    {FountainWeb.Schemas.WebhookEndpointUpdateRequest, "status"} =>
+      {Fountain.Webhooks.Endpoint, :statuses}
   }
 
   # Enums with no domain list behind them. Each entry needs a reason: the

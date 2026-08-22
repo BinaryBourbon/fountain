@@ -104,3 +104,12 @@ config :fountain, :agentphone_api_key, "ap_test_key"
 config :fountain, :agentphone_req_options, plug: {Req.Test, Fountain.Team.Comms.AgentPhone}
 config :fountain, :agentphone_webhook_secret, "whsec_test"
 config :fountain, :posthog_req_options, plug: {Req.Test, Fountain.FeatureFlags}
+
+# Webhooks (#700). Every delivery goes to a Req.Test plug, so a test that
+# forgets to stub fails loudly instead of reaching a real receiver. `http://`
+# endpoints are permitted here so a test can use a plain URL; the SSRF guard
+# is unaffected by that flag and is exercised directly in
+# `webhooks/url_test.exs`.
+config :fountain, :webhook_req_options, plug: {Req.Test, Fountain.Webhooks}
+config :fountain, :webhook_allow_http, true
+config :fountain, :webhooks_enabled, true

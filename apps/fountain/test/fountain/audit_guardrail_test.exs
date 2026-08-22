@@ -24,7 +24,16 @@ defmodule Fountain.AuditGuardrailTest do
   use Fountain.DataCase, async: true
   use Mimic
 
-  alias Fountain.{Agents, Audit, Buzz, Conversations, Environments, InferenceCredentials, Vaults}
+  alias Fountain.{
+    Agents,
+    Audit,
+    Buzz,
+    Conversations,
+    Environments,
+    InferenceCredentials,
+    Vaults,
+    Webhooks
+  }
 
   # {label, fun/1 taking the user, expected action}
   #
@@ -86,7 +95,15 @@ defmodule Fountain.AuditGuardrailTest do
     {"team contact release", &__MODULE__.do_contact_release/1, "team.contact.released"},
     {"support report create", &__MODULE__.do_support_create/1, "support.report.created"},
     {"runner register", &__MODULE__.do_runner_register/1, "runner.registered"},
-    {"runner delete", &__MODULE__.do_runner_delete/1, "runner.deleted"}
+    {"runner delete", &__MODULE__.do_runner_delete/1, "runner.deleted"},
+    # Outbound webhooks (ADR 0024). The auto-disable path is the one with no
+    # human behind it, hence `system:webhook_delivery` in the vocabulary.
+    {"webhook endpoint create", &__MODULE__.do_webhook_create/1, "webhook_endpoint.created"},
+    {"webhook endpoint update", &__MODULE__.do_webhook_update/1, "webhook_endpoint.updated"},
+    {"webhook endpoint delete", &__MODULE__.do_webhook_delete/1, "webhook_endpoint.deleted"},
+    {"webhook secret rotate", &__MODULE__.do_webhook_rotate/1, "webhook_endpoint.secret_rotated"},
+    {"webhook endpoint disable", &__MODULE__.do_webhook_disable/1, "webhook_endpoint.disabled"},
+    {"webhook endpoint enable", &__MODULE__.do_webhook_enable/1, "webhook_endpoint.enabled"}
   ]
 
   # Documented non-coverage. Mirrors the `Fountain.Audit` moduledoc; if the two
@@ -154,7 +171,10 @@ defmodule Fountain.AuditGuardrailTest do
           {Fountain.Team.Comms, :provision_contact, 4},
           {Fountain.Team.Comms, :update_contact, 4},
           {Fountain.Team.Comms, :set_opt_out, 3},
-          {Fountain.Team.Comms, :release_contact, 3}
+          {Fountain.Team.Comms, :release_contact, 3},
+          {Webhooks, :create_endpoint, 3},
+          {Webhooks, :update_endpoint, 3},
+          {Webhooks, :delete_endpoint, 2}
         ] do
       # `Code.ensure_loaded?/1` first: `function_exported?/3` answers about
       # *loaded* modules, so on a seed where this test ran before anything had
@@ -167,6 +187,31 @@ defmodule Fountain.AuditGuardrailTest do
   end
 
   ## ── the mutations ─────────────────────────────────────────────────────────
+
+  defp a_webhook(user) do
+    {:ok, {endpoint, _secret}} =
+      Webhooks.create_endpoint(user.id, %{"url" => "https://hooks.example.com/f"})
+
+    endpoint
+  end
+
+  def do_webhook_create(user), do: a_webhook(user)
+
+  def do_webhook_update(user) do
+    {:ok, _} = Webhooks.update_endpoint(a_webhook(user), %{"description" => "ci"})
+  end
+
+  def do_webhook_delete(user), do: {:ok, _} = Webhooks.delete_endpoint(a_webhook(user))
+
+  def do_webhook_rotate(user), do: {:ok, {_, _}} = Webhooks.rotate_secret(a_webhook(user))
+
+  def do_webhook_disable(user),
+    do: {:ok, _} = Webhooks.disable_endpoint(a_webhook(user), "test")
+
+  def do_webhook_enable(user) do
+    {:ok, disabled} = Webhooks.disable_endpoint(a_webhook(user), "test")
+    {:ok, _} = Webhooks.enable_endpoint(disabled)
+  end
 
   def do_agent_create(user),
     do: {:ok, _} = Agents.create_agent(agent_attrs(%{"user_id" => user.id}))

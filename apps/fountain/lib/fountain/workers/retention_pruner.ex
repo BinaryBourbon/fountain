@@ -20,6 +20,10 @@ defmodule Fountain.Workers.RetentionPruner do
   never be used again, and `stripe_events` only has to outlive Stripe's
   three-day redelivery window to do its job.
 
+  `webhook_deliveries` is one row per HTTP attempt at one event, and every
+  attempt of a failing endpoint writes another. It is a debugging aid, not an
+  event store, so it gets the shortest window of the lot.
+
   `usage_events` gets the longest window because it is the input to billing
   history, and `turn_images` is deliberately absent — those rows are owned by
   their turn and go when the conversation does.
@@ -49,7 +53,8 @@ defmodule Fountain.Workers.RetentionPruner do
     audit_events: 365,
     stripe_events: 90,
     revoked_api_keys: 30,
-    usage_events: 400
+    usage_events: 400,
+    webhook_deliveries: 30
   ]
 
   @impl Oban.Worker
@@ -144,6 +149,14 @@ defmodule Fountain.Workers.RetentionPruner do
 
   defp do_prune(:usage_events, cutoff) do
     delete_where("usage_events", dynamic([r], r.inserted_at < ^cutoff))
+  end
+
+  # One row per HTTP attempt, so this grows with conversation volume times
+  # endpoint count. 30 days is longer than any "why did my integration miss
+  # that" investigation and short enough that the table stays a debugging
+  # aid rather than a second event store (#700).
+  defp do_prune(:webhook_deliveries, cutoff) do
+    delete_where("webhook_deliveries", dynamic([r], r.inserted_at < ^cutoff))
   end
 
   defp do_prune(:revoked_api_keys, cutoff) do

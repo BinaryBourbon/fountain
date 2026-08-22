@@ -241,6 +241,25 @@ defmodule FountainWeb.Router do
     post "/agentphone", AgentPhoneWebhookController, :create
   end
 
+  # Outbound webhooks (#700) — the ones Fountain *sends*. Declared after the
+  # inbound AgentPhone route above so its literal path is matched first; a
+  # `/:id` segment would otherwise swallow "agentphone". Full scope, like key
+  # management: a sandbox's per-conversation token must not be able to point
+  # the account's lifecycle events at a URL of its choosing.
+  scope "/api/webhooks", FountainWeb do
+    pipe_through [:accepts_json, :api, :require_full_scope]
+
+    get "/", WebhookEndpointController, :index
+    post "/", WebhookEndpointController, :create
+    get "/:id", WebhookEndpointController, :show
+    patch "/:id", WebhookEndpointController, :update
+    delete "/:id", WebhookEndpointController, :delete
+    post "/:id/rotate-secret", WebhookEndpointController, :rotate
+    post "/:id/test", WebhookEndpointController, :test
+    get "/:id/deliveries", WebhookEndpointController, :deliveries
+    post "/:id/deliveries/:delivery_id/redeliver", WebhookEndpointController, :redeliver
+  end
+
   ## ─── Authenticated JSON resource endpoints ──────────────────────────────────────────────────────────────
 
   scope "/api/auth", FountainWeb do
@@ -569,6 +588,9 @@ defmodule FountainWeb.Router do
 
       # ── Self-hosted runners (ADR 0022) ─────────────────────────────────────────────────────
       live "/account/runners", RunnersLive.Index, :index
+
+      # ── Outbound webhooks (#700) ───────────────────────────────────────────────────────────
+      live "/account/webhooks", WebhooksLive.Index, :index
 
       # ── Credential management (#448) ───────────────────────────────────────────────────────
       live "/account/security", AccountSecurityLive, :index

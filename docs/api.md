@@ -828,6 +828,31 @@ with payment off. Those actions are extend-trial, comp and resync-stripe.
 A read across tenants returns metadata alone. Prompt content and output
 content never cross a tenant boundary, whatever the role.
 
+## Webhooks
+
+```
+GET    /api/webhooks                                  # list endpoints
+POST   /api/webhooks                                  # create one; the secret is in this response only
+GET    /api/webhooks/:id
+PATCH  /api/webhooks/:id                              # url, description, event_types, status
+DELETE /api/webhooks/:id
+POST   /api/webhooks/:id/rotate-secret                # a new secret; the old one stops verifying
+POST   /api/webhooks/:id/test                         # queue a signed `webhook.test` event
+GET    /api/webhooks/:id/deliveries                   # ?limit= (default 50, max 200)
+POST   /api/webhooks/:id/deliveries/:delivery_id/redeliver
+```
+
+Fountain POSTs conversation lifecycle transitions to a URL you own, so an
+integration that cannot hold a socket open does not have to poll. The payload
+carries ids, a stage and a duration, and never conversation content.
+
+These routes need a full-scope key. A sandbox's per-conversation token must
+not be able to point the account's events at a URL of its choosing.
+
+The full event catalogue, the payload envelope, a worked signature verifier
+and the at-least-once contract are on the [webhooks
+reference](reference/webhooks.md).
+
 ## Audit
 
 ```
