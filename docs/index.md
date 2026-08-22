@@ -1,12 +1,12 @@
 # Fountain
 
-Fountain is a **multi-tenant API**. It manages agents, repos, secrets and
-conversations. An operator console sits on top of the API, and separate apps
-let you watch an agent at work.
+Fountain runs a coding agent on a machine you do not own, and gives you a
+conversation with it. You send a prompt. You read the reply. There is no
+machine for you to operate.
 
-Fountain is for people who want sandboxed coding agents. Each agent starts
-with the environment variables, MCP servers, skills, repos and packages that
-you configured once.
+It is an API first. Your app reaches it over a protocol you already speak, or
+through the SDK. The person who uses your app need never learn that an agent
+is there.
 
 !!! tip "In a hurry?"
     Install the CLI and log in. For your own instance, set `FOUNTAIN_BASE_URL`
@@ -21,27 +21,50 @@ you configured once.
 
 ## The problem
 
-A coding agent on your own machine works until there is more than one of you.
+An agent is only useful with a computer behind it. That computer is the part
+nobody set out to build.
 
-Your configuration does not move. A new engineer spends an afternoon to work
-out which MCP servers, skills and environment variables the last person had.
-The configuration lives on a laptop and not anywhere the team shares.
+The agent needs a filesystem, a shell, a package manager and a network. It
+needs real credentials, and those must never reach the prompt or the
+transcript. It needs to remember the last time, so the second message costs a
+sentence and not an explanation of the first.
 
-Credentials move apart. No one place holds the correct value of a key. The
-incorrect `.env` breaks an agent without a sound, and nobody finds out until a
-run fails in a strange way.
+The computer also needs an owner. Something must start it, park it while
+nobody speaks, and wake it when somebody does. One account must never see
+another's work. A machine that nobody stops costs money for as long as it
+runs.
 
-Parallel work makes you duplicate things. Two tasks that need different
-credentials mean two checkouts and two configurations. You must then keep the
-two in step.
+You can build all of that. It is weeks of infrastructure, and it is not your
+product.
 
-Nobody builds a sandbox in an afternoon. An isolated machine that you can
-discard, and that costs little when it is idle, is real infrastructure work. It
-is also not the work you set out to do.
+## What Fountain does
 
-Fountain makes the configuration an API object. It makes the credentials a
-layered merge. It makes the machine something Fountain gives you for one run,
-then takes back when the run goes quiet.
+Fountain keeps the computer, and gives you the conversation.
+
+Send a prompt. A machine starts somewhere else, clones your repo, installs
+your packages, and runs the agent. It parks when the talk stops, and it costs
+little while parked. The next message wakes it, with the files where the agent
+left them.
+
+Your secrets arrive at spawn as environment variables, so they never enter the
+prompt or the model's context. Fountain scrubs them out of the output it
+stores.
+
+Fountain is multi-tenant. Each account reaches its own agents and its own
+machines, because Fountain scopes each query to the caller. Your own users
+therefore stay apart, and you write no code for it.
+
+Reach it the way you already work.
+
+- [**ACP**](integrations/acp.md), for an editor or a chat surface.
+- [**AG-UI**](integrations/openbot.md), for a coworker platform.
+- [**REST and SSE**](api.md), for your own code, with a
+  [TypeScript SDK](sdk.md) and a [CLI](cli.md) over them.
+
+What you build on top is yours. It can be a chat client whose contacts are
+bots, or a tool that makes an engineer faster. Your own user need not know
+which. [Why a bot needs more than a chat UI](build/index.md) makes that case
+in full.
 
 ## Start here
 
