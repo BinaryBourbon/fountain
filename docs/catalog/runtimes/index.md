@@ -1,9 +1,9 @@
 # Runtimes
 
-A runtime is the coding-agent CLI a sandbox runs. It is one field on an
-[Agent](../../concepts/agent.md), and it decides which provider's credential
-that agent needs, how skills land on disk, and where the system prompt is
-written.
+A runtime is the coding-agent CLI that a sandbox runs. It is one field on an
+[Agent](../../concepts/agent.md). It decides which provider's credential that
+agent needs, how skills land on disk, and where Fountain writes the system
+prompt.
 
 ## All four
 
@@ -11,40 +11,40 @@ written.
 |---|---|---|---|
 | [claude](claude.md) | `anthropic` | ACP | No |
 | [codex](codex.md) | `openai` | ACP | No |
-| [opencode](opencode.md) | any of the three | ACP | **Yes** |
-| [gemini](gemini.md) | `google` | legacy stream | No |
+| [opencode](opencode.md) | Any of the three | ACP | **Yes** |
+| [gemini](gemini.md) | `google` | Legacy stream | No |
 
 ## How to choose
 
-**Pick the runtime whose provider you have a key for.** This is the constraint
-that decides it most of the time. Inference credentials are per-user, entered
-in the running app, and Fountain can export keys for exactly three providers.
-See [Services Fountain uses](../../integrations/index.md).
+**Choose the runtime whose provider you hold a key for.** That constraint
+decides it most of the time. Inference credentials belong to one user, who
+enters them in the app, and Fountain can export keys for exactly three
+providers. Read
+[Services Fountain uses](../../integrations/index.md).
 
-**Pick `opencode` if you want one agent definition to work across providers.**
-It is the only multi-provider runtime. It takes the canonical
-`provider/model-id` string verbatim and reads the prefix to decide which key to
-export.
+**Choose `opencode` to make one agent definition work across providers.** It
+is the only multi-provider runtime. It takes the canonical `provider/model-id`
+string word for word, then reads the prefix to decide which key to export.
 
-**Avoid `gemini` unless you specifically want it.** It is the only runtime not
-on ACP, so it does not get the editor integration, the permission plumbing or
-the shared block format the other three share.
+**Do not choose `gemini` unless you want it in particular.** It is the only
+runtime off ACP. So it gets no editor integration, no permission flow, and
+none of the shared block format that the other three have.
 
 ## The rule that catches people
 
-`model` is stored as `provider/model-id`, and **the provider half is validated
-while the model id is not.**
+Fountain stores `model` as `provider/model-id`. **It validates the provider
+half, and it does not validate the model id.**
 
-The provider must match the runtime. A mismatch is rejected when you save the
-agent, because Fountain holds no credential for the wrong provider and the
-sandbox would start with no inference key at all.
+The provider must match the runtime. Fountain rejects a mismatch when you save
+the agent. It holds no credential for the wrong provider, and the sandbox
+would start with no inference key at all.
 
-The model id is passed to the CLI unchanged. A model released after your
-Fountain version still works, and a typo reaches the CLI and fails there.
+Fountain passes the model id to the CLI unchanged. A model that ships after
+your Fountain version still works, and a typo reaches the CLI and fails there.
 
 ## Suggested models
 
-These are suggestions the agent form offers, not an allowlist.
+The agent form offers these as suggestions. They are not an allowlist.
 
 | Provider | Suggested |
 |---|---|
@@ -52,13 +52,13 @@ These are suggestions the agent form offers, not an allowlist.
 | `openai` | `gpt-5-codex`, `gpt-5` |
 | `google` | `gemini-2.5-pro`, `gemini-2.5-flash` |
 
-`GET /api/catalog` returns this list per runtime, so a client can render the
-current set rather than hard-coding one.
+`GET /api/catalog` returns this list for each runtime. A client can then
+render the current set, and it does not hard-code one.
 
 ## Where skills and prompts land
 
-Each runtime has its own on-disk layout, which is why the same skill list
-produces different paths.
+Each runtime has its own layout on disk. That is why one skill list produces
+different paths.
 
 | Runtime | Skills root | skills.sh agent | System prompt |
 |---|---|---|---|
@@ -69,7 +69,7 @@ produces different paths.
 
 ## Related
 
-- [About agents](../../concepts/agent.md), where `runtime` is set.
+- [About agents](../../concepts/agent.md), where you set `runtime`.
 - [Skills](../skills/index.md).
-- [`fountain acp`](../../integrations/acp.md), the adapter three of the four
-  speak through.
+- [`fountain acp`](../../integrations/acp.md), the adapter that three of the
+  four speak through.

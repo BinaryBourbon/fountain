@@ -11,19 +11,6 @@ docs/architecture.md
 docs/build/index.md
 docs/build/pieces.md
 docs/build/team-chat.md
-docs/catalog/index.md
-docs/catalog/mcp-servers/fountain-buzz.md
-docs/catalog/mcp-servers/fountain-comms.md
-docs/catalog/mcp-servers/fountain-team.md
-docs/catalog/mcp-servers/index.md
-docs/catalog/runtimes/claude.md
-docs/catalog/runtimes/codex.md
-docs/catalog/runtimes/gemini.md
-docs/catalog/runtimes/index.md
-docs/catalog/runtimes/opencode.md
-docs/catalog/skills/create-team.md
-docs/catalog/skills/fountain.md
-docs/catalog/skills/index.md
 docs/cli.md
 docs/cli/commands.md
 docs/configuration.md
@@ -58,6 +45,4 @@ docs/integrations/sentry.md
 docs/integrations/sprites-contract.md
 docs/integrations/sprites.md
 docs/integrations/stripe.md
-docs/reference/conversation-states.md
-docs/reference/glossary.md
 docs/sdk.md

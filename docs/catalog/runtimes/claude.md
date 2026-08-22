@@ -1,6 +1,6 @@
 # claude
 
-> Anthropic's Claude Code CLI, running headless inside the sandbox.
+> Anthropic's Claude Code CLI, headless in the sandbox.
 
 ## At a glance
 
@@ -12,15 +12,15 @@
 | Skills root | `/home/sprite/.claude/skills` |
 | skills.sh agent | `claude-code` |
 | System prompt | `~/.claude/CLAUDE.md` |
-| Credential | A Claude Code OAuth token, or an Anthropic API key. See [which one it uses](#which-credential-it-uses) |
+| Credential | An OAuth token or an API key. Read [which one it uses](#which-credential-it-uses). |
 
-## Why you would pick this one
+## Why you would choose this one
 
-It is the default and the most exercised path. Editor integration, the
-permission flow and the block format all developed against it first.
+It is the default, and it is the most exercised path. Editor integration, the
+permission flow and the block format all grew against it first.
 
-Pick [opencode](opencode.md) instead if you want one agent definition that can
-switch providers.
+Choose [opencode](opencode.md) instead to get one agent definition that can
+move between providers.
 
 ## Set it up
 
@@ -34,64 +34,65 @@ spec:
   model: anthropic/claude-sonnet-4-6
 ```
 
-The model must carry the `anthropic/` prefix. Anything else is rejected when
-you save the agent.
+The model must carry the `anthropic/` prefix. Fountain rejects any other
+prefix when you save the agent.
 
-Add your credential at `/account/inference-credentials` in the running app. An
-operator cannot set one for you. See
+Add your credential at `/account/inference-credentials` in the app. An
+operator cannot set one for you. Read
 [Services Fountain uses](../../integrations/index.md).
 
 ## Which credential it uses
 
-Two kinds work, and if you have both on file **the OAuth token wins**.
+Two kinds work. If you hold both, **the OAuth token wins**.
 
 | Credential | Bills |
 |---|---|
-| Claude Code OAuth token | Your Claude.ai subscription (Pro or Team) |
-| Anthropic API key | Metered API usage |
+| Claude Code OAuth token | Your Claude.ai subscription, Pro or Team. |
+| Anthropic API key | Metered API usage. |
 
-That preference is the reason the order matters to you rather than to
-Fountain. A subscription you are already paying for is usually the one you
-want spent.
+That preference matters to you and not to Fountain. A subscription you already
+pay for is usually the one you want spent.
 
-**Exactly one is exported into the sandbox, never both.** Claude Code prefers
-the OAuth path when it sees both, but which variable it actually picks has
-varied between CLI versions, so Fountain chooses one rather than letting the
+**Fountain exports exactly one into the sandbox, and never both.** Claude Code
+prefers the OAuth path when it sees both, but the variable it picks has
+changed between CLI versions. So Fountain chooses one, and it does not let the
 CLI decide.
 
 ### When an organization disallows the subscription
 
 An Anthropic organization can disable Claude subscription access for Claude
-Code. When it has, a turn using the OAuth token fails with
+Code. After that, a turn that uses the OAuth token fails with
 `oauth_org_not_allowed`.
 
-Fountain recovers rather than leaving you to work it out.
+Fountain recovers. It does not leave you to work it out.
 
-- **With an API key on file**, the conversation switches to it and the turn
-  fails with a message saying so. Send the prompt again and it runs.
-- **Without one**, the turn fails with a message telling you to add one.
+- **With an API key on file**, the conversation moves to that key, and the
+  turn fails with a message that says so. Send the prompt again and it runs.
+- **Without one**, the turn fails with a message that tells you to add one.
 
-Two details worth knowing about the recovery.
+Two details about the recovery matter.
 
-**The turn still fails.** The switch is not a silent retry, so the failure and
-the fix are both in the transcript rather than only in a log nobody reads.
+**The turn still fails.** The switch is not a silent retry. The failure and the
+fix both sit in the transcript, and not only in a log nobody reads.
 
-**The switch lasts for that conversation, not forever.** A new conversation
-tries the OAuth token again, so an organization policy that is later reverted
-heals on its own instead of staying pinned to the fallback.
+**The switch lasts for that conversation, and not forever.** A new
+conversation tries the OAuth token again. So an organization policy that
+somebody later reverts heals on its own. It does not stay pinned to the
+fallback.
 
 ## Verify
 
-Run a conversation and ask it what model it is. A turn that reaches output at
-all proves the credential, the runtime and the sandbox.
+Run a conversation, then ask it what model it is. A turn that reaches output
+at all proves the credential, the runtime and the sandbox.
 
 ## Limits
 
-**MCP servers are provisioned rather than passed per session.** Session-scoped
-MCP delivery is broken upstream in `claude-agent-acp`, so Fountain writes
-`.mcp.json` into the sandbox and enables project servers instead. The effect is
-the same and the mechanism is different, which matters if you are debugging why
-a raw ACP probe behaves differently from Fountain.
+**Fountain provisions the MCP servers. It does not pass them for each
+session.** An upstream defect in `claude-agent-acp` breaks session-scoped MCP
+delivery. So Fountain writes `.mcp.json` into the sandbox and starts the
+project servers instead. The effect is the same and the mechanism is
+different. That matters when you debug why a raw ACP probe behaves one way and
+Fountain behaves another.
 
 ## Related
 

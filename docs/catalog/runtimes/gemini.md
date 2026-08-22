@@ -1,6 +1,6 @@
 # gemini
 
-> Google's Gemini CLI. The only runtime not on ACP.
+> Google's Gemini CLI. The only runtime off ACP.
 
 ## At a glance
 
@@ -8,18 +8,18 @@
 |---|---|
 | Provider | `google` |
 | Multi-provider | No |
-| Transport | **Legacy**, a line-delimited `stream-json` the worker tails |
+| Transport | **Legacy**. A line-delimited `stream-json` that the worker tails. |
 | Skills root | `/tmp/.gemini/skills` |
 | skills.sh agent | `gemini-cli` |
 | System prompt | `~/.gemini/GEMINI.md` |
 | Credential | A Gemini API key, exported as `GEMINI_API_KEY` |
 
-## Why you would pick this one
+## Why you would choose this one
 
-You specifically want a Gemini model. That is the whole case.
+You want a Gemini model in particular. That is the whole case.
 
-If you do not, prefer [claude](claude.md), [codex](codex.md) or
-[opencode](opencode.md), all of which are on ACP.
+If you do not, choose [claude](claude.md), [codex](codex.md) or
+[opencode](opencode.md). All three are on ACP.
 
 ## Set it up
 
@@ -37,19 +37,19 @@ Add your Gemini key at `/account/inference-credentials`.
 
 ## Verify
 
-Run a conversation. Output arriving at all proves the credential and the
+Run a conversation. Output that arrives at all proves the credential and the
 legacy stream parser.
 
 ## Limits
 
-**Not on ACP.** The other three runtimes speak the Agent Client Protocol, which
-is what carries editor integration and the shared block format. Gemini uses the
-older path, so it does not get those.
+**Off ACP.** The other three runtimes speak the Agent Client Protocol, which
+carries editor integration and the shared block format. Gemini uses the older
+path, so it gets neither.
 
-**Sessions are the CLI's, not Fountain's.** Gemini manages its own session
-state, and `--resume` re-enters the most recent conversation in the workspace,
-so Fountain does not pass a session id. One workspace holds one resumable
-session.
+**The sessions belong to the CLI, and not to Fountain.** Gemini manages its
+own session state. Its `--resume` re-enters the most recent conversation in
+the workspace, so Fountain passes no session id. One workspace holds one
+session that you can resume.
 
 ## Related
 

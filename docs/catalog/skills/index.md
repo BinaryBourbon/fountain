@@ -1,22 +1,23 @@
 # Skills
 
-A skill is a `SKILL.md` written into the sandbox, which the runtime reads to
-learn a capability. Skills are declared on an [Agent](../../concepts/agent.md).
+A skill is a `SKILL.md` that Fountain writes into the sandbox. The runtime
+reads it to learn a capability. You declare skills on an
+[Agent](../../concepts/agent.md).
 
-## Bundled in every sandbox
+## Bundled in each sandbox
 
-These two are written into **every** sandbox, whatever an agent declares.
+Fountain writes these two into **each** sandbox, whatever an agent declares.
 
 | Skill | What it does |
 |---|---|
-| [fountain](fountain.md) | Gives the agent Fountain's own API, so it can spawn and stream sub-conversations |
-| [create-team](create-team.md) | A five-question flow that builds the user's team. Answering `/create-team` runs it |
+| [fountain](fountain.md) | Gives the agent Fountain's own API, so it can start sub-conversations and stream them. |
+| [create-team](create-team.md) | A five-question flow that builds the user's team. An answer of `/create-team` runs it. |
 
-## Declaring your own
+## How to declare your own
 
-Two forms, and they behave differently.
+There are two forms, and they behave differently.
 
-**Inline.** The whole file, written directly to
+**Inline.** Fountain writes the whole file to
 `<skills_root>/<name>/SKILL.md`.
 
 ```yaml
@@ -31,8 +32,8 @@ skills:
       ...
 ```
 
-**From GitHub.** Installed on the sandbox with the
-[skills.sh](https://skills.sh) CLI.
+**From GitHub.** The [skills.sh](https://skills.sh) CLI installs it on the
+sandbox.
 
 ```yaml
 skills:
@@ -41,33 +42,34 @@ skills:
     name: fountain-api # optional: rename on install
 ```
 
-Without a `ref`, the repository's default branch is resolved **at spawn time**.
-Two conversations from the same agent, a week apart, can install different
-code. Pin a `ref` for anything you depend on.
+With no `ref`, Fountain resolves the repository's default branch **at spawn
+time**. Two conversations from the same agent, a week apart, can install
+different code. Pin a `ref` on whatever you depend on.
 
 ## Two things about how they land
 
-**Skills mount before the network policy locks the sandbox down.** GitHub
-installs need npm and github.com, so they happen first. A `limited` environment
-that allowlists neither still gets its skills, and this ordering is why.
+**Skills mount before the network policy locks the sandbox down.** A GitHub
+install needs npm and github.com, so it happens first. A `limited` environment
+that allowlists neither still gets its skills, and this order is the reason.
 
-**GitHub installs run before inline writes.** The install is a blocking exec,
-which doubles as the readiness gate the file-write path needs anyway.
+**A GitHub install runs before an inline write.** The install is an exec that
+blocks, and it also serves as the readiness gate that the file-write path
+needs.
 
 ## The path depends on the runtime
 
-Each runtime declares its own skills root and its own skills.sh agent name, so
-the same declaration lands in a different place depending on `runtime`. See
+Each runtime declares its own skills root and its own skills.sh agent name. So
+one declaration lands in a different place for each `runtime`. Read
 [Runtimes](../runtimes/index.md) for the table.
 
 ## Not here yet
 
-There is no catalog of third-party skills. Anything on GitHub that ships a
-`SKILL.md` works, and Fountain does not curate a list.
+There is no catalog of third-party skills. Any GitHub repo that ships a
+`SKILL.md` works, and Fountain curates no list.
 
 ## Related
 
-- [About agents](../../concepts/agent.md), where `skills` is declared.
+- [About agents](../../concepts/agent.md), where you declare `skills`.
 - [Runtimes](../runtimes/index.md), for where a skill lands on disk.
 - [Agents as teammates](../../concepts/teammates.md), which
   [create-team](create-team.md) builds.
