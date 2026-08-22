@@ -95,7 +95,7 @@ Two things translate, and two do not.
 | `/home/sprite` is home. | Mapped to the sandbox directory. That holds for a file path, for a work directory **and for a command argument**. A `bash -lc` script that says `/home/sprite/.local/bin/x` lands in the sandbox. |
 | `~` and a relative path. | The sandbox directory. |
 | `packages.apt` in an environment. | Fails. A Mac has no `apt`, and the daemon does not translate to `brew`. Leave it empty, or use `setup_script`. |
-| `networking_type: limited`. | Fails to provision. The provider does not advertise an egress policy, and it will not pretend. |
+| `networking_type: limited`. | Refused at launch. The provider does not advertise an egress policy, and it will not pretend. The conversation fails before a sandbox exists, with a `network` / `failed` event whose reason is `backend_lacks_network_policy`. The agent form shows the same warning when you pair the two. |
 
 `/tmp` is the machine's `/tmp`. The gemini and opencode workspaces live there,
 and each sandbox sees the same ones, as it does inside one Linux sandbox.

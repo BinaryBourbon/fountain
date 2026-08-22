@@ -5,6 +5,8 @@ defmodule Fountain.Environments.Environment do
   alias Fountain.Accounts.User
   alias Fountain.Environments.Secret
 
+  @type t :: %__MODULE__{}
+
   @primary_key {:id, :binary_id, autogenerate: true}
   @foreign_key_type :binary_id
 

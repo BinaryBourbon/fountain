@@ -692,7 +692,24 @@ defmodule Fountain.Conversations.ConversationServer do
     {:ok, _} = Conversations.update_sandbox(sandbox, %{status: "starting"})
     publish_stage(state.conversation_id, "provision", "started")
 
-    case create_sandbox_handle(sandbox) do
+    # A `limited` environment on a backend with no `:network_policy` capability
+    # can only fail. It failed closed before, but several steps in, after a
+    # sandbox had been created and torn down, and wearing the shape of a
+    # transport error. Refuse the pairing here, by name, before anything is
+    # provisioned (#935).
+    provider = Fountain.Conversations.sandbox_provider_atom(sandbox)
+
+    handle_result =
+      with :ok <-
+             Fountain.Conversations.Provisioning.check_network_policy_support(
+               provider,
+               env,
+               state.conversation_id
+             ) do
+        create_sandbox_handle(provider, sandbox)
+      end
+
+    case handle_result do
       {:ok, handle} ->
         skills = (agent && agent.skills) || []
         # conv.runtime is validated-required and outlives the agent; the agent
@@ -754,7 +771,7 @@ defmodule Fountain.Conversations.ConversationServer do
         end
 
       {:error, reason} ->
-        Logger.error("sprite provision failed: #{inspect(reason)}")
+        Logger.error("provision could not start: #{inspect(reason)}")
         {:ok, _} = Conversations.update_sandbox(sandbox, %{status: "failed"})
         publish_stage(state.conversation_id, "provision", "failed", %{reason: inspect(reason)})
         Conversations.update_conversation(conv, %{status: "failed"})
@@ -2271,9 +2288,7 @@ defmodule Fountain.Conversations.ConversationServer do
 
   # The row's provider decides where the sandbox is created; adopt-on-
   # already-exists is the adapter's job.
-  defp create_sandbox_handle(sandbox) do
-    provider = Fountain.Conversations.sandbox_provider_atom(sandbox)
-
+  defp create_sandbox_handle(provider, sandbox) do
     Fountain.Retry.with_backoff(
       fn -> Fountain.Sandbox.create(provider, sandbox.sprite_name) end,
       label: "sprite create #{sandbox.sprite_name}"

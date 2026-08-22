@@ -289,3 +289,72 @@ defmodule FountainWeb.AgentsLive.IndexTest do
     end
   end
 end
+
+defmodule FountainWeb.AgentsLive.NetworkPolicyNoteTest do
+  # async: false because it flips `:runners_enabled`, which is application-wide
+  # config the rest of the suite reads to decide which providers are enabled.
+  # `:runner` is the only adapter in tree without `:network_policy`, so it is
+  # the only pairing that can express this.
+  use FountainWeb.ConnCase, async: false
+
+  import Phoenix.LiveViewTest
+
+  setup do
+    previous = Application.get_env(:fountain, :runners_enabled)
+    Application.put_env(:fountain, :runners_enabled, true)
+    on_exit(fn -> Application.put_env(:fountain, :runners_enabled, previous) end)
+    :ok
+  end
+
+  describe "network policy the backend cannot enforce (#935)" do
+    # The provider is per agent (ADR 0018) and the egress policy is per
+    # environment, so the agent form is the only console page where both are
+    # known. Without this the pairing is discovered by a conversation dying
+    # mid-provision.
+    test "warns when a limited environment is paired with a backend that has no policy", %{
+      conn: conn
+    } do
+      user = insert_verified_user()
+      env = insert_env(user_id: user.id, networking_type: "limited", networking_config: %{})
+
+      agent =
+        insert_agent(user_id: user.id, environment_id: env.id, sandbox_provider: "runner")
+
+      conn = login_user(conn, user)
+
+      {:ok, _view, html} = live(conn, ~p"/agents/#{agent.id}/edit")
+
+      assert html =~ "cannot hold a limited environment"
+      assert html =~ "runner"
+    end
+
+    test "no warning when the backend advertises a network policy", %{conn: conn} do
+      user = insert_verified_user()
+      env = insert_env(user_id: user.id, networking_type: "limited", networking_config: %{})
+
+      # No pin, so the agent runs on the instance default. That is sprites,
+      # which advertises `:network_policy`, as do e2b and daytona.
+      agent = insert_agent(user_id: user.id, environment_id: env.id)
+
+      conn = login_user(conn, user)
+
+      {:ok, _view, html} = live(conn, ~p"/agents/#{agent.id}/edit")
+
+      refute html =~ "cannot hold a limited environment"
+    end
+
+    test "no warning when the environment is unrestricted", %{conn: conn} do
+      user = insert_verified_user()
+      env = insert_env(user_id: user.id, networking_type: "unrestricted")
+
+      agent =
+        insert_agent(user_id: user.id, environment_id: env.id, sandbox_provider: "runner")
+
+      conn = login_user(conn, user)
+
+      {:ok, _view, html} = live(conn, ~p"/agents/#{agent.id}/edit")
+
+      refute html =~ "cannot hold a limited environment"
+    end
+  end
+end

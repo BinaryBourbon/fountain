@@ -267,6 +267,47 @@ defmodule Fountain.Conversations.Provisioning do
   # ── network policy ────────────────────────────────────────────────────────
 
   @doc """
+  Refuse a `limited` environment on a backend that cannot enforce one, before
+  anything is provisioned.
+
+  Not every provider can hold egress. `Fountain.Sandbox.Runner` answers
+  `{:error, :not_supported}` and leaves `:network_policy` out of its
+  `capabilities/0`; Sprites, E2B and Daytona all advertise it. The pairing has
+  always failed closed — `apply_network_policy/3` turns the `:not_supported`
+  into `{:error, {:network_policy, :not_supported}}` and the cold-provision
+  `with` aborts — so a `limited` environment has never run unrestricted.
+
+  What was missing is *when* and *why* the operator finds out. The failure
+  arrived several steps into provisioning, after a sandbox had been created,
+  wearing the same shape as a transport error. This check runs before the
+  sandbox exists and names the cause: a `network` / `failed` stage event whose
+  reason is `backend_lacks_network_policy`.
+
+  The provider is per agent since ADR 0018, so an `Environment` cannot answer
+  this on its own — one environment is reachable from agents on different
+  backends. Both facts are only known here, at launch (#935, #627).
+  """
+  @spec check_network_policy_support(atom(), Environment.t() | nil, String.t()) ::
+          :ok | {:error, {:network_policy, :unsupported_by_backend}}
+  def check_network_policy_support(_provider, nil, _conv_id), do: :ok
+
+  def check_network_policy_support(provider, %Environment{networking_type: "limited"}, conv_id) do
+    if Sandbox.supports?(provider, :network_policy) do
+      :ok
+    else
+      publish_stage(conv_id, "network", "failed", %{
+        type: "limited",
+        provider: to_string(provider),
+        reason: "backend_lacks_network_policy"
+      })
+
+      {:error, {:network_policy, :unsupported_by_backend}}
+    end
+  end
+
+  def check_network_policy_support(_provider, _env, _conv_id), do: :ok
+
+  @doc """
   Apply the env's networking config to the sandbox. `unrestricted` is a
   no-op (sandboxes are open by default). `limited` builds an allowlist from
   `networking_config.allowed_hosts: [...]` and applies it as a default-deny
