@@ -1022,6 +1022,13 @@ case System.get_env("OAUTH_CLIENTS") do
     end
 end
 
+# ── PostHog: feature flags and product analytics ──────────────────────────
+#
+# One project API key serves both halves. `Fountain.FeatureFlags` reads it to
+# evaluate per-user flags; `Fountain.Analytics` reads it to send product
+# events. Neither does anything without it, so an instance that sets no key
+# evaluates no flags and sends nothing.
+#
 # ── Feature flags ─────────────────────────────────────────────────────────
 #
 # Per-user flags are evaluated by PostHog (`Fountain.FeatureFlags`) when a
@@ -1048,6 +1055,34 @@ config :fountain,
        |> Enum.map(&String.trim/1)
        |> Enum.reject(&(&1 == ""))
        |> Map.new(&{&1, true})
+
+# ── Product analytics ─────────────────────────────────────────────────────
+#
+# `Fountain.Analytics` captures product events into the same PostHog project
+# the flags come from. On whenever a key is set; POSTHOG_CAPTURE=false keeps
+# flag evaluation and turns capture off, for a deployment that wants one
+# without the other.
+#
+# POSTHOG_PERSON_PII=false drops the account email from person properties,
+# leaving the user id — which is all the audit trail stores either. The
+# events themselves never carry PII: no secret values, no prompts, no agent
+# output (`Fountain.Analytics.sanitize/1`).
+#
+# POSTHOG_INSTANCE names this deployment. Every event is associated with it
+# as a PostHog group, so a hosted instance and a self-hoster reporting into
+# one project stay separable. Defaults to PHX_HOST.
+config :fountain,
+       :analytics_enabled,
+       System.get_env("POSTHOG_CAPTURE", "true") not in ~w(false 0 no off)
+
+config :fountain,
+       :analytics_person_pii,
+       System.get_env("POSTHOG_PERSON_PII", "true") not in ~w(false 0 no off)
+
+case System.get_env("POSTHOG_INSTANCE") || System.get_env("PHX_HOST") do
+  blank when blank in [nil, ""] -> :ok
+  name -> config :fountain, :analytics_instance, name
+end
 
 # ── Teammate email + phone (flag `team_comms`) ───────────────────────────
 #

@@ -1865,6 +1865,7 @@ defmodule Fountain.Billing do
   def record_usage(user_id, event_type, resource_id, resource_type, metadata \\ %{}) do
     case emit(user_id, event_type, resource_id, resource_type, metadata) do
       {:ok, _} = ok ->
+        mirror_usage_to_analytics(user_id, event_type, resource_type, metadata)
         ok
 
       {:error, %Ecto.Changeset{} = cs} ->
@@ -1875,6 +1876,31 @@ defmodule Fountain.Billing do
     e ->
       usage_dropped(event_type, "exception", Exception.message(e))
       {:error, :exception}
+  end
+
+  # The six metering event types are also the six moments that say whether
+  # anyone is actually *using* the product, so they go to PostHog from the
+  # same choke point that writes the billing row — never from the callers,
+  # which is the whole point of `record_usage/5` being the choke point.
+  #
+  # `usage.` prefixed so a product event and its billing counterpart are
+  # obviously the same fact seen twice, and so they cannot collide with an
+  # audit action name in the same PostHog project.
+  defp mirror_usage_to_analytics(user_id, event_type, resource_type, metadata) do
+    if Fountain.Analytics.enabled?(),
+      do: do_mirror_usage(user_id, event_type, resource_type, metadata)
+
+    :ok
+  end
+
+  defp do_mirror_usage(user_id, event_type, resource_type, metadata) do
+    Fountain.Analytics.capture(
+      "usage.#{event_type}",
+      user_id,
+      metadata
+      |> Fountain.Analytics.sanitize()
+      |> Map.merge(%{"resource_type" => resource_type, "source" => "metering"})
+    )
   end
 
   defp usage_dropped(event_type, kind, reason) do

@@ -18,6 +18,32 @@ upgrade, is in
 
 ### Added
 
+- **Product analytics in PostHog** (ADR 0025). Fountain has kept an audit
+  trail, a billing meter and a set of OTel spans for a while, and none of them
+  could say whether the accounts that verified last week came back. It now
+  captures product events server-side into the same PostHog project that
+  already evaluates feature flags, so retention, funnels and cohorts stop
+  being SQL nobody has written yet.
+
+  The events come from choke points the code already had, never from
+  instrumented call sites: `Audit.record/1` (every audited mutation, under its
+  own action name), `Billing.record_usage/5` (`usage.turn_started` and the
+  other five metering events) and `Conversations.publish_stage/4` (how a turn
+  ended). Adding an instrumented action means auditing it, which the guardrail
+  test already forces. Console pageviews come from the LiveView auth hook, so
+  the console still loads no third-party script, and reading a flag captures
+  `$feature_flag_called` while stamping `$feature/<key>` onto every other
+  event.
+
+  Nothing is sent without `POSTHOG_PROJECT_API_KEY`, and `POSTHOG_CAPTURE=false`
+  keeps flag evaluation while stopping capture. Events carry action names,
+  resource types, counts and sizes, never secret values, prompts or agent
+  output. `POSTHOG_PERSON_PII=false` drops the account email and leaves the
+  user id. Delivery is best-effort and bounded: events batch through one
+  process, a full queue or a failed request drops them, and each drop is
+  counted on `[:fountain, :analytics, :dropped]` so silence and health stay
+  distinguishable.
+
 - **Webhooks** (#700, ADR 0024). Until now the only way to learn that
   something happened to a conversation was to hold an HTTP connection open,
   which is a daemon every integrator had to write and a thing a GitHub Action,

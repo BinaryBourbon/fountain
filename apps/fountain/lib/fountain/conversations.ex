@@ -1183,8 +1183,58 @@ defmodule Fountain.Conversations do
     # rescues everything, because a webhook that is not sent is a degraded
     # integration and a stage transition that raises is a stuck agent.
     Fountain.Webhooks.dispatch_stage(event)
+    mirror_stage_to_analytics(event, meta)
 
     event
+  end
+
+  # Which stage outcomes are product events, and why only these.
+  #
+  # Provisioning already reaches PostHog through `Billing.record_usage/5`
+  # (`usage.sandbox_provisioned` and friends), which carries the user id for
+  # free — mirroring it here as well would double-count the same fact. What
+  # metering does *not* have is how a turn ended, and "how many turns finished,
+  # and how many of those failed" is the single most useful thing this system
+  # can report about itself. The two failure stages join it because they are
+  # the ones that end an activation attempt.
+  @analytics_stages %{
+    {"turn", "done"} => true,
+    {"turn", "failed"} => true,
+    {"turn", "interrupted"} => true,
+    {"setup", "failed"} => true,
+    {"model", "failed"} => true
+  }
+
+  defp mirror_stage_to_analytics(event, meta) do
+    # `enabled?/0` first, before anything touches the database. This runs on
+    # the conversation hot path, and an instance with no PostHog key must not
+    # pay a query for a feature it has not turned on.
+    with true <- Fountain.Analytics.enabled?(),
+         true <- Map.has_key?(@analytics_stages, {event.stage, event.state}),
+         user_id when is_binary(user_id) <- conversation_user_id(event.conversation_id) do
+      Fountain.Analytics.capture(
+        "conversation.#{event.stage}.#{event.state}",
+        user_id,
+        meta
+        |> Fountain.Analytics.sanitize()
+        |> Map.merge(%{
+          "conversation_id" => event.conversation_id,
+          "source" => "conversation"
+        })
+      )
+    else
+      _ -> :ok
+    end
+  rescue
+    # Same contract as the webhook dispatch above it: a stage transition that
+    # raises is a stuck agent, and analytics is never worth that.
+    _ -> :ok
+  end
+
+  defp conversation_user_id(nil), do: nil
+
+  defp conversation_user_id(conversation_id) do
+    Repo.one(from c in Conversation, where: c.id == ^conversation_id, select: c.user_id)
   end
 
   @doc """

@@ -51,11 +51,72 @@ defmodule Fountain.FeatureFlags do
   def enabled?(flag, user) when is_atom(flag), do: enabled?(key!(flag), user)
 
   def enabled?(flag, user) when is_binary(flag) do
-    case Map.fetch(overrides(), flag) do
-      {:ok, value} -> value == true
-      :error -> remote_enabled?(flag, distinct_id(user))
+    id = distinct_id(user)
+
+    answer =
+      case Map.fetch(overrides(), flag) do
+        {:ok, value} -> value == true
+        :error -> remote_enabled?(flag, id)
+      end
+
+    report_called(flag, id, answer)
+    answer
+  end
+
+  # PostHog's own SDKs capture `$feature_flag_called` every time a flag is
+  # read, which is what makes "the flag is on for 40 accounts but only 3 ever
+  # hit the code path" answerable. Rate-limited to one event per person per
+  # flag per `@fresh_ms` for the same reason the lookup itself is cached: a
+  # flag read on every request must not become an event on every request.
+  defp report_called(_flag, nil, _answer), do: :ok
+
+  defp report_called(flag, distinct_id, answer) do
+    now = System.monotonic_time(:millisecond)
+    key = {:called, distinct_id, flag}
+
+    if stale_called?(key, now) do
+      ensure_table()
+      :ets.insert(@table, {key, answer, now})
+
+      Fountain.Analytics.capture("$feature_flag_called", distinct_id, %{
+        "$feature_flag" => flag,
+        "$feature_flag_response" => answer
+      })
+    end
+
+    :ok
+  end
+
+  defp stale_called?(key, now) do
+    ensure_table()
+
+    case :ets.lookup(@table, key) do
+      [{^key, _answer, at}] -> now - at >= @fresh_ms
+      [] -> true
     end
   end
+
+  @doc """
+  The answers already held for this person, without ever making a call.
+
+  `Fountain.Analytics` stamps these onto every event as `$feature/<key>` so a
+  cohort can be compared against its control at query time. Cache-only on
+  purpose: capturing an event must never be the thing that triggers a flag
+  lookup, and a person who has not had a flag read yet simply carries no flag
+  properties.
+  """
+  @spec cached_flags(String.t() | nil) :: %{String.t() => boolean()}
+  def cached_flags(distinct_id) when is_binary(distinct_id) do
+    remote =
+      case cached(distinct_id) do
+        {:ok, flags, _at} -> flags
+        :miss -> %{}
+      end
+
+    Map.merge(remote, overrides())
+  end
+
+  def cached_flags(_), do: %{}
 
   defp distinct_id(%{id: id}) when is_binary(id), do: id
   defp distinct_id(id) when is_binary(id), do: id

@@ -33,6 +33,7 @@ defmodule Fountain.Application do
         FountainWeb.Plugs.RateLimit.Sweeper,
         Fountain.Conversations.Redaction,
         Fountain.FeatureFlags.Cache,
+        Fountain.Analytics.Sink,
         Fountain.Team.Comms.Inbound.Seen,
         {Oban, Application.fetch_env!(:fountain, Oban)}
       ] ++
