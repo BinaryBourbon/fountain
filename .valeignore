@@ -47,7 +47,6 @@ docs/guides/operate/put-it-on-the-internet.md
 docs/guides/operate/run-a-release-task.md
 docs/guides/operate/sandbox-lifetime.md
 docs/guides/operate/upgrade.md
-docs/index.md
 docs/integrations/acp.md
 docs/integrations/adding-a-sandbox-provider.md
 docs/integrations/buzz.md
@@ -70,7 +69,6 @@ docs/integrations/sprites.md
 docs/integrations/stripe.md
 docs/llm-integration.md
 docs/operations.md
-docs/primitives.md
 docs/reference/conversation-states.md
 docs/reference/glossary.md
 docs/sdk.md

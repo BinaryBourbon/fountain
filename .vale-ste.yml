@@ -136,3 +136,23 @@ vocabulary:
     - env
     - dek
     - adr
+    # Gerunds that name a thing here, and page titles built from them. STE
+    # exempts a Technical Name from Rule 3.4 the same way it exempts one from
+    # the dictionary.
+    - billing
+    - logging
+    - onboarding
+    - troubleshooting
+    - self-hosting
+    - staging
+    - clustering
+    - monitoring
+    - provisioning
+    - versioning
+    - streaming
+    - polling
+    - routing
+    - caching
+    - encoding
+    - sharding
+    - plugging
