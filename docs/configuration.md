@@ -63,8 +63,8 @@ message.
 
 | Variable | Default | Required | Effect |
 |---|---|---|---|
-| `WEBHOOKS_ENABLED` | `true` | — | A `false` stops Fountain dispatching outbound [webhooks](reference/webhooks.md) at all. Endpoints stay saved and stop receiving. Use it on a deployment with no outbound egress. |
-| `WEBHOOK_ALLOW_HTTP` | `false` | — | A `true` lets an endpoint URL use plain `http://`, for a receiver on your own network. It relaxes the scheme rule alone. Loopback, link-local and RFC1918 targets stay refused either way, at every request. |
+| `WEBHOOKS_ENABLED` | `true` | — | A `false` stops every outbound [webhook](reference/webhooks.md). An endpoint stays saved and gets nothing. Use it on a deployment with no outbound egress. |
+| `WEBHOOK_ALLOW_HTTP` | `false` | — | A `true` lets an endpoint URL use plain `http://`, for a receiver on your own network. It relaxes the scheme rule alone. Fountain refuses a loopback, link local or RFC1918 target either way, at every request. |
 
 ## Registration and accounts
 

@@ -842,16 +842,16 @@ GET    /api/webhooks/:id/deliveries                   # ?limit= (default 50, max
 POST   /api/webhooks/:id/deliveries/:delivery_id/redeliver
 ```
 
-Fountain POSTs conversation lifecycle transitions to a URL you own, so an
+Fountain sends conversation lifecycle transitions to a URL you own. An
 integration that cannot hold a socket open does not have to poll. The payload
 carries ids, a stage and a duration, and never conversation content.
 
 These routes need a full-scope key. A sandbox's per-conversation token must
-not be able to point the account's events at a URL of its choosing.
+not point the account's events at a URL that the sandbox picks.
 
-The full event catalogue, the payload envelope, a worked signature verifier
-and the at-least-once contract are on the [webhooks
-reference](reference/webhooks.md).
+The [webhooks reference](reference/webhooks.md) holds the full event
+catalogue, the payload shape, a worked signature verifier and the
+at-least-once contract.
 
 ## Audit
 

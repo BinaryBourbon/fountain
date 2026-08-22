@@ -282,9 +282,9 @@ fountain keys revoke <id>
 
 ## Webhooks
 
-Endpoints Fountain POSTs conversation lifecycle events to. The full event
-catalogue and a worked signature verifier are on the
-[webhooks reference](reference/webhooks.md).
+Endpoints that Fountain sends conversation lifecycle events to. The
+[webhooks reference](reference/webhooks.md) holds the full event catalogue and
+a worked signature verifier.
 
 ```bash
 fountain webhooks list [--json]
@@ -299,13 +299,13 @@ fountain webhooks deliveries <id> [--limit <n>] [--json]
 fountain webhooks redeliver <id> <delivery-id>
 ```
 
-`create` and `rotate-secret` print the signing secret once. It is not
-recoverable, only replaceable. Repeat `--event` for each type; with none, an
-endpoint gets `conversation.turn.done`, `conversation.turn.failed` and
-`conversation.provision.failed`.
+`create` and `rotate-secret` print the secret once. Fountain cannot show it
+again, and can only replace it. Repeat `--event` for each type. An endpoint
+with no `--event` gets `conversation.turn.done`,
+`conversation.turn.failed` and `conversation.provision.failed`.
 
-`deliveries` is where a broken integration becomes a status code and a
-response body rather than a support thread.
+`deliveries` turns a broken integration into a status code and a response
+body, rather than a support thread.
 
 ## Output
 

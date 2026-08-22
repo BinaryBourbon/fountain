@@ -694,6 +694,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/webhooks/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get one webhook endpoint */
+        get: operations["FountainWeb.WebhookEndpointController.show"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete a webhook endpoint
+         * @description Its delivery log goes with it. Queued deliveries are dropped.
+         */
+        delete: operations["FountainWeb.WebhookEndpointController.delete"];
+        options?: never;
+        head?: never;
+        /**
+         * Update a webhook endpoint
+         * @description Any subset of url, description, event_types and status. Setting `status` to `active` on an endpoint that was auto-disabled also clears its failure count.
+         */
+        patch: operations["FountainWeb.WebhookEndpointController.update"];
+        trace?: never;
+    };
     "/api/auth/register": {
         parameters: {
             query?: never;
@@ -958,6 +983,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/webhooks/{id}/deliveries/{delivery_id}/redeliver": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Send one recorded event again
+         * @description A fresh job with a fresh attempt counter, against the endpoint's current URL and current secret. The payload is the one that was recorded.
+         */
+        post: operations["FountainWeb.WebhookEndpointController.redeliver"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/events/stream": {
         parameters: {
             query?: never;
@@ -1098,6 +1143,26 @@ export interface paths {
         post?: never;
         /** Clear a provider credential */
         delete: operations["FountainWeb.InferenceCredentialController.delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/webhooks/{id}/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Send a test event
+         * @description Queues one `webhook.test` delivery, signed like any other. Delivered whatever the endpoint's filter says, and deliberately outside the `conversation.*` namespace so a receiver switching on type cannot mistake it for a real transition.
+         */
+        post: operations["FountainWeb.WebhookEndpointController.test"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -1441,6 +1506,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/webhooks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List webhook endpoints
+         * @description Metadata only. The signing secret is returned once, at creation and at each rotation, and is not recoverable.
+         */
+        get: operations["FountainWeb.WebhookEndpointController.index"];
+        put?: never;
+        /**
+         * Create a webhook endpoint
+         * @description The response is the only time the signing secret is available. A URL pointing at loopback, link-local (the cloud metadata address included) or RFC1918 space is refused here and again at every delivery.
+         */
+        post: operations["FountainWeb.WebhookEndpointController.create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/webhooks/{id}/deliveries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Recent delivery attempts
+         * @description Newest first, one row per HTTP attempt. Pruned on the `webhook_deliveries` retention window (30 days by default).
+         */
+        get: operations["FountainWeb.WebhookEndpointController.deliveries"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/search": {
         parameters: {
             query?: never;
@@ -1499,6 +1608,26 @@ export interface paths {
          * @description Applies all resources from a compiled fountain.yml manifest in one request. Resources are reconciled by name — environments first, then vaults, then agents — so agent specs may reference an environment by name via `spec.environment`. Application is best-effort per resource: the response is 200 even when individual resources fail, with per-resource errors in the result entries.
          */
         post: operations["FountainWeb.ApplyController.create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/webhooks/{id}/rotate-secret": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rotate the signing secret
+         * @description Returns a new secret and invalidates the old one immediately. A receiver that verifies signatures has to be updated in the same breath.
+         */
+        post: operations["FountainWeb.WebhookEndpointController.rotate"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2063,6 +2192,10 @@ export interface components {
             /** Format: uuid */
             user_id: string;
         };
+        /** WebhookDeliveryListResponse */
+        WebhookDeliveryListResponse: {
+            data: components["schemas"]["WebhookDelivery"][];
+        };
         /**
          * VaultSecret
          * @description A named secret in a vault. Values are write-only — the API never returns them.
@@ -2247,9 +2380,33 @@ export interface components {
             provider: "anthropic_api_key" | "claude_code_oauth_token" | "openai_api_key" | "gemini_api_key";
             set: boolean;
         };
+        /** WebhookEndpointCreateRequest */
+        WebhookEndpointCreateRequest: {
+            description?: string | null;
+            /**
+             * @description Defaults to conversation.turn.done, conversation.turn.failed and conversation.provision.failed when absent.
+             * @example [
+             *       "conversation.turn.done"
+             *     ]
+             */
+            event_types?: string[];
+            /**
+             * @description https:// only, unless the instance permits http. Loopback, link-local (including the cloud metadata address) and RFC1918 targets are refused, at request time as well as here.
+             * @example https://example.com/hooks/fountain
+             */
+            url: string;
+        };
         /** VaultSecretResponse */
         VaultSecretResponse: {
             data: components["schemas"]["VaultSecret"];
+        };
+        /** WebhookEndpointListResponse */
+        WebhookEndpointListResponse: {
+            data: components["schemas"]["WebhookEndpoint"][];
+        };
+        /** WebhookEndpointResponse */
+        WebhookEndpointResponse: {
+            data: components["schemas"]["WebhookEndpoint"];
         };
         /**
          * TurnUsage
@@ -2286,6 +2443,39 @@ export interface components {
                     enabled: string[];
                 };
             };
+        };
+        /**
+         * WebhookEndpoint
+         * @description A URL of yours that Fountain POSTs lifecycle events to. The signing secret is returned only by create and rotate, and never appears here.
+         */
+        WebhookEndpoint: {
+            /** @description Events in a row that exhausted their retries. Any accepted delivery clears it. */
+            consecutive_failures?: number;
+            description?: string | null;
+            /** Format: date-time */
+            disabled_at?: string | null;
+            disabled_reason?: string | null;
+            /**
+             * @description What this endpoint is subscribed to. An exact type (`conversation.turn.done`), one stage (`conversation.turn.*`), or `*` for everything. `GET /api/catalog` is not the source for these; the docs page is.
+             * @example [
+             *       "conversation.turn.done",
+             *       "conversation.turn.failed"
+             *     ]
+             */
+            event_types: string[];
+            /** Format: uuid */
+            id: string;
+            /** Format: date-time */
+            inserted_at?: string;
+            /**
+             * @description `disabled` means Fountain stopped delivering, either because you switched it off or because deliveries failed for long enough.
+             * @enum {string}
+             */
+            status: "active" | "disabled";
+            /** Format: date-time */
+            updated_at?: string;
+            /** @example https://example.com/hooks/fountain */
+            url: string;
         };
         /**
          * Teammate
@@ -2536,6 +2726,15 @@ export interface components {
                 /** @enum {string} */
                 media_type: "image/png" | "image/jpeg" | "image/gif" | "image/webp";
             } | null;
+        };
+        /**
+         * WebhookTestResponse
+         * @description The test event was queued. Its delivery shows up in `GET /api/webhooks/{id}/deliveries` once the worker has run.
+         */
+        WebhookTestResponse: {
+            /** @example webhook.test */
+            event_type: string;
+            queued: boolean;
         };
         /**
          * Conversation
@@ -2843,6 +3042,28 @@ export interface components {
         AgentListResponse: {
             data: components["schemas"]["Agent"][];
         };
+        /**
+         * WebhookDelivery
+         * @description One HTTP attempt at one event. Retained for 30 days by default, then pruned.
+         */
+        WebhookDelivery: {
+            /** @description 1 for the first try. */
+            attempt: number;
+            duration_ms?: number | null;
+            error?: string | null;
+            /** @description The log_events row id, which is also the SSE event id. */
+            event_id: string;
+            /** @example conversation.turn.done */
+            event_type: string;
+            /** Format: uuid */
+            id: string;
+            /** Format: date-time */
+            inserted_at?: string;
+            /** @description The first few KB of what the receiver said. */
+            response_body?: string | null;
+            /** @description null when the request never got a response. */
+            status_code?: number | null;
+        };
         /** AgentUpdate */
         AgentUpdate: {
             /** @description Environments a conversation may launch this agent under instead of its own (environment_id on create). Same shape as allowed_vault_ids: null (default) allows any environment the tenant owns; an empty list forbids overriding; a non-empty list is an allowlist. The agent's own environment always passes. */
@@ -3072,6 +3293,18 @@ export interface components {
             password: string;
             /** @description From the reset email. */
             token: string;
+        };
+        /**
+         * WebhookEndpointCreatedResponse
+         * @description The endpoint, plus the signing secret. This is the only response that carries the secret; it is not recoverable afterwards, only replaceable.
+         */
+        WebhookEndpointCreatedResponse: {
+            data: components["schemas"]["WebhookEndpoint"];
+            /**
+             * @description The HMAC-SHA256 signing secret. Store it; it is not shown again.
+             * @example whsec_Zm91bnRhaW4tZXhhbXBsZS1zZWNyZXQtdmFsdWU
+             */
+            secret: string;
         };
         /** AdminSuspendRequest */
         AdminSuspendRequest: {
@@ -3304,6 +3537,17 @@ export interface components {
                 /** @description Pass as `before` for the next (older) page. */
                 next_cursor?: number | null;
             };
+        };
+        /**
+         * WebhookEndpointUpdateRequest
+         * @description Any subset. `status` toggles delivery; the secret is rotated separately.
+         */
+        WebhookEndpointUpdateRequest: {
+            description?: string | null;
+            event_types?: string[];
+            /** @enum {string} */
+            status?: "active" | "disabled";
+            url?: string;
         };
         /** AdminRoleRequest */
         AdminRoleRequest: {
@@ -5058,6 +5302,138 @@ export interface operations {
             };
         };
     };
+    "FountainWeb.WebhookEndpointController.show": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The endpoint */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebhookEndpointResponse"];
+                };
+            };
+            /** @description Missing or invalid key */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No such endpoint on this account */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "FountainWeb.WebhookEndpointController.delete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing or invalid key */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No such endpoint on this account */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "FountainWeb.WebhookEndpointController.update": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        /** @description Fields to change */
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WebhookEndpointUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description The endpoint */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebhookEndpointResponse"];
+                };
+            };
+            /** @description Missing or invalid key */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No such endpoint on this account */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Invalid URL or event filter */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     "FountainWeb.RegistrationController.api_create": {
         parameters: {
             query?: never;
@@ -5853,6 +6229,47 @@ export interface operations {
             };
         };
     };
+    "FountainWeb.WebhookEndpointController.redeliver": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                delivery_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Queued */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebhookTestResponse"];
+                };
+            };
+            /** @description Missing or invalid key */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No such endpoint or delivery on this account */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     "FountainWeb.EventsController.stream": {
         parameters: {
             query?: {
@@ -6217,6 +6634,46 @@ export interface operations {
             };
             /** @description Unknown provider */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "FountainWeb.WebhookEndpointController.test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Queued */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebhookTestResponse"];
+                };
+            };
+            /** @description Missing or invalid key */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No such endpoint on this account */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -7103,6 +7560,121 @@ export interface operations {
             };
         };
     };
+    "FountainWeb.WebhookEndpointController.index": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Endpoints */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebhookEndpointListResponse"];
+                };
+            };
+            /** @description Missing or invalid key */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "FountainWeb.WebhookEndpointController.create": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description The endpoint */
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WebhookEndpointCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description The endpoint, with its secret */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebhookEndpointCreatedResponse"];
+                };
+            };
+            /** @description Missing or invalid key */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Invalid URL or event filter */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "FountainWeb.WebhookEndpointController.deliveries": {
+        parameters: {
+            query?: {
+                /** @description Default 50, max 200. */
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Attempts */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebhookDeliveryListResponse"];
+                };
+            };
+            /** @description Missing or invalid key */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No such endpoint on this account */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     "FountainWeb.SearchController.index": {
         parameters: {
             query: {
@@ -7266,6 +7838,46 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ChangesetError"];
+                };
+            };
+        };
+    };
+    "FountainWeb.WebhookEndpointController.rotate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The endpoint, with its new secret */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebhookEndpointCreatedResponse"];
+                };
+            };
+            /** @description Missing or invalid key */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No such endpoint on this account */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };

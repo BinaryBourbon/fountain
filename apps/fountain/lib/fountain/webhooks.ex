@@ -283,44 +283,56 @@ defmodule Fountain.Webhooks do
   defp do_dispatch(event) do
     type = Events.type(event.stage, event.state)
 
-    with %{} = conv <- conversation_facts(event.conversation_id),
-         [_ | _] = endpoints <- active_endpoints_for(conv.user_id, type) do
-      payload = payload(event, conv, type)
+    case conversation_and_endpoints(event.conversation_id) do
+      {conv, [_ | _] = endpoints} ->
+        payload = payload(event, conv, type)
 
-      Enum.each(endpoints, fn endpoint ->
-        Fountain.Workers.WebhookDelivery.enqueue(endpoint.id, payload)
-      end)
-    else
-      _ -> :ok
+        endpoints
+        |> Enum.filter(&Events.matches?(&1.event_types, type))
+        |> Enum.each(&Fountain.Workers.WebhookDelivery.enqueue(&1.id, payload))
+
+      _ ->
+        :ok
     end
 
     :ok
   end
 
-  defp conversation_facts(nil), do: nil
+  defp conversation_and_endpoints(nil), do: nil
 
-  defp conversation_facts(conversation_id) do
-    Repo.one(
-      from c in Conversation,
-        where: c.id == ^conversation_id,
-        select: %{
-          id: c.id,
-          user_id: c.user_id,
-          agent_id: c.agent_id,
-          parent_conversation_id: c.parent_conversation_id,
-          status: c.status
-        }
-    )
-  end
-
-  # Filtering in Elixir rather than in SQL: the filter vocabulary has
+  # One round trip, not two. This runs on `publish_stage/4`, which is on the
+  # conversation's own hot path and fires tens of times per conversation, so
+  # the query count here is the cost every tenant pays whether or not they
+  # have ever configured a webhook. A left join means an account with no
+  # endpoints costs exactly one indexed read.
+  #
+  # The event-type filter stays in Elixir. The filter vocabulary has
   # wildcards, `event_types` is a small array, and a tenant has a handful of
-  # endpoints. An array containment query would have to be written twice —
-  # once for the exact form and once for each wildcard shape.
-  defp active_endpoints_for(user_id, type) do
-    from(e in Endpoint, where: e.user_id == ^user_id and e.status == "active")
-    |> Repo.all()
-    |> Enum.filter(&Events.matches?(&1.event_types, type))
+  # endpoints; an array-containment query would have to be written once for
+  # the exact form and again for each wildcard shape.
+  defp conversation_and_endpoints(conversation_id) do
+    rows =
+      Repo.all(
+        from c in Conversation,
+          left_join: e in Endpoint,
+          on: e.user_id == c.user_id and e.status == "active",
+          where: c.id == ^conversation_id,
+          select: {
+            %{
+              id: c.id,
+              user_id: c.user_id,
+              agent_id: c.agent_id,
+              parent_conversation_id: c.parent_conversation_id,
+              status: c.status
+            },
+            e
+          }
+      )
+
+    case rows do
+      [] -> nil
+      [{conv, _} | _] -> {conv, rows |> Enum.map(&elem(&1, 1)) |> Enum.reject(&is_nil/1)}
+    end
   end
 
   @doc """

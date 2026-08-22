@@ -147,6 +147,16 @@ defmodule Fountain.WebhooksTest do
       %{user: user, conv: conv}
     end
 
+    defp collect_queries(count \\ 0) do
+      receive do
+        {:query, _source} -> collect_queries(count + 1)
+      after
+        50 -> count
+      end
+    end
+
+    defp flush_queries, do: collect_queries()
+
     defp jobs_for(endpoint) do
       Repo.all(
         from j in Oban.Job,
@@ -239,6 +249,41 @@ defmodule Fountain.WebhooksTest do
 
       assert [job] = jobs_for(endpoint)
       assert job.args["payload"]["id"] == to_string(event.id)
+    end
+
+    test "dispatch costs one query, whether or not the tenant has endpoints",
+         %{user: user, conv: conv} do
+      # `publish_stage/4` is on the conversation's own hot path and fires tens
+      # of times per conversation, so the query count here is what every
+      # tenant pays whether or not they ever configured a webhook. Two
+      # queries (fetch conversation, then fetch endpoints) was the obvious
+      # shape and is twice the cost; a left join is one indexed read.
+      me = self()
+      handler = "webhook-query-count-#{System.unique_integer([:positive])}"
+
+      :telemetry.attach(
+        handler,
+        [:fountain, :repo, :query],
+        fn _event, _measure, meta, _config ->
+          if self() == me and meta[:source] in ["conversations", "webhook_endpoints"] do
+            send(me, {:query, meta[:source]})
+          end
+        end,
+        nil
+      )
+
+      on_exit(fn -> :telemetry.detach(handler) end)
+
+      # No endpoints at all: the common case on most instances.
+      Conversations.publish_stage(conv.id, "turn", "done")
+      assert collect_queries() == 1
+
+      endpoint_for(user, %{"event_types" => ["*"]})
+      flush_queries()
+
+      # With endpoints, still one: the join carries both.
+      Conversations.publish_stage(conv.id, "turn", "done")
+      assert collect_queries() == 1
     end
 
     test "dispatch survives anything it finds, including finding nothing" do
