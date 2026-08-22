@@ -61,8 +61,3 @@ docs/integrations/stripe.md
 docs/reference/conversation-states.md
 docs/reference/glossary.md
 docs/sdk.md
-docs/troubleshooting/conversation-stuck-or-failed.md
-docs/troubleshooting/index.md
-docs/troubleshooting/nobody-can-log-in.md
-docs/troubleshooting/pods-restarting.md
-docs/troubleshooting/sandbox-errors.md

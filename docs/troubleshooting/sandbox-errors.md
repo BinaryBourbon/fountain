@@ -1,51 +1,51 @@
 # Sandbox errors
 
-This guide shows you how to read a provisioning failure, and what the retries
-have already tried on your behalf.
+This guide shows you how to read a failure to provision, and what the retries
+already tried for you.
 
-The examples below are the Sprites path, which is the default. The shape is the
-same on other providers, because every adapter normalizes provider errors into
-one taxonomy. See
+The examples below use the Sprites path, which is the default. The shape is
+the same on the other providers, because each adapter normalizes the
+provider's errors into one taxonomy. Read
 [the sandbox contract](../integrations/sandbox-contract.md).
 
 ## What the retries already cover
 
-Transient failures on the provisioning path (5xx, 429, timeouts) are tried up
-to three times, meaning two retries, with exponential backoff. Each call is
-bounded by `SPRITES_TIMEOUT_MS`, default 30s.
+Fountain tries a transient failure on the provision path up to three times.
+That is the first call and two retries, with exponential backoff. Transient
+means a 5xx, a 429 or a timeout. `SPRITES_TIMEOUT_MS` bounds each call, and
+the default is 30s.
 
-You only see a failure after that has been exhausted.
+You see a failure only after all three attempts fail.
 
 ## What a 4xx means
 
-These are deliberately **not** retried.
+Fountain does **not** retry these, and that is deliberate.
 
-- **401 or 403.** The provider token is invalid, revoked, or missing. Check
-  this first, because it fails every conversation while everything else looks
-  healthy.
-- **409 on create.** Already handled. The existing sandbox is adopted, so this
-  is not an error you will see.
+- **401 or 403.** The provider token is invalid, revoked or absent. Check this
+  first. It fails each conversation while everything else looks healthy.
+- **409 on create.** Fountain handles this. It adopts the sandbox that already
+  exists, so you never see the error.
 
 ## During a provider outage
 
-New conversations and wakes fail. A fresh provision marks the conversation
-`failed`, and a wake leaves it resumable for later.
+A new conversation fails, and so does a wake. A fresh provision marks the
+conversation `failed`. A wake leaves it resumable for later.
 
-Sign-in, dashboards, configuration and past logs keep serving.
+Sign-in, dashboards, configuration and past logs all still work.
 
-The readiness probe deliberately excludes the sandbox provider, because a third
-party's uptime does not belong on the serving path. Do not expect pods to go
-NotReady over it.
+The readiness probe deliberately leaves the sandbox provider out. A third
+party's uptime does not belong on the request path, so do not expect a pod to
+go NotReady over it.
 
-If you scrape metrics, provisioning failures show as
-`fountain_stage_count{stage="provision", status="failed"}`, and completions as
+If you scrape metrics, a failure to provision shows as
+`fountain_stage_count{stage="provision", status="failed"}`. A success shows as
 `status="done"`.
 
-## Quota, not outage
+## Quota, and not an outage
 
-A user at their concurrent-sandbox quota, default 5, sees provisioning fail
-while the provider is perfectly healthy. Crashed provisions leave rows that
-count until the reaper releases them, hourly at :07. See
+A user at their quota for concurrent sandboxes, which is 5 by default, sees a
+provision fail while the provider is healthy. A crashed provision leaves a row
+that counts until the reaper releases it, each hour at :07. Read
 [A conversation is stuck or failed](conversation-stuck-or-failed.md).
 
 ## Related
@@ -53,5 +53,5 @@ count until the reaper releases them, hourly at :07. See
 - [A conversation is stuck or failed](conversation-stuck-or-failed.md).
 - [The sandbox contract](../integrations/sandbox-contract.md), for the shared
   error taxonomy.
-- [Wire up observability](../guides/operate/observability.md), for the
-  provisioning-failure alert.
+- [Wire up observability](../guides/operate/observability.md), for the alert
+  on a failure to provision.
