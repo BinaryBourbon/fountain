@@ -29,11 +29,12 @@ defmodule Fountain.Runtimes.ACP do
   `Peer`'s replay-discard exists for exactly this, and Gemini is the runtime
   that actually exercises it.
 
-  Converting Gemini is still worth it despite the replay, because its legacy
-  resume is the worst thing we ship: `gemini --resume` re-enters "the most
-  recent conversation in the workspace" (`gemini.ex:14-17`), which is correct
-  only while one conversation ever runs per workspace — an invariant held by
-  accident and asserted by no test. ACP names the session.
+  Converting Gemini was worth it despite the replay, because its legacy resume
+  was the worst thing we shipped: `gemini --resume` re-entered "the most recent
+  conversation in the workspace", correct only while one conversation ever ran
+  per workspace — an invariant held by accident and asserted by no test. ACP
+  names the session. That argv is deleted (#941), and with it the last vendor
+  permission-bypass flag Fountain passed.
 
   **Gemini was held back for eleven days** (#659) by a defect in its own
   session store, and now ships behind a workaround for it. The mechanism is

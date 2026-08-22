@@ -2473,9 +2473,9 @@ defmodule Fountain.Conversations.ConversationServer do
           # nothing and the id that comes back overwrites this one (see the
           # `{:acp, ref, {:session, id}}` handler). What the row still buys is
           # the `mode` decision above — a persisted id means "a turn has
-          # happened", which is the only thing gemini's legacy `--resume`
-          # needs, since `Gemini.build_command/5` ignores the id and re-enters
-          # the most recent conversation in the workspace.
+          # happened", which is what picks `session/resume` or `session/load`
+          # over `session/new`. It used to buy gemini's legacy `--resume` the
+          # same signal; that argv is gone with #941.
           new_id = Ecto.UUID.generate()
           {:ok, _} = Conversations.update_conversation(conv, %{runtime_session_id: new_id})
           new_id

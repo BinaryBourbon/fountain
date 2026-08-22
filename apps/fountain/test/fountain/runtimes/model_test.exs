@@ -114,23 +114,14 @@ defmodule Fountain.Runtimes.ModelTest do
   end
 
   # The regression #553 describes: runtimes built argv that never mentioned
-  # agent.model, so the CLI's own default ran instead. Only gemini still
-  # builds argv — the other runtimes' turns travel over ACP, where the model
-  # is pinned per session by the peer (see "model selection" in
-  # acp/peer_test.exs).
-  describe "build_command/5 honours agent.model" do
-    test "gemini passes the bare id" do
-      {"gemini", argv, _opts} =
-        Runtimes.Gemini.build_command(
-          agent("gemini", "google/gemini-2.5-pro"),
-          "hi",
-          :run,
-          nil,
-          []
-        )
-
-      assert "--model" in argv
-      assert Enum.at(argv, Enum.find_index(argv, &(&1 == "--model")) + 1) == "gemini-2.5-pro"
-    end
-  end
+  # agent.model, so the CLI's own default ran instead.
+  #
+  # No runtime builds argv any more. gemini was the last one, and #941 deleted
+  # its `build_command/5` along with the `--approval-mode yolo` it carried. The
+  # model is pinned per session over ACP now — see "model selection" in
+  # `acp/peer_test.exs`, which is where this regression is guarded.
+  #
+  # `Model.model_args/1` itself is still tested above: it is what an argv-based
+  # runtime would use, and it is cheaper to keep than to re-derive if a fifth
+  # runtime ever arrives that cannot speak ACP.
 end
