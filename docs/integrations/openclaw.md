@@ -103,8 +103,8 @@ OpenClaw runs on Node, and needs **Node ≥ 22.22.3**, or ≥ 24.15, or ≥ 25.9
               // the id you spawn/bind, mapped to the command OpenClaw runs
               fountain: { command: "fountain", args: ["acp", "--agent", "researcher"] }
             },
-            // until permission forwarding lands (see Limits), the sandbox's own
-            // policy runs the turn; ask acpx not to block on an approval prompt
+            // the agent's own policy runs the turn; nobody has measured an
+            // `ask` policy through acpx yet (see Limits)
             permissionMode: "approve-all"
           }
         }
@@ -207,15 +207,13 @@ environments can stand in for its own, with `allowed_environment_ids`.
 - **One identity for each host.** OpenClaw is single-user and self-hosted, so
   each session authenticates as the host's Fountain login. This integration
   gives you no Fountain identity for each channel user.
-- **Fountain refuses an agent on the `gemini` runtime** when a session opens,
-  and names it. Gemini is not on ACP yet
-  ([#659](https://github.com/BinaryBourbon/fountain/issues/659)). Use those
-  agents from the conversations app, or with `fountain run`.
-- **Fountain does not forward a permission prompt yet.** An agent today
-  handles its own permissions, which is why the setup above sets
-  `permissionMode: "approve-all"`. Nothing asks an OpenClaw channel to approve
-  a tool call ([#643](https://github.com/BinaryBourbon/fountain/issues/643),
-  [#708](https://github.com/BinaryBourbon/fountain/issues/708)).
+- **We have not measured a permission prompt in a channel.** Fountain forwards
+  `session/request_permission` to an ACP client
+  ([#708](https://github.com/BinaryBourbon/fountain/issues/708)), and the setup
+  above keeps `permissionMode: "approve-all"` because nobody has driven an
+  `ask` policy through OpenClaw yet. An unanswered prompt blocks the tool for 5
+  minutes, and Fountain then refuses it. Leave the default until somebody
+  measures it.
 - **The model, and the thinking level, belong to the Fountain agent.** <!-- vale disable-line STE.IngForms -->
   Fountain accepts and ignores OpenClaw's `--model`, the `model` and
   `thinking` on `sessions_spawn`, and the `/acp` model controls. A Fountain
@@ -286,7 +284,7 @@ fountain acp --agent researcher --log-level debug
 | Message | Meaning |
 |---|---|
 | `no Fountain agent configured` | The entry has no `--agent`. |
-| `agent "x" runs the gemini runtime, which does not speak ACP` | Read the limits above. |
+| `agent "x" runs the … runtime, which does not speak ACP` | All four runtimes speak ACP. This names a conversation whose runtime column holds a name that no adapter covers. |
 | `credentials for … were rejected` | Run `fountain auth login` on the host. The message names the instance it tried. |
 | `could not resolve agent "x" on …` | The wrong name, or the right name on a different instance. |
 

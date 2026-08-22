@@ -116,6 +116,25 @@ Use it when one agent config must run under several baselines. The same
 is one, still wins on a key collision. An agent can also restrict which
 environments can stand in for its own, with `allowed_environment_ids`.
 
+### Approve a tool before it runs
+
+By default the agent runs a tool without a question. `--permission ask` puts
+the question in your editor instead, as its own approval prompt. The tool waits
+for your answer.
+
+```json
+"args": ["acp", "--agent", "researcher", "--permission", "ask"]
+```
+
+To ask about one kind of tool only, name the kind. `--permission execute=ask`
+asks before a shell command, and permits the rest. An entry can only narrow
+what the agent itself permits. [Before a tool runs](../concepts/permissions.md)
+holds the policy, the keys and the three verdicts.
+
+No answer is an answer. Fountain refuses a prompt that you dismiss. It refuses
+one that your editor never answers, and one that waits 5 minutes. The turn
+continues either way, and the agent reads that it has no permission.
+
 ### Any other ACP client
 
 Nothing in the adapter is specific to Zed. Whatever your client calls it, the
@@ -144,6 +163,7 @@ version.
 | `session/prompt` | Runs a turn. Messages, thoughts and tool calls stream back as they happen. |
 | `session/cancel` | Interrupts the turn that runs. |
 | `session/load` | Replays the conversation into an editor you just opened. |
+| `session/request_permission` (agent → editor) | Asks you before the agent runs a tool, when the policy says `ask`. Your answer goes back to the agent. |
 
 A prompt can carry images. A dropped connection is not a lost turn. The server
 closes an idle stream after 60 seconds, and the adapter reconnects and
@@ -152,14 +172,12 @@ continues from where it stopped.
 ## Limits, stated rather than discovered
 
 - **No access to your local files**, as above.
-- **Fountain refuses an agent on the `gemini` runtime** when the editor opens
-  a session, and names it. Gemini is not on ACP yet
-  ([#659](https://github.com/BinaryBourbon/fountain/issues/659)). Use those
-  agents from the conversations app, or with `fountain run`.
-- **Fountain does not forward a permission prompt yet.** An agent today
-  handles its own permissions, so nothing asks your editor to approve a tool
-  call ([#643](https://github.com/BinaryBourbon/fountain/issues/643),
-  [#708](https://github.com/BinaryBourbon/fountain/issues/708)).
+- **The opencode runtime never asks.** It decides permission inside its own
+  server, and it sends no request to your editor. Fountain refuses a policy it
+  cannot enforce, with a 422 at session start
+  ([#959](https://github.com/BinaryBourbon/fountain/issues/959)). Nobody has
+  measured whether opencode's own config reaches the protocol
+  ([#962](https://github.com/BinaryBourbon/fountain/issues/962)).
 - **A reclaimed sandbox loses the agent's memory.** If Fountain reclaimed a
   conversation's sandbox while you were away, `session/load` still replays the
   full transcript. The agent itself does not remember it
@@ -181,7 +199,7 @@ terminal.
 | Message | Meaning |
 |---|---|
 | `no Fountain agent configured` | The entry has no `--agent`. |
-| `agent "x" runs the gemini runtime, which does not speak ACP` | Read the limits above. |
+| `agent "x" runs the … runtime, which does not speak ACP` | All four runtimes speak ACP. This names a conversation whose runtime column holds a name that no adapter covers. |
 | `credentials for … were rejected` | Run `fountain auth login`. The message names the instance it tried, and that is usually the surprise. |
 | `could not resolve agent "x" on …` | The wrong name, or the right name on a different instance. |
 

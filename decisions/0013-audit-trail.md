@@ -177,6 +177,14 @@ considered and rejected: that list is a second place to remember, one forgotten
 entry away from a silently unaudited route — the exact failure mode #540
 existed to remove.
 
+The plug's action is the **route pattern** (`PUT /api/agents/:id`), not the
+request path. The code recorded `conn.request_path` until #979, which put the
+resource id inside the action and cost two things: the trail's only groupable
+column, and — because `Fountain.Analytics` mirrors `action` through as the
+PostHog event name ([ADR 0025](0025-product-analytics-in-posthog.md)) — a bounded event
+taxonomy. The Fountain project had grown a separate event definition per
+conversation before anyone looked.
+
 ### 5. Deleting an account anonymises its trail
 
 `audit_events.user_id` is `on_delete: :nilify_all`. Deleting an account does

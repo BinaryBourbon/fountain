@@ -300,4 +300,114 @@ defmodule FountainWeb.Plugs.AuditTest do
       assert %Plug.Conn{} = sent_conn(conn)
     end
   end
+
+  # The action string is mirrored straight through as the PostHog event name
+  # (`Fountain.Audit.do_mirror/1`), so a resource id inside it is one event
+  # definition per resource in a third-party project. It is also the only
+  # groupable column the trail has.
+  describe "action — the route pattern, never the request path" do
+    setup do
+      user = insert_verified_user()
+      {_key, raw_key} = insert_api_key(user)
+      {:ok, user: user, raw_key: raw_key}
+    end
+
+    test "a nested member route records the pattern, not the uuid", %{
+      conn: conn,
+      user: user,
+      raw_key: raw_key
+    } do
+      # 404 on purpose: the plug records what was attempted, and a refused
+      # request is exactly the case a semantic context event cannot cover.
+      conn
+      |> authed_with_key(raw_key)
+      |> post("/api/conversations/#{Ecto.UUID.generate()}/read")
+
+      assert action_for(user) == "POST /api/conversations/:conversation_id/read"
+    end
+
+    test "a top-level member route records the pattern", %{
+      conn: conn,
+      user: user,
+      raw_key: raw_key
+    } do
+      conn
+      |> authed_with_key(raw_key)
+      |> delete("/api/agents/#{Ecto.UUID.generate()}")
+
+      assert action_for(user) == "DELETE /api/agents/:id"
+    end
+
+    test "a collection route is unchanged", %{conn: conn, user: user, raw_key: raw_key} do
+      conn
+      |> authed_with_key(raw_key)
+      |> post("/api/agents", %{})
+
+      assert action_for(user) == "POST /api/agents"
+    end
+
+    test "no route id leaks into any action a routed request records", %{
+      conn: conn,
+      user: user,
+      raw_key: raw_key
+    } do
+      id = Ecto.UUID.generate()
+
+      conn
+      |> authed_with_key(raw_key)
+      |> post("/api/conversations/#{id}/read")
+
+      refute action_for(user) =~ id
+    end
+
+    # Only reachable from a hand-built conn, but the fallback has to be
+    # bounded too or it reintroduces the cardinality it exists to prevent.
+    test "falls back to masking uuid segments when the conn has no router", %{
+      conn: conn,
+      user: user
+    } do
+      id = Ecto.UUID.generate()
+
+      conn
+      |> Map.merge(%{
+        method: "POST",
+        request_path: "/api/conversations/#{id}/read",
+        path_info: ["api", "conversations", id, "read"],
+        params: %{},
+        private: %{}
+      })
+      |> Map.put(:remote_ip, {127, 0, 0, 1})
+      |> Plug.Conn.assign(:current_user, user)
+      |> Audit.call([])
+      |> Plug.Conn.send_resp(404, "")
+
+      assert action_for(user) == "POST /api/conversations/:id/read"
+    end
+
+    test "leaves a routerless path with no uuid alone", %{conn: conn, user: user} do
+      conn
+      |> Map.merge(%{
+        method: "POST",
+        request_path: "/api/conversations",
+        path_info: ["api", "conversations"],
+        params: %{},
+        private: %{}
+      })
+      |> Map.put(:remote_ip, {127, 0, 0, 1})
+      |> Plug.Conn.assign(:current_user, user)
+      |> Audit.call([])
+      |> Plug.Conn.send_resp(201, "ok")
+
+      assert action_for(user) == "POST /api/conversations"
+    end
+  end
+
+  # The plug's row is the one whose action starts with an HTTP verb — the
+  # context that handled the request writes its own semantic row through the
+  # same table.
+  defp action_for(user) do
+    Fountain.Audit.list_recent_for_user(user.id)
+    |> Enum.map(& &1.action)
+    |> Enum.find(&String.starts_with?(&1, ~w(POST PUT PATCH DELETE)))
+  end
 end

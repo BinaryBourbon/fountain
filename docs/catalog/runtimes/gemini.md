@@ -1,6 +1,7 @@
 # gemini
 
-> Google's Gemini CLI. The only runtime off ACP.
+> Google's Gemini CLI. The last runtime to reach ACP, and it reached it on
+> 2026-08-22.
 
 ## At a glance
 
@@ -8,7 +9,7 @@
 |---|---|
 | Provider | `google` |
 | Multi-provider | No |
-| Transport | **Legacy**. A line-delimited `stream-json` that the worker tails. |
+| Transport | ACP, through the CLI's own `--acp` flag |
 | Skills root | `/tmp/.gemini/skills` |
 | skills.sh agent | `gemini-cli` |
 | System prompt | `~/.gemini/GEMINI.md` |
@@ -18,8 +19,9 @@
 
 You want a Gemini model in particular. That is the whole case.
 
-If you do not, choose [claude](claude.md), [codex](codex.md) or
-[opencode](opencode.md). All three are on ACP.
+All four runtimes speak ACP, so the transport no longer decides this. Choose
+[opencode](opencode.md) instead to move one agent definition between
+providers.
 
 ## Set it up
 
@@ -37,21 +39,25 @@ Add your Gemini key at `/account/inference-credentials`.
 
 ## Verify
 
-Run a conversation. Output that arrives at all proves the credential and the
-legacy stream parser.
+Run a conversation, then ask it what model it is. A turn that reaches output
+at all proves the credential, the runtime and the sandbox.
 
 ## Limits
 
-**Off ACP.** The other three runtimes speak the Agent Client Protocol, which
-carries editor integration and the shared block format. Gemini uses the older
-path, so it gets neither.
+**Every turn after the first replays the whole transcript.** Gemini advertises
+`loadSession` and no resume capability, so a turn loads the session again from
+the start. Fountain discards that replay. The cost is time at the head of a
+turn, and it grows with the transcript. The other three runtimes reattach.
 
-**The sessions belong to the CLI, and not to Fountain.** Gemini manages its
-own session state. Its `--resume` re-enters the most recent conversation in
-the workspace, so Fountain passes no session id. One workspace holds one
-session that you can resume.
+**Fountain repairs gemini's session store after every turn.** The store
+deletes a session while it loads it, an upstream defect
+([gemini-cli#28775](https://github.com/google-gemini/gemini-cli/issues/28775)).
+Fountain consolidates the store at the end of each turn, so a load cannot
+collide with what it loads. That workaround goes away when upstream lands a
+fix.
 
 ## Related
 
 - [About agents](../../concepts/agent.md)
+- [`fountain acp`](../../integrations/acp.md)
 - [Runtimes](index.md)
