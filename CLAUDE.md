@@ -358,6 +358,11 @@ in-app manual at `/docs` — the same markdown is embedded at compile time by
   the docs. Keep to the two line shapes the parser reads — `  - Title: x.md`,
   and a `  - Section:` header with six-space-indented children — because a
   line it cannot read raises at compile time rather than being skipped.
+  **Sections are one level deep.** MkDocs nests as deep as you like, but the
+  in-app sidebar renders exactly a section and its pages, so a sub-section (or
+  a page indented past its siblings) raises too. Flatten it into a sibling
+  section — `Catalog` is what that looks like, with the three hub pages sitting
+  among their own entries — or make it headings on a hub page.
 - **Anything `Fountain.Docs` reads at compile time must be `COPY`d into the
   Docker build stage.** The release image contains no `docs/`, only strings
   baked out of it, so a file outside the `COPY` list does not degrade to a
