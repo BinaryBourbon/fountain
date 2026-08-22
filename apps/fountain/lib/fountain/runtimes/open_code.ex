@@ -20,29 +20,32 @@ defmodule Fountain.Runtimes.OpenCode do
 
   @behaviour Fountain.Runtimes
 
+  alias Fountain.Runtimes.Layout
   alias Fountain.Runtimes.Model
 
-  # opencode insists on being inside a git repo. Putting the workspace
-  # in /tmp side-steps the sprite user's lack of write access on
-  # /home/sprite (which prevents `git init` from stat'ing the work tree).
-  # Mirrors `Fountain.Runtimes.ACP.cwd("opencode")`, which is where the ACP
-  # session actually runs.
-  @workdir "/tmp/opencode-workspace"
+  @runtime "opencode"
 
-  # opencode runs with HOME=/tmp (see default_env/1), so its skills
-  # discovery path is rooted there.
-  @impl true
-  def skills_root, do: "/tmp/.config/opencode/skills"
+  # opencode insists on being inside a git repo, and the sprite user cannot
+  # `git init` in /home/sprite (work-tree perms). The workspace lives under
+  # /tmp for that reason; `Fountain.Runtimes.Layout` owns the path, and the
+  # ACP session runs in the same place because it reads the same row.
+  @workdir Layout.cwd(@runtime)
 
   @impl true
-  def skills_sh_agent, do: "opencode"
+  def skills_root, do: Layout.skills_root(@runtime)
 
+  @impl true
+  def skills_sh_agent, do: Layout.skills_sh_agent(@runtime)
+
+  # HOME comes from the layout, so the directory opencode actually reads and
+  # the directory Fountain writes its skills and instructions into are the
+  # same one by construction.
   @impl true
   def default_env(%{model: model} = agent, inference_credentials) when is_binary(model) do
-    provider_env(agent, inference_credentials) ++ [{"HOME", "/tmp"}]
+    provider_env(agent, inference_credentials) ++ Layout.home_env(@runtime)
   end
 
-  def default_env(_, _inference_credentials), do: [{"HOME", "/tmp"}]
+  def default_env(_, _inference_credentials), do: Layout.home_env(@runtime)
 
   defp provider_env(%{model: model}, inference_credentials) do
     case Model.provider(model) do

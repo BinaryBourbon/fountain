@@ -110,7 +110,10 @@ defmodule Fountain.Runtimes.ACP do
 
   alias Fountain.Agents.Agent
 
-  # Per runtime: how ACP is reached, and where the agent should run.
+  # Per runtime: how ACP is reached. Where the agent *runs* is not here —
+  # that is layout, and it lives in `Fountain.Runtimes.Layout` alongside the
+  # workspace each runtime's `prepare_sandbox/3` git-inits. This table used
+  # to carry its own `cwd` copy, with a comment admitting the mirror.
   #
   # `package` nil means native support — the runtime speaks ACP itself and
   # arrives with the sprite base image, so there is nothing to install and
@@ -126,16 +129,13 @@ defmodule Fountain.Runtimes.ACP do
       bin: "claude-agent-acp",
       args: [],
       package: "@agentclientprotocol/claude-agent-acp",
-      version: "0.66.0",
-      cwd: "/home/sprite"
+      version: "0.66.0"
     },
     # Native: `gemini --acp`. Advertises `loadSession: true` and **no**
     # `sessionCapabilities`, so every turn after the first pays a full replay
-    # that `Peer` discards. The cwd mirrors `Fountain.Runtimes.Gemini`'s
-    # `@workdir` — gemini walks up from cwd looking for a `.git`, and
-    # `Gemini.prepare_sandbox/3` git-inits exactly this directory. Pointing it
-    # at /home/sprite instead reintroduces the EACCES noise that workspace
-    # exists to avoid.
+    # that `Peer` discards. Its cwd matters more than the others' — gemini
+    # walks up from it looking for a `.git` — and both that path and the
+    # `git init` that satisfies it now come from `Fountain.Runtimes.Layout`.
     # Shippable since #659. Gemini's own session store erases a session in the
     # act of loading it (google-gemini/gemini-cli#28775, still open on 0.56.0 —
     # the moduledoc has the mechanism), which held this entry back for eleven
@@ -146,8 +146,7 @@ defmodule Fountain.Runtimes.ACP do
       bin: "gemini",
       args: ["--acp"],
       package: nil,
-      version: nil,
-      cwd: "/tmp/gemini-workspace"
+      version: nil
     },
     # Adapter, on the Codex App Server. The `zed-industries/codex-acp` that
     # earlier drafts named is archived; this is its successor under the
@@ -158,8 +157,7 @@ defmodule Fountain.Runtimes.ACP do
       bin: "codex-acp",
       args: [],
       package: "@agentclientprotocol/codex-acp",
-      version: "1.1.14",
-      cwd: "/home/sprite"
+      version: "1.1.14"
     },
     # Native: `opencode acp`. Heavier than the others — the subcommand starts a
     # local HTTP server inside the sprite and drives it through opencode's own
@@ -181,7 +179,6 @@ defmodule Fountain.Runtimes.ACP do
       args: ["acp"],
       package: nil,
       version: nil,
-      cwd: "/tmp/opencode-workspace",
       asks_permission: false
     }
   }
@@ -263,7 +260,7 @@ defmodule Fountain.Runtimes.ACP do
   repo (gemini does) behaves differently depending on what we say here.
   """
   @spec cwd(String.t()) :: String.t()
-  def cwd(runtime), do: get_in(@adapters, [runtime, :cwd]) || "/home/sprite"
+  def cwd(runtime), do: Fountain.Runtimes.Layout.cwd(runtime) || "/home/sprite"
 
   @doc """
   Whether this turn speaks ACP.
@@ -303,10 +300,18 @@ defmodule Fountain.Runtimes.ACP do
   @doc """
   Install the pinned adapter into a sprite.
 
-  Runs at provision time, with the rest of the package installs, because it
-  needs unrestricted network — by the time a turn spawns, the network policy
-  has been applied and an install would fail in a way that looks like a
-  protocol bug.
+  Runs at provision time rather than at spawn: by the time a turn spawns the
+  sandbox may be suspended-and-resumed or policy-restricted, and an install
+  failing there reads as a protocol bug rather than a missing package.
+
+  It does **not** run with the rest of the package installs, which an earlier
+  version of this paragraph claimed. `prepare_runtime_sprite/5` is called
+  after `run_provisioning_pipeline/5`, so this lands *after*
+  `Provisioning.apply_network_policy/3`. On the default `unrestricted`
+  environment that costs nothing. On a `limited` one the allowlist has to
+  include the npm registry, or the adapter install fails here — the same
+  exposure `Fountain.Runtimes.OpenCode.prepare_sandbox/3`'s `bun install` has,
+  for the same reason.
 
   Idempotent on the exact pinned version: an image that already carries a
   different version is corrected rather than accepted, since "some adapter is

@@ -22,22 +22,24 @@ defmodule Fountain.Runtimes.Instructions do
   | opencode | `~/.config/opencode/AGENTS.md`       |
   | gemini   | `~/.gemini/GEMINI.md`                |
 
+  `~` is the runtime's own HOME, which is **not** `/home/sprite` for all of
+  them — opencode and gemini run with `HOME=/tmp`. This module used to expand
+  the table above against a hardcoded `/home/sprite`, so for those two the
+  prompt was written where their CLI never looks: they ran on the default
+  persona, silently, and the test pinned the wrong path alongside. The paths
+  now come from `Fountain.Runtimes.Layout`, which is also where the `HOME`
+  export is derived from, so the two cannot disagree again.
+
   The file carries a short header so a human (or the agent) reading it knows
   where it came from, then the prompt verbatim.
   """
 
-  @home "/home/sprite"
-
-  @paths %{
-    "claude" => "#{@home}/.claude/CLAUDE.md",
-    "codex" => "#{@home}/.codex/AGENTS.md",
-    "opencode" => "#{@home}/.config/opencode/AGENTS.md",
-    "gemini" => "#{@home}/.gemini/GEMINI.md"
-  }
+  alias Fountain.Runtimes.Layout
 
   @doc "The user-level instructions file the runtime reads, or nil for a runtime we do not know."
   @spec path(String.t() | nil) :: String.t() | nil
-  def path(runtime), do: Map.get(@paths, runtime)
+  def path(runtime) when is_binary(runtime), do: Layout.instructions_path(runtime)
+  def path(_runtime), do: nil
 
   @doc """
   Write the agent's system prompt for the runtime into the sandbox. Returns
