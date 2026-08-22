@@ -158,12 +158,36 @@ spec:
             # default trust list already covers. (Cloudflare egress ranges
             # were listed here briefly; the tunnel made them unnecessary —
             # CF's own addresses never appear as hops.)
-            # No OTLP collector in-cluster yet — without this,
-            # opentelemetry_exporter retries localhost:4318 per span and
-            # floods logs with :econnrefused. Swap to the real
-            # OTEL_EXPORTER_OTLP_ENDPOINT once a collector is wired up.
-            - name: OTEL_TRACES_EXPORTER
-              value: "none"
+            # --- Tracing (OTel -> Tempo) ---
+            # Tempo runs in-cluster (home-cloud platform/tempo), keeping blocks
+            # in garage under a 5 GiB bucket quota with 72h retention. This
+            # replaces OTEL_TRACES_EXPORTER=none, which was here because
+            # nothing was listening and opentelemetry_exporter retried
+            # localhost:4318 per span, flooding the logs with :econnrefused.
+            #
+            # Setting an endpoint is the whole switch: runtime.exs flips
+            # traces_exporter to :otlp as soon as one of
+            # OTEL_EXPORTER_OTLP_ENDPOINT / HONEYCOMB_* is present (#317 made
+            # "no target configured" mean "export nothing", so a self-hoster
+            # who sets none of these still exports nowhere). The exporter
+            # speaks OTLP over HTTP/protobuf, so this is Tempo's http receiver
+            # port 4318 — not grpc's 4317.
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: http://tempo.tempo.svc.cluster.local:4318
+            - name: OTEL_SERVICE_NAME
+              value: fountain
+            # Pod identity on every span, so Grafana's Tempo -> Loki jump can
+            # narrow from a slow span to that pod's logs: the tempo datasource
+            # maps k8s.namespace.name / k8s.pod.name onto the namespace / pod
+            # labels alloy puts on log lines. The Erlang SDK merges
+            # OTEL_RESOURCE_ATTRIBUTES into the resource runtime.exs builds.
+            # POD_NAME must be declared before the var that references it.
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: k8s.namespace.name=fountain,k8s.pod.name=$(POD_NAME)
           # Replaces the base's list (configMap + secret): this deployment has
           # no ConfigMap — non-secret config is the explicit env above, and
           # everything else comes from the Infisical-materialized Secret:
