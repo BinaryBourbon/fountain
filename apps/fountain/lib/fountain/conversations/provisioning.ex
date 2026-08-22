@@ -287,7 +287,7 @@ defmodule Fountain.Conversations.Provisioning do
   this on its own — one environment is reachable from agents on different
   backends. Both facts are only known here, at launch (#935, #627).
   """
-  @spec check_network_policy_support(atom(), Environment.t() | nil, String.t()) ::
+  @spec check_network_policy_support(atom(), %Environment{} | nil, String.t()) ::
           :ok | {:error, {:network_policy, :unsupported_by_backend}}
   def check_network_policy_support(_provider, nil, _conv_id), do: :ok
 
