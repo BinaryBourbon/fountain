@@ -198,4 +198,94 @@ defmodule FountainWeb.AgentsLive.IndexTest do
       assert path =~ "/auth/login"
     end
   end
+
+  describe "permission policy (#939)" do
+    # The form renders a credential card, as its own nested <form>, when the
+    # account holds no key for the model's provider. Nested forms truncate the
+    # outer one for LiveViewTest, so a submit test needs the key on file.
+    defp with_credential(user) do
+      {:ok, dek} = Fountain.Crypto.load_tenant_key(user.id)
+
+      {:ok, _} =
+        Fountain.InferenceCredentials.put_credential(user.id, dek, :anthropic_api_key, "sk-ant-x")
+
+      user
+    end
+
+    test "the form shows what answers before the agent runs a tool", %{conn: conn} do
+      user = insert_verified_user()
+      agent = insert_agent(user_id: user.id, permission_policy: %{"default" => "ask"})
+      conn = login_user(conn, user)
+
+      {:ok, _view, html} = live(conn, ~p"/agents/#{agent.id}/edit")
+
+      assert html =~ "Before the agent runs a tool"
+      assert html =~ "Ask a human"
+      # The stored default is the one selected, rather than the field showing
+      # allow while the row says otherwise.
+      assert html =~ ~r/<option value="ask" selected/
+    end
+
+    test "saving stores the default and the per-kind overrides", %{conn: conn} do
+      user = with_credential(insert_verified_user())
+      agent = insert_agent(user_id: user.id)
+      conn = login_user(conn, user)
+
+      {:ok, view, _html} = live(conn, ~p"/agents/#{agent.id}/edit")
+
+      view
+      |> form("form", %{
+        "agent" => %{
+          "name" => agent.name,
+          "model" => agent.model,
+          "runtime" => agent.runtime,
+          "permission_default" => "ask",
+          "permission_kinds" => %{"execute" => "auto_deny", "read" => ""}
+        }
+      })
+      |> render_submit()
+
+      assert %{"default" => "ask", "execute" => "auto_deny"} =
+               Fountain.Agents.get_agent(agent.id, user.id).permission_policy
+    end
+
+    test "an untouched form leaves the policy empty rather than writing a default", %{conn: conn} do
+      # Every agent predates this field. Saving an unrelated edit must not
+      # start writing `%{"default" => "auto_allow"}` into rows that had `%{}`,
+      # which would read as a policy someone chose.
+      user = with_credential(insert_verified_user())
+      agent = insert_agent(user_id: user.id)
+      conn = login_user(conn, user)
+
+      {:ok, view, _html} = live(conn, ~p"/agents/#{agent.id}/edit")
+
+      view
+      |> form("form", %{
+        "agent" => %{
+          "name" => "renamed",
+          "model" => agent.model,
+          "runtime" => agent.runtime
+        }
+      })
+      |> render_submit()
+
+      assert Fountain.Agents.get_agent(agent.id, user.id).permission_policy == %{}
+    end
+
+    test "a runtime that never asks says so instead of offering the choice", %{conn: conn} do
+      # opencode decides permission in its own server and sends no request
+      # (#959), so a policy here would display a restriction nothing enforces.
+      user = insert_verified_user()
+
+      agent =
+        insert_agent(user_id: user.id, runtime: "opencode", model: "anthropic/claude-sonnet-5")
+
+      conn = login_user(conn, user)
+
+      {:ok, _view, html} = live(conn, ~p"/agents/#{agent.id}/edit")
+
+      assert html =~ "decides this inside its own server"
+      assert html =~ "disabled"
+    end
+  end
 end

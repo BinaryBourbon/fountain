@@ -77,6 +77,7 @@ nav:
       - Agents as teammates: concepts/teammates.md
       - Where a secret comes from: concepts/secrets.md
       - About sandboxes: concepts/sandboxes.md
+      - Before a tool runs: concepts/permissions.md
       - The console, the apps, and the API: concepts/surfaces.md
       - Architecture: architecture.md
   - Setup: setup.md

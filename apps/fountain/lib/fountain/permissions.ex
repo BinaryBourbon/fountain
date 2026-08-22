@@ -81,6 +81,9 @@ defmodule Fountain.Permissions do
 
   @default_key "default"
 
+  # ACP's `toolCall.kind` vocabulary, in the protocol's own order.
+  @tool_kinds ~w(read edit delete move search execute think fetch switch_mode other)
+
   # Well under `Lifecycle.idle_timeout_seconds/0` (60 minutes by default), and
   # deliberately so: a held request suppresses only the idle verdict, so one
   # that outlived the idle bound would be resolved by the max-lifetime ceiling
@@ -118,6 +121,18 @@ defmodule Fountain.Permissions do
   @doc "Every verdict a policy may name."
   @spec verdicts() :: [String.t()]
   def verdicts, do: @verdicts
+
+  @doc """
+  ACP's own tool kinds, which are the policy keys worth offering in a form.
+
+  The protocol's closed list, so it is the stable half of a request: a title
+  matches one invocation of one command on claude (#958), while a kind means
+  the same thing on every runtime and every turn. A policy may still name a
+  title — `verdict_for_request/2` tries that first — it is simply not something
+  to invite someone to type.
+  """
+  @spec tool_kinds() :: [String.t()]
+  def tool_kinds, do: @tool_kinds
 
   @doc "The verdict applied when a policy names neither the tool nor a default."
   @spec default_verdict() :: String.t()
