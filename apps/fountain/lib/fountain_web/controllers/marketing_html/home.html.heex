@@ -21,7 +21,7 @@
     </a>
   </div>
   <p :if={monthly_price()} class="text-xs text-[var(--color-text-muted)]">
-    Free 14-day trial — then {monthly_price()}/mo per team. Cancel anytime.
+    Free 14-day trial — then {monthly_price()}/mo per user. Cancel anytime.
   </p>
   <p :if={!monthly_price()} class="text-xs text-[var(--color-text-muted)]">
     Free 14-day trial. Cancel anytime.
@@ -211,7 +211,7 @@
     Get started free
   </a>
   <p :if={monthly_price()} class="mt-4 text-sm text-[var(--color-text-muted)]">
-    {monthly_price()}/mo per team after trial. Cancel anytime. No lock-in.
+    {monthly_price()}/mo per user after trial. Cancel anytime. No lock-in.
   </p>
   <p :if={!monthly_price()} class="mt-4 text-sm text-[var(--color-text-muted)]">
     Cancel anytime. No lock-in.
