@@ -228,12 +228,12 @@ Set no key and Fountain sends nothing. Set a key and the events go to your own
 PostHog project.
 
 Fountain captures an event at three points in the code. Each point is a
-function that the operation must call, so a new action is captured without a
-new call site.
+function that the operation must call, so Fountain captures a new action
+without a new call site.
 
 - Every audited change, under the name of its audit action. `agent.created`
   and `vault.secret.write` are examples.
-- Every usage event that billing records, with a `usage.` prefix.
+- Every usage event that the meter records, with a `usage.` prefix.
   `usage.turn_started` is an example.
 - The end of a conversation turn, as `conversation.turn.done`,
   `conversation.turn.failed` or `conversation.turn.interrupted`.
