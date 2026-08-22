@@ -14,17 +14,6 @@ docs/build/team-chat.md
 docs/cli.md
 docs/cli/commands.md
 docs/configuration.md
-docs/guides/operate/back-up-and-restore.md
-docs/guides/operate/billing.md
-docs/guides/operate/database.md
-docs/guides/operate/deploy.md
-docs/guides/operate/email.md
-docs/guides/operate/kubernetes.md
-docs/guides/operate/observability.md
-docs/guides/operate/put-it-on-the-internet.md
-docs/guides/operate/run-a-release-task.md
-docs/guides/operate/sandbox-lifetime.md
-docs/guides/operate/upgrade.md
 docs/integrations/acp.md
 docs/integrations/adding-a-sandbox-provider.md
 docs/integrations/buzz.md

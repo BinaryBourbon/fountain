@@ -1,31 +1,38 @@
-# Turn on billing
+# Start billing
 
-This guide shows you how to enable the subscription gate, and why you probably
-should not.
+<!-- "billing" is a Technical Name here: the product surface, the
+     BILLING_ENABLED flag and the Elixir context all carry it. STE exempts a
+     Technical Name from the -ing rule, and the linter has no vocabulary
+     hook for that rule, so the exemption is declared for the page. -->
+<!-- vale STE.IngForms = NO -->
 
-## Leave it off unless you are running Fountain commercially
+This guide shows you how to start the subscription gate, and why you probably
+must not.
 
-Billing is off by default (`BILLING_ENABLED=false`), and the compose file also
-pins it off.
+## Leave it off unless you run Fountain commercially
 
-The subscription gate exists for the hosted service. On your own instance it is
-a lock with no key. Leave it off unless you are running Fountain commercially
-and have configured Stripe.
+Billing is off by default (`BILLING_ENABLED=false`), and the compose file pins
+it off as well.
 
-With billing disabled, accounts carry no subscription status and no trial
-clock. Nothing billing-shaped appears in the UI, the admin panel, or the API.
+The subscription gate exists for the hosted service. On your own instance it
+is a lock with no key. Leave it off, unless you run Fountain commercially and
+you configured Stripe.
 
-## Enable it
+With billing off, an account carries no subscription status and no trial
+clock. Nothing that looks like billing appears in the UI, in the admin panel
+or in the API.
 
-Set `BILLING_ENABLED=true` and configure Stripe. The
+## Start it
+
+Set `BILLING_ENABLED=true`, then configure Stripe. The
 [Stripe integration guide](../../integrations/stripe.md) covers
 `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_ID` and the
-provider-side setup.
+provider side.
 
-## Start the clocks on existing accounts
+## Start the clocks on the accounts you already have
 
-Accounts created while billing was off have no trial to measure, and they
-**fail closed** at the subscription gate the moment you enable it. Start their
+An account created while billing was off has no trial to measure. It **fails
+closed** at the subscription gate the moment you turn billing on. Start those
 trial clocks explicitly.
 
 ```bash
@@ -36,14 +43,16 @@ bin/fountain_server eval 'Fountain.Release.expire_legacy_trials(dry_run: true)'
 bin/fountain_server eval 'Fountain.Release.expire_legacy_trials(days: 14)'
 ```
 
-Run the dry run first. It reports without changing anything.
+Run the dry run first. It reports, and it changes nothing.
 
 ## Verify it worked
 
-Sign in as a non-admin account and confirm it can still reach a gated action.
-An account that is locked out here is one the backfill missed.
+Sign in as an account that is not an admin, then confirm it can still reach a
+gated action. An account that cannot is one the backfill missed.
 
 ## Related
 
 - [Stripe integration guide](../../integrations/stripe.md).
 - [Run a release task](run-a-release-task.md).
+
+<!-- vale STE.IngForms = YES -->
