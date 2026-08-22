@@ -173,14 +173,14 @@ Those are `provision`, `setup` and `reattach`, then `turn`, then
 `terminate`. Each one carries a `state` of `started`, `done`, `failed` or
 `interrupted`.
 
-!!! note "The team stream carries raw events"
+!!! note "The team stream carries blocks"
 
-    `/api/team/stream` takes `streams` and nothing else. It has no `blocks`.
-    So treat it as a notification channel, which says *something happened, and
-    to whom*.
+    `/api/team/stream` takes `blocks` as well as `streams`, and the SDK sends
+    it for you. An event arrives parsed, so this one connection is enough to
+    show *something happened, and to whom* **and** to render the words.
 
-    Read the transcript itself from the conversation's own feed, which does
-    parse blocks. The next section covers that.
+    The next section covers the conversation's own feed, which is what you read
+    when somebody opens one thread and you want its history.
 
 ## 6. Open a thread
 

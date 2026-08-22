@@ -165,16 +165,17 @@ export class Team {
    * Each payload is a conversation event plus `conversation_id` and
    * `agent_id`, so a roster row can be found without a socket per teammate.
    *
-   * Note that this endpoint carries raw events only — it takes no `blocks`
-   * parameter, so a client rendering a transcript from it either parses the
-   * runtime's dialect itself or reads the conversation's own feed, which does
-   * support blocks. Use it as a notification channel and fetch detail per
-   * conversation.
+   * Events carry server-parsed `blocks`, as on every other feed, so a client
+   * renders a transcript from this stream alone rather than re-parsing a
+   * runtime's dialect or opening a second connection per thread. The stream is
+   * multi-conversation, so the server picks the runtime per event from the
+   * conversation that produced it (#881).
    */
   stream(options: StreamRequest = {}): AsyncIterable<TeamEvent> {
-    // No `blocks` here: the endpoint does not accept it and the spec
-    // validator rejects unknown query parameters.
-    return streamPath(this.http, "/api/team/stream", normalizeStreams(options));
+    return streamPath(this.http, "/api/team/stream", {
+      blocks: true,
+      ...normalizeStreams(options),
+    });
   }
 
   private async agentId(agent: string): Promise<string> {

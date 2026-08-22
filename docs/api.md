@@ -533,7 +533,7 @@ POST   /api/team/:agent_id/contact  # give the teammate an email address + phone
 PATCH  /api/team/:agent_id/contact  # change prompt_from_number (nothing bought or released)
 DELETE /api/team/:agent_id/contact  # release them
 GET    /api/team/comms              # {enabled, configured}: may this caller, and can this instance
-GET    /api/team/stream             # SSE: every teammate's events on one connection
+GET    /api/team/stream             # SSE: every teammate's events on one connection (`?blocks=true`)
 ```
 
 `PATCH /api/team/:agent_id` sets the teammate's name, which is its
