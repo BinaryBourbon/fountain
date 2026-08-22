@@ -130,6 +130,9 @@ describe("team", () => {
 
     const stream = fake.requests.find((r) => r.path === "/api/team/stream");
     assert.ok(stream, "used the team stream, not one connection per teammate");
+    // #881: the endpoint takes `blocks` now, so a client renders a transcript
+    // from this connection instead of re-parsing the runtime's dialect.
+    assert.equal(stream.query.get("blocks"), "true");
   });
 
   test("routines", async () => {

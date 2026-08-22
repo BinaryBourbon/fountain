@@ -36,6 +36,14 @@ defmodule FountainWeb.EventsController do
         "`?blocks=true` adds server-parsed blocks. Heartbeats every 15 s; closes after " <>
         "60 s idle so the client reconnects. The first byte is a `: connected` comment.",
     parameters: [
+      "Last-Event-ID": [
+        in: :header,
+        type: :string,
+        required: false,
+        description:
+          "Resume after this event id (integer as string). " <>
+            "Missing or unparseable values are treated as 0."
+      ],
       streams: [
         in: :query,
         type: :string,

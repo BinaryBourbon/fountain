@@ -53,7 +53,13 @@ export class FakeFountain {
 
   readonly conversations = new Map<string, FakeConversation>();
   /** Every request the SDK made, for assertions about the wire. */
-  readonly requests: { method: string; path: string; body: unknown; headers: NodeJS.Dict<string | string[]> }[] = [];
+  readonly requests: {
+    method: string;
+    path: string;
+    query: URLSearchParams;
+    body: unknown;
+    headers: NodeJS.Dict<string | string[]>;
+  }[] = [];
 
   /** Called when a conversation opens or a prompt lands; script the turn here. */
   onTurn: ((conversation: FakeConversation, turnNumber: number) => void) | null = null;
@@ -150,7 +156,13 @@ export class FakeFountain {
   private async handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const url = new URL(req.url ?? "/", "http://localhost");
     const body = await readBody(req);
-    this.requests.push({ method: req.method ?? "GET", path: url.pathname, body, headers: req.headers });
+    this.requests.push({
+      method: req.method ?? "GET",
+      path: url.pathname,
+      query: url.searchParams,
+      body,
+      headers: req.headers,
+    });
 
     if (this.failNextWith) {
       const failure = this.failNextWith;

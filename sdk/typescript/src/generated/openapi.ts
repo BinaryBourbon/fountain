@@ -1643,7 +1643,7 @@ export interface paths {
         };
         /**
          * Stream the whole team's events (SSE)
-         * @description One `text/event-stream` carrying the log events of every teammate's conversation, each payload the shape of `GET /api/conversations/:id/stream` plus `conversation_id` and `agent_id`. A `team` event (data `{reason: changed}`) is sent when the roster changes — a teammate added or removed, or a fresh conversation opened for one, or a self-hosted runner connecting or dropping (presence changes for the teammates on it) — and the stream follows the new conversation on its own; the client re-lists. A `schedule` event (same data) is sent when a team schedule is created, updated, deleted or fired (#825); the client re-lists `/api/team/schedules`. `Last-Event-ID` (a log event id) replays what was missed on each teammate's conversation. Heartbeats every 15s; closes after 60s idle so the client reconnects.
+         * @description One `text/event-stream` carrying the log events of every teammate's conversation, each payload the shape of `GET /api/conversations/:id/stream` plus `conversation_id` and `agent_id`. A `team` event (data `{reason: changed}`) is sent when the roster changes — a teammate added or removed, or a fresh conversation opened for one, or a self-hosted runner connecting or dropping (presence changes for the teammates on it) — and the stream follows the new conversation on its own; the client re-lists. A `schedule` event (same data) is sent when a team schedule is created, updated, deleted or fired (#825); the client re-lists `/api/team/schedules`. `Last-Event-ID` (a log event id) replays what was missed on each teammate's conversation. `?blocks=true` adds server-parsed blocks, per event, for the runtime of the conversation that produced it. Heartbeats every 15s; closes after 60s idle so the client reconnects.
          */
         get: operations["FountainWeb.TeamController.stream"];
         put?: never;
@@ -6283,7 +6283,10 @@ export interface operations {
                 /** @description Add `blocks` to each event payload. Defaults to false. */
                 blocks?: boolean;
             };
-            header?: never;
+            header?: {
+                /** @description Resume after this event id (integer as string). Missing or unparseable values are treated as 0. */
+                "Last-Event-ID"?: string;
+            };
             path?: never;
             cookie?: never;
         };
@@ -7892,8 +7895,13 @@ export interface operations {
             query?: {
                 /** @description Comma-separated stream allow-list (`stdout,stderr,acp,stage,...`). */
                 streams?: string;
+                /** @description Add `blocks` to each event payload — its `data` parsed server-side into the structured blocks a transcript renders, as on `/api/conversations/:id/stream?blocks=true`. The stream is multi-conversation, so the runtime is taken per event from the conversation that produced it. Defaults to false. */
+                blocks?: boolean;
             };
-            header?: never;
+            header?: {
+                /** @description Resume after this event id (integer as string). Missing or unparseable values are treated as 0. */
+                "Last-Event-ID"?: string;
+            };
             path?: never;
             cookie?: never;
         };
