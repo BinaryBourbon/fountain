@@ -3,8 +3,9 @@ defmodule FountainWeb.Plugs.Audit do
   Records state-changing API requests to the audit log on the way out.
 
   Captures:
-    * `action`: HTTP verb + last path segment after `/api/` (e.g.
-      `POST conversations`, `DELETE environments/:id/secrets/:id`).
+    * `action`: HTTP verb + the matched *route pattern* (e.g.
+      `POST /api/conversations`, `DELETE /api/environments/:environment_id/secrets/:id`).
+      The pattern, not the request path: see "Why the pattern and not the path".
     * `resource_type`, `resource_id`: derived from the matched route's
       action + params.
     * `actor`: derived from the credential — `"sprite"` for a per-conversation
@@ -40,6 +41,32 @@ defmodule FountainWeb.Plugs.Audit do
 
   Recorded as a decision in ADR 0013 §4 — two rows per API mutation is
   intended, and deduplicating them in the UI would lose the refused requests.
+
+  ## Why the pattern and not the path
+
+  This used to record `conn.request_path` verbatim, which put the resource id
+  inside the action string: `POST /api/conversations/<uuid>/read` was a
+  different action from the same call against a different conversation. Two
+  things break when it does.
+
+  The trail loses its only groupable field. "Show me every read of a
+  conversation" is a `LIKE` over a column that has one distinct value per
+  conversation, and the id is already in `resource_id` where a query can use
+  it.
+
+  And `Fountain.Analytics` mirrors `action` straight through as the **PostHog
+  event name**. One event definition per uuid is unbounded cardinality in a
+  third-party project that never garbage-collects definitions — the Fountain
+  project had already grown `POST /api/conversations/<uuid>/read`,
+  `POST /api/team/<uuid>/messages` and `POST /api/mcp/team/<uuid>` as separate
+  events by the time anyone looked at the taxonomy.
+
+  The route pattern is what both want. `Phoenix.Router.route_info/4` gives it
+  exactly, from the same match the request already went through. When there is
+  no router on the conn or the path does not match a route — neither happens
+  on a live request that reached this pipeline, but both happen in a unit test
+  that builds a bare conn — uuid-shaped segments are masked to `:id` instead,
+  so the fallback is bounded too.
   """
 
   import Plug.Conn
@@ -67,7 +94,7 @@ defmodule FountainWeb.Plugs.Audit do
     {resource_type, resource_id} = derive_resource(conn)
 
     Audit.record(%{
-      action: "#{conn.method} #{conn.request_path}",
+      action: "#{conn.method} #{route_pattern(conn)}",
       resource_type: resource_type,
       resource_id: resource_id,
       actor: actor(conn),
@@ -77,6 +104,29 @@ defmodule FountainWeb.Plugs.Audit do
     })
 
     conn
+  end
+
+  # The matched route as declared in the router, e.g. "/api/agents/:id". See
+  # "Why the pattern and not the path" in the moduledoc for why this is not
+  # `conn.request_path`.
+  defp route_pattern(conn) do
+    with router when not is_nil(router) <- conn.private[:phoenix_router],
+         %{route: route} when is_binary(route) <-
+           Phoenix.Router.route_info(router, conn.method, conn.request_path, conn.host) do
+      route
+    else
+      _ -> mask_ids(conn.request_path)
+    end
+  end
+
+  @uuid ~r/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+  defp mask_ids(path) do
+    path
+    |> String.split("/")
+    |> Enum.map_join("/", fn segment ->
+      if Regex.match?(@uuid, segment), do: ":id", else: segment
+    end)
   end
 
   # A sandbox acting on the tenant's behalf is a materially different claim from
