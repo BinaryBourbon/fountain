@@ -1,31 +1,31 @@
 ---
 type: ADR
 title: "Speaking the Agent Client Protocol to runtimes"
-description: "ACP is the only runtime I/O path for claude, codex and opencode, adopted behind gates; Fountain.Runtimes stays the provisioning layer. Gates 1, 2 and 3 built, gate 4 in progress."
+description: "ACP is the only runtime I/O path for all four coding agents, adopted behind gates; Fountain.Runtimes stays the provisioning layer. All four gates are built."
 tags: [acp, runtimes]
 status: stable
 adr: "0014"
-adr_status: "Partially accepted"
+adr_status: "Accepted"
 date: 2026-08-09
-generated: { by: human:jhgaylor, at: 2026-08-14T00:25:23-04:00 }
-verified: { by: human:jhgaylor, at: 2026-08-22T07:30:00-04:00 }
-stale_after: 2026-11-22
+generated: { by: human:jhgaylor, at: 2026-08-22T04:44:07-04:00 }
+verified: { by: human:jhgaylor, at: 2026-08-22T04:44:07-04:00 }
 ---
 
 # 0014 — Speaking the Agent Client Protocol to runtimes
 
-**Status:** Partially accepted — **gates 1, 2 and 3 are built; gate 4 is in
-progress.** ACP is the **only** way Fountain speaks to
-claude, codex and opencode: their legacy spawn path (`build_command/5`, the
-permission-bypass flags, the claude-only stream tracer) was deleted on
-2026-08-14, and the per-agent `metadata["acp"]` flag — gate 2's opt-in, then
-briefly a default-on opt-out — was retired with it, since there is nothing
-left to opt out into. Their MCP config travels only in `session/new` (#636)
-and every ACP turn gets protocol-keyed tool spans (#637). Gemini takes the
-legacy path — an upstream defect, not a choice; see gate 4. *Gate 3 —
-permissions* is built and measured against live agents, with one runtime
-(opencode) that cannot honour it and says so. Each gate below carries its own
-status; the PR that builds one removes its caveat.
+**Status:** Accepted — **all four gates are built.** ACP is the **only** way
+Fountain speaks to a coding agent. The legacy spawn path (`build_command/5`,
+the permission-bypass flags, the claude-only stream tracer) was deleted for
+claude, codex and opencode on 2026-08-14 and for gemini on 2026-08-22, and the
+per-agent `metadata["acp"]` flag — gate 2's opt-in, then briefly a default-on
+opt-out — was retired with the first three, since there was nothing left to opt
+out into. `build_command/5` now has no implementation on any runtime. MCP
+config travels only in `session/new` (#636), every ACP turn gets
+protocol-keyed tool spans (#637), and the four dialect parsers are frozen
+history-renderers rather than code a vendor's point release can break (#642).
+*Gate 3 — permissions* is built and measured against live agents, with one
+runtime (opencode) that cannot honour it and says so. Each gate below carries
+its own status; the PR that builds one removes its caveat.
 
 ## Context
 
@@ -92,6 +92,12 @@ forking four CLIs.
 > one this ADR was written against: the channel exists, the request arrives
 > with its tool name and option list intact, and what is missing is a policy
 > to consult instead of a constant. See gate 3.
+>
+> **And 2026-08-22.** The fourth flag is gone: #659 put gemini on ACP and #941
+> deleted `--approval-mode yolo` along with the `build_command/5` that carried
+> it. No agent Fountain spawns runs with a vendor bypass flag any more, and
+> `permission_outcome/1` is no longer a constant — gate 3 replaced it with a
+> per-agent policy, answered per tool call.
 
 **Two runtimes resume by guessing.** `gemini.ex:14-17` documents that
 `--resume` re-enters "the most recent conversation in the workspace" because
@@ -628,6 +634,16 @@ where the legacy path fails on an id it guessed.
 > result. `cancelled` stayed unmeasured because neither shippable adapter has
 > been seen to omit a `reject_*` option — the fail-closed rule below is what
 > covers that case, and it is now the only path to it.
+>
+> **And gemini, 2026-08-22.** It shipped on ACP the same morning (#964) and it
+> asks: measured live on gemini 0.53 with `gemini-2.5-flash`, one `ask` launch,
+> one external `curl`, answered and honoured (#974). Its option ids are its own
+> — `proceed_once` / `cancel`, where claude sends `allow`/`reject` and codex
+> `allow_once`/`reject_once` — which is the concrete reason every answer path
+> picks from the list the agent sent rather than from a name it knows. It
+> titles a tool call with the command, as claude does, so the prefer-a-kind
+> advice above covers three runtimes rather than one. **Three of the four ask;
+> opencode is the exception, not the rule.**
 
 Tracked as #643, split into #939 (the policy), #940 (the ask path) and #941
 (gemini's remaining flag).
@@ -686,7 +702,7 @@ for it.
 It was not blocked, and one runtime is the exception rather than the rule: see
 the measurement note at the top of this gate for opencode.
 
-### Gate 4 — remaining runtimes, and parser deletion — **in progress**
+### Gate 4 — remaining runtimes, and parser deletion — **built, 2026-08-22**
 
 > **Amendment, 2026-08-13.** Two changes to this gate as written. First, the
 > sequencing: #644 already departed from "only after gate 3" — if the
@@ -713,10 +729,11 @@ not when the code compiles.
 > pairs, which is cheaper than a second pairing pass.
 
 **Three of the four runtimes are converted and one is not, for a reason
-outside our code — 2026-08-11.** Claude, Codex and OpenCode each did
-`session/new` then `session/resume` against a live agent, recalling a token
-only the prior turn established. Gemini's first turn is equally good and its
-resume cannot be made to work from this side, so it is excluded from
+outside our code — 2026-08-11.** (Superseded by the amendment at the end of
+this gate: gemini was converted on 2026-08-22.) Claude, Codex and OpenCode
+each did `session/new` then `session/resume` against a live agent, recalling
+a token only the prior turn established. Gemini's first turn is equally good
+and its resume cannot be made to work from this side, so it is excluded from
 `ACP.supported_runtimes/0` (#659) and its dialect parser stays.
 
 The mechanism, read out of gemini 0.53.0's shipped bundle and confirmed on live
@@ -745,6 +762,36 @@ Two consequences worth carrying into gate 4:
 
 A workaround would mean writing into another product's private store on a
 filename convention it can change without notice. We wait for upstream.
+
+> **Amendment, 2026-08-22 — gemini is converted, and the workaround above is
+> the one we took.** The paragraph is kept because its objection was right and
+> the reversal was deliberate. What changed is the price. #955 pinned the
+> collision down precisely enough to repair it without guessing at gemini's
+> format: `Fountain.Runtimes.Gemini.SessionStore` consolidates the chats
+> directory at the end of every turn — keep the file with real content, delete
+> the poisoned duplicates, park the survivor under a timestamp the recorder
+> cannot produce. Five consecutive turns inside one wall-clock minute then
+> survive with history intact, where the baseline loses the transcript on the
+> first resume. Prod smoke on `sha-41a9744` (#964): three turns, two
+> consecutive resumes, a word planted before the first reload recalled after
+> both.
+>
+> It is still someone else's private store, so it is carried as a **registered
+> quirk** rather than as ordinary code. `Fountain.Runtimes.Quirks` names the
+> defect (google-gemini/gemini-cli#28775), the versions it was measured against
+> (gemini-cli 0.53.0 through 0.56.0), the function that implements it, how to
+> re-probe it on a version bump, and what to delete when upstream lands, and
+> `quirks_test.exs` fails if that function disappears without its entry (#975).
+> That registry is what makes the reversal safe: the objection was to a
+> workaround outliving its defect invisibly, and this one cannot go invisible.
+>
+> Two things followed from the conversion. #941 deleted `--approval-mode yolo`
+> and the `build_command/5` that carried it — the last implementation of that
+> callback on any runtime — putting gemini on the gate 3 policy with the other
+> three. And **all four parsers are now frozen**: nothing writes a legacy
+> dialect any more, so `LegacyBlocks` renders stored history only and is
+> deleted outright when pre-ACP rows age out of retention. That is the last
+> thing this gate owes, and it is a retention event rather than work.
 
 ### Not in scope
 
