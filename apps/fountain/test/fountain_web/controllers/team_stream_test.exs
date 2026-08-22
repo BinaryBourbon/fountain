@@ -58,7 +58,7 @@ defmodule FountainWeb.TeamStreamTest do
     ev
   end
 
-  defp stream_async(raw_key, headers \\ []) do
+  defp stream_async(raw_key, headers \\ [], path \\ "/api/team/stream") do
     parent = self()
 
     Task.async(fn ->
@@ -69,8 +69,22 @@ defmodule FountainWeb.TeamStreamTest do
           Plug.Conn.put_req_header(c, k, v)
         end)
 
-      Phoenix.ConnTest.dispatch(conn, @endpoint, :get, "/api/team/stream")
+      Phoenix.ConnTest.dispatch(conn, @endpoint, :get, path)
     end)
+  end
+
+  defp acp_text(text) do
+    Jason.encode!(%{
+      "jsonrpc" => "2.0",
+      "method" => "session/update",
+      "params" => %{
+        "sessionId" => "s",
+        "update" => %{
+          "sessionUpdate" => "agent_message_chunk",
+          "content" => %{"type" => "text", "text" => text}
+        }
+      }
+    })
   end
 
   test "events from every teammate arrive on one connection, labelled", %{
@@ -228,5 +242,102 @@ defmodule FountainWeb.TeamStreamTest do
     refute conn.resp_body =~ "replayed-stdout"
     refute conn.resp_body =~ "live-stdout"
     refute conn.resp_body =~ "before"
+  end
+
+  # #881: this stream is the one a team UI actually opens, and it was the only
+  # feed that could not hand back server-parsed blocks. Without them a client
+  # either re-parses the runtime's own dialect or opens a second connection per
+  # thread for detail, which is exactly what `?blocks=true` exists to prevent.
+  describe "?blocks=true (#881)" do
+    test "adds the server-parsed blocks per event, in replay and in the live tail", %{
+      user: user,
+      raw_key: key
+    } do
+      ada = insert_agent(user_id: user.id, name: "Ada")
+      conv = insert_teammate_conv(user, ada, %{runtime: "claude"})
+      marker = insert_log_event(conv, %{kind: "output", stream: "acp", data: "m"})
+      insert_log_event(conv, %{kind: "output", stream: "acp", data: acp_text("replayed")})
+
+      task =
+        stream_async(
+          key,
+          [{"last-event-id", to_string(marker.id)}],
+          "/api/team/stream?blocks=true"
+        )
+
+      Process.sleep(300)
+      publish(conv, %{kind: "output", stream: "acp", data: acp_text("live")})
+
+      body = Task.await(task, 5_000).resp_body
+
+      for text <- ["replayed", "live"] do
+        [payload] =
+          Regex.run(~r/data: (\{[^\n]*#{text}[^\n]*\})/, body, capture: :all_but_first)
+
+        decoded = Jason.decode!(payload)
+        assert %{"blocks" => [%{"kind" => "text", "body" => ^text}]} = decoded
+        # Still labelled, so a client can route it to a roster row.
+        assert decoded["agent_id"] == ada.id
+      end
+    end
+
+    test "the runtime comes from the conversation that produced the event, not the request", %{
+      user: user,
+      raw_key: key
+    } do
+      # The whole complication of this stream: it is multi-conversation, so
+      # there is no single runtime to parse against.
+      claude = insert_agent(user_id: user.id, name: "Ada", runtime: "claude")
+      other = insert_agent(user_id: user.id, name: "Linus", runtime: "codex")
+      claude_conv = insert_teammate_conv(user, claude, %{runtime: "claude"})
+      other_conv = insert_teammate_conv(user, other, %{runtime: "codex"})
+
+      task = stream_async(key, [], "/api/team/stream?blocks=true")
+      Process.sleep(300)
+      publish(claude_conv, %{kind: "output", stream: "acp", data: acp_text("from-claude")})
+      publish(other_conv, %{kind: "output", stream: "acp", data: acp_text("from-codex")})
+
+      body = Task.await(task, 5_000).resp_body
+
+      for text <- ["from-claude", "from-codex"] do
+        [payload] =
+          Regex.run(~r/data: (\{[^\n]*#{text}[^\n]*\})/, body, capture: :all_but_first)
+
+        assert %{"blocks" => [%{"kind" => "text", "body" => ^text}]} = Jason.decode!(payload)
+      end
+    end
+
+    test "without the flag the field is absent, so existing clients see the same payload", %{
+      user: user,
+      raw_key: key
+    } do
+      ada = insert_agent(user_id: user.id, name: "Ada")
+      conv = insert_teammate_conv(user, ada, %{runtime: "claude"})
+
+      task = stream_async(key)
+      Process.sleep(300)
+      publish(conv, %{kind: "output", stream: "acp", data: acp_text("plain")})
+
+      [payload] =
+        Regex.run(
+          ~r/data: (\{[^\n]*plain[^\n]*\})/,
+          Task.await(task, 5_000).resp_body,
+          capture: :all_but_first
+        )
+
+      refute Map.has_key?(Jason.decode!(payload), "blocks")
+    end
+
+    test "blocks=true is accepted rather than rejected as an unknown parameter", %{
+      user: user,
+      raw_key: key
+    } do
+      # OpenApiSpex rejects undeclared query parameters, so before #881 this
+      # was a hard 422 and the SDK had to special-case the endpoint.
+      insert_teammate_conv(user, insert_agent(user_id: user.id))
+
+      conn = stream_async(key, [], "/api/team/stream?blocks=true") |> Task.await(5_000)
+      assert conn.status == 200
+    end
   end
 end

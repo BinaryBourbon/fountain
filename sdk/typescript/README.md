@@ -246,8 +246,9 @@ for await (const event of fountain.team.stream({ streams: ["stage"] })) {
 
 `list`, `get`, `rename`, `remove`, `history`, `freshConversation`, and
 `team.schedules.*` for cron routines. The stream reconnects from its last event
-id on its own; note it carries raw events (the endpoint takes no `blocks`), so
-use it as a notification channel and read detail from the conversation feed.
+id on its own, and carries server-parsed `blocks` like every other feed — the
+runtime is picked per event from the conversation that produced it — so one
+connection is enough to render a thread.
 
 Opening a thread is two calls, and every app wrote both by hand first:
 

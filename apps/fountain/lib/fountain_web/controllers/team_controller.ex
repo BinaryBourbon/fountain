@@ -391,14 +391,34 @@ defmodule FountainWeb.TeamController do
         "conversation on its own; the client re-lists. A `schedule` event (same " <>
         "data) is sent when a team schedule is created, updated, deleted or fired " <>
         "(#825); the client re-lists `/api/team/schedules`. `Last-Event-ID` (a log event " <>
-        "id) replays what was missed on each teammate's conversation. Heartbeats " <>
-        "every 15s; closes after 60s idle so the client reconnects.",
+        "id) replays what was missed on each teammate's conversation. `?blocks=true` adds " <>
+        "server-parsed blocks, per event, for the runtime of the conversation that " <>
+        "produced it. Heartbeats every 15s; closes after 60s idle so the client reconnects.",
     parameters: [
+      "Last-Event-ID": [
+        in: :header,
+        type: :string,
+        required: false,
+        description:
+          "Resume after this event id (integer as string). " <>
+            "Missing or unparseable values are treated as 0."
+      ],
       streams: [
         in: :query,
         type: :string,
         required: false,
         description: "Comma-separated stream allow-list (`stdout,stderr,acp,stage,...`)."
+      ],
+      blocks: [
+        in: :query,
+        type: :boolean,
+        required: false,
+        description:
+          "Add `blocks` to each event payload — its `data` parsed server-side into the " <>
+            "structured blocks a transcript renders, as on " <>
+            "`/api/conversations/:id/stream?blocks=true`. The stream is " <>
+            "multi-conversation, so the runtime is taken per event from the " <>
+            "conversation that produced it. Defaults to false."
       ]
     ],
     responses: [
@@ -419,6 +439,7 @@ defmodule FountainWeb.TeamController do
     user_id = conn.assigns.current_user.id
     last_event_id = conn |> get_req_header("last-event-id") |> List.first() |> parse_id()
     streams = parse_streams(params["streams"])
+    blocks? = params["blocks"] in [true, "true", "1"]
 
     Team.subscribe(user_id)
     # A runner going offline or online changes presence for every teammate
@@ -444,11 +465,19 @@ defmodule FountainWeb.TeamController do
         {:error, _} -> conn
       end
 
-    case replay(conn, followed, last_event_id, streams) do
+    state = %{
+      user_id: user_id,
+      followed: followed,
+      last_id: last_event_id,
+      streams: streams,
+      blocks?: blocks?
+    }
+
+    case replay(conn, state) do
       {:ok, conn, last_id} ->
         Process.send_after(self(), :heartbeat, heartbeat_ms())
 
-        sse_loop(conn, %{user_id: user_id, followed: followed, last_id: last_id, streams: streams})
+        sse_loop(conn, %{state | last_id: last_id})
 
       {:closed, conn, _} ->
         conn
@@ -456,8 +485,12 @@ defmodule FountainWeb.TeamController do
   end
 
   # Subscribe to every teammate's conversation not yet followed. Returns the
-  # map conversation_id → agent_id the loop labels events with. Topics are
-  # never unsubscribed: a removed teammate's conversation stops publishing.
+  # map conversation_id → `{agent_id, runtime}`: the agent id labels the event
+  # for the roster, and the runtime is what `?blocks=true` parses the event's
+  # data with. The runtime has to travel with the conversation rather than
+  # with the request, because this stream carries every teammate at once and
+  # they do not share one (#881). Topics are never unsubscribed: a removed
+  # teammate's conversation stops publishing.
   defp follow_team(user_id, followed) do
     user_id
     |> Team.list_teammates()
@@ -466,21 +499,21 @@ defmodule FountainWeb.TeamController do
         Phoenix.PubSub.subscribe(Fountain.PubSub, "conv:#{conv.id}")
       end
 
-      Map.put(acc, conv.id, agent.id)
+      Map.put(acc, conv.id, {agent.id, conv.runtime})
     end)
   end
 
-  defp replay(conn, _followed, 0, _streams), do: {:ok, conn, 0}
+  defp replay(conn, %{last_id: 0}), do: {:ok, conn, 0}
 
-  defp replay(conn, followed, after_id, streams) do
+  defp replay(conn, state) do
     # Ownership: `followed` came from the tenant-scoped Team.list_teammates.
-    followed
-    |> Enum.flat_map(fn {conv_id, _agent_id} ->
-      Conversations._unsafe_list_log_events(conv_id, after_id, streams: streams)
+    state.followed
+    |> Enum.flat_map(fn {conv_id, _} ->
+      Conversations._unsafe_list_log_events(conv_id, state.last_id, streams: state.streams)
     end)
     |> Enum.sort_by(& &1.id)
-    |> Enum.reduce_while({:ok, conn, after_id}, fn ev, {:ok, acc, last_id} ->
-      case write_event(acc, ev, followed) do
+    |> Enum.reduce_while({:ok, conn, state.last_id}, fn ev, {:ok, acc, last_id} ->
+      case write_event(acc, ev, state) do
         {:ok, c} -> {:cont, {:ok, c, max(ev.id, last_id)}}
         {:error, _} -> {:halt, {:closed, acc, last_id}}
       end
@@ -491,7 +524,7 @@ defmodule FountainWeb.TeamController do
     receive do
       {:log_event, %LogEvent{id: ev_id} = ev} when ev_id > state.last_id ->
         if Conversations.event_in_streams?(ev, state.streams) do
-          case write_event(conn, ev, state.followed) do
+          case write_event(conn, ev, state) do
             {:ok, conn} -> sse_loop(conn, %{state | last_id: ev_id})
             {:error, _} -> conn
           end
@@ -553,11 +586,13 @@ defmodule FountainWeb.TeamController do
 
   # Field-for-field the per-conversation stream's payload, plus the two ids a
   # client needs to route the event to a roster row.
-  defp write_event(conn, %LogEvent{} = ev, followed) do
+  defp write_event(conn, %LogEvent{} = ev, state) do
+    {agent_id, runtime} = Map.get(state.followed, ev.conversation_id) || {nil, nil}
+
     payload =
-      Jason.encode!(%{
+      %{
         conversation_id: ev.conversation_id,
-        agent_id: Map.get(followed, ev.conversation_id),
+        agent_id: agent_id,
         kind: ev.kind,
         stream: ev.stream,
         data: ev.data,
@@ -565,7 +600,9 @@ defmodule FountainWeb.TeamController do
         state: ev.state,
         turn_id: ev.turn_id,
         ts: ev.inserted_at
-      })
+      }
+      |> FountainWeb.ConversationJSON.put_blocks(ev, if(state.blocks?, do: runtime))
+      |> Jason.encode!()
 
     Plug.Conn.chunk(conn, "id: #{ev.id}\nevent: #{ev.kind}\ndata: #{payload}\n\n")
   end

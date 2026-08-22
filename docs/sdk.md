@@ -243,15 +243,15 @@ for await (const event of fountain.team.stream({ streams: ["stage"] })) {
 The stream reconnects from its last event id on its own. So the caller sees
 neither a deploy nor an idle timeout.
 
-!!! note "The team stream carries raw events"
+!!! note "The team stream carries blocks"
 
-    `/api/team/stream` takes `streams` and nothing else. It has no `blocks`,
-    so an event on it is in the runtime's own dialect.
+    `/api/team/stream` takes `blocks` and `streams`. The SDK sends `blocks` for
+    you, so an event on it arrives parsed, not in the runtime's own dialect.
+    The stream covers many conversations, so the server picks the runtime per
+    event from the conversation that produced it.
 
-    Treat it as a notification channel, which says something happened and to
-    whom. Read the detail from the conversation's own feed, which does parse
-    blocks. `fountain.events()` is the same idea across each conversation you
-    own, and it *does* take `blocks`.
+    You can therefore render a thread from this one connection.
+    `fountain.events()` is the same idea across each conversation you own.
 
 ## Reading a thread
 

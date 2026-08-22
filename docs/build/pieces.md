@@ -128,7 +128,7 @@ The two feeds a client uses are different on purpose.
 | | `/api/team/stream` | `/api/conversations/:id/events` |
 |---|---|---|
 | Covers | Each teammate. | One thread. |
-| Carries | Raw events, with `conversation_id` and `agent_id`. | Events, and `blocks` on request. |
+| Carries | Events, and `blocks` on request, with `conversation_id` and `agent_id`. | Events, and `blocks` on request. |
 | Answers | *Something happened, and to whom.* | *The words themselves.* |
 | You use it for | The roster, the dots that show a reply on the way, notifications, unread counts. | The thread, as you render it. |
 

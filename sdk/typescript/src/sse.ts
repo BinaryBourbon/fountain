@@ -102,9 +102,8 @@ export interface StreamOptions {
   /**
    * Ask for server-parsed `blocks` on each event.
    *
-   * Not every stream takes it: `/api/team/stream` accepts `streams` and
-   * nothing else, and OpenApiSpex rejects an unexpected query parameter
-   * outright — so this is opt-in per endpoint rather than always-on.
+   * Every SSE endpoint takes it, so the wrappers here send it by default and
+   * a caller only sets this to stream the runtime's raw dialect instead.
    */
   blocks?: boolean;
 }
