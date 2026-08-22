@@ -6,6 +6,7 @@ defmodule FountainWeb.AdminLive.Index do
 
   alias Fountain.{Accounts, Billing, Conversations, Quotas}
   alias Fountain.Accounts.Deletion
+  alias Fountain.Billing.SandboxUsage
 
   @usage_window_days 30
   @per_page 25
@@ -23,6 +24,7 @@ defmodule FountainWeb.AdminLive.Index do
      |> assign(:billing_enabled, Billing.enabled?())
      |> assign(:funnel, Fountain.Funnel.summary_admin())
      |> assign_billing_overview()
+     |> assign(:provider_spend, Billing.provider_spend())
      |> assign(:sandboxes, Conversations._unsafe_list_sandboxes_admin())
      |> assign(:admin_events, Fountain.Audit._unsafe_list_recent_admin(25))}
   end
@@ -46,6 +48,7 @@ defmodule FountainWeb.AdminLive.Index do
      |> assign_users()
      |> assign(:funnel, Fountain.Funnel.summary_admin())
      |> assign_billing_overview()
+     |> assign(:provider_spend, Billing.provider_spend())
      |> assign(:sandboxes, Conversations._unsafe_list_sandboxes_admin())
      |> assign(:admin_events, Fountain.Audit._unsafe_list_recent_admin(25))}
   end
@@ -423,7 +426,13 @@ defmodule FountainWeb.AdminLive.Index do
         DateTime.add(now, 1, :second)
       )
 
-    no_usage = %{conversations: 0, turns: 0, sandbox_minutes: 0.0}
+    no_usage = %{
+      conversations: 0,
+      turns: 0,
+      sandbox_minutes: 0.0,
+      sandbox_minutes_by_provider: %{}
+    }
+
     sandbox_counts = Quotas.active_sandbox_counts()
 
     %{users: users, total: total} =
@@ -562,6 +571,69 @@ defmodule FountainWeb.AdminLive.Index do
           <div class="text-xs">
             built an agent: {@funnel.stalled.built_agent} · created an environment: {@funnel.stalled.built_environment} · built nothing: {@funnel.stalled.built_nothing}
           </div>
+        </div>
+      </section>
+
+      <%!-- Not gated on @billing_enabled: a self-hosted instance still pays a
+            provider bill, and this is the only place that says whose sandboxes
+            it is for. --%>
+      <section class="space-y-3">
+        <h2 class="text-lg font-medium">Sandbox spend by provider</h2>
+        <p class="text-xs text-zinc-500">
+          Active sandbox time {Calendar.strftime(@provider_spend.period_start, "%b %-d")} – now,
+          parked time excluded. Minutes on different providers cost different amounts — hold these
+          next to the invoice, they are not money.
+        </p>
+
+        <div :if={@provider_spend.by_provider == %{}} class="text-xs text-zinc-400">
+          No sandbox time this month.
+        </div>
+
+        <div :if={@provider_spend.by_provider != %{}} class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div
+            :for={{provider, totals} <- Enum.sort(@provider_spend.by_provider)}
+            class="bg-white rounded shadow border border-zinc-200 px-4 py-3"
+          >
+            <div class="text-xs text-zinc-500">{provider}</div>
+            <div class="text-2xl font-semibold tabular-nums">
+              {format_hours(SandboxUsage.hours(totals.active_seconds))}
+            </div>
+            <div class="text-xs text-zinc-500 tabular-nums">
+              {totals.sandboxes} sandboxes · {totals.users} {if totals.users == 1,
+                do: "tenant",
+                else: "tenants"}
+            </div>
+            <div :if={not SandboxUsage.platform_cost?(provider)} class="text-xs text-zinc-400">
+              tenant hardware, not our bill
+            </div>
+          </div>
+        </div>
+
+        <div class="text-xs text-zinc-500 tabular-nums">
+          Billable to us: {format_hours(SandboxUsage.hours(@provider_spend.platform_seconds))}
+        </div>
+
+        <div
+          :if={@provider_spend.top_tenants != []}
+          class="bg-white rounded shadow border border-zinc-200"
+        >
+          <div class="px-4 py-2 text-xs font-medium text-zinc-500 border-b border-zinc-200">
+            Who it belongs to
+          </div>
+          <ul class="divide-y divide-zinc-100">
+            <li
+              :for={tenant <- @provider_spend.top_tenants}
+              class="px-4 py-2 text-xs flex items-center justify-between gap-3"
+            >
+              <span class="truncate">
+                {tenant.email || "(deleted account)"}
+                <span class="text-zinc-400">· {tenant.provider}</span>
+              </span>
+              <span class="tabular-nums whitespace-nowrap text-zinc-500">
+                {format_hours(SandboxUsage.hours(tenant.active_seconds))} · {tenant.sandboxes} sandboxes
+              </span>
+            </li>
+          </ul>
         </div>
       </section>
 
@@ -832,7 +904,10 @@ defmodule FountainWeb.AdminLive.Index do
                   </div>
                 </div>
               </td>
-              <td class="px-4 py-2 text-xs text-zinc-500 tabular-nums whitespace-nowrap">
+              <td
+                class="px-4 py-2 text-xs text-zinc-500 tabular-nums whitespace-nowrap"
+                title={provider_split(u.usage.sandbox_minutes_by_provider)}
+              >
                 {u.usage.conversations}c · {u.usage.turns}t · {round(u.usage.sandbox_minutes)}m
               </td>
               <td class="px-4 py-2">
@@ -1051,6 +1126,17 @@ defmodule FountainWeb.AdminLive.Index do
     dollars = div(cents, 100)
     remainder = rem(cents, 100)
     "$#{dollars}.#{String.pad_leading(to_string(remainder), 2, "0")}/mo"
+  end
+
+  # Which provider a tenant's sandbox minutes ran on, for the usage cell's
+  # tooltip. Empty when the tenant had no sandbox time, so the attribute
+  # renders as nothing rather than as an empty tooltip.
+  defp provider_split(by_provider) when map_size(by_provider) == 0, do: nil
+
+  defp provider_split(by_provider) do
+    by_provider
+    |> Enum.sort()
+    |> Enum.map_join(" · ", fn {provider, minutes} -> "#{provider} #{round(minutes)}m" end)
   end
 
   defp format_hours(h) when h < 1, do: "#{round(h * 60)}m"

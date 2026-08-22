@@ -180,9 +180,19 @@ defmodule Fountain.Factory do
       %{sprite_name: "test-sprite-#{uniq()}", status: "pending", user_id: user_id}
       |> Map.merge(overrides_map)
 
-    %Sandbox{}
-    |> Sandbox.changeset(attrs)
-    |> Repo.insert!()
+    sandbox =
+      %Sandbox{}
+      |> Sandbox.changeset(attrs)
+      |> Repo.insert!()
+
+    # `inserted_at` is when a sandbox started costing money, so anything
+    # testing spend attribution has to be able to place one in the past. The
+    # changeset does not cast it (nothing in the app sets it), so back-date the
+    # row directly.
+    case Map.get(overrides_map, :inserted_at) do
+      nil -> sandbox
+      at -> sandbox |> Ecto.Changeset.change(inserted_at: at) |> Repo.update!()
+    end
   end
 
   def insert_conversation(overrides \\ %{}) do

@@ -187,6 +187,7 @@ defmodule FountainWeb.MetricsTest do
         # Fountain.OpsGaugesTest since the poller is off in test
         [:fountain, :conversations],
         [:fountain, :sandboxes],
+        [:fountain, :sandboxes_by_provider],
         [:fountain, :oban_queue],
         # Emitted by Oban itself around every job execution
         [:oban, :job, :stop],

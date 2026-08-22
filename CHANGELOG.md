@@ -39,6 +39,22 @@ upgrade, is in
   `Host` header and TLS SNI. Redirects are never followed. See
   [Webhooks](https://binarybourbon.github.io/fountain/reference/webhooks/).
 
+- **Sandbox spend attribution: which tenant, on which provider, ran how long.**
+  Fountain pays Sprites, E2B and Daytona by the second and had no way to say
+  whose seconds those were. `Fountain.Billing.SandboxUsage` now computes active
+  sandbox time per `{user, provider}` from the sandbox rows themselves, clipped
+  to the period asked about, with parked time subtracted. A **Sandbox spend by
+  provider** panel on `/admin` reports hours, sandboxes and tenants per
+  provider, names the accounts behind the total, and marks self-hosted runner
+  hours as the tenant's own hardware rather than our bill. Each account sees
+  its own split on `/account/billing` and in `usage.sandbox_minutes_by_provider`
+  on `GET /api/account/billing`, and Prometheus gained
+  `fountain_sandboxes_by_provider_count` for the live view. Deliberately no
+  money anywhere: prices are per-provider and per-machine-size, and a made-up
+  rate would look authoritative. Documented in
+  `docs/guides/operate/sandbox-spend.md`. Closes the metering-correctness half
+  of #798.
+
 - **What we need from a sandbox platform** (`docs/integrations/platform-requirements.md`):
   the ten things Fountain had to build itself because no backend promised them,
   each with the workaround it costs us and an acceptance test a platform team can
@@ -79,6 +95,23 @@ upgrade, is in
   exists. Generating it immediately found one: see below.
 
 ### Fixed
+
+- **A sandbox that failed never recorded when it stopped.** Of the dozen
+  writers of a terminal sandbox status, the ones that terminated passed a
+  `terminated_at` and the ones that failed never did, so a failed sandbox
+  carried a null end for the rest of its life. `Conversations.update_sandbox/2`
+  now stamps the column at the same choke point that meters the transition, and
+  a migration repairs the backlog from `updated_at`. Without it, spend
+  attribution reads every historical failure as a sandbox that is still
+  running.
+
+- **Sandbox minutes only appeared when a sandbox died, and then all at once.**
+  The whole lifetime landed in whichever period the teardown happened to fall
+  in, so a long-lived agent reported zero for months and then a spike, a
+  sandbox spanning a month boundary billed entirely to the later month, and one
+  still running reported nothing at all. `usage_summary/3` and
+  `usage_summaries/2` now report the time that actually ran inside the period
+  asked about. `/account/billing` and the admin usage column change with them.
 
 - **Every line of every code block in `/docs` and `/help` had a light box
   painted behind it.** Tailwind Typography's `code` variant matches the

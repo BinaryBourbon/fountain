@@ -54,6 +54,44 @@ defmodule Fountain.OpsGaugesTest do
     end
   end
 
+  test "counts non-terminal sandboxes by provider and status" do
+    # The live counterpart to the after-the-fact roll-up: which providers are
+    # charging us right now. Tagged by provider, never by tenant — that would
+    # be one Prometheus series per account.
+    attach([[:fountain, :sandboxes_by_provider]])
+
+    user = insert_verified_user()
+    insert_sandbox(user_id: user.id, provider: "e2b", status: "ready")
+    insert_sandbox(user_id: user.id, provider: "e2b", status: "ready")
+    insert_sandbox(user_id: user.id, provider: "sprites", status: "suspended")
+
+    assert :ok = OpsGauges.emit_telemetry()
+
+    assert_receive {:telemetry, [:fountain, :sandboxes_by_provider], %{count: 2},
+                    %{provider: "e2b", status: "ready"}}
+
+    assert_receive {:telemetry, [:fountain, :sandboxes_by_provider], %{count: 1},
+                    %{provider: "sprites", status: "suspended"}}
+
+    # Zeros for every provider Fountain knows, so a series exists from boot.
+    for provider <- Fountain.Sandbox.known_providers() do
+      assert_receive {:telemetry, [:fountain, :sandboxes_by_provider], %{count: _},
+                      %{provider: ^provider, status: "pending"}}
+    end
+  end
+
+  test "does not count terminal sandboxes — those rows are history, not a signal" do
+    attach([[:fountain, :sandboxes_by_provider]])
+
+    user = insert_verified_user()
+    insert_sandbox(user_id: user.id, provider: "daytona", status: "terminated")
+
+    assert :ok = OpsGauges.emit_telemetry()
+
+    refute_receive {:telemetry, [:fountain, :sandboxes_by_provider], _,
+                    %{provider: "daytona", status: "terminated"}}
+  end
+
   test "counts queued Oban jobs by queue and state" do
     attach([[:fountain, :oban_queue]])
 

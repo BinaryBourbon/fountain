@@ -354,6 +354,15 @@ defmodule FountainWeb.Telemetry do
         tags: [:status],
         description: "Sandbox rows by status"
       ),
+      # The live view of what the sandbox providers are charging for. Tagged
+      # by provider because a minute on each is bought at a different price;
+      # not tagged by tenant, which is a database report, not a series.
+      last_value("fountain.sandboxes_by_provider.count",
+        event_name: [:fountain, :sandboxes_by_provider],
+        measurement: :count,
+        tags: [:provider, :status],
+        description: "Non-terminal sandbox rows by provider and status"
+      ),
       last_value("fountain.oban_queue.depth",
         event_name: [:fountain, :oban_queue],
         measurement: :depth,

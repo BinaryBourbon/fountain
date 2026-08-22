@@ -1581,7 +1581,17 @@ defmodule FountainWeb.Schemas do
               properties: %{
                 conversations: %Schema{type: :integer},
                 turns: %Schema{type: :integer},
-                sandbox_minutes: %Schema{type: :number}
+                sandbox_minutes: %Schema{
+                  type: :number,
+                  description: "Active sandbox minutes inside the period, parked time excluded."
+                },
+                sandbox_minutes_by_provider: %Schema{
+                  type: :object,
+                  description:
+                    "sandbox_minutes split by sandbox provider (sprites, e2b, " <>
+                      "daytona, runner). Providers not used in the period are absent.",
+                  additionalProperties: %Schema{type: :number}
+                }
               }
             }
           },

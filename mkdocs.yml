@@ -88,6 +88,7 @@ nav:
       - Deploy on Kubernetes: guides/operate/kubernetes.md
       - Configure email: guides/operate/email.md
       - Change sandbox lifetimes: guides/operate/sandbox-lifetime.md
+      - See what sandboxes cost: guides/operate/sandbox-spend.md
       - Start billing: guides/operate/billing.md
       - Back up and restore: guides/operate/back-up-and-restore.md
       - Upgrade an instance: guides/operate/upgrade.md

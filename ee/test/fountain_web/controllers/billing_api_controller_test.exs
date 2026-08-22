@@ -65,8 +65,42 @@ defmodule FountainWeb.BillingApiControllerTest do
       assert body["data"]["usage"]["conversations"] == 0
       assert body["data"]["usage"]["turns"] == 0
       assert body["data"]["usage"]["sandbox_minutes"] == 0
+      assert body["data"]["usage"]["sandbox_minutes_by_provider"] == %{}
       assert body["data"]["period"]["start"]
       assert body["data"]["period"]["end"]
+    end
+
+    test "sandbox minutes are reported per provider", %{conn: conn, user: user, key: key} do
+      # Which provider ran the minutes is what makes them attributable to a
+      # cost: a minute on each is bought at a different price.
+      now = DateTime.utc_now() |> DateTime.truncate(:second)
+      {period_start, _} = Fountain.Billing.current_month_range()
+
+      # Clamped to the month the endpoint reports on, so the run is ten minutes
+      # long every day except the first ten minutes of a month, when it is
+      # shorter — and the expected value follows it rather than going stale.
+      started =
+        [DateTime.add(now, -10, :minute), period_start]
+        |> Enum.max(DateTime)
+
+      insert_sandbox(
+        user_id: user.id,
+        provider: "e2b",
+        status: "terminated",
+        inserted_at: started,
+        terminated_at: now
+      )
+
+      expected = Float.round(DateTime.diff(now, started, :second) / 60, 2)
+
+      body =
+        conn
+        |> authed_with_key(key)
+        |> get("/api/account/billing")
+        |> json_response(200)
+
+      assert body["data"]["usage"]["sandbox_minutes"] == expected
+      assert body["data"]["usage"]["sandbox_minutes_by_provider"] == %{"e2b" => expected}
     end
 
     test "trial dates answer the 'why did my API calls start failing' question", %{

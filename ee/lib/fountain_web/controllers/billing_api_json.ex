@@ -16,7 +16,10 @@ defmodule FountainWeb.BillingApiJSON do
         usage: %{
           conversations: usage.conversations,
           turns: usage.turns,
-          sandbox_minutes: Float.round(usage.sandbox_minutes, 2)
+          sandbox_minutes: Float.round(usage.sandbox_minutes, 2),
+          # Which sandbox provider the minutes ran on. Absent providers were
+          # not used; the values sum to `sandbox_minutes`.
+          sandbox_minutes_by_provider: usage.sandbox_minutes_by_provider
         }
       }
     }
