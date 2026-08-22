@@ -219,6 +219,15 @@ defmodule FountainWeb.Live.BillingLive do
             <dd class="mt-1 text-2xl font-semibold">{format_minutes(@usage.sandbox_minutes)}</dd>
           </div>
         </dl>
+        <p :if={@usage.sandbox_minutes_by_provider != %{}} class="mt-3 text-xs text-gray-500">
+          Sandbox minutes by provider
+          <span
+            :for={{provider, minutes} <- Enum.sort(@usage.sandbox_minutes_by_provider)}
+            class="ml-2 inline-block rounded bg-gray-100 px-1.5 py-0.5 tabular-nums"
+          >
+            <span class="font-medium text-gray-700">{provider}</span> {format_minutes(minutes)}
+          </span>
+        </p>
       </div>
     </div>
     """

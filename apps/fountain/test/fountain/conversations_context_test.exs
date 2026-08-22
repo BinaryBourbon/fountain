@@ -96,6 +96,44 @@ defmodule Fountain.ConversationsContextTest do
       assert {:error, changeset} = Conversations.update_sandbox(sandbox, %{status: "invalid"})
       assert errors_on(changeset)[:status]
     end
+
+    test "stamps terminated_at when a sandbox fails" do
+      # Every path that marked a sandbox `failed` left terminated_at null, so
+      # spend attribution — which reads it as the end of the billed interval —
+      # saw a failed sandbox as one that never stopped running.
+      user = insert_verified_user()
+      sandbox = insert_sandbox(user_id: user.id, status: "starting")
+
+      assert {:ok, updated} = Conversations.update_sandbox(sandbox, %{status: "failed"})
+      assert %DateTime{} = updated.terminated_at
+    end
+
+    test "stamps terminated_at when a sandbox terminates without one" do
+      user = insert_verified_user()
+      sandbox = insert_sandbox(user_id: user.id, status: "ready")
+
+      assert {:ok, updated} = Conversations.update_sandbox(sandbox, %{status: "terminated"})
+      assert %DateTime{} = updated.terminated_at
+    end
+
+    test "keeps a terminated_at the caller supplied" do
+      user = insert_verified_user()
+      sandbox = insert_sandbox(user_id: user.id, status: "ready")
+      at = ~U[2026-05-10 12:00:00Z]
+
+      assert {:ok, updated} =
+               Conversations.update_sandbox(sandbox, %{status: "terminated", terminated_at: at})
+
+      assert updated.terminated_at == at
+    end
+
+    test "does not stamp terminated_at on a non-terminal transition" do
+      user = insert_verified_user()
+      sandbox = insert_sandbox(user_id: user.id, status: "pending")
+
+      assert {:ok, updated} = Conversations.update_sandbox(sandbox, %{status: "ready"})
+      assert is_nil(updated.terminated_at)
+    end
   end
 
   # ────────────────────────────────────────────────────────────────────────────

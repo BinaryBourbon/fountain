@@ -202,13 +202,39 @@ defmodule Fountain.Conversations do
   def update_sandbox(%Sandbox{} = sandbox, attrs) do
     was = sandbox.status
 
-    with {:ok, updated} <- sandbox |> Sandbox.changeset(attrs) |> Repo.update() do
+    changeset = sandbox |> Sandbox.changeset(attrs) |> stamp_terminated_at()
+
+    with {:ok, updated} <- Repo.update(changeset) do
       record_sandbox_usage(was, updated)
       {:ok, updated}
     end
   end
 
   @billable_terminal ~w(terminated failed)
+
+  # `terminated_at` is when a sandbox stopped costing money, so spend
+  # attribution reads it as the end of the billed interval
+  # (`Fountain.Billing.SandboxUsage`). Stamping it here rather than at each
+  # call site is the same choke-point argument as the metering below: of the
+  # dozen writers of a terminal status, the ones that terminate passed a
+  # timestamp and the ones that fail never did, which left every failed
+  # sandbox looking like it was still running years later.
+  #
+  # Only fills a gap — a caller that passes its own `terminated_at` keeps it.
+  defp stamp_terminated_at(changeset) do
+    status = Ecto.Changeset.get_field(changeset, :status)
+
+    if status in @billable_terminal and
+         is_nil(Ecto.Changeset.get_field(changeset, :terminated_at)) do
+      Ecto.Changeset.put_change(
+        changeset,
+        :terminated_at,
+        DateTime.utc_now() |> DateTime.truncate(:second)
+      )
+    else
+      changeset
+    end
+  end
 
   # Transitions only: update_sandbox/2 is called repeatedly with the same status
   # in places, and double-counting a sandbox would overstate a bill. Provision

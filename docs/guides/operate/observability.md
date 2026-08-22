@@ -23,6 +23,12 @@ observability pack, built from a real run of the hosted instance.
   into Grafana, then choose your Prometheus datasource. On compose, point any
   Prometheus at the metrics port and import the same file.
 
+One series is worth naming here, because it is the one that maps to money.
+`fountain_sandboxes_by_provider_count` reports how many sandboxes each provider
+holds right now, by status. See
+[See what sandboxes cost](sandbox-spend.md) for the per-account view that goes
+with it.
+
 ## Logs
 
 Logs go to stdout.

@@ -79,15 +79,9 @@ defmodule Fountain.BillingTest do
       assert summary.turns == 3
     end
 
-    test "sums duration_ms from sandbox_terminated events into sandbox_minutes", %{user: user} do
-      # 60_000 ms = 1 min, 120_000 ms = 2 min -> total 3.0 minutes
-      insert_event(user, "sandbox_terminated", ~U[2026-05-10 12:00:00Z], %{
-        "duration_ms" => 60_000
-      })
-
-      insert_event(user, "sandbox_terminated", ~U[2026-05-10 12:30:00Z], %{
-        "duration_ms" => 120_000
-      })
+    test "sums the sandboxes' active time into sandbox_minutes", %{user: user} do
+      terminated_sandbox(user, "sprites", ~U[2026-05-10 12:00:00Z], ~U[2026-05-10 12:01:00Z])
+      terminated_sandbox(user, "sprites", ~U[2026-05-10 12:30:00Z], ~U[2026-05-10 12:32:00Z])
 
       summary = Billing.usage_summary(user.id, @period_start, @period_end)
 
@@ -477,7 +471,7 @@ defmodule Fountain.BillingTest do
     end
   end
 
-  describe "usage_summary/3 — sandbox_minutes edge cases" do
+  describe "usage_summary/3 — sandbox_minutes per provider" do
     @period_start ~U[2026-05-01 00:00:00Z]
     @period_end ~U[2026-06-01 00:00:00Z]
 
@@ -485,149 +479,66 @@ defmodule Fountain.BillingTest do
       {:ok, user: insert_verified_user()}
     end
 
-    test "sandbox_minutes defaults to 0 when duration_ms key is absent from metadata", %{
-      user: user
-    } do
-      insert_event(user, "sandbox_terminated", ~U[2026-05-10 12:00:00Z], %{})
+    test "splits the minutes by the provider that ran them", %{user: user} do
+      terminated_sandbox(user, "sprites", ~U[2026-05-10 12:00:00Z], ~U[2026-05-10 12:10:00Z])
+      terminated_sandbox(user, "e2b", ~U[2026-05-11 12:00:00Z], ~U[2026-05-11 12:05:00Z])
 
+      summary = Billing.usage_summary(user.id, @period_start, @period_end)
+
+      assert summary.sandbox_minutes_by_provider == %{"sprites" => 10.0, "e2b" => 5.0}
+    end
+
+    test "the split adds up to the total", %{user: user} do
+      terminated_sandbox(user, "sprites", ~U[2026-05-10 12:00:00Z], ~U[2026-05-10 12:10:00Z])
+      terminated_sandbox(user, "daytona", ~U[2026-05-11 12:00:00Z], ~U[2026-05-11 12:07:00Z])
+
+      summary = Billing.usage_summary(user.id, @period_start, @period_end)
+
+      assert summary.sandbox_minutes == 17.0
+
+      assert summary.sandbox_minutes_by_provider |> Map.values() |> Enum.sum() ==
+               summary.sandbox_minutes
+    end
+
+    test "is empty for a tenant with no sandbox time", %{user: user} do
       summary = Billing.usage_summary(user.id, @period_start, @period_end)
 
       assert summary.sandbox_minutes == 0.0
+      assert summary.sandbox_minutes_by_provider == %{}
     end
 
-    test "sandbox_minutes handles mixed events where some lack duration_ms", %{user: user} do
-      insert_event(user, "sandbox_terminated", ~U[2026-05-10 12:00:00Z], %{
-        "duration_ms" => 60_000
-      })
-
-      insert_event(user, "sandbox_terminated", ~U[2026-05-11 12:00:00Z], %{})
+    test "counts a sandbox still running at the period's end", %{user: user} do
+      # The gap terminate-only accrual left: a long-lived agent reported zero
+      # for months and then a spike in whichever month it happened to die.
+      insert_sandbox(
+        user_id: user.id,
+        provider: "sprites",
+        status: "ready",
+        inserted_at: ~U[2026-05-31 23:00:00Z]
+      )
 
       summary = Billing.usage_summary(user.id, @period_start, @period_end)
 
-      # Only the first event contributes 1 minute; the second defaults to 0
-      assert summary.sandbox_minutes == 1.0
-    end
-  end
-
-  describe "usage_summary/3 — suspend-aware sandbox_minutes (#665)" do
-    @period_start ~U[2026-05-01 00:00:00Z]
-    @period_end ~U[2026-06-01 00:00:00Z]
-    @sandbox_id Ecto.UUID.generate()
-
-    setup do
-      {:ok, user: insert_verified_user()}
+      assert summary.sandbox_minutes == 60.0
     end
 
-    test "subtracts a closed suspend/resume interval from the terminated duration", %{
-      user: user
-    } do
-      # Alive 12:00 -> 13:00 (1h = 3_600_000ms), parked 12:20 -> 12:50 (30min).
-      # Net run time: 30 minutes.
-      insert_event(user, "sandbox_suspended", ~U[2026-05-10 12:20:00Z], %{}, @sandbox_id)
-      insert_event(user, "sandbox_resumed", ~U[2026-05-10 12:50:00Z], %{}, @sandbox_id)
+    test "excludes parked time", %{user: user} do
+      sandbox =
+        terminated_sandbox(user, "sprites", ~U[2026-05-10 12:00:00Z], ~U[2026-05-10 13:00:00Z])
 
-      insert_event(
-        user,
-        "sandbox_terminated",
-        ~U[2026-05-10 13:00:00Z],
-        %{"duration_ms" => 3_600_000},
-        @sandbox_id
-      )
+      insert_event(user, "sandbox_suspended", ~U[2026-05-10 12:20:00Z], %{}, sandbox.id)
+      insert_event(user, "sandbox_resumed", ~U[2026-05-10 12:50:00Z], %{}, sandbox.id)
 
       summary = Billing.usage_summary(user.id, @period_start, @period_end)
 
       assert summary.sandbox_minutes == 30.0
     end
-
-    test "closes a dangling suspend against the terminated event itself", %{user: user} do
-      # A sandbox that parks and is torn down (account deletion, tenant reap)
-      # without ever waking again: no sandbox_resumed at all. The whole parked
-      # span (12:20 -> 13:00, 40 minutes) must come off the hour.
-      insert_event(user, "sandbox_suspended", ~U[2026-05-10 12:20:00Z], %{}, @sandbox_id)
-
-      insert_event(
-        user,
-        "sandbox_terminated",
-        ~U[2026-05-10 13:00:00Z],
-        %{"duration_ms" => 3_600_000},
-        @sandbox_id
-      )
-
-      summary = Billing.usage_summary(user.id, @period_start, @period_end)
-
-      assert summary.sandbox_minutes == 20.0
-    end
-
-    test "sums multiple park cycles on the same sandbox", %{user: user} do
-      # Two separate suspend/resume cycles of 10 minutes each = 20 minutes
-      # parked out of the hour.
-      insert_event(user, "sandbox_suspended", ~U[2026-05-10 12:10:00Z], %{}, @sandbox_id)
-      insert_event(user, "sandbox_resumed", ~U[2026-05-10 12:20:00Z], %{}, @sandbox_id)
-      insert_event(user, "sandbox_suspended", ~U[2026-05-10 12:40:00Z], %{}, @sandbox_id)
-      insert_event(user, "sandbox_resumed", ~U[2026-05-10 12:50:00Z], %{}, @sandbox_id)
-
-      insert_event(
-        user,
-        "sandbox_terminated",
-        ~U[2026-05-10 13:00:00Z],
-        %{"duration_ms" => 3_600_000},
-        @sandbox_id
-      )
-
-      summary = Billing.usage_summary(user.id, @period_start, @period_end)
-
-      assert summary.sandbox_minutes == 40.0
-    end
-
-    test "never goes negative when parked time would exceed the recorded duration", %{
-      user: user
-    } do
-      insert_event(user, "sandbox_suspended", ~U[2026-05-10 11:00:00Z], %{}, @sandbox_id)
-
-      insert_event(
-        user,
-        "sandbox_terminated",
-        ~U[2026-05-10 13:00:00Z],
-        %{"duration_ms" => 60_000},
-        @sandbox_id
-      )
-
-      summary = Billing.usage_summary(user.id, @period_start, @period_end)
-
-      assert summary.sandbox_minutes == 0.0
-    end
-
-    test "keys parked intervals per sandbox — one sandbox's suspend does not bleed into another's",
-         %{user: user} do
-      other_sandbox_id = Ecto.UUID.generate()
-
-      insert_event(user, "sandbox_suspended", ~U[2026-05-10 12:20:00Z], %{}, other_sandbox_id)
-      insert_event(user, "sandbox_resumed", ~U[2026-05-10 12:50:00Z], %{}, other_sandbox_id)
-
-      insert_event(
-        user,
-        "sandbox_terminated",
-        ~U[2026-05-10 13:00:00Z],
-        %{"duration_ms" => 3_600_000},
-        @sandbox_id
-      )
-
-      summary = Billing.usage_summary(user.id, @period_start, @period_end)
-
-      # The suspend/resume pair belongs to a different sandbox; the terminated
-      # sandbox's full hour still counts.
-      assert summary.sandbox_minutes == 60.0
-    end
-
-    test "a suspend still parked at period end (no resume, no terminated event) contributes nothing",
-         %{user: user} do
-      insert_event(user, "sandbox_suspended", ~U[2026-05-10 12:20:00Z], %{}, @sandbox_id)
-
-      summary = Billing.usage_summary(user.id, @period_start, @period_end)
-
-      assert summary.sandbox_minutes == 0.0
-    end
   end
+
+  # The interval arithmetic these used to pin — parked spans, dangling
+  # suspends, per-sandbox keying, never-negative — moved with the computation
+  # into Fountain.Billing.SandboxUsage (billing_sandbox_usage_test.exs), which
+  # exercises it against real sandbox rows rather than hand-written events.
 
   describe "sync_subscription/1 — trial_end nil branch" do
     setup do
@@ -658,32 +569,6 @@ defmodule Fountain.BillingTest do
       }
 
       assert {:error, :user_not_found} = Billing.sync_subscription(event)
-    end
-  end
-
-  describe "usage_summary/3 — atom-key duration_ms metadata" do
-    @period_start ~U[2026-05-01 00:00:00Z]
-    @period_end ~U[2026-06-01 00:00:00Z]
-
-    setup do
-      {:ok, user: insert_verified_user()}
-    end
-
-    test "reads duration_ms from atom-keyed metadata when string key is absent", %{user: user} do
-      # Insert the event directly with atom key in metadata (bypasses Jason decode path)
-      %UsageEvent{}
-      |> UsageEvent.changeset(%{
-        user_id: user.id,
-        event_type: "sandbox_terminated",
-        inserted_at: ~U[2026-05-10 12:00:00Z],
-        metadata: %{duration_ms: 120_000}
-      })
-      |> Repo.insert!()
-
-      summary = Billing.usage_summary(user.id, @period_start, @period_end)
-
-      # 120_000 ms = 2.0 minutes
-      assert summary.sandbox_minutes == 2.0
     end
   end
 
@@ -827,6 +712,18 @@ defmodule Fountain.BillingTest do
       resource_id: resource_id
     })
     |> Repo.insert!()
+  end
+
+  # Sandbox minutes are read off the sandbox rows themselves, so anything
+  # asserting on them has to create one rather than hand-write an event.
+  defp terminated_sandbox(user, provider, started, ended) do
+    insert_sandbox(
+      user_id: user.id,
+      provider: provider,
+      status: "terminated",
+      inserted_at: started,
+      terminated_at: ended
+    )
   end
 
   describe "extend_trial/2" do
@@ -1067,17 +964,28 @@ defmodule Fountain.BillingTest do
       {:ok, _} = Billing.record_usage(a.id, "sandbox_provisioned", nil, nil)
       {:ok, _} = Billing.record_usage(a.id, "turn_started", nil, nil)
       {:ok, _} = Billing.record_usage(a.id, "turn_started", nil, nil)
-
-      {:ok, _} =
-        Billing.record_usage(a.id, "sandbox_terminated", nil, nil, %{"duration_ms" => 120_000})
-
       {:ok, _} = Billing.record_usage(b.id, "turn_started", nil, nil)
 
-      now = DateTime.utc_now()
+      now = DateTime.utc_now() |> DateTime.truncate(:second)
+
+      terminated_sandbox(a, "sprites", DateTime.add(now, -2, :minute), now)
+
       summaries = Billing.usage_summaries(DateTime.add(now, -1, :day), DateTime.add(now, 1, :day))
 
-      assert summaries[a.id] == %{conversations: 1, turns: 2, sandbox_minutes: 2.0}
-      assert summaries[b.id] == %{conversations: 0, turns: 1, sandbox_minutes: 0.0}
+      assert summaries[a.id] == %{
+               conversations: 1,
+               turns: 2,
+               sandbox_minutes: 2.0,
+               sandbox_minutes_by_provider: %{"sprites" => 2.0}
+             }
+
+      assert summaries[b.id] == %{
+               conversations: 0,
+               turns: 1,
+               sandbox_minutes: 0.0,
+               sandbox_minutes_by_provider: %{}
+             }
+
       refute Map.has_key?(summaries, quiet.id)
     end
 
@@ -1096,35 +1004,36 @@ defmodule Fountain.BillingTest do
     test "subtracts parked time per sandbox, per user (#665)" do
       a = insert_verified_user()
       b = insert_verified_user()
-      sandbox_a = Ecto.UUID.generate()
-      sandbox_b = Ecto.UUID.generate()
 
       # a: alive an hour, parked 30 of those minutes -> nets 30.
-      insert_event(a, "sandbox_suspended", ~U[2026-05-10 12:20:00Z], %{}, sandbox_a)
-      insert_event(a, "sandbox_resumed", ~U[2026-05-10 12:50:00Z], %{}, sandbox_a)
+      sandbox_a =
+        terminated_sandbox(a, "sprites", ~U[2026-05-10 12:00:00Z], ~U[2026-05-10 13:00:00Z])
 
-      insert_event(
-        a,
-        "sandbox_terminated",
-        ~U[2026-05-10 13:00:00Z],
-        %{"duration_ms" => 3_600_000},
-        sandbox_a
-      )
+      insert_event(a, "sandbox_suspended", ~U[2026-05-10 12:20:00Z], %{}, sandbox_a.id)
+      insert_event(a, "sandbox_resumed", ~U[2026-05-10 12:50:00Z], %{}, sandbox_a.id)
 
       # b: alive an hour, never suspended -> nets the full 60.
-      insert_event(
-        b,
-        "sandbox_terminated",
-        ~U[2026-05-10 13:00:00Z],
-        %{"duration_ms" => 3_600_000},
-        sandbox_b
-      )
+      terminated_sandbox(b, "sprites", ~U[2026-05-10 12:00:00Z], ~U[2026-05-10 13:00:00Z])
 
       summaries =
         Billing.usage_summaries(~U[2026-05-01 00:00:00Z], ~U[2026-06-01 00:00:00Z])
 
       assert summaries[a.id].sandbox_minutes == 30.0
       assert summaries[b.id].sandbox_minutes == 60.0
+    end
+
+    test "splits each user's minutes by provider" do
+      a = insert_verified_user()
+
+      terminated_sandbox(a, "sprites", ~U[2026-05-10 12:00:00Z], ~U[2026-05-10 12:10:00Z])
+      terminated_sandbox(a, "runner", ~U[2026-05-10 12:00:00Z], ~U[2026-05-10 12:04:00Z])
+
+      summaries = Billing.usage_summaries(~U[2026-05-01 00:00:00Z], ~U[2026-06-01 00:00:00Z])
+
+      assert summaries[a.id].sandbox_minutes_by_provider == %{
+               "sprites" => 10.0,
+               "runner" => 4.0
+             }
     end
   end
 

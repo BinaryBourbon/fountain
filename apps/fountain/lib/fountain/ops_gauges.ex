@@ -40,8 +40,40 @@ defmodule Fountain.OpsGauges do
         Fountain.Conversations.Sandbox.statuses()
       )
 
+      emit_sandbox_provider_counts()
       emit_oban_depths()
     end)
+  end
+
+  # How many sandboxes are costing money on each provider right now — the live
+  # counterpart to the after-the-fact roll-up in
+  # `Fountain.Billing.SandboxUsage`, and the series to watch when a provider
+  # bill moves. Deliberately not tagged by tenant: attribution belongs in the
+  # database report, where a per-user dimension is a column rather than a new
+  # Prometheus series per account.
+  #
+  # Terminal statuses are excluded for the same reason Oban's are: those rows
+  # are unbounded history, not a signal.
+  @live_statuses ~w(pending starting ready suspended)
+
+  defp emit_sandbox_provider_counts do
+    counts =
+      Repo.all(
+        from(s in Fountain.Conversations.Sandbox,
+          where: s.status in @live_statuses,
+          group_by: [s.provider, s.status],
+          select: {{s.provider, s.status}, count(s.id)}
+        )
+      )
+      |> Map.new()
+
+    for provider <- Fountain.Sandbox.known_providers(), status <- @live_statuses do
+      :telemetry.execute(
+        [:fountain, :sandboxes_by_provider],
+        %{count: Map.get(counts, {provider, status}, 0)},
+        %{provider: provider, status: status}
+      )
+    end
   end
 
   defp emit_status_counts(event, schema, statuses) do

@@ -753,6 +753,71 @@ defmodule FountainWeb.AdminLiveTest do
       assert html =~ "1c · 1t · 0m"
     end
   end
+
+  describe "AdminLive.Index — sandbox spend by provider" do
+    defp sandbox_run(user, provider, minutes) do
+      now = DateTime.utc_now() |> DateTime.truncate(:second)
+      {period_start, _} = Fountain.Billing.current_month_range()
+      started = Enum.max([DateTime.add(now, -minutes, :minute), period_start], DateTime)
+
+      insert_sandbox(
+        user_id: user.id,
+        provider: provider,
+        status: "terminated",
+        inserted_at: started,
+        terminated_at: now
+      )
+    end
+
+    test "names each provider and the tenants behind it", %{conn: conn} do
+      admin = insert_admin()
+      user = insert_verified_user()
+      sandbox_run(user, "e2b", 30)
+
+      conn = login_user(conn, admin)
+      {:ok, _lv, html} = live(conn, ~p"/admin")
+
+      assert html =~ "Sandbox spend by provider"
+      assert html =~ "e2b"
+      assert html =~ "Billable to us"
+      assert html =~ user.email
+    end
+
+    test "marks a self-hosted runner as not our bill", %{conn: conn} do
+      admin = insert_admin()
+      user = insert_verified_user()
+      sandbox_run(user, "runner", 30)
+
+      conn = login_user(conn, admin)
+      {:ok, _lv, html} = live(conn, ~p"/admin")
+
+      assert html =~ "tenant hardware, not our bill"
+    end
+
+    test "reports how much of the paid time was idle", %{conn: conn} do
+      # The number that says whether the bill is avoidable. A sandbox that
+      # never took a turn is 100% idle.
+      admin = insert_admin()
+      user = insert_verified_user()
+      sandbox_run(user, "e2b", 30)
+
+      conn = login_user(conn, admin)
+      {:ok, _lv, html} = live(conn, ~p"/admin")
+
+      assert html =~ "idle"
+      assert html =~ "100%"
+      assert html =~ "what a shorter idle timeout would remove"
+    end
+
+    test "renders with no sandbox time at all", %{conn: conn} do
+      admin = insert_admin()
+
+      conn = login_user(conn, admin)
+      {:ok, _lv, html} = live(conn, ~p"/admin")
+
+      assert html =~ "No sandbox time this month."
+    end
+  end
 end
 
 defmodule FountainWeb.AdminLiveErrorTest do

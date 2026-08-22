@@ -53,6 +53,8 @@ gated action. An account that cannot is one the backfill missed.
 ## Related
 
 - [Stripe integration guide](../../integrations/stripe.md).
+- [See what sandboxes cost](sandbox-spend.md), for what each account runs and
+  which provider you pay for it.
 - [Run a release task](run-a-release-task.md).
 
 <!-- vale STE.IngForms = YES -->

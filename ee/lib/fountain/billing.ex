@@ -33,6 +33,7 @@ defmodule Fountain.Billing do
 
   alias Fountain.Accounts.User
   alias Fountain.Audit
+  alias Fountain.Billing.SandboxUsage
   alias Fountain.Billing.UsageEvent
   alias Fountain.Repo
 
@@ -1547,42 +1548,72 @@ defmodule Fountain.Billing do
     still accrue sandbox minutes; excluding them makes the two numbers
     diverge for exactly the accounts where provisioning is failing.
   - `:turns` — count of `turn_started` events
-  - `:sandbox_minutes` — total wall-clock sandbox time in minutes, derived
-    from `duration_ms` metadata on `sandbox_terminated` events, minus any
-    parked interval bracketed by `sandbox_suspended`/`sandbox_resumed` (or, for
-    a sandbox that parks and is torn down without ever waking again,
-    `sandbox_suspended` paired with the terminated event itself) (#665).
+  - `:sandbox_minutes` — active sandbox time in minutes inside the period,
+    parked time excluded. Computed by `Fountain.Billing.SandboxUsage` from the
+    sandbox rows themselves, clipped to the period: a sandbox that spans a
+    month boundary contributes to each month what it ran in that month, and
+    one still running contributes everything up to now.
+  - `:sandbox_minutes_by_provider` — the same minutes split per sandbox
+    provider, `%{provider => minutes}`. Providers the tenant did not use are
+    absent. Minutes on different providers are bought at different prices, so
+    this split is what makes the total attributable to a cost.
   """
   @spec usage_summary(binary(), DateTime.t(), DateTime.t()) ::
-          %{conversations: non_neg_integer(), turns: non_neg_integer(), sandbox_minutes: float()}
+          %{
+            conversations: non_neg_integer(),
+            turns: non_neg_integer(),
+            sandbox_minutes: float(),
+            sandbox_minutes_by_provider: %{optional(String.t()) => float()}
+          }
   def usage_summary(user_id, %DateTime{} = period_start, %DateTime{} = period_end) do
     events =
       from(e in UsageEvent,
         where:
           e.user_id == ^user_id and
             e.inserted_at >= ^period_start and
-            e.inserted_at < ^period_end
+            e.inserted_at < ^period_end and
+            e.event_type in ["sandbox_provisioned", "sandbox_provision_failed", "turn_started"],
+        select: e.event_type
       )
       |> Repo.all()
 
     conversations =
-      Enum.count(events, &(&1.event_type in ["sandbox_provisioned", "sandbox_provision_failed"]))
+      Enum.count(events, &(&1 in ["sandbox_provisioned", "sandbox_provision_failed"]))
 
-    turns = Enum.count(events, &(&1.event_type == "turn_started"))
+    turns = Enum.count(events, &(&1 == "turn_started"))
 
-    %{conversations: conversations, turns: turns, sandbox_minutes: sandbox_minutes(events)}
+    seconds_by_provider = SandboxUsage.for_user(user_id, period_start, period_end)
+
+    %{
+      conversations: conversations,
+      turns: turns,
+      # Rounded once, from the total — summing rounded per-provider minutes
+      # would let the parts disagree with the whole.
+      sandbox_minutes:
+        seconds_by_provider |> Map.values() |> Enum.sum() |> SandboxUsage.minutes(),
+      sandbox_minutes_by_provider:
+        Map.new(seconds_by_provider, fn {provider, seconds} ->
+          {provider, SandboxUsage.minutes(seconds)}
+        end)
+    }
   end
 
   @doc """
   `usage_summary/3` for every user at once, in one query — for the admin view,
   which refreshes on a timer and must not run a query per user.
 
-  Returns `%{user_id => %{conversations: n, turns: n, sandbox_minutes: f}}`;
-  users with no events in the period are absent.
+  Returns `%{user_id => %{conversations: n, turns: n, sandbox_minutes: f,
+  sandbox_minutes_by_provider: %{provider => f}}}`; users with neither events
+  nor sandbox time in the period are absent.
   """
   @spec usage_summaries(DateTime.t(), DateTime.t()) :: %{optional(binary()) => map()}
   def usage_summaries(%DateTime{} = period_start, %DateTime{} = period_end) do
-    empty = %{conversations: 0, turns: 0, sandbox_minutes: 0.0}
+    empty = %{
+      conversations: 0,
+      turns: 0,
+      sandbox_minutes: 0.0,
+      sandbox_minutes_by_provider: %{}
+    }
 
     counted =
       from(e in UsageEvent,
@@ -1611,80 +1642,109 @@ defmodule Fountain.Billing do
         Map.put(acc, user_id, summary)
       end)
 
-    # Separate pass, in its own (still single) query: pairing suspend/resume
-    # intervals against a sandbox's terminated duration (#665) needs the raw
-    # per-sandbox event timeline, which a `sum(duration_ms)` aggregate throws
-    # away. These three event types are a small slice of `usage_events`
-    # compared to `turn_started`, so pulling their rows is cheap next to the
-    # one-query-per-admin-refresh constraint above.
-    from(e in UsageEvent,
-      where:
-        e.inserted_at >= ^period_start and e.inserted_at < ^period_end and
-          e.event_type in ["sandbox_suspended", "sandbox_resumed", "sandbox_terminated"]
-    )
-    |> Repo.all()
-    |> Enum.group_by(& &1.user_id)
-    |> Enum.reduce(counted, fn {user_id, user_events}, acc ->
+    # Sandbox minutes come from the sandbox rows, not from these events — the
+    # period-clipped, per-provider computation in `SandboxUsage`, which is two
+    # more queries for every user at once rather than one per user.
+    period_start
+    |> SandboxUsage.attribution(period_end)
+    |> SandboxUsage.by_user()
+    # Sandboxes whose owner has been deleted keep their seconds under a `nil`
+    # owner in the provider report; here there is no user row to hang them on.
+    |> Enum.reject(fn {user_id, _} -> is_nil(user_id) end)
+    |> Enum.reduce(counted, fn {user_id, seconds_by_provider}, acc ->
       summary = Map.get(acc, user_id, empty)
-      Map.put(acc, user_id, %{summary | sandbox_minutes: sandbox_minutes(user_events)})
+
+      Map.put(acc, user_id, %{
+        summary
+        | sandbox_minutes:
+            seconds_by_provider |> Map.values() |> Enum.sum() |> SandboxUsage.minutes(),
+          sandbox_minutes_by_provider:
+            Map.new(seconds_by_provider, fn {provider, seconds} ->
+              {provider, SandboxUsage.minutes(seconds)}
+            end)
+      })
     end)
   end
 
-  # Shared by usage_summary/3 (one user's events) and usage_summaries/2 (one
-  # user's slice of the all-users pull) — sums sandbox_terminated's
-  # duration_ms, minus whatever of that span was parked rather than running.
-  defp sandbox_minutes(events) do
-    parked_ms_by_sandbox = parked_ms_by_sandbox(events)
+  # ─── Provider spend attribution ─────────────────────────────────────────────
 
-    events
-    |> Enum.filter(&(&1.event_type == "sandbox_terminated"))
-    |> Enum.reduce(0.0, fn ev, acc ->
-      ms =
-        get_in(ev.metadata, ["duration_ms"]) ||
-          get_in(ev.metadata, [:duration_ms]) || 0
+  @doc """
+  Sandbox time per provider for a period, and who it belongs to — the number to
+  hold a Sprites, E2B or Daytona invoice next to.
 
-      parked_ms = Map.get(parked_ms_by_sandbox, ev.resource_id, 0)
-      acc + max(ms - parked_ms, 0) / 60_000.0
-    end)
+  Options:
+    * `:period` — `{period_start, period_end}`, default the current month
+    * `:top` — how many tenants `:top_tenants` names (default 10)
+    * `:now` — pins the clock (tests)
+
+  Returns:
+    * `:period_start` / `:period_end` — the window these numbers cover
+    * `:by_provider` — `%{provider => %{active_seconds, busy_seconds,
+      idle_seconds, sandboxes, users}}`, parked time already excluded
+    * `:platform_seconds` — seconds on providers Fountain pays for. Self-hosted
+      runners (decisions/0022) run on the tenant's own machine, so they appear
+      in `:by_provider` but deliberately not in this total
+    * `:platform_idle_seconds` — the part of `:platform_seconds` with no turn
+      in flight. This is the number a shorter idle timeout removes, so it is
+      the one to read before changing anything about the bill
+    * `:top_tenants` — the accounts behind that total, biggest first, each with
+      its `email` (`nil` once the account is deleted — the seconds were still
+      paid for, they are simply no longer attributable)
+    * `:attribution` — every per-tenant row the totals were built from
+
+  Deliberately no money: prices are per-provider, per-machine-size and
+  negotiated, and none of them are in this codebase. A made-up rate would make
+  this look authoritative when it is not — multiply outside, against the rate
+  card you actually pay.
+  """
+  @spec provider_spend(keyword()) :: %{
+          period_start: DateTime.t(),
+          period_end: DateTime.t(),
+          by_provider: map(),
+          platform_seconds: non_neg_integer(),
+          platform_idle_seconds: non_neg_integer(),
+          top_tenants: [map()],
+          attribution: [SandboxUsage.row()]
+        }
+  def provider_spend(opts \\ []) do
+    {period_start, period_end} = Keyword.get(opts, :period) || current_month_range()
+
+    attribution_opts =
+      case Keyword.fetch(opts, :now) do
+        {:ok, now} -> [now: now]
+        :error -> []
+      end
+
+    rows = SandboxUsage.attribution(period_start, period_end, attribution_opts)
+    paid = Enum.filter(rows, &SandboxUsage.platform_cost?(&1.provider))
+
+    %{
+      period_start: period_start,
+      period_end: period_end,
+      by_provider: SandboxUsage.by_provider(rows),
+      platform_seconds: paid |> Enum.map(& &1.active_seconds) |> Enum.sum(),
+      platform_idle_seconds: paid |> Enum.map(& &1.idle_seconds) |> Enum.sum(),
+      top_tenants: top_tenants(paid, Keyword.get(opts, :top, 10)),
+      attribution: rows
+    }
   end
 
-  # A sandbox's parked time, in milliseconds, keyed by resource_id (the
-  # sandbox id). Pairs each `sandbox_suspended` with the `sandbox_resumed` (or,
-  # failing that, the `sandbox_terminated`) that closes it, in event order —
-  # a `sandbox_suspended` with neither in this event set is still parked as of
-  # `period_end` and contributes nothing yet, matching `sandbox_terminated`'s
-  # own absence from the minutes total until it fires.
-  defp parked_ms_by_sandbox(events) do
-    events
-    |> Enum.filter(
-      &(&1.event_type in ["sandbox_suspended", "sandbox_resumed", "sandbox_terminated"])
-    )
-    |> Enum.group_by(& &1.resource_id)
-    |> Map.new(fn {resource_id, resource_events} ->
-      parked_ms =
-        resource_events
-        |> Enum.sort_by(& &1.inserted_at, DateTime)
-        |> sum_parked_intervals()
+  # One email lookup for the whole list rather than one per row — this renders
+  # on the admin panel's ten-second refresh.
+  defp top_tenants(rows, limit) do
+    top = rows |> Enum.sort_by(& &1.active_seconds, :desc) |> Enum.take(limit)
 
-      {resource_id, parked_ms}
-    end)
-  end
+    emails =
+      top
+      |> Enum.map(& &1.user_id)
+      |> Enum.reject(&is_nil/1)
+      |> Enum.uniq()
+      |> case do
+        [] -> %{}
+        ids -> Repo.all(from u in User, where: u.id in ^ids, select: {u.id, u.email}) |> Map.new()
+      end
 
-  defp sum_parked_intervals(sorted_events) do
-    {total_ms, _suspended_since} =
-      Enum.reduce(sorted_events, {0, nil}, fn
-        %{event_type: "sandbox_suspended", inserted_at: at}, {total_ms, nil} ->
-          {total_ms, at}
-
-        %{event_type: type, inserted_at: at}, {total_ms, since}
-        when type in ["sandbox_resumed", "sandbox_terminated"] and not is_nil(since) ->
-          {total_ms + DateTime.diff(at, since, :millisecond), nil}
-
-        _event, acc ->
-          acc
-      end)
-
-    total_ms
+    Enum.map(top, &Map.put(&1, :email, Map.get(emails, &1.user_id)))
   end
 
   # ─── Admin billing overview (#286) ──────────────────────────────────────────

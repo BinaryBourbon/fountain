@@ -3605,7 +3605,12 @@ export interface components {
                 trial_ends_at?: string | null;
                 usage: {
                     conversations?: number;
+                    /** @description Active sandbox minutes inside the period, parked time excluded. */
                     sandbox_minutes?: number;
+                    /** @description sandbox_minutes split by sandbox provider (sprites, e2b, daytona, runner). Providers not used in the period are absent. */
+                    sandbox_minutes_by_provider?: {
+                        [key: string]: number;
+                    };
                     turns?: number;
                 };
             };
