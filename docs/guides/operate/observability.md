@@ -22,6 +22,10 @@ observability pack, built from a real run of the hosted instance.
   built from metrics the app truly exports, and from nothing else. Import it
   into Grafana, then choose your Prometheus datasource. On compose, point any
   Prometheus at the metrics port and import the same file.
+- **Three team dashboards**, in `deploy/grafana/`, one each for ops, product
+  and finance. They cover the same metrics in more depth, and the ops one adds
+  trace panels. [Read the dashboards](dashboards.md) says what each number
+  means, and which questions belong in PostHog instead.
 
 One series is worth naming here, because it is the one that maps to money.
 `fountain_sandboxes_by_provider_count` reports how many sandboxes each provider

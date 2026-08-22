@@ -47,6 +47,27 @@ upgrade, is in
 
 ### Added
 
+- **Five dashboards, for three teams** (`deploy/grafana/`,
+  `docs/guides/operate/dashboards.md`). Fountain exported 57 Prometheus series,
+  a Tempo trace stream and a PostHog event stream, and shipped one starter
+  dashboard against a fraction of the first. Ops, product and finance each get
+  one Grafana dashboard, and product and finance each get a PostHog dashboard
+  for the questions a time series cannot answer.
+
+  The Grafana JSON ships as ConfigMaps labelled `grafana_dashboard: "1"`
+  (`deploy/grafana/kustomization.yaml`, referenced from `k8s/kustomization.yaml`
+  rather than from the portable baseline, which must not assume a Grafana). The
+  kube-prometheus-stack sidecar watches every namespace, so a deploy delivers
+  them and an edit made in the Grafana UI is overwritten by the next one.
+
+  Two traps are documented because both are silent. The funnel, conversation,
+  sandbox and Oban gauges are polled from the same database by every replica
+  and exported once per pod, so a `sum` reports two replicas as twice the work;
+  they use `max`, and the finance dashboard collapses the per-replica duplicate
+  before it adds providers together. And a counter that has never fired has no
+  series at all, so every panel watching a rare failure ends in `or vector(0)`
+  to read 0 rather than *No data*.
+
 - **Product analytics in PostHog** (ADR 0025). Fountain has kept an audit
   trail, a billing meter and a set of OTel spans for a while, and none of them
   could say whether the accounts that verified last week came back. It now

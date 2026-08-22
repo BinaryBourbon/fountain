@@ -1,0 +1,1131 @@
+{
+  "__comment": "Ops dashboard for Fountain. Owned by the repo at deploy/grafana/fountain-ops.json; see docs/guides/operate/dashboards.md. Every panel uses a metric FountainWeb.Telemetry.prometheus_metrics/0 truly exports, or a Tempo span the app truly emits. Gauges are polled from the database by every replica and are therefore identical per pod: they use `max`, never `sum`. Counters are per-replica events and use `sum`.",
+  "title": "Fountain / Ops",
+  "uid": "fountain-ops",
+  "tags": [
+    "fountain",
+    "ops"
+  ],
+  "schemaVersion": 39,
+  "editable": true,
+  "graphTooltip": 1,
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "refresh": "1m",
+  "templating": {
+    "list": [
+      {
+        "name": "DS_PROMETHEUS",
+        "label": "Prometheus",
+        "type": "datasource",
+        "query": "prometheus",
+        "current": {
+          "text": "Prometheus",
+          "value": "prometheus"
+        }
+      },
+      {
+        "name": "DS_TEMPO",
+        "label": "Tempo",
+        "type": "datasource",
+        "query": "tempo",
+        "current": {
+          "text": "Tempo",
+          "value": "tempo"
+        }
+      },
+      {
+        "name": "namespace",
+        "label": "Namespace",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
+        "query": {
+          "query": "label_values(fountain_conversations_count, namespace)",
+          "refId": "ns"
+        },
+        "refresh": 1,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": {
+          "text": "fountain",
+          "value": "fountain"
+        }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "type": "row",
+      "title": "Golden signals",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "panels": []
+    },
+    {
+      "type": "stat",
+      "title": "5xx share (5m)",
+      "description": "Server errors as a share of all dispatched requests. The FountainHighServerErrorRate alert fires off the same ratio.",
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 0,
+        "y": 1
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 0.01
+              },
+              {
+                "color": "red",
+                "value": 0.05
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(phoenix_router_dispatch_stop_count{namespace=\"$namespace\", status=~\"5..\"}[5m])) / sum(rate(phoenix_router_dispatch_stop_count{namespace=\"$namespace\"}[5m]))"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Unhandled exceptions /s",
+      "description": "Exceptions that escaped the router. The series does not exist until the first one fires, so `or vector(0)` is what makes the panel read 0 instead of No data.",
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 4,
+        "y": 1
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 0.001
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(phoenix_router_dispatch_exception_count{namespace=\"$namespace\"}[5m])) or vector(0)"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "HTTP p95 (5m)",
+      "description": "Buckets are milliseconds (FountainWeb.Telemetry sets unit: {:native, :millisecond}).",
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 8,
+        "y": 1
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 500
+              },
+              {
+                "color": "red",
+                "value": 2000
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(phoenix_router_dispatch_stop_duration_bucket{namespace=\"$namespace\"}[5m])))"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Pods scraped",
+      "description": "Metrics targets currently up. Zero means the scrape is broken, not that the app is idle. FountainMetricsTargetDown alerts on it.",
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 12,
+        "y": 1
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(up{namespace=\"$namespace\", job=\"fountain\"})"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Untracked sprites",
+      "description": "Sprites alive at the provider with no sandbox row. A LEVEL re-measured every reaper run, not a delta, so `max` across pods is correct and `sum` would multiply it by the replica count.",
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 16,
+        "y": 1
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(fountain_reaper_untracked_count{namespace=\"$namespace\"}) or vector(0)"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Conversations running",
+      "description": "Every pod polls the same database and reports the same number, so this gauge is duplicated per replica. `max` reads it once; `sum` would report two replicas as twice the work.",
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 20,
+        "y": 1
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(fountain_conversations_count{namespace=\"$namespace\", status=\"running\"})"
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "HTTP",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 6
+      },
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Requests by status class",
+      "description": "Per-pod request counters, summed. Counters are per-replica events, so sum is right here even though the gauges above need max.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "fillOpacity": 15,
+            "lineWidth": 2,
+            "stacking": {
+              "mode": "normal"
+            }
+          },
+          "unit": "reqps",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (status) (label_replace(rate(phoenix_router_dispatch_stop_count{namespace=\"$namespace\"}[5m]), \"status\", \"${1}xx\", \"status\", \"(.).+\"))",
+          "legendFormat": "{{status}}"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Request duration p50 / p95 / p99",
+      "description": "Top bucket is 5s. A p99 pinned at 5000 means the real tail is above the highest boundary, not exactly five seconds.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "fillOpacity": 0,
+            "lineWidth": 2
+          },
+          "unit": "ms",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(phoenix_router_dispatch_stop_duration_bucket{namespace=\"$namespace\"}[5m])))",
+          "legendFormat": "p50"
+        },
+        {
+          "refId": "B",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(phoenix_router_dispatch_stop_duration_bucket{namespace=\"$namespace\"}[5m])))",
+          "legendFormat": "p95"
+        },
+        {
+          "refId": "C",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(phoenix_router_dispatch_stop_duration_bucket{namespace=\"$namespace\"}[5m])))",
+          "legendFormat": "p99"
+        }
+      ]
+    },
+    {
+      "type": "table",
+      "title": "Slowest routes (p95, top 10)",
+      "description": "Route is the router pattern, never the request path, so ids do not mint a series each.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 15
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "topk(10, histogram_quantile(0.95, sum by (route, le) (rate(phoenix_router_dispatch_stop_duration_bucket{namespace=\"$namespace\"}[15m]))))",
+          "instant": true,
+          "format": "table"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "job": true,
+              "instance": true,
+              "service": true,
+              "endpoint": true,
+              "container": true,
+              "__name__": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Database: p95 query time vs p95 pool wait",
+      "description": "Pool wait is the saturation signal. It climbing while query time is flat is 'every connection is checked out', which presents as the whole app being slow rather than one query being slow.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 15
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "fillOpacity": 0,
+            "lineWidth": 2
+          },
+          "unit": "ms",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(fountain_repo_query_total_time_bucket{namespace=\"$namespace\"}[5m])))",
+          "legendFormat": "query p95"
+        },
+        {
+          "refId": "B",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(fountain_repo_query_queue_time_bucket{namespace=\"$namespace\"}[5m])))",
+          "legendFormat": "pool wait p95"
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "Conversations and sandboxes",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 23
+      },
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Stage transitions",
+      "description": "Conversations.publish_stage/4 is the only funnel that sees every outcome. Provision, reattach and turn failures are rescued inside the GenServer, so a span :exception event never fires for them.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 24
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "fillOpacity": 15,
+            "lineWidth": 2
+          },
+          "unit": "ops",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (stage, status) (rate(fountain_stage_count{namespace=\"$namespace\"}[15m]))",
+          "legendFormat": "{{stage}} {{status}}"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Provisioning duration p95, whole and by step",
+      "description": "The whole span next to its own components (#537), so a regression says which step moved. All six share 120s as the top bucket, which is also the setup-script timeout. A step that has never run has no series and draws nothing.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 24
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "fillOpacity": 0,
+            "lineWidth": 2
+          },
+          "unit": "s",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(fountain_fresh_provision_stop_duration_bucket{namespace=\"$namespace\"}[30m]))) / 1000",
+          "legendFormat": "fresh provision"
+        },
+        {
+          "refId": "B",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(fountain_setup_script_stop_duration_bucket{namespace=\"$namespace\"}[30m]))) / 1000",
+          "legendFormat": "setup script"
+        },
+        {
+          "refId": "C",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(fountain_packages_stop_duration_bucket{namespace=\"$namespace\"}[30m]))) / 1000",
+          "legendFormat": "packages"
+        },
+        {
+          "refId": "D",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(fountain_clone_repositories_stop_duration_bucket{namespace=\"$namespace\"}[30m]))) / 1000",
+          "legendFormat": "clone repositories"
+        },
+        {
+          "refId": "E",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(fountain_network_policy_stop_duration_bucket{namespace=\"$namespace\"}[30m]))) / 1000",
+          "legendFormat": "network policy"
+        },
+        {
+          "refId": "F",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(fountain_reattach_stop_duration_bucket{namespace=\"$namespace\"}[30m]))) / 1000",
+          "legendFormat": "reattach"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Turn duration p50 / p95 by runtime",
+      "description": "Buckets reach 30 minutes on purpose. A provision that takes two minutes is broken; a turn that takes twenty is a Tuesday. A turn resumed after a restart contributes no sample, because its start is in a previous BEAM lifetime.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 32
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "fillOpacity": 0,
+            "lineWidth": 2
+          },
+          "unit": "s",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.50, sum by (runtime, le) (rate(fountain_turn_completed_duration_ms_bucket{namespace=\"$namespace\"}[30m]))) / 1000",
+          "legendFormat": "{{runtime}} p50"
+        },
+        {
+          "refId": "B",
+          "expr": "histogram_quantile(0.95, sum by (runtime, le) (rate(fountain_turn_completed_duration_ms_bucket{namespace=\"$namespace\"}[30m]))) / 1000",
+          "legendFormat": "{{runtime}} p95"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Time to first output p50 / p95 by runtime",
+      "description": "The latency a person actually feels. ConversationServer measures the first stdout bytes rather than parsed tokens, so every runtime is comparable here.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 32
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "fillOpacity": 0,
+            "lineWidth": 2
+          },
+          "unit": "ms",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.50, sum by (runtime, le) (rate(fountain_turn_first_output_elapsed_ms_bucket{namespace=\"$namespace\"}[30m])))",
+          "legendFormat": "{{runtime}} p50"
+        },
+        {
+          "refId": "B",
+          "expr": "histogram_quantile(0.95, sum by (runtime, le) (rate(fountain_turn_first_output_elapsed_ms_bucket{namespace=\"$namespace\"}[30m])))",
+          "legendFormat": "{{runtime}} p95"
+        }
+      ]
+    },
+    {
+      "type": "bargauge",
+      "title": "Sandboxes by status",
+      "description": "Sandbox rows, not live sprites. The two diverge when a sprite leaks, which is what the untracked stat above counts.",
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 0,
+        "y": 40
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "displayMode": "lcd",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showUnfilled": true
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (status) (fountain_sandboxes_count{namespace=\"$namespace\"})",
+          "legendFormat": "{{status}}",
+          "instant": true
+        }
+      ]
+    },
+    {
+      "type": "bargauge",
+      "title": "Conversations by status",
+      "description": "Polled from OpsGauges. Zeros are emitted for every known status, so a series existing at 0 means healthy, not missing.",
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 8,
+        "y": 40
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "displayMode": "lcd",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showUnfilled": true
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (status) (fountain_conversations_count{namespace=\"$namespace\"})",
+          "legendFormat": "{{status}}",
+          "instant": true
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Sandbox lifecycle sweeps",
+      "description": "Idle parks and keeps the sprite (decisions/0017); the ceiling destroys it. A flat zero across all three with live sandboxes means the reaper is not running.",
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 16,
+        "y": 40
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "fillOpacity": 0,
+            "lineWidth": 2
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(fountain_sandbox_reclaimed_count{namespace=\"$namespace\"}[1h])) * 3600 or vector(0)",
+          "legendFormat": "reclaimed by ceiling /h"
+        },
+        {
+          "refId": "B",
+          "expr": "sum(rate(fountain_sandbox_suspended_count{namespace=\"$namespace\"}[1h])) * 3600 or vector(0)",
+          "legendFormat": "parked by idle bound /h"
+        },
+        {
+          "refId": "C",
+          "expr": "sum(rate(fountain_reaper_run_released{namespace=\"$namespace\"}[1h])) * 3600 or vector(0)",
+          "legendFormat": "sprites released /h"
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "Background work and the VM",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 47
+      },
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Oban queue depth",
+      "description": "Non-terminal states plus discarded. Another per-pod duplicate gauge, so max rather than sum.",
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 0,
+        "y": 48
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "fillOpacity": 15,
+            "lineWidth": 2
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (queue, state) (fountain_oban_queue_depth{namespace=\"$namespace\"})",
+          "legendFormat": "{{queue}} / {{state}}"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Oban job outcomes",
+      "description": "Oban catches job exceptions internally and reports them only through telemetry, so no crash report sees a failing RetentionPruner or SandboxReaper. This counter is the signal.",
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 8,
+        "y": 48
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "fillOpacity": 15,
+            "lineWidth": 2
+          },
+          "unit": "ops",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (state) (rate(fountain_oban_job_stop_count{namespace=\"$namespace\"}[15m]))",
+          "legendFormat": "{{state}}"
+        },
+        {
+          "refId": "B",
+          "expr": "sum by (worker) (rate(fountain_oban_job_exception_count{namespace=\"$namespace\"}[15m]))",
+          "legendFormat": "raised: {{worker}}"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "BEAM memory and run queues",
+      "description": "Memory is exported in kilobytes. Run queues are counts, scaled here only so they share an axis with memory; read them for shape, not for value.",
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 16,
+        "y": 48
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "fillOpacity": 0,
+            "lineWidth": 2
+          },
+          "unit": "deckbytes",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(vm_memory_total{namespace=\"$namespace\"})",
+          "legendFormat": "memory"
+        },
+        {
+          "refId": "B",
+          "expr": "sum(vm_total_run_queue_lengths_cpu{namespace=\"$namespace\"}) * 1024 * 1024",
+          "legendFormat": "cpu run queue (scaled)"
+        },
+        {
+          "refId": "C",
+          "expr": "sum(vm_total_run_queue_lengths_io{namespace=\"$namespace\"}) * 1024 * 1024",
+          "legendFormat": "io run queue (scaled)"
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "Traces",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 55
+      },
+      "panels": []
+    },
+    {
+      "type": "table",
+      "title": "Slowest turns",
+      "description": "fountain.turn spans carry runtime, model, conv_id and turn_number. TRACEPARENT is propagated into the sandbox, so tool calls appear as fountain.tool_use children. Click a trace, then use the Logs button to jump to that pod's Loki lines for the same window.",
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 56
+      },
+      "datasource": {
+        "type": "tempo",
+        "uid": "${DS_TEMPO}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "queryType": "traceql",
+          "query": "{resource.service.name=\"fountain\" && name=\"fountain.turn\"} | select(span.runtime, span.model, span.turn_number)",
+          "limit": 20,
+          "tableType": "traces"
+        }
+      ]
+    },
+    {
+      "type": "table",
+      "title": "Spans that ended in error",
+      "description": "Fountain.Telemetry.span/3 marks a span as an error when the closure returns outcome :failed or :error, and the ACP tracer marks a tool span when its status is not completed.",
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 56
+      },
+      "datasource": {
+        "type": "tempo",
+        "uid": "${DS_TEMPO}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "queryType": "traceql",
+          "query": "{resource.service.name=\"fountain\" && status=error}",
+          "limit": 20,
+          "tableType": "traces"
+        }
+      ]
+    }
+  ]
+}

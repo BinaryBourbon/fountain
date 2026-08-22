@@ -30,6 +30,12 @@ resources:
   - service-headless.yaml
   - servicemonitor.yaml
   - prometheusrule.yaml
+  # The team dashboards (ops / product / finance), as ConfigMaps the
+  # kube-prometheus-stack Grafana sidecar picks up. It watches every
+  # namespace, so they live in `fountain` beside everything else rather than
+  # in `monitoring`. Not in the baseline: ../deploy/k8s must not assume a
+  # Grafana, and definitely not one running that sidecar.
+  - ../deploy/grafana
   - ingressroute.yaml
   - certificate.yaml
   # Two replicas: a node drain must not take both at once (maxUnavailable: 0
