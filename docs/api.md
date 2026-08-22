@@ -1,28 +1,37 @@
 # API reference
 
-Fountain exposes a REST API. All endpoints are under `/api/` and return JSON.
+Fountain serves a REST API. Each endpoint sits under `/api/`, and each one
+returns JSON.
 
-!!! tip "Writing a script, not an integration?"
+!!! tip "Do you write a script, and not an integration?"
 
-    The [TypeScript SDK](sdk.md) is one call, `fountain.run(prompt, { agent, vault })`,
-    over the conversation endpoints below. Reach for the raw API when you need
-    a surface the SDK does not wrap, or a language it is not written in.
+    The [TypeScript SDK](sdk.md) is one call over the conversation endpoints
+    below, `fountain.run(prompt, { agent, vault })`.
 
-The authoritative, always-current reference is the served OpenAPI spec.
+    Reach for the raw API when you need a surface the SDK does not wrap, or a
+    language nobody wrote it in.
 
-- `GET /api/openapi.json` - OpenAPI 3.1 spec, generated from the code (public, no auth)
-- `GET /api/docs` - Swagger UI over the same spec
+The authority is the OpenAPI spec that the server serves. It is always
+current.
 
-The endpoint listings below are a convenience summary of that spec. Every
-`/api/` endpoint is in it, including the auth surface. A test walks the router
-and fails if a route is added without one, so a generated client covers the
-whole API and not just the parts someone remembered to document.
+- `GET /api/openapi.json`, the OpenAPI 3.1 spec, generated from the code. It
+  is public, and it needs no auth.
+- `GET /api/docs`, a Swagger UI over that same spec.
+
+The endpoint lists below summarise that spec, for convenience. Each `/api/`
+endpoint is in the spec, and the auth surface with them.
+
+A test walks the router, and fails when somebody adds a route with no spec
+entry. So a generated client covers the whole API. It does not cover the parts
+that somebody remembered to document.
 
 ## Authentication
 
-**API key (recommended for scripts and CI):**
+**An API key. Use this for a script and for CI.**
 
-Create a key under Account -> API Keys (or exchange credentials via `POST /api/auth/token`, which is what `fountain auth login` does), then pass it as a Bearer token:
+Create a key under Account → API Keys. Or exchange your credentials at
+`POST /api/auth/token`, which is what `fountain auth login` does. Then pass
+the key as a Bearer token.
 
 ```bash
 curl -H "Authorization: Bearer $FOUNTAIN_API_KEY" \
@@ -36,7 +45,8 @@ POST   /api/auth/api-keys          # create a key (plaintext returned once)
 DELETE /api/auth/api-keys/:id      # revoke a key
 ```
 
-**Registration and account recovery** (no auth, because the emailed token authenticates the completion):
+**Registration and account recovery.** These need no auth. The token in the
+email authenticates the last step.
 
 ```
 POST   /api/auth/register          # {email, password}
@@ -47,29 +57,50 @@ POST   /api/auth/reset             # {token, password}
 POST   /api/auth/email/confirm     # {token}. Completes a pending email change
 ```
 
-The verification and reset emails keep linking to the browser pages; these endpoints accept the same tokens, so a CLI can prompt "paste the code from your email" and never open a browser. `verify` is idempotent (an already-verified account is a 200) and issues no session, so mint a key at `POST /api/auth/token` once the account is live. Token failures are `422` with `error` of `invalid_token` or `expired`.
+The verification and reset emails still link to the browser pages. These
+endpoints accept the same tokens, so a CLI can ask you to paste the code from
+your email, and open no browser.
 
-Completing a reset or an email change bumps `session_version`, which signs out every existing session.
+`verify` is idempotent, so an account somebody already verified gets a 200. It
+issues no session, so mint a key at `POST /api/auth/token` once the account is
+live. A token failure is a `422`, with an `error` of `invalid_token` or
+`expired`.
 
-**Credential changes** (bearer token **plus** the current password; `full`-scoped keys only):
+A reset that completes bumps `session_version`, and so does an email change
+that completes. That signs out each session that exists.
+
+**Credential changes.** These need the bearer token **and** the current
+password. They take a `full`-scoped key alone.
 
 ```
 POST   /api/auth/password          # {current_password, new_password}
 POST   /api/auth/email             # {new_email, current_password}. Sends a confirmation link
 ```
 
-Changing the password signs out browser sessions (`session_version` bumps) but does **not** revoke API keys, which are separate credentials with their own expiries. The response says so explicitly (`sessions_invalidated`, `api_keys_revoked`); if you are rotating because something leaked, revoke keys yourself with `DELETE /api/auth/api-keys/:id`.
+A change of password signs out the browser sessions, because `session_version`
+bumps. It does **not** revoke an API key. Those are separate credentials, with
+their own expiries.
 
-The email endpoint answers identically whether or not the address is free, so it is not an availability oracle. The address only changes when the emailed token is submitted to `POST /api/auth/email/confirm`.
+The response says so, in `sessions_invalidated` and `api_keys_revoked`. If you
+rotate because something leaked, revoke the keys yourself, with
+`DELETE /api/auth/api-keys/:id`.
 
-**Session cookie:** Obtained via OAuth at `/auth/oauth/:provider` or email/password login. Used by Fountain's own console.
+The email endpoint answers the same way whether the address is free or not, so
+it tells nobody which addresses exist. The address changes only when somebody
+submits the emailed token to `POST /api/auth/email/confirm`.
+
+**A session cookie.** You get one from OAuth at `/auth/oauth/:provider`, or
+from an email and password login. Fountain's own console uses it.
 
 ### Sign in with Fountain (OAuth 2.0 for browser apps)
 
-Fountain's own browser apps on other origins ([team](https://github.com/jhgaylor/fountain-team),
-[conversations](https://github.com/jhgaylor/fountain-conversations)) do not
-paste a key: they use the **authorization code grant with PKCE (S256)** as
-public clients, and the token they get *is* an API key (`decisions/0021`).
+Fountain's own browser apps sit on other origins. Those are
+[team](https://github.com/jhgaylor/fountain-team) and
+[conversations](https://github.com/jhgaylor/fountain-conversations), and
+neither pastes a key.
+
+They use the **authorization code grant with PKCE (S256)**, as public
+clients. The token they get *is* an API key (`decisions/0021`).
 
 ```
 GET  /oauth/authorize?client_id=…&redirect_uri=…&code_challenge=…&code_challenge_method=S256&state=…
@@ -79,10 +110,13 @@ POST /api/oauth/token    # {grant_type: "authorization_code", code, code_verifie
 POST /api/oauth/revoke   # bearer: revoke the presented token (sign-out)
 ```
 
-Clients are registered on the server (`OAUTH_CLIENTS`, exact redirect URIs);
-an unregistered client or redirect renders an error page and never
-redirects. Codes live five minutes and are single-use. The key is full-scope,
-expires in 30 days, and lists under Account → API keys as `oauth:<client_id>`.
+You register a client on the server, in `OAUTH_CLIENTS`, with exact redirect
+URIs. A client or a redirect that nobody registered renders an error page, and
+Fountain redirects nowhere.
+
+A code lives five minutes, and it works once. The key is full-scope, it
+expires in 30 days, and it lists under Account → API keys as
+`oauth:<client_id>`.
 
 ## Account state
 
@@ -91,7 +125,12 @@ GET    /api/account/onboarding           # {state, completed, completed_at}
 POST   /api/account/onboarding/complete  # idempotent
 ```
 
-An account configured entirely through the API never passes through the browser wizard, so nothing marks it onboarded and a later browser visit re-enters that wizard. Completing it over the API closes the loop. `GET /api/auth/me` also carries `email_verified`, `onboarding_state` and `onboarding_completed`.
+An account that somebody configured through the API alone never passes through
+the browser wizard. So nothing marks it onboarded, and a later browser visit
+re-enters that wizard. Complete it over the API and the loop closes.
+
+`GET /api/auth/me` also carries `email_verified`, `onboarding_state` and
+`onboarding_completed`.
 
 ### Billing
 
@@ -101,9 +140,17 @@ POST   /api/account/billing/portal    # Stripe Billing Portal URL
 POST   /api/account/billing/checkout  # Stripe Checkout URL
 ```
 
-Stripe requires a browser to finish, so the URL is the deliverable. Mint it here, open it there. Return URLs are server-chosen; a caller-supplied one would be an open redirect.
+Stripe needs a browser to finish, so the URL is what you get. Mint it here,
+and open it there. The server chooses the return URLs. A URL that a caller
+supplied would be an open redirect.
 
-`checkout` refuses with `409 subscription_exists` when Stripe already holds a live subscription (Checkout on top of one creates a duplicate), so use the portal instead. Both refuse a comped account with `422`, and answer `502` rather than guessing when Stripe is unreachable. On an instance with billing disabled all three are `404` with `"billing": "disabled"`.
+`checkout` refuses with `409 subscription_exists` when Stripe already holds a
+live subscription. Checkout on top of one creates a duplicate, so use the
+portal instead.
+
+Both refuse a comped account with `422`. Both answer `502` when Stripe is
+unreachable, and guess nothing. On an instance with payment off, all three are
+a `404` with `"billing": "disabled"`.
 
 ### Data export and deletion
 
@@ -115,13 +162,20 @@ GET    /api/account/exports/:id/download # gzipped JSON
 DELETE /api/account                      # {"confirm": "<your account email>"}. Irreversible
 ```
 
-Exports build asynchronously; the API has no PubSub, so poll `GET /api/account/exports` until `downloadable` is true. At most one export exists per account and one request per hour.
+An export builds in the background, and the API has no PubSub. So poll
+`GET /api/account/exports` until `downloadable` is true. One account holds one
+export at most, and takes one request each hour.
 
-Deleting the account cancels billing, destroys sandboxes and removes every resource **and the tenant encryption key**. It requires the confirmation body, the API equivalent of the UI's typed-email gate, and a `full`-scoped key.
+To delete the account cancels the subscription, destroys the sandboxes, and
+removes each resource **and the tenant encryption key**. It needs the
+confirmation body, which is the API's version of the typed-email gate in the
+UI. It also needs a `full`-scoped key.
 
 ## Inference credentials
 
-Conversations run on your own provider tokens, and Fountain never sees your inference traffic, so a new account cannot start a conversation until at least one is set.
+A conversation runs on your own provider token, and Fountain never sees your
+inference traffic. So a new account cannot start a conversation until you set
+at least one.
 
 ```
 GET    /api/account/inference-credentials             # per-provider set/not-set
@@ -129,24 +183,31 @@ PUT    /api/account/inference-credentials/:provider   # {"value": "...", "valida
 DELETE /api/account/inference-credentials/:provider   # clear
 ```
 
-Providers: `anthropic_api_key`, `claude_code_oauth_token`, `openai_api_key`, `gemini_api_key`.
+The providers are `anthropic_api_key`, `claude_code_oauth_token`,
+`openai_api_key` and `gemini_api_key`.
 
-`PUT` pings the provider to check the credential before storing it. The outcomes are distinguishable so a client knows whether to re-type or retry:
+`PUT` pings the provider to check the credential before it stores it. The
+outcomes differ, so a client knows whether to ask for the value again or to
+try again.
 
 | Status | Meaning |
 |---|---|
-| `200` | Stored (encrypted under your tenant key) |
-| `422` | `invalid`. The provider rejected it (`provider_status` carries the upstream code), or the value was blank, or the provider is unknown |
-| `502` | `network`. The provider was unreachable from this instance |
-| `504` | `timeout`. The provider did not answer in time |
+| `200` | Stored, encrypted under your tenant key. |
+| `422` | `invalid`. The provider rejected it, and `provider_status` carries the upstream code. Or the value was blank. Or nobody knows that provider. |
+| `502` | `network`. This instance could not reach the provider. |
+| `504` | `timeout`. The provider did not answer in time. |
 
-Send `{"validate": false}` to store a credential without the ping.
+Send `{"validate": false}` to store a credential with no ping.
 
-Values are **write-only**, so these endpoints report only whether a provider is set. They require a `full`-scoped key, because the per-conversation token a sandbox holds cannot read or replace the account's credentials.
+A value is **write-only**, so these endpoints report which providers hold one,
+and no more. They need a `full`-scoped key, because the token a sandbox holds
+for one conversation can neither read nor replace the account's credentials.
 
 ## Rate limiting
 
-Requests are rate-limited per client IP, authenticated or not, because the limiter does not key by API key. On a limit hit you get `429 Too Many Requests` with a `Retry-After` header.
+Fountain rate-limits a request by client IP, whether it carries auth or not.
+The limiter does not key on the API key. On a limit you get
+`429 Too Many Requests`, with a `Retry-After` header.
 
 ## Agents
 
@@ -164,9 +225,19 @@ PUT    /api/agents/:id/avatar   # raw bytes with an image content-type, or {"dat
 DELETE /api/agents/:id/avatar
 ```
 
-Avatars accept `image/png`, `image/jpeg`, `image/gif`, `image/webp`, up to 5 MB. The agent object carries `avatar_media_type` (null when there is none). Anything else is refused with `415`; an oversized upload with `413`. Bytes are served with `nosniff` and a sandboxing CSP, and the media type is re-validated at serve time.
+An avatar takes `image/png`, `image/jpeg`, `image/gif` or `image/webp`, up to
+5 MB. The agent object carries `avatar_media_type`, which is null when there
+is no avatar.
 
-Agent objects carry `conversation_count`; environments carry `secret_count` and `agent_count`; vaults carry `secret_count`. They are on both the list and single-resource reads, so "is this environment in use / safe to delete" is one request.
+Fountain refuses another type with `415`, and an upload that is too large with
+`413`. It serves the bytes with `nosniff` and a CSP that sandboxes them, and it
+checks the media type again at serve time.
+
+An agent object carries `conversation_count`. An environment carries
+`secret_count` and `agent_count`. A vault carries `secret_count`.
+
+They are on the list read and on the single-resource read. So "does this
+environment have a user, and is it safe to delete" is one request.
 
 ## Catalog
 
@@ -175,21 +246,27 @@ GET  /api/catalog             # runtimes, model suggestions per runtime, sandbox
 POST /api/avatars/generate    # {base, mood} → {data (base64 PNG), media_type}; attach with PUT /api/agents/:id/avatar
 ```
 
-The vocabulary the agent and environment forms are built from, so a client
-elsewhere does not hard-code it. Model lists are suggestions, not an
-allowlist, and any `provider/model` under a known provider is accepted.
-`package_managers` is what provisioning actually installs from an
-environment's `packages` (`apt`, `npm`); other keys are stored and ignored.
-Avatar generation uses the tenant's own OpenAI credential (`422
-no_openai_key` without one).
+This is the vocabulary that builds the agent and environment forms. A client
+somewhere else can read it, and hard-code nothing.
 
-`apps` is where this instance sends a human to *read* something, meaning the
-standalone [conversations](https://github.com/jhgaylor/fountain-conversations)
-and [team](https://github.com/jhgaylor/fountain-team) apps, which route on the
-fragment (`…/#/c/<conversation_id>`, `…/#/team/<agent_id>`). Either is null
-where the deployment has no such app. Use it instead of composing a URL
-against the API host, because Fountain's own UI is a console and does not
-serve transcripts.
+A model list is a set of suggestions, and not an allowlist. Fountain accepts
+any `provider/model` under a provider it knows.
+
+`package_managers` names what Fountain truly installs from an environment's
+`packages`, which is `apt` and `npm`. It stores another key and ignores it.
+
+To draw an avatar, Fountain uses the tenant's own OpenAI credential. Without
+one it answers `422 no_openai_key`.
+
+`apps` is where this instance sends a person to *read* something. Those are
+the standalone
+[conversations](https://github.com/jhgaylor/fountain-conversations) and
+[team](https://github.com/jhgaylor/fountain-team) apps, which route on the
+fragment, as `…/#/c/<conversation_id>` and `…/#/team/<agent_id>`.
+
+Either one is null where the deployment has no such app. Use `apps`, and do
+not compose a URL against the API host. Fountain's own UI is a console, and it
+serves no transcript.
 
 ## Environments
 
@@ -204,7 +281,8 @@ POST   /api/environments/:id/secrets          # upsert
 DELETE /api/environments/:id/secrets/:key
 ```
 
-Secret values are **write-only**: once stored, the API never returns them. Listing returns each secret's key, id, and timestamps.
+A secret value is **write-only**. Once Fountain stores it, the API never
+returns it. A list returns each secret's key, its id, and its timestamps.
 
 ## Vaults
 
@@ -219,7 +297,7 @@ POST   /api/vaults/:id/secrets
 DELETE /api/vaults/:id/secrets/:key
 ```
 
-The same write-only rule applies to vault secret values.
+The same write-only rule covers a vault secret value.
 
 ## Bulk apply
 
@@ -227,7 +305,8 @@ The same write-only rule applies to vault secret values.
 POST   /api/apply                # apply a compiled manifest in one request
 ```
 
-Takes the compiled form of a `fountain.yml` manifest, which is what `fountain apply` sends.
+This takes the compiled form of a `fountain.yml` manifest, which is what
+`fountain apply` sends.
 
 ```json
 {
@@ -239,11 +318,21 @@ Takes the compiled form of a `fountain.yml` manifest, which is what `fountain ap
 }
 ```
 
-Resources are upserted by name in a fixed order (environments, then vaults, then agents), so an agent's `spec.environment` name reference resolves against environments in the same manifest **or** environments that already exist. Application is best-effort per resource: the response is always `200` with a per-resource result, carrying an `action` of `created`, `updated`, or `error` (with changeset-style `errors`), plus per-key secret outcomes. Secret values are never echoed back.
+Fountain upserts a resource by name, in a fixed order. Environments first,
+then vaults, then agents. So an agent's `spec.environment` name reference
+resolves against an environment in the same manifest, **or** against one that
+already exists.
+
+Fountain applies each resource on a best-effort basis. The response is always
+a `200`, with one result for each resource. Each result carries an `action` of
+`created`, `updated` or `error`, and an `error` carries changeset-style
+`errors`. Each result also carries the outcome for each secret key. Fountain
+never echoes a secret value back.
 
 ## Conversations
 
-Conversations are multi-turn: create one with an initial prompt, then keep prompting it.
+A conversation takes many turns. Create one with a first prompt, then prompt
+it again and again.
 
 ```
 GET    /api/conversations                  # list (?roots_only=true; ?agent_id= ?channel_id= ?status=idle,terminated)
@@ -261,62 +350,102 @@ GET    /api/conversations/:id/stream       # SSE log stream (?streams=stdout,std
 GET    /api/conversations/:id/turns/:turn_id/images/:position   # image bytes
 ```
 
-Turns carry `image_count`; the image endpoint takes a zero-based `position` into that count and returns the raw bytes with the stored media type. Anything that does not resolve is a `404`, so it is not a probe for ids. That covers an unknown conversation, a turn from a different conversation, an absent position, and a stored media type that is not an image.
+A turn carries `image_count`. The image endpoint takes a `position` into that
+count, which starts at zero, and returns the raw bytes with the stored media
+type.
 
-The list takes `agent_id`, `channel_id` (the *bound* channel, `fountain:team`
-for the team; a conversation unbound by removing its teammate no longer
-matches, so a teammate's full history is `GET /api/team/:agent_id/conversations`)
-and `status` (comma-separated; `400 invalid_status` on a value outside the
-vocabulary), all combinable with `roots_only`. The list is unpaged.
+Whatever does not resolve is a `404`, so nobody can probe for an id.
 
-Conversation objects carry `title`, `turn_count`, `last_active_at`, `last_read_at` and a computed `unread` alongside the lifecycle fields. `unread` is true when `last_active_at` is later than `last_read_at` (and for a conversation never read); `POST /api/conversations/:id/read` clears it.
+That covers four cases. A conversation nobody knows. A turn from a different
+conversation. A position that is not there. A stored media type that is not an
+image.
 
-**Token usage.** Each turn carries `usage`, as `{input, output, cache_read?,
-cache_write?}`, the figure the runtime reports when the turn ends (the ACP
-`session/prompt` response's `usage`; claude-agent-acp and codex-acp report
-it), or `null` while the turn runs, when the runtime reported none, or on
-turns that predate the field. It is recorded once per turn and never summed
-from the `usage_update` notifications that stream during a turn (those are
-context-window occupancy and mean different things per runtime). Each
-conversation carries `usage_total: {input, output}`, a running sum over its
-turns; a `/api/team` roster entry carries `usage_total` summed over every
+The list takes three filters, and you can combine each of them with
+`roots_only`.
+
+`agent_id`. `channel_id`, which names the channel that holds a conversation,
+and the team's is `fountain:team`. Remove a teammate and its conversation comes
+free, so it no longer matches. A teammate's full history is therefore
+`GET /api/team/:agent_id/conversations`.
+
+`status`, which takes a comma-separated list. A value outside the vocabulary
+gives a `400 invalid_status`.
+
+The list has no pages.
+
+A conversation object carries `title`, `turn_count`, `last_active_at`,
+`last_read_at` and a computed `unread`, next to the lifecycle fields.
+
+`unread` is true when `last_active_at` is later than `last_read_at`, and for a
+conversation that nobody read. `POST /api/conversations/:id/read` clears it.
+
+**Token usage.** Each turn carries `usage`, as
+`{input, output, cache_read?, cache_write?}`. That is the figure the runtime
+reports when the turn ends, in the `usage` of the ACP `session/prompt`
+response. claude-agent-acp and codex-acp report it.
+
+It is `null` in three cases. While the turn runs. When the runtime reported
+none. On a turn older than the field.
+
+Fountain records it once for each turn. It never sums the `usage_update`
+notifications that stream while a turn runs. Those report how full the context
+window is, and each runtime means something different by that.
+
+Each conversation carries `usage_total: {input, output}`, a sum over its
+turns. A `/api/team` roster entry carries `usage_total` summed over each
 conversation the agent has had on the team.
 
-`/tree` returns every conversation in the same spawn tree. Ancestors and descendants, flat, each with a `parent_id`.
+`/tree` returns each conversation in the same spawn tree. Ancestors and
+descendants, flat, and each one with a `parent_id`.
 
 ```json
 {"data": [{"id": "…", "source": "ui", "status": "idle", "parent_id": null},
           {"id": "…", "source": "agent", "status": "running", "parent_id": "…"}]}
 ```
 
-Since sub-conversations are created over the API (`X-Fountain-Parent-Conversation-Id`), this is how an agent that fanned out enumerates what it started without keeping its own bookkeeping.
+A sub-conversation arrives over the API, with
+`X-Fountain-Parent-Conversation-Id`. So this is how an agent that fanned out
+lists what it started, and keeps no records of its own.
 
-`/events` is the read-model for the log feed and `/stream` is the tail. The JSON endpoint returns the same rows the stream sends (`kind`, `stream`, `data`, `stage`, `state`, `duration_ms`, `turn_id`, `ts`) plus each event's `id`, oldest first.
+`/events` is the read model for the log feed, and `/stream` is the tail.
+
+The JSON endpoint returns the rows that the stream sends, which are `kind`,
+`stream`, `data`, `stage`, `state`, `duration_ms`, `turn_id` and `ts`. It adds
+each event's `id`, and it returns the oldest first.
 
 ```json
 {"data": [{"id": 41, "kind": "output", "stream": "stdout", "data": "...", "ts": "..."}],
  "meta": {"limit": 100, "has_more": true, "next_cursor": 41}}
 ```
 
-Page by passing the previous response's `meta.next_cursor` as `after`; keep going while `meta.has_more` is true. `limit` defaults to 100 and caps at 1000. The `id` is the same value the SSE route uses as `Last-Event-ID`, so a client can drain history as JSON and then attach the stream from where it left off.
+To page, pass the previous response's `meta.next_cursor` as `after`. Continue
+while `meta.has_more` is true. `limit` defaults to 100, and caps at 1000.
 
-`?blocks=true`, available on `/events`, on `/stream` and on `/api/events/stream`, adds
-`blocks` to every event: its `data` parsed server-side into the structured
-blocks a transcript renders, the same parse the conversations app uses
-(`Fountain.Conversations.Blocks`). A client never re-implements a runtime's
-dialect (ADR 0014, applied to the wire). Kinds and their fields:
+The `id` is the value that the SSE route uses as `Last-Event-ID`. So a client
+can drain the history as JSON, then attach the stream where it stopped.
+
+`?blocks=true` works on `/events`, on `/stream` and on
+`/api/events/stream`. It adds `blocks` to each event.
+
+That is the event's `data`, parsed on the server into the structured blocks
+that a transcript renders. It is the parse the conversations app uses,
+`Fountain.Conversations.Blocks`. So a client never writes a runtime's dialect
+again. That is ADR 0014, applied to the wire.
+
+Here are the kinds, and their fields.
 
 | kind | fields |
 |---|---|
 | `text`, `thinking` | `body` |
-| `tool_use` | `id`, `name`, `summary`, `body` (the input) |
-| `tool_result` | `tool_id`, `body`, `error`. Pair it with the `tool_use` of the same id |
+| `tool_use` | `id`, `name`, `summary`, `body`, which is the input. |
+| `tool_result` | `tool_id`, `body`, `error`. Pair it with the `tool_use` that has the same id. |
 | `init` | `summary`, `body` |
 | `result` | `body`, `raw` |
 | `error` | `body` |
-| `raw` | `body`, `summary`. An unrecognised line, shown rather than dropped |
+| `raw` | `body`, `summary`. It is a line nobody recognised. Fountain shows it, and drops nothing. |
 
-Non-output events carry `blocks: []`; without the flag the field is absent.
+An event that is not output carries `blocks: []`. Without the flag, the field
+is absent.
 
 ### Every conversation on one stream
 
@@ -324,21 +453,26 @@ Non-output events carry `blocks: []`; without the flag the field is absent.
 GET /api/events/stream          # SSE (?streams=  ?blocks=true)
 ```
 
-One `text/event-stream` for every conversation the caller owns that is not
-finished, which is what a conversation list with live status and unread dots needs
-instead of a socket per conversation. Each event is the per-conversation
-stream's payload plus `conversation_id`. A `conversations` event
-(`{"reason":"changed"}`) is sent, debounced to one per second, when the list
-changes (created, titled, read, deleted, finished); the stream follows a new
-conversation on its own and the client re-lists. `Last-Event-ID` replays what
-was missed across every followed conversation; the first byte is a
-`: connected` comment; heartbeats every 15 s; closes after 60 s idle so the
-client reconnects.
+This is one `text/event-stream` for each conversation the caller owns that has
+not finished. A conversation list with live status and unread dots needs that,
+and it needs no socket for each conversation.
+
+Each event is the payload of the stream for one conversation, with
+`conversation_id` added.
+
+Fountain sends a `conversations` event, `{"reason":"changed"}`, when the list
+changes. That is a create, a title, a read, a delete or a finish, and Fountain
+sends at most one each second. The stream follows a new conversation on its
+own, and the client lists them again.
+
+`Last-Event-ID` replays what you missed, across each conversation the stream
+follows. The first byte is a `: connected` comment. A heartbeat arrives every
+15 s. The stream closes after 60 s idle, so the client reconnects.
 
 ## Search
 
-Full-text search across the caller's conversations, for a command palette
-("jump to the message"):
+This is full-text search across the caller's conversations. A command palette
+uses it, to jump to a message.
 
 ```
 GET /api/search?q=<text>[&limit=20][&offset=0][&agent_id=][&conversation_id=][&since=][&kinds=title,prompt,reply]
@@ -351,31 +485,41 @@ GET /api/search?q=<text>[&limit=20][&offset=0][&agent_id=][&conversation_id=][&s
  "meta": {"limit": 20, "offset": 0, "has_more": false}}
 ```
 
-Three sources, one shape: `title` (a conversation's title; `turn_id` null),
-`prompt` (a turn's prompt) and `reply` (a turn's assistant text, the `text`
-blocks of its events, materialised when the turn ends, so a turn in flight is
-searchable by its prompt but not yet by its reply). Postgres full-text with
-`websearch` syntax (`"quoted phrase"`, `-excluded`, `or`) and exact-token
-matching (no stemming), so identifiers and code fragments match as
-themselves. Hits are ranked, newest first among equals; `snippet` is plain
-text with no markup; `ts` is the turn's (or the conversation's) creation
-time. `limit` caps at 100. Every source is scoped to the caller in the query
-itself; nothing is indexed across tenants. Rate-limited with the rest of
-`/api`.
+There are three sources, in one shape.
 
-Turns that ended before the `reply_text` column existed are searchable by
-prompt only until the one-time backfill runs on the server:
+`title` is a conversation's title, and its `turn_id` is null. `prompt` is a
+turn's prompt. `reply` is a turn's assistant text, which is the `text` blocks
+of its events. Fountain materialises a reply when the turn ends, so you can
+search a turn in flight by its prompt, and not yet by its reply.
+
+It is Postgres full-text, with `websearch` syntax. That is a
+`"quoted phrase"`, a `-excluded` word, and `or`. It matches an exact token and
+stems nothing, so an identifier and a code fragment match as themselves.
+
+Fountain ranks the hits, and puts the newest first among equals. The
+`snippet` is plain text with no markup. The `ts` is the creation time of the
+turn, or of the conversation itself. A `limit` caps at 100.
+
+The query itself scopes each source to the caller. Fountain indexes nothing
+across tenants. The rate limit on the rest of `/api` covers this too.
+
+A turn that ended before the `reply_text` column existed is searchable by its
+prompt alone. Run the one-time backfill on the server to fix that, with
 `bin/fountain_server eval 'Fountain.Release.backfill_turn_replies()'`.
 
 ## Team
 
-The roster [`/team`](concepts/teammates.md) shows, for
-clients that are not this web app. A teammate is a conversation bound to the
-reserved channel `fountain:team`; every route here wraps the same
-`Fountain.Team` the page uses, so a standalone client gets the page's exact
-semantics, where add is idempotent, a message wakes a parked computer or opens a
-fresh conversation when the old one is past resuming, remove terminates and
-unbinds, without reimplementing them over `/api/conversations`.
+These routes serve the roster that [`/team`](concepts/teammates.md) shows, to
+a client that is not this web app. A teammate is a conversation bound to the
+reserved channel `fountain:team`.
+
+Each route here wraps the `Fountain.Team` that the page wraps. So a standalone
+client gets the page's exact semantics, and writes none of them again over
+`/api/conversations`.
+
+Those semantics are three. An add is idempotent. A message wakes a parked
+machine, or opens a fresh conversation when nobody can resume the old one. A
+remove terminates the conversation and unbinds it.
 
 ```
 GET    /api/team                    # roster: agent, conversation, presence, unread, preview
@@ -392,116 +536,174 @@ GET    /api/team/comms              # {enabled, configured}: may this caller, an
 GET    /api/team/stream             # SSE: every teammate's events on one connection
 ```
 
-`PATCH /api/team/:agent_id` sets what the teammate is called, which is its
-conversation's `title`. The name carries onto the fresh conversation
-opened when that one is past resuming; `team.renamed` is audited and the
-stream sends `team`. `GET /api/team/:agent_id/conversations` is the
-teammate's history: a retired conversation (a previous computer's thread)
-stays bound to the team channel until the teammate is removed, so it is
-listed behind the current one with `current: false`; read it with
+`PATCH /api/team/:agent_id` sets the teammate's name, which is its
+conversation's `title`. That name carries onto the fresh conversation that
+Fountain opens when nobody can resume this one. The audit trail records
+`team.renamed`, and the stream sends `team`.
+
+`GET /api/team/:agent_id/conversations` is the teammate's history. A retired
+conversation is a previous machine's thread. It stays bound to the team
+channel until somebody removes the teammate, so the list shows it behind the
+current one, with `current: false`. Read it with
 `GET /api/conversations/:id/events`.
 
-`POST /api/team/:agent_id/conversations` starts the teammate over without
-losing its computer. The current conversation is retired, meaning
-`terminated` and listed behind the new one with `current: false`, and a new
-conversation is
-opened under the binding, carrying the name, environment and vault and
-pointing at the **same sandbox**. Nothing is provisioned or interrupted: the
-next message wakes that sandbox through the ordinary reattach path and
-starts a fresh runtime session on it, so the agent's context is new but its
-files, clones and installed tools are where it left them. `201` with the
-teammate and its new conversation; `400 conversation_busy` while a turn is
-running (interrupt first), `503 provisioning` while the computer is still
-starting. When the computer is gone (sandbox `terminated`/`failed`, or the
-conversation already past resuming) a new sandbox is provisioned instead,
-exactly as `POST /api/team` would. Audited as `team.conversation.rotated`;
-the stream sends `team`. To retire the thread *and* the computer, the old
-way still works: `POST /api/conversations/:id/terminate` on the current
-conversation, and the next message opens a fresh one on a new sandbox.
+`POST /api/team/:agent_id/conversations` starts the teammate over, and keeps
+its machine.
 
-`POST /api/team` answers `201` with the teammate, or `200` when the agent was
-already on the team (its live conversation, the attributes ignored). `name`
-becomes the conversation's `title`; `environment_id` and `vault_id` go through
-the agent's `allowed_environment_ids` / `allowed_vault_ids` exactly as on
-`POST /api/conversations` (`404` unknown or foreign, `422` not allowed).
+Fountain retires the current conversation. It goes `terminated`, and the list
+shows it behind the new one with `current: false`. Fountain opens a new
+conversation on the same channel. That one carries the name, the environment
+and the vault. It points at the **same sandbox**.
 
-Each roster entry carries `name` (title, else the agent's name), the full
-`agent` and `conversation` objects, `presence` (`state` in `working`,
-`starting`, `online`, `asleep`, `away`, `machine_offline`, `failed`, `offline`,
-plus a human `label`), `unread`, `last_turn`, and `preview`, as `{kind:
-"you"|"them"|"typing", text}` or null with no messages. `machine_offline` is
-a teammate on a [self-hosted runner](integrations/runners.md) whose machine
-is not connected: a message cannot wake it (`503 runner_offline`), it comes
-back when the daemon reconnects. The conversation's `sandbox` carries
-`provider` and, on a runner, `runner: {id, name, hostname, online, path}`.
+Fountain provisions nothing and interrupts nothing. The next message wakes
+that sandbox through the usual reattach path, and starts a fresh runtime
+session on it. So the agent's context is new, and its files, clones and
+installed tools are where it left them.
 
-**Email and phone (proof of concept, flag `team_comms`).** `POST
-/api/team/:agent_id/contact` gives the teammate an inbox
-([AgentMail](https://agentmail.to)) and a number
-([AgentPhone](https://agentphone.ai)) under the instance's own keys, and the
-roster entry gains `contact: {email, phone}`. From its next turn the teammate
-has `email_send`, `email_reply`, `email_list`, `email_get`, `sms_send`,
-`sms_list` and `my_contact_info` MCP tools, served by Fountain itself at
-`POST /api/mcp/team-comms/:conversation_id` with the conversation's sprite
-token, so no provider key enters the sandbox, and every send is audited
-(`team.contact.sent`, never the content). `404 team_comms_not_enabled` when
-the flag is off for the caller, `503 team_comms_not_configured` when the
-instance has no keys, `409` for a second contact, `424 provider_error`
-(`channel` names which) when a provider refuses, because provisioning is all or
-nothing. `DELETE` releases both upstream and forgets them; `GET
-/api/team/comms` answers `{enabled, configured}` so a client knows whether
-to offer it. See [configuration](configuration.md#teammate-email-and-phone).
+You get a `201`, with the teammate and its new conversation. You get
+`400 conversation_busy` while a turn runs, so interrupt it first. You get
+`503 provisioning` while the machine still starts.
 
-The request body carries `prompt_from_number` (required; any common format,
-stored E.164): **your** phone. A text from that number to the teammate's
-number arrives as a prompt in the teammate's conversation, delivered by
-AgentPhone to `POST /api/webhooks/agentphone` (HMAC-verified with
-`AGENTPHONE_WEBHOOK_SECRET`), wrapped so the teammate knows it came by SMS
-and can answer with its `sms_send` tool. Texts from any other number are
-acknowledged and ignored; deliveries are deduplicated by AgentPhone's
-`X-Webhook-ID`. Audited as `team.contact.prompted` (bytes, never the text).
-`STOP` (or `UNSUBSCRIBE`, `CANCEL`, `END`, `QUIT`) from that number opts it
-out. `contact.prompt_opted_out_at` is set and its texts are dropped until
-`START`, or until the number is changed (new consent); `HELP` is answered.
-Each keyword gets a confirmation texted back from the teammate's number,
-best-effort.
+When the machine has gone, Fountain provisions a new sandbox instead, exactly
+as `POST /api/team` would. The machine has gone when the sandbox is
+`terminated` or `failed`, or when nobody can resume the conversation.
 
-`/messages` returns `202 {status: "queued", conversation_id}`; the id is the
-conversation the message went to, which is a new one when the teammate's
-previous conversation was terminated. `400 conversation_busy` while the last
-turn is still running, `503 provisioning` while the computer is starting,
-`503 runner_offline` while a runner-backed teammate's machine is off.
+The audit trail records `team.conversation.rotated`, and the stream sends
+`team`.
 
-**Teammates know each other.** Every conversation on the team channel carries
-an MCP server, `fountain-team`, served by Fountain at
-`POST /api/mcp/team/:conversation_id` and authenticated with the sandbox's
-own token: `list_teammates`, `get_teammate` (by name, role or keyword, and
-"the engineer"), `send_to_teammate` (lands in their thread prefixed with who
-sent it and a note that only the owner and their teammates can send such
-messages; busy/starting/machine-offline come back as tool errors to retry;
-returns the turn it created), `wait_for_teammate` (blocks up to 90 s for
-the reply. `since_turn` pins it to a specific turn, and `timed_out: true` means
-call again) and `read_teammate` (recent prompts and replies). So "send this to the
-steward" inside one teammate's turn is two tool calls, and the exchange is
-visible in both threads on the team page.
+To retire the thread *and* the machine, the old way still works. Send
+`POST /api/conversations/:id/terminate` on the current conversation. The next
+message then opens a fresh one on a new sandbox.
 
-`/stream` is one `text/event-stream` for the whole team: each event is the
-per-conversation stream's payload plus `conversation_id` and `agent_id`, so a
-client routes it to a roster row without a socket per teammate. A `team`
-event (`{"reason":"changed"}`) is sent when the roster changes, such as a teammate
-added or removed, a fresh conversation opened for one, or a self-hosted
-runner connecting or dropping (presence changes for the teammates on it), so
-and the stream starts following the new conversation itself; the client
-re-lists. It honours
-`Last-Event-ID` (replayed across every teammate) and `?streams=`, heartbeats
-every 15 s and closes after 60 s idle so the client reconnects.
+`POST /api/team` answers `201` with the teammate. It answers `200` when the
+agent was on the team already, and returns that agent's live conversation and
+ignores the attributes you sent.
+
+`name` becomes the conversation's `title`. `environment_id` and `vault_id` go
+through the agent's `allowed_environment_ids` and `allowed_vault_ids`, exactly
+as they do on `POST /api/conversations`. One that nobody knows, or that
+belongs to another tenant, is a `404`. One the agent does not permit is a
+`422`.
+
+Each roster entry carries seven things. `name`, which is the title, or else
+the agent's name. The full `agent` object. The full `conversation` object.
+`presence`. `unread`. `last_turn`. `preview`, as
+`{kind: "you"|"them"|"typing", text}`, or null when there are no messages.
+
+`presence` carries a `state`, one of `working`, `starting`, `online`,
+`asleep`, `away`, `machine_offline`, `failed` and `offline`. It carries a
+`label` for a person to read.
+
+`machine_offline` is a teammate on a
+[self-hosted runner](integrations/runners.md) whose machine is not connected.
+A message cannot wake it, and you get `503 runner_offline`. It comes back when
+the daemon reconnects.
+
+The conversation's `sandbox` carries `provider`. On a runner it also carries
+`runner: {id, name, hostname, online, path}`.
+
+**Email and phone. A proof of concept, behind the `team_comms` flag.**
+
+`POST /api/team/:agent_id/contact` gives the teammate an inbox, from
+[AgentMail](https://agentmail.to), and a number, from
+[AgentPhone](https://agentphone.ai). Both sit under the instance's own keys,
+and the roster entry gains `contact: {email, phone}`.
+
+From its next turn, the teammate holds seven MCP tools. Those are
+`email_send`, `email_reply`, `email_list`, `email_get`, `sms_send`,
+`sms_list` and `my_contact_info`. Fountain serves them itself, at
+`POST /api/mcp/team-comms/:conversation_id`, with the conversation's sprite
+token. So no provider key enters the sandbox. The audit trail records each
+send as `team.contact.sent`, and never the content.
+
+There are four refusals. You get `404 team_comms_not_enabled` when the flag is
+off for the caller. You get `503 team_comms_not_configured` when the instance
+holds no keys. You get `409` for a second contact. You get
+`424 provider_error` when a provider refuses, where `channel` names which one.
+A provision is all or nothing.
+
+`DELETE` releases both upstream, then forgets them. `GET /api/team/comms`
+answers `{enabled, configured}`, so a client knows whether to offer it. Read
+[configuration](configuration.md#teammate-email-and-phone).
+
+The request body must carry `prompt_from_number`. Any common format works, and
+Fountain stores E.164. It is **your** phone.
+
+A text from that number to the teammate's number arrives as a prompt in the
+teammate's conversation. AgentPhone delivers it to
+`POST /api/webhooks/agentphone`, and `AGENTPHONE_WEBHOOK_SECRET` verifies the
+HMAC. Fountain wraps it, so the teammate knows it came by SMS and can answer
+with its `sms_send` tool.
+
+Fountain acknowledges a text from any other number, and ignores it. It
+deduplicates a delivery by AgentPhone's `X-Webhook-ID`. The audit trail
+records `team.contact.prompted`, with the byte count, and never the text.
+
+A `STOP` from that number opts it out, and so does `UNSUBSCRIBE`, `CANCEL`,
+`END` or `QUIT`. Fountain sets `contact.prompt_opted_out_at`, and drops that
+number's texts until a `START`, or until somebody changes the number, which is
+fresh consent. Fountain answers a `HELP`.
+
+Each keyword gets a confirmation, texted back from the teammate's number, on a
+best-effort basis.
+
+`/messages` returns `202 {status: "queued", conversation_id}`. The id names
+the conversation the message went to. That is a new conversation when somebody
+terminated the teammate's previous one.
+
+You get `400 conversation_busy` while the last turn still runs. You get
+`503 provisioning` while the machine starts. You get `503 runner_offline`
+while the machine behind a runner-backed teammate is off.
+
+**Teammates know each other.** Each conversation on the team channel carries
+an MCP server, `fountain-team`. Fountain serves it at
+`POST /api/mcp/team/:conversation_id`, and the sandbox's own token
+authenticates the call. It holds four tools.
+
+`list_teammates`.
+
+`get_teammate`, by name, by role or by keyword, and "the engineer" resolves.
+
+`send_to_teammate`. The message lands in their thread, with the sender named
+in front. It carries a note that the owner and their teammates alone can send
+such a message.
+
+A teammate that is busy, that still starts, or whose machine is off comes back
+as a tool error, so the agent can try again. The tool returns the turn it
+created.
+
+`wait_for_teammate`, which blocks for up to 90 s for the reply. `since_turn`
+pins it to one turn. A `timed_out: true` means call it again.
+
+`read_teammate`, which returns the recent prompts and replies.
+
+So "send this to the steward", inside one teammate's turn, is two tool calls.
+The team page shows the exchange in both threads.
+
+`/stream` is one `text/event-stream` for the whole team. Each event is the
+payload of the stream for one conversation, with `conversation_id` and
+`agent_id` added. A client routes it to a roster row, and needs no socket for
+each teammate.
+
+Fountain sends a `team` event, `{"reason":"changed"}`, when the roster
+changes. Three things change it. Somebody adds or removes a teammate. Fountain
+opens a fresh conversation for one. A self-hosted runner connects or drops,
+which changes presence for the teammates on it.
+
+The stream then follows the new conversation itself, and the client lists them
+again.
+
+The stream honours `Last-Event-ID`, replayed across each teammate, and it
+honours `?streams=`. A heartbeat arrives every 15 s. It closes after 60 s
+idle, so the client reconnects.
 
 ### Schedules
 
-The routines the team page offers, over the API. A routine is a cron that
-runs a teammate with a prompt, either in its own thread or on a one-off
-computer.
-Every route wraps `Fountain.Team.Schedules`, so a standalone client gets the
+These are the routines that the team page offers, over the API. A routine is a
+cron that runs a teammate with a prompt. It runs in the teammate's own thread,
+or on a one-off machine.
+
+Each route wraps `Fountain.Team.Schedules`, so a standalone client gets the
 page's exact semantics.
 
 ```
@@ -516,37 +718,51 @@ POST   /api/team/:agent_id/schedules/:id/run     # run now → 202 {status: "que
 
 A schedule carries `id`, `agent_id`, `name`, `cron`, `prompt`, `one_off`,
 `enabled`, `next_run_at`, `last_run_at`, `last_conversation_id` and
-`last_error`. `cron` is evaluated in UTC (`0 9 * * 1-5` is 09:00 UTC on
-weekdays; `@daily`-style names work, `@reboot` does not). `one_off: false`
-(the default) sends the prompt into the teammate's own conversation as a
-typed message would; `one_off: true` opens a fresh conversation on a new
-computer each run, with the teammate's agent, environment and vault. The
-agent must be the caller's; it need not be on the team yet. A schedule is
-addressed by `(agent_id, id)`: the same row under another agent's path is a
-`404`, like another tenant's.
+`last_error`.
 
-`/run` takes the same path as the page's "Run now" and answers like
-`/messages`: `400 conversation_busy` while the teammate's previous turn is
-still running, `503` while its computer is starting, `404` when an in-thread
-schedule's agent is not on the team; `last_run_at` / `last_error` are stamped
-either way. Creates, updates, deletes and runs are audited
-(`team.schedule.*`) with the request's attribution.
+Fountain evaluates `cron` in UTC. A `0 9 * * 1-5` is 09:00 UTC on a weekday.
+A name in the `@daily` style works, and `@reboot` does not.
 
-The team stream sends a `schedule` event (`{"reason":"changed"}`) whenever a
-schedule is created, updated, deleted or fired, whether by the API, the page
-or the scheduler, so a client re-lists rather than polls.
+`one_off: false` is the default. It sends the prompt into the teammate's own
+conversation, as a typed message would.
 
-Browser clients on another origin need `API_CORS_ORIGINS` set on the server
-(see [configuration](configuration.md)); a bearer key is the only credential
-that crosses origins.
+`one_off: true` opens a fresh conversation on a new machine for each run. It
+uses the teammate's agent, environment and vault.
+
+The agent must be the caller's. It need not be on the team yet.
+
+A schedule has the address `(agent_id, id)`. The same row under another
+agent's path is a `404`, as another tenant's row is.
+
+`/run` takes the path that the page's "Run now" takes, and it answers as
+`/messages` does.
+
+You get `400 conversation_busy` while the teammate's previous turn still runs.
+You get `503` while its machine starts. You get `404` when the agent of an
+in-thread schedule is not on the team. Fountain stamps `last_run_at` and
+`last_error` either way.
+
+The audit trail records a create, an update, a delete and a run, as
+`team.schedule.*`, with the request's attribution.
+
+The team stream sends a `schedule` event, `{"reason":"changed"}`, whenever
+anybody creates, updates, deletes or fires a schedule. That holds for the API,
+for the page and for the scheduler. So a client lists them again, and polls
+nothing.
+
+A browser client on another origin needs `API_CORS_ORIGINS` set on the server.
+Read [configuration](configuration.md). A bearer key is the one credential
+that crosses an origin.
 
 ## Support
 
-"Report a problem" from a client (#843): the report is stored with whatever
-context the client attaches. That is conversation, agent, sandbox, presence,
-recent events, app version and page URL, the facts triage needs and never
-secrets, and
-forwarded to the operator out of band.
+This is "Report a problem" from a client (#843). Fountain stores the report
+with whatever context the client attaches, then forwards it to the operator
+out of band.
+
+That context is the conversation, the agent, the sandbox, the presence, the
+recent events, the app version and the page URL. Those are the facts that
+triage needs, and never a secret.
 
 ```
 POST   /api/support/reports         # {category, message, context?, client?, screenshot?} → 201 the report
@@ -554,24 +770,37 @@ GET    /api/support/reports         # the caller's reports, newest first
 GET    /api/support/reports/:id
 ```
 
-`category` is one of `bug`, `stuck`, `question`, `idea`, `other`; `message`
-up to 20 KB; `context` an object up to 64 KB; `client` a name/version
-string; `screenshot` the same `{data: base64, media_type}` shape prompt
-images use (png/jpeg/gif/webp, 5 MB). The response carries `status` (`new`
-→ `forwarded` or `failed`), `forwarded_at`, `external_url` (the GitHub issue
-when one was created) and `forward_error`; the screenshot is reported by
-presence, never inlined. Audited as `support.report.created` with category,
-sizes and context keys, never the message.
+The `category` is one of `bug`, `stuck`, `question`, `idea` and `other`. The
+`message` takes up to 20 KB. The `context` is an object of up to 64 KB. The
+`client` is a string of a name and a version.
 
-Forwarding is an Oban job: a GitHub issue when the instance sets
-`SUPPORT_GITHUB_REPO` + `SUPPORT_GITHUB_TOKEN` (issues:write; labelled
-`support` and the category), and/or mail to `SUPPORT_EMAIL` with the
-screenshot attached. Neither configured is fine, because the rows are the inbox.
-Rate-limited with the rest of `/api`.
+`screenshot` takes the `{data: base64, media_type}` shape that a prompt image
+takes. It accepts png, jpeg, gif and webp, up to 5 MB.
+
+The response carries `status`, which goes `new` and then `forwarded` or
+`failed`. It carries `forwarded_at`, and `external_url`, which names the GitHub issue
+when Fountain opened one, and `forward_error`. It reports that a screenshot is
+there, and never inlines it.
+
+The audit trail records `support.report.created`, with the category, the sizes
+and the context keys. It never records the message.
+
+An Oban job forwards the report. It opens a GitHub issue when the instance
+sets `SUPPORT_GITHUB_REPO` and `SUPPORT_GITHUB_TOKEN`, which needs
+issues:write, and it labels the issue `support` and the category. It mails
+`SUPPORT_EMAIL`, with the screenshot attached. It can do one, the other, or
+both.
+
+Neither one configured is fine, because the rows are the inbox. The rate limit
+on the rest of `/api` covers this too.
 
 ## Admin
 
-For operator accounts (`role: "admin"`) holding a `full`-scoped key. Every action mirrors the admin UI, including its refusals, and records the same privilege-trail event.
+These are for an operator account, with `role: "admin"`, that holds a
+`full`-scoped key.
+
+Each action mirrors the admin UI, and its refusals with it. Each one records
+the same privilege-trail event.
 
 ```
 GET    /api/admin/users                     # ?q= ?status= ?role= ?verified= ?sort= ?dir= ?page= ?per_page=
@@ -589,7 +818,15 @@ GET    /api/admin/audit                     # cross-tenant audit events
 GET    /api/admin/events                    # the privilege trail: who did what to whom
 ```
 
-Refusals: you cannot suspend, delete, or change the role of your own account (use another admin, or `DELETE /api/account` for self-deletion). Billing actions (extend-trial, comp, resync-stripe) are `404` with `"billing": "disabled"` on an instance without billing. Cross-tenant reads are metadata only; prompt and output content never cross a tenant boundary, whatever the role.
+Here are the refusals. You cannot suspend your own account, delete it, or
+change its role. Use another admin, or `DELETE /api/account` to delete your
+own.
+
+The payment actions are `404` with `"billing": "disabled"` on an instance
+with payment off. Those actions are extend-trial, comp and resync-stripe.
+
+A read across tenants returns metadata alone. Prompt content and output
+content never cross a tenant boundary, whatever the role.
 
 ## Audit
 
@@ -597,13 +834,31 @@ Refusals: you cannot suspend, delete, or change the role of your own account (us
 GET    /api/audit    # ?limit= ?before= ?action_prefix= ?resource_type= ?since= ?until=
 ```
 
-The account's own append-only trail, newest first: `id`, `inserted_at`, `actor`, `action`, `resource_type`, `resource_id`, `metadata`, `request_ip`. `actor` distinguishes `ui` (browser session), `api` (a bearer key), `sprite` (the per-conversation token a sandbox holds) and `system`.
+This is the account's own append-only trail, newest first. Each row carries
+`id`, `inserted_at`, `actor`, `action`, `resource_type`, `resource_id`,
+`metadata` and `request_ip`.
 
-Page backwards with `meta.next_cursor` as `before`; `limit` defaults to 100 and caps at 500. `action_prefix` matches a family of actions (`vault.`) and is treated as a literal, not a LIKE pattern. `since` / `until` take ISO 8601 timestamps and are refused with `400` if malformed rather than silently ignored.
+`actor` tells four things apart. `ui` is a browser session. `api` is a bearer
+key. `sprite` is the token a sandbox holds for one conversation. `system` is
+Fountain itself.
 
-Only this tenant's events are visible.
+To page backwards, pass `meta.next_cursor` as `before`. `limit` defaults to
+100, and caps at 500.
 
-The `/audit` page in the browser takes the same `action_prefix`, `resource_type`, `since` and `until` filters (as `?action=`, `?resource=`, `?since=`, `?until=`) and runs them through the same query, so a filtered view is a shareable link. It shows the newest 200 matches and does not page, so use this endpoint to walk the whole trail.
+`action_prefix` matches a family of actions, such as `vault.`. Fountain treats
+it as a literal, and not as a LIKE pattern.
+
+`since` and `until` take ISO 8601 timestamps. Fountain refuses a malformed one
+with a `400`, and ignores none of them without a sound.
+
+You see this tenant's events, and no other tenant's.
+
+The `/audit` page in the browser takes the same four filters, as `?action=`,
+`?resource=`, `?since=` and `?until=`. It runs them through the same query, so
+a filtered view is a link you can share.
+
+That page shows the newest 200 matches, and it has no pages. Use this endpoint
+to walk the whole trail.
 
 ## Error responses
 
@@ -613,20 +868,20 @@ The `/audit` page in the browser takes the same `action_prefix`, `resource_type`
 
 | Status | Meaning |
 |---|---|
-| `400` | Invalid request body |
-| `401` | Missing or invalid auth |
-| `402` | Active subscription required (`subscription_required`, includes `upgrade_url`) |
-| `403` | Wrong tenant |
-| `404` | Not found |
-| `410` | Conversation terminated (`conversation_terminated`). Stop retrying |
-| `422` | Validation error |
-| `429` | Rate limited |
-| `500` | Internal error |
+| `400` | The request body is invalid. |
+| `401` | The auth is absent or invalid. |
+| `402` | You need a live subscription. The code is `subscription_required`, and the body carries `upgrade_url`. |
+| `403` | The wrong tenant. |
+| `404` | Nothing found. |
+| `410` | Somebody terminated the conversation. The code is `conversation_terminated`. Stop, and do not try again. |
+| `422` | A validation error. |
+| `429` | The rate limit stopped you. |
+| `500` | An internal error. |
 
 ## LLM-native discovery
 
-- `/llms.txt` - concise API summary
-- `/llms-full.txt` - full API reference
-- `/skill` - drop-in skill for Claude Code, Cursor, Continue, Aider
+- `/llms.txt`, a short API summary.
+- `/llms-full.txt`, the full API reference.
+- `/skill`, a drop-in skill for Claude Code, Cursor, Continue and Aider.
 
-See [LLM integration](llm-integration.md) for details.
+Read [LLM integration](llm-integration.md) for the detail.
