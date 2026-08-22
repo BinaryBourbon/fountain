@@ -463,11 +463,20 @@ defmodule Fountain.Runtimes.ACP.Peer do
     tool = Fountain.Permissions.tool_name(params)
     verdict = Fountain.Permissions.verdict_for_request(state.permission_policy, params)
 
-    case verdict do
-      "ask" ->
+    cond do
+      held?(state, id) ->
+        # The replay of a request this peer already holds, which is what a
+        # reattach reads out of the sprite's buffer (#967). Raising it again
+        # would publish a second card for one question, and — because the id a
+        # client answers with is minted per hold — would leave the card someone
+        # is actually looking at unanswerable. The agent is still blocked on
+        # the request we are already holding, so there is nothing to do.
+        state
+
+      verdict == "ask" ->
         hold_permission(state, id, tool, params)
 
-      _ ->
+      true ->
         if verdict != "auto_allow", do: report(state, {:permission_denied, tool, verdict})
 
         write(
@@ -488,6 +497,12 @@ defmodule Fountain.Runtimes.ACP.Peer do
   # stdout. Those are output, not protocol, and the transcript is more useful
   # with them in it.
   defp handle_message({:invalid, line}, state), do: persist(state, "stdout", [line, "\n"])
+
+  # Whether this is the request the peer is already holding open. An agent
+  # cannot have two requests outstanding under one JSON-RPC id, so a matching
+  # id while something is held means the line was replayed, not re-asked.
+  defp held?(%{pending_permission: %{id: held_id}}, id), do: held_id == id
+  defp held?(_state, _id), do: false
 
   # `ask`: do not answer. The agent stays blocked while a human decides, which
   # is the whole point, and is also why a timeout is not optional — see the
