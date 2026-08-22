@@ -1,10 +1,10 @@
 <%!-- Hero --%>
 <section class="max-w-5xl mx-auto px-6 py-20 text-center">
   <h1 class="text-4xl sm:text-5xl font-bold tracking-tight text-[var(--color-text-primary)] mb-5 leading-tight">
-    Stop wiring up Claude instances by hand.
+    Have the conversation. Skip the infrastructure.
   </h1>
   <p class="text-lg sm:text-xl text-[var(--color-text-secondary)] max-w-2xl mx-auto mb-10">
-    Fountain gives your whole team preconfigured, sandboxed AI agents — zero local setup, real-time logs, and credentials that never drift.
+    Fountain runs an agent on a cloud sandbox and hands your app a conversation with it. Send a prompt, read the reply. The sandbox parks between messages and wakes with its work intact — and you never provision, secure, or pay for an idle machine.
   </p>
   <div class="flex flex-col sm:flex-row gap-3 justify-center mb-4">
     <a
@@ -32,28 +32,25 @@
 <section class="bg-[var(--color-bg-1)] border-y border-[var(--color-border)]">
   <div class="max-w-5xl mx-auto px-6 py-16">
     <h2 class="text-2xl font-semibold text-[var(--color-text-primary)] mb-6 text-center">
-      Manual configuration doesn't scale.
+      The agent is the easy part.
     </h2>
     <ul class="max-w-xl mx-auto space-y-4 text-[var(--color-text-secondary)]">
       <li class="flex items-start gap-3">
         <span class="mt-2 size-1.5 rounded-full bg-[var(--color-brand)] flex-shrink-0"></span>
         <span>
-          New teammates spend afternoons reverse-engineering setup instead of writing code.
+          An agent needs a machine: a filesystem, a shell, a package manager, a network. That is real infrastructure, and it is not the thing you set out to build.
         </span>
       </li>
       <li class="flex items-start gap-3">
         <span class="mt-2 size-1.5 rounded-full bg-[var(--color-brand)] flex-shrink-0"></span>
         <span>
-          API keys expire mid-sprint with no single source of truth — the wrong <code
-            class="text-[var(--color-code-text)] bg-[var(--color-code-bg)] rounded px-1 py-0.5 text-sm"
-            phx-no-format
-          >.env</code> silently breaks the agent.
+          It needs real credentials, and those must never reach the prompt, the model's context, or the logs you keep.
         </span>
       </li>
       <li class="flex items-start gap-3">
         <span class="mt-2 size-1.5 rounded-full bg-[var(--color-brand)] flex-shrink-0"></span>
         <span>
-          Parallel tasks with different credentials mean maintaining separate local checkouts.
+          Something has to start that machine, park it when nobody is talking, wake it on the next message, and keep every account's work apart.
         </span>
       </li>
     </ul>
@@ -63,7 +60,7 @@
 <%!-- Feature cards --%>
 <section class="max-w-5xl mx-auto px-6 py-16">
   <h2 class="text-2xl font-semibold text-[var(--color-text-primary)] mb-10 text-center">
-    Everything you need, nothing you don't.
+    What you stop building.
   </h2>
   <div class="grid sm:grid-cols-2 gap-6">
     <%!-- Self-serve onboarding --%>
@@ -83,10 +80,10 @@
         </svg>
       </div>
       <h3 class="font-semibold text-[var(--color-text-primary)] mb-2">
-        Teammates onboard themselves
+        Your users stay apart
       </h3>
       <p class="text-sm text-[var(--color-text-secondary)] leading-relaxed">
-        A new engineer gets a URL, registers, and is running their first agent conversation before they've read a README. No documentation handoff, no ticket to the platform team.
+        Every query is scoped to the caller, so one account never reaches another's agents or sandboxes. Build a product on top and your own users are isolated from each other without you writing a line for it.
       </p>
     </div>
 
@@ -107,10 +104,10 @@
         </svg>
       </div>
       <h3 class="font-semibold text-[var(--color-text-primary)] mb-2">
-        Switch credentials without touching config
+        Credentials that never reach the prompt
       </h3>
       <p class="text-sm text-[var(--color-text-secondary)] leading-relaxed">
-        Vaults are encrypted per-conversation overrides layered on top of your baseline environment. Test against staging, scope a contractor's access, or rotate a single key — without duplicating your setup.
+        Environments and Vaults merge when the sandbox spawns and arrive as ordinary environment variables. They stay out of the prompt and the model's context, and Fountain scrubs them from the output it stores.
       </p>
     </div>
 
@@ -131,14 +128,13 @@
         </svg>
       </div>
       <h3 class="font-semibold text-[var(--color-text-primary)] mb-2">
-        Debug in seconds, not sessions
+        Watch any turn, live
       </h3>
       <p class="text-sm text-[var(--color-text-secondary)] leading-relaxed">
-        Every conversation's stdout, stderr, and lifecycle events stream live, turn by turn, in the
-        conversations app. No <code
+        Output and lifecycle events stream over SSE as they happen. Ask for <code
           class="text-[var(--color-code-text)] bg-[var(--color-code-bg)] rounded px-1 py-0.5 text-xs"
           phx-no-format
-        >curl -N</code> to a raw SSE endpoint, no log pipeline to stand up. Open a conversation and see exactly what happened.
+        >?blocks=true</code> and the server parses each runtime's dialect for you, so your client renders one shape instead of four.
       </p>
     </div>
 
@@ -155,13 +151,13 @@
         </svg>
       </div>
       <h3 class="font-semibold text-[var(--color-text-primary)] mb-2">
-        Script it, click it, or pipe it to CI
+        Reach it the way you already build
       </h3>
       <p class="text-sm text-[var(--color-text-secondary)] leading-relaxed">
-        REST API for automation, browser apps for hands-on work, and a <code
+        ACP for an editor or a chat surface, AG-UI for a coworker platform, REST and SSE for your own code, plus a TypeScript SDK and a <code
           class="text-[var(--color-code-text)] bg-[var(--color-code-bg)] rounded px-1 py-0.5 text-xs"
           phx-no-format
-        >fountain</code> CLI for pipelines — all reading and writing the same Environments, Agents, and Conversations. Pick the interface that fits the job.
+        >fountain</code> CLI. The people using what you build need never learn that an agent is there.
       </p>
     </div>
   </div>
@@ -206,7 +202,7 @@
     Start your free 14-day trial.
   </h2>
   <p class="text-[var(--color-text-secondary)] mb-8 max-w-lg mx-auto">
-    Spin up your first sandboxed agent conversation in under ten minutes. No credit card required.
+    Your first conversation runs in minutes. There is no machine to provision, and no credit card to enter.
   </p>
   <a
     href={~p"/auth/register"}
