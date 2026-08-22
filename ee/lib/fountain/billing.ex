@@ -1679,11 +1679,14 @@ defmodule Fountain.Billing do
 
   Returns:
     * `:period_start` / `:period_end` — the window these numbers cover
-    * `:by_provider` — `%{provider => %{active_seconds, sandboxes, users}}`,
-      parked time already excluded
+    * `:by_provider` — `%{provider => %{active_seconds, busy_seconds,
+      idle_seconds, sandboxes, users}}`, parked time already excluded
     * `:platform_seconds` — seconds on providers Fountain pays for. Self-hosted
       runners (decisions/0022) run on the tenant's own machine, so they appear
       in `:by_provider` but deliberately not in this total
+    * `:platform_idle_seconds` — the part of `:platform_seconds` with no turn
+      in flight. This is the number a shorter idle timeout removes, so it is
+      the one to read before changing anything about the bill
     * `:top_tenants` — the accounts behind that total, biggest first, each with
       its `email` (`nil` once the account is deleted — the seconds were still
       paid for, they are simply no longer attributable)
@@ -1699,6 +1702,7 @@ defmodule Fountain.Billing do
           period_end: DateTime.t(),
           by_provider: map(),
           platform_seconds: non_neg_integer(),
+          platform_idle_seconds: non_neg_integer(),
           top_tenants: [map()],
           attribution: [SandboxUsage.row()]
         }
@@ -1719,6 +1723,7 @@ defmodule Fountain.Billing do
       period_end: period_end,
       by_provider: SandboxUsage.by_provider(rows),
       platform_seconds: paid |> Enum.map(& &1.active_seconds) |> Enum.sum(),
+      platform_idle_seconds: paid |> Enum.map(& &1.idle_seconds) |> Enum.sum(),
       top_tenants: top_tenants(paid, Keyword.get(opts, :top, 10)),
       attribution: rows
     }

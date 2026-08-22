@@ -19,12 +19,27 @@ the end of a month gives each month the time it ran in that month. A sandbox
 that has not stopped gives you the time up to now. This is what makes a month
 of Fountain numbers comparable with a month of provider invoices.
 
+## Idle time, and why it is the number to look at
+
+A sandbox that nobody prompts still runs, and a provider still charges full
+rate for it. So idle time counts as active time. Fountain also reports it on
+its own, because it is the part of the bill you can remove.
+
+Busy time is the time with a turn in flight. Idle time is the rest. Together
+they add up to the active hours. Read a card that says 40 hours, 36 of them
+idle, as agents that sat at a prompt. The idle timeout is too long. See
+[Change sandbox lifetimes](sandbox-lifetime.md) to shorten it.
+
+Two conversations that prompt the same sandbox at the same moment make one
+busy sandbox, not two. Fountain counts the overlap once.
+
 ## Read it in the admin panel
 
 Sign in as an admin and open `/admin`. The **Sandbox spend by provider** panel
-shows one card for each provider, with active hours, sandbox count, and how
-many accounts are behind it. Below the cards, **Who it belongs to** names the
-accounts with the most hours.
+shows one card for each provider. Each card gives the active hours, the sandbox
+count, how many accounts are behind it, and the idle hours inside that total.
+The idle figure turns amber above 50%. Below the cards, **Who it belongs to**
+names the accounts with the most hours, each with its own idle share.
 
 The panel is there whether or not you turn billing on. A self-hosted instance <!-- vale disable-line STE.IngForms -->
 still pays a provider.
@@ -65,6 +80,19 @@ Per-account numbers belong in the admin panel and the API, where they are a
 column.
 
 See [Wire up observability](observability.md) for how to scrape the endpoint.
+
+## When to distrust the parked figures
+
+Fountain writes a sandbox row synchronously, and cannot lose it. The suspend
+and resume records that mark parked time are different. Fountain writes those
+best-effort on purpose, because a metering problem must not fail somebody's <!-- vale disable-line STE.IngForms -->
+conversation. A database problem can drop one.
+
+A dropped suspend record makes parked time look like run time, and Fountain
+charges the account for it. A dropped resume record does the opposite. Neither
+one is silent. Each drop increments the `fountain_usage_dropped_count` metric.
+Read that metric for the period you want. A count above zero says the parked
+figures rest on an incomplete record. Treat that period as approximate.
 
 ## What these numbers are not
 

@@ -794,6 +794,21 @@ defmodule FountainWeb.AdminLiveTest do
       assert html =~ "tenant hardware, not our bill"
     end
 
+    test "reports how much of the paid time was idle", %{conn: conn} do
+      # The number that says whether the bill is avoidable. A sandbox that
+      # never took a turn is 100% idle.
+      admin = insert_admin()
+      user = insert_verified_user()
+      sandbox_run(user, "e2b", 30)
+
+      conn = login_user(conn, admin)
+      {:ok, _lv, html} = live(conn, ~p"/admin")
+
+      assert html =~ "idle"
+      assert html =~ "100%"
+      assert html =~ "what a shorter idle timeout would remove"
+    end
+
     test "renders with no sandbox time at all", %{conn: conn} do
       admin = insert_admin()
 

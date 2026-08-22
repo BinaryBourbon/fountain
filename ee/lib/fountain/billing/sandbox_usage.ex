@@ -44,6 +44,36 @@ defmodule Fountain.Billing.SandboxUsage do
   (decisions/0017). A suspend still open at the end of the interval is closed
   by the sandbox's own end, or by `period_end`.
 
+  **The interval is durable; the discount is not.** A sandbox row is written
+  synchronously and cannot be lost, but `Billing.record_usage/5` is
+  deliberately best-effort — metering must never be able to fail a
+  conversation (#503) — so the suspend/resume rows this subtraction pairs on
+  can be dropped. A dropped `sandbox_suspended` bills parked time as running;
+  a dropped `sandbox_resumed` treats a woken sandbox as parked until it dies.
+  Neither can crash a report and neither is silent: every drop increments
+  `[:fountain, :usage, :dropped]`. A non-zero count on that counter over a
+  period means that period's parked figures rest on an incomplete record, and
+  the numbers here should be read as approximate until it is back to zero.
+
+  ## Idle time
+
+  A sandbox nobody is prompting still runs and is still charged at full rate,
+  so idle time counts as active — that is what the invoice says. It is also
+  reported on its own, because it is the part that a shorter idle timeout can
+  remove (decisions/0017, `docs/guides/operate/sandbox-lifetime.md`), and an
+  hours total that cannot separate work from waiting says nothing about
+  whether the bill is avoidable.
+
+  Busy time is the union of the sandbox's turn intervals (`turns.started_at`
+  to `turns.ended_at`), not their sum: two conversations on one sandbox
+  prompting at once is one busy sandbox, not two. A turn still running closes
+  at the same ceiling everything else does. So
+
+      active = busy + idle
+
+  by construction, with `busy` capped at `active` so an odd row cannot produce
+  negative idle.
+
   ## What a provider column does and does not mean
 
   `runner` is a tenant's own machine (decisions/0022) — real sandbox time, zero
@@ -69,7 +99,9 @@ defmodule Fountain.Billing.SandboxUsage do
   import Ecto.Query
 
   alias Fountain.Billing.UsageEvent
+  alias Fountain.Conversations.Conversation
   alias Fountain.Conversations.Sandbox
+  alias Fountain.Conversations.Turn
   alias Fountain.Repo
 
   @terminal ~w(terminated failed)
@@ -82,12 +114,18 @@ defmodule Fountain.Billing.SandboxUsage do
   @typedoc """
   One tenant's time on one provider inside the period.
 
+  `active_seconds` is what the provider charges for. `busy_seconds` is the part
+  of it with a turn in flight and `idle_seconds` the rest; the two add up to
+  `active_seconds`.
+
   `user_id` is `nil` for sandboxes whose owner has been deleted.
   """
   @type row :: %{
           user_id: binary() | nil,
           provider: String.t(),
           active_seconds: non_neg_integer(),
+          busy_seconds: non_neg_integer(),
+          idle_seconds: non_neg_integer(),
           sandboxes: pos_integer()
         }
 
@@ -114,20 +152,31 @@ defmodule Fountain.Billing.SandboxUsage do
       |> Enum.map(&{&1, overlap_seconds(&1, period_start, ceiling)})
       |> Enum.reject(fn {_sandbox, seconds} -> seconds <= 0 end)
 
-    parked = parked_seconds(Enum.map(overlapping, &elem(&1, 0)), period_start, ceiling)
+    sandboxes_in_period = Enum.map(overlapping, &elem(&1, 0))
+    parked = parked_seconds(sandboxes_in_period, period_start, ceiling)
+    busy = busy_seconds(sandboxes_in_period, period_start, ceiling)
 
     overlapping
     |> Enum.group_by(fn {sandbox, _} -> {sandbox.user_id, sandbox.provider} end)
     |> Enum.map(fn {{user_id, provider}, group} ->
-      active =
-        Enum.reduce(group, 0, fn {sandbox, seconds}, acc ->
-          acc + max(seconds - Map.get(parked, sandbox.id, 0), 0)
+      {active, busy_total} =
+        Enum.reduce(group, {0, 0}, fn {sandbox, seconds}, {active_acc, busy_acc} ->
+          sandbox_active = max(seconds - Map.get(parked, sandbox.id, 0), 0)
+
+          # Capped per sandbox rather than per group: a single row whose turns
+          # somehow outrun its own active window must not borrow headroom from
+          # a sibling and hide the anomaly.
+          sandbox_busy = min(Map.get(busy, sandbox.id, 0), sandbox_active)
+
+          {active_acc + sandbox_active, busy_acc + sandbox_busy}
         end)
 
       %{
         user_id: user_id,
         provider: provider,
         active_seconds: active,
+        busy_seconds: busy_total,
+        idle_seconds: active - busy_total,
         sandboxes: length(group)
       }
     end)
@@ -145,6 +194,8 @@ defmodule Fountain.Billing.SandboxUsage do
   @spec by_provider([row()]) :: %{
           optional(String.t()) => %{
             active_seconds: non_neg_integer(),
+            busy_seconds: non_neg_integer(),
+            idle_seconds: non_neg_integer(),
             sandboxes: non_neg_integer(),
             users: non_neg_integer()
           }
@@ -156,6 +207,8 @@ defmodule Fountain.Billing.SandboxUsage do
       {provider,
        %{
          active_seconds: group |> Enum.map(& &1.active_seconds) |> Enum.sum(),
+         busy_seconds: group |> Enum.map(& &1.busy_seconds) |> Enum.sum(),
+         idle_seconds: group |> Enum.map(& &1.idle_seconds) |> Enum.sum(),
          sandboxes: group |> Enum.map(& &1.sandboxes) |> Enum.sum(),
          users: group |> Enum.map(& &1.user_id) |> Enum.uniq() |> length()
        }}
@@ -292,6 +345,67 @@ defmodule Fountain.Billing.SandboxUsage do
         nil -> acc
         own -> Map.put(acc, sandbox.id, sum_parked(own, sandbox, period_start, ceiling))
       end
+    end)
+  end
+
+  defp busy_seconds([], _period_start, _ceiling), do: %{}
+
+  defp busy_seconds(sandboxes, period_start, ceiling) do
+    ids = Enum.map(sandboxes, & &1.id)
+
+    # Bounded at the database by the period: `turns` is the largest table in
+    # play here, and only the ones overlapping the window can contribute.
+    turns =
+      from(t in Turn,
+        join: c in Conversation,
+        on: c.id == t.conversation_id,
+        where: c.sandbox_id in ^ids,
+        where: not is_nil(t.started_at),
+        where: t.started_at < ^ceiling,
+        where: is_nil(t.ended_at) or t.ended_at >= ^period_start,
+        select: %{sandbox_id: c.sandbox_id, started_at: t.started_at, ended_at: t.ended_at}
+      )
+      |> Repo.all()
+      |> Enum.group_by(& &1.sandbox_id)
+
+    Enum.reduce(sandboxes, %{}, fn sandbox, acc ->
+      case Map.get(turns, sandbox.id) do
+        nil ->
+          acc
+
+        own ->
+          # A turn with no end is still running, or ended without the row being
+          # written; either way it cannot outlive the sandbox.
+          close = effective_end(sandbox, ceiling)
+
+          seconds =
+            own
+            |> Enum.map(&{&1.started_at, &1.ended_at || close})
+            |> merge_intervals()
+            |> Enum.map(fn {from, to} -> span_seconds(from, to, period_start, ceiling) end)
+            |> Enum.sum()
+
+          Map.put(acc, sandbox.id, seconds)
+      end
+    end)
+  end
+
+  # Union, not sum: two conversations prompting on one sandbox at the same
+  # moment is one busy sandbox. Summing them would let busy exceed active and
+  # report negative idle.
+  defp merge_intervals(intervals) do
+    intervals
+    |> Enum.sort_by(fn {from, _} -> from end, DateTime)
+    |> Enum.reduce([], fn
+      interval, [] ->
+        [interval]
+
+      {from, to}, [{open_from, open_to} | rest] = acc ->
+        if DateTime.compare(from, open_to) == :gt do
+          [{from, to} | acc]
+        else
+          [{open_from, latest(to, open_to)} | rest]
+        end
     end)
   end
 

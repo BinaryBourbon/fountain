@@ -13,6 +13,7 @@ defmodule Fountain.Billing.SandboxUsageTest do
   alias Fountain.Billing
   alias Fountain.Billing.SandboxUsage
   alias Fountain.Billing.UsageEvent
+  alias Fountain.Conversations
   alias Fountain.Repo
 
   @period_start ~U[2026-05-01 00:00:00Z]
@@ -275,6 +276,165 @@ defmodule Fountain.Billing.SandboxUsageTest do
     end
   end
 
+  describe "attribution/3 — idle time" do
+    # A sandbox nobody is prompting still costs full price, so it stays in
+    # active. Reporting it separately is what says whether the bill is
+    # avoidable.
+    defp turn(sandbox, user, started_at, ended_at) do
+      agent = insert_agent(user_id: user.id)
+
+      conversation =
+        insert_conversation(user_id: user.id, agent_id: agent.id, sandbox: sandbox)
+
+      {:ok, _} =
+        Conversations._unsafe_create_turn(%{
+          conversation_id: conversation.id,
+          turn_number: System.unique_integer([:positive]),
+          prompt: "hello",
+          status: "completed",
+          started_at: started_at,
+          ended_at: ended_at
+        })
+    end
+
+    test "an hour with a ten-minute turn is fifty minutes idle" do
+      user = insert_verified_user()
+
+      sandbox =
+        terminated_sandbox(user, "sprites", ~U[2026-05-10 12:00:00Z], ~U[2026-05-10 13:00:00Z])
+
+      turn(sandbox, user, ~U[2026-05-10 12:10:00Z], ~U[2026-05-10 12:20:00Z])
+
+      assert [row] = attribution()
+      assert row.active_seconds == 3600
+      assert row.busy_seconds == 600
+      assert row.idle_seconds == 3000
+    end
+
+    test "a sandbox that never took a turn is entirely idle" do
+      user = insert_verified_user()
+
+      terminated_sandbox(user, "sprites", ~U[2026-05-10 12:00:00Z], ~U[2026-05-10 13:00:00Z])
+
+      assert [row] = attribution()
+      assert row.busy_seconds == 0
+      assert row.idle_seconds == row.active_seconds
+    end
+
+    test "busy and idle always add up to active" do
+      user = insert_verified_user()
+
+      sandbox =
+        terminated_sandbox(user, "sprites", ~U[2026-05-10 12:00:00Z], ~U[2026-05-10 13:00:00Z])
+
+      turn(sandbox, user, ~U[2026-05-10 12:05:00Z], ~U[2026-05-10 12:15:00Z])
+      turn(sandbox, user, ~U[2026-05-10 12:40:00Z], ~U[2026-05-10 12:50:00Z])
+
+      assert [row] = attribution()
+      assert row.busy_seconds + row.idle_seconds == row.active_seconds
+      assert row.busy_seconds == 1200
+    end
+
+    test "overlapping turns on one sandbox count once, not twice" do
+      # Two conversations prompting at the same moment is one busy sandbox.
+      # Summing them would push busy past active and report negative idle.
+      user = insert_verified_user()
+
+      sandbox =
+        terminated_sandbox(user, "sprites", ~U[2026-05-10 12:00:00Z], ~U[2026-05-10 13:00:00Z])
+
+      turn(sandbox, user, ~U[2026-05-10 12:00:00Z], ~U[2026-05-10 12:30:00Z])
+      turn(sandbox, user, ~U[2026-05-10 12:10:00Z], ~U[2026-05-10 12:40:00Z])
+
+      assert [row] = attribution()
+      assert row.busy_seconds == 2400
+      assert row.idle_seconds == 1200
+    end
+
+    test "a turn still running is busy up to the ceiling" do
+      user = insert_verified_user()
+
+      sandbox =
+        insert_sandbox(
+          user_id: user.id,
+          provider: "sprites",
+          status: "ready",
+          inserted_at: ~U[2026-05-31 22:00:00Z]
+        )
+
+      turn(sandbox, user, ~U[2026-05-31 23:00:00Z], nil)
+
+      assert [row] = attribution()
+      assert row.active_seconds == 2 * 3600
+      assert row.busy_seconds == 3600
+      assert row.idle_seconds == 3600
+    end
+
+    test "a turn is clipped to the period, like everything else" do
+      user = insert_verified_user()
+
+      sandbox =
+        terminated_sandbox(user, "sprites", ~U[2026-04-30 22:00:00Z], ~U[2026-05-01 02:00:00Z])
+
+      # Runs from an hour before the period into its first hour.
+      turn(sandbox, user, ~U[2026-04-30 23:00:00Z], ~U[2026-05-01 01:00:00Z])
+
+      assert [row] = attribution()
+      assert row.active_seconds == 2 * 3600
+      assert row.busy_seconds == 3600
+    end
+
+    test "parked time is neither busy nor idle — it is not paid for" do
+      user = insert_verified_user()
+
+      sandbox =
+        terminated_sandbox(user, "sprites", ~U[2026-05-10 12:00:00Z], ~U[2026-05-10 13:00:00Z])
+
+      park_event(sandbox, "sandbox_suspended", ~U[2026-05-10 12:30:00Z])
+      park_event(sandbox, "sandbox_resumed", ~U[2026-05-10 12:45:00Z])
+      turn(sandbox, user, ~U[2026-05-10 12:00:00Z], ~U[2026-05-10 12:10:00Z])
+
+      assert [row] = attribution()
+      assert row.active_seconds == 2700
+      assert row.busy_seconds == 600
+      assert row.idle_seconds == 2100
+    end
+
+    test "never reports negative idle when turns outrun the paid window" do
+      # Defensive: a mostly-parked sandbox whose turn rows say it was busy
+      # throughout. Busy caps at active rather than going through it.
+      user = insert_verified_user()
+
+      sandbox =
+        terminated_sandbox(user, "sprites", ~U[2026-05-10 12:00:00Z], ~U[2026-05-10 13:00:00Z])
+
+      park_event(sandbox, "sandbox_suspended", ~U[2026-05-10 12:05:00Z])
+      park_event(sandbox, "sandbox_resumed", ~U[2026-05-10 12:55:00Z])
+      turn(sandbox, user, ~U[2026-05-10 12:00:00Z], ~U[2026-05-10 13:00:00Z])
+
+      assert [row] = attribution()
+      assert row.active_seconds == 600
+      assert row.busy_seconds == 600
+      assert row.idle_seconds == 0
+    end
+
+    test "one sandbox's turns do not make another look busy" do
+      user = insert_verified_user()
+
+      busy =
+        terminated_sandbox(user, "sprites", ~U[2026-05-10 12:00:00Z], ~U[2026-05-10 13:00:00Z])
+
+      terminated_sandbox(user, "e2b", ~U[2026-05-10 12:00:00Z], ~U[2026-05-10 13:00:00Z])
+
+      turn(busy, user, ~U[2026-05-10 12:00:00Z], ~U[2026-05-10 12:30:00Z])
+
+      rows = attribution()
+
+      assert Enum.find(rows, &(&1.provider == "sprites")).busy_seconds == 1800
+      assert Enum.find(rows, &(&1.provider == "e2b")).busy_seconds == 0
+    end
+  end
+
   describe "by_provider/1" do
     test "totals seconds, sandboxes and distinct tenants per provider" do
       one = insert_verified_user()
@@ -286,8 +446,22 @@ defmodule Fountain.Billing.SandboxUsageTest do
 
       totals = attribution() |> SandboxUsage.by_provider()
 
-      assert totals["sprites"] == %{active_seconds: 1800, sandboxes: 2, users: 2}
-      assert totals["e2b"] == %{active_seconds: 300, sandboxes: 1, users: 1}
+      # No turns anywhere, so every paid second is idle.
+      assert totals["sprites"] == %{
+               active_seconds: 1800,
+               busy_seconds: 0,
+               idle_seconds: 1800,
+               sandboxes: 2,
+               users: 2
+             }
+
+      assert totals["e2b"] == %{
+               active_seconds: 300,
+               busy_seconds: 0,
+               idle_seconds: 300,
+               sandboxes: 1,
+               users: 1
+             }
     end
   end
 
@@ -342,6 +516,8 @@ defmodule Fountain.Billing.SandboxUsageTest do
       assert spend.by_provider["sprites"].active_seconds == 3600
       assert spend.by_provider["e2b"].active_seconds == 1800
       assert spend.platform_seconds == 5400
+      # Neither sandbox took a turn, so all of it is time we could not justify.
+      assert spend.platform_idle_seconds == 5400
 
       assert [top, second] = spend.top_tenants
       assert top.email == one.email

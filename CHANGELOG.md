@@ -46,7 +46,13 @@ upgrade, is in
   to the period asked about, with parked time subtracted. A **Sandbox spend by
   provider** panel on `/admin` reports hours, sandboxes and tenants per
   provider, names the accounts behind the total, and marks self-hosted runner
-  hours as the tenant's own hardware rather than our bill. Each account sees
+  hours as the tenant's own hardware rather than our bill. Every total also
+  splits into **busy and idle** — busy being the union of the sandbox's turn
+  intervals, so two conversations prompting one sandbox at once count once —
+  because a sandbox nobody is prompting is charged at full rate and is the
+  part of the bill a shorter idle timeout (decisions/0017) actually removes.
+  An hours figure that cannot separate work from waiting says nothing about
+  whether the bill is avoidable. Each account sees
   its own split on `/account/billing` and in `usage.sandbox_minutes_by_provider`
   on `GET /api/account/billing`, and Prometheus gained
   `fountain_sandboxes_by_provider_count` for the live view. Deliberately no

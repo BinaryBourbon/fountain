@@ -603,6 +603,17 @@ defmodule FountainWeb.AdminLive.Index do
                 do: "tenant",
                 else: "tenants"}
             </div>
+            <div
+              class="text-xs tabular-nums"
+              title="No turn in flight. A shorter idle timeout removes this."
+            >
+              <span class={
+                if idle_share(totals) >= 0.5, do: "text-amber-600 font-medium", else: "text-zinc-500"
+              }>
+                {format_hours(SandboxUsage.hours(totals.idle_seconds))} idle
+              </span>
+              <span class="text-zinc-400">({round(idle_share(totals) * 100)}%)</span>
+            </div>
             <div :if={not SandboxUsage.platform_cost?(provider)} class="text-xs text-zinc-400">
               tenant hardware, not our bill
             </div>
@@ -611,6 +622,10 @@ defmodule FountainWeb.AdminLive.Index do
 
         <div class="text-xs text-zinc-500 tabular-nums">
           Billable to us: {format_hours(SandboxUsage.hours(@provider_spend.platform_seconds))}
+          <span :if={@provider_spend.platform_seconds > 0} class="text-zinc-400">
+            · {format_hours(SandboxUsage.hours(@provider_spend.platform_idle_seconds))} of it idle,
+            which is what a shorter idle timeout would remove
+          </span>
         </div>
 
         <div
@@ -630,7 +645,11 @@ defmodule FountainWeb.AdminLive.Index do
                 <span class="text-zinc-400">· {tenant.provider}</span>
               </span>
               <span class="tabular-nums whitespace-nowrap text-zinc-500">
-                {format_hours(SandboxUsage.hours(tenant.active_seconds))} · {tenant.sandboxes} sandboxes
+                {format_hours(SandboxUsage.hours(tenant.active_seconds))}
+                <span class="text-zinc-400">
+                  ({round(idle_share(tenant) * 100)}% idle)
+                </span>
+                · {tenant.sandboxes} sandboxes
               </span>
             </li>
           </ul>
@@ -1127,6 +1146,11 @@ defmodule FountainWeb.AdminLive.Index do
     remainder = rem(cents, 100)
     "$#{dollars}.#{String.pad_leading(to_string(remainder), 2, "0")}/mo"
   end
+
+  # Share of a provider's paid time with no turn in flight. Zero active time
+  # is 0.0 rather than a division by zero — nothing running is not "all idle".
+  defp idle_share(%{active_seconds: 0}), do: 0.0
+  defp idle_share(%{active_seconds: active, idle_seconds: idle}), do: idle / active
 
   # Which provider a tenant's sandbox minutes ran on, for the usage cell's
   # tooltip. Empty when the tenant had no sandbox time, so the attribute
