@@ -266,27 +266,41 @@ defmodule Fountain.ConversationsWakeTest do
 
       test = self()
 
-      # A stand-in for the first server: registers under the conversation's
-      # name a beat after the wake starts looking, then relays the prompt
-      # cast it receives.
+      # A stand-in for the first server: it only has to receive the prompt
+      # cast and relay it.
       late_server =
         spawn_link(fn ->
-          Process.sleep(40)
-          {:ok, _} = Horde.Registry.register(Fountain.ConversationRegistry, conv.id, nil)
-          send(test, :registered)
-
           receive do
             {:"$gen_cast", {:initial_prompt, prompt, images}} ->
               send(test, {:handed_off, prompt, images})
           end
         end)
 
+      # The registry catches up on the second poll. This used to be a
+      # stand-in that slept 40 ms before registering for real, which made the
+      # test a wall-clock race: a loaded runner could burn the whole settle
+      # window before the sleep returned, the wake would correctly give up,
+      # and the `reject` below would fail on a green build (#921). Deciding
+      # per lookup which poll finds the server drives the same branch with no
+      # clock in it.
+      {:ok, polls} = Agent.start_link(fn -> 0 end)
+
+      stub(Horde.Registry, :lookup, fn Fountain.ConversationRegistry, _key ->
+        case Agent.get_and_update(polls, &{&1, &1 + 1}) do
+          0 -> []
+          _ -> [{late_server, nil}]
+        end
+      end)
+
       # No second server, no second sandbox.
       reject(&Horde.DynamicSupervisor.start_child/2)
 
       assert {:ok, woken} = Conversations.wake_conversation(conv.id, "hello")
-      assert_receive :registered
       assert_receive {:handed_off, "hello", []}, 500
+
+      # The first poll missed: the wake waited for the registry rather than
+      # concluding the provision was dead on the strength of one lookup.
+      assert Agent.get(polls, & &1) >= 2
 
       assert woken.sandbox_id == sandbox.id
       assert Repo.reload(sandbox).status == "pending"
