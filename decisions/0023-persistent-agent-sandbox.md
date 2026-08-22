@@ -4,14 +4,14 @@ title: "A persistent sandbox per agent, offered beside the sandbox-per-conversat
 description: "Sketch only — nothing here is built. Adds a second sandbox mode, chosen per launch and defaulted per agent, where one long-lived sandbox serves many conversations of an agent (the 'grokbot' shape); keeps the per-conversation mode as the default; names the seven places the code hard-codes 1:1 today. Companion design note: #805."
 tags: [sandbox, lifecycle, conversations, product]
 status: draft
-adr: "0021"
+adr: "0023"
 adr_status: "Proposed"
 date: 2026-08-17
 generated: { by: human:jhgaylor, at: 2026-08-17T17:30:00-04:00 }
 stale_after: 2026-10-01
 ---
 
-# 0021 — A persistent sandbox per agent, beside the sandbox-per-conversation model
+# 0023 — A persistent sandbox per agent, beside the sandbox-per-conversation model
 
 **Status:** Proposed — a design sketch. **Nothing described here is built.**
 The 1:1 model of today is the only one that exists; every mechanism below is
@@ -20,6 +20,12 @@ code, not a list of fixed defects.
 **Date:** 2026-08-17 (amended 2026-08-18: mode is chosen per launch and
 defaulted per agent, not fixed per agent; the machine carries a lease/refcount;
 `sandbox_id` attach — see #805 for the holistic picture this converges on)
+
+**Renumbered 2026-08-21:** this ADR was drafted as 0021 on 2026-08-18 and lost
+the number to [0021](0021-oauth-for-first-party-apps.md) (OAuth for first-party
+apps), which was opened later the same day and merged first. Line references in
+the survey below were re-checked against `main` on the same date. Anything
+citing "ADR 0021" for a persistent sandbox — #793, #805 — means this file.
 
 **Companion:** #805 is the "if we had designed it this way from the start"
 sketch — the sandbox as a first-class machine, a conversation as a binding of
@@ -78,7 +84,7 @@ path ever produces a second conversation on a sandbox row, and these paths
 would misbehave if one did:
 
 1. **Reattach binds to the wrong process.** `attempt_session_attach`
-   (`conversation_server.ex:876`) takes the *head* of the sandbox's session
+   (`conversation_server.ex:1000`) takes the *head* of the sandbox's session
    list. Two conversations' detachable turns on one sandbox → a reattaching
    server streams B's agent into A's transcript. Sessions carry only a
    provider id and a command line, no conversation tag.
@@ -86,16 +92,16 @@ would misbehave if one did:
    (`provisioning.ex:32`) mixes environment/vault values with
    `FOUNTAIN_TOKEN` (the per-conversation callback key) and
    `FOUNTAIN_CONVERSATION_ID`, and is rewritten on every reattach
-   (`conversation_server.ex:604,789,1071`). Two conversations would stomp
+   (`conversation_server.ex:689,880`). Two conversations would stomp
    each other's identity.
-3. **cwd is per runtime, not per conversation** (`runtimes/acp.ex:209`):
+3. **cwd is per runtime, not per conversation** (`runtimes/acp.ex:113-145`):
    claude/codex share `/home/sprite`, opencode a single sqlite db and an HTTP
    port, gemini `--resume`s "the most recent conversation in the workspace"
    (`gemini.ex:62`; called out as unsafe at `acp.ex:33-36`). ACP session ids
    themselves are explicit and safe; the disk around them is not.
 4. **Terminate/park/destroy flip the shared row for one conversation.**
-   `:terminate_conv` (`conversation_server.ex:1249-1260`) destroys the sprite
-   unconditionally; `park_sandbox` (`:1665`) suspends the row when *this*
+   `:terminate_conv` (`conversation_server.ex:1390`) destroys the sprite
+   unconditionally; `park_sandbox` (`:1886`) suspends the row when *this*
    server's clock says idle — on Daytona/E2B that is a real pause of the other
    conversation's running turn.
 5. **Idle/ceiling verdicts are per-server state acted on per-row**
