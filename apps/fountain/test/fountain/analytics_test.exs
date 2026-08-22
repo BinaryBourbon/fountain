@@ -51,7 +51,8 @@ defmodule Fountain.AnalyticsTest do
         role: "user",
         subscription_status: "trialing",
         onboarding_state: "step_1",
-        max_concurrent_sandboxes: 5,
+        plan: "solo",
+        sandbox_limit_override: nil,
         cancel_at_period_end: false,
         inserted_at: ~U[2026-01-01 00:00:00Z]
       },

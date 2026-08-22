@@ -82,12 +82,13 @@ defmodule FountainWeb.AdminLive.Index do
     with_target_user(socket, id, fn user -> do_toggle_admin(socket, user) end)
   end
 
-  # The concurrency cap is the only lever for a noisy or abusive tenant
-  # (ADR 0005). Without this it is adjustable only with direct database access,
-  # which makes it useless in an incident.
+  # The concurrency cap normally comes from the tenant's plan. This overrides
+  # it, which is the only lever for a noisy or abusive tenant (ADR 0005) and
+  # the only way to hand a trusted one more than they pay for. Submitting the
+  # field empty clears the override and hands the cap back to the plan.
   @impl true
   def handle_event("set_sandbox_limit", %{"user_id" => id, "limit" => raw}, socket) do
-    with {limit, ""} <- Integer.parse(String.trim(raw)),
+    with {:ok, limit} <- parse_limit_override(raw),
          %Accounts.User{} = user <- Accounts.get_user(id),
          {:ok, _} <- Accounts.update_sandbox_limit(user, limit, actor: "admin") do
       Fountain.Audit.record_admin(%{
@@ -96,12 +97,18 @@ defmodule FountainWeb.AdminLive.Index do
         event_type: "admin.sandbox_limit.changed",
         metadata: %{
           "email" => user.email,
-          "from" => user.max_concurrent_sandboxes,
-          "to" => limit
+          "from" => user.sandbox_limit_override,
+          "to" => limit,
+          "plan" => Fountain.Plans.resolve(user.plan).slug
         }
       })
 
-      {:noreply, socket |> assign_users() |> put_flash(:info, "Sandbox limit updated")}
+      message =
+        if is_nil(limit),
+          do: "Override cleared — the cap follows the plan again",
+          else: "Sandbox limit override set"
+
+      {:noreply, socket |> assign_users() |> put_flash(:info, message)}
     else
       nil ->
         {:noreply,
@@ -110,7 +117,12 @@ defmodule FountainWeb.AdminLive.Index do
          |> put_flash(:error, "User not found — the account may have been deleted")}
 
       _ ->
-        {:noreply, put_flash(socket, :error, "Limit must be a whole number of 0 or more")}
+        {:noreply,
+         put_flash(
+           socket,
+           :error,
+           "Override must be a whole number of 0 or more, or empty for the plan's cap"
+         )}
     end
   end
 
@@ -413,6 +425,21 @@ defmodule FountainWeb.AdminLive.Index do
     end
   end
 
+  # "" clears the override (the cap goes back to the plan's); anything else
+  # must be a whole number of zero or more.
+  defp parse_limit_override(raw) do
+    case String.trim(raw) do
+      "" ->
+        {:ok, nil}
+
+      trimmed ->
+        case Integer.parse(trimmed) do
+          {limit, ""} when limit >= 0 -> {:ok, limit}
+          _ -> :error
+        end
+    end
+  end
+
   defp assign_users(socket) do
     f = socket.assigns.filters
     now = DateTime.utc_now()
@@ -451,6 +478,8 @@ defmodule FountainWeb.AdminLive.Index do
       Enum.map(users, fn u ->
         u
         |> Map.put(:active_sandboxes, Map.get(sandbox_counts, u.id, 0))
+        |> Map.put(:sandbox_limit, Fountain.Quotas.sandbox_limit_for(u))
+        |> Map.put(:plan, Fountain.Plans.resolve(u.plan))
         |> Map.put(:usage, Map.get(usage, u.id, no_usage))
       end)
 
@@ -938,18 +967,23 @@ defmodule FountainWeb.AdminLive.Index do
                   <input type="hidden" name="user_id" value={u.id} />
                   <span class={[
                     "text-xs tabular-nums",
-                    if(u.active_sandboxes >= u.max_concurrent_sandboxes,
+                    if(u.active_sandboxes >= u.sandbox_limit,
                       do: "text-red-600 font-medium",
                       else: "text-zinc-500"
                     )
                   ]}>
-                    {u.active_sandboxes} /
+                    {u.active_sandboxes} / {u.sandbox_limit}
                   </span>
+                  <%!-- Empty means "no override": the cap is the plan's, shown
+                        as the placeholder so an admin can see what clearing
+                        the box would leave behind. --%>
                   <input
                     type="number"
                     name="limit"
                     min="0"
-                    value={u.max_concurrent_sandboxes}
+                    value={u.sandbox_limit_override}
+                    placeholder={u.plan.concurrent_sandboxes}
+                    title={"#{u.plan.name} plan: #{u.plan.concurrent_sandboxes} concurrent"}
                     class="w-14 rounded border border-zinc-200 px-1 py-0.5 text-xs"
                   />
                   <button class="text-xs text-zinc-500 hover:text-zinc-900 underline">set</button>

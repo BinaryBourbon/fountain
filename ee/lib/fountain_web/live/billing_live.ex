@@ -14,6 +14,8 @@ defmodule FountainWeb.Live.BillingLive do
   use FountainWeb, :live_view
 
   alias Fountain.Billing
+  alias Fountain.Plans
+  alias Fountain.Quotas
 
   @impl true
   def mount(_params, _session, socket) do
@@ -28,10 +30,59 @@ defmodule FountainWeb.Live.BillingLive do
          usage: usage,
          period_start: period_start,
          period_end: period_end,
-         stripe_url_loading: false
+         stripe_url_loading: false,
+         plan: Billing.plan(user),
+         sandbox_limit: Quotas.sandbox_limit_for(user),
+         available_plans: Billing.available_plans()
        )}
     else
       {:ok, redirect(socket, to: ~p"/account")}
+    end
+  end
+
+  # Switching tier reprices the existing subscription rather than opening
+  # Checkout, which would mint a second one. The new entitlement lands with
+  # the webhook Stripe sends back, so the page says "applied shortly" instead
+  # of showing a number the account does not have yet.
+  @impl true
+  def handle_event("change_plan", %{"plan" => slug}, socket) do
+    user = socket.assigns.current_user
+
+    case Billing.change_plan(user, slug, FountainWeb.Audited.attribution(socket)) do
+      {:ok, _user} ->
+        {:noreply,
+         put_flash(
+           socket,
+           :info,
+           "Switched to #{Plans.resolve(slug).name}. Your new limit applies shortly."
+         )}
+
+      {:error, :comped} ->
+        {:noreply,
+         put_flash(socket, :info, "This account is comped — there is no plan to change.")}
+
+      # Nothing to reprice: an account whose subscription was cancelled, or one
+      # that never had one. Checkout is the right door, and it is the button
+      # already on this page.
+      {:error, :no_subscription} ->
+        {:noreply,
+         put_flash(socket, :error, "Start a subscription first, then you can change plan.")}
+
+      # The subscription holds a price this deployment does not recognise, so
+      # there is nothing safe to reprice. In practice that means a price id
+      # was removed from the config out from under a live subscription — most
+      # likely `STRIPE_PRICE_ID`, which every `legacy` account still points
+      # at. Saying "try again" would send them round a loop that cannot work.
+      {:error, :plan_item_not_found} ->
+        {:noreply,
+         put_flash(
+           socket,
+           :error,
+           "We could not match your subscription to a plan. Please contact support."
+         )}
+
+      {:error, _reason} ->
+        {:noreply, put_flash(socket, :error, "Unable to reach Stripe. Please try again.")}
     end
   end
 
@@ -117,7 +168,19 @@ defmodule FountainWeb.Live.BillingLive do
         <dl class="space-y-3">
           <div class="flex items-center justify-between">
             <dt class="text-sm text-gray-500">Plan</dt>
-            <dd class="text-sm font-medium">Fountain</dd>
+            <dd class="text-sm font-medium">{@plan.name}</dd>
+          </div>
+          <%!-- The number the plan is sold on, and the one an operator
+                override can make differ from it — so show what is actually
+                enforced rather than what the tier says. --%>
+          <div class="flex items-center justify-between">
+            <dt class="text-sm text-gray-500">Agents at once</dt>
+            <dd class="text-sm font-medium">
+              {@sandbox_limit}
+              <span :if={@sandbox_limit != @plan.concurrent_sandboxes} class="text-gray-500">
+                (adjusted for this account)
+              </span>
+            </dd>
           </div>
           <div class="flex items-center justify-between">
             <dt class="text-sm text-gray-500">Status</dt>
@@ -199,6 +262,61 @@ defmodule FountainWeb.Live.BillingLive do
         </div>
       </div>
 
+      <%!-- Plan picker. Shown only to an account with a subscription to
+            reprice and only when this deployment has more than one plan
+            priced: with nothing to switch between it is a card of disabled
+            buttons. A comped account never sees it — an operator's decision
+            is not the customer's to change. --%>
+      <div
+        :if={plan_picker?(@current_user, @available_plans)}
+        class="rounded-lg border bg-white p-6 shadow-sm"
+      >
+        <h2 class="text-lg font-medium">Change plan</h2>
+        <p class="mt-1 text-sm text-gray-500">
+          Plans differ by how many sandboxes you can run at the same time.
+          Upgrades take effect immediately and are prorated; downgrades apply
+          from your next invoice.
+        </p>
+
+        <div class="mt-5 grid gap-4 sm:grid-cols-3">
+          <div
+            :for={plan <- @available_plans}
+            class={[
+              "rounded-lg border p-4",
+              if(plan.slug == @plan.slug, do: "border-indigo-500 bg-indigo-50", else: "bg-white")
+            ]}
+          >
+            <div class="flex items-baseline justify-between">
+              <h3 class="text-sm font-semibold">{plan.name}</h3>
+              <span class="text-sm font-medium">{Plans.format_usd(plan.monthly_cents)}</span>
+            </div>
+            <p class="mt-1 text-xs text-gray-500">
+              {plan.concurrent_sandboxes} agents at once
+            </p>
+            <div class="mt-3">
+              <span :if={plan.slug == @plan.slug} class="text-xs font-medium text-indigo-700">
+                Current plan
+              </span>
+              <button
+                :if={plan.slug != @plan.slug}
+                phx-click="change_plan"
+                phx-value-plan={plan.slug}
+                data-confirm={"Switch to #{plan.name} at #{Plans.format_usd(plan.monthly_cents)}/mo?"}
+                class="text-xs font-medium text-indigo-600 hover:text-indigo-700"
+              >
+                {if Plans.upgrade?(@plan, plan), do: "Upgrade", else: "Switch"} to {plan.name}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <p :if={not @plan.public?} class="mt-4 text-xs text-gray-500">
+          You are on {@plan.name}, an earlier plan we no longer sell. You can
+          keep it for as long as you like — moving to one of the plans above is
+          a one-way change.
+        </p>
+      </div>
+
       <%!-- Monthly usage summary --%>
       <div class="rounded-lg border bg-white p-6 shadow-sm">
         <h2 class="mb-1 text-lg font-medium">Usage This Month</h2>
@@ -243,6 +361,15 @@ defmodule FountainWeb.Live.BillingLive do
   # Both surfaces mint the same URLs under the same rules, so the rules live in
   # the context (#524) rather than in a copy per surface.
   defp build_stripe_url(user), do: Billing.manage_url(user, billing_return_url())
+
+  # Three conditions, all of them things the picker cannot work without: a
+  # subscription to reprice, a status that is the customer's to change, and
+  # more than one plan priced on this deployment.
+  defp plan_picker?(user, available_plans) do
+    user.subscription_status != "comped" and
+      user.stripe_subscription_id not in [nil, ""] and
+      length(available_plans) > 1
+  end
 
   defp billing_return_url, do: FountainWeb.Endpoint.url() <> ~p"/account/billing"
 

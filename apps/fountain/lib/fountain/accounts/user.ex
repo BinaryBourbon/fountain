@@ -23,7 +23,15 @@ defmodule Fountain.Accounts.User do
     field :email_verified_at, :utc_datetime
     field :onboarding_completed_at, :utc_datetime
     field :onboarding_state, :string, default: "step_1"
-    field :max_concurrent_sandboxes, :integer, default: 5
+    # Per-user override of the plan's concurrent-sandbox cap; null means "the
+    # plan's". The Postgres column is still `max_concurrent_sandboxes` — it
+    # predates plans and renaming it would break a rolling deploy — so the
+    # honest name lives here and the migration explains the split.
+    field :sandbox_limit_override, :integer, source: :max_concurrent_sandboxes
+    # `Fountain.Plans` slug. Null means this deployment's `DEFAULT_PLAN`,
+    # which is how a self-hosted instance runs with no plan concept at all.
+    # Written from the Stripe price on the subscription, never guessed.
+    field :plan, :string
     field :role, :string, default: "user"
     field :stripe_customer_id, :string
     # The subscription of record. Webhook sync applies events for this
@@ -60,7 +68,7 @@ defmodule Fountain.Accounts.User do
   @doc "Changeset for new user registration (email + password path)."
   def registration_changeset(user, attrs) do
     user
-    |> cast(attrs, [:email, :password, :role, :max_concurrent_sandboxes])
+    |> cast(attrs, [:email, :password, :role, :sandbox_limit_override])
     |> validate_required([:email, :password])
     |> validate_format(:email, ~r/^[^\s@]+@[^\s@]+\.[^\s@]+$/,
       message: "must be a valid email address"
@@ -75,7 +83,7 @@ defmodule Fountain.Accounts.User do
   @doc "Changeset for OAuth registration (no password required; email pre-verified by provider)."
   def oauth_registration_changeset(user, attrs) do
     user
-    |> cast(attrs, [:email, :role, :max_concurrent_sandboxes, :email_verified_at])
+    |> cast(attrs, [:email, :role, :sandbox_limit_override, :email_verified_at])
     |> validate_required([:email])
     |> validate_format(:email, ~r/^[^\s@]+@[^\s@]+\.[^\s@]+$/,
       message: "must be a valid email address"
@@ -86,16 +94,26 @@ defmodule Fountain.Accounts.User do
   end
 
   @doc """
-  Changeset for the per-tenant sandbox concurrency cap (ADR 0005).
+  Changeset for the per-tenant sandbox concurrency override (ADR 0005).
 
   Admin-only. Zero is valid and meaningful — it is the lever for cutting off an
-  abusive tenant without deleting their account.
+  abusive tenant without deleting their account. `nil` is valid too and means
+  something different: clear the override and let the plan decide again.
   """
   def sandbox_limit_changeset(user, attrs) do
     user
-    |> cast(attrs, [:max_concurrent_sandboxes])
-    |> validate_required([:max_concurrent_sandboxes])
-    |> validate_number(:max_concurrent_sandboxes, greater_than_or_equal_to: 0)
+    |> cast(attrs, [:sandbox_limit_override])
+    |> validate_number(:sandbox_limit_override, greater_than_or_equal_to: 0)
+  end
+
+  @doc """
+  Changeset for the plan slug. Driven by the Stripe price on the
+  subscription (`Fountain.Billing.sync_subscription/1`) or set by an admin.
+  """
+  def plan_changeset(user, attrs) do
+    user
+    |> cast(attrs, [:plan])
+    |> validate_inclusion(:plan, Fountain.Plans.slugs())
   end
 
   @doc "Changeset for billing field updates (driven by Stripe webhooks)."
@@ -108,9 +126,14 @@ defmodule Fountain.Accounts.User do
       :trial_ends_at,
       :subscription_synced_at,
       :cancel_at_period_end,
-      :current_period_end
+      :current_period_end,
+      # Only ever put here when the price on the subscription mapped to a
+      # known plan. An unrecognised price leaves the key out entirely rather
+      # than nulling a tenant's entitlement from a half-configured replica.
+      :plan
     ])
     |> validate_inclusion(:subscription_status, @subscription_statuses)
+    |> validate_inclusion(:plan, Fountain.Plans.slugs())
     |> unique_constraint(:stripe_customer_id)
   end
 

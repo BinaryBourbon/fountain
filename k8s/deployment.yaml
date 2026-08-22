@@ -124,10 +124,17 @@ spec:
             # LEGAL_CONTACT_EMAIL, LEGAL_JURISDICTION, LEGAL_EFFECTIVE_DATE
             # (#517) — until then /terms and /privacy render loud
             # {{COMPANY_LEGAL_NAME}} placeholders and boot logs a warning.
-            # Display-only price for the admin billing overview's MRR tile
-            # (#286). Matches the live price (price_1TVSgwDbTpLaSfbPV8fLtPT9,
-            # $29/mo as of 2026-08-02) — the API only exposes the price *id*,
-            # so the amount is stated here. Update alongside any price change.
+            # Display-only price of the CLOSED `legacy` plan, for the admin
+            # billing overview's MRR tile (#286). Matches the flat price the
+            # tiers replaced (price_1TVSgwDbTpLaSfbPV8fLtPT9, $29/mo as of
+            # 2026-08-02) — the API only exposes the price *id*, so the amount
+            # is stated here.
+            #
+            # The public plans do NOT read this: each carries its own display
+            # price in `Fountain.Plans` (ADR 0026), and their price ids come
+            # from STRIPE_PRICE_ID_SOLO / _TEAM / _SCALE in Infisical beside
+            # STRIPE_PRICE_ID. `mix fountain.verify_plans` is what checks the
+            # catalog's amounts against Stripe — run it after any price change.
             - name: STRIPE_PRICE_MONTHLY_CENTS
               value: "2900"
             # Deliberate unverified accounts (operator tests) survive the

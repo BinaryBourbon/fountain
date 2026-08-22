@@ -4,24 +4,38 @@ defmodule FountainWeb.MarketingHTML do
 
   embed_templates "marketing_html/*"
 
-  @doc """
-  Display price for the marketing page, read from `:stripe_price_monthly_cents`
-  (`STRIPE_PRICE_MONTHLY_CENTS`) — the same value the admin MRR tile uses, so
-  the homepage cannot drift from the configured Stripe price.
+  alias Fountain.Plans
 
-  Returns e.g. `"$29"`, or `nil` when billing is disabled or the price isn't
-  configured — the pricing sentence is omitted rather than fabricated.
+  @doc """
+  The plans to show in the pricing table: the ones this deployment can
+  actually sell (`Fountain.Billing.available_plans/0`).
+
+  Empty when billing is off or no price id is configured, and the pricing
+  section renders nothing rather than advertising a tier whose button leads to
+  a Stripe error.
+  """
+  def pricing_plans, do: Fountain.Billing.available_plans()
+
+  @doc """
+  The cheapest sellable plan's price, e.g. `"$29"` — the "from" figure in the
+  hero, where a table would be too much.
+
+  `nil` when there is nothing to sell, in which case the pricing sentence is
+  omitted rather than fabricated.
   """
   def monthly_price do
-    with true <- Fountain.Billing.enabled?(),
-         cents when is_integer(cents) and cents > 0 <-
-           Application.get_env(:fountain, :stripe_price_monthly_cents) do
-      format_usd(cents)
-    else
-      _ -> nil
+    case pricing_plans() do
+      [cheapest | _] -> Plans.format_usd(cheapest.monthly_cents)
+      [] -> nil
     end
   end
 
-  defp format_usd(cents) when rem(cents, 100) == 0, do: "$#{div(cents, 100)}"
-  defp format_usd(cents), do: "$#{:erlang.float_to_binary(cents / 100, decimals: 2)}"
+  @doc "A plan's monthly price, formatted."
+  def plan_price(plan), do: Plans.format_usd(plan.monthly_cents)
+
+  @doc """
+  The one-line capacity claim under a plan's price. Concurrency is the axis
+  the tiers are sold on, so it is the only number here.
+  """
+  def plan_capacity(plan), do: "#{plan.concurrent_sandboxes} agents at once"
 end

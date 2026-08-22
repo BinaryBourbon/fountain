@@ -295,7 +295,27 @@ defmodule FountainWeb.AdminLiveTest do
       |> render_submit(%{"user_id" => target.id, "limit" => "25"})
 
       assert Fountain.Quotas.sandbox_limit(target.id) == 25
-      assert render(lv) =~ "Sandbox limit updated"
+      assert render(lv) =~ "Sandbox limit override set"
+    end
+
+    test "an empty field clears the override and the cap follows the plan", %{conn: conn} do
+      admin = insert_admin()
+      target = insert_verified_user(plan: "team")
+      {:ok, _} = Fountain.Accounts.update_sandbox_limit(target, 25, actor: "admin")
+
+      conn = login_user(conn, admin)
+      {:ok, lv, _html} = live(conn, ~p"/admin")
+
+      lv
+      |> element("#sandbox-limit-#{target.id}")
+      |> render_submit(%{"user_id" => target.id, "limit" => ""})
+
+      assert render(lv) =~ "Override cleared"
+
+      assert Fountain.Quotas.sandbox_limit(target.id) ==
+               Fountain.Plans.fetch!("team").concurrent_sandboxes
+
+      assert Fountain.Accounts.get_user(target.id).sandbox_limit_override == nil
     end
 
     test "admin can drop a cap to zero to cut off an abusive tenant", %{conn: conn} do

@@ -1361,7 +1361,17 @@ defmodule FountainWeb.Schemas do
         current_period_end: %Schema{type: :string, format: :"date-time", nullable: true},
         cancel_at_period_end: %Schema{type: :boolean, nullable: true},
         has_stripe_customer: %Schema{type: :boolean},
-        max_concurrent_sandboxes: %Schema{type: :integer, nullable: true},
+        plan: %Schema{type: :string, description: "Plan slug", enum: Fountain.Plans.slugs()},
+        max_concurrent_sandboxes: %Schema{
+          type: :integer,
+          nullable: true,
+          description: "The concurrency cap actually enforced: the override, or the plan's."
+        },
+        sandbox_limit_override: %Schema{
+          type: :integer,
+          nullable: true,
+          description: "Admin override of the plan's cap. Null means the plan's cap applies."
+        },
         active_sandboxes: %Schema{type: :integer},
         onboarding_completed_at: %Schema{type: :string, format: :"date-time", nullable: true},
         last_activity_at: %Schema{type: :string, format: :"date-time", nullable: true},
@@ -1416,7 +1426,14 @@ defmodule FountainWeb.Schemas do
       title: "AdminSandboxLimitRequest",
       type: :object,
       properties: %{
-        limit: %Schema{type: :integer, minimum: 0, description: "Concurrent sandbox cap."}
+        limit: %Schema{
+          type: :integer,
+          minimum: 0,
+          nullable: true,
+          description:
+            "Override of the plan's concurrent-sandbox cap. Null clears it, " <>
+              "handing the cap back to the plan."
+        }
       },
       required: [:limit]
     })
@@ -1584,6 +1601,29 @@ defmodule FountainWeb.Schemas do
               description: "Access continues until current_period_end."
             },
             has_stripe_customer: %Schema{type: :boolean},
+            plan: %Schema{
+              type: :object,
+              description: "The account's plan and what it entitles them to.",
+              properties: %{
+                slug: %Schema{type: :string, enum: Fountain.Plans.slugs()},
+                name: %Schema{type: :string},
+                monthly_cents: %Schema{type: :integer},
+                concurrent_sandboxes: %Schema{
+                  type: :integer,
+                  description: "The plan's concurrency cap."
+                },
+                sandbox_limit: %Schema{
+                  type: :integer,
+                  description:
+                    "The cap actually enforced for this account. Differs from " <>
+                      "concurrent_sandboxes when an operator has set an override."
+                },
+                team_contacts: %Schema{
+                  type: :integer,
+                  description: "Most teammate contacts this account may hold at once."
+                }
+              }
+            },
             period: %Schema{
               type: :object,
               description: "The window the usage numbers cover (current calendar month).",

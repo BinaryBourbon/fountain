@@ -21,7 +21,7 @@
     </a>
   </div>
   <p :if={monthly_price()} class="text-xs text-[var(--color-text-muted)]">
-    Free 14-day trial — then {monthly_price()}/mo per user. Cancel anytime.
+    Free 14-day trial — then from {monthly_price()}/mo. Cancel anytime.
   </p>
   <p :if={!monthly_price()} class="text-xs text-[var(--color-text-muted)]">
     Free 14-day trial. Cancel anytime.
@@ -177,10 +177,59 @@
   >
     Get started free
   </a>
-  <p :if={monthly_price()} class="mt-4 text-sm text-[var(--color-text-muted)]">
-    {monthly_price()}/mo per user after trial. Cancel anytime. No lock-in.
-  </p>
-  <p :if={!monthly_price()} class="mt-4 text-sm text-[var(--color-text-muted)]">
+  <p class="mt-4 text-sm text-[var(--color-text-muted)]">
     Cancel anytime. No lock-in.
   </p>
+</section>
+
+<%!-- Pricing. Rendered only for the plans this deployment can actually sell,
+      so a self-hosted instance (and a hosted one mid-rollout) shows nothing
+      rather than a tier whose button leads to a Stripe error. --%>
+<section
+  :if={pricing_plans() != []}
+  id="pricing"
+  class="bg-[var(--color-bg-1)] border-t border-[var(--color-border)]"
+>
+  <div class="max-w-5xl mx-auto px-6 py-20">
+    <h2 class="text-2xl font-semibold text-center text-[var(--color-text-primary)]">
+      Pay for how many agents run at once
+    </h2>
+    <p class="mt-3 mb-12 text-center text-[var(--color-text-secondary)] max-w-xl mx-auto">
+      Every plan has the whole product in it. What changes is how many sandboxes
+      you can have running side by side. Bring your own model keys — Fountain
+      never bills you for inference.
+    </p>
+
+    <div class="grid gap-6 md:grid-cols-3">
+      <div
+        :for={plan <- pricing_plans()}
+        class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-0)] p-6 flex flex-col"
+      >
+        <h3 class="text-lg font-semibold text-[var(--color-text-primary)]">{plan.name}</h3>
+        <p class="mt-1 text-sm text-[var(--color-text-muted)] min-h-[2.5rem]">{plan.tagline}</p>
+        <p class="mt-4">
+          <span class="text-3xl font-semibold text-[var(--color-text-primary)]">
+            {plan_price(plan)}
+          </span>
+          <span class="text-sm text-[var(--color-text-muted)]">/mo</span>
+        </p>
+        <p class="mt-3 text-sm font-medium text-[var(--color-text-primary)]">
+          {plan_capacity(plan)}
+        </p>
+        <p class="mt-1 text-xs text-[var(--color-text-muted)]">
+          concurrent sandboxes. Queue as much work as you like behind them.
+        </p>
+        <a
+          href={~p"/auth/register"}
+          class="mt-6 inline-flex items-center justify-center px-4 py-2 rounded-lg border border-[var(--color-border)] text-[var(--color-text-primary)] text-sm font-medium hover:bg-[var(--color-bg-2)] transition-colors"
+        >
+          Start free trial
+        </a>
+      </div>
+    </div>
+
+    <p class="mt-8 text-center text-xs text-[var(--color-text-muted)]">
+      14 days free on any plan, no card. Change plan or cancel at any time.
+    </p>
+  </div>
 </section>

@@ -26,8 +26,11 @@ or in the API.
 
 Set `BILLING_ENABLED=true`, then configure Stripe. The
 [Stripe integration guide](../../integrations/stripe.md) covers
-`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_ID` and the
-provider side.
+`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` and the provider side.
+
+Then choose what you sell. [Launch plans and prices](plans-and-prices.md)
+covers the three tiers and the price variable for each one. It also covers the
+verifier that finds a price which disagrees with the catalog.
 
 ## Start the clocks on the accounts you already have
 
@@ -53,6 +56,7 @@ gated action. An account that cannot is one the backfill missed.
 ## Related
 
 - [Stripe integration guide](../../integrations/stripe.md).
+- [Launch plans and prices](plans-and-prices.md).
 - [See what sandboxes cost](sandbox-spend.md), for what each account runs and
   which provider you pay for it.
 - [Run a release task](run-a-release-task.md).
