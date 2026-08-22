@@ -1,136 +1,150 @@
-# Adding a sandbox provider
+# Add a sandbox provider
 
-Fountain runs conversations on pluggable sandbox backends behind the
-`Fountain.Sandbox` behaviour (Sprites, E2B, Daytona and the self-hosted
-runner today). This page is the practical checklist for adding another. The *why* behind the seam's
-shape lives in [ADR 0018](https://github.com/BinaryBourbon/fountain/blob/main/decisions/0018-sandbox-provider-abstraction.md);
-the contract itself is the `Fountain.Sandbox` moduledoc; the executable form
-of the contract is `Fountain.SandboxConformanceCase`. When those disagree
-with this page, they win. For the same territory from the platform's side of
-the table, covering what we would ask a vendor to support natively and what
-each gap costs us, see [what we need from a
-platform](platform-requirements.md).
+Fountain runs a conversation on a pluggable sandbox backend, behind the
+`Fountain.Sandbox` behaviour. Today those are Sprites, E2B, Daytona and the
+self-hosted runner. This page is the practical checklist for another one.
 
-## Before writing any code: answer six questions
+Three places hold the contract itself.
+[ADR 0018](https://github.com/BinaryBourbon/fountain/blob/main/decisions/0018-sandbox-provider-abstraction.md)
+holds the *why* behind the shape of the seam. The `Fountain.Sandbox` moduledoc
+is the contract. `Fountain.SandboxConformanceCase` is the executable form of
+it. When one of those disagrees with this page, it wins.
 
-Every hard bug in the E2B and Daytona adapters traced back to one of these.
-Answer them against the provider's real API. Run the calls, don't trust the
-docs. (Both existing adapters shipped with research that was verified against
-official specs and *still* wrong on five counts once measured live.)
+For the same territory from the platform's side of the table, read
+[what we need from a platform](platform-requirements.md). It covers what we
+would ask a vendor to support natively, and what each gap costs us.
 
-1. **Identity.** Can you create a sandbox with a name you choose, and fetch
-   it by that name? Daytona: yes. E2B: no, and the adapter emulates names via
-   metadata filters and adopt-on-list. Fountain always minted the name
-   (`fountain-<prefix>-<hex>`); your adapter must make create idempotent
-   (re-creating an existing name adopts it) and `get` must distinguish
-   `{:error, :not_found}` from transient failures, because that distinction is what
-   protects parked disks from being destroyed on a flaky network call.
-2. **Suspend.** Is there a park state that preserves the *disk* at reduced
-   cost, and a resume that returns the same disk? Agent memory lives on the
-   sandbox filesystem, because resume-with-a-fresh-disk is data loss rather than a
-   degradation. If the provider can't do this, don't fake it: omit the
-   `:suspend` capability and `Lifecycle.idle_action/1` will destroy on idle
-   instead (honest amnesia beats silent amnesia).
-3. **Streaming.** How do you get stdout/stderr of a long-running process,
-   live, and, critically, can a *reconnecting* client replay output from
-   byte zero? The attach contract requires replay-from-start. E2B's daemon
-   can't replay (journaling `tee` shim + tail replayer); Daytona's follow
-   websocket turned out to be unusable live (HTTP journal poller instead).
-   Expect to build something here; measure the vendor's streaming endpoint
-   with raw bytes before trusting it.
-4. **stdin.** Can you write to a live process's stdin repeatedly, and send a
-   real EOF? ACP turns hold stdin open for the whole turn and write NDJSON
-   into it. Daytona's input endpoint EOF'd the pipe after every write, so the
-   adapter routes stdin through a tail-fed file instead. Also: `write_stdin`
-   must be *total*, so writing to an exited command returns
-   `{:error, :command_exited}`, never crashes the caller.
-5. **Exit codes.** Does the provider report a spawned command's exit code
-   reliably? Daytona doesn't, so the spawn shim writes an exit-sentinel file.
-   Never fabricate exit 0; a stream closing without a verdict is only exit 0
-   when the contract's close-without-exit rule applies.
-6. **Egress.** Is there a deny-by-default network mode with a runtime-
-   updatable domain allowlist? If yes, advertise `:network_policy` and
-   remember `allow: []` means *deny all*, never a no-op. If it's tier-gated
-   (Daytona), document the failure mode: `limited` network environments
-   fail to provision on that provider.
+## Before you write any code, answer six questions
 
-Rejected-provider notes worth keeping: Modal was passed over in the original
-campaign because its control plane is gRPC-only (everything else here is
-plain HTTP + Req); revisit only if that changed or you're prepared to take a
+Each hard defect in the E2B and Daytona adapters came from one of these.
+Answer them against the provider's real API. Run the calls, and do not trust
+the docs.
+
+Both adapters shipped with research that somebody verified against the
+official specs. That research was *still* wrong on five counts once we
+measured it live.
+
+1. **Identity.** Can you create a sandbox with a name you choose, then fetch
+   it by that name? Daytona can. E2B cannot, so the adapter emulates a name
+   with metadata filters and adopt-on-list. Fountain always mints the name,
+   as `fountain-<prefix>-<hex>`. Your adapter must make create idempotent, so
+   that a create against a name that exists adopts it. Your `get` must tell
+   `{:error, :not_found}` apart from a transient failure, because that is
+   what protects a parked disk from a teardown on one flaky network call.
+2. **Suspend.** Is there a park state that keeps the *disk* at a lower cost,
+   and a resume that returns the same disk? The agent's memory lives on the
+   sandbox filesystem, so a resume with a fresh disk loses data. It is not a
+   degradation. If the provider cannot do this, do not fake it. Omit the
+   `:suspend` capability, and `Lifecycle.idle_action/1` destroys on idle
+   instead. Honest amnesia beats amnesia that says nothing.
+3. **Streams.** How do you get the stdout and stderr of a long process, live?
+   And, above all, can a client that *reconnects* replay the output from byte
+   zero? The attach contract demands replay from the start. E2B's daemon
+   cannot replay, so the adapter uses a `tee` shim that journals, and a tail
+   replayer. Daytona's follow websocket turned out to be unusable live, so
+   the adapter polls the HTTP journal. Expect to build something here.
+   Measure the vendor's stream endpoint with raw bytes before you trust it.
+4. **stdin.** Can you write to a live process's stdin again and again, and
+   send a real EOF? An ACP turn holds stdin open for the whole turn and
+   writes NDJSON into it. Daytona's input endpoint sent EOF to the pipe after
+   each write, so the adapter routes stdin through a file that `tail` feeds.
+   Also, `write_stdin` must be *total*. A write to a command that exited
+   returns `{:error, :command_exited}`, and never crashes the caller.
+5. **Exit codes.** Does the provider report the exit code of a spawned
+   command reliably? Daytona does not, so the spawn shim writes an exit
+   sentinel file. Never invent an exit 0. A stream that closes with no
+   verdict is exit 0 only when the contract's close-without-exit rule
+   applies.
+6. **Egress.** Is there a deny-by-default network mode with a domain
+   allowlist you can update at runtime? If so, advertise `:network_policy`,
+   and remember that `allow: []` means *deny all*, and never a no-op. If the
+   tier gates it, as Daytona's does, document the failure. A `limited`
+   network environment then fails to provision on that provider.
+
+One note on a provider we rejected. The original campaign passed over Modal,
+because its control plane is gRPC alone, and everything else here is plain
+HTTP with Req. Revisit that only if it changed, or if you are ready to take a
 gRPC dependency.
 
 ## The code checklist
 
-Registration centers on `apps/fountain/lib/fountain/sandbox.ex`, and the
-changeset validations and the schema-enum guardrail derive from
-`known_providers/0`, but three lists are still literals and the guardrail
-is what catches drift: the `sandbox_provider` enums in
-`fountain_web/schemas.ex` (Agent, AgentCreate, AgentUpdate) and the
-`SANDBOX_PROVIDER` boot check in `config/runtime.exs`. Budget those edits.
+Registration centers on `apps/fountain/lib/fountain/sandbox.ex`. The changeset
+validations and the schema-enum guardrail derive from `known_providers/0`.
+Three lists are still literals, and the guardrail is what catches the drift.
+Those are the `sandbox_provider` enums in `fountain_web/schemas.ex`, on Agent,
+AgentCreate and AgentUpdate, and the `SANDBOX_PROVIDER` boot check in
+`config/runtime.exs`. Budget for those edits.
 
-1. **Adapter modules** under `apps/fountain/lib/fountain/sandbox/<provider>/`:
-   the adapter (`@behaviour Fountain.Sandbox`), an API client, and whatever
-   streaming/command-server processes the provider needs. Keep provider
-   secrets out of `Handle.private` inspection (the struct already excludes
-   `private` from Inspect, so don't defeat that). Normalize every error into
-   the taxonomy in the behaviour moduledoc (`:not_found`, `{:unavailable,_}`,
-   `{:denied,_}`, `{:rate_limited,_}`, …) in an `errors.ex`, because `Fountain.Retry`
-   keys retryability off these shapes.
-2. **Register it**: add the atom to `known_providers/0`, the module to
-   `@default_adapters`, and a `credential_present?/1` clause. "Enabled" is
-   exactly "adapter registered AND credential present", and there is no other
-   switch, and the agent-form provider select appears on its own once a
-   second provider is enabled.
-3. **Config**: `config/runtime.exs` env vars (`<PROVIDER>_API_KEY` required,
-   plus base URL / image knobs, blank-equals-unset), rows in
-   `docs/configuration.md`, `.env.example`, `.env.compose.example`, and
-   `docker-compose.yml`.
-4. **Conformance**: add a `use Fountain.SandboxConformanceCase, adapter: ...`
-   test with Req.Test stubs for the provider API (or, for a provider whose
-   sandbox names carry routing, `name: {Mod, :fun, args}` to mint them, because the
-   runner adapter does this). This is the gate that
-   catches contract drift (exec-never-raises, write_stdin totality, replay-
-   from-start, one-terminal-frame, `allow: []` is not a no-op, …).
-5. **Image**: a Dockerfile under `images/<provider>/` that bakes the `sprite`
-   user (passwordless sudo, `/home/sprite`), node/npm/bun/git, the agent
-   CLIs, **and a sprite-writable npm global prefix**
-   (`npm config set prefix /home/sprite/.npm-global`), because without that
-   provisioning's `npm install -g --silent` fails as a silent exit 243. If
-   commands run as a provider-selected user, make sure it's `sprite` (cf.
-   `E2B_USER`).
-6. **Docs**: an `docs/integrations/<provider>.md` page + `mkdocs.yml` nav
-   entry, modeled on `e2b.md` / `daytona.md`.
+1. **Adapter modules**, under
+   `apps/fountain/lib/fountain/sandbox/<provider>/`. You need the adapter,
+   with `@behaviour Fountain.Sandbox`, an API client, and whatever stream or
+   command-server processes the provider needs. Keep the provider's secrets
+   out of an inspection of `Handle.private`. The struct already excludes
+   `private` from Inspect, so do not defeat that. Normalize each error into
+   the taxonomy in the behaviour moduledoc, in an `errors.ex`. That is
+   `:not_found`, `{:unavailable,_}`, `{:denied,_}`, `{:rate_limited,_}` and
+   the rest, because `Fountain.Retry` keys retryability off those shapes.
+2. **Register it.** Add the atom to `known_providers/0`, the module to
+   `@default_adapters`, and a `credential_present?/1` clause. "On" is exactly
+   "you registered the adapter AND the credential is there". There is no
+   other switch. The provider select in the agent form appears on its own,
+   once a second provider is on.
+3. **Config.** Add the env vars to `config/runtime.exs`. You need
+   `<PROVIDER>_API_KEY`, and a base URL and image knobs, where blank equals
+   unset. Then add rows to `docs/configuration.md`, `.env.example`,
+   `.env.compose.example` and `docker-compose.yml`.
+4. **Conformance.** Add a test with
+   `use Fountain.SandboxConformanceCase, adapter: ...` and Req.Test stubs for
+   the provider API. Where a sandbox name has to carry a route, mint the
+   names with `name: {Mod, :fun, args}`, the way the runner adapter does.
+   This is the gate that catches contract drift. It covers exec-never-raises,
+   `write_stdin` totality, replay from the start, one terminal frame, and
+   `allow: []` as more than a no-op.
+5. **Image.** Write a Dockerfile under `images/<provider>/`. It bakes the
+   `sprite` user, with passwordless sudo and `/home/sprite`. It bakes node,
+   npm, bun and git, and the agent CLIs. It also bakes **an npm global prefix
+   that `sprite` can write to**, with
+   `npm config set prefix /home/sprite/.npm-global`. Without that, the
+   `npm install -g --silent` at provision fails as a silent exit 243. If
+   commands run as a user the provider selects, make sure that user is
+   `sprite`. Compare `E2B_USER`.
+6. **Docs.** Add a `docs/integrations/<provider>.md` page and a `mkdocs.yml`
+   nav entry, modelled on `e2b.md` and `daytona.md`.
 
-## Two traps that both existing adapters hit
+## Two traps that both adapters hit
 
 - **Spawn must not return before the provider acks the process.** The ACP
-  peer writes `initialize` within milliseconds of spawn returning; any
+  peer writes `initialize` within milliseconds of the return from spawn. An
   adapter that returns from `spawn` while the daemon-side registration is
-  still in flight will fail prod turns with what looks like "process
-  exited" (E2B lost this race in ~300ms, PR #693). Block on the daemon's
-  start acknowledgment.
-- **Local success proves less than you think.** The E2B race passed every
-  local run and both full local cycles on latency luck, and Daytona's
-  websocket looked fine in unit tests. The verification ladder below exists
-  because each rung caught something the previous one couldn't.
+  still in flight fails prod turns, and the failure looks like "process
+  exited". E2B lost that race in about 300ms, and PR #693 fixed it. Block on
+  the daemon's start acknowledgment.
+- **A local success proves less than you think.** The E2B race passed each
+  local run and both full local cycles, on latency luck. Daytona's websocket
+  looked fine in unit tests. The verification ladder below exists because
+  each rung caught something the rung before it could not.
 
-## Verification ladder
+## The verification ladder
 
-Run them in order. Each rung has caught real bugs the previous rung passed.
+Run these in order. Each rung has caught a real defect that the rung before
+it passed.
 
 1. `mix test`, with the conformance suite green against your Req.Test stubs.
-2. **Live adapter smoke** against a real account: every behaviour callback
-   exercised, including suspend/resume with a file surviving the round trip,
-   attach replay, and egress deny/allow.
-3. **Full conversation cycle** locally (`start_conversation` → real model
-   turn → idle park → provider-side status check → wake → second turn →
-   terminate → provider-side gone), using the custom image.
-4. **Prod smoke** after merge+deploy: pin an agent to the provider via
-   `POST /api/agents` (`sandbox_provider`), run one conversation through the
-   public API, poll **turn status** (not `turn_count`, because a failed turn still
-   counts), read the answer from `/events`, terminate, and confirm the
-   provider account is clean.
+2. **A live adapter smoke** against a real account. Exercise each behaviour
+   callback. That includes suspend and resume with a file that survives the
+   round trip, an attach replay, and an egress deny and allow.
+3. **A full conversation cycle** locally, on the custom image.
+   `start_conversation`, a real model turn, an idle park, a status check on
+   the provider side, a wake, a second turn, a terminate. The sandbox is then
+   gone on the provider side.
+4. **A prod smoke** after the merge and the deploy. Pin an agent to the
+   provider with `sandbox_provider` on `POST /api/agents`. Run one
+   conversation through the public API. Poll the **turn status**, and not
+   `turn_count`, because a turn that failed still counts. Read the answer
+   from `/events`, terminate, then confirm that the provider account is
+   clean.
 
-Then: the provider's key goes to the Infisical prod project (synced into
-`fountain-secrets`, auto-reloads the deployment), and the image needs a
-rebuild story (#692 tracks automating that).
+Two things remain after that. The provider's key goes to the Infisical prod
+project, which syncs it into `fountain-secrets` and reloads the deployment on
+its own. The image needs a rebuild story, and #692 tracks how to automate
+that.
