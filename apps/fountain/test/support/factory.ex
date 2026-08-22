@@ -160,7 +160,7 @@ defmodule Fountain.Factory do
   end
 
   defp default_model_for("codex"), do: "openai/gpt-5-codex"
-  defp default_model_for("gemini"), do: "google/gemini-2.5-pro"
+  defp default_model_for("gemini"), do: "google/gemini-3.1-pro-preview"
   defp default_model_for(_runtime), do: "anthropic/claude-sonnet-4-6"
 
   def insert_agent(overrides \\ %{}) do

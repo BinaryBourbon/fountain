@@ -233,7 +233,7 @@ defmodule Fountain.Conversations.ConversationServerTest do
         %Fountain.Agents.Agent{}
         |> Fountain.Agents.Agent.changeset(%{
           "name" => "legacy-cross-tenant",
-          "model" => "google/gemini-2.5-pro",
+          "model" => "google/gemini-3.1-pro-preview",
           "runtime" => "gemini",
           "user_id" => attacker.id,
           "environment_id" => victim_env.id

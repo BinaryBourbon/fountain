@@ -141,7 +141,7 @@ defmodule FountainWeb.AgentsLive.Form do
   # rejects a mismatched prefix (#553). Track the selected runtime so the hint
   # can't lead someone into that error.
   defp model_placeholder("codex"), do: "openai/gpt-5-codex"
-  defp model_placeholder("gemini"), do: "google/gemini-2.5-pro"
+  defp model_placeholder("gemini"), do: "google/gemini-3.1-pro-preview"
   defp model_placeholder(_runtime), do: "anthropic/claude-sonnet-4-6"
 
   # A model id off the curated list is legitimate — new models ship between

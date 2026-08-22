@@ -895,7 +895,7 @@ defmodule Fountain.Runtimes.ACP.PeerTest do
     test "says so in the transcript when the runtime has no model option", ctx do
       # Silently running someone else's model is the failure mode this whole
       # campaign keeps turning up. Not fatal, but not invisible either.
-      pid = start_peer(ctx, model: "gemini-2.5-pro")
+      pid = start_peer(ctx, model: "gemini-3.1-pro-preview")
       %{"id" => init_id} = next_write()
       send_response(pid, init_id, %{"agentCapabilities" => caps()})
       %{"id" => new_id} = next_write()
@@ -903,7 +903,7 @@ defmodule Fountain.Runtimes.ACP.PeerTest do
 
       assert_receive {:acp, _ref, {:lines, "stderr", msg}}
       assert msg =~ "does not expose model selection"
-      assert msg =~ "gemini-2.5-pro"
+      assert msg =~ "gemini-3.1-pro-preview"
 
       assert %{"method" => "session/prompt"} = next_write()
     end

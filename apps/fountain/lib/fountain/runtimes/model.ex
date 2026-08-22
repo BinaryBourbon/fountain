@@ -10,7 +10,7 @@ defmodule Fountain.Runtimes.Model do
 
       claude --model claude-sonnet-4-6
       codex  --model gpt-5-codex        # also spelled -m
-      gemini --model gemini-2.5-pro     # also spelled -m
+      gemini --model gemini-3.1-pro-preview   # also spelled -m
 
   `Fountain.Agents.Agent` rejects a model whose prefix doesn't match its
   runtime at write time (via `provider_for_runtime/1`), so by the time a
@@ -51,7 +51,19 @@ defmodule Fountain.Runtimes.Model do
       claude-haiku-4-5
     ),
     "openai" => ~w(gpt-5-codex gpt-5),
-    "google" => ~w(gemini-2.5-pro gemini-2.5-flash)
+    # Both 2.5 entries were removed on 2026-08-22: Google retired
+    # `gemini-2.5-pro` *and* `gemini-2.5-flash` for new API keys, so every
+    # model Fountain suggested for google answered
+    # "no longer available to new users" on a key issued after the cutoff.
+    # Verified against generativelanguage.googleapis.com, not inferred from a
+    # release note. `gemini-3.1-pro-preview` is the replacement Google's own
+    # error names; the flash tier is listed newest-first beside it.
+    "google" => ~w(
+      gemini-3.1-pro-preview
+      gemini-3.7-flash
+      gemini-3.6-flash
+      gemini-3.5-flash
+    )
   }
 
   # Stable order for the UI: the single-provider runtimes in the order they

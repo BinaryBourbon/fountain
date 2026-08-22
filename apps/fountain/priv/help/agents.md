@@ -3,7 +3,7 @@
 An **Agent** is a named configuration for a single coding-agent CLI. It bundles together:
 
 - a **runtime** (`claude` / `codex` / `gemini` / `opencode`) — which binary runs in the sprite
-- a **model** (`anthropic/claude-sonnet-4-6`, `openai/gpt-5.1`, `google/gemini-2.5-pro`, etc.)
+- a **model** (`anthropic/claude-sonnet-4-6`, `openai/gpt-5.1`, `google/gemini-3.1-pro-preview`, etc.)
 - an optional **system prompt** (`system`)
 - an optional **environment** reference (`environment_id` or `environment` by name) — the sprite shape to provision
 - optional **skills** — names of bundled skills to mount into the sprite
@@ -74,7 +74,7 @@ Use `$${VAR}` only when the MCP server (or some downstream process the runtime s
 | --- | --- | --- | --- |
 | claude | `claude` | `anthropic/claude-sonnet-4-6` | `CLAUDE_CODE_OAUTH_TOKEN` (preferred) or `ANTHROPIC_API_KEY` |
 | codex | `codex` | `openai/gpt-5.1` | `OPENAI_API_KEY` (consumed via `codex login --with-api-key` at provision time) |
-| gemini | `gemini` | `google/gemini-2.5-pro` | `GEMINI_API_KEY` |
+| gemini | `gemini` | `google/gemini-3.1-pro-preview` | `GEMINI_API_KEY` |
 | opencode | `opencode` | `provider/model` (anthropic / openai / google) | per provider |
 
 Each has its own quirks — codex needs a one-shot login, opencode auto-installs from `bun install -g`, gemini needs `--allowed-mcp-server-names` for MCP, etc. The runtime modules in `apps/fountain/lib/fountain/runtimes/*.ex` handle these transparently.
