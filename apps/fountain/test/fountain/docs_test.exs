@@ -203,6 +203,44 @@ defmodule Fountain.DocsTest do
       end
     end
 
+    test "a section inside a section raises, naming the one-level limit" do
+      yaml = """
+      nav:
+        - Section:
+            - Subsection:
+                - Child: a/b.md
+      """
+
+      assert_raise ArgumentError, ~r/nav sections are one level deep/, fn ->
+        Compiler.parse_nav(yaml)
+      end
+    end
+
+    test "a page indented past its siblings raises rather than being promoted" do
+      yaml = """
+      nav:
+        - Section:
+            - Child: a/b.md
+                - Grandchild: a/c.md
+      """
+
+      assert_raise ArgumentError, ~r/nav sections are one level deep/, fn ->
+        Compiler.parse_nav(yaml)
+      end
+    end
+
+    test "a section's children may sit at any one indent, as long as it is one" do
+      yaml = """
+      nav:
+        - Section:
+          - First: a/b.md
+          - Second: a/c.md
+      """
+
+      assert Compiler.parse_nav(yaml) ==
+               [{"Section", [{"First", "a/b.md"}, {"Second", "a/c.md"}]}]
+    end
+
     test "a file with no nav: block raises" do
       assert_raise ArgumentError, ~r/no `nav:` block/, fn ->
         Compiler.parse_nav("site_name: Fountain\n")

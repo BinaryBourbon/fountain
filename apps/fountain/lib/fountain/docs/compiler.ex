@@ -31,6 +31,12 @@ defmodule Fountain.Docs.Compiler do
   the bug this parser exists to make impossible, so being unable to parse the
   nav has to fail the compile, not shrink the site.
 
+  Two levels is the whole depth. MkDocs nests as deep as you like; the in-app
+  sidebar at `/docs` renders exactly a section and its pages, so a third tier
+  raises here with a message that says to flatten it. That includes a page
+  indented past its siblings, which would otherwise be quietly promoted into
+  its grandparent section — the one silent outcome this parser must not have.
+
   This replaced a hand-maintained copy of the nav in `Fountain.Docs`. Adding a
   page to `mkdocs.yml` is now the whole change.
   """
@@ -51,6 +57,9 @@ defmodule Fountain.Docs.Compiler do
     |> Enum.reject(&(String.trim(&1) == "" or String.starts_with?(String.trim(&1), "#")))
   end
 
+  # A section accumulates as `{title, reversed_children, child_indent}`; the
+  # indent is remembered so a deeper line is caught rather than promoted, and
+  # dropped again by `finish_nav/1`.
   defp nav_entry(line, acc) do
     case Regex.run(~r/^(\s+)- ([^:]+):\s*(\S+)?\s*$/, line) do
       # `  - Setup: setup.md` — a top-level page.
@@ -59,28 +68,57 @@ defmodule Fountain.Docs.Compiler do
 
       # `  - Sandbox providers:` — a section header; its children follow.
       [_, indent, title] when byte_size(indent) == 2 ->
-        [{title, []} | acc]
+        [{title, [], nil} | acc]
 
       # `      - Sprites: integrations/sprites.md` — a child of the section
       # currently being built.
       [_, indent, title, file] when byte_size(indent) > 2 ->
-        case acc do
-          [{section, children} | rest] when is_list(children) ->
-            [{section, [{title, file} | children]} | rest]
+        add_child(acc, byte_size(indent), title, file, line)
 
-          _ ->
-            raise ArgumentError, "indented nav entry with no section above it: #{inspect(line)}"
-        end
+      # `      - Sandbox providers:` — a section inside a section, which this
+      # parser has no shape for.
+      [_, indent, _title] when byte_size(indent) > 2 ->
+        raise ArgumentError, one_level_message("nested nav section", line)
 
       _ ->
         raise ArgumentError, "unparsed mkdocs.yml nav line: #{inspect(line)}"
     end
   end
 
+  defp add_child([{section, children, indent} | rest], indent, title, file, _line) do
+    [{section, [{title, file} | children], indent} | rest]
+  end
+
+  defp add_child([{section, children, nil} | rest], indent, title, file, _line) do
+    [{section, [{title, file} | children], indent} | rest]
+  end
+
+  defp add_child([{_section, _children, _sibling_indent} | _rest], _indent, _title, _file, line) do
+    raise ArgumentError, one_level_message("nav entry indented past its siblings", line)
+  end
+
+  defp add_child(_acc, _indent, _title, _file, line) do
+    raise ArgumentError, "indented nav entry with no section above it: #{inspect(line)}"
+  end
+
+  # The one thing a reader of either raise needs to know: the limit is ours,
+  # not MkDocs', and flattening is the fix. Without this they go looking for a
+  # typo in a line that is perfectly good YAML.
+  defp one_level_message(what, line) do
+    """
+    #{what}: #{inspect(line)}
+
+    mkdocs.yml nav sections are one level deep. MkDocs itself nests freely, but
+    Fountain.Docs embeds the nav for the in-app sidebar at /docs, which renders
+    exactly two levels. Flatten this into a sibling top-level section, or make
+    it headings on a hub page.
+    """
+  end
+
   defp finish_nav(acc) do
     acc
     |> Enum.map(fn
-      {section, children} when is_list(children) -> {section, Enum.reverse(children)}
+      {section, children, _child_indent} -> {section, Enum.reverse(children)}
       entry -> entry
     end)
     |> Enum.reverse()
