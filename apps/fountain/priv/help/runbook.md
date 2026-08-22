@@ -214,9 +214,26 @@ kubectl exec -n garage garage-0 -- /garage bucket info tempo
 kubectl logs -n tempo statefulset/tempo --tail=50
 ```
 
-**Error tracking.** Still none — no Sentry/GlitchTip. Exceptions reach the logs
-and the `phoenix_router_dispatch_exception_count` counter, but there is no
-grouping, no stack-trace history, and no per-release regression view.
+**Error tracking.** Sentry, wired in three places: `Sentry.LoggerHandler`
+(attached by `Fountain.Application`, rate-limited to 20 events a minute),
+`Sentry.PlugContext` on the endpoint for request context, and
+`in_app_otp_apps: [:fountain]` so the SDK knows which frames are ours. Events
+carry `release: FOUNTAIN_BUILD_SHA`, so a regression points at the deploy that
+introduced it, and `environment_name` from `SENTRY_ENVIRONMENT`.
+
+Nothing tenant-shaped rides along. `send_default_pii: false` keeps cookies,
+user IPs and bodies out by default, and `FountainWeb.SentryScrubber` replaces
+every string in a request body with a length tag (#402) — an allowlist of
+shape, because Sentry's own scrubber is a three-name denylist that the
+secret-write endpoints sailed straight through.
+
+`SENTRY_DSN` arrives in the Infisical-materialized Secret. An instance without
+one skips the handler entirely, and a *blank* one is deleted from the
+environment rather than passed through, because the SDK reads the variable
+itself and a blank value crashes the `:sentry` app at boot no matter what the
+config says (#497, #513). The package is API-compatible with GlitchTip, so
+re-pointing `SENTRY_DSN` is the whole migration if you ever want the tracker
+off this cluster.
 
 ## Email is not being delivered
 
