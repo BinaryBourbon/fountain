@@ -14,7 +14,7 @@ machine.
 
 | Behind the bubble | What it truly means |
 |---|---|
-| A computer. | A filesystem, a shell, a package manager, a network. |
+| A machine. | A filesystem, a shell, a package manager, a network. |
 | Credentials. | A GitHub token that works, and that sits in neither the prompt nor the transcript. |
 | Memory. | The second message costs a sentence, and not a re-explanation of the first. |
 | Isolation. | One bot's token and files, on a machine that is not the one that serves your app. |

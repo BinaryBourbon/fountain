@@ -1,8 +1,8 @@
 # Fountain
 
-Fountain runs a coding agent on a machine you do not own, and gives you a
-conversation with it. You send a prompt. You read the reply. There is no
-machine for you to operate.
+Fountain runs an agent on a cloud sandbox, and gives you a conversation with
+it. You send a prompt. You read the reply. Fountain operates the sandbox, and
+you do not.
 
 It is an API first. Your app reaches it over a protocol you already speak, or
 through the SDK. The person who uses your app need never learn that an agent
@@ -21,7 +21,7 @@ is there.
 
 ## The problem
 
-An agent is only useful with a computer behind it. That computer is the part
+An agent is only useful with a sandbox behind it. That sandbox is the part
 nobody set out to build.
 
 The agent needs a filesystem, a shell, a package manager and a network. It
@@ -29,9 +29,9 @@ needs real credentials, and those must never reach the prompt or the
 transcript. It needs to remember the last time, so the second message costs a
 sentence and not an explanation of the first.
 
-The computer also needs an owner. Something must start it, park it while
+The sandbox also needs an owner. Something must start it, park it while
 nobody speaks, and wake it when somebody does. One account must never see
-another's work. A machine that nobody stops costs money for as long as it
+another's work. A sandbox that nobody stops costs money for as long as it
 runs.
 
 You can build all of that. It is weeks of infrastructure, and it is not your
@@ -39,19 +39,19 @@ product.
 
 ## What Fountain does
 
-Fountain keeps the computer, and gives you the conversation.
+Fountain keeps the sandbox, and gives you the conversation.
 
-Send a prompt. A machine starts somewhere else, clones your repo, installs
-your packages, and runs the agent. It parks when the talk stops, and it costs
-little while parked. The next message wakes it, with the files where the agent
-left them.
+Send a prompt. A sandbox starts, with whatever packages, files and secrets you
+configured, and runs the agent. It parks when the talk stops, and it costs
+little while parked. The next message wakes it, and the agent's work is still
+there.
 
 Your secrets arrive at spawn as environment variables, so they never enter the
 prompt or the model's context. Fountain scrubs them out of the output it
 stores.
 
 Fountain is multi-tenant. Each account reaches its own agents and its own
-machines, because Fountain scopes each query to the caller. Your own users
+sandboxes, because Fountain scopes each query to the caller. Your own users
 therefore stay apart, and you write no code for it.
 
 Reach it the way you already work.
