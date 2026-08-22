@@ -59,6 +59,13 @@ message.
 | `SANDBOX_MAX_LIFETIME_HOURS` | `24` | — | The absolute ceiling on a sandbox's age, whatever the activity. The same `0` rule and the same boot refusal apply. |
 | `LOG_OUTPUT_BUDGET_MB` | `50` | — | The durable log volume for one conversation. Once a conversation has persisted this much sandbox output, Fountain writes one truncation marker and discards the rest. Retention bounds age, and this bounds rate. The same `0` rule and the same boot refusal apply. |
 
+## Webhooks
+
+| Variable | Default | Required | Effect |
+|---|---|---|---|
+| `WEBHOOKS_ENABLED` | `true` | — | A `false` stops every outbound [webhook](reference/webhooks.md). An endpoint stays saved and gets nothing. Use it on a deployment with no outbound egress. |
+| `WEBHOOK_ALLOW_HTTP` | `false` | — | A `true` lets an endpoint URL use plain `http://`, for a receiver on your own network. It relaxes the scheme rule alone. Fountain refuses a loopback, link local or RFC1918 target either way, at every request. |
+
 ## Registration and accounts
 
 | Variable | Default | Required | Effect |

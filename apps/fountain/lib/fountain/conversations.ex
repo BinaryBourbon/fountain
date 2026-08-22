@@ -1151,6 +1151,13 @@ defmodule Fountain.Conversations do
 
     Phoenix.PubSub.broadcast(Fountain.PubSub, "conv:#{conv_id}", {:log_event, event})
 
+    # Webhook dispatch hangs off the same call for the same reason the stage
+    # counter does (#700): a new lifecycle outcome cannot be added without
+    # subscribers seeing it. Best-effort by construction — `dispatch_stage/1`
+    # rescues everything, because a webhook that is not sent is a degraded
+    # integration and a stage transition that raises is a stuck agent.
+    Fountain.Webhooks.dispatch_stage(event)
+
     event
   end
 

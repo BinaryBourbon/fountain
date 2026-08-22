@@ -8,7 +8,10 @@ config :fountain, Oban,
   # exports is its own queue so a user-requested data export is never stuck
   # behind a maintenance sweep; concurrency 1 because each job reads every row
   # an account owns and two at once doubles that memory.
-  queues: [maintenance: 1, billing: 5, exports: 1, mailer: 5, schedules: 5],
+  # webhooks is its own queue so a tenant's slow receiver never sits in front
+  # of a maintenance sweep or an email, and so its concurrency can be tuned
+  # against outbound HTTP rather than against database work (#700).
+  queues: [maintenance: 1, billing: 5, exports: 1, mailer: 5, schedules: 5, webhooks: 10],
   plugins: [
     # Oban's own job-table pruning: completed jobs older than 7 days.
     {Oban.Plugins.Pruner, max_age: 7 * 24 * 60 * 60},

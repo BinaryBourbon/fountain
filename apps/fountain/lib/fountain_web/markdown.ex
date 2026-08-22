@@ -48,7 +48,12 @@ defmodule FountainWeb.Markdown do
   # `markdown_test.exs` fails if the docs corpus grows a fence in a language
   # this list does not name — a highlighter that quietly degrades is worse than
   # one that is off, because nobody notices.
-  @languages ~w(bash typescript json json5 yaml elixir ini)
+  #
+  # `python` and `javascript` joined the list with the webhooks reference
+  # (#700), which carries a signature verifier in each. A receiver author
+  # reading an unhighlighted wall of HMAC code is the case this guard exists
+  # for.
+  @languages ~w(bash typescript javascript python json json5 yaml elixir ini)
 
   @doc """
   The languages whose parsers are baked into the image — see `@languages`.

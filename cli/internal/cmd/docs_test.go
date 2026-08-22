@@ -43,7 +43,7 @@ func TestNoDocumentedCommandIsInvented(t *testing.T) {
 		real["fountain "+strings.Join(path, " ")] = true
 	})
 	// Group commands are legitimate to mention on their own.
-	for _, g := range []string{"agent", "auth", "conv", "env", "keys", "vault", "buzz", "buzz agents"} {
+	for _, g := range []string{"agent", "auth", "conv", "env", "keys", "vault", "buzz", "buzz agents", "webhooks"} {
 		real["fountain "+g] = true
 	}
 

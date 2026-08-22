@@ -97,6 +97,7 @@ defmodule FountainWeb.Layouts do
                 current={@current_path}
               />
               <.nav_link href={~p"/account/runners"} label="Runners" current={@current_path} />
+              <.nav_link href={~p"/account/webhooks"} label="Webhooks" current={@current_path} />
               <.nav_link
                 :if={Fountain.Billing.enabled?()}
                 href={~p"/account/billing"}

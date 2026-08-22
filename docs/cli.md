@@ -280,6 +280,33 @@ fountain keys create <name>     # prints the key once; it is not recoverable
 fountain keys revoke <id>
 ```
 
+## Webhooks
+
+Endpoints that Fountain sends conversation lifecycle events to. The
+[webhooks reference](reference/webhooks.md) holds the full event catalogue and
+a worked signature verifier.
+
+```bash
+fountain webhooks list [--json]
+fountain webhooks create <url> [--description <text>] [--event <type>]...
+fountain webhooks show <id>
+fountain webhooks delete <id>
+fountain webhooks test <id>
+fountain webhooks rotate-secret <id>
+fountain webhooks pause <id>
+fountain webhooks resume <id>
+fountain webhooks deliveries <id> [--limit <n>] [--json]
+fountain webhooks redeliver <id> <delivery-id>
+```
+
+`create` and `rotate-secret` print the secret once. Fountain cannot show it
+again, and can only replace it. Repeat `--event` for each type. An endpoint
+with no `--event` gets `conversation.turn.done`,
+`conversation.turn.failed` and `conversation.provision.failed`.
+
+`deliveries` turns a broken integration into a status code and a response
+body, rather than a support thread.
+
 ## Output
 
 A list command accepts `--json`. There is no `-o` flag, and there is no YAML

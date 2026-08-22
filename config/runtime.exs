@@ -474,6 +474,21 @@ config :fountain,
   sandbox_idle_timeout_minutes: parse_bound.("SANDBOX_IDLE_TIMEOUT_MINUTES", "60"),
   sandbox_max_lifetime_hours: parse_bound.("SANDBOX_MAX_LIFETIME_HOURS", "24")
 
+# Webhooks (#700). On by default; a deployment with no outbound HTTP egress
+# can switch dispatch off entirely. WEBHOOK_ALLOW_HTTP relaxes the https-only
+# rule on endpoint URLs, which is for a self-hosted instance calling a
+# receiver on its own network. It does NOT relax the SSRF address checks —
+# loopback, link-local and RFC1918 targets stay refused either way.
+#
+# Skipped in :test, like the runner switch above: config/test.exs pins both
+# so the suite exercises a known state, and an unguarded override here would
+# silently replace it with whatever the developer's shell happens to say.
+if config_env() != :test do
+  config :fountain,
+    webhooks_enabled: System.get_env("WEBHOOKS_ENABLED", "true") == "true",
+    webhook_allow_http: System.get_env("WEBHOOK_ALLOW_HTTP", "false") == "true"
+end
+
 # Durable log volume per conversation (#331). Retention bounds the age of
 # log_events rows; this bounds the rate — without it a sandbox printing
 # garbage could write tens of GB into the same Postgres volume the app

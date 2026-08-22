@@ -18,6 +18,27 @@ upgrade, is in
 
 ### Added
 
+- **Webhooks** (#700, ADR 0024). Until now the only way to learn that
+  something happened to a conversation was to hold an HTTP connection open,
+  which is a daemon every integrator had to write and a thing a GitHub Action,
+  a Lambda or a cron script cannot do at all. Fountain now POSTs conversation
+  lifecycle transitions to a URL you own, signed with an HMAC secret, retried
+  for about a day, with every attempt visible and redeliverable from
+  `/account/webhooks`, `/api/webhooks` and `fountain webhooks`.
+
+  Dispatch hangs off `publish_stage/4`, the same chokepoint the Prometheus
+  stage counter is built on, so a new lifecycle outcome cannot be added
+  without subscribers seeing it. A test reads the call sites out of the source
+  to keep that true. Conversation output stays on SSE: a chatty turn writes
+  thousands of chunks and none of them becomes an HTTP request.
+
+  The payload carries ids, a stage and a duration, and never conversation
+  content, on the same rule the audit trail runs on. The URL is checked for
+  shape when you save it, resolved and checked again before every request, and
+  then connected to by the address that was checked, with your hostname in the
+  `Host` header and TLS SNI. Redirects are never followed. See
+  [Webhooks](https://binarybourbon.github.io/fountain/reference/webhooks/).
+
 - **What we need from a sandbox platform** (`docs/integrations/platform-requirements.md`):
   the ten things Fountain had to build itself because no backend promised them,
   each with the workaround it costs us and an acceptance test a platform team can
