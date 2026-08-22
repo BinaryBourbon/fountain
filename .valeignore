@@ -26,14 +26,6 @@ docs/catalog/skills/fountain.md
 docs/catalog/skills/index.md
 docs/cli.md
 docs/cli/commands.md
-docs/concepts/agent.md
-docs/concepts/conversation.md
-docs/concepts/environment.md
-docs/concepts/sandboxes.md
-docs/concepts/secrets.md
-docs/concepts/surfaces.md
-docs/concepts/teammates.md
-docs/concepts/vault.md
 docs/configuration.md
 docs/guides/operate/back-up-and-restore.md
 docs/guides/operate/billing.md
