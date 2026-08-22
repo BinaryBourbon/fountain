@@ -1,31 +1,31 @@
 ---
 type: ADR
 title: "Speaking the Agent Client Protocol to runtimes"
-description: "ACP is the only runtime I/O path for claude, codex and opencode, adopted behind gates; Fountain.Runtimes stays the provisioning layer. Gates 1 and 2 built, gate 4 in progress, gate 3 not built."
+description: "ACP is the only runtime I/O path for claude, codex and opencode, adopted behind gates; Fountain.Runtimes stays the provisioning layer. Gates 1, 2 and 3 built, gate 4 in progress."
 tags: [acp, runtimes]
 status: stable
 adr: "0014"
 adr_status: "Partially accepted"
 date: 2026-08-09
 generated: { by: human:jhgaylor, at: 2026-08-14T00:25:23-04:00 }
-verified: { by: human:jhgaylor, at: 2026-08-14T00:25:23-04:00 }
-stale_after: 2026-11-14
+verified: { by: human:jhgaylor, at: 2026-08-22T07:30:00-04:00 }
+stale_after: 2026-11-22
 ---
 
 # 0014 — Speaking the Agent Client Protocol to runtimes
 
-**Status:** Partially accepted — **gates 1 and 2 are built; gate 4 is in
-progress; gate 3 is not built.** ACP is the **only** way Fountain speaks to
+**Status:** Partially accepted — **gates 1, 2 and 3 are built; gate 4 is in
+progress.** ACP is the **only** way Fountain speaks to
 claude, codex and opencode: their legacy spawn path (`build_command/5`, the
 permission-bypass flags, the claude-only stream tracer) was deleted on
 2026-08-14, and the per-agent `metadata["acp"]` flag — gate 2's opt-in, then
 briefly a default-on opt-out — was retired with it, since there is nothing
 left to opt out into. Their MCP config travels only in `session/new` (#636)
 and every ACP turn gets protocol-keyed tool spans (#637). Gemini takes the
-legacy path — an upstream defect, not a choice; see gate 4. Nothing in *Gate 3
-— permissions* exists, and it should not be read as describing behaviour the
-system has. Each gate below carries its own status; the PR that builds one
-removes its caveat.
+legacy path — an upstream defect, not a choice; see gate 4. *Gate 3 —
+permissions* is built and measured against live agents, with one runtime
+(opencode) that cannot honour it and says so. Each gate below carries its own
+status; the PR that builds one removes its caveat.
 
 ## Context
 
@@ -581,7 +581,7 @@ where the legacy path fails on an id it guessed.
 > memory is still lost when its sandbox is — that is unchanged — but the
 > conversation keeps working and the transcript says why.
 
-### Gate 3 — permissions — **not built**
+### Gate 3 — permissions — **built**
 
 > **Rewritten 2026-08-21.** As drafted this gate said "implement
 > `session/request_permission` against the conversation LiveView". That
@@ -589,6 +589,45 @@ where the legacy path fails on an id it guessed.
 > over the API (#865-#870) — and the request half is already built
 > (`peer.ex:372`). What follows replaces the original text, which claimed a
 > channel had to be created when what it needs is a policy and a door.
+
+> **Built 2026-08-21 and measured 2026-08-22.** #939 landed the policy and
+> #940 the ask path. Driving both against live claude, codex and opencode
+> agents in production the next day found three things this gate had assumed,
+> each of which took a PR to fix. They are recorded here because each was a
+> claim in the text above, not a slip in the code.
+>
+> **The premise "the request arrives on every shippable runtime" was true for
+> two of the three.** claude (claude-agent-acp 0.66) and codex (codex-acp
+> 1.1.14) ask per tool call. **opencode never sends
+> `session/request_permission` at all** — it ran an external `curl` and then
+> an `rm -rf` under an ask-everything policy without one. The policy was
+> nonetheless accepted and stored on an opencode agent, which displayed a
+> restriction it could not enforce; both doors now refuse it with 422
+> `permission_policy_unenforceable`, and `ACP.asks_permission?/1` keeps the
+> measurement beside the adapter entry (#959). Making opencode ask is #962,
+> and needs its own measurement first.
+>
+> **A per-tool key was unwritable.** Keys matched one derived name, the
+> `toolCall` title falling back to ACP's kind. claude's title is the *command*
+> (`curl -sS … https://example.com`) and codex sends no title at all, so
+> `%{"Bash" => "ask"}` — the example in this ADR, the moduledoc and the
+> OpenAPI description — matched nothing on either runtime and `"default"` was
+> the only usable key. `verdict_for_request/2` now tries title, then kind,
+> then default; `kind` is the stable half and the one to reach for (#958).
+>
+> **The request id repeats.** Both adapters number their requests from 0 *per
+> turn*, so publishing the adapter's id made a conversation's second card
+> render already-resolved (clients pair on `request_id`, as decided above) and
+> let a stale card answer a tool nobody saw. Fountain now mints the public id
+> and reads the adapter's back out of it (#957).
+>
+> **What is confirmed.** `ask` holds the turn and a human answers it over the
+> stream; a deny reaches the agent as "User refused permission to run tool",
+> after which claude and codex both continue the turn and end it normally;
+> nobody answering denies at exactly the five-minute timeout, with the same
+> result. `cancelled` stayed unmeasured because neither shippable adapter has
+> been seen to omit a `reject_*` option — the fail-closed rule below is what
+> covers that case, and it is now the only path to it.
 
 Tracked as #643, split into #939 (the policy), #940 (the ask path) and #941
 (gemini's remaining flag).
@@ -643,6 +682,9 @@ If this gate turns out to be blocked — by adapter support, by latency, by the
 reaper killing sessions mid-prompt — the honest outcome is to say so here. It
 is no longer a reason to stop the campaign; gates 2 and 4 have already paid
 for it.
+
+It was not blocked, and one runtime is the exception rather than the rule: see
+the measurement note at the top of this gate for opencode.
 
 ### Gate 4 — remaining runtimes, and parser deletion — **in progress**
 
