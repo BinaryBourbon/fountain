@@ -525,6 +525,49 @@ defmodule Fountain.Conversations.ConversationServerTest do
       assert Conversations._unsafe_get_sandbox!(sandbox.id).status == "ready"
     end
 
+    test "a reattach that never reaches the sprite announces nothing", %{conv: conv} do
+      # #971: a Horde child is stopped and started by cluster churn, and every
+      # rebalance re-enters this path. Announcing on the way in wrote 51
+      # `started` events for one conversation in one second — fifty of them
+      # describing a process that was replaced before it touched anything.
+      # The provider round trip outlives a rebalance, so a start that will be
+      # replaced is replaced before the announcement.
+      stub_happy_sprite()
+
+      Mimic.stub(Fountain.Sandbox.Sprites, :get, fn _handle ->
+        {:error, {:unavailable, %Req.TransportError{reason: :nxdomain}}}
+      end)
+
+      {_pid, ref, _} = start_server(conv)
+      assert :normal = assert_stopped(ref)
+
+      stages =
+        conv.id
+        |> Conversations._unsafe_list_log_events()
+        |> Enum.filter(&(&1.kind == "stage" and &1.stage == "reattach"))
+
+      # The failure is announced; the arrival is not.
+      assert Enum.map(stages, & &1.state) == ["failed"]
+    end
+
+    test "a reattach that reaches the sprite says which node it is on", %{conv: conv} do
+      # The other half of #971: with the node stamped, a redistribution storm
+      # (many nodes, one conversation) is one query away from a crash loop
+      # (one node, restarting), rather than a guess.
+      stub_happy_sprite()
+
+      {pid, _ref, _} = start_server(conv)
+      on_exit(fn -> if Process.alive?(pid), do: GenServer.stop(pid, :normal) end)
+
+      started =
+        conv.id
+        |> Conversations._unsafe_list_log_events()
+        |> Enum.find(&(&1.kind == "stage" and &1.stage == "reattach" and &1.state == "started"))
+
+      assert %{"node" => node_name, "sprite_name" => _} = Jason.decode!(started.data)
+      assert node_name == to_string(node())
+    end
+
     test "a definitive not-found retires the sandbox so the next prompt provisions fresh", %{
       conv: conv,
       sandbox: sandbox

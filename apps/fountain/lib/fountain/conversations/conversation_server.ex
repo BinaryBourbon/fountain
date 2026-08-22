@@ -880,11 +880,26 @@ defmodule Fountain.Conversations.ConversationServer do
     )
   end
 
+  # The `started` event is published **after** the sprite answers, not on the
+  # way in, and that is deliberate (#971).
+  #
+  # A `ConversationServer` is a Horde child, so cluster churn stops and starts
+  # it — every rebalance runs this function again from the top. Announcing on
+  # entry turned that into a transcript: production logged 51 `reattach`
+  # `started` events for one conversation inside one second, in lockstep with a
+  # second conversation on the same node, and exactly one of them reached
+  # `done`. Fifty of those describe a process that was replaced before it
+  # touched anything, which is a fact about our supervision tree and not about
+  # the user's conversation.
+  #
+  # The provider round trip outlives a rebalance, so a start that is going to
+  # be replaced is replaced before this line and writes nothing. What survives
+  # to publish has a live sprite and is really reattaching.
+  #
+  # The node is stamped on every reattach event for the same incident: it is
+  # what tells a redistribution storm (many nodes, one conversation) from a
+  # crash loop (one node, restarting) without guessing.
   defp do_reattach(state, conv, sandbox, agent, env, secrets) do
-    publish_stage(state.conversation_id, "reattach", "started", %{
-      sprite_name: sandbox.sprite_name
-    })
-
     handle =
       Fountain.Sandbox.build_handle(
         Fountain.Conversations.sandbox_provider_atom(sandbox),
@@ -896,6 +911,11 @@ defmodule Fountain.Conversations.ConversationServer do
            label: "sprite lookup on wake"
          ) do
       {:ok, _info} ->
+        publish_stage(state.conversation_id, "reattach", "started", %{
+          sprite_name: sandbox.sprite_name,
+          node: to_string(node())
+        })
+
         {state, _conv} = rotate_callback_api_key(state, conv)
         sprite_env = build_sprite_env(state, agent, env, secrets)
 
@@ -944,7 +964,8 @@ defmodule Fountain.Conversations.ConversationServer do
 
         publish_stage(state.conversation_id, "reattach", "failed", %{
           reason: "not_found",
-          retryable: false
+          retryable: false,
+          node: to_string(node())
         })
 
         {:ok, _} =
@@ -978,7 +999,8 @@ defmodule Fountain.Conversations.ConversationServer do
 
         publish_stage(state.conversation_id, "reattach", "failed", %{
           reason: inspect(reason),
-          retryable: true
+          retryable: true,
+          node: to_string(node())
         })
 
         {:stop, :normal, state}
