@@ -53,6 +53,18 @@ func (a *Agent) notify(method string, params any) {
 	}
 }
 
+// requester is the connection, when it can carry a request to the client as
+// well as notifications. A Notifier that cannot is not an error — it means
+// nothing can be asked, and `forwardPermission` says so and lets the request
+// be answered by another client or denied by the server's timeout.
+func (a *Agent) requester() (Requester, bool) {
+	a.mu.Lock()
+	n := a.notifier
+	a.mu.Unlock()
+	r, ok := n.(Requester)
+	return r, ok
+}
+
 type promptParams struct {
 	SessionID string            `json:"sessionId"`
 	Prompt    []json.RawMessage `json:"prompt"`
@@ -115,6 +127,15 @@ func (a *Agent) followTurn(ctx context.Context, sess Session, head string) (any,
 	err := a.api.Follow(ctx, sess.ID, head, func(ev Event) (bool, error) {
 		switch {
 		case ev.Kind == "output" && ev.Stream == "acp":
+			if req, ok := a.decodePermission(ev.Data); ok {
+				// The agent is blocked in the sandbox until someone answers.
+				// Asking runs on its own goroutine so the stream keeps being
+				// read — the resolution arrives on it, and so does the turn's
+				// end if another client answers first.
+				go a.forwardPermission(ctx, sess, ev.Data)
+				a.log.Debug("forwarding a permission request", "request", requestID(req.ID))
+				return false, nil
+			}
 			a.forwardUpdate(sess, ev.Data)
 			return false, nil
 
@@ -185,9 +206,10 @@ func (a *Agent) forwardUpdate(sess Session, line string) {
 	}
 
 	if msg.Method != "session/update" {
-		// Requests from the sprite (session/request_permission) are not
-		// forwarded: answering them across two hops is #708, and it is gated
-		// on an answer to what replies when the editor detaches mid-request.
+		// A `session/request_permission` is a *request*, not an update: it is
+		// forwarded from the live turn loop (see followTurn), where there is a
+		// context to answer within. Anything else the sprite's adapter sent
+		// upward is not ours to relay.
 		a.log.Debug("not forwarding a non-update message", "method", msg.Method)
 		return
 	}

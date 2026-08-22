@@ -39,6 +39,18 @@ environment instead of the agent's own. One agent config can then run under
 several environments — one entry per environment — without duplicating the
 agent. The vault still wins over it on key collision.
 
+--permission decides what happens before the agent runs a tool. "ask" puts the
+question in your editor, as an approval prompt, and the tool waits for your
+answer; "auto_deny" refuses; the default, "auto_allow", runs it. Narrow it per
+tool with key=verdict pairs — --permission execute=ask asks before shell
+commands and allows the rest. Keys match the tool card's title first and then
+ACP's kind (execute, edit, read, fetch, …), and a launch may only narrow what
+the agent already allows.
+
+Nobody answering is an answer: an unanswered prompt is denied after the
+server's timeout, and so is one your editor dismisses or disconnects from. The
+turn continues either way.
+
 What it is, and is not: a control surface for a conversation running in a
 Fountain sandbox — watch it, steer it, interrupt it. It has no access to the
 files open in your editor, and the paths it reports are inside the sandbox,
@@ -54,6 +66,7 @@ Options:
       --agent string         Fountain agent name or id to open sessions against
       --environment string   environment name or id to provision each session's conversation from, instead of the agent's own
       --log-level string     stderr log level: debug, info, warn, error (default "info")
+      --permission string    what happens before the agent runs a tool: auto_allow, ask, auto_deny, or key=verdict pairs (for example "execute=ask")
       --vault string         vault name or id to attach to each session's conversation
 ```
 

@@ -390,3 +390,94 @@ func TestUnknownVaultNameIsReported(t *testing.T) {
 		t.Fatalf("want an error naming the vault, got %v", err)
 	}
 }
+
+// --permission is how an editor entry turns asking on: without a policy the
+// agent's own stands, and its default is auto_allow, so no request is ever
+// raised for an editor to answer (#708).
+func TestCreateConversationCarriesThePermissionPolicy(t *testing.T) {
+	var body map[string]any
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"data":{"id":"conv-1"}}`))
+	}))
+	defer srv.Close()
+
+	api := acpTestAPI(t, srv.URL)
+	api.permission = map[string]string{"default": "ask"}
+
+	if _, _, err := api.CreateConversation(context.Background(), "agent-1", "", false); err != nil {
+		t.Fatalf("CreateConversation: %v", err)
+	}
+
+	policy, ok := body["permission_policy"].(map[string]any)
+	if !ok || policy["default"] != "ask" {
+		t.Errorf("permission_policy = %v, want the default ask", body["permission_policy"])
+	}
+}
+
+// Same omit-when-unset rule as the vault and the environment: an empty policy
+// is a request to change nothing, not a request for auto_allow.
+func TestCreateConversationOmitsThePermissionPolicyWhenUnset(t *testing.T) {
+	var body map[string]any
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"data":{"id":"conv-1"}}`))
+	}))
+	defer srv.Close()
+
+	api := acpTestAPI(t, srv.URL)
+
+	if _, _, err := api.CreateConversation(context.Background(), "agent-1", "", false); err != nil {
+		t.Fatalf("CreateConversation: %v", err)
+	}
+	if _, present := body["permission_policy"]; present {
+		t.Errorf("permission_policy was sent without --permission: %v", body["permission_policy"])
+	}
+}
+
+func TestParsePermissionPolicy(t *testing.T) {
+	cases := []struct {
+		flag string
+		want map[string]string
+	}{
+		{"", nil},
+		{"  ", nil},
+		{"ask", map[string]string{"default": "ask"}},
+		{"auto_deny", map[string]string{"default": "auto_deny"}},
+		{"execute=ask", map[string]string{"execute": "ask"}},
+		{
+			"default=ask, edit=auto_deny",
+			map[string]string{"default": "ask", "edit": "auto_deny"},
+		},
+	}
+
+	for _, tc := range cases {
+		got, err := parsePermissionPolicy(tc.flag)
+		if err != nil {
+			t.Fatalf("parsePermissionPolicy(%q): %v", tc.flag, err)
+		}
+		if len(got) != len(tc.want) {
+			t.Fatalf("parsePermissionPolicy(%q) = %v, want %v", tc.flag, got, tc.want)
+		}
+		for k, v := range tc.want {
+			if got[k] != v {
+				t.Errorf("parsePermissionPolicy(%q)[%q] = %q, want %q", tc.flag, k, got[k], v)
+			}
+		}
+	}
+}
+
+// A typo is rejected at startup, where an editor shows the process's stderr,
+// rather than becoming a 422 at the first session/new.
+func TestParsePermissionPolicyRejectsAnUnknownVerdict(t *testing.T) {
+	if _, err := parsePermissionPolicy("aks"); err == nil {
+		t.Error("accepted a misspelled verdict")
+	}
+	if _, err := parsePermissionPolicy("=ask"); err == nil {
+		t.Error("accepted an empty tool key")
+	}
+}

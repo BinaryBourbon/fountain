@@ -46,6 +46,16 @@ type fakeAPI struct {
 	conversationErr error
 	replay          []Event
 	replayErr       error
+
+	// permission path (#708)
+	answers   []permissionAnswer
+	answerErr error
+}
+
+type permissionAnswer struct {
+	convID    string
+	requestID string
+	optionID  string
 }
 
 type sentPrompt struct {
@@ -97,6 +107,25 @@ func (f *fakeAPI) Interrupt(_ context.Context, convID string) error {
 		onInterrupt()
 	}
 	return f.interruptErr
+}
+
+func (f *fakeAPI) AnswerPermission(_ context.Context, convID, requestID, optionID string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.answers = append(f.answers, permissionAnswer{
+		convID:    convID,
+		requestID: requestID,
+		optionID:  optionID,
+	})
+	return f.answerErr
+}
+
+// answered returns the answers recorded so far, safely — the permission path
+// runs on its own goroutine.
+func (f *fakeAPI) answered() []permissionAnswer {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]permissionAnswer(nil), f.answers...)
 }
 
 func (f *fakeAPI) Follow(_ context.Context, _, lastEventID string, fn EventFunc) error {
