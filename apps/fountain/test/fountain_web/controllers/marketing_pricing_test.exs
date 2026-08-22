@@ -19,22 +19,22 @@ defmodule FountainWeb.MarketingPricingTest do
     Application.put_env(:fountain, :stripe_price_monthly_cents, 2900)
 
     body = conn |> get(~p"/") |> html_response(200)
-    assert body =~ "then $29/mo per team"
-    assert body =~ "$29/mo per team after trial"
+    assert body =~ "then $29/mo per user"
+    assert body =~ "$29/mo per user after trial"
   end
 
   test "non-whole-dollar prices render with cents", %{conn: conn} do
     Application.put_env(:fountain, :stripe_price_monthly_cents, 2950)
 
     body = conn |> get(~p"/") |> html_response(200)
-    assert body =~ "$29.50/mo per team"
+    assert body =~ "$29.50/mo per user"
   end
 
   test "omits the price when STRIPE_PRICE_MONTHLY_CENTS is unset", %{conn: conn} do
     Application.put_env(:fountain, :stripe_price_monthly_cents, nil)
 
     body = conn |> get(~p"/") |> html_response(200)
-    refute body =~ "/mo per team"
+    refute body =~ "/mo per"
     assert body =~ "Free 14-day trial. Cancel anytime."
     assert body =~ "Cancel anytime. No lock-in."
   end
@@ -44,6 +44,6 @@ defmodule FountainWeb.MarketingPricingTest do
     Application.put_env(:fountain, :billing_enabled, false)
 
     body = conn |> get(~p"/") |> html_response(200)
-    refute body =~ "/mo per team"
+    refute body =~ "/mo per"
   end
 end
