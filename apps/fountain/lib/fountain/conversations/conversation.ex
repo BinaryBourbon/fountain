@@ -42,6 +42,14 @@ defmodule Fountain.Conversations.Conversation do
     field :usage_input_tokens, :integer, default: 0
     field :usage_output_tokens, :integer, default: 0
 
+    # Per-launch permission override (#939). nil means "this launch had no
+    # opinion" and the agent's policy stands alone. Set, it is merged with the
+    # agent's by `Permissions.effective/2`, which takes the stricter of the two
+    # per tool — so this can only ever narrow, and an agent that tightens later
+    # tightens this conversation too. The widening case is rejected at the door
+    # in `start_conversation/2` rather than silently clamped.
+    field :permission_policy, :map
+
     # Populated by list_conversations_by_activity/1 — not persisted.
     field :turn_count, :integer, virtual: true, default: 0
     field :last_active_at, :utc_datetime_usec, virtual: true
@@ -86,7 +94,8 @@ defmodule Fountain.Conversations.Conversation do
       :agent_id,
       :vault_id,
       :environment_id,
-      :channel_id
+      :channel_id,
+      :permission_policy
     ])
     |> validate_required([:runtime, :status, :sandbox_id, :user_id])
     |> validate_length(:channel_id, max: 255)

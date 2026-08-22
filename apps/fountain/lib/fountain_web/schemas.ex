@@ -260,6 +260,16 @@ defmodule FountainWeb.Schemas do
               "allowlist is set (422 environment_not_allowed). Part of the channel_id " <>
               "resume key."
         },
+        permission_policy: %Schema{
+          type: :object,
+          nullable: true,
+          additionalProperties: %Schema{type: :string, enum: ["auto_allow", "auto_deny"]},
+          description:
+            "Per-launch permission override (#939). Merged with the agent's own policy, " <>
+              "taking the stricter of the two per tool. It may only narrow: a policy that " <>
+              "would loosen any tool is refused with 422 permission_policy_widens rather " <>
+              "than silently clamped."
+        },
         prompt: %Schema{type: :string, description: "Optional first turn prompt."},
         title: %Schema{
           type: :string,
@@ -413,6 +423,17 @@ defmodule FountainWeb.Schemas do
               "(SANDBOX_PROVIDER). Only providers configured on this instance are accepted"
         },
         environment_id: %Schema{type: :string, format: :uuid, nullable: true},
+        permission_policy: %Schema{
+          type: :object,
+          nullable: true,
+          additionalProperties: %Schema{type: :string, enum: ["auto_allow", "auto_deny"]},
+          description:
+            "Per-tool permission policy: a map of tool name (as the transcript labels it) " <>
+              "to verdict, plus an optional \"default\" key. Unset tools fall back to the " <>
+              "default, and an unset default is auto_allow \u2014 today's behaviour. " <>
+              "\"ask\" is a known verdict but is not supported yet (422 " <>
+              "permission_policy_unbuilt)."
+        },
         skills: %Schema{
           type: :array,
           description:

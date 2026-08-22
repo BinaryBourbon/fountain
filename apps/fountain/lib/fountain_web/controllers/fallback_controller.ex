@@ -52,6 +52,44 @@ defmodule FountainWeb.FallbackController do
     })
   end
 
+  # A per-launch permission override that would loosen the agent's policy
+  # (#939). 422 naming the tool, because the caller asked for something
+  # specific and a generic "invalid" would send them hunting. Refused rather
+  # than clamped: `Permissions.effective/2` would clamp it to something safe
+  # anyway, but silently handing back a tighter policy than the one requested
+  # gives the caller no way to learn the ask was a mistake.
+  def call(conn, {:error, {:permission_policy_widens, tool}}) do
+    conn
+    |> put_status(:unprocessable_entity)
+    |> json(%{
+      error: "permission_policy_widens",
+      message:
+        "permission_policy may only narrow the agent's own policy; " <>
+          "#{tool} would be loosened"
+    })
+  end
+
+  # `ask` is a real verdict with nowhere to ask until #940 builds the stream
+  # event and the answer endpoint. Refused here rather than degrading to an
+  # allow (unsafe) or hanging the turn on a prompt nobody will see (worse).
+  def call(conn, {:error, {:permission_policy_unbuilt, verdict}}) do
+    conn
+    |> put_status(:unprocessable_entity)
+    |> json(%{
+      error: "permission_policy_unbuilt",
+      message: "permission verdict #{verdict} is not supported yet"
+    })
+  end
+
+  def call(conn, {:error, :permission_policy_invalid}) do
+    conn
+    |> put_status(:unprocessable_entity)
+    |> json(%{
+      error: "permission_policy_invalid",
+      message: "permission_policy must map tool names to auto_allow or auto_deny"
+    })
+  end
+
   # An unknown or cross-tenant parent conversation. 404 rather than 403 so the
   # caller cannot use the response to probe which conversation ids exist.
   def call(conn, {:error, :parent_not_found}) do

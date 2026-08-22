@@ -120,6 +120,10 @@ defmodule Fountain.Runtimes.ACP.Peer do
       images: [],
       mcp_servers: [],
       model: nil,
+      # The effective per-tool permission policy for this turn (#939). Already
+      # merged and clamped by `Permissions.effective/2` before it gets here —
+      # the peer applies it, it does not resolve it.
+      permission_policy: %{},
       buffer: "",
       next_id: 1,
       pending: %{},
@@ -186,6 +190,7 @@ defmodule Fountain.Runtimes.ACP.Peer do
       cwd: Keyword.get(opts, :cwd, "/home/sprite"),
       images: Keyword.get(opts, :images, []),
       mcp_servers: Keyword.get(opts, :mcp_servers, []),
+      permission_policy: Keyword.get(opts, :permission_policy) || %{},
       model: Keyword.get(opts, :model),
       replay_quiet_ms: Keyword.get(opts, :replay_quiet_ms, @replay_quiet_ms),
       replay_max_ms: Keyword.get(opts, :replay_max_ms, @replay_max_ms),
@@ -364,13 +369,28 @@ defmodule Fountain.Runtimes.ACP.Peer do
   end
 
   # `session/request_permission` is the channel gate 3 exists to use. Gate 2
-  # answers it the way the legacy path already behaves — every runtime today
-  # runs with its rail removed (`--dangerously-skip-permissions` and friends),
-  # so auto-allowing is parity, not a new exposure. Answering *something* is not
-  # optional: the agent blocks on this request, and a blocked agent is a turn in
-  # flight, which disarms idle reclaim and bills the sprite to the ceiling.
+  # answered it with a constant auto-allow, which was parity with the legacy
+  # path's `--dangerously-skip-permissions` and friends. #939 made that a
+  # policy: `Fountain.Permissions` decides per tool, and `auto_allow` — still
+  # the default — keeps the old ladder verbatim, so this is parity until
+  # someone writes a policy.
+  #
+  # Answering *something* is not optional: the agent blocks on this request, and
+  # a blocked agent is a turn in flight, which disarms idle reclaim and bills
+  # the sprite to the ceiling.
+  #
+  # The verdict is reported to the owner so a denial reaches the audit trail
+  # (0013 — in the context, tool and verdict, never values). Allows are not
+  # recorded: a turn makes dozens of tool calls, and a row each would make the
+  # trail a transcript.
   defp handle_message({:request, id, "session/request_permission", params}, state) do
-    write(state, Protocol.response(id, %{outcome: permission_outcome(params)}))
+    outcome = Fountain.Permissions.outcome(state.permission_policy, params)
+    tool = Fountain.Permissions.tool_name(params)
+    verdict = Fountain.Permissions.verdict_for(state.permission_policy, tool)
+
+    if verdict != "auto_allow", do: report(state, {:permission_denied, tool, verdict})
+
+    write(state, Protocol.response(id, %{outcome: outcome}))
   end
 
   # We declared no filesystem or terminal capabilities, so nothing should ask.
@@ -744,19 +764,5 @@ defmodule Fountain.Runtimes.ACP.Peer do
 
   # Prefer an option the agent itself marked as an allow. `optionId` is opaque
   # and adapter-defined, so picking by `kind` is the only portable choice.
-  defp permission_outcome(params) do
-    options = Map.get(params, "options") || []
-
-    chosen =
-      Enum.find(options, &(&1["kind"] == "allow_always")) ||
-        Enum.find(options, &(&1["kind"] == "allow_once")) ||
-        List.first(options)
-
-    case chosen do
-      %{"optionId" => id} -> %{outcome: "selected", optionId: id}
-      _ -> %{outcome: "cancelled"}
-    end
-  end
-
   defp noreply(state), do: {:noreply, state}
 end

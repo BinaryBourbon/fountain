@@ -475,6 +475,79 @@ defmodule Fountain.Runtimes.ACP.PeerTest do
       assert outcome["optionId"] == "yes"
     end
 
+    test "a policy that denies a tool picks the agent's own rejection, and reports it", ctx do
+      pid = start_peer(ctx, permission_policy: %{"Bash" => "auto_deny"})
+      _init = next_write()
+
+      Peer.stdout(
+        pid,
+        Jason.encode!(%{
+          "jsonrpc" => "2.0",
+          "id" => 101,
+          "method" => "session/request_permission",
+          "params" => %{
+            "toolCall" => %{"title" => "Bash", "kind" => "execute"},
+            "options" => [
+              %{"optionId" => "yes", "kind" => "allow_always"},
+              %{"optionId" => "no", "kind" => "reject_once"}
+            ]
+          }
+        }) <> "\n"
+      )
+
+      assert %{"id" => 101, "result" => %{"outcome" => outcome}} = next_write()
+      assert outcome["outcome"] == "selected"
+      assert outcome["optionId"] == "no"
+
+      # The refusal reaches the owner so it can be audited in the context.
+      assert_receive {:acp, _ref, {:permission_denied, "Bash", "auto_deny"}}
+    end
+
+    test "a denied tool with no rejection offered is cancelled, never allowed", ctx do
+      pid = start_peer(ctx, permission_policy: %{"default" => "auto_deny"})
+      _init = next_write()
+
+      Peer.stdout(
+        pid,
+        Jason.encode!(%{
+          "jsonrpc" => "2.0",
+          "id" => 102,
+          "method" => "session/request_permission",
+          "params" => %{
+            "toolCall" => %{"title" => "Bash"},
+            "options" => [%{"optionId" => "yes", "kind" => "allow_always"}]
+          }
+        }) <> "\n"
+      )
+
+      assert %{"id" => 102, "result" => %{"outcome" => %{"outcome" => "cancelled"}}} =
+               next_write()
+    end
+
+    test "a tool the policy does not name is still allowed, and is not reported", ctx do
+      pid = start_peer(ctx, permission_policy: %{"Bash" => "auto_deny"})
+      _init = next_write()
+
+      Peer.stdout(
+        pid,
+        Jason.encode!(%{
+          "jsonrpc" => "2.0",
+          "id" => 103,
+          "method" => "session/request_permission",
+          "params" => %{
+            "toolCall" => %{"title" => "Read"},
+            "options" => [%{"optionId" => "yes", "kind" => "allow_always"}]
+          }
+        }) <> "\n"
+      )
+
+      assert %{"id" => 103, "result" => %{"outcome" => %{"optionId" => "yes"}}} = next_write()
+
+      # Allows are deliberately not recorded — a row each would make the audit
+      # trail a second copy of the transcript.
+      refute_receive {:acp, _ref, {:permission_denied, _, _}}, 50
+    end
+
     test "an fs/* request is refused, not ignored", ctx do
       # Silence would block the agent forever. We declared no fs capability, so
       # the honest answer is method-not-found.

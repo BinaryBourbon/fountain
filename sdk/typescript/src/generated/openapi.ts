@@ -1858,6 +1858,10 @@ export interface components {
             fresh?: boolean | null;
             /** @description Optional images to attach to the initial prompt. */
             images?: components["schemas"]["ImageInput"][] | null;
+            /** @description Per-launch permission override (#939). Merged with the agent's own policy, taking the stricter of the two per tool. It may only narrow: a policy that would loosen any tool is refused with 422 permission_policy_widens rather than silently clamped. */
+            permission_policy?: {
+                [key: string]: "auto_allow" | "auto_deny";
+            } | null;
             /** @description Optional first turn prompt. */
             prompt?: string;
             /** @description Override the auto-generated sprite name. */
@@ -2423,6 +2427,10 @@ export interface components {
             /** @description Canonical provider/model_id (e.g. anthropic/claude-sonnet-4-6). The provider must match the runtime — anthropic for claude, openai for codex, google for gemini; opencode accepts any of the three. Other providers are rejected: Fountain has no credentials to export for them. The model id is not checked against a list, so a newly released model works without a Fountain release. */
             model: string;
             name: string;
+            /** @description Per-tool permission policy: a map of tool name (as the transcript labels it) to verdict, plus an optional "default" key. Unset tools fall back to the default, and an unset default is auto_allow — today's behaviour. "ask" is a known verdict but is not supported yet (422 permission_policy_unbuilt). */
+            permission_policy?: {
+                [key: string]: "auto_allow" | "auto_deny";
+            } | null;
             /** @enum {string} */
             runtime: "claude" | "codex" | "gemini" | "opencode";
             /**

@@ -39,6 +39,11 @@ defmodule Fountain.Agents.Agent do
     # non-empty = allowlist. An override *replaces* the reviewed environment
     # wholesale, so it is scoped the same way a vault override is.
     field :allowed_environment_ids, {:array, :binary_id}
+    # Per-tool permission policy (#939): %{"default" => "auto_allow",
+    # "Bash" => "auto_deny"}. Empty means no opinion, which resolves to
+    # auto_allow — what every agent does today. A launch may supply its own,
+    # but only to narrow this one; see Fountain.Permissions.
+    field :permission_policy, :map, default: %{}
     field :avatar_media_type, :string
     field :conversation_count, :integer, virtual: true, default: 0
     belongs_to :user, User
@@ -62,6 +67,7 @@ defmodule Fountain.Agents.Agent do
       :metadata,
       :allowed_vault_ids,
       :allowed_environment_ids,
+      :permission_policy,
       :user_id,
       :environment_id
     ])
@@ -74,6 +80,7 @@ defmodule Fountain.Agents.Agent do
     |> validate_sandbox_provider()
     |> validate_length(:name, min: 1, max: 200)
     |> validate_skills()
+    |> validate_permission_policy()
     |> unique_constraint(:name, name: :agents_user_id_name_index)
     |> foreign_key_constraint(:environment_id)
   end
@@ -141,6 +148,44 @@ defmodule Fountain.Agents.Agent do
           []
       end
     end)
+  end
+
+  # A policy is a flat map of tool name (or "default") to verdict. Validated
+  # here rather than trusted, because `Permissions.verdict_for/2` treats an
+  # unrecognised value as `auto_deny` — safe, but a silent deny on a typo is a
+  # bad way to find out. `ask` is a real verdict with nowhere to ask until #940
+  # builds the stream event and the answer endpoint, so it is refused at the
+  # door instead of degrading to an allow or hanging the turn.
+  defp validate_permission_policy(changeset) do
+    validate_change(changeset, :permission_policy, fn :permission_policy, policy ->
+      cond do
+        not is_map(policy) ->
+          [permission_policy: "must be a map of tool name to verdict"]
+
+        true ->
+          Enum.flat_map(policy, fn {tool, verdict} -> policy_errors(tool, verdict) end)
+      end
+    end)
+  end
+
+  defp policy_errors(tool, verdict) do
+    cond do
+      not is_binary(tool) or tool == "" ->
+        [permission_policy: "tool names must be non-empty strings"]
+
+      verdict not in Fountain.Permissions.verdicts() ->
+        [
+          permission_policy:
+            "#{tool}: unknown verdict #{inspect(verdict)} " <>
+              "(one of #{Enum.join(Fountain.Permissions.verdicts(), ", ")})"
+        ]
+
+      not Fountain.Permissions.buildable?(verdict) ->
+        [permission_policy: "#{tool}: #{verdict} is not built yet — see #940"]
+
+      true ->
+        []
+    end
   end
 
   defp validate_skills(changeset) do

@@ -67,6 +67,15 @@ defmodule FountainWeb.SchemaEnumGuardrailTest do
     {FountainWeb.Schemas.BuzzProvisionRequest, "respond_to"} => {BuzzIdentity, :respond_to_modes},
     {FountainWeb.Schemas.BuzzAccessUpdateRequest, "respond_to"} =>
       {BuzzIdentity, :respond_to_modes},
+    # The permission verdicts a policy may actually name today. Deliberately
+    # `buildable_verdicts/0` and not `verdicts/0`: "ask" is a real verdict the
+    # domain knows about, with nowhere to ask until #940, and both doors refuse
+    # it — so publishing it in the spec would advertise a value every request
+    # carrying it gets a 422 for.
+    {FountainWeb.Schemas.Agent, "permission_policy.{}"} =>
+      {Fountain.Permissions, :buildable_verdicts},
+    {FountainWeb.Schemas.ConversationCreateRequest, "permission_policy.{}"} =>
+      {Fountain.Permissions, :buildable_verdicts},
     {FountainWeb.Schemas.Conversation, "status"} => {Conversation, :statuses},
     {FountainWeb.Schemas.Conversation, "source"} => {Conversation, :sources},
     {FountainWeb.Schemas.ConversationTreeNode, "status"} => {Conversation, :statuses},
