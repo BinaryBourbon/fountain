@@ -1,25 +1,32 @@
 # Stripe
 
-**Optional.** The subscription gate exists for the hosted service; billing is
+<!-- "billing" and "dunning" are Technical Names here: the product surface,
+     the BILLING_ENABLED flag and the Elixir context carry the first, and the
+     second is the industry term for the failed-payment sequence. STE exempts
+     a Technical Name from Rule 3.4, and the linter has no vocabulary hook for
+     that rule, so the exemption is declared for the page. -->
+<!-- vale STE.IngForms = NO -->
+
+**Optional.** The subscription gate exists for the hosted service. Billing is
 off by default (`BILLING_ENABLED=false`), and that is the right setting for
-most self-hosted instances, because a gate with no checkout behind it is a lock with
+most self-hosted instances. A gate with no checkout behind it is a lock with
 no key. Set this up only if you run Fountain commercially.
 
 ## At a glance
 
 | | |
 |---|---|
-| Required | No, and off by default |
-| Provider | Stripe |
+| Required | No, and off by default. |
+| Provider | Stripe. |
 | Env vars | `BILLING_ENABLED`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_ID` |
 | Webhook | `<PUBLIC_URL>/api/stripe/webhook` |
-| Without it | No billing, which is correct for most self-hosted instances |
+| Without it | No billing, which is correct for most self-hosted instances. |
 
-## Provider side
+## The provider side
 
 1. **A product with a recurring price.** Its price ID (`price_…`) becomes
    `STRIPE_PRICE_ID`.
-2. **An API key** (Developers → API keys), as `STRIPE_SECRET_KEY`.
+2. **An API key**, from Developers → API keys, as `STRIPE_SECRET_KEY`.
 3. **A webhook endpoint** pointed at `<PUBLIC_URL>/api/stripe/webhook`,
    subscribed to these events.
     - `checkout.session.completed`
@@ -33,95 +40,109 @@ no key. Set this up only if you run Fountain commercially.
 
     Its signing secret becomes `STRIPE_WEBHOOK_SECRET`.
 
-    An existing endpoint keeps working without the three `invoice.*` events,
-    since dunning state still syncs from the subscription events, but the SCA
-    ("confirm your payment") email never fires and recovery notices depend
-    solely on `customer.subscription.updated`. Add them when upgrading.
+    An endpoint that already exists keeps working without the three
+    `invoice.*` events. Dunning state still syncs from the subscription
+    events. But the SCA email, the one that says "confirm your payment", never
+    fires, and a recovery notice then depends on
+    `customer.subscription.updated` alone. Add the three when you upgrade.
 
-Use test-mode keys and a test-mode price everywhere except a production
-instance taking real money.
+Use test-mode keys and a test-mode price everywhere, except on a production
+instance that takes real money.
 
 ## Env vars
 
 | Variable | Effect |
 |---|---|
-| `BILLING_ENABLED` | `false` by default; `true` enforces the subscription gate on conversations |
-| `STRIPE_SECRET_KEY` | API key |
-| `STRIPE_WEBHOOK_SECRET` | Verifies webhook signatures; a bad signature is rejected with a 400 |
-| `STRIPE_PRICE_ID` | The price surfaced by Checkout. Unset with billing enabled, signups get a purely local 14-day trial and a logged warning, and Checkout is broken |
+| `BILLING_ENABLED` | `false` by default. `true` enforces the subscription gate on conversations. |
+| `STRIPE_SECRET_KEY` | The API key. |
+| `STRIPE_WEBHOOK_SECRET` | Verifies a webhook signature. Fountain rejects a bad signature with a 400. |
+| `STRIPE_PRICE_ID` | The price that Checkout shows. Leave it unset with billing on, and a signup gets a purely local 14-day trial, with a logged warning. Checkout then does not work. |
 
 ## Behavior worth knowing
 
-- On email verification (or OAuth signup), Fountain creates the Stripe
-  customer and opens a **14-day trial subscription** with no payment method;
-  Stripe cancels it at trial end if none is added. Trial expiry is *also*
-  checked against the local clock, so a missed webhook delays revenue rather
-  than opening the gate.
-- Webhook processing is idempotent (event IDs are claimed in a dedup table)
-  and order-safe (stale events are ignored). Transient failures return a 500
-  so Stripe redelivers.
-- Comped accounts are never overwritten by Stripe events.
-- `invoice.payment_failed` / `invoice.payment_action_required` drive dunning
-  and SCA emails but never write subscription status, which stays with the
-  subscription events. `invoice.paid` writes status in exactly one case:
-  `past_due → active` (dunning recovery), because Stripe also pays a $0
-  invoice at trial creation and one per normal renewal, which must not touch
-  the account.
+- At email verification, or at an OAuth signup, Fountain creates the Stripe
+  customer and opens a **14-day trial subscription** with no payment method.
+  Stripe cancels that subscription at the end of the trial when nobody adds
+  one. Fountain *also* checks trial expiry against the local clock, so a
+  webhook that never arrives delays revenue. It does not open the gate.
+- Webhook processing is idempotent. Fountain claims each event ID in a dedup
+  table. It is also safe against order, because it ignores a stale event. A
+  transient failure returns a 500, so that Stripe delivers it again.
+- Fountain never overwrites a comped account from a Stripe event.
+- `invoice.payment_failed` and `invoice.payment_action_required` drive the
+  dunning and SCA emails. Neither one writes subscription status, which stays
+  with the subscription events. `invoice.paid` writes status in exactly one
+  case, `past_due → active`, which is a dunning recovery. Stripe also pays a
+  $0 invoice at trial creation, and one at each normal renewal, and neither
+  must touch the account.
 
 ## Verify
 
-The webhook endpoint's delivery log in the Stripe dashboard should show 2xx
-responses; a fresh signup should show a `trialing` status on
+The delivery log for the webhook endpoint in the Stripe dashboard must show
+2xx responses. A fresh signup must show a `trialing` status on
 `/account/billing` and in the admin panel.
 
-To exercise the full trial lifecycle without waiting 14 days, use
-[Stripe Test Clocks](https://docs.stripe.com/billing/testing/test-clocks):
-a customer created under a test clock can have its clock advanced past the
-trial-ending threshold (the reminder email enqueues) and past trial end (the
-status flips and the gate refuses). The clock must be attached when the
-customer is created, so this is a deliberate test-mode exercise rather than
-something you bolt onto an existing signup.
+To exercise the full trial lifecycle without a 14-day wait, use
+[Stripe Test Clocks](https://docs.stripe.com/billing/testing/test-clocks). A
+customer created under a test clock can have its clock advanced past the
+threshold that ends the trial, where the reminder email enqueues. Advance it
+past the end of the trial, and the status flips and the gate refuses.
+
+You must attach the clock when you create the customer. So this is a
+deliberate test-mode exercise, and not something you bolt onto a signup that
+already exists.
 
 ## Release verification: `mix fountain.verify_lifecycle`
 
-The Test Clock exercise above is automated as a repeatable command. Run it
-before releasing **any billing-touching change**:
+One command automates the Test Clock exercise above, and you can repeat it.
+Run it before you release **any change that touches billing**.
 
 ```bash
 STRIPE_SECRET_KEY=sk_test_... mix fountain.verify_lifecycle
 ```
 
-It creates a scratch user and a Test Clock, then walks the whole lifecycle,
-trial → T-3d warning email enqueued → expiry (gate refuses, trial-expired
-email) → paid subscription with a test card (gate opens) → cancel at period
-end (access retained, `cancel_at_period_end`/`current_period_end` synced) →
-period end (gate refuses, cancellation email, flag cleared) → re-subscribe
-(the return path) → failed renewal on an always-failing test card (real
-dunning: `past_due`, gate refuses, payment-failed email, and the real failed
-invoice fed through `invoice.payment_failed`) → dunning recovery (a working
-card pays the open invoice; `invoice.paid` flips `past_due → active`, the
-gate opens, payment-recovered email), asserting the **Fountain-side** state
-at every step. Each fetched Stripe
-state is fed through `Billing.sync_subscription/1`, exactly what the webhook
-controller does after signature verification; webhook *delivery* needs a
-public endpoint and stays out of scope. Cleanup (clock + scratch user) runs
-even when a step fails.
+It creates a scratch user and a Test Clock, then walks the whole lifecycle. It
+asserts the **Fountain-side** state at each step.
+
+1. Trial.
+2. The T-3d warning email enqueues.
+3. Expiry. The gate refuses, and the trial-expired email goes out.
+4. A paid subscription with a test card. The gate opens.
+5. Cancel at period end. Access stays, and `cancel_at_period_end` and
+   `current_period_end` sync.
+6. Period end. The gate refuses, the cancellation email goes out, and the flag
+   clears.
+7. Re-subscribe, which is the return path.
+8. A renewal that fails, on a test card that always fails. That is real
+   dunning: `past_due`, the gate refuses, the payment-failed email goes out,
+   and the real failed invoice feeds through `invoice.payment_failed`.
+9. Dunning recovery. A card that works pays the open invoice, `invoice.paid`
+   flips `past_due → active`, the gate opens, and the payment-recovered email
+   goes out.
+
+Each Stripe state it fetches goes through `Billing.sync_subscription/1`, which
+is exactly what the webhook controller does after it verifies the signature.
+Webhook *delivery* needs a public endpoint, and stays out of scope. The
+cleanup, which is the clock and the scratch user, runs even when a step fails.
 
 Four notes.
 
-- **Test-mode key only.** Live keys are refused outright. The CLI's key
-  lives in `~/.config/stripe/config.toml` (`test_mode_api_key`) and expires
-  every 90 days; an expired key fails the preflight with a `stripe login`
-  hint rather than a misleading mid-run error.
-- Runs against the dev database; the scratch user is deleted afterwards.
-- Deliberately **not CI**, being external, about 1 to 2 minutes of clock advances, and needing a
-  key. It is a release-check, run by a person (or an agent) with the result
-  pasted into the PR that motivated it.
-- `STRIPE_PRICE_ID` is honored when set; otherwise a throwaway test-mode
-  product/price is created under the clock's lifetime.
+- **A test-mode key, and no other.** Fountain refuses a live key outright. The
+  CLI's key lives in `~/.config/stripe/config.toml`, as `test_mode_api_key`,
+  and it expires every 90 days. An expired key fails the preflight with a
+  `stripe login` hint, and does not produce a confusing error mid-run.
+- It runs against the dev database, and it deletes the scratch user
+  afterwards.
+- It is deliberately **not in CI**. It is external, it takes one to two
+  minutes of clock advances, and it needs a key. It is a release check that a
+  person, or an agent, runs. Paste the result into the PR that motivated it.
+- It honors `STRIPE_PRICE_ID` when you set one. Otherwise it creates a
+  throwaway test-mode product and price, which live as long as the clock.
 
 ## Related
 
-- [Start billing](../guides/operate/billing.md), the operator guide,
-  including the backfill existing accounts need.
+- [Start billing](../guides/operate/billing.md), the operator guide, with the
+  backfill that existing accounts need.
 - [Services Fountain uses](index.md).
+
+<!-- vale STE.IngForms = YES -->

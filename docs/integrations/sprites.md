@@ -1,63 +1,66 @@
 # Sprites
 
-[sprites.dev](https://sprites.dev) is the original of the three
-[sandbox providers](sandbox-contract.md) and the instance default
-(`SANDBOX_PROVIDER=sprites`). It is a hosted service; a Fountain instance
-needs at least one provider credential, and with none configured every
+[sprites.dev](https://sprites.dev) is the first of the three
+[sandbox providers](sandbox-contract.md), and the instance default
+(`SANDBOX_PROVIDER=sprites`). It is a hosted service. A Fountain instance
+needs at least one provider credential. With none configured, each
 conversation fails at provision time.
 
-The exact API surface Fountain consumes, and what a compatible replacement
-behind `SPRITES_BASE_URL` would have to provide, is written down in
-[the Sprites transport reference](sprites-contract.md).
+[The Sprites transport reference](sprites-contract.md) writes down the exact
+API surface Fountain consumes. It also says what a compatible replacement
+behind `SPRITES_BASE_URL` would have to provide.
 
 ## At a glance
 
 | | |
 |---|---|
-| Role | Sandbox provider, and the instance default |
-| Enabled by | `SPRITES_TOKEN` |
+| Role | Sandbox provider, and the instance default. |
+| Turned on by | `SPRITES_TOKEN` |
 | Env vars | `SPRITES_TOKEN`, `SPRITES_BASE_URL`, `SPRITES_TIMEOUT_MS` |
-| Suspend | Parks implicitly. The sprite scales itself to zero, disk preserved |
-| Capabilities advertised | `:suspend`, `:network_policy`, `:attach`, `:tty`, `:public_url`, and `:checkpoint` (off by default, #654) |
-| Billed to | One platform token, so the operator, not the tenant |
+| Suspend | Parks on its own. The sprite scales itself to zero and keeps its disk. |
+| Capabilities advertised | `:suspend`, `:network_policy`, `:attach`, `:tty`, `:public_url`, and `:checkpoint`, which is off by default (#654). |
+| Billed to | One platform token, so the operator and not the tenant. |
 
-## Provider side
+## The provider side
 
-Create a sprites.dev account and issue an API token. That token is the whole
-provider-side setup.
+Create a sprites.dev account, then issue an API token. That token is the whole
+setup on the provider side.
 
 ## Env vars
 
 | Variable | Default | Effect |
 |---|---|---|
-| `SPRITES_TOKEN` | — | The platform token. Not checked at boot, so the app starts without it and the first conversation fails at provision time instead |
-| `SPRITES_BASE_URL` | `https://api.sprites.dev` | Repoints the Sprites API. Anything else must implement the same transport. [E2B](e2b.md) and [Daytona](daytona.md) are separate providers rather than `SPRITES_BASE_URL` replacements |
-| `SPRITES_TIMEOUT_MS` | `30000` | Bounds every HTTP call to the Sprites API. Long-running commands (package installs, clones) set their own per-call timeouts. Boot refuses a non-positive value |
+| `SPRITES_TOKEN` | — | The platform token. Fountain does not check it at boot, so the app starts without it and the first conversation fails at provision time. |
+| `SPRITES_BASE_URL` | `https://api.sprites.dev` | Repoints the Sprites API. Whatever you point it at must implement the same transport. [E2B](e2b.md) and [Daytona](daytona.md) are separate providers, and not replacements behind this variable. |
+| `SPRITES_TIMEOUT_MS` | `30000` | Bounds each HTTP call to the Sprites API. A long command, such as a package install or a clone, sets its own timeout for that call. Boot refuses a value that is not positive. |
 
 ## The cost model
 
-**One platform token pays for every Sprites sandbox.** Fountain provisions
-all tenants' Sprites sandboxes with `SPRITES_TOKEN` and the bill lands on that token's
-account. On the hosted instance subscription pricing recovers it, and on yours
-you are the one paying. Two consequences follow.
+**One platform token pays for each Sprites sandbox.** Fountain provisions
+every tenant's Sprites sandboxes with `SPRITES_TOKEN`, and the bill lands on
+that token's account. On the hosted instance, the subscription price recovers
+it. On yours, you pay. Two results follow.
 
-- Every signup that can start a conversation can spend your money. Close
-  registration, or restrict it, before putting an instance on the internet.
-- Per-user concurrency is capped (`max_concurrent_sandboxes`, default 5,
-  adjustable per user from the admin panel). Sandboxes count from the moment
-  provisioning begins, because that is when they start being paid for.
+- Each signup that can start a conversation can spend your money. Close
+  registration, or restrict it, before you put an instance on the internet.
+- Fountain caps concurrency for each user. `max_concurrent_sandboxes` defaults
+  to 5, and an admin can change it for one user from the admin panel. A
+  sandbox counts from the moment a provision starts, because that is the
+  moment it starts to cost money.
 
-The token is never surfaced to tenants, the admin UI, or the sandboxes
-themselves. A sprite receives only a scoped, expiring token whose sole
-audience is your Fountain instance's own API.
+Fountain never shows the token to a tenant, to the admin UI, or to a sandbox.
+A sprite receives a scoped token that expires, and its only audience is your
+Fountain instance's own API.
 
 ## Verify
 
-Start a conversation. Provisioning progress streams as stage events; a bad or
-missing token surfaces as the `provision` stage failing, visible in the
-conversation's log view. A Sprites outage does not affect anything else,
-sign-in, dashboards and configuration keep working, and the health endpoints
-deliberately do not consult Sprites.
+Start a conversation. Progress streams as stage events. A token that is bad or
+absent shows up as a failure at the `provision` stage, in the conversation's
+log view.
+
+A Sprites outage affects nothing else. Sign-in, dashboards and configuration
+all still work, and the health endpoints deliberately ask Sprites no
+question.
 
 ## Related
 

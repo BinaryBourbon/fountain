@@ -1,12 +1,12 @@
 # Daytona
 
 [Daytona](https://daytona.io) is one of the three
-[sandbox providers](sandbox-contract.md), and the closest semantic match
-to the contract of any of them.
-Setting `DAYTONA_API_KEY` enables it; `SANDBOX_PROVIDER=daytona` makes it
-the default for newly-created sandboxes, and an individual agent can pin it
-via `sandbox_provider`. Existing sandboxes always stay on the provider they
-were created on.
+[sandbox providers](sandbox-contract.md), and of the three it matches the
+contract most closely.
+
+`DAYTONA_API_KEY` turns it on. `SANDBOX_PROVIDER=daytona` makes it the default
+for a new sandbox, and one agent can pin it with `sandbox_provider`. A sandbox
+that already exists always stays on the provider Fountain made it on.
 
 ```bash
 DAYTONA_API_KEY=dtn_...            # enables the provider
@@ -19,18 +19,18 @@ DAYTONA_SNAPSHOT=fountain          # a snapshot built from images/daytona/ (unse
 
 | | |
 |---|---|
-| Role | Sandbox provider, and the closest semantic match to the contract |
-| Enabled by | `DAYTONA_API_KEY` |
+| Role | Sandbox provider, and the closest match to the contract. |
+| Turned on by | `DAYTONA_API_KEY` |
 | Env vars | `DAYTONA_API_KEY`, `DAYTONA_SNAPSHOT`, `DAYTONA_API_URL` |
-| Suspend | Explicit stop, disk preserved, archiving when long-parked |
+| Suspend | An explicit stop. It keeps the disk, and archives a long park. |
 | Capabilities advertised | `:suspend`, `:network_policy`, `:attach` |
-| Self-hostable | Yes, via `DAYTONA_API_URL` |
-| Needs first | A snapshot built from `images/daytona/`. The stock image lacks the agent CLIs |
+| Self-hostable | Yes, through `DAYTONA_API_URL`. |
+| Needs first | A snapshot built from `images/daytona/`. The stock image has no agent CLIs. |
 
 ## Snapshot
 
-The stock image does not carry the agent CLIs. Build the reference snapshot
-once per organization:
+The stock image carries no agent CLI. Build the reference snapshot once for
+each organization.
 
 ```bash
 cd images/daytona
@@ -41,31 +41,31 @@ daytona snapshot create fountain --dockerfile Dockerfile
 
 | Fountain operation | Daytona mechanics |
 |---|---|
-| Name-keyed create/adopt | Native. Sandboxes are name-addressable in API paths, and a conflicting create adopts when a follow-up get succeeds |
-| Suspend / resume | `stop` preserves the whole disk; `start` resumes it. Long-parked sandboxes auto-archive to object storage (still startable, slower) so they stop consuming disk quota |
-| TTL | None. Sandboxes are created with `ttlMinutes: 0` and `autoStopInterval: 0`, and Fountain's own lifecycle owns suspension. No heartbeat needed |
-| Exec | One-shot toolbox `process/execute` with cwd/env/timeout |
-| Streaming / reattach | Daemon-side sessions journal output server-side, and the log websocket **replays from byte zero before following**, so reattach is the same stream opened again. The daemon publishes no exit code and its follow stream is unreliable at both ends, so the adapter's shim writes an exit sentinel and the stream reconnects with a byte-exact skip |
-| Stdin | The daemon FIFO EOFs after every write, so stdin-consuming commands read from a `tail -f`-fed file; writes append via one-shot execs, and `close_stdin` kills the tail for a real EOF |
-| Network policy | `networkBlockAll` + `domainAllowList` per sandbox, updatable on a running sandbox. Genuinely default-deny, so `allow: []` needs no translation |
-| Checkpoints | Not supported (`:checkpoint` is not advertised) |
+| Create or adopt by name | Native. A sandbox is addressable by name in the API paths. A create that conflicts adopts the sandbox when the get that follows succeeds. |
+| Suspend and resume | `stop` keeps the whole disk, and `start` resumes it. A sandbox that stays parked archives itself to object storage on its own. It still starts, more slowly, and it takes no more disk quota. |
+| TTL | None. Fountain creates a sandbox with `ttlMinutes: 0` and `autoStopInterval: 0`, and Fountain's own lifecycle owns the suspend. Nothing heartbeats. |
+| Exec | A one-shot toolbox `process/execute`, with cwd, env and timeout. |
+| Streams and reattach | A daemon-side session journals the output on the server. The log websocket **replays from byte zero before it follows**, so a reattach is the same stream opened again. The daemon publishes no exit code, and its follow stream is unreliable at both ends. So the adapter's shim writes an exit sentinel, and the stream reconnects with a byte-exact skip. |
+| Stdin | The daemon FIFO sends EOF after each write. So a command that consumes stdin reads from a file that `tail -f` feeds. A write appends through a one-shot exec, and `close_stdin` kills the tail for a real EOF. |
+| Network policy | `networkBlockAll` and `domainAllowList`, for each sandbox, and you can update them on a sandbox that runs. It is truly default-deny, so `allow: []` needs no translation. |
+| Checkpoints | Not supported. Daytona does not advertise `:checkpoint`. |
 
 ## Operational notes
 
-- **Domain allowlist size**: Daytona caps `domainAllowList` around 20
-  entries; a `limited` environment with a longer allowlist will be rejected
-  by the API.
-- **Org tiers**: lower tiers restrict egress by default and may not honor
-  overrides, so check the organization's network settings if `limited`
-  environments behave unexpectedly.
-- **Reaper**: reconciliation lists `fountain`-labeled sandboxes only; other
-  sandboxes in the organization are never touched.
+- **The size of the domain allowlist.** Daytona caps `domainAllowList` at
+  about 20 entries. The API rejects a `limited` environment with a longer
+  allowlist.
+- **Org tiers.** A lower tier restricts egress by default, and can ignore an
+  override. Check the organization's network settings when a `limited`
+  environment behaves in a way you did not expect.
+- **Reaper.** Reconciliation lists the sandboxes Fountain labelled, and no
+  others. It never touches another sandbox in the organization.
 
 ## Verify
 
-Create a conversation on an agent pinned to `daytona` and watch it reach its
-first turn. Anything short of that is a provisioning failure, and the stage
-events name the step.
+Create a conversation on an agent pinned to `daytona`, and watch it reach its
+first turn. A run that stops short of that is a failure to provision, and the
+stage events name the step.
 
 ## Related
 
