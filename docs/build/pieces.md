@@ -1,18 +1,18 @@
 # What each piece does
 
-A chat app has three nouns: a contact, a thread, a message. Fountain has
+A chat app has three nouns. A contact, a thread, a message. Fountain has
 [four primitives](../primitives.md), and they line up.
 
 | In your UI | In Fountain | What it decides |
 |---|---|---|
-| the contact | **Agent** | which model and runtime answer, what the system prompt says, which skills and MCP servers exist |
-| the thread | **Conversation** | one standing session, bound to the reserved channel `fountain:team` |
-| the computer behind it | its **sandbox** | the filesystem, the shell, the network, the memory |
-| what it is allowed to touch | **Environment** + **Vault** | packages, cloned repos, setup script, and the encrypted values injected at spawn |
-| a message | a **turn** | one prompt and everything the agent did about it |
+| The contact. | **Agent** | Which model and runtime answer. What the system prompt says. Which skills and MCP servers exist. |
+| The thread. | **Conversation** | One session that continues, bound to the reserved channel `fountain:team`. |
+| The machine behind it. | Its **sandbox** | The filesystem, the shell, the network, the memory. |
+| What it can touch. | **Environment** and **Vault** | Packages, cloned repos, the setup script, and the encrypted values that arrive at spawn. |
+| A message. | A **turn** | One prompt, and everything the agent did about it. |
 
-There is no fifth primitive for the team. A teammate *is* a conversation with
-a channel binding, so anything you can do to a conversation you can do to a
+There is no fifth primitive for the team. A teammate *is* a conversation bound
+to a channel. So whatever you can do to a conversation, you can do to a
 teammate.
 
 ```
@@ -29,21 +29,22 @@ teammate.
                  the runtime's session on disk
 ```
 
-## One agent, one durable thread
+## One agent, one thread that lasts
 
-`channel_id` is what arranges that. Sending to a channel that already has a
-live conversation continues it, so your app needs no "create or find" dance
-and no table of its own mapping rows to conversation ids.
+`channel_id` arranges that. Send to a channel that already has a live
+conversation, and Fountain continues it. Your app then needs no
+"create or find" dance, and no table of its own that maps a row to a
+conversation id.
 
-The team is a reserved channel, `fountain:team`. Any other string is yours:
+The team is a reserved channel, `fountain:team`. Any other string is yours.
 
 ```ts
 // a Slack channel, a Telegram chat, a row in your own product
 await fountain.run(text, { agent: "watchtower", channelId: `slack:${channel}` });
 ```
 
-Same behaviour, same sandbox per thread, without the team API at all.
-[AG-UI](../integrations/openbot.md) binds one coworker channel to one
+You get the same behaviour, and one sandbox for each thread, with no team API
+at all. [AG-UI](../integrations/openbot.md) binds one coworker channel to one
 conversation this way, and [Buzz](../integrations/buzz.md) binds a Nostr
 thread.
 
@@ -71,27 +72,27 @@ thread.
 ```
 
 **The 202 is not the answer.** `POST /messages` queues a turn and returns the
-conversation id. Everything after that arrives on the stream, so an app
-awaiting a reply is really awaiting stream events. The SDK's `Run` handle does
-that waiting for you.
+conversation id. Everything after that arrives on the stream. So an app that
+awaits a reply really awaits stream events. The SDK's `Run` handle does that
+wait for you.
 
-**Secrets enter at spawn, not at prompt.** The environment's values and the
-vault's are merged (the vault wins on a key collision) and handed to the
-sandbox as environment variables. Since they never reach the prompt, they
-never reach the model's context, and no clever message can talk the model into
-revealing them.
+**Secrets arrive at spawn, and not at the prompt.** Fountain merges the
+environment's values with the vault's, and the vault wins on a key collision.
+It hands the result to the sandbox as environment variables. They never reach
+the prompt, so they never reach the model's context. No clever message can
+talk the model into a value it does not hold.
 
-**Redaction is on the write path.** Every value of 8 bytes or more that
-Fountain put into that sandbox is scrubbed out of persisted output. The
-scrubbing happens on the single path every log event takes, rather than in the
-client or as a rule the agent is asked to follow, so `env`, `set -x` and
-`cat .env` all persist as `[REDACTED]`. A browser app can therefore offer a
-"connect GitHub" button without much thought about the transcript.
+**Redaction happens on the write path.** Fountain scrubs each value of 8 bytes
+or more that it put into that sandbox out of the persisted output. The scrub
+runs on the one path that each log event takes. It does not run in the client,
+and it is not a rule that somebody asks the agent to obey. So `env`, `set -x`
+and `cat .env` all persist as `[REDACTED]`. A browser app can therefore offer
+a "connect GitHub" button, and think little about the transcript.
 
-## The computer's day
+## The machine's day
 
-The sandbox has no equivalent in a stateless agent API, and its lifecycle is
-what your empty states should be designed around.
+The sandbox has no equivalent in a stateless agent API. Design your empty
+states around its lifecycle.
 
 ```
   sandbox:  pending ──▶ starting ──▶ ready ──────────────▶ suspended
@@ -107,17 +108,18 @@ what your empty states should be designed around.
                                    computer, and a new memory
 ```
 
-`ready` becomes `suspended` after 60 minutes with no turn (default).
+`ready` becomes `suspended` after 60 minutes with no turn, by default.
 
-Suspension is free and invisible. The disk survives, which keeps the runtime's
-session alive, so message five never re-explains messages one through four.
+A suspend is free and invisible. The disk survives, which keeps the runtime's
+session alive. So message five never explains messages one to four again.
 
-The ceiling costs you that. A sandbox destroyed at the max-lifetime bound
-loses its disk; the stored transcript is intact and the conversation still
-resumes, but the agent's own memory of it is gone. Both bounds are
-configurable (`SANDBOX_IDLE_TIMEOUT_MINUTES`, `SANDBOX_MAX_LIFETIME_HOURS`),
-and `freshConversation()` is the deliberate version of the same thing: a new
-session on the *same* disk.
+The ceiling costs you that. A sandbox that the max-lifetime bound destroys
+loses its disk. The stored transcript is intact and the conversation still
+resumes, and the agent's own memory of it has gone.
+
+You can configure both bounds, with `SANDBOX_IDLE_TIMEOUT_MINUTES` and
+`SANDBOX_MAX_LIFETIME_HOURS`. `freshConversation()` is the deliberate version
+of the same thing. It gives you a new session on the *same* disk.
 
 ## Who reads what
 
@@ -125,29 +127,33 @@ The two feeds a client uses are different on purpose.
 
 | | `/api/team/stream` | `/api/conversations/:id/events` |
 |---|---|---|
-| covers | every teammate | one thread |
-| carries | raw events + `conversation_id`, `agent_id` | events, and `blocks` on request |
-| answers | *something happened, to whom* | *what was said* |
-| you use it for | roster, typing dots, notifications, unread | rendering the thread |
+| Covers | Each teammate. | One thread. |
+| Carries | Raw events, with `conversation_id` and `agent_id`. | Events, and `blocks` on request. |
+| Answers | *Something happened, and to whom.* | *The words themselves.* |
+| You use it for | The roster, the dots that show a reply on the way, notifications, unread counts. | The thread, as you render it. |
 
-A team UI wants both: one long-lived connection for the roster, and a read of
-the open thread's feed. `blocks` keeps the second one from becoming a parser.
+A team UI wants both. One long-lived connection for the roster, and a read of
+the open thread's feed. `blocks` keeps the second one from a parser of your
+own.
+
 The server folds each runtime's dialect into `text`, `thinking`, `tool_use`,
-`tool_result`, `init`, `result`, `error` and `raw`, so your renderer handles
-eight kinds instead of four vendor formats.
+`tool_result`, `init`, `result`, `error` and `raw`. So your renderer handles
+eight kinds, and not four vendor formats.
 
 ## Where the multi-tenancy is
 
-Every route is scoped to the key that called it. Across agents,
+Fountain scopes each route to the key that called it. Across agents,
 conversations, secrets, search and audit, a key sees its own account and
-nothing else, and the scoping lives in the queries rather than in each
-controller. So the second person to sign in gets their own roster, their own
-computers and their own quota without you writing a line about it, and a
-browser app holding one person's key cannot be talked into reaching anyone
-else's teammates.
+nothing else. That scope lives in the queries, and not in each controller.
 
-*Sharing* is the part you do not get for free. A teammate belongs to an
-account, so a shared team room across several people remains your product's
+So the second person to sign in gets their own roster, their own machines and
+their own quota. You write not one line about it.
+
+Nobody can talk a browser app that holds one person's key into a reach for
+anybody else's teammates.
+
+*To share* is the part you do not get for free. A teammate belongs to one
+account, so a team room that several people share stays your product's
 problem. The usual answer is one Fountain account for the team, with your app
 in front of it.
 
@@ -157,5 +163,6 @@ in front of it.
   own terms.
 - [Architecture](../architecture.md) covers what runs, and what breaks when a
   dependency is down.
-- [Troubleshooting](../troubleshooting/index.md) is what to read when a sandbox is stuck.
+- [Troubleshoot a problem](../troubleshooting/index.md) is what to read when a
+  sandbox is stuck.
 - [A team chat, end to end](team-chat.md) is the code.

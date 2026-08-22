@@ -1,74 +1,81 @@
 # Mail
 
-**A decision is required.** Production refuses to boot with no mail setting,
-because a silently discarded verification email dead-ends signup with no
-visible error. There are exactly three options, checked in this order:
+**You must decide.** Production refuses to boot with no mail setting. A
+verification email that Fountain throws away leaves signup at a dead end, with
+no error to see. There are exactly three options, and Fountain checks them in
+the order below.
 
 ## At a glance
 
 | | |
 |---|---|
-| Required | **A decision, yes.** Production refuses to boot without one of the three |
-| Options | Resend, any SMTP server, or none |
-| Env vars | `RESEND_API_KEY` *or* `SMTP_*` *or* `EMAIL_DELIVERY=none`, plus `EMAIL_FROM` |
-| Precedence | Checked in the order below. Resend wins if several are set |
-| Without it | Production will not start |
+| Required | **Yes, as a decision.** Production refuses to boot without one of the three. |
+| Options | Resend, any SMTP server, or none. |
+| Env vars | `RESEND_API_KEY` *or* `SMTP_*` *or* `EMAIL_DELIVERY=none`, and `EMAIL_FROM`. |
+| Precedence | Fountain checks them in the order below. Resend wins when you set several. |
+| Without it | Production will not start. |
 
 ## Option 1: Resend
 
 | Variable | Effect |
 |---|---|
-| `RESEND_API_KEY` | Delivery via [Resend](https://resend.com) |
+| `RESEND_API_KEY` | [Resend](https://resend.com) delivers the mail. |
 
-Provider side: verify your sending domain in Resend (SPF, DKIM, DMARC
-records) before pointing `EMAIL_FROM` at it, because an unverified domain will not
-deliver to arbitrary inboxes.
+On the provider side, verify the domain you send from in Resend before you
+point `EMAIL_FROM` at it. That means the SPF, DKIM and DMARC records. A domain
+nobody verified will not deliver to an arbitrary inbox.
 
 ## Option 2: any SMTP server
 
 | Variable | Default | Effect |
 |---|---|---|
-| `SMTP_HOST` | — | Selects SMTP delivery |
+| `SMTP_HOST` | — | Chooses SMTP delivery. |
 | `SMTP_PORT` | `587` | |
-| `SMTP_USERNAME` | — | Omit entirely for an unauthenticated relay |
+| `SMTP_USERNAME` | — | Omit it for a relay that wants no authentication. |
 | `SMTP_PASSWORD` | — | |
-| `SMTP_TLS` | `always` | STARTTLS by default; `never` for a relay on a trusted network that does not offer it |
+| `SMTP_TLS` | `always` | STARTTLS by default. Use `never` for a relay on a trusted network that does not offer it. |
 
-If `RESEND_API_KEY` is also set, Resend wins, because the options are checked in
-order.
+If you also set `RESEND_API_KEY`, Resend wins, because Fountain checks the
+options in order.
 
-## Option 3: no email, deliberately
+## Option 3: no email, on purpose
 
 | Variable | Effect |
 |---|---|
-| `EMAIL_DELIVERY=none` | Disables email with a stderr notice at boot |
+| `EMAIL_DELIVERY=none` | Turns email off, with a notice on stderr at boot. |
 
-For an OAuth-only instance, or while evaluating. Accounts created with email
-+ password self-verify at registration, since a verification link that can never
-be delivered gates nothing (ADR 0011).
+Use it for an OAuth-only instance, or while you evaluate Fountain. An account
+created with email and password self-verifies at registration. A verification
+link that can never arrive gates nothing (ADR 0011).
 
-Password reset is dead in this mode; the only route back into a locked-out
-account is operator intervention.
+A password reset is dead in this mode. The one route back into a locked-out
+account is the operator.
 
-## In every mode
+## In each mode
 
 | Variable | Default | Effect |
 |---|---|---|
-| `EMAIL_FROM` | — | The From address, on a domain your provider is verified for. Required with any real delivery provider, and the app refuses to boot without it rather than sending mail your provider will reject |
+| `EMAIL_FROM` | — | The From address, on a domain your provider verified. A real delivery provider needs it, and the app refuses to boot without it. It does not send mail that your provider will reject. |
 
-What actually sends email today: account verification (24-hour link),
-password reset (1-hour link), and, only with [Stripe](stripe.md) configured,
-the four lifecycle emails: the trial-ending reminder three days out,
-trial expired, payment failed, and subscription canceled. OAuth signups skip verification
-entirely, so [GitHub OAuth](github-oauth.md) plus `EMAIL_DELIVERY=none` is a
-coherent minimal setup.
+Here is what sends email today. Account verification, with a 24-hour link.
+Password reset, with a 1-hour link.
+
+With [Stripe](stripe.md) configured, four lifecycle emails go out as well. A
+reminder three days before the trial ends. Trial expired. Payment failed.
+Subscription canceled.
+
+An OAuth signup skips verification, so [GitHub OAuth](github-oauth.md) with
+`EMAIL_DELIVERY=none` is a coherent minimal setup.
 
 ## Verify
 
-Register a throwaway account and confirm the verification email arrives.
-check spam, which is where an unverified sending domain lands. On a running
-instance, boot logs state the chosen mode (`EMAIL_DELIVERY=none` prints its
-notice to stderr; a missing configuration refuses to boot and says so).
+Register a throwaway account, then confirm that the verification email
+arrives. Check the spam folder, which is where mail from a domain nobody
+verified lands.
+
+On a live instance, the boot logs state the mode Fountain chose.
+`EMAIL_DELIVERY=none` prints its notice to stderr. An absent configuration
+refuses to boot, and says so.
 
 ## Related
 

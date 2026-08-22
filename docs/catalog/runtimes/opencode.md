@@ -14,13 +14,13 @@
 | System prompt | `~/.config/opencode/AGENTS.md` |
 | Credential | Whichever provider the model prefix names |
 
-## Why you would pick this one
+## Why you would choose this one
 
-It is the only runtime where changing provider is a one-line edit to `model`
-rather than a different agent.
+It is the only runtime where a change of provider is a one-line edit to
+`model`. On the others it is a different agent.
 
-It takes the canonical `provider/model-id` string verbatim and reads the prefix
-to decide which API key to export into the sandbox.
+It takes the canonical `provider/model-id` string word for word. It then reads
+the prefix to decide which API key to export into the sandbox.
 
 ## Set it up
 
@@ -39,18 +39,19 @@ Add a key for whichever provider you name, at
 
 ## Verify
 
-Run a conversation, then change `model` to a different provider and run
-another. Both working is the thing this runtime is for.
+Run a conversation. Then change `model` to a different provider and run
+another one. Two runs that both work are what this runtime is for.
 
 ## Limits
 
-**The provider set is closed at three.** `anthropic`, `openai` and `google` are
-the only prefixes Fountain can export a credential for, so a fourth is rejected
-when you save the agent rather than failing as an auth error inside the
-sandbox.
+**Three providers, and no more.** `anthropic`, `openai` and `google` are the
+only prefixes that Fountain can export a credential for. Fountain rejects a
+fourth when you save the agent, so it does not fail later as an auth error in
+the sandbox.
 
-**A provider you have no key for fails at the turn, not at save time.** The
-prefix is validated, the presence of your credential is not.
+**A provider you hold no key for fails at the turn, and not at save time.**
+Fountain validates the prefix. It does not check that your credential is
+there.
 
 ## Related
 

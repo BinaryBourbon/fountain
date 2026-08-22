@@ -67,7 +67,7 @@ markdown_extensions:
 # docs/cli.md is diffed against the real CLI command tree.
 nav:
   - Home: index.md
-  - Guided tour — opening a PR: tour.md
+  - Guided tour, a pull request: tour.md
   - Concepts:
       - The four primitives: primitives.md
       - Environment: concepts/environment.md
@@ -81,14 +81,14 @@ nav:
       - Architecture: architecture.md
   - Setup: setup.md
   - Run an instance:
-      - Self-hosting: self-hosting.md
+      - Self-host Fountain: self-hosting.md
       - Deploy an instance: guides/operate/deploy.md
       - Put it on the internet: guides/operate/put-it-on-the-internet.md
       - Connect a database: guides/operate/database.md
       - Deploy on Kubernetes: guides/operate/kubernetes.md
       - Configure email: guides/operate/email.md
       - Change sandbox lifetimes: guides/operate/sandbox-lifetime.md
-      - Turn on billing: guides/operate/billing.md
+      - Start billing: guides/operate/billing.md
       - Back up and restore: guides/operate/back-up-and-restore.md
       - Upgrade an instance: guides/operate/upgrade.md
       - Wire up observability: guides/operate/observability.md
@@ -98,7 +98,7 @@ nav:
       - Overview: troubleshooting/index.md
       - A conversation is stuck or failed: troubleshooting/conversation-stuck-or-failed.md
       - Sandbox errors: troubleshooting/sandbox-errors.md
-      - Pods restarting or not ready: troubleshooting/pods-restarting.md
+      - Pods restart or never go ready: troubleshooting/pods-restarting.md
       - Nobody can log in: troubleshooting/nobody-can-log-in.md
   - Configuration reference: configuration.md
   - Catalog:
@@ -122,7 +122,7 @@ nav:
       - E2B: integrations/e2b.md
       - Daytona: integrations/daytona.md
       - Self-hosted runners: integrations/runners.md
-      - Adding a provider: integrations/adding-a-sandbox-provider.md
+      - Add a provider: integrations/adding-a-sandbox-provider.md
       - What we need from a platform: integrations/platform-requirements.md
   - Services Fountain uses:
       - Overview: integrations/index.md
@@ -138,10 +138,10 @@ nav:
       - Conversation states: reference/conversation-states.md
       - Glossary: reference/glossary.md
   - Build a chat app:
-      - The shape everyone is cloning: build/index.md
+      - The shape everyone clones: build/index.md
       - A team chat, end to end: build/team-chat.md
       - What each piece does: build/pieces.md
-  - Plugging into Fountain:
+  - Plug into Fountain:
       - Overview: integrations/clients.md
       - fountain acp (reference): integrations/acp.md
       - Editors (ACP): integrations/editors.md

@@ -1,63 +1,63 @@
 # About agents
 
-This page explains what an Agent is and which of its fields carry decisions
-rather than settings. For every field, see the
+This page explains what an Agent is, and which of its fields carry a decision
+and not a setting. For each field, read the
 [API reference](../api.md).
 
 ## What an agent is
 
-An Agent is a named, re-runnable configuration for a coding agent. It is
-config, not a process. Nothing runs until a [Conversation](conversation.md)
-runs it.
+An Agent is a named configuration for a coding agent that you can run again
+and again. It is config, and not a process. Nothing runs until a
+[Conversation](conversation.md) runs it.
 
 An Agent decides seven things.
 
-- **`model`**, as `provider/model-id`, for example
+- **`model`**, as `provider/model-id`. An example is
   `anthropic/claude-sonnet-4-6`.
 - **`runtime`**, one of `claude`, `codex`, `gemini` or `opencode`.
-- **`environment`**, an optional [Environment](environment.md) to provision
-  from.
-- **`system`** and **`description`**, the system prompt and a human-readable
-  summary.
-- **`skills`**, either inline or sourced from GitHub.
-- **`mcp_servers`**, MCP server definitions with `${VAR}` substitution in their
-  env.
-- **`metadata`**, a free-form map for your own bookkeeping.
+- **`environment`**, an optional [Environment](environment.md) to start from.
+- **`system`** and **`description`**, the system prompt and a summary that a
+  person reads.
+- **`skills`**, either inline or from GitHub.
+- **`mcp_servers`**, the MCP server definitions, with `${VAR}` substitution in
+  their env.
+- **`metadata`**, a free-form map for your own records.
 
 ## Why it exists
 
-An Agent is the thing you name and hand to someone else.
+An Agent is the thing you name and hand to somebody else.
 
-Without it, every run would carry its own model choice, prompt and tool
-configuration, and two people asking the same agent for the same thing would
-get different behavior. The Agent is the unit that makes a run repeatable and
-the unit a teammate is built from. See
-[agents as teammates](teammates.md).
+Without it, each run would carry its own model choice, prompt and tool
+configuration. Two people would ask the same agent for the same thing and get
+different behavior. The Agent is the unit that makes a run repeatable, and a
+teammate starts from one. Read [agents as teammates](teammates.md).
 
-## Why the provider is checked and the model id is not
+## Why Fountain checks the provider and not the model id
 
-This trips people up, and the asymmetry is deliberate.
+This asymmetry surprises people, and it is deliberate.
 
-The provider must match the runtime. `anthropic` for `claude`, `openai` for
-`codex`, `google` for `gemini`. `opencode` is multi-provider and takes any of
-the three, using the prefix to pick which API key to export.
+The provider must match the runtime. Use `anthropic` for `claude`, `openai`
+for `codex`, and `google` for `gemini`. `opencode` takes any of the three, and
+the prefix picks which API key to export.
 
-A provider outside that set is rejected at write time. Fountain holds no
-credential for it, so a sandbox provisioned that way would start with no
-inference key at all and fail on the first turn with an error that pointed
-nowhere useful. Rejecting at write time turns a confusing runtime failure into
-a clear form error.
+Fountain rejects a provider outside that set at write time. It holds no
+credential for such a provider. A sandbox from that config would start with no
+inference key at all. It would fail on the first turn, and the error would
+point nowhere useful. The write-time rejection turns an unclear runtime
+failure into a clear form error.
 
-The model id itself is not checked against a list. The agent form suggests
-current models, and whatever you type is passed to the runtime's CLI unchanged.
-A model released after your Fountain version still works. Validating the id
-would mean shipping a list that goes stale between releases, and the cost of a
-stale allowlist is worse than the cost of a typo.
+Fountain does not check the model id against a list. The agent form suggests
+current models. Fountain passes what you type to the runtime's CLI unchanged,
+so a model that ships after your Fountain version still works.
+
+To validate the id, Fountain would have to ship a list. That list would go
+stale between releases, and a stale allowlist costs more than a typo does.
 
 ## How the system prompt reaches the machine
 
-The system prompt is written into the runtime's user-level instructions file on
-the agent's sandbox, at provision and again at every reattach.
+Fountain writes the system prompt into the runtime's user-level instructions
+file on the agent's sandbox. It writes it at provision, and again at each
+reattach.
 
 | Runtime | File |
 |---|---|
@@ -66,26 +66,26 @@ the agent's sandbox, at provision and again at every reattach.
 | `opencode` | `~/.config/opencode/AGENTS.md` |
 | `gemini` | `~/.gemini/GEMINI.md` |
 
-Because it is rewritten on reattach, editing an Agent's system prompt reaches
-an existing sandbox the next time that sandbox wakes. It does not reach a turn
-that is already in flight.
+Fountain rewrites the file on reattach. An edit to an Agent's system prompt
+therefore reaches a sandbox that already exists, the next time that sandbox
+wakes. It does not reach a turn that is already in flight.
 
 ## Skills and MCP servers
 
-Each `skills` entry is either inline or GitHub-sourced. An inline entry is
-`{name, content}` and writes a full `SKILL.md` into the sandbox. A GitHub entry
-is `{source: "owner/repo"}` and is installed with the skills.sh CLI.
+Each `skills` entry is inline or it comes from GitHub. An inline entry is
+`{name, content}`, and Fountain writes a full `SKILL.md` into the sandbox. A
+GitHub entry is `{source: "owner/repo"}`, and the skills.sh CLI installs it.
 
-Two skills are bundled into every sandbox regardless of what an Agent asks
-for.
+Each sandbox also gets two skills, whatever the Agent asks for.
 
-- **`fountain`** gives the agent Fountain's own API, so it can spawn
+- **`fountain`** gives the agent Fountain's own API, so the agent can start
   sub-conversations.
-- **`create-team`** is a question-and-answer flow that sets up the user's team.
-  A first teammate runs it when someone answers `/create-team`.
+- **`create-team`** is a question and answer flow that sets up the user's team.
+  A first teammate runs it when somebody answers `/create-team`.
 
-`mcp_servers` entries support `${VAR}` substitution in their `env`, resolved
-from the merged environment and vault secrets at spawn time.
+An `mcp_servers` entry takes `${VAR}` substitution in its `env`. Fountain
+resolves the reference from the merged environment and vault secrets at spawn
+time.
 
 ```yaml
 apiVersion: fountain.dev/v1
@@ -106,28 +106,29 @@ spec:
         GITHUB_PERSONAL_ACCESS_TOKEN: "${GITHUB_PAT}"
 ```
 
-`${GITHUB_PAT}` resolves from the merged environment and vault secrets. See
+`${GITHUB_PAT}` resolves from the merged environment and vault secrets. Read
 [substitution](../api.md).
 
 ## What an agent is not
 
-**Not a running process.** An Agent that has never been run has no sandbox, no
+**Not a process that runs.** An Agent that nobody has run has no sandbox, no
 memory and no cost.
 
 **Not a hard scope.** `allowed_environment_ids` and `allowed_vault_ids` bound
-which Environments and Vaults a launch may name. They are the Agent's own
-allowlists rather than a tenancy boundary. Tenancy is enforced separately, on
-every query.
+which Environments and Vaults a launch can name. They are the Agent's own
+allowlists, and not a tenancy boundary. Fountain enforces tenancy separately,
+on each query.
 
 **Not the ACP sense of "agent".** In the Agent Client Protocol, "agent" means
-the process an editor spawns. See
+the process that an editor spawns. Read
 [`fountain acp`](../integrations/acp.md).
 
 ## Where to go next
 
 - [About conversations](conversation.md), which run an Agent.
-- [Agents as teammates](teammates.md), which is one Conversation per Agent.
+- [Agents as teammates](teammates.md), which is one Conversation for each
+  Agent.
 - [About environments](environment.md), which an Agent names.
-- [Runtimes](../catalog/runtimes/index.md), all four compared.
-- [Skills](../catalog/skills/index.md), including the two every sandbox gets.
+- [Runtimes](../catalog/runtimes/index.md), with all four compared.
+- [Skills](../catalog/skills/index.md), and the two that each sandbox gets.
 - [Glossary](../reference/glossary.md), for the three senses of "agent".

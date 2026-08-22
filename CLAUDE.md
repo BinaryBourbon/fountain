@@ -379,6 +379,21 @@ in-app manual at `/docs` — the same markdown is embedded at compile time by
   `scripts/docs-style-allow.txt`, so a file **not** on that list is checked and
   every new page is covered by default. Cleaning a page means deleting its
   line; the list only shrinks (#911).
+- **`vale lint docs` enforces ASD-STE100 Simplified Technical English.** Every
+  published page is written in it. The standard is
+  `docs-redesign/08-simplified-technical-english.md`; config is
+  `.vale-ste.yml`; the backlog is `.valeignore` and is **empty**. The linter is
+  [`stuffbucket/vale`](https://github.com/stuffbucket/vale) — MIT, pure Go.
+  Install it with `brew install stuffbucket/tap/vale`. CI uses the pinned
+  `v0.15.0` release binary, checksum-verified, **not** `go install`: the jobs
+  pin Go from `cli/go.mod` with `GOTOOLCHAIN=local` and cannot fetch the newer
+  toolchain the module wants. The gate is six rules: sentence length (20
+  procedural / 25 descriptive), contractions, the passive voice, phrasal verbs,
+  one instruction per sentence, and the -ing form. `STE.Vocabulary` advises and
+  does not gate, because its wordset was built for aircraft maintenance. Read
+  the standard before you fight the linter — it lists the three traps (joined
+  table cells, a code span opening a sentence, `anything` matching the -ing
+  rule) and where a suppression comment is legitimate.
 - **`docs/cli.md` is diffed against the CLI.** `cli/internal/cmd/docs_test.go`
   fails if a command exists that the page does not mention, or the page
   mentions one that does not exist. Add a CLI command → add it to `docs/cli.md`

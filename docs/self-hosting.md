@@ -1,52 +1,52 @@
-# Self-hosting
+# Self-host Fountain
 
-Running your own Fountain instance.
+This section is about an instance of your own that stays up.
 
-For a development environment on your own machine, see [Setup](setup.md). That
-is a different thing, and this section assumes you want an instance that stays
-up.
+For a development environment on your own machine, read [Setup](setup.md).
+That is a different thing.
 
 Start with [Deploy an instance](guides/operate/deploy.md).
 
-## What you need
+## What you must have
 
 | | |
 |---|---|
-| **Postgres 16+** | The compose file runs one for you |
-| **A sandbox provider** | [sprites.dev](https://sprites.dev) by default. [E2B](integrations/e2b.md) and [Daytona](integrations/daytona.md) are hosted alternatives, and users can bring their own machines with [`fountain runner`](integrations/runners.md), which needs no credential. The app boots without one, but every conversation fails |
-| **A mail provider** | Resend or any SMTP server. See [Configure email](guides/operate/email.md), which is a decision rather than an optional extra |
+| **Postgres 16+** | The compose file runs one for you. |
+| **A sandbox provider** | [sprites.dev](https://sprites.dev) is the default. [E2B](integrations/e2b.md) and [Daytona](integrations/daytona.md) are two more hosts. A user can also bring their own machine with [`fountain runner`](integrations/runners.md), which needs no credential. The app boots without a provider, but then each conversation fails. |
+| **A mail provider** | Resend, or any SMTP server. Read [Configure email](guides/operate/email.md). It is a decision, and not an optional extra. |
 
-Sandboxes run on one of three backends, all hosted services. A Fountain
-instance is not fully self-contained, and self-hosted Daytona comes closest.
+A sandbox runs on one of three backends. Somebody else runs all three of
+them as a service, so a Fountain instance is not self-contained. Self-hosted
+Daytona comes closest.
 
-| Provider | Enabled by | Idle behavior | Notes |
+| Provider | Turned on by | When idle | Notes |
 |---|---|---|---|
-| **Sprites** (default) | `SPRITES_TOKEN` | Parks, scaling to zero on its own | The reference backend |
-| **E2B** | `E2B_API_KEY` | Parks with an explicit pause, snapshotting filesystem and memory | Needs a template built from `images/e2b/`. See [E2B](integrations/e2b.md) |
-| **Daytona** | `DAYTONA_API_KEY` | Parks with an explicit stop, preserving disk, archiving when long-parked | Self-hostable via `DAYTONA_API_URL`. See [Daytona](integrations/daytona.md) |
+| **Sprites** (default) | `SPRITES_TOKEN` | Parks, and scales to zero on its own. | The reference backend. |
+| **E2B** | `E2B_API_KEY` | Parks on an explicit pause, with a snapshot of filesystem and memory. | Needs a template built from `images/e2b/`. Read [E2B](integrations/e2b.md). |
+| **Daytona** | `DAYTONA_API_KEY` | Parks on an explicit stop, keeps the disk, and archives a long park. | You can self-host it through `DAYTONA_API_URL`. Read [Daytona](integrations/daytona.md). |
 
-`SANDBOX_PROVIDER` picks the default for new sandboxes. An agent can pin a
-provider, and existing sandboxes always stay where they were created.
+`SANDBOX_PROVIDER` chooses the default for a new sandbox. An agent can pin a
+provider. A sandbox that already exists always stays where Fountain made it.
 
-For what each piece of the system does and what breaks when a dependency is
-down, see [Architecture](architecture.md).
+[Architecture](architecture.md) says what each piece of the system does, and
+what breaks when a dependency is down.
 
 ## The guides
 
-**Standing it up.**
+**How to stand it up.**
 
 - [Deploy an instance](guides/operate/deploy.md)
 - [Put it on the internet](guides/operate/put-it-on-the-internet.md)
 - [Connect a database](guides/operate/database.md)
 - [Deploy on Kubernetes](guides/operate/kubernetes.md)
 
-**Decisions it forces.**
+**The decisions it forces.**
 
 - [Configure email](guides/operate/email.md)
 - [Change sandbox lifetimes](guides/operate/sandbox-lifetime.md)
-- [Turn on billing](guides/operate/billing.md)
+- [Start billing](guides/operate/billing.md) <!-- vale disable-line STE.IngForms -->
 
-**Keeping it up.**
+**How to keep it up.**
 
 - [Back up and restore](guides/operate/back-up-and-restore.md)
 - [Upgrade an instance](guides/operate/upgrade.md)
@@ -54,19 +54,19 @@ down, see [Architecture](architecture.md).
 - [Run a release task](guides/operate/run-a-release-task.md)
 
 When something is wrong, start from
-[Troubleshooting](troubleshooting/index.md).
+[Troubleshoot a problem](troubleshooting/index.md).
 
 ## Licence
 
-Fountain is MIT licensed. Running your own instance is explicitly fine,
-including commercially.
+Fountain is MIT licensed. You can run your own instance, and you can do it
+commercially.
 
 ## Known gaps
 
-Being straight about what self-hosting does not yet include.
+Here is what a self-hosted instance does not yet cover.
 
-- **Sandbox backends are hosted dependencies.** Sprites, E2B and Daytona are
-  all services, and self-hosted Daytona narrows this. The contract a new
-  backend must satisfy is executable, `Fountain.Sandbox` plus its conformance
-  suite, and written down in
-  [the sandbox contract](integrations/sandbox-contract.md).
+- **A sandbox backend is a dependency somebody else runs.** Sprites, E2B and
+  Daytona are all services. Self-hosted Daytona narrows the gap. The contract
+  that a new backend must satisfy is executable code, `Fountain.Sandbox` and
+  its conformance suite, and
+  [the sandbox contract](integrations/sandbox-contract.md) writes it down.

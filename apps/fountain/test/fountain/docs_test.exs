@@ -129,7 +129,7 @@ defmodule Fountain.DocsTest do
 
     test "keeps mkdocs.yml's order" do
       titles = Enum.map(Docs.nav_source(), &elem(&1, 0))
-      assert Enum.take(titles, 3) == ["Home", "Guided tour — opening a PR", "Concepts"]
+      assert Enum.take(titles, 3) == ["Home", "Guided tour, a pull request", "Concepts"]
       assert List.last(titles) == "Changelog"
     end
 
@@ -139,7 +139,7 @@ defmodule Fountain.DocsTest do
     test "the tutorial and the concepts tree come before reference" do
       titles = Enum.map(Docs.nav_source(), &elem(&1, 0))
 
-      tour = Enum.find_index(titles, &(&1 == "Guided tour — opening a PR"))
+      tour = Enum.find_index(titles, &(&1 == "Guided tour, a pull request"))
       concepts = Enum.find_index(titles, &(&1 == "Concepts"))
       reference = Enum.find_index(titles, &(&1 == "Reference"))
 

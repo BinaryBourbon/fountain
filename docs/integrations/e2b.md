@@ -1,11 +1,10 @@
 # E2B
 
 [E2B](https://e2b.dev) is one of the three
-[sandbox providers](sandbox-contract.md). Setting
-`E2B_API_KEY` enables it; `SANDBOX_PROVIDER=e2b` makes it the default for
-newly-created sandboxes, and an individual agent can pin it via
-`sandbox_provider`. Existing sandboxes always stay on the provider they were
-created on.
+[sandbox providers](sandbox-contract.md). `E2B_API_KEY` turns it on, and
+`SANDBOX_PROVIDER=e2b` makes it the default for a new sandbox. One agent can
+also pin it with `sandbox_provider`. A sandbox that already exists always
+stays on the provider Fountain made it on.
 
 ```bash
 E2B_API_KEY=e2b_...          # enables the provider
@@ -18,55 +17,55 @@ E2B_TEMPLATE=fountain        # a template built from images/e2b/ (see below)
 
 | | |
 |---|---|
-| Role | Sandbox provider |
-| Enabled by | `E2B_API_KEY` |
+| Role | Sandbox provider. |
+| Turned on by | `E2B_API_KEY` |
 | Env vars | `E2B_API_KEY`, `E2B_TEMPLATE`, `E2B_BASE_URL` |
-| Suspend | Explicit pause, snapshotting filesystem **and memory** |
+| Suspend | An explicit pause, with a snapshot of filesystem **and memory**. |
 | Capabilities advertised | `:suspend`, `:network_policy`, `:attach` |
-| Needs first | A template built from `images/e2b/`. The stock `base` lacks the agent CLIs |
+| Needs first | A template built from `images/e2b/`. The stock `base` has no agent CLIs. |
 
 ## Template
 
-The stock `base` template does not carry the agent CLIs. Build the reference
-template once per account:
+The stock `base` template carries no agent CLI. Build the reference template
+once for each account.
 
 ```bash
 cd images/e2b
 e2b template build --name fountain --dockerfile e2b.Dockerfile
 ```
 
-It recreates the sandbox shape the provisioning pipeline assumes, meaning a
-`sprite` user with passwordless sudo, `/home/sprite`, node/npm/bun/git and
-the four agent CLIs, so no per-provider provisioning code exists.
+It recreates the sandbox shape that the provision pipeline assumes. That is a
+`sprite` user with passwordless sudo, `/home/sprite`, node, npm, bun, git and
+the four agent CLIs. So no provision code exists for one provider alone.
 
 ## How the contract maps
 
 | Fountain operation | E2B mechanics |
 |---|---|
-| Name-keyed create/adopt | E2B assigns ids; the minted name rides in sandbox `metadata` and lookups filter on it server-side. A create race leaves a duplicate the reaper converges |
-| Suspend / resume | Real calls: `pause` snapshots filesystem + memory (retained indefinitely, storage-only cost); `connect` restores. The idle bound genuinely parks |
-| TTL | Every running E2B sandbox has one. Live commands heartbeat it, and sandboxes are created with `autoPause: true`, so a missed heartbeat pauses (state preserved) rather than kills. Operations that find the sandbox auto-paused resume it first |
-| Exec / streaming | envd (the in-sandbox daemon) over Connect-RPC with the JSON codec, which is plain HTTPS and not gRPC |
-| Reattach after a deploy | envd does not replay a reconnected process's output, so detachable commands run under a journaling shim (`tee` to `/tmp/fountain/<tag>.*`); reattach replays the journal from byte zero via a `tail` streamer and reads the real exit code from the shim's exit file |
-| Network policy | Native default-deny: `denyOut 0.0.0.0/0` plus the allowlist, updatable on a running sandbox, so the provision-open-then-lock flow works unchanged |
-| Checkpoints | Not supported (`:checkpoint` is not advertised) |
+| Create or adopt by name | E2B assigns the ids. The minted name rides in sandbox `metadata`, and a lookup filters on it server-side. A create race leaves a duplicate, and the reaper converges it. |
+| Suspend and resume | Real calls. `pause` snapshots filesystem and memory, keeps them without a time limit, and costs storage alone. `connect` restores. The idle bound truly parks. |
+| TTL | Each E2B sandbox that runs has one. A live command heartbeats it. Fountain creates a sandbox with `autoPause: true`. A heartbeat that arrives late then pauses the sandbox and keeps its state, and does not kill it. An operation that finds the sandbox auto-paused resumes it first. |
+| Exec and streams | envd, the daemon in the sandbox, over Connect-RPC with the JSON codec. That is plain HTTPS, and not gRPC. |
+| Reattach after a deploy | envd does not replay the output of a process you reconnect to. So a detachable command runs under a shim that journals, with `tee` to `/tmp/fountain/<tag>.*`. A reattach replays the journal from byte zero through a `tail` streamer, and reads the real exit code from the shim's exit file. |
+| Network policy | Native default-deny. `denyOut 0.0.0.0/0` plus the allowlist, and you can update it on a sandbox that runs. The provision-open-then-lock flow works unchanged. |
+| Checkpoints | Not supported. E2B does not advertise `:checkpoint`. |
 
 ## Operational notes
 
-- **Plans**: agent turns can exceed one hour; E2B's Hobby tier caps
-  continuous runtime at 1h, so Pro is effectively required.
-- **Reaper**: reconciliation lists both `running` and `paused` sandboxes,
-  filtered to `fountain`-stamped metadata; other sandboxes on the account
-  are never touched.
-- **Egress**: the callback host (`PUBLIC_URL`) must be reachable from
-  inside; `limited` environments get it via the same allowlist mechanics as
-  Sprites.
+- **Plans.** An agent turn can take more than one hour. E2B's Hobby tier caps
+  continuous runtime at 1h, so you need Pro.
+- **Reaper.** Reconciliation lists both `running` and `paused` sandboxes,
+  filtered to metadata that Fountain stamped. It never touches another
+  sandbox on the account.
+- **Egress.** The callback host, `PUBLIC_URL`, must be reachable from inside
+  the sandbox. A `limited` environment gets it through the same allowlist
+  mechanics that Sprites uses.
 
 ## Verify
 
-Create a conversation on an agent pinned to `e2b` and watch it reach its first
-turn. Anything short of that is a provisioning failure, and the stage events
-name the step.
+Create a conversation on an agent pinned to `e2b`, and watch it reach its
+first turn. A run that stops short of that is a failure to provision, and the
+stage events name the step.
 
 ## Related
 

@@ -1,6 +1,6 @@
 # codex
 
-> OpenAI's Codex CLI, running headless inside the sandbox.
+> OpenAI's Codex CLI, headless in the sandbox.
 
 ## At a glance
 
@@ -14,10 +14,10 @@
 | System prompt | `~/.codex/AGENTS.md` |
 | Credential | An OpenAI API key |
 
-## Why you would pick this one
+## Why you would choose this one
 
-You want an OpenAI model doing the work, or you are comparing two runtimes on
-the same task.
+You want an OpenAI model to do the work. Or you compare two runtimes on the
+same task.
 
 ## Set it up
 
@@ -33,7 +33,7 @@ spec:
 
 The model must carry the `openai/` prefix.
 
-Add your OpenAI key at `/account/inference-credentials` in the running app.
+Add your OpenAI key at `/account/inference-credentials` in the app.
 
 ## Verify
 
@@ -42,9 +42,9 @@ adapter.
 
 ## Limits
 
-The CLI takes the bare model id, so Fountain strips the `openai/` prefix before
-invoking it. That is invisible in normal use and worth knowing if you are
-reading a spawn command in the logs.
+The CLI takes the bare model id, so Fountain removes the `openai/` prefix
+before it calls the CLI. You never see that in normal use. It matters when you
+read a spawn command in the logs.
 
 ## Related
 

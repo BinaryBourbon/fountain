@@ -1,11 +1,10 @@
 # Nobody can log in
 
-This guide shows you how to work down the chain from the most common cause to
-the least.
+This guide walks the chain from the most common cause to the least.
 
-Note the symptom, because it misleads. The password is accepted and the session
-is real, but it never leaves the "check your email" page, so this reads as a
-broken app rather than a refused login.
+Note the symptom, because it misleads. Fountain accepts the password and the
+session is real, but the user never leaves the "check your email" page. That
+reads as a broken app, and not as a refused login.
 
 ## 1. Did the verification email go anywhere?
 
@@ -19,35 +18,35 @@ docker compose exec app bin/fountain_server eval \
   'Fountain.Release.verify_email("them@example.com")'
 ```
 
-If that unblocks the account, the problem is mail. See
+If that unblocks the account, the problem is mail. Read
 [Configure email](../guides/operate/email.md).
 
-## 2. Mail configured but not arriving
+## 2. You configured mail, and nothing arrives
 
-An unverified sending domain (SPF, DKIM, DMARC) is accepted by the provider and
-then rejected or spam-foldered downstream. See the
-[mail integration guide](../integrations/mail.md).
+The provider accepts mail from a domain that nobody verified. SPF, DKIM and
+DMARC then fail downstream, and the receiver rejects the message or files it
+as spam. Read the [mail integration guide](../integrations/mail.md).
 
 ## 3. OAuth still works when mail does not
 
-GitHub sign-ins arrive already verified, so they are a way back in while mail
-is broken.
+A GitHub sign-in arrives already verified, so it is a way back in while mail
+fails.
 
-Conversely, a GitHub outage breaks only the button. Password auth is
-unaffected.
+The reverse also holds. A GitHub outage breaks the button and nothing else.
+Password auth still works.
 
-## 4. Password reset needs working mail
+## 4. A password reset needs mail that works
 
-With `EMAIL_DELIVERY=none` a locked-out password account has no self-serve
-route back. That is the trade-off the mode's boot notice warns about, and the
-only route is a release task.
+With `EMAIL_DELIVERY=none`, a locked-out password account has no self-serve
+route back. That is the trade the mode's boot notice warns you about, and the
+one route left is a release task.
 
 ## 5. 429 responses
 
-The API rate limit is 600 requests per minute per IP.
+The API rate limit is 600 requests each minute, for each IP.
 
-If *everyone* is rate-limited at once behind a proxy, `TRUSTED_PROXIES` is
-unset and every client is sharing the proxy's bucket. See
+If Fountain rate-limits *everyone* at once behind a proxy, `TRUSTED_PROXIES`
+is unset. Each client then shares the proxy's bucket. Read
 [Put it on the internet](../guides/operate/put-it-on-the-internet.md).
 
 ## Related

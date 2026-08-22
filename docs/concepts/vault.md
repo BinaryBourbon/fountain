@@ -1,40 +1,40 @@
 # About vaults
 
 This page explains what a Fountain Vault is, why it exists, and why it is not
-the thing its name suggests. For every field, see the
-[API reference](../api.md). For the commands, see the
+the thing its name suggests. For each field, read the
+[API reference](../api.md). For the commands, read the
 [CLI reference](../cli.md).
 
 ## If you have used HashiCorp Vault, read this first
 
-The names collide and the meanings are close to opposite. Getting this
-backwards produces exactly the wrong model of how a credential reaches a
-sandbox, so it is worth thirty seconds.
+The names collide and the meanings are close to opposite. Get this backwards
+and you build exactly the wrong model of how a credential reaches a sandbox.
+Thirty seconds here saves that.
 
 | HashiCorp Vault | Fountain Vault |
 |---|---|
-| One central server you deploy, cluster and unseal | A small record in Fountain's database. Make as many as you like |
-| The authoritative store. If it is in Vault, it is true | A patch layer. The Environment is the baseline and the Vault overrides it |
-| Issues dynamic, leased, revocable credentials | Holds static values you wrote. No leases, no rotation, no revocation |
-| Sealed until an operator unseals it | No state. There is nothing to unseal |
-| Path mounts and per-path policy | A flat key and value bag, scoped to your tenant |
-| Precedence is not a concept | Precedence is the entire point |
+| One central server that you deploy, cluster and unseal. | A small record in Fountain's database. Make as many as you want. |
+| The authoritative store. What Vault holds is true. | A patch layer. The Environment is the baseline, and the Vault overrides it. |
+| Issues dynamic, leased, revocable credentials. | Holds static values that you wrote. No leases, no rotation, no revocation. |
+| Sealed until an operator unseals it. | No state at all. There is nothing to unseal. |
+| Path mounts, and a policy for each path. | One flat bag of keys and values, scoped to your tenant. |
+| Precedence is not a concept. | Precedence is the whole point. |
 
-One thing does carry over. Both encrypt with an envelope. HashiCorp goes unseal
-key, then root key, then keyring, then data. Fountain goes
-`MASTER_SECRETS_KEY`, then a per-tenant data encryption key, then the value. If
-you understood theirs, you already understand
+One thing does carry over. Both products encrypt with an envelope.
+
+HashiCorp goes unseal key, then root key, then keyring, then data. <!-- vale disable-line STE.IngForms -->
+Fountain goes `MASTER_SECRETS_KEY`, then one data encryption key for each
+tenant, then the value. If you understood theirs, you already understand
 [ours](../architecture.md).
 
 ## What a vault is
 
-A Vault is a named bag of environment variable overrides that layers over an
+A Vault is a named bag of environment variable overrides. It layers over an
 Environment for one run.
 
-It is free-floating. It belongs to no Agent and no Environment. It can be
-attached to any conversation the Agent's `allowed_vault_ids` permits, and the
-same Vault can be attached to conversations of different Agents at the same
-time.
+It floats free. It belongs to no Agent and to no Environment. You can attach
+it to any conversation that the Agent's `allowed_vault_ids` permits. You can
+also attach one Vault to conversations of different Agents at the same time.
 
 ```yaml
 apiVersion: fountain.dev/v1
@@ -49,25 +49,27 @@ spec:
 
 ## Why it exists
 
-Without vaults, changing one credential means editing the Environment, and the
-Environment is shared. Three consequences follow, and teams hit all three.
+Without vaults, one credential change means an edit to the Environment. The
+whole team shares that Environment. Three results follow, and teams meet all
+three.
 
-Running one Agent against staging and production would need two Environments
-that are identical except for one URL. They would drift.
+To run one Agent against staging and production, you would need two <!-- vale disable-line STE.IngForms -->
+Environments. The two would be the same except for one URL, and they would
+drift apart.
 
-Giving a contractor's agent a scoped token would mean either widening the
-shared Environment or cloning it.
+To give a contractor's agent a scoped token, you would widen the shared
+Environment or clone it.
 
-Rotating one key would touch every agent using that Environment, whether or not
-they use the key.
+To rotate one key, you would touch each agent on that Environment. Some of
+them do not use the key at all.
 
-A Vault makes each of those a one-line attachment on a single run and leaves
-the shared thing alone.
+A Vault turns each of those into a one-line attachment on a single run. The
+shared thing stays as it is.
 
 ## The merge rule
 
-When a Conversation starts, Fountain builds the environment variable set in one
-direction.
+A Conversation starts. Fountain then builds the environment variable set in
+one direction.
 
 ```
 environment secrets  --merge-->  vault secrets  -->  the sandbox
@@ -75,60 +77,60 @@ environment secrets  --merge-->  vault secrets  -->  the sandbox
                                wins on collision
 ```
 
-The Vault wins. If the Environment sets `DATABASE_URL` and the attached Vault
-also sets `DATABASE_URL`, the process sees the Vault's value.
+The Vault wins. The Environment sets `DATABASE_URL`, the attached Vault sets
+`DATABASE_URL` too, and the process sees the Vault's value.
 
-The merge happens once, at spawn. Editing a Vault does not reach a sandbox that
-is already running.
+The merge happens once, at spawn. An edit to a Vault does not reach a sandbox
+that already runs.
 
-Keys that only the Environment sets survive untouched. A Vault is a patch, not
-a replacement.
+A key that only the Environment sets survives untouched. A Vault is a patch,
+and not a replacement.
 
 ## What a vault is not
 
-**Not rotation.** A value you put in a Vault stays there until you change it.
-Fountain does not expire it, does not renew it and does not tell an agent that
-it went stale.
+**Not rotation.** A value that you place in a Vault stays there until you
+change it. Fountain does not expire it, does not renew it, and does not tell
+an agent that it went stale.
 
-**Not revocation.** Removing a Vault from an Agent's `allowed_vault_ids` stops
-future conversations attaching it. A sandbox that is already running keeps the
-value it was given, because by then the value is in a process's environment on
-a machine.
+**Not revocation.** Remove a Vault from an Agent's `allowed_vault_ids` and no
+later conversation can attach it. A sandbox that already runs keeps the value
+you gave it. By then the value sits in a process environment on a machine.
 
-**Not a read audit.** Fountain audits the mutation when a secret is written, by
-key and by size. It does not record that an agent read one, because the read
-happens inside the sandbox.
+**Not a read audit.** Fountain audits the mutation when you write a secret, by
+key and by size. It does not record that an agent read one, because that read
+happens in the sandbox.
 
-**Not returnable.** Values are write-only. Listing a Vault returns keys and
-timestamps. There is no endpoint that gives you a value back, including as the
-owner.
+**Not returnable.** Values are write-only. A list of a Vault returns keys and
+timestamps. No endpoint gives you a value back, not even to the owner.
 
 ## When to use something else
 
-Use an [Environment](environment.md) for anything the whole team shares that
+Use an [Environment](environment.md) for what the whole team shares and what
 changes rarely.
 
-Use `env_vars` on an Environment for values that are not sensitive. A Vault
-holding one non-secret is a Vault someone will later assume is secret.
+Use `env_vars` on an Environment for a value that is not sensitive. A Vault
+that holds one non-secret is a Vault that somebody later assumes is secret.
 
 Use [inference credentials](../integrations/index.md) for model API keys.
-Those are per-user, entered in the running app, and never belong in a Vault.
+Those belong to one user, you enter them in the app, and they never belong in
+a Vault.
 
 ## What we chose not to do
 
-We considered per-key precedence, so a specific Environment key could refuse to
-be overridden by a Vault. We rejected it. A merge rule that holds always is
-worth more than a merge rule that is more expressive, because the reader has to
-hold it in their head at the moment they are debugging a wrong credential,
-which is usually a bad moment.
+We looked at precedence for each key, so that one Environment key could refuse
+an override from a Vault. We rejected it.
 
-We also considered making the Vault the baseline and the Environment the
-override, which would have matched the HashiCorp prior. We rejected it because
-the thing that changes rarely should be the base.
+A merge rule that always holds is worth more than a merge rule that says more.
+The reader must hold the rule in their head at the moment they debug a wrong
+credential, and that moment is usually a bad one.
+
+We also looked at the other order, with the Vault as the baseline and the
+Environment as the override. That would have matched the HashiCorp prior. We
+rejected it, because the thing that changes rarely must be the base.
 
 ## Where to go next
 
 - [About environments](environment.md), the other half of the merge.
-- [About agents](agent.md), which decides which vaults are attachable.
+- [About agents](agent.md), which decides which vaults you can attach.
 - [Architecture](../architecture.md), for the full encryption chain.
 - [CLI reference](../cli.md), for `fountain vault`.

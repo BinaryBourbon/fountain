@@ -1,73 +1,74 @@
 # GitHub OAuth
 
-**Optional.** Adds "Continue with GitHub" to the login and registration pages.
-Email + password auth works without it.
+**Optional.** It adds "Continue with GitHub" to the login and registration
+pages. Email and password auth works without it.
 
 ## At a glance
 
 | | |
 |---|---|
-| Required | No |
-| Provider | A GitHub OAuth app |
+| Required | No. |
+| Provider | A GitHub OAuth app. |
 | Env vars | `GITHUB_OAUTH_CLIENT_ID`, `GITHUB_OAUTH_CLIENT_SECRET` |
 | Scope requested | `user:email` |
 | Callback | `<PUBLIC_URL>/auth/oauth/github/callback` |
-| Without it | Email and password auth only, with no dead-end button |
+| Without it | Email and password auth alone, with no dead-end button. |
 
-## Provider side
+## The provider side
 
 Create an OAuth app at
-[github.com/settings/developers](https://github.com/settings/developers):
+[github.com/settings/developers](https://github.com/settings/developers).
 
 | Field | Value |
 |---|---|
-| Homepage URL | your `PUBLIC_URL` |
+| Homepage URL | Your `PUBLIC_URL`. |
 | Authorization callback URL | `<PUBLIC_URL>/auth/oauth/github/callback` |
 
-The requested scope is `user:email`.
+Fountain requests the `user:email` scope.
 
 ## Env vars
 
 | Variable | Effect |
 |---|---|
-| `GITHUB_OAUTH_CLIENT_ID` | From the OAuth app |
-| `GITHUB_OAUTH_CLIENT_SECRET` | From the OAuth app |
+| `GITHUB_OAUTH_CLIENT_ID` | From the OAuth app. |
+| `GITHUB_OAUTH_CLIENT_SECRET` | From the OAuth app. |
 
-The button only renders when `GITHUB_OAUTH_CLIENT_ID` is set, so an
-unconfigured instance shows plain email + password auth, with no dead-end
+The button renders only when you set `GITHUB_OAUTH_CLIENT_ID`. An instance
+with no configuration shows plain email and password auth, and no dead-end
 GitHub button.
 
 ## Behavior worth knowing
 
-- **Only a GitHub-verified email is accepted.** Fountain checks the address's
-  `verified` flag with GitHub rather than trusting the primary email, because
-  sign-ins link to existing accounts by email, so an unverified address set to
-  someone else's email must not attach to their account. An unverified email
-  is refused with a message telling the user to confirm it on GitHub first.
-- OAuth signups arrive with their email already verified, so no verification
-  email is sent, so OAuth works fine on an instance with
+- **Fountain accepts a GitHub-verified email and no other.** It checks the
+  address's `verified` flag with GitHub, and it does not trust the primary
+  email. A sign-in links to an account that already exists by email, so an
+  unverified address set to somebody else's email must not attach to their
+  account. Fountain refuses an unverified email with a message that tells the
+  user to confirm it on GitHub first.
+- An OAuth signup arrives with its email already verified, so Fountain sends
+  no verification email. OAuth therefore works on an instance with
   `EMAIL_DELIVERY=none`.
 - `REGISTRATION_ENABLED=false` and `REGISTRATION_ALLOWED_EMAIL_DOMAINS` apply
-  to OAuth signups too, not just the forms. Existing users can still sign in
-  when registration is closed.
+  to an OAuth signup as well, and not to the forms alone. A user who already
+  exists can still sign in after you close registration.
 
 ## Verify
 
-Sign in with the button. The audit log (`/audit`) records
-`auth.oauth.signup` or `auth.oauth.login`; rejections are recorded as
-`auth.oauth.rejected` with the reason.
+Sign in with the button. The audit log at `/audit` records
+`auth.oauth.signup` or `auth.oauth.login`. It records a rejection as
+`auth.oauth.rejected`, with the reason.
 
 ## Limits
 
 **A GitHub outage breaks the button and nothing else.** Email and password
-auth is unaffected, so an instance with both is not single-homed on GitHub.
+auth still works, so an instance with both does not depend on GitHub alone.
 
-**The button is all-or-nothing.** There is no per-user or per-domain gate on
-who may use it, beyond `REGISTRATION_ALLOWED_EMAIL_DOMAINS`.
+**The button is all or nothing.** There is no gate for one user or one domain
+on who can use it, beyond `REGISTRATION_ALLOWED_EMAIL_DOMAINS`.
 
 ## Related
 
 - [Nobody can log in](../troubleshooting/nobody-can-log-in.md), where OAuth is
-  the way back in when mail is broken.
+  the way back in when mail fails.
 - [Put it on the internet](../guides/operate/put-it-on-the-internet.md).
 - [Services Fountain uses](index.md).

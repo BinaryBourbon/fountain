@@ -1,6 +1,8 @@
 # LLM integration
 
-Fountain is built to be consumed by AI coding tools. Every instance exposes machine-readable discovery endpoints so any agentic IDE can learn the full API from a single fetch.
+Fountain exists for an AI coding tool to consume. Each instance serves
+discovery endpoints that a machine can read, so an agentic IDE learns the full
+API from one fetch.
 
 The examples below run against your own instance. Point `FOUNTAIN_URL` at it.
 
@@ -8,22 +10,23 @@ The examples below run against your own instance. Point `FOUNTAIN_URL` at it.
 FOUNTAIN_URL=http://localhost:4000
 ```
 
-## Drop-in skill for Claude Code
+## A drop-in skill for Claude Code
 
 ```bash
 mkdir -p ~/.claude/skills/fountain
 curl -fsSL $FOUNTAIN_URL/skill > ~/.claude/skills/fountain/SKILL.md
 ```
 
-After that, telling Claude "spin up a researcher agent on Fountain and have it audit the auth module" Just Works.
+After that, tell Claude to start a researcher agent on Fountain and to audit
+the auth module. It works with no more setup.
 
 ## Discovery endpoints
 
 | Endpoint | Content | Best for |
 |---|---|---|
-| `/llms.txt` | Concise API summary (~500 tokens) | Context-constrained models |
-| `/llms-full.txt` | Full API reference | Deep tool-calling agents |
-| `/skill` | Claude Code / Cursor skill file | IDE skills |
+| `/llms.txt` | A short API summary, about 500 tokens. | A model with little context to spare. |
+| `/llms-full.txt` | The full API reference. | An agent that calls many tools. |
+| `/skill` | The skill file for Claude Code and Cursor. | IDE skills. |
 
 ```bash
 curl $FOUNTAIN_URL/llms.txt
@@ -32,18 +35,18 @@ curl $FOUNTAIN_URL/llms-full.txt
 
 ## There is no first-party MCP server
 
-**Not built.** A first-party MCP server exposing the four primitives as tools
-has been discussed and does not exist. There is no package to install and no
-config block that will work. Use the `/skill` file above, which gives an
-agentic IDE the whole API surface in one fetch.
+**Nobody built one.** An MCP server that exposes the four primitives as tools
+is an idea that Fountain discussed and did not build. No package exists to
+install, and no config block works. Use the `/skill` file above. It gives an
+agentic IDE the full API surface in one fetch.
 
-## Using the API from an agent
+## How to use the API from an agent
 
-1. Load the skill from `/skill` at session start
-2. Authenticate with a Fountain API key stored in the agent's environment
-3. Use the CLI or REST API to spin up sub-agents
+1. Load the skill from `/skill` when the session starts.
+2. Authenticate with a Fountain API key from the agent's environment.
+3. Start sub-agents with the CLI or the REST API.
 
-Example prompt:
+Here is an example prompt.
 
 ```
 Please:

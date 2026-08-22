@@ -1,58 +1,58 @@
 # fountain
 
-> Lets an agent spawn and stream more Fountain conversations from inside its
-> own sandbox.
+> Lets an agent start more Fountain conversations from inside its own sandbox,
+> and stream them.
 
 ## At a glance
 
 | | |
 |---|---|
-| Bundled | Yes, in every sandbox |
-| Declared by | Nobody. It is always prepended |
+| Bundled | Yes, in each sandbox. |
+| Declared by | Nobody. Fountain always adds it. |
 | Source | `apps/fountain/priv/sprite_skills/fountain/SKILL.md` |
 | Reads | `FOUNTAIN_BASE_URL`, `FOUNTAIN_TOKEN`, `FOUNTAIN_CONVERSATION_ID` |
 
 ## What it gives the agent
 
 Fountain's own API, from the inside. An agent that has it can fan work out
-across other agents and collect the answers.
+across other agents, then collect the answers.
 
-Two patterns are written out in the skill. Fan out N conversations in parallel
-and gather their results, and drive a single sub-conversation over multiple
+The skill writes two patterns out. It can fan out N conversations in parallel
+and gather their results. It can also drive one sub-conversation over several
 turns.
 
-This is what makes "delegate to another agent" work when a user asks for it.
+That is what makes "delegate to another agent" work when a user asks for it.
 
 ## The credential it uses
 
-`FOUNTAIN_TOKEN` is a **per-conversation key scoped to this conversation's
-owner**, not a long-lived admin token.
+`FOUNTAIN_TOKEN` is a **key for one conversation, scoped to that
+conversation's owner**. It is not a long-lived admin token.
 
-Fountain rotates it on every fresh provision and every reattach, for example
-after a deploy or a BEAM restart, revoking the previous value. A request that
-returns 401 with `"reason": "api_key_revoked"` means the agent cached a stale
-copy and should re-read the variable from its environment.
+Fountain rotates it at each fresh provision and at each reattach, such as
+after a deploy or a BEAM restart, and revokes the previous value. A request
+that returns 401 with `"reason": "api_key_revoked"` means the agent cached a
+stale copy. The agent must read the variable from its environment again.
 
-## Provenance is automatic
+## Provenance comes for free
 
-`FOUNTAIN_CONVERSATION_ID` is always in the sandbox's environment. A
-`POST /api/conversations` that includes
-`X-Fountain-Parent-Conversation-Id: $FOUNTAIN_CONVERSATION_ID` records the
-parent, so an operator can reconstruct the whole spawn chain.
+`FOUNTAIN_CONVERSATION_ID` is always in the sandbox's environment. Send
+`X-Fountain-Parent-Conversation-Id: $FOUNTAIN_CONVERSATION_ID` on a
+`POST /api/conversations`, and Fountain records the parent. An operator can
+then rebuild the whole spawn chain.
 
 ## Limits
 
-**Spawned agents have the same skill.** Nothing stops recursion, so the skill
-tells the agent to cap depth itself with a `MAX_DEPTH` check. A runaway fan-out
-is a real way to spend money.
+**A spawned agent has the same skill.** Nothing stops recursion, so the skill
+tells the agent to cap the depth itself with a `MAX_DEPTH` check. A runaway
+fan-out is a real way to spend money.
 
-**Every conversation is a real sandbox.** The skill is explicit that orphaned
-conversations run until the idle timeout, and that the agent should terminate
-promptly. See
+**Each conversation is a real sandbox.** The skill says plainly that an
+orphaned conversation runs until the idle timeout, and that the agent must
+terminate it without delay. Read
 [Change sandbox lifetimes](../../guides/operate/sandbox-lifetime.md).
 
-**The bare `/conversations` path is not the API.** It redirects to the login
-page for non-browser requests. The API is under `/api`.
+**The bare `/conversations` path is not the API.** It redirects a non-browser
+request to the login page. The API is under `/api`.
 
 ## Related
 

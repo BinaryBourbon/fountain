@@ -1,73 +1,76 @@
 # Sentry
 
-**Optional, and inert until you opt in.** With no DSN set, the SDK is
-configured but does nothing. No account, no events, nothing leaves your
-instance.
+**Optional, and inert until you opt in.** With no DSN set, the SDK sits there
+and does nothing. No account, no events, and nothing leaves your instance.
 
 ## At a glance
 
 | | |
 |---|---|
-| Required | No |
-| Provider | sentry.io, or anything Sentry-API-compatible such as GlitchTip |
+| Required | No. |
+| Provider | sentry.io, or any service that speaks the Sentry API, such as GlitchTip. |
 | Env vars | `SENTRY_DSN`, `SENTRY_ENVIRONMENT` |
-| Rate limit | 20 events per minute |
-| Without it | The SDK is inert and nothing leaves the instance |
+| Rate limit | 20 events each minute. |
+| Without it | The SDK is inert, and nothing leaves the instance. |
 
-## Provider side
+## The provider side
 
-Create a project (platform: Elixir) on [sentry.io](https://sentry.io) or any
-Sentry-API-compatible endpoint, such as GlitchTip for a fully self-hosted
-stack, and take its DSN.
+Create a project on [sentry.io](https://sentry.io), with Elixir as the
+platform, and take its DSN. Any endpoint that speaks the Sentry API works, so
+use GlitchTip for a stack you host yourself.
 
 ## Env vars
 
 | Variable | Default | Effect |
 |---|---|---|
-| `SENTRY_DSN` | — | Turns reporting on. Crashes, including ones that never touch a web request, are reported with stack traces, grouped, rate-limited to 20 events/minute |
-| `SENTRY_ENVIRONMENT` | the build env | Environment tag on events |
-| `FOUNTAIN_BUILD_SHA` | set by the image build (release images) or by the deployment (main-line images) | Correlates events with releases: "this started with `sha-…`" |
+| `SENTRY_DSN` | — | Turns the reports on. Sentry receives each crash with a stack trace, groups them, and holds them to 20 events each minute. That includes a crash that never touches a web request. |
+| `SENTRY_ENVIRONMENT` | The build env. | The environment tag on an event. |
+| `FOUNTAIN_BUILD_SHA` | Set by the image build for a release image, or by the deployment for a main-line image. | Matches an event to a release. "This started with `sha-…`". |
 
-Reporting is deliberately conservative: `send_default_pii` is off, so
-cookies, user IPs and request bodies are not attached, because this app holds tenant
-secrets, and nothing the SDK gathers on its own should ride along.
+Fountain is deliberately conservative about what it reports.
+`send_default_pii` is off, so it attaches no cookie, no user IP and no request
+body. This app holds tenant secrets, and nothing the SDK gathers on its own
+must ride along.
 
-## Crons: alerting when a scheduled job stops running
+## Crons, an alert when a scheduled job stops
 
-Sentry Monitors (Crons) catch the failure mode Prometheus alerts often miss:
-a backup job that silently stops being scheduled. The pattern Fountain's own
-deployment uses for its nightly `pg_dump` is reusable for any scheduled job.
+Sentry Monitors, which Sentry calls Crons, catch a failure that a Prometheus
+alert often misses. A backup job stops without a sound, and nobody notices.
+Fountain's own deployment uses the pattern below for its nightly `pg_dump`,
+and it works for any scheduled job.
 
-- After the job **verifiably succeeds** (upload confirmed, not merely
-  attempted), ping the check-in URL derived from the DSN.
+- The job **verifiably succeeds**, which means the upload confirms it and not
+  merely attempts it. Ping the check-in URL that the DSN gives you.
 
     ```
     curl -fsS -m 10 "https://<sentry-host>/api/<project-id>/cron/<monitor-slug>/<public-key>/?status=ok"
     ```
 
-- The monitor is auto-created on the first check-in. Then set its schedule
-  and a grace period in the Sentry UI, which arms the alert for *missed*
-  runs, which is the point.
-- Keep it best-effort: a Sentry outage must never fail a successful backup.
+- The first check-in creates the monitor. Then set its schedule and a grace
+  period in the Sentry UI. That arms the alert for a *missed* run, which is
+  the point.
+- Keep the ping best-effort. A Sentry outage must never fail a backup that
+  worked.
 
 ## Verify
 
-Set the DSN, restart, and cause any error. It appears in the project within
-seconds, tagged with environment and release. Unset it and nothing does.
+Set the DSN, restart, then cause any error. It appears in the project within
+seconds, tagged with environment and release. Unset the DSN and nothing
+appears.
 
 ## Limits
 
-**Nothing is sent until you set a DSN.** Unset, the SDK is inert rather than
-buffering, so there is no backlog to flush when you turn it on.
+**Fountain sends nothing until you set a DSN.** Unset, the SDK is inert. It
+buffers nothing, so there is no backlog to flush when you turn it on.
 
-**Tenant data is deliberately withheld.** Cookies, user IPs and request bodies
-are not attached, because this app holds other people's secrets. That also
-means a report carries less context than a stock Sentry integration would.
+**Fountain withholds tenant data on purpose.** It attaches no cookie, no user
+IP and no request body, because this app holds other people's secrets. So a
+report carries less context than a stock Sentry integration would.
 
 ## Related
 
-- [Wire up observability](../guides/operate/observability.md), including the
-  alerting pack.
+- [Wire up observability](../guides/operate/observability.md), and the alert
+  pack.
 - [Back up and restore](../guides/operate/back-up-and-restore.md), which uses
-  the Crons pattern below.
+  the Crons pattern above.
 - [Services Fountain uses](index.md).

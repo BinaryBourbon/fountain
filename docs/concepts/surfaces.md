@@ -1,16 +1,16 @@
 # The console, the apps, and the API
 
-This page explains why Fountain's own UI does not show you an agent working,
-and where that happens instead. For connecting your own client, see
-[Plugging into Fountain](../integrations/clients.md).
+This page explains why Fountain's own UI does not show you an agent at work,
+and where that happens instead. To connect your own client, read
+[Plug into Fountain](../integrations/clients.md).
 
 ## Three surfaces, on purpose
 
 | Surface | What it is | Where it runs |
 |---|---|---|
-| The console | Fountain's own browser UI | The Fountain server |
-| The apps | Conversations and Team | Their own origins, on `/api` |
-| The API | REST, SSE, plus the CLI and SDK over it | Anywhere |
+| The console | Fountain's own browser UI. | The Fountain server. |
+| The apps | Conversations and Team. | Their own origins, on `/api`. |
+| The API | REST and SSE, with the CLI and the SDK over it. | Anywhere. |
 
 ## The console is an operator console
 
@@ -20,64 +20,68 @@ API keys, account and admin.
 It is deliberately not an interactive application. You configure things in it.
 You do not watch an agent work in it.
 
-## Watching an agent work is a different application
+## To watch an agent work, use a different application
 
-Two single-page apps sit on `/api`, each on its own origin with its own OAuth
-client.
+Two single-page apps sit on `/api`. Each one has its own origin and its own
+OAuth client.
 
 | App | What it does |
 |---|---|
-| [Conversations](https://github.com/jhgaylor/fountain-conversations) | start a run, watch it, steer it, read the raw log |
-| [Team](https://github.com/jhgaylor/fountain-team) | agents as teammates, one thread each |
+| [Conversations](https://github.com/jhgaylor/fountain-conversations) | Start a run, watch it, steer it, read the raw log. |
+| [Team](https://github.com/jhgaylor/fountain-team) | Agents as teammates, one thread for each. |
 
-They replaced in-app LiveViews. `/conversations`, `/conversations/new`,
-`/conversations/:id`, `/conversations/:id/logs`, `/team` and `/team/:agent_id`
-now redirect rather than 404, because links to them are in sent emails, in
-filed support issues, in agents' skills and in people's bookmarks. `/onboarding`
-goes to the dashboard, whose checklist replaced the wizard.
+They replaced in-app LiveViews. Six paths now redirect, and they do not 404.
+They are `/conversations`, `/conversations/new`, `/conversations/:id`,
+`/conversations/:id/logs`, `/team` and `/team/:agent_id`.
 
-The redirect is a 302 rather than a 301, deliberately. A permanent redirect
-would be cached in browsers past any future change of mind.
+Links to them sit in sent emails, in filed support issues, in agents' skills
+and in people's bookmarks.
 
-## Why split them
+`/onboarding` goes to the dashboard, whose checklist replaced the wizard.
 
-**A conversation UI is a real-time application and a console is not.** Turn
-streaming, tool-call rendering, steering a run mid-turn and interrupting it are
-a different engineering problem from a form that writes a row. Putting both in
-one LiveView meant every change to either risked the other.
+The redirect is a 302 and not a 301, and that is deliberate. A browser caches a
+permanent redirect past any later change of mind.
 
-**The apps are static builds with no server.** You type your Fountain's URL in.
-That means one hosted build works against every deployment, including yours,
-as soon as the server admits the origin.
+## Why divide them
+
+**A conversation UI is a real-time application, and a console is not.** A form
+that writes a row is one engineering problem. To stream a turn, to render a
+tool call, to steer a run mid-turn and to interrupt it is a different one. Put
+both in one LiveView, and each change to one risks the other.
+
+**The apps are static builds with no server.** You type your Fountain's URL
+in. So one hosted build works against each deployment, yours as well, as soon
+as the server admits the origin.
 
 ```
 API_CORS_ORIGINS=https://jakegaylor.com
 ```
 
-**It forces the API to be complete.** If the only way to watch a conversation
-is over `/api`, then `/api` has everything a client needs, and anyone building
-their own client is on equal footing with the first-party one. `?blocks=true`
-on the event streams exists for exactly this reason. The server does the
-runtime-dialect parsing so no client re-implements it.
+**It forces the API to be complete.** Make `/api` the only way to watch a
+conversation, and `/api` then holds everything a client needs. Anybody who
+builds their own client stands level with the first-party one. `?blocks=true`
+on the event streams exists for exactly this reason. The server parses the
+runtime dialect, so no client writes that code again.
 
-That last point is the real argument. A console that could do things the API
+That last point is the real argument. A console that could do what the API
 could not would quietly make the API second-class.
 
 ## What this means for you
 
-**Building a conversation-facing feature?** It goes in the app, not in
-Fountain. The server's job is to serve it.
+**Do you build a feature that a conversation shows?** It goes in the app, and
+not in Fountain. The server's job is to serve it.
 
-**Self-hosting?** The hosted apps work against your instance once you set
-`API_CORS_ORIGINS`. If you would rather host your own build, point
-`CONVERSATIONS_APP_URL` and `TEAM_APP_URL` at it. Setting either to an empty
-string tells the console this deployment has no such app, and it stops
-offering it. See [Deploy an instance](../guides/operate/deploy.md).
+**Do you self-host?** The hosted apps work against your instance once you set
+`API_CORS_ORIGINS`. To host your own build instead, point
+`CONVERSATIONS_APP_URL` and `TEAM_APP_URL` at it. Set either one to an empty
+string to tell the console that this deployment has no such app. The console
+then stops the offer. Read
+[Deploy an instance](../guides/operate/deploy.md).
 
-**Writing something that links a human to a transcript?** Read the URL from
-the one place that knows it. The console's links, an email's "open it", a
-forwarded support report and `/api/catalog` all agree because they all ask the
-same module.
+**Do you write something that links a person to a transcript?** Read the URL
+from the one place that knows it. The console's links, an email's "open it", a
+forwarded support report and `/api/catalog` all agree, because they all ask
+the same module.
 
 ## What this is not
 
@@ -87,14 +91,14 @@ are static files with no backend of their own.
 **Not a plugin system.** The apps are ordinary API clients with no special
 access. Yours would have the same.
 
-**Not permanent for the console.** The console keeps whatever a human needs
+**Not permanent for the console.** The console keeps whatever a person needs
 that is not a conversation. That boundary can move, and the redirects exist so
-it can move without breaking links.
+that it can move and break no link.
 
 ## Where to go next
 
-- [Plugging into Fountain](../integrations/clients.md), for editors, chat
+- [Plug into Fountain](../integrations/clients.md), for editors, chat
   surfaces, plugins and SDKs.
-- [Build a chat app](../build/index.md), the case for the API underneath.
+- [Build a chat app](../build/index.md), the case for the API below it.
 - [API reference](../api.md).
 - [Agents as teammates](teammates.md), which is what the Team app renders.

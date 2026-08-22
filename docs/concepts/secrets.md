@@ -1,15 +1,15 @@
 # Where a secret comes from
 
-This page explains the whole chain, from the key on the server to the string an
-agent's process reads. To put a value somewhere, see
+This page explains the whole chain, from the key on the server to the string
+an agent's process reads. To put a value somewhere, read
 [About environments](environment.md) and [About vaults](vault.md). For the
-operator side, see
+operator side, read
 [Back up and restore](../guides/operate/back-up-and-restore.md).
 
 ## Four hops
 
-A secret you type into Fountain is transformed four times before an agent sees
-it.
+You type a secret into Fountain. Fountain transforms it four times before an
+agent sees it.
 
 ```
 MASTER_SECRETS_KEY          (the platform key, never in the database)
@@ -27,51 +27,52 @@ environment + vault         (vault wins on collision)
 the process environment     (inside the sandbox)
 ```
 
-Each hop exists for a different reason, and knowing which one you are looking
-at is usually the difference between a five-minute problem and an afternoon.
+Each hop exists for a different reason. To know which hop you look at is
+usually the difference between a five-minute problem and an afternoon.
 
-## Hop 1: the master key wraps a per-tenant key
+## Hop 1: the master key wraps a key for each tenant
 
-Every tenant has a data encryption key, a DEK. The DEK is what actually
-encrypts that tenant's values.
+Each tenant has a data encryption key, a DEK. The DEK is what encrypts that
+tenant's values.
 
-The DEK is not stored in the clear. It is stored wrapped with AES-256-GCM under
-`MASTER_SECRETS_KEY`, in `user_data_keys.wrapped_key`.
+Fountain does not store the DEK in the clear. It wraps the DEK with AES-256-GCM
+under `MASTER_SECRETS_KEY`, then stores it in `user_data_keys.wrapped_key`.
 
-`MASTER_SECRETS_KEY` is a 32-byte binary, base64url-encoded, set at runtime.
-**It is deliberately not in the database.** That is the whole point of the
-arrangement, and it is also why a database backup on its own is useless. See
+`MASTER_SECRETS_KEY` is a 32-byte binary, base64url-encoded, and you set it at
+runtime. **It is deliberately not in the database.** That is the whole point of
+the arrangement, and it is also why a database backup on its own is worth
+nothing. Read
 [Back up and restore](../guides/operate/back-up-and-restore.md).
 
-In dev and test a deterministic key is derived from a fixed phrase. Production
-refuses to boot without a real one.
+In dev and test, Fountain derives a deterministic key from a fixed phrase.
+Production refuses to boot without a true one.
 
-If this shape feels familiar, it is the same one HashiCorp Vault uses. Unseal
-key wraps root key wraps keyring wraps data. That analogy holds here, unlike
-almost everything else about the word "vault". See
+If the shape feels familiar, HashiCorp Vault uses the same one. The unseal key
+wraps the root key, which wraps the keyring, which wraps the data. <!-- vale disable-line STE.IngForms -->
+That analogy holds here. Almost nothing else about the word "vault" does. Read
 [About vaults](vault.md).
 
 ## Hop 2: the DEK encrypts the value
 
-The DEK's lifecycle is short and explicit.
+The DEK has a short and explicit lifecycle.
 
-1. At user creation, generate a DEK, wrap it, store it.
-2. At conversation start, load the tenant key and unwrap the DEK.
-3. While the conversation runs, the unwrapped DEK is held in the conversation
-   process's own state, and every encrypt and decrypt is passed it explicitly.
-4. When the conversation ends, the DEK is dropped from that state.
+1. Generate a DEK at user creation, wrap it, and store it.
+2. Load the tenant key at conversation start, then unwrap the DEK.
+3. Hold the unwrapped DEK in the conversation process's own state while the
+   conversation runs. Pass it to each encrypt and decrypt explicitly.
+4. Drop the DEK from that state when the conversation ends.
 
-Passing the DEK explicitly rather than looking it up is what makes tenant
-isolation a property of the call rather than a convention. A function that
-needs a DEK cannot accidentally use somebody else's.
+Fountain passes the DEK explicitly and does not look it up. That makes tenant
+isolation a property of the call, and not a convention. A function that needs a
+DEK cannot use somebody else's by accident.
 
-Values are write-only from the outside. Listing a vault or an environment
-returns keys and timestamps. There is no endpoint that returns a value, for
-anyone, including the owner.
+From the outside, values are write-only. A list of a vault or an environment
+returns keys and timestamps. No endpoint returns a value, to anybody, and the
+owner is nobody special.
 
 ## Hop 3: environment and vault merge
 
-At the moment a conversation starts, Fountain resolves the full set.
+A conversation starts. At that moment Fountain resolves the full set.
 
 ```
 environment secrets  --merge-->  vault secrets  -->  the sandbox
@@ -79,22 +80,23 @@ environment secrets  --merge-->  vault secrets  -->  the sandbox
                                wins on collision
 ```
 
-The merge happens once, at spawn. Editing either afterwards does not reach a
-sandbox that is already running.
+The merge happens once, at spawn. Edit either one afterwards and the edit does
+not reach a sandbox that already runs.
 
-A conversation may name a different environment than its agent's default, and
-may attach a vault, and both are scoped by the agent's
-`allowed_environment_ids` and `allowed_vault_ids`.
+A conversation can name a different environment from its agent's default, and
+it can attach a vault. The agent's `allowed_environment_ids` and
+`allowed_vault_ids` scope both.
 
-Non-secret `env_vars` from the environment are merged in too. They are stored
-and returned in the clear, so the distinction between `env_vars` and `secrets`
-is about who can read the value back, not about who can use it.
+Fountain merges the non-secret `env_vars` from the environment in as well. It
+stores those in the clear and returns them in the clear. So the difference
+between `env_vars` and `secrets` is about who can read a value back. It is not
+about who can use one.
 
 ## Hop 4: substitution, then the process
 
-Agent config strings support `${VAR}` interpolation, resolved against the
-merged map. This is how an MCP server declaration gets a credential without the
-credential being written into the agent.
+An agent config string takes `${VAR}` interpolation, which Fountain resolves
+against the merged map. That is how an MCP server declaration gets a
+credential, with no credential written into the agent.
 
 ```yaml
 mcp_servers:
@@ -103,53 +105,52 @@ mcp_servers:
       GITHUB_PERSONAL_ACCESS_TOKEN: "${GITHUB_PAT}"
 ```
 
-Substitution is recursive, so it reaches inside maps and lists, and it is
-fail-complete. Every missing variable is reported at once rather than one per
-attempt, because the alternative is fixing a config one name at a time.
+Substitution is recursive, so it reaches inside maps and lists. It is also
+fail-complete. Fountain reports each absent variable at once, and not one for
+each attempt. The alternative is a config you fix one name at a time.
 
 `$$` is a literal `$`.
 
 ## What the chain does not do
 
-**No rotation.** Nothing expires a value or tells an agent it went stale.
+**No rotation.** Nothing expires a value, and nothing tells an agent that a
+value went stale.
 
-**No revocation of a live process.** Removing a vault from an agent's
-allowlist stops future conversations attaching it. A sandbox already running
-keeps what it was given, because by then the value is in a process's
-environment on a machine.
+**No revocation of a live process.** Remove a vault from an agent's allowlist,
+and no later conversation can attach it. A sandbox that already runs keeps what
+you gave it. By then the value sits in a process environment, on a machine.
 
-**No read audit.** Fountain audits the write, by key and by size, never by
-value. It cannot audit the read, because the read happens inside the sandbox.
+**No read audit.** Fountain audits the write, by key and by size, and never by
+value. It cannot audit the read, because that read happens in the sandbox.
 
-**No protection against the agent.** Anything in the merged map is readable by
-the code running in that sandbox, which is the point of putting it there. Scope
-the credential, do not scope the agent.
+**No protection against the agent.** The code in that sandbox can read
+everything in the merged map. That is why the value is there at all. Scope the
+credential. Do not scope the agent.
 
-## Hop 5, which is really a hop back: output is scrubbed
+## Hop 5, which is really a hop back: Fountain scrubs the output
 
-Everything a sandbox writes to stdout or stderr is persisted verbatim into
-`log_events` and streamed over SSE. That table has none of the envelope
-encryption above, and it outlives the conversation.
+Fountain writes everything a sandbox sends to stdout or stderr into
+`log_events`, word for word, and streams it over SSE. That table has none of
+the envelope encryption above, and it outlives the conversation.
 
 So an `env`, a `set -x`, a `cat .env` in a setup script, or an agent that
 prints its own environment would write plaintext credentials into Postgres.
-Fountain removes every known secret value from output before it is stored.
+Fountain removes each known secret value from the output before it stores it.
 
-Two consequences worth knowing.
+Two results matter.
 
 **A smoke test that echoes a secret prints `[REDACTED]`.** That is the system
-working. Ask for a character count instead if you need to confirm a value
-arrived.
+at work. To confirm that a value arrived, ask for a character count instead.
 
-**There is a length floor of 8 bytes.** Sandbox environments hold plenty of
-short non-secrets, such as `true`, `1`, a port or a region, and redacting those
-would turn logs into noise while protecting nothing. The case this misses is a
-deliberately short password. Do not use one.
+**There is a length floor of 8 bytes.** A sandbox environment holds many short
+non-secrets, such as `true`, `1`, a port or a region. To redact those would
+turn logs into noise and protect nothing. The case this misses is a short
+password that somebody chose on purpose. Do not choose one.
 
-The values live in a registry that the single log writer consults, rather than
-being passed to each caller, because the scrubber this replaced was applied on
-the HTTPS clone path and not the SSH one. Redaction a caller has to remember
-will eventually be forgotten by a new caller.
+The values live in a registry that the one log writer reads. Fountain does not
+pass them to each caller. The scrubber this replaced ran on the HTTPS clone
+path and not on the SSH one. A redaction that each caller must remember is a
+redaction that a new caller will one day forget.
 
 ## Where to go next
 
