@@ -1081,7 +1081,13 @@ defmodule Fountain.Conversations.ConversationServer do
         prompt: running_turn.prompt,
         mode: :continue,
         session_id: conv.runtime_session_id,
-        attach: running_turn.acp_prompt_id
+        attach: running_turn.acp_prompt_id,
+        # A reattached peer answers `session/request_permission` exactly like a
+        # fresh one — the adapter in the sprite is mid-turn and still asking.
+        # Resolving from the agent here (rather than reading a policy frozen on
+        # the conversation row) is what makes a tightening apply across a
+        # deploy.
+        permission_policy: effective_permission_policy(conv, agent_for(conv))
       )
 
     dedup =
@@ -1542,6 +1548,18 @@ defmodule Fountain.Conversations.ConversationServer do
   def handle_info({:acp, ref, {:prompt_sent, id}}, %{current_command_ref: ref} = state) do
     {:ok, turn} = Conversations._unsafe_update_turn(state.current_turn, %{acp_prompt_id: id})
     {:noreply, %{state | current_turn: turn}}
+  end
+
+  # A tool the policy withheld (#939). Recorded in the context, per 0013: the
+  # tool and the verdict, never the tool's input. Only refusals reach here —
+  # the peer stays silent on `auto_allow`, because a turn makes dozens of tool
+  # calls and a row each would turn the trail into a transcript.
+  def handle_info(
+        {:acp, ref, {:permission_denied, tool, verdict}},
+        %{current_command_ref: ref} = state
+      ) do
+    Conversations.record_permission_denied(state.conversation_id, tool, verdict)
+    {:noreply, state}
   end
 
   # The number gate 2 exists to produce: what a turn pays for `initialize` plus
@@ -2429,7 +2447,8 @@ defmodule Fountain.Conversations.ConversationServer do
                         buzz_mcp_servers(state) ++
                         team_mcp_servers(state) ++
                         team_comms_mcp_servers(state),
-                    model: agent && Fountain.Runtimes.Model.id(agent.model)
+                    model: agent && Fountain.Runtimes.Model.id(agent.model),
+                    permission_policy: effective_permission_policy(conv, agent)
                   )
                 else
                   {nil, nil}
@@ -2737,6 +2756,19 @@ defmodule Fountain.Conversations.ConversationServer do
     %{new_state | stream_tracer: tracer}
   end
 
+  # The permission policy in force for this turn (#939): the agent's own,
+  # clamped by whatever narrowing the launch asked for. Resolved per turn from
+  # the agent rather than read off a policy frozen on the conversation row, so
+  # tightening an agent tightens the conversations already running under it.
+  defp effective_permission_policy(conv, agent) do
+    Fountain.Permissions.effective(agent && agent.permission_policy, conv.permission_policy)
+  end
+
+  # Ownership is already established: this server exists for this conversation.
+  # See the `_unsafe_` rules in CLAUDE.md — a GenServer holding the conversation
+  # is one of the legitimate callers.
+  defp agent_for(conv), do: conv.agent_id && Agents._unsafe_get_agent(conv.agent_id)
+
   defp start_acp_peer(command, prompt, mode, runtime_session_id, opts) do
     {:ok, peer} =
       Fountain.Runtimes.ACP.Peer.start(
@@ -2749,7 +2781,8 @@ defmodule Fountain.Conversations.ConversationServer do
         cwd: Keyword.get(opts, :cwd) || "/home/sprite",
         images: Keyword.get(opts, :images, []),
         mcp_servers: Keyword.get(opts, :mcp_servers, []),
-        model: Keyword.get(opts, :model)
+        model: Keyword.get(opts, :model),
+        permission_policy: Keyword.get(opts, :permission_policy)
       )
 
     {peer, Process.monitor(peer)}

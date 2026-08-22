@@ -384,4 +384,71 @@ defmodule Fountain.AgentsTest do
       assert hd(results).environment.id == env.id
     end
   end
+
+  describe "permission_policy (#939)" do
+    test "defaults to an empty map, which means auto_allow" do
+      agent = insert_agent(user_id: insert_verified_user().id)
+      assert agent.permission_policy == %{}
+      assert Fountain.Permissions.verdict_for(agent.permission_policy, "Bash") == "auto_allow"
+    end
+
+    test "accepts a per-tool map with a default" do
+      user = insert_verified_user()
+      policy = %{"default" => "auto_allow", "Bash" => "auto_deny"}
+      agent = insert_agent(user_id: user.id, permission_policy: policy)
+      assert agent.permission_policy == policy
+    end
+
+    test "rejects an unknown verdict rather than failing closed silently" do
+      user = insert_verified_user()
+
+      assert {:error, changeset} =
+               Agents.create_agent(
+                 agent_attrs(%{
+                   "user_id" => user.id,
+                   "permission_policy" => %{"Bash" => "banana"}
+                 })
+               )
+
+      assert %{permission_policy: [msg]} = errors_on(changeset)
+      assert msg =~ "unknown verdict"
+    end
+
+    test "rejects ask until #940 builds somewhere to ask" do
+      user = insert_verified_user()
+
+      assert {:error, changeset} =
+               Agents.create_agent(
+                 agent_attrs(%{"user_id" => user.id, "permission_policy" => %{"Bash" => "ask"}})
+               )
+
+      assert %{permission_policy: [msg]} = errors_on(changeset)
+      assert msg =~ "not built yet"
+    end
+
+    test "rejects a non-string tool key" do
+      user = insert_verified_user()
+
+      assert {:error, changeset} =
+               Agents.create_agent(
+                 agent_attrs(%{"user_id" => user.id, "permission_policy" => %{"" => "auto_deny"}})
+               )
+
+      assert %{permission_policy: _} = errors_on(changeset)
+    end
+
+    test "a policy change is audited by the existing agent.updated trail" do
+      user = insert_verified_user()
+      agent = insert_agent(user_id: user.id)
+
+      {:ok, _} = Agents.update_agent(agent, %{"permission_policy" => %{"Bash" => "auto_deny"}})
+
+      assert [event] =
+               user.id
+               |> Fountain.Audit.list_recent_for_user(10)
+               |> Enum.filter(&(&1.action == "agent.updated"))
+
+      assert "permission_policy" in event.metadata["changed"]
+    end
+  end
 end

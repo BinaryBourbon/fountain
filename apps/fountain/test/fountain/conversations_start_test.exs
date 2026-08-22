@@ -274,6 +274,88 @@ defmodule Fountain.ConversationsStartTest do
   # start_conversation/2 — per-launch environment override (#783)
   # ────────────────────────────────────────────────────────────────────────────
 
+  describe "start_conversation/2 permission_policy override (#939)" do
+    setup do
+      stub(Horde.DynamicSupervisor, :start_child, fn _sup, _spec ->
+        {:ok, spawn(fn -> :ok end)}
+      end)
+
+      user = insert_verified_user()
+      %{user: user}
+    end
+
+    defp launch(ctx, agent, policy) do
+      attrs = %{"agent_id" => agent.id, "user_id" => ctx.user.id}
+      attrs = if policy, do: Map.put(attrs, "permission_policy", policy), else: attrs
+      Conversations.start_conversation(attrs)
+    end
+
+    test "no override leaves the column nil, and the agent's policy stands alone", ctx do
+      agent = insert_agent(user_id: ctx.user.id, permission_policy: %{"Bash" => "auto_deny"})
+
+      assert {:ok, conv} = launch(ctx, agent, nil)
+      assert conv.permission_policy == nil
+
+      effective = Fountain.Permissions.effective(agent.permission_policy, conv.permission_policy)
+      assert Fountain.Permissions.verdict_for(effective, "Bash") == "auto_deny"
+    end
+
+    test "a launch may narrow the agent's policy", ctx do
+      agent = insert_agent(user_id: ctx.user.id, permission_policy: %{"default" => "auto_allow"})
+
+      assert {:ok, conv} = launch(ctx, agent, %{"Bash" => "auto_deny"})
+      assert conv.permission_policy == %{"Bash" => "auto_deny"}
+
+      effective = Fountain.Permissions.effective(agent.permission_policy, conv.permission_policy)
+      assert Fountain.Permissions.verdict_for(effective, "Bash") == "auto_deny"
+      assert Fountain.Permissions.verdict_for(effective, "Read") == "auto_allow"
+    end
+
+    test "a launch may not widen it, and the error names the tool", ctx do
+      # The no-escalation rule, and the reason there is no allowlist beside it:
+      # a launch cannot reach a permission the agent did not already grant.
+      agent = insert_agent(user_id: ctx.user.id, permission_policy: %{"Bash" => "auto_deny"})
+
+      assert {:error, {:permission_policy_widens, "Bash"}} =
+               launch(ctx, agent, %{"Bash" => "auto_allow"})
+    end
+
+    test "a launch may not widen via the default either", ctx do
+      agent = insert_agent(user_id: ctx.user.id, permission_policy: %{"default" => "auto_deny"})
+
+      assert {:error, {:permission_policy_widens, _}} =
+               launch(ctx, agent, %{"default" => "auto_allow"})
+    end
+
+    test "widening is refused rather than silently clamped", ctx do
+      # `effective/2` would clamp this to a safe value anyway. Refusing is about
+      # the caller: someone who asked to loosen a policy and got a tighter one
+      # without being told has no way to find out the ask was a mistake.
+      agent = insert_agent(user_id: ctx.user.id, permission_policy: %{"Bash" => "auto_deny"})
+
+      assert {:error, _} = launch(ctx, agent, %{"Bash" => "auto_allow"})
+      assert Repo.aggregate(Fountain.Conversations.Conversation, :count) == 0
+    end
+
+    test "ask is refused at the door until #940 builds somewhere to ask", ctx do
+      agent = insert_agent(user_id: ctx.user.id)
+
+      assert {:error, {:permission_policy_unbuilt, "ask"}} =
+               launch(ctx, agent, %{"Bash" => "ask"})
+    end
+
+    test "an unknown verdict is refused", ctx do
+      agent = insert_agent(user_id: ctx.user.id)
+      assert {:error, :permission_policy_invalid} = launch(ctx, agent, %{"Bash" => "banana"})
+    end
+
+    test "an empty override is the same as none", ctx do
+      agent = insert_agent(user_id: ctx.user.id)
+      assert {:ok, conv} = launch(ctx, agent, %{})
+      assert conv.permission_policy == nil
+    end
+  end
+
   describe "start_conversation/2 environment_id override" do
     setup do
       stub(Horde.DynamicSupervisor, :start_child, fn _sup, _spec ->

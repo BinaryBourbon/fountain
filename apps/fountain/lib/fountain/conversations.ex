@@ -1415,6 +1415,8 @@ defmodule Fountain.Conversations do
     - `vault_id`              — optional vault whose secrets override the env's
     - `environment_id`        — optional environment to provision from instead of the
                                 agent's own (#783); subject to `agent.allowed_environment_ids`
+    - `permission_policy`     — optional per-tool permission override (#939); may only
+                                narrow the agent's own policy, never widen it
     - `source`                — optional; one of "ui", "api", "agent" (default "api")
     - `parent_conversation_id` — optional; UUID of the conversation that spawned this one
     - `title`                 — optional display title (the team page names a teammate with it)
@@ -1425,6 +1427,7 @@ defmodule Fountain.Conversations do
          {:ok, runtime_module} <- Fountain.Runtimes.for_runtime(agent.runtime),
          {:ok, vault_id} <- resolve_vault_id(attrs["vault_id"], user_id, agent),
          {:ok, env_id} <- resolve_environment_id(attrs["environment_id"], user_id, agent),
+         {:ok, perm_policy} <- resolve_permission_policy(attrs["permission_policy"], agent),
          {:ok, parent_id} <- resolve_parent_id(attrs["parent_conversation_id"], user_id),
          :ok <- Fountain.Accounts.check_not_suspended(user_id),
          :ok <- Fountain.Billing.check_active(user_id),
@@ -1455,7 +1458,8 @@ defmodule Fountain.Conversations do
              source: attrs["source"] || "api",
              parent_conversation_id: parent_id,
              channel_id: attrs["channel_id"],
-             title: attrs["title"]
+             title: attrs["title"],
+             permission_policy: perm_policy
            }) do
       # Recorded here rather than in either branch below: both of them return
       # {:ok, conv}. The row exists and the sandbox reservation is spent even
@@ -1657,6 +1661,79 @@ defmodule Fountain.Conversations do
 
   defp check_environment_allowed(id, %Agents.Agent{allowed_environment_ids: allowed}) do
     if id in allowed, do: :ok, else: {:error, :environment_not_allowed}
+  end
+
+  @doc """
+  Record that the permission policy withheld a tool from a running agent.
+
+  Called by the `ConversationServer` when its peer reports a refusal (#939).
+  The actor is `sprite`: the agent asked, the policy answered, and no human was
+  involved — attributing it to the person who happened to write the policy
+  would be a lie about who was at the keyboard.
+
+  Only refusals are recorded. A turn makes dozens of tool calls and a row per
+  allow would make the trail a second copy of the transcript, which 0013
+  forbids for exactly this reason. The tool's *input* is never recorded, only
+  its name and the verdict.
+  """
+  @spec record_permission_denied(binary(), String.t() | nil, String.t()) :: :ok
+  def record_permission_denied(conversation_id, tool, verdict) when is_binary(conversation_id) do
+    case _unsafe_get_conversation(conversation_id) do
+      nil ->
+        :ok
+
+      conv ->
+        Audit.record(%{
+          user_id: conv.user_id,
+          action: "conversation.permission_denied",
+          resource_type: "conversation",
+          resource_id: conv.id,
+          actor: "sprite",
+          metadata: %{"tool" => tool, "verdict" => verdict}
+        })
+
+        :ok
+    end
+  end
+
+  # A per-launch permission override (#939). Unlike the vault and environment
+  # overrides, this one needs no allowlist on the agent: `check_narrows/2`
+  # refuses anything looser than the agent's own policy, so a launch cannot
+  # reach a permission the agent did not already grant. There is nothing to
+  # allow-list because there is nothing to escalate to.
+  #
+  # Rejected loudly rather than clamped. `Permissions.effective/2` clamps
+  # anyway — that is the invariant the peer relies on — but a caller who asked
+  # to loosen a policy and silently got a tighter one would have no way to
+  # tell, and the difference matters when the ask was a mistake.
+  defp resolve_permission_policy(nil, _agent), do: {:ok, nil}
+  defp resolve_permission_policy(policy, _agent) when policy == %{}, do: {:ok, nil}
+
+  defp resolve_permission_policy(policy, agent) when is_map(policy) do
+    with :ok <- validate_policy_shape(policy),
+         :ok <- Fountain.Permissions.check_narrows(agent.permission_policy, policy) do
+      {:ok, policy}
+    end
+  end
+
+  defp resolve_permission_policy(_policy, _agent), do: {:error, :permission_policy_invalid}
+
+  defp validate_policy_shape(policy) do
+    Enum.find_value(policy, :ok, fn {tool, verdict} ->
+      cond do
+        not is_binary(tool) or tool == "" ->
+          {:error, :permission_policy_invalid}
+
+        verdict not in Fountain.Permissions.verdicts() ->
+          {:error, :permission_policy_invalid}
+
+        not Fountain.Permissions.buildable?(verdict) ->
+          {:error, {:permission_policy_unbuilt, verdict}}
+
+        true ->
+          nil
+      end
+    end)
   end
 
   @doc """
