@@ -15,7 +15,8 @@ defmodule Fountain.Runtimes.OpenCode do
   Heads-up: opencode is *not* pre-installed on the sprite base image —
   the first session on a new sprite will install it (10–30s longer than
   the other runtimes). Subsequent turns on the same sprite are normal
-  speed.
+  speed. Registered as `:opencode_absent_from_base_image` in
+  `Fountain.Runtimes.Quirks`.
   """
 
   @behaviour Fountain.Runtimes
