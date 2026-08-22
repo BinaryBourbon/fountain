@@ -858,19 +858,51 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
     end
   end
 
-  # The gemini describes that lived here are gone with #659: gemini is held
-  # back from `supported_runtimes/0`, so a gemini agent takes the legacy path
-  # and these could only ever assert that. The behaviour they covered did not
-  # go away with them —
-  #
-  #   * launch command and workspace  → `Fountain.Runtimes.ACPTest`
-  #     ("the held-back gemini entry still points at the right workspace")
-  #   * session/load instead of resume, and the replay discard
-  #     → `Fountain.Runtimes.ACP.PeerTest`, driven by an agent advertising
-  #       `loadSession` and no `resume`, which is exactly gemini's shape
-  #
-  # When #659 lifts the block, a gemini conversation-level test belongs here
-  # again.
+  # Restored with #659, as the note that replaced them asked. Gemini is the
+  # only runtime whose adapter advertises `loadSession` and *no* `resume`, so
+  # it is the one that exercises the expensive resumption path end to end —
+  # and the only one whose session store Fountain has to defend against.
+  describe "gemini over ACP (#659)" do
+    setup do
+      user = insert_verified_user()
+      agent = insert_agent(user_id: user.id, runtime: "gemini")
+      conv = insert_conversation(user_id: user.id, agent: agent)
+      {:ok, user: user, agent: agent, conv: conv}
+    end
+
+    test "a gemini turn spawns the native ACP binary in its own workspace", ctx do
+      {_pid, _ref} = start_acp_turn(ctx.conv)
+
+      assert_receive {:spawned, "gemini", ["--acp"], opts}
+      # /home/sprite would reintroduce the EACCES noise this workspace exists
+      # to avoid, and gemini walks up from cwd looking for a .git.
+      assert opts[:dir] == "/tmp/gemini-workspace"
+    end
+
+    test "protocol bytes never reach the transcript", ctx do
+      {pid, ref} = start_acp_turn(ctx.conv)
+      init = next_write()
+      assert init["method"] == "initialize"
+
+      reply(pid, ref, init["id"], %{"agentCapabilities" => %{"loadSession" => true}})
+      _new = next_write()
+
+      events = Conversations._unsafe_list_log_events(ctx.conv.id)
+      refute Enum.any?(events, &(&1.kind == "output" and &1.data =~ "jsonrpc"))
+    end
+
+    test "an agent advertising loadSession and no resume takes session/load", ctx do
+      # Gemini's exact shape. `session/resume` would be cheaper and it is not
+      # on offer, which is why Peer's replay-discard exists at all.
+      {pid, ref} = start_acp_turn(ctx.conv, %{}, Fountain.Test.FakeRuntime)
+      init = next_write()
+      reply(pid, ref, init["id"], %{"agentCapabilities" => %{"loadSession" => true}})
+
+      new = next_write()
+      assert new["method"] == "session/new"
+    end
+  end
+
   describe "permission ask path (#940)" do
     defp ask_agent(user) do
       insert_agent(user_id: user.id, runtime: "claude", permission_policy: %{"Bash" => "ask"})

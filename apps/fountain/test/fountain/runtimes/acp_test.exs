@@ -20,22 +20,27 @@ defmodule Fountain.Runtimes.ACPTest do
       # left to opt out into, so stale metadata must not route anywhere.
       assert ACP.enabled?(agent(runtime: "claude", metadata: %{"acp" => false}))
       assert ACP.enabled?(agent(runtime: "claude", metadata: %{"acp" => true}))
-      refute ACP.enabled?(agent(runtime: "gemini", metadata: %{"acp" => true}))
+
+      # gemini was this test's counter-example while it was blocked; since #659
+      # nothing is, so the only thing the flag still cannot switch on is a
+      # runtime with no adapter entry at all.
+      refute ACP.enabled?(agent(runtime: "nonesuch", metadata: %{"acp" => true}))
     end
 
-    test "a blocked runtime cannot be switched on at all" do
-      # gemini is converted and verified for turn 1, but loading a session
-      # erases it: the load path's own chat recorder overwrites the message
-      # list in the session file before the lookup reads it (#658, mechanism in
-      # the ACP moduledoc). A working first turn followed by an amnesiac agent
-      # — and an unrecoverable conversation — is worse than the
-      # resume-by-guessing it replaces, so the flag must not reach it.
-      assert %{"gemini" => _} = ACP.blocked_runtimes()
-      refute "gemini" in ACP.supported_runtimes()
-      refute ACP.enabled?(agent(runtime: "gemini", metadata: %{"acp" => true}))
+    test "nothing is blocked any more: gemini ships behind the #659 workaround" do
+      # gemini was held back because loading a session erased it — the load
+      # path's own chat recorder overwrote the message list before the lookup
+      # read it (#658). `Gemini.SessionStore` consolidates the store at the end
+      # of every turn so the load cannot collide with what it is loading, which
+      # is what let this switch on.
+      assert ACP.blocked_runtimes() == %{}
+      assert "gemini" in ACP.supported_runtimes()
+      assert ACP.enabled?(agent(runtime: "gemini", metadata: %{}))
     end
 
-    test "a blocked runtime keeps its adapter entry, so the work is not lost" do
+    test "gemini's adapter entry still points at its own workspace" do
+      # Not /home/sprite: gemini walks up from cwd looking for a .git, and
+      # `Gemini.prepare_sandbox/3` git-inits exactly this directory.
       assert {"gemini", ["--acp"]} = ACP.command("gemini")
       assert ACP.cwd("gemini") == "/tmp/gemini-workspace"
     end

@@ -29,7 +29,11 @@ defmodule Fountain.Conversations.ConversationServerLogBudgetTest do
   defp setup_conv do
     stub_happy_sprite()
     user = insert_verified_user()
-    agent = insert_agent(user_id: user.id, runtime: "gemini")
+    # gemini used to be this test's way of reaching the legacy stdout handler.
+    # Since #659 every shipped runtime speaks ACP, so output reaches the budget
+    # through the peer's line reports instead — same `log_with_replay_skip`,
+    # different transport. See `persist_acp_lines/3`.
+    agent = insert_agent(user_id: user.id, runtime: "claude")
     insert_conversation(user_id: user.id, agent_id: agent.id)
   end
 
@@ -46,7 +50,7 @@ defmodule Fountain.Conversations.ConversationServerLogBudgetTest do
     # 3 x 60 bytes against a 100-byte budget: chunk 1 persists, chunk 2
     # crosses the budget → marker, chunk 3 is silently dropped.
     chunk = String.duplicate("a", 60)
-    for _ <- 1..3, do: send(pid, {:stdout, %{ref: cmd_ref}, chunk})
+    for _ <- 1..3, do: send(pid, {:acp, cmd_ref, {:lines, "stdout", chunk}})
     _ = :sys.get_state(pid)
 
     events = output_events(conv.id)
@@ -66,7 +70,7 @@ defmodule Fountain.Conversations.ConversationServerLogBudgetTest do
     conv = setup_conv()
     {pid, cmd_ref, _ref} = start_with_turn(conv)
 
-    send(pid, {:stdout, %{ref: cmd_ref}, String.duplicate("b", 90)})
+    send(pid, {:acp, cmd_ref, {:lines, "stdout", String.duplicate("b", 90)}})
     _ = :sys.get_state(pid)
 
     # Close the turn so the second wake below finds nothing running, then
@@ -88,7 +92,7 @@ defmodule Fountain.Conversations.ConversationServerLogBudgetTest do
 
     {pid2, cmd_ref2, _ref2} = start_with_turn(conv)
 
-    send(pid2, {:stdout, %{ref: cmd_ref2}, String.duplicate("c", 20)})
+    send(pid2, {:acp, cmd_ref2, {:lines, "stdout", String.duplicate("c", 20)}})
     _ = :sys.get_state(pid2)
 
     data = Enum.map(output_events(conv.id), & &1.data)
@@ -109,7 +113,7 @@ defmodule Fountain.Conversations.ConversationServerLogBudgetTest do
     conv = setup_conv()
     {pid, cmd_ref, _ref} = start_with_turn(conv)
 
-    for _ <- 1..5, do: send(pid, {:stdout, %{ref: cmd_ref}, String.duplicate("d", 60)})
+    for _ <- 1..5, do: send(pid, {:acp, cmd_ref, {:lines, "stdout", String.duplicate("d", 60)}})
     _ = :sys.get_state(pid)
 
     assert Enum.count(output_events(conv.id), &(&1.data =~ "dddd")) == 5
@@ -120,7 +124,7 @@ defmodule Fountain.Conversations.ConversationServerLogBudgetTest do
     conv = setup_conv()
     {pid, cmd_ref, _ref} = start_with_turn(conv)
 
-    send(pid, {:stdout, %{ref: cmd_ref}, "hello"})
+    send(pid, {:acp, cmd_ref, {:lines, "stdout", "hello"}})
     _ = :sys.get_state(pid)
 
     assert Enum.any?(output_events(conv.id), &(&1.data == "hello"))
