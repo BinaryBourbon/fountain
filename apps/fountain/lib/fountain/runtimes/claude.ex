@@ -31,7 +31,10 @@ defmodule Fountain.Runtimes.Claude do
 
   When the upstream bug is fixed, the session-scoped path will start working
   too; at that point drop this provisioning to avoid double-registration
-  (cf. the same lesson in `Fountain.Runtimes.Gemini`).
+  (cf. the same lesson in `Fountain.Runtimes.Gemini`). Registered as
+  `:claude_mcp_via_files` in `Fountain.Runtimes.Quirks`, which carries the
+  re-probe procedure and is guarded by a test that fails if this function
+  disappears without the entry.
   """
 
   @behaviour Fountain.Runtimes

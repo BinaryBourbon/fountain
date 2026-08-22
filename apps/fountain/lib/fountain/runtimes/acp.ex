@@ -141,7 +141,9 @@ defmodule Fountain.Runtimes.ACP do
     # the moduledoc has the mechanism), which held this entry back for eleven
     # days. `Fountain.Runtimes.Gemini.SessionStore` consolidates the store at
     # the end of every turn so the load cannot collide with what it is loading.
-    # Delete that module and this comment when upstream lands.
+    # Delete that module and this comment when upstream lands — the
+    # condition, and the procedure for checking it, are recorded as
+    # `:gemini_session_store_consolidation` in `Fountain.Runtimes.Quirks`.
     "gemini" => %{
       bin: "gemini",
       args: ["--acp"],
@@ -329,6 +331,8 @@ defmodule Fountain.Runtimes.ACP do
   in the default PATH — `command -v claude-agent-acp` after a successful global
   install returns nothing. The spawn would then fail with `command not found`,
   which reads like a protocol bug and is not one.
+
+  Registered as `:npm_global_bin_off_path` in `Fountain.Runtimes.Quirks`.
 
   So we symlink into `/home/sprite/.local/bin`, which *is* on PATH. This is the
   same shape as `Fountain.Runtimes.OpenCode.prepare_sandbox/3`, which hit the

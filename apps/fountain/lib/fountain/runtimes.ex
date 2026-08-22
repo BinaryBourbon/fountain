@@ -15,12 +15,10 @@ defmodule Fountain.Runtimes do
       and now stated once, in `Fountain.Runtimes.Layout`. `skills_root/0`,
       `skills_sh_agent/0`, the instructions path and every workspace directory
       are derived from that table rather than restated per module.
-    * **Workarounds** — an upstream defect each runtime carries, with a
-      deletion condition: claude's MCP servers going in as files because the
-      ACP session-scoped channel is dropped on the floor
-      (`claude-agent-acp#883`), gemini's session store consolidation
-      (`gemini-cli#28775`), opencode not being on the base image, and
-      `HOME=/tmp` for the two runtimes that trip the sprite's rename ACL.
+    * **Workarounds** — a defect each runtime carries, with a deletion
+      condition. Registered in `Fountain.Runtimes.Quirks`, which names the
+      function implementing each one and is guarded by a test, so a workaround
+      cannot outlive its defect unnoticed.
     * **Credential delivery** — genuinely irreducible, and two shapes rather
       than four: an env var (claude, gemini, opencode) or a login exec that
       consumes the key on stdin (codex, whose CLI ignores the process env).

@@ -1,5 +1,9 @@
 defmodule Fountain.Runtimes.Gemini.SessionStore do
   @moduledoc """
+  A workaround, registered as `:gemini_session_store_consolidation` in
+  `Fountain.Runtimes.Quirks` — which carries the deletion condition and how
+  to re-probe it. This whole module goes when gemini-cli#28775 lands.
+
   Keeps gemini's own chat-session store from erasing the session it is asked to
   load — a workaround for [gemini-cli#28775][], tracked as #659.
 
