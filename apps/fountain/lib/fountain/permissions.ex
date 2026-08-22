@@ -144,6 +144,20 @@ defmodule Fountain.Permissions do
   def buildable?(verdict), do: verdict in buildable_verdicts()
 
   @doc """
+  Whether a policy asks for anything the runtime has to act on.
+
+  `auto_allow` everywhere is what the peer would do with no policy at all, so it
+  needs nothing from the runtime. Anything else has to reach the agent as an
+  answer to `session/request_permission` — which is why a runtime that never
+  sends one refuses such a policy at the door
+  (`Fountain.Runtimes.ACP.asks_permission?/1`).
+  """
+  @spec needs_enforcement?(map() | nil) :: boolean()
+  def needs_enforcement?(policy) do
+    policy |> normalize() |> Enum.any?(fn {_key, verdict} -> verdict != @auto_allow end)
+  end
+
+  @doc """
   The verdict `policy` gives `tool`.
 
   Falls back to the policy's own `"default"`, then to `auto_allow`.

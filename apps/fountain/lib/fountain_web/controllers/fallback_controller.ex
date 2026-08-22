@@ -86,7 +86,23 @@ defmodule FountainWeb.FallbackController do
     |> put_status(:unprocessable_entity)
     |> json(%{
       error: "permission_policy_invalid",
-      message: "permission_policy must map tool names to auto_allow or auto_deny"
+      message:
+        "permission_policy must map a tool title or ACP kind to one of " <>
+          Enum.join(Fountain.Permissions.verdicts(), ", ")
+    })
+  end
+
+  # The runtime never sends `session/request_permission`, so the verdicts have
+  # nothing to travel on. Refused rather than stored: an inert `auto_deny`
+  # reads like protection everywhere it is displayed.
+  def call(conn, {:error, {:permission_policy_unenforceable, runtime}}) do
+    conn
+    |> put_status(:unprocessable_entity)
+    |> json(%{
+      error: "permission_policy_unenforceable",
+      message:
+        "the #{runtime} runtime never asks before it runs a tool, so a policy " <>
+          "stricter than auto_allow cannot be enforced on it"
     })
   end
 

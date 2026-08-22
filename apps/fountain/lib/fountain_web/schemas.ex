@@ -286,7 +286,8 @@ defmodule FountainWeb.Schemas do
               "the command it is about to run, so a title matches one invocation only. " <>
               "Merged with the agent's own policy, taking the stricter of the two. It may " <>
               "only narrow: a policy that would loosen any tool is refused with 422 " <>
-              "permission_policy_widens rather than silently clamped."
+              "permission_policy_widens rather than silently clamped, and one the runtime " <>
+              "never consults is refused with 422 permission_policy_unenforceable."
         },
         prompt: %Schema{type: :string, description: "Optional first turn prompt."},
         title: %Schema{
@@ -487,7 +488,9 @@ defmodule FountainWeb.Schemas do
               "claude titles a tool call with the command it is about to run. Unset keys " <>
               "fall back to the default, and an unset default is auto_allow \u2014 today's " <>
               "behaviour. \"ask\" holds the tool until a human answers it on the " <>
-              "conversation stream, and denies if nobody does before the timeout."
+              "conversation stream, and denies if nobody does before the timeout. A " <>
+              "runtime that never asks (opencode) refuses anything stricter than " <>
+              "auto_allow with 422 permission_policy_unenforceable."
         },
         skills: %Schema{
           type: :array,
@@ -741,7 +744,8 @@ defmodule FountainWeb.Schemas do
               "fall back to the default, and an unset default is auto_allow. \"ask\" holds " <>
               "the tool until a human answers it on the conversation stream, and denies if " <>
               "nobody does before the timeout. A conversation may narrow this at launch, " <>
-              "never widen it."
+              "never widen it. A runtime that never asks (opencode) refuses anything " <>
+              "stricter than auto_allow with 422 permission_policy_unenforceable."
         },
         environment_id: %Schema{type: :string, format: :uuid, nullable: true},
         skills: %Schema{
@@ -847,7 +851,8 @@ defmodule FountainWeb.Schemas do
               "fall back to the default, and an unset default is auto_allow. \"ask\" holds " <>
               "the tool until a human answers it on the conversation stream, and denies if " <>
               "nobody does before the timeout. A conversation may narrow this at launch, " <>
-              "never widen it."
+              "never widen it. A runtime that never asks (opencode) refuses anything " <>
+              "stricter than auto_allow with 422 permission_policy_unenforceable."
         },
         allowed_environment_ids: %Schema{
           type: :array,

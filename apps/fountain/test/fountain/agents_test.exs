@@ -431,6 +431,40 @@ defmodule Fountain.AgentsTest do
       assert %{permission_policy: _} = errors_on(changeset)
     end
 
+    test "a runtime that never asks refuses the policy instead of ignoring it" do
+      # Measured live 2026-08-22: opencode ran an external `curl` and an `rm -rf`
+      # under an ask-everything policy without ever sending
+      # `session/request_permission`. Storing the policy anyway would put
+      # "auto_deny" on every screen that shows the agent and enforce nothing.
+      user = insert_verified_user()
+
+      assert {:error, changeset} =
+               Agents.create_agent(
+                 agent_attrs(%{
+                   "user_id" => user.id,
+                   "runtime" => "opencode",
+                   "model" => "anthropic/claude-sonnet-5",
+                   "permission_policy" => %{"default" => "auto_deny"}
+                 })
+               )
+
+      assert %{permission_policy: [msg]} = errors_on(changeset)
+      assert msg =~ "never asks"
+
+      # auto_allow everywhere asks nothing of the runtime, so it still stores.
+      assert {:ok, agent} =
+               Agents.create_agent(
+                 agent_attrs(%{
+                   "user_id" => user.id,
+                   "runtime" => "opencode",
+                   "model" => "anthropic/claude-sonnet-5",
+                   "permission_policy" => %{"default" => "auto_allow"}
+                 })
+               )
+
+      assert agent.permission_policy == %{"default" => "auto_allow"}
+    end
+
     test "a policy change is audited by the existing agent.updated trail" do
       user = insert_verified_user()
       agent = insert_agent(user_id: user.id)
