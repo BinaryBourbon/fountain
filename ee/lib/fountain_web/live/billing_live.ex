@@ -68,6 +68,19 @@ defmodule FountainWeb.Live.BillingLive do
         {:noreply,
          put_flash(socket, :error, "Start a subscription first, then you can change plan.")}
 
+      # The subscription holds a price this deployment does not recognise, so
+      # there is nothing safe to reprice. In practice that means a price id
+      # was removed from the config out from under a live subscription — most
+      # likely `STRIPE_PRICE_ID`, which every `legacy` account still points
+      # at. Saying "try again" would send them round a loop that cannot work.
+      {:error, :plan_item_not_found} ->
+        {:noreply,
+         put_flash(
+           socket,
+           :error,
+           "We could not match your subscription to a plan. Please contact support."
+         )}
+
       {:error, _reason} ->
         {:noreply, put_flash(socket, :error, "Unable to reach Stripe. Please try again.")}
     end

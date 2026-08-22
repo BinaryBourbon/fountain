@@ -295,7 +295,17 @@ defmodule Fountain.Plans do
   def format_usd(cents) when is_integer(cents),
     do: "$#{:erlang.float_to_binary(cents / 100, decimals: 2)}"
 
-  defp price_ids, do: Application.get_env(:fountain, :stripe_price_ids, %{})
+  # Not `get_env(..., %{})`: that default applies only when the key is
+  # *absent*, and a key explicitly set to nil is a real state — config that
+  # computed to nil, or anything that has written the key back. Reading it as
+  # an empty map keeps a half-configured deployment showing no plans instead
+  # of raising BadMapError on the marketing page.
+  defp price_ids do
+    case Application.get_env(:fountain, :stripe_price_ids) do
+      map when is_map(map) -> map
+      _ -> %{}
+    end
+  end
 
   # The tiers arrived after the flat price had been selling for months. Its
   # id is still `STRIPE_PRICE_ID`, and every account that bought it is on

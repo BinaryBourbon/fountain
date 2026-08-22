@@ -166,6 +166,19 @@ defmodule Fountain.PlansTest do
       assert Plans.price_id("legacy") == nil
     end
 
+    # `get_env(key, %{})` hands back the default only when the key is ABSENT.
+    # A key explicitly holding nil is a different state, and reading it as a
+    # map raised BadMapError on the marketing page — which is the first thing
+    # a visitor sees.
+    test "a price-id config of nil reads as no prices, not as a crash" do
+      Application.put_env(:fountain, :stripe_price_ids, nil)
+      Application.put_env(:fountain, :stripe_price_id, nil)
+
+      assert Plans.price_id("solo") == nil
+      assert Plans.contact_price_id() == nil
+      assert Plans.slug_for_price_id("price_anything") == nil
+    end
+
     test "slug_for_price_id/1 maps a price back to its plan" do
       assert Plans.slug_for_price_id("price_scale") == "scale"
     end

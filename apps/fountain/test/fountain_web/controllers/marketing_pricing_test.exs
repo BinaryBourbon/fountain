@@ -10,8 +10,15 @@ defmodule FountainWeb.MarketingPricingTest do
     price = Application.get_env(:fountain, :stripe_price_monthly_cents)
     billing = Application.get_env(:fountain, :billing_enabled)
 
+    # delete_env when there was nothing there: put_env(key, nil) leaves the key
+    # *present* holding nil, which is a different state from absent and leaks
+    # into whatever runs next.
     on_exit(fn ->
-      Application.put_env(:fountain, :stripe_price_ids, price_ids)
+      case price_ids do
+        nil -> Application.delete_env(:fountain, :stripe_price_ids)
+        value -> Application.put_env(:fountain, :stripe_price_ids, value)
+      end
+
       Application.put_env(:fountain, :stripe_price_monthly_cents, price)
       Application.put_env(:fountain, :billing_enabled, billing)
     end)
