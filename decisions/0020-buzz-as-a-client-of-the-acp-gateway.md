@@ -42,8 +42,10 @@ ACP *client* of the runtimes), [0015](0015-fountain-as-an-acp-agent.md)
 (Fountain as an ACP *agent* an editor drives), and
 [0016](0016-governance-as-an-acp-proxy.md) (the governance plane in the middle).
 It also depends on the egress/credential thinking in
-[0019](https://github.com/BinaryBourbon/fountain/pull/690), and it explains why that ADR's
-placeholder-swap mechanism does **not** extend to Nostr.
+**0019** ([PR #690](https://github.com/BinaryBourbon/fountain/pull/690)) — a
+**proposed** ADR still on an open branch, describing a mechanism that is **not
+built** — and it explains why that mechanism would **not** extend to Nostr even
+if it were.
 
 ## Context
 
@@ -87,9 +89,10 @@ env. So all of the agent's Nostr surface lives on the laptop and in the sandbox.
   Buzz's own [remote-agents](https://github.com/block/buzz/blob/main/VISION_REMOTE_AGENTS.md)
   work is trying to solve.
 
-### Why the 0019 egress trick does not extend to this
+### Why the 0019 egress trick would not extend to this
 
-[0019](https://github.com/BinaryBourbon/fountain/pull/690) brokers API credentials by injecting
+0019 ([PR #690](https://github.com/BinaryBourbon/fountain/pull/690), proposed,
+not merged and not built) *would* broker API credentials by injecting
 *placeholder* values into the sandbox and swapping the real secret onto the
 outbound HTTP request at an egress proxy. That works because an API key is a
 bearer token the proxy can substitute. A Nostr event carries a **Schnorr
@@ -163,8 +166,10 @@ without it.
 
 - **A Buzz agent's identity and presence become Fountain-native state.** The nsec
   lives in a vault, decrypted only server-side; the sandbox holds neither key nor
-  relay connection for the brokered path. This is the 0019 inversion applied to
-  Nostr: the sandbox becomes untrusted with respect to the agent's identity.
+  relay connection for the brokered path. This is the inversion 0019 proposes,
+  applied to Nostr: the sandbox becomes untrusted with respect to the agent's
+  identity. The inversion is what carries over; 0019's own mechanism is not
+  built, and would not work here regardless (see above).
 - **Every Buzz publish becomes visible.** Phase 2 routes replies through a
   Fountain-hosted tool, so each publish is recorded in the audit trail
   (`buzz.published` — the tool and channel, never the content) — the first time
@@ -195,7 +200,7 @@ without it.
 - **Leave it as it is (CLI + key in the sandbox).** Rejected: the four costs
   above, chiefly the identity key sitting in reach of untrusted model output and
   every publish bypassing governance.
-- **Broker the signature at network egress, like 0019 does for API keys.**
+- **Broker the signature at network egress, the way 0019 proposes for API keys.**
   Impossible, not merely rejected: a Nostr event is signed over its own content;
   there is no bearer value to swap at the proxy. Recorded here so no one
   re-proposes it.
