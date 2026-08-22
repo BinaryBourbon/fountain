@@ -2,26 +2,35 @@ defmodule Fountain.Runtimes.Gemini do
   @moduledoc """
   Google Gemini CLI runtime.
 
-  Argv shape:
+  Provisioning only. Gemini speaks ACP since #659, so a turn spawns
+  `gemini --acp` (`Fountain.Runtimes.ACP`) and the prompt, the model, the
+  session id and the MCP servers all travel over the protocol rather than in
+  argv. This module is what remains: the workspace, the skills paths, the
+  settings file and `GEMINI_API_KEY`.
 
-      mode == :run       → gemini --output-format stream-json --model <model_id>
-      mode == :continue  → gemini --resume --output-format stream-json --model <model_id>
+  `build_command/5` is gone with #941. It was the last implementation of that
+  callback and the last place Fountain passed a vendor permission-bypass flag
+  (`--approval-mode yolo`, matching the `--dangerously-*` flags claude, codex
+  and opencode lost when their legacy spawn paths were deleted). Permissions
+  are now a policy (#939) answered per tool over `session/request_permission`,
+  with `ask` reaching a human (#940).
 
-  `--model` (also spelled `-m`) takes the bare id, so the canonical
-  `google/` prefix on `agent.model` is stripped — see
-  `Fountain.Runtimes.Model`.
+  Two things that lived in that argv and did not disappear with it:
 
-  Gemini manages its own session state — `--resume` re-enters the most
-  recent conversation in the workspace, so we don't pass a session id.
-  `--output-format stream-json` is the line-delimited stream the worker
-  tails.
+  * **the model.** `--model` took the bare id, stripped from the canonical
+    `google/` prefix. ACP pins it per session instead — gemini advertises
+    `models`, so `Peer` sends `session/set_model` (see "model selection" in
+    `acp/peer_test.exs`). The #553 regression it guarded against is still
+    guarded, one layer down.
+  * **`--resume`.** It re-entered "the most recent conversation in the
+    workspace", correct only while one conversation ever ran per workspace.
+    ACP names the session, which is the whole reason the conversion was worth
+    doing.
 
   Auth: `GEMINI_API_KEY` exported into the sprite.
   """
 
   @behaviour Fountain.Runtimes
-
-  alias Fountain.Runtimes.Model
 
   # Run gemini from a workspace dir we own and have git-init'd; avoids
   # the noisy `[WARN] [MemoryDiscovery] EACCES at /home/sprite/.git`
@@ -37,45 +46,6 @@ defmodule Fountain.Runtimes.Gemini do
 
   @impl true
   def skills_sh_agent, do: "gemini-cli"
-
-  @impl true
-  def build_command(agent, _prompt, mode, _runtime_session_id, opts) do
-    base =
-      [
-        "--output-format",
-        "stream-json",
-        # `yolo` auto-approves tool calls — matches claude's
-        # `--dangerously-skip-permissions` and codex's
-        # `--dangerously-bypass-approvals-and-sandbox`.
-        "--approval-mode",
-        "yolo"
-      ] ++ Model.model_args(agent)
-
-    # Non-interactive gemini does NOT load MCP tools by default. The
-    # `--allowed-mcp-server-names` flag is the explicit allow-list.
-    mcp_args =
-      case mcp_server_names(agent) do
-        [] -> []
-        names -> ["--allowed-mcp-server-names" | names]
-      end
-
-    resume = if mode == :continue, do: ["--resume"], else: []
-
-    # Gemini has no --image flag. The @path syntax embedded in the prompt
-    # text tells gemini-cli to include that file as multimodal context.
-    prompt_suffix =
-      case Keyword.get(opts, :images, []) do
-        [] -> ""
-        images -> "\n" <> Enum.map_join(images, "\n", fn {path, _mt} -> "@#{path}" end)
-      end
-
-    {"gemini", resume ++ base ++ mcp_args, [dir: @workdir, prompt_suffix: prompt_suffix]}
-  end
-
-  defp mcp_server_names(%{mcp_servers: m}) when is_map(m) and m != %{},
-    do: m |> Map.keys() |> Enum.map(&to_string/1)
-
-  defp mcp_server_names(_), do: []
 
   @impl true
   def default_env(_agent, inference_credentials) do
