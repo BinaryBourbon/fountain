@@ -461,7 +461,7 @@ defmodule Fountain.Runtimes.ACP.Peer do
   # trail a transcript.
   defp handle_message({:request, id, "session/request_permission", params}, state) do
     tool = Fountain.Permissions.tool_name(params)
-    verdict = Fountain.Permissions.verdict_for(state.permission_policy, tool)
+    verdict = Fountain.Permissions.verdict_for_request(state.permission_policy, params)
 
     case verdict do
       "ask" ->
@@ -500,14 +500,37 @@ defmodule Fountain.Runtimes.ACP.Peer do
   # client pairs the two on `request_id`.
   defp hold_permission(state, id, tool, params) do
     options = Enum.filter(Map.get(params, "options") || [], &is_map/1)
+    request_id = mint_request_id(id)
 
-    state = persist(state, "acp", Protocol.request(id, "session/request_permission", params))
-    report(state, {:permission_ask, to_string(id), tool, options})
+    state =
+      persist(state, "acp", Protocol.request(request_id, "session/request_permission", params))
+
+    report(state, {:permission_ask, request_id, tool, options})
 
     %{
       state
-      | pending_permission: %{id: id, request_id: to_string(id), options: options, tool: tool}
+      | pending_permission: %{id: id, request_id: request_id, options: options, tool: tool}
     }
+  end
+
+  # The id a client answers with, which is **not** the adapter's own JSON-RPC
+  # id. Measured against claude-agent-acp 0.66 in production: it numbers its
+  # requests from 0 *per turn*, so every conversation's second permission
+  # request arrives as id 0 again. Two live consequences, both from one cause:
+  #
+  # - a client pairing the resolution to the request on `request_id` (which is
+  #   the contract) marks the new card resolved the moment it renders, because
+  #   turn 2's `request`/`done` already named that id;
+  # - answering from a stale card would land on whatever request is open *now*,
+  #   approving a tool the person never saw.
+  #
+  # So Fountain mints the public id: the adapter's own id, a dot, and eight
+  # random bytes. The adapter id stays in front because a transcript is read
+  # beside adapter logs, and `restore_pending/1` reads it back to answer with
+  # the id the agent is actually blocked on. A stale card now misses and gets
+  # the same 409 as any other lost race.
+  defp mint_request_id(id) do
+    "#{id}.#{Base.encode16(:crypto.strong_rand_bytes(8), case: :lower)}"
   end
 
   # We declared no filesystem or terminal capabilities, so nothing should ask.
@@ -875,23 +898,50 @@ defmodule Fountain.Runtimes.ACP.Peer do
   # A held request handed back on reattach (#940). Stored as a string-keyed map
   # on the turn row; the peer works in atoms. The JSON-RPC id has to come back
   # as the integer the agent sent, because that is what it is blocked on.
+  # The adapter's own JSON-RPC id, back out of the minted `request_id` (see
+  # `mint_request_id/1`): everything before the last dot. A response has to
+  # echo the id's JSON type, so a numeric id is restored as an integer and
+  # anything else as the string it was — an adapter that numbers its requests
+  # and one that names them are both answerable after a deploy.
   defp restore_pending(%{"request_id" => request_id, "options" => options} = pending)
        when is_binary(request_id) do
-    case Integer.parse(request_id) do
-      {id, ""} ->
+    case acp_id(request_id) do
+      nil ->
+        nil
+
+      id ->
         %{
           id: id,
           request_id: request_id,
           options: List.wrap(options),
           tool: Map.get(pending, "tool")
         }
-
-      _ ->
-        nil
     end
   end
 
   defp restore_pending(_), do: nil
+
+  defp acp_id(request_id) do
+    case String.split(request_id, ".") do
+      [_only] ->
+        # A request_id written before #955 minted them: the whole string is the
+        # adapter's id. Restoring it keeps a request raised across that deploy
+        # answerable instead of orphaning it.
+        parse_acp_id(request_id)
+
+      parts ->
+        parts |> Enum.drop(-1) |> Enum.join(".") |> parse_acp_id()
+    end
+  end
+
+  defp parse_acp_id(""), do: nil
+
+  defp parse_acp_id(raw) do
+    case Integer.parse(raw) do
+      {id, ""} -> id
+      _ -> raw
+    end
+  end
 
   defp noreply(state), do: {:noreply, state}
 end

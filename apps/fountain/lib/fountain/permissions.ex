@@ -14,14 +14,19 @@ defmodule Fountain.Permissions do
 
   ## The shape
 
-  A policy is a map of tool name to verdict, plus a `"default"` key:
+  A policy is a map of key to verdict, plus a `"default"` key:
 
-      %{"default" => "auto_allow", "Bash" => "auto_deny"}
+      %{"default" => "auto_allow", "execute" => "ask"}
 
-  Tool names are matched the way the transcript labels them
-  (`ACP.Blocks.tool_name/1`): the agent's own `title`, falling back to ACP's
-  coarse `kind`. So a policy key is the string a user reads on a tool card,
-  not an internal id.
+  A request is matched most-specific-first (`verdict_for_request/2`): the tool
+  card's title, then ACP's coarse `kind`, then `"default"`.
+
+  **Reach for `kind` unless you know the runtime's titles.** claude-agent-acp,
+  which every shipped agent runs, titles a tool call with the command itself
+  — `curl -sS … https://example.com` — so a title key matches exactly one
+  invocation and nothing else. `kind` is the stable half: `execute`, `edit`,
+  `read`, `delete`, `move`, `search`, `fetch`, `think`, `other`. Measured live
+  on 2026-08-22; see `verdict_for_request/2`.
 
   ## Narrow, never widen
 
@@ -218,7 +223,7 @@ defmodule Fountain.Permissions do
   def outcome(policy, params) when is_map(params) do
     options = Map.get(params, "options") || []
 
-    case verdict_for(normalize(policy), tool_name(params)) do
+    case verdict_for_request(policy, params) do
       @auto_deny -> deny(options)
       # `ask` is not answered here — the peer holds the request open and a human
       # answers it (#940). Denying is the safe reading if a caller asks this
@@ -228,6 +233,57 @@ defmodule Fountain.Permissions do
       _ -> allow(options)
     end
   end
+
+  @doc """
+  The verdict `policy` gives one `session/request_permission`.
+
+  Tries the request's keys in order — the tool card's title first, then ACP's
+  coarse `kind` — and falls through to the policy's `"default"`.
+
+  **The `kind` fallback is what makes a per-tool policy writable.** Measured
+  against claude-agent-acp 0.66 in production on 2026-08-22: its `toolCall.title`
+  is the command itself (`curl -sS -o /dev/null -w "%{http_code}" https://…`),
+  not the tool. A title key can therefore only ever match one invocation, which
+  left `"default"` as the only usable key on the runtime every shipped agent
+  runs — a per-tool policy in name only. `kind` (`execute`, `edit`, `read`,
+  `delete`, `move`, `search`, `fetch`, `think`, `other`) is the stable half of
+  the same request, so `%{"execute" => "ask"}` means "ask before running
+  anything in the shell" and keeps working across invocations.
+
+  Title stays first: an exact-title rule is the more specific of the two, and a
+  runtime whose titles *are* tool names (`Bash`, `Edit`) keeps behaving as
+  0014 gate 3 described.
+  """
+  @spec verdict_for_request(map() | nil, map()) :: String.t()
+  def verdict_for_request(policy, params) when is_map(params) do
+    policy = normalize(policy)
+
+    params
+    |> policy_keys()
+    |> Enum.find_value(nil, fn key -> Map.get(policy, key) end)
+    |> case do
+      verdict when verdict in @verdicts -> verdict
+      # Not a verdict at all: the changesets reject these, so a value here means
+      # the row was written around them. Not trusted into an allow.
+      verdict when not is_nil(verdict) -> @auto_deny
+      nil -> verdict_for(policy, nil)
+    end
+  end
+
+  @doc """
+  The policy keys one request matches, most specific first.
+
+  The tool card's title, then ACP's `kind`. Empty when the request carries no
+  tool call at all, which falls through to the policy's default.
+  """
+  @spec policy_keys(map()) :: [String.t()]
+  def policy_keys(%{"toolCall" => call}) when is_map(call) do
+    [call["title"], call["kind"]]
+    |> Enum.filter(&(is_binary(&1) and &1 != ""))
+    |> Enum.uniq()
+  end
+
+  def policy_keys(_params), do: []
 
   @doc """
   The tool a permission request is about, as the transcript labels it.

@@ -170,6 +170,58 @@ defmodule Fountain.PermissionsTest do
     end
   end
 
+  describe "verdict_for_request/2 matches title, then kind" do
+    defp call(options, call), do: %{"options" => options, "toolCall" => call}
+
+    test "the kind matches when the title does not" do
+      # What makes a per-tool policy writable at all against claude-agent-acp:
+      # measured live on 2026-08-22, its title is the command it is about to
+      # run, so only `kind` is the same string twice.
+      params =
+        call([allow_always(), reject_once()], %{"title" => "curl https://x", "kind" => "execute"})
+
+      assert Permissions.verdict_for_request(%{"execute" => "auto_deny"}, params) == "auto_deny"
+
+      assert %{outcome: "selected", optionId: "ro"} =
+               Permissions.outcome(%{"execute" => "auto_deny"}, params)
+    end
+
+    test "an exact title still wins over the kind" do
+      params = call([], %{"title" => "Bash", "kind" => "execute"})
+
+      assert Permissions.verdict_for_request(
+               %{"Bash" => "auto_allow", "execute" => "auto_deny"},
+               params
+             ) == "auto_allow"
+    end
+
+    test "neither key named falls through to the policy's default" do
+      params = call([], %{"title" => "Bash", "kind" => "execute"})
+
+      assert Permissions.verdict_for_request(%{"default" => "ask"}, params) == "ask"
+      assert Permissions.verdict_for_request(%{}, params) == "auto_allow"
+      assert Permissions.verdict_for_request(nil, params) == "auto_allow"
+    end
+
+    test "a value that is not a verdict is not trusted into an allow" do
+      # The changesets reject these, so reaching here means the row was written
+      # around them.
+      params = call([], %{"title" => "Bash", "kind" => "execute"})
+
+      assert Permissions.verdict_for_request(%{"Bash" => "yolo"}, params) == "auto_deny"
+    end
+
+    test "policy_keys/1 is most specific first, and empty without a tool call" do
+      assert Permissions.policy_keys(%{"toolCall" => %{"title" => "Bash", "kind" => "execute"}}) ==
+               ["Bash", "execute"]
+
+      assert Permissions.policy_keys(%{"toolCall" => %{"title" => "read", "kind" => "read"}}) ==
+               ["read"]
+
+      assert Permissions.policy_keys(%{"options" => []}) == []
+    end
+  end
+
   describe "ask" do
     test "is buildable since #940 gave it somewhere to ask" do
       assert "ask" in Permissions.verdicts()
