@@ -4,6 +4,8 @@ defmodule FountainWeb.AgentsLive.Form do
 
   alias Fountain.{Agents, AvatarGenerator, Environments, InferenceCredentials}
   alias Fountain.Agents.Agent
+  alias Fountain.Permissions
+  alias Fountain.Runtimes.ACP
   alias Fountain.Runtimes.Model
 
   @impl true
@@ -60,8 +62,45 @@ defmodule FountainWeb.AgentsLive.Form do
       "model" => a.model || "anthropic/claude-sonnet-4-6",
       "runtime" => a.runtime || "claude",
       "sandbox_provider" => a.sandbox_provider || "",
-      "environment_id" => a.environment_id || ""
+      "environment_id" => a.environment_id || "",
+      "permission_default" => Permissions.verdict_for(a.permission_policy, nil),
+      "permission_kinds" => permission_kind_form(a.permission_policy)
     }
+  end
+
+  # The per-kind half of the policy, as the form holds it: every ACP kind, with
+  # "" meaning "whatever the default says". Only the kinds are offered here —
+  # a title key matches one invocation of one command on the runtime every
+  # agent runs (#958), so a form that invited one would be inviting a rule that
+  # never fires.
+  defp permission_kind_form(policy) do
+    policy = policy || %{}
+    Map.new(Permissions.tool_kinds(), fn kind -> {kind, Map.get(policy, kind, "")} end)
+  end
+
+  # The other direction: form state back to the map the changeset takes. An
+  # empty default plus no overrides is an empty policy rather than
+  # `%{"default" => "auto_allow"}`, so an agent nobody has touched keeps the
+  # empty map it has always had.
+  defp form_to_permission_policy(params) do
+    kinds =
+      params
+      |> Map.get("permission_kinds", %{})
+      |> Enum.filter(fn {_kind, verdict} -> verdict in Permissions.verdicts() end)
+      |> Map.new()
+
+    case Map.get(params, "permission_default") do
+      verdict when verdict in ["ask", "auto_deny"] -> Map.put(kinds, "default", verdict)
+      _ -> kinds
+    end
+  end
+
+  defp asks_permission?(runtime), do: ACP.asks_permission?(runtime || "claude")
+
+  defp permission_override_count(form) do
+    form
+    |> Map.get("permission_kinds", %{})
+    |> Enum.count(fn {_kind, verdict} -> verdict not in [nil, ""] end)
   end
 
   defp agent_to_skill_list(skills) do
@@ -320,6 +359,7 @@ defmodule FountainWeb.AgentsLive.Form do
         params
         |> Map.put("skills", skills)
         |> Map.put("mcp_servers", mcp_map)
+        |> Map.put("permission_policy", form_to_permission_policy(params))
         |> Map.put("user_id", socket.assigns.user_id)
         |> nil_if_blank("environment_id")
         |> nil_if_blank("sandbox_provider")
@@ -644,6 +684,70 @@ defmodule FountainWeb.AgentsLive.Form do
               {e.name}
             </option>
           </select>
+        </div>
+
+        <%!-- Permissions (#939): what answers before the agent runs a tool. --%>
+        <div class="space-y-2">
+          <label class="block text-sm font-medium text-zinc-700">
+            Before the agent runs a tool
+          </label>
+          <select
+            name="agent[permission_default]"
+            disabled={not asks_permission?(@form["runtime"])}
+            class="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm disabled:bg-zinc-100 disabled:text-zinc-500"
+          >
+            <option value="auto_allow" selected={@form["permission_default"] == "auto_allow"}>
+              Run it
+            </option>
+            <option value="ask" selected={@form["permission_default"] == "ask"}>
+              Ask a human, and refuse if nobody answers
+            </option>
+            <option value="auto_deny" selected={@form["permission_default"] == "auto_deny"}>
+              Refuse it
+            </option>
+          </select>
+
+          <p :if={not asks_permission?(@form["runtime"])} class="text-xs text-amber-700">
+            The {@form["runtime"]} runtime decides this inside its own server and never asks
+            Fountain, so a policy here would show a restriction it could not enforce.
+          </p>
+
+          <details :if={asks_permission?(@form["runtime"])} class="text-sm">
+            <summary class="cursor-pointer text-zinc-600">
+              Per kind of tool ({permission_override_count(@form)} set)
+            </summary>
+            <p class="mt-2 text-xs text-zinc-500">
+              A kind is the agent's own label for what a tool call does. Leave one alone to
+              follow the setting above.
+            </p>
+            <div class="mt-2 grid grid-cols-2 gap-2">
+              <div :for={kind <- Permissions.tool_kinds()} class="flex items-center gap-2">
+                <label class="w-20 text-xs text-zinc-600" for={"permission-#{kind}"}>{kind}</label>
+                <select
+                  id={"permission-#{kind}"}
+                  name={"agent[permission_kinds][#{kind}]"}
+                  class="flex-1 rounded-md border border-zinc-300 bg-white px-2 py-1 text-xs"
+                >
+                  <option value="" selected={@form["permission_kinds"][kind] in [nil, ""]}>
+                    Same as above
+                  </option>
+                  <option
+                    :for={verdict <- Permissions.verdicts()}
+                    value={verdict}
+                    selected={@form["permission_kinds"][kind] == verdict}
+                  >
+                    {verdict}
+                  </option>
+                </select>
+              </div>
+            </div>
+          </details>
+
+          <p class="text-xs text-zinc-500">
+            A conversation may narrow this at launch, never widen it. An unanswered request is
+            refused after five minutes, and the turn carries on.
+          </p>
+          <.error_msg field="permission_policy" errors={@errors} />
         </div>
 
         <%!-- Avatar --%>
