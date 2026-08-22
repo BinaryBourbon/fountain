@@ -77,6 +77,27 @@ audit trail means the analytics vocabulary *is* the audit vocabulary, the
 guardrail test that forces a new mutation to audit also forces it to be
 captured, and the two can never drift apart in coverage.
 
+**The trail is a superset of the product stream.** Riding the audit trail gives
+coverage for free, and the first day in production showed it also carries two
+things a product stream must refuse. Of 2,160 audit rows in 24 hours:
+
+- **1,513 (70%) were `api_key.created` / `api_key.revoked`**, and not one had a
+  human actor: 534 `self` (the default, which OAuth token issuance takes — a
+  Fountain OAuth token *is* an API key, ADR 0021), 445
+  `system:conversation_server`, 341 `system:buzz_harness`, 193
+  `system:buzz_boot_sweep`. Those are sprite credentials minted and revoked per
+  conversation and per harness boot. A key a person mints in the console or
+  through the API arrives as `ui` or `api` and is kept.
+- **425 rows across 73 distinct names were the `:api` pipeline's request-log
+  row** (ADR 0013 §4), named after the request line and carrying a resource id.
+  PostHog registers each distinct name as its own event definition, so that is
+  73 new definitions per day, permanently. The semantic row for the same
+  mutation is already captured, so refusing it loses nothing.
+
+`Fountain.Analytics.product_event?/2` is that filter: a closed dotted
+vocabulary, and `api_key.*` only from a human actor. It changes nothing about
+what is audited — every row still lands in the trail.
+
 **Off unless configured, and it never carries content.** No
 `POSTHOG_PROJECT_API_KEY` means nothing is sent. `POSTHOG_CAPTURE=false` keeps
 flag evaluation and stops capture. Events carry action names, resource types,

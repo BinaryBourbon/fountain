@@ -196,6 +196,50 @@ defmodule Fountain.AnalyticsTest do
     end
   end
 
+  describe "product_event?/2" do
+    test "an ordinary context action is a product event" do
+      assert Analytics.product_event?("agent.created", "ui")
+      assert Analytics.product_event?("conversation.created", "api")
+      assert Analytics.product_event?("team.contact.provisioned", "self")
+      assert Analytics.product_event?("billing.trial.started", "system:trial_sweeper")
+    end
+
+    test "the api pipeline's request-log row is not" do
+      # ADR 0013 §4 writes one of these per API mutation, named after the
+      # request line. Its name carries a resource id, so PostHog would register
+      # a new event definition for every conversation anyone touched.
+      refute Analytics.product_event?("POST /api/conversations", "api")
+
+      refute Analytics.product_event?(
+               "DELETE /api/agents/02100b96-193b-4bdf-b9d9-d1f6e356061d",
+               "api"
+             )
+
+      refute Analytics.product_event?("GET /api/agents", "api")
+    end
+
+    test "an API key the system issued itself is not" do
+      refute Analytics.product_event?("api_key.created", "self")
+      refute Analytics.product_event?("api_key.created", "system:conversation_server")
+      refute Analytics.product_event?("api_key.revoked", "system:buzz_harness")
+      refute Analytics.product_event?("api_key.created", nil)
+    end
+
+    test "an API key a person minted is" do
+      assert Analytics.product_event?("api_key.created", "ui")
+      assert Analytics.product_event?("api_key.revoked", "ui")
+      assert Analytics.product_event?("api_key.created", "api")
+    end
+
+    test "a name outside the closed vocabulary is refused" do
+      refute Analytics.product_event?("Agent.Created", "ui")
+      refute Analytics.product_event?("agent created", "ui")
+      refute Analytics.product_event?("agent", "ui")
+      refute Analytics.product_event?("", "ui")
+      refute Analytics.product_event?(nil, "ui")
+    end
+  end
+
   describe "sanitize/1" do
     test "passes scalars through" do
       assert Analytics.sanitize(%{"provider" => "sprites", "count" => 3, "ok" => true}) ==

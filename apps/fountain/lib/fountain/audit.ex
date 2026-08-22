@@ -112,8 +112,21 @@ defmodule Fountain.Audit do
   end
 
   defp do_mirror(%Event{} = event) do
+    # Not every audited row is a product event. `Analytics.product_event?/2`
+    # owns that judgement and says why; the short version is that the `:api`
+    # pipeline's request-log row is named after the request line (so its name
+    # carries a UUID) and self-issued API keys were 70% of the trail.
+    #
+    # `refresh_person/1` still runs for the rows this drops. A subscription
+    # transition recorded against a system actor changes the account's shape
+    # whether or not the row itself is worth counting.
     refresh_person(event)
 
+    if Fountain.Analytics.product_event?(event.action, event.actor),
+      do: capture_event(event)
+  end
+
+  defp capture_event(%Event{} = event) do
     Fountain.Analytics.capture(
       event.action,
       event.user_id,
