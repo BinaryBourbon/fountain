@@ -2490,9 +2490,15 @@ defmodule Fountain.Conversations.ConversationServer do
     # `build_command/5` is not consulted at all on this path. There is no
     # opt-in left to check: gate 4 deleted the legacy spawn path for claude,
     # codex and opencode along with the per-agent flag, so `acp?` is a
-    # property of `conv.runtime` alone. The `else` branch survives for gemini,
-    # the one runtime held back (#659), and for it the CLI is not a fallback —
-    # it is the only path.
+    # property of `conv.runtime` alone.
+    #
+    # The `else` branch is now **unreachable in production**. It survived for
+    # gemini until #659 put it on ACP and #941 deleted its `build_command/5`;
+    # no runtime module implements that callback any more, and `for_runtime/1`
+    # refuses a name that has no module, so a conversation whose runtime lacks
+    # an ACP adapter cannot start in the first place. It is kept because the
+    # turn machinery it leads to — the log budget, stdin handling, exit codes —
+    # is shared, and `Fountain.Test.FakeRuntime` still drives it here.
     {cmd, args, build_opts} =
       if acp? do
         {c, a} = Fountain.Runtimes.ACP.command(conv.runtime)

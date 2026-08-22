@@ -11,15 +11,15 @@ defmodule Fountain.Runtimes.LegacyBlocks do
 
   ## What is live and what is frozen
 
-  - **gemini** is the only dialect still *produced*: its ACP conversion is
-    held back by an upstream defect (#659), so gemini turns keep writing
-    stream-json to the `stdout` stream and this parser keeps earning its
-    place.
-  - **claude, codex, opencode** are **frozen**: their runtimes speak only ACP
-    now, so their parsers exist solely to render `stdout` rows recorded
-    before the conversion. Frozen means exactly that — the input set is
-    historical and can no longer change, so these clauses must never be
-    extended. When pre-ACP history ages out of retention, they are deleted.
+  **All four are frozen.** gemini was the last dialect still being produced;
+  #659 put it on ACP and #941 deleted the argv that produced it, so nothing
+  writes a legacy dialect any more.
+
+  Frozen means exactly that: every parser here exists solely to render `stdout`
+  rows recorded before its runtime was converted. The input set is historical
+  and can no longer grow, so these clauses must never be extended. **When
+  pre-ACP history ages out of retention, this module is deleted** — that is now
+  the only thing standing between it and deletion, for all four.
 
   **A dialect parser must never be written again.** A fifth runtime that does
   not speak ACP gets an adapter at the sandbox boundary, not a fifth set of

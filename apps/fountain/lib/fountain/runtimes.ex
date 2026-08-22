@@ -5,8 +5,13 @@ defmodule Fountain.Runtimes do
 
   This is the **provisioning** layer ADR 0014 deliberately kept: credentials,
   skills layout, sandbox bootstrap. Turn I/O is ACP (`Fountain.Runtimes.ACP`)
-  for every supported runtime; `build_command/5` exists only for runtimes
-  still on the legacy spawn path (gemini, #659), which is why it is optional.
+  for every supported runtime. `build_command/5` has **no implementation left**
+  — gemini was the last one and #941 deleted it — so the callback stays
+  optional and the legacy spawn path in `ConversationServer` is unreachable for
+  any runtime `for_runtime/1` will resolve. Both are kept rather than deleted
+  because a fifth runtime that cannot speak ACP would need them, and because
+  the turn machinery around them (log budget, exit handling) is shared and
+  still exercised through `Fountain.Test.FakeRuntime`.
 
   What varies between runtimes here falls into three kinds, and only the last
   needs code:
