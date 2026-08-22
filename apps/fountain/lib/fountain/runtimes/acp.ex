@@ -203,7 +203,7 @@ defmodule Fountain.Runtimes.ACP do
   Runtimes with an adapter entry that are held back, and why.
 
   Public so the reason travels with the code rather than living only in an
-  issue: `%{"gemini" => "#659"}`.
+  issue. Empty since #964; the last entry was `%{"gemini" => "#659"}`.
   """
   @spec blocked_runtimes() :: %{String.t() => String.t()}
   def blocked_runtimes do
@@ -273,9 +273,10 @@ defmodule Fountain.Runtimes.ACP do
   Whether this turn speaks ACP.
 
   A property of the runtime alone: supported runtimes always do, and for them
-  the legacy spawn path no longer exists. A blocked or unknown runtime
-  (gemini, #659) takes the legacy path — for those it is not a failure mode,
-  it is the only path.
+  the legacy spawn path no longer exists. Since #964 that is all four, so the
+  false branch has no runtime left — it answers for a conversation row naming
+  a runtime with no adapter entry, and for a blocked one should `blocked:`
+  ever be used again.
 
   Takes the runtime string, not the agent, because a conversation outlives
   its agent (deleting one nilifies `agent_id`) and the conversation row

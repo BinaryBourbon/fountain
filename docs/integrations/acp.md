@@ -51,7 +51,7 @@ version when that is lower. `agentInfo` is `fountain`, with the CLI's version.
 |---|---|
 | `initialize` | The capability handshake. Fountain logs the client's own capabilities, which are `fs` and terminals, and uses neither. This agent works on a sandbox filesystem, and not on yours. |
 | `authenticate` | Verifies the CLI's saved credentials against the instance. Fountain advertises it only when it holds none. |
-| `session/new` | Resolves `--agent`. It refuses an agent whose runtime does not speak ACP, which today is `gemini` ([#659](https://github.com/BinaryBourbon/fountain/issues/659)). Then it opens a conversation. **The ACP session id *is* the conversation id**, as below. It responds with the agent's model, as the one model available. |
+| `session/new` | Resolves `--agent`. It refuses an agent whose runtime has no ACP adapter, which today is no runtime at all. Then it opens a conversation. **The ACP session id *is* the conversation id**, as below. It responds with the agent's model, as the one model available. |
 | `session/prompt` | Sends the turn, as text and images. It drops another block with a warning, and refuses a prompt where it can use nothing. It then streams the conversation's ACP output back as `session/update` notifications, until the turn ends. |
 | `session/cancel` | Interrupts the turn that runs. |
 | `session/load` | Reopens a conversation that this process did not start. It replays the stored `session/update` history **before** the response, as the spec demands. |
@@ -176,7 +176,7 @@ terminal.
 | Message | Meaning |
 |---|---|
 | `no Fountain agent configured` | The entry has no `--agent`. |
-| `agent "x" runs the gemini runtime, which does not speak ACP` | Use that agent from the conversations app, or with `fountain run`. |
+| `agent "x" runs the … runtime, which does not speak ACP` | All four runtimes speak ACP. This names a conversation whose runtime column holds a name that no adapter covers. Use that agent from the conversations app, or with `fountain run`. |
 | `credentials for … were rejected` | Run `fountain auth login`. The message names the instance it tried, and that is usually the surprise. |
 | `could not resolve agent "x" on …` | The wrong name, or the right name on a different instance. |
 | `the sandbox never started: …` | The provision failed, and the reason belongs to the sandbox provider. |

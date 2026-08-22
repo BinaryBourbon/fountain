@@ -12,7 +12,7 @@ prompt.
 | [claude](claude.md) | `anthropic` | ACP | No |
 | [codex](codex.md) | `openai` | ACP | No |
 | [opencode](opencode.md) | Any of the three | ACP | **Yes** |
-| [gemini](gemini.md) | `google` | Legacy stream | No |
+| [gemini](gemini.md) | `google` | ACP, through `gemini --acp` | No |
 
 ## How to choose
 
@@ -26,9 +26,10 @@ providers. Read
 is the only multi-provider runtime. It takes the canonical `provider/model-id`
 string word for word, then reads the prefix to decide which key to export.
 
-**Do not choose `gemini` unless you want it in particular.** It is the only
-runtime off ACP. So it gets no editor integration, no permission flow, and
-none of the shared block format that the other three have.
+**All four speak ACP.** Gemini was the last one off it, and it joined on
+2026-08-22. So editor integration, the permission flow and the shared block
+format reach every runtime, and the choice is about the provider and the CLI
+rather than about the transport.
 
 ## The rule that catches people
 
