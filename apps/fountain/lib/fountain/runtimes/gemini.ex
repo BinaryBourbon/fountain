@@ -126,6 +126,10 @@ defmodule Fountain.Runtimes.Gemini do
     fi
     """
 
+    # The session-store workaround travels with the workspace (#659): it has to
+    # be on disk before the first turn ends, since that is when it first runs.
+    _ = Fountain.Runtimes.Gemini.SessionStore.install(handle)
+
     case Fountain.Sandbox.exec(handle, "bash", ["-lc", script],
            env: sprite_env,
            timeout: 30_000

@@ -10,6 +10,7 @@ end
 # seam is Fountain.Sandbox.Sprites (the adapter behind the Fountain.Sandbox
 # facade); the raw SDK copies below it exist only for the adapter's own unit
 # tests and the full-stack provisioning/checkpoint pins.
+Mimic.copy(Fountain.Sandbox)
 Mimic.copy(Fountain.Sandbox.Sprites)
 Mimic.copy(Fountain.AvatarGenerator)
 Mimic.copy(Fountain.Sandbox.Sprites.Client)

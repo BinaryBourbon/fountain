@@ -2963,6 +2963,22 @@ defmodule Fountain.Conversations.ConversationServer do
   defp finalize_tracer(nil), do: :ok
   defp finalize_tracer(tracer), do: Fountain.Runtimes.ACP.Tracer.finalize(tracer)
 
+  # gemini erases a session in the act of loading it (#659), so its store is
+  # consolidated at the end of every turn — before the next turn's
+  # `session/load` can collide with it. Best-effort and gemini-only; delete
+  # with the workaround when gemini-cli#28775 lands.
+  defp consolidate_gemini_session(%{handle: handle} = state) when not is_nil(handle) do
+    conv = Conversations._unsafe_get_conversation!(state.conversation_id)
+
+    if conv.runtime == "gemini" do
+      Fountain.Runtimes.Gemini.SessionStore.consolidate(handle, conv.runtime_session_id)
+    end
+
+    :ok
+  end
+
+  defp consolidate_gemini_session(_state), do: :ok
+
   defp finish_acp_turn(state, status, span_attrs, stage_meta) do
     # Resolve a held permission request before the peer goes away (#940). The
     # agent's blocked request dies with the process either way, but a card left
@@ -2972,6 +2988,7 @@ defmodule Fountain.Conversations.ConversationServer do
 
     if state.current_command, do: Fountain.Sandbox.close_stdin(state.current_command)
     stop_acp_peer(state)
+    consolidate_gemini_session(state)
 
     # Before the turn span ends: totals land on it, abandoned tool spans close.
     finalize_tracer(state.stream_tracer)
