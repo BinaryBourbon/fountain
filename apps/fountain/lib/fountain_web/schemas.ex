@@ -121,6 +121,18 @@ defmodule FountainWeb.Schemas do
         sandbox: %Schema{oneOf: [Sandbox], nullable: true},
         agent_id: %Schema{type: :string, format: :uuid, nullable: true},
         vault_id: %Schema{type: :string, format: :uuid, nullable: true},
+        permission_policy: %Schema{
+          type: :object,
+          nullable: true,
+          additionalProperties: %Schema{
+            type: :string,
+            enum: Fountain.Permissions.buildable_verdicts()
+          },
+          description:
+            "The per-launch permission override this conversation was started with, or " <>
+              "null if it had none. The policy actually in force is this merged with the " <>
+              "agent's, taking the stricter of the two per tool."
+        },
         environment_id: %Schema{
           type: :string,
           format: :uuid,
@@ -709,6 +721,20 @@ defmodule FountainWeb.Schemas do
             "Sandbox backend override; null inherits the instance default " <>
               "(SANDBOX_PROVIDER). Only providers configured on this instance are accepted"
         },
+        permission_policy: %Schema{
+          type: :object,
+          nullable: true,
+          additionalProperties: %Schema{
+            type: :string,
+            enum: Fountain.Permissions.buildable_verdicts()
+          },
+          description:
+            "Per-tool permission policy: a map of tool name (as the transcript labels it) " <>
+              "to verdict, plus an optional \"default\" key. Unset tools fall back to the " <>
+              "default, and an unset default is auto_allow. \"ask\" holds the tool until a " <>
+              "human answers it on the conversation stream, and denies if nobody does " <>
+              "before the timeout. A conversation may narrow this at launch, never widen it."
+        },
         environment_id: %Schema{type: :string, format: :uuid, nullable: true},
         skills: %Schema{
           type: :array,
@@ -797,6 +823,20 @@ defmodule FountainWeb.Schemas do
           description:
             "Sandbox backend override; null inherits the instance default " <>
               "(SANDBOX_PROVIDER). Only providers configured on this instance are accepted"
+        },
+        permission_policy: %Schema{
+          type: :object,
+          nullable: true,
+          additionalProperties: %Schema{
+            type: :string,
+            enum: Fountain.Permissions.buildable_verdicts()
+          },
+          description:
+            "Per-tool permission policy: a map of tool name (as the transcript labels it) " <>
+              "to verdict, plus an optional \"default\" key. Unset tools fall back to the " <>
+              "default, and an unset default is auto_allow. \"ask\" holds the tool until a " <>
+              "human answers it on the conversation stream, and denies if nobody does " <>
+              "before the timeout. A conversation may narrow this at launch, never widen it."
         },
         allowed_environment_ids: %Schema{
           type: :array,
