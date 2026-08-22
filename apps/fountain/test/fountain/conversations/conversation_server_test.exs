@@ -385,6 +385,62 @@ defmodule Fountain.Conversations.ConversationServerTest do
     end
   end
 
+  describe "provisioning — warm start from a checkpoint (#989)" do
+    test "the network policy is applied on the warm arm, not skipped with the disk steps", %{
+      user: user
+    } do
+      # A checkpoint captures the disk, so packages, clones and the setup
+      # script legitimately do not re-run. An egress policy is configuration on
+      # the sandbox, and a warm start creates a *new* sandbox — skipping it
+      # turned a `limited` environment into an unrestricted one and still
+      # reported `provision/done`.
+      stub_happy_sprite()
+      test_pid = self()
+
+      env =
+        insert_env(
+          user_id: user.id,
+          networking_type: "limited",
+          networking_config: %{"allowed_hosts" => ["github.com"]},
+          checkpoint_id: "ckpt-1"
+        )
+
+      agent = insert_agent(user_id: user.id, environment_id: env.id, runtime: "claude")
+      sandbox = insert_sandbox(user_id: user.id, status: "pending")
+
+      conv =
+        insert_conversation(
+          user_id: user.id,
+          agent: agent,
+          runtime: @legacy_runtime,
+          sandbox_id: sandbox.id,
+          status: "pending"
+        )
+
+      # The harness stubs a restore failure by default, which falls through to
+      # the cold path; this test is about the warm one.
+      Mimic.stub(Fountain.Conversations.Provisioning, :restore_checkpoint, fn _h, _id -> :ok end)
+
+      Mimic.stub(Fountain.Conversations.Provisioning, :apply_network_policy, fn _h, e, _c ->
+        send(test_pid, {:network_policy, e.networking_type})
+        :ok
+      end)
+
+      # The disk steps stay skipped: that part of the warm start is correct.
+      Mimic.stub(Fountain.Conversations.Provisioning, :install_packages, fn _s, _e, _se, _c ->
+        send(test_pid, :packages)
+        :ok
+      end)
+
+      {pid, _ref, :alive} = start_server(conv)
+
+      assert_received {:network_policy, "limited"}
+      refute_received :packages
+      assert Conversations._unsafe_get_sandbox!(sandbox.id).status == "ready"
+      GenServer.stop(pid)
+    end
+  end
+
   describe "provisioning — failure paths" do
     test "a sprite that cannot be created marks both rows failed", %{conv: conv, sandbox: sandbox} do
       stub_happy_sprite()

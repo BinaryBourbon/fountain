@@ -779,15 +779,22 @@ defmodule Fountain.Conversations.ConversationServer do
     end
   end
 
-  # Try a checkpoint restore first if the env has one. If restore
-  # succeeds, skip the slow steps (network policy + packages + clone +
-  # setup_script) — they all ran when the checkpoint was originally
-  # taken. If restore fails, clear the checkpoint id and fall through to
-  # the full pipeline.
+  # Try a checkpoint restore first if the env has one. If restore succeeds,
+  # skip the slow steps (packages + clone + setup_script) — they all wrote to
+  # the disk the checkpoint captured, so restoring it restores their effect.
+  # If restore fails, clear the checkpoint id and fall through to the full
+  # pipeline.
+  #
+  # The network policy is **not** one of those steps and is applied on both
+  # arms (#989). It is configuration on the sandbox, not a file: a warm start
+  # creates a fresh sandbox and pours a disk image into it, and that sandbox
+  # carries no policy. Skipping it turned a `limited` environment into an
+  # unrestricted one, silently, and reported `provision/done`. It costs one
+  # fast API call, so the warm start pays nothing for it.
   defp run_provisioning_pipeline(handle, env, sprite_env, secrets, conv_id) do
     case attempt_warm_start(handle, env, conv_id) do
       :warm_started ->
-        :ok
+        Fountain.Conversations.Provisioning.apply_network_policy(handle, env, conv_id)
 
       :cold ->
         with :ok <-
