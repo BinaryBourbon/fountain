@@ -1,15 +1,15 @@
 # CLI reference
 
-The `fountain` binary manages Fountain resources from the terminal or CI scripts.
-It is a convenience wrapper over the REST API. Everything here can be done with
-`curl`.
+The `fountain` binary manages Fountain resources from a terminal, or from a CI
+script. It is a convenience wrapper over the REST API. You can do everything
+here with `curl`.
 
-This page is organised by what you are trying to do, and shows the useful
-invocations rather than every flag. For the flag-complete list, generated from
-the binary itself, see [All commands](cli/commands.md).
+This page follows what you want to do. It shows the useful invocations, and
+not each flag. For the complete list of flags, which comes
+from the binary itself, read [All commands](cli/commands.md).
 
-If a command is not on one of these two pages it does not exist. A test walks
-the real command tree and fails either way round.
+A command that is on neither of these two pages does not exist. A test walks
+the real command tree, and it fails either way round.
 
 ## Install
 
@@ -17,7 +17,8 @@ the real command tree and fails either way round.
 brew install BinaryBourbon/tap/fountain
 ```
 
-Or grab a release binary from the [GitHub Releases](https://github.com/BinaryBourbon/fountain/releases) page.
+Or take a release binary from the
+[GitHub Releases](https://github.com/BinaryBourbon/fountain/releases) page.
 
 ## Authentication
 
@@ -27,8 +28,9 @@ fountain auth whoami    # print the current user
 fountain auth logout    # remove saved credentials
 ```
 
-`auth login` has no `--endpoint` flag. Point the CLI at a different instance with
-`FOUNTAIN_BASE_URL`, which `auth login` then records in the saved profile:
+`auth login` has no `--endpoint` flag. Point the CLI at a different instance
+with `FOUNTAIN_BASE_URL`. `auth login` then records that URL in the saved
+profile.
 
 ```bash
 FOUNTAIN_BASE_URL=https://your-fountain.example.com fountain auth login
@@ -36,7 +38,8 @@ FOUNTAIN_BASE_URL=https://your-fountain.example.com fountain auth login
 
 ### Profiles
 
-Use `--profile` (or `FOUNTAIN_PROFILE`) to keep several instances side by side:
+Use `--profile`, or `FOUNTAIN_PROFILE`, to keep several instances side by
+side.
 
 ```bash
 FOUNTAIN_BASE_URL=https://staging.example.com fountain auth login --profile staging
@@ -50,8 +53,8 @@ fountain agent list [--json]
 fountain agent show <id>
 ```
 
-Agents are **read-only** from the CLI. Create and update them with
-[`fountain apply`](#apply-manifests) or the REST API.
+An agent is **read-only** from the CLI. Create one and update one with
+[`fountain apply`](#apply-manifests), or with the REST API.
 
 ## Environments
 
@@ -60,13 +63,14 @@ fountain env list [--json]
 fountain env show <id>
 ```
 
-Also read-only. Environment secrets are set through `apply` or the API.
+These are read-only too. Set an environment secret through `apply`, or through
+the API.
 
 ## Vaults
 
-Vaults are the one resource with a full CLI surface, because they hold the
-per-conversation credentials you most often want to change without editing a
-manifest.
+A vault is the one resource with a full CLI surface. A vault holds the
+credentials for one conversation, and those are the ones you most often want
+to change with no edit to a manifest.
 
 ```bash
 fountain vault list [--json]
@@ -80,16 +84,21 @@ fountain vault delete-secret <id-or-name> <key>
 
 ## Hosted Buzz agents
 
-Change the inbound gate on a hosted [Buzz](integrations/buzz.md) agent, meaning
-whose `@`-mention the harness will answer. The Buzz desktop refuses to change
-access on a provider agent it has already deployed, so this is where that gate
-changes. Setting it restarts the harness so the new gate is live.
+These commands change the inbound gate on a hosted
+[Buzz](integrations/buzz.md) agent. The gate decides whose `@`-mention the
+harness answers.
+
+The Buzz desktop refuses to change access on a provider agent it already
+deployed. So this is where that gate changes. To set it restarts the harness,
+and the new gate is then live.
 
 **This does not make the agent mentionable.** Buzz Desktop 0.5.17 and newer
-builds its agent directory from the owner-signed kind-30177 policy the desktop
-published at deploy, not from what the harness advertises, so opening the gate
-here without republishing that policy leaves other users unable to send the
-mention in the first place. See
+builds its agent directory from the owner-signed kind-30177 policy that the
+desktop published at deploy. It does not build it from what the harness
+advertises.
+
+So open the gate here, publish that policy again, and other users can send the
+mention. Open the gate alone, and they cannot send it at all. Read
 [Who may talk to it](integrations/buzz.md#who-may-talk-to-it).
 
 ```bash
@@ -99,10 +108,12 @@ fountain buzz agents set-access <name-or-id> --respond-to allowlist --allowlist 
 fountain buzz agents set-access <name-or-id> --respond-to owner-only
 ```
 
-`--respond-to` is one of `owner-only`, `allowlist`, `anyone`, `nobody`
-(`buzz-acp`'s own modes). Only the flags you pass change; `--respond-to` alone
-keeps the stored allowlist. Note that a later provider deploy from the desktop
-resends the desktop's own record and overwrites what is set here.
+`--respond-to` is one of `owner-only`, `allowlist`, `anyone` and `nobody`.
+Those are `buzz-acp`'s own modes. Only the flags you pass change, so
+`--respond-to` on its own keeps the stored allowlist.
+
+A later provider deploy from the desktop sends the desktop's own record again,
+and overwrites what you set here.
 
 ## Conversations
 
@@ -116,7 +127,7 @@ fountain conv terminate <id>
 fountain conv delete <id>
 ```
 
-`-i/--image` is repeatable and takes local file paths.
+You can repeat `-i` and `--image`. Each one takes a local file path.
 
 ## Run an agent
 
@@ -126,27 +137,31 @@ fountain run <agent-name-or-id> -p "Run the test suite" --vault staging-creds
 fountain run <agent-name-or-id> -p "Run the test suite" --environment staging
 ```
 
-`run` creates a conversation and streams until the turn reaches a terminal state.
-`--vault` layers a vault's secrets over the agent's environment (vault wins on
-collision); `--environment` provisions from that environment instead of the
-agent's own.
+`run` creates a conversation, then streams until the turn reaches a terminal
+state.
+
+`--vault` layers a vault's secrets over the agent's environment, and the vault
+wins on a collision. `--environment` provisions from that environment, and not
+from the agent's own.
 
 ### Long-running turns
 
-The server closes an idle SSE connection after 60 seconds, so a turn that thinks
-for a while without printing will see the connection drop. The CLI reconnects
-using `Last-Event-ID`, so output produced while disconnected is replayed and a
-dropped connection is never mistaken for a finished turn.
+The server closes an idle SSE connection after 60 seconds. So a turn that
+thinks for a while and prints nothing loses its connection.
 
-If nothing arrives at all for 30 minutes the CLI exits with an error naming the
-conversation, rather than reporting success. Widen the wait with
-`FOUNTAIN_STREAM_IDLE_TIMEOUT` (seconds):
+The CLI reconnects with `Last-Event-ID`. It replays the output that arrived
+while it had no connection, and it never mistakes a dropped connection for a
+finished turn.
+
+If nothing at all arrives for 30 minutes, the CLI exits with an error that
+names the conversation. It does not report success. Widen the wait with
+`FOUNTAIN_STREAM_IDLE_TIMEOUT`, in seconds.
 
 ```bash
 FOUNTAIN_STREAM_IDLE_TIMEOUT=7200 fountain run researcher -p "large refactor"
 ```
 
-Disconnecting loses nothing. Reattach at any time:
+A disconnect loses nothing. Reattach at any time.
 
 ```bash
 fountain conv stream <conversation-id>
@@ -158,21 +173,27 @@ fountain conv stream <conversation-id>
 fountain acp --agent <name-or-id> [--vault <name-or-id>] [--environment <name-or-id>] [--log-level debug]
 ```
 
-Speaks the [Agent Client Protocol](https://agentclientprotocol.com) on stdio, so
-an ACP-capable editor can drive a Fountain conversation. You do not run this
-yourself. The editor spawns it and talks JSON-RPC over the pipe. stdout carries
-the protocol and nothing else; diagnostics go to stderr, which is where to look
-first when an editor reports a problem.
+This speaks the [Agent Client Protocol](https://agentclientprotocol.com) on
+stdio, so an ACP-capable editor can drive a Fountain conversation.
 
-`--agent` names the Fountain agent that sessions run: the protocol has no field
-for it, so it is configured on the command line, one editor entry per agent.
-Credentials are the ones `fountain auth login` already saved, and `--profile`
-selects the instance.
+You do not run it yourself. The editor spawns it, and talks JSON-RPC over the
+pipe. stdout carries the protocol and nothing else. Diagnostics go to stderr,
+and that is where to look first when an editor reports a problem.
+
+`--agent` names the Fountain agent that a session runs. The protocol has no
+field for it, so you configure it on the command line, with one editor entry
+for each agent.
+
+The credentials are the ones that `fountain auth login` already saved.
+`--profile` chooses the instance.
 
 **[`fountain acp` (reference)](integrations/acp.md)** documents the protocol
-surface and flags in full; **[Editors (ACP)](integrations/editors.md)** has the setup, the editor config
-snippets, and the limits worth knowing before you start. Chief among them is
-that the agent works on a sandbox's files, not the ones open in your editor.
+surface and the flags in full. **[Editors (ACP)](integrations/editors.md)**
+has the setup, the editor config snippets, and the limits that matter before
+you start.
+
+The first of those limits is that the agent works on a sandbox's files. It
+does not work on the files open in your editor.
 
 ## Self-hosted runner
 
@@ -181,14 +202,18 @@ fountain runner                          # this machine becomes a sandbox provid
 fountain runner --name mini --root ~/fountain-sandboxes --log-level debug
 ```
 
-Dials out to Fountain, holds the connection, and serves sandboxes for agents
-whose `sandbox_provider` is `runner`: each sandbox is a directory under
-`--root` (default `~/.fountain/runners/<name>/sandboxes`), the agent's
-processes run on this machine as you with `HOME` pointed at that directory,
-and idle sandboxes park by stopping their processes with the directory left
-in place. Trusted mode, with no VM and no egress policy, so run it on a machine
-you would hand a capable colleague a shell on. Needs a full-scope key. Names are
-unique per account (default: the hostname); reconnects with backoff. See the
+This dials out to Fountain, holds the connection, and serves sandboxes for an
+agent whose `sandbox_provider` is `runner`.
+
+Each sandbox is a directory under `--root`, which defaults to
+`~/.fountain/runners/<name>/sandboxes`. The agent's processes run on this
+machine as you, with `HOME` pointed at that directory. An idle sandbox parks:
+it stops its processes, and the directory stays.
+
+Fountain trusts this machine, and gives it no VM and no egress policy. Run it
+where you would hand a capable colleague a shell. It needs a full-scope key.
+A name is unique for each account, and it defaults to the hostname. It
+reconnects with backoff. Read the
 [runners guide](integrations/runners.md).
 
 ## Apply manifests
@@ -199,25 +224,31 @@ fountain apply -f path/to/directory/          # walks all *.yml / *.yaml files
 fountain apply -f dir/ --var REGION=eu-west-1 # ${VAR} substitution, repeatable
 ```
 
-Apply is idempotent, creating if new and updating if changed. The supported
-kinds are `Environment`, `Vault` and `Agent`.
+Apply is idempotent. It creates what is new, and updates what changed. It
+supports three kinds, which are `Environment`, `Vault` and `Agent`.
 
-`--var`/`${VAR}` substitution applies to `spec.secrets` values only. A
-`${VAR}` anywhere else in the document (a `setup_script`, a name) is
-transmitted literally.
+`--var` and `${VAR}` substitution apply to a `spec.secrets` value alone. A
+`${VAR}` anywhere else in the document goes across as it stands. A
+`setup_script` and a name are two such places.
 
-The CLI compiles every document into a single manifest and sends it to
-`POST /api/apply` in one request; the server reconciles environments, then
-vaults, then agents, and resolves agent `environment:` name references,
-including environments that already exist on the server. Against older servers
-without `/api/apply`, the CLI falls back to per-resource calls.
+The CLI compiles each document into one manifest, and sends that to
+`POST /api/apply` in one request.
+
+The server reconciles the environments, then the vaults, then the agents. It
+resolves an agent's `environment:` name reference, and that includes an
+environment that already exists on the server.
+
+Against an older server with no `/api/apply`, the CLI falls back to one call
+for each resource.
 
 ### Secret references
 
-`spec.secrets` values can reference a secret manager instead of holding
-plaintext. That is what makes manifests committable to git. A value starting
-with one of these schemes is resolved client-side at apply time by shelling
-out to the manager's own CLI (which must be installed and authenticated):
+A `spec.secrets` value can point at a secret manager, and hold no plaintext.
+That is what lets you commit a manifest to git.
+
+The CLI resolves a value that starts with one of these schemes, on the client,
+at apply time. It runs the manager's own CLI, which you must install and
+authenticate first.
 
 | Scheme | Manager | Resolved with |
 |---|---|---|
@@ -234,9 +265,12 @@ spec:
     STRIPE_KEY: bws://8f0a3c1e-...
 ```
 
-Resolution failures (and empty values, which nearly always mean "secret not
-found") fail the apply for that document rather than writing an empty secret.
-Only `spec.secrets` values are resolved; the schemes are inert anywhere else.
+A failure to resolve fails the apply for that document. So does an empty
+value, which nearly always means the manager found no secret. The CLI writes
+no empty secret.
+
+The CLI resolves a `spec.secrets` value alone. The schemes are inert anywhere
+else.
 
 ## API keys
 
@@ -248,7 +282,8 @@ fountain keys revoke <id>
 
 ## Output
 
-List commands accept `--json`. There is no `-o` flag and no YAML output:
+A list command accepts `--json`. There is no `-o` flag, and there is no YAML
+output.
 
 ```bash
 fountain agent list --json | jq '.[].name'
@@ -256,8 +291,8 @@ fountain agent list --json | jq '.[].name'
 
 ## Configuration
 
-`~/.fountain/credentials` is an INI-style file written by `fountain auth login`,
-with one section per profile (values are written double-quoted):
+`fountain auth login` writes `~/.fountain/credentials`, an INI-style file with
+one section for each profile. It writes each value in double quotes.
 
 ```ini
 [default]
@@ -265,26 +300,30 @@ api_key = "ftn_..."
 base_url = "https://fountain.inevitable.fyi"
 ```
 
-The file is written `0600` and the directory `0700`.
+The CLI writes the file `0600`, and the directory `0700`.
 
 ### Environment variables
 
 | Variable | Effect |
 |---|---|
-| `FOUNTAIN_API_KEY` | API key; takes precedence over the credentials file |
-| `FOUNTAIN_BASE_URL` | Instance URL; takes precedence over the credentials file |
-| `FOUNTAIN_PROFILE` | Profile to use, equivalent to `--profile` |
-| `FOUNTAIN_STREAM_IDLE_TIMEOUT` | Seconds of silence before a stream gives up (default 1800) |
+| `FOUNTAIN_API_KEY` | The API key. It wins over the credentials file. |
+| `FOUNTAIN_BASE_URL` | The instance URL. It wins over the credentials file. |
+| `FOUNTAIN_PROFILE` | The profile to use. It is the same as `--profile`. |
+| `FOUNTAIN_STREAM_IDLE_TIMEOUT` | The seconds of silence before a stream gives up. The default is 1800. |
 
 ```bash
 FOUNTAIN_API_KEY=ftn_... FOUNTAIN_BASE_URL=https://other.example.com fountain agent list
 ```
 
-Resolution order for both the key and the URL is: environment variable, then the
-active profile in the credentials file, then (for the URL only) the built-in
-default `https://fountain.inevitable.fyi`.
+The CLI resolves both the key and the URL in the same order. It reads the
+environment variable, then the active profile in the credentials file. For the
+URL alone it then falls back to the built-in default,
+`https://fountain.inevitable.fyi`.
 
-**Self-hosting?** That built-in default is the hosted instance, not yours. Run
-`fountain auth login` with `FOUNTAIN_BASE_URL` pointed at your instance before
-anything else: an unconfigured CLI with `FOUNTAIN_API_KEY` exported sends that
-key to `fountain.inevitable.fyi`. Configure the URL before the key.
+**Do you self-host?** That built-in default is the hosted instance, and not
+yours.
+
+Run `fountain auth login` with `FOUNTAIN_BASE_URL` pointed at your instance.
+Do that first, before each other command. A CLI with no config, and `FOUNTAIN_API_KEY`
+exported, sends that key to `fountain.inevitable.fyi`. Configure the URL
+before the key.
