@@ -136,6 +136,63 @@ defmodule Fountain.AnalyticsBridgesTest do
     end
   end
 
+  describe "what the audit trail does not forward" do
+    test "the api pipeline's request-log row is audited but not captured" do
+      user = insert_verified_user()
+      forget_setup()
+
+      {:ok, _} =
+        Audit.record(%{
+          action: "DELETE /api/agents/02100b96-193b-4bdf-b9d9-d1f6e356061d",
+          resource_type: "request",
+          user_id: user.id,
+          actor: "api"
+        })
+
+      assert captured() == []
+
+      # Still in the trail, which is the point: this drops nothing from the
+      # audit record, only from the product stream.
+      assert Enum.any?(
+               Fountain.Audit.list_for_user(user.id),
+               &(&1.action == "DELETE /api/agents/02100b96-193b-4bdf-b9d9-d1f6e356061d")
+             )
+    end
+
+    test "an API key the system issued itself is not captured" do
+      user = insert_verified_user()
+      forget_setup()
+
+      for actor <- ["self", "system:conversation_server", "system:buzz_harness"] do
+        {:ok, _} =
+          Audit.record(%{
+            action: "api_key.created",
+            resource_type: "api_key",
+            user_id: user.id,
+            actor: actor
+          })
+      end
+
+      assert captured() == []
+    end
+
+    test "an API key a person minted is captured" do
+      user = insert_verified_user()
+      forget_setup()
+
+      {:ok, _} =
+        Audit.record(%{
+          action: "api_key.created",
+          resource_type: "api_key",
+          user_id: user.id,
+          actor: "ui"
+        })
+
+      assert event = event_named("api_key.created")
+      assert event["properties"]["actor"] == "ui"
+    end
+  end
+
   describe "the metering choke point" do
     test "a usage event is also a product event" do
       user = insert_verified_user()

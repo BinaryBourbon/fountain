@@ -35,6 +35,14 @@ upgrade, is in
   `$feature_flag_called` while stamping `$feature/<key>` onto every other
   event.
 
+  The trail is a superset of the product stream, and two things it carries are
+  refused: the `:api` pipeline's request-log row, whose name holds a resource
+  id and would make a new PostHog event type per resource, and an API key
+  Fountain issued to itself (a sandbox credential, a Buzz harness credential,
+  an OAuth token). Those were 70% of the trail in its first day. A key a
+  person mints in the console or through the API is kept. Nothing is dropped
+  from the audit trail itself.
+
   Nothing is sent without `POSTHOG_PROJECT_API_KEY`, and `POSTHOG_CAPTURE=false`
   keeps flag evaluation while stopping capture. Events carry action names,
   resource types, counts and sizes, never secret values, prompts or agent

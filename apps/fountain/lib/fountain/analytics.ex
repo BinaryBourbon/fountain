@@ -169,6 +169,65 @@ defmodule Fountain.Analytics do
     )
   end
 
+  # A context action name: dotted, lowercase, closed vocabulary
+  # (`agent.created`, `team.contact.provisioned`). Anything else arriving from
+  # the audit trail is the `:api` pipeline's request-log row, which is named
+  # after the request line and carries a UUID.
+  @context_action ~r/^[a-z][a-z0-9_]*(\.[a-z0-9_]+)+$/
+
+  # The two surfaces a person mints an API key from. Everything else is a
+  # credential the system issued itself.
+  @human_actors ~w(ui api)
+
+  @doc """
+  Whether an audited action belongs in PostHog.
+
+  The audit trail and a product analytics stream want different things, and
+  mirroring one into the other wholesale was wrong in two ways that a day of
+  production data made obvious (2,160 audit rows in 24 hours).
+
+  ## The request log is not a product event
+
+  ADR 0013 §4 keeps a **second** row for every API mutation, written by the
+  `:api` pipeline plug and named after the request line
+  (`POST /api/conversations/<uuid>/read`). It answers "what was attempted",
+  including for requests that were refused, which is what an access log is
+  for. The semantic row for the same mutation (`conversation.created`) is
+  already captured, so nothing is lost by declining the second one.
+
+  What would be lost by keeping it is the event taxonomy. Those names embed
+  resource ids: **73 distinct action names in one day**, every one of which
+  PostHog registers as its own event definition, permanently. A product
+  vocabulary has to be closed, and `@context_action` is that fence.
+
+  ## A credential the system issued itself is not a product event
+
+  `api_key.created` and `api_key.revoked` were **1,513 of those 2,160 rows —
+  70% of the entire trail**. Not one carried a human actor: 534 `self`
+  (the context default, which OAuth token issuance takes — a Fountain OAuth
+  token *is* an API key, ADR 0021), 445 `system:conversation_server`, 341
+  `system:buzz_harness`, 193 `system:buzz_boot_sweep`. Those are sprite
+  credentials minted and revoked per conversation and per harness boot. They
+  say how busy the machine is, which is a telemetry question, and they would
+  have drowned every real signal in the project.
+
+  A person minting a key in the console or through the API is genuine product
+  usage and is kept: both call sites pass `FountainWeb.Audited.attribution/2`,
+  so they arrive as `ui` or `api`.
+
+  This filter never touches what is *audited*. The trail keeps every row.
+  """
+  @spec product_event?(String.t(), String.t() | nil) :: boolean()
+  def product_event?(action, actor) when is_binary(action) do
+    cond do
+      not Regex.match?(@context_action, action) -> false
+      String.starts_with?(action, "api_key.") -> actor in @human_actors
+      true -> true
+    end
+  end
+
+  def product_event?(_action, _actor), do: false
+
   @doc """
   Person properties derived from a user row.
 

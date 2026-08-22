@@ -238,6 +238,17 @@ without a new call site.
 - The end of a conversation turn, as `conversation.turn.done`,
   `conversation.turn.failed` or `conversation.turn.interrupted`.
 
+Two kinds of audited change stay out of PostHog. The audit trail keeps both.
+
+- The request log. Each API write leaves a second audit row named after the
+  request line, such as `POST /api/agents/<id>`. The name holds a resource id,
+  so PostHog would make a new event type for each resource. The first row
+  already says what changed.
+- An API key that Fountain issued to itself. A sandbox and a Buzz harness each
+  get a key, and an OAuth token is a key. These were 70 percent of the trail in
+  one day. A key that a person makes in the console, or through the API, is
+  kept.
+
 Fountain also captures `$pageview` for each console page, `$identify` when the
 shape of an account changes, and `$feature_flag_called` when it reads a flag.
 Each event carries the flags that Fountain already knows for that person, as
