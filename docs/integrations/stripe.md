@@ -122,6 +122,6 @@ Four notes.
 
 ## Related
 
-- [Turn on billing](../guides/operate/billing.md), the operator guide,
+- [Start billing](../guides/operate/billing.md), the operator guide,
   including the backfill existing accounts need.
 - [Services Fountain uses](index.md).

@@ -157,5 +157,5 @@ in front of it.
   own terms.
 - [Architecture](../architecture.md) covers what runs, and what breaks when a
   dependency is down.
-- [Troubleshooting](../troubleshooting/index.md) is what to read when a sandbox is stuck.
+- [Troubleshoot a problem](../troubleshooting/index.md) is what to read when a sandbox is stuck.
 - [A team chat, end to end](team-chat.md) is the code.

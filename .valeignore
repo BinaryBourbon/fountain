@@ -24,7 +24,6 @@ docs/catalog/runtimes/opencode.md
 docs/catalog/skills/create-team.md
 docs/catalog/skills/fountain.md
 docs/catalog/skills/index.md
-docs/changelog.md
 docs/cli.md
 docs/cli/commands.md
 docs/concepts/agent.md
@@ -67,14 +66,9 @@ docs/integrations/sentry.md
 docs/integrations/sprites-contract.md
 docs/integrations/sprites.md
 docs/integrations/stripe.md
-docs/llm-integration.md
-docs/operations.md
 docs/reference/conversation-states.md
 docs/reference/glossary.md
 docs/sdk.md
-docs/self-hosting.md
-docs/setup.md
-docs/tour.md
 docs/troubleshooting/conversation-stuck-or-failed.md
 docs/troubleshooting/index.md
 docs/troubleshooting/nobody-can-log-in.md

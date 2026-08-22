@@ -46,7 +46,7 @@ first and read the report.
 ## Related
 
 - [Upgrade an instance](upgrade.md).
-- [Turn on billing](billing.md), which is where `expire_legacy_trials/1`
+- [Start billing](billing.md), which is where `expire_legacy_trials/1`
   matters.
 - [Nobody can log in](../../troubleshooting/nobody-can-log-in.md), which is
   where `verify_email/1` matters.
