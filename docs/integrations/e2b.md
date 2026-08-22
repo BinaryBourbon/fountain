@@ -30,11 +30,25 @@ The stock `base` template carries no agent CLI. Build the reference template
 once for each account.
 
 ```bash
-cd images/e2b
-e2b template build --name fountain --dockerfile e2b.Dockerfile
+E2B_API_KEY=... scripts/sandbox-image/build-e2b.sh
 ```
 
-It recreates the sandbox shape that the provision pipeline assumes. That is a
+The script runs `e2b template create fountain` against `images/e2b/`. Then it
+creates one sandbox from the new template. It checks the shape that the
+provision pipeline assumes, then it destroys the sandbox. `E2B_TEMPLATE`
+selects a different template name.
+
+`e2b template create` takes the name and rebuilds that template in place. So
+the template id that an instance points at stays the same. Sandboxes that
+already run keep the copy that they started from.
+
+CI runs the same script. The `Sandbox images` workflow rebuilds the template
+when `images/e2b/` changes, once each week for the agent CLI versions, and on
+request. It needs an `E2B_API_KEY` repository secret. That key must belong to
+the account the instance uses. A template that another account builds is not
+visible to the instance.
+
+The image recreates the sandbox shape that the provision pipeline assumes. That is a
 `sprite` user with passwordless sudo, `/home/sprite`, node, npm, bun, git and
 the four agent CLIs. So no provision code exists for one provider alone.
 

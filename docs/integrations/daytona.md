@@ -33,9 +33,28 @@ The stock image carries no agent CLI. Build the reference snapshot once for
 each organization.
 
 ```bash
-cd images/daytona
-daytona snapshot create fountain --dockerfile Dockerfile
+DAYTONA_API_KEY=... scripts/sandbox-image/build-daytona.sh
 ```
+
+The script sends the content of `images/daytona/Dockerfile` to the snapshot
+API and waits for the build to reach `active`. Then it creates one sandbox
+from the new snapshot. It checks the shape that the provision pipeline
+assumes, then it destroys the sandbox. `DAYTONA_SNAPSHOT` selects a different
+snapshot name.
+
+A snapshot name is unique for each organization, and Daytona has no rename. So
+a rebuild of the name that an instance points at is a delete and a create. In
+the minutes between them, the organization has no snapshot of that name. A
+conversation that starts on Daytona in that window cannot create its sandbox.
+Sandboxes that already exist keep the copy that they started from.
+
+CI runs the same script. The `Sandbox images` workflow rebuilds the snapshot
+when `images/daytona/` changes, once each week for the agent CLI versions, and
+on request. It first builds the same Dockerfile with `docker build` on the
+runner. That gate catches an upstream break before the delete opens the window
+above. The workflow needs a `DAYTONA_API_KEY` repository secret. That key must
+belong to the account the instance uses. A snapshot that another organization
+builds is not visible to the instance.
 
 ## How the contract maps
 

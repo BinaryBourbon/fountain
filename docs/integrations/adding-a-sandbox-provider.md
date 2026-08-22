@@ -146,5 +146,17 @@ it passed.
 
 Two things remain after that. The provider's key goes to the Infisical prod
 project, which syncs it into `fountain-secrets` and reloads the deployment on
-its own. The image needs a rebuild story, and #692 tracks how to automate
-that.
+its own. And the image needs a rebuild, because the agent CLIs in it go stale
+in weeks.
+
+The `Sandbox images` workflow owns the rebuild. Give the new provider a
+`scripts/sandbox-image/build-<provider>.sh` that rebuilds the image and then
+smokes it. Add a matrix entry, so that `docker build` proves the Dockerfile on
+the runner first. Then add a job that runs the script with the account key as
+a repository secret. That key must belong to the account prod uses. An image
+that another account builds is not visible to prod.
+
+Every one of those scripts ships `scripts/sandbox-image/smoke.sh` into the new
+sandbox and reads its verdict. Keep the checks in that one file. It is the
+statement of what an image must give the provision pipeline, and it holds each
+provider to the same contract.
