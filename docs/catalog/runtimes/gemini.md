@@ -30,7 +30,7 @@ metadata:
   name: gemini-agent
 spec:
   runtime: gemini
-  model: google/gemini-2.5-pro
+  model: google/gemini-3.1-pro-preview
 ```
 
 Add your Gemini key at `/account/inference-credentials`.

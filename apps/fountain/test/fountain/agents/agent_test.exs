@@ -14,7 +14,7 @@ defmodule Fountain.Agents.AgentTest do
   @model_for %{
     "claude" => "anthropic/claude-sonnet-4-6",
     "codex" => "openai/gpt-5-codex",
-    "gemini" => "google/gemini-2.5-pro",
+    "gemini" => "google/gemini-3.1-pro-preview",
     "opencode" => "anthropic/claude-sonnet-4-6"
   }
 
@@ -94,7 +94,7 @@ defmodule Fountain.Agents.AgentTest do
     end
 
     test "opencode accepts any known provider — it is the multi-provider runtime" do
-      for model <- ~w(anthropic/claude-sonnet-4-6 openai/gpt-5 google/gemini-2.5-pro) do
+      for model <- ~w(anthropic/claude-sonnet-4-6 openai/gpt-5 google/gemini-3.1-pro-preview) do
         attrs = Map.merge(@valid_attrs, %{runtime: "opencode", model: model})
         assert Agent.changeset(%Agent{}, attrs).valid?
       end

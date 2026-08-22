@@ -50,7 +50,7 @@ The agent form offers these as suggestions. They are not an allowlist.
 |---|---|
 | `anthropic` | `claude-opus-5`, `claude-sonnet-5`, `claude-opus-4-8`, `claude-sonnet-4-6`, `claude-haiku-4-5` |
 | `openai` | `gpt-5-codex`, `gpt-5` |
-| `google` | `gemini-2.5-pro`, `gemini-2.5-flash` |
+| `google` | `gemini-3.1-pro-preview`, `gemini-3.7-flash` |
 
 `GET /api/catalog` returns this list for each runtime. A client can then
 render the current set, and it does not hard-code one.
