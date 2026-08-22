@@ -1,15 +1,11 @@
 # The Simplified Technical English backlog, from the ASD-STE100 rewrite.
 #
-# Files listed here are SKIPPED by scripts/docs-ste.py. The list only shrinks.
-# A file that is NOT listed is checked, so a page written tomorrow is covered
-# from the day it lands, and the rewrite goes in one page at a time without CI
-# going red in between.
+# `vale lint` skips these paths. The list only shrinks. A page that is NOT
+# listed is checked, so a page written tomorrow is covered from the day it
+# lands, and the rewrite goes in one page at a time without CI going red in
+# between.
 #
 # The standard is docs-redesign/08-simplified-technical-english.md.
-#
-# The list started at 75 files and 1,659 findings. Delete a line only when the
-# page passes the checker. The checker also fails if a line names a file that
-# no longer exists, so a rename cannot quietly re-exempt a page.
 docs/api.md
 docs/architecture.md
 docs/build/index.md

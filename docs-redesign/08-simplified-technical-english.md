@@ -82,17 +82,16 @@ sentence uses, and the two mean different things.
 | Fountain merges the maps, giving the Vault priority. | Fountain merges the maps. The Vault wins. |
 | The existing sandbox wakes. | The sandbox that is already there wakes. |
 
-Three -ing words stay. A word the dictionary approves in its own right
+Three kinds of -ing word stay. A word the dictionary approves in its own right
 (`during`, `string`, `warning`). A Technical Name (`billing`, `logging`,
 `staging`). A code identifier, which is exempt because it is code.
 
-`ING_ALLOWED` in `scripts/docs-ste.py` holds both lists. Add a word to it only
-when the word names a thing. Do not add a word to escape a rewrite.
-
 ### Words
 
-Use the approved word. The checker holds the not-approved words this
-documentation used, with the approved word for each.
+Use the approved word. `vale lint --audit docs` reports every word the
+wordset rejects, with a replacement for each. This table holds the ones that
+came up most in these pages, and they are also the ones the linter is most
+clearly right about.
 
 | Not approved | Write |
 |---|---|
@@ -166,34 +165,58 @@ record of what happened and is not rewritten after the fact.
 
 ## What CI enforces
 
-`scripts/docs-ste.py`, in the same two CI jobs that run
-`scripts/docs-style.py`. Six rules.
+The linter is [`stuffbucket/vale`](https://github.com/stuffbucket/vale), an MIT
+pure-Go ASD-STE100 checker. It parses Markdown to an AST and lints prose nodes
+only, so code, HTML, URLs and front matter are exempt by construction. It is
+not certified by ASD and it does not bundle the licensed dictionary. It
+approximates Part 1 from the MIT OpenSTE wordset.
 
-1. Sentence length, 20 words procedural and 25 descriptive.
-2. Paragraph length, 6 sentences.
-3. The not-approved word list.
-4. Contractions.
-5. The passive voice, by a be-verb and participle heuristic.
-6. The -ing form, against `ING_ALLOWED`.
+CI installs it with `go install github.com/stuffbucket/vale/cmd/vale@v0.15.0`
+and runs `vale lint docs` in the two jobs that already run
+`scripts/docs-style.py`. Configuration is `.vale-ste.yml` at the repo root.
 
-Two rules in this page are for a human reviewer and not for CI. Noun clusters
-need a parser. One word with one meaning needs the licensed dictionary.
+Locally, install it once and run it the same way.
+
+```sh
+go install github.com/stuffbucket/vale/cmd/vale@v0.15.0
+vale lint docs                 # the gate
+vale lint --audit docs         # the gate, plus the vocabulary advice
+```
+
+| Rule | Severity | Gated |
+|---|---|---|
+| `STE.SentenceLength` | error | yes |
+| `STE.Contractions` | error | yes |
+| `STE.PassiveVoice` | warning | yes |
+| `STE.PhrasalVerbs` | warning | yes |
+| `STE.OneInstruction` | warning | yes |
+| `STE.IngForms` | warning, raised from suggestion | yes |
+| `STE.Vocabulary` | suggestion | no |
+
+`STE.Vocabulary` advises and does not gate. The wordset behind it was built for
+aircraft maintenance, and part of what it says degrades software prose. It
+wants "examine" in place of "search", "the two" in place of "both", and
+"flush" in place of "running". Read it with `--audit` and take the words it is
+right about. Those are the ones in the table above, and every general style
+guide names them too.
+
+Two rules in this page reach no checker at all. Noun clusters need a parser.
+One word with one meaning needs the licensed dictionary. Both are the
+reviewer's job.
+
+### Technical Names
+
+`vocabulary.allow` in `.vale-ste.yml` holds them. A word goes there when it
+names a thing in this system or in one Fountain talks to. A word does not go
+there to escape a rewrite.
 
 ### The ratchet
 
-`scripts/docs-ste-allow.txt` is the backlog. A file on it is skipped. A file
-not on it is checked, so a new page is covered from the day somebody writes
-it. The list only shrinks, and the checker fails if a line names a file that
-no longer exists.
+`.valeignore` is the backlog. A page listed there is skipped. A page not
+listed is checked, so a page written tomorrow is covered from the day it
+lands. The list only shrinks.
 
-The backlog started at 75 files and 1,659 findings.
-
-### The per-line escape
-
-A line that ends with `<!-- ste-ok -->` is skipped. It exists for a quotation
-of somebody else's words, and for the passive that Rule 3.3 permits because no
-actor exists to name. The run prints how many are in use. Treat a rise in that
-number the way you would treat a line added to the backlog.
+The backlog started at 76 pages, 219 errors and 343 warnings.
 
 ## What this does not claim
 

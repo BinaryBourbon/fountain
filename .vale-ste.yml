@@ -1,0 +1,138 @@
+# ASD-STE100 Simplified Technical English, for docs/**/*.md.
+#
+# The standard is docs-redesign/08-simplified-technical-english.md. The linter
+# is github.com/stuffbucket/vale, pinned in .github/workflows/ci.yml.
+#
+# The gate is `warning`. Six rules sit at or above it: sentence length,
+# contractions, the passive voice, phrasal verbs, one instruction per sentence
+# and the -ing form. The last one is a suggestion in the linter's defaults and
+# this file raises it, because Rule 3.4 is not optional.
+#
+# STE.Vocabulary stays a suggestion. `vale lint --audit` prints it and the
+# build does not fail on it. The reason is in the rules block below.
+
+minSeverity: warning
+
+rules:
+  # ASD-STE100 Rule 3.4. Not a suggestion here.
+  STE.IngForms:
+    severity: warning
+
+  # The official ASD-STE100 dictionary is licensed and the linter does not
+  # bundle it. This rule approximates it from the OpenSTE wordset, which was
+  # built for aircraft maintenance. Most of what it says is right. Some of it
+  # is not right for software, and obeying that part makes a page worse rather
+  # than plainer. It asks for "examine" in place of "search", "the two" in
+  # place of "both", and "flush" in place of "running".
+  #
+  # So it advises rather than gates. Run `vale lint --audit docs` and read it.
+  # Take the words it is right about, which are the ones every style guide
+  # already names: via, however, require, provide, perform, utilize, should,
+  # may, additional, prior to. Deliverable 8 lists them.
+  STE.Vocabulary:
+    severity: suggestion
+
+# Report an unapproved word only when the wordset can name a replacement. The
+# official ASD-STE100 dictionary is licensed and is not bundled with the
+# linter, so a word with no suggestion is as likely to be a Technical Name as
+# a mistake.
+strictVocabulary: false
+
+sentence:
+  procedureMax: 20
+  descriptionMax: 25
+
+files:
+  include:
+    # Both patterns. `docs/**/*.md` alone does not match `docs/index.md` on a
+    # directory walk, because `**` wants at least one directory, and that
+    # silently exempted all thirteen top-level pages.
+    - "docs/*.md"
+    - "docs/**/*.md"
+  exclude:
+    # Internal planning material. Not in the nav, not served at /docs, not on
+    # the site. The same exemption scripts/docs-style.py makes.
+    - "docs/superpowers/**"
+    # A record of what happened, not a description of how the system works.
+    # docs/changelog.md is a one-line snippet include of it.
+    - "CHANGELOG.md"
+
+vocabulary:
+  builtinTechnicalTerms: true
+  # Technical Names, which ASD-STE100 exempts from the dictionary. A word goes
+  # here when it names a thing in this system or in one Fountain talks to. It
+  # does not go here to escape a rewrite.
+  allow:
+    # The four primitives and the words the glossary fixes.
+    - fountain
+    - environment
+    - vault
+    - agent
+    - conversation
+    - sandbox
+    - primitive
+    - runtime
+    - teammate
+    - console
+    # Fountain's own machinery.
+    - sprite
+    - sprites
+    - reaper
+    - rehydrator
+    - substitution
+    - envelope encryption
+    - tenant
+    - multi-tenant
+    - prompt
+    - system prompt
+    - skill
+    - turn
+    - transcript
+    - channel
+    - thread
+    - roster
+    # Providers, services and protocols.
+    - e2b
+    - daytona
+    - stripe
+    - sentry
+    - resend
+    - postgres
+    - postgresql
+    - kubernetes
+    - flux
+    - cloudflare
+    - github
+    - oauth
+    - pkce
+    - acp
+    - ag-ui
+    - mcp
+    - nostr
+    - buzz
+    - openclaw
+    - openbot
+    - hermes
+    - claude
+    - codex
+    - gemini
+    - opencode
+    - anthropic
+    - webhook
+    - websocket
+    - sse
+    - rest
+    - json
+    - yaml
+    - markdown
+    - repo
+    - repository
+    - cli
+    - sdk
+    - api
+    - ui
+    - url
+    - uuid
+    - env
+    - dek
+    - adr
