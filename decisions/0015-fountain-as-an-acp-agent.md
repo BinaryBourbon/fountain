@@ -1,7 +1,7 @@
 ---
 type: ADR
 title: "Fountain as an ACP agent, reachable from a code editor"
-description: "fountain acp speaks ACP over stdio to an editor and HTTP+SSE to the API, so an editor can drive a Fountain agent. Gates 1 through 3 built; gate 4 (permission forwarding) not built."
+description: "fountain acp speaks ACP over stdio to an editor and HTTP+SSE to the API, so an editor can drive a Fountain agent. All four gates built, permission forwarding included."
 tags: [acp, cli, editor]
 status: stable
 adr: "0015"
@@ -19,8 +19,11 @@ stale_after: 2026-11-14
 prompt it, watch it stream, cancel it, and reopen it later
 ([#709](https://github.com/BinaryBourbon/fountain/issues/709): gate 1 in
 #710/#711/#712, gate 2 in #713/#714/#715, gate 3 in #718 and the PR carrying
-this line). **Gate 4 — permission forwarding — is not built** and remains
-blocked on #643; the *Consequences* section below states what it needs first.
+this line). **Gate 4 — permission forwarding — is built** (#708, in
+the PR carrying this line): a `session/request_permission` raised in the sprite
+reaches the editor as the ACP request it already is, and the answer travels
+back down. The question the *Consequences* section said to answer first was
+answered in 0014 gate 3 and is summarised there.
 
 **A third client validated the reusability bet — see the
 [2026-08-16 addendum](#addendum--2026-08-16-openclaw-is-another-acp-client-spike-verified):
@@ -242,8 +245,13 @@ land in `cli/`.**
 3. ~~**Auth and distribution.**~~ **Built.** `authMethods`, the editor page in
    `docs/integrations/editors.md`, and the event stream documented as the
    interface it now is (#707).
-4. **Permission forwarding** — not built, blocked on 0014 gate 3 (#643). See
-   below.
+4. ~~**Permission forwarding.**~~ **Built.** Under an `ask` policy the request
+   goes to the editor with the agent's own options, and the answer returns
+   through `POST /api/conversations/:id/requests/:request_id` (#708). Every
+   unclear outcome denies with a rejection the agent itself offered, which
+   covers the detached editor the *Consequences* section worried about.
+   `--permission` turns asking on for an editor entry, because an agent's
+   default is `auto_allow` and would otherwise raise nothing to forward.
 
 **Two things found by running gates 1–3 against production, which the tests
 could not see.** Both are worth keeping here because they are properties of
@@ -264,13 +272,27 @@ profile are chosen.
 
 ## Consequences
 
-**Permission requests would traverse two hops.** If 0014 gate 3 lands, a
-`session/request_permission` originating in the sprite has to be forwarded
+**Permission requests traverse two hops.** A
+`session/request_permission` originating in the sprite is forwarded
 editor-ward and answered back down: sprite → Fountain → editor → Fountain →
-sprite. That needs a timeout policy and an answer to *what replies when the
-editor detaches mid-request*. A conversation blocked forever on a permission
-prompt nobody will ever see is a new failure mode, and neither `SandboxReaper`
-nor the rehydrator knows about it. Do not start gate 4 without that answer.
+sprite. This section said not to start gate 4 without an answer to *what
+replies when the editor detaches mid-request*, and it was right to.
+
+> **Answered, and built 2026-08-22 (#708).** The answer is two-layered, and
+> the outer layer belongs to 0014 gate 3 rather than to this adapter: a
+> permission timeout well under the idle bound, whose expiry is **deny**. So a
+> conversation cannot block forever on a prompt nobody will see, whoever was
+> supposed to answer it, and the reaper needs to know nothing new.
+>
+> The detached editor is the case this adapter adds, and it is
+> *distinguishable* from nobody-attached — so it does not wait for that
+> timeout. An editor that errors, disconnects, or dismisses the prompt denies
+> the call immediately, with a `reject_*` the agent itself offered. An option
+> id the agent never advertised is refused rather than relayed, and when the
+> agent offered no rejection at all nothing is sent, because inventing one is
+> the failure the never-synthesise rule exists to prevent. The web apps are
+> **peer clients** of the same request; first answer wins, and a 409 is an
+> ordinary outcome rather than an error.
 
 **Two clients now depend on the event stream's shape.** The web UI and the ACP
 adapter would render from the same normalized events. That is the point — but
@@ -410,7 +432,8 @@ worth an upstream report, not an adapter workaround.
   `openclaw agent` (the CLI front door to the gateway); a Telegram/Discord
   binding is the same gateway path with a delivery step on the end, and has not
   been run.
-- **Permission forwarding is still gate 4 / #643.** Nothing here changes that.
+- **Permission forwarding was gate 4 / #643,** and is built (#708). Nothing in
+  this addendum was what unblocked it.
   OpenClaw runs the turn under `permissionMode: "approve-all"` and the sandbox's
   own policy; per-tool approvals do not round-trip to a channel any more than
   they do to an editor. The two-hop failure mode in *Consequences* applies

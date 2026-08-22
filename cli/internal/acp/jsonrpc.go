@@ -84,6 +84,20 @@ type Conn struct {
 
 	mu       sync.Mutex // guards out
 	inflight sync.WaitGroup
+
+	// Outbound requests: the agent asks the *client* something and blocks on
+	// the answer. `session/request_permission` is the only one (#708), and it
+	// is the only place either ACP direction carries a request upward.
+	pendingMu sync.Mutex
+	pending   map[int64]chan clientReply
+	nextID    int64
+}
+
+// clientReply is one response to a request we sent: exactly one of result or
+// err is set.
+type clientReply struct {
+	result json.RawMessage
+	err    *Error
 }
 
 // NewConn wires a connection to the given streams. For `fountain acp` these
@@ -91,7 +105,12 @@ type Conn struct {
 // else, which is why every diagnostic in this package goes to the logger
 // (stderr) instead.
 func NewConn(in io.Reader, out io.Writer, log *slog.Logger) *Conn {
-	return &Conn{in: bufio.NewReader(in), out: out, log: log}
+	return &Conn{
+		in:      bufio.NewReader(in),
+		out:     out,
+		log:     log,
+		pending: map[int64]chan clientReply{},
+	}
 }
 
 // Serve reads messages until stdin closes or ctx is cancelled.
@@ -149,10 +168,9 @@ func (c *Conn) dispatch(ctx context.Context, h Handler, line string) {
 
 	switch {
 	case msg.Method == "" && len(msg.ID) > 0:
-		// A response to something we sent. Nothing in this package sends
-		// requests yet; when session/request_permission forwarding lands
-		// (#708) this is where its answers arrive.
-		c.log.Debug("ignoring response to a request we did not send", "id", string(msg.ID))
+		// A response to something we sent — today, only a forwarded
+		// `session/request_permission` (#708).
+		c.deliver(line, msg)
 
 	case msg.Method == "":
 		c.log.Warn("dropping message with no method and no id", "line", truncate(line, 256))
@@ -216,6 +234,90 @@ func errorPayload(e *Error) map[string]any {
 		payload["data"] = e.Data
 	}
 	return payload
+}
+
+// Request sends a JSON-RPC request to the client and waits for its response.
+//
+// The one caller is the permission forwarding in #708: a request that began in
+// the sprite, travelled to Fountain, and now has to reach the human in front of
+// the editor. Every other message this package sends is a notification or a
+// response, which is why this is the only place an id has to be correlated in
+// the outbound direction.
+//
+// A cancelled context returns immediately and abandons the slot: the editor
+// may still answer, and the answer is then dropped rather than delivered to a
+// caller that stopped waiting.
+func (c *Conn) Request(ctx context.Context, method string, params any) (json.RawMessage, error) {
+	c.pendingMu.Lock()
+	c.nextID++
+	id := c.nextID
+	ch := make(chan clientReply, 1)
+	c.pending[id] = ch
+	c.pendingMu.Unlock()
+
+	defer func() {
+		c.pendingMu.Lock()
+		delete(c.pending, id)
+		c.pendingMu.Unlock()
+	}()
+
+	msg := map[string]any{"jsonrpc": "2.0", "id": id, "method": method}
+	if params != nil {
+		msg["params"] = params
+	}
+	c.write(msg)
+
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case reply := <-ch:
+		if reply.err != nil {
+			return nil, reply.err
+		}
+		return reply.result, nil
+	}
+}
+
+// deliver hands one response to whoever is waiting on its id.
+func (c *Conn) deliver(line string, msg message) {
+	var id int64
+	if err := json.Unmarshal(msg.ID, &id); err != nil {
+		c.log.Debug("ignoring a response whose id is not one of ours", "id", string(msg.ID))
+		return
+	}
+
+	c.pendingMu.Lock()
+	ch, ok := c.pending[id]
+	c.pendingMu.Unlock()
+	if !ok {
+		// A late answer to a request we gave up on, or a client answering
+		// something we never asked. Neither is worth killing the connection.
+		c.log.Debug("ignoring response to a request we are no longer waiting on", "id", id)
+		return
+	}
+
+	var envelope struct {
+		Result json.RawMessage `json:"result"`
+		Error  *struct {
+			Code    int    `json:"code"`
+			Message string `json:"message"`
+			Data    any    `json:"data"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal([]byte(line), &envelope); err != nil {
+		ch <- clientReply{err: Errorf(CodeParseError, "unparseable response: %s", err)}
+		return
+	}
+
+	if envelope.Error != nil {
+		ch <- clientReply{err: &Error{
+			Code:    envelope.Error.Code,
+			Message: envelope.Error.Message,
+			Data:    envelope.Error.Data,
+		}}
+		return
+	}
+	ch <- clientReply{result: envelope.Result}
 }
 
 // Notify sends a notification to the client. This is how `session/update`

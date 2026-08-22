@@ -19,7 +19,7 @@ and the CLI's credentials. Each path it reports is inside the sandbox.
 ## Invocation
 
 ```bash
-fountain acp --agent <name-or-id> [--vault <name-or-id>] [--environment <name-or-id>] [--log-level debug]
+fountain acp --agent <name-or-id> [--vault <name-or-id>] [--environment <name-or-id>] [--permission ask] [--log-level debug]
 ```
 
 | Flag | Meaning |
@@ -27,6 +27,7 @@ fountain acp --agent <name-or-id> [--vault <name-or-id>] [--environment <name-or
 | `--agent` | **Required, in practice.** The Fountain agent that each session runs. ACP has no field for it, so you configure it for each process. Use one client entry for each agent you want to reach. |
 | `--vault` | A vault that attaches to each conversation this process opens. Vault values override the agent's environment, so a secret for one entry belongs here. An identity the agent posts under is the example. Two entries on the same agent with different vaults stay apart. |
 | `--environment` | Provisions each conversation from this environment, and not from the agent's own. One agent config then runs under several environments, with one entry for each. The vault still wins on a key collision. When the agent sets `allowed_environment_ids`, the environment must be on that list. |
+| `--permission` | What happens before the agent runs a tool. `ask` sends the question to your client, as an approval prompt. `auto_deny` refuses. The default, `auto_allow`, runs the tool. To narrow it for one kind of tool, give `key=verdict` pairs, such as `execute=ask`. See [Permission prompts](#permission-prompts). |
 | `--log-level` | The verbosity on stderr. One of `debug`, `info`, which is the default, `warn` and `error`. |
 | `--profile` | Which saved CLI credentials to use. It is a global flag. |
 
@@ -55,7 +56,7 @@ version when that is lower. `agentInfo` is `fountain`, with the CLI's version.
 | `session/cancel` | Interrupts the turn that runs. |
 | `session/load` | Reopens a conversation that this process did not start. It replays the stored `session/update` history **before** the response, as the spec demands. |
 | `session/set_model` | Not implemented. The model belongs to the Fountain agent. A change here would change each conversation on that agent. |
-| `session/request_permission` (agent → client) | Not forwarded yet. A sandboxed runtime runs under its own permission mode ([#643](https://github.com/BinaryBourbon/fountain/issues/643), [#708](https://github.com/BinaryBourbon/fountain/issues/708)). |
+| `session/request_permission` (agent → client) | Goes to your client when the policy for that tool is `ask` ([#708](https://github.com/BinaryBourbon/fountain/issues/708)). It carries the agent's own options. Your answer goes back to the agent. See [Permission prompts](#permission-prompts). |
 
 Fountain advertises `loadSession: true`. On prompts it advertises
 `image: true`, `audio: false` and `embeddedContext: false`. A client cannot
@@ -115,6 +116,41 @@ other field in `_meta`.
 
 The same knobs exist on the API, as `channel_id` and `fresh` on
 `POST /api/conversations`.
+
+## Permission prompts
+
+With `--permission ask`, the agent stops before it runs a tool and asks. The
+request starts in the sandbox. It goes to Fountain, then to your client, as an
+ACP `session/request_permission`. Your client shows its approval prompt. Your
+answer goes back the same way. The tool then runs, or it does not.
+
+Your client gets the agent's own options, and only those. Fountain adds none.
+A client that answers with an option that the agent did not offer gets a
+refusal, and Fountain denies the call.
+
+**Each other outcome is also a denial.** These are the outcomes.
+
+- Your client dismisses the prompt, or closes, or fails.
+- Nobody answers before the server's timeout, which is 5 minutes.
+- Another client answers first, and the first answer wins. Your client then
+  sees a request that no longer waits.
+
+A denial does not stop the turn. The agent reads that it has no permission for
+that tool, and continues.
+
+**A key matches the tool card's title first, and then ACP's kind.** The kinds
+are `execute`, `edit`, `read`, `delete`, `move`, `search`, `fetch`, `think`
+and `other`. Prefer a kind. The claude runtime puts the command itself in the
+title, so a title matches one command and nothing else.
+
+**A launch can only narrow what the agent permits.** A `--permission` that
+makes the agent's own policy less strict gets a 422, at `session/new`, that
+names the tool. To set the agent's own policy, use the API or the console.
+
+**The opencode runtime never asks.** It decides permission in its own server,
+and sends no request. Fountain refuses a policy stricter than `auto_allow` on
+that runtime, and says so, and does not pretend to protect you
+([#959](https://github.com/BinaryBourbon/fountain/issues/959)).
 
 ## Lifecycle, sandboxes, and what survives
 

@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"strings"
@@ -26,6 +27,7 @@ var (
 	acpAgent       string
 	acpVault       string
 	acpEnvironment string
+	acpPermission  string
 )
 
 func init() {
@@ -53,6 +55,18 @@ environment instead of the agent's own. One agent config can then run under
 several environments — one entry per environment — without duplicating the
 agent. The vault still wins over it on key collision.
 
+--permission decides what happens before the agent runs a tool. "ask" puts the
+question in your editor, as an approval prompt, and the tool waits for your
+answer; "auto_deny" refuses; the default, "auto_allow", runs it. Narrow it per
+tool with key=verdict pairs — --permission execute=ask asks before shell
+commands and allows the rest. Keys match the tool card's title first and then
+ACP's kind (execute, edit, read, fetch, …), and a launch may only narrow what
+the agent already allows.
+
+Nobody answering is an answer: an unanswered prompt is denied after the
+server's timeout, and so is one your editor dismisses or disconnects from. The
+turn continues either way.
+
 What it is, and is not: a control surface for a conversation running in a
 Fountain sandbox — watch it, steer it, interrupt it. It has no access to the
 files open in your editor, and the paths it reports are inside the sandbox,
@@ -62,6 +76,7 @@ not on your machine.`,
 	acpCmd.Flags().StringVar(&acpAgent, "agent", "", "Fountain agent name or id to open sessions against")
 	acpCmd.Flags().StringVar(&acpVault, "vault", "", "vault name or id to attach to each session's conversation")
 	acpCmd.Flags().StringVar(&acpEnvironment, "environment", "", "environment name or id to provision each session's conversation from, instead of the agent's own")
+	acpCmd.Flags().StringVar(&acpPermission, "permission", "", `what happens before the agent runs a tool: auto_allow, ask, auto_deny, or key=verdict pairs (for example "execute=ask")`)
 	acpCmd.Flags().StringVar(&acpLogLevel, "log-level", "info", "stderr log level: debug, info, warn, error")
 	rootCmd.AddCommand(acpCmd)
 }
@@ -81,10 +96,21 @@ func runACP() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	permission, err := parsePermissionPolicy(acpPermission)
+	if err != nil {
+		return err
+	}
+
 	opts := activeOpts()
 	agent := acp.NewAgent(
 		cliAuth{opts: opts},
-		fountainAPI{opts: opts, log: log, vault: acpVault, environment: acpEnvironment},
+		fountainAPI{
+			opts:        opts,
+			log:         log,
+			vault:       acpVault,
+			environment: acpEnvironment,
+			permission:  permission,
+		},
 		acpAgent,
 		Version,
 		log,
@@ -161,6 +187,54 @@ type fountainAPI struct {
 	log         *slog.Logger
 	vault       string
 	environment string
+	// permission is the per-launch policy every conversation this process
+	// opens is started with (#939), already parsed. nil leaves the agent's own
+	// policy alone.
+	permission map[string]string
+}
+
+// parsePermissionPolicy turns --permission into the policy the API takes.
+//
+// A bare verdict is the policy's default, which is the common case: "ask before
+// anything". Comma-separated key=verdict pairs narrow it per tool, and may
+// include their own "default". Rejected here rather than at the server so a
+// typo is a message on the editor's stderr at startup, not a 422 at the first
+// `session/new`.
+func parsePermissionPolicy(flag string) (map[string]string, error) {
+	flag = strings.TrimSpace(flag)
+	if flag == "" {
+		return nil, nil
+	}
+
+	policy := map[string]string{}
+	for _, part := range strings.Split(flag, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+
+		key, verdict := "default", part
+		if k, v, found := strings.Cut(part, "="); found {
+			key, verdict = strings.TrimSpace(k), strings.TrimSpace(v)
+		}
+		if key == "" {
+			return nil, fmt.Errorf("--permission: %q has an empty tool key", part)
+		}
+		if !isVerdict(verdict) {
+			return nil, fmt.Errorf(
+				"--permission: unknown verdict %q (want auto_allow, ask or auto_deny)", verdict)
+		}
+		policy[key] = verdict
+	}
+
+	if len(policy) == 0 {
+		return nil, nil
+	}
+	return policy, nil
+}
+
+func isVerdict(v string) bool {
+	return v == "auto_allow" || v == "ask" || v == "auto_deny"
 }
 
 func (f fountainAPI) Agent(_ context.Context, target string) (acp.AgentRef, error) {
@@ -245,6 +319,14 @@ func (f fountainAPI) CreateConversation(_ context.Context, agentID, channelID st
 			return "", false, err
 		}
 		body["environment_id"] = envID
+	}
+
+	// The permission policy this entry runs under (#939). A launch may only
+	// narrow the agent's own, so the server refuses a widening one with 422
+	// rather than clamping it — which reaches the editor as a `session/new`
+	// failure naming the tool.
+	if len(f.permission) > 0 {
+		body["permission_policy"] = f.permission
 	}
 
 	// No prompt: the conversation is created empty and the editor's first
@@ -353,6 +435,19 @@ func (f fountainAPI) Interrupt(_ context.Context, convID string) error {
 	if api.StatusCode(err) == 409 {
 		f.log.Info("cancel arrived after the turn ended", "conversation", convID)
 		return nil
+	}
+	return err
+}
+
+// AnswerPermission answers a held `session/request_permission` (#940). A 409
+// means it was already resolved — another attached client answered it, the ask
+// timeout denied it, or the turn ended — which is the documented outcome of
+// losing that race, not a failure.
+func (f fountainAPI) AnswerPermission(_ context.Context, convID, requestID, optionID string) error {
+	path := "/conversations/" + convID + "/requests/" + url.PathEscape(requestID)
+	err := api.New(f.opts).Post(path, map[string]any{"option_id": optionID}, nil)
+	if api.StatusCode(err) == 409 {
+		return fmt.Errorf("%w: %s", acp.ErrAlreadyResolved, err)
 	}
 	return err
 }

@@ -33,6 +33,11 @@ type API interface {
 	// Interrupt stops the running turn. A conversation with no turn running is
 	// not an error — see cancel.
 	Interrupt(ctx context.Context, convID string) error
+	// AnswerPermission answers a held `session/request_permission` with one of
+	// the options the agent offered (#940). A request another client, the
+	// timeout or the turn's end already resolved returns an error satisfying
+	// IsAlreadyResolved — losing that race is the contract, not a failure.
+	AnswerPermission(ctx context.Context, convID, requestID, optionID string) error
 	// Conversation looks up a conversation the adapter did not open, which is
 	// what `session/load` is: an editor handing back an id from last week.
 	Conversation(ctx context.Context, convID string) (ConversationRef, error)
