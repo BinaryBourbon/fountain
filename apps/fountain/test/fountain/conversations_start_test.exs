@@ -534,6 +534,71 @@ defmodule Fountain.ConversationsStartTest do
   end
 
   # ────────────────────────────────────────────────────────────────────────────
+  # start_or_resume_conversation/2 — the binding follows the machine (#779)
+  # ────────────────────────────────────────────────────────────────────────────
+
+  # A conversation bound to the #779 channel whose sandbox is in `status`.
+  defp bound_conversation(ctx, sandbox_status) do
+    sandbox = insert_sandbox(user_id: ctx.user.id, status: sandbox_status)
+
+    insert_conversation(
+      user_id: ctx.user.id,
+      agent: ctx.agent,
+      sandbox: sandbox,
+      status: "idle",
+      channel_id: "chan-779"
+    )
+  end
+
+  describe "start_or_resume_conversation/2 sandbox liveness" do
+    setup do
+      stub(Horde.DynamicSupervisor, :start_child, fn _sup, _spec ->
+        {:ok, spawn(fn -> :ok end)}
+      end)
+
+      user = insert_verified_user()
+      agent = insert_agent(user_id: user.id)
+
+      %{
+        user: user,
+        agent: agent,
+        attrs: %{"agent_id" => agent.id, "user_id" => user.id, "channel_id" => "chan-779"}
+      }
+    end
+
+    for status <- ~w(terminated failed) do
+      test "a conversation whose sandbox is #{status} is not resumed", ctx do
+        # The 24 hour ceiling destroys the sandbox and leaves the conversation
+        # `idle`. Resuming it wakes onto a fresh machine with the workspace
+        # gone, in a transcript that reads as continuous — the channel is
+        # better served by a new conversation on a working machine.
+        dead = bound_conversation(ctx, unquote(status))
+
+        assert {:ok, fresh, :created} = Conversations.start_or_resume_conversation(ctx.attrs)
+        refute fresh.id == dead.id
+
+        # And the new one is what the channel resumes from here.
+        assert {:ok, resumed, :resumed} = Conversations.start_or_resume_conversation(ctx.attrs)
+        assert resumed.id == fresh.id
+      end
+    end
+
+    test "a suspended sandbox is parked, not gone, and still resumes", ctx do
+      parked = bound_conversation(ctx, "suspended")
+
+      assert {:ok, resumed, :resumed} = Conversations.start_or_resume_conversation(ctx.attrs)
+      assert resumed.id == parked.id
+    end
+
+    test "a ready sandbox resumes, as before", ctx do
+      live = bound_conversation(ctx, "ready")
+
+      assert {:ok, resumed, :resumed} = Conversations.start_or_resume_conversation(ctx.attrs)
+      assert resumed.id == live.id
+    end
+  end
+
+  # ────────────────────────────────────────────────────────────────────────────
   # _unsafe_list_active_conversations/0 — ordering
   # ────────────────────────────────────────────────────────────────────────────
 

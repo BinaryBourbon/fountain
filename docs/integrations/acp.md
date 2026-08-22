@@ -111,7 +111,7 @@ other field in `_meta`.
 
 | Field | Meaning |
 |---|---|
-| `channelId` | Names the external channel that this session serves. With it, `session/new` **resumes** the conversation already bound to that channel, for this user, agent and vault. That is the same conversation, the same sandbox and the same runtime session, with a fresh ACP id on the client's side. A harness that forgets its sessions on restart therefore lands back where it was ([#774](https://github.com/BinaryBourbon/fountain/issues/774)). Without it, each `session/new` is a new conversation. |
+| `channelId` | Names the external channel that this session serves. With it, `session/new` **resumes** the conversation already bound to that channel, for this user, agent and vault. That is the same conversation, the same sandbox and the same runtime session, with a fresh ACP id on the client's side. A harness that forgets its sessions on restart therefore lands back where it was ([#774](https://github.com/BinaryBourbon/fountain/issues/774)). A destroyed sandbox also stops the resume. The workspace does not survive it, so Fountain opens a new conversation on a new sandbox ([#779](https://github.com/BinaryBourbon/fountain/issues/779)). Without it, each `session/new` is a new conversation. |
 | `freshSession` | With `channelId`, it skips the resume this one time. It unbinds the current conversation, which continues and then retires like any other idle one. It opens a new conversation, and binds the channel to that. A Buzz owner's `!rotate` turns into this ([#788](https://github.com/BinaryBourbon/fountain/pull/788)). Fountain ignores it without `channelId`. |
 
 The same knobs exist on the API, as `channel_id` and `fresh` on

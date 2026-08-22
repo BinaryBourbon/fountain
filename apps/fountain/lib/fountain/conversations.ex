@@ -1402,8 +1402,13 @@ defmodule Fountain.Conversations do
 
   Resumes the **latest live** conversation for the same user + agent + vault
   + environment override + channel — `terminated` and `failed` ones are past
-  resuming, so a new one is opened and becomes the binding. Returns `{:ok, conv, :resumed}` or
-  `{:ok, conv, :created}`; without a `channel_id` it always creates.
+  resuming, so a new one is opened and becomes the binding. So is one whose
+  *sandbox* is `terminated` or `failed` (#779): the machine is gone, and the
+  workspace with it, so the channel gets a new conversation on a working one
+  rather than a continuous-looking transcript on a blank disk. A `suspended`
+  sandbox is parked, not gone, and still resumes. Returns `{:ok, conv,
+  :resumed}` or `{:ok, conv, :created}`; without a `channel_id` it always
+  creates.
 
   `attrs["fresh"]` (`true`) skips the resume this once: the conversation
   currently bound to the channel is unbound (its `channel_id` cleared — it
@@ -1467,11 +1472,22 @@ defmodule Fountain.Conversations do
   # different identities (#727) and must not share a conversation. So is the
   # environment override (#783): an identity that switches environments must
   # not resume a conversation provisioned from the old one.
+  #
+  # The sandbox is part of it too (#779): the 24 hour ceiling destroys a
+  # sandbox while its conversation stays `idle`, and resuming that row wakes
+  # onto a *fresh* machine with the workspace gone (#778 makes the turn work;
+  # #936 is the memory it loses) inside a transcript that reads as continuous.
+  # A channel is better served by a new conversation on a working machine, so
+  # the binding follows the machine, not just the conversation row.
+  # `suspended` is not in the list: that sandbox is parked, not gone, and its
+  # disk wakes back up with the workspace on it.
   defp find_channel_conversation(user_id, agent_id, vault_id, env_id, channel_id) do
     from(c in Conversation,
+      join: s in assoc(c, :sandbox),
       where:
         c.user_id == ^user_id and c.agent_id == ^agent_id and c.channel_id == ^channel_id and
-          c.status not in ["terminated", "failed"],
+          c.status not in ["terminated", "failed"] and
+          s.status not in ["terminated", "failed"],
       order_by: [desc: c.inserted_at],
       limit: 1
     )
