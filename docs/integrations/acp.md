@@ -56,7 +56,7 @@ version when that is lower. `agentInfo` is `fountain`, with the CLI's version.
 | `session/cancel` | Interrupts the turn that runs. |
 | `session/load` | Reopens a conversation that this process did not start. It replays the stored `session/update` history **before** the response, as the spec demands. |
 | `session/set_model` | Not implemented. The model belongs to the Fountain agent. A change here would change each conversation on that agent. |
-| `session/request_permission` (agent → client) | Forwarded to your client, with the agent's own options, when the policy for that tool is `ask` ([#708](https://github.com/BinaryBourbon/fountain/issues/708)). Your answer goes back to the agent. See [Permission prompts](#permission-prompts). |
+| `session/request_permission` (agent → client) | Goes to your client when the policy for that tool is `ask` ([#708](https://github.com/BinaryBourbon/fountain/issues/708)). It carries the agent's own options. Your answer goes back to the agent. See [Permission prompts](#permission-prompts). |
 
 Fountain advertises `loadSession: true`. On prompts it advertises
 `image: true`, `audio: false` and `embeddedContext: false`. A client cannot
@@ -133,7 +133,7 @@ refusal, and Fountain denies the call.
 - Your client dismisses the prompt, or closes, or fails.
 - Nobody answers before the server's timeout, which is 5 minutes.
 - Another client answers first, and the first answer wins. Your client then
-  sees that the request is closed.
+  sees a request that no longer waits.
 
 A denial does not stop the turn. The agent reads that it has no permission for
 that tool, and continues.
