@@ -9,12 +9,15 @@ with the environment variables, MCP servers, skills, repos and packages that
 you configured once.
 
 !!! tip "In a hurry?"
-    Install the CLI and point it at a Fountain instance.
+    Install the CLI and log in. For your own instance, set `FOUNTAIN_BASE_URL`
+    first, because the CLI defaults to the hosted one.
     ```sh
     brew install BinaryBourbon/tap/fountain
     fountain auth login
-    fountain apply -f agent-specs
+    fountain auth whoami
     ```
+    The CLI now works, and you have no agent to run yet. The
+    [guided tour](tour.md) builds the first one.
 
 ## The problem
 
