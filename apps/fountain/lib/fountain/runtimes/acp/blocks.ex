@@ -62,10 +62,42 @@ defmodule Fountain.Runtimes.ACP.Blocks do
   @spec from_line(String.t()) :: [map()]
   def from_line(line) do
     case Protocol.classify_line(line) do
-      {:notification, "session/update", params} -> from_update(params)
-      {:invalid, raw} -> [%{kind: :raw, body: raw, summary: "raw"}]
-      _ -> []
+      {:notification, "session/update", params} ->
+        from_update(params)
+
+      # The one *request* that renders. The agent is blocked on it and a human
+      # has to answer, so it belongs inline in the transcript beside the tool
+      # call it is about, not on a separate channel a client correlates by hand
+      # (#940). Its resolution arrives as a `request` stage event and is paired
+      # here on `request_id` — the same pass that already pairs a `tool_result`
+      # to its `tool_use` on `tool_id`.
+      {:request, id, "session/request_permission", params} ->
+        permission_blocks(id, params)
+
+      {:invalid, raw} ->
+        [%{kind: :raw, body: raw, summary: "raw"}]
+
+      _ ->
+        []
     end
+  end
+
+  # `params` is always a map: `Protocol.classify/1` defaults it to `%{}`.
+  defp permission_blocks(id, params) do
+    call = Map.get(params, "toolCall") || %{}
+
+    [
+      %{
+        kind: :permission_request,
+        request_id: to_string(id),
+        name: tool_name(call),
+        summary: tool_summary(call),
+        # Exactly what the agent offered, in its order. A client must never
+        # synthesise an option that is not on this list — the same fail-closed
+        # rule `Fountain.Permissions` follows server-side.
+        options: Enum.filter(Map.get(params, "options") || [], &is_map/1)
+      }
+    ]
   end
 
   @doc """

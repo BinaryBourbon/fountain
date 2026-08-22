@@ -45,6 +45,21 @@ defmodule Fountain.Runtimes.ACP.PeerTest do
     pid
   end
 
+  defp permission_line(id, tool) do
+    Jason.encode!(%{
+      "jsonrpc" => "2.0",
+      "id" => id,
+      "method" => "session/request_permission",
+      "params" => %{
+        "toolCall" => %{"title" => tool, "kind" => "execute"},
+        "options" => [
+          %{"optionId" => "yes", "kind" => "allow_always"},
+          %{"optionId" => "no", "kind" => "reject_once"}
+        ]
+      }
+    }) <> "\n"
+  end
+
   # Receive the next thing the peer wrote, decoded.
   defp next_write do
     assert_receive {:wrote, line}, 1_000
@@ -546,6 +561,84 @@ defmodule Fountain.Runtimes.ACP.PeerTest do
       # Allows are deliberately not recorded — a row each would make the audit
       # trail a second copy of the transcript.
       refute_receive {:acp, _ref, {:permission_denied, _, _}}, 50
+    end
+
+    test "ask holds the request open instead of answering it", ctx do
+      pid = start_peer(ctx, permission_policy: %{"Bash" => "ask"})
+      _init = next_write()
+
+      Peer.stdout(pid, permission_line(201, "Bash"))
+
+      # The agent stays blocked: nothing is written back until a human answers.
+      # The request is persisted so it renders inline as a block, and the owner
+      # is told so it can publish the stage event and arm a timeout.
+      assert_receive {:acp, _ref, {:lines, "acp", line}}
+      assert line =~ "session/request_permission"
+      assert_receive {:acp, _ref, {:permission_ask, "201", "Bash", options}}
+      assert Enum.map(options, & &1["optionId"]) == ["yes", "no"]
+
+      refute_receive {:wrote, _}, 50
+    end
+
+    test "an answer selects the option, and only an offered one", ctx do
+      pid = start_peer(ctx, permission_policy: %{"Bash" => "ask"})
+      _init = next_write()
+      Peer.stdout(pid, permission_line(202, "Bash"))
+      assert_receive {:acp, _ref, {:permission_ask, "202", _, _}}
+
+      assert {:error, :unknown_option} = Peer.answer_permission(pid, "202", "made-up")
+      assert :ok = Peer.answer_permission(pid, "202", "yes")
+
+      assert %{"id" => 202, "result" => %{"outcome" => outcome}} = next_write()
+      assert outcome["outcome"] == "selected"
+      assert outcome["optionId"] == "yes"
+    end
+
+    test "a second answer is too late, not a second write", ctx do
+      # First answer wins: the web apps and an editor are peer clients of this
+      # door, so losing the race is an ordinary outcome, not a caller error.
+      pid = start_peer(ctx, permission_policy: %{"Bash" => "ask"})
+      _init = next_write()
+      Peer.stdout(pid, permission_line(203, "Bash"))
+      assert_receive {:acp, _ref, {:permission_ask, "203", _, _}}
+
+      assert :ok = Peer.answer_permission(pid, "203", "yes")
+      _answer = next_write()
+
+      assert {:error, :no_pending_permission} = Peer.answer_permission(pid, "203", "no")
+      refute_receive {:wrote, _}, 50
+    end
+
+    test "denying a held request picks the agent's own rejection", ctx do
+      pid = start_peer(ctx, permission_policy: %{"Bash" => "ask"})
+      _init = next_write()
+      Peer.stdout(pid, permission_line(204, "Bash"))
+      assert_receive {:acp, _ref, {:permission_ask, "204", _, _}}
+
+      Peer.deny_permission(pid, "204")
+
+      assert %{"id" => 204, "result" => %{"outcome" => outcome}} = next_write()
+      assert outcome["optionId"] == "no"
+    end
+
+    test "a request handed back on reattach is still answerable", ctx do
+      # The JSON-RPC id lives in the peer and dies with it, so a request raised
+      # before a deploy is only answerable after one because the turn row wrote
+      # it down. Same trap as `acp_prompt_id` (#772).
+      pid =
+        start_peer(ctx,
+          permission_policy: %{"Bash" => "ask"},
+          pending_permission: %{
+            "request_id" => "205",
+            "tool" => "Bash",
+            "options" => [%{"optionId" => "yes", "kind" => "allow_once"}]
+          }
+        )
+
+      _init = next_write()
+
+      assert :ok = Peer.answer_permission(pid, "205", "yes")
+      assert %{"id" => 205, "result" => %{"outcome" => %{"optionId" => "yes"}}} = next_write()
     end
 
     test "an fs/* request is refused, not ignored", ctx do

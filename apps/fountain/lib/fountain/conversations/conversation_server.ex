@@ -193,6 +193,28 @@ defmodule Fountain.Conversations.ConversationServer do
   end
 
   @doc """
+  Answer an outstanding permission request (#940).
+
+  Tenant scoping is the caller's job — reach this through
+  `Conversations.answer_permission_request/4`, which establishes ownership
+  first.
+
+  `{:error, :no_pending_permission}` covers every "too late": another attached
+  client answered it, the timeout denied it, the turn ended, or the server is
+  no longer running. That is deliberately not distinguished from "never
+  existed" — a client that lost the race and a client guessing ids get the same
+  answer.
+  """
+  @spec answer_permission(binary(), String.t(), String.t()) ::
+          :ok | {:error, :no_pending_permission | :unknown_option | :not_running}
+  def answer_permission(conv_id, request_id, option_id) do
+    case whereis(conv_id) do
+      nil -> {:error, :not_running}
+      pid -> call_server(pid, {:answer_permission, request_id, option_id})
+    end
+  end
+
+  @doc """
   Terminate the conversation. If the GenServer is alive, it tears down the
   sprite. If not, just mark the DB rows terminated so the user can still
   clean up dead conversations after a server restart.
@@ -355,6 +377,8 @@ defmodule Fountain.Conversations.ConversationServer do
       # rather than linked: a protocol bug must fail a turn, not take down a
       # server that is holding a sprite handle and a tenant's secrets.
       acp_peer: nil,
+      # Timer refusing an unanswered permission request (#940).
+      permission_timer: nil,
       acp_peer_mon: nil,
       # Bytes of replayed output to drop on reattach, keyed by stream.
       # Empty map outside a reattach window. See attempt_session_attach.
@@ -1087,7 +1111,13 @@ defmodule Fountain.Conversations.ConversationServer do
         # Resolving from the agent here (rather than reading a policy frozen on
         # the conversation row) is what makes a tightening apply across a
         # deploy.
-        permission_policy: effective_permission_policy(conv, agent_for(conv))
+        permission_policy: effective_permission_policy(conv, agent_for(conv)),
+        # Hand back the request the previous peer was holding, if any (#940).
+        # The agent minted the JSON-RPC id and is still blocked on it, so the
+        # id outlives our process — but only if we wrote it down. This is the
+        # same trap `acp_prompt_id` exists for, and the reason the turn row
+        # carries `pending_permission` at all.
+        pending_permission: running_turn.pending_permission
       )
 
     dedup =
@@ -1393,6 +1423,25 @@ defmodule Fountain.Conversations.ConversationServer do
      }}
   end
 
+  # First answer wins. The web apps and an editor (#708) are peer clients of
+  # this door, not fallbacks for one another, so a second answer to the same
+  # request is "too late" rather than an error in the caller.
+  def handle_call({:answer_permission, request_id, option_id}, _from, state) do
+    case state.acp_peer do
+      nil ->
+        {:reply, {:error, :no_pending_permission}, state}
+
+      peer ->
+        case Fountain.Runtimes.ACP.Peer.answer_permission(peer, request_id, option_id) do
+          :ok ->
+            {:reply, :ok, resolve_permission(state, request_id, "answered", option_id)}
+
+          {:error, reason} ->
+            {:reply, {:error, reason}, state}
+        end
+    end
+  end
+
   def handle_call(:terminate_conv, _from, state) do
     if state.handle, do: _ = Fountain.Sandbox.destroy(state.handle)
     sandbox = Conversations._unsafe_get_sandbox!(state.sandbox_id)
@@ -1548,6 +1597,65 @@ defmodule Fountain.Conversations.ConversationServer do
   def handle_info({:acp, ref, {:prompt_sent, id}}, %{current_command_ref: ref} = state) do
     {:ok, turn} = Conversations._unsafe_update_turn(state.current_turn, %{acp_prompt_id: id})
     {:noreply, %{state | current_turn: turn}}
+  end
+
+  # `ask`: the agent is blocked and a human has to answer (#940).
+  #
+  # Three things happen, and the order matters. The pending request is persisted
+  # on the turn first, so a deploy landing a millisecond later can still be
+  # answered; then the stage event goes out; then the timeout is armed.
+  #
+  # The timeout is not optional and it is not a tidiness measure.
+  # `Lifecycle.check/4` suppresses only the *idle* verdict while a turn is in
+  # flight, so an unanswered request would sail past the idle bound and be
+  # resolved by the max-lifetime ceiling — and per 0017 the idle bound suspends
+  # while the ceiling destroys. Left alone, a prompt nobody answers does not
+  # hang forever; it burns the whole lifetime and then takes the agent's memory
+  # with it (#649).
+  def handle_info(
+        {:acp, ref, {:permission_ask, request_id, tool, options}},
+        %{current_command_ref: ref} = state
+      ) do
+    pending = %{
+      "request_id" => request_id,
+      "tool" => tool,
+      "options" => options,
+      "asked_at" => DateTime.utc_now() |> DateTime.to_iso8601()
+    }
+
+    state =
+      case state.current_turn do
+        nil ->
+          state
+
+        turn ->
+          {:ok, turn} = Conversations._unsafe_update_turn(turn, %{pending_permission: pending})
+          %{state | current_turn: turn}
+      end
+
+    publish_stage(state.conversation_id, "request", "started", %{
+      request_id: request_id,
+      tool: tool,
+      # The agent's own list, verbatim. A client must never offer an option
+      # that is not on it.
+      options: options,
+      timeout_ms: Fountain.Permissions.ask_timeout_ms()
+    })
+
+    timer =
+      Process.send_after(
+        self(),
+        {:permission_timeout, request_id},
+        Fountain.Permissions.ask_timeout_ms()
+      )
+
+    {:noreply, %{state | permission_timer: timer}}
+  end
+
+  # Nobody answered in time. Deny — the only safe default — and say so on the
+  # stream so a card stops waiting.
+  def handle_info({:permission_timeout, request_id}, state) do
+    {:noreply, resolve_permission(state, request_id, "timeout", nil)}
   end
 
   # A tool the policy withheld (#939). Recorded in the context, per 0013: the
@@ -1838,6 +1946,63 @@ defmodule Fountain.Conversations.ConversationServer do
   def handle_info({:EXIT, _from, reason}, state), do: {:stop, reason, state}
 
   def handle_info(_msg, state), do: {:noreply, state}
+
+  # The one place a held request stops being held, whoever ended it: an answer,
+  # the timeout, or the turn ending. Cancels the timer, clears the turn's
+  # `pending_permission`, and publishes the resolution so a card can close.
+  #
+  # `state: "done"` for every outcome, including a deny and a timeout. The stage
+  # and its status are the Prometheus counter's only tags and there is an alert
+  # on them — a timeout emitting `failed` would page someone for a policy doing
+  # exactly what it was told.
+  defp resolve_permission(state, request_id, outcome, option_id) do
+    if state.permission_timer, do: Process.cancel_timer(state.permission_timer)
+
+    # Read before the clear below wipes it.
+    tool = pending_tool(state)
+
+    if outcome != "answered" and state.acp_peer do
+      Fountain.Runtimes.ACP.Peer.deny_permission(state.acp_peer, request_id)
+    end
+
+    state =
+      case state.current_turn do
+        nil ->
+          state
+
+        turn ->
+          {:ok, turn} = Conversations._unsafe_update_turn(turn, %{pending_permission: nil})
+          %{state | current_turn: turn}
+      end
+
+    publish_stage(state.conversation_id, "request", "done", %{
+      request_id: request_id,
+      outcome: outcome,
+      option_id: option_id
+    })
+
+    if outcome != "answered" do
+      Conversations.record_permission_denied(state.conversation_id, tool, outcome)
+    end
+
+    %{state | permission_timer: nil}
+  end
+
+  defp pending_tool(%{current_turn: %{pending_permission: %{"tool" => tool}}}), do: tool
+  defp pending_tool(_state), do: nil
+
+  # Resolve whatever is held, if anything. The turn row is the source of truth
+  # rather than the timer, so this is also correct for a request raised by a
+  # previous BEAM lifetime and reattached to.
+  defp resolve_pending_permission(state, outcome) do
+    case state.current_turn do
+      %{pending_permission: %{"request_id" => request_id}} ->
+        resolve_permission(state, request_id, outcome, nil)
+
+      _ ->
+        state
+    end
+  end
 
   # The absolute lifetime ceiling measures a continuous run, not calendar age:
   # a wake from `suspended` stamps `last_resumed_at` and restarts the clock,
@@ -2799,6 +2964,12 @@ defmodule Fountain.Conversations.ConversationServer do
   defp finalize_tracer(tracer), do: Fountain.Runtimes.ACP.Tracer.finalize(tracer)
 
   defp finish_acp_turn(state, status, span_attrs, stage_meta) do
+    # Resolve a held permission request before the peer goes away (#940). The
+    # agent's blocked request dies with the process either way, but a card left
+    # open is a client waiting on an answer that can never arrive, and the
+    # turn's `pending_permission` would stay set on a turn that is over.
+    state = resolve_pending_permission(state, "turn_ended")
+
     if state.current_command, do: Fountain.Sandbox.close_stdin(state.current_command)
     stop_acp_peer(state)
 

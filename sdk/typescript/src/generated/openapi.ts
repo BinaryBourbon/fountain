@@ -188,6 +188,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/conversations/{conversation_id}/requests/{request_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Answer a permission request
+         * @description Answers a `session/request_permission` the agent is blocked on (#940). The request and its options arrive as a `permission_request` block on the conversation's event stream; `option_id` must be one of the `optionId` values that block carried. Never send an option the agent did not offer.
+         *
+         *     First answer wins: another attached client, the timeout, or the turn ending may already have resolved it, and all of those return 409. The resolution appears on the stream as a `request` stage event with state `done`.
+         */
+        post: operations["FountainWeb.ConversationController.answer_request"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/account/exports/{id}/download": {
         parameters: {
             query?: never;
@@ -1860,7 +1882,7 @@ export interface components {
             images?: components["schemas"]["ImageInput"][] | null;
             /** @description Per-launch permission override (#939). Merged with the agent's own policy, taking the stricter of the two per tool. It may only narrow: a policy that would loosen any tool is refused with 422 permission_policy_widens rather than silently clamped. */
             permission_policy?: {
-                [key: string]: "auto_allow" | "auto_deny";
+                [key: string]: "auto_allow" | "ask" | "auto_deny";
             } | null;
             /** @description Optional first turn prompt. */
             prompt?: string;
@@ -2072,6 +2094,11 @@ export interface components {
         /** TeammateConversationListResponse */
         TeammateConversationListResponse: {
             data: components["schemas"]["TeammateConversation"][];
+        };
+        /** PermissionAnswerRequest */
+        PermissionAnswerRequest: {
+            /** @description One of the `optionId` values from the request's own `options` list, as carried on the `permission_request` block. An id the agent did not offer is refused (422 unknown_option) rather than forwarded. */
+            option_id: string;
         };
         /**
          * AvatarRequest
@@ -2427,9 +2454,9 @@ export interface components {
             /** @description Canonical provider/model_id (e.g. anthropic/claude-sonnet-4-6). The provider must match the runtime — anthropic for claude, openai for codex, google for gemini; opencode accepts any of the three. Other providers are rejected: Fountain has no credentials to export for them. The model id is not checked against a list, so a newly released model works without a Fountain release. */
             model: string;
             name: string;
-            /** @description Per-tool permission policy: a map of tool name (as the transcript labels it) to verdict, plus an optional "default" key. Unset tools fall back to the default, and an unset default is auto_allow — today's behaviour. "ask" is a known verdict but is not supported yet (422 permission_policy_unbuilt). */
+            /** @description Per-tool permission policy: a map of tool name (as the transcript labels it) to verdict, plus an optional "default" key. Unset tools fall back to the default, and an unset default is auto_allow — today's behaviour. "ask" holds the tool until a human answers it on the conversation stream, and denies if nobody does before the timeout. */
             permission_policy?: {
-                [key: string]: "auto_allow" | "auto_deny";
+                [key: string]: "auto_allow" | "ask" | "auto_deny";
             } | null;
             /** @enum {string} */
             runtime: "claude" | "codex" | "gemini" | "opencode";
@@ -2703,16 +2730,22 @@ export interface components {
         };
         /**
          * Block
-         * @description One structured piece of a log event's output — the same parse the web UI renders (`Fountain.Conversations.Blocks`). `kind` decides the other fields: `text`/`thinking` carry `body`; `tool_use` carries `id`, `name`, `summary`, `body` (the input); `tool_result` carries `tool_id`, `body`, `error` and pairs with the `tool_use` of the same id; `init` carries `summary`, `body`; `result` carries `body`, `raw`; `error` carries `body`; `raw` carries `body`, `summary`.
+         * @description One structured piece of a log event's output — the same parse the web UI renders (`Fountain.Conversations.Blocks`). `kind` decides the other fields: `text`/`thinking` carry `body`; `tool_use` carries `id`, `name`, `summary`, `body` (the input); `tool_result` carries `tool_id`, `body`, `error` and pairs with the `tool_use` of the same id; `init` carries `summary`, `body`; `result` carries `body`, `raw`; `error` carries `body`; `raw` carries `body`, `summary`; `permission_request` carries `request_id`, `name`, `summary` and `options` — the agent is blocked on it, and a client answers with POST /api/conversations/{id}/requests/{request_id}. Render only the options in `options`; never synthesise one the agent did not offer.
          */
         Block: {
             body?: string | null;
             error?: boolean | null;
             id?: string | null;
             /** @enum {string} */
-            kind: "text" | "thinking" | "tool_use" | "tool_result" | "init" | "result" | "error" | "raw";
+            kind: "text" | "thinking" | "tool_use" | "tool_result" | "init" | "result" | "error" | "raw" | "permission_request";
             name?: string | null;
+            /** @description permission_request only: the options the agent offered, in its order. Each carries at least `optionId` and `kind` (allow_once, allow_always, reject_once, reject_always, ...). */
+            options?: {
+                [key: string]: unknown;
+            }[] | null;
             raw?: string | null;
+            /** @description permission_request only: the id to answer with. */
+            request_id?: string | null;
             summary?: string | null;
             tool_id?: string | null;
         } & {
@@ -3229,6 +3262,11 @@ export interface components {
             setup_script?: string;
             /** Format: date-time */
             updated_at?: string;
+        };
+        /** PermissionAnswerResponse */
+        PermissionAnswerResponse: {
+            /** @example true */
+            ok: boolean;
         };
         /** ConversationTreeResponse */
         ConversationTreeResponse: {
@@ -3783,6 +3821,61 @@ export interface operations {
             };
             /** @description Not found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "FountainWeb.ConversationController.answer_request": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                conversation_id: string;
+                request_id: string;
+            };
+            cookie?: never;
+        };
+        /** @description Answer */
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PermissionAnswerRequest"];
+            };
+        };
+        responses: {
+            /** @description Answered */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PermissionAnswerResponse"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Already resolved */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unknown option */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };

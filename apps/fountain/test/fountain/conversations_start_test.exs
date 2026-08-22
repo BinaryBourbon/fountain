@@ -337,11 +337,21 @@ defmodule Fountain.ConversationsStartTest do
       assert Repo.aggregate(Fountain.Conversations.Conversation, :count) == 0
     end
 
-    test "ask is refused at the door until #940 builds somewhere to ask", ctx do
+    test "a launch may narrow to ask, now that #940 gave it somewhere to ask", ctx do
       agent = insert_agent(user_id: ctx.user.id)
 
-      assert {:error, {:permission_policy_unbuilt, "ask"}} =
-               launch(ctx, agent, %{"Bash" => "ask"})
+      assert {:ok, conv} = launch(ctx, agent, %{"Bash" => "ask"})
+      assert conv.permission_policy == %{"Bash" => "ask"}
+    end
+
+    test "ask is a narrowing of auto_allow but a widening of auto_deny", ctx do
+      lenient = insert_agent(user_id: ctx.user.id, permission_policy: %{"Bash" => "auto_allow"})
+      strict = insert_agent(user_id: ctx.user.id, permission_policy: %{"Bash" => "auto_deny"})
+
+      assert {:ok, _} = launch(ctx, lenient, %{"Bash" => "ask"})
+
+      assert {:error, {:permission_policy_widens, "Bash"}} =
+               launch(ctx, strict, %{"Bash" => "ask"})
     end
 
     test "an unknown verdict is refused", ctx do

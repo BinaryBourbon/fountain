@@ -414,16 +414,10 @@ defmodule Fountain.AgentsTest do
       assert msg =~ "unknown verdict"
     end
 
-    test "rejects ask until #940 builds somewhere to ask" do
+    test "accepts ask, now that #940 gave it somewhere to ask" do
       user = insert_verified_user()
-
-      assert {:error, changeset} =
-               Agents.create_agent(
-                 agent_attrs(%{"user_id" => user.id, "permission_policy" => %{"Bash" => "ask"}})
-               )
-
-      assert %{permission_policy: [msg]} = errors_on(changeset)
-      assert msg =~ "not built yet"
+      agent = insert_agent(user_id: user.id, permission_policy: %{"Bash" => "ask"})
+      assert agent.permission_policy == %{"Bash" => "ask"}
     end
 
     test "rejects a non-string tool key" do

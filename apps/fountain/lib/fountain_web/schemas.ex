@@ -263,7 +263,10 @@ defmodule FountainWeb.Schemas do
         permission_policy: %Schema{
           type: :object,
           nullable: true,
-          additionalProperties: %Schema{type: :string, enum: ["auto_allow", "auto_deny"]},
+          additionalProperties: %Schema{
+            type: :string,
+            enum: Fountain.Permissions.buildable_verdicts()
+          },
           description:
             "Per-launch permission override (#939). Merged with the agent's own policy, " <>
               "taking the stricter of the two per tool. It may only narrow: a policy that " <>
@@ -338,6 +341,38 @@ defmodule FountainWeb.Schemas do
       type: :object,
       properties: %{status: %Schema{type: :string, example: "queued"}},
       required: [:status]
+    })
+  end
+
+  defmodule PermissionAnswerRequest do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "PermissionAnswerRequest",
+      type: :object,
+      properties: %{
+        option_id: %Schema{
+          type: :string,
+          description:
+            "One of the `optionId` values from the request's own `options` list, as " <>
+              "carried on the `permission_request` block. An id the agent did not offer " <>
+              "is refused (422 unknown_option) rather than forwarded."
+        }
+      },
+      required: [:option_id]
+    })
+  end
+
+  defmodule PermissionAnswerResponse do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "PermissionAnswerResponse",
+      type: :object,
+      properties: %{ok: %Schema{type: :boolean, example: true}},
+      required: [:ok]
     })
   end
 
@@ -426,13 +461,16 @@ defmodule FountainWeb.Schemas do
         permission_policy: %Schema{
           type: :object,
           nullable: true,
-          additionalProperties: %Schema{type: :string, enum: ["auto_allow", "auto_deny"]},
+          additionalProperties: %Schema{
+            type: :string,
+            enum: Fountain.Permissions.buildable_verdicts()
+          },
           description:
             "Per-tool permission policy: a map of tool name (as the transcript labels it) " <>
               "to verdict, plus an optional \"default\" key. Unset tools fall back to the " <>
               "default, and an unset default is auto_allow \u2014 today's behaviour. " <>
-              "\"ask\" is a known verdict but is not supported yet (422 " <>
-              "permission_policy_unbuilt)."
+              "\"ask\" holds the tool until a human answers it on the conversation " <>
+              "stream, and denies if nobody does before the timeout."
         },
         skills: %Schema{
           type: :array,
@@ -1140,7 +1178,11 @@ defmodule FountainWeb.Schemas do
           "`text`/`thinking` carry `body`; `tool_use` carries `id`, `name`, `summary`, " <>
           "`body` (the input); `tool_result` carries `tool_id`, `body`, `error` and pairs " <>
           "with the `tool_use` of the same id; `init` carries `summary`, `body`; `result` " <>
-          "carries `body`, `raw`; `error` carries `body`; `raw` carries `body`, `summary`.",
+          "carries `body`, `raw`; `error` carries `body`; `raw` carries `body`, `summary`; " <>
+          "`permission_request` carries `request_id`, `name`, `summary` and `options` — the " <>
+          "agent is blocked on it, and a client answers with " <>
+          "POST /api/conversations/{id}/requests/{request_id}. Render only the options in " <>
+          "`options`; never synthesise one the agent did not offer.",
       type: :object,
       properties: %{
         kind: %Schema{
@@ -1153,7 +1195,21 @@ defmodule FountainWeb.Schemas do
         name: %Schema{type: :string, nullable: true},
         tool_id: %Schema{type: :string, nullable: true},
         error: %Schema{type: :boolean, nullable: true},
-        raw: %Schema{type: :string, nullable: true}
+        raw: %Schema{type: :string, nullable: true},
+        request_id: %Schema{
+          type: :string,
+          nullable: true,
+          description: "permission_request only: the id to answer with."
+        },
+        options: %Schema{
+          type: :array,
+          nullable: true,
+          description:
+            "permission_request only: the options the agent offered, in its order. " <>
+              "Each carries at least `optionId` and `kind` (allow_once, allow_always, " <>
+              "reject_once, reject_always, ...).",
+          items: %Schema{type: :object, additionalProperties: true}
+        }
       },
       required: [:kind],
       additionalProperties: true

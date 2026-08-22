@@ -30,6 +30,7 @@ defmodule Fountain.Conversations.Blocks do
   | `:result` | `body`, `raw` |
   | `:error` | `body` |
   | `:raw` | `body`, `summary` |
+  | `:permission_request` | `request_id`, `name`, `summary`, `options` |
 
   A `tool_result` is paired to its `tool_use` on `tool_id`; that is the
   client's pass (`pair_tool_results` in the LiveView, the same in the SPA),
@@ -38,7 +39,7 @@ defmodule Fountain.Conversations.Blocks do
 
   alias Fountain.Runtimes.{ACP, LegacyBlocks}
 
-  @kinds ~w(text thinking tool_use tool_result init result error raw)
+  @kinds ~w(text thinking tool_use tool_result init result error raw permission_request)
 
   @doc "Every `kind` a block can have — the wire enum."
   def kinds, do: @kinds
