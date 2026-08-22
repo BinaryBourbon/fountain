@@ -83,6 +83,15 @@ defmodule Fountain.PlansTest do
     test "slugs/0 lists every plan, including the closed one" do
       assert Enum.sort(Plans.slugs()) == Enum.sort(~w(solo team scale legacy))
     end
+
+    # The distinction is load-bearing: `slugs/0` is what a stored row may hold
+    # and still includes the closed plan, while `public_slugs/0` is what a
+    # request may name. Publishing `legacy` on the checkout endpoint would
+    # advertise a price Checkout cannot honour.
+    test "public_slugs/0 excludes the closed plan" do
+      assert Plans.public_slugs() == ~w(solo team scale)
+      refute "legacy" in Plans.public_slugs()
+    end
   end
 
   describe "entitlement readers" do

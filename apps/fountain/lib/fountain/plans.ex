@@ -142,6 +142,16 @@ defmodule Fountain.Plans do
   @spec slugs() :: [String.t()]
   def slugs, do: @slugs
 
+  @doc """
+  The slugs a customer may buy — everything `public/0` lists.
+
+  Distinct from `slugs/0` on purpose: this is the vocabulary a *request* may
+  name (the checkout endpoint's `plan`), while `slugs/0` is the vocabulary a
+  *stored row* may hold, which still includes the closed plan.
+  """
+  @spec public_slugs() :: [String.t()]
+  def public_slugs, do: Enum.map(public(), & &1.slug)
+
   @doc "Whether `slug` names a plan in the catalog."
   @spec known?(term()) :: boolean()
   def known?(slug) when is_binary(slug), do: slug in @slugs
