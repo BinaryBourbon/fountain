@@ -18,6 +18,10 @@ Mimic.copy(Fountain.Sandbox.Daytona.LogStream)
 Mimic.copy(Sprites)
 Mimic.copy(Sprites.Filesystem)
 Mimic.copy(Horde.DynamicSupervisor)
+# Horde.Registry is copied so the registry settle window (#800) can be driven
+# from a test rather than waited out: a stub decides which poll finds the
+# server, which is what stops that test racing a loaded runner (#921).
+Mimic.copy(Horde.Registry)
 Mimic.copy(Req)
 
 # Stripe modules — needed by billing tests and webhook controller tests.
