@@ -102,7 +102,7 @@ Three results follow from that layout.
 - **A database backup cannot decrypt itself.** To restore the secrets you need
   the same `MASTER_SECRETS_KEY` that was live when somebody took the backup.
   So
-  [keep it apart from the backups](guides/operate/back-up-and-restore.md#back-up-master_secrets_key).
+  [keep it apart from the backups](guides/operate/back-up-and-restore.md#back-master_secrets_key-up).
 - Lose the master key, or change it, and you lose each stored secret. Nothing
   else goes, because accounts, configs and history are plain rows.
 - An attacker with database access alone holds ciphertext and wrapped keys.
