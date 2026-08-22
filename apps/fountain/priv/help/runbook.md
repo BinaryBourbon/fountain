@@ -197,10 +197,22 @@ curl -s localhost:9090/api/v1/alerts | jq '.data.alerts[] | select(.labels.names
 ```
 
 **Traces.** Instrumented (`Fountain.Telemetry` spans, `traceparent` propagated
-into sprites) but exported nowhere: `OTEL_TRACES_EXPORTER=none` on the
-Deployment, because there is no Tempo/Jaeger/collector in the cluster. Turning
-it on without one makes the exporter retry `localhost:4318` per span and flood
-the logs. Stand up a collector first.
+into sprites) and exported to Tempo, which runs in-cluster and keeps its blocks
+in garage. The Deployment sets `OTEL_EXPORTER_OTLP_ENDPOINT` at
+`tempo.tempo.svc.cluster.local:4318`; that alone turns the export on, since
+`runtime.exs` treats "no target configured" as "export nothing". Query them in
+Grafana under the **Tempo** datasource. A span carries `k8s.namespace.name` and
+`k8s.pod.name`, so the Tempo → Loki jump lands on the logs for the same pod and
+time window.
+
+Retention is 72h, capped by a 5 GiB quota on the garage bucket. If traces stop
+appearing, check the bucket first — garage refuses writes past the quota rather
+than evicting:
+
+```bash
+kubectl exec -n garage garage-0 -- /garage bucket info tempo
+kubectl logs -n tempo statefulset/tempo --tail=50
+```
 
 **Error tracking.** Still none — no Sentry/GlitchTip. Exceptions reach the logs
 and the `phoenix_router_dispatch_exception_count` counter, but there is no
