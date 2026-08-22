@@ -7,7 +7,6 @@
 #
 # The standard is docs-redesign/08-simplified-technical-english.md.
 docs/api.md
-docs/architecture.md
 docs/build/index.md
 docs/build/pieces.md
 docs/build/team-chat.md
