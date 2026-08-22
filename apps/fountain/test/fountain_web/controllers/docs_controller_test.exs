@@ -9,7 +9,7 @@ defmodule FountainWeb.DocsControllerTest do
       body = conn |> get(~p"/docs") |> html_response(200)
       assert body =~ "multi-tenant"
       # One entry from each nav shape: a top-level page and a section child.
-      assert body =~ "Self-hosting"
+      assert body =~ "Self-host Fountain"
       assert body =~ "Sprites transport reference"
       assert body =~ ~s(href="/docs/integrations/sprites-contract")
     end
