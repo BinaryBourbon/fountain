@@ -32,20 +32,24 @@ defmodule Fountain.Runtimes.Gemini do
 
   @behaviour Fountain.Runtimes
 
+  alias Fountain.Runtimes.Layout
+
+  @runtime "gemini"
+
   # Run gemini from a workspace dir we own and have git-init'd; avoids
   # the noisy `[WARN] [MemoryDiscovery] EACCES at /home/sprite/.git`
   # message (gemini walks up from cwd looking for .git, and /home/sprite's
   # perms trip it).  Also gives MemoryDiscovery a real workspace root
-  # to anchor on instead of crawling /home.
-  @workdir "/tmp/gemini-workspace"
-
-  # gemini runs with HOME=/tmp on the sprite, so its skill discovery
-  # path is /tmp/.gemini/skills (NOT /home/sprite/.gemini/skills).
-  @impl true
-  def skills_root, do: "/tmp/.gemini/skills"
+  # to anchor on instead of crawling /home. `Fountain.Runtimes.Layout` owns
+  # the path, and the ACP session runs in the same place because it reads
+  # the same row.
+  @workdir Layout.cwd(@runtime)
 
   @impl true
-  def skills_sh_agent, do: "gemini-cli"
+  def skills_root, do: Layout.skills_root(@runtime)
+
+  @impl true
+  def skills_sh_agent, do: Layout.skills_sh_agent(@runtime)
 
   @impl true
   def default_env(_agent, inference_credentials) do
@@ -61,8 +65,10 @@ defmodule Fountain.Runtimes.Gemini do
     # can write into /home/sprite/.gemini at first glance (ACLs let `ls`
     # and most writes through), but rename across that boundary errors
     # out. /tmp side-steps it cleanly. Mirrors the same fix we needed
-    # for opencode's `~/.opencode` access path.
-    base ++ [{"HOME", "/tmp"}]
+    # for opencode's `~/.opencode` access path. The path itself lives in
+    # `Fountain.Runtimes.Layout`, so the HOME gemini gets and the HOME
+    # Fountain writes its config under are the same one by construction.
+    base ++ Layout.home_env(@runtime)
   end
 
   # Gemini reads user-scope MCP servers from `$HOME/.gemini/settings.json`,
@@ -70,13 +76,15 @@ defmodule Fountain.Runtimes.Gemini do
   # with HOME=/tmp, write there only — duplicating into /home/sprite
   # was making gemini register every MCP tool twice on startup and
   # spam the log with `Tool ... already registered. Overwriting.` lines.
+  @settings Path.join(Layout.config_root(@runtime), "settings.json")
+
   @impl true
   def write_config(_handle, nil), do: :ok
   def write_config(_handle, %{mcp_servers: m}) when m == %{} or is_nil(m), do: :ok
 
   def write_config(handle, %{mcp_servers: mcp_servers}) do
     payload = Jason.encode!(%{"mcpServers" => mcp_servers}, pretty: true)
-    Fountain.Sandbox.write_file(handle, "/tmp/.gemini/settings.json", payload)
+    Fountain.Sandbox.write_file(handle, @settings, payload)
     :ok
   end
 

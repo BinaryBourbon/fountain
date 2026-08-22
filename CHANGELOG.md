@@ -120,6 +120,19 @@ upgrade, is in
 
 ### Fixed
 
+- **An opencode or gemini agent ignored its system prompt.** Both runtimes run
+  with `HOME=/tmp` — a workaround for a rename that fails across
+  `/home/sprite`'s ACL boundary — and their skills were written there
+  correctly. The system prompt was not: it went to
+  `/home/sprite/.config/opencode/AGENTS.md` and `/home/sprite/.gemini/GEMINI.md`,
+  which neither CLI reads. Every agent on
+  those two runtimes ran on its CLI's default persona, with nothing in the log
+  to say so, and the test asserted the same wrong paths. Both the `HOME` export
+  and the paths written under it now come from one table
+  (`Fountain.Runtimes.Layout`), so they cannot disagree, and a guardrail test
+  checks the agreement rather than the literals. claude and codex were never
+  affected.
+
 - **A sandbox that failed never recorded when it stopped.** Of the dozen
   writers of a terminal sandbox status, the ones that terminated passed a
   `terminated_at` and the ones that failed never did, so a failed sandbox

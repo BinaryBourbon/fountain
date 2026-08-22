@@ -11,9 +11,17 @@ defmodule Fountain.Runtimes.InstructionsTest do
   test "each ACP runtime has a user-level instructions file; unknown runtimes none" do
     assert Instructions.path("claude") == "/home/sprite/.claude/CLAUDE.md"
     assert Instructions.path("codex") == "/home/sprite/.codex/AGENTS.md"
-    assert Instructions.path("opencode") == "/home/sprite/.config/opencode/AGENTS.md"
-    assert Instructions.path("gemini") == "/home/sprite/.gemini/GEMINI.md"
+
+    # Under the runtime's *own* HOME, which is /tmp for these two. The earlier
+    # version of this test asserted /home/sprite for both — the same wrong
+    # answer the code gave, so it pinned the bug instead of catching it.
+    # `Fountain.Runtimes.LayoutTest` now checks the agreement rather than the
+    # literal.
+    assert Instructions.path("opencode") == "/tmp/.config/opencode/AGENTS.md"
+    assert Instructions.path("gemini") == "/tmp/.gemini/GEMINI.md"
+
     assert Instructions.path("nope") == nil
+    assert Instructions.path(nil) == nil
   end
 
   test "writes the prompt verbatim, with a provenance header, to the runtime's file" do

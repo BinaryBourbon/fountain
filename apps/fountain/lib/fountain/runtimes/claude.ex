@@ -36,14 +36,20 @@ defmodule Fountain.Runtimes.Claude do
 
   @behaviour Fountain.Runtimes
 
-  @mcp_config "/home/sprite/.mcp.json"
-  @settings "/home/sprite/.claude/settings.json"
+  alias Fountain.Runtimes.Layout
+
+  @runtime "claude"
+
+  # The project-scope config sits at the repo root the agent runs in, not
+  # under the config directory — that is what makes it *project* scope.
+  @mcp_config Path.join(Layout.cwd(@runtime), ".mcp.json")
+  @settings Path.join(Layout.config_root(@runtime), "settings.json")
 
   @impl true
-  def skills_root, do: "/home/sprite/.claude/skills"
+  def skills_root, do: Layout.skills_root(@runtime)
 
   @impl true
-  def skills_sh_agent, do: "claude-code"
+  def skills_sh_agent, do: Layout.skills_sh_agent(@runtime)
 
   @impl true
   def default_env(_agent, inference_credentials) do
