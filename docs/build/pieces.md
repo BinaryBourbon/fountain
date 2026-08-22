@@ -133,8 +133,8 @@ The two feeds a client uses are different on purpose.
 | You use it for | The roster, the dots that show a reply on the way, notifications, unread counts. | The thread, as you render it. |
 
 A team UI wants both. One long-lived connection for the roster, and a read of
-the open thread's feed. `blocks` stops the second one from turning into a
-parser.
+the open thread's feed. `blocks` keeps the second one from a parser of your
+own.
 
 The server folds each runtime's dialect into `text`, `thinking`, `tool_use`,
 `tool_result`, `init`, `result`, `error` and `raw`. So your renderer handles
