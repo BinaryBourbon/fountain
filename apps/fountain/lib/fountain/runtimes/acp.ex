@@ -150,12 +150,22 @@ defmodule Fountain.Runtimes.ACP do
     # protocol, but it is a second process model to keep in mind when something
     # hangs. Nothing to install here: `OpenCode.prepare_sandbox/3` already bun-
     # installs the binary and symlinks it onto PATH.
+    #
+    # `asks_permission: false` — measured live on 2026-08-22, not inferred.
+    # opencode ran `curl` to an external host and then `rm -rf` under an
+    # `ask`-everything policy and sent no `session/request_permission` for
+    # either: it decides permission inside its own server and never offers the
+    # protocol's channel. So a policy is unenforceable here, and #939's
+    # premise — "the request arrives on every shippable runtime" — held for
+    # claude and codex but never for this one. `Fountain.Permissions` refuses
+    # the policy at the door rather than let it read as protection (#956).
     "opencode" => %{
       bin: "opencode",
       args: ["acp"],
       package: nil,
       version: nil,
-      cwd: "/tmp/opencode-workspace"
+      cwd: "/tmp/opencode-workspace",
+      asks_permission: false
     }
   }
 
@@ -182,6 +192,36 @@ defmodule Fountain.Runtimes.ACP do
   @spec blocked_runtimes() :: %{String.t() => String.t()}
   def blocked_runtimes do
     for {name, %{blocked: reason}} <- @adapters, into: %{}, do: {name, reason}
+  end
+
+  @doc """
+  Whether a runtime asks the client before it runs a tool.
+
+  A permission policy is only worth anything on a runtime that sends
+  `session/request_permission` (#939, #940). Every entry is assumed to ask
+  until measured otherwise, which is the safe direction to be wrong in: a
+  runtime that turns out not to ask gets a loud refusal here the first time
+  someone writes a policy for it, rather than a policy that reads as
+  protection and is not.
+
+  Measured 2026-08-22 against live agents: claude (claude-agent-acp 0.66) and
+  codex (codex-acp 1.1.14) both ask per tool call. opencode does not, ever.
+  gemini is not shippable (#659) and its own bypass flag is #941's.
+  """
+  @spec asks_permission?(String.t()) :: boolean()
+  def asks_permission?(runtime) do
+    case @adapters[runtime] do
+      nil -> true
+      spec -> Map.get(spec, :asks_permission, true)
+    end
+  end
+
+  @doc """
+  Runtimes measured **not** to ask, so a policy cannot be enforced on them.
+  """
+  @spec runtimes_without_permissions() :: [String.t()]
+  def runtimes_without_permissions do
+    for {name, spec} <- @adapters, Map.get(spec, :asks_permission, true) == false, do: name
   end
 
   @doc "The npm package and version pinned for a runtime, or nil when native."

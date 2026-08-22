@@ -163,9 +163,30 @@ defmodule Fountain.Agents.Agent do
           [permission_policy: "must be a map of tool name to verdict"]
 
         true ->
-          Enum.flat_map(policy, fn {tool, verdict} -> policy_errors(tool, verdict) end)
+          Enum.flat_map(policy, fn {tool, verdict} -> policy_errors(tool, verdict) end) ++
+            runtime_errors(changeset, policy)
       end
     end)
+  end
+
+  # A policy the runtime will never consult is refused rather than stored. The
+  # verdicts are carried by `session/request_permission`, and opencode does not
+  # send it — measured live, see `Fountain.Runtimes.ACP.asks_permission?/1`. An
+  # accepted-but-inert `auto_deny` is the worst of the three outcomes: it reads
+  # like protection on every screen that shows it.
+  defp runtime_errors(changeset, policy) do
+    runtime = Ecto.Changeset.get_field(changeset, :runtime)
+
+    if not Fountain.Permissions.needs_enforcement?(policy) or
+         Fountain.Runtimes.ACP.asks_permission?(runtime) do
+      []
+    else
+      [
+        permission_policy:
+          "the #{runtime} runtime never asks before it runs a tool, so a policy " <>
+            "stricter than auto_allow cannot be enforced on it"
+      ]
+    end
   end
 
   defp policy_errors(tool, verdict) do

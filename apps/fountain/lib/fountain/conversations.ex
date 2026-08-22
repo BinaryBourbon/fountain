@@ -1796,12 +1796,24 @@ defmodule Fountain.Conversations do
 
   defp resolve_permission_policy(policy, agent) when is_map(policy) do
     with :ok <- validate_policy_shape(policy),
+         :ok <- check_runtime_asks(policy, agent),
          :ok <- Fountain.Permissions.check_narrows(agent.permission_policy, policy) do
       {:ok, policy}
     end
   end
 
   defp resolve_permission_policy(_policy, _agent), do: {:error, :permission_policy_invalid}
+
+  # A launch cannot be protected by a policy the runtime never consults. Refused
+  # rather than accepted-and-ignored — see `ACP.asks_permission?/1`, measured.
+  defp check_runtime_asks(policy, agent) do
+    if not Fountain.Permissions.needs_enforcement?(policy) or
+         Fountain.Runtimes.ACP.asks_permission?(agent.runtime) do
+      :ok
+    else
+      {:error, {:permission_policy_unenforceable, agent.runtime}}
+    end
+  end
 
   defp validate_policy_shape(policy) do
     Enum.find_value(policy, :ok, fn {tool, verdict} ->

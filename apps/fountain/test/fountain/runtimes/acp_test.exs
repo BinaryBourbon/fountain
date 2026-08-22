@@ -47,6 +47,21 @@ defmodule Fountain.Runtimes.ACPTest do
       end
     end
 
+    test "asks_permission? carries a measurement, and defaults to asking" do
+      # Measured 2026-08-22 against live agents: claude and codex both send
+      # `session/request_permission` per tool call; opencode ran an external
+      # `curl` and an `rm -rf` under an ask-everything policy and sent none.
+      assert ACP.asks_permission?("claude")
+      assert ACP.asks_permission?("codex")
+      refute ACP.asks_permission?("opencode")
+      assert ACP.runtimes_without_permissions() == ["opencode"]
+
+      # Unmeasured is assumed to ask, which is the safe direction to be wrong
+      # in: the first policy written for it gets a loud refusal, not a silent
+      # one.
+      assert ACP.asks_permission?("somethingelse")
+    end
+
     test "a runtime with no adapter entry stays legacy" do
       # For an unconvertible runtime the legacy path is the only path.
       refute ACP.enabled?("somethingelse")
