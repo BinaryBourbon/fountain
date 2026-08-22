@@ -75,7 +75,8 @@ defmodule Fountain.Audit do
       |> Map.put_new(:inserted_at, DateTime.utc_now() |> DateTime.truncate(:second))
 
     case %Event{} |> Event.changeset(attrs) |> Repo.insert() do
-      {:ok, _} = ok ->
+      {:ok, event} = ok ->
+        mirror_to_analytics(event)
         ok
 
       {:error, changeset} = err ->
@@ -86,6 +87,67 @@ defmodule Fountain.Audit do
       require Logger
       Logger.warning("audit: record failed: #{inspect(e)}")
       {:error, :exception}
+  end
+
+  # Product analytics rides on the audit trail rather than on a second set of
+  # call sites (see `Fountain.Analytics`): every mutation already has to come
+  # through here, so a new audited action is a new PostHog event for free and
+  # the two can never drift apart in coverage.
+  #
+  # Only the attributed events go. A `user_id: nil` row is a system action or
+  # one whose account has since been deleted; giving either a synthetic person
+  # would put rows in PostHog that no cohort should ever match. The metadata
+  # is passed through `Analytics.sanitize/1` — audit metadata is values-free
+  # by rule (ADR 0013), and this is the fence that keeps it that way when the
+  # destination is a third party rather than our own table.
+  defp mirror_to_analytics(%Event{user_id: nil}), do: :ok
+
+  defp mirror_to_analytics(%Event{} = event) do
+    # Checked here rather than left to `capture/4`, which would also do
+    # nothing: `refresh_person/1` re-reads the user row, and an instance with
+    # no PostHog key must not pay a `SELECT` on every account-shaped mutation
+    # for a feature it has not turned on.
+    if Fountain.Analytics.enabled?(), do: do_mirror(event)
+    :ok
+  end
+
+  defp do_mirror(%Event{} = event) do
+    refresh_person(event)
+
+    Fountain.Analytics.capture(
+      event.action,
+      event.user_id,
+      event.metadata
+      |> Fountain.Analytics.sanitize()
+      |> Map.merge(%{
+        "resource_type" => event.resource_type,
+        "actor" => event.actor,
+        "source" => "audit"
+      }),
+      request_ip: event.request_ip,
+      timestamp: event.inserted_at
+    )
+  end
+
+  # An action that changes the *shape* of the account, not just its contents.
+  # These are the only ones worth re-reading the user row for: PostHog person
+  # properties are what cohorts are built from, and they go stale the moment a
+  # trial converts or an account is suspended. Everything else (an agent
+  # created, a secret written) leaves the person unchanged, and refreshing on
+  # those would put a `SELECT` on every audited mutation in the system.
+  @person_refreshing_prefixes ~w(account. auth. billing. admin.)
+
+  defp refresh_person(%Event{user_id: user_id, action: action}) do
+    if String.starts_with?(action, @person_refreshing_prefixes) do
+      case Fountain.Accounts.get_user(user_id) do
+        nil -> :ok
+        user -> Fountain.Analytics.identify(user)
+      end
+    end
+
+    :ok
+  rescue
+    _ -> :ok
   end
 
   # The account was deleted between the action and this write, so `user_id`

@@ -218,6 +218,46 @@ Without PostHog you can force a flag on for each user.
 | `POSTHOG_HOST` | `https://us.i.posthog.com` | — | The PostHog ingestion host. Use `https://eu.i.posthog.com` for EU Cloud, or an instance you host yourself. |
 | `FEATURE_FLAGS_ON` | — | — | Comma-separated flag keys, forced on for each user, such as `team_comms`. It wins over PostHog. |
 
+## Product analytics
+
+The same project key sends product events to PostHog. Fountain captures them
+on the server. There is no analytics script in the browser, and the console
+loads no third-party code.
+
+Set no key and Fountain sends nothing. Set a key and the events go to your own
+PostHog project.
+
+Fountain captures an event at three points in the code. Each point is a
+function that the operation must call, so a new action is captured without a
+new call site.
+
+- Every audited change, under the name of its audit action. `agent.created`
+  and `vault.secret.write` are examples.
+- Every usage event that billing records, with a `usage.` prefix.
+  `usage.turn_started` is an example.
+- The end of a conversation turn, as `conversation.turn.done`,
+  `conversation.turn.failed` or `conversation.turn.interrupted`.
+
+Fountain also captures `$pageview` for each console page, `$identify` when the
+shape of an account changes, and `$feature_flag_called` when it reads a flag.
+Each event carries the flags that Fountain already knows for that person, as
+`$feature/<key>`.
+
+Fountain sends no secret value, no environment variable value, no prompt and
+no agent output. An event holds the name of the action, the type of the
+resource, and counts or sizes.
+
+Delivery is best-effort. Events go to a queue and leave in batches. Fountain
+drops them if the queue is full or if PostHog answers with an error, and it
+counts each drop on the `fountain.analytics.dropped` telemetry event. An
+analytics failure cannot fail the operation it measures.
+
+| Variable | Default | Required | Effect |
+|---|---|---|---|
+| `POSTHOG_CAPTURE` | `true` | — | Set it to `false` to stop product events. Flag evaluation continues. |
+| `POSTHOG_PERSON_PII` | `true` | — | Set it to `false` to keep the account email out of PostHog. The person is then known by user id alone. |
+| `POSTHOG_INSTANCE` | `PHX_HOST` | — | The name of this deployment. Each event is a member of this PostHog group, so two deployments that report to one project stay apart. |
+
 ## Teammate email and phone
 
 Behind the `team_comms` flag, you can give a teammate an email address, from

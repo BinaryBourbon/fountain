@@ -105,6 +105,15 @@ config :fountain, :agentphone_req_options, plug: {Req.Test, Fountain.Team.Comms.
 config :fountain, :agentphone_webhook_secret, "whsec_test"
 config :fountain, :posthog_req_options, plug: {Req.Test, Fountain.FeatureFlags}
 
+# Product analytics (`Fountain.Analytics`). Capture is inert without a project
+# API key, which the suite deliberately does not set — so the default here is
+# "nothing is sent", and a test that wants to assert on a payload sets the key
+# and stubs the plug. `:inline` sends from the calling process so the stub is
+# owned by the test that installed it, exactly as the flag lookup is.
+config :fountain, :analytics_mode, :inline
+config :fountain, :analytics_req_options, plug: {Req.Test, Fountain.Analytics}
+config :fountain, :analytics_instance, "test"
+
 # Webhooks (#700). Every delivery goes to a Req.Test plug, so a test that
 # forgets to stub fails loudly instead of reaching a real receiver. `http://`
 # endpoints are permitted here so a test can use a plain URL; the SSRF guard

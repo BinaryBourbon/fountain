@@ -14,6 +14,11 @@ defmodule Fountain.FeatureFlagsTest do
 
     FeatureFlags.reset()
 
+    # A flag read now also captures `$feature_flag_called`. Swallow it here so
+    # these tests stay about flag evaluation; `analytics_test.exs` and the
+    # block at the bottom of this file own the capture behaviour.
+    Req.Test.stub(Fountain.Analytics, fn conn -> Req.Test.json(conn, %{"status" => 1}) end)
+
     on_exit(fn ->
       restore(:posthog_project_api_key, previous.key)
       restore(:feature_flag_overrides, previous.overrides)
@@ -149,6 +154,62 @@ defmodule Fountain.FeatureFlagsTest do
       age_cache(@user_id)
       stub_down()
       refute FeatureFlags.enabled?(:team_comms, @user_id)
+    end
+  end
+
+  describe "what analytics is told" do
+    setup do
+      stub_flags(%{"team_comms" => true})
+      test = self()
+
+      Req.Test.stub(Fountain.Analytics, fn conn ->
+        {:ok, body, conn} = Plug.Conn.read_body(conn)
+        send(test, {:posthog, Jason.decode!(body)})
+        Req.Test.json(conn, %{"status" => 1})
+      end)
+
+      :ok
+    end
+
+    test "reading a flag captures $feature_flag_called with the answer" do
+      posthog_on()
+      assert FeatureFlags.enabled?(:team_comms, @user_id)
+
+      assert_receive {:posthog, %{"batch" => [event]}}
+      assert event["event"] == "$feature_flag_called"
+      assert event["distinct_id"] == @user_id
+      assert event["properties"]["$feature_flag"] == "team_comms"
+      assert event["properties"]["$feature_flag_response"] == true
+    end
+
+    test "reading the same flag again inside the cache window says nothing more" do
+      posthog_on()
+      assert FeatureFlags.enabled?(:team_comms, @user_id)
+      assert_receive {:posthog, _}
+
+      assert FeatureFlags.enabled?(:team_comms, @user_id)
+      refute_receive {:posthog, _}, 50
+    end
+
+    test "cached_flags/1 reports what is known without calling PostHog" do
+      posthog_on()
+      assert FeatureFlags.enabled?(:team_comms, @user_id)
+
+      Req.Test.stub(FeatureFlags, fn _conn -> flunk("must not call PostHog") end)
+      assert FeatureFlags.cached_flags(@user_id) == %{"team_comms" => true}
+    end
+
+    test "cached_flags/1 is empty for a person nothing is known about" do
+      posthog_on()
+      assert FeatureFlags.cached_flags("44444444-4444-4444-4444-444444444444") == %{}
+      assert FeatureFlags.cached_flags(nil) == %{}
+    end
+
+    test "a static override shows up in cached_flags/1 with no PostHog at all" do
+      posthog_off()
+      Application.put_env(:fountain, :feature_flag_overrides, %{"team_comms" => true})
+
+      assert FeatureFlags.cached_flags(@user_id) == %{"team_comms" => true}
     end
   end
 
