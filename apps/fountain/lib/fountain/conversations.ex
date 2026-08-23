@@ -38,13 +38,28 @@ defmodule Fountain.Conversations do
     alias Fountain.Accounts.User
 
     Repo.all(
-      from s in Sandbox,
-        where: s.status not in ["terminated", "failed"],
+      from s in admin_sandboxes(),
         order_by: [desc: s.inserted_at],
         left_join: u in User,
         on: u.id == s.user_id,
         preload: [user: u, conversations: []]
     )
+  end
+
+  @doc """
+  How many sandboxes `_unsafe_list_sandboxes_admin/0` would return, without
+  loading them or their owners.
+
+  Deliberately built on the same query: the admin overview shows this count
+  and links to the list, and a count that came from a second definition of
+  "active" would disagree with the page it points at. `Quotas` has its own,
+  narrower definition (`pending`/`starting`/`ready`) because a concurrency cap
+  counts sandboxes being paid for, not sandboxes on screen.
+  """
+  def _unsafe_count_sandboxes_admin, do: Repo.aggregate(admin_sandboxes(), :count, :id)
+
+  defp admin_sandboxes do
+    from s in Sandbox, where: s.status not in ["terminated", "failed"]
   end
 
   def _unsafe_get_sandbox(id), do: Repo.get(Sandbox, id)

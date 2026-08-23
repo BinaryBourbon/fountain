@@ -33,6 +33,7 @@ defmodule FountainWeb.Live.AdminFinanceLive do
   use FountainWeb, :live_view
 
   import FountainWeb.AdminLive.Helpers
+  import FountainWeb.AdminLive.Shell
 
   alias Fountain.Billing
   alias Fountain.Billing.Finance
@@ -136,10 +137,8 @@ defmodule FountainWeb.Live.AdminFinanceLive do
     ~H"""
     <div class="space-y-8">
       <div>
-        <.link navigate={~p"/admin"} class="text-xs text-zinc-500 hover:text-zinc-900 underline">
-          ← Admin
-        </.link>
-        <h1 class="text-2xl font-semibold mt-1">Finance</h1>
+        <.admin_tabs current={:finance} billing_enabled={@billing_enabled} />
+        <h1 class="text-2xl font-semibold mt-4">Finance</h1>
         <p class="text-sm text-zinc-500 mt-1">
           Revenue against platform spend, per tenant, for {Calendar.strftime(
             @finance.period_start,
@@ -597,8 +596,4 @@ defmodule FountainWeb.Live.AdminFinanceLive do
   defp month_label(0), do: "This month"
   defp month_label(1), do: "Last month"
   defp month_label(n), do: "#{n} months ago"
-
-  defp format_hours(h) when h < 1, do: "#{round(h * 60)}m"
-  defp format_hours(h) when h < 48, do: "#{Float.round(h * 1.0, 1)}h"
-  defp format_hours(h), do: "#{Float.round(h / 24, 1)}d"
 end

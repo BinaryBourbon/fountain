@@ -368,6 +368,33 @@ defmodule Fountain.Audit do
   end
 
   @doc """
+  One page of the privilege trail, newest first, with the unfiltered total.
+
+  `/admin/activity` reads the whole trail rather than the newest 25 the admin
+  overview used to show. The trail is the record of what an operator did to an
+  account, so "only the last 25 are on screen" is the wrong answer to a
+  support question about last Tuesday.
+  """
+  @spec _unsafe_page_admin_events(keyword()) :: %{
+          events: [AdminEvent.t()],
+          total: non_neg_integer()
+        }
+  def _unsafe_page_admin_events(opts \\ []) do
+    page = Keyword.get(opts, :page, 1)
+    per_page = Keyword.get(opts, :per_page, 50)
+
+    events =
+      Repo.all(
+        from e in AdminEvent,
+          order_by: [desc: e.inserted_at, desc: e.id],
+          limit: ^per_page,
+          offset: ^((page - 1) * per_page)
+      )
+
+    %{events: events, total: Repo.aggregate(AdminEvent, :count, :id)}
+  end
+
+  @doc """
   Administrative actions taken against one user, newest first. Admin surfaces
   only — this is the "what happened to account Y" half of the support story.
   """

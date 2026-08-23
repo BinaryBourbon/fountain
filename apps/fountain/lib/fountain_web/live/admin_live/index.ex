@@ -1,17 +1,26 @@
 defmodule FountainWeb.AdminLive.Index do
-  @moduledoc false
+  @moduledoc """
+  `/admin` — the funnel, and one tile per thing that could be wrong.
+
+  This page used to be the whole admin panel: six stacked sections, and a
+  `mount` plus a ten-second refresh that re-ran every query behind all six
+  regardless of which one an operator had scrolled to. The sections are now
+  `/admin/users`, `/admin/sandboxes`, `/admin/billing` and `/admin/activity`,
+  and what is left here is the glance: is anything on fire, and where do I go.
+
+  Every tile is a link. A number on this page is never the place to act on
+  that number — the levers live on the page the tile points at, next to their
+  confirmations.
+  """
+
   use FountainWeb, :live_view
 
   import FountainWeb.AdminLive.Helpers
+  import FountainWeb.AdminLive.Shell
 
-  alias Fountain.{Accounts, Billing, Conversations, Quotas}
-  alias Fountain.Accounts.Deletion
+  alias Fountain.{Billing, Conversations}
   alias Fountain.Billing.SandboxUsage
-
-  @usage_window_days 30
-  @per_page 25
-  @statuses ~w(trialing active past_due canceled comped)
-  @sorts ~w(email joined trial_end last_activity)
+  alias FountainWeb.AdminLive.Users
 
   @impl true
   def mount(_params, _session, socket) do
@@ -19,38 +28,23 @@ defmodule FountainWeb.AdminLive.Index do
 
     {:ok,
      socket
-     |> FountainWeb.Audited.put_client_ip()
      |> assign(:page_title, "Admin")
      |> assign(:billing_enabled, Billing.enabled?())
-     |> assign(:funnel, Fountain.Funnel.summary_admin())
-     |> assign_billing_overview()
-     |> assign(:provider_spend, Billing.provider_spend())
-     |> assign(:sandboxes, Conversations._unsafe_list_sandboxes_admin())
-     |> assign(:admin_events, Fountain.Audit._unsafe_list_recent_admin(25))}
-  end
-
-  # Filter/sort/page state lives in the URL, so the 10s refresh, admin
-  # actions, and browser reloads all preserve position.
-  @impl true
-  def handle_params(params, _uri, socket) do
-    {:noreply,
-     socket
-     |> assign(:filters, parse_filters(params))
-     |> assign_users()}
+     |> assign_overview()}
   end
 
   @impl true
   def handle_info(:refresh, socket) do
     Process.send_after(self(), :refresh, 10_000)
+    {:noreply, assign_overview(socket)}
+  end
 
-    {:noreply,
-     socket
-     |> assign_users()
-     |> assign(:funnel, Fountain.Funnel.summary_admin())
-     |> assign_billing_overview()
-     |> assign(:provider_spend, Billing.provider_spend())
-     |> assign(:sandboxes, Conversations._unsafe_list_sandboxes_admin())
-     |> assign(:admin_events, Fountain.Audit._unsafe_list_recent_admin(25))}
+  defp assign_overview(socket) do
+    socket
+    |> assign(:funnel, Fountain.Funnel.summary_admin())
+    |> assign(:provider_spend, Billing.provider_spend())
+    |> assign(:sandbox_count, Conversations._unsafe_count_sandboxes_admin())
+    |> assign_billing_overview()
   end
 
   # overview_admin/0 runs real queries (MRR, status counts, webhook events);
@@ -64,575 +58,30 @@ defmodule FountainWeb.AdminLive.Index do
   end
 
   @impl true
-  def handle_event("filter", params, socket) do
-    filters = %{
-      socket.assigns.filters
-      | search: params["q"] || "",
-        status: if(params["status"] in @statuses, do: params["status"]),
-        role: if(params["role"] in ~w(admin user), do: params["role"]),
-        verified: parse_verified(params["verified"]),
-        page: 1
-    }
-
-    {:noreply, push_patch(socket, to: admin_path(filters))}
-  end
-
-  @impl true
-  def handle_event("toggle_admin", %{"id" => id}, socket) do
-    with_target_user(socket, id, fn user -> do_toggle_admin(socket, user) end)
-  end
-
-  # The concurrency cap normally comes from the tenant's plan. This overrides
-  # it, which is the only lever for a noisy or abusive tenant (ADR 0005) and
-  # the only way to hand a trusted one more than they pay for. Submitting the
-  # field empty clears the override and hands the cap back to the plan.
-  @impl true
-  def handle_event("set_sandbox_limit", %{"user_id" => id, "limit" => raw}, socket) do
-    with {:ok, limit} <- parse_limit_override(raw),
-         %Accounts.User{} = user <- Accounts.get_user(id),
-         {:ok, _} <- Accounts.update_sandbox_limit(user, limit, actor: "admin") do
-      Fountain.Audit.record_admin(%{
-        actor_user_id: socket.assigns.current_user.id,
-        target_user_id: user.id,
-        event_type: "admin.sandbox_limit.changed",
-        metadata: %{
-          "email" => user.email,
-          "from" => user.sandbox_limit_override,
-          "to" => limit,
-          "plan" => Fountain.Plans.resolve(user.plan).slug
-        }
-      })
-
-      message =
-        if is_nil(limit),
-          do: "Override cleared — the cap follows the plan again",
-          else: "Sandbox limit override set"
-
-      {:noreply, socket |> assign_users() |> put_flash(:info, message)}
-    else
-      nil ->
-        {:noreply,
-         socket
-         |> assign_users()
-         |> put_flash(:error, "User not found — the account may have been deleted")}
-
-      _ ->
-        {:noreply,
-         put_flash(
-           socket,
-           :error,
-           "Override must be a whole number of 0 or more, or empty for the plan's cap"
-         )}
-    end
-  end
-
-  # The buttons are hidden when billing is disabled, but events can still be
-  # sent by hand (#399's lesson) — and all of these actions talk to Stripe.
-  @impl true
-  def handle_event(event, _params, %{assigns: %{billing_enabled: false}} = socket)
-      when event in ~w(extend_trial toggle_comp resync_stripe set_plan set_comped_contacts) do
-    {:noreply, put_flash(socket, :error, "Billing is disabled on this instance")}
-  end
-
-  @impl true
-  def handle_event("extend_trial", %{"user_id" => id, "days" => raw}, socket) do
-    with {days, ""} when days > 0 <- Integer.parse(String.trim(raw)),
-         %Accounts.User{} = user <- Accounts.get_user(id),
-         {:ok, updated} <- Billing.extend_trial(user, days) do
-      Fountain.Audit.record_admin(%{
-        actor_user_id: socket.assigns.current_user.id,
-        target_user_id: user.id,
-        event_type: "admin.trial.extended",
-        metadata: %{
-          "email" => user.email,
-          "from" => user.trial_ends_at && DateTime.to_iso8601(user.trial_ends_at),
-          "to" => DateTime.to_iso8601(updated.trial_ends_at)
-        }
-      })
-
-      {:noreply,
-       socket
-       |> assign_users()
-       |> put_flash(:info, "Trial extended to #{format_date(updated.trial_ends_at)}")}
-    else
-      {:error, :active_subscription} ->
-        {:noreply, put_flash(socket, :error, "Account has an active paid subscription")}
-
-      {:error, :comped} ->
-        {:noreply, put_flash(socket, :error, "Account is comped — nothing to extend")}
-
-      {:error, _} ->
-        {:noreply, put_flash(socket, :error, "Could not extend trial — Stripe refused")}
-
-      nil ->
-        {:noreply,
-         socket
-         |> assign_users()
-         |> put_flash(:error, "User not found — the account may have been deleted")}
-
-      _ ->
-        {:noreply, put_flash(socket, :error, "Days must be a whole number of 1 or more")}
-    end
-  end
-
-  @impl true
-  def handle_event("toggle_comp", %{"id" => id}, socket) do
-    with_target_user(socket, id, fn user -> do_toggle_comp(socket, user) end)
-  end
-
-  # The in-app remedy for webhook drift (#502): re-read the subscription of
-  # record from Stripe and adopt what it says, without a Stripe dashboard
-  # round-trip.
-  @impl true
-  def handle_event("resync_stripe", %{"id" => id}, socket) do
-    with_target_user(socket, id, fn user -> do_resync_stripe(socket, user) end)
-  end
-
-  @impl true
-  def handle_event("reap_sandbox", %{"id" => id}, socket) do
-    case Conversations._unsafe_reap_sandbox(id) do
-      {:ok, outcome} ->
-        Fountain.Audit.record_admin(%{
-          actor_user_id: socket.assigns.current_user.id,
-          target_user_id: nil,
-          event_type: "admin.sandbox.reaped",
-          metadata: %{"sandbox_id" => id, "outcome" => to_string(outcome)}
-        })
-
-        msg =
-          case outcome do
-            :terminated -> "Sandbox and its live conversations terminated"
-            :released -> "Sandbox released — conversations stay resumable"
-            :already_terminal -> "Sandbox was already terminated"
-          end
-
-        {:noreply,
-         socket
-         |> assign(:sandboxes, Conversations._unsafe_list_sandboxes_admin())
-         |> assign_users()
-         |> put_flash(:info, msg)}
-
-      {:error, :not_found} ->
-        {:noreply, put_flash(socket, :error, "Sandbox not found")}
-    end
-  end
-
-  # The reversible abuse lever between comp and delete (#287): sessions die,
-  # API keys refuse, sandboxes are reaped — and it all comes back with one
-  # click. Billing is deliberately untouched; see Accounts.suspend_user/1.
-  @impl true
-  def handle_event("toggle_suspend", %{"id" => id}, socket) do
-    admin = socket.assigns.current_user
-
-    if id == admin.id do
-      {:noreply, put_flash(socket, :error, "You cannot suspend your own account")}
-    else
-      with_target_user(socket, id, fn user -> do_toggle_suspend(socket, admin, user) end)
-    end
-  end
-
-  # The support path for a deletion request that cannot go through the account
-  # page — a locked-out user, or one who asked by email. Same teardown as
-  # self-serve; only the actor recorded differs.
-  @impl true
-  def handle_event("delete_user", %{"id" => id}, socket) do
-    admin = socket.assigns.current_user
-
-    if id == admin.id do
-      # The UI hides the button, but an event can still be sent by hand. An
-      # admin deleting themselves mid-session is a support problem, not a
-      # feature.
-      {:noreply, put_flash(socket, :error, "Use your own account page to delete your account")}
-    else
-      with_target_user(socket, id, fn user -> do_delete_user(socket, admin, user) end)
-    end
-  end
-
-  # Non-bang lookup for every admin action targeting a user row (#401): the
-  # table is loaded at mount, so acting on a user deleted since (another
-  # admin tab, self-deletion) made get_user! raise and kill the LiveView.
-  # A comped account cannot change its own plan (`Billing.change_plan/3`
-  # refuses, correctly — an operator's decision is not the customer's to
-  # revise), so without this there is no door at all onto the entitlements of
-  # exactly the accounts an operator hand-manages.
-  @impl true
-  def handle_event("set_plan", %{"user_id" => id, "plan" => plan}, socket) do
-    with %Accounts.User{} = user <- Accounts.get_user(id),
-         {:ok, updated} <- Accounts.update_plan(user, plan, actor: "admin") do
-      Fountain.Audit.record_admin(%{
-        actor_user_id: socket.assigns.current_user.id,
-        target_user_id: user.id,
-        event_type: "admin.plan.changed",
-        metadata: %{"email" => user.email, "from" => user.plan, "to" => updated.plan}
-      })
-
-      {:noreply,
-       socket
-       |> assign_users()
-       |> put_flash(:info, "Plan set to #{Fountain.Plans.resolve(updated.plan).name}")}
-    else
-      nil ->
-        {:noreply, put_flash(socket, :error, "User not found")}
-
-      _ ->
-        {:noreply, put_flash(socket, :error, "Unknown plan")}
-    end
-  end
-
-  # Free teammate contacts, distinct from a comped account (which makes
-  # everything free). The re-sync is what carries the change to Stripe;
-  # without it the new allowance would not apply until the tenant next added
-  # or removed a contact.
-  @impl true
-  def handle_event("set_comped_contacts", %{"user_id" => id, "count" => raw}, socket) do
-    with {count, ""} <- Integer.parse(String.trim(raw)),
-         true <- count >= 0,
-         %Accounts.User{} = user <- Accounts.get_user(id),
-         {:ok, updated} <- Accounts.update_comped_contacts(user, count, actor: "admin") do
-      Fountain.Audit.record_admin(%{
-        actor_user_id: socket.assigns.current_user.id,
-        target_user_id: user.id,
-        event_type: "admin.comped_contacts.changed",
-        metadata: %{
-          "email" => user.email,
-          "from" => user.comped_contacts,
-          "to" => updated.comped_contacts
-        }
-      })
-
-      message =
-        case Billing.sync_contact_addon(updated.id) do
-          {:ok, :not_billed} -> "Comped contacts updated (this account is not billed for them)"
-          {:ok, billed} -> "Comped contacts updated — Stripe now bills for #{billed}"
-          {:error, _} -> "Saved, but Stripe could not be reached — re-sync from this page"
-        end
-
-      {:noreply, socket |> assign_users() |> put_flash(:info, message)}
-    else
-      nil -> {:noreply, put_flash(socket, :error, "User not found")}
-      _ -> {:noreply, put_flash(socket, :error, "Must be a whole number of 0 or more")}
-    end
-  end
-
-  defp with_target_user(socket, id, fun) do
-    case Accounts.get_user(id) do
-      nil ->
-        {:noreply,
-         socket
-         |> assign_users()
-         |> put_flash(:error, "User not found — the account may have been deleted")}
-
-      user ->
-        fun.(user)
-    end
-  end
-
-  defp do_toggle_admin(socket, user) do
-    new_role = if user.role == "admin", do: "user", else: "admin"
-
-    case Accounts.update_user_role(user, new_role, actor: "admin") do
-      {:ok, _} ->
-        Fountain.Audit.record_admin(%{
-          actor_user_id: socket.assigns.current_user.id,
-          target_user_id: user.id,
-          event_type:
-            if(new_role == "admin", do: "admin.role.granted", else: "admin.role.revoked"),
-          metadata: %{"email" => user.email, "from" => user.role, "to" => new_role}
-        })
-
-        {:noreply, socket |> assign_users() |> put_flash(:info, "Role updated")}
-
-      {:error, _} ->
-        {:noreply, put_flash(socket, :error, "Failed to update role")}
-    end
-  end
-
-  defp do_toggle_comp(socket, user) do
-    result =
-      if user.subscription_status == "comped",
-        do: {Billing.revoke_comp(user), "admin.comp.revoked"},
-        else: {Billing.comp_account(user), "admin.comp.granted"}
-
-    case result do
-      {{:ok, updated}, event_type} ->
-        Fountain.Audit.record_admin(%{
-          actor_user_id: socket.assigns.current_user.id,
-          target_user_id: user.id,
-          event_type: event_type,
-          metadata: %{
-            "email" => user.email,
-            "from" => user.subscription_status,
-            "to" => updated.subscription_status
-          }
-        })
-
-        {:noreply,
-         socket |> assign_users() |> put_flash(:info, "Now #{updated.subscription_status}")}
-
-      {{:error, _}, _} ->
-        {:noreply,
-         put_flash(socket, :error, "Could not change comp — Stripe cancellation failed")}
-    end
-  end
-
-  defp do_resync_stripe(socket, user) do
-    case Billing.resync_from_stripe(user) do
-      {:ok, %Accounts.User{} = updated} ->
-        Fountain.Audit.record_admin(%{
-          actor_user_id: socket.assigns.current_user.id,
-          target_user_id: user.id,
-          event_type: "admin.stripe.resynced",
-          metadata: %{
-            "email" => user.email,
-            "from" => user.subscription_status,
-            "to" => updated.subscription_status
-          }
-        })
-
-        {:noreply,
-         socket
-         |> assign_users()
-         |> put_flash(:info, "Resynced from Stripe — status #{updated.subscription_status}")}
-
-      {:ok, :sync_enqueued} ->
-        Fountain.Audit.record_admin(%{
-          actor_user_id: socket.assigns.current_user.id,
-          target_user_id: user.id,
-          event_type: "admin.stripe.resynced",
-          metadata: %{"email" => user.email, "outcome" => "customer_sync_enqueued"}
-        })
-
-        {:noreply,
-         put_flash(
-           socket,
-           :info,
-           "No subscription on record — customer sync enqueued, check back shortly"
-         )}
-
-      {:error, :comped} ->
-        {:noreply,
-         put_flash(socket, :error, "Account is comped — Stripe does not drive its status")}
-
-      {:error, _} ->
-        {:noreply, put_flash(socket, :error, "Could not resync — Stripe refused the read")}
-    end
-  end
-
-  defp do_toggle_suspend(socket, admin, user) do
-    if Accounts.suspended?(user) do
-      case Accounts.unsuspend_user(user, actor: "admin") do
-        {:ok, _} ->
-          Fountain.Audit.record_admin(%{
-            actor_user_id: admin.id,
-            target_user_id: user.id,
-            event_type: "admin.account.unsuspended",
-            metadata: %{"email" => user.email}
-          })
-
-          {:noreply, socket |> assign_users() |> put_flash(:info, "Suspension lifted")}
-
-        {:error, _} ->
-          {:noreply, put_flash(socket, :error, "Could not lift the suspension")}
-      end
-    else
-      case Accounts.suspend_user(user, actor: "admin") do
-        {:ok, _, reaped} ->
-          Fountain.Audit.record_admin(%{
-            actor_user_id: admin.id,
-            target_user_id: user.id,
-            event_type: "admin.account.suspended",
-            metadata: %{"email" => user.email, "sandboxes_reaped" => reaped}
-          })
-
-          {:noreply,
-           socket
-           |> assign_users()
-           |> assign(:sandboxes, Conversations._unsafe_list_sandboxes_admin())
-           |> put_flash(:info, "Suspended — #{reaped} sandbox(es) reaped")}
-
-        {:error, _} ->
-          {:noreply, put_flash(socket, :error, "Could not suspend the account")}
-      end
-    end
-  end
-
-  defp do_delete_user(socket, admin, user) do
-    case Deletion.delete_user(user,
-           actor: "admin:#{admin.id}",
-           request_ip: socket.assigns[:client_ip]
-         ) do
-      {:ok, _summary} ->
-        Fountain.Audit.record_admin(%{
-          actor_user_id: admin.id,
-          target_user_id: user.id,
-          event_type: "admin.account.deleted",
-          metadata: %{"email" => user.email}
-        })
-
-        {:noreply,
-         socket
-         |> assign_users()
-         |> assign(:sandboxes, Conversations._unsafe_list_sandboxes_admin())
-         |> put_flash(:info, "Deleted #{user.email}")}
-
-      {:error, {:stripe, _}} ->
-        {:noreply,
-         put_flash(
-           socket,
-           :error,
-           "Could not cancel #{user.email}'s subscription — nothing was deleted"
-         )}
-
-      {:error, _} ->
-        {:noreply, put_flash(socket, :error, "Deletion failed — nothing was deleted")}
-    end
-  end
-
-  # "" clears the override (the cap goes back to the plan's); anything else
-  # must be a whole number of zero or more.
-  defp parse_limit_override(raw) do
-    case String.trim(raw) do
-      "" ->
-        {:ok, nil}
-
-      trimmed ->
-        case Integer.parse(trimmed) do
-          {limit, ""} when limit >= 0 -> {:ok, limit}
-          _ -> :error
-        end
-    end
-  end
-
-  defp assign_users(socket) do
-    f = socket.assigns.filters
-    now = DateTime.utc_now()
-
-    # Upper bound one second ahead: the column is second-precision, so a bound
-    # of `now` loses its sub-second part in the cast and excludes events
-    # recorded within the current second.
-    usage =
-      Billing.usage_summaries(
-        DateTime.add(now, -@usage_window_days, :day),
-        DateTime.add(now, 1, :second)
-      )
-
-    no_usage = %{
-      conversations: 0,
-      turns: 0,
-      sandbox_minutes: 0.0,
-      sandbox_minutes_by_provider: %{},
-      turn_hours: 0.0
-    }
-
-    sandbox_counts = Quotas.active_sandbox_counts()
-    # One grouped query, not one per row — the same contract as the sandbox
-    # counts above. The page refreshes on a timer.
-    contact_counts = Fountain.Team.Comms.contact_counts()
-
-    %{users: users, total: total} =
-      Accounts.list_users_admin(
-        search: f.search,
-        status: f.status,
-        role: f.role,
-        verified: f.verified,
-        sort: f.sort,
-        dir: f.dir,
-        page: f.page,
-        per_page: @per_page
-      )
-
-    users =
-      Enum.map(users, fn u ->
-        u
-        |> Map.put(:active_sandboxes, Map.get(sandbox_counts, u.id, 0))
-        |> Map.put(:sandbox_limit, Fountain.Quotas.sandbox_limit_for(u))
-        |> Map.put(:plan, Fountain.Plans.resolve(u.plan))
-        |> Map.put(:contact_count, Map.get(contact_counts, u.id, 0))
-        |> Map.put(:usage, Map.get(usage, u.id, no_usage))
-      end)
-
-    socket
-    |> assign(:users, users)
-    |> assign(:total_users, total)
-  end
-
-  defp parse_filters(params) do
-    %{
-      search: params["q"] || "",
-      status: if(params["status"] in @statuses, do: params["status"]),
-      role: if(params["role"] in ~w(admin user), do: params["role"]),
-      verified: parse_verified(params["verified"]),
-      sort: if(params["sort"] in @sorts, do: params["sort"], else: "joined"),
-      dir: if(params["dir"] in ~w(asc desc), do: params["dir"], else: "desc"),
-      page: parse_page(params["page"])
-    }
-  end
-
-  defp parse_verified("yes"), do: true
-  defp parse_verified("no"), do: false
-  defp parse_verified(_), do: nil
-
-  defp parse_page(raw) do
-    case is_binary(raw) && Integer.parse(raw) do
-      {page, ""} when page > 0 -> page
-      _ -> 1
-    end
-  end
-
-  defp admin_path(f) do
-    params =
-      [
-        q: if(f.search != "", do: f.search),
-        status: f.status,
-        role: f.role,
-        verified:
-          case f.verified do
-            true -> "yes"
-            false -> "no"
-            nil -> nil
-          end,
-        sort: if(f.sort != "joined", do: f.sort),
-        dir: if(f.dir != "desc", do: f.dir),
-        page: if(f.page > 1, do: f.page)
-      ]
-      |> Enum.reject(fn {_k, v} -> is_nil(v) end)
-
-    ~p"/admin?#{params}"
-  end
-
-  defp sort_toggle(f, col) do
-    cond do
-      f.sort == col -> %{f | dir: flip(f.dir), page: 1}
-      col == "email" -> %{f | sort: col, dir: "asc", page: 1}
-      true -> %{f | sort: col, dir: "desc", page: 1}
-    end
-  end
-
-  defp flip("asc"), do: "desc"
-  defp flip(_), do: "asc"
-
-  defp page_count(total), do: max(div(total + @per_page - 1, @per_page), 1)
-
-  attr :label, :string, required: true
-  attr :col, :string, required: true
-  attr :filters, :map, required: true
-
-  defp sort_header(assigns) do
-    ~H"""
-    <.link patch={admin_path(sort_toggle(@filters, @col))} class="hover:text-zinc-900">
-      {@label}<span :if={@filters.sort == @col}> {if @filters.dir == "asc", do: "▲", else: "▼"}</span>
-    </.link>
-    """
-  end
-
-  @impl true
   def render(assigns) do
     ~H"""
-    <div class="space-y-8">
-      <div>
-        <h1 class="text-2xl font-semibold">Admin</h1>
-        <p class="text-sm text-zinc-500 mt-1">System overview. Refreshes every 10s.</p>
-      </div>
+    <div class="space-y-6">
+      <.admin_header title="Admin" current={:overview} billing_enabled={@billing_enabled}>
+        <:subtitle>System overview. Refreshes every 10s.</:subtitle>
+      </.admin_header>
+
+      <%!-- The one genuinely bad state that has no tile of its own, because a
+            count is not the point: which webhooks, and how long they have
+            been failing, is on the billing page. --%>
+      <.link
+        :if={@billing_enabled and @billing_overview.failed_events != []}
+        navigate={~p"/admin/billing"}
+        class="block bg-red-50 border border-red-200 rounded px-4 py-3 text-sm text-red-900 hover:border-red-400"
+      >
+        <span class="font-medium">
+          {length(@billing_overview.failed_events)} webhook {if length(
+                                                                  @billing_overview.failed_events
+                                                                ) == 1,
+                                                                do: "event is",
+                                                                else: "events are"} failing
+        </span>
+        — subscription state may lag Stripe. See Billing ↗
+      </.link>
 
       <section class="space-y-3">
         <h2 class="text-lg font-medium">Funnel</h2>
@@ -671,92 +120,11 @@ defmodule FountainWeb.AdminLive.Index do
         </div>
       </section>
 
-      <%!-- Not gated on @billing_enabled: a self-hosted instance still pays a
-            provider bill, and this is the only place that says whose sandboxes
-            it is for. --%>
       <section class="space-y-3">
-        <h2 class="text-lg font-medium">Sandbox spend by provider</h2>
-        <p class="text-xs text-zinc-500">
-          Active sandbox time {Calendar.strftime(@provider_spend.period_start, "%b %-d")} – now,
-          parked time excluded. Minutes on different providers cost different amounts — hold these
-          next to the invoice, they are not money.
-        </p>
-
-        <div :if={@provider_spend.by_provider == %{}} class="text-xs text-zinc-400">
-          No sandbox time this month.
-        </div>
-
-        <div :if={@provider_spend.by_provider != %{}} class="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <div
-            :for={{provider, totals} <- Enum.sort(@provider_spend.by_provider)}
-            class="bg-white rounded shadow border border-zinc-200 px-4 py-3"
-          >
-            <div class="text-xs text-zinc-500">{provider}</div>
-            <div class="text-2xl font-semibold tabular-nums">
-              {format_hours(SandboxUsage.hours(totals.active_seconds))}
-            </div>
-            <div class="text-xs text-zinc-500 tabular-nums">
-              {totals.sandboxes} sandboxes · {totals.users} {if totals.users == 1,
-                do: "tenant",
-                else: "tenants"}
-            </div>
-            <div
-              class="text-xs tabular-nums"
-              title="No turn in flight. A shorter idle timeout removes this."
-            >
-              <span class={
-                if idle_share(totals) >= 0.5, do: "text-amber-600 font-medium", else: "text-zinc-500"
-              }>
-                {format_hours(SandboxUsage.hours(totals.idle_seconds))} idle
-              </span>
-              <span class="text-zinc-400">({round(idle_share(totals) * 100)}%)</span>
-            </div>
-            <div :if={not SandboxUsage.platform_cost?(provider)} class="text-xs text-zinc-400">
-              tenant hardware, not our bill
-            </div>
-          </div>
-        </div>
-
-        <div class="text-xs text-zinc-500 tabular-nums">
-          Billable to us: {format_hours(SandboxUsage.hours(@provider_spend.platform_seconds))}
-          <span :if={@provider_spend.platform_seconds > 0} class="text-zinc-400">
-            · {format_hours(SandboxUsage.hours(@provider_spend.platform_idle_seconds))} of it idle,
-            which is what a shorter idle timeout would remove
-          </span>
-        </div>
-
-        <div
-          :if={@provider_spend.top_tenants != []}
-          class="bg-white rounded shadow border border-zinc-200"
-        >
-          <div class="px-4 py-2 text-xs font-medium text-zinc-500 border-b border-zinc-200">
-            Who it belongs to
-          </div>
-          <ul class="divide-y divide-zinc-100">
-            <li
-              :for={tenant <- @provider_spend.top_tenants}
-              class="px-4 py-2 text-xs flex items-center justify-between gap-3"
-            >
-              <span class="truncate">
-                {tenant.email || "(deleted account)"}
-                <span class="text-zinc-400">· {tenant.provider}</span>
-              </span>
-              <span class="tabular-nums whitespace-nowrap text-zinc-500">
-                {format_hours(SandboxUsage.hours(tenant.active_seconds))}
-                <span class="text-zinc-400">
-                  ({round(idle_share(tenant) * 100)}% idle)
-                </span>
-                · {tenant.sandboxes} sandboxes
-              </span>
-            </li>
-          </ul>
-        </div>
-      </section>
-
-      <section :if={@billing_enabled} class="space-y-3">
-        <h2 class="text-lg font-medium">Billing</h2>
-        <div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
+        <h2 class="text-lg font-medium">At a glance</h2>
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <.link
+            :if={@billing_enabled}
             navigate={~p"/admin/finance"}
             class="bg-white rounded shadow border border-zinc-200 px-4 py-3 hover:border-zinc-400"
           >
@@ -764,12 +132,12 @@ defmodule FountainWeb.AdminLive.Index do
             <div class="text-2xl font-semibold tabular-nums">
               {format_mrr(@billing_overview.mrr_cents)}
             </div>
-            <div class="text-xs text-zinc-500" title={mrr_split(@billing_overview.mrr_by_plan)}>
-              active subscriptions, per plan · finance ↗
-            </div>
+            <div class="text-xs text-zinc-500">active subscriptions · finance ↗</div>
           </.link>
+
           <.link
-            navigate={~p"/admin?status=trialing&sort=trial_end&dir=asc"}
+            :if={@billing_enabled}
+            navigate={Users.users_path(%{status: "trialing", sort: "trial_end", dir: "asc"})}
             class="bg-white rounded shadow border border-zinc-200 px-4 py-3 hover:border-zinc-400"
           >
             <div class="text-xs text-zinc-500">Trials ending in 7 days</div>
@@ -778,524 +146,47 @@ defmodule FountainWeb.AdminLive.Index do
             </div>
             <div class="text-xs text-zinc-500">soonest first ↗</div>
           </.link>
-          <div class="bg-white rounded shadow border border-zinc-200 px-4 py-3">
-            <div class="text-xs text-zinc-500">Conversions this month</div>
-            <div class="text-2xl font-semibold tabular-nums">
-              {@billing_overview.conversions_this_month}
-            </div>
-            <div class="text-xs text-zinc-500">completed checkouts</div>
-          </div>
-        </div>
-        <div class="flex flex-wrap gap-2">
+
           <.link
-            :for={status <- ~w(trialing active past_due canceled comped)}
-            navigate={~p"/admin?status=#{status}"}
-            class={[
-              "inline-flex items-center gap-1.5 rounded px-2 py-1 text-xs font-medium border hover:opacity-75",
-              subscription_status_color(status)
-            ]}
+            navigate={~p"/admin/sandboxes"}
+            class="bg-white rounded shadow border border-zinc-200 px-4 py-3 hover:border-zinc-400"
           >
-            {status}
-            <span class="tabular-nums">{Map.get(@billing_overview.status_counts, status, 0)}</span>
+            <div class="text-xs text-zinc-500">Active sandboxes</div>
+            <div class="text-2xl font-semibold tabular-nums">{@sandbox_count}</div>
+            <div class="text-xs text-zinc-500">running now ↗</div>
+          </.link>
+
+          <%!-- Hours, not money: minutes on different providers cost
+                different amounts, and only /admin/finance has the rate card
+                that turns one into the other. --%>
+          <.link
+            navigate={~p"/admin/sandboxes"}
+            class="bg-white rounded shadow border border-zinc-200 px-4 py-3 hover:border-zinc-400"
+          >
+            <div class="text-xs text-zinc-500">Billable sandbox time</div>
+            <div class="text-2xl font-semibold tabular-nums">
+              {format_hours(SandboxUsage.hours(@provider_spend.platform_seconds))}
+            </div>
+            <div class={[
+              "text-xs tabular-nums",
+              if(idle_share(platform_totals(@provider_spend)) >= 0.5,
+                do: "text-amber-600 font-medium",
+                else: "text-zinc-500"
+              )
+            ]}>
+              {format_hours(SandboxUsage.hours(@provider_spend.platform_idle_seconds))} idle ↗
+            </div>
           </.link>
         </div>
-        <div
-          :if={@billing_overview.failed_events != []}
-          class="bg-red-50 border border-red-200 rounded px-4 py-3 text-sm space-y-2"
-        >
-          <div class="font-medium text-red-900">
-            {length(@billing_overview.failed_events)} webhook {if length(
-                                                                    @billing_overview.failed_events
-                                                                  ) == 1,
-                                                                  do: "event is",
-                                                                  else: "events are"} failing — subscription state may lag Stripe
-          </div>
-          <table class="w-full text-sm bg-white rounded border border-red-100 font-mono">
-            <tbody>
-              <tr
-                :for={f <- @billing_overview.failed_events}
-                class="border-b border-red-50 last:border-0"
-              >
-                <td class="px-3 py-1.5 text-xs text-zinc-500 whitespace-nowrap">
-                  {format_ts(f.last_failed_at)}
-                </td>
-                <td class="px-3 py-1.5 text-xs">{f.event_type}</td>
-                <td class="px-3 py-1.5 text-xs text-zinc-400">{f.event_id}</td>
-                <td class="px-3 py-1.5 text-xs text-red-700" title={f.error}>
-                  ×{f.failure_count} · {String.slice(f.error, 0, 80)}
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        <div :if={@billing_overview.failed_events == []} class="text-xs text-zinc-400">
-          No unresolved webhook failures.
-        </div>
-        <details class="text-sm">
-          <summary class="cursor-pointer text-zinc-500 hover:text-zinc-900">
-            Recent webhook events ({length(@billing_overview.recent_events)})
-          </summary>
-          <table class="w-full mt-2 text-sm bg-white rounded shadow border border-zinc-200 font-mono">
-            <tbody>
-              <tr
-                :for={e <- @billing_overview.recent_events}
-                class="border-b border-zinc-100 last:border-0"
-              >
-                <td class="px-4 py-1.5 text-xs text-zinc-500">{format_ts(e.inserted_at)}</td>
-                <td class="px-4 py-1.5 text-xs">{e.type}</td>
-                <td class="px-4 py-1.5 text-xs text-zinc-400">{e.id}</td>
-              </tr>
-            </tbody>
-          </table>
-        </details>
-      </section>
-
-      <section class="space-y-3">
-        <div class="flex flex-wrap items-center justify-between gap-3">
-          <h2 class="text-lg font-medium">Users ({@total_users})</h2>
-          <form phx-change="filter" id="user-filters" class="flex flex-wrap items-center gap-2">
-            <input
-              type="text"
-              name="q"
-              value={@filters.search}
-              placeholder="Search email…"
-              phx-debounce="300"
-              autocomplete="off"
-              class="w-48 rounded border border-zinc-200 px-2 py-1 text-xs"
-            />
-            <select
-              :if={@billing_enabled}
-              name="status"
-              class="rounded border border-zinc-200 px-1 py-1 text-xs"
-            >
-              <option value="">any status</option>
-              <option
-                :for={s <- ~w(trialing active past_due canceled comped)}
-                value={s}
-                selected={@filters.status == s}
-              >
-                {s}
-              </option>
-            </select>
-            <select name="role" class="rounded border border-zinc-200 px-1 py-1 text-xs">
-              <option value="">any role</option>
-              <option value="admin" selected={@filters.role == "admin"}>admin</option>
-              <option value="user" selected={@filters.role == "user"}>user</option>
-            </select>
-            <select name="verified" class="rounded border border-zinc-200 px-1 py-1 text-xs">
-              <option value="">any verification</option>
-              <option value="yes" selected={@filters.verified == true}>verified</option>
-              <option value="no" selected={@filters.verified == false}>unverified</option>
-            </select>
-          </form>
-        </div>
-        <table class="w-full text-sm bg-white rounded shadow border border-zinc-200">
-          <thead class="text-left text-zinc-500 border-b border-zinc-200">
-            <tr>
-              <th class="px-4 py-2">
-                <.sort_header label="Email" col="email" filters={@filters} />
-              </th>
-              <th class="px-4 py-2">Role</th>
-              <th :if={@billing_enabled} class="px-4 py-2">
-                <.sort_header label="Billing" col="trial_end" filters={@filters} />
-              </th>
-              <th
-                :if={@billing_enabled}
-                class="px-4 py-2"
-                title="Plan, and teammate contacts this account is not charged for"
-              >
-                Plan
-              </th>
-              <th
-                class="px-4 py-2"
-                title="Last 30 days: conversations · turns · turn hours (the unit a plan includes)"
-              >
-                Usage 30d
-              </th>
-              <th class="px-4 py-2">Sandboxes</th>
-              <th class="px-4 py-2">Onboarding</th>
-              <th class="px-4 py-2">
-                <.sort_header label="Last active" col="last_activity" filters={@filters} />
-              </th>
-              <th class="px-4 py-2">
-                <.sort_header label="Joined" col="joined" filters={@filters} />
-              </th>
-              <th class="px-4 py-2"></th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr :if={@users == []}>
-              <td
-                colspan={if @billing_enabled, do: "10", else: "8"}
-                class="px-4 py-6 text-center text-sm text-zinc-500"
-              >
-                No users match.
-              </td>
-            </tr>
-            <tr :for={u <- @users} class="border-b border-zinc-100 last:border-0 hover:bg-zinc-50">
-              <td class="px-4 py-2 font-mono text-xs">
-                <.link navigate={~p"/admin/users/#{u.id}"} class="hover:underline">
-                  {u.email}
-                </.link>
-                <span
-                  :if={is_nil(u.email_verified_at)}
-                  class="ml-1 inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium border bg-zinc-100 text-zinc-500 border-zinc-200"
-                >
-                  unverified
-                </span>
-                <span
-                  :if={u.suspended_at}
-                  class="ml-1 inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium border bg-red-100 text-red-700 border-red-200"
-                  title={"since #{format_ts(u.suspended_at)}"}
-                >
-                  suspended
-                </span>
-              </td>
-              <td class="px-4 py-2">
-                <span class={[
-                  "inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium border",
-                  if(u.role == "admin",
-                    do: "bg-amber-100 text-amber-800 border-amber-200",
-                    else: "bg-zinc-100 text-zinc-600 border-zinc-200"
-                  )
-                ]}>
-                  {u.role}
-                </span>
-              </td>
-              <td :if={@billing_enabled} class="px-4 py-2">
-                <div class="space-y-1">
-                  <div class="flex items-center gap-2">
-                    <span class={[
-                      "inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium border",
-                      subscription_status_color(u.subscription_status)
-                    ]}>
-                      {u.subscription_status}
-                    </span>
-                    <span
-                      :if={u.subscription_status == "trialing" and u.trial_ends_at}
-                      class="text-xs text-zinc-500"
-                    >
-                      ends {format_date(u.trial_ends_at)}
-                    </span>
-                    <a
-                      :if={u.stripe_customer_id not in [nil, ""]}
-                      href={"https://dashboard.stripe.com/customers/#{u.stripe_customer_id}"}
-                      target="_blank"
-                      rel="noopener"
-                      class="text-xs text-zinc-400 hover:text-zinc-700 underline"
-                    >
-                      stripe ↗
-                    </a>
-                  </div>
-                  <div class="flex items-center gap-2">
-                    <form
-                      :if={u.subscription_status not in ["active", "comped"]}
-                      phx-submit="extend_trial"
-                      id={"extend-trial-#{u.id}"}
-                      class="flex items-center gap-1"
-                    >
-                      <input type="hidden" name="user_id" value={u.id} />
-                      <input
-                        type="number"
-                        name="days"
-                        min="1"
-                        value="14"
-                        class="w-12 rounded border border-zinc-200 px-1 py-0.5 text-xs"
-                      />
-                      <button class="text-xs text-zinc-500 hover:text-zinc-900 underline">
-                        extend trial
-                      </button>
-                    </form>
-                    <button
-                      phx-click="toggle_comp"
-                      phx-value-id={u.id}
-                      data-confirm={
-                        if u.subscription_status == "comped",
-                          do: "Revoke #{u.email}'s comp? They become canceled and must subscribe.",
-                          else:
-                            "Comp #{u.email}? Free access until revoked. Any Stripe subscription is cancelled."
-                      }
-                      class="text-xs text-zinc-500 hover:text-zinc-900 underline"
-                    >
-                      {if u.subscription_status == "comped", do: "revoke comp", else: "comp"}
-                    </button>
-                    <button
-                      :if={u.subscription_status != "comped"}
-                      phx-click="resync_stripe"
-                      phx-value-id={u.id}
-                      title="Re-read subscription state from Stripe — repairs webhook drift"
-                      class="text-xs text-zinc-500 hover:text-zinc-900 underline"
-                    >
-                      resync
-                    </button>
-                  </div>
-                </div>
-              </td>
-              <%!-- Plan and the free-contact allowance. Both are operator
-                    levers a customer cannot reach: change_plan/3 refuses for a
-                    comped account, and comped_contacts has no self-serve
-                    surface at all. --%>
-              <td :if={@billing_enabled} class="px-4 py-2">
-                <div class="space-y-1">
-                  <form phx-change="set_plan" id={"plan-#{u.id}"}>
-                    <input type="hidden" name="user_id" value={u.id} />
-                    <select
-                      name="plan"
-                      class="rounded border border-zinc-200 px-1 py-0.5 text-xs"
-                      title={"#{u.plan.concurrent_sandboxes} concurrent · #{u.plan.team_contacts} contacts"}
-                    >
-                      <%!-- Storable slugs only: `trial` is derived from
-                            subscription status, so offering it here would
-                            let an operator pin an account to a plan the
-                            column cannot hold. --%>
-                      <option
-                        :for={p <- Enum.map(Fountain.Plans.slugs(), &Fountain.Plans.fetch!/1)}
-                        value={p.slug}
-                        selected={p.slug == u.plan.slug}
-                      >
-                        {p.name}{if not p.public?, do: " (closed)"}
-                      </option>
-                    </select>
-                  </form>
-                  <form
-                    phx-submit="set_comped_contacts"
-                    id={"comped-contacts-#{u.id}"}
-                    class="flex items-center gap-1"
-                  >
-                    <input type="hidden" name="user_id" value={u.id} />
-                    <input
-                      type="number"
-                      name="count"
-                      min="0"
-                      value={u.comped_contacts}
-                      title="Teammate contacts this account is not charged for"
-                      class="w-12 rounded border border-zinc-200 px-1 py-0.5 text-xs"
-                    />
-                    <button class="text-xs text-zinc-500 hover:text-zinc-900 underline">
-                      free
-                    </button>
-                    <span :if={u.contact_count > 0} class="text-xs text-zinc-400 tabular-nums">
-                      of {u.contact_count}
-                    </span>
-                  </form>
-                </div>
-              </td>
-              <%!-- Turn hours, not sandbox minutes. Sandbox time is what
-                    Fountain is billed and it is on /admin/finance; what a
-                    tenant *buys* is turn hours (Fountain.Plans), so that is
-                    the number to read beside their plan. The tooltip keeps
-                    the sandbox side one hover away. --%>
-              <td
-                class="px-4 py-2 text-xs text-zinc-500 tabular-nums whitespace-nowrap"
-                title={usage_tooltip(u.usage)}
-              >
-                {u.usage.conversations}c · {u.usage.turns}t · {format_hours(u.usage.turn_hours)}
-              </td>
-              <td class="px-4 py-2">
-                <form
-                  phx-submit="set_sandbox_limit"
-                  id={"sandbox-limit-#{u.id}"}
-                  class="flex items-center gap-1"
-                >
-                  <input type="hidden" name="user_id" value={u.id} />
-                  <span class={[
-                    "text-xs tabular-nums",
-                    if(u.active_sandboxes >= u.sandbox_limit,
-                      do: "text-red-600 font-medium",
-                      else: "text-zinc-500"
-                    )
-                  ]}>
-                    {u.active_sandboxes} / {u.sandbox_limit}
-                  </span>
-                  <%!-- Empty means "no override": the cap is the plan's, shown
-                        as the placeholder so an admin can see what clearing
-                        the box would leave behind. --%>
-                  <input
-                    type="number"
-                    name="limit"
-                    min="0"
-                    value={u.sandbox_limit_override}
-                    placeholder={u.plan.concurrent_sandboxes}
-                    title={"#{u.plan.name} plan: #{u.plan.concurrent_sandboxes} concurrent"}
-                    class="w-14 rounded border border-zinc-200 px-1 py-0.5 text-xs"
-                  />
-                  <button class="text-xs text-zinc-500 hover:text-zinc-900 underline">set</button>
-                </form>
-              </td>
-              <td class="px-4 py-2 text-zinc-500 text-xs">
-                {u.onboarding_state}
-                <span :if={u.onboarding_completed_at} class="text-zinc-400">
-                  · {format_date(u.onboarding_completed_at)}
-                </span>
-              </td>
-              <td class="px-4 py-2 text-zinc-500 text-xs">
-                {if u.last_activity_at, do: format_date(u.last_activity_at), else: "—"}
-              </td>
-              <td class="px-4 py-2 text-zinc-500 text-xs">{format_date(u.inserted_at)}</td>
-              <td class="px-4 py-2 text-right space-x-3">
-                <button
-                  phx-click="toggle_admin"
-                  phx-value-id={u.id}
-                  data-confirm={"Toggle admin for #{u.email}?"}
-                  class="text-xs text-zinc-600 hover:text-zinc-900 underline"
-                >
-                  {if u.role == "admin", do: "Remove admin", else: "Make admin"}
-                </button>
-                <button
-                  :if={u.id != @current_user.id}
-                  phx-click="toggle_suspend"
-                  phx-value-id={u.id}
-                  data-confirm={
-                    if u.suspended_at,
-                      do: "Lift #{u.email}'s suspension? They can log in again immediately.",
-                      else:
-                        "Suspend #{u.email}? Sessions and API keys stop working and running conversations are terminated. Reversible; billing is not touched."
-                  }
-                  class="text-xs text-amber-700 hover:text-amber-900 underline"
-                >
-                  {if u.suspended_at, do: "Unsuspend", else: "Suspend"}
-                </button>
-                <button
-                  :if={u.id != @current_user.id}
-                  phx-click="delete_user"
-                  phx-value-id={u.id}
-                  data-confirm={"Permanently delete #{u.email}? This cancels their subscription, destroys their sandboxes and erases their data. It cannot be undone."}
-                  class="text-xs text-red-600 hover:text-red-800 underline"
-                >
-                  Delete
-                </button>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-        <div
-          :if={page_count(@total_users) > 1 or @filters.page > 1}
-          class="flex items-center justify-between text-xs text-zinc-500"
-        >
-          <span>Page {@filters.page} of {page_count(@total_users)}</span>
-          <div class="space-x-3">
-            <.link
-              :if={@filters.page > 1}
-              patch={admin_path(%{@filters | page: @filters.page - 1})}
-              class="underline"
-            >
-              ← prev
-            </.link>
-            <.link
-              :if={@filters.page < page_count(@total_users)}
-              patch={admin_path(%{@filters | page: @filters.page + 1})}
-              class="underline"
-            >
-              next →
-            </.link>
-          </div>
-        </div>
-      </section>
-
-      <section class="space-y-3">
-        <h2 class="text-lg font-medium">Active sandboxes ({length(@sandboxes)})</h2>
-
-        <div :if={@sandboxes == []} class="text-sm text-zinc-500">No active sandboxes.</div>
-
-        <table
-          :if={@sandboxes != []}
-          class="w-full text-sm bg-white rounded shadow border border-zinc-200 font-mono"
-        >
-          <thead class="text-left text-zinc-500 border-b border-zinc-200">
-            <tr>
-              <th class="px-4 py-2">ID</th>
-              <th class="px-4 py-2">Owner</th>
-              <th class="px-4 py-2">Status</th>
-              <th class="px-4 py-2">Conversations</th>
-              <th class="px-4 py-2">Started</th>
-              <th class="px-4 py-2"></th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr :for={s <- @sandboxes} class="border-b border-zinc-100 last:border-0">
-              <td class="px-4 py-2 text-xs">{String.slice(s.id, 0, 8)}</td>
-              <td class="px-4 py-2 text-xs">
-                <.link
-                  :if={s.user}
-                  navigate={~p"/admin/users/#{s.user.id}"}
-                  class="hover:underline"
-                >
-                  {s.user.email}
-                </.link>
-                <span :if={is_nil(s.user)} class="text-zinc-400">—</span>
-              </td>
-              <td class="px-4 py-2">
-                <span class={[
-                  "inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium border",
-                  sandbox_status_color(s.status)
-                ]}>
-                  {s.status}
-                </span>
-              </td>
-              <td class="px-4 py-2 text-xs text-zinc-500">
-                <span :if={s.conversations == []}>—</span>
-                <span :if={s.conversations != []} class="space-x-2">
-                  <.link
-                    :for={c <- s.conversations}
-                    navigate={~p"/admin/conversations/#{c.id}"}
-                    class="hover:underline"
-                  >
-                    {String.slice(c.id, 0, 8)}
-                  </.link>
-                </span>
-              </td>
-              <td class="px-4 py-2 text-xs text-zinc-500">{format_ts(s.inserted_at)}</td>
-              <td class="px-4 py-2 text-right">
-                <button
-                  phx-click="reap_sandbox"
-                  phx-value-id={s.id}
-                  data-confirm={"Reap sandbox #{String.slice(s.id, 0, 8)}? Live conversations are terminated; idle ones stay resumable on a fresh sandbox."}
-                  class="text-xs text-red-600 hover:text-red-800 underline"
-                >
-                  Reap
-                </button>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </section>
-      <section class="space-y-3">
-        <h2 class="text-lg font-medium">Recent admin actions</h2>
-        <p class="text-sm text-zinc-500">
-          Role grants and quota changes. Previously unrecorded — the <code>admin_audit_events</code>
-          table existed with no writer.
-        </p>
-
-        <div :if={@admin_events == []} class="text-sm text-zinc-500">Nothing yet.</div>
-
-        <table
-          :if={@admin_events != []}
-          class="w-full text-sm bg-white rounded shadow border border-zinc-200"
-        >
-          <thead class="text-left text-zinc-500 border-b border-zinc-200">
-            <tr>
-              <th class="px-4 py-2">When</th>
-              <th class="px-4 py-2">Action</th>
-              <th class="px-4 py-2">Target</th>
-              <th class="px-4 py-2">Detail</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr :for={e <- @admin_events} class="border-b border-zinc-100 last:border-0">
-              <td class="px-4 py-2 text-xs text-zinc-500">{format_ts(e.inserted_at)}</td>
-              <td class="px-4 py-2 font-mono text-xs">{e.event_type}</td>
-              <td class="px-4 py-2 font-mono text-xs">{e.metadata["email"]}</td>
-              <td class="px-4 py-2 text-xs text-zinc-500">
-                <span :if={e.metadata["from"] != nil}>
-                  {e.metadata["from"]} &rarr; {e.metadata["to"]}
-                </span>
-              </td>
-            </tr>
-          </tbody>
-        </table>
       </section>
     </div>
     """
+  end
+
+  # `idle_share/1` reads the same shape a per-provider row has, so the
+  # platform totals are put into that shape rather than the ratio recomputed.
+  defp platform_totals(spend) do
+    %{active_seconds: spend.platform_seconds, idle_seconds: spend.platform_idle_seconds}
   end
 
   defp stage_label(:registered), do: "Registered"
@@ -1313,36 +204,4 @@ defmodule FountainWeb.AdminLive.Index do
     remainder = rem(cents, 100)
     "$#{dollars}.#{String.pad_leading(to_string(remainder), 2, "0")}/mo"
   end
-
-  # Share of a provider's paid time with no turn in flight. Zero active time
-  # is 0.0 rather than a division by zero — nothing running is not "all idle".
-  defp idle_share(%{active_seconds: 0}), do: 0.0
-  defp idle_share(%{active_seconds: active, idle_seconds: idle}), do: idle / active
-
-  # The sandbox side of the usage cell, which the cell itself no longer shows:
-  # total active time and which provider it ran on. Nil when the tenant had no
-  # sandbox time, so the attribute renders as nothing rather than as an empty
-  # tooltip.
-  defp usage_tooltip(%{sandbox_minutes_by_provider: by_provider}) when map_size(by_provider) == 0,
-    do: nil
-
-  defp usage_tooltip(usage) do
-    split =
-      usage.sandbox_minutes_by_provider
-      |> Enum.sort()
-      |> Enum.map_join(" · ", fn {provider, minutes} -> "#{provider} #{round(minutes)}m" end)
-
-    "#{round(usage.sandbox_minutes)}m sandbox time (#{split}) — what we are billed, on /admin/finance"
-  end
-
-  # Every active plan behind the MRR tile, for its tooltip.
-  defp mrr_split([]), do: nil
-
-  defp mrr_split(by_plan) do
-    Enum.map_join(by_plan, " · ", fn line -> "#{line.plan.name} ×#{line.accounts}" end)
-  end
-
-  defp format_hours(h) when h < 1, do: "#{round(h * 60)}m"
-  defp format_hours(h) when h < 48, do: "#{Float.round(h * 1.0, 1)}h"
-  defp format_hours(h), do: "#{Float.round(h / 24, 1)}d"
 end
