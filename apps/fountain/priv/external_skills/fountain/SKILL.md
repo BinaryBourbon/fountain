@@ -302,7 +302,8 @@ Errors:
 
 ## Further reading
 
-- Quickstart: `$FOUNTAIN_BASE_URL/help/quickstart`
+- Guided tour, end to end: `$FOUNTAIN_BASE_URL/docs/tour`
+- API reference: `$FOUNTAIN_BASE_URL/docs/api`
 - Full doc bundle for LLMs: `$FOUNTAIN_BASE_URL/llms-full.txt`
 - OpenAPI spec: `$FOUNTAIN_BASE_URL/api/openapi.json`
 - Source: https://github.com/BinaryBourbon/fountain
