@@ -16,6 +16,17 @@ upgrade, is in
 
 ## [Unreleased]
 
+### Added
+
+- **Agent config versioning with diff and rollback.** Every config change
+  writes an immutable version (version 1 backfilled for existing agents);
+  the console's History page (`/agents/:id/versions`) diffs each version
+  against its predecessor and offers one-click rollback, applied as a new
+  edit through the same validation as any other — history is never
+  rewritten. Conversations record the agent version they launched under
+  (provenance only; the live agent row still drives the sandbox), and
+  version history joins the account export. ADR 0029.
+
 ### Changed
 
 - **Plan concurrency caps retuned to 2 / 5 / 10.** Solo now allows 2

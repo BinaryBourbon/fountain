@@ -142,7 +142,21 @@ defmodule Fountain.Agents do
                  Repo.insert(version_changeset(updated, next_version_number(updated.id))) do
             updated
           else
-            {:error, invalid} -> Repo.rollback(invalid)
+            # A concurrent edit racing the [agent_id, version] unique index
+            # fails on the *version* changeset — but every caller is holding
+            # the agent form and expects an Agent changeset back, so keep the
+            # contract and say what happened.
+            {:error, %Ecto.Changeset{data: %AgentVersion{}}} ->
+              Repo.rollback(
+                Ecto.Changeset.add_error(
+                  changeset,
+                  :base,
+                  "the agent was updated by someone else at the same moment — retry"
+                )
+              )
+
+            {:error, invalid} ->
+              Repo.rollback(invalid)
           end
         end)
       else

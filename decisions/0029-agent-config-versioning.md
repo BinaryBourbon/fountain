@@ -1,14 +1,14 @@
 ---
 type: ADR
 title: "Agent config versioning: full-value snapshots in a tenant table, rollback as a new edit, provenance on conversations"
-description: "agent_versions stores the complete config per change — a deliberate exception to the audit trail's values-never-recorded rule — with rollback re-applied through update_agent (history is append-only) and conversations stamped with the version they launched under; the version does not drive the sandbox, the live agent row still does."
+description: "agent_versions stores the complete config per change in a tenant-owned table with tenant-data lifecycle (cascade, deletion, export) — outside ADR 0013's trail, which keeps recording only which fields moved — with rollback re-applied through update_agent (history is append-only, never pruned) and conversations stamped with the version they launched under; the version does not drive the sandbox, the live agent row still does."
 tags: [agents, conversations, audit, data-model]
 status: stable
 adr: "0029"
 adr_status: "Accepted"
 date: 2026-08-23
-generated: { by: human:mdonigian, at: 2026-08-23T19:30:00-04:00 }
-verified: { by: human:mdonigian, at: 2026-08-23T19:30:00-04:00 }
+generated: { by: human:mdonigian, at: 2026-08-23T22:30:00-04:00 }
+verified: { by: human:mdonigian, at: 2026-08-23T22:30:00-04:00 }
 ---
 
 # 0029 — Agent config versioning: full-value snapshots in a tenant table, rollback as a new edit, provenance on conversations
@@ -61,12 +61,15 @@ version 1 for every pre-existing agent from its live row, so every agent has
 at least one version. The audit call stays outside the transaction, per
 ADR 0013.
 
-**Storing full values here is a deliberate exception to the audit trail's
-rule, not an erosion of it.** The trail still records only which fields moved.
-`agent_versions` is tenant data in a tenant table: it cascades with the agent,
-leaves with account deletion, and joins the account export. The two mechanisms
-answer different questions — the trail answers *who changed what, when*; a
-version answers *what the config was*.
+**Full values live here because this is a tenant table, which ADR 0013 does
+not govern.** 0013 constrains the *audit trail* — the trail still records
+only which fields moved, and nothing about that changes. What is decided
+here is the design that sits beside it: `agent_versions` is tenant data with
+tenant-data lifecycle — it cascades with the agent, leaves with account
+deletion, and joins the account export. The two mechanisms answer different
+questions — the trail answers *who changed what, when*; a version answers
+*what the config was* — and future work (a versions API, running a pinned
+version) leans on this table, not the trail.
 
 **Rollback is a new edit, never a rewrite.** `rollback_agent/3` feeds the
 stored config back through `update_agent/3`: the config is re-validated on the
@@ -98,6 +101,12 @@ edit, not per use.
   `[agent_id, version]` turns a concurrent-edit race into a changeset error.
 - The export grows: each agent carries its full version history, values
   included.
+- **Known gap (#1052):** `agents.environment_id` nilifies when its
+  environment is deleted, changing the live config with no version row — the
+  next edit's diff then attributes `environment_id → nil` to the wrong
+  change. Rollback to such a version is correctly refused by re-validation,
+  so nothing breaks; closing the gap (a version written from environment
+  deletion) is tracked in that issue.
 - Making a conversation actually *run* its pinned version remains unbuilt and
   is out of scope here; it would mean replacing `ConversationServer`'s live
   agent reads with version-aware ones. Nothing in this ADR should be read as
@@ -106,7 +115,7 @@ edit, not per use.
 ## Alternatives considered
 
 - **Values in audit metadata** — breaks ADR 0013's rule for every reader of
-  the trail instead of scoping the exception to one table with tenant-data
+  the trail instead of keeping values in one tenant table with tenant-data
   lifecycle; retention would also fight audit's own windows.
 - **Rollback as a direct row write (bypassing the changeset)** — restores
   configs the validators now refuse; the sandbox-provider and

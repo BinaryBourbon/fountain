@@ -20,9 +20,9 @@ defmodule FountainWeb.AgentsLive.Versions do
   @impl true
   def handle_event("rollback", %{"version" => version}, socket) do
     %{agent: agent, user_id: user_id} = socket.assigns
-    version = String.to_integer(version)
 
-    with %_{} = target <- Agents.get_agent_version(agent.id, version, user_id),
+    with {version, ""} <- Integer.parse(version),
+         %_{} = target <- Agents.get_agent_version(agent.id, version, user_id),
          {:ok, agent} <-
            Agents.rollback_agent(agent, target, FountainWeb.Audited.attribution(socket)) do
       {:noreply,
@@ -31,14 +31,16 @@ defmodule FountainWeb.AgentsLive.Versions do
        |> load_versions()
        |> put_flash(:info, "Rolled back to version #{version}")}
     else
-      nil ->
-        {:noreply, put_flash(socket, :error, "Version not found")}
-
       {:error, %Ecto.Changeset{} = cs} ->
         # The old config is re-validated on the way back in, so a snapshot
         # that references since-removed infrastructure is refused, not
         # silently restored.
         {:noreply, put_flash(socket, :error, "Cannot roll back: #{rollback_error(cs)}")}
+
+      # Integer.parse :error / trailing garbage, or no such version (nil).
+      # Same user-facing answer either way.
+      _ ->
+        {:noreply, put_flash(socket, :error, "Version not found")}
     end
   end
 
@@ -47,13 +49,7 @@ defmodule FountainWeb.AgentsLive.Versions do
 
     # Each version is paired with its predecessor so the template renders a
     # per-version diff without recomputing neighbours.
-    diffed =
-      versions
-      |> Enum.map(& &1)
-      |> then(fn vs ->
-        previous = Enum.drop(vs, 1) ++ [nil]
-        Enum.zip(vs, previous)
-      end)
+    diffed = Enum.zip(versions, Enum.drop(versions, 1) ++ [nil])
 
     assign(socket, :versions, diffed)
   end

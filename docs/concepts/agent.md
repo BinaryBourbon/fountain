@@ -123,6 +123,21 @@ on each query.
 the process that an editor spawns. Read
 [`fountain acp`](../integrations/acp.md).
 
+## Config history and rollback
+
+Fountain writes a version each time an agent's config changes. Open the
+History page from the agent's edit page to see them. Each version shows what
+changed, field by field, against the version before it.
+
+A rollback applies an old version's config as a new edit. Fountain does not
+rewrite history: the rollback itself becomes the newest version. Fountain
+checks the old config again on the way back in, and refuses a version that
+names removed infrastructure with an error.
+
+Each conversation records the version it launched under. The live agent
+still drives the sandbox; the recorded version says what the config was at
+launch.
+
 ## Where to go next
 
 - [About conversations](conversation.md), which run an Agent.
