@@ -237,6 +237,28 @@ That is the shape we already run, with the protocol swapped in underneath it:
 > replayed lines are de-duplicated by content, not by the byte count the
 > legacy path still uses.
 
+> **Addendum, 2026-08-22 — the turn-scoped connection deletes a permission
+> grant, and that is a real cost this ADR did not price.** Gate 3 (#939/#940)
+> gave a human the `ask` verdict, and agents answer it with options that mean
+> "and stop asking me". Where the agent keeps that grant **in its own process**,
+> closing the connection at turn end throws it away. Measured on codex
+> 2026-08-22: "Allow for Session" (`_meta.codex.decision: acceptForSession`)
+> suppresses the second identical call inside one turn and is gone by the next
+> one, while its `accept_execpolicy_amendment` option, which codex writes to
+> disk, survives. claude's grants are written to
+> `.claude/settings.local.json` and so are unaffected by connection lifetime —
+> they have a separate upstream defect, anthropics/claude-code#88919, which is
+> not this ADR's to answer.
+>
+> This does not overturn the rule. Turn-scoped is still what keeps protocol
+> state from becoming a reason to hold a sandbox open, and sandbox-scoped
+> remains the permitted optimisation rather than a correction. But the cost
+> column now has an entry beyond latency: **a runtime that holds consent in
+> memory cannot honour "always" under this design**, and no client can paper
+> over it, because the option carries no metadata saying so. #817 asks for the
+> same widening from the other direction — Claude Code's background tasks die
+> at the same boundary — and #996 is where the two are being weighed together.
+
 **The rule that keeps this from eroding one optimisation at a time: no ACP
 state may become a reason to keep a sandbox alive.** A connection may be
 scoped to the turn (v1) or, if per-turn `initialize` proves too slow, to the
