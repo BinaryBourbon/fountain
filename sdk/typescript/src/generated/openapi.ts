@@ -1823,7 +1823,7 @@ export interface paths {
         };
         /**
          * Subscription status and current-period usage
-         * @description Trial and period dates alongside the usage numbers the billing page shows. On an instance with billing disabled this is a 404 carrying `billing: "disabled"`, mirroring the UI, which redirects away from the billing page entirely.
+         * @description Trial and period dates alongside the usage numbers the billing page shows, measured over the period Stripe invoices where one is known and the calendar month otherwise (`period.source` says which). On an instance with billing disabled this is a 404 carrying `billing: "disabled"`, mirroring the UI, which redirects away from the billing page entirely.
          */
         get: operations["FountainWeb.BillingApiController.show"];
         put?: never;
@@ -3601,11 +3601,21 @@ export interface components {
                 cancel_at_period_end?: boolean;
                 /** Format: date-time */
                 current_period_end?: string | null;
+                /**
+                 * Format: date-time
+                 * @description Start of the period Stripe is invoicing. Null for a comped account, a deployment without Stripe, and any subscription that has not sent a webhook since this field existed.
+                 */
+                current_period_start?: string | null;
                 has_stripe_customer?: boolean;
-                /** @description The window the usage numbers cover (current calendar month). */
+                /** @description The window the usage numbers cover: the period Stripe is invoicing, or the current calendar month when there is no such period. */
                 period?: {
                     /** Format: date-time */
                     end?: string;
+                    /**
+                     * @description `calendar_month` means these numbers do not line up with an invoice — the account is comped, self-hosted, or has not reported a period yet.
+                     * @enum {string}
+                     */
+                    source?: "subscription" | "calendar_month";
                     /** Format: date-time */
                     start?: string;
                 };
@@ -3613,6 +3623,8 @@ export interface components {
                 plan?: {
                     /** @description The plan's concurrency cap. */
                     concurrent_sandboxes?: number;
+                    /** @description Turn hours the plan includes per billing period. Reported only: no request is refused for exceeding it. */
+                    included_turn_hours?: number;
                     monthly_cents?: number;
                     name?: string;
                     /** @description The cap actually enforced for this account. Differs from concurrent_sandboxes when an operator has set an override. */
@@ -3634,6 +3646,12 @@ export interface components {
                     sandbox_minutes_by_provider?: {
                         [key: string]: number;
                     };
+                    /** @description Hours with a prompt in flight, on providers Fountain pays for. The unit included_turn_hours is denominated in. An idle sandbox spends none of these; sandbox_minutes counts it. */
+                    turn_hours?: number;
+                    /** @description The plan's allowance, repeated here beside what was used. */
+                    turn_hours_included?: number;
+                    /** @description Clamped at zero; an account over its allowance is not owed hours. */
+                    turn_hours_remaining?: number;
                     turns?: number;
                 };
             };
