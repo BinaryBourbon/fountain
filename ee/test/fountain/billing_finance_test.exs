@@ -135,6 +135,15 @@ defmodule Fountain.Billing.FinanceTest do
       assert %{inbox_month: nil, number_month: nil} = Finance.rate_card()
     end
 
+    test "a fractional rate survives, because per-message rates are fractional" do
+      # AgentMail bills about $0.002 an email. Read as whole cents that is
+      # zero, and every deployment that priced email would report it as free.
+      rate_card(agentmail_message_cents: 0.2, provider_hourly_cents: %{"sprites" => 10.76})
+
+      assert %{email: 0.2, providers: %{"sprites" => 10.76}} = Finance.rate_card()
+      assert Finance.priced?()
+    end
+
     test "the default basis is active, and only an exact \"turn\" changes it" do
       assert Finance.default_basis() == :active
 
@@ -297,6 +306,30 @@ defmodule Fountain.Billing.FinanceTest do
       # Nothing bought is a known price, not a missing one — otherwise every
       # tenant on an unpriced-contacts deployment would have a nil cost.
       assert row.contact_cost_cents == 0
+    end
+
+    test "sub-cent email rates accumulate instead of rounding away" do
+      # 400 emails at 0.2c is $0.80, not $0. Rounding per channel first would
+      # make the email column zero however much mail an agent sent.
+      rate_card(agentmail_message_cents: 0.2, agentphone_message_cents: 2)
+      user = subscriber("solo")
+
+      message(user, "comms_email_sent", 400)
+      message(user, "comms_sms_sent", 10)
+
+      row = row_for(summary(), user)
+
+      # 400 x 0.2c = 80c, plus 10 texts at 2c = 20c.
+      assert row.message_cost_cents == 100
+    end
+
+    test "a fractional provider rate prices the hours it should" do
+      rate_card(provider_hourly_cents: %{"sprites" => 10.76})
+      user = subscriber("solo")
+      ran(user, "sprites", 100, 100)
+
+      # 100 hours at 10.76c, whichever basis — they are equal here.
+      assert row_for(summary(), user).sandbox_cost_cents == 1076
     end
 
     test "messages are counted each way and priced apart" do

@@ -16,6 +16,36 @@ upgrade, is in
 
 ## [Unreleased]
 
+
+### Added
+
+- **The finance panel's rate card is filled in, and rates may be fractional.**
+  `/admin/finance` shipped reporting hours with no money in them until an
+  operator supplied prices (#1025). The published rates are now set:
+  `PROVIDER_COST_BASIS=turn`, `PROVIDER_HOURLY_CENTS`, and the AgentMail and
+  AgentPhone per-unit and per-message rates.
+
+  **The basis is the load-bearing choice.** Sprites sleeps a sandbox after 30
+  seconds of inactivity and bills "just the CPU hours, RAM hours and GB-hours
+  of storage you use while the Sprite is awake", so the billable unit is close
+  to turn time and not the sandbox's wall-clock lifetime.
+  `SandboxUsage.active_seconds` reports the latter — it subtracts only the
+  explicit suspend/resume of #665 and knows nothing about the provider's own
+  auto-sleep. Over one month those two read 1,908h against 16,659h, so the
+  basis is worth 9x and the rate is worth rather less.
+
+  Rates are fractional now because per-message rates are. AgentMail bills
+  about $0.002 an email; as a whole number of cents that is zero, and the
+  panel would have reported email as free however much of it an agent sent.
+  Each cost component still rounds to whole cents exactly once, at the end,
+  so 400 emails at 0.2c is 80c rather than 400 roundings of nothing.
+
+  One rate card prices every provider on one basis, which is right only while
+  the providers behave alike. `sprites` (asleep after 30s) and `e2b` (billed
+  until paused) do not, and a deployment with real traffic on both wants a
+  per-provider basis. It does not bite today: every hour on the bill is a
+  Sprites hour.
+
 ### Added
 
 - **The public pages report visitors.** Fountain's analytics were server-side

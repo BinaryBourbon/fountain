@@ -48,6 +48,18 @@ defmodule Fountain.Billing.Finance do
   | `:agentmail_message_cents` | `AGENTMAIL_MESSAGE_CENTS` | cents per email sent |
   | `:agentphone_message_cents` | `AGENTPHONE_MESSAGE_CENTS` | cents per SMS, each way |
 
+  **Every rate may be fractional.** Per-message rates in particular usually
+  are — AgentMail bills roughly $0.002 an email, which as a whole number of
+  cents is zero. Rates stay fractional through the arithmetic and each cost
+  component rounds to whole cents exactly once, at the end.
+
+  One rate card covers every provider, and it prices them all on the same
+  basis. That is right while the providers Fountain actually bills for behave
+  the same way, and `sprites` (asleep after 30s idle, billed awake) and `e2b`
+  (billed until paused) do not. Today it does not bite — every hour on the
+  bill is a Sprites hour — but a deployment with real traffic on both wants a
+  per-provider basis, not this.
+
   `nil` propagates: a tenant with sandbox hours on a provider that has no rate
   has `cost_cents: nil`, not a cost that silently omits them, and their margin
   is `nil` too. `priced?/0` says whether the card covers anything at all, so a
@@ -209,9 +221,13 @@ defmodule Fountain.Billing.Finance do
     end
   end
 
+  # Fractional cents are the normal case, not an edge one: AgentMail bills
+  # around $0.002 an email, so a whole-cent rate rounds it to zero and the
+  # panel reports email as free. Rates stay fractional through the
+  # arithmetic; each cost component rounds to whole cents once, at the end.
   defp rate(key) do
     case Application.get_env(:fountain, key) do
-      cents when is_integer(cents) and cents >= 0 -> cents
+      cents when is_number(cents) and cents >= 0 -> cents
       _ -> nil
     end
   end
@@ -626,10 +642,17 @@ defmodule Fountain.Billing.Finance do
   defp message_cost_cents(%{emails_sent: 0, sms_sent: 0, sms_received: 0}, _card), do: 0
 
   defp message_cost_cents(messages, card) do
-    add_or_nil([
+    # Rounded once from the total rather than per channel: at $0.002 an email,
+    # rounding each channel first turns 400 emails and 10 texts into `0 + 20`
+    # instead of `80 + 20`.
+    [
       per_message(messages.emails_sent, card.email),
+      # AgentPhone charges "$0.02/message (inbound and outbound)", so both
+      # directions are billed at the one rate.
       per_message(messages.sms_sent + messages.sms_received, card.sms)
-    ])
+    ]
+    |> add_or_nil()
+    |> then(&(&1 && round(&1)))
   end
 
   defp per_message(0, _cents), do: 0
