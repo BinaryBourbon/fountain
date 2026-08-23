@@ -65,11 +65,11 @@ defmodule Fountain.MixProject do
       {:bandit, "~> 1.5"},
       {:remote_ip, "~> 1.2"},
       {:oban, "~> 2.19"},
-      # ravi-hq fork: includes the filesystem URL fix (/v1/sprites/<name>/fs/*)
-      # and the attach_session URL fix. Upstream `superfly/sprites-ex` returns
-      # 404 from `Filesystem.write`, so the bundled `fountain` SKILL.md silently
-      # never landed on sprites. Pin to the post-merge commit on `main`.
-      {:sprites, github: "ravi-hq/sprites-ex", ref: "c2a96426331f0e367455e838fea4ab4154032215"},
+      # Upstream, at the tag. The `ravi-hq` fork this used to pin existed for
+      # the filesystem URL fix (/v1/sprites/<name>/fs/*) and the
+      # attach_session URL fix; both are upstream as of v0.2.0, and the fork
+      # branched before the exit-frame fixes that #880 needed.
+      {:sprites, github: "superfly/sprites-ex", tag: "v0.2.0"},
       {:open_api_spex, "~> 3.21"},
       {:libcluster, "~> 3.4"},
       {:horde, "~> 0.10.0"},
