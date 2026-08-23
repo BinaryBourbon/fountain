@@ -121,8 +121,7 @@ defmodule FountainWeb.AdminLive.Billing do
                 do: "event is",
                 else: "events are"} failing — subscription state may lag Stripe. Repair one account
               with <span class="font-mono">resync</span>
-              on
-              <.link navigate={~p"/admin/users"} class="underline">Users</.link>.
+              on <.link navigate={~p"/admin/users"} class="underline">Users</.link>.
             </div>
             <table class="w-full text-sm bg-white rounded border border-red-100 font-mono">
               <tbody>

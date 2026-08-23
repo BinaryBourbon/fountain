@@ -61,7 +61,7 @@ defmodule FountainWeb.LiveviewReconciliationTest do
       victim = insert_verified_user()
       conn = login_user(conn, admin)
 
-      {:ok, view, _html} = live(conn, ~p"/admin")
+      {:ok, view, _html} = live(conn, ~p"/admin/users")
 
       {:ok, _} = Fountain.Repo.delete(victim)
 

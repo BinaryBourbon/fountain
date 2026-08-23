@@ -82,7 +82,7 @@ defmodule FountainWeb.AdminConversationDetailLiveTest do
       admin = insert_admin()
       conn = login_user(conn, admin)
 
-      assert {:error, {:live_redirect, %{to: "/admin"}}} =
+      assert {:error, {:live_redirect, %{to: "/admin/sandboxes"}}} =
                live(conn, ~p"/admin/conversations/#{Ecto.UUID.generate()}")
     end
   end

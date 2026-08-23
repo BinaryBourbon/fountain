@@ -124,7 +124,7 @@ defmodule FountainWeb.AccountDeletionLiveTest do
       admin = insert_verified_user(role: "admin")
       target = insert_verified_user()
 
-      {:ok, lv, _html} = live(login_user(conn, admin), ~p"/admin")
+      {:ok, lv, _html} = live(login_user(conn, admin), ~p"/admin/users")
 
       capture_log(fn ->
         html = render_click(lv, "delete_user", %{"id" => target.id})
@@ -141,7 +141,7 @@ defmodule FountainWeb.AccountDeletionLiveTest do
       # problem rather than a feature.
       admin = insert_verified_user(role: "admin")
 
-      {:ok, lv, _html} = live(login_user(conn, admin), ~p"/admin")
+      {:ok, lv, _html} = live(login_user(conn, admin), ~p"/admin/users")
 
       html = render_click(lv, "delete_user", %{"id" => admin.id})
 

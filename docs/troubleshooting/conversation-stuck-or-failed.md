@@ -73,7 +73,7 @@ row. That row counts against the user's quota, which is 2 concurrent sandboxes
 by default.
 
 The reaper runs each hour at :07 and releases a row that has been stuck for
-more than 60 minutes. An admin can raise a user's cap from `/admin` at once.
+more than 60 minutes. An admin can raise a user's cap from `/admin/users` at once.
 
 The reaper logs one summary line for each run.
 

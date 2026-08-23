@@ -34,7 +34,9 @@ defmodule FountainWeb.AdminLive.Activity do
   @impl true
   def handle_params(params, _uri, socket) do
     page = parse_page(params["page"])
-    %{events: events, total: total} = Audit._unsafe_page_admin_events(page: page, per_page: @per_page)
+
+    %{events: events, total: total} =
+      Audit._unsafe_page_admin_events(page: page, per_page: @per_page)
 
     {:noreply,
      socket
