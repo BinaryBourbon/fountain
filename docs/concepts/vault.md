@@ -43,9 +43,11 @@ metadata:
   name: staging-creds
 spec:
   secrets:
-    - key: DATABASE_URL
-      value: postgres://staging-host/mydb
+    DATABASE_URL: postgres://staging-host/mydb
 ```
+
+`secrets` must be a map of `KEY: value`. The server keeps only the map form
+and drops any other shape without an error.
 
 ## Why it exists
 

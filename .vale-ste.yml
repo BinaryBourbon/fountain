@@ -48,11 +48,15 @@ sentence:
 # moved those pages to `superpowers/` at the repo root.
 files:
   include:
-    # Both patterns. `docs/**/*.md` alone does not match `docs/index.md` on a
-    # directory walk, because `**` wants at least one directory, and that
-    # silently exempted all thirteen top-level pages.
+    # One pattern per directory depth. On this walker `**` matches exactly
+    # one directory, so `docs/**/*.md` alone does not match `docs/index.md`
+    # (no directory) and does not match `docs/catalog/skills/fountain.md`
+    # (two directories). The second gap was found in #1010: every page two
+    # levels deep — all of `docs/catalog/*/` and `docs/guides/operate/` —
+    # was silently outside the gate.
     - "docs/*.md"
     - "docs/**/*.md"
+    - "docs/**/**/*.md"
   exclude:
     # A record of what happened, not a description of how the system works.
     # docs/changelog.md is a one-line snippet include of it.

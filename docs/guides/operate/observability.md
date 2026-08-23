@@ -27,9 +27,9 @@ observability pack, built from a real run of the hosted instance.
   trace panels. [Read the dashboards](dashboards.md) says what each number
   means, and which questions belong in PostHog instead.
 
-One series is worth naming here, because it is the one that maps to money.
-`fountain_sandboxes_by_provider_count` reports how many sandboxes each provider
-holds right now, by status. See
+One series gets a mention here, because it is the one that maps to money.
+The gauge `fountain_sandboxes_by_provider_count` reports how many sandboxes
+each provider holds right now, by status. See
 [See what sandboxes cost](sandbox-spend.md) for the per-account view that goes
 with it.
 
