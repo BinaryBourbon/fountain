@@ -123,11 +123,17 @@ defmodule Fountain.AnalyticsTest do
       assert :ok = Analytics.capture("agent.created", nil)
     end
 
-    test "sends no IP by default, so PostHog does not geolocate the server" do
+    test "disables enrichment by default, so PostHog does not geolocate the deployment" do
+      # This test used to assert `"$ip" => nil` and describe that as sending no
+      # IP. It was asserting the bug: PostHog reads a null or missing `$ip` as
+      # "use the address the batch came from" and geolocates the sending pod,
+      # which put every pageview in the project in one city. `$geoip_disable`
+      # is the documented way to say "unknown". See ADR 0028.
       Analytics.capture("agent.created", @user_id)
 
       assert_receive {:posthog, "/batch/", %{"batch" => [event]}}
-      assert Map.fetch!(event["properties"], "$ip") == nil
+      assert event["properties"]["$geoip_disable"] == true
+      refute Map.has_key?(event["properties"], "$ip")
     end
 
     test "forwards the end user's IP when the caller knows it" do

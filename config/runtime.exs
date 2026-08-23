@@ -1124,6 +1124,20 @@ config :fountain,
        :analytics_person_pii,
        System.get_env("POSTHOG_PERSON_PII", "true") not in ~w(false 0 no off)
 
+# POSTHOG_BROWSER_CAPTURE=false stops the public pages (landing, legal, the
+# manual, the auth flow) loading posthog-js, leaving the server-side capture
+# untouched. The console never loads it either way.
+#
+# The snippet is what makes visitors countable at all: a server-side pageview
+# has no session, no referrer and no device, and `Fountain.Analytics` drops
+# events with no subject — so before it, nobody who was not signed in was
+# counted anywhere. The off-switch exists because loading a third-party script
+# into a visitor's browser is a different decision from sending product events
+# from a server, and a self-hoster is entitled to make them separately.
+config :fountain,
+       :analytics_browser_capture,
+       System.get_env("POSTHOG_BROWSER_CAPTURE", "true") not in ~w(false 0 no off)
+
 case System.get_env("POSTHOG_INSTANCE") || System.get_env("PHX_HOST") do
   blank when blank in [nil, ""] -> :ok
   name -> config :fountain, :analytics_instance, name

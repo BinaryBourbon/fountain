@@ -158,11 +158,21 @@ defmodule FountainWeb.Live.Hooks do
   # double every pageview in the project.
   defp capture_pageview(socket, uri) do
     if connected?(socket) do
-      Fountain.Analytics.capture("$pageview", socket.assigns[:current_user], %{
-        "$current_url" => uri,
-        "$pathname" => URI.parse(uri).path,
-        "surface" => "console"
-      })
+      Fountain.Analytics.capture(
+        "$pageview",
+        socket.assigns[:current_user],
+        %{
+          "$current_url" => uri,
+          "$pathname" => URI.parse(uri).path,
+          "surface" => "console"
+        },
+        # Without this every console pageview geolocates to the deployment's
+        # own egress address — PostHog fills a missing `$ip` from wherever the
+        # batch came from, which for a server-side sink is a pod. `client_ip`
+        # is resolved at mount by `Audited.put_client_ip/1`, under the same
+        # trusted-proxy rule the audit trail and the rate limiter use.
+        request_ip: socket.assigns[:client_ip]
+      )
     end
   end
 end

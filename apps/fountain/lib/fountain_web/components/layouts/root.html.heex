@@ -16,6 +16,54 @@
     <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32.png" />
     <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16.png" />
     <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon.png" />
+    <%!--
+      PostHog, on the public surface only — the landing and legal pages, the
+      manual and the auth flow. `FountainWeb.Plugs.WebAnalytics` sets this
+      assign and holds the reasoning; the console has no snippet and captures
+      its pageviews server-side from `FountainWeb.Live.Hooks`, so rendering
+      this there would double every one of them.
+
+      `person_profiles: "identified_only"` keeps an anonymous reader from
+      minting a person profile. The events still count — visitors, sessions,
+      referrers and entry pages all work on anonymous events — but a person
+      appears when an account does, which is the same rule the server-side
+      capture keeps, and it is what stops the manual from becoming the
+      project's largest cohort.
+    --%>
+    <script
+      :if={assigns[:web_analytics]}
+      defer
+      src={"#{@web_analytics.assets_host}/static/array.js"}
+    >
+    </script>
+    <%!--
+      The config reaches the script as data attributes rather than as values
+      interpolated into the JS. HEEx escapes an attribute on its own, so
+      nothing here needs `raw/1` and no value can close the tag — which also
+      keeps this out of the XSS surface a template that builds JS by
+      concatenation would have.
+
+      The inline block runs at parse time and only registers a listener;
+      array.js is deferred, so it has executed by the time DOMContentLoaded
+      fires and `posthog.init` exists.
+    --%>
+    <script
+      :if={assigns[:web_analytics]}
+      id="posthog-config"
+      data-api-key={@web_analytics.api_key}
+      data-api-host={@web_analytics.api_host}
+    >
+      window.addEventListener("DOMContentLoaded", function () {
+        if (!window.posthog || !window.posthog.init) return;
+        var cfg = document.getElementById("posthog-config");
+        window.posthog.init(cfg.dataset.apiKey, {
+          api_host: cfg.dataset.apiHost,
+          defaults: "2025-05-24",
+          person_profiles: "identified_only"
+        });
+        window.posthog.register({ surface: "public" });
+      });
+    </script>
     <%!-- Design tokens — must load before Tailwind CDN so CSS vars are defined --%>
     <link rel="stylesheet" href="/assets/tokens.css" />
     <%!-- Tailwind CDN config: register token-backed colour utilities --%>

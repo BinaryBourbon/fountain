@@ -59,6 +59,18 @@ defmodule FountainWeb.AnalyticsPageviewTest do
     assert pageview["properties"]["surface"] == "console"
   end
 
+  test "a console pageview carries the operator's address, not the deployment's", %{conn: conn} do
+    # PostHog fills a missing `$ip` from wherever the batch arrived from, which
+    # for a server-side sink is a pod: every pageview in the project geolocated
+    # to one city until the hook started forwarding what `put_client_ip/1`
+    # already resolved at mount.
+    {:ok, _lv, _html} = live(conn, ~p"/dashboard")
+
+    assert [pageview] = pageviews()
+    refute pageview["properties"]["$geoip_disable"]
+    assert is_binary(pageview["properties"]["$ip"])
+  end
+
   test "with no PostHog key nothing is captured", %{conn: conn} do
     Application.delete_env(:fountain, :posthog_project_api_key)
 

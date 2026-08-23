@@ -244,9 +244,8 @@ Without PostHog you can force a flag on for each user.
 
 ## Product analytics
 
-The same project key sends product events to PostHog. Fountain captures them
-on the server. There is no analytics script in the browser, and the console
-loads no third-party code.
+The same project key sends product events to PostHog. Fountain captures most
+of them on the server.
 
 Set no key and Fountain sends nothing. Set a key and the events go to your own
 PostHog project.
@@ -262,21 +261,55 @@ without a new call site.
 - The end of a conversation turn, as `conversation.turn.done`,
   `conversation.turn.failed` or `conversation.turn.interrupted`.
 
-Two kinds of audited change stay out of PostHog. The audit trail keeps both.
+Each API write leaves a second audit row named after the request line. Fountain
+sends these rows as one event, `api.request`. The route is a property, not part
+of the name. A name per route makes a permanent event type per route, and
+PostHog never removes an event type. A property keeps the count of names at
+one, and PostHog can break down a property.
 
-- The request log. Each API write leaves a second audit row named after the
-  request line, such as `POST /api/agents/<id>`. The name holds a resource id,
-  so PostHog would make a new event type for each resource. The first row
-  already says what changed.
-- An API key that Fountain issued to itself. A sandbox and a Buzz harness each
-  get a key, and an OAuth token is a key. These were 70 percent of the trail in
-  one day. A key that a person makes in the console, or through the API, is
-  kept.
+The `api.request` event carries `method`, `route`, `status` and `status_class`.
+Together they answer which endpoints your callers use, and which of them fail.
+A request that Fountain refuses before it knows the account has no person, so
+Fountain sends no event for it. The audit trail keeps that row.
+
+One kind of audited change stays out of PostHog. The audit trail keeps it. It
+is an API key that Fountain issued to itself. A sandbox and a Buzz harness each
+get a key, and an OAuth token is a key. These were 70 percent of the trail in
+one day. Fountain keeps a key that a person makes in the console, or through
+the API.
 
 Fountain also captures `$pageview` for each console page, `$identify` when the
 shape of an account changes, and `$feature_flag_called` when it reads a flag.
 Each event carries the flags that Fountain already knows for that person, as
 `$feature/<key>`.
+
+## Web analytics
+
+The public pages load the PostHog browser library. These pages are the home
+page, the legal pages, the manual and the sign-in flow. The console loads no
+browser library, and Fountain captures console pageviews on the server.
+
+The split has a reason. A pageview from the server has no session, no referrer
+and no device. Fountain also drops an event with no account, so a visitor with
+no account is invisible to it. Only a browser knows these facts, and only the
+public pages have visitors who are not yet accounts.
+
+The browser library sends anonymous events. It makes no person profile for a
+reader. A person profile appears when an account appears.
+
+Fountain joins the two halves at sign-in. It reads the anonymous id from the
+PostHog cookie, and it tells PostHog to merge that visitor into the account.
+The pages a person read before the account then belong to the account. Fountain
+reads this cookie and writes nothing to it. A reader with no cookie signs in as
+normal, and Fountain sends no merge.
+
+Each browser event carries `surface: "public"`. Each console pageview carries
+`surface: "console"`. Use this property to hold the two apart.
+
+Fountain adds the PostHog origins to the Content Security Policy of the public
+pages. The console keeps its own policy, which names no PostHog origin.
+Fountain reads `POSTHOG_HOST` for both origins. PostHog Cloud serves the
+library from a second origin, and Fountain derives that origin from the first.
 
 Fountain sends no secret value, no environment variable value, no prompt and
 no agent output. An event holds the name of the action, the type of the
@@ -290,6 +323,7 @@ analytics failure cannot fail the operation it measures.
 | Variable | Default | Required | Effect |
 |---|---|---|---|
 | `POSTHOG_CAPTURE` | `true` | — | Set it to `false` to stop product events. Flag evaluation continues. |
+| `POSTHOG_BROWSER_CAPTURE` | `true` | — | Set it to `false` to keep the PostHog browser library off the public pages. Server capture continues. |
 | `POSTHOG_PERSON_PII` | `true` | — | Set it to `false` to keep the account email out of PostHog. The person is then known by user id alone. |
 | `POSTHOG_INSTANCE` | `PHX_HOST` | — | The name of this deployment. Each event is a member of this PostHog group, so two deployments that report to one project stay apart. |
 
