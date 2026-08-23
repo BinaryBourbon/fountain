@@ -1,0 +1,124 @@
+name: Publish SDK
+
+# Publishes `@agentshit/fountain-sdk` to npm with **trusted publishing**: npm
+# trades this workflow's OIDC identity for a short-lived credential, so there
+# is no NPM_TOKEN in this repository and nothing to leak or rotate. That only
+# works if npm is told, on the package's settings page, to trust exactly this
+# repository and exactly this workflow *filename* — so renaming this file
+# breaks publishing until the trusted publisher is updated to match.
+#
+# Publishing is deliberately not attached to the server's `v*.*.*` tags. The
+# SDK talks to the REST API, which is additive, so it versions on its own
+# clock; tying it to the server would either publish a byte-identical package
+# on every server release or hold a ready SDK fix behind one.
+#
+#   git tag sdk-v0.1.1 && git push origin sdk-v0.1.1
+#
+# or run it by hand from the Actions tab, which publishes whatever version
+# `sdk/typescript/package.json` currently names.
+
+on:
+  push:
+    tags:
+      - "sdk-v*.*.*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Publish to npm
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      # The whole point: this is what lets the runner mint an OIDC token for
+      # npm to verify. Without it `npm publish` falls back to looking for a
+      # token and fails.
+      id-token: write
+
+    defaults:
+      run:
+        working-directory: sdk/typescript
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v5
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+          cache: npm
+          cache-dependency-path: sdk/typescript/package-lock.json
+
+      # OIDC publishing needs npm 11.5.1 or newer. Node 24 ships one, but the
+      # bundled version moves with the Node patch release, so assert it rather
+      # than find out through a confusing auth failure. The check is coarse
+      # (major.minor >= 11.5); nothing ever shipped between 11.5.0 and 11.5.1.
+      - name: npm is new enough for OIDC
+        run: |
+          version=$(npm -v)
+          echo "npm $version"
+          major=${version%%.*}
+          rest=${version#*.}
+          minor=${rest%%.*}
+          if [ "$major" -lt 11 ] || { [ "$major" -eq 11 ] && [ "$minor" -lt 5 ]; }; then
+            echo "::error::npm $version is too old for trusted publishing (need >= 11.5)." >&2
+            exit 1
+          fi
+
+      # A tag that disagrees with package.json publishes the wrong version
+      # under the right name, which cannot be undone — npm does not allow a
+      # re-publish of the same version.
+      - name: The tag matches the version being published
+        if: startsWith(github.ref, 'refs/tags/sdk-v')
+        run: |
+          tagged="${GITHUB_REF_NAME#sdk-v}"
+          declared=$(node -p "require('./package.json').version")
+          echo "tag: $tagged / package.json: $declared"
+          if [ "$tagged" != "$declared" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match package.json version $declared." >&2
+            exit 1
+          fi
+
+      - name: Install
+        run: npm ci
+
+      # `prepublishOnly` runs these again on publish. They are here as their
+      # own steps so a failure says which gate failed, instead of surfacing as
+      # a publish that died somewhere inside npm.
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      - name: The default entry still bundles for a browser
+        run: npx --yes esbuild dist/index.js --bundle --platform=browser --format=esm --outfile=/dev/null
+
+      # No NPM_TOKEN. npm exchanges the OIDC token from `id-token: write` for a
+      # short-lived credential, and publishes with provenance attached, which
+      # is how a consumer can verify this tarball came from this workflow in
+      # this repository rather than from somebody's laptop.
+      - name: Publish
+        run: npm publish
+
+      - name: Say what landed
+        run: |
+          version=$(node -p "require('./package.json').version")
+          {
+            echo "### Published"
+            echo
+            echo '`@agentshit/fountain-sdk@'"$version"'`'
+            echo
+            echo "https://www.npmjs.com/package/@agentshit/fountain-sdk/v/$version"
+            echo
+            echo "A freshly published version can 404 on the public registry for"
+            echo "a few minutes before the CDN serves it. That is propagation,"
+            echo "not a failed publish."
+          } >> "$GITHUB_STEP_SUMMARY"
