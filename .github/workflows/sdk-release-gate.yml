@@ -1,0 +1,46 @@
+name: SDK release gate
+
+# Makes "does this need a release?" part of review rather than something
+# remembered afterwards.
+#
+# The publish workflow ships whatever version lands on main, so a PR that
+# changes what the SDK ships and leaves the version alone produces a change
+# that sits on main unreleased — invisible, until somebody wonders why the fix
+# they merged is not on npm. This says so on the PR instead.
+#
+# It also front-loads everything that would make the publish fail on main,
+# where failing is cheap and a person is already looking: a version already on
+# npm (which can never be republished), a missing changelog entry, and the
+# USER_AGENT constant that `npm version` does not touch.
+
+on:
+  pull_request:
+    paths:
+      - "sdk/typescript/**"
+      - "scripts/sdk-release.mjs"
+      - ".github/workflows/sdk-release-gate.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    name: A change to the SDK says whether it releases
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # The deliberate exception: changing the published surface without cutting
+    # a release. Rare, and it should take a label and a sentence in the PR.
+    if: ${{ !contains(github.event.pull_request.labels.*.name, 'sdk-no-release') }}
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v5
+        with:
+          # The guard diffs against the merge base, so it needs history.
+          fetch-depth: 0
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+
+      - name: Does this PR need a version bump?
+        run: node scripts/sdk-release.mjs guard "origin/${{ github.base_ref }}"

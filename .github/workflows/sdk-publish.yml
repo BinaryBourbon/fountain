@@ -1,26 +1,30 @@
 name: Publish SDK
 
-# Publishes `@agentshit/fountain-sdk` to npm with **trusted publishing**: npm
-# trades this workflow's OIDC identity for a short-lived credential, so there
-# is no NPM_TOKEN in this repository and nothing to leak or rotate. That only
-# works if npm is told, on the package's settings page, to trust exactly this
-# repository and exactly this workflow *filename* — so renaming this file
-# breaks publishing until the trusted publisher is updated to match.
+# Publishes `@agentshit/fountain-sdk` to npm. **CI is the only publisher** —
+# nothing is ever released from a laptop.
 #
-# Publishing is deliberately not attached to the server's `v*.*.*` tags. The
-# SDK talks to the REST API, which is additive, so it versions on its own
-# clock; tying it to the server would either publish a byte-identical package
-# on every server release or hold a ready SDK fix behind one.
+# The trigger is the version itself: merge a PR that bumps
+# `sdk/typescript/package.json` and that version goes out. There is no tag to
+# push and no button to remember, because a release step a human performs is a
+# release step a human forgets. The `SDK release gate` workflow is the other
+# half — it fails a PR that changes what the SDK ships without bumping, so the
+# bump happens during review rather than after.
 #
-#   git tag sdk-v0.1.1 && git push origin sdk-v0.1.1
+# Idempotent by construction: the run starts by asking the registry whether
+# this version already exists and stops if it does. So a PR touching only the
+# SDK's tests runs this workflow, finds nothing to do, and says so.
 #
-# or run it by hand from the Actions tab, which publishes whatever version
-# `sdk/typescript/package.json` currently names.
+# npm authenticates this through **trusted publishing** — it trades the OIDC
+# identity below for a short-lived credential, so no NPM_TOKEN exists in this
+# repository. npm is configured to trust this repository and this workflow
+# *filename*: renaming this file breaks publishing until the trusted publisher
+# on npmjs.com is updated to match.
 
 on:
   push:
-    tags:
-      - "sdk-v*.*.*"
+    branches: [main]
+    paths:
+      - "sdk/typescript/**"
   workflow_dispatch:
 
 permissions:
@@ -31,16 +35,15 @@ jobs:
     name: Publish to npm
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    permissions:
-      contents: read
-      # The whole point: this is what lets the runner mint an OIDC token for
-      # npm to verify. Without it `npm publish` falls back to looking for a
-      # token and fails.
-      id-token: write
 
-    defaults:
-      run:
-        working-directory: sdk/typescript
+    permissions:
+      # `contents: write` only to push the `sdk-v*` tag *after* a successful
+      # publish, as a record of which commit produced which version. The tag is
+      # an output of a release, never the input that causes one.
+      contents: write
+      # What lets the runner mint an OIDC token for npm to verify. Without it
+      # `npm publish` looks for a token instead and fails.
+      id-token: write
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v5
@@ -69,56 +72,96 @@ jobs:
             exit 1
           fi
 
-      # A tag that disagrees with package.json publishes the wrong version
-      # under the right name, which cannot be undone — npm does not allow a
-      # re-publish of the same version.
-      - name: The tag matches the version being published
-        if: startsWith(github.ref, 'refs/tags/sdk-v')
+      - name: Is there anything to publish?
+        id: release
         run: |
-          tagged="${GITHUB_REF_NAME#sdk-v}"
-          declared=$(node -p "require('./package.json').version")
-          echo "tag: $tagged / package.json: $declared"
-          if [ "$tagged" != "$declared" ]; then
-            echo "::error::Tag $GITHUB_REF_NAME does not match package.json version $declared." >&2
-            exit 1
-          fi
+          node scripts/sdk-release.mjs state > state.json
+          cat state.json
+          version=$(node -p "require('./state.json').version")
+          tag=$(node -p "require('./state.json').tag")
+          published=$(node -p "require('./state.json').published")
+          if [ "$published" = "true" ]; then needed=no; else needed=yes; fi
+          {
+            echo "version=$version"
+            echo "tag=$tag"
+            echo "needed=$needed"
+          } >> "$GITHUB_OUTPUT"
+          echo "version $version already on npm: $published (publish: $needed)"
 
       - name: Install
+        if: steps.release.outputs.needed == 'yes'
+        working-directory: sdk/typescript
         run: npm ci
 
-      # `prepublishOnly` runs these again on publish. They are here as their
-      # own steps so a failure says which gate failed, instead of surfacing as
-      # a publish that died somewhere inside npm.
+      # `prepublishOnly` runs these again. They are here as their own steps so a
+      # failure names the gate that failed, instead of surfacing as a publish
+      # that died somewhere inside npm.
       - name: Typecheck
+        if: steps.release.outputs.needed == 'yes'
+        working-directory: sdk/typescript
         run: npm run typecheck
 
       - name: Test
+        if: steps.release.outputs.needed == 'yes'
+        working-directory: sdk/typescript
         run: npm test
 
       - name: Build
+        if: steps.release.outputs.needed == 'yes'
+        working-directory: sdk/typescript
         run: npm run build
 
       - name: The default entry still bundles for a browser
+        if: steps.release.outputs.needed == 'yes'
+        working-directory: sdk/typescript
         run: npx --yes esbuild dist/index.js --bundle --platform=browser --format=esm --outfile=/dev/null
 
-      # No NPM_TOKEN. npm exchanges the OIDC token from `id-token: write` for a
-      # short-lived credential, and publishes with provenance attached, which
-      # is how a consumer can verify this tarball came from this workflow in
-      # this repository rather than from somebody's laptop.
+      # No NPM_TOKEN. npm exchanges the OIDC token for a short-lived credential
+      # and attaches provenance, which is how a consumer verifies this tarball
+      # came from this workflow at this commit rather than from someone's
+      # laptop. FOUNTAIN_CI is what tells `prepublishOnly` this is CI.
       - name: Publish
+        if: steps.release.outputs.needed == 'yes'
+        working-directory: sdk/typescript
+        env:
+          FOUNTAIN_CI_PUBLISH: "1"
         run: npm publish
 
-      - name: Say what landed
+      # After the fact, and only on success: which commit produced which
+      # version. A failed publish leaves no tag to clean up.
+      - name: Record the release as a tag
+        if: steps.release.outputs.needed == 'yes'
+        env:
+          TAG: ${{ steps.release.outputs.tag }}
         run: |
-          version=$(node -p "require('./package.json').version")
-          {
-            echo "### Published"
-            echo
-            echo '`@agentshit/fountain-sdk@'"$version"'`'
-            echo
-            echo "https://www.npmjs.com/package/@agentshit/fountain-sdk/v/$version"
-            echo
-            echo "A freshly published version can 404 on the public registry for"
-            echo "a few minutes before the CDN serves it. That is propagation,"
-            echo "not a failed publish."
-          } >> "$GITHUB_STEP_SUMMARY"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$TAG" -m "@agentshit/fountain-sdk ${TAG#sdk-v}" "$GITHUB_SHA"
+          git push origin "$TAG"
+
+      - name: Say what happened
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+          NEEDED: ${{ steps.release.outputs.needed }}
+        run: |
+          if [ "$NEEDED" = "yes" ]; then
+            {
+              echo "### Published \`@agentshit/fountain-sdk@$VERSION\`"
+              echo
+              echo "https://www.npmjs.com/package/@agentshit/fountain-sdk/v/$VERSION"
+              echo
+              echo "Tagged \`sdk-v$VERSION\` at \`$GITHUB_SHA\`. Verify the provenance with"
+              echo '`npm audit signatures` after installing.'
+              echo
+              echo "A new version 404s on the public registry for a few minutes"
+              echo "before the CDN serves it. That is propagation, not failure."
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            {
+              echo "### Nothing to publish"
+              echo
+              echo "\`@agentshit/fountain-sdk@$VERSION\` is already on npm. This push"
+              echo "changed the SDK without changing its version, which is fine for"
+              echo "tests, examples and the changelog."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi

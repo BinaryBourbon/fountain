@@ -409,16 +409,33 @@ lie, which is how `me()` shipped returning `null`.
 
 ### Releasing
 
-The version lives in `package.json` and is asserted against `USER_AGENT` by a
-test, so a bump that misses one fails rather than shipping a lie.
+**CI is the only publisher.** `npm publish` from a checkout refuses, and npm is
+configured to accept releases only from this repository's `Publish SDK`
+workflow — so a tarball on the registry always carries provenance tying it to
+a commit and a workflow run.
+
+There is no release command and no tag to push. **Merging a version bump is the
+release.**
 
 ```bash
-npm version patch          # or minor — updates package.json, tags
-npm publish                # prepublishOnly runs typecheck, tests and build
+cd sdk/typescript
+npm version patch          # or minor / major — edits package.json + the lockfile
 ```
 
-Add the release to `CHANGELOG.md` in the same commit, and check that
-`docs/sdk.md` still describes what shipped.
+Then update two things `npm version` does not touch, and open a PR as usual:
+
+- `USER_AGENT` in `src/http.ts`
+- a `## [x.y.z]` section in `CHANGELOG.md`
+
+The `SDK release gate` check on the PR fails if either is missing, if the
+version is already on npm, or if you changed what the package ships without
+bumping at all. When the PR merges, `Publish SDK` sees a version the registry
+does not have, publishes it, and tags the merge commit `sdk-v<version>`.
+
+A PR that touches only tests, examples or the changelog needs no bump; the
+gate stays quiet, and the publish workflow finds nothing to do. To change the
+published surface deliberately without releasing, label the PR
+`sdk-no-release`.
 
 ## License
 

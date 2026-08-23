@@ -401,6 +401,20 @@ What people write by hand is the part a spec cannot express. That many log
 events fold into one *turn*. That you can await a run or stream it. Which of
 85 paths are worth a verb.
 
+## How CI publishes it
+
+CI publishes every version. No person publishes from a workstation. npm accepts
+a release only from the `Publish SDK` workflow in this repository. Each tarball
+therefore carries a provenance attestation. To examine it, install the package
+and then run this command:
+
+```bash
+npm audit signatures
+```
+
+A verified attestation identifies the workflow and the commit that made the
+tarball. A package that a person sends by hand has no such attestation.
+
 ## Other languages
 
 There is no SDK for your language yet. There are two worked references for the

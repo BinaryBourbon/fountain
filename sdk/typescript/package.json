@@ -46,7 +46,7 @@
     "generate": "openapi-typescript ${FOUNTAIN_OPENAPI:-/tmp/fountain-openapi.json} -o src/generated/openapi.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "node --test test/*.test.ts",
-    "prepublishOnly": "npm run typecheck && npm test && npm run build"
+    "prepublishOnly": "node scripts/ci-publishes.mjs && npm run typecheck && npm test && npm run build"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
