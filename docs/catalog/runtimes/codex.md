@@ -28,7 +28,7 @@ metadata:
   name: reviewer
 spec:
   runtime: codex
-  model: openai/gpt-5-codex
+  model: openai/gpt-5.3-codex
 ```
 
 The model must carry the `openai/` prefix.

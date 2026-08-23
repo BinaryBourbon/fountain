@@ -9,7 +9,7 @@ defmodule Fountain.Runtimes.Model do
   provider and want the bare id:
 
       claude --model claude-sonnet-4-6
-      codex  --model gpt-5-codex        # also spelled -m
+      codex  --model gpt-5.3-codex      # also spelled -m
       gemini --model gemini-3.1-pro-preview   # also spelled -m
 
   `Fountain.Agents.Agent` rejects a model whose prefix doesn't match its
@@ -62,15 +62,36 @@ defmodule Fountain.Runtimes.Model do
   # the kind of failure and the tenant reads the provider's own sentence, which
   # names the replacement. See `Fountain.Runtimes.ACP.Peer`'s
   # `model_unavailable?/1` and its handler in `ConversationServer`.
+  #
+  # Every id below was checked with a real inference call on 2026-08-22, per
+  # provider, on this instance's own keys. That is the only check worth making
+  # — see the listing-endpoint note above.
   @catalog %{
+    # `claude-opus-4-7` added 2026-08-22. It is not new, but it was never
+    # listed, and it is the third most configured model on this instance (9
+    # agents, 290 completed turns) — a working model that the picker did not
+    # offer, so every one of those agents was typed in from somewhere else.
     "anthropic" => ~w(
       claude-opus-5
       claude-sonnet-5
       claude-opus-4-8
+      claude-opus-4-7
       claude-sonnet-4-6
       claude-haiku-4-5
     ),
-    "openai" => ~w(gpt-5-codex gpt-5),
+    # `gpt-5-codex` was retired and removed on 2026-08-22 — the same defect as
+    # the google entries below, and a worse one, because it was the suggestion
+    # *and* the form placeholder for the codex runtime, so it was what a new
+    # codex user was told to type. `/v1/responses` answers 404 "Model not
+    # found gpt-5-codex" for it and 200 for `gpt-5.3-codex`.
+    #
+    # A trap for the next person to check this: codex-line models are not
+    # served on `/v1/responses` once they are old, so a 404 there is a real
+    # retirement — but `GET /v1/models` still lists every one of them
+    # (`gpt-5.1-codex`, `gpt-5.2-codex`, ...). The listing lies here exactly as
+    # it does for google. `gpt-5` still answers 200 and was replaced only for
+    # being five releases behind.
+    "openai" => ~w(gpt-5.3-codex gpt-5.5),
     # Both 2.5 entries were removed on 2026-08-22: Google retired
     # `gemini-2.5-pro` *and* `gemini-2.5-flash` for new API keys, so every
     # model Fountain suggested for google answered

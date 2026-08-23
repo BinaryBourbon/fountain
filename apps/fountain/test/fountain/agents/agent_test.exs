@@ -13,7 +13,7 @@ defmodule Fountain.Agents.AgentTest do
   # multi-provider, so any prefix is fine there.
   @model_for %{
     "claude" => "anthropic/claude-sonnet-4-6",
-    "codex" => "openai/gpt-5-codex",
+    "codex" => "openai/gpt-5.3-codex",
     "gemini" => "google/gemini-3.1-pro-preview",
     "opencode" => "anthropic/claude-sonnet-4-6"
   }
