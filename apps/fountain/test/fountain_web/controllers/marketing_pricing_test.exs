@@ -73,7 +73,21 @@ defmodule FountainWeb.MarketingPricingTest do
     assert body =~ "Going over the hours does not stop anything"
     assert body =~ "nothing extra is charged"
     assert body =~ "Running at the concurrency cap does"
-    assert body =~ "waits for a free slot"
+    assert body =~ "is refused rather than queued"
+  end
+
+  # #1026: the page promised a queue for a whole release, pinned by a test that
+  # asserted the sentence was present. There is no queue —
+  # `Quotas.check_sandbox_quota/2` refuses the next start, and
+  # `FallbackController` returns 429. A buyer picks a tier on this sentence, so
+  # the queue wording is asserted absent, not merely replaced.
+  test "the pricing table does not promise a queue behind the cap", %{conn: conn} do
+    price_all()
+
+    body = conn |> get(~p"/") |> html_response(200)
+
+    refute body =~ "waits for a free slot"
+    refute body =~ "Queue as much work"
   end
 
   # The trial's numbers are enforced from the catalog, so the page reads them

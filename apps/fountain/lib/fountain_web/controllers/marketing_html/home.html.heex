@@ -217,7 +217,7 @@
           {plan_capacity(plan)}
         </p>
         <p class="mt-1 text-xs text-[var(--color-text-muted)]">
-          concurrent sandboxes. Queue as much work as you like behind them.
+          concurrent sandboxes. A start beyond the cap is refused until one frees.
         </p>
         <p class="mt-3 text-sm font-medium text-[var(--color-text-primary)]">
           {plan_turn_hours(plan)}
@@ -260,8 +260,9 @@
         <span class="text-[var(--color-text-secondary)]">
           Running at the concurrency cap does.
         </span>
-        A sandbox beyond it waits for a free slot rather than starting, so the
-        number to choose a plan on is how many agents you want working at once.
+        A sandbox beyond it is refused rather than queued, so the number to
+        choose a plan on is how many agents you want working at once. Terminate
+        a conversation, or upgrade.
       </p>
       <p>
         The 14-day trial runs {trial_plan().concurrent_sandboxes} agents at once
