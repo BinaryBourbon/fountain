@@ -140,7 +140,7 @@ defmodule FountainWeb.AgentsLive.Form do
   # Each runtime but opencode only reaches one provider, and the changeset
   # rejects a mismatched prefix (#553). Track the selected runtime so the hint
   # can't lead someone into that error.
-  defp model_placeholder("codex"), do: "openai/gpt-5-codex"
+  defp model_placeholder("codex"), do: "openai/gpt-5.3-codex"
   defp model_placeholder("gemini"), do: "google/gemini-3.1-pro-preview"
   defp model_placeholder(_runtime), do: "anthropic/claude-sonnet-4-6"
 

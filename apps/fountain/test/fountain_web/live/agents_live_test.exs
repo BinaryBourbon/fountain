@@ -143,7 +143,7 @@ defmodule FountainWeb.AgentsLive.IndexTest do
       # Switching runtime re-scopes the list — codex can't reach an
       # anthropic/ model, and the changeset rejects one.
       html = render_change(view, "validate", %{"agent" => %{"runtime" => "codex"}})
-      assert html =~ "openai/gpt-5-codex"
+      assert html =~ "openai/gpt-5.3-codex"
       refute html =~ "anthropic/claude-opus-5"
     end
 
