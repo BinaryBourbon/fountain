@@ -1,14 +1,14 @@
 ---
 type: ADR
 title: "AGPL-3.0 for the server, Apache-2.0 for the clients, Elastic 2.0 for ee/"
-description: "Fountain relicenses from MIT before the commercial launch: AGPL-3.0-or-later on apps/fountain so a hosted fork owes its changes back, Apache-2.0 on cli/ and sdk/ so integrators carry no obligation, Elastic License 2.0 on ee/. Inbound=outbound with a DCO and deliberately no CLA."
+description: "Fountain relicenses from MIT before the commercial launch: AGPL-3.0-or-later on apps/fountain so a hosted fork owes its changes back, Apache-2.0 on cli/ and sdk/ so integrators carry no obligation, Elastic License 2.0 on ee/. Contributions come in under Apache-2.0 and go out under the directory's license, with a DCO and no CLA document (same-day addendum; #997)."
 tags: [licensing, ee, community]
 status: stable
 adr: "0027"
 adr_status: "Accepted"
 date: 2026-08-22
-generated: { by: human:jhgaylor, at: 2026-08-22T12:00:00-04:00 }
-verified: { by: human:jhgaylor, at: 2026-08-22T12:00:00-04:00 }
+generated: { by: human:jhgaylor, at: 2026-08-22T22:30:00-04:00 }
+verified: { by: human:jhgaylor, at: 2026-08-22T22:30:00-04:00 }
 ---
 
 # 0027 — AGPL-3.0 for the server, Apache-2.0 for the clients, Elastic 2.0 for `ee/`
@@ -106,6 +106,10 @@ bespoke file would not be.
 
 ### Why no CLA
 
+> **Superseded the same day by the addendum below (#997).** Contributions now
+> come in under Apache-2.0. The reasoning here is kept because the objection it
+> raises is real and the addendum answers it rather than dismissing it.
+
 A CLA would let the maintainer sell commercial exceptions to a company that
 wants Fountain without AGPL obligations, converting the feared competitor into
 a customer. It is declined because the asymmetry ("you grant me rights I do
@@ -134,14 +138,12 @@ contributors keep full reuse rights over their own work.
 - **A hosted-only feature must live in `ee/` or be published.** This is a real
   roadmap constraint, and it is the first question to ask of any feature meant
   to be exclusive to the hosted product.
-- **Adding a CLA later requires asking every contributor.** Reversing the
-  no-CLA decision gets harder with each merged pull request, which is why
-  #997 carries a deadline expressed as an event rather than a date.
-- **The dual-licensing option is intact today and expires on the first merged
-  outside pull request.** Sole copyright means commercial exceptions could
-  still be sold without asking anyone. Declining a CLA spends that option
-  gradually rather than having already lost it, which is the honest way to
-  state the cost of the previous section.
+- **The inbound question was settled before the deadline it carried.** See the
+  addendum. #997 is closed.
+- **The dual-licensing option is preserved rather than spent.** Sole copyright
+  meant commercial exceptions could be sold without asking anyone, and that
+  would have ended at the first merged outside pull request. The addendum keeps
+  it open.
 - **`NOTICE` records the MIT terms** the v0.12.0 and earlier releases were
   distributed under. That record is for the people holding those releases, not
   a condition Fountain must satisfy, since no third-party code is in the tree.
@@ -165,3 +167,62 @@ contributors keep full reuse rights over their own work.
 - **The core-only build and the dependency-inversion seams** from 0010 remain
   unbuilt. They are not required by this decision, because ELv2 grants
   self-hosters the right to run `ee/`.
+
+## Addendum — 2026-08-22: contributions come in under Apache-2.0 (#997)
+
+The body above declined a CLA and left the inbound question open, tracked in
+#997 with a deadline expressed as an event: the first merged outside pull
+request. That deadline was uncomfortable precisely because the event is one the
+project is actively trying to cause. It is settled now, the same day, rather
+than left to be remembered under time pressure.
+
+**Contributions are licensed to Fountain under the Apache License 2.0,
+whichever directory they touch. Fountain distributes them under the license
+governing that directory.** There is still no CLA document, no signing
+ceremony and no bot. The DCO sign-off stays, and now also records agreement to
+the inbound terms.
+
+### Why this and not a CLA
+
+It does the same job. Apache-2.0 permits sublicensing, so it preserves exactly
+the right a CLA exists to preserve: the ability to distribute a contribution
+under the AGPL, under ELv2, or under a commercial license sold to a company
+whose policy forbids the AGPL.
+
+What it avoids is the ceremony, which is most of what contributors actually
+resent. There is no document to read, nothing to sign before a first patch, and
+no bot blocking a pull request until an account is linked. For a project whose
+scarcest resource is a first outside contributor, the difference between "open
+a pull request" and "sign this, then open a pull request" is the whole cost.
+
+It is also better for the contributor than a CLA in one concrete way.
+Apache-2.0 places no restriction on them, so they keep the full right to reuse
+their own contribution anywhere, including in proprietary work of their own. A
+copyright assignment would not leave them that.
+
+### What this does not change
+
+The asymmetry is real and identical to a CLA's: the maintainer can relicense a
+contribution, a contributor cannot relicense anyone else's. `CONTRIBUTING.md`
+states it in those words rather than burying it, and invites the objection on
+the pull request. Anyone who does not want that trade should not have to
+discover it after their work is merged.
+
+It changes nothing for `cli/` and `sdk/typescript`, where inbound and outbound
+are both Apache-2.0 already.
+
+It also does not commit Fountain to selling commercial exceptions. It keeps the
+option. The decision to exercise it would be its own ADR, and the argument
+against it, that a project taking contributions under copyleft and selling them
+under proprietary terms is trading on goodwill it did not pay for, is not
+answered here.
+
+### Consequence
+
+The body's "Why no CLA" section argued that the asymmetry deters contributors
+and that Fountain needs contributors more than the lever. That objection is not
+withdrawn. This addendum bets that the ceremony, not the asymmetry, is what
+actually deters people, and that stating the asymmetry plainly is a better
+answer than pretending to a symmetry the project did not want to keep. If that
+bet is wrong, the fix is to drop the inbound term and revert to
+inbound=outbound, which costs nothing except the option itself.

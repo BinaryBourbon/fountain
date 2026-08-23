@@ -37,8 +37,12 @@ upgrade, is in
   either: `ee/` is free to run and your changes to it stay private, which is
   what ELv2 grants and what the single-image build requires.
 
-  Contributions are inbound=outbound under the license of the directory they
-  touch, with a DCO (`git commit -s`) and deliberately no CLA. See `NOTICE`,
+  Contributions come in under the Apache License 2.0 and go out under the
+  license of the directory they touch, with a DCO (`git commit -s`), no CLA
+  document and no bot. That preserves the ability to sell a commercial
+  exception to a company whose policy forbids the AGPL, which would otherwise
+  close at the first merged outside pull request. The asymmetry it creates is
+  stated in `CONTRIBUTING.md` rather than buried. See `NOTICE`,
   `CONTRIBUTING.md` and `decisions/0027-agpl-relicensing.md`.
 
 ### Added
