@@ -586,7 +586,16 @@ defmodule FountainWeb.AgentsLive.Form do
   def render(assigns) do
     ~H"""
     <div class="max-w-2xl space-y-6">
-      <h1 class="text-2xl font-semibold">{page_title(@action)}</h1>
+      <div class="flex items-center justify-between">
+        <h1 class="text-2xl font-semibold">{page_title(@action)}</h1>
+        <.link
+          :if={@action == :edit}
+          navigate={~p"/agents/#{@agent.id}/versions"}
+          class="text-sm text-zinc-500 hover:text-zinc-700"
+        >
+          History
+        </.link>
+      </div>
 
       <form
         phx-change="validate"

@@ -586,6 +586,7 @@ defmodule FountainWeb.Router do
       live "/agents", AgentsLive.Index, :index
       live "/agents/new", AgentsLive.Form, :new
       live "/agents/:id/edit", AgentsLive.Form, :edit
+      live "/agents/:id/versions", AgentsLive.Versions, :index
       live "/environments", EnvironmentsLive.Index, :index
       live "/environments/new", EnvironmentsLive.Form, :new
       live "/environments/:id/edit", EnvironmentsLive.Form, :edit

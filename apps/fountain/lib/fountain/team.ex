@@ -541,6 +541,9 @@ defmodule Fountain.Team do
     attrs = %{
       sandbox_id: prev.sandbox_id,
       agent_id: agent_id,
+      # Ownership: agent came from the scoped get_agent above (nil-safe —
+      # a deleted agent leaves the version unstamped, like the runtime).
+      agent_version_id: agent && Agents._unsafe_current_version_id(agent.id),
       vault_id: prev.vault_id,
       environment_id: prev.environment_id,
       user_id: user_id,

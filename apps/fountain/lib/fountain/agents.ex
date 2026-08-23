@@ -5,6 +5,7 @@ defmodule Fountain.Agents do
 
   alias Fountain.Agents.Agent
   alias Fountain.Agents.AgentAvatar
+  alias Fountain.Agents.AgentVersion
   alias Fountain.Audit
   alias Fountain.Conversations.Conversation
   alias Fountain.Environments
@@ -107,10 +108,22 @@ defmodule Fountain.Agents do
   manifest apply all leave the same trail (#543).
   """
   def create_agent(attrs, opts \\ []) do
-    %Agent{}
-    |> Agent.changeset(attrs)
-    |> validate_environment_owner()
-    |> Repo.insert()
+    changeset =
+      %Agent{}
+      |> Agent.changeset(attrs)
+      |> validate_environment_owner()
+
+    # The version snapshot shares the transaction with the insert: an agent
+    # with no version 1 would break the invariant every conversation and the
+    # history page lean on. The audit call stays outside (see audited/3).
+    Repo.transaction(fn ->
+      with {:ok, agent} <- Repo.insert(changeset),
+           {:ok, _} <- Repo.insert(version_changeset(agent, 1)) do
+        agent
+      else
+        {:error, invalid} -> Repo.rollback(invalid)
+      end
+    end)
     |> audited("agent.created", opts)
   end
 
@@ -121,8 +134,24 @@ defmodule Fountain.Agents do
       |> Agent.changeset(attrs)
       |> validate_environment_owner()
 
-    changeset
-    |> Repo.update()
+    result =
+      if snapshot_needed?(changeset) do
+        Repo.transaction(fn ->
+          with {:ok, updated} <- Repo.update(changeset),
+               {:ok, _} <-
+                 Repo.insert(version_changeset(updated, next_version_number(updated.id))) do
+            updated
+          else
+            {:error, invalid} -> Repo.rollback(invalid)
+          end
+        end)
+      else
+        # No config field moved (a no-op save): no version row, same as no
+        # audit metadata worth recording twice.
+        Repo.update(changeset)
+      end
+
+    result
     |> audited("agent.updated", merge_metadata(opts, Audit.changed_fields(changeset)))
   end
 
@@ -213,6 +242,110 @@ defmodule Fountain.Agents do
 
   @doc "Fetch the raw avatar blob for an agent. Returns nil if none uploaded."
   def get_avatar(%Agent{id: agent_id}), do: Repo.get(AgentAvatar, agent_id)
+
+  # ── versions ──────────────────────────────────────────────────────────────
+
+  # The config fields a version captures — everything `Agent.changeset/2`
+  # casts except ownership (`user_id`) and the avatar, which is a blob with
+  # its own lifecycle, not config.
+  @snapshot_fields [
+    :name,
+    :description,
+    :system,
+    :model,
+    :runtime,
+    :sandbox_provider,
+    :skills,
+    :mcp_servers,
+    :metadata,
+    :allowed_vault_ids,
+    :allowed_environment_ids,
+    :permission_policy,
+    :environment_id
+  ]
+
+  @doc """
+  The string-keyed config payload a version stores for `agent`.
+
+  Public so tests assert the same shape the context writes; the backfill in
+  the create_agent_versions migration mirrors it in SQL.
+  """
+  def snapshot_config(%Agent{} = agent) do
+    Map.new(@snapshot_fields, fn field -> {Atom.to_string(field), Map.get(agent, field)} end)
+  end
+
+  @doc "List an agent's versions, newest first, scoped to user."
+  def list_agent_versions(agent_id, user_id) when is_binary(user_id) do
+    Repo.all(
+      from v in AgentVersion,
+        where: v.agent_id == ^agent_id and v.user_id == ^user_id,
+        order_by: [desc: v.version]
+    )
+  end
+
+  @doc "Get one version of an agent by number, scoped to user. Nil when missing."
+  def get_agent_version(agent_id, version, user_id)
+      when is_integer(version) and is_binary(user_id) do
+    Repo.get_by(AgentVersion, agent_id: agent_id, version: version, user_id: user_id)
+  end
+
+  @doc """
+  WARNING: no owner check. The id of an agent's newest version, for stamping
+  onto a conversation directly after a tenant-scoped agent fetch.
+  """
+  def _unsafe_current_version_id(agent_id) do
+    Repo.one(
+      from v in AgentVersion,
+        where: v.agent_id == ^agent_id,
+        order_by: [desc: v.version],
+        limit: 1,
+        select: v.id
+    )
+  end
+
+  @doc """
+  Apply a prior version's config as a new edit.
+
+  This is `update_agent/3` with the version's stored config as attrs: history
+  is never rewritten — the rollback itself becomes the newest version. The
+  config is re-validated on the way back in, so a snapshot referencing
+  infrastructure that no longer exists (a removed sandbox provider, a deleted
+  environment) is refused with a changeset error rather than restored blind.
+  """
+  def rollback_agent(
+        %Agent{id: agent_id} = agent,
+        %AgentVersion{agent_id: agent_id} = version,
+        opts \\ []
+      ) do
+    update_agent(
+      agent,
+      version.config,
+      merge_metadata(opts, %{"rolled_back_to" => version.version})
+    )
+  end
+
+  defp version_changeset(%Agent{} = agent, number) do
+    AgentVersion.changeset(%AgentVersion{}, %{
+      version: number,
+      config: snapshot_config(agent),
+      agent_id: agent.id,
+      user_id: agent.user_id
+    })
+  end
+
+  # Runs inside the update transaction; the unique index on
+  # [agent_id, version] turns a concurrent-edit race into a changeset error
+  # rather than two rows with the same number.
+  defp next_version_number(agent_id) do
+    current =
+      Repo.one(from v in AgentVersion, where: v.agent_id == ^agent_id, select: max(v.version))
+
+    (current || 0) + 1
+  end
+
+  defp snapshot_needed?(%Ecto.Changeset{changes: changes}) do
+    Enum.any?(@snapshot_fields, &Map.has_key?(changes, &1))
+  end
 
   defp apply_search(query, ""), do: query
 
