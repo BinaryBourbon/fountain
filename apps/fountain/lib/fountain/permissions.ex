@@ -65,6 +65,37 @@ defmodule Fountain.Permissions do
   "no option was selected" and the only honest answer available. Inventing an
   `optionId` the agent never advertised would at best error and at worst select
   something unrelated.
+
+  ## Fountain does not remember an answer, and "always" often does not either
+
+  An answer is relayed to the peer and forgotten. Every "remember this"
+  semantic belongs to the agent, and each of the three that ask implements it
+  differently. Measured live against production on 2026-08-22 — do not
+  re-derive, and do not assume an `allow_always` option means what it says:
+
+  | runtime | what `allow_always` does |
+  |---|---|
+  | claude | Writes a rule into `.claude/settings.local.json` in the sandbox. Holds across turns, dies with the sandbox. **Except** where the command writes outside the working directory — see below. |
+  | codex | "Allow for Session" lives in the codex process, so it lasts exactly one turn. "Allow Commands Starting With …" (`accept_execpolicy_amendment`) is written to disk and holds. |
+  | opencode | Never asks, so there is nothing to grant (#959). |
+
+  Two consequences worth holding on to. **codex's session grant is ours, not
+  a defect**: one ACP connection per turn (0014) tears that process down at
+  turn end, which is the same lever as #817. And **every grant dies with the
+  sandbox**, so a `Lifecycle` reclaim silently resets consent.
+
+  claude's exception is upstream and is a prompt loop no clicking resolves
+  (anthropics/claude-code#88919). A shell redirect to a path outside the
+  session's working directory is gated by a filesystem write check that no
+  `Bash(...)` or `Read(...)` rule participates in, and `allow_always` only ever
+  proposes those. So it writes a well-formed, general, irrelevant rule, and the
+  byte-identical command asks again — measured twice within a single turn, in
+  one process. The rule of thumb: **`allow_always` holds only where the command
+  writes nothing outside its cwd.**
+
+  None of this is worked around here. #996 is where the question of whether
+  Fountain should own grants at all is being decided; a matcher written before
+  that decision would be a second permission authority arriving by accident.
   """
 
   @auto_allow "auto_allow"

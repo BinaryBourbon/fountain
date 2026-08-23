@@ -83,6 +83,33 @@ Some rules keep that safe.
 | opencode | **No** | It decides this in its own server, and sends nothing. Fountain refuses a policy stricter than `auto_allow` on this runtime, with 422 `permission_policy_unenforceable` ([#959](https://github.com/BinaryBourbon/fountain/issues/959)). |
 | gemini | Yes | Measured on gemini 0.53 with `gemini-2.5-flash`. Google removed that model for new API keys after this measurement. Its option ids are its own (`proceed_once`, `cancel`), so answer with an id from the request, never a name you know from another runtime. |
 
+## An "always" answer does not always hold
+
+Each runtime that asks offers an option that means "do not ask me again".
+Fountain sends the option id, and it keeps no record of the answer. The runtime
+decides how long its own grant lasts, and the three runtimes disagree.
+
+| Runtime | How long an "always" answer lasts |
+|---|---|
+| claude | It writes a rule to a file in the sandbox. The rule holds for later turns. |
+| codex | `Allow for Session` lasts one turn. The option that amends the command policy goes to a file, and it holds. |
+| opencode | This runtime never asks, so it grants nothing. |
+
+Every grant lives inside the sandbox. A new sandbox starts with none of them.
+
+Two limits are open work.
+
+- codex loses a session grant at the end of each turn. Fountain opens one
+  protocol connection per turn, and the grant lives in the runtime process.
+  See [#817](https://github.com/BinaryBourbon/fountain/issues/817) and
+  [#996](https://github.com/BinaryBourbon/fountain/issues/996).
+- claude asks again for a command that writes outside the directory where it
+  runs.
+  The rule that `Always Allow` writes cannot answer the check that stopped the
+  command, so the prompt repeats. This is a defect in the runtime, and the
+  report is
+  [anthropics/claude-code#88919](https://github.com/anthropics/claude-code/issues/88919).
+
 ## What the audit trail keeps
 
 Fountain records a refusal, with the tool and the verdict. It records no
