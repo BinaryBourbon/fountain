@@ -44,7 +44,7 @@ sentence:
 
 # Everything under docs/ is a published page, so everything under docs/ is
 # linted. `docs/superpowers/**` used to be excluded here — planning material
-# that MkDocs published and /docs did not. #1006 retired the MkDocs site and
+# that MkDocs published and /docs did not. #1008 retired the MkDocs site and
 # moved those pages to `superpowers/` at the repo root.
 files:
   include:

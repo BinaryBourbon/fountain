@@ -25,7 +25,7 @@ rule exists to stop a dash carrying a clause, which a lone cell cannot do.
 
 There is no directory exclusion any more. `docs/superpowers/` was one —
 internal planning material that sat under `docs/` without a nav entry, so
-MkDocs published it and /docs did not. #1006 retired the MkDocs site and made
+MkDocs published it and /docs did not. #1008 retired the MkDocs site and made
 "in docs/ but not in the nav" a test failure, and those four pages moved to
 `superpowers/` at the repo root. Everything under `docs/` is now a published
 page, so every page under `docs/` is checked.

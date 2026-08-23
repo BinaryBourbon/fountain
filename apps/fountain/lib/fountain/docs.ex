@@ -7,7 +7,7 @@ defmodule Fountain.Docs do
   static MkDocs Material site and deployed to GitHub Pages as well; that second
   copy was retired once `/docs` served the same markdown from the same nav,
   because two publishing paths for one set of pages is two things to keep
-  green (#1006).
+  green (#1008).
 
   Pages are read at compile time (`@external_resource`, so edits recompile in
   dev), preprocessed to plain markdown by `Fountain.Docs.Compiler`, and served

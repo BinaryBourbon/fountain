@@ -8,7 +8,7 @@ defmodule Fountain.Docs.Compiler do
   Covers exactly the dialect the docs use (see the `Fountain.Docs` moduledoc):
   snippet includes, admonitions, and relative `.md` links. The syntax is
   inherited from the MkDocs Material site these pages were published as until
-  #1006; this is not, and never was, a general MkDocs renderer.
+  #1008; this is not, and never was, a general MkDocs renderer.
   """
 
   @doc ~S(`"index.md"` → `""`, `"integrations/index.md"` → `"integrations"`, else the rootname.)

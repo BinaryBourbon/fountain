@@ -349,13 +349,13 @@ See `.env.example` for the full list. Key ones for local dev:
 `docs/` is the public manual, published at `/docs` and **nowhere else** — the
 markdown is embedded at compile time by `Fountain.Docs`. It used to be built as
 a MkDocs Material site and deployed to GitHub Pages as well; that copy was
-retired in #1006, so there is no `mkdocs.yml`, no `docs.yml` workflow and no
+retired in #1008, so there is no `mkdocs.yml`, no `docs.yml` workflow and no
 `mkdocs build` step to keep green. A page reaches a reader through `/docs` or
 not at all.
 
-The one thing left on GitHub Pages is a **tombstone**: one redirect per old URL
-into `/docs`, built by `scripts/build-pages-tombstone.py` from the nav and
-published by hand from `.github/workflows/pages-tombstone.yml`. It is
+The one thing left on GitHub Pages is a **tombstone** (#1011): one redirect per
+old URL into `/docs`, built by `scripts/build-pages-tombstone.py` from the nav
+and published by hand from `.github/workflows/pages-tombstone.yml`. It is
 `workflow_dispatch` only and reads no page content. **Do not turn it into a
 docs publishing path**, and do not treat a docs edit as needing a re-run —
 the redirects only go stale if a page's *slug* changes.

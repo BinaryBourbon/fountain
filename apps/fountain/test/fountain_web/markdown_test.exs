@@ -319,7 +319,7 @@ end|
     # test above and break the Dockerfile's cache step. The fence still says
     # `promql`, because the fence names the language rather than requesting a
     # renderer, and renaming it to hide the gap would be a lie a future parser
-    # never undoes. (Until #1006 there was a second reason: the MkDocs build
+    # never undoes. (Until #1008 there was a second reason: the MkDocs build
     # highlighted it, Pygments having a lexer.)
     #
     # This list is the difference between a gap that is known and one that is
