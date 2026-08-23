@@ -430,7 +430,7 @@ defmodule FountainWeb.BillingLiveTest do
       {:ok, _lv, html} = live(login_user(conn, user), ~p"/account/billing")
 
       assert html =~ "Turn hours"
-      assert html =~ "of 100 included"
+      assert html =~ "of #{Fountain.Plans.included_turn_hours("solo")} included"
       assert html =~ "A turn hour is an hour with a prompt in flight"
     end
 
@@ -443,13 +443,39 @@ defmodule FountainWeb.BillingLiveTest do
 
       {:ok, _lv, html} = live(login_user(conn, user), ~p"/account/billing")
 
+      team = Fountain.Plans.fetch!("team")
+      trial = Fountain.Plans.fetch!("trial")
+
       assert html =~ "Trial, then Team"
-      assert html =~ "of 40 included"
+      assert html =~ "of #{trial.included_turn_hours} included"
       assert html =~ "on trial"
       # The tier's numbers are stated as what subscribing raises them to.
-      assert html =~ "300"
-      assert html =~ "15"
-      refute html =~ "of 300 included"
+      assert html =~
+               "raises those to #{team.included_turn_hours} and #{team.concurrent_sandboxes}"
+
+      refute html =~ "of #{team.included_turn_hours} included"
+    end
+
+    # The trial ties the cheapest tier on concurrency and hours, so the
+    # "raises those to" sentence would name the numbers the customer already
+    # has. Subscribing at the bottom of the ladder buys the clock, not
+    # capacity, and the page has to say the true thing.
+    test "a trialing account on a tier that ties the trial is not promised a raise",
+         %{conn: conn} do
+      solo = Fountain.Plans.fetch!("solo")
+      trial = Fountain.Plans.fetch!("trial")
+      # Guard: if Solo ever climbs above the trial again, this test is
+      # asserting the wrong branch and should be deleted rather than fixed.
+      assert solo.concurrent_sandboxes == trial.concurrent_sandboxes
+      assert solo.included_turn_hours == trial.included_turn_hours
+
+      user = insert_verified_user(plan: "solo")
+
+      {:ok, _lv, html} = live(login_user(conn, user), ~p"/account/billing")
+
+      refute html =~ "raises those to"
+      assert html =~ "which is what Solo carries too"
+      assert html =~ "lifts the fourteen-day limit"
     end
 
     test "says nothing is limited when a tenant is over", %{conn: conn} do
@@ -533,9 +559,11 @@ defmodule FountainWeb.BillingLiveTest do
       # switch back onto.
       refute html =~ "Switch to Legacy"
       assert html =~ "an earlier plan we no longer sell"
-      # The hours are part of what a customer is choosing between.
-      assert html =~ "100 turn hours included"
-      assert html =~ "800 turn hours included"
+      # The hours are part of what a customer is choosing between. Derived
+      # from the catalog: which numbers the tiers carry is pinned in
+      # plans_test.exs, and this is about the picker rendering them.
+      assert html =~ "#{Fountain.Plans.included_turn_hours("solo")} turn hours included"
+      assert html =~ "#{Fountain.Plans.included_turn_hours("scale")} turn hours included"
     end
 
     test "the current plan is not offered as a switch", %{conn: conn} do

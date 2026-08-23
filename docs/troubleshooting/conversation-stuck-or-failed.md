@@ -69,7 +69,7 @@ the full table in [Conversation states](../reference/conversation-states.md).
 ## The knock-on effect on quota
 
 A crash in the middle of a provision leaves a `pending` or `starting` sandbox
-row. That row counts against the user's quota, which is 5 concurrent sandboxes
+row. That row counts against the user's quota, which is 2 concurrent sandboxes
 by default.
 
 The reaper runs each hour at :07 and releases a row that has been stuck for

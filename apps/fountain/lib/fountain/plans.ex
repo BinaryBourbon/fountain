@@ -20,8 +20,8 @@ defmodule Fountain.Plans do
   ## Included turn hours
 
   `included_turn_hours` is derived, not chosen per tier: **20 turn hours per
-  concurrent sandbox the plan allows**, so Solo's 5 slots carry 100 hours and
-  Scale's 40 carry 800. Deriving it keeps the ladder on one axis — a plan
+  concurrent sandbox the plan allows**, so Solo's 2 slots carry 40 hours and
+  Scale's 10 carry 200. Deriving it keeps the ladder on one axis — a plan
   cannot end up with more capacity and less work to do with it.
 
   A *turn* hour is time with a prompt actually in flight
@@ -41,24 +41,28 @@ defmodule Fountain.Plans do
 
   | Plan | Concurrent | Turn hours | Teammate contacts | Price |
   |---|---|---|---|---|
-  | `solo` | 5 | 100 | 1 | $29/mo |
-  | `team` | 15 | 300 | 3 | $79/mo |
-  | `scale` | 40 | 800 | 10 | $199/mo |
-  | `legacy` | 15 | 300 | 3 | $29/mo (closed) |
+  | `solo` | 2 | 40 | 1 | $29/mo |
+  | `team` | 5 | 100 | 3 | $79/mo |
+  | `scale` | 10 | 200 | 10 | $199/mo |
+  | `legacy` | 5 | 100 | 3 | $29/mo (closed) |
   | `trial` | 2 | 40 | 0 | free (closed) |
 
-  ## The trial is a plan, and a smaller one
+  ## The trial is a plan, and never a larger one
 
   `trial` is what a `trialing` account gets, whatever tier its subscription
-  names — see `effective/1`. It is deliberately below every paid plan on every
-  axis, because a trial that hands over the full tier gives a converting
-  customer nothing on the day they pay, and the customer portal is configured
-  to end the trial on a plan change precisely so they get something.
+  names — see `effective/1`. It is never *above* a paid plan on any axis, and
+  it may sit level with the smallest one: it matches Solo's capacity and
+  carries no teammate contacts. A trial that handed over a *higher* tier's
+  capacity would make converting a downgrade, which is the failure this
+  bounds. Converting at the bottom of the ladder buys the contact and the
+  removal of the clock rather than more concurrency, and the customer portal
+  is still configured to end the trial on a plan change.
 
-  Its zero contacts are the sharpest edge: an AgentMail inbox and an
-  AgentPhone number cost real money the moment they exist, and a free trial
-  that mints one is an abuse vector with a monthly bill attached. That is one
-  number in the catalog to change if the trade turns out to be wrong.
+  Its zero contacts are the sharpest edge, and now the only axis separating it
+  from Solo: an AgentMail inbox and an AgentPhone number cost real money the
+  moment they exist, and a free trial that mints one is an abuse vector with a
+  monthly bill attached. That is one number in the catalog to change if the
+  trade turns out to be wrong.
 
   `legacy` is the flat price every account bought before the tiers existed.
   It is pinned to the old `STRIPE_PRICE_ID`, carries `team`'s capacity so that
@@ -125,10 +129,10 @@ defmodule Fountain.Plans do
     %{
       slug: "solo",
       name: "Solo",
-      tagline: "One person, a handful of agents at a time.",
+      tagline: "One person, a couple of agents at a time.",
       monthly_cents: 2_900,
-      concurrent_sandboxes: 5,
-      included_turn_hours: 100,
+      concurrent_sandboxes: 2,
+      included_turn_hours: 40,
       team_contacts: 1,
       order: 1
     },
@@ -137,8 +141,8 @@ defmodule Fountain.Plans do
       name: "Team",
       tagline: "A standing team of agents, working in parallel.",
       monthly_cents: 7_900,
-      concurrent_sandboxes: 15,
-      included_turn_hours: 300,
+      concurrent_sandboxes: 5,
+      included_turn_hours: 100,
       team_contacts: 3,
       order: 2
     },
@@ -147,8 +151,8 @@ defmodule Fountain.Plans do
       name: "Scale",
       tagline: "Fleet-sized fan-out, without asking first.",
       monthly_cents: 19_900,
-      concurrent_sandboxes: 40,
-      included_turn_hours: 800,
+      concurrent_sandboxes: 10,
+      included_turn_hours: 200,
       team_contacts: 10,
       order: 3
     },
@@ -157,8 +161,8 @@ defmodule Fountain.Plans do
       name: "Legacy",
       tagline: "The original flat plan, at Team capacity.",
       monthly_cents: 2_900,
-      concurrent_sandboxes: 15,
-      included_turn_hours: 300,
+      concurrent_sandboxes: 5,
+      included_turn_hours: 100,
       team_contacts: 3,
       order: 0,
       public?: false

@@ -43,7 +43,8 @@ defmodule Fountain.BillingTrialAllowanceTest do
   test "the same account on that tier gets the tier's hours" do
     user = user_on("scale", "active")
 
-    assert Billing.turn_hour_allowance(user).included == 800
+    assert Billing.turn_hour_allowance(user).included ==
+             Plans.fetch!("scale").included_turn_hours
   end
 
   # The allowance is smaller during a trial, so `over?` can be true for a
@@ -60,6 +61,7 @@ defmodule Fountain.BillingTrialAllowanceTest do
     user = user_on("scale", "trialing")
     Application.put_env(:fountain, :billing_enabled, false)
 
-    assert Billing.turn_hour_allowance(user).included == 800
+    assert Billing.turn_hour_allowance(user).included ==
+             Plans.fetch!("scale").included_turn_hours
   end
 end

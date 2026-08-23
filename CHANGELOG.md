@@ -16,6 +16,29 @@ upgrade, is in
 
 ## [Unreleased]
 
+### Changed
+
+- **Plan concurrency caps retuned to 2 / 5 / 10.** Solo now allows 2
+  concurrent sandboxes (was 5), Team 5 (was 15) and Scale 10 (was 40), with
+  the closed `legacy` plan following Team down to 5. Included turn hours stay
+  derived at 20 per slot, so they move with the caps: 40 / 100 / 200. Prices
+  do not change, no Stripe price is touched, and there is no migration — the
+  cap resolves from `users.plan` on each request, so the new numbers apply at
+  the next deploy.
+
+  **This lowers the cap on accounts that already have one.** A tenant sitting
+  above their new cap keeps the sandboxes they are running and is refused the
+  next start until they are under it. Per-account relief is
+  `sandbox_limit_override` from `/admin`, which still beats the plan in either
+  direction. Self-hosters are affected too: the default plan is `solo`, so an
+  instance with no billing drops from 5 to 2 unless it sets `DEFAULT_PLAN` or
+  an override.
+
+  The trial keeps 2 concurrent and 40 hours, which now ties Solo. The
+  invariant it is held to changed from "smaller than every paid plan on every
+  axis" to "never larger than one" — it stays strictly below Team and Scale,
+  and strictly below Solo on teammate contacts, which is the only axis still
+  separating the two. ADR 0026 carries an amendment with the reasoning.
 
 ### Fixed
 

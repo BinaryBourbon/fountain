@@ -41,6 +41,10 @@ defmodule FountainWeb.Live.BillingLive do
          # `trial` plan (`Plans.effective/1`).
          plan: Billing.plan(user),
          effective_plan: Plans.effective(user),
+         # Whether subscribing actually moves a number. The trial ties the
+         # cheapest tier on concurrency and hours, so for a Solo trialist
+         # "raises those to 2 and 40" would be a sentence that says nothing.
+         trial_raises_numbers?: trial_raises_numbers?(user),
          on_trial: user.subscription_status == "trialing" and Billing.enabled?(),
          sandbox_limit: Quotas.sandbox_limit_for(user),
          available_plans: Billing.available_plans()
@@ -48,6 +52,18 @@ defmodule FountainWeb.Live.BillingLive do
     else
       {:ok, redirect(socket, to: ~p"/account")}
     end
+  end
+
+  # A trial is never *larger* than a paid plan, but since the caps were
+  # retuned it can tie the cheapest one. Comparing rather than assuming is
+  # what keeps the page from telling a Solo trialist that subscribing raises
+  # their numbers to exactly the numbers they already have.
+  defp trial_raises_numbers?(user) do
+    tier = Plans.resolve(user.plan)
+    now = Plans.effective(user)
+
+    tier.included_turn_hours > now.included_turn_hours or
+      tier.concurrent_sandboxes > now.concurrent_sandboxes
   end
 
   # Switching tier reprices the existing subscription rather than opening
@@ -201,7 +217,10 @@ defmodule FountainWeb.Live.BillingLive do
                 (adjusted for this account)
               </span>
               <span
-                :if={@on_trial and @sandbox_limit == @effective_plan.concurrent_sandboxes}
+                :if={
+                  @on_trial and @sandbox_limit == @effective_plan.concurrent_sandboxes and
+                    @plan.concurrent_sandboxes > @effective_plan.concurrent_sandboxes
+                }
                 class="text-gray-500"
               >
                 on trial, {@plan.concurrent_sandboxes} on {@plan.name}
@@ -375,9 +394,12 @@ defmodule FountainWeb.Live.BillingLive do
           costs you nothing here, and neither does time on your own runner.
           Parked sandboxes are excluded from every number on this page.
         </p>
-        <p :if={@on_trial} class="mt-2 text-xs text-gray-500">
+        <p :if={@on_trial and @trial_raises_numbers?} class="mt-2 text-xs text-gray-500">
           A trial includes {@effective_plan.included_turn_hours} turn hours and {@effective_plan.concurrent_sandboxes} agents at once. {@plan.name} raises those to {@plan.included_turn_hours} and {@plan.concurrent_sandboxes} as soon as you subscribe — you do not
           wait for the trial to run out.
+        </p>
+        <p :if={@on_trial and not @trial_raises_numbers?} class="mt-2 text-xs text-gray-500">
+          A trial includes {@effective_plan.included_turn_hours} turn hours and {@effective_plan.concurrent_sandboxes} agents at once, which is what {@plan.name} carries too. Subscribing keeps those numbers and lifts the fourteen-day limit; a larger tier is what raises them.
         </p>
         <p :if={@allowance.over?} class="mt-2 text-xs text-amber-700">
           You are over the hours your plan includes. Nothing is limited and

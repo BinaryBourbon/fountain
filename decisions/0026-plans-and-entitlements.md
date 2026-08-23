@@ -59,6 +59,10 @@ Three public tiers, differing in nothing but the cap `Quotas` already enforces:
 | Team | 15 | 3 | $79/mo |
 | Scale | 40 | 10 | $199/mo |
 
+> **These caps were retuned on 2026-08-23** to 2 / 5 / 10 at the same prices.
+> See the second amendment at the end of this document; `Fountain.Plans` is
+> the live catalog either way.
+
 Concurrency is the only axis because it is the only number that is
 simultaneously a real cost to Fountain (capacity on the shared provider
 account, ADR 0005/0018), already enforced in code, and legible to a customer
@@ -344,3 +348,41 @@ all of that in one place.
 
 Refs: #798, ADR 0005, ADR 0006 (and its 2026-08-05 addendum), ADR 0013,
 ADR 0017, ADR 0018.
+
+## Amendment (2026-08-23) — the caps retuned to 2 / 5 / 10, and the trial ties Solo
+
+**Status:** Accepted and built. Only the numbers in `@plan_specs` moved. The
+axis, the derivation, the override, the webhook-writes-the-plan rule and the
+contact add-on are all unchanged.
+
+| Plan | Concurrent | Turn hours | Was |
+|---|---|---|---|
+| `trial` | 2 | 40 | unchanged |
+| `solo` | 2 | 40 | 5 / 100 |
+| `team` | 5 | 100 | 15 / 300 |
+| `scale` | 10 | 200 | 40 / 800 |
+| `legacy` | 5 | 100 | 15 / 300 |
+
+Prices do not move, so no Stripe price is touched and `verify_plans` keeps
+passing. Nothing is migrated: `Quotas.sandbox_limit/1` resolves the cap from
+`users.plan` on each request, so the new numbers apply at the next deploy and
+an operator override still beats them.
+
+**This lowers the cap on existing accounts, which the original ladder never
+did.** The 2026-08-22 changeover was written so that nobody lost capacity;
+this one is a deliberate reduction, and a tenant sitting above their new cap
+keeps the sandboxes they have and is refused the next start. The lever for an
+account that needs the old number is `sandbox_limit_override`, per account,
+which is what it is for.
+
+**The trial now ties Solo rather than sitting below it.** The section above
+argued that a trial carrying its tier's full numbers gives a converting
+customer nothing on the day they pay. At 2 concurrent on both, that is again
+true for the *bottom* tier specifically: converting from the trial to Solo
+buys the teammate contact and the removal of the clock, not more concurrency.
+The invariant that replaces "smaller on every axis" is **never larger than a
+plan somebody pays for** — enforced as `<=` in `plans_trial_test.exs`, which
+still leaves the trial strictly below Team and Scale because the public caps
+climb strictly. Contacts stay strictly below Solo, and that assertion is
+pinned separately: if that ties too, a free trial and a paid Solo are the same
+product with a clock on one of them.

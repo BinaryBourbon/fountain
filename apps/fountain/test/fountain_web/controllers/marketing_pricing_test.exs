@@ -118,7 +118,7 @@ defmodule FountainWeb.MarketingPricingTest do
 
     body = conn |> get(~p"/") |> html_response(200)
     assert body =~ "then from $79/mo"
-    assert body =~ "15 agents at once"
+    assert body =~ "#{Fountain.Plans.concurrent_sandboxes("team")} agents at once"
     refute body =~ "Solo"
     refute body =~ "Scale"
   end
