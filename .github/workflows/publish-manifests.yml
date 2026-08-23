@@ -49,7 +49,7 @@ on:
     branches: [main]
     paths:
       - "k8s/**"
-      - "deploy/k8s/**"
+      - "deploy/**"
   # Manual escape hatch: republishes from a given commit's tree. The
   # ancestor-walk image resolution keeps it honest — a tree whose history
   # contains no built image is refused before anything is published.
@@ -258,14 +258,27 @@ jobs:
             fi
           fi
 
-          # Stage exactly what the cluster Kustomization consumes: ./k8s plus
-          # the ../deploy/k8s baseline its kustomization references, relative
-          # layout intact. The tree is evaluated in-cluster by
-          # kustomize-controller.
+          # Stage what the cluster Kustomization consumes: ./k8s plus every
+          # ../deploy/* tree its kustomization references, relative layout
+          # intact. The tree is evaluated in-cluster by kustomize-controller.
+          #
+          # All of deploy/ rather than a named list. The named list was
+          # `deploy/k8s` alone, and when #1001 added `- ../deploy/grafana` to
+          # k8s/kustomization.yaml the artifact went out without it. Flux could
+          # not build and sat at Ready=False (BuildFailed), which wedges every
+          # later deploy while the running workload stays healthy — the quiet
+          # kind of broken.
           staging=$(mktemp -d)
           cp -R k8s "${staging}/k8s"
-          mkdir -p "${staging}/deploy"
-          cp -R deploy/k8s "${staging}/deploy/k8s"
+          cp -R deploy "${staging}/deploy"
+
+          # Build what is about to be published, not the repo. The earlier
+          # kustomize step runs against the full checkout, where a
+          # `../deploy/<x>` reference resolves whether or not it was staged, so
+          # it cannot see a staging omission by construction. This can, because
+          # it builds the same subset kustomize-controller will.
+          echo "── verifying the staged tree builds"
+          kubectl kustomize "${staging}/k8s" > /dev/null
 
           flux push artifact "oci://${MANIFESTS}:sha-${SHORT}" \
             --path="${staging}" \
