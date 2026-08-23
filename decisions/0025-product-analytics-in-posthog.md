@@ -96,11 +96,16 @@ things a product stream must refuse. Of 2,160 audit rows in 24 hours:
 - **425 rows across 73 distinct names were the `:api` pipeline's request-log
   row** (ADR 0013 §4), named after the request line and carrying a resource id.
   PostHog registers each distinct name as its own event definition, so that is
-  73 new definitions per day, permanently. The semantic row for the same
-  mutation is already captured, so refusing it loses nothing.
+  73 new definitions per day. The semantic row for the same mutation is already
+  captured, so refusing it loses nothing.
   **Amended by ADR 0028**: the reasoning above is about the *name*, and was
   applied to the row. The row is now captured as one `api.request` event with
   the route as a property.
+  **Corrected by ADR 0028 (2026-08-23)**: this said "permanently", and that is
+  not true — the retired request-line definitions left the project's taxonomy
+  about a day after their events stopped. The cost of a name-per-route is paid
+  while it exists, by everyone who reads the taxonomy, which is enough to
+  refuse it; it is not paid forever. See ADR 0028's Correction section.
 
 `Fountain.Analytics.product_event?/2` is that filter: a closed dotted
 vocabulary, and `api_key.*` only from a human actor. It changes nothing about

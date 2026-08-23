@@ -54,10 +54,10 @@ stop exactly this caused it.
 
 **API usage was refused wholesale.** ADR 0025 declined the `:api` pipeline's
 request-log rows, correctly, because their *names* are request lines and 73
-distinct names in one day is 73 permanent event definitions. That reasoning is
-about the name. It was applied to the row, which left "which endpoints does
-anyone call", "is the SDK erroring", and "did that release change API usage"
-with no answer, while the audit trail held the data for all three.
+distinct names in one day is 73 new event definitions. That reasoning is about
+the name. It was applied to the row, which left "which endpoints does anyone
+call", "is the SDK erroring", and "did that release change API usage" with no
+answer, while the audit trail held the data for all three.
 
 ## Decision
 
@@ -96,10 +96,10 @@ person lands on after signing in.
 
 **The `:api` request log becomes one event.** `api.request`, with `method`,
 `route`, `status` and `status_class` as properties. The cardinality moves from
-the event definition, where it is permanent and unbounded, to a property
-value, where PostHog is built to break down by it and the router bounds the
-set. `Fountain.Analytics.api_request/1` owns the classification, and the two
-classifiers are mutually exclusive by test.
+the event definition, where it is unbounded and shared by everything that reads
+the taxonomy, to a property value, where PostHog is built to break down by it
+and the router bounds the set. `Fountain.Analytics.api_request/1` owns the
+classification, and the two classifiers are mutually exclusive by test.
 
 A request refused before Fountain knows the account has no subject and is not
 captured. That preserves ADR 0025's rule that persons mean accounts, and it
@@ -232,8 +232,11 @@ the library does.
   private beyond what masking already covers. Writing it down beat switching it
   off.
 - **Lifting `product_event?/2`'s refusal and letting route-named events
-  through.** The original reasoning holds: 73 permanent event definitions per
-  day, and PostHog never garbage-collects one.
+  through.** The original reasoning holds, though **not for the reason first
+  given here** — see the correction below. 73 new event definitions a day is a
+  taxonomy nobody can read, an autocomplete nobody can use, and a
+  `read-data-schema` answer in which the real vocabulary is a minority of the
+  output. That is enough on its own.
 - **Answering API usage from Grafana instead.** The data is already there and
   this would have cost nothing. It splits one question across two tools: "did
   the accounts that signed up last week start using the API" needs the person,
@@ -248,3 +251,38 @@ the library does.
   PostHog's own issue tracker, and it would fix the symptom for every event at
   once. It is a project setting rather than a property of this deployment, so
   a second Fountain reporting into the same project would inherit it silently.
+
+## Correction (2026-08-23)
+
+This ADR was accepted saying that a PostHog event definition is **permanent**,
+and that "PostHog never garbage-collects one". That is not true, and the
+statement was inherited from ADR 0025 rather than checked.
+
+The nine request-line definitions this decision retired
+(`POST /api/conversations`, `POST /api/mcp/team/:conversation_id`, and the
+seven uuid-carrying names that predate the route-pattern fix) stopped receiving
+events at 2026-08-22T09:00Z. Roughly a day later they were **gone from the
+project's taxonomy**: a full listing of `/api/event_definitions/` returns 32
+definitions and none of them is a request line, `?search=POST` returns zero,
+and `?include_hidden=true` returns the same 32. The historical events are still
+queryable in `events`; only the taxonomy entries are absent.
+
+Whether PostHog prunes a definition once its event stops arriving, or whether
+the tool that first listed them reads distinct names out of event data rather
+than out of the definitions table, is not determinable from the API. Either
+way, "permanent" is unsupported.
+
+**The decision does not change**, and neither does `product_event?/2`. One
+bounded event name is still right, because the cost of 73 new names a day is
+paid while they exist and by everyone who reads the taxonomy — the event
+picker, autocomplete, `read-data-schema`, and anyone trying to learn the
+vocabulary. That cost is real and self-limiting rather than real and forever,
+which is a weaker argument for the same conclusion.
+
+What is worth carrying forward is the method: this was found by trying to act
+on the ADR's claim (cleaning up the definitions it said would accumulate) and
+discovering there was nothing to clean up. An ADR's justification is checkable,
+and this one had not been checked.
+
+ADR 0025 §"the request log is not a product event" carries the same
+"permanently" and inherits this correction.

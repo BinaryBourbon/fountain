@@ -317,8 +317,8 @@ defmodule Fountain.Analytics do
 
   What would be lost by keeping it is the event taxonomy. Those names embed
   resource ids: **73 distinct action names in one day**, every one of which
-  PostHog registers as its own event definition, permanently. A product
-  vocabulary has to be closed, and `@context_action` is that fence.
+  PostHog registers as its own event definition. A product vocabulary has to
+  be closed, and `@context_action` is that fence.
 
   ## A credential the system issued itself is not a product event
 
@@ -359,7 +359,9 @@ defmodule Fountain.Analytics do
   `product_event?/2` refuses these rows and gives the reason: their *names*
   are request lines, and one PostHog event definition per route — per uuid,
   before `FountainWeb.Plugs.Audit` started recording the pattern — is
-  unbounded cardinality in a project that never garbage-collects definitions.
+  unbounded cardinality in the one taxonomy every reader of the project
+  shares: the event picker, autocomplete, and anyone trying to learn the
+  vocabulary.
 
   That argument is about the name, and only the name. It was read as "API
   traffic does not belong in PostHog", which left the product with no answer
@@ -369,10 +371,16 @@ defmodule Fountain.Analytics do
 
   So the row still becomes an event; it becomes **one** event,
   `api.request`, with the route as a *property*. Cardinality moves from the
-  event definition, where it is permanent and unbounded, to a property value,
-  where PostHog is built to break down by it and the router bounds the set.
-  One name, one definition, and `route`, `method` and `status` are the three
-  breakdowns that answer all three questions.
+  event definition, which is shared, to a property value, where PostHog is
+  built to break down by it and the router bounds the set. One name, one
+  definition, and `route`, `method` and `status` are the three breakdowns that
+  answer all three questions.
+
+  ADR 0028's Correction section retracts a stronger claim this docstring and
+  ADR 0025 both used to make — that a definition is permanent, and that PostHog
+  never removes one. The retired request-line definitions left the taxonomy
+  about a day after their last event. The cost is paid while they exist, which
+  is reason enough; it is not paid forever.
 
   Returns `:error` for anything that is not a request line, which is every
   semantic context action.

@@ -16,6 +16,21 @@ upgrade, is in
 
 ## [Unreleased]
 
+### Fixed
+
+- **ADR 0028 said a PostHog event definition is permanent. It is not.** The
+  claim came from ADR 0025 and was repeated without checking. Trying to act on
+  it is what disproved it: the nine request-line definitions `api.request`
+  retired stopped receiving events on 2026-08-22, and about a day later they
+  were gone from the project's taxonomy — a full listing returns 32
+  definitions with no request line among them, `?search=POST` returns zero,
+  and `?include_hidden=true` returns the same 32. The historical events remain
+  queryable; only the taxonomy entries went. The decision does not change and
+  neither does `product_event?/2` — 73 new names a day is still a taxonomy
+  nobody can read — but the cost is paid while those names exist rather than
+  forever, which is a weaker argument for the same conclusion. Corrected in
+  ADR 0028's new Correction section, in ADR 0025, in the `Fountain.Analytics`
+  and `FountainWeb.Plugs.Audit` docstrings, and in the configuration guide.
 
 ### Added
 
@@ -88,9 +103,9 @@ upgrade, is in
   audit trail held the data for all three. They now arrive as a single
   `api.request` event carrying `method`, `route`, `status` and `status_class`.
   One event name, with the route as a *property*: the original refusal was
-  about the event *name* (73 distinct request-line names in one day, each a
-  permanent PostHog event definition), and a property is where PostHog can
-  break down by a value the router bounds.
+  about the event *name* (73 distinct request-line names in one day, each its
+  own PostHog event definition in the taxonomy everyone reads), and a property
+  is where PostHog can break down by a value the router bounds.
 - **A finance panel at `/admin/finance`.** `/admin` had an MRR tile with no
   cost beside it and a sandbox-hours table with no money in it, so the only
   question an operator asks a finance page — which accounts cost more than

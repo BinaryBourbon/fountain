@@ -283,9 +283,9 @@ without a new call site.
 
 Each API write leaves a second audit row named after the request line. Fountain
 sends these rows as one event, `api.request`. The route is a property, not part
-of the name. A name per route makes a permanent event type per route, and
-PostHog never removes an event type. A property keeps the count of names at
-one, and PostHog can break down a property.
+of the name. A name per route makes an event type per route, and each event
+type fills the list that every person on the project reads. A property keeps
+the count of names at one, and PostHog can break down a property.
 
 The `api.request` event carries `method`, `route`, `status` and `status_class`.
 Together they answer which endpoints your callers use, and which of them fail.
