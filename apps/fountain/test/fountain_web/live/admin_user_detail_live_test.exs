@@ -47,6 +47,19 @@ defmodule FountainWeb.AdminUserDetailLiveTest do
       refute html =~ "key_hash"
     end
 
+    test "shows the tenant's turn hours against their plan (#1016)", %{conn: conn} do
+      admin = insert_admin()
+      target = insert_verified_user(plan: "team")
+
+      {:ok, _lv, html} = live(login_user(conn, admin), ~p"/admin/users/#{target.id}")
+
+      assert html =~ "Turn hours"
+      assert html =~ "0.0 / 300"
+      # No Stripe period on this account, so the window is a calendar month
+      # and support has to be able to see that before quoting the number.
+      assert html =~ "calendar month"
+    end
+
     test "shows admin actions taken against the account", %{conn: conn} do
       admin = insert_admin()
       target = insert_verified_user()

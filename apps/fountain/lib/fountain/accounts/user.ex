@@ -52,6 +52,14 @@ defmodule Fountain.Accounts.User do
     # access continues until current_period_end, when `.deleted` fires. Synced
     # from subscription webhooks so the UI can say "access until <date>".
     field :cancel_at_period_end, :boolean, default: false
+    # The invoiced period, both ends of it, synced from the Stripe
+    # subscription. `current_period_start` is what makes an allowance
+    # measurable over the window the customer is actually charged for rather
+    # than over a calendar month that drifts out of step with every renewal.
+    # Null on a trialing account Stripe has not reported a period for, on a
+    # comped account, and on a self-hosted deployment with no Stripe —
+    # `Fountain.Billing.billing_period/2` handles all three.
+    field :current_period_start, :utc_datetime
     field :current_period_end, :utc_datetime
     field :session_version, :integer, default: 0
     field :theme_preference, :string, default: "system"
@@ -143,6 +151,7 @@ defmodule Fountain.Accounts.User do
       :trial_ends_at,
       :subscription_synced_at,
       :cancel_at_period_end,
+      :current_period_start,
       :current_period_end,
       # Only ever put here when the price on the subscription mapped to a
       # known plan. An unrecognised price leaves the key out entirely rather

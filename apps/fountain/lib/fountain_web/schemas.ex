@@ -1601,6 +1601,15 @@ defmodule FountainWeb.Schemas do
               nullable: true
             },
             trial_ends_at: %Schema{type: :string, format: :"date-time", nullable: true},
+            current_period_start: %Schema{
+              type: :string,
+              format: :"date-time",
+              nullable: true,
+              description:
+                "Start of the period Stripe is invoicing. Null for a comped " <>
+                  "account, a deployment without Stripe, and any subscription " <>
+                  "that has not sent a webhook since this field existed."
+            },
             current_period_end: %Schema{type: :string, format: :"date-time", nullable: true},
             cancel_at_period_end: %Schema{
               type: :boolean,
@@ -1618,6 +1627,12 @@ defmodule FountainWeb.Schemas do
                   type: :integer,
                   description: "The plan's concurrency cap."
                 },
+                included_turn_hours: %Schema{
+                  type: :integer,
+                  description:
+                    "Turn hours the plan includes per billing period. Reported " <>
+                      "only: no request is refused for exceeding it."
+                },
                 sandbox_limit: %Schema{
                   type: :integer,
                   description:
@@ -1632,10 +1647,21 @@ defmodule FountainWeb.Schemas do
             },
             period: %Schema{
               type: :object,
-              description: "The window the usage numbers cover (current calendar month).",
+              description:
+                "The window the usage numbers cover: the period Stripe is " <>
+                  "invoicing, or the current calendar month when there is no " <>
+                  "such period.",
               properties: %{
                 start: %Schema{type: :string, format: :"date-time"},
-                end: %Schema{type: :string, format: :"date-time"}
+                end: %Schema{type: :string, format: :"date-time"},
+                source: %Schema{
+                  type: :string,
+                  enum: ~w(subscription calendar_month),
+                  description:
+                    "`calendar_month` means these numbers do not line up with " <>
+                      "an invoice — the account is comped, self-hosted, or has " <>
+                      "not reported a period yet."
+                }
               }
             },
             usage: %Schema{
@@ -1643,6 +1669,21 @@ defmodule FountainWeb.Schemas do
               properties: %{
                 conversations: %Schema{type: :integer},
                 turns: %Schema{type: :integer},
+                turn_hours: %Schema{
+                  type: :number,
+                  description:
+                    "Hours with a prompt in flight, on providers Fountain pays " <>
+                      "for. The unit included_turn_hours is denominated in. An " <>
+                      "idle sandbox spends none of these; sandbox_minutes counts it."
+                },
+                turn_hours_included: %Schema{
+                  type: :integer,
+                  description: "The plan's allowance, repeated here beside what was used."
+                },
+                turn_hours_remaining: %Schema{
+                  type: :number,
+                  description: "Clamped at zero; an account over its allowance is not owed hours."
+                },
                 sandbox_minutes: %Schema{
                   type: :number,
                   description: "Active sandbox minutes inside the period, parked time excluded."

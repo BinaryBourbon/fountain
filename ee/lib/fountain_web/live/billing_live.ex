@@ -21,15 +21,19 @@ defmodule FountainWeb.Live.BillingLive do
   def mount(_params, _session, socket) do
     if Billing.enabled?() do
       user = socket.assigns.current_user
-      {period_start, period_end} = current_month_range()
-      usage = Billing.usage_summary(user.id, period_start, period_end)
+      # The window Stripe invoices, not the calendar month — an allowance
+      # measured over a period the customer is not charged for is worse than
+      # no allowance. `:source` says which one this is; the template shows a
+      # note when it is the fallback.
+      period = Billing.billing_period(user)
+      usage = Billing.usage_summary(user.id, period.start, period.end)
 
       {:ok,
        assign(socket,
          page_title: "Billing",
          usage: usage,
-         period_start: period_start,
-         period_end: period_end,
+         allowance: Billing.turn_hour_allowance(user, period: period),
+         period: period,
          stripe_url_loading: false,
          plan: Billing.plan(user),
          sandbox_limit: Quotas.sandbox_limit_for(user),
@@ -213,8 +217,8 @@ defmodule FountainWeb.Live.BillingLive do
             <div class="flex items-center justify-between">
               <dt class="text-sm text-gray-500">Billing period</dt>
               <dd class="text-sm font-medium">
-                {Calendar.strftime(@period_start, "%B %-d")} – {Calendar.strftime(
-                  @period_end,
+                {Calendar.strftime(@period.start, "%B %-d")} – {Calendar.strftime(
+                  @period.end,
                   "%B %-d, %Y"
                 )}
               </dd>
@@ -273,7 +277,8 @@ defmodule FountainWeb.Live.BillingLive do
       >
         <h2 class="text-lg font-medium">Change plan</h2>
         <p class="mt-1 text-sm text-gray-500">
-          Plans differ by how many sandboxes you can run at the same time.
+          Plans differ by how many sandboxes you can run at the same time,
+          and by the turn hours that come with them.
           Upgrades take effect immediately and are prorated; downgrades apply
           from your next invoice.
         </p>
@@ -292,6 +297,9 @@ defmodule FountainWeb.Live.BillingLive do
             </div>
             <p class="mt-1 text-xs text-gray-500">
               {plan.concurrent_sandboxes} agents at once
+            </p>
+            <p class="mt-0.5 text-xs text-gray-500">
+              {plan.included_turn_hours} turn hours included
             </p>
             <div class="mt-3">
               <span :if={plan.slug == @plan.slug} class="text-xs font-medium text-indigo-700">
@@ -317,11 +325,46 @@ defmodule FountainWeb.Live.BillingLive do
         </p>
       </div>
 
-      <%!-- Monthly usage summary --%>
+      <%!-- Turn hours against the plan's allowance. Reported only; nothing
+            refuses anything because a tenant is over it (#1016 step 4). --%>
       <div class="rounded-lg border bg-white p-6 shadow-sm">
-        <h2 class="mb-1 text-lg font-medium">Usage This Month</h2>
+        <div class="flex items-baseline justify-between">
+          <h2 class="text-lg font-medium">Turn hours</h2>
+          <p class="text-sm tabular-nums">
+            <span class="font-semibold">{format_hours(@allowance.used)}</span>
+            <span class="text-gray-500">of {@allowance.included} included</span>
+          </p>
+        </div>
+        <div class="mt-3 h-2 w-full overflow-hidden rounded-full bg-gray-100">
+          <div
+            class={[
+              "h-full rounded-full",
+              if(@allowance.over?, do: "bg-amber-500", else: "bg-indigo-500")
+            ]}
+            style={"width: #{meter_width(@allowance)}%"}
+          >
+          </div>
+        </div>
+        <p class="mt-3 text-xs text-gray-500">
+          A turn hour is an hour with a prompt in flight. An agent sitting idle
+          costs you nothing here, and neither does time on your own runner.
+          Parked sandboxes are excluded from every number on this page.
+        </p>
+        <p :if={@allowance.over?} class="mt-2 text-xs text-amber-700">
+          You are over the hours your plan includes. Nothing is limited and
+          nothing extra is charged — we are showing you the number while we
+          work out what a fair overage looks like.
+        </p>
+      </div>
+
+      <%!-- Usage over the billing period --%>
+      <div class="rounded-lg border bg-white p-6 shadow-sm">
+        <h2 class="mb-1 text-lg font-medium">Usage this period</h2>
         <p class="mb-4 text-xs text-gray-400">
-          {Calendar.strftime(@period_start, "%b %-d")} – {Calendar.strftime(@period_end, "%b %-d, %Y")}
+          {Calendar.strftime(@period.start, "%b %-d")} – {Calendar.strftime(@period.end, "%b %-d, %Y")}
+          <span :if={@period.source == :calendar_month}>
+            · calendar month (we do not have an invoiced period for this account yet)
+          </span>
         </p>
         <dl class="grid grid-cols-3 gap-4">
           <div class="rounded-md bg-gray-50 p-4 text-center">
@@ -352,8 +395,6 @@ defmodule FountainWeb.Live.BillingLive do
   end
 
   # ─── Private helpers ───────────────────────────────────────────────────────────
-
-  defp current_month_range, do: Billing.current_month_range()
 
   # Refused outright rather than relying on the button being hidden (#399):
   # a stale socket or a hand-sent event must not open Checkout for an
@@ -416,4 +457,16 @@ defmodule FountainWeb.Live.BillingLive do
     |> Float.round(1)
     |> to_string()
   end
+
+  defp format_hours(hours), do: hours |> Float.round(1) |> to_string()
+
+  # Capped at 100 so an over-allowance account gets a full bar rather than one
+  # that overflows its track. `over?` is what says it went past, not the width.
+  # A plan with no hours (nothing sells one today) would divide by zero.
+  defp meter_width(%{included: included}) when included <= 0, do: 0
+
+  # `min/2` last and against a float: `min(101.5, 100)` returns the *integer*
+  # 100, which Float.round/2 refuses — an over-allowance account 500s the page.
+  defp meter_width(%{used: used, included: included}),
+    do: (used / included * 100) |> Float.round(1) |> min(100.0)
 end

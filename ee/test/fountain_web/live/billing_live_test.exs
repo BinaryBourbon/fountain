@@ -77,7 +77,8 @@ defmodule FountainWeb.BillingLiveTest do
       {:ok, _lv, html} = live(login_user(conn, user), ~p"/account/billing")
 
       assert html =~ "Subscription"
-      assert html =~ "Usage This Month"
+      assert html =~ "Usage this period"
+      assert html =~ "Turn hours"
     end
   end
 
@@ -387,6 +388,91 @@ defmodule FountainWeb.BillingLiveTest do
     end
   end
 
+  describe "the turn-hour meter (#1016)" do
+    defp busy_hours(user, hours) do
+      now = DateTime.utc_now() |> DateTime.truncate(:second)
+      {period_start, _} = Billing.current_month_range()
+      started = Enum.max([DateTime.add(now, -hours * 3600, :second), period_start], DateTime)
+
+      sandbox =
+        insert_sandbox(
+          user_id: user.id,
+          provider: "sprites",
+          status: "terminated",
+          inserted_at: started,
+          terminated_at: now
+        )
+
+      agent = insert_agent(user_id: user.id)
+
+      conversation =
+        insert_conversation(user_id: user.id, agent_id: agent.id, sandbox: sandbox)
+
+      {:ok, _} =
+        Fountain.Conversations._unsafe_create_turn(%{
+          conversation_id: conversation.id,
+          turn_number: 1,
+          prompt: "hello",
+          status: "completed",
+          started_at: started,
+          ended_at: now
+        })
+
+      :ok
+    end
+
+    test "shows hours used against the plan's allowance", %{conn: conn} do
+      user = insert_verified_user(plan: "solo")
+      busy_hours(user, 3)
+
+      {:ok, _lv, html} = live(login_user(conn, user), ~p"/account/billing")
+
+      assert html =~ "Turn hours"
+      assert html =~ "of 100 included"
+      assert html =~ "A turn hour is an hour with a prompt in flight"
+    end
+
+    test "says nothing is limited when a tenant is over", %{conn: conn} do
+      user = insert_verified_user(plan: "solo")
+      busy_hours(user, 120)
+
+      {:ok, _lv, html} = live(login_user(conn, user), ~p"/account/billing")
+
+      # Reported, never enforced (#1016 step 4 is still open). A page that
+      # implied a limit it does not have would be worse than no meter.
+      assert html =~ "You are over the hours your plan includes"
+      assert html =~ "Nothing is limited and"
+    end
+
+    test "labels a calendar-month window as the fallback it is", %{conn: conn} do
+      # No Stripe period synced, so these numbers do not line up with an
+      # invoice. Saying so is the whole reason `billing_period/2` returns a
+      # source rather than a bare tuple.
+      user = insert_verified_user()
+
+      {:ok, _lv, html} = live(login_user(conn, user), ~p"/account/billing")
+
+      assert html =~ "we do not have an invoiced period for this account yet"
+    end
+
+    test "does not label the window when it is the invoiced one", %{conn: conn} do
+      now = DateTime.utc_now() |> DateTime.truncate(:second)
+
+      {:ok, user} =
+        insert_verified_user()
+        |> Fountain.Accounts.User.billing_changeset(%{
+          subscription_status: "active",
+          current_period_start: DateTime.add(now, -5, :day),
+          current_period_end: DateTime.add(now, 25, :day)
+        })
+        |> Fountain.Repo.update()
+
+      {:ok, _lv, html} = live(login_user(conn, user), ~p"/account/billing")
+
+      refute html =~ "we do not have an invoiced period for this account yet"
+    end
+  end
+
   describe "the plan picker" do
     setup do
       Application.put_env(:fountain, :stripe_price_ids, %{
@@ -427,6 +513,9 @@ defmodule FountainWeb.BillingLiveTest do
       # switch back onto.
       refute html =~ "Switch to Legacy"
       assert html =~ "an earlier plan we no longer sell"
+      # The hours are part of what a customer is choosing between.
+      assert html =~ "100 turn hours included"
+      assert html =~ "800 turn hours included"
     end
 
     test "the current plan is not offered as a switch", %{conn: conn} do

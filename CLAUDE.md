@@ -61,10 +61,11 @@ every plan.
 | | solo | team | scale | legacy |
 |---|---|---|---|---|
 | concurrent sandboxes | 5 | 15 | 40 | 15 |
+| included turn hours | 100 | 300 | 800 | 300 |
 | teammate contacts | 1 | 3 | 10 | 3 |
 | price | $29 | $79 | $199 | $29 (closed) |
 
-Three rules that are easy to get wrong:
+Four rules that are easy to get wrong:
 
 - **The plan is not the cap.** `Quotas.sandbox_limit/1` returns
   `users.sandbox_limit_override` when it is set and the plan's number
@@ -86,6 +87,22 @@ Three rules that are easy to get wrong:
   an allowance. Two levers comp one: `comp_account/1` makes everything free,
   `users.comped_contacts` takes N off the billed quantity for a tenant who
   still pays for their tier.
+
+- **A turn hour is not a sandbox hour, and nothing enforces either.**
+  `included_turn_hours` is 20 per concurrent slot, measured against
+  `SandboxUsage`'s `busy_seconds` (a prompt in flight) on platform-paid
+  providers only — an idle sandbox and a self-hosted runner spend none of it.
+  `Billing.turn_hour_allowance/2` is the one shape every surface renders, so
+  they cannot disagree. **No gate reads it** (#1016 steps 4 and 5 are unbuilt);
+  do not add one without deciding the overage shape first.
+
+- **Usage is measured over the invoiced period, or says it is not.**
+  `Billing.billing_period/2` returns `%{start, end, source}` — `:subscription`
+  from `users.current_period_start`/`_end`, `:calendar_month` when there is no
+  such period (comped, self-hosted, or no webhook yet). The fallback is never
+  silent: if you add a surface that shows a usage number, show the source too.
+  `Fountain.Release.backfill_billing_periods/1` fills the column from Stripe
+  for accounts that predate it.
 
 Price ids come from config (`STRIPE_PRICE_ID_SOLO` and friends), the display
 cents from the catalog. `mix fountain.verify_plans` is the only thing that

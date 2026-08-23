@@ -43,7 +43,19 @@ defmodule FountainWeb.MarketingPricingTest do
       assert body =~ plan.name
       assert body =~ Plans.format_usd(plan.monthly_cents)
       assert body =~ "#{plan.concurrent_sandboxes} agents at once"
+      assert body =~ "#{plan.included_turn_hours} turn hours a month"
     end
+  end
+
+  # The hours are a public promise, so the page has to say what a turn hour
+  # is. A reader who assumes it means wall-clock sandbox time reads Solo's
+  # 100 hours as four days and concludes the plan is unusable.
+  test "the pricing table explains that hours are counted while an agent works",
+       %{conn: conn} do
+    price_all()
+
+    body = conn |> get(~p"/") |> html_response(200)
+    assert body =~ "counted while an agent is working, not while it waits"
   end
 
   test "the hero quotes the cheapest sellable plan", %{conn: conn} do

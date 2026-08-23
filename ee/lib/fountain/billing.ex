@@ -543,6 +543,7 @@ defmodule Fountain.Billing do
           %{
             subscription_status: coerce_status(sub.status, "trial_sweep"),
             trial_ends_at: unix_field(Map.get(sub, :trial_end)),
+            current_period_start: unix_field(period_start_unix(sub)),
             current_period_end: unix_field(period_end_unix(sub))
           },
           now,
@@ -635,6 +636,7 @@ defmodule Fountain.Billing do
     attrs = %{
       subscription_status: coerce_status(sub.status, "admin_resync"),
       trial_ends_at: unix_field(Map.get(sub, :trial_end)),
+      current_period_start: unix_field(period_start_unix(sub)),
       current_period_end: unix_field(period_end_unix(sub)),
       cancel_at_period_end: Map.get(sub, :cancel_at_period_end) == true,
       subscription_synced_at: DateTime.utc_now() |> DateTime.truncate(:second)
@@ -1424,6 +1426,17 @@ defmodule Fountain.Billing do
     cancel_at_period_end =
       type != "customer.subscription.deleted" and Map.get(sub, :cancel_at_period_end) == true
 
+    # Both ends of the invoiced period, not just the one the cancellation
+    # notice needed. `current_period_start` is what `billing_period/2`
+    # measures an allowance over; without it every usage number was reported
+    # against a calendar month that drifts out of step with the invoice at
+    # every renewal.
+    current_period_start =
+      case period_start_unix(sub) do
+        ts when is_integer(ts) -> DateTime.from_unix!(ts) |> DateTime.truncate(:second)
+        _ -> nil
+      end
+
     current_period_end =
       case period_end_unix(sub) do
         ts when is_integer(ts) -> DateTime.from_unix!(ts) |> DateTime.truncate(:second)
@@ -1467,6 +1480,7 @@ defmodule Fountain.Billing do
                 trial_ends_at: trial_ends_at,
                 subscription_synced_at: event_created || user.subscription_synced_at,
                 cancel_at_period_end: cancel_at_period_end,
+                current_period_start: current_period_start,
                 current_period_end: current_period_end
               }
               |> maybe_adopt_subscription_id(user, subscription_id, type)
@@ -1690,6 +1704,13 @@ defmodule Fountain.Billing do
   # will confirm — necessary because that webhook may have already arrived and
   # been ignored for carrying an unrecorded subscription id.
   #
+  # The billing period is deliberately *not* written here. A Checkout session
+  # carries the subscription's id, not its object, and this runs inside the
+  # event-claim transaction, where a Stripe read must not happen. The
+  # `customer.subscription.created` event for the very subscription being
+  # adopted carries both period ends and lands within seconds; until it does,
+  # `billing_period/2` reports a calendar month and says so.
+  #
   # The watermark stamp (#393) makes the adoption participate in the stale?/2
   # ordering guard: without it, any older event for the adopted subscription
   # that straggled in afterwards was treated as fresh and could move the
@@ -1844,8 +1865,18 @@ defmodule Fountain.Billing do
   #
   # Any item will do: a plan item and a teammate-contact add-on ride the same
   # subscription and therefore share its period.
-  def period_end_unix(sub) do
-    case Map.get(sub, :current_period_end) || Map.get(sub, "current_period_end") do
+  def period_end_unix(sub), do: period_unix(sub, :current_period_end)
+
+  @doc false
+  # The other end of the same period (#1016), read the same way and for the
+  # same reason. It moved onto the item in the same API change, so a
+  # subscription-level read here would have repeated #1018 exactly: a column
+  # that is never once populated, behind a green suite whose fixtures all
+  # carry the old shape.
+  def period_start_unix(sub), do: period_unix(sub, :current_period_start)
+
+  defp period_unix(sub, key) do
+    case field(sub, key) do
       ts when is_integer(ts) ->
         ts
 
@@ -1853,13 +1884,17 @@ defmodule Fountain.Billing do
         sub
         |> subscription_items()
         |> Enum.find_value(fn item ->
-          case Map.get(item, :current_period_end) || Map.get(item, "current_period_end") do
+          case field(item, key) do
             ts when is_integer(ts) -> ts
             _ -> nil
           end
         end)
     end
   end
+
+  # Stripe hands these back atom-keyed on the API path and string-keyed on
+  # some webhook paths; tests build both.
+  defp field(map, key), do: Map.get(map, key) || Map.get(map, Atom.to_string(key))
 
   defp item_price_id(%{price: %{id: id}}), do: id
   defp item_price_id(%{price: id}) when is_binary(id), do: id
@@ -1912,6 +1947,132 @@ defmodule Fountain.Billing do
     }
 
     {period_start, period_end}
+  end
+
+  @doc """
+  The window a tenant's usage should be measured over: the period Stripe is
+  actually invoicing them for, or the calendar month when there is no such
+  period — and which of the two it is.
+
+  Returns `%{start:, end:, source:}` rather than a bare `{start, end}` on
+  purpose. A number measured over the wrong window has to be able to say so:
+  enforcing an allowance, or even displaying one, against a calendar month
+  when the customer's invoice runs the 20th to the 20th is a support ticket
+  per customer per month. Every surface that shows the number carries the
+  `:source` with it.
+
+  `:subscription` requires both ends synced from Stripe *and* that the stored
+  period contains `now`. Everything else falls back to `:calendar_month`:
+
+    * a self-hosted deployment with no Stripe at all;
+    * a comped account, which has no invoiced period;
+    * a trialing account Stripe has not reported a period for;
+    * an account whose stored period has already ended — a cancelled
+      subscription's final period, or the seconds between a renewal and the
+      webhook that reports the new one.
+
+  The last case is a real (brief) wobble at every renewal: the numbers move
+  to a calendar month until `customer.subscription.updated` lands. Rolling the
+  stored period forward instead would mean inventing a boundary Stripe has not
+  confirmed, and the flag makes the substitution visible either way.
+  """
+  @spec billing_period(User.t(), DateTime.t() | nil) :: %{
+          start: DateTime.t(),
+          end: DateTime.t(),
+          source: :subscription | :calendar_month
+        }
+  def billing_period(user, now \\ nil)
+
+  def billing_period(
+        %User{
+          current_period_start: %DateTime{} = period_start,
+          current_period_end: %DateTime{} = period_end
+        },
+        now
+      ) do
+    now = now || DateTime.utc_now()
+
+    if DateTime.compare(period_start, now) != :gt and DateTime.compare(now, period_end) == :lt do
+      %{start: period_start, end: period_end, source: :subscription}
+    else
+      calendar_month_period()
+    end
+  end
+
+  def billing_period(%User{}, _now), do: calendar_month_period()
+
+  defp calendar_month_period do
+    {period_start, period_end} = current_month_range()
+    %{start: period_start, end: period_end, source: :calendar_month}
+  end
+
+  @doc """
+  Turn hours a tenant has spent in a period, on the providers Fountain pays
+  for.
+
+  A *turn* hour is an hour with a prompt in flight, not an hour of sandbox
+  wall-clock: an agent left running overnight with nobody talking to it costs
+  Fountain money (and is reported by `usage_summary/3` as sandbox minutes) but
+  spends none of the tenant's allowance. Time on a tenant's own runner
+  (ADR 0022) is excluded too — Fountain pays nothing for it, so charging an
+  allowance against it would be indefensible.
+
+  Pass a period as `{start, end}`; defaults to the tenant's `billing_period/2`.
+  """
+  @spec turn_hours_used(User.t(), keyword()) :: float()
+  def turn_hours_used(%User{} = user, opts \\ []) do
+    {period_start, period_end} =
+      case Keyword.get(opts, :period) do
+        {%DateTime{} = s, %DateTime{} = e} -> {s, e}
+        nil -> billing_period(user) |> then(&{&1.start, &1.end})
+      end
+
+    user.id
+    |> SandboxUsage.busy_for_user(period_start, period_end)
+    |> Enum.filter(fn {provider, _seconds} -> SandboxUsage.platform_cost?(provider) end)
+    |> Enum.map(&elem(&1, 1))
+    |> Enum.sum()
+    |> SandboxUsage.hours()
+  end
+
+  @doc """
+  The turn-hour meter, in one shape, for every surface that shows it: the
+  billing page, `GET /api/account/billing`, and the admin per-tenant view.
+
+  One function so the three cannot disagree about the window, the unit, or
+  which providers count.
+
+    * `:used` / `:included` — turn hours spent, and what the plan carries
+    * `:remaining` — clamped at zero; a tenant over their allowance is not
+      owed negative hours
+    * `:period` — the `billing_period/2` map, `:source` included, so a
+      surface can label a calendar-month fallback as one
+    * `:over?` — whether `:used` has passed `:included`
+
+  **Nothing acts on this.** No gate, no ceiling, no invoice line. Whether
+  going over means post-paid overage or exhausted prepaid credits is still
+  open (#1016 step 4) and is meant to be decided against a cycle of these
+  numbers rather than ahead of one.
+  """
+  @spec turn_hour_allowance(User.t(), keyword()) :: %{
+          used: float(),
+          included: non_neg_integer(),
+          remaining: float(),
+          period: %{start: DateTime.t(), end: DateTime.t(), source: atom()},
+          over?: boolean()
+        }
+  def turn_hour_allowance(%User{} = user, opts \\ []) do
+    period = Keyword.get(opts, :period) || billing_period(user)
+    used = turn_hours_used(user, period: {period.start, period.end})
+    included = Plans.included_turn_hours(user.plan)
+
+    %{
+      used: used,
+      included: included,
+      remaining: Float.round(max(included - used, 0.0), 2),
+      period: period,
+      over?: used > included
+    }
   end
 
   @doc """

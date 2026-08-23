@@ -68,6 +68,85 @@ defmodule FountainWeb.BillingApiControllerTest do
       assert body["data"]["usage"]["sandbox_minutes_by_provider"] == %{}
       assert body["data"]["period"]["start"]
       assert body["data"]["period"]["end"]
+      # No subscription period synced yet, so the numbers cover a calendar
+      # month — and the response has to say so rather than let a client show
+      # an allowance against a window nobody is invoiced for.
+      assert body["data"]["period"]["source"] == "calendar_month"
+    end
+
+    test "the plan's turn-hour allowance travels with the usage", %{
+      conn: conn,
+      user: user,
+      key: key
+    } do
+      # Turn hours, not sandbox minutes: an hour with a prompt in flight.
+      now = DateTime.utc_now() |> DateTime.truncate(:second)
+      {period_start, _} = Fountain.Billing.current_month_range()
+      started = Enum.max([DateTime.add(now, -30, :minute), period_start], DateTime)
+
+      sandbox =
+        insert_sandbox(
+          user_id: user.id,
+          provider: "sprites",
+          status: "terminated",
+          inserted_at: started,
+          terminated_at: now
+        )
+
+      agent = insert_agent(user_id: user.id)
+
+      conversation =
+        insert_conversation(user_id: user.id, agent_id: agent.id, sandbox: sandbox)
+
+      {:ok, _} =
+        Fountain.Conversations._unsafe_create_turn(%{
+          conversation_id: conversation.id,
+          turn_number: 1,
+          prompt: "hello",
+          status: "completed",
+          started_at: started,
+          ended_at: now
+        })
+
+      expected = Float.round(DateTime.diff(now, started, :second) / 3600, 2)
+
+      body =
+        conn
+        |> authed_with_key(key)
+        |> get("/api/account/billing")
+        |> json_response(200)
+
+      assert body["data"]["usage"]["turn_hours"] == expected
+      assert body["data"]["usage"]["turn_hours_included"] == 100
+      assert body["data"]["plan"]["included_turn_hours"] == 100
+      assert body["data"]["usage"]["turn_hours_remaining"] == Float.round(100 - expected, 2)
+    end
+
+    test "an idle sandbox spends sandbox minutes and no turn hours", %{
+      conn: conn,
+      user: user,
+      key: key
+    } do
+      now = DateTime.utc_now() |> DateTime.truncate(:second)
+      {period_start, _} = Fountain.Billing.current_month_range()
+      started = Enum.max([DateTime.add(now, -30, :minute), period_start], DateTime)
+
+      insert_sandbox(
+        user_id: user.id,
+        provider: "sprites",
+        status: "terminated",
+        inserted_at: started,
+        terminated_at: now
+      )
+
+      body =
+        conn
+        |> authed_with_key(key)
+        |> get("/api/account/billing")
+        |> json_response(200)
+
+      assert body["data"]["usage"]["sandbox_minutes"] > 0
+      assert body["data"]["usage"]["turn_hours"] == 0.0
     end
 
     test "sandbox minutes are reported per provider", %{conn: conn, user: user, key: key} do
