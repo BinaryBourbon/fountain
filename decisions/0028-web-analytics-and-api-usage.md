@@ -132,6 +132,38 @@ attribute on its own, so the layout interpolates nothing into JavaScript and
 needs no `raw/1`. A template that concatenates config into a script body is an
 XSS surface that has to be argued about; one that does not is not.
 
+**The public pages are recorded, and that is now deliberate.** It did not
+start out that way: session replay is switched on in the PostHog *project*,
+and posthog-js records whenever it is, so loading the library turned replay on
+for the landing page, the legal pages, the manual and the auth flow without
+anyone deciding it. The behaviour was found in production, kept on review, and
+is written down here because a capability nobody chose is one nobody is
+maintaining.
+
+So, plainly: **a visitor to a public Fountain page has that visit recorded.**
+
+**No LiveView is recorded, and the admin pages least of all.** There is nothing
+to exclude, because exclusion is not the mechanism: the console scope never
+pipes through `:public_analytics`, so `@web_analytics` is unset, the layout's
+`:if` is false, and posthog-js is never fetched. No library means no recorder,
+on `/dashboard`, on `/admin`, and on `/admin/finance` — which lists accounts
+and revenue and is the page it would matter most on.
+
+That protection is a single routing fact, which is a thin thing to rest on, so
+it is pinned by tests that name `/admin` and `/admin/finance` directly. Adding
+`:public_analytics` to the console scope fails four of them. If a console page
+ever does need a client-side event, it goes through the server, not by loading
+the library on that surface.
+
+The layout states `session_recording: { maskAllInputs: true }` rather than
+relying on the default. Two reasons, neither of which is that the default is
+wrong (it is `true`): a reader should be able to see that these pages are
+recorded and how, without going to check a project setting; and masking should
+not change silently when a dependency's default does. It matters most on
+`/auth/login` and `/auth/register`, the two public pages with a form worth
+typing into, where it covers the email address. Passwords are masked by rrweb
+regardless.
+
 **`POSTHOG_BROWSER_CAPTURE=false`** keeps the library off the public pages and
 leaves server capture untouched. Loading a third-party script into a visitor's
 browser is a different decision from sending product events from a server, and
@@ -173,12 +205,32 @@ captured volume for API-heavy tenants. It is one event definition, and it is
 the only event in the project whose name is fixed while its meaning varies by
 property.
 
+Replay storage and retention now apply to Fountain's public traffic, which
+they did not before. Recordings count against the PostHog plan, and a page that
+is recorded is a page whose DOM leaves the building — masked, but present. If a
+future public page carries anything that should not be replayed, masking it is
+a per-page job (`ph-mask`, `ph-no-capture`) rather than something this decision
+covers.
+
+The trigger for replay is a **project setting**, not this code. Switching
+replay off in PostHog stops it with no deploy; switching it on for a second
+project would surprise a deployment that pointed at one. That is the honest
+seam: this repository chooses to *load the library*, and PostHog chooses what
+the library does.
+
 ## Alternatives considered
 
 - **A snippet on the console too.** It would give the console sessions and
   replay, and it would double every pageview unless the server-side hook were
   deleted at the same time. Out of scope by choice; if it is ever done, the
   hook goes with it.
+- **`disable_session_recording: true` on the public pages.** The alternative
+  once the recording was discovered, and the one that matched the original
+  scope, which had said nothing about replay. Rejected on review: replay of the
+  landing page and the sign-up flow answers "where did this funnel actually
+  lose people" in a way a pageview count cannot, and the pages carry nothing
+  private beyond what masking already covers. Writing it down beat switching it
+  off.
 - **Lifting `product_event?/2`'s refusal and letting route-named events
   through.** The original reasoning holds: 73 permanent event definitions per
   day, and PostHog never garbage-collects one.

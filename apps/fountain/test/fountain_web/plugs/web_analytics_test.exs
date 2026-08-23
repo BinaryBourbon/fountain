@@ -90,6 +90,25 @@ defmodule FountainWeb.Plugs.WebAnalyticsTest do
 
       assert html =~ ~s|register({ surface: "public" })|
     end
+
+    test "recording masks what people type, and says so rather than inheriting it", %{conn: conn} do
+      # Replay is on in the PostHog *project*, so posthog-js records these
+      # pages whether or not this file mentions it. Stating the masking is what
+      # keeps it from changing when a dependency's default does — and the
+      # public surface includes the two pages with a form worth typing into.
+      html = conn |> get(~p"/") |> html_response(200)
+
+      assert html =~ ~s|session_recording: { maskAllInputs: true }|
+    end
+
+    test "the auth pages, where people type, carry the same masking", %{conn: conn} do
+      for path <- [~p"/auth/login", ~p"/auth/register"] do
+        html = conn |> get(path) |> html_response(200)
+
+        assert html =~ ~s|session_recording: { maskAllInputs: true }|,
+               "#{path} is recorded without stating that inputs are masked"
+      end
+    end
   end
 
   describe "the console" do
@@ -101,6 +120,23 @@ defmodule FountainWeb.Plugs.WebAnalyticsTest do
       {:ok, _lv, html} = live(conn, ~p"/dashboard")
 
       refute snippet?(html)
+    end
+
+    test "the admin pages load no library, so nothing there is ever recorded", %{conn: conn} do
+      # The public pages are session recorded (ADR 0028). The console is not,
+      # because it loads no library — and that is the whole of the protection,
+      # so it is worth pinning where it matters most rather than trusting that
+      # nobody adds :public_analytics to a wider scope later. /admin/finance is
+      # a revenue page; /admin lists accounts.
+      {:ok, admin} = Fountain.Accounts.update_user_role(insert_verified_user(), "admin")
+      conn = login_user(conn, admin)
+
+      for path <- [~p"/admin", ~p"/admin/finance"] do
+        html = conn |> get(path) |> html_response(200)
+
+        refute snippet?(html), "#{path} rendered the analytics snippet"
+        refute html =~ "array.js", "#{path} loaded posthog-js"
+      end
     end
 
     test "the console's dead render loads neither the snippet nor the library", %{conn: conn} do
