@@ -14,6 +14,7 @@ defmodule FountainWeb.AdminLive.UserDetail do
   use FountainWeb, :live_view
 
   import FountainWeb.AdminLive.Helpers
+  import FountainWeb.AdminLive.Shell
 
   alias Fountain.{Accounts, Agents, Audit, Conversations, Environments, Quotas, Vaults}
 
@@ -101,10 +102,8 @@ defmodule FountainWeb.AdminLive.UserDetail do
     ~H"""
     <div class="space-y-8">
       <div>
-        <.link navigate={~p"/admin"} class="text-xs text-zinc-500 hover:text-zinc-900 underline">
-          ← Admin
-        </.link>
-        <h1 class="text-2xl font-semibold font-mono mt-1">{@user.email}</h1>
+        <.admin_tabs current={:users} billing_enabled={@billing_enabled} />
+        <h1 class="text-2xl font-semibold font-mono mt-4">{@user.email}</h1>
         <div class="flex flex-wrap items-center gap-2 mt-2 text-xs">
           <span class={[
             "inline-flex items-center rounded px-1.5 py-0.5 font-medium border",

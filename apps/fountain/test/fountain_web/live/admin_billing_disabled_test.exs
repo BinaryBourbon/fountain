@@ -31,8 +31,8 @@ defmodule FountainWeb.AdminBillingDisabledTest do
     end
   end
 
-  describe "/admin" do
-    test "renders no billing tiles, filters, sorts or actions", %{conn: conn} do
+  describe "/admin (overview)" do
+    test "renders no billing tiles", %{conn: conn} do
       admin = insert_admin()
       insert_verified_user()
 
@@ -41,10 +41,59 @@ defmodule FountainWeb.AdminBillingDisabledTest do
 
         refute html =~ "MRR"
         refute html =~ "Trials ending in 7 days"
-        refute html =~ "Conversions this month"
-        refute html =~ "Recent webhook events"
         # Funnel keeps its four real stages; the subscribed tile is noise here.
         refute html =~ "Subscribed"
+        # And no tab pointing at a page that has nothing to say.
+        refute html =~ ~s(href="/admin/billing")
+        refute html =~ ~s(href="/admin/finance")
+      end)
+    end
+
+    test "keeps the funnel and the sandbox tiles", %{conn: conn} do
+      admin = insert_admin()
+
+      with_billing_disabled(fn ->
+        {:ok, _lv, html} = live(login_user(conn, admin), ~p"/admin")
+
+        assert html =~ "Registered"
+        assert html =~ "Activated"
+        assert html =~ "Active sandboxes"
+      end)
+    end
+
+    test "with billing enabled the tiles and the tabs are back", %{conn: conn} do
+      admin = insert_admin()
+
+      {:ok, _lv, html} = live(login_user(conn, admin), ~p"/admin")
+
+      assert html =~ "MRR"
+      assert html =~ "Subscribed"
+      assert html =~ ~s(href="/admin/billing")
+      assert html =~ ~s(href="/admin/finance")
+    end
+  end
+
+  describe "/admin/billing" do
+    test "says so rather than rendering an empty page", %{conn: conn} do
+      admin = insert_admin()
+
+      with_billing_disabled(fn ->
+        {:ok, _lv, html} = live(login_user(conn, admin), ~p"/admin/billing")
+
+        assert html =~ "Billing is disabled on this instance"
+        refute html =~ "Recent webhook events"
+      end)
+    end
+  end
+
+  describe "/admin/users" do
+    test "renders no billing filters, sorts or row actions", %{conn: conn} do
+      admin = insert_admin()
+      insert_verified_user()
+
+      with_billing_disabled(fn ->
+        {:ok, _lv, html} = live(login_user(conn, admin), ~p"/admin/users")
+
         # No subscription-status filter, no trial_end sort (the Billing column
         # header carries it), no Stripe-backed row actions.
         refute html =~ ~s(name="status")
@@ -61,15 +110,13 @@ defmodule FountainWeb.AdminBillingDisabledTest do
       other = insert_verified_user()
 
       with_billing_disabled(fn ->
-        {:ok, _lv, html} = live(login_user(conn, admin), ~p"/admin")
+        {:ok, _lv, html} = live(login_user(conn, admin), ~p"/admin/users")
 
         assert html =~ other.email
         assert html =~ ~s(name="verified")
         assert html =~ ~s(phx-click="toggle_suspend")
         assert html =~ ~s(phx-click="delete_user")
         assert html =~ ~s(phx-submit="set_sandbox_limit")
-        assert html =~ "Registered"
-        assert html =~ "Activated"
       end)
     end
 
@@ -81,7 +128,7 @@ defmodule FountainWeb.AdminBillingDisabledTest do
       target = insert_verified_user()
 
       with_billing_disabled(fn ->
-        {:ok, lv, _html} = live(login_user(conn, admin), ~p"/admin")
+        {:ok, lv, _html} = live(login_user(conn, admin), ~p"/admin/users")
 
         html = render_submit(lv, "extend_trial", %{"user_id" => target.id, "days" => "14"})
         assert html =~ "Billing is disabled on this instance"
@@ -97,10 +144,8 @@ defmodule FountainWeb.AdminBillingDisabledTest do
     test "with billing enabled the billing surface is unchanged", %{conn: conn} do
       admin = insert_admin()
 
-      {:ok, _lv, html} = live(login_user(conn, admin), ~p"/admin")
+      {:ok, _lv, html} = live(login_user(conn, admin), ~p"/admin/users")
 
-      assert html =~ "MRR"
-      assert html =~ "Subscribed"
       assert html =~ ~s(name="status")
       assert html =~ ~s(phx-submit="extend_trial")
     end

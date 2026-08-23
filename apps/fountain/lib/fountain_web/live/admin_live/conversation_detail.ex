@@ -17,6 +17,7 @@ defmodule FountainWeb.AdminLive.ConversationDetail do
   use FountainWeb, :live_view
 
   import FountainWeb.AdminLive.Helpers
+  import FountainWeb.AdminLive.Shell
 
   alias Fountain.{Audit, Conversations}
 
@@ -29,7 +30,7 @@ defmodule FountainWeb.AdminLive.ConversationDetail do
         {:ok,
          socket
          |> put_flash(:error, "Conversation not found")
-         |> push_navigate(to: ~p"/admin")}
+         |> push_navigate(to: ~p"/admin/sandboxes")}
 
       %{conversation: conv, turn_count: turn_count, log_event_count: log_event_count} ->
         # connected?-guard: mount runs for both the static render and the
@@ -49,6 +50,7 @@ defmodule FountainWeb.AdminLive.ConversationDetail do
         {:ok,
          socket
          |> assign(:page_title, "Admin · conversation #{String.slice(conv.id, 0, 8)}")
+         |> assign(:billing_enabled, Fountain.Billing.enabled?())
          |> assign(:conv, conv)
          |> assign(:turn_count, turn_count)
          |> assign(:log_event_count, log_event_count)
@@ -61,10 +63,8 @@ defmodule FountainWeb.AdminLive.ConversationDetail do
     ~H"""
     <div class="space-y-8">
       <div>
-        <.link navigate={~p"/admin"} class="text-xs text-zinc-500 hover:text-zinc-900 underline">
-          ← Admin
-        </.link>
-        <h1 class="text-2xl font-semibold mt-1">
+        <.admin_tabs current={:sandboxes} billing_enabled={@billing_enabled} />
+        <h1 class="text-2xl font-semibold mt-4">
           <span class="font-mono">{String.slice(@conv.id, 0, 8)}</span>
           <span :if={@conv.title} class="text-zinc-500 text-lg ml-2">{@conv.title}</span>
         </h1>

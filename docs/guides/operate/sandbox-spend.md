@@ -35,7 +35,7 @@ busy sandbox, not two. Fountain counts the overlap once.
 
 ## Read it in the admin panel
 
-Sign in as an admin and open `/admin`. The **Sandbox spend by provider** panel
+Sign in as an admin and open `/admin/sandboxes`. The **Spend by provider** panel
 shows one card for each provider. Each card gives the active hours, the sandbox
 count, how many accounts are behind it, and the idle hours inside that total.
 The idle figure turns amber above 50%. Below the cards, **Who it belongs to**

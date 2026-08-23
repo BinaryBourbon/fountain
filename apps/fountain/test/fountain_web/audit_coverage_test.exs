@@ -272,7 +272,7 @@ defmodule FountainWeb.AuditCoverageTest do
     test "granting the admin role is recorded with actor and target", %{conn: conn, admin: admin} do
       target = insert_verified_user()
 
-      {:ok, lv, _html} = live(login_user(conn, admin), ~p"/admin")
+      {:ok, lv, _html} = live(login_user(conn, admin), ~p"/admin/users")
       render_click(lv, "toggle_admin", %{"id" => target.id})
 
       assert [event] = Repo.all(AdminEvent)
@@ -286,7 +286,7 @@ defmodule FountainWeb.AuditCoverageTest do
       target = insert_verified_user()
       {:ok, target} = Fountain.Accounts.update_user_role(target, "admin")
 
-      {:ok, lv, _html} = live(login_user(conn, admin), ~p"/admin")
+      {:ok, lv, _html} = live(login_user(conn, admin), ~p"/admin/users")
       render_click(lv, "toggle_admin", %{"id" => target.id})
 
       assert [event] = Repo.all(AdminEvent)
@@ -296,7 +296,7 @@ defmodule FountainWeb.AuditCoverageTest do
     test "a quota change is recorded", %{conn: conn, admin: admin} do
       target = insert_verified_user()
 
-      {:ok, lv, _html} = live(login_user(conn, admin), ~p"/admin")
+      {:ok, lv, _html} = live(login_user(conn, admin), ~p"/admin/users")
 
       lv
       |> element("#sandbox-limit-#{target.id}")
@@ -310,10 +310,10 @@ defmodule FountainWeb.AuditCoverageTest do
     test "the admin view surfaces the trail", %{conn: conn, admin: admin} do
       target = insert_verified_user()
 
-      {:ok, lv, _html} = live(login_user(conn, admin), ~p"/admin")
+      {:ok, lv, _html} = live(login_user(conn, admin), ~p"/admin/users")
       render_click(lv, "toggle_admin", %{"id" => target.id})
 
-      {:ok, _lv2, html} = live(login_user(conn, admin), ~p"/admin")
+      {:ok, _lv2, html} = live(login_user(conn, admin), ~p"/admin/activity")
       assert html =~ "admin.role.granted"
       assert html =~ target.email
     end

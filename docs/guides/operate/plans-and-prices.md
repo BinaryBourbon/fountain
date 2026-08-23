@@ -175,7 +175,7 @@ The migration also clears the per-account cap wherever it still held the old
 default of 5. A cap that an operator set to another value survives as an
 override. An override always beats the plan.
 
-Open `/admin` and read the sandbox column. It shows the enforced cap. The
+Open `/admin/users` and read the sandbox column. It shows the enforced cap. The
 field beside it holds the override. Clear that field to hand the cap back to
 the plan.
 
@@ -202,12 +202,12 @@ Set `STRIPE_CONTACT_PRICE_CENTS` to the same amount, for display.
 
 Two levers, and they answer different questions.
 
-To make an account pay **nothing at all**, comp the account. Open `/admin` and
+To make an account pay **nothing at all**, comp the account. Open `/admin/users` and
 select `comp` on the row. Fountain cancels the Stripe subscriptions and stops
 all charges, contacts included. The teammate keeps the inbox and the number.
 
 To let an account **pay for its plan and still hold a free number**, set the
-comped contact count. Open `/admin`, put a number in the field beside the plan,
+comped contact count. Open `/admin/users`, put a number in the field beside the plan,
 then select `free`. Fountain bills for the contacts above that count, and for
 none if the count covers them all.
 
@@ -221,7 +221,7 @@ Unset the three plan variables. Every account keeps the plan slug it holds,
 and `Fountain.Plans` keeps enforcing that plan's cap. The pricing table and
 the plan picker go away, because no public plan has a price.
 
-To move one account, open `/admin` and set an override on it.
+To move one account, open `/admin/users` and set an override on it.
 
 ## Related
 
