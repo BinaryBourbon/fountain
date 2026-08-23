@@ -108,17 +108,19 @@ defmodule Fountain.ConversationsStartTest do
       user = insert_active_user()
       agent = insert_agent(user_id: user.id)
 
-      for _ <- 1..Fountain.Quotas.default_limit(),
-          do: insert_sandbox(user_id: user.id, status: "ready")
+      limit = Fountain.Quotas.default_limit()
+      for _ <- 1..limit, do: insert_sandbox(user_id: user.id, status: "ready")
 
-      assert {:error, {:sandbox_quota_exceeded, %{count: 5, limit: 5}}} =
+      assert {:error, {:sandbox_quota_exceeded, %{count: ^limit, limit: ^limit}}} =
                Conversations.start_conversation(%{"agent_id" => agent.id, "user_id" => user.id})
     end
 
     test "the cap is checked before any sandbox row is allocated" do
       user = insert_active_user()
       agent = insert_agent(user_id: user.id)
-      for _ <- 1..5, do: insert_sandbox(user_id: user.id, status: "ready")
+
+      for _ <- 1..Fountain.Quotas.default_limit(),
+          do: insert_sandbox(user_id: user.id, status: "ready")
 
       before = Fountain.Quotas.active_sandbox_count(user.id)
 
@@ -133,7 +135,10 @@ defmodule Fountain.ConversationsStartTest do
     test "one tenant at its cap does not block another" do
       capped = insert_active_user()
       other = insert_active_user()
-      for _ <- 1..5, do: insert_sandbox(user_id: capped.id, status: "ready")
+
+      for _ <- 1..Fountain.Quotas.default_limit(),
+          do: insert_sandbox(user_id: capped.id, status: "ready")
+
       agent = insert_agent(user_id: other.id)
 
       stub(Horde.DynamicSupervisor, :start_child, fn _s, _spec -> {:ok, spawn(fn -> :ok end)} end)
@@ -145,7 +150,10 @@ defmodule Fountain.ConversationsStartTest do
     test "terminated sandboxes free capacity" do
       user = insert_active_user()
       agent = insert_agent(user_id: user.id)
-      [first | _] = for _ <- 1..5, do: insert_sandbox(user_id: user.id, status: "ready")
+
+      [first | _] =
+        for _ <- 1..Fountain.Quotas.default_limit(),
+            do: insert_sandbox(user_id: user.id, status: "ready")
 
       assert {:error, _} =
                Conversations.start_conversation(%{"agent_id" => agent.id, "user_id" => user.id})

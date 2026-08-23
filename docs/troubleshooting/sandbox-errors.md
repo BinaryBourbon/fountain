@@ -43,7 +43,7 @@ If you scrape metrics, a failure to provision shows as
 
 ## Quota, and not an outage
 
-A user at their quota for concurrent sandboxes, which is 5 by default, sees a
+A user at their quota for concurrent sandboxes, which is 2 by default, sees a
 provision fail while the provider is healthy. A crashed provision leaves a row
 that counts until the reaper releases it, each hour at :07. Read
 [A conversation is stuck or failed](conversation-stuck-or-failed.md).

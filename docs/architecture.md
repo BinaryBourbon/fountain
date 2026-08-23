@@ -131,7 +131,7 @@ a state of `started`, `done`, `failed` or `interrupted`.
    to you*, because Fountain scopes each query in the system to one tenant.
    The vault must be on the agent's allowlist. The subscription gate applies
    when you turned Stripe on, and answers `402` otherwise. The quota for
-   concurrent sandboxes applies, and it is 5 for each user by default. <!-- vale disable-line STE.IngForms -->
+   concurrent sandboxes applies, and it is 2 for each user by default. <!-- vale disable-line STE.IngForms -->
 2. **`provision`.** Fountain creates the sandbox and conversation rows, as
    `pending`, then starts a conversation server. That server creates the
    sprite, mounts the skills, and mints a scoped API key that expires. The

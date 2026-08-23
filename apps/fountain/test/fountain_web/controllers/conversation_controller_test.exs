@@ -279,8 +279,8 @@ defmodule FountainWeb.ConversationControllerTest do
     } do
       agent = insert_agent(user_id: user.id)
 
-      for _ <- 1..Fountain.Quotas.default_limit(),
-          do: insert_sandbox(user_id: user.id, status: "ready")
+      limit = Fountain.Quotas.default_limit()
+      for _ <- 1..limit, do: insert_sandbox(user_id: user.id, status: "ready")
 
       conn =
         conn
@@ -289,8 +289,8 @@ defmodule FountainWeb.ConversationControllerTest do
 
       body = json_response(conn, 429)
       assert body["error"] == "sandbox_quota_exceeded"
-      assert body["active_sandboxes"] == 5
-      assert body["limit"] == 5
+      assert body["active_sandboxes"] == limit
+      assert body["limit"] == limit
     end
 
     test "POST /api/conversations succeeds below the cap", %{
@@ -1057,6 +1057,10 @@ defmodule FountainWeb.ConversationControllerTest do
     # fresh one per restart. The key is opaque; Fountain only matches it.
     setup %{user: user} do
       stub(Horde.DynamicSupervisor, :start_child, fn _s, _spec -> {:ok, spawn(fn -> :ok end)} end)
+      # Channel binding, not the quota: several of these open three sandboxes
+      # for one tenant, which is above the default plan's cap. An override
+      # takes the cap out of the way rather than shaping the test around it.
+      {:ok, _} = Fountain.Accounts.update_sandbox_limit(user, 25)
       %{agent: insert_agent(user_id: user.id)}
     end
 

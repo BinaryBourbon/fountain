@@ -118,10 +118,14 @@ defmodule FountainWeb.BillingApiControllerTest do
         |> get("/api/account/billing")
         |> json_response(200)
 
+      included = Fountain.Plans.included_turn_hours(Fountain.Plans.default_slug())
+
       assert body["data"]["usage"]["turn_hours"] == expected
-      assert body["data"]["usage"]["turn_hours_included"] == 100
-      assert body["data"]["plan"]["included_turn_hours"] == 100
-      assert body["data"]["usage"]["turn_hours_remaining"] == Float.round(100 - expected, 2)
+      assert body["data"]["usage"]["turn_hours_included"] == included
+      assert body["data"]["plan"]["included_turn_hours"] == included
+
+      assert body["data"]["usage"]["turn_hours_remaining"] ==
+               Float.round(included - expected, 2)
     end
 
     test "an idle sandbox spends sandbox minutes and no turn hours", %{

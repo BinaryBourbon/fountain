@@ -24,14 +24,27 @@ defmodule Fountain.PlansTrialTest do
   end
 
   describe "the trial plan" do
-    test "is smaller than every public plan on every axis" do
+    # `<=`, not `<`: the trial matches Solo's capacity rather than sitting
+    # under it. What must never happen is the trial being *larger* than a plan
+    # somebody pays for, which would make converting a downgrade — and since
+    # the public caps climb strictly (`plans_test.exs`), levelling with the
+    # cheapest still leaves it strictly below Team and Scale.
+    test "is never larger than any public plan, on any axis" do
       trial = Plans.fetch!("trial")
 
       for plan <- Plans.public() do
-        assert trial.concurrent_sandboxes < plan.concurrent_sandboxes
-        assert trial.included_turn_hours < plan.included_turn_hours
+        assert trial.concurrent_sandboxes <= plan.concurrent_sandboxes
+        assert trial.included_turn_hours <= plan.included_turn_hours
         assert trial.team_contacts <= plan.team_contacts
       end
+    end
+
+    # The one axis that still separates the trial from the plan directly above
+    # it. If this ever ties too, a free trial and a paid Solo are the same
+    # thing with a clock on one of them.
+    test "carries strictly fewer contacts than the cheapest public plan" do
+      cheapest = Plans.public() |> List.first()
+      assert Plans.fetch!("trial").team_contacts < cheapest.team_contacts
     end
 
     # The whole reason it exists: converting has to hand the customer something
@@ -102,7 +115,7 @@ defmodule Fountain.PlansTrialTest do
       for status <- ~w(active past_due canceled comped) do
         user = %{plan: "team", subscription_status: status}
         assert Plans.effective(user).slug == "team", "status=#{status}"
-        assert Plans.concurrent_sandboxes(user) == 15
+        assert Plans.concurrent_sandboxes(user) == 5
       end
     end
 
@@ -110,8 +123,8 @@ defmodule Fountain.PlansTrialTest do
     # `turn_hour_allowance/2` passed one and silently handed trialing accounts
     # the paid allowance.
     test "a bare slug is the plan's own number, trial or not" do
-      assert Plans.concurrent_sandboxes("scale") == 40
-      assert Plans.included_turn_hours("scale") == 800
+      assert Plans.concurrent_sandboxes("scale") == 10
+      assert Plans.included_turn_hours("scale") == 200
     end
 
     # `subscription_status` defaults to "trialing" in the schema, so without
@@ -122,7 +135,7 @@ defmodule Fountain.PlansTrialTest do
 
       with_billing_off(fn ->
         assert Plans.effective(user).slug == "scale"
-        assert Plans.concurrent_sandboxes(user) == 40
+        assert Plans.concurrent_sandboxes(user) == 10
       end)
     end
 
@@ -147,7 +160,7 @@ defmodule Fountain.PlansTrialTest do
       assert Quotas.sandbox_limit(user.id) == 2
 
       {:ok, _} = activate(user)
-      assert Quotas.sandbox_limit(user.id) == 40
+      assert Quotas.sandbox_limit(user.id) == 10
     end
 
     # An override is the operator saying "this account, this number". A trial

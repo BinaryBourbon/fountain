@@ -43,10 +43,10 @@ it. On yours, you pay. Two results follow.
 
 - Each signup that can start a conversation can spend your money. Close
   registration, or restrict it, before you put an instance on the internet.
-- Fountain caps concurrency for each user. `max_concurrent_sandboxes` defaults
-  to 5, and an admin can change it for one user from the admin panel. A
-  sandbox counts from the moment a provision starts, because that is the
-  moment it starts to cost money.
+- Fountain caps concurrency for each user. The plan sets the cap, and it is 2
+  on the default plan. An admin can override it for one user from the admin
+  panel. A sandbox counts from the moment a provision starts, because that is
+  the moment it starts to cost money.
 
 Fountain never shows the token to a tenant, to the admin UI, or to a sandbox.
 A sprite receives a scoped token that expires, and its only audience is your

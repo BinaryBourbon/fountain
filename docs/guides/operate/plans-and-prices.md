@@ -18,10 +18,10 @@ sandboxes a tenant can run at the same time.
 
 | Plan | Concurrent sandboxes | Turn hours | Contact ceiling | Price |
 |---|---|---|---|---|
-| Solo | 5 | 100 | 1 | $29/mo |
-| Team | 15 | 300 | 3 | $79/mo |
-| Scale | 40 | 800 | 10 | $199/mo |
-| Legacy | 15 | 300 | 3 | $29/mo |
+| Solo | 2 | 40 | 1 | $29/mo |
+| Team | 5 | 100 | 3 | $79/mo |
+| Scale | 10 | 200 | 10 | $199/mo |
+| Legacy | 5 | 100 | 3 | $29/mo |
 
 Every plan carries the whole product. Only the cap differs. See
 [ADR 0026](https://github.com/jhgaylor/fountain/blob/main/decisions/0026-plans-and-entitlements.md)
@@ -31,22 +31,23 @@ for why.
 to a new customer. It exists so that the accounts which bought the old price
 keep it, at Team capacity.
 
-### A trial is smaller than any plan
+### A trial is never larger than a plan
 
-A trial is not one of the plans above. It is its own, smaller one, and an
-account gets it for the first 14 days whatever tier the subscription names.
+A trial is not one of the plans above. It is its own plan, and an account gets
+it for the first 14 days whatever tier the subscription names.
 
 | Plan | Concurrent sandboxes | Turn hours | Contact ceiling | Price |
 |---|---|---|---|---|
 | Trial | 2 | 40 | 0 | free |
 
-The trial is below every paid plan on every axis, so a customer who subscribes
-gets more capacity the same day. This is also why the customer portal ends the
-trial on a plan change instead of continuing it. To continue the trial would
-take the payment and leave the customer on these numbers.
+The trial matches Solo on capacity and hours. It stays below Team and Scale.
+No trial is larger than a plan that a customer pays for, so a subscription is
+never a downgrade. This is also why the customer portal ends the trial on a
+plan change instead of continuing it.
 
-A trial includes no teammate contacts. An inbox and a phone number cost money
-as soon as they exist. A free trial that gives one away invites abuse.
+A trial includes no teammate contacts. That is the only limit which separates
+a trial from Solo. An inbox and a phone number cost money as soon as they
+exist. A free trial that gives one away invites abuse.
 
 The trial applies only where billing is on. On a self-hosted instance every
 account carries the `trialing` status and none of these limits.
@@ -67,7 +68,7 @@ question. See
 [issue 1016](https://github.com/BinaryBourbon/fountain/issues/1016) for the
 current state.
 
-The pricing page states this to a visitor, because a plan that lists 800 hours
+The pricing page states this to a visitor, because a plan that lists 200 hours
 and then says nothing reads as a hard stop. The two limits behave differently.
 Fountain refuses the next start for a tenant at the concurrency cap. A tenant
 over the hours continues, and pays no more.
@@ -167,8 +168,8 @@ Run it again after every price change.
 ## Check the accounts you already have
 
 The migration puts every account with a Stripe customer on the `legacy` plan.
-Those accounts gain capacity, from 5 concurrent sandboxes to 15. No account
-loses any.
+Those accounts hold 5 concurrent sandboxes, the same number as the old default
+cap. No account lost capacity at the changeover.
 
 The migration also clears the per-account cap wherever it still held the old
 default of 5. A cap that an operator set to another value survives as an

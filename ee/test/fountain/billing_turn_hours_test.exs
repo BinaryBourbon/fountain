@@ -249,14 +249,14 @@ defmodule Fountain.Billing.TurnHoursTest do
 
       assert allowance.used == 4.0
       assert allowance.included == Plans.included_turn_hours("solo")
-      assert allowance.remaining == 96.0
+      assert allowance.remaining == Plans.included_turn_hours("solo") - 4.0
       refute allowance.over?
     end
 
     test "remaining never goes negative, and over? is what says so" do
       user = insert_active_user(plan: "solo")
 
-      # 101 hours against Solo's 100: one hour over.
+      # 101 hours against Solo's allowance: comfortably over it.
       sandbox =
         sandbox_running(user, "sprites", ~U[2026-05-02 00:00:00Z], ~U[2026-05-10 00:00:00Z])
 

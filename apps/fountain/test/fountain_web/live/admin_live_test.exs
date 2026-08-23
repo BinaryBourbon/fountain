@@ -313,7 +313,10 @@ defmodule FountainWeb.AdminLiveTest do
       |> render_change(%{"user_id" => target.id, "plan" => "scale"})
 
       assert Fountain.Accounts.get_user(target.id).plan == "scale"
-      assert Fountain.Quotas.sandbox_limit(target.id) == 40
+
+      assert Fountain.Quotas.sandbox_limit(target.id) ==
+               Fountain.Plans.concurrent_sandboxes("scale")
+
       # The privilege trail, not just the effect: record_admin/1 is
       # best-effort and silently drops an event type missing from its closed
       # allowlist, which is how admin actions have shipped unaudited before.
