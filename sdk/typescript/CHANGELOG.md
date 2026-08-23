@@ -10,7 +10,14 @@ server releases.
 
 ---
 
-## [0.1.0] — unreleased
+## [0.1.1] — 2026-08-23
+
+No code change from 0.1.0. This is the first release published by CI through
+npm's trusted publishing, so unlike 0.1.0 — which went out from a laptop — the
+tarball carries a provenance attestation tying it to the workflow, the
+repository and the commit that built it. Verify with `npm audit signatures`.
+
+## [0.1.0] — 2026-08-23
 
 First published release.
 
@@ -39,4 +46,5 @@ First published release.
 - A browser entry with no Node built-in reachable from it, and a Node entry
   that adds `~/.fountain/credentials`.
 
-[0.1.0]: https://github.com/BinaryBourbon/fountain/tree/main/sdk/typescript
+[0.1.1]: https://www.npmjs.com/package/@agentshit/fountain-sdk/v/0.1.1
+[0.1.0]: https://www.npmjs.com/package/@agentshit/fountain-sdk/v/0.1.0

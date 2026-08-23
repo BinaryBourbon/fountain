@@ -47,6 +47,18 @@ upgrade, is in
 
 ### Added
 
+- **The SDK publishes itself from CI, with provenance**
+  (`.github/workflows/sdk-publish.yml`). `@agentshit/fountain-sdk@0.1.0` reached
+  npm from a laptop, authenticated by a long-lived token in a `~/.npmrc`. The
+  `Publish SDK` workflow replaces that with npm trusted publishing: npm trades
+  the workflow's OIDC identity for a short-lived credential, so the repository
+  holds no `NPM_TOKEN`, and each tarball carries an attestation a consumer can
+  verify back to the workflow and commit that built it (`npm audit
+  signatures`). It fires on an `sdk-v*.*.*` tag — the SDK versions on its own
+  clock, because the REST API it wraps is additive — and refuses to run when
+  the tag and `package.json` disagree, since npm never allows a version to be
+  republished.
+
 - **The TypeScript SDK is ready to publish, and can answer a permission
   request** (`sdk/typescript`). It goes to npm as
   **`@agentshit/fountain-sdk` 0.1.0** — scoped, because the `agentshit` org is
