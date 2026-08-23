@@ -1,5 +1,8 @@
 defmodule FountainWeb.PasswordResetControllerTest do
   use FountainWeb.ConnCase, async: true
+  use Mimic
+
+  import ExUnit.CaptureLog
 
   alias Fountain.Accounts
 
@@ -38,6 +41,36 @@ defmodule FountainWeb.PasswordResetControllerTest do
         |> post("/api/auth/forgot", Jason.encode!(%{}))
 
       assert json_response(conn, 200)
+    end
+
+    # #1040: the send is fire-and-forget and nothing awaits it. As a linked
+    # `Task.async` a delivery error took the request down with it, so the
+    # caller saw a 500 (or nothing) for a reset that had already been signed.
+    test "a delivery error does not fail the request", %{conn: conn} do
+      user = insert_verified_user()
+      test_pid = self()
+
+      stub(Fountain.Mailer, :deliver, fn _email ->
+        send(test_pid, {:delivering, self()})
+        raise "smtp is down"
+      end)
+
+      log =
+        capture_log(fn ->
+          conn =
+            conn
+            |> Plug.Conn.put_req_header("content-type", "application/json")
+            |> post("/api/auth/forgot", Jason.encode!(%{email: user.email}))
+
+          assert_receive {:delivering, task_pid}
+
+          ref = Process.monitor(task_pid)
+          assert_receive {:DOWN, ^ref, :process, ^task_pid, _reason}
+
+          assert json_response(conn, 200)["message"] =~ "registered"
+        end)
+
+      assert log =~ "smtp is down"
     end
   end
 

@@ -35,12 +35,60 @@ defmodule Fountain.DataCase do
     :ok
   end
 
+  # Long enough that a `last_used_at` stamp or a test-adapter email always
+  # lands, short enough that a task which is genuinely stuck cannot stall the
+  # suite. Never reached in practice — both sites are a single round trip.
+  @drain_timeout_ms 500
+
   @doc """
   Sets up the sandbox based on the test tags.
   """
   def setup_sandbox(tags) do
+    test_pid = self()
     pid = Ecto.Adapters.SQL.Sandbox.start_owner!(Fountain.Repo, shared: not tags[:async])
     on_exit(fn -> Ecto.Adapters.SQL.Sandbox.stop_owner(pid) end)
+    # `on_exit` callbacks run last-registered-first, so this drains before the
+    # owner above is stopped.
+    on_exit(fn -> drain_best_effort_tasks(test_pid) end)
+  end
+
+  @doc """
+  Wait for the fire-and-forget tasks this test started to finish.
+
+  Best-effort work off a request — the `last_used_at` stamp, the password-reset
+  email — runs in an *unlinked* task under `Fountain.TaskSupervisor` (#1040), so
+  unlike the linked `Task.async` it replaced it is not killed when the test
+  process finishes. Left alone it would still be holding a sandbox connection
+  when the owner is stopped, which drops that connection and logs a disconnect:
+  churn in the pool the flake in #1040 was blamed on to begin with.
+
+  Only tasks started by `test_pid` are waited on — `Task.Supervisor` propagates
+  `$callers`, which is also how the task reaches this test's connection at all,
+  so it identifies the ones that matter without an async test waiting on
+  another's work.
+  """
+  def drain_best_effort_tasks(test_pid) do
+    Fountain.TaskSupervisor
+    |> Task.Supervisor.children()
+    |> Enum.filter(&started_by?(&1, test_pid))
+    |> Enum.each(&await_down/1)
+  end
+
+  defp started_by?(pid, test_pid) do
+    case Process.info(pid, :dictionary) do
+      {:dictionary, dictionary} -> test_pid in Keyword.get(dictionary, :"$callers", [])
+      nil -> false
+    end
+  end
+
+  defp await_down(pid) do
+    ref = Process.monitor(pid)
+
+    receive do
+      {:DOWN, ^ref, :process, ^pid, _reason} -> :ok
+    after
+      @drain_timeout_ms -> Process.demonitor(ref, [:flush])
+    end
   end
 
   @doc """
