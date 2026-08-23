@@ -17,6 +17,23 @@ upgrade, is in
 ## [Unreleased]
 
 
+
+### Fixed
+
+- **`/admin/finance` 500'd as soon as a rate card was configured.** #1029 made
+  rates fractional; `money/1` still matched only integers, and `rate_label/2`
+  passed it the raw rate. The page raised `FunctionClauseError` on
+  `money(5.45)` for every visit. It was invisible in CI because every test
+  used whole-number rates, and the one test that did use a fractional rate
+  exercised the arithmetic rather than the render — no test had ever rendered
+  the provider card with a rate set at all.
+
+  A rate is now shown in cents keeping its fraction (`10.76c/hour`), because
+  it is a rate and not a total: rounded to whole cents, 10.76 and 5.45 stop
+  being comparable and anything between 4.5 and 5.5 reads the same. `money/1`
+  also rounds a float rather than raising — every cost path already rounds
+  before display, but a cent of rounding is a better answer than a dead page.
+
 ### Added
 
 - **The finance panel's rate card is filled in, and rates may be fractional.**

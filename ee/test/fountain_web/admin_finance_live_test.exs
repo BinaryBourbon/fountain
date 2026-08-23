@@ -147,6 +147,46 @@ defmodule FountainWeb.AdminFinanceLiveTest do
     end
   end
 
+  describe "fractional rates" do
+    # The gap that took /admin/finance down in prod the moment a rate card was
+    # configured: every rate here was a whole number, and `money/1` only
+    # matched integers. The context tests covered fractional arithmetic; none
+    # of them *rendered* the provider card that shows the rate.
+    test "renders the provider card at the rates prod actually runs", %{conn: conn} do
+      Application.put_env(:fountain, :provider_hourly_cents, %{
+        "sprites" => 10.76,
+        "e2b" => 5.45,
+        "daytona" => 5.45
+      })
+
+      Application.put_env(:fountain, :agentmail_message_cents, 0.2)
+
+      admin = insert_admin()
+      user = subscriber("solo")
+      ran(user, 10, 4)
+
+      {:ok, _lv, html} = live(login_user(conn, admin), ~p"/admin/finance")
+
+      # A rate is shown in cents keeping its fraction — rounded to whole cents
+      # 10.76 and 5.45 would both collapse and stop being comparable.
+      assert html =~ "10.76c/hour"
+      refute html =~ "no rate configured"
+    end
+
+    test "a whole fractional rate does not grow a decimal point", %{conn: conn} do
+      Application.put_env(:fountain, :provider_hourly_cents, %{"sprites" => 12.0})
+
+      admin = insert_admin()
+      user = subscriber("solo")
+      ran(user, 5, 5)
+
+      {:ok, _lv, html} = live(login_user(conn, admin), ~p"/admin/finance")
+
+      assert html =~ "12c/hour"
+      refute html =~ "12.0c/hour"
+    end
+  end
+
   describe "the cost basis" do
     test "the toggle reprices the same hours", %{conn: conn} do
       Application.put_env(:fountain, :provider_hourly_cents, %{"sprites" => 100})
