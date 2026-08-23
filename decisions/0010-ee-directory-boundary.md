@@ -126,3 +126,10 @@ One framing correction, per the same retrospective: this boundary
 **preserves the option** of licensing ee/ differently; it is not a plan of
 record. Everything remains MIT until an explicit license decision says
 otherwise.
+
+> **Settled by 0027 (2026-08-22).** That decision exercised the option this
+> ADR preserved: `ee/` is now under the Elastic License 2.0 and the server is
+> AGPL-3.0-or-later. The "Not done yet" note above, that `ee/LICENSE` is a
+> copy of the root MIT license and that the public docs correctly say MIT,
+> described the state on 2026-08-04 and is no longer true. See
+> [`0027-agpl-relicensing.md`](0027-agpl-relicensing.md).

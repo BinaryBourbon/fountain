@@ -1,0 +1,98 @@
+Fountain
+Copyright (c) 2026 Jake Gaylor
+
+================================================================================
+Licensing
+================================================================================
+
+This repository is not licensed as a single unit. Each directory below carries
+its own LICENSE file, and that file governs.
+
+  apps/fountain, config, priv    GNU Affero General Public License v3.0
+  (the Fountain server)          or later  ...................  LICENSE
+
+  ee/                            Elastic License 2.0 .......... ee/LICENSE
+
+  cli/                           Apache License 2.0 ........... cli/LICENSE
+  sdk/typescript/                Apache License 2.0 ........... sdk/typescript/LICENSE
+
+The client surfaces are deliberately permissive. Building something on top of
+the Fountain API, or shipping the CLI inside a proprietary product, carries no
+copyleft obligation. Running a modified Fountain server and offering it over a
+network does: AGPL section 13 requires that you offer your users the source of
+your modified version.
+
+The first-party single-page apps live in their own repositories and are
+licensed under the Apache License 2.0 there.
+
+  https://github.com/jhgaylor/fountain-conversations
+  https://github.com/jhgaylor/fountain-team
+
+================================================================================
+Relicensing history
+================================================================================
+
+Fountain was released under the MIT License from the first public commit
+(2026-05-10) through release v0.12.0 (2026-08-17). Those releases remain
+available under the MIT License to anyone who obtained them, and that grant is
+irrevocable. The AGPL and Elastic License terms apply to the source from the
+relicensing commit onward.
+
+Every line in this repository is the copyright of Jake Gaylor. No third-party
+contribution has been merged. The MIT License also permits sublicensing under
+other terms, so the relicensing would be permitted even if one had been.
+
+The MIT terms are reproduced below as the record of what the v0.12.0 and
+earlier releases were distributed under. Anyone holding one of those releases
+holds it under these terms.
+
+--------------------------------------------------------------------------------
+MIT License
+
+Copyright (c) 2026 Jake Gaylor
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+--------------------------------------------------------------------------------
+
+================================================================================
+Acknowledgements
+================================================================================
+
+Fountain has had help that is not copyright and is worth naming anyway. lex00
+(https://github.com/lex00) filed the issues that became the Environment and
+Vault metadata fields, the agent-scoped vault allowlist, the skill ref pin, and
+the API key list endpoint. Those were good calls and the features shipped.
+
+================================================================================
+Third-party components
+================================================================================
+
+Fountain depends on Hex, npm and Go packages that carry their own licenses.
+The dependency set is MIT, Apache 2.0, BSD and ISC, with two exceptions worth
+naming.
+
+  open_api_spex   Mozilla Public License 2.0. File-level copyleft, compatible
+                  with the AGPL. Fountain does not modify its files.
+
+  muzak           CC-BY-NC-ND-4.0. A mutation-testing tool declared
+                  `only: :test`. It is not linked into the product and is not
+                  present in the release image.
+
+The Sprites Elixir client is pinned to a superfly/sprites-ex tag and carries
+that project's license.

@@ -2,10 +2,12 @@
 
 Code in `ee/` is compiled into the same `:fountain` OTP app as everything
 under `apps/fountain` (wired in via `elixirc_paths` / `test_paths` in
-`apps/fountain/mix.exs`), but sits behind a directory boundary intended to
-carry a different license someday, GitLab-style — an option preserved, not a
-plan of record. **Today it is MIT** (`ee/LICENSE`, identical to the root
-license).
+`apps/fountain/mix.exs`), but sits behind a directory boundary that
+carries its own license, GitLab-style. **`ee/` is under the Elastic License
+2.0** (`ee/LICENSE`); the server under `apps/fountain` is AGPL-3.0-or-later
+(root `LICENSE`). You may run `ee/` in your own instance for free and keep
+your changes private; you may not offer it to third parties as a hosted
+service. See `decisions/0027-agpl-relicensing.md`.
 
 ## Contents
 
