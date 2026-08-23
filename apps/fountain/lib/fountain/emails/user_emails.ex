@@ -116,6 +116,32 @@ defmodule Fountain.Emails.UserEmails do
   end
 
   @doc """
+  Warn an owner that vault secrets are about to expire.
+
+  Sent by `Workers.SecretExpirySweeper`, once per recorded expiry, listing
+  every due secret the owner has in one mail. Names vaults and keys only —
+  the values never leave the vault, expiring or not.
+  """
+  @spec deliver_vault_secrets_expiring_email(User.t(), [map()]) ::
+          {:ok, term()} | {:error, term()}
+  def deliver_vault_secrets_expiring_email(%User{} = user, [_ | _] = entries) do
+    url = "#{Fountain.PublicUrl.base()}/vaults"
+
+    new()
+    |> from(from_address())
+    |> to({user.email, user.email})
+    |> subject(secrets_expiring_subject(entries))
+    |> html_body(secrets_expiring_html(entries, url))
+    |> text_body(secrets_expiring_text(entries, url))
+    |> Mailer.deliver()
+  end
+
+  defp secrets_expiring_subject([%{key: key}]), do: "Your vault secret #{key} expires soon"
+
+  defp secrets_expiring_subject(entries),
+    do: "#{length(entries)} of your vault secrets expire soon"
+
+  @doc """
   Confirm an account deletion (#450).
 
   Takes a raw address, not a `User` — by send time the row is gone. Honest
@@ -314,6 +340,64 @@ defmodule Fountain.Emails.UserEmails do
     If this looks wrong, #{support_phrase()}.
     """
   end
+
+  defp secrets_expiring_html(entries, url) do
+    rows =
+      Enum.map_join(entries, "\n", fn e ->
+        "<li><strong>#{e.key}</strong> in vault <strong>#{Plug.HTML.html_escape(e.vault_name)}</strong> — expires #{expiry_date(e.expires_at)}</li>"
+      end)
+
+    """
+    <!DOCTYPE html>
+    <html>
+    <body style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 24px;">
+      <h2>Vault secrets expiring soon</h2>
+      <p>
+        You recorded an expiry date on these vault secrets, and it is close:
+      </p>
+      <ul>
+        #{rows}
+      </ul>
+      <p>
+        Nothing stops on that date on Fountain's side — but an agent handed an
+        expired credential fails mid-conversation, which is a worse place to
+        find out. Rotate the value and record the new expiry.
+      </p>
+      <p><a href="#{url}">#{url}</a></p>
+      <p style="color: #71717a; font-size: 13px;">
+        You get this notice once per recorded expiry. If this looks wrong,
+        #{support_phrase()}.
+      </p>
+    </body>
+    </html>
+    """
+  end
+
+  defp secrets_expiring_text(entries, url) do
+    rows =
+      Enum.map_join(entries, "\n", fn e ->
+        "  - #{e.key} in vault #{e.vault_name} — expires #{expiry_date(e.expires_at)}"
+      end)
+
+    """
+    Vault secrets expiring soon
+
+    You recorded an expiry date on these vault secrets, and it is close:
+
+    #{rows}
+
+    Nothing stops on that date on Fountain's side — but an agent handed an
+    expired credential fails mid-conversation, which is a worse place to
+    find out. Rotate the value and record the new expiry.
+
+    #{url}
+
+    You get this notice once per recorded expiry. If this looks wrong,
+    #{support_phrase()}.
+    """
+  end
+
+  defp expiry_date(%DateTime{} = dt), do: dt |> DateTime.to_date() |> Date.to_iso8601()
 
   defp account_suspended_html do
     """

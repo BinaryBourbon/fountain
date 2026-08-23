@@ -45,7 +45,24 @@ defmodule FountainWeb.VaultSecretControllerTest do
 
       body = json_response(conn, 201)
       assert body["data"]["key"] == "API_TOKEN"
+      assert body["data"]["expires_at"] == nil
       refute Map.has_key?(body["data"], "value")
+    end
+
+    test "accepts and returns an optional expiry", %{conn: conn, user: user, raw_key: raw_key} do
+      vault = insert_vault(user_id: user.id)
+
+      conn =
+        conn
+        |> authed_with_key(raw_key)
+        |> post_json("/api/vaults/#{vault.id}/secrets", %{
+          key: "API_TOKEN",
+          value: "t0k3n",
+          expires_at: "2027-01-15T00:00:00Z"
+        })
+
+      body = json_response(conn, 201)
+      assert body["data"]["expires_at"] == "2027-01-15T00:00:00Z"
     end
 
     test "returns 404 when vault belongs to another user", %{conn: conn, raw_key: raw_key} do

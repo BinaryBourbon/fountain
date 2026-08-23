@@ -53,7 +53,7 @@ defmodule FountainWeb.VaultSecretController do
         {:error, :not_found}
 
       vault ->
-        attrs = Map.take(params, ["key", "value"])
+        attrs = Map.take(params, ["key", "value", "expires_at"])
         {:ok, dek} = Crypto.load_tenant_key(user.id)
 
         with {:ok, secret} <- Vaults.upsert_secret(vault, attrs, dek, Audited.attribution(conn)) do
