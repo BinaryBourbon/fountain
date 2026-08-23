@@ -361,6 +361,34 @@ defmodule Fountain.BillingTest do
       refute updated.cancel_at_period_end
       assert updated.current_period_end == nil
     end
+
+    test "both ends of the invoiced period are recorded (#1016)", %{user: _user} do
+      # The start is what makes a usage window match an invoice. Without it
+      # every number was measured over a calendar month, which for anyone who
+      # subscribed on the 20th is not the period they are charged for.
+      period_start = 1_797_408_000
+      period_end = 1_800_000_000
+
+      event = %Stripe.Event{
+        type: "customer.subscription.updated",
+        data: %{
+          object: %{
+            customer: "cus_cap",
+            status: "active",
+            trial_end: nil,
+            current_period_start: period_start,
+            current_period_end: period_end
+          }
+        }
+      }
+
+      assert {:ok, updated} = Billing.sync_subscription(event)
+      assert updated.current_period_start == DateTime.from_unix!(period_start)
+      assert updated.current_period_end == DateTime.from_unix!(period_end)
+
+      assert %{source: :subscription} =
+               Billing.billing_period(updated, DateTime.from_unix!(period_start + 60))
+    end
   end
 
   describe "sync_subscription/1 — the return path for canceled" do
@@ -585,6 +613,8 @@ defmodule Fountain.BillingTest do
       period_end =
         DateTime.utc_now() |> DateTime.add(30, :day) |> DateTime.truncate(:second)
 
+      period_start = DateTime.add(period_end, -30, :day)
+
       user =
         billing_state(insert_verified_user(),
           subscription_status: "past_due",
@@ -599,6 +629,7 @@ defmodule Fountain.BillingTest do
            id: "sub_resync",
            status: "active",
            trial_end: nil,
+           current_period_start: DateTime.to_unix(period_start),
            current_period_end: DateTime.to_unix(period_end),
            cancel_at_period_end: false
          }}
@@ -606,6 +637,7 @@ defmodule Fountain.BillingTest do
 
       assert {:ok, updated} = Billing.resync_from_stripe(user)
       assert updated.subscription_status == "active"
+      assert updated.current_period_start == period_start
       assert updated.current_period_end == period_end
       assert updated.subscription_synced_at
     end

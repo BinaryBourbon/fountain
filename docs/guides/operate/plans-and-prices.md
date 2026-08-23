@@ -16,12 +16,12 @@ commercial instance with `BILLING_ENABLED=true`. Read
 A plan sets one number that Fountain enforces. That number is the count of
 sandboxes a tenant can run at the same time.
 
-| Plan | Concurrent sandboxes | Contact ceiling | Price |
-|---|---|---|---|
-| Solo | 5 | 1 | $29/mo |
-| Team | 15 | 3 | $79/mo |
-| Scale | 40 | 10 | $199/mo |
-| Legacy | 15 | 3 | $29/mo |
+| Plan | Concurrent sandboxes | Turn hours | Contact ceiling | Price |
+|---|---|---|---|---|
+| Solo | 5 | 100 | 1 | $29/mo |
+| Team | 15 | 300 | 3 | $79/mo |
+| Scale | 40 | 800 | 10 | $199/mo |
+| Legacy | 15 | 300 | 3 | $29/mo |
 
 Every plan carries the whole product. Only the cap differs. See
 [ADR 0026](https://github.com/jhgaylor/fountain/blob/main/decisions/0026-plans-and-entitlements.md)
@@ -33,6 +33,50 @@ keep it, at Team capacity.
 
 The contact ceiling bounds teammate email and phone contacts. It is an abuse
 bound, not an allowance. Fountain charges for each contact separately.
+
+### Turn hours measure work, not clock time
+
+Each plan includes 20 turn hours for each concurrent sandbox. A turn hour is
+one hour with a prompt in flight. An agent that waits for a person spends no
+turn hours. Time on a self-hosted runner also spends none, because Fountain
+pays nothing for that machine.
+
+Fountain reports these hours and enforces nothing. No request fails because a
+tenant exceeds the included hours. The price of an overage is still an open
+question. See
+[issue 1016](https://github.com/BinaryBourbon/fountain/issues/1016) for the
+current state.
+
+Three surfaces show the number. The billing page shows it to the tenant. The
+API reports it at `GET /api/account/billing`. The admin page for one account
+shows it beside the sandbox count.
+
+### The billing period
+
+Fountain measures the hours over the period that Stripe invoices. The
+`users.current_period_start` column holds the start of that period, and
+Fountain reads it from the subscription at every webhook.
+
+An account without such a period gets the calendar month instead. Every
+surface states which window it used, because a number measured over the wrong
+window must say so. Three kinds of account have no period. A comped account
+has none. A self-hosted account has none. An account that received no
+subscription webhook since this column arrived has none yet.
+
+Fountain fills the column for one such account at the next renewal. To fill it
+for every account at once, run this task.
+
+```bash
+bin/fountain_server eval 'Fountain.Release.backfill_billing_periods(dry_run: true)'
+bin/fountain_server eval 'Fountain.Release.backfill_billing_periods()'
+```
+
+The task makes one Stripe read for each account that needs one. It writes the
+two period columns and nothing else. It is safe to run more than once.
+
+Use `eval` for this task, and `rpc` for the verifier above. This task starts
+its own database connection, and an `rpc` restarts the pool of a pod that
+serves traffic.
 
 ### A downgrade does not stop work in progress
 

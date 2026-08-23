@@ -265,6 +265,129 @@ defmodule Fountain.Release do
     end
   end
 
+  @doc """
+  Backfills `users.current_period_start` from Stripe (#1016).
+
+  The column arrived after every existing subscription had already been
+  created, so until each account's next `customer.subscription.updated` event
+  lands it has an end date and no start, and `Fountain.Billing.billing_period/2`
+  reports a calendar month for it. That is correct behaviour, and it is also
+  a month of every usage number being measured over a window that is not the
+  one the customer is invoiced for. This closes the gap in one pass.
+
+      # See who is missing a period start, call Stripe for none of them:
+      bin/fountain_server eval 'Fountain.Release.backfill_billing_periods(dry_run: true)'
+
+      # Do it:
+      bin/fountain_server eval 'Fountain.Release.backfill_billing_periods()'
+
+  Every account skipped means the run repaired nothing, which the task says
+  out loud rather than reporting a clean pass.
+
+  `eval`, not the `rpc` that `mix fountain.verify_plans` wants. Every task in
+  this module goes through `with_repo/1`, and `Ecto.Migrator.with_repo`
+  restarts the repo's pool child when it finds one already started — over
+  `rpc` that would bounce the connection pool of a pod that is serving. The
+  Stripe key this needs comes from `config/runtime.exs`, which a release
+  `eval` does execute.
+
+  One Stripe read per account, and only for accounts that have a subscription
+  of record and no start recorded — so it is safe to re-run, and a second run
+  after the first is a handful of queries and no API calls. Comped accounts
+  are skipped: they have no invoiced period, which is the state the fallback
+  exists for.
+
+  Writes `current_period_start` and `current_period_end` only. Status, trial
+  and plan are deliberately untouched — repairing those from Stripe is
+  `Billing.resync_from_stripe/1`'s job, it participates in the webhook
+  ordering guard, and a bulk backfill quietly flipping account statuses is
+  exactly the kind of surprise a one-column migration helper should not have.
+  """
+  def backfill_billing_periods(opts \\ []) do
+    with_repo(fn -> do_backfill_billing_periods(opts) end)
+  end
+
+  defp do_backfill_billing_periods(opts) do
+    dry_run? = Keyword.get(opts, :dry_run, false)
+    import Ecto.Query
+
+    query =
+      from u in Fountain.Accounts.User,
+        where: not is_nil(u.stripe_subscription_id) and u.stripe_subscription_id != "",
+        where: is_nil(u.current_period_start),
+        where: u.subscription_status != "comped",
+        select: %{id: u.id, subscription_id: u.stripe_subscription_id}
+
+    pending = Fountain.Repo.all(query)
+
+    if dry_run? do
+      IO.puts("#{length(pending)} subscribed account(s) have no current_period_start.")
+      IO.puts("Running without dry_run: would read each one from Stripe and record its period.")
+      {:ok, length(pending)}
+    else
+      {:ok, _} = Application.ensure_all_started(:stripity_stripe)
+      tally = Enum.reduce(pending, %{updated: 0, skipped: 0}, &backfill_one/2)
+
+      Fountain.Audit.record(%{
+        user_id: nil,
+        action: "release.billing_periods_backfilled",
+        resource_type: "release_task",
+        actor: "system:release_task",
+        metadata: %{
+          "accounts_considered" => length(pending),
+          "accounts_updated" => tally.updated,
+          "accounts_skipped" => tally.skipped
+        }
+      })
+
+      IO.puts(
+        "Recorded a billing period on #{tally.updated} account(s), #{tally.skipped} skipped."
+      )
+
+      # One skipped account is a deleted subscription. Every account skipped is
+      # not a coincidence — it is an unset, revoked or wrong-mode
+      # STRIPE_SECRET_KEY, or Stripe being unreachable — and without saying so
+      # the task reports a successful run that repaired nothing. Checking the
+      # outcome rather than the config catches all four.
+      if tally.updated == 0 and tally.skipped > 0 do
+        IO.warn(
+          "every one of the #{tally.skipped} account(s) was skipped — check " <>
+            "STRIPE_SECRET_KEY and the reasons above before assuming this ran"
+        )
+      end
+
+      {:ok, tally.updated}
+    end
+  end
+
+  # A subscription Stripe cannot hand back — deleted, or belonging to a key
+  # this deployment no longer holds — is skipped rather than fatal. The point
+  # of the pass is the accounts it can repair.
+  defp backfill_one(%{id: user_id, subscription_id: subscription_id}, tally) do
+    with {:ok, sub} <- Stripe.Subscription.retrieve(subscription_id),
+         %DateTime{} = period_start <- unix_datetime(Map.get(sub, :current_period_start)) do
+      user = Fountain.Repo.get!(Fountain.Accounts.User, user_id)
+
+      user
+      |> Fountain.Accounts.User.billing_changeset(%{
+        current_period_start: period_start,
+        current_period_end: unix_datetime(Map.get(sub, :current_period_end))
+      })
+      |> Fountain.Repo.update!()
+
+      %{tally | updated: tally.updated + 1}
+    else
+      other ->
+        IO.puts("  skipped #{user_id} (#{subscription_id}): #{inspect(other)}")
+        %{tally | skipped: tally.skipped + 1}
+    end
+  end
+
+  defp unix_datetime(ts) when is_integer(ts),
+    do: ts |> DateTime.from_unix!() |> DateTime.truncate(:second)
+
+  defp unix_datetime(_), do: nil
+
   defp repos do
     Application.fetch_env!(@app, :ecto_repos)
   end

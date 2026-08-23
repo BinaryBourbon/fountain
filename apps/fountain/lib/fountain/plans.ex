@@ -13,18 +13,38 @@ defmodule Fountain.Plans do
 
   Concurrent sandboxes, and only that. It is the one thing that is both a real
   cost to Fountain (capacity on the shared provider account, ADR 0005/0018)
-  and legible to a customer without a usage meter. Sandbox-hours are the
-  honest *variable* unit and remain the plan for a later revision of #798;
-  they need metering correctness first and they are not what these tiers sell.
+  and legible to a customer without a usage meter. The tiers are still priced
+  on it; the turn-hour allowance below is an amount of work *inside* a tier,
+  not a second axis to sell on.
+
+  ## Included turn hours
+
+  `included_turn_hours` is derived, not chosen per tier: **20 turn hours per
+  concurrent sandbox the plan allows**, so Solo's 5 slots carry 100 hours and
+  Scale's 40 carry 800. Deriving it keeps the ladder on one axis — a plan
+  cannot end up with more capacity and less work to do with it.
+
+  A *turn* hour is time with a prompt actually in flight
+  (`Fountain.Billing.SandboxUsage`'s `busy_seconds`), not wall-clock sandbox
+  time. The distinction is the whole point: a sandbox left running overnight
+  with nobody prompting it burns `active_seconds` and no allowance, so the
+  meter measures work rather than forgetfulness. Hours on a tenant's own
+  runner (ADR 0022) do not count either — Fountain pays nothing for them.
+
+  **Nothing enforces this yet.** `Fountain.Billing.turn_hour_allowance/2`
+  reports used against included and every surface displays it; no code path
+  refuses anything because of it. The overage shape — post-paid or prepaid
+  credits — is deliberately still open (#1016 step 4), to be decided with a
+  cycle of real numbers in hand.
 
   ## The catalog
 
-  | Plan | Concurrent | Teammate contacts | Price |
-  |---|---|---|---|
-  | `solo` | 5 | 1 | $29/mo |
-  | `team` | 15 | 3 | $79/mo |
-  | `scale` | 40 | 10 | $199/mo |
-  | `legacy` | 15 | 3 | $29/mo (closed) |
+  | Plan | Concurrent | Turn hours | Teammate contacts | Price |
+  |---|---|---|---|---|
+  | `solo` | 5 | 100 | 1 | $29/mo |
+  | `team` | 15 | 300 | 3 | $79/mo |
+  | `scale` | 40 | 800 | 10 | $199/mo |
+  | `legacy` | 15 | 300 | 3 | $29/mo (closed) |
 
   `legacy` is the flat price every account bought before the tiers existed.
   It is pinned to the old `STRIPE_PRICE_ID`, carries `team`'s capacity so that
@@ -71,6 +91,7 @@ defmodule Fountain.Plans do
     :tagline,
     :monthly_cents,
     :concurrent_sandboxes,
+    :included_turn_hours,
     :team_contacts,
     :order,
     public?: true
@@ -81,6 +102,11 @@ defmodule Fountain.Plans do
   # Plain maps, not structs: a module attribute cannot hold a struct of the
   # module that is defining it. `all/0` is what turns these into `%Plans{}`,
   # and with four of them the cost of doing so per call is not worth caching.
+  #
+  # `included_turn_hours` is 20 per concurrent slot, written out per plan
+  # rather than computed, so the catalog stays a table you can read every
+  # entitlement off. `plans_test.exs` asserts the ratio, so breaking it for a
+  # future plan is a deliberate act rather than a typo.
   @plan_specs [
     %{
       slug: "solo",
@@ -88,6 +114,7 @@ defmodule Fountain.Plans do
       tagline: "One person, a handful of agents at a time.",
       monthly_cents: 2_900,
       concurrent_sandboxes: 5,
+      included_turn_hours: 100,
       team_contacts: 1,
       order: 1
     },
@@ -97,6 +124,7 @@ defmodule Fountain.Plans do
       tagline: "A standing team of agents, working in parallel.",
       monthly_cents: 7_900,
       concurrent_sandboxes: 15,
+      included_turn_hours: 300,
       team_contacts: 3,
       order: 2
     },
@@ -106,6 +134,7 @@ defmodule Fountain.Plans do
       tagline: "Fleet-sized fan-out, without asking first.",
       monthly_cents: 19_900,
       concurrent_sandboxes: 40,
+      included_turn_hours: 800,
       team_contacts: 10,
       order: 3
     },
@@ -115,6 +144,7 @@ defmodule Fountain.Plans do
       tagline: "The original flat plan, at Team capacity.",
       monthly_cents: 2_900,
       concurrent_sandboxes: 15,
+      included_turn_hours: 300,
       team_contacts: 3,
       order: 0,
       public?: false
@@ -198,6 +228,22 @@ defmodule Fountain.Plans do
   @spec concurrent_sandboxes(term()) :: non_neg_integer()
   def concurrent_sandboxes(%__MODULE__{concurrent_sandboxes: n}), do: n
   def concurrent_sandboxes(subject), do: resolve(subject).concurrent_sandboxes
+
+  @doc """
+  The turn hours a user's, slug's or plan's subscription includes per billing
+  period.
+
+  A turn hour is an hour with a prompt in flight, on a provider Fountain pays
+  for. It is **not** wall-clock sandbox time: see the moduledoc, and
+  `Fountain.Billing.turn_hour_allowance/2` for the used side of the same
+  number.
+
+  Reported everywhere, enforced nowhere — no code path refuses anything
+  because a tenant is over.
+  """
+  @spec included_turn_hours(term()) :: non_neg_integer()
+  def included_turn_hours(%__MODULE__{included_turn_hours: n}), do: n
+  def included_turn_hours(subject), do: resolve(subject).included_turn_hours
 
   @doc """
   The most teammate contacts a user, slug or plan may hold at once.

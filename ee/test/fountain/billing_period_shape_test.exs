@@ -93,6 +93,81 @@ defmodule Fountain.BillingPeriodShapeTest do
     end
   end
 
+  # The same trap, one field over (#1016). `current_period_start` moved onto
+  # the item in the same API change, so an allowance measured over the billing
+  # period would have been measured over a calendar month forever — with the
+  # fallback quietly reporting `:calendar_month` and looking like correct
+  # behaviour rather than a bug.
+  describe "period_start_unix/1" do
+    test "prefers the subscription-level field when Stripe still sends one" do
+      assert Billing.period_start_unix(%{current_period_start: 1_797_408_000}) == 1_797_408_000
+    end
+
+    test "falls back to the item when the subscription-level field is null" do
+      sub = %{
+        current_period_start: nil,
+        items: %{data: [%{id: "si_1", current_period_start: 1_786_357_774}]}
+      }
+
+      assert Billing.period_start_unix(sub) == 1_786_357_774
+    end
+
+    test "reads string keys too" do
+      sub = %{"items" => %{"data" => [%{"current_period_start" => 1_786_357_774}]}}
+      assert Billing.period_start_unix(sub) == 1_786_357_774
+    end
+
+    test "skips an item with no period and takes the one that has it" do
+      sub = %{
+        items: %{
+          data: [
+            %{id: "si_addon"},
+            %{id: "si_plan", current_period_start: 1_786_357_774}
+          ]
+        }
+      }
+
+      assert Billing.period_start_unix(sub) == 1_786_357_774
+    end
+
+    test "answers nil when nothing carries a period" do
+      assert Billing.period_start_unix(%{}) == nil
+      assert Billing.period_start_unix(%{items: %{data: [%{id: "si_1"}]}}) == nil
+    end
+
+    # Both ends come off the same item, so a subscription in the current shape
+    # yields a period that `billing_period/2` will actually accept.
+    test "both ends read off one item make a usable billing period" do
+      _user = customer("cus_both_ends")
+      period_start = 1_786_357_774
+      period_end = 1_789_036_174
+
+      assert {:ok, updated} =
+               Billing.sync_subscription(
+                 event("cus_both_ends", %{
+                   current_period_start: nil,
+                   current_period_end: nil,
+                   items: %{
+                     data: [
+                       %{
+                         id: "si_1",
+                         current_period_start: period_start,
+                         current_period_end: period_end
+                       }
+                     ]
+                   }
+                 })
+               )
+
+      assert updated.current_period_start == DateTime.from_unix!(period_start)
+      assert updated.current_period_end == DateTime.from_unix!(period_end)
+
+      # The point of the column: a window Stripe invoices, not a calendar month.
+      assert %{source: :subscription} =
+               Billing.billing_period(updated, DateTime.from_unix!(period_start + 3600))
+    end
+  end
+
   describe "sync_subscription/1 with the current Stripe shape" do
     # The end-to-end version of the bug: a cancelling customer is promised
     # "access until <date>", and the date came out blank.

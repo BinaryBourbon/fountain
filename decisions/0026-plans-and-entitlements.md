@@ -235,10 +235,54 @@ is where it is worth running.
   invoice once `STRIPE_PRICE_ID_CONTACT` is set; setting that variable is
   therefore a customer-facing act, not a config tidy-up.
 * The tiers make the #798 hours work easier, not harder, but they also mean a
-  later hours model has to fit *inside* a tier rather than replace it.
+  later hours model has to fit *inside* a tier rather than replace it. See the
+  amendment below, which is that model's first increment.
 * Price points are now partly in code (`Fountain.Plans`) and partly in Stripe.
   `verify_plans` is the only thing standing between that and a customer being
   shown one number and charged another. Run it.
+
+## Amendment (2026-08-23) — included turn hours, reported and not enforced
+
+**Status:** Accepted and built (#1016 steps 1 to 3). The allowance is
+displayed on every surface. **No code path refuses anything because of it**;
+steps 4 and 5 of #1016, which decide the overage shape and add a ceiling, are
+deliberately not built.
+
+Each plan now carries `included_turn_hours` — 20 hours per concurrent slot, so
+Solo 100, Team 300, Scale 800, `legacy` 300 at Team's capacity. Three things
+about it are decisions rather than details.
+
+**The unit is turn time, not sandbox-active time.** #798 called
+sandbox-active-hours the honest variable unit, and for *Fountain's* cost it is:
+an idle sprite is billed at full rate. It is the wrong unit to sell, because
+the tenant behaviour it punishes is forgetting to close a tab, not doing work.
+`SandboxUsage` has separated `busy_seconds` from `idle_seconds` since #666, so
+the allowance is denominated in busy time and the idle half stays a cost signal
+for the operator (`provider_spend/1`) rather than a customer-facing number.
+Hours on a self-hosted runner (0022) are excluded for the same reason from the
+other direction: Fountain pays nothing for that machine.
+
+The prod distribution this was set against, at the time of writing: the
+dogfood account burned 271 turn hours in a month against 11,091 active hours,
+and every other tenant was under half a turn hour. The ratio between those two
+columns is the whole argument.
+
+**The period is Stripe's, not the calendar's.** `users.current_period_start`
+is now synced beside `current_period_end`, and `Billing.billing_period/2`
+returns `%{start, end, source}`. An account with no invoiced period — comped,
+self-hosted, or not yet reported by a webhook — gets the calendar month with
+`source: :calendar_month`, and **every surface displays that fact**. The
+alternative considered and rejected was deriving the start from the previous
+`current_period_end`, which is wrong for a `trialing` account, where that field
+holds the trial end rather than a period boundary.
+
+**It is reported before it is enforced, on purpose.** Setting a number that
+bills people before seeing a cycle of real usage against it is how you pick a
+figure that is wrong for everybody. The overage shape (post-paid versus prepaid
+credits) stays open in #1016. Note for whoever closes it: the contact add-on
+this ADR built is a *licensed* quantity price, and Stripe ignores quantity on a
+metered price — hours need Meter Events or a credit balance, not a second
+licensed item.
 
 ## Alternatives considered
 

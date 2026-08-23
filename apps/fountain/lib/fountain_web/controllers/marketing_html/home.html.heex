@@ -219,6 +219,12 @@
         <p class="mt-1 text-xs text-[var(--color-text-muted)]">
           concurrent sandboxes. Queue as much work as you like behind them.
         </p>
+        <p class="mt-3 text-sm font-medium text-[var(--color-text-primary)]">
+          {plan_turn_hours(plan)}
+        </p>
+        <p class="mt-1 text-xs text-[var(--color-text-muted)]">
+          counted while an agent is working, not while it waits.
+        </p>
         <a
           href={~p"/auth/register"}
           class="mt-6 inline-flex items-center justify-center px-4 py-2 rounded-lg border border-[var(--color-border)] text-[var(--color-text-primary)] text-sm font-medium hover:bg-[var(--color-bg-2)] transition-colors"

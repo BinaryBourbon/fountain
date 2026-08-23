@@ -30,7 +30,9 @@ defmodule FountainWeb.BillingApiController do
     summary: "Subscription status and current-period usage",
     description:
       "Trial and period dates alongside the usage numbers the billing page " <>
-        "shows. On an instance with billing disabled this is a 404 carrying " <>
+        "shows, measured over the period Stripe invoices where one is known " <>
+        "and the calendar month otherwise (`period.source` says which). " <>
+        "On an instance with billing disabled this is a 404 carrying " <>
         "`billing: \"disabled\"`, mirroring the UI, which redirects away from " <>
         "the billing page entirely.",
     responses: [
@@ -43,13 +45,13 @@ defmodule FountainWeb.BillingApiController do
   def show(conn, _params) do
     with :ok <- require_billing() do
       user = conn.assigns.current_user
-      {period_start, period_end} = current_month_range()
+      period = Billing.billing_period(user)
 
       render(conn, :show,
         user: user,
-        usage: Billing.usage_summary(user.id, period_start, period_end),
-        period_start: period_start,
-        period_end: period_end
+        usage: Billing.usage_summary(user.id, period.start, period.end),
+        allowance: Billing.turn_hour_allowance(user, period: period),
+        period: period
       )
     end
   end
@@ -181,7 +183,4 @@ defmodule FountainWeb.BillingApiController do
   end
 
   defp return_url, do: FountainWeb.Endpoint.url() <> "/account/billing"
-
-  # The same calendar-month window the billing page reports.
-  defp current_month_range, do: Billing.current_month_range()
 end

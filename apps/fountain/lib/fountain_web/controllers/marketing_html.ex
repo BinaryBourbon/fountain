@@ -35,7 +35,14 @@ defmodule FountainWeb.MarketingHTML do
 
   @doc """
   The one-line capacity claim under a plan's price. Concurrency is the axis
-  the tiers are sold on, so it is the only number here.
+  the tiers are sold on, so it is the headline number.
   """
   def plan_capacity(plan), do: "#{plan.concurrent_sandboxes} agents at once"
+
+  @doc """
+  The work that comes with the capacity. A turn hour is an hour with a prompt
+  in flight, so an agent left sitting idle does not spend one — which is the
+  part worth being explicit about on a pricing page.
+  """
+  def plan_turn_hours(plan), do: "#{plan.included_turn_hours} turn hours a month"
 end

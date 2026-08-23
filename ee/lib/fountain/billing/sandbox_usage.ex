@@ -247,6 +247,30 @@ defmodule Fountain.Billing.SandboxUsage do
   end
 
   @doc """
+  One tenant's *turn* seconds per provider: `%{provider => busy_seconds}`.
+
+  The same rows `for_user/3` reads, reporting the part of each with a prompt
+  actually in flight rather than the whole active window. This is the unit a
+  plan's included hours are measured in (`Fountain.Plans.included_turn_hours/1`):
+  an idle sandbox costs Fountain money and is reported by `for_user/3`, but
+  spending nothing of a customer's allowance is the deliberate choice — the
+  allowance measures work, not forgetfulness.
+
+  Providers with no turn time in the period are absent rather than zero, so a
+  tenant whose sandboxes all sat idle gets an empty map, not `%{"sprites" => 0}`.
+  """
+  @spec busy_for_user(binary(), DateTime.t(), DateTime.t()) :: %{
+          optional(String.t()) => non_neg_integer()
+        }
+  def busy_for_user(user_id, %DateTime{} = period_start, %DateTime{} = period_end)
+      when is_binary(user_id) do
+    period_start
+    |> attribution(period_end, user_id: user_id)
+    |> Enum.reject(&(&1.busy_seconds == 0))
+    |> Map.new(&{&1.provider, &1.busy_seconds})
+  end
+
+  @doc """
   Does time on this provider land on a bill Fountain pays?
 
   False for `runner` (the tenant's own machine) and for any provider this
