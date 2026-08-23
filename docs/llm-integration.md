@@ -2,7 +2,7 @@
 
 Fountain exists for an AI coding tool to consume. Each instance serves
 discovery endpoints that a machine can read, so an agentic IDE learns the full
-API from one fetch.
+API from one fetch. Each one links pages on `/docs`, which needs no login.
 
 The examples below run against your own instance. Point `FOUNTAIN_URL` at it.
 
@@ -24,8 +24,8 @@ the auth module. It works with no more setup.
 
 | Endpoint | Content | Best for |
 |---|---|---|
-| `/llms.txt` | A short API summary, about 500 tokens. | A model with little context to spare. |
-| `/llms-full.txt` | The full API reference. | An agent that calls many tools. |
+| `/llms.txt` | An index of the manual, with a summary of what Fountain is. About 2,000 tokens. | A first fetch, or a model with little context to spare. |
+| `/llms-full.txt` | Every page that the index links, in one document. About 230 KB. | An agent that must not crawl links. |
 | `/skill` | The skill file for Claude Code and Cursor. | IDE skills. |
 
 ```bash
