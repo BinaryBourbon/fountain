@@ -69,8 +69,8 @@ current state.
 
 The pricing page states this to a visitor, because a plan that lists 800 hours
 and then says nothing reads as a hard stop. The two limits behave differently.
-A tenant at the concurrency cap waits for a free slot. A tenant over the hours
-continues, and pays no more.
+Fountain refuses the next start for a tenant at the concurrency cap. A tenant
+over the hours continues, and pays no more.
 
 Four surfaces show the number. The pricing page shows it to a visitor. The
 billing page shows it to the tenant. The API reports it at
