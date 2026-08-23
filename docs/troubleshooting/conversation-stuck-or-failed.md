@@ -85,13 +85,14 @@ kubectl logs -n fountain -l app=fountain --since=2h | grep 'reaper:'
 `parked` counts the idle sandboxes the reaper suspended. The reaper can undo
 that, and it is not a teardown.
 
-## One trap worth knowing
+## Conversations from before August 2026
 
-On the default provider, a setup script or a clone that failed can record as
-successful. The exec transport reports exit code 0 for each command
-([#880](https://github.com/BinaryBourbon/fountain/issues/880), open). When a
-conversation starts in a state you did not expect, read the logged output. Do
-not trust the stage status.
+Stage status is reliable now. It was not always. On the default provider, a
+setup script or a clone that failed could record as successful. The client
+discarded the exit code and read a 0. See
+[#880](https://github.com/BinaryBourbon/fountain/issues/880), fixed on
+2026-08-23. For a conversation that ran before that date, read the logged
+output. Do not trust its stage status.
 
 ## Related
 

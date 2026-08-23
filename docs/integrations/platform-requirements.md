@@ -224,7 +224,7 @@ a scorecard. Several entries are probably stale already.
 
 | Requirement | [Sprites](sprites.md) | [E2B](e2b.md) | [Daytona](daytona.md) | [Runner](runners.md) |
 |---|---|---|---|---|
-| exit-truth | No. Exec reports 0 whatever happened. | Yes. | No. A session-command record carries no exit code. | Yes. |
+| exit-truth | Yes. | Yes. | No. A session-command record carries no exit code. | Yes. |
 | replay-cursor | Partial. It replays the last 16 KiB, and starts mid-line. | No. We ship a journal shim and a tail replayer. | Yes. The journal replays from byte zero. | Yes. |
 | detached-sessions | Yes. | No. The adapter emulates them. | Yes. | Yes. |
 | absence-definitive | Undocumented. | Undocumented. | Undocumented. | Yes. Each offline shape is transient by construction. |
@@ -234,6 +234,16 @@ a scorecard. Several entries are probably stale already.
 | honest-listing | Yes, with continuation tokens. | Not measured. | Not measured. | Yes. |
 | egress-deny | Partial. The translation fails open. | Yes. | Yes, and the tier gates it. | No, by design. The machine is the user's. |
 | url-or-nothing | Yes. | No. It has a hostname for each port, and no more. | No. | No. |
+
+One entry here was wrong for three months. This table said Sprites failed
+exit-truth, because each command we ran through it reported 0. The platform
+sent the true code every time. Our Elixir client read the one-byte field as
+four bytes, matched no frame, and reported a 0 that nobody had sent. See
+[#880](https://github.com/BinaryBourbon/fountain/issues/880).
+
+Read that as a warning about this table. We measure each platform through our
+own adapter, so every row says something about the adapter as well as the
+platform. A row that reports a failure is the row to distrust first.
 
 The fourth backend is our own daemon, the
 [self-hosted runner](runners.md). Read it as an existence proof, and not as a
