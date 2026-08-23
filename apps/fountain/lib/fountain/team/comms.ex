@@ -86,6 +86,54 @@ defmodule Fountain.Team.Comms do
     |> Map.new()
   end
 
+  @doc """
+  The two channels counted apart, for every tenant holding at least one
+  contact: `%{user_id => %{inboxes: n, numbers: n}}`.
+
+  `contact_counts/0` answers the *billing* question — a contact is one add-on
+  unit whatever channels it ended up with. This answers the *cost* one, which
+  is a different number: AgentMail charges per inbox and AgentPhone per
+  number, at rates that have nothing to do with each other, so
+  `Fountain.Billing.Finance` cannot price a bare contact count.
+
+  The two usually agree. They come apart exactly where the schema says they
+  can: `provision_contact/4` is all-or-nothing, but a contact whose number was
+  later released keeps its inbox, and `Contact.email?/1` / `phone?/1` are what
+  decide either way. The counts here apply the same test in SQL — a null or
+  empty provider id is not a channel — so a half-released contact is billed
+  for the half that still exists.
+
+  One query, like `contact_counts/0`, and for the same reason: the finance
+  panel renders a row per tenant.
+  """
+  @spec channel_counts() :: %{
+          optional(binary()) => %{inboxes: non_neg_integer(), numbers: non_neg_integer()}
+        }
+  def channel_counts do
+    from(c in Contact,
+      group_by: c.user_id,
+      select: {
+        c.user_id,
+        %{
+          inboxes:
+            fragment(
+              "count(*) filter (where ? is not null and ? <> '')",
+              c.email_inbox_id,
+              c.email_inbox_id
+            ),
+          numbers:
+            fragment(
+              "count(*) filter (where ? is not null and ? <> '')",
+              c.phone_number_id,
+              c.phone_number_id
+            )
+        }
+      }
+    )
+    |> Repo.all()
+    |> Map.new()
+  end
+
   @doc "Contacts for many teammates at once, `%{agent_id => %Contact{}}`."
   def contacts_by_agent(user_id, agent_ids) when is_binary(user_id) and is_list(agent_ids) do
     from(c in Contact, where: c.user_id == ^user_id and c.agent_id in ^agent_ids)

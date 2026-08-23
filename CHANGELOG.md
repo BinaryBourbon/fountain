@@ -47,6 +47,39 @@ upgrade, is in
   about the event *name* (73 distinct request-line names in one day, each a
   permanent PostHog event definition), and a property is where PostHog can
   break down by a value the router bounds.
+- **A finance panel at `/admin/finance`.** `/admin` had an MRR tile with no
+  cost beside it and a sandbox-hours table with no money in it, so the only
+  question an operator asks a finance page — which accounts cost more than
+  they pay — had no answer anywhere. The new page puts revenue, platform
+  spend and the margin between them on one row per tenant, worst margin
+  first, with a month picker back through the last six.
+
+  It reports **no money it was not told**. Fountain's own costs are nowhere in
+  this codebase (provider prices are per-machine-size and negotiated;
+  AgentMail and AgentPhone bill per unit and per message), so cost is priced
+  from a rate card in config: `PROVIDER_HOURLY_CENTS`,
+  `AGENTMAIL_INBOX_CENTS`, `AGENTPHONE_NUMBER_CENTS`,
+  `AGENTMAIL_MESSAGE_CENTS`, `AGENTPHONE_MESSAGE_CENTS`. Set none of them and
+  the panel still works, in hours, inboxes, numbers and message counts. An
+  unpriced line renders `—` and never `$0.00`, and the `nil` propagates to the
+  total: a cost that quietly omitted the provider nobody priced would read as
+  a cheap tenant, most convincingly on the expensive ones.
+
+  It also does not assume **which** hours a provider bills. The rate can
+  multiply every hour a sandbox was awake, or only the hours with a prompt in
+  flight, and a toggle on the page switches between the two
+  (`PROVIDER_COST_BASIS` sets the default). Which one is right is a fact about
+  the invoice rather than about this codebase, and the way to find out is to
+  put both next to one. Both hour figures stay on every row either way, since
+  the gap between them is idle time and that is the lever on the bill.
+- **Teammate messages are metered.** `comms_email_sent`, `comms_sms_sent` and
+  `comms_sms_received` join the usage-event vocabulary, recorded at the two
+  choke points a message already passes through
+  (`FountainWeb.TeamCommsMcpController`'s audit callback and
+  `Team.Comms.Inbound`). An inbox and a number cost money every month and a
+  message costs money each time, and only the first half was visible. Inbound
+  counts, because AgentPhone charges to receive. Best-effort by the same
+  contract as every other usage event; neither call can fail a send.
 
 ### Fixed
 
@@ -66,6 +99,33 @@ upgrade, is in
 
 ### Changed
 
+- **The admin MRR tile prices each account at its own plan.** It was
+  `active × STRIPE_PRICE_MONTHLY_CENTS` — one configured amount for
+  everybody. The comment said the day there was a second price would be loud;
+  it was not. #991 shipped four tiers and the tile went on charging every
+  active account the legacy $29, so a deployment selling Scale under-reported
+  its own revenue sevenfold. `Billing.overview_admin/1` now reads
+  `Fountain.Billing.Finance.mrr/0`, which prices from the plan catalog and
+  adds the teammate-contact add-on, and carries the per-plan split with it.
+  `STRIPE_PRICE_MONTHLY_CENTS` is no longer read there and stays what it says
+  it is: the closed `legacy` plan's display price.
+- **The dashboard's usage tile is turn hours, not sandbox time.** "Sandbox
+  time" was wall-clock hours a tenant's sandboxes were awake — Fountain's cost
+  signal, and nothing a customer buys or is measured on. It went up while they
+  slept. The tile now shows turn hours against the plan's included hours, the
+  unit `Fountain.Plans` actually denominates an allowance in, and the sandbox
+  figure moved into the hint. The whole "this month" section also moves to the
+  window Stripe invoices where there is one, so the dashboard and
+  `/account/billing` can no longer report different numbers for the same
+  period; the heading says which window it is on.
+- **`/admin`'s per-user usage column shows turn hours.** Same reasoning, one
+  page over: sandbox minutes belong next to the bill Fountain pays, on
+  `/admin/finance`. The sandbox total and its per-provider split stay in the
+  cell's tooltip.
+- `Billing.usage_summary/3` and `usage_summaries/2` both carry `turn_hours`
+  now, computed from the attribution pass they already ran. `usage_summary/3`
+  makes one pass where it used to make one and would have needed two. No API
+  field was renamed or removed.
 - **`/` is no longer the same page on every deployment.** The homepage sold a
   product: a hero, a 14-day trial, a monthly price, and a footer calling
   Fountain "managed agent infrastructure". Every self-hosted instance served

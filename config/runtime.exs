@@ -657,6 +657,74 @@ stripe_price_monthly_cents =
 
 config :fountain, :stripe_price_monthly_cents, stripe_price_monthly_cents
 
+# ── The finance panel's rate card (/admin/finance) ────────────────────────────
+#
+# What Fountain *pays*, which is nowhere else in this codebase: provider
+# prices are per-machine-size and negotiated, and AgentMail/AgentPhone bill
+# per unit and per message. `Fountain.Billing.Finance` reports hours and units
+# with no money at all until these are set, and an unpriced line stays `nil`
+# rather than collapsing to zero — a cost of $0 and a cost nobody has told us
+# reads very differently next to revenue.
+#
+# PROVIDER_HOURLY_CENTS is cents per active sandbox hour, per provider:
+#   PROVIDER_HOURLY_CENTS="sprites=12,e2b=15,daytona=10"
+# A provider absent from the list is unpriced. `runner` is never priced: it is
+# the tenant's own machine (ADR 0022) and costs Fountain nothing.
+parse_cents = fn var, raw ->
+  case Integer.parse(String.trim(raw)) do
+    {cents, ""} when cents >= 0 -> cents
+    _ -> raise "#{var} must be a whole number of cents, got #{inspect(raw)}"
+  end
+end
+
+provider_hourly_cents =
+  case System.get_env("PROVIDER_HOURLY_CENTS") do
+    value when value in [nil, ""] ->
+      %{}
+
+    value ->
+      value
+      |> String.split(",", trim: true)
+      |> Map.new(fn pair ->
+        case String.split(pair, "=", parts: 2) do
+          [provider, cents] ->
+            {String.trim(provider), parse_cents.("PROVIDER_HOURLY_CENTS", cents)}
+
+          _ ->
+            raise "PROVIDER_HOURLY_CENTS: #{inspect(pair)} is not provider=cents"
+        end
+      end)
+  end
+
+config :fountain, :provider_hourly_cents, provider_hourly_cents
+
+# Which hours that rate multiplies. `active` (the default) is every hour a
+# sandbox was awake, idle included. `turn` is only the hours with a prompt in
+# flight, which is the closer match where a provider scales to near-zero
+# between prompts. /admin/finance can switch between the two per view; this
+# sets what it opens on. Anything unrecognised reads as `active`, because a
+# typo must not quietly halve the reported bill.
+config :fountain,
+       :cost_basis,
+       if(System.get_env("PROVIDER_COST_BASIS") == "turn", do: :turn, else: :active)
+
+# Teammate contacts: what AgentMail charges per inbox per month, AgentPhone
+# per number per month, and each of them per message. The monthly pair is
+# pro-rated to whatever window the panel is showing; messages are counted from
+# the `comms_*` usage events. Unset means unpriced, which the panel reports as
+# `—` rather than as free.
+contact_rate = fn var ->
+  case System.get_env(var) do
+    value when value in [nil, ""] -> nil
+    value -> parse_cents.(var, value)
+  end
+end
+
+config :fountain, :agentmail_inbox_cents, contact_rate.("AGENTMAIL_INBOX_CENTS")
+config :fountain, :agentphone_number_cents, contact_rate.("AGENTPHONE_NUMBER_CENTS")
+config :fountain, :agentmail_message_cents, contact_rate.("AGENTMAIL_MESSAGE_CENTS")
+config :fountain, :agentphone_message_cents, contact_rate.("AGENTPHONE_MESSAGE_CENTS")
+
 # Mail delivery.
 #
 # With no adapter configured this used to silently fall back to

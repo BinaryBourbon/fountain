@@ -255,6 +255,18 @@ defmodule Fountain.Team.Comms.Inbound do
         "prompt_bytes" => byte_size(text)
       }
     })
+
+    # AgentPhone charges for an inbound message as well as an outbound one, so
+    # it is metered on the same footing as a send
+    # (`FountainWeb.TeamCommsMcpController`). Best-effort, after the prompt is
+    # already away.
+    Fountain.Billing.record_usage(
+      contact.user_id,
+      "comms_sms_received",
+      contact.id,
+      "team_contact",
+      %{"agent_id" => contact.agent_id, "conversation_id" => conv.id}
+    )
   end
 
   defmodule Seen do

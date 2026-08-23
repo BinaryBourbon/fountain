@@ -7,8 +7,8 @@ defmodule Fountain.Analytics do
 
     * `Fountain.Audit` — who changed what, kept forever, tenant-visible. A
       compliance record, not a metric.
-    * `Fountain.Billing.record_usage/5` — what to charge for. Six event types,
-      shaped by the invoice.
+    * `Fountain.Billing.record_usage/5` — what to charge for. A closed set of
+      event types, shaped by the invoice.
     * OTel spans / `Fountain.Telemetry` — how the machine is behaving.
 
   None of them answers "did the people who verified last week come back", so

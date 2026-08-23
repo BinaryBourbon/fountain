@@ -33,6 +33,7 @@ defmodule Fountain.Billing do
 
   alias Fountain.Accounts.User
   alias Fountain.Audit
+  alias Fountain.Billing.Finance
   alias Fountain.Billing.SandboxUsage
   alias Fountain.Billing.UsageEvent
   alias Fountain.Plans
@@ -2096,13 +2097,19 @@ defmodule Fountain.Billing do
     provider, `%{provider => minutes}`. Providers the tenant did not use are
     absent. Minutes on different providers are bought at different prices, so
     this split is what makes the total attributable to a cost.
+  - `:turn_hours` — the part of that time with a prompt actually in flight, on
+    the providers Fountain pays for. The same number
+    `turn_hours_used/2` computes, carried here so a surface showing usage does
+    not need a second pass over the same rows to show the unit a plan is
+    denominated in (`Fountain.Plans.included_turn_hours/1`).
   """
   @spec usage_summary(binary(), DateTime.t(), DateTime.t()) ::
           %{
             conversations: non_neg_integer(),
             turns: non_neg_integer(),
             sandbox_minutes: float(),
-            sandbox_minutes_by_provider: %{optional(String.t()) => float()}
+            sandbox_minutes_by_provider: %{optional(String.t()) => float()},
+            turn_hours: float()
           }
   def usage_summary(user_id, %DateTime{} = period_start, %DateTime{} = period_end) do
     events =
@@ -2121,7 +2128,9 @@ defmodule Fountain.Billing do
 
     turns = Enum.count(events, &(&1 == "turn_started"))
 
-    seconds_by_provider = SandboxUsage.for_user(user_id, period_start, period_end)
+    # One attribution pass, read two ways. `for_user/3` and `busy_for_user/3`
+    # would each run it again; this is the same two queries once.
+    rows = SandboxUsage.attribution(period_start, period_end, user_id: user_id)
 
     %{
       conversations: conversations,
@@ -2129,11 +2138,17 @@ defmodule Fountain.Billing do
       # Rounded once, from the total — summing rounded per-provider minutes
       # would let the parts disagree with the whole.
       sandbox_minutes:
-        seconds_by_provider |> Map.values() |> Enum.sum() |> SandboxUsage.minutes(),
+        rows |> Enum.map(& &1.active_seconds) |> Enum.sum() |> SandboxUsage.minutes(),
       sandbox_minutes_by_provider:
-        Map.new(seconds_by_provider, fn {provider, seconds} ->
-          {provider, SandboxUsage.minutes(seconds)}
-        end)
+        rows
+        |> Enum.reject(&(&1.active_seconds == 0))
+        |> Map.new(&{&1.provider, SandboxUsage.minutes(&1.active_seconds)}),
+      turn_hours:
+        rows
+        |> Enum.filter(&SandboxUsage.platform_cost?(&1.provider))
+        |> Enum.map(& &1.busy_seconds)
+        |> Enum.sum()
+        |> SandboxUsage.hours()
     }
   end
 
@@ -2142,8 +2157,16 @@ defmodule Fountain.Billing do
   which refreshes on a timer and must not run a query per user.
 
   Returns `%{user_id => %{conversations: n, turns: n, sandbox_minutes: f,
-  sandbox_minutes_by_provider: %{provider => f}}}`; users with neither events
-  nor sandbox time in the period are absent.
+  sandbox_minutes_by_provider: %{provider => f}, turn_hours: f}}`; users with
+  neither events nor sandbox time in the period are absent.
+
+  Carries two units on purpose, because they answer different questions and
+  the admin table shows both. `sandbox_minutes` is wall-clock sandbox time —
+  what a provider bills Fountain, so minutes, per provider, because the
+  providers charge differently. `turn_hours` is time with a prompt in flight —
+  what a *plan* includes (`Fountain.Plans.included_turn_hours/1`), so hours,
+  and summed only over the providers Fountain pays for, exactly as
+  `turn_hours_used/2` computes it for one tenant.
   """
   @spec usage_summaries(DateTime.t(), DateTime.t()) :: %{optional(binary()) => map()}
   def usage_summaries(%DateTime{} = period_start, %DateTime{} = period_end) do
@@ -2151,7 +2174,8 @@ defmodule Fountain.Billing do
       conversations: 0,
       turns: 0,
       sandbox_minutes: 0.0,
-      sandbox_minutes_by_provider: %{}
+      sandbox_minutes_by_provider: %{},
+      turn_hours: 0.0
     }
 
     counted =
@@ -2181,26 +2205,33 @@ defmodule Fountain.Billing do
         Map.put(acc, user_id, summary)
       end)
 
-    # Sandbox minutes come from the sandbox rows, not from these events — the
-    # period-clipped, per-provider computation in `SandboxUsage`, which is two
-    # more queries for every user at once rather than one per user.
+    # Both sandbox figures come from the sandbox rows, not from these events —
+    # the period-clipped, per-provider computation in `SandboxUsage`, which is
+    # two more queries for every user at once rather than one per user.
+    # `Finance.usage_by_user/1` rather than `SandboxUsage.by_user/1` because
+    # the latter collapses to active seconds and drops the busy/idle split
+    # turn hours are read off. Sandboxes whose owner has been deleted keep
+    # their seconds under a `nil` owner in the provider report; it drops them,
+    # since here there is no user row to hang them on.
     period_start
     |> SandboxUsage.attribution(period_end)
-    |> SandboxUsage.by_user()
-    # Sandboxes whose owner has been deleted keep their seconds under a `nil`
-    # owner in the provider report; here there is no user row to hang them on.
-    |> Enum.reject(fn {user_id, _} -> is_nil(user_id) end)
-    |> Enum.reduce(counted, fn {user_id, seconds_by_provider}, acc ->
+    |> Finance.usage_by_user()
+    |> Enum.reduce(counted, fn {user_id, usage}, acc ->
       summary = Map.get(acc, user_id, empty)
 
       Map.put(acc, user_id, %{
         summary
-        | sandbox_minutes:
-            seconds_by_provider |> Map.values() |> Enum.sum() |> SandboxUsage.minutes(),
+        | sandbox_minutes: SandboxUsage.minutes(usage.active_seconds),
           sandbox_minutes_by_provider:
-            Map.new(seconds_by_provider, fn {provider, seconds} ->
-              {provider, SandboxUsage.minutes(seconds)}
-            end)
+            Map.new(usage.by_provider, fn row ->
+              {row.provider, SandboxUsage.minutes(row.active)}
+            end),
+          turn_hours:
+            usage.by_provider
+            |> Enum.filter(&SandboxUsage.platform_cost?(&1.provider))
+            |> Enum.map(& &1.busy)
+            |> Enum.sum()
+            |> SandboxUsage.hours()
       })
     end)
   end
@@ -2299,30 +2330,32 @@ defmodule Fountain.Billing do
     since the start of the current UTC month. Every verified webhook is
     claimed into `stripe_events` before handling, so the claim table is a
     complete record of checkouts — including a canceled user coming back.
-  - `mrr_cents` — active subscriptions × the configured monthly price
-    (`:stripe_price_monthly_cents`, from `STRIPE_PRICE_MONTHLY_CENTS`).
-    `nil` when the price isn't configured — no number is better than a made-up
-    one. Deliberately `active` only: `past_due` is at-risk revenue, comped is
-    not revenue. Honesty note: this breaks the day there is a second price;
-    the config is a single amount on purpose so that day is loud.
+  - `mrr_cents` / `mrr_by_plan` — recurring revenue, priced per plan from
+    `Fountain.Billing.Finance.mrr/0`: each active subscription at its own
+    tier's price, plus the teammate-contact add-on. Deliberately `active`
+    only: `past_due` is at-risk revenue, comped is not revenue.
+
+    It used to be `active × :stripe_price_monthly_cents`, one configured
+    amount for everybody. The day there was a second price was supposed to be
+    loud and was not — #991 shipped four tiers and this tile went on charging
+    every account the legacy $29, under-reporting a deployment selling Scale
+    by a factor of seven. The catalog has held every plan's price since, so
+    there is nothing left to configure and nothing left to get out of step.
+    `STRIPE_PRICE_MONTHLY_CENTS` is no longer read here.
   - `recent_events` — the last processed webhook events, newest first.
   - `failed_events` — unresolved webhook processing failures, most recently
     failed first (#501). Failed deliveries are never claimed (the claim rolls
     back with the failed apply), so these come from `stripe_webhook_failures`,
     written by the controller outside the rolled-back transaction.
 
-  Options: `:price_cents` overrides the configured price (tests), `:now`
-  pins the clock, `:event_limit` caps `recent_events`/`failed_events`
-  (default 10).
+  Options: `:now` pins the clock, `:event_limit` caps
+  `recent_events`/`failed_events` (default 10).
   """
   @spec overview_admin(keyword()) :: map()
   def overview_admin(opts \\ []) do
     now = Keyword.get(opts, :now, DateTime.utc_now())
-
-    price_cents =
-      Keyword.get(opts, :price_cents, Application.get_env(:fountain, :stripe_price_monthly_cents))
-
     event_limit = Keyword.get(opts, :event_limit, 10)
+    mrr = Finance.mrr()
 
     status_counts =
       from(u in User,
@@ -2375,13 +2408,12 @@ defmodule Fountain.Billing do
           }
       )
 
-    active = Map.get(status_counts, "active", 0)
-
     %{
       status_counts: status_counts,
       trials_ending_7d: trials_ending_7d,
       conversions_this_month: conversions_this_month,
-      mrr_cents: price_cents && active * price_cents,
+      mrr_cents: mrr.mrr_cents,
+      mrr_by_plan: mrr.by_plan,
       recent_events: recent_events,
       failed_events: failed_events
     }

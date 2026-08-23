@@ -9,6 +9,8 @@ defmodule Fountain.BillingOverviewTest do
     Repo.update!(Ecto.Changeset.change(user, [subscription_status: status] ++ extra))
   end
 
+  defp set_plan!(user, plan), do: Repo.update!(Ecto.Changeset.change(user, plan: plan))
+
   defp insert_stripe_event!(id, type, inserted_at) do
     Repo.insert_all("stripe_events", [
       %{id: id, type: type, inserted_at: DateTime.truncate(inserted_at, :second)}
@@ -75,19 +77,33 @@ defmodule Fountain.BillingOverviewTest do
   end
 
   describe "overview_admin/1 — MRR" do
-    test "active count times the configured price; comped and past_due excluded" do
-      set_status!(insert_verified_user(), "active")
-      set_status!(insert_verified_user(), "active")
-      set_status!(insert_verified_user(), "past_due")
-      set_status!(insert_verified_user(), "comped")
+    test "each active account at its own plan's price; comped and past_due excluded" do
+      set_plan!(set_status!(insert_verified_user(), "active"), "solo")
+      set_plan!(set_status!(insert_verified_user(), "active"), "scale")
+      set_plan!(set_status!(insert_verified_user(), "past_due"), "scale")
+      set_plan!(set_status!(insert_verified_user(), "comped"), "scale")
 
-      assert %{mrr_cents: 5800} = Billing.overview_admin(now: @now, price_cents: 2900)
+      expected = Fountain.Plans.monthly_cents("solo") + Fountain.Plans.monthly_cents("scale")
+
+      assert %{mrr_cents: ^expected} = Billing.overview_admin(now: @now)
     end
 
-    test "nil when no price is configured — no fabricated number" do
-      set_status!(insert_verified_user(), "active")
+    test "the tile carries the per-plan split behind it" do
+      set_plan!(set_status!(insert_verified_user(), "active"), "team")
+      set_plan!(set_status!(insert_verified_user(), "active"), "team")
 
-      assert %{mrr_cents: nil} = Billing.overview_admin(now: @now, price_cents: nil)
+      assert %{mrr_by_plan: [%{plan: %{slug: "team"}, accounts: 2}]} =
+               Billing.overview_admin(now: @now)
+    end
+
+    test "no active subscriptions is zero, not nil" do
+      set_status!(insert_verified_user(), "trialing")
+
+      # It used to be `nil` whenever `STRIPE_PRICE_MONTHLY_CENTS` was unset,
+      # because there was no way to price an account without it. The catalog
+      # holds every plan's price now, so an empty MRR is a fact rather than a
+      # missing configuration.
+      assert %{mrr_cents: 0} = Billing.overview_admin(now: @now)
     end
   end
 

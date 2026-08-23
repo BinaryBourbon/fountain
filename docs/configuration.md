@@ -121,8 +121,14 @@ at a dead end, with no error to see. Read [Email](guides/operate/email.md).
 | `STRIPE_PRICE_ID_SCALE` | — | For the Scale plan. | The Stripe price for Scale. |
 | `STRIPE_PRICE_ID_CONTACT` | — | No. | The Stripe price for one teammate contact. Fountain sets the quantity of that subscription item to the number of contacts the tenant holds. Leave it unset, and teammate contacts cost the tenant nothing. |
 | `STRIPE_CONTACT_PRICE_CENTS` | `500` | No. | The monthly price of one teammate contact, in cents. It is for display alone. |
-| `STRIPE_PRICE_MONTHLY_CENTS` | — | No. | The monthly price of the `legacy` plan, in cents, such as `2900`. It is for display alone, and it feeds the MRR tile in the admin overview. Unset, the tile shows a placeholder, and not a number somebody invented. |
+| `STRIPE_PRICE_MONTHLY_CENTS` | — | No. | The monthly price of the `legacy` plan, in cents, such as `2900`. It is for display alone. The admin MRR tile reads every other plan's price from the catalog. |
 | `DEFAULT_PLAN` | `solo` | No. | The plan for an account that has no plan of its own. On a self-hosted instance that is every account. Set `DEFAULT_PLAN=scale` to give every account the highest concurrency cap. |
+| `PROVIDER_HOURLY_CENTS` | — | No. | What you pay each sandbox provider, in cents per active hour, as `sprites=12,e2b=15`. A provider you leave out stays unpriced. |
+| `PROVIDER_COST_BASIS` | `active` | No. | Which hours the provider rate multiplies. An `active` counts every hour a sandbox was awake. A `turn` counts only the hours with a prompt in flight. Use `turn` where the provider drops to near-zero between prompts. |
+| `AGENTMAIL_INBOX_CENTS` | — | No. | What AgentMail charges for one inbox each month, in cents. |
+| `AGENTPHONE_NUMBER_CENTS` | — | No. | What AgentPhone charges for one number each month, in cents. |
+| `AGENTMAIL_MESSAGE_CENTS` | — | No. | What AgentMail charges for one email, in cents. |
+| `AGENTPHONE_MESSAGE_CENTS` | — | No. | What AgentPhone charges for one SMS, in cents. Fountain counts an inbound message too, because AgentPhone charges for it. |
 
 <!-- vale STE.IngForms = YES -->
 
@@ -130,6 +136,18 @@ Each plan sets one number that Fountain enforces: how many sandboxes the tenant
 can run at the same time. Run `mix fountain.verify_plans` after you set a price
 variable. The task reads each price from Stripe and fails if the amount differs
 from the catalog.
+
+The rate variables are different from every other price here. They are what
+**you pay**, not what a tenant pays, and no other part of Fountain knows them.
+The admin finance panel at `/admin/finance` holds them next to your revenue,
+per tenant. The panel also switches between the two hour bases per view, so
+you can compare both totals against a real invoice and keep the one that
+matches.
+
+Set none of them and the panel still works. It shows hours, inboxes, numbers
+and message counts, and it shows `—` in each money column. A rate you do not
+set stays `—` and never becomes `$0`, because a cost of zero and a cost nobody
+told us about are different facts.
 
 ## Public pages
 
