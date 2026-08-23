@@ -7,6 +7,12 @@ defmodule FountainWeb.Plugs.TenantAPIAuthTest do
   alias Fountain.Accounts
   alias FountainWeb.Plugs.TenantAPIAuth
 
+  # Explicit, because `assert_receive`'s 100 ms default is a bet on how fast a
+  # task gets scheduled on a loaded runner — and losing that bet fails a test
+  # about a race with a race of its own. The `refute_receive` below keeps the
+  # default: that one is a window we want short.
+  @receive_timeout 5_000
+
   describe "call/2" do
     test "sets current_user when valid Bearer key is provided", %{conn: conn} do
       user = insert_verified_user()
@@ -143,7 +149,7 @@ defmodule FountainWeb.Plugs.TenantAPIAuthTest do
         |> authed_with_key(raw_key)
         |> TenantAPIAuth.call([])
 
-      assert_receive {:touched, ^raw_key, task_pid}
+      assert_receive {:touched, ^raw_key, task_pid}, @receive_timeout
       refute task_pid == test_pid
       refute conn.halted
       assert conn.assigns.current_user.id == user.id
@@ -170,12 +176,12 @@ defmodule FountainWeb.Plugs.TenantAPIAuthTest do
             |> authed_with_key(raw_key)
             |> TenantAPIAuth.call([])
 
-          assert_receive {:touching, task_pid}
+          assert_receive {:touching, task_pid}, @receive_timeout
 
           # Sync on the task actually dying, so the assertions below are about
           # a crash that has already happened rather than one still in flight.
           ref = Process.monitor(task_pid)
-          assert_receive {:DOWN, ^ref, :process, ^task_pid, _reason}
+          assert_receive {:DOWN, ^ref, :process, ^task_pid, _reason}, @receive_timeout
 
           refute_receive {:EXIT, ^task_pid, _reason}
 

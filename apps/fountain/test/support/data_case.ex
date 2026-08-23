@@ -37,8 +37,11 @@ defmodule Fountain.DataCase do
 
   # Long enough that a `last_used_at` stamp or a test-adapter email always
   # lands, short enough that a task which is genuinely stuck cannot stall the
-  # suite. Never reached in practice — both sites are a single round trip.
-  @drain_timeout_ms 500
+  # suite. Never reached in practice — both sites are a single round trip, and
+  # this returns as soon as the task is down — but the ceiling is generous on
+  # purpose: the drain exists to keep loaded runs from churning connections, so
+  # it must not be the thing that gives up first when a run is loaded.
+  @drain_timeout_ms 2_000
 
   @doc """
   Sets up the sandbox based on the test tags.

@@ -7,6 +7,12 @@ defmodule Fountain.AccountsAdditionalTest do
   import Fountain.Factory
   import ExUnit.CaptureLog
 
+  # `assert_receive`'s 100 ms default is a bet on how fast another process gets
+  # scheduled, and a loaded CI runner loses it: the raise, rescue and log line
+  # below took longer than that on partition 6 and failed a test written to
+  # catch a timing flake. Nothing here waits the full window when it passes.
+  @receive_timeout 5_000
+
   # ── get_user_by_email/1 ─────────────────────────────────────────────────────
 
   describe "get_user_by_email/1" do
@@ -372,7 +378,7 @@ defmodule Fountain.AccountsAdditionalTest do
           # spawn/1, not Task.async: no `$callers`, so the sandbox has no
           # connection to hand this process and `Repo.update_all` raises.
           spawn(fn -> send(test_pid, {:touched, Accounts.touch_api_key(raw_key)}) end)
-          assert_receive {:touched, :ok}
+          assert_receive {:touched, :ok}, @receive_timeout
         end)
 
       assert log =~ "touch_api_key: last_used_at stamp failed"

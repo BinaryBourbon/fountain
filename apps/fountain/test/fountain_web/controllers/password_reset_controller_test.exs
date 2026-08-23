@@ -6,6 +6,10 @@ defmodule FountainWeb.PasswordResetControllerTest do
 
   alias Fountain.Accounts
 
+  # See the note in `tenant_api_auth_test.exs`: `assert_receive`'s 100 ms
+  # default is a bet on scheduling latency that a loaded runner loses.
+  @receive_timeout 5_000
+
   describe "GET /auth/forgot-password" do
     test "renders the forgot password form", %{conn: conn} do
       conn = get(conn, ~p"/auth/forgot-password")
@@ -62,10 +66,10 @@ defmodule FountainWeb.PasswordResetControllerTest do
             |> Plug.Conn.put_req_header("content-type", "application/json")
             |> post("/api/auth/forgot", Jason.encode!(%{email: user.email}))
 
-          assert_receive {:delivering, task_pid}
+          assert_receive {:delivering, task_pid}, @receive_timeout
 
           ref = Process.monitor(task_pid)
-          assert_receive {:DOWN, ^ref, :process, ^task_pid, _reason}
+          assert_receive {:DOWN, ^ref, :process, ^task_pid, _reason}, @receive_timeout
 
           assert json_response(conn, 200)["message"] =~ "registered"
         end)
