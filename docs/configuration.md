@@ -123,11 +123,11 @@ at a dead end, with no error to see. Read [Email](guides/operate/email.md).
 | `STRIPE_CONTACT_PRICE_CENTS` | `500` | No. | The monthly price of one teammate contact, in cents. It is for display alone. |
 | `STRIPE_PRICE_MONTHLY_CENTS` | — | No. | The monthly price of the `legacy` plan, in cents, such as `2900`. It is for display alone. The admin MRR tile reads every other plan's price from the catalog. |
 | `DEFAULT_PLAN` | `solo` | No. | The plan for an account that has no plan of its own. On a self-hosted instance that is every account. Set `DEFAULT_PLAN=scale` to give every account the highest concurrency cap. |
-| `PROVIDER_HOURLY_CENTS` | — | No. | What you pay each sandbox provider, in cents per active hour, as `sprites=12,e2b=15`. A provider you leave out stays unpriced. |
+| `PROVIDER_HOURLY_CENTS` | — | No. | What you pay each sandbox provider, in cents per sandbox hour, as `sprites=10.76,e2b=5.45`. Rates can be fractional. A provider you leave out stays unpriced. |
 | `PROVIDER_COST_BASIS` | `active` | No. | Which hours the provider rate multiplies. An `active` counts every hour a sandbox was awake. A `turn` counts only the hours with a prompt in flight. Use `turn` where the provider drops to near-zero between prompts. |
 | `AGENTMAIL_INBOX_CENTS` | — | No. | What AgentMail charges for one inbox each month, in cents. |
 | `AGENTPHONE_NUMBER_CENTS` | — | No. | What AgentPhone charges for one number each month, in cents. |
-| `AGENTMAIL_MESSAGE_CENTS` | — | No. | What AgentMail charges for one email, in cents. |
+| `AGENTMAIL_MESSAGE_CENTS` | — | No. | What AgentMail charges for one email, in cents. Give the fraction, such as `0.2` for $2 per 1,000 emails. A whole number rounds this rate to zero. |
 | `AGENTPHONE_MESSAGE_CENTS` | — | No. | What AgentPhone charges for one SMS, in cents. Fountain counts an inbound message too, because AgentPhone charges for it. |
 
 <!-- vale STE.IngForms = YES -->
@@ -142,6 +142,9 @@ The rate variables are different from every other price here. They are what
 The admin finance panel at `/admin/finance` holds them next to your revenue,
 per tenant. The panel switches between the two hour bases per view. Compare
 both totals against a real invoice, then keep the basis that matches.
+
+Each rate can be fractional. Per-message rates usually are, and a whole number
+rounds them to zero.
 
 Set none of them and the panel still works. It shows hours, inboxes, numbers
 and message counts, and it shows `—` in each money column. A rate you do not

@@ -666,14 +666,20 @@ config :fountain, :stripe_price_monthly_cents, stripe_price_monthly_cents
 # rather than collapsing to zero — a cost of $0 and a cost nobody has told us
 # reads very differently next to revenue.
 #
-# PROVIDER_HOURLY_CENTS is cents per active sandbox hour, per provider:
-#   PROVIDER_HOURLY_CENTS="sprites=12,e2b=15,daytona=10"
+# PROVIDER_HOURLY_CENTS is cents per sandbox hour, per provider, and may be
+# fractional:
+#   PROVIDER_HOURLY_CENTS="sprites=10.76,e2b=5.45,daytona=5.45"
 # A provider absent from the list is unpriced. `runner` is never priced: it is
 # the tenant's own machine (ADR 0022) and costs Fountain nothing.
+# Cents, whole or fractional. Fractional is the normal case for a per-message
+# rate: AgentMail bills about $0.002 an email, which as a whole number of cents
+# is zero, and the panel would report email as free.
 parse_cents = fn var, raw ->
-  case Integer.parse(String.trim(raw)) do
+  trimmed = String.trim(raw)
+
+  case Float.parse(trimmed) do
     {cents, ""} when cents >= 0 -> cents
-    _ -> raise "#{var} must be a whole number of cents, got #{inspect(raw)}"
+    _ -> raise "#{var} must be a number of cents, 0 or more, got #{inspect(raw)}"
   end
 end
 

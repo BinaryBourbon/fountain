@@ -141,6 +141,52 @@ spec:
             # catalog's amounts against Stripe — run it after any price change.
             - name: STRIPE_PRICE_MONTHLY_CENTS
               value: "2900"
+            # ── The finance panel's rate card (/admin/finance, #1025) ──
+            #
+            # What we PAY, which nothing else in the codebase knows. Not
+            # secrets: published list prices, and a wrong one shows a wrong
+            # number on one admin page rather than leaking anything.
+            #
+            # Sprites sleeps a sandbox after 30 seconds of inactivity and
+            # bills "just the CPU hours, RAM hours and GB-hours of storage you
+            # use while the Sprite is awake". So the billable unit is close to
+            # turn time, and NOT the sandbox's wall-clock lifetime, which
+            # `SandboxUsage.active_seconds` reports: that only subtracts the
+            # explicit suspend/resume of #665 and knows nothing about Sprites'
+            # own auto-sleep. In August those two read 1,908h against 16,659h
+            # — a 9x error in whichever direction you get this wrong.
+            - name: PROVIDER_COST_BASIS
+              value: turn
+            # Cents per hour, fractional. Sprites publishes $0.07/vCPU-hr and
+            # $0.04375/GB-hr; at the shape a Claude Code session actually runs
+            # (~30% of 2 vCPU, 1.5 GB) that blends to 10.76c/hr, which
+            # reproduces the widely-quoted ~$0.44 for a 4-hour session.
+            # Cross-check: 1,908 turn hours implies ~1,145 CPU-hrs and ~2,862
+            # RAM-hrs, inside the Champion tier ($200/mo, 1,800 + 7,200), and
+            # 1,908h x 10.76c = $205. Two routes, one number.
+            #
+            # e2b and daytona both publish $0.0504/vCPU-hr + $0.0162/GiB-hr,
+            # which blends to 5.45c/hr at the same shape. Neither has run an
+            # hour here; they are priced anyway because a provider with hours
+            # and no rate takes that whole tenant's cost to nil.
+            - name: PROVIDER_HOURLY_CENTS
+              value: sprites=10.76,e2b=5.45,daytona=5.45
+            # AgentPhone: "$3.00/month" a number, "$0.02/message (inbound and
+            # outbound)" — both directions, which is why inbound is metered.
+            - name: AGENTPHONE_NUMBER_CENTS
+              value: "300"
+            - name: AGENTPHONE_MESSAGE_CENTS
+              value: "2"
+            # AgentMail: Developer is $20/mo for 10 inboxes, so $2 an inbox.
+            # The per-email rate is the one number neither the pricing page nor
+            # the docs state; $2 per 1,000 emails is what the secondary
+            # write-ups agree on and what the plan tiers imply. Fractional
+            # cents exist for exactly this: 0.2c an email is zero as a whole
+            # number, and email would report as free.
+            - name: AGENTMAIL_INBOX_CENTS
+              value: "200"
+            - name: AGENTMAIL_MESSAGE_CENTS
+              value: "0.2"
             # Deliberate unverified accounts (operator tests) survive the
             # unverified-account pruner (#258).
             - name: UNVERIFIED_PRUNE_EXEMPT
