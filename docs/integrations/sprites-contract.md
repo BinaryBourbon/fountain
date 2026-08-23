@@ -65,17 +65,24 @@ Frames are binary, with a one-byte stream id in front.
 | `0` | stdin, client to server. |
 | `1` | stdout. |
 | `2` | stderr. |
-| `3` | exit, and then a 4-byte big-endian exit code. |
+| `3` | exit, and then a one-byte exit code. |
 | `4` | stdin EOF, client to server. |
 
 In TTY mode the prefix disappears. A binary frame is then raw terminal bytes,
 and a JSON text frame carries a control message, which is `exit`, `resize` or
 `port`.
 
-Fountain depends on two subtleties.
+Fountain depends on three subtleties.
 
+- **The exit code is one byte.** This page said four bytes until August 2026,
+  and our Elixir client read four. No real frame `3` ever matched, so the
+  client discarded every one of them. Read
+  [#880](https://github.com/BinaryBourbon/fountain/issues/880) before you
+  change this row.
 - **A close with no exit frame counts as exit 0.** A replacement that drops a
   connection and sends no frame `3` makes a failed command look successful.
+  This rule is what turned the wrong width into silence. The client dropped
+  the frame, the socket closed, and the command reported success.
 - The client enforces the timeout for each command. The turn itself runs
   unbounded, and the [sandbox lifecycle](../architecture.md) ends it. The
   transport does not.
