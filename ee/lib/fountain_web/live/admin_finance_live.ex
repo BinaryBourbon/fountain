@@ -492,6 +492,14 @@ defmodule FountainWeb.Live.AdminFinanceLive do
   # money cell on this page goes through here for that reason.
   defp money(nil), do: "—"
 
+  # Rates are fractional cents (#1029) and a cost total is whole ones. Every
+  # cost path rounds before it gets here, but a float reaching this function
+  # must round rather than raise: a 500 on the finance page is a worse answer
+  # than a cent of rounding, and that is exactly what shipped — `rate_label/2`
+  # handed `money/1` a raw `10.76` and took the whole page down the moment a
+  # rate card was configured.
+  defp money(cents) when is_float(cents), do: money(round(cents))
+
   defp money(cents) when is_integer(cents) do
     sign = if cents < 0, do: "-", else: ""
     abs = abs(cents)
@@ -522,12 +530,24 @@ defmodule FountainWeb.Live.AdminFinanceLive do
     end
   end
 
+  # A rate is not a total, and rounding it to whole cents throws away the part
+  # that matters: 10.76c/hr and 5.45c/hr both render as "$0.11" and "$0.05"
+  # once, and as the same "$0.05" for anything between 4.5 and 5.5. Rates are
+  # shown in cents, with their fraction.
   defp rate_label(card, provider) do
     cond do
       not SandboxUsage.platform_cost?(provider) -> "no cost to us"
-      cents = Map.get(card.providers, provider) -> "#{money(cents)}/hour"
+      rate = Map.get(card.providers, provider) -> "#{trim_zeros(rate)}c/hour"
       true -> "no rate configured"
     end
+  end
+
+  # `10.76` renders as "10.76", `2.0` as "2" — a whole rate should not grow a
+  # decimal point just because the config parser returns a float.
+  defp trim_zeros(rate) when is_integer(rate), do: Integer.to_string(rate)
+
+  defp trim_zeros(rate) when is_float(rate) do
+    if rate == Float.round(rate), do: Integer.to_string(trunc(rate)), else: to_string(rate)
   end
 
   defp contacts_cell(%{inboxes: 0, numbers: 0}), do: "—"
