@@ -5,6 +5,26 @@
  * server that can hand out a feed on demand — including the awkward parts: a
  * connection that dies mid-turn, output belonging to somebody else's turn, an
  * ACP runtime that streams a sentence as five chunks.
+ *
+ * **A route here must answer in the same envelope the real one does.** Almost
+ * everything is wrapped in `{data: …}`, and a fake that wraps one of the few
+ * that are not turns a green suite into a lie — `me()` shipped returning `null`
+ * against production for exactly that reason, because this file wrapped
+ * `/api/auth/me` and the only test that touched the path called `request()`
+ * rather than the verb. The unenveloped ones, from the OpenAPI document:
+ *
+ *   GET  /api/auth/me
+ *   POST /api/auth/api-keys
+ *   POST /api/conversations/{id}/prompts
+ *   POST /api/conversations/{id}/requests/{request_id}
+ *   POST /api/team/{agent_id}/messages
+ *   POST /api/team/{agent_id}/schedules/{id}/run
+ *   POST /api/webhooks/{id}/test
+ *   POST /api/webhooks/{id}/deliveries/{delivery_id}/redeliver
+ *   GET  /health, GET /health/ready
+ *
+ * Regenerate that list against a fresh spec rather than trusting it to age
+ * well: `jq` the schemas whose 2xx body has no `data` property.
  */
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -69,6 +89,10 @@ export class FakeFountain {
   failNextWith: { status: number; body: unknown; retryAfter?: number } | null = null;
   /** Teammates that answer `conversation_busy` instead of taking a message. */
   readonly busyTeammates = new Set<string>();
+  /** Every permission answer that arrived, in order. */
+  readonly answers: { conversationId: string; requestId: string; optionId: string }[] = [];
+  /** Called when one lands — script the rest of the held turn from here. */
+  onAnswer: ((conversationId: string, requestId: string, optionId: string) => void) | null = null;
 
   private nextEventId = 1;
   private nextConversation = 1;
@@ -177,7 +201,10 @@ export class FakeFountain {
 
     const path = url.pathname;
 
-    if (path === "/api/auth/me") return json(res, 200, { data: { email: "test@example.com" } });
+    // Unenveloped, exactly as the real server answers it — see the note above.
+    if (path === "/api/auth/me") {
+      return json(res, 200, { id: "user-1", email: "test@example.com", role: "user", email_verified: true });
+    }
     if (path === "/api/catalog") return json(res, 200, { data: this.catalog });
     if (path === "/api/search") return json(res, 200, { data: [{ conversation_id: "conv-1", snippet: "hit" }] });
 
@@ -218,6 +245,20 @@ export class FakeFountain {
         this.onTurn?.(conversation, turnNumber);
         return;
       }
+      // Answering a held tool call. Unenveloped, like the real one.
+      const answering = /^\/requests\/([^/]+)$/.exec(rest);
+      if (answering && req.method === "POST") {
+        const optionId = (body as { option_id?: unknown } | null)?.option_id;
+        if (typeof optionId !== "string" || !optionId) {
+          return json(res, 422, { error: "unprocessable_entity", errors: { option_id: ["is required"] } });
+        }
+        const requestId = decodeURIComponent(answering[1] as string);
+        this.answers.push({ conversationId: conversation.id, requestId, optionId });
+        json(res, 200, { ok: true });
+        this.onAnswer?.(conversation.id, requestId, optionId);
+        return;
+      }
+
       if (rest === "/interrupt" || rest === "/terminate") return json(res, 200, { status: "ok" });
       if (rest === "/read" && req.method === "POST") return json(res, 204, null);
       if (rest === "/tree") return json(res, 200, { data: { id: conversation.id, children: [] } });

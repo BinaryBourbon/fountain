@@ -4,7 +4,7 @@ The REST API describes machinery. Conversations, turns, log events, blocks.
 The SDK describes the job.
 
 ```ts
-import { Fountain } from "fountain-sdk";
+import { Fountain } from "@agentshit/fountain-sdk";
 
 const fountain = new Fountain();
 
@@ -21,12 +21,9 @@ The source lives in
 [`sdk/typescript/`](https://github.com/BinaryBourbon/fountain/tree/main/sdk/typescript).
 It has no runtime dependency, and it needs Node 20.19 or newer.
 
-!!! note "Not on npm yet"
-
-    Nobody has published the package yet. Until somebody does, build it from a
-    checkout with
-    `cd sdk/typescript && npm install && npm run build && npm link`. Then run
-    `npm link fountain-sdk` in the project that wants it.
+```bash
+npm install @agentshit/fountain-sdk
+```
 
 ## What the second argument is for
 
@@ -102,6 +99,32 @@ const results = await Promise.all(agents.map((agent) => fountain.run(prompt, { a
 A turn that **fails** is a result, and not an exception. So check
 `result.state`, which is `done`, `failed`, `interrupted` or `timeout`. Only a
 transport failure, a request the server rejected, or a timeout throws.
+
+## When the agent asks first
+
+An agent can hold a tool call and wait for a person. Give its
+`permission_policy` an `ask` entry, and the agent stops before that tool. The
+turn does not continue until an answer comes back.
+
+```ts
+for await (const event of run) {
+  if (event.type !== "permission") continue;
+
+  console.log(event.request.summary);
+  const allow = event.request.options.find((o) => o.kind === "allow_once");
+  await run.answer(event.request.requestId, allow.optionId);
+}
+```
+
+The `options` list holds the choices of the agent, in the order of the agent.
+Branch on `kind`, which is `allow_once`, `allow_always`, `reject_once` or
+`reject_always`. An `optionId` that the agent did not offer causes a
+`ValidationError`. To answer from a different process, use
+`fountain.resume(id).answer(...)`.
+
+A request that gets no answer expires, and the server then denies it. The turn
+continues, but the agent did not do that step. Answer each request, or give the
+agent the default `auto_allow` policy.
 
 ## A whole definition, in code
 
@@ -369,7 +392,7 @@ schema in Elixir reaches the SDK on the next build. A type here can never
 describe an API that has gone.
 
 ```ts
-import type { components, paths } from "fountain-sdk";
+import type { components, paths } from "@agentshit/fountain-sdk";
 
 type Teammate = components["schemas"]["Teammate"];
 ```

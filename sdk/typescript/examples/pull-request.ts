@@ -16,7 +16,7 @@
  * (Inside this repository the import below resolves to the SDK itself, so run
  * `npm run build` in sdk/typescript first. Installed from npm it just works.)
  */
-import { Fountain } from "fountain-sdk";
+import { Fountain } from "@agentshit/fountain-sdk";
 
 const repo = process.env.REPO_URL;
 const token = process.env.GITHUB_TOKEN;

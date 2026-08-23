@@ -1,12 +1,13 @@
 import { test, describe, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, writeFileSync, rmSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 // Importing the Node entry is what installs the credentials-file reader; the
 // browser entry deliberately has none. Doing it here tests that wiring too.
 import "../src/node.ts";
 import { resolveConfig, conversationUrl, DEFAULT_BASE_URL } from "../src/config.ts";
+import { USER_AGENT } from "../src/http.ts";
 
 const VARS = [
   "FOUNTAIN_API_KEY",
@@ -121,5 +122,15 @@ describe("conversationUrl", () => {
   test("a deployment with no app falls back to something fetchable", () => {
     const config = resolveConfig({ baseUrl: "https://self.hosted", appUrl: "" });
     assert.equal(conversationUrl("abc", config), "https://self.hosted/api/conversations/abc");
+  });
+});
+
+describe("the version the server sees", () => {
+  // `USER_AGENT` is a literal, because importing package.json would need a JSON
+  // import attribute in every consumer's bundler. A literal drifts silently, so
+  // it is asserted instead: bump the version, and this says where else to.
+  test("USER_AGENT carries the published version", () => {
+    const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
+    assert.equal(USER_AGENT, `fountain-sdk-js/${pkg.version}`);
   });
 });

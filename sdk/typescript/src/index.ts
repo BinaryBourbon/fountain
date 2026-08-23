@@ -40,6 +40,8 @@ export type {
   EnvironmentInput,
   LogEvent,
   NamedResource,
+  PermissionOption,
+  PermissionRequest,
   Stream,
   TeamEvent,
   Repository,

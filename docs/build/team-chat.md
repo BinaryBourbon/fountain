@@ -13,7 +13,7 @@ bearer token.
 ## 1. A client
 
 ```ts
-import { Fountain } from "fountain-sdk";
+import { Fountain } from "@agentshit/fountain-sdk";
 
 const fountain = new Fountain({
   baseUrl: "https://fountain.example.com",   // your instance
@@ -202,7 +202,7 @@ Each turn is a pair of bubbles. The words, and everything the agent did about
 them. Group the feed by `turn_id` and you have both.
 
 ```ts
-import type { Block, LogEvent, Turn } from "fountain-sdk";
+import type { Block, LogEvent, Turn } from "@agentshit/fountain-sdk";
 
 function bubbles(turns: Turn[], events: LogEvent[]) {
   const byTurn = new Map<string, Block[]>();
@@ -261,7 +261,7 @@ ACP parser. Do not repeat that.
 message sent mid-turn, and the right answer is not an error toast.
 
 ```ts
-import { ConversationBusyError } from "fountain-sdk";
+import { ConversationBusyError } from "@agentshit/fountain-sdk";
 
 try {
   await fountain.team.message("watchtower", text);

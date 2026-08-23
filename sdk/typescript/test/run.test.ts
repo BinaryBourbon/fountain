@@ -30,6 +30,8 @@ beforeEach(() => {
   fake.onTurn = null;
   fake.dieAfterEvents = null;
   fake.failNextWith = null;
+  fake.onAnswer = null;
+  fake.answers.length = 0;
 });
 
 describe("run", () => {
@@ -362,15 +364,112 @@ describe("errors", () => {
     );
   });
 
+  // An `ask` policy holds the tool call until somebody answers, and denies it
+  // when nobody does. The SDK has to both surface the question and be able to
+  // answer it, or an `ask` agent silently does less than it was asked to.
+  test("a held tool call is surfaced, answered, and the turn then finishes", async () => {
+    fake.onTurn = (conversation) => {
+      fake.emit(conversation.id, {
+        kind: "stage",
+        stage: "turn",
+        state: "started",
+        stream: "stage",
+        data: JSON.stringify({ turn_number: 1, turn_id: "t1" }),
+      });
+      fake.emit(conversation.id, {
+        kind: "output",
+        stream: "acp",
+        turn_id: "t1",
+        blocks: [
+          {
+            kind: "permission_request",
+            request_id: "req-7",
+            summary: "Run the migration",
+            options: [
+              { optionId: "opt-allow", kind: "allow_once" },
+              { optionId: "opt-deny", kind: "reject_once" },
+            ],
+          },
+        ],
+      });
+      // and then nothing: the turn is held open until the answer arrives.
+    };
+
+    fake.onAnswer = (conversationId) => {
+      fake.emit(conversationId, {
+        kind: "output",
+        stream: "acp",
+        turn_id: "t1",
+        blocks: [{ kind: "text", body: "Migration applied." }],
+      });
+      fake.emit(conversationId, {
+        kind: "stage",
+        stage: "turn",
+        state: "done",
+        stream: "stage",
+        data: JSON.stringify({ turn_number: 1, turn_id: "t1" }),
+      });
+    };
+
+    // A deadline so a regression fails in five seconds instead of hanging CI:
+    // if the ask is never surfaced, nothing answers it and the turn never ends.
+    const run = client().run("Migrate the database", { agent: "reposage", timeoutMs: 5_000 });
+
+    let asked = 0;
+    for await (const event of run) {
+      if (event.type !== "permission") continue;
+      asked++;
+      assert.equal(event.request.summary, "Run the migration");
+      const allow = event.request.options.find((option) => option.kind === "allow_once");
+      assert.ok(allow, "the allow option must survive the trip");
+      await run.answer(event.request.requestId, allow.optionId);
+    }
+
+    const result = await run;
+    assert.equal(asked, 1);
+    assert.equal(result.state, "done");
+    assert.equal(result.text, "Migration applied.");
+    assert.deepEqual(
+      fake.answers.map((a) => [a.requestId, a.optionId]),
+      [["req-7", "opt-allow"]],
+    );
+  });
+
+  test("answering through a resumed conversation hits the same endpoint", async () => {
+    fake.onTurn = (conversation, turnNumber) => {
+      fake.scriptTurn(conversation.id, { turnNumber, turnId: "t1", text: ["ok"] });
+    };
+    const run = client().run("go", { agent: "reposage" });
+    const id = await run.conversationId;
+    await run;
+
+    await client().resume(id).answer("req-9", "opt-deny");
+    assert.deepEqual(fake.answers.at(-1), {
+      conversationId: id,
+      requestId: "req-9",
+      optionId: "opt-deny",
+    });
+  });
+
   test("a missing key fails before any request", async () => {
     const bare = new Fountain({ baseUrl, apiKey: "", profile: "no-such-profile" });
     await assert.rejects(() => bare.me(), /No Fountain API key/);
+  });
+
+  // `/api/auth/me` answers with the identity itself, not `{data: …}`. Unwrapping
+  // it returned `null` for a call that had succeeded, and nothing caught that
+  // because the fake wrapped it too and the only test called `request()`.
+  test("me() returns the identity, which the endpoint sends unenveloped", async () => {
+    const me = await client().me();
+    assert.equal(me.email, "test@example.com");
+    assert.equal(me.role, "user");
+    assert.ok(me.id, "an identity with no id means the envelope was unwrapped away");
   });
 });
 
 describe("escape hatch", () => {
   test("api reaches endpoints the SDK does not wrap", async () => {
-    const me = await client().request<{ data: { email: string } }>("GET", "/api/auth/me");
-    assert.equal(me.data.email, "test@example.com");
+    const me = await client().request<{ email: string }>("GET", "/api/auth/me");
+    assert.equal(me.email, "test@example.com");
   });
 });

@@ -24,12 +24,16 @@ code actually reaches for.
 | **Web UI** (`/dashboard`) | Getting started, debugging conversations, managing resources visually |
 | **REST API** (`/api/*`) | Scripting, CI/CD pipelines, integrating Fountain into your own tools |
 | **CLI** (`fountain`) | Local workflows, manifest-driven `apply`, shell scripting |
-| **TypeScript SDK** (`sdk/typescript`) | Running an agent from your own code: `fountain.run(prompt, { agent, vault })` |
+| **TypeScript SDK** (`@agentshit/fountain-sdk`) | Running an agent from your own code: `fountain.run(prompt, { agent, vault })` |
 
 The CLI and the SDK are convenience wrappers over the REST API. Everything they do, you can do with `curl`.
 
+```bash
+npm install @agentshit/fountain-sdk
+```
+
 ```ts
-import { Fountain } from "fountain-sdk";
+import { Fountain } from "@agentshit/fountain-sdk";
 
 const run = await new Fountain().run("Upgrade us to Phoenix 1.8 and open a PR", {
   agent: "reposage",

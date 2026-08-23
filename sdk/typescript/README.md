@@ -1,9 +1,9 @@
-# fountain-sdk
+# @agentshit/fountain-sdk
 
 Give an agent a computer, your repos and your credentials — in one call.
 
 ```ts
-import { Fountain } from "fountain-sdk";
+import { Fountain } from "@agentshit/fountain-sdk";
 
 const fountain = new Fountain();
 
@@ -90,14 +90,9 @@ tests.
 
 ## Install
 
-**Not on npm yet.** Until it is published, install it from a checkout:
-
 ```bash
-cd sdk/typescript && npm install && npm run build && npm link
-npm link fountain-sdk            # in the project that wants it
+npm install @agentshit/fountain-sdk
 ```
-
-Once published, it will be `npm install fountain-sdk`.
 
 Node 20.19+ (native `fetch` and ESM). No runtime dependencies.
 
@@ -166,6 +161,32 @@ A `RunResult` is:
 A turn that **fails** is a result, not an exception — the agent ran and has
 something to say about it. Check `state`. Only a transport failure, a rejected
 request or a timeout throws.
+
+## When the agent asks first
+
+An agent whose `permission_policy` has an `ask` entry stops before the tool
+call and waits to be told. Nothing else in the turn moves until it is answered,
+and an unanswered request is denied when it expires — so an `ask` agent driven
+by a caller that ignores these finishes having quietly skipped the work.
+
+```ts
+for await (const event of run) {
+  if (event.type !== "permission") continue;
+
+  console.log(event.request.summary);          // "Run rm -rf build"
+  const allow = event.request.options.find((o) => o.kind === "allow_once");
+  await run.answer(event.request.requestId, allow!.optionId);
+}
+```
+
+`options` is whatever the agent offered, in its order; `kind` is the part worth
+branching on (`allow_once`, `allow_always`, `reject_once`, `reject_always`).
+Sending an id the agent did not offer is a `ValidationError`, not a forwarded
+answer. `resume(id).answer(...)` is the same call from a process that is not
+the one following the turn.
+
+The default policy is `auto_allow` and never asks, so this is opt-in per agent.
+`opencode` never asks at all and refuses anything stricter than `auto_allow`.
 
 ## Defining what you run
 
@@ -272,6 +293,23 @@ if (error instanceof ValidationError) …         // error.fieldErrors
 
 Every error carries `status`, `code`, `body`, `retryAfter` and `retryable`.
 
+| class | when |
+|---|---|
+| `AuthError` | 401, or no key configured at all |
+| `SubscriptionRequiredError` | 402 — carries `upgradeUrl` |
+| `NotFoundError` | 404 — wrong id, or it belongs to another account |
+| `ValidationError` | 422 — read `fieldErrors` |
+| `RateLimitError` | 429 |
+| `ConversationBusyError` | the agent is still on the previous prompt |
+| `QuotaExceededError` | at the concurrent-sandbox cap — `activeSandboxes` / `limit` |
+| `NotReadyError` | the sandbox is still coming up — retry after `retryAfter` |
+| `TimeoutError` | the SDK stopped waiting — carries `conversationId` and `partialText` |
+| `ResolutionError` | a name matched no agent/vault/environment, or matched several |
+| `ConnectionError` | the request never reached Fountain — in a browser, usually CORS |
+
+A `ResolutionError` names what the account actually has, so a typo is a
+one-line fix rather than a trip to the console.
+
 ## In a browser
 
 The default entry imports no Node built-in, so it bundles as-is; the
@@ -289,7 +327,7 @@ sent more than one person hunting through their own code.
 
 `src/generated/openapi.ts` is produced from the same OpenAPI document the
 server serves, and CI regenerates it and fails on a diff — so the types cannot
-drift from the API. `import type { components, paths } from "fountain-sdk"` for
+drift from the API. `import type { components, paths } from "@agentshit/fountain-sdk"` for
 the raw shapes. What is hand-written is what a spec cannot express: that many
 log events fold into one turn, and which of 85 paths are worth a verb.
 
@@ -327,23 +365,6 @@ try {
 - `run.interrupt()` — ask the agent to stop the turn. The sandbox stays up.
 - `run.terminate()` — tear the sandbox down. Nothing resumes after this.
 
-## Errors
-
-Every failure is a `FountainError` with `status`, `code` and `body`:
-
-| class | when |
-|---|---|
-| `AuthError` | 401, or no key configured at all |
-| `SubscriptionRequiredError` | 402 — carries `upgradeUrl` |
-| `NotFoundError` | 404 — wrong id, or it belongs to another account |
-| `ValidationError` | 422 |
-| `RateLimitError` | 429 |
-| `TimeoutError` | the SDK stopped waiting — carries `conversationId` and `partialText` |
-| `ResolutionError` | a name matched no agent/vault/environment, or matched several |
-
-A `ResolutionError` names what the account actually has, so a typo is a
-one-line fix rather than a trip to the console.
-
 ## The rest of the API
 
 The verbs above are the ones worth wrapping. Everything else Fountain exposes —
@@ -377,6 +398,31 @@ The tests run a fake Fountain over real HTTP and real SSE, including the parts
 that are easy to get wrong: a connection that dies mid-turn, output belonging
 to another turn, and the two different ways runtimes chunk their text.
 
+`npm test` runs the TypeScript sources directly, which needs Node 22.6+ even
+though the published package only needs 20.19 — the tarball is compiled. CI
+runs on Node 24.
+
+A route added to `test/server.ts` has to answer in the same envelope the real
+one does. Nearly everything is `{data: …}`; the nine that are not are listed at
+the top of that file. A fake that wraps one of those turns a green suite into a
+lie, which is how `me()` shipped returning `null`.
+
+### Releasing
+
+The version lives in `package.json` and is asserted against `USER_AGENT` by a
+test, so a bump that misses one fails rather than shipping a lie.
+
+```bash
+npm version patch          # or minor — updates package.json, tags
+npm publish                # prepublishOnly runs typecheck, tests and build
+```
+
+Add the release to `CHANGELOG.md` in the same commit, and check that
+`docs/sdk.md` still describes what shipped.
+
 ## License
 
-MIT, same as Fountain.
+[Apache-2.0](LICENSE). Fountain is not licensed as a single unit: the server is
+AGPL-3.0-or-later, and the clients — this SDK and the CLI — are Apache-2.0 on
+purpose. Talking to the API, or shipping this SDK inside a proprietary
+application, puts no licence obligation on your code.

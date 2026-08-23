@@ -18,11 +18,11 @@ real run.
   the smallest one that works.
 
 ```bash
-npm install fountain-sdk   # see the SDK page: not on npm yet, build from the repo
+npm install @agentshit/fountain-sdk
 ```
 
 ```ts
-import { Fountain } from "fountain-sdk";
+import { Fountain } from "@agentshit/fountain-sdk";
 
 const fountain = new Fountain();          // FOUNTAIN_API_KEY
 const REPO = "https://github.com/you/your-app";

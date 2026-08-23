@@ -81,6 +81,31 @@ export class Conversation {
   }
 
   /**
+   * Answer a permission request the agent is holding a tool call on.
+   *
+   * `optionId` has to be one of the ids the agent offered on the
+   * `permission_request` block — the server refuses anything else with a 422
+   * rather than forwarding it. Answer promptly: the request expires, and an
+   * expired one is denied.
+   *
+   * ```ts
+   * for await (const event of run) {
+   *   if (event.type === "permission") {
+   *     const allow = event.request.options.find((o) => o.kind === "allow_once");
+   *     if (allow) await conversation.answer(event.request.requestId, allow.optionId);
+   *   }
+   * }
+   * ```
+   */
+  async answer(requestId: string, optionId: string): Promise<void> {
+    await this.http.request(
+      "POST",
+      `/api/conversations/${this.id}/requests/${encodeURIComponent(requestId)}`,
+      { body: { option_id: optionId } },
+    );
+  }
+
+  /**
    * Mark everything so far as read, clearing the teammate's unread badge.
    *
    * Every application built on Fountain calls this — it is what stops a UI

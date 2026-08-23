@@ -3,11 +3,14 @@ import type { Resolver } from "./resolve.ts";
 import type {
   Agent,
   AgentInput,
+  AgentPatch,
   Environment,
   EnvironmentInput,
+  EnvironmentPatch,
   Secret,
   Vault,
   VaultInput,
+  VaultPatch,
 } from "./types.ts";
 
 /**
@@ -20,8 +23,14 @@ import type {
  * because those are not data.
  */
 
-/** List, read, define, change and delete one kind of thing. */
-class Collection<T extends { id: string }, Input> {
+/**
+ * List, read, define, change and delete one kind of thing.
+ *
+ * `Patch` is its own parameter rather than `Partial<Input>`: the API's update
+ * schemas are not simply every create field made optional, and the generated
+ * ones say so exactly.
+ */
+class Collection<T extends { id: string }, Input, Patch> {
   protected readonly http: HttpClient;
   protected readonly resolver: Resolver;
   protected readonly path: string;
@@ -54,7 +63,7 @@ class Collection<T extends { id: string }, Input> {
   }
 
   /** Change one. Only the fields you pass are touched. */
-  async update(nameOrId: string, patch: Partial<Input>): Promise<T> {
+  async update(nameOrId: string, patch: Patch): Promise<T> {
     const { id } = await this.resolver.resolve(this.path, this.what, nameOrId);
     const updated = await this.http.data<T>("PATCH", `${this.path}/${id}`, { body: patch });
     // The patch may have renamed it.
@@ -128,14 +137,14 @@ class Secrets {
 }
 
 /** The agents on this account. */
-export class Agents extends Collection<Agent, AgentInput> {
+export class Agents extends Collection<Agent, AgentInput, AgentPatch> {
   constructor(http: HttpClient, resolver: Resolver) {
     super(http, resolver, "/api/agents", "agent");
   }
 }
 
 /** The environments on this account, and their secrets. */
-export class Environments extends Collection<Environment, EnvironmentInput> {
+export class Environments extends Collection<Environment, EnvironmentInput, EnvironmentPatch> {
   readonly secrets: Secrets;
 
   constructor(http: HttpClient, resolver: Resolver) {
@@ -145,7 +154,7 @@ export class Environments extends Collection<Environment, EnvironmentInput> {
 }
 
 /** The vaults on this account, and their secrets. */
-export class Vaults extends Collection<Vault, VaultInput> {
+export class Vaults extends Collection<Vault, VaultInput, VaultPatch> {
   readonly secrets: Secrets;
 
   constructor(http: HttpClient, resolver: Resolver) {

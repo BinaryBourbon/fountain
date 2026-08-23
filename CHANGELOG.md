@@ -47,6 +47,22 @@ upgrade, is in
 
 ### Added
 
+- **The TypeScript SDK is ready to publish, and can answer a permission
+  request** (`sdk/typescript`). It goes to npm as
+  **`@agentshit/fountain-sdk` 0.1.0** — scoped, because the `agentshit` org is
+  where Fountain's packages live. The install instructions in `README.md`,
+  `docs/sdk.md` and `docs/tour.md` no longer say "build it from a checkout",
+  because there is now a package to install.
+
+  With it, the one part of the API the SDK could not drive: an agent whose
+  `permission_policy` has an `ask` entry stops before the tool call, and a
+  `permission_request` block used to reach a caller as an anonymous block with
+  no way to reply. It is now a `{ type: "permission" }` run event carrying the
+  request id, the summary and the options the agent offered, and
+  `run.answer(requestId, optionId)` (or `resume(id).answer(...)`) sends the
+  reply. An `ask` agent driven from a script previously lost every held tool
+  call to the server's deny-on-expiry.
+
 - **Five dashboards, for three teams** (`deploy/grafana/`,
   `docs/guides/operate/dashboards.md`). Fountain exported 57 Prometheus series,
   a Tempo trace stream and a PostHog event stream, and shipped one starter
@@ -203,6 +219,17 @@ upgrade, is in
   cannot be rebuilt in place, does not exist.
 
 ### Fixed
+
+- **`fountain.me()` returned `null` against a real Fountain**
+  (`sdk/typescript`). `GET /api/auth/me` is one of the nine endpoints that
+  answers with the object itself instead of `{data: …}`, and the SDK unwrapped
+  it anyway, so the call documented as "the cheapest way to check a key works"
+  handed back `null` on success. The test suite was green because the in-process
+  fake wrapped the response too, and the only test touching the path used the
+  raw `request()` escape hatch rather than the verb. The fake now answers
+  unenveloped, `me()` is tested through `me()`, and `test/server.ts` carries the
+  list of unenveloped endpoints so the next route added there is checked against
+  the real envelope.
 
 - **An opencode or gemini agent ignored its system prompt.** Both runtimes run
   with `HOME=/tmp` — a workaround for a rename that fails across
