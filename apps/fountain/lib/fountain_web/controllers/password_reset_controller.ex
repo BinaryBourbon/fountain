@@ -73,7 +73,12 @@ defmodule FountainWeb.PasswordResetController do
       # token for the user — without this, a used link stayed live for the
       # rest of its hour (shared inbox, forwarded mail, proxy log).
       token = Phoenix.Token.sign(conn, "password_reset", {user.id, user.session_version})
-      Task.async(fn -> UserEmails.deliver_password_reset_email(user, token) end)
+      # Unlinked and supervised (#1040): this was a linked `Task.async` that
+      # nothing awaited, so a delivery error could take down the request that
+      # was about to answer 200.
+      Task.Supervisor.start_child(Fountain.TaskSupervisor, fn ->
+        UserEmails.deliver_password_reset_email(user, token)
+      end)
     end
 
     conn
