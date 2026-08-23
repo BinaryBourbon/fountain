@@ -15,11 +15,11 @@ export interface RequestOptions {
 
 /**
  * The product token this client sends. Deliberately not the package name: a
- * scope reads as a second token in a User-Agent (`@agentshit/…/0.1.0`), and
+ * scope reads as a second token in a User-Agent (`@agentshit/…/0.1.1`), and
  * this string is already what Fountain's request logs are keyed on. The
  * version half is asserted against `package.json` by a test.
  */
-export const USER_AGENT = "fountain-sdk-js/0.1.0";
+export const USER_AGENT = "fountain-sdk-js/0.1.1";
 
 /**
  * The thin layer everything else is built on: one bearer token, JSON in and
