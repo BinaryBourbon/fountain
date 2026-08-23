@@ -116,6 +116,14 @@ The consequence is accepted openly and written into `CONTRIBUTING.md`: with no
 CLA, the maintainer cannot relicense a contributor's work either. The AGPL
 guarantee binds the maintainer exactly as hard as it binds anyone else.
 
+This is the one part of this ADR held open on purpose. Sole copyright means the
+option is intact right now, and it closes at the first merged outside pull
+request rather than on a date. **#997** tracks the decision and names the
+question that settles it, which is whether selling a commercial exception is
+ever part of the plan. The lighter form worth knowing about is inbound
+Apache-2.0 with outbound AGPL: one sentence, no document and no bot, and
+contributors keep full reuse rights over their own work.
+
 ## Consequences
 
 - **Releases through v0.12.0 stay MIT, irrevocably.** Anyone who obtained them
@@ -127,7 +135,8 @@ guarantee binds the maintainer exactly as hard as it binds anyone else.
   roadmap constraint, and it is the first question to ask of any feature meant
   to be exclusive to the hosted product.
 - **Adding a CLA later requires asking every contributor.** Reversing the
-  no-CLA decision gets harder with each merged pull request.
+  no-CLA decision gets harder with each merged pull request, which is why
+  #997 carries a deadline expressed as an event rather than a date.
 - **The dual-licensing option is intact today and expires on the first merged
   outside pull request.** Sole copyright means commercial exceptions could
   still be sold without asking anyone. Declining a CLA spends that option
