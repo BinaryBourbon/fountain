@@ -1,0 +1,693 @@
+{
+  "__comment": "Finance dashboard for Fountain. Owned by the repo at deploy/grafana/fountain-finance.json; see docs/guides/operate/dashboards.md. Cost drivers and conversion counts, not revenue: Stripe holds the money and usage_events holds the billable record. Sandbox-minutes are an estimate sampled from a gauge and must be reconciled against the provider bill. Provider gauges are duplicated per replica, so every one collapses with `max` before any `sum`.",
+  "title": "Fountain / Finance",
+  "uid": "fountain-finance",
+  "tags": [
+    "fountain",
+    "finance"
+  ],
+  "schemaVersion": 39,
+  "editable": true,
+  "graphTooltip": 1,
+  "time": {
+    "from": "now-7d",
+    "to": "now"
+  },
+  "refresh": "5m",
+  "templating": {
+    "list": [
+      {
+        "name": "DS_PROMETHEUS",
+        "label": "Prometheus",
+        "type": "datasource",
+        "query": "prometheus",
+        "current": {
+          "text": "Prometheus",
+          "value": "prometheus"
+        }
+      },
+      {
+        "name": "namespace",
+        "label": "Namespace",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
+        "query": {
+          "query": "label_values(fountain_conversations_count, namespace)",
+          "refId": "ns"
+        },
+        "refresh": 1,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": {
+          "text": "fountain",
+          "value": "fountain"
+        }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "type": "row",
+      "title": "What the providers are charging for right now",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "panels": []
+    },
+    {
+      "type": "bargauge",
+      "title": "Live sandboxes by provider",
+      "description": "Non-terminal sandbox rows that are pending, starting or ready. A minute on each provider is bought at a different price, which is why this is tagged by provider and not by tenant. Per-account spend is a database report rather than a series; the console has it under sandbox spend.",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 1
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "displayMode": "lcd",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showUnfilled": true
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (provider) (fountain_sandboxes_by_provider_count{namespace=\"$namespace\", status=~\"pending|starting|ready\"})",
+          "legendFormat": "{{provider}}",
+          "instant": true
+        }
+      ]
+    },
+    {
+      "type": "bargauge",
+      "title": "Parked sandboxes by provider",
+      "description": "Suspended by the idle bound. The sprite is kept so the memory survives (decisions/0017), which means a parked sandbox can still cost storage even though it is doing no work. Only the max-lifetime ceiling destroys.",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 1
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "displayMode": "lcd",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showUnfilled": true
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (provider) (fountain_sandboxes_by_provider_count{namespace=\"$namespace\", status=\"suspended\"})",
+          "legendFormat": "{{provider}}",
+          "instant": true
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Untracked sprites",
+      "description": "Sprites alive at the provider with no sandbox row to bill against. This is money leaving with nothing to attribute it to. It is a level re-measured on every reaper run, so it falls when they are cleaned up.",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 16,
+        "y": 1
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(fountain_reaper_untracked_count{namespace=\"$namespace\"}) or vector(0)"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Usage events dropped",
+      "description": "Metering swallows its own failures by contract, so an outage looks exactly like nobody using the product. Any non-zero value here means billing rows were lost over the selected range and the invoice will under-charge (#503).",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 20,
+        "y": 1
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(increase(fountain_usage_dropped_count{namespace=\"$namespace\"}[$__range])) or vector(0)"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Provisions in range",
+      "description": "Each one writes a sandbox_provisioned usage event.",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 16,
+        "y": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(increase(fountain_stage_count{namespace=\"$namespace\", stage=\"provision\", status=\"done\"}[$__range])) or vector(0)"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Turns started in range",
+      "description": "Each one writes a turn_started usage event. Metering counts turns that started, not turns that succeeded, so this is the billable count rather than the successful one.",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 20,
+        "y": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(increase(fountain_stage_count{namespace=\"$namespace\", stage=\"turn\", status=\"started\"}[$__range])) or vector(0)"
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "Sandbox time, the cost proxy",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 9
+      },
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Sandbox-minutes accrued per hour, by provider",
+      "description": "An estimate, not an invoice. Grafana samples the live-sandbox gauge every minute over a trailing hour, takes the mean, and multiplies by 60 to get sandbox-minutes. It is accurate to the scrape interval, so a sandbox that lived and died between two scrapes is missed. Reconcile against the provider bill before anyone quotes it.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 10
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "fillOpacity": 15,
+            "lineWidth": 2,
+            "stacking": {
+              "mode": "normal"
+            }
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "60 * avg_over_time((max by (provider) (fountain_sandboxes_by_provider_count{namespace=\"$namespace\", status=~\"pending|starting|ready\"}))[1h:1m])",
+          "legendFormat": "{{provider}}"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Live and parked sandboxes over time",
+      "description": "The inner max collapses the per-replica duplicate of each provider gauge; the outer sum then adds the providers together. Doing it the other way round multiplies the total by the replica count.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 10
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "fillOpacity": 10,
+            "lineWidth": 2
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(max by (provider) (fountain_sandboxes_by_provider_count{namespace=\"$namespace\", status=~\"pending|starting|ready\"}))",
+          "legendFormat": "live"
+        },
+        {
+          "refId": "B",
+          "expr": "sum(max by (provider) (fountain_sandboxes_by_provider_count{namespace=\"$namespace\", status=\"suspended\"}))",
+          "legendFormat": "parked"
+        },
+        {
+          "refId": "C",
+          "expr": "max(fountain_reaper_untracked_count{namespace=\"$namespace\"}) or vector(0)",
+          "legendFormat": "untracked"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "What cost control reclaimed, per hour",
+      "description": "Spend that did not happen. A flat zero on every line while live sandboxes climb means the lifetime bounds are not firing, and the bill will show it before this panel does.",
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 18
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "fillOpacity": 0,
+            "lineWidth": 2
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(fountain_sandbox_reclaimed_count{namespace=\"$namespace\"}[1h])) * 3600 or vector(0)",
+          "legendFormat": "destroyed at the ceiling"
+        },
+        {
+          "refId": "B",
+          "expr": "sum(rate(fountain_sandbox_suspended_count{namespace=\"$namespace\"}[1h])) * 3600 or vector(0)",
+          "legendFormat": "parked at the idle bound"
+        },
+        {
+          "refId": "C",
+          "expr": "sum(rate(fountain_reaper_run_released{namespace=\"$namespace\"}[1h])) * 3600 or vector(0)",
+          "legendFormat": "sprites released by the reaper"
+        },
+        {
+          "refId": "D",
+          "expr": "sum(rate(fountain_reaper_run_expired{namespace=\"$namespace\"}[1h])) * 3600 or vector(0)",
+          "legendFormat": "rows expired by the reaper"
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "Conversion to paid",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 26
+      },
+      "panels": []
+    },
+    {
+      "type": "bargauge",
+      "title": "Registered to subscribed",
+      "description": "All-time counts. Subscribed means an active or past_due subscription. Comped accounts are operator grants rather than conversions and are excluded, so this number is smaller than the count of accounts that can spend.",
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 0,
+        "y": 27
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "displayMode": "lcd",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showUnfilled": true
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(fountain_funnel_registered{namespace=\"$namespace\"})",
+          "legendFormat": "registered",
+          "instant": true
+        },
+        {
+          "refId": "B",
+          "expr": "max(fountain_funnel_verified{namespace=\"$namespace\"})",
+          "legendFormat": "verified",
+          "instant": true
+        },
+        {
+          "refId": "C",
+          "expr": "max(fountain_funnel_activated{namespace=\"$namespace\"})",
+          "legendFormat": "activated",
+          "instant": true
+        },
+        {
+          "refId": "D",
+          "expr": "max(fountain_funnel_subscribed{namespace=\"$namespace\"})",
+          "legendFormat": "subscribed",
+          "instant": true
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Subscribed / registered",
+      "description": "End to end conversion. A revenue number needs Stripe, which Prometheus never sees; this is the count that leads it.",
+      "gridPos": {
+        "h": 7,
+        "w": 6,
+        "x": 12,
+        "y": 27
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(fountain_funnel_subscribed{namespace=\"$namespace\"}) / max(fountain_funnel_registered{namespace=\"$namespace\"})"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Subscribed / activated",
+      "description": "Conversion among accounts that got far enough to run something. This is the one that moves when pricing or the gate changes.",
+      "gridPos": {
+        "h": 7,
+        "w": 6,
+        "x": 18,
+        "y": 27
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(fountain_funnel_subscribed{namespace=\"$namespace\"}) / max(fountain_funnel_activated{namespace=\"$namespace\"})"
+        }
+      ]
+    },
+    {
+      "type": "text",
+      "title": "What this dashboard is not",
+      "gridPos": {
+        "h": 6,
+        "w": 24,
+        "x": 0,
+        "y": 34
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "\n**It is not the invoice.** Prometheus holds counts over time with no account\nattached. Every number here is an instance-wide aggregate.\n\nFor money, in order of authority:\n\n1. **Stripe** is the record. Charges, refunds, and MRR live there and nowhere else.\n2. **`usage_events` in Postgres** is what the invoice is built from. Six event\n   types, written synchronously, never updated after insertion. The console\n   shows the per-account view under sandbox spend; `Fountain.Billing` has the\n   aggregates.\n3. **PostHog**, on the **Fountain / Finance** dashboard, holds the same six\n   metering events per person, so \"which accounts drive the sandbox bill\" is\n   answerable there and is not answerable here.\n4. **This dashboard** is the early warning. It moves within a scrape interval,\n   which the other three do not.\n\nThe one panel to watch for correctness is **Usage events dropped**. Metering\nswallows its own failures so that a billing outage can never fail a\nconversation, which also means a broken meter and a quiet week look identical\neverywhere except that counter.\n\nSee `docs/guides/operate/dashboards.md` in the Fountain repo.\n"
+      }
+    }
+  ]
+}

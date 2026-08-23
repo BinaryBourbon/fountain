@@ -309,6 +309,23 @@ end|
       end
     end
 
+    # Fences we accept rendering unhighlighted in-app, and why.
+    #
+    # `text`/`plain` and friends ask for no highlighting in the first place.
+    #
+    # `promql` asks for it and cannot have it: Lumis ships no PromQL parser
+    # (116 languages, none of them PromQL, and none aliasing to it), so there
+    # is nothing to bake and adding it to `@languages` would fail the sibling
+    # test above and break the Dockerfile's cache step. The published MkDocs
+    # site does highlight it, because Pygments has a lexer, so the fence stays
+    # `promql` rather than degrading the public page to match the in-app one.
+    #
+    # This list is the difference between a gap that is known and one that is
+    # silent, which is the whole point of the test below. Adding to it means
+    # checking that Lumis really has no parser, not that baking one is
+    # inconvenient.
+    @unhighlightable ~w(text txt plain plaintext promql)
+
     test "covers every language the docs corpus and in-app help fence" do
       # The parsers ship in the image (see `@languages` in FountainWeb.Markdown);
       # a fence in a language that is not baked renders unhighlighted in
@@ -319,7 +336,7 @@ end|
       aliases =
         for l <- Lumis.available_languages(), a <- l.aliases, into: by_alias, do: {a, l.id}
 
-      for {file, info} <- fenced_languages(), info not in ~w(text txt plain plaintext) do
+      for {file, info} <- fenced_languages(), info not in @unhighlightable do
         id = Map.get(aliases, info, info)
 
         assert MapSet.member?(baked, id),
