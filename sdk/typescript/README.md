@@ -1,9 +1,9 @@
-# fountain-sdk
+# @agentshit/fountain-sdk
 
 Give an agent a computer, your repos and your credentials — in one call.
 
 ```ts
-import { Fountain } from "fountain-sdk";
+import { Fountain } from "@agentshit/fountain-sdk";
 
 const fountain = new Fountain();
 
@@ -91,7 +91,7 @@ tests.
 ## Install
 
 ```bash
-npm install fountain-sdk
+npm install @agentshit/fountain-sdk
 ```
 
 Node 20.19+ (native `fetch` and ESM). No runtime dependencies.
@@ -327,7 +327,7 @@ sent more than one person hunting through their own code.
 
 `src/generated/openapi.ts` is produced from the same OpenAPI document the
 server serves, and CI regenerates it and fails on a diff — so the types cannot
-drift from the API. `import type { components, paths } from "fountain-sdk"` for
+drift from the API. `import type { components, paths } from "@agentshit/fountain-sdk"` for
 the raw shapes. What is hand-written is what a spec cannot express: that many
 log events fold into one turn, and which of 85 paths are worth a verb.
 

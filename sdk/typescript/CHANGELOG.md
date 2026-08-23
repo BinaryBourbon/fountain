@@ -1,6 +1,6 @@
 # Changelog
 
-Notable changes to `fountain-sdk`. Format:
+Notable changes to `@agentshit/fountain-sdk`. Format:
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [SemVer](https://semver.org/).
 

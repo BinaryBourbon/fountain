@@ -4,7 +4,7 @@ The REST API describes machinery. Conversations, turns, log events, blocks.
 The SDK describes the job.
 
 ```ts
-import { Fountain } from "fountain-sdk";
+import { Fountain } from "@agentshit/fountain-sdk";
 
 const fountain = new Fountain();
 
@@ -22,7 +22,7 @@ The source lives in
 It has no runtime dependency, and it needs Node 20.19 or newer.
 
 ```bash
-npm install fountain-sdk
+npm install @agentshit/fountain-sdk
 ```
 
 ## What the second argument is for
@@ -392,7 +392,7 @@ schema in Elixir reaches the SDK on the next build. A type here can never
 describe an API that has gone.
 
 ```ts
-import type { components, paths } from "fountain-sdk";
+import type { components, paths } from "@agentshit/fountain-sdk";
 
 type Teammate = components["schemas"]["Teammate"];
 ```

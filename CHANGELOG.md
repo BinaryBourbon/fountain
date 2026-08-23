@@ -48,9 +48,11 @@ upgrade, is in
 ### Added
 
 - **The TypeScript SDK is ready to publish, and can answer a permission
-  request** (`sdk/typescript`). `fountain-sdk` goes to npm as **0.1.0**. The
-  install instructions in `README.md` and `docs/sdk.md` no longer say "build it
-  from a checkout", because there is now a package to install.
+  request** (`sdk/typescript`). It goes to npm as
+  **`@agentshit/fountain-sdk` 0.1.0** — scoped, because the `agentshit` org is
+  where Fountain's packages live. The install instructions in `README.md`,
+  `docs/sdk.md` and `docs/tour.md` no longer say "build it from a checkout",
+  because there is now a package to install.
 
   With it, the one part of the API the SDK could not drive: an agent whose
   `permission_policy` has an `ask` entry stops before the tool call, and a

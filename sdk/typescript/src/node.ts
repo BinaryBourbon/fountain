@@ -3,7 +3,7 @@
  *
  * Everything the SDK does works in a browser, and `src/index.ts` is what a
  * bundler gets. The one thing that cannot work there is reading
- * `~/.fountain/credentials`, so that lives here: importing `fountain-sdk`
+ * `~/.fountain/credentials`, so that lives here: importing `@agentshit/fountain-sdk`
  * under Node resolves to this module, which installs the reader and then
  * re-exports the same API.
  */

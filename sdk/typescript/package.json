@@ -1,8 +1,11 @@
 {
-  "name": "fountain-sdk",
+  "name": "@agentshit/fountain-sdk",
   "version": "0.1.0",
   "description": "Run a coding agent on a real computer, with your repos and your credentials, in one call.",
   "license": "Apache-2.0",
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
   "engines": {
     "node": ">=20.19"

@@ -35,7 +35,7 @@ function unquote(value: string): string {
  *
  * The eleven apps built on Fountain so far are browser apps, and a bare
  * `import "node:fs"` at the top of this module breaks their bundles. So the
- * file reader is injected: `fountain-sdk` resolves to a Node entry that
+ * file reader is injected: `@agentshit/fountain-sdk` resolves to a Node entry that
  * installs one, and to this browser-safe module everywhere else. Nothing here
  * touches a Node built-in.
  */
