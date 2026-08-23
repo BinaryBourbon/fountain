@@ -50,12 +50,44 @@ defmodule FountainWeb.MarketingPricingTest do
   # The hours are a public promise, so the page has to say what a turn hour
   # is. A reader who assumes it means wall-clock sandbox time reads Solo's
   # 100 hours as four days and concludes the plan is unusable.
-  test "the pricing table explains that hours are counted while an agent works",
-       %{conn: conn} do
+  # Scale-to-zero (0017) is the strongest claim the rest of the page makes. A
+  # pricing page that charged for parked time, or merely failed to say it did
+  # not, would undercut it.
+  test "the pricing table says parked and idle time cost nothing", %{conn: conn} do
     price_all()
 
     body = conn |> get(~p"/") |> html_response(200)
-    assert body =~ "counted while an agent is working, not while it waits"
+    assert body =~ "counted only while a prompt is in flight"
+    assert body =~ "A parked agent, an idle one"
+    assert body =~ "your own machine all cost nothing"
+  end
+
+  # "800 hours included" followed by silence reads as a hard stop, and a hard
+  # stop on hours sounds like an agent dying mid-task. The two limits behave
+  # differently and the page has to say which is which.
+  test "the pricing table says what happens at each limit", %{conn: conn} do
+    price_all()
+
+    body = conn |> get(~p"/") |> html_response(200)
+
+    assert body =~ "Going over the hours does not stop anything"
+    assert body =~ "nothing extra is charged"
+    assert body =~ "Running at the concurrency cap does"
+    assert body =~ "waits for a free slot"
+  end
+
+  # The trial's numbers are enforced from the catalog, so the page reads them
+  # from there. Hardcoding them is how a pricing page ends up advertising
+  # limits the product does not have.
+  test "the trial line comes from the catalog, not from the template", %{conn: conn} do
+    price_all()
+    trial = Plans.fetch!("trial")
+
+    body = conn |> get(~p"/") |> html_response(200)
+
+    assert body =~ "#{trial.concurrent_sandboxes} agents at once"
+    assert body =~ "with #{trial.included_turn_hours} turn hours"
+    assert body =~ "Subscribing lifts both the same day"
   end
 
   test "the hero quotes the cheapest sellable plan", %{conn: conn} do

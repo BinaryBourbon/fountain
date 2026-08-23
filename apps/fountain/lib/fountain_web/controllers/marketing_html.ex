@@ -45,4 +45,13 @@ defmodule FountainWeb.MarketingHTML do
   part worth being explicit about on a pricing page.
   """
   def plan_turn_hours(plan), do: "#{plan.included_turn_hours} turn hours a month"
+
+  @doc """
+  The trial plan, so the page can state what fourteen days actually gets you.
+
+  Read from the catalog rather than written into the template: the trial's
+  numbers are enforced from `Fountain.Plans`, and a page that repeats them by
+  hand is a page that will one day advertise limits the product does not have.
+  """
+  def trial_plan, do: Plans.fetch!("trial")
 end
