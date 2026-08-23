@@ -10,7 +10,7 @@
 | Manifest | [`examples/agents/fountain-contributor/`](https://github.com/BinaryBourbon/fountain/tree/main/examples/agents/fountain-contributor) | <!-- vale disable-line STE.SentenceLength -->
 | Runtime | claude, model `anthropic/claude-opus-5` |
 | Resources | one Environment, one Vault, one Agent |
-| First run | 30 to 60 minutes to provision, paid one time into a checkpoint |
+| First run | about 15 minutes to provision (measured), paid one time into a checkpoint |
 | Network policy | `unrestricted` |
 | Vault needs | a GitHub token with `repo` scope, and your git identity |
 
