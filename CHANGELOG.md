@@ -54,6 +54,16 @@ upgrade, is in
   since the docs IA campaign moved that content, because nothing checked
   absolute links; they point at the right pages now (#1006)
 
+  The old site does not simply stop: it becomes a **tombstone**, one redirect
+  per URL it used to answer, each pointing at the same page under `/docs` and
+  carrying the fragment across. Deleting the workflow would have left the last
+  snapshot serving forever, which is worse than a 404, and deleting the site
+  would have broken every link anyone ever made to it.
+  `scripts/build-pages-tombstone.py` generates it from the nav and refuses to
+  emit a redirect to a page that is not there;
+  `.github/workflows/pages-tombstone.yml` publishes it by hand and is
+  `workflow_dispatch` only, so it is not a docs publishing path (#1006)
+
 ### Changed
 
 - **Fountain is no longer MIT licensed** (ADR 0027). The server under
