@@ -108,8 +108,10 @@ AgentCreate and AgentUpdate, and the `SANDBOX_PROVIDER` boot check in
    `npm install -g --silent` at provision fails as a silent exit 243. If
    commands run as a user the provider selects, make sure that user is
    `sprite`. Compare `E2B_USER`.
-6. **Docs.** Add a `docs/integrations/<provider>.md` page and a `mkdocs.yml`
-   nav entry, modelled on `e2b.md` and `daytona.md`.
+6. **Docs.** Add a `docs/integrations/<provider>.md` page and a `docs/nav.yml`
+   entry, modelled on `e2b.md` and `daytona.md`. The nav entry is not optional.
+   Fountain serves only the pages the nav names, so a page you leave out of it
+   reaches no reader. The test suite fails until you add it.
 
 ## Two traps that both adapters hit
 

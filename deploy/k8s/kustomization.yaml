@@ -25,6 +25,6 @@ resources:
 images:
   # Pin a release, not `latest` — `latest` moves on every merge to main.
   # Released tags: vX.Y.Z (immutable) and vX.Y (newest patch in the line).
-  # https://binarybourbon.github.io/fountain/self-hosting/#versioning-and-upgrades
+  # https://fountain.inevitable.fyi/docs/guides/operate/upgrade#how-versions-work
   - name: ghcr.io/binarybourbon/fountain
     newTag: v0.12.0

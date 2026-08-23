@@ -6,7 +6,7 @@
  * Every piece here is what a roster-and-threads UI actually needs: a roster
  * row, a live router for the team's one connection, and a transcript folded
  * out of server-parsed blocks. The docs walk through it at
- * https://binarybourbon.github.io/fountain/build/team-chat/ — this file is the
+ * https://fountain.inevitable.fyi/docs/build/team-chat — this file is the
  * copy CI typechecks, so the page cannot drift from the SDK.
  *
  * Creates a temporary agent and removes everything on the way out.

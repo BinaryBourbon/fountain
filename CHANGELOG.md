@@ -10,11 +10,49 @@ always safe to take. Every release publishes the server image to
 `ghcr.io/binarybourbon/fountain` as `vX.Y.Z` (immutable) and `vX.Y` (moving,
 newest patch in the line). The full policy, including how migrations run on
 upgrade, is in
-[Versioning and upgrades](https://binarybourbon.github.io/fountain/self-hosting/#versioning-and-upgrades).
+[Versioning and upgrades](https://fountain.inevitable.fyi/docs/guides/operate/upgrade#how-versions-work).
 
 ---
 
 ## [Unreleased]
+
+### Removed
+
+- **The GitHub Pages documentation site.** `docs/` had two publishers: the
+  in-app manual at `/docs`, embedded at compile time by `Fountain.Docs`, and a
+  MkDocs Material build deployed to `binarybourbon.github.io/fountain` on every
+  push to `main`. They served the same markdown from the same nav, so the
+  second one bought nothing and cost a workflow, a `mkdocs build --strict` step
+  in two CI jobs, a Python toolchain, and a second renderer whose dialect the
+  first had to keep chasing. `/docs` is now the only place the manual is
+  published. It is public and needs no account, which is what made the Pages
+  copy redundant rather than load-bearing.
+
+  Gone with it: `.github/workflows/docs.yml`, `mkdocs.yml`,
+  `docs/requirements.txt` and the `mkdocs build` CI steps. The nav moved to
+  **`docs/nav.yml`**, same format, same parser, now inside the tree it
+  describes, so it needs no Dockerfile `COPY` and no special case in the CI
+  docs-path filter.
+
+  Two things the Pages build was quietly doing, both now handled:
+
+  - MkDocs built every page under `docs/` whether the nav named it or not, so
+    four pages under `docs/superpowers/` reached the public site while being
+    invisible at `/docs`. They are internal planning material from May 2026;
+    they moved to `superpowers/` at the repo root, beside `runbooks/`. A new
+    test fails on any page under `docs/` that the nav does not name, since such
+    a page is now published nowhere at all.
+  - `mkdocs build --strict` was the link checker. `docs_test.exs` already
+    checked every internal `/docs` link *and* every anchor, which MkDocs never
+    did, and it runs on every pull request rather than after the merge. It is
+    now the whole structural gate. The prose gates (`scripts/docs-style.py`,
+    `vale lint docs`) are unchanged.
+
+  Links into the old site from `README.md`, `CHANGELOG.md`, `docker-compose.yml`,
+  `deploy/k8s/` and the SDK examples now point at
+  `https://fountain.inevitable.fyi/docs/...`. Four of them had been broken
+  since the docs IA campaign moved that content, because nothing checked
+  absolute links; they point at the right pages now (#1006)
 
 ### Changed
 
@@ -149,7 +187,7 @@ upgrade, is in
   shape when you save it, resolved and checked again before every request, and
   then connected to by the address that was checked, with your hostname in the
   `Host` header and TLS SNI. Redirects are never followed. See
-  [Webhooks](https://binarybourbon.github.io/fountain/reference/webhooks/).
+  [Webhooks](https://fountain.inevitable.fyi/docs/reference/webhooks).
 
 - **Sandbox spend attribution: which tenant, on which provider, ran how long.**
   Fountain pays Sprites, E2B and Daytona by the second and had no way to say
@@ -401,7 +439,7 @@ upgrade, is in
   transcript each turn. Tool use and lifecycle stages relay as AG-UI thinking
   events; no AG-UI *tool call* is emitted, because a Fountain agent runs its
   tools in its own sandbox and already has the result. See
-  [OpenBot (AG-UI)](https://binarybourbon.github.io/fountain/integrations/openbot/).
+  [OpenBot (AG-UI)](https://fountain.inevitable.fyi/docs/integrations/openbot).
 
 - **Usage on the console's dashboard.** A "This month" row — conversations,
   turns, sandbox time, and tokens in/out — on the same calendar the billing
@@ -622,7 +660,7 @@ upgrade, is in
   The chat bubbles moved out of `ConversationsLive.Show` into
   `ConversationsLive.Chat` so both surfaces render a turn the same way.
 
-- **Docs: a [`fountain acp` reference](https://binarybourbon.github.io/fountain/integrations/acp/)
+- **Docs: a [`fountain acp` reference](https://fountain.inevitable.fyi/docs/integrations/acp)
   and an "Operating a hosted agent" section on the Buzz page.** The three ACP
   clients (editors, OpenClaw, Buzz) now point at one page for the adapter's
   protocol surface, `_meta` extensions (`channelId`, `freshSession`), what
@@ -1068,7 +1106,7 @@ a background supervisor that starts on boot.
   files, declares no access to the ones open in your editor, and deliberately
   does not send sandbox paths as clickable locations. Agents on a runtime
   that does not speak ACP are refused by name. Setup and editor config are on
-  the new [Editors (ACP)](https://binarybourbon.github.io/fountain/integrations/editors/)
+  the new [Editors (ACP)](https://fountain.inevitable.fyi/docs/integrations/editors)
   page (ADR 0015; #709, #698–#707).
 
 - **The conversation event stream is documented as the interface it now is.**
@@ -1293,7 +1331,7 @@ a background supervisor that starts on boot.
   `bin/migrate` untouched, since that is what the Job runs. Default unchanged:
   an instance that sets nothing migrates exactly as before. Nothing checks
   that the Job ran, so ordering it before the rollout is the operator's job;
-  [the guide](https://binarybourbon.github.io/fountain/self-hosting/#running-migrations-in-a-job)
+  [the guide](https://fountain.inevitable.fyi/docs/guides/operate/database#run-migrations-in-a-job)
   and `deploy/k8s/README.md` say so and carry the manifest (#610)
 
 ### Changed

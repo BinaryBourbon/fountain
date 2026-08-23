@@ -42,6 +42,10 @@ sentence:
   procedureMax: 20
   descriptionMax: 25
 
+# Everything under docs/ is a published page, so everything under docs/ is
+# linted. `docs/superpowers/**` used to be excluded here — planning material
+# that MkDocs published and /docs did not. #1006 retired the MkDocs site and
+# moved those pages to `superpowers/` at the repo root.
 files:
   include:
     # Both patterns. `docs/**/*.md` alone does not match `docs/index.md` on a
@@ -50,9 +54,6 @@ files:
     - "docs/*.md"
     - "docs/**/*.md"
   exclude:
-    # Internal planning material. Not in the nav, not served at /docs, not on
-    # the site. The same exemption scripts/docs-style.py makes.
-    - "docs/superpowers/**"
     # A record of what happened, not a description of how the system works.
     # docs/changelog.md is a one-line snippet include of it.
     - "CHANGELOG.md"

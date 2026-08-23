@@ -14,8 +14,8 @@
 # them just doubles the paging.
 #
 # Every alert says what it means and what to do. The symptom → component map
-# is https://binarybourbon.github.io/fountain/architecture/ and the actions
-# are https://binarybourbon.github.io/fountain/operations/.
+# is https://fountain.inevitable.fyi/docs/architecture and the actions
+# are https://fountain.inevitable.fyi/docs/operations.
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
 metadata:
@@ -187,7 +187,7 @@ spec:
               Likely causes, in the order to check them: SPRITES_TOKEN invalid
               or rate-limited, the Sprites API unhealthy, or tenants at their
               concurrency cap. Triage:
-              https://binarybourbon.github.io/fountain/operations/#sprites-errors
+              https://fountain.inevitable.fyi/docs/troubleshooting/sandbox-errors
 
         - alert: FountainProvisionDeadlineExceeded
           # The provision watchdog (#329) declared a provision wedged and

@@ -1,12 +1,13 @@
 defmodule FountainWeb.DocsController do
   @moduledoc """
-  Serves the public documentation site (the same markdown GitHub Pages
-  publishes) at `/docs`. Content is embedded at compile time by
-  `Fountain.Docs`; rendering goes through the sanitizing
+  Serves the public documentation manual at `/docs`. Content is embedded at
+  compile time by `Fountain.Docs`; rendering goes through the sanitizing
   `FountainWeb.Markdown` pipeline, same as `/help` (#323).
 
-  Public, like the marketing pages — the GitHub Pages site has no auth, so
-  the in-app mirror has none either.
+  Public, like the marketing pages, and deliberately so: since the GitHub Pages
+  copy was retired (#1006) this route is the only published manual, and the
+  people who most need it — someone deciding whether to self-host, or reading
+  `setup.md` before they have an account — have no session to authenticate.
   """
   use FountainWeb, :controller
 

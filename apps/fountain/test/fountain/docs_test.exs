@@ -1,13 +1,17 @@
 defmodule Fountain.DocsTest do
   @moduledoc """
-  The embedded docs site against `mkdocs.yml` and against itself.
+  The embedded docs manual against `docs/nav.yml` and against itself.
 
-  The nav in `Fountain.Docs` is a hand-maintained mirror of the `nav:`
-  section in `mkdocs.yml` — the sync test parses that file so adding a page
-  to one and not the other fails here rather than shipping a `/docs` that
-  silently lags the GitHub Pages site. The preprocessing tests pin the small
-  MkDocs dialect the docs are allowed to use: if a page introduces syntax
-  the compiler doesn't rewrite, the leftover-syntax checks catch it.
+  Since #1006 retired the GitHub Pages build, this file is the *whole*
+  structural gate on `docs/`. `mkdocs build --strict` used to run on main and
+  catch a relative link that did not resolve; nothing else renders these pages
+  now, so the checks that replaced it live here: every page the nav names
+  exists, every page on disk is in the nav, and every internal `/docs` link
+  and anchor resolves. The anchor check is the one MkDocs never had.
+
+  The preprocessing tests pin the small dialect the docs are allowed to use:
+  if a page introduces syntax the compiler doesn't rewrite, the leftover-syntax
+  checks catch it.
   """
 
   use ExUnit.Case, async: true
@@ -52,9 +56,10 @@ defmodule Fountain.DocsTest do
     The generalisation of the test above. Snippets are found by scanning
     markdown; this one asks the module itself what it read, so a *new kind* of
     compile-time dependency is covered without anyone remembering to extend a
-    scanner. `mkdocs.yml` is the case that motivated it — the nav is parsed
-    from it at compile time, and nothing about a snippet scan would ever have
-    noticed it was missing from the Dockerfile.
+    scanner. The nav file is the case that motivated it — it is parsed at
+    compile time, and nothing about a snippet scan would ever have noticed it
+    was missing from the Dockerfile. (It sat at the repo root as `mkdocs.yml`
+    then, so it needed its own COPY; `docs/nav.yml` is inside `COPY docs`.)
     """
     test "every file Fountain.Docs reads at compile time is copied into the image" do
       copied = dockerfile_copies()
@@ -107,15 +112,15 @@ defmodule Fountain.DocsTest do
     end
   end
 
-  describe "nav ← mkdocs.yml" do
+  describe "nav ← docs/nav.yml" do
     @doc """
-    The nav is parsed from mkdocs.yml rather than mirrored in Elixir, so there
+    The nav is parsed from docs/nav.yml rather than mirrored in Elixir, so there
     is no longer a drift test to write — drift is unrepresentable. What is
     worth pinning is the parser's contract, and above all that it REFUSES a
     line it does not understand. Silently dropping one would quietly shrink
     /docs, which is the failure this whole arrangement exists to prevent.
     """
-    test "parses the real mkdocs.yml into pages and one-level sections" do
+    test "parses the real docs/nav.yml into pages and one-level sections" do
       nav = Docs.nav_source()
 
       assert {"Home", "index.md"} in nav
@@ -127,7 +132,7 @@ defmodule Fountain.DocsTest do
       assert {"Sprites", "integrations/sprites.md"} in children
     end
 
-    test "keeps mkdocs.yml's order" do
+    test "keeps docs/nav.yml's order" do
       titles = Enum.map(Docs.nav_source(), &elem(&1, 0))
       assert Enum.take(titles, 3) == ["Home", "Guided tour, a pull request", "Concepts"]
       assert List.last(titles) == "Changelog"
@@ -190,7 +195,7 @@ defmodule Fountain.DocsTest do
     test "an unparsable nav line raises rather than being dropped" do
       yaml = "nav:\n  - Home: index.md\n  this is not a nav entry\n"
 
-      assert_raise ArgumentError, ~r/unparsed mkdocs.yml nav line/, fn ->
+      assert_raise ArgumentError, ~r{unparsed docs/nav\.yml nav line}, fn ->
         Compiler.parse_nav(yaml)
       end
     end
@@ -211,7 +216,7 @@ defmodule Fountain.DocsTest do
                 - Child: a/b.md
       """
 
-      assert_raise ArgumentError, ~r/nav sections are one level deep/, fn ->
+      assert_raise ArgumentError, ~r/sections are one level deep/, fn ->
         Compiler.parse_nav(yaml)
       end
     end
@@ -224,7 +229,7 @@ defmodule Fountain.DocsTest do
                 - Grandchild: a/c.md
       """
 
-      assert_raise ArgumentError, ~r/nav sections are one level deep/, fn ->
+      assert_raise ArgumentError, ~r/sections are one level deep/, fn ->
         Compiler.parse_nav(yaml)
       end
     end
@@ -250,8 +255,45 @@ defmodule Fountain.DocsTest do
     test "every page the nav names exists on disk" do
       for {_title, file} <- Compiler.flat_pages(Docs.nav_source()) do
         assert File.exists?(Path.join([@repo_root, "docs", file])),
-               "mkdocs.yml nav lists #{file}, which does not exist"
+               "docs/nav.yml lists #{file}, which does not exist"
       end
+    end
+
+    @doc """
+    The other direction, and the one that had no gate before #1006. MkDocs
+    built every page under `docs/` whether the nav named it or not, so a page
+    left out of the nav was still reachable on the GitHub Pages site and its
+    absence from `/docs` looked like a rendering quirk rather than a mistake.
+    Four such pages had accumulated (`docs/superpowers/`, since moved to the
+    repo root).
+
+    With Pages gone, `/docs` is the only reader of `docs/`, so a page missing
+    from the nav is a page that is published nowhere at all — written, merged,
+    and invisible. There is no allowlist on purpose: somewhere else in the repo
+    is the right home for a markdown file nobody should read here.
+    """
+    test "every page on disk is named in the nav" do
+      named = MapSet.new(Compiler.flat_pages(Docs.nav_source()), fn {_title, file} -> file end)
+
+      on_disk =
+        [@repo_root, "docs", "**", "*.md"]
+        |> Path.join()
+        |> Path.wildcard()
+        |> Enum.map(&Path.relative_to(&1, Path.join(@repo_root, "docs")))
+
+      orphans = Enum.reject(on_disk, &MapSet.member?(named, &1))
+
+      assert orphans == [],
+             """
+             These pages are under docs/ but not in docs/nav.yml:
+
+             #{Enum.map_join(orphans, "\n", &("  docs/" <> &1))}
+
+             /docs is the only place docs/ is published, so a page the nav does
+             not name is published nowhere. Add it to docs/nav.yml, or move it
+             out of docs/ — runbooks/, decisions/ and superpowers/ are all
+             deliberately unpublished.
+             """
     end
   end
 
@@ -277,7 +319,7 @@ defmodule Fountain.DocsTest do
       assert :error = Docs.get("../../etc/passwd")
     end
 
-    test "no MkDocs syntax survives preprocessing" do
+    test "no unsupported syntax survives preprocessing" do
       for slug <- Docs.slugs() do
         {:ok, %{body: body}} = Docs.get(slug)
 
@@ -304,9 +346,9 @@ defmodule Fountain.DocsTest do
     end
 
     # The rendered target must carry the anchor as a heading id — MDEx emits
-    # them on the trusted path (#765). MkDocs slugs the same headings for the
-    # public site; the two differ only for *duplicate* headings (comrak
-    # `-1`, python-markdown `_1`), so avoid linking to those.
+    # them on the trusted path (#765). Comrak's slug is now the only one that
+    # matters: the MkDocs build that slugged the same headings differently for
+    # *duplicate* headings (comrak `-1`, python-markdown `_1`) is gone (#1006).
     test "every internal /docs anchor link targets a heading on that page" do
       rendered =
         Map.new(Docs.slugs(), fn slug ->
@@ -384,7 +426,7 @@ defmodule Fountain.DocsTest do
     end
   end
 
-  # A deliberately narrow parser for the two shapes mkdocs.yml's nav uses:
+  # A deliberately narrow parser for the two shapes docs/nav.yml's nav uses:
   # `- Title: file.md` entries at two indent levels and `- Title:` section
   # headers. Anything it doesn't recognize fails the test, which is the point —
   # a new nav shape needs a decision here, not silent skipping.

@@ -86,7 +86,7 @@ defmodule FountainWeb.Markdown do
 
   Fenced code is syntax highlighted here too, for the same reason: the fences
   are authored, and a docs page whose whole job is showing code should show it
-  the way the published MkDocs site does.
+  highlighted.
 
   This is only ever fed authored documentation. Never pass agent- or
   user-supplied markdown here; use `to_html/1` for that.
@@ -95,9 +95,9 @@ defmodule FountainWeb.Markdown do
     # `unsafe: true` is what lets the kept figure/svg block through; every
     # other raw-HTML node has already been turned into text by the walk.
     # `header_id_prefix` gives every heading a GFM-style id (plus GitHub's
-    # empty self-link) so the docs' `#anchor` cross-links resolve in-app the
-    # way they do on the MkDocs site (#765). Trusted path only: ids on agent
-    # output would be surface with no reader.
+    # empty self-link) so the docs' `#anchor` cross-links resolve (#765).
+    # `docs_test.exs` checks every one of them against these ids. Trusted path
+    # only: ids on agent output would be surface with no reader.
     render(text, &trusted_nodes/1, [header_id_prefix: ""], unsafe: true)
   end
 

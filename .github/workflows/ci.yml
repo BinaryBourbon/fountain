@@ -158,9 +158,9 @@ jobs:
       - name: Classify the diff
         id: filter
         # An ALLOWLIST, not an ignore list, and that direction is the whole
-        # safety argument: a path is docs-only if it is under docs/ or is
-        # mkdocs.yml itself, and anything else — including this workflow —
-        # falls through to the full suite. A new top-level directory nobody
+        # safety argument: a path is docs-only if it is under docs/, and
+        # anything else — including this workflow — falls through to the
+        # full suite. A new top-level directory nobody
         # thought about is therefore tested, not skipped. The failure mode is
         # "ran too much", never "ran too little".
         #
@@ -210,17 +210,21 @@ jobs:
           fi
 
           # Whether ANY docs path moved, independent of whether the diff is
-          # docs-ONLY. A mixed PR takes the `checks` path, which had no strict
-          # build, so `mkdocs build --strict` ran on neither branch of the gate
-          # and a broken link surfaced on main after the merge.
+          # docs-ONLY. A mixed PR takes the `checks` path, which carried no
+          # docs gate at all before, so prose errors surfaced on main after
+          # the merge.
+          #
+          # docs/nav.yml is under docs/ and so is covered by both greps here
+          # without a special case — it used to be mkdocs.yml at the repo root,
+          # which needed naming twice (#1006).
           docs_touched=false
-          if printf '%s\n' "${changed}" | grep -qE '^docs/|^mkdocs\.yml$'; then
+          if printf '%s\n' "${changed}" | grep -qE '^docs/'; then
             docs_touched=true
           fi
 
           # grep -qv succeeds when ANY line falls outside the allowlist, so
           # the negation is "every changed path is a docs path".
-          if printf '%s\n' "${changed}" | grep -qvE '^docs/|^mkdocs\.yml$'; then
+          if printf '%s\n' "${changed}" | grep -qvE '^docs/'; then
             echo "non-docs paths changed — running the full CI"
             decide false "${cli_docs}" "${docs_touched}"
           fi
@@ -809,21 +813,17 @@ jobs:
         working-directory: sdk/typescript
         run: npx --yes esbuild dist/index.js --bundle --platform=browser --format=esm --outfile=/dev/null
 
-      # The complement of the `docs` job. That job carries the strict build for
-      # a docs-ONLY diff; this carries it for a diff that touches docs AND
+      # The complement of the `docs` job. That job carries the prose gates for
+      # a docs-ONLY diff; this carries them for a diff that touches docs AND
       # code, which took neither branch before and so went unchecked until
       # docs.yml ran on main. The two jobs are mutually exclusive by the same
-      # docs_only gate, so neither the cache argument nor the "one set or the
-      # other, never both" claim in the `docs` job comment changes.
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        if: ${{ needs.changes.outputs.docs_touched == 'true' }}
-        with:
-          python-version: '3.12'
-
-      - name: Install MkDocs
-        if: ${{ needs.changes.outputs.docs_touched == 'true' }}
-        run: pip install -r docs/requirements.txt
-
+      # docs_only gate.
+      #
+      # The structural half of the gate — every page the nav names, every page
+      # on disk, every internal /docs link and every anchor — lives in
+      # docs_test.exs and runs in the Elixir suite, so it needs nothing here.
+      # That is what `mkdocs build --strict` used to carry, and the test is the
+      # stronger of the two: MkDocs never checked anchors (#1006).
       - name: Docs style
         if: ${{ needs.changes.outputs.docs_touched == 'true' }}
         run: python3 scripts/docs-style.py
@@ -848,10 +848,6 @@ jobs:
       - name: Docs Simplified Technical English
         if: ${{ needs.changes.outputs.docs_touched == 'true' }}
         run: vale lint docs
-
-      - name: Build the site strictly
-        if: ${{ needs.changes.outputs.docs_touched == 'true' }}
-        run: mkdocs build --strict
 
   compose-fresh-clone:
     name: Compose fresh-clone check
@@ -942,11 +938,11 @@ jobs:
 
   # What a docs-only PR runs instead of the three test partitions, the
   # coverage merge, static analysis and the two compose checks. It is not a
-  # weaker gate for docs, it is a stronger one: `mkdocs build --strict` never
-  # ran on a pull request at all before this job existed — docs.yml is
+  # weaker gate for docs, it is a stronger one: the docs gate did not run on a
+  # pull request at all before this job existed — the GitHub Pages workflow was
   # push-to-main only — so a broken relative link or a page missing from the
   # nav passed CI and failed after the merge, on main, where nobody was
-  # looking.
+  # looking. That workflow is gone (#1006); this job is the gate.
   #
   # The compile step is the load-bearing one. Fountain.Docs embeds every page
   # at compile time, so a snippet include pointing at a file that is not there
@@ -1064,9 +1060,11 @@ jobs:
       - name: Set up database
         run: mix ecto.create --quiet && mix ecto.migrate --quiet
 
-      # docs_test.exs: the mkdocs.yml nav parser, the snippet-to-Dockerfile
-      # COPY coverage, the MkDocs-dialect preprocessing and every internal
-      # /docs link. docs_controller_test.exs: that the pages actually serve.
+      # docs_test.exs: the docs/nav.yml parser, the snippet-to-Dockerfile COPY
+      # coverage, the dialect preprocessing, and every internal /docs link and
+      # anchor. Since #1006 it is the whole structural gate — there is no
+      # second renderer to build the pages strictly against.
+      # docs_controller_test.exs: that the pages actually serve.
       - name: Docs tests
         run: mix test apps/fountain/test/fountain/docs_test.exs apps/fountain/test/fountain_web/controllers/docs_controller_test.exs
 
@@ -1097,18 +1095,6 @@ jobs:
 
       - name: Docs Simplified Technical English
         run: vale lint docs
-
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: '3.12'
-
-      - name: Install MkDocs
-        run: pip install -r docs/requirements.txt
-
-      # The gate docs.yml only ever applied after the merge. A page missing
-      # from the nav, or a relative link that does not resolve, is an error.
-      - name: Build the site strictly
-        run: mkdocs build --strict
 
       - name: Set up Go
         if: ${{ needs.changes.outputs.cli_docs == 'true' }}

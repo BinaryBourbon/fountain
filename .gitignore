@@ -50,9 +50,6 @@ erl_crash.dump
 # Operator's local AoD manifest — contains MCP bearer tokens.
 aod.yml
 
-# Static docs build output (mkdocs)
-/_site/
-
 # Built escript outputs.
 /aod
 /apps/*/aod
@@ -61,8 +58,6 @@ aod.yml
 /burrito_out/
 
 
-# mkdocs build output
-site/
 priv/plts/
 
 # Python (integrations/hermes)

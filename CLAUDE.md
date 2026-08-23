@@ -39,7 +39,7 @@ fountain/                  umbrella root
     prod.exs               prod overrides
   .github/workflows/ci.yml CI pipeline
   decisions/               ADRs (Architecture Decision Records)
-  docs/                    source for the public MkDocs site
+  docs/                    the public manual, served at /docs (nav.yml is the nav)
 ```
 
 ## Architecture: the four primitives
@@ -346,11 +346,14 @@ See `.env.example` for the full list. Key ones for local dev:
 
 ## Docs (`docs/`)
 
-`docs/` is both the public MkDocs site (`.github/workflows/docs.yml`) and the
-in-app manual at `/docs` — the same markdown is embedded at compile time by
-`Fountain.Docs`. Three guardrails trip people who only edit markdown:
+`docs/` is the public manual, published at `/docs` and **nowhere else** — the
+markdown is embedded at compile time by `Fountain.Docs`. It used to be built as
+a MkDocs Material site and deployed to GitHub Pages as well; that copy was
+retired in #1006, so there is no `mkdocs.yml`, no `docs.yml` workflow and no
+`mkdocs build` step to keep green. A page reaches a reader through `/docs` or
+not at all. Guardrails that trip people who only edit markdown:
 
-- **The nav lives only in `mkdocs.yml`.** `Fountain.Docs` parses that file's
+- **The nav lives only in `docs/nav.yml`.** `Fountain.Docs` parses that file's
   `nav:` block at compile time, so adding, renaming or moving a page is a
   one-file change. It used to be mirrored in `@nav` in
   `apps/fountain/lib/fountain/docs.ex` with a drift test, which is exactly how
@@ -358,11 +361,18 @@ in-app manual at `/docs` — the same markdown is embedded at compile time by
   the docs. Keep to the two line shapes the parser reads — `  - Title: x.md`,
   and a `  - Section:` header with six-space-indented children — because a
   line it cannot read raises at compile time rather than being skipped.
-  **Sections are one level deep.** MkDocs nests as deep as you like, but the
-  in-app sidebar renders exactly a section and its pages, so a sub-section (or
-  a page indented past its siblings) raises too. Flatten it into a sibling
-  section — `Catalog` is what that looks like, with the three hub pages sitting
-  among their own entries — or make it headings on a hub page.
+  **Sections are one level deep.** The in-app sidebar renders exactly a section
+  and its pages, so a sub-section (or a page indented past its siblings) raises
+  too. Flatten it into a sibling section — `Catalog` is what that looks like,
+  with the three hub pages sitting among their own entries — or make it
+  headings on a hub page.
+- **A page not in the nav is published nowhere.** `docs_test.exs` walks
+  `docs/**/*.md` both ways: every page the nav names exists, and every page on
+  disk is named. There is no allowlist. If a markdown file should not be read
+  at `/docs`, it belongs somewhere else — `runbooks/`, `decisions/` and
+  `superpowers/` are all deliberately unpublished. MkDocs used to build an
+  unlisted page anyway, so four of them accumulated under `docs/superpowers/`
+  before this check existed.
 - **Anything `Fountain.Docs` reads at compile time must be `COPY`d into the
   Docker build stage.** The release image contains no `docs/`, only strings
   baked out of it, so a file outside the `COPY` list does not degrade to a
@@ -370,9 +380,12 @@ in-app manual at `/docs` — the same markdown is embedded at compile time by
   deploy silently never happens (#884). `docs_test.exs` asserts the module's
   `@external_resource` list against the Dockerfile, so adding a new
   compile-time read fails there first.
-- **`mkdocs build --strict`** is what CI runs; a broken relative link or a page
-  not in the nav is an error. Run it locally (`pip install -r
-  docs/requirements.txt`).
+- **Links and anchors are checked by the suite, not by a site build.** Every
+  internal `/docs` link must resolve to a page, and every `#anchor` to a
+  heading on that page. `mkdocs build --strict` used to carry the link half of
+  this on `main` only; `docs_test.exs` carries both, on every PR, and it is the
+  stricter of the two — MkDocs never checked anchors. Run
+  `mix test apps/fountain/test/fountain/docs_test.exs`.
 - **`python3 scripts/docs-style.py`** enforces the style sheet
   (`docs-redesign/06-voice-and-style.md`): no em dashes, no colon-introduced
   lists, no "simply"/"obviously"/"coming soon". It skips the backlog in
@@ -399,9 +412,10 @@ in-app manual at `/docs` — the same markdown is embedded at compile time by
   mentions one that does not exist. Add a CLI command → add it to `docs/cli.md`
   in a fenced `bash` block.
 
-The MkDocs dialect the in-app renderer understands is small (snippet includes,
-admonitions, relative `.md` links); check a page at `/docs` if it uses anything
-fancier.
+The dialect the renderer understands is small (snippet includes, admonitions,
+relative `.md` links) and is inherited from the MkDocs site these pages used to
+be; check a page at `/docs` if it uses anything fancier. Nothing else renders
+them, so `/docs` is the answer, not a second opinion.
 
 ## Decisions
 
