@@ -347,6 +347,17 @@ if config_env() != :test do
   config :fountain, :billing_enabled, System.get_env("BILLING_ENABLED", "false") != "false"
 end
 
+# Which page `/` serves. The hosted deployment shows the product pitch; every
+# other deployment shows a plain front door, for the reason a self-hosted
+# instance does not serve the upstream project's legal terms either. Off by
+# default, opted into by k8s/deployment.yaml.
+#
+# Skipped in :test — config/test.exs pins it on, so the suite exercises the
+# marketing page and flips it off per-test through the application env.
+if config_env() != :test do
+  config :fountain, :marketing_site, System.get_env("MARKETING_SITE", "false") != "false"
+end
+
 # The legal identity /terms and /privacy render (#517). Instance config, not
 # source: a self-hosted operator must never serve the upstream project's legal
 # terms, and the hosted instance's real entity does not belong in the repo.
