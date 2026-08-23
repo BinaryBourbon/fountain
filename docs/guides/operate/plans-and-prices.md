@@ -81,8 +81,11 @@ and charges another.
 Run the verifier against the same key the instance uses.
 
 ```bash
-bin/fountain_server eval 'Mix.Tasks.Fountain.VerifyPlans.run([])'
+bin/fountain_server rpc 'Mix.Tasks.Fountain.VerifyPlans.run([])'
 ```
+
+Use `rpc`, not `eval`. An `eval` starts a second copy of the code with no
+application running, so it reads none of the configuration you want to check.
 
 From a checkout, run `mix fountain.verify_plans` instead. The task reads each
 price from Stripe. It fails if the amount, the currency, the interval or the

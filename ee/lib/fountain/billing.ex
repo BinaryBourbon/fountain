@@ -543,7 +543,7 @@ defmodule Fountain.Billing do
           %{
             subscription_status: coerce_status(sub.status, "trial_sweep"),
             trial_ends_at: unix_field(Map.get(sub, :trial_end)),
-            current_period_end: unix_field(Map.get(sub, :current_period_end))
+            current_period_end: unix_field(period_end_unix(sub))
           },
           now,
           :synced
@@ -635,7 +635,7 @@ defmodule Fountain.Billing do
     attrs = %{
       subscription_status: coerce_status(sub.status, "admin_resync"),
       trial_ends_at: unix_field(Map.get(sub, :trial_end)),
-      current_period_end: unix_field(Map.get(sub, :current_period_end)),
+      current_period_end: unix_field(period_end_unix(sub)),
       cancel_at_period_end: Map.get(sub, :cancel_at_period_end) == true,
       subscription_synced_at: DateTime.utc_now() |> DateTime.truncate(:second)
     }
@@ -1425,7 +1425,7 @@ defmodule Fountain.Billing do
       type != "customer.subscription.deleted" and Map.get(sub, :cancel_at_period_end) == true
 
     current_period_end =
-      case Map.get(sub, :current_period_end) do
+      case period_end_unix(sub) do
         ts when is_integer(ts) -> DateTime.from_unix!(ts) |> DateTime.truncate(:second)
         _ -> nil
       end
@@ -1827,6 +1827,39 @@ defmodule Fountain.Billing do
   defp subscription_items(%{items: data}) when is_list(data), do: data
   defp subscription_items(%{"items" => %{"data" => data}}) when is_list(data), do: data
   defp subscription_items(_), do: []
+
+  @doc false
+  # When the current billing period ends, as a unix timestamp, or nil.
+  #
+  # Stripe moved `current_period_start`/`current_period_end` off the
+  # subscription and onto its items. On the API version this account is pinned
+  # to, the subscription-level field reads `nil` and the real value sits on
+  # `items.data[]` — so the obvious `Map.get(sub, :current_period_end)` had
+  # never once populated `users.current_period_end` (#1018), and the
+  # "access until <date>" a cancelling customer is shown was blank.
+  #
+  # Reads the item, falling back to the subscription-level field so an older
+  # API version — and every existing test fixture, which is built in the old
+  # shape and is exactly why this went unseen — still works.
+  #
+  # Any item will do: a plan item and a teammate-contact add-on ride the same
+  # subscription and therefore share its period.
+  def period_end_unix(sub) do
+    case Map.get(sub, :current_period_end) || Map.get(sub, "current_period_end") do
+      ts when is_integer(ts) ->
+        ts
+
+      _ ->
+        sub
+        |> subscription_items()
+        |> Enum.find_value(fn item ->
+          case Map.get(item, :current_period_end) || Map.get(item, "current_period_end") do
+            ts when is_integer(ts) -> ts
+            _ -> nil
+          end
+        end)
+    end
+  end
 
   defp item_price_id(%{price: %{id: id}}), do: id
   defp item_price_id(%{price: id}) when is_binary(id), do: id

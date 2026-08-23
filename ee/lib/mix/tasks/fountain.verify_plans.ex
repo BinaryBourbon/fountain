@@ -58,7 +58,7 @@ defmodule Mix.Tasks.Fountain.VerifyPlans do
     {:ok, _} = Application.ensure_all_started(:stripity_stripe)
 
     unless configured_key?() do
-      Mix.raise("STRIPE_SECRET_KEY is not set — there is nothing to verify against.")
+      abort("STRIPE_SECRET_KEY is not set — there is nothing to verify against.")
     end
 
     results = Enum.map(Plans.all(), &check_plan/1) ++ [check_contact_addon()]
@@ -67,13 +67,26 @@ defmodule Mix.Tasks.Fountain.VerifyPlans do
 
     failures = Enum.count(results, &match?({:fail, _, _}, &1))
 
-    Mix.shell().info("")
+    IO.puts("")
 
     if failures == 0 do
-      Mix.shell().info("All configured prices match the catalog.")
+      IO.puts("All configured prices match the catalog.")
     else
-      Mix.raise("#{failures} price(s) do not match the catalog — see above.")
+      abort("#{failures} price(s) do not match the catalog — see above.")
     end
+  end
+
+  # `IO.puts` rather than `Mix.shell()`, and a plain raise rather than
+  # `Mix.raise`: `Mix` is not in a prod release, so every `Mix.*` call at
+  # runtime blew up the moment this ran the way the operator guide says to run
+  # it — `bin/fountain_server rpc`. It got as far as talking to Stripe and then
+  # died printing the answer (#1018).
+  #
+  # `use Mix.Task` above is fine: that is compile-time, so the module is in the
+  # release and `rpc` can reach it.
+  defp abort(message) do
+    IO.warn(message, [])
+    raise message
   end
 
   defp check_plan(plan) do
@@ -143,11 +156,9 @@ defmodule Mix.Tasks.Fountain.VerifyPlans do
   defp unless_ok(true, _message), do: nil
   defp unless_ok(_false, message), do: message
 
-  defp report({:ok, label, detail}), do: Mix.shell().info("  ok    #{label}: #{detail}")
-  defp report({:skip, label, detail}), do: Mix.shell().info("  --    #{label}: #{detail}")
-
-  defp report({:fail, label, detail}),
-    do: Mix.shell().error("  FAIL  #{label}: #{detail}")
+  defp report({:ok, label, detail}), do: IO.puts("  ok    #{label}: #{detail}")
+  defp report({:skip, label, detail}), do: IO.puts("  --    #{label}: #{detail}")
+  defp report({:fail, label, detail}), do: IO.puts(:stderr, "  FAIL  #{label}: #{detail}")
 
   defp label(plan) do
     if plan.public?, do: plan.name, else: "#{plan.name} (closed)"
