@@ -98,6 +98,8 @@ defmodule FountainWeb.SchemaEnumGuardrailTest do
     {FountainWeb.Schemas.ManifestResource, "kind"} => {Manifest, :kinds},
     {FountainWeb.Schemas.OnboardingResponse, "data.state"} => {Accounts, :onboarding_states},
     {FountainWeb.Schemas.Sandbox, "status"} => {Sandbox, :statuses},
+    {FountainWeb.Schemas.SandboxRequest, "kind"} => {Fountain.SandboxQueue.Request, :kinds},
+    {FountainWeb.Schemas.SandboxRequest, "status"} => {Fountain.SandboxQueue.Request, :statuses},
     {FountainWeb.Schemas.Turn, "status"} => {Turn, :statuses},
     {FountainWeb.Schemas.Teammate, "presence.state"} =>
       {FountainWeb.TeamPresenter, :presence_states},

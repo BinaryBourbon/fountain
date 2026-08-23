@@ -322,11 +322,54 @@ defmodule FountainWeb.Schemas do
             "With channel_id: skip the resume and open a new conversation (201), which then " <>
               "becomes the channel's binding. Sent by a chat harness relaying its owner's " <>
               "rotate command. Ignored without channel_id."
+        },
+        queue: %Schema{
+          type: :boolean,
+          nullable: true,
+          description:
+            "Opt in to the bounded sandbox queue (ADR 0030). When the start hits the " <>
+              "concurrency cap, the request is queued for a free slot and answered 202 " <>
+              "with a sandbox request instead of 429. The queue is bounded: at its depth " <>
+              "or wait limit the request gets the usual 429/expiry. Requests carrying " <>
+              "images are never queued. Without this flag the cap refuses as before."
         }
       },
       required: [:agent_id]
     })
   end
+
+  defmodule SandboxRequest do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "SandboxRequest",
+      description:
+        "A queued sandbox request (ADR 0030): work waiting for a free concurrency slot. " <>
+          "`position` is 1-based among the caller's queued requests and only present " <>
+          "while status is queued.",
+      type: :object,
+      properties: %{
+        id: %Schema{type: :string, format: :uuid},
+        agent_id: %Schema{type: :string, format: :uuid},
+        kind: %Schema{type: :string, enum: ["start", "schedule_run"]},
+        status: %Schema{
+          type: :string,
+          enum: ["queued", "started", "cancelled", "expired", "failed"]
+        },
+        source: %Schema{type: :string, nullable: true},
+        conversation_id: %Schema{type: :string, format: :uuid, nullable: true},
+        error: %Schema{type: :string, nullable: true},
+        position: %Schema{type: :integer, nullable: true},
+        inserted_at: %Schema{type: :string, format: :"date-time"}
+      },
+      required: [:id, :agent_id, :kind, :status]
+    })
+  end
+
+  item_response(SandboxRequestResponse, of: SandboxRequest)
+
+  list_response(SandboxRequestListResponse, of: SandboxRequest)
 
   defmodule PromptRequest do
     @moduledoc false

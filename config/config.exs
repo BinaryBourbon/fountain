@@ -36,7 +36,12 @@ config :fountain, Oban,
        # Every minute: the tick for user-defined team schedules. Cheap — one
        # indexed query, usually empty — and a minute is the cron grain the
        # schedules are written in.
-       {"* * * * *", Fountain.Workers.TeamScheduler}
+       {"* * * * *", Fountain.Workers.TeamScheduler},
+       # Every 5 minutes: the sandbox-queue backstop (#1033). The queue
+       # drains event-driven from update_sandbox/2; this sweep only expires
+       # overdue requests and recovers from a lost poke, so a stall costs
+       # minutes, never until something unrelated moves.
+       {"*/5 * * * *", Fountain.Workers.SandboxQueueDrainer}
      ]}
   ]
 

@@ -221,8 +221,22 @@ defmodule Fountain.Conversations do
 
     with {:ok, updated} <- Repo.update(changeset) do
       record_sandbox_usage(was, updated)
+      maybe_poke_sandbox_queue(was, updated)
       {:ok, updated}
     end
+  end
+
+  # A transition out of the statuses that count toward the concurrency cap
+  # frees a slot; the queue drains on that event, not on a timer (#1033).
+  # Metering at this choke point (see the doc above) is the same argument:
+  # terminate, fail, suspend and the reaper's stuck-row release all pass
+  # through here, so no slot-freeing site can forget to poke.
+  defp maybe_poke_sandbox_queue(was, %Sandbox{} = updated) do
+    if was in ~w(pending starting ready) and updated.status in ~w(terminated failed suspended) do
+      Fountain.Workers.SandboxQueueDrainer.poke(updated.user_id)
+    end
+
+    :ok
   end
 
   @billable_terminal ~w(terminated failed)

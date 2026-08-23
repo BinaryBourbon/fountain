@@ -70,8 +70,12 @@ current state.
 
 The pricing page states this to a visitor, because a plan that lists 200 hours
 and then says nothing reads as a hard stop. The two limits behave differently.
-Fountain refuses the next start for a tenant at the concurrency cap. A tenant
-over the hours continues, and pays no more.
+Fountain refuses the next start for a tenant at the concurrency cap. A caller
+can set `queue: true` on the create call instead. The start then waits in a
+bounded queue until a slot frees. The queue holds at most 10 requests for one
+tenant, and a request waits at most one hour. Past either bound, Fountain
+refuses the start as before. A tenant over the hours continues, and pays no
+more.
 
 Four surfaces show the number. The pricing page shows it to a visitor. The
 billing page shows it to the tenant. The API reports it at
@@ -109,7 +113,7 @@ serves traffic.
 
 The cap applies when a sandbox starts. A tenant who moves to a smaller plan
 keeps every sandbox that already runs. Fountain refuses the next one until the
-count falls below the new cap.
+count falls below the new cap, unless the caller opted in to the queue.
 
 This is deliberate. A downgrade must not destroy an agent mid-task. Tell a
 tenant who downgrades that the new cap applies to their next conversation.

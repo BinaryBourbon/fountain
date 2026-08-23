@@ -296,6 +296,11 @@ defmodule FountainWeb.ConversationController do
       created: {"Conversation", "application/json", Schemas.ConversationResponse},
       ok:
         {"Conversation (resumed by channel_id)", "application/json", Schemas.ConversationResponse},
+      accepted:
+        {"Queued for a free sandbox slot (queue: true at the concurrency cap, ADR 0030)",
+         "application/json", Schemas.SandboxRequestResponse},
+      too_many_requests:
+        {"Concurrency cap reached (and not queued)", "application/json", Schemas.Error},
       not_found: {"Agent not found", "application/json", Schemas.Error},
       unprocessable_entity: {"Validation error", "application/json", Schemas.ChangesetError},
       payment_required:
@@ -347,8 +352,45 @@ defmodule FountainWeb.ConversationController do
         |> put_status(402)
         |> json(%{error: "subscription_required", upgrade_url: "/account/billing"})
 
+      {:error, {:sandbox_quota_exceeded, _} = reason} ->
+        maybe_enqueue(conn, params, user, reason)
+
       {:error, _} = err ->
         err
+    end
+  end
+
+  # The cap refusal is the contract every existing client has (429); queueing
+  # is the explicit opt-in behind `queue: true` (#1033, ADR 0030). Requests
+  # carrying images stay refusals: the queue stores JSON-safe attrs and
+  # holding image bytes for up to an hour serves nobody.
+  defp maybe_enqueue(conn, params, user, reason) do
+    if params["queue"] == true and params["images"] in [nil, []] do
+      enqueue_params = %{
+        user_id: user.id,
+        agent_id: params["agent_id"],
+        kind: "start",
+        source: params["source"],
+        attrs: Map.drop(params, ["queue", "images", "user_id", "agent_id"])
+      }
+
+      case Fountain.SandboxQueue.enqueue(enqueue_params, Audited.attribution(conn)) do
+        {:ok, request} ->
+          conn
+          |> put_status(:accepted)
+          |> put_view(FountainWeb.SandboxQueueJSON)
+          |> render(:show, request: request, position: Fountain.SandboxQueue.position(request))
+
+        # The queue's own depth bound: the caller gets the refusal it opted
+        # out of, exactly as if the queue did not exist.
+        {:error, :queue_full} ->
+          {:error, reason}
+
+        {:error, _} = err ->
+          err
+      end
+    else
+      {:error, reason}
     end
   end
 

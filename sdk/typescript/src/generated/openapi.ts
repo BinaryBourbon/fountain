@@ -78,6 +78,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/sandbox-queue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List queued sandbox requests
+         * @description The caller's requests currently waiting for a free concurrency slot (ADR 0030), oldest first — list order is queue order, and `position` says so explicitly. Terminal requests (started, cancelled, expired, failed) are not listed.
+         */
+        get: operations["FountainWeb.SandboxQueueController.index"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/team/schedules": {
         parameters: {
             query?: never;
@@ -113,6 +133,23 @@ export interface paths {
         put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sandbox-queue/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Cancel a queued sandbox request */
+        delete: operations["FountainWeb.SandboxQueueController.delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -2015,6 +2052,8 @@ export interface components {
             } | null;
             /** @description Optional first turn prompt. */
             prompt?: string;
+            /** @description Opt in to the bounded sandbox queue (ADR 0030). When the start hits the concurrency cap, the request is queued for a free slot and answered 202 with a sandbox request instead of 429. The queue is bounded: at its depth or wait limit the request gets the usual 429/expiry. Requests carrying images are never queued. Without this flag the cap refuses as before. */
+            queue?: boolean | null;
             /** @description Override the auto-generated sprite name. */
             sprite_name?: string;
             /** @description Optional display title. The team page names a teammate with it. */
@@ -3163,6 +3202,10 @@ export interface components {
         AdminAuditListResponse: {
             data: components["schemas"]["AuditEvent"][];
         };
+        /** SandboxRequestResponse */
+        SandboxRequestResponse: {
+            data: components["schemas"]["SandboxRequest"];
+        };
         /** TeamScheduleResponse */
         TeamScheduleResponse: {
             data: components["schemas"]["TeamSchedule"];
@@ -3460,6 +3503,27 @@ export interface components {
             data: components["schemas"]["TeamSchedule"][];
         };
         /**
+         * SandboxRequest
+         * @description A queued sandbox request (ADR 0030): work waiting for a free concurrency slot. `position` is 1-based among the caller's queued requests and only present while status is queued.
+         */
+        SandboxRequest: {
+            /** Format: uuid */
+            agent_id: string;
+            /** Format: uuid */
+            conversation_id?: string | null;
+            error?: string | null;
+            /** Format: uuid */
+            id: string;
+            /** Format: date-time */
+            inserted_at?: string;
+            /** @enum {string} */
+            kind: "start" | "schedule_run";
+            position?: number | null;
+            source?: string | null;
+            /** @enum {string} */
+            status: "queued" | "started" | "cancelled" | "expired" | "failed";
+        };
+        /**
          * AdminEventListResponse
          * @description The privilege trail: who did what to whom.
          */
@@ -3570,6 +3634,10 @@ export interface components {
             base: string;
             /** @description One of `GET /api/catalog` `avatar.moods`. */
             mood: string;
+        };
+        /** SandboxRequestListResponse */
+        SandboxRequestListResponse: {
+            data: components["schemas"]["SandboxRequest"][];
         };
         /** MessageResponse */
         MessageResponse: {
@@ -3846,6 +3914,26 @@ export interface operations {
             };
         };
     };
+    "FountainWeb.SandboxQueueController.index": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Sandbox requests */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SandboxRequestListResponse"];
+                };
+            };
+        };
+    };
     "FountainWeb.TeamScheduleController.index_all": {
         parameters: {
             query?: never;
@@ -3882,6 +3970,35 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HealthResponse"];
+                };
+            };
+        };
+    };
+    "FountainWeb.SandboxQueueController.delete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Cancelled */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not found or no longer queued */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -5593,6 +5710,15 @@ export interface operations {
                     "application/json": components["schemas"]["ConversationResponse"];
                 };
             };
+            /** @description Queued for a free sandbox slot (queue: true at the concurrency cap, ADR 0030) */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SandboxRequestResponse"];
+                };
+            };
             /** @description Subscription required */
             402: {
                 headers: {
@@ -5621,6 +5747,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ChangesetError"];
+                };
+            };
+            /** @description Concurrency cap reached (and not queued) */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };

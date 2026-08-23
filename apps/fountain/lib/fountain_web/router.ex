@@ -410,6 +410,12 @@ defmodule FountainWeb.Router do
     end
 
     resources "/agents", AgentController, except: [:new, :edit]
+
+    # The bounded sandbox queue (ADR 0030): list what is waiting for a free
+    # concurrency slot, withdraw a request. Enqueueing happens on
+    # POST /conversations with queue: true, not here.
+    get "/sandbox-queue", SandboxQueueController, :index
+    delete "/sandbox-queue/:id", SandboxQueueController, :delete
     # The form vocabulary and the avatar generator, for clients that build
     # the agent/environment forms elsewhere (#815).
     get "/catalog", CatalogController, :show

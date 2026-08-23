@@ -73,20 +73,22 @@ defmodule FountainWeb.MarketingPricingTest do
     assert body =~ "Going over the hours does not stop anything"
     assert body =~ "nothing extra is charged"
     assert body =~ "Running at the concurrency cap does"
-    assert body =~ "is refused rather than queued"
+    assert body =~ "refused by default"
   end
 
-  # #1026: the page promised a queue for a whole release, pinned by a test that
-  # asserted the sentence was present. There is no queue —
-  # `Quotas.check_sandbox_quota/2` refuses the next start, and
-  # `FallbackController` returns 429. A buyer picks a tier on this sentence, so
-  # the queue wording is asserted absent, not merely replaced.
-  test "the pricing table does not promise a queue behind the cap", %{conn: conn} do
+  # #1026 → #1027 → #1033: the page promised a queue for a whole release while
+  # there was none, then said "refused rather than queued" while that was
+  # true. ADR 0030 built the queue, bounded and opt-in, so the sentence goes
+  # back the other way — but a buyer still picks a tier on it, so what is
+  # asserted is the *bound*: every mention of queueing on this page must say
+  # it is bounded, and the old unbounded promise stays absent.
+  test "the pricing table promises only the bounded queue ADR 0030 built", %{conn: conn} do
     price_all()
 
     body = conn |> get(~p"/") |> html_response(200)
 
-    refute body =~ "waits for a free slot"
+    assert body =~ "bounded queue"
+    assert body =~ "the queue delays the cap, it never raises it"
     refute body =~ "Queue as much work"
   end
 

@@ -179,8 +179,14 @@ defmodule Fountain.Team.Schedules do
 
     run_attrs =
       case result do
-        {:ok, conv} -> %{last_run_at: now, last_conversation_id: conv.id, last_error: nil}
-        {:error, reason} -> %{last_run_at: now, last_error: describe_error(reason)}
+        {:ok, conv} ->
+          %{last_run_at: now, last_conversation_id: conv.id, last_error: nil}
+
+        {:error, {:sandbox_quota_exceeded, _} = reason} ->
+          %{last_run_at: now, last_error: maybe_queue_run(schedule, reason, opts)}
+
+        {:error, reason} ->
+          %{last_run_at: now, last_error: describe_error(reason)}
       end
 
     {:ok, _} = schedule |> Schedule.run_changeset(run_attrs) |> Repo.update()
@@ -283,6 +289,28 @@ defmodule Fountain.Team.Schedules do
   end
 
   # What a run's failure reads as on the row and in the UI. Never the prompt.
+  # A cron firing into a refusal is lost work nothing retries — the case
+  # that motivated the sandbox queue (#1033) — so scheduled runs opt in
+  # unconditionally. The drainer re-fires run_schedule when a slot frees;
+  # enqueue dedupes per schedule, so an hourly cron stacking on a full cap
+  # holds one queued run, not one per tick. Past the queue's own bound the
+  # run fails exactly as it did before the queue existed.
+  defp maybe_queue_run(%Schedule{} = schedule, reason, opts) do
+    case Fountain.SandboxQueue.enqueue(
+           %{
+             user_id: schedule.user_id,
+             agent_id: schedule.agent_id,
+             kind: "schedule_run",
+             schedule_id: schedule.id,
+             source: "schedule"
+           },
+           opts
+         ) do
+      {:ok, _request} -> "waiting for a free sandbox slot"
+      {:error, _} -> describe_error(reason)
+    end
+  end
+
   def describe_error(:busy), do: "teammate was busy"
   def describe_error(:provisioning), do: "teammate's computer was still starting"
   def describe_error(:not_found), do: "agent is not on the team"

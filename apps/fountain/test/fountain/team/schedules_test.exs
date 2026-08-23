@@ -329,4 +329,28 @@ defmodule Fountain.Team.SchedulesTest do
     {:ok, conv} = Schedules.run_schedule(s)
     assert Conversations.get_conversation(conv.id, user.id)
   end
+
+  describe "run_schedule/2 — at the sandbox cap (#1033, ADR 0030)" do
+    test "queues the run instead of losing it, and only once per schedule" do
+      user = insert_verified_user()
+      ada = insert_agent(user_id: user.id)
+      s = create!(user, ada, %{"one_off" => true})
+
+      limit = Fountain.Quotas.default_limit()
+      for _ <- 1..limit, do: insert_sandbox(user_id: user.id, status: "ready")
+
+      assert {:error, {:sandbox_quota_exceeded, _}} = Schedules.run_schedule(s)
+
+      assert Schedules.get_schedule(s.id, user.id).last_error ==
+               "waiting for a free sandbox slot"
+
+      assert [request] = Fountain.SandboxQueue.list_queued(user.id)
+      assert request.kind == "schedule_run"
+      assert request.schedule_id == s.id
+
+      # The next cron tick on a still-full cap holds one queued run, not two.
+      assert {:error, {:sandbox_quota_exceeded, _}} = Schedules.run_schedule(s)
+      assert [_one] = Fountain.SandboxQueue.list_queued(user.id)
+    end
+  end
 end
