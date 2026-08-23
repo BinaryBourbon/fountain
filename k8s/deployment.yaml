@@ -120,6 +120,10 @@ spec:
             # hosted instance is the deployment that opts in.
             - name: BILLING_ENABLED
               value: "true"
+            # `/` serves a plain front door unless a deployment says it is the
+            # project's own site. This is the one that is.
+            - name: MARKETING_SITE
+              value: "true"
             # TODO(#500): before billing launch, set LEGAL_ENTITY,
             # LEGAL_CONTACT_EMAIL, LEGAL_JURISDICTION, LEGAL_EFFECTIVE_DATE
             # (#517) — until then /terms and /privacy render loud

@@ -28,6 +28,7 @@
             Sign in
           </a>
           <a
+            :if={Fountain.Accounts.registration_enabled?()}
             href={~p"/auth/register"}
             class="text-sm font-medium bg-[var(--color-brand)] text-white px-4 py-1.5 rounded-md hover:bg-[var(--color-brand-hover)] transition-colors"
           >
@@ -46,9 +47,12 @@
   <%!-- Footer --%>
   <footer class="border-t border-[var(--color-border)] bg-[var(--color-bg-1)]">
     <div class="max-w-5xl mx-auto px-6 py-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-[var(--color-text-muted)]">
-      <span>
+      <%!-- The project's copyright line and its one-line pitch belong on the
+        project's own site. Somebody else's deployment gets an attribution. --%>
+      <span :if={Fountain.Marketing.site?()}>
         © 2026 Fountain. Managed agent infrastructure for teams who'd rather build than configure.
       </span>
+      <span :if={!Fountain.Marketing.site?()}>Powered by Fountain.</span>
       <div class="flex items-center gap-4">
         <a href="/docs" class="hover:text-[var(--color-text-secondary)] transition-colors">
           Docs
@@ -79,6 +83,7 @@
             Sign in
           </a>
           <a
+            :if={Fountain.Accounts.registration_enabled?()}
             href={~p"/auth/register"}
             class="hover:text-[var(--color-text-secondary)] transition-colors"
           >

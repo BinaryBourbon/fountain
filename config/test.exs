@@ -30,6 +30,11 @@ config :ueberauth, Ueberauth.Strategy.Github.OAuth,
 # toggles it per-test via the application env.
 config :fountain, :billing_enabled, true
 
+# `/` serves the marketing page in :test (MARKETING_SITE is not read in :test —
+# see config/runtime.exs), so the existing homepage tests keep covering the
+# pitch. The plain front door is covered by flipping this off per-test.
+config :fountain, :marketing_site, true
+
 # Legal identity pinned (LEGAL_* env vars are not read in :test — see
 # config/runtime.exs) so the developer's shell can't change suite behavior;
 # unpublished-page tests set :legal to nil through the application env.

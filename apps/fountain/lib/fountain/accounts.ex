@@ -64,7 +64,7 @@ defmodule Fountain.Accounts do
   @spec registration_allowed?(String.t() | nil) :: :ok | {:error, atom()}
   def registration_allowed?(email) do
     cond do
-      not Application.get_env(:fountain, :registration_enabled, true) ->
+      not registration_enabled?() ->
         {:error, :registration_closed}
 
       not domain_allowed?(email) ->
@@ -74,6 +74,17 @@ defmodule Fountain.Accounts do
         :ok
     end
   end
+
+  @doc """
+  Whether registration is open at all, with no email in hand.
+
+  For a front door deciding whether to offer a "create an account" link: a link
+  that leads to a refusal is worse than no link. It is not a control —
+  `registration_allowed?/1` stays the thing that refuses the submit, on all
+  three paths.
+  """
+  @spec registration_enabled?() :: boolean()
+  def registration_enabled?, do: Application.get_env(:fountain, :registration_enabled, true)
 
   defp domain_allowed?(email) do
     case Application.get_env(:fountain, :registration_allowed_email_domains, []) do

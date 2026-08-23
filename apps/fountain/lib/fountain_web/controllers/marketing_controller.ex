@@ -1,9 +1,18 @@
 defmodule FountainWeb.MarketingController do
-  @moduledoc false
+  @moduledoc """
+  The public pages: `/`, `/terms` and `/privacy`.
+
+  None of the three is the same page on every deployment. `/` serves the
+  product pitch on the marketing site and a plain front door everywhere else
+  (`Fountain.Marketing`); the legal pages render the operator's identity, or
+  nothing at all (`Fountain.Legal`). A deployment is not the Fountain project,
+  and these pages are the three that would claim otherwise.
+  """
   use FountainWeb, :controller
 
   def home(conn, _params) do
-    render(conn, :home, layout: {FountainWeb.Layouts, :marketing})
+    page = if Fountain.Marketing.site?(), do: :home, else: :instance
+    render(conn, page, layout: {FountainWeb.Layouts, :marketing})
   end
 
   def terms(conn, _params) do

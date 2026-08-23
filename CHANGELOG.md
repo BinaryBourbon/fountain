@@ -16,6 +16,27 @@ upgrade, is in
 
 ## [Unreleased]
 
+### Changed
+
+- **`/` is no longer the same page on every deployment.** The homepage sold a
+  product: a hero, a 14-day trial, a monthly price, and a footer calling
+  Fountain "managed agent infrastructure". Every self-hosted instance served
+  it, to an audience of the operator and their own team, none of whom are
+  buying a trial of the thing they already run. `/` now serves a plain front
+  door — the instance, a way in, and a link to `/docs` — unless the deployment
+  sets `MARKETING_SITE=true`. This is the reasoning `LEGAL_ENTITY` already
+  applies one page over (#517): an instance must not serve the upstream
+  project's terms, and it has no more business serving the upstream project's
+  sales copy. The flag is off by default, so a self-host is right without
+  reading this entry. It is deliberately not `BILLING_ENABLED`, which an
+  operator running Fountain commercially inside their own company may well
+  turn on.
+- **A closed instance stops advertising registration.** With
+  `REGISTRATION_ENABLED=false` the public pages still linked "Get started" and
+  "Register", and `Accounts.registration_allowed?/1` then refused the submit.
+  The nav, the footer and the new front door now hide the link. The context
+  check is unchanged and is still the control.
+
 ### Removed
 
 - **The GitHub Pages documentation site.** `docs/` had two publishers: the

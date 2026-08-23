@@ -120,6 +120,19 @@ at a dead end, with no error to see. Read [Email](guides/operate/email.md).
 
 <!-- vale STE.IngForms = YES -->
 
+## Public pages
+
+The `/` page is not the same page on every deployment. The Fountain project's
+own site shows the product page, with the price and the free trial. Every other
+deployment shows a plain front door: the name, a way in, and a link to this
+manual.
+
+Your deployment is not the Fountain project, so the front door is the default.
+
+| Variable | Default | Required | Effect |
+|---|---|---|---|
+| `MARKETING_SITE` | `false` | — | A `true` serves the Fountain project's product page at `/`. It also puts the project's copyright line in the footer. Turn it on only if you operate the project's own site. |
+
 ## Legal pages
 
 These four variables carry the identity that `/terms` and `/privacy` render.

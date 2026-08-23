@@ -48,7 +48,11 @@ config :fountain, Oban,
 config :fountain,
   billing_enabled: true,
   registration_enabled: true,
-  registration_allowed_email_domains: []
+  registration_allowed_email_domains: [],
+  # Which page `/` serves. False everywhere but the hosted deployment, which
+  # opts in with MARKETING_SITE (runtime.exs); config/test.exs pins it true so
+  # the suite covers the pitch and flips it off per-test. See Fountain.Marketing.
+  marketing_site: false
 
 # Sandbox lifetime bounds. Crossing the idle bound SUSPENDS the sandbox — the
 # sprite stays (scaled to zero) and the next prompt resumes the agent with its
