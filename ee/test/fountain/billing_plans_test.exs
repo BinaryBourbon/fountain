@@ -368,6 +368,59 @@ defmodule Fountain.BillingPlansTest do
       assert {:ok, :not_billed} = Billing.sync_contact_addon(user.id)
     end
 
+    # The narrow lever: pays for the tier, holds a number Fountain eats.
+    # `comped` on the account is the broad one and short-circuits entirely.
+    test "the comped allowance comes off the billed quantity", %{user: user, agent: agent} do
+      insert_contact(user, agent)
+      insert_contact(user, insert_agent(user_id: user.id))
+      insert_contact(user, insert_agent(user_id: user.id))
+      {:ok, user} = Fountain.Accounts.update_comped_contacts(user, 1)
+
+      stub(Stripe.Subscription, :retrieve, fn _ ->
+        {:ok,
+         %{
+           id: "sub_addon",
+           items: %{data: [%{id: "si_addon", price: %{id: "price_contact"}, quantity: 3}]}
+         }}
+      end)
+
+      expect(Stripe.SubscriptionItem, :update, fn "si_addon", params ->
+        assert params.quantity == 2
+        {:ok, %{id: "si_addon"}}
+      end)
+
+      assert {:ok, 2} = Billing.sync_contact_addon(user.id)
+    end
+
+    # Jake's case: pays for the plan, one free number. Stripe must be billed
+    # for nothing, and the item deleted rather than set to a zero quantity a
+    # licensed price rejects.
+    test "an allowance covering every contact bills nothing", %{user: user, agent: agent} do
+      insert_contact(user, agent)
+      {:ok, user} = Fountain.Accounts.update_comped_contacts(user, 1)
+
+      stub(Stripe.Subscription, :retrieve, fn _ ->
+        {:ok,
+         %{
+           id: "sub_addon",
+           items: %{data: [%{id: "si_addon", price: %{id: "price_contact"}, quantity: 1}]}
+         }}
+      end)
+
+      expect(Stripe.SubscriptionItem, :delete, fn "si_addon", _ -> {:ok, %{id: "si_addon"}} end)
+
+      assert {:ok, 0} = Billing.sync_contact_addon(user.id)
+    end
+
+    # An allowance bigger than the contact count must floor at zero, not hand
+    # Stripe a negative quantity.
+    test "an allowance larger than the count floors at zero", %{user: user, agent: agent} do
+      insert_contact(user, agent)
+      {:ok, user} = Fountain.Accounts.update_comped_contacts(user, 10)
+
+      assert Billing.billable_contacts(Repo.get!(User, user.id)) == 0
+    end
+
     test "bills nothing for a comped account or one with no subscription", %{user: user} do
       {:ok, comped} =
         user |> Ecto.Changeset.change(subscription_status: "comped") |> Repo.update()
@@ -379,7 +432,80 @@ defmodule Fountain.BillingPlansTest do
     end
   end
 
+  # The add-on item lives on the subscription, so a *new* subscription starts
+  # without it — and the quantity is otherwise only pushed on provision and
+  # release. Left unfixed, an account that cancelled (or was comped and then
+  # un-comped) and came back through Checkout kept its numbers and stopped
+  # being billed for them until it happened to add or remove one.
+  describe "a resubscription re-attaches the contact add-on" do
+    setup do
+      user = customer("cus_resub")
+      agent = insert_agent(user_id: user.id)
+      {:ok, user: user, agent: agent}
+    end
+
+    test "the new subscription gets an item at the contact count", %{user: user, agent: agent} do
+      insert_contact(user, agent)
+      test_pid = self()
+
+      stub(Stripe.Subscription, :retrieve, fn "sub_new" ->
+        {:ok, %{id: "sub_new", items: %{data: [%{id: "si_plan", price: %{id: "price_solo"}}]}}}
+      end)
+
+      expect(Stripe.SubscriptionItem, :create, fn params ->
+        send(test_pid, {:addon_created, params.subscription, params.quantity})
+        {:ok, %{id: "si_addon"}}
+      end)
+
+      assert {:ok, _} = checkout_completed(user, "cus_resub", "sub_new")
+      assert_received {:addon_created, "sub_new", 1}
+      assert Repo.get!(User, user.id).stripe_subscription_id == "sub_new"
+    end
+
+    test "a tenant with no contacts gets no item and no Stripe call", %{user: user} do
+      reject(&Stripe.Subscription.retrieve/1)
+      reject(&Stripe.SubscriptionItem.create/1)
+
+      assert {:ok, _} = checkout_completed(user, "cus_resub", "sub_new2")
+      assert Repo.get!(User, user.id).stripe_subscription_id == "sub_new2"
+    end
+
+    # The adoption is the event's job. A Stripe hiccup re-attaching the add-on
+    # must not make the webhook fail and have Stripe redeliver an adoption
+    # that already succeeded.
+    test "a failure to re-attach does not fail the adoption", %{user: user, agent: agent} do
+      insert_contact(user, agent)
+
+      stub(Stripe.Subscription, :retrieve, fn _ ->
+        {:error,
+         %Stripe.Error{
+           source: :network,
+           code: :api_connection_error,
+           message: "down"
+         }}
+      end)
+
+      assert {:ok, _} = checkout_completed(user, "cus_resub", "sub_new3")
+      assert Repo.get!(User, user.id).stripe_subscription_id == "sub_new3"
+    end
+  end
+
   ## helpers
+
+  defp checkout_completed(_user, customer_id, subscription_id) do
+    Billing.sync_subscription(%Stripe.Event{
+      id: "evt_#{System.unique_integer([:positive])}",
+      type: "checkout.session.completed",
+      created: DateTime.utc_now() |> DateTime.to_unix(),
+      data: %{
+        object: %{
+          customer: customer_id,
+          subscription: subscription_id,
+          client_reference_id: nil
+        }
+      }
+    })
+  end
 
   defp customer(id) do
     user = insert_verified_user()

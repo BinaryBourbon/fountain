@@ -3358,6 +3358,8 @@ export interface components {
         AdminUser: {
             active_sandboxes?: number;
             cancel_at_period_end?: boolean | null;
+            /** @description Teammate contacts this account is not charged for. Distinct from a `comped` subscription_status, which makes everything free. */
+            comped_contacts?: number;
             /** Format: date-time */
             current_period_end?: string | null;
             email: string;

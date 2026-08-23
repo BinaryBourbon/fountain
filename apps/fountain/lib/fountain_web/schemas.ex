@@ -1372,6 +1372,12 @@ defmodule FountainWeb.Schemas do
           nullable: true,
           description: "Admin override of the plan's cap. Null means the plan's cap applies."
         },
+        comped_contacts: %Schema{
+          type: :integer,
+          description:
+            "Teammate contacts this account is not charged for. Distinct from a " <>
+              "`comped` subscription_status, which makes everything free."
+        },
         active_sandboxes: %Schema{type: :integer},
         onboarding_completed_at: %Schema{type: :string, format: :"date-time", nullable: true},
         last_activity_at: %Schema{type: :string, format: :"date-time", nullable: true},

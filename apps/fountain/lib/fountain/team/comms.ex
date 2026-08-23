@@ -72,6 +72,20 @@ defmodule Fountain.Team.Comms do
     Repo.aggregate(from(c in Contact, where: c.user_id == ^user_id), :count, :id)
   end
 
+  @doc """
+  Contact counts for every tenant with at least one, in a single query — for
+  the admin view, which shows the number on every row and must not run a count
+  per row (the same contract as `Fountain.Quotas.active_sandbox_counts/0`).
+
+  Returns `%{user_id => count}`; tenants with no contacts are absent.
+  """
+  @spec contact_counts() :: %{optional(binary()) => non_neg_integer()}
+  def contact_counts do
+    from(c in Contact, group_by: c.user_id, select: {c.user_id, count(c.id)})
+    |> Repo.all()
+    |> Map.new()
+  end
+
   @doc "Contacts for many teammates at once, `%{agent_id => %Contact{}}`."
   def contacts_by_agent(user_id, agent_ids) when is_binary(user_id) and is_list(agent_ids) do
     from(c in Contact, where: c.user_id == ^user_id and c.agent_id in ^agent_ids)

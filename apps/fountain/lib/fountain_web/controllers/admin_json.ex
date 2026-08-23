@@ -54,6 +54,9 @@ defmodule FountainWeb.AdminJSON do
       # null when the cap is simply the plan's.
       max_concurrent_sandboxes: Fountain.Quotas.sandbox_limit_for(u),
       sandbox_limit_override: u.sandbox_limit_override,
+      # Teammate contacts this account is not charged for. Distinct from a
+      # `comped` subscription_status, which makes everything free.
+      comped_contacts: u.comped_contacts,
       active_sandboxes: Map.get(sandbox_counts, u.id, 0),
       onboarding_completed_at: u.onboarding_completed_at,
       last_activity_at: Map.get(u, :last_activity_at),

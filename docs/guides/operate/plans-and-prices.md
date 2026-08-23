@@ -124,6 +124,23 @@ Set `STRIPE_CONTACT_PRICE_CENTS` to the same amount, for display.
     item appears on their next invoice once you set this variable. Tell them
     first.
 
+## Give someone free numbers
+
+Two levers, and they answer different questions.
+
+To make an account pay **nothing at all**, comp the account. Open `/admin` and
+select `comp` on the row. Fountain cancels the Stripe subscriptions and stops
+all charges, contacts included. The teammate keeps the inbox and the number.
+
+To let an account **pay for its plan and still hold a free number**, set the
+comped contact count. Open `/admin`, put a number in the field beside the plan,
+then select `free`. Fountain bills for the contacts above that count, and for
+none if the count covers them all.
+
+The second lever is the one for a staff account, a partner, or a customer you
+gave a number to as an apology. The first makes their plan free as well, which
+is more than you usually want.
+
 ## Reverse the change
 
 Unset the three plan variables. Every account keeps the plan slug it holds,

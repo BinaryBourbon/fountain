@@ -162,6 +162,38 @@ Zero quantity deletes the item rather than setting it to zero: Stripe rejects a
 zero quantity on a licensed price, and a lingering item puts "1 × contact" on
 the invoice of a tenant who released their last number.
 
+The add-on item lives on the subscription, so a **new** subscription starts
+without it — and the quantity is otherwise only pushed on provision and
+release. A tenant who cancelled (or was comped and then un-comped) and came
+back through Checkout would therefore keep their numbers and stop being billed
+for them until they happened to add or remove one.
+`complete_checkout/4` re-attaches the item after adopting the subscription,
+best-effort and last, so a Stripe hiccup there cannot make the webhook fail and
+have Stripe redeliver an adoption that already succeeded.
+
+### Two levers for comping, deliberately separate
+
+`comp_account/1` makes **everything** free: it cancels the Stripe
+subscriptions, and `sync_contact_addon/1` short-circuits on the resulting
+`comped` status. That is the right lever for an account that should pay
+nothing at all.
+
+`users.comped_contacts` is the narrower one: the first N contacts are not
+billed, so the quantity pushed to Stripe is `max(0, count - comped_contacts)`.
+It exists because the account comp cannot express the case that actually comes
+up — a tenant who pays for their tier and holds a number Fountain eats the cost
+of. Flooring at zero is what makes an allowance larger than the contact count
+harmless rather than a negative quantity Stripe rejects.
+
+Both are admin-only and audited (`admin.comped_contacts.changed`). Setting the
+allowance re-syncs the add-on immediately; without that the change would not
+reach Stripe until the tenant's next provision or release.
+
+`Accounts.update_plan/3` is admin-only for the same reason:
+`Billing.change_plan/3` refuses for a comped account — an operator's decision
+is not the customer's to revise — so a comped account would otherwise have no
+door onto its own entitlements at all.
+
 ### Self-hosting
 
 `DEFAULT_PLAN` (default `solo`) is the plan for any account with no plan of its

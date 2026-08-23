@@ -32,6 +32,10 @@ defmodule Fountain.Accounts.User do
     # which is how a self-hosted instance runs with no plan concept at all.
     # Written from the Stripe price on the subscription, never guessed.
     field :plan, :string
+    # Teammate contacts this account is not charged for. Distinct from a
+    # `comped` subscription_status, which makes everything free: this is the
+    # tenant who pays for their tier and holds a number Fountain eats.
+    field :comped_contacts, :integer, default: 0
     field :role, :string, default: "user"
     field :stripe_customer_id, :string
     # The subscription of record. Webhook sync applies events for this
@@ -114,6 +118,19 @@ defmodule Fountain.Accounts.User do
     user
     |> cast(attrs, [:plan])
     |> validate_inclusion(:plan, Fountain.Plans.slugs())
+  end
+
+  @doc """
+  Changeset for the free-teammate-contact allowance. Admin-only.
+
+  Zero is the default and means "charge for every contact". `nil` is not
+  accepted: the column answers a question that always has an answer.
+  """
+  def comped_contacts_changeset(user, attrs) do
+    user
+    |> cast(attrs, [:comped_contacts])
+    |> validate_required([:comped_contacts])
+    |> validate_number(:comped_contacts, greater_than_or_equal_to: 0)
   end
 
   @doc "Changeset for billing field updates (driven by Stripe webhooks)."

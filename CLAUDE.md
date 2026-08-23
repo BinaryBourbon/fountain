@@ -83,7 +83,9 @@ Three rules that are easy to get wrong:
   `Billing.sync_contact_addon/1` *sets* an add-on subscription item's quantity
   from the contact rows (never increments), best-effort, after the row
   commits. The plan's `team_contacts` number is an abuse ceiling on top, not
-  an allowance.
+  an allowance. Two levers comp one: `comp_account/1` makes everything free,
+  `users.comped_contacts` takes N off the billed quantity for a tenant who
+  still pays for their tier.
 
 Price ids come from config (`STRIPE_PRICE_ID_SOLO` and friends), the display
 cents from the catalog. `mix fountain.verify_plans` is the only thing that

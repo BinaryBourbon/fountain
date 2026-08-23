@@ -218,6 +218,35 @@ upgrade, is in
   Unset `STRIPE_PRICE_ID_CONTACT` keeps contacts free, which is what every
   deployment does until it sets that variable.
 
+  Two levers comp a contact, deliberately separate. `comp_account/1` makes
+  everything free and short-circuits the add-on entirely. `users.comped_contacts`
+  is the narrower one — the first N contacts are not billed, so the quantity
+  pushed to Stripe is `max(0, count - comped_contacts)` — because the account
+  comp cannot express the case that actually comes up: a tenant who pays for
+  their tier and holds a number Fountain eats. Both are admin-only and audited.
+
+- **Admin can set a plan and a free-contact allowance** (`/admin`).
+  `Billing.change_plan/3` refuses for a comped account, correctly — an
+  operator's decision is not the customer's to revise — so without an admin
+  door a comped account had no way onto its own entitlements at all.
+
+### Fixed
+
+- **The teammate-contact add-on survives a resubscription.** The add-on item
+  lives on the subscription, so a *new* one starts without it, and the quantity
+  is otherwise only pushed on provision and release. A tenant who cancelled (or
+  was comped and then un-comped) and came back through Checkout kept their
+  numbers and stopped being billed for them until they happened to add or
+  remove one. `complete_checkout/4` now re-attaches the item after adopting the
+  subscription — best-effort and last, so a Stripe hiccup there cannot fail the
+  webhook and have Stripe redeliver an adoption that already succeeded.
+
+- **`admin.plan.changed` and `admin.comped_contacts.changed` are in
+  `AdminEvent`'s allowlist.** The list is closed and `record_admin/1` is
+  best-effort, so a missing type is dropped silently and the action ships with
+  no privilege trail. That has now bitten three times; the new admin tests
+  assert the trail rather than only the effect.
+
 - **Product analytics in PostHog** (ADR 0025). Fountain has kept an audit
   trail, a billing meter and a set of OTel spans for a while, and none of them
   could say whether the accounts that verified last week came back. It now
