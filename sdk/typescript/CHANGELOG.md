@@ -10,6 +10,36 @@ server releases.
 
 ---
 
+## [0.1.3] — 2026-08-23
+
+### Added
+
+- Turn-hour types, generated from the server's OpenAPI spec (fountain ADR 0026,
+  amended). `GET /api/account/billing` now reports what a plan includes and
+  what the account has spent against it.
+
+  - `plan.included_turn_hours` — turn hours the tier carries per billing
+    period.
+  - `usage.turn_hours`, `usage.turn_hours_included`,
+    `usage.turn_hours_remaining`.
+  - `current_period_start` beside the existing `current_period_end`.
+  - `period.source` — `"subscription"` or `"calendar_month"`.
+
+  A **turn hour is not a sandbox hour.** It counts time with a prompt in
+  flight, so an agent left running with nobody talking to it spends
+  `usage.sandbox_minutes` and none of the allowance. Do not present the two as
+  the same unit.
+
+  Read `period.source` before showing an allowance. `"calendar_month"` means
+  the server has no invoiced period for that account (comped, self-hosted, or
+  no subscription webhook yet), so the numbers do not line up with an invoice
+  and a UI that implies they do will be wrong for exactly those accounts.
+
+  Nothing is enforced against these numbers today — no request fails for
+  exceeding the included hours.
+
+All fields are optional and additive; nothing existing changed shape.
+
 ## [0.1.2] — 2026-08-23
 
 ### Added
