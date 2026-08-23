@@ -314,6 +314,23 @@ public pages have visitors who are not yet accounts.
 The browser library sends anonymous events. It makes no person profile for a
 reader. A person profile appears when an account appears.
 
+### PostHog records the public pages
+
+PostHog session replay makes a record of each visit to a public page. The
+record covers the home page, the legal pages, the manual and the sign-in flow.
+
+PostHog does not record the console. This includes the dashboard, the agent and
+vault pages, and the admin pages. The console loads no browser library, so
+there is no recorder on those pages.
+
+Fountain masks every input in the record. This matters on the sign-in and
+sign-up pages, where the mask hides the email address. PostHog masks a password
+field in all conditions.
+
+The switch for replay is a PostHog project setting, not a Fountain setting. To
+stop the records, turn replay off in your PostHog project. To stop the browser
+library and the records together, set `POSTHOG_BROWSER_CAPTURE` to `false`.
+
 Fountain joins the two halves at sign-in. It reads the anonymous id from the
 PostHog cookie, and it tells PostHog to merge that visitor into the account.
 The pages a person read before the account then belong to the account. Fountain
@@ -340,7 +357,7 @@ analytics failure cannot fail the operation it measures.
 | Variable | Default | Required | Effect |
 |---|---|---|---|
 | `POSTHOG_CAPTURE` | `true` | — | Set it to `false` to stop product events. Flag evaluation continues. |
-| `POSTHOG_BROWSER_CAPTURE` | `true` | — | Set it to `false` to keep the PostHog browser library off the public pages. Server capture continues. |
+| `POSTHOG_BROWSER_CAPTURE` | `true` | — | Set it to `false` to keep the PostHog browser library off the public pages. This also stops the session recordings. Server capture continues. |
 | `POSTHOG_PERSON_PII` | `true` | — | Set it to `false` to keep the account email out of PostHog. The person is then known by user id alone. |
 | `POSTHOG_INSTANCE` | `PHX_HOST` | — | The name of this deployment. Each event is a member of this PostHog group, so two deployments that report to one project stay apart. |
 

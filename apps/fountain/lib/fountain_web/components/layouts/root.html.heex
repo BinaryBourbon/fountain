@@ -29,6 +29,18 @@
       appears when an account does, which is the same rule the server-side
       capture keeps, and it is what stops the manual from becoming the
       project's largest cohort.
+
+      `session_recording` is stated rather than left to the default, because
+      the default is not ours to rely on: replay is switched on in the PostHog
+      *project*, so posthog-js starts recording on its own unless a page says
+      otherwise. A reader of this file should be able to see that these pages
+      are recorded without going and checking a project setting, and the
+      masking should not silently change when a dependency does.
+
+      Everything typed is masked. The public surface includes /auth/login and
+      /auth/register, so this is where someone types their email address and
+      their password. `maskAllInputs` covers the address; passwords are masked
+      by rrweb regardless.
     --%>
     <script
       :if={assigns[:web_analytics]}
@@ -59,7 +71,8 @@
         window.posthog.init(cfg.dataset.apiKey, {
           api_host: cfg.dataset.apiHost,
           defaults: "2025-05-24",
-          person_profiles: "identified_only"
+          person_profiles: "identified_only",
+          session_recording: { maskAllInputs: true }
         });
         window.posthog.register({ surface: "public" });
       });

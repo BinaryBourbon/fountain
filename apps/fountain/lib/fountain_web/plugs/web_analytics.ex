@@ -40,6 +40,21 @@ defmodule FountainWeb.Plugs.WebAnalytics do
   `surface: "console"` the hook sets, so the two halves stay separable in a
   project that now receives both.
 
+  ## These pages are recorded
+
+  Session replay is switched on in the PostHog project, and posthog-js records
+  whenever it is, so the public pages are replayed as well as counted. That
+  followed from loading the library rather than from a decision, and it is
+  worth saying plainly rather than leaving to a project setting: **a visitor to
+  the landing page, the manual or the auth flow has that visit recorded.**
+
+  The console is not recorded, because it loads no library.
+
+  All inputs are masked (`maskAllInputs`), which the layout states rather than
+  inherits. It matters most on `/auth/login` and `/auth/register` — the two
+  public pages with a form worth typing into — where it covers the email
+  address; passwords are masked by rrweb whatever this says.
+
   ## The CSP is widened here, not in the router
 
   `FountainWeb.Router`'s `@csp` names no PostHog origin, which keeps the

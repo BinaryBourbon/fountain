@@ -18,6 +18,20 @@ upgrade, is in
 
 ### Added
 
+- **The public pages are session recorded, and now say so.** This started as a
+  side effect rather than a decision: session replay is switched on in the
+  PostHog *project*, and posthog-js records whenever it is, so loading the
+  library for visitor analytics turned replay on for the landing page, the
+  legal pages, the manual and the auth flow without anyone choosing it. Found
+  in production, kept on review — replay of the sign-up flow answers "where did
+  this funnel lose people" in a way a pageview count cannot — and written down,
+  because a capability nobody chose is one nobody maintains. The console is
+  still not recorded; it loads no library. The layout now states
+  `session_recording: { maskAllInputs: true }` rather than inheriting it, so
+  the masking is visible to a reader of the file and cannot change quietly when
+  a dependency's default does. It covers the email address on `/auth/login` and
+  `/auth/register`; passwords are masked by rrweb regardless. ADR 0028.
+
 - **The public pages report visitors.** Fountain's analytics were server-side
   only, and `capture/4` drops an event with no account attached — so the
   landing page, the legal pages, the manual and the whole auth flow sent
