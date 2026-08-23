@@ -89,8 +89,8 @@ defmodule Fountain.Team.CommsPlanTest do
 
   describe "contact_count/1" do
     test "counts only this tenant's contacts" do
-      user = insert_verified_user(plan: "team")
-      other = insert_verified_user(plan: "team")
+      user = insert_active_user(plan: "team")
+      other = insert_active_user(plan: "team")
 
       {_a, {:ok, _}} = provision(user, "Ada")
       {_b, {:ok, _}} = provision(other, "Bob")
@@ -102,12 +102,12 @@ defmodule Fountain.Team.CommsPlanTest do
 
   describe "the plan ceiling" do
     test "a teammate under the ceiling gets a contact" do
-      user = insert_verified_user(plan: "solo")
+      user = insert_active_user(plan: "solo")
       assert {_agent, {:ok, _contact}} = provision(user, "Ada")
     end
 
     test "refuses at the ceiling, and says which one" do
-      user = insert_verified_user(plan: "solo")
+      user = insert_active_user(plan: "solo")
       fill_to_ceiling(user)
 
       limit = Plans.team_contacts("solo")
@@ -118,7 +118,7 @@ defmodule Fountain.Team.CommsPlanTest do
 
     test "a bigger plan allows more" do
       solo = Plans.team_contacts("solo")
-      user = insert_verified_user(plan: "team")
+      user = insert_active_user(plan: "team")
 
       for n <- 1..(solo + 1) do
         assert {_agent, {:ok, _}} = provision(user, "mate-#{n}")
@@ -128,7 +128,7 @@ defmodule Fountain.Team.CommsPlanTest do
     # Nothing is bought before the ceiling is checked: a refused provision must
     # not leave an orphan inbox or number behind at the provider.
     test "buys nothing when it refuses" do
-      user = insert_verified_user(plan: "solo")
+      user = insert_active_user(plan: "solo")
       fill_to_ceiling(user)
       before = Comms.contact_count(user.id)
 
@@ -140,7 +140,7 @@ defmodule Fountain.Team.CommsPlanTest do
     end
 
     test "releasing one makes room again" do
-      user = insert_verified_user(plan: "solo")
+      user = insert_active_user(plan: "solo")
       fill_to_ceiling(user)
       {agent, _} = provision(user, "refused")
 
@@ -155,7 +155,7 @@ defmodule Fountain.Team.CommsPlanTest do
 
   describe "the add-on quantity sync" do
     test "runs after a contact is provisioned" do
-      user = insert_verified_user(plan: "team")
+      user = insert_active_user(plan: "team")
       test_pid = self()
 
       expect(Fountain.Billing, :sync_contact_addon, fn user_id ->
@@ -169,7 +169,7 @@ defmodule Fountain.Team.CommsPlanTest do
     end
 
     test "runs after one is released" do
-      user = insert_verified_user(plan: "team")
+      user = insert_active_user(plan: "team")
       {agent, {:ok, _}} = provision(user, "Ada")
       test_pid = self()
 
@@ -186,7 +186,7 @@ defmodule Fountain.Team.CommsPlanTest do
     # this runs, so a Stripe outage must not fail the provision or strand a
     # released number as un-released.
     test "a failing sync does not fail the provision" do
-      user = insert_verified_user(plan: "team")
+      user = insert_active_user(plan: "team")
       stub(Fountain.Billing, :sync_contact_addon, fn _ -> raise "stripe is down" end)
 
       assert {_agent, {:ok, _contact}} = provision(user, "Ada")

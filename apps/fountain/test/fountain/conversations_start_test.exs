@@ -14,7 +14,7 @@ defmodule Fountain.ConversationsStartTest do
 
   describe "wake_conversation/2 — provider resume" do
     test "a failed resume leaves the row suspended and fails retryably" do
-      user = insert_verified_user()
+      user = insert_active_user()
       agent = insert_agent(user_id: user.id)
       sandbox = insert_sandbox(user_id: user.id, sprite_name: "parked-wont-wake")
       {:ok, sandbox} = Conversations.update_sandbox(sandbox, %{status: "suspended"})
@@ -38,7 +38,7 @@ defmodule Fountain.ConversationsStartTest do
       # Falling through to :create_new would retire the row and orphan (or
       # lose) the parked disk; a retryable error keeps the agent's memory
       # safe until the operator restores the provider's credentials.
-      user = insert_verified_user()
+      user = insert_active_user()
       agent = insert_agent(user_id: user.id)
       sandbox = insert_sandbox(user_id: user.id, sprite_name: "parked-on-e2b")
 
@@ -56,7 +56,7 @@ defmodule Fountain.ConversationsStartTest do
 
   describe "start_conversation/1" do
     test "the sandbox row is stamped with the resolved provider" do
-      user = insert_verified_user()
+      user = insert_active_user()
       agent = insert_agent(user_id: user.id)
       stub(Horde.DynamicSupervisor, :start_child, fn _s, _spec -> {:ok, spawn(fn -> :ok end)} end)
 
@@ -68,7 +68,7 @@ defmodule Fountain.ConversationsStartTest do
     end
 
     test "an agent pinned to a disabled provider is refused before any row is allocated" do
-      user = insert_verified_user()
+      user = insert_active_user()
       agent = insert_agent(user_id: user.id)
 
       # Simulate drift: the override was saved while the provider was
@@ -89,8 +89,8 @@ defmodule Fountain.ConversationsStartTest do
     end
 
     test "returns {:error, :vault_not_found} when vault_id belongs to a different user" do
-      user1 = insert_verified_user()
-      user2 = insert_verified_user()
+      user1 = insert_active_user()
+      user2 = insert_active_user()
       agent = insert_agent(user_id: user1.id)
       # vault belongs to user2, not user1
       vault = insert_vault(user_id: user2.id)
@@ -105,7 +105,7 @@ defmodule Fountain.ConversationsStartTest do
     end
 
     test "is refused once the tenant is at its concurrent-sandbox cap" do
-      user = insert_verified_user()
+      user = insert_active_user()
       agent = insert_agent(user_id: user.id)
 
       for _ <- 1..Fountain.Quotas.default_limit(),
@@ -116,7 +116,7 @@ defmodule Fountain.ConversationsStartTest do
     end
 
     test "the cap is checked before any sandbox row is allocated" do
-      user = insert_verified_user()
+      user = insert_active_user()
       agent = insert_agent(user_id: user.id)
       for _ <- 1..5, do: insert_sandbox(user_id: user.id, status: "ready")
 
@@ -131,8 +131,8 @@ defmodule Fountain.ConversationsStartTest do
     end
 
     test "one tenant at its cap does not block another" do
-      capped = insert_verified_user()
-      other = insert_verified_user()
+      capped = insert_active_user()
+      other = insert_active_user()
       for _ <- 1..5, do: insert_sandbox(user_id: capped.id, status: "ready")
       agent = insert_agent(user_id: other.id)
 
@@ -143,7 +143,7 @@ defmodule Fountain.ConversationsStartTest do
     end
 
     test "terminated sandboxes free capacity" do
-      user = insert_verified_user()
+      user = insert_active_user()
       agent = insert_agent(user_id: user.id)
       [first | _] = for _ <- 1..5, do: insert_sandbox(user_id: user.id, status: "ready")
 
@@ -158,7 +158,7 @@ defmodule Fountain.ConversationsStartTest do
     end
 
     test "creates sandbox, conversation, and starts server", %{} do
-      user = insert_verified_user()
+      user = insert_active_user()
       agent = insert_agent(user_id: user.id)
 
       stub(Horde.DynamicSupervisor, :start_child, fn _supervisor, _child_spec ->
@@ -178,7 +178,7 @@ defmodule Fountain.ConversationsStartTest do
     end
 
     test "broadcasts graph update when parent_conversation_id is set", %{} do
-      user = insert_verified_user()
+      user = insert_active_user()
       agent = insert_agent(user_id: user.id)
       parent_conv = insert_conversation(user_id: user.id)
 
@@ -197,7 +197,7 @@ defmodule Fountain.ConversationsStartTest do
     end
 
     test "succeeds when vault_id is empty string", %{} do
-      user = insert_verified_user()
+      user = insert_active_user()
       agent = insert_agent(user_id: user.id)
 
       stub(Horde.DynamicSupervisor, :start_child, fn _sup, _spec ->
@@ -210,7 +210,7 @@ defmodule Fountain.ConversationsStartTest do
     end
 
     test "succeeds and links vault when valid vault_id provided", %{} do
-      user = insert_verified_user()
+      user = insert_active_user()
       agent = insert_agent(user_id: user.id)
       vault = insert_vault(user_id: user.id)
 
@@ -224,7 +224,7 @@ defmodule Fountain.ConversationsStartTest do
     end
 
     test "allows a vault on the agent's allowed_vault_ids list", %{} do
-      user = insert_verified_user()
+      user = insert_active_user()
       vault = insert_vault(user_id: user.id)
       agent = insert_agent(user_id: user.id, allowed_vault_ids: [vault.id])
 
@@ -238,7 +238,7 @@ defmodule Fountain.ConversationsStartTest do
     end
 
     test "returns {:error, :vault_not_allowed} for a vault outside the allowlist", %{} do
-      user = insert_verified_user()
+      user = insert_active_user()
       allowed = insert_vault(user_id: user.id)
       other = insert_vault(user_id: user.id)
       agent = insert_agent(user_id: user.id, allowed_vault_ids: [allowed.id])
@@ -248,7 +248,7 @@ defmodule Fountain.ConversationsStartTest do
     end
 
     test "returns {:error, :vault_not_allowed} for any vault when the allowlist is empty", %{} do
-      user = insert_verified_user()
+      user = insert_active_user()
       vault = insert_vault(user_id: user.id)
       agent = insert_agent(user_id: user.id, allowed_vault_ids: [])
 
@@ -257,7 +257,7 @@ defmodule Fountain.ConversationsStartTest do
     end
 
     test "empty allowlist still permits starting with no vault at all", %{} do
-      user = insert_verified_user()
+      user = insert_active_user()
       agent = insert_agent(user_id: user.id, allowed_vault_ids: [])
 
       stub(Horde.DynamicSupervisor, :start_child, fn _sup, _spec ->
@@ -280,7 +280,7 @@ defmodule Fountain.ConversationsStartTest do
         {:ok, spawn(fn -> :ok end)}
       end)
 
-      user = insert_verified_user()
+      user = insert_active_user()
       %{user: user}
     end
 
@@ -404,7 +404,7 @@ defmodule Fountain.ConversationsStartTest do
         {:ok, spawn(fn -> :ok end)}
       end)
 
-      user = insert_verified_user()
+      user = insert_active_user()
       agent_env = insert_env(user_id: user.id)
       other_env = insert_env(user_id: user.id)
       agent = insert_agent(user_id: user.id, environment_id: agent_env.id)
@@ -442,7 +442,7 @@ defmodule Fountain.ConversationsStartTest do
     end
 
     test "a foreign environment reads as not found — same as an unknown id", ctx do
-      stranger = insert_verified_user()
+      stranger = insert_active_user()
       foreign = insert_env(user_id: stranger.id)
 
       for id <- [foreign.id, Ecto.UUID.generate()] do
@@ -497,7 +497,7 @@ defmodule Fountain.ConversationsStartTest do
 
     test "the allowlist is checked before the fetch, so a foreign id is refused not probed",
          ctx do
-      stranger = insert_verified_user()
+      stranger = insert_active_user()
       foreign = insert_env(user_id: stranger.id)
       {:ok, agent} = Agents.update_agent(ctx.agent, %{allowed_environment_ids: []})
 
@@ -556,7 +556,7 @@ defmodule Fountain.ConversationsStartTest do
         {:ok, spawn(fn -> :ok end)}
       end)
 
-      user = insert_verified_user()
+      user = insert_active_user()
       agent = insert_agent(user_id: user.id)
 
       %{
@@ -604,7 +604,7 @@ defmodule Fountain.ConversationsStartTest do
 
   describe "_unsafe_list_active_conversations/0 ordering" do
     test "running conversations appear before idle conversations" do
-      user = insert_verified_user()
+      user = insert_active_user()
       idle = insert_conversation(user_id: user.id, status: "idle")
       running = insert_conversation(user_id: user.id, status: "running")
 
@@ -620,7 +620,7 @@ defmodule Fountain.ConversationsStartTest do
 
   describe "_unsafe_list_turns/1 image preloads" do
     test "preloads images association on each turn" do
-      user = insert_verified_user()
+      user = insert_active_user()
       conv = insert_conversation(user_id: user.id)
       turn = insert_turn(conv)
 
@@ -642,7 +642,7 @@ defmodule Fountain.ConversationsStartTest do
     end
 
     test "returns turns with empty images list when no images have been inserted" do
-      user = insert_verified_user()
+      user = insert_active_user()
       conv = insert_conversation(user_id: user.id)
       _turn = insert_turn(conv)
 
@@ -651,7 +651,7 @@ defmodule Fountain.ConversationsStartTest do
     end
 
     test "orders images by position ascending when multiple images exist" do
-      user = insert_verified_user()
+      user = insert_active_user()
       conv = insert_conversation(user_id: user.id)
       turn = insert_turn(conv)
 
@@ -681,7 +681,7 @@ defmodule Fountain.ConversationsStartTest do
 
   describe "insert_sandbox/1 factory — no explicit user_id" do
     test "creates a new user when no user_id is provided" do
-      # Triggers the insert_verified_user().id fallback in insert_sandbox (factory.ex line 129)
+      # Triggers the insert_active_user().id fallback in insert_sandbox (factory.ex line 129)
       sandbox = insert_sandbox()
       assert is_binary(sandbox.user_id)
     end
@@ -689,7 +689,7 @@ defmodule Fountain.ConversationsStartTest do
 
   describe "insert_conversation/1 factory — agent without explicit user_id" do
     test "derives user_id from agent when no user_id is provided" do
-      user = insert_verified_user()
+      user = insert_active_user()
       agent = insert_agent(user_id: user.id)
       conv = insert_conversation(agent: agent)
       assert conv.user_id == user.id
@@ -697,7 +697,7 @@ defmodule Fountain.ConversationsStartTest do
     end
 
     test "creates a new user when neither user_id nor agent is provided" do
-      # Triggers the insert_verified_user().id fallback (factory.ex line 147)
+      # Triggers the insert_active_user().id fallback (factory.ex line 147)
       conv = insert_conversation()
       assert is_binary(conv.user_id)
       assert is_nil(conv.agent_id)

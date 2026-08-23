@@ -58,14 +58,25 @@ fountain/                  umbrella root
 sandboxes a tenant may run at once. Everything else the product does is on
 every plan.
 
-| | solo | team | scale | legacy |
-|---|---|---|---|---|
-| concurrent sandboxes | 5 | 15 | 40 | 15 |
-| included turn hours | 100 | 300 | 800 | 300 |
-| teammate contacts | 1 | 3 | 10 | 3 |
-| price | $29 | $79 | $199 | $29 (closed) |
+| | trial | solo | team | scale | legacy |
+|---|---|---|---|---|---|
+| concurrent sandboxes | 2 | 5 | 15 | 40 | 15 |
+| included turn hours | 40 | 100 | 300 | 800 | 300 |
+| teammate contacts | 0 | 1 | 3 | 10 | 3 |
+| price | free | $29 | $79 | $199 | $29 (closed) |
 
-Four rules that are easy to get wrong:
+Five rules that are easy to get wrong:
+
+- **A trialing account gets `trial`'s numbers, not its tier's.**
+  `Plans.effective/1` is what applies today; `Plans.resolve/1` is the tier the
+  subscription names and what it converts into. Every entitlement reader
+  (`concurrent_sandboxes/1`, `included_turn_hours/1`, `team_contacts/1`) routes
+  through `effective/1` **when handed a `%User{}`** — hand it a bare slug and
+  it cannot know the status, which is how `turn_hour_allowance/2` first got it
+  wrong. Only applies when billing is on: `subscription_status` defaults to
+  `"trialing"`, so without that guard every self-hosted account would be capped
+  at two sandboxes. In tests, `insert_verified_user/1` is trialing —
+  `insert_active_user/1` is the one that gets the plan's numbers.
 
 - **The plan is not the cap.** `Quotas.sandbox_limit/1` returns
   `users.sandbox_limit_override` when it is set and the plan's number

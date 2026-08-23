@@ -119,7 +119,7 @@ defmodule Fountain.AuditGuardrailTest do
 
   for {label, fun, action} <- @must_audit do
     test "#{label} leaves an audit event" do
-      user = insert_verified_user()
+      user = insert_active_user()
 
       unquote(fun).(user)
 

@@ -76,7 +76,7 @@ defmodule Fountain.Team.CommsTest do
 
   describe "gates" do
     test "status reports the flag and the providers separately" do
-      user = insert_verified_user()
+      user = insert_active_user()
       flag(false)
       assert Comms.status(user) == %{enabled: false, configured: true}
       flag(true)
@@ -84,7 +84,7 @@ defmodule Fountain.Team.CommsTest do
     end
 
     test "provision is refused with the flag off, and nothing is called" do
-      user = insert_verified_user()
+      user = insert_active_user()
       agent = teammate(user)
       flag(false)
       Req.Test.stub(AgentMail, fn _ -> flunk("AgentMail must not be called") end)
@@ -94,7 +94,7 @@ defmodule Fountain.Team.CommsTest do
     end
 
     test "provision is refused when a provider key is missing" do
-      user = insert_verified_user()
+      user = insert_active_user()
       agent = teammate(user)
       flag(true)
       previous = Application.get_env(:fountain, :agentphone_api_key)
@@ -113,7 +113,7 @@ defmodule Fountain.Team.CommsTest do
     end
 
     test "creates an inbox and a number, records them, audits, broadcasts" do
-      user = insert_verified_user()
+      user = insert_active_user()
       agent = teammate(user, "Ada Lovelace")
       stub_providers_ok()
       Team.subscribe(user.id)
@@ -154,7 +154,7 @@ defmodule Fountain.Team.CommsTest do
     end
 
     test "the teammate's contact rides along on the roster" do
-      user = insert_verified_user()
+      user = insert_active_user()
       agent = teammate(user)
       stub_providers_ok()
       {:ok, contact} = Comms.provision_contact(user.id, agent.id, @req)
@@ -164,7 +164,7 @@ defmodule Fountain.Team.CommsTest do
     end
 
     test "refuses a second contact for the same teammate" do
-      user = insert_verified_user()
+      user = insert_active_user()
       agent = teammate(user)
       stub_providers_ok()
       {:ok, _} = Comms.provision_contact(user.id, agent.id, @req)
@@ -172,7 +172,7 @@ defmodule Fountain.Team.CommsTest do
     end
 
     test "a missing or bad prompt_from_number is refused before anything is bought" do
-      user = insert_verified_user()
+      user = insert_active_user()
       agent = teammate(user)
       Req.Test.stub(AgentMail, fn _ -> flunk("nothing is bought on a bad request") end)
       Req.Test.stub(AgentPhone, fn _ -> flunk("nothing is bought on a bad request") end)
@@ -188,20 +188,20 @@ defmodule Fountain.Team.CommsTest do
     end
 
     test "an agent not on the team gets not_found" do
-      user = insert_verified_user()
+      user = insert_active_user()
       agent = insert_agent(user_id: user.id)
       assert {:error, :not_found} = Comms.provision_contact(user.id, agent.id, @req)
     end
 
     test "another tenant's teammate is not_found" do
-      user = insert_verified_user()
-      other = insert_verified_user()
+      user = insert_active_user()
+      other = insert_active_user()
       agent = teammate(other)
       assert {:error, :not_found} = Comms.provision_contact(user.id, agent.id, @req)
     end
 
     test "all or nothing: a failed number deletes the inbox again" do
-      user = insert_verified_user()
+      user = insert_active_user()
       agent = teammate(user)
       test = self()
 
@@ -247,7 +247,7 @@ defmodule Fountain.Team.CommsTest do
     end
 
     test "a failed inbox is reported as the email channel, and no number is bought" do
-      user = insert_verified_user()
+      user = insert_active_user()
       agent = teammate(user)
 
       Req.Test.stub(AgentMail, fn conn ->
@@ -268,7 +268,7 @@ defmodule Fountain.Team.CommsTest do
     end
 
     test "changes the prompt number without touching the providers" do
-      user = insert_verified_user()
+      user = insert_active_user()
       agent = teammate(user)
       stub_providers_ok()
       {:ok, _} = Comms.provision_contact(user.id, agent.id, @req)
@@ -288,7 +288,7 @@ defmodule Fountain.Team.CommsTest do
     end
 
     test "no contact is not_found" do
-      user = insert_verified_user()
+      user = insert_active_user()
       agent = teammate(user)
 
       assert {:error, :not_found} =
@@ -303,7 +303,7 @@ defmodule Fountain.Team.CommsTest do
     end
 
     test "deletes the inbox and the number, removes the row, audits" do
-      user = insert_verified_user()
+      user = insert_active_user()
       agent = teammate(user)
       stub_providers_ok()
       {:ok, _} = Comms.provision_contact(user.id, agent.id, @req)
@@ -323,7 +323,7 @@ defmodule Fountain.Team.CommsTest do
     end
 
     test "a provider that already forgot the resource counts as released" do
-      user = insert_verified_user()
+      user = insert_active_user()
       agent = teammate(user)
       stub_providers_ok()
       {:ok, _} = Comms.provision_contact(user.id, agent.id, @req)
@@ -341,7 +341,7 @@ defmodule Fountain.Team.CommsTest do
     end
 
     test "a provider failure keeps the row so nothing is orphaned" do
-      user = insert_verified_user()
+      user = insert_active_user()
       agent = teammate(user)
       stub_providers_ok()
       {:ok, _} = Comms.provision_contact(user.id, agent.id, @req)
@@ -355,13 +355,13 @@ defmodule Fountain.Team.CommsTest do
     end
 
     test "no contact is not_found" do
-      user = insert_verified_user()
+      user = insert_active_user()
       agent = teammate(user)
       assert {:error, :not_found} = Comms.release_contact(user.id, agent.id)
     end
 
     test "removing the teammate releases its contact too" do
-      user = insert_verified_user()
+      user = insert_active_user()
       agent = teammate(user)
       stub_providers_ok()
       {:ok, _} = Comms.provision_contact(user.id, agent.id, @req)
@@ -376,7 +376,7 @@ defmodule Fountain.Team.CommsTest do
   describe "conversation_mcp_servers/2" do
     test "injects the tools for a teammate with a contact when the flag is on" do
       flag(true)
-      user = insert_verified_user()
+      user = insert_active_user()
       agent = teammate(user)
       stub_providers_ok()
       {:ok, _} = Comms.provision_contact(user.id, agent.id, @req)
@@ -391,7 +391,7 @@ defmodule Fountain.Team.CommsTest do
 
     test "nothing without a contact, off the team, with the flag off, or without a token" do
       flag(true)
-      user = insert_verified_user()
+      user = insert_active_user()
       agent = teammate(user)
       %{conversation: conv} = Team.get_teammate(user.id, agent.id)
       assert [] = Comms.conversation_mcp_servers(conv.id, "tok")

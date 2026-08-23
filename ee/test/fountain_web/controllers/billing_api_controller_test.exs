@@ -24,7 +24,9 @@ defmodule FountainWeb.BillingApiControllerTest do
       end
     end)
 
-    user = insert_verified_user()
+    # Active, not trialing: these assert what a *plan* reports, and a trial is
+    # deliberately capped below its tier (`Fountain.Plans`' `trial` plan).
+    user = insert_active_user()
     {_rec, key} = insert_api_key(user)
     {:ok, user: user, key: key}
   end

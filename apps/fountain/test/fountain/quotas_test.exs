@@ -5,8 +5,8 @@ defmodule Fountain.QuotasTest do
 
   describe "active_sandbox_count/2" do
     test "counts only the given tenant's sandboxes" do
-      user = insert_verified_user()
-      other = insert_verified_user()
+      user = insert_active_user()
+      other = insert_active_user()
 
       insert_sandbox(user_id: user.id, status: "ready")
       insert_sandbox(user_id: user.id, status: "pending")
@@ -17,7 +17,7 @@ defmodule Fountain.QuotasTest do
     end
 
     test "pending and starting count — a sprite bills from provisioning, not from ready" do
-      user = insert_verified_user()
+      user = insert_active_user()
 
       for status <- ~w(pending starting ready) do
         insert_sandbox(user_id: user.id, status: status)
@@ -27,7 +27,7 @@ defmodule Fountain.QuotasTest do
     end
 
     test "terminated and failed do not count" do
-      user = insert_verified_user()
+      user = insert_active_user()
 
       insert_sandbox(user_id: user.id, status: "ready")
       insert_sandbox(user_id: user.id, status: "terminated")
@@ -40,7 +40,7 @@ defmodule Fountain.QuotasTest do
       # Otherwise five abandoned conversations would permanently lock a
       # default-cap tenant out of starting anything. Waking a suspended
       # sandbox re-runs the gate (Conversations.wake_suspended_sandbox/2).
-      user = insert_verified_user()
+      user = insert_active_user()
 
       insert_sandbox(user_id: user.id, status: "ready")
       insert_sandbox(user_id: user.id, status: "suspended")
@@ -49,7 +49,7 @@ defmodule Fountain.QuotasTest do
     end
 
     test "exclude: leaves the named sandbox out" do
-      user = insert_verified_user()
+      user = insert_active_user()
       keep = insert_sandbox(user_id: user.id, status: "ready")
       insert_sandbox(user_id: user.id, status: "ready")
 
@@ -58,7 +58,7 @@ defmodule Fountain.QuotasTest do
     end
 
     test "is zero for a tenant with no sandboxes" do
-      assert Quotas.active_sandbox_count(insert_verified_user().id) == 0
+      assert Quotas.active_sandbox_count(insert_active_user().id) == 0
     end
   end
 
@@ -70,27 +70,27 @@ defmodule Fountain.QuotasTest do
     # on, so changing a cap in the catalog has to be a deliberate edit here.
 
     test "a user with no plan gets the default plan's cap, which is 5" do
-      assert Quotas.sandbox_limit(insert_verified_user().id) == 5
+      assert Quotas.sandbox_limit(insert_active_user().id) == 5
     end
 
     test "the cap follows the plan" do
-      assert Quotas.sandbox_limit(insert_verified_user(plan: "solo").id) == 5
-      assert Quotas.sandbox_limit(insert_verified_user(plan: "team").id) == 15
-      assert Quotas.sandbox_limit(insert_verified_user(plan: "scale").id) == 40
+      assert Quotas.sandbox_limit(insert_active_user(plan: "solo").id) == 5
+      assert Quotas.sandbox_limit(insert_active_user(plan: "team").id) == 15
+      assert Quotas.sandbox_limit(insert_active_user(plan: "scale").id) == 40
     end
 
     # Grandfathering, in one assertion: the closed plan is priced like Solo
     # and capped like Team, so nobody lost capacity at the changeover.
     test "the closed legacy plan carries Team's cap" do
-      assert Quotas.sandbox_limit(insert_verified_user(plan: "legacy").id) == 15
+      assert Quotas.sandbox_limit(insert_active_user(plan: "legacy").id) == 15
     end
 
     test "an override beats the plan, in either direction" do
-      up = insert_verified_user(plan: "solo")
+      up = insert_active_user(plan: "solo")
       {:ok, up} = Fountain.Accounts.update_sandbox_limit(up, 25)
       assert Quotas.sandbox_limit(up.id) == 25
 
-      down = insert_verified_user(plan: "scale")
+      down = insert_active_user(plan: "scale")
       {:ok, down} = Fountain.Accounts.update_sandbox_limit(down, 1)
       assert Quotas.sandbox_limit(down.id) == 1
     end
@@ -98,14 +98,14 @@ defmodule Fountain.QuotasTest do
     # Zero is the abuse lever and must survive the "is there an override?"
     # test, which a truthiness check would get wrong.
     test "an override of zero is an override, not an absent one" do
-      user = insert_verified_user(plan: "scale")
+      user = insert_active_user(plan: "scale")
       {:ok, user} = Fountain.Accounts.update_sandbox_limit(user, 0)
 
       assert Quotas.sandbox_limit(user.id) == 0
     end
 
     test "clearing the override hands the cap back to the plan" do
-      user = insert_verified_user(plan: "team")
+      user = insert_active_user(plan: "team")
       {:ok, user} = Fountain.Accounts.update_sandbox_limit(user, 1)
       {:ok, user} = Fountain.Accounts.update_sandbox_limit(user, nil)
 
@@ -123,7 +123,7 @@ defmodule Fountain.QuotasTest do
     test "agrees with sandbox_limit/1 without touching the database" do
       for plan <- ["solo", "team", "scale", "legacy", nil],
           override <- [nil, 0, 25] do
-        user = insert_verified_user(plan: plan)
+        user = insert_active_user(plan: plan)
         {:ok, user} = Fountain.Accounts.update_sandbox_limit(user, override)
 
         assert Quotas.sandbox_limit_for(user) == Quotas.sandbox_limit(user.id),
@@ -134,14 +134,14 @@ defmodule Fountain.QuotasTest do
 
   describe "check_sandbox_quota/2" do
     test "passes below the cap" do
-      user = insert_verified_user()
+      user = insert_active_user()
       insert_sandbox(user_id: user.id, status: "ready")
 
       assert :ok = Quotas.check_sandbox_quota(user.id)
     end
 
     test "denies at the cap" do
-      user = insert_verified_user()
+      user = insert_active_user()
       for _ <- 1..Quotas.default_limit(), do: insert_sandbox(user_id: user.id, status: "ready")
 
       assert {:error, {:sandbox_quota_exceeded, %{count: 5, limit: 5}}} =
@@ -149,7 +149,7 @@ defmodule Fountain.QuotasTest do
     end
 
     test "denies above the cap" do
-      user = insert_verified_user()
+      user = insert_active_user()
       for _ <- 1..7, do: insert_sandbox(user_id: user.id, status: "ready")
 
       assert {:error, {:sandbox_quota_exceeded, %{count: 7, limit: 5}}} =
@@ -157,8 +157,8 @@ defmodule Fountain.QuotasTest do
     end
 
     test "one tenant at its cap does not affect another" do
-      user = insert_verified_user()
-      other = insert_verified_user()
+      user = insert_active_user()
+      other = insert_active_user()
       for _ <- 1..5, do: insert_sandbox(user_id: user.id, status: "ready")
 
       assert {:error, _} = Quotas.check_sandbox_quota(user.id)
@@ -166,7 +166,7 @@ defmodule Fountain.QuotasTest do
     end
 
     test "exclude: lets a replacement through at exactly the cap" do
-      user = insert_verified_user()
+      user = insert_active_user()
       [replacing | _] = for _ <- 1..5, do: insert_sandbox(user_id: user.id, status: "ready")
 
       assert {:error, _} = Quotas.check_sandbox_quota(user.id)
@@ -174,7 +174,7 @@ defmodule Fountain.QuotasTest do
     end
 
     test "a raised cap admits more" do
-      user = insert_verified_user()
+      user = insert_active_user()
       for _ <- 1..5, do: insert_sandbox(user_id: user.id, status: "ready")
       assert {:error, _} = Quotas.check_sandbox_quota(user.id)
 
@@ -183,7 +183,7 @@ defmodule Fountain.QuotasTest do
     end
 
     test "a cap of zero denies everything — the lever for shutting off abuse" do
-      user = insert_verified_user()
+      user = insert_active_user()
       {:ok, user} = Fountain.Accounts.update_sandbox_limit(user, 0)
 
       assert {:error, {:sandbox_quota_exceeded, %{count: 0, limit: 0}}} =
@@ -200,7 +200,7 @@ defmodule Fountain.QuotasTest do
     alias Fountain.Quotas
 
     test "creates the row when below the cap" do
-      user = insert_verified_user()
+      user = insert_active_user()
 
       assert {:ok, sandbox} =
                Quotas.with_sandbox_reservation(user.id, fn ->
@@ -212,7 +212,7 @@ defmodule Fountain.QuotasTest do
     end
 
     test "refuses at the cap and creates nothing" do
-      user = insert_verified_user()
+      user = insert_active_user()
       for _ <- 1..5, do: insert_sandbox(user_id: user.id, status: "ready")
 
       assert {:error, {:sandbox_quota_exceeded, %{count: 5, limit: 5}}} =
@@ -224,7 +224,7 @@ defmodule Fountain.QuotasTest do
     end
 
     test "a failure in fun rolls the reservation back" do
-      user = insert_verified_user()
+      user = insert_active_user()
 
       assert {:error, :boom} =
                Quotas.with_sandbox_reservation(user.id, fn ->
@@ -237,7 +237,7 @@ defmodule Fountain.QuotasTest do
     end
 
     test "honours the :exclude option the wake path needs" do
-      user = insert_verified_user()
+      user = insert_active_user()
       sandboxes = for _ <- 1..5, do: insert_sandbox(user_id: user.id, status: "ready")
       replacing = hd(sandboxes)
 
@@ -250,11 +250,11 @@ defmodule Fountain.QuotasTest do
 
   describe "check_sandbox_quota!/2" do
     test "returns :ok below the cap" do
-      assert :ok = Quotas.check_sandbox_quota!(insert_verified_user().id)
+      assert :ok = Quotas.check_sandbox_quota!(insert_active_user().id)
     end
 
     test "raises at the cap with the counts in the message" do
-      user = insert_verified_user()
+      user = insert_active_user()
       for _ <- 1..5, do: insert_sandbox(user_id: user.id, status: "ready")
 
       err =

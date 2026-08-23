@@ -2064,7 +2064,10 @@ defmodule Fountain.Billing do
   def turn_hour_allowance(%User{} = user, opts \\ []) do
     period = Keyword.get(opts, :period) || billing_period(user)
     used = turn_hours_used(user, period: {period.start, period.end})
-    included = Plans.included_turn_hours(user.plan)
+    # The user, not `user.plan`: a slug carries no subscription status, so
+    # passing one would quietly hand a trialing account the paid tier's
+    # allowance (`Plans.effective/1`).
+    included = Plans.included_turn_hours(user)
 
     %{
       used: used,

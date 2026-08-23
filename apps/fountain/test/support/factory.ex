@@ -41,6 +41,22 @@ defmodule Fountain.Factory do
     verified
   end
 
+  @doc """
+  A verified user with a live subscription — `subscription_status: "active"`.
+
+  `insert_verified_user/1` leaves the schema default, `"trialing"`, and a
+  trialing account is deliberately capped below its tier (`Fountain.Plans`'
+  `trial` plan): two sandboxes, forty turn hours, no teammate contacts. Reach
+  for this one whenever the test is about what a *plan* allows rather than
+  about the trial, or the plan's numbers will not be the ones in force.
+  """
+  def insert_active_user(overrides \\ %{}) do
+    overrides
+    |> insert_verified_user()
+    |> Fountain.Accounts.User.billing_changeset(%{subscription_status: "active"})
+    |> Repo.update!()
+  end
+
   def insert_api_key(user, name \\ nil, opts \\ []) do
     name = name || "key-#{uniq()}"
     {:ok, {key_record, raw_key}} = Fountain.Accounts.create_api_key(user.id, name, opts)

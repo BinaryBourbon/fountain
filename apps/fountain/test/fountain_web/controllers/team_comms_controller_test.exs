@@ -11,7 +11,7 @@ defmodule FountainWeb.TeamCommsControllerTest do
     previous = Application.get_env(:fountain, :feature_flag_overrides)
     on_exit(fn -> restore(:feature_flag_overrides, previous) end)
 
-    user = insert_verified_user()
+    user = insert_active_user()
     {_key, raw_key} = insert_api_key(user)
     {:ok, user: user, raw_key: raw_key}
   end
@@ -196,7 +196,7 @@ defmodule FountainWeb.TeamCommsControllerTest do
     } do
       flag(true)
       loose = insert_agent(user_id: user.id)
-      {theirs, _} = teammate(insert_verified_user())
+      {theirs, _} = teammate(insert_active_user())
 
       give(conn, key, loose.id)
       |> json_response(404)
@@ -377,7 +377,7 @@ defmodule FountainWeb.TeamCommsControllerTest do
     end
 
     test "is 404 for another tenant", %{conn: conn, conv: conv} do
-      other = insert_verified_user()
+      other = insert_active_user()
       {_key, other_key} = insert_api_key(other)
 
       assert rpc(conn, other_key, conv.id, %{"id" => 1, "method" => "initialize"})

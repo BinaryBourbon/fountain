@@ -6,7 +6,7 @@ defmodule FountainWeb.ConversationControllerTest do
   alias FountainWeb.ConversationController
 
   setup do
-    user = insert_verified_user()
+    user = insert_active_user()
     {_key_record, raw_key} = insert_api_key(user)
     {:ok, user: user, raw_key: raw_key}
   end
@@ -27,7 +27,7 @@ defmodule FountainWeb.ConversationControllerTest do
       conn: conn,
       raw_key: raw_key
     } do
-      other_user = insert_verified_user()
+      other_user = insert_active_user()
       other_conv = insert_conversation(user_id: other_user.id)
 
       conn = conn |> authed_with_key(raw_key) |> get("/api/conversations")
@@ -132,7 +132,7 @@ defmodule FountainWeb.ConversationControllerTest do
       conn: conn,
       raw_key: raw_key
     } do
-      other_user = insert_verified_user()
+      other_user = insert_active_user()
       other_conv = insert_conversation(user_id: other_user.id)
 
       conn = conn |> authed_with_key(raw_key) |> get("/api/conversations/#{other_conv.id}")
@@ -217,7 +217,7 @@ defmodule FountainWeb.ConversationControllerTest do
       conn: conn,
       raw_key: raw_key
     } do
-      other_user = insert_verified_user()
+      other_user = insert_active_user()
       other_conv = insert_conversation(user_id: other_user.id)
 
       conn = conn |> authed_with_key(raw_key) |> get("/api/conversations/#{other_conv.id}/turns")
@@ -348,7 +348,7 @@ defmodule FountainWeb.ConversationControllerTest do
       conn: conn,
       raw_key: raw_key
     } do
-      other_user = insert_verified_user()
+      other_user = insert_active_user()
       other_conv = insert_conversation(user_id: other_user.id)
 
       conn = conn |> authed_with_key(raw_key) |> delete("/api/conversations/#{other_conv.id}")
@@ -412,7 +412,7 @@ defmodule FountainWeb.ConversationControllerTest do
     end
 
     test "returns 404 when agent belongs to a different user", %{conn: conn, raw_key: raw_key} do
-      other_user = insert_verified_user()
+      other_user = insert_active_user()
       other_agent = insert_agent(user_id: other_user.id)
 
       conn =
@@ -562,7 +562,7 @@ defmodule FountainWeb.ConversationControllerTest do
       conn: conn,
       raw_key: raw_key
     } do
-      other_user = insert_verified_user()
+      other_user = insert_active_user()
       other_conv = insert_conversation(user_id: other_user.id)
 
       conn =
@@ -874,7 +874,7 @@ defmodule FountainWeb.ConversationControllerTest do
     end
 
     test "another tenant's conversation is still a 404", %{conn: conn, raw_key: raw_key} do
-      other = insert_conversation(user_id: insert_verified_user().id)
+      other = insert_conversation(user_id: insert_active_user().id)
 
       conn =
         conn
@@ -1016,7 +1016,7 @@ defmodule FountainWeb.ConversationControllerTest do
       raw_key: raw_key,
       agent: agent
     } do
-      foreign = insert_env(user_id: insert_verified_user().id)
+      foreign = insert_env(user_id: insert_active_user().id)
 
       for id <- [foreign.id, Ecto.UUID.generate()] do
         assert conn
@@ -1160,7 +1160,7 @@ defmodule FountainWeb.ConversationControllerTest do
     end
 
     test "another user's binding is invisible", %{conn: conn, agent: agent} do
-      other = insert_verified_user()
+      other = insert_active_user()
       {_k, other_key} = insert_api_key(other)
       other_agent = insert_agent(user_id: other.id)
 
