@@ -11,7 +11,7 @@
  * that are not turns a green suite into a lie — `me()` shipped returning `null`
  * against production for exactly that reason, because this file wrapped
  * `/api/auth/me` and the only test that touched the path called `request()`
- * rather than the verb. The unwrapped ones, from the OpenAPI document:
+ * rather than the verb. The unenveloped ones, from the OpenAPI document:
  *
  *   GET  /api/auth/me
  *   POST /api/auth/api-keys
@@ -201,7 +201,7 @@ export class FakeFountain {
 
     const path = url.pathname;
 
-    // Unenveloped, exactly as the real server answers it. See UNENVELOPED.
+    // Unenveloped, exactly as the real server answers it — see the note above.
     if (path === "/api/auth/me") {
       return json(res, 200, { id: "user-1", email: "test@example.com", role: "user", email_verified: true });
     }

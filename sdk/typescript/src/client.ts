@@ -162,7 +162,7 @@ export class Fountain {
    *
    * `request`, not `data`: this is one of the few endpoints that answers with
    * the object itself rather than `{data: …}`, so unwrapping would hand back
-   * `null` for a call that succeeded. See `UNENVELOPED` in `test/server.ts`.
+   * `null` for a call that succeeded. `test/server.ts` lists the others.
    */
   async me(): Promise<AuthMe> {
     return this.api.request<AuthMe>("GET", "/api/auth/me");
