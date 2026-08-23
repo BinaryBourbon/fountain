@@ -222,8 +222,13 @@
         <p class="mt-3 text-sm font-medium text-[var(--color-text-primary)]">
           {plan_turn_hours(plan)}
         </p>
+        <%!-- Naming parking explicitly, rather than the softer "not while it
+              waits": scale-to-zero is the strongest claim in the product, and
+              a pricing page that only gestures at it quietly undercuts the
+              thing the rest of the page is arguing. --%>
         <p class="mt-1 text-xs text-[var(--color-text-muted)]">
-          counted while an agent is working, not while it waits.
+          counted only while a prompt is in flight. A parked agent, an idle one,
+          and one running on your own machine all cost nothing.
         </p>
         <a
           href={~p"/auth/register"}
@@ -234,8 +239,36 @@
       </div>
     </div>
 
-    <p class="mt-8 text-center text-xs text-[var(--color-text-muted)]">
-      14 days free on any plan, no card. Change plan or cancel at any time.
-    </p>
+    <%!-- The two questions an engineer asks before signing up, answered where
+          they are asked rather than on the billing page they cannot see yet.
+
+          "What happens at the limit" has to be answered even though the answer
+          is currently "nothing": a plan that lists 800 hours and then says
+          nothing reads as a hard stop, and a hard stop on hours sounds like an
+          agent dying mid-task. Concurrency is a cap and behaves like one; hours
+          are not, and the page should not let the reader assume they are. --%>
+    <div class="mt-10 max-w-2xl mx-auto space-y-3 text-center text-xs text-[var(--color-text-muted)]">
+      <p>
+        <span class="text-[var(--color-text-secondary)]">
+          Going over the hours does not stop anything.
+        </span>
+        No agent is killed, no request is refused, and nothing extra is charged
+        today. We are still working out what a fair overage looks like, and you
+        will hear it from us before it changes.
+      </p>
+      <p>
+        <span class="text-[var(--color-text-secondary)]">
+          Running at the concurrency cap does.
+        </span>
+        A sandbox beyond it waits for a free slot rather than starting, so the
+        number to choose a plan on is how many agents you want working at once.
+      </p>
+      <p>
+        The 14-day trial runs {trial_plan().concurrent_sandboxes} agents at once
+        with {trial_plan().included_turn_hours} turn hours, so you can judge it
+        before paying. Subscribing lifts both the same day. No card to start,
+        and you can change plan or cancel at any time.
+      </p>
+    </div>
   </div>
 </section>

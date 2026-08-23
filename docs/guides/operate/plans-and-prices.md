@@ -67,9 +67,15 @@ question. See
 [issue 1016](https://github.com/BinaryBourbon/fountain/issues/1016) for the
 current state.
 
-Three surfaces show the number. The billing page shows it to the tenant. The
-API reports it at `GET /api/account/billing`. The admin page for one account
-shows it beside the sandbox count.
+The pricing page states this to a visitor, because a plan that lists 800 hours
+and then says nothing reads as a hard stop. The two limits behave differently.
+A tenant at the concurrency cap waits for a free slot. A tenant over the hours
+continues, and pays no more.
+
+Four surfaces show the number. The pricing page shows it to a visitor. The
+billing page shows it to the tenant. The API reports it at
+`GET /api/account/billing`. The admin page for one account shows it beside the
+sandbox count.
 
 ### The billing period
 
