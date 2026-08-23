@@ -112,19 +112,69 @@ defmodule Fountain.Audit do
   end
 
   defp do_mirror(%Event{} = event) do
-    # Not every audited row is a product event. `Analytics.product_event?/2`
-    # owns that judgement and says why; the short version is that the `:api`
-    # pipeline's request-log row is named after the request line (so its name
-    # carries a UUID) and self-issued API keys were 70% of the trail.
+    # An audited row becomes one of three things, and `Fountain.Analytics`
+    # owns every one of those judgements:
     #
-    # `refresh_person/1` still runs for the rows this drops. A subscription
-    # transition recorded against a system actor changes the account's shape
-    # whether or not the row itself is worth counting.
+    #   * a semantic product event under its own name (`agent.created`) —
+    #     `product_event?/2`;
+    #   * the `:api` pipeline's request-log row, which becomes the single
+    #     `api.request` event with the route as a property — `api_request/1`
+    #     says why the name cannot be the route;
+    #   * nothing — a self-issued API key, which was 70% of the trail.
+    #
+    # `refresh_person/1` runs for all three. A subscription transition
+    # recorded against a system actor changes the account's shape whether or
+    # not the row itself is worth counting.
     refresh_person(event)
 
-    if Fountain.Analytics.product_event?(event.action, event.actor),
-      do: capture_event(event)
+    cond do
+      Fountain.Analytics.product_event?(event.action, event.actor) ->
+        capture_event(event)
+
+      match?({:ok, _}, Fountain.Analytics.api_request(event.action)) ->
+        capture_api_request(event)
+
+      true ->
+        :ok
+    end
   end
+
+  # One event name for the whole API surface. `route` is the matched router
+  # pattern, so it is bounded by the router rather than by traffic, and
+  # `status`/`status_class` make a run of refusals visible as a breakdown
+  # instead of as a shape in the audit table nobody queries.
+  #
+  # A refused request with no principal (a 401 on a bad credential) captures
+  # nothing: `Analytics.capture/4` drops events with no subject by rule, so
+  # PostHog person counts keep meaning accounts. Unauthenticated API failures
+  # are an access-log question and stay one — the audit trail keeps the row.
+  defp capture_api_request(%Event{} = event) do
+    {:ok, {method, route}} = Fountain.Analytics.api_request(event.action)
+    status = status(event.metadata)
+
+    Fountain.Analytics.capture(
+      "api.request",
+      event.user_id,
+      %{
+        "method" => method,
+        "route" => route,
+        "endpoint" => event.action,
+        "status" => status,
+        "status_class" => status_class(status),
+        "resource_type" => event.resource_type,
+        "actor" => event.actor,
+        "source" => "audit"
+      },
+      request_ip: event.request_ip,
+      timestamp: event.inserted_at
+    )
+  end
+
+  defp status(metadata) when is_map(metadata), do: Map.get(metadata, "status")
+  defp status(_), do: nil
+
+  defp status_class(status) when is_integer(status), do: "#{div(status, 100)}xx"
+  defp status_class(_), do: nil
 
   defp capture_event(%Event{} = event) do
     Fountain.Analytics.capture(

@@ -1,0 +1,198 @@
+---
+type: ADR
+title: "Web analytics from the public pages, API usage as one event, and an end to the datacentre geolocation"
+description: "posthog-js on the public browser surface only (the console stays snippet-free and server-captured), the anonymous visitor merged into the account at sign-in from the server, the :api pipeline's request log captured as a single api.request event with route as a property, and $ip replaced by an explicit $geoip_disable."
+tags: [observability, analytics, privacy, api]
+status: stable
+adr: "0028"
+adr_status: "Accepted"
+date: 2026-08-23
+generated: { by: human:jhgaylor, at: 2026-08-23T03:00:00-04:00 }
+verified: { by: human:jhgaylor, at: 2026-08-23T03:00:00-04:00 }
+---
+
+# 0028 — Web analytics from the public pages, API usage as one event, and an end to the datacentre geolocation
+
+**Status:** Accepted. Everything described here is built:
+`FountainWeb.Plugs.WebAnalytics`, `FountainWeb.Plugs.AnalyticsIdentity`,
+`Fountain.Analytics.browser_config/0`, `alias_anonymous/2`, `api_request/1`,
+the `api.request` branch in `Fountain.Audit`, and the runtime CSP in
+`FountainWeb.Router.csp/0`. Covered by `analytics_web_test.exs`,
+`fountain_web/plugs/web_analytics_test.exs`,
+`fountain_web/plugs/analytics_identity_test.exs`, and the amended
+`analytics_bridges_test.exs` and `analytics_pageview_test.exs`.
+
+Amends **ADR 0025**, which stands except where this says otherwise.
+
+## Context
+
+ADR 0025 built the product analytics pipeline and it works. A day of
+production data showed that three of the questions it was built to answer
+could not be asked of it, and that one of its outputs was actively wrong.
+
+**Nobody who was not signed in was counted anywhere.** `capture/4` drops an
+event with no subject, by rule, so PostHog person counts mean accounts. The
+consequence went unnoticed: the marketing home, the legal pages, the manual
+and the whole auth flow produced *nothing*. Fountain had no idea how many
+people looked at it, where they came from, or how many of them reached the
+register form. The acquisition funnel had no top.
+
+**Web analytics had no input.** The console's server-side `$pageview` is the
+only pageview the project received. It carries no `$session_id`, so a query
+for sessions returned **0** against 108 pageviews; no `$referrer` and no UTM
+parameters, so acquisition was unanswerable; no `$browser`, `$os` or
+`$device_type`. Every PostHog web analytics KPI — bounce rate, session
+duration, entry and exit pages — has no input at all. These are facts about a
+browser, and only a browser has them.
+
+**Every event geolocated to the deployment.** `base_properties/2` sent
+`"$ip" => nil` with a comment saying that meant "no location". It does not.
+PostHog fills a missing or null `$ip` from the address the batch arrived from,
+which for a server-side sink is a pod's egress address, and then geolocates
+that. All 108 pageviews reported a single city. The code that was written to
+stop exactly this caused it.
+
+**API usage was refused wholesale.** ADR 0025 declined the `:api` pipeline's
+request-log rows, correctly, because their *names* are request lines and 73
+distinct names in one day is 73 permanent event definitions. That reasoning is
+about the name. It was applied to the row, which left "which endpoints does
+anyone call", "is the SDK erroring", and "did that release change API usage"
+with no answer, while the audit trail held the data for all three.
+
+## Decision
+
+**posthog-js on the public surface, and only there.**
+`FountainWeb.Plugs.WebAnalytics` marks the landing and legal pages, the manual
+and the auth flow; the root layout renders the snippet for those routes alone.
+This is what makes a visitor countable: sessions, referrers, UTMs, devices,
+and people who have no account yet.
+
+**The console does not get one, and this is the constraint on future work.**
+ADR 0025 rejected a console snippet and that rejection stands, for its
+original reasons plus a new one: `FountainWeb.Live.Hooks` already captures
+`$pageview` there, and a snippet that autocaptures would double every console
+number in the project. A console page that needs a client-side event should
+send it through the server, not by loading the library on that surface.
+
+**`person_profiles: "identified_only"`.** An anonymous reader does not mint a
+person profile. The events still count — visitors, sessions and entry pages
+all work on anonymous events — but a person appears when an account does,
+which is the same rule the server-side capture keeps. Without this, the manual
+would become the project's largest cohort and the person count would stop
+meaning accounts.
+
+**The visitor and the account are merged from the server.**
+`FountainWeb.Plugs.AnalyticsIdentity` reads posthog-js's own cookie
+(`ph_<key>_posthog`), and on the transition from no session to a session
+sends `$identify` with `$anon_distinct_id`. PostHog merges the anonymous
+person into the account, and the pages someone read before signing up join
+their history.
+
+It is a plug on the transition, not a call at each sign-in site, for ADR
+0013's reason: five controllers establish a browser session today, and a sixth
+would be one forgotten line away from a silent hole. Doing it from the server
+also avoids the alternative, which is a snippet on the console — the pages a
+person lands on after signing in.
+
+**The `:api` request log becomes one event.** `api.request`, with `method`,
+`route`, `status` and `status_class` as properties. The cardinality moves from
+the event definition, where it is permanent and unbounded, to a property
+value, where PostHog is built to break down by it and the router bounds the
+set. `Fountain.Analytics.api_request/1` owns the classification, and the two
+classifiers are mutually exclusive by test.
+
+A request refused before Fountain knows the account has no subject and is not
+captured. That preserves ADR 0025's rule that persons mean accounts, and it
+means unauthenticated API failures stay an access-log question. The audit
+trail keeps the row either way.
+
+**`$geoip_disable`, not a null `$ip`.** A request-scoped capture forwards the
+real client address; anything else states explicitly that there is no
+location. The console pageview hook now forwards the address
+`FountainWeb.Audited.put_client_ip/1` already resolved at mount, under the
+same trusted-proxy rule the rate limiter and the audit trail use. This
+replaces the sentence in ADR 0025's Consequences that describes `$ip` as sent
+`null`.
+
+**The CSP is widened on the public responses only.** `FountainWeb.Router`'s
+`@csp` is unchanged and names no PostHog origin, so the console's policy stays
+exactly as tight as it was — it loads no analytics script, so it should not
+permit one. `FountainWeb.Plugs.WebAnalytics` appends the two origins to
+`script-src` and `connect-src` on the responses that do load it.
+
+That append happens at runtime because `POSTHOG_HOST` is read in
+`config/runtime.exs`: a compile-time entry would carry whatever the build saw
+— for a release, nothing — and would block every self-hosted PostHog behind a
+header that looked correct in the source.
+`Fountain.Analytics.assets_host/1` derives PostHog Cloud's separate asset
+origin so `POSTHOG_HOST` stays the one thing an operator sets.
+
+**The snippet's config reaches it as `data-` attributes.** HEEx escapes an
+attribute on its own, so the layout interpolates nothing into JavaScript and
+needs no `raw/1`. A template that concatenates config into a script body is an
+XSS surface that has to be argued about; one that does not is not.
+
+**`POSTHOG_BROWSER_CAPTURE=false`** keeps the library off the public pages and
+leaves server capture untouched. Loading a third-party script into a visitor's
+browser is a different decision from sending product events from a server, and
+a self-hoster is entitled to make them separately.
+
+## Consequences
+
+The project now receives two kinds of pageview. They are distinguished by a
+`surface` property (`public` / `console`), which every browser event carries
+as a registered super-property and every hook event sets. Any query that does
+not filter on it is counting two different things.
+
+PostHog's web analytics product becomes usable, but only for the public
+surface. Console usage stays a product-analytics question answered by
+`$pageview` with `surface: "console"`, and it will never have sessions or
+bounce rates. That is the deliberate cost of not running a snippet there.
+
+The CSP is now assembled in two places — the router's attribute and a plug
+that appends to it. The plug parses the header it finds rather than
+re-declaring one, so there is still a single source for every directive, but a
+future change to `@csp`'s directive names would need to keep `@widened` in
+step.
+
+Merging depends on a cookie that an ad blocker removes, and on the visitor
+signing in from the browser they browsed in. A merge that cannot be made is
+not an error; that person's history starts at their account, which is where
+every account's history started before this. Registration does not sign anyone
+in, so the merge for a new signup lands at email verification rather than at
+the register form.
+
+Reading posthog-js's cookie couples the server to a third-party storage
+format. It is read-only, defensive at every step, and it fails to `nil` on
+anything unexpected — but a posthog-js change to the cookie shape would make
+merging silently stop, with no other symptom than a funnel that loses its top
+again.
+
+`api.request` adds one PostHog event per audited API write, roughly doubling
+captured volume for API-heavy tenants. It is one event definition, and it is
+the only event in the project whose name is fixed while its meaning varies by
+property.
+
+## Alternatives considered
+
+- **A snippet on the console too.** It would give the console sessions and
+  replay, and it would double every pageview unless the server-side hook were
+  deleted at the same time. Out of scope by choice; if it is ever done, the
+  hook goes with it.
+- **Lifting `product_event?/2`'s refusal and letting route-named events
+  through.** The original reasoning holds: 73 permanent event definitions per
+  day, and PostHog never garbage-collects one.
+- **Answering API usage from Grafana instead.** The data is already there and
+  this would have cost nothing. It splits one question across two tools: "did
+  the accounts that signed up last week start using the API" needs the person,
+  and the person is in PostHog.
+- **Calling `posthog.identify()` in the browser after login.** The natural
+  approach, and it requires the snippet on the console, which is the thing
+  this ADR declines.
+- **A `$create_alias` event instead of `$identify` with `$anon_distinct_id`.**
+  Both merge. `$identify` is the canonical anonymous-to-identified direction
+  and is what the browser library sends for the same transition.
+- **Turning off PostHog's GeoIP transformation project-wide.** Suggested by
+  PostHog's own issue tracker, and it would fix the symptom for every event at
+  once. It is a project setting rather than a property of this deployment, so
+  a second Fountain reporting into the same project would inherit it silently.

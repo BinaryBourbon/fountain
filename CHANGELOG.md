@@ -16,6 +16,54 @@ upgrade, is in
 
 ## [Unreleased]
 
+### Added
+
+- **The public pages report visitors.** Fountain's analytics were server-side
+  only, and `capture/4` drops an event with no account attached — so the
+  landing page, the legal pages, the manual and the whole auth flow sent
+  nothing at all. Nobody who was not already signed in was counted anywhere,
+  and the acquisition funnel had no top. Those pages now load `posthog-js`,
+  which is the only thing that has the facts the question needs: sessions
+  (the project's server-side pageviews had produced **0** sessions against 108
+  pageviews, so every web-analytics KPI — bounce rate, session duration, entry
+  pages — had no input), referrers, UTM parameters, and devices. Anonymous
+  readers do not mint person profiles (`person_profiles: "identified_only"`),
+  so a person still appears when an account does. `POSTHOG_BROWSER_CAPTURE=false`
+  turns it off and leaves server capture untouched. ADR 0028.
+- **The visitor and the account become one person at sign-in.**
+  `FountainWeb.Plugs.AnalyticsIdentity` reads posthog-js's cookie and merges
+  the anonymous visitor into the account, so the pages someone read before
+  signing up join their history. It keys on the session transition rather than
+  sitting at each of the five places a session is established, for the reason
+  ADR 0013 gives: a sixth door would otherwise be one forgotten line away from
+  a silent hole. Doing it from the server is what lets the console stay free
+  of a snippet.
+- **API usage is answerable.** The `:api` pipeline's request-log rows were
+  refused wholesale, which left "which endpoints does anyone call", "is the SDK
+  erroring" and "did that release change API usage" with no answer while the
+  audit trail held the data for all three. They now arrive as a single
+  `api.request` event carrying `method`, `route`, `status` and `status_class`.
+  One event name, with the route as a *property*: the original refusal was
+  about the event *name* (73 distinct request-line names in one day, each a
+  permanent PostHog event definition), and a property is where PostHog can
+  break down by a value the router bounds.
+
+### Fixed
+
+- **Analytics no longer geolocates every person to the datacentre.**
+  `Fountain.Analytics` sent `"$ip" => nil` believing that meant "no location".
+  It does not: PostHog fills a missing `$ip` from the address the batch
+  arrived from, which for a server-side sink is a pod's egress address, and
+  then geolocates that — all 108 pageviews in the project reported a single
+  city. A capture with no client address now sets `$geoip_disable`, and the
+  console pageview hook forwards the address `Audited.put_client_ip/1` already
+  resolved at mount, under the same trusted-proxy rule the rate limiter uses.
+- **The CSP is built at runtime.** It is assembled per response rather than
+  baked into a module attribute, because `POSTHOG_HOST` is read in
+  `config/runtime.exs` — a compile-time policy would have carried whatever the
+  *build* saw (for a release, nothing) and blocked every self-hosted PostHog
+  behind a header that looked correct in the source.
+
 ### Changed
 
 - **`/` is no longer the same page on every deployment.** The homepage sold a

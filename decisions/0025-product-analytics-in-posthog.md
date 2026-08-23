@@ -19,6 +19,11 @@ verified: { by: human:jhgaylor, at: 2026-08-22T04:00:00-04:00 }
 `analytics_test.exs`, `analytics_bridges_test.exs`, `analytics/sink_test.exs`
 and `fountain_web/live/analytics_pageview_test.exs`.
 
+**Amended by [ADR 0028](0028-web-analytics-and-api-usage.md)** (2026-08-23) in
+three places, each marked below: the `:api` request-log row is now captured as
+a single `api.request` event, the public browser surface loads `posthog-js`
+(the console still does not), and `$ip` is no longer sent as `null`.
+
 ## Context
 
 Fountain had three telemetry sinks and none of them answered a product
@@ -93,6 +98,9 @@ things a product stream must refuse. Of 2,160 audit rows in 24 hours:
   PostHog registers each distinct name as its own event definition, so that is
   73 new definitions per day, permanently. The semantic row for the same
   mutation is already captured, so refusing it loses nothing.
+  **Amended by ADR 0028**: the reasoning above is about the *name*, and was
+  applied to the row. The row is now captured as one `api.request` event with
+  the route as a property.
 
 `Fountain.Analytics.product_event?/2` is that filter: a closed dotted
 vocabulary, and `api_key.*` only from a human actor. It changes nothing about
@@ -131,8 +139,11 @@ double-count the same fact.
 
 PII leaves the building for the first time. The audit trail is ours; PostHog
 is not. That is why the email is a switch, why `sanitize/1` exists even though
-audit metadata is values-free by rule, and why `$ip` is sent as `null` unless
-a request-scoped caller knows the end user's address.
+audit metadata is values-free by rule, and why `$ip` is only sent when a
+request-scoped caller knows the end user's address.
+**Amended by ADR 0028**: sending `$ip` as `null` did not mean "no location" —
+PostHog fell back to the sending pod's address and geolocated that. A capture
+with no client address now sets `$geoip_disable` instead.
 
 ## Alternatives considered
 
@@ -140,6 +151,10 @@ a request-scoped caller knows the end user's address.
   operator surface behind a login, its pages are LiveView, and the events that
   matter (a turn finishing, a sandbox provisioning) happen on the server where
   no browser is watching. It would also mean a third-party script in the CSP.
+  **Amended by ADR 0028**: this holds for the console and is now a stated
+  constraint there. It was read as covering the whole browser surface, which
+  left every visitor who was not signed in uncounted; the *public* pages load
+  the snippet.
 - **Instrument at call sites.** Precise, and exactly the mistake ADR 0013 was
   written to stop. Coverage would depend on which door a request came through.
 - **Emit from `:telemetry` handlers.** Tempting, since `Fountain.Telemetry`

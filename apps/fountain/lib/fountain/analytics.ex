@@ -26,7 +26,7 @@ defmodule Fountain.Analytics do
 
   | Choke point | Events |
   |---|---|
-  | `Fountain.Audit.record/1` | every audited mutation, under its own action name (`agent.created`, `vault.secret.write`, …) |
+  | `Fountain.Audit.record/1` | every audited mutation, under its own action name (`agent.created`, `vault.secret.write`, …), plus `api.request` for the `:api` pipeline's request log |
   | `Fountain.Billing.record_usage/5` | `usage.sandbox_provisioned`, `usage.turn_started`, `usage.sandbox_terminated`, … |
   | `Fountain.Conversations.publish_stage/4` | `conversation.turn.done` and the other outcome stages webhooks already subscribe to |
   | `FountainWeb.Live.Hooks` | `$pageview` for the console |
@@ -57,7 +57,21 @@ defmodule Fountain.Analytics do
       stdout events; the same reason `Fountain.Webhooks.Events` refuses to
       dispatch `kind: "output"` applies to a capture endpoint.
     * **Anonymous events.** An event with no user is dropped rather than
-      given a synthetic id, so PostHog person counts mean accounts.
+      given a synthetic id, so PostHog person counts mean accounts. The
+      browser snippet on the public pages does send anonymous events — that
+      is the only way a visitor who has no account can be counted at all —
+      but under `person_profiles: "identified_only"`, so it does not mint a
+      person either. See `FountainWeb.Plugs.WebAnalytics`.
+
+  ## The browser half
+
+  Everything above is captured on the server. It cannot answer anything about
+  a *visitor*: a synthesised `$pageview` has no session, no referrer and no
+  device, and the rule directly above means nobody who is not signed in
+  appears at all. `browser_config/0` and `FountainWeb.Plugs.WebAnalytics` put
+  posthog-js on the public pages for exactly that, and `alias_anonymous/2`
+  joins the two halves when someone signs in. The console stays server-only —
+  ADR 0028 and `FountainWeb.Live.Hooks` say why.
   """
 
   require Logger
@@ -107,7 +121,9 @@ defmodule Fountain.Analytics do
     * `:timestamp` — event time; defaults to now, which matters because the
       sink batches.
     * `:request_ip` — the *end user's* IP, forwarded as `$ip` so PostHog
-      geolocates the person rather than the server.
+      geolocates the person rather than the deployment. Omitting it sets
+      `$geoip_disable` instead; PostHog reads a missing `$ip` as "use the
+      address this batch came from", which is not the same as "unknown".
     * `:set` / `:set_once` — person properties to merge on this event.
     * `:groups` — extra group associations beyond the instance group.
   """
@@ -169,6 +185,110 @@ defmodule Fountain.Analytics do
     )
   end
 
+  @doc """
+  Merge the browser's anonymous person into an account that just signed in.
+
+  The public pages (`FountainWeb.Plugs.WebAnalytics`) capture with posthog-js
+  under a generated anonymous id, so everything a visitor did before they had
+  an account — landing, reading the manual, reaching the register form — is
+  recorded against a person nothing later connects to them. Signing in is the
+  moment that connection becomes knowable, and this is where it is made:
+  PostHog merges the anonymous person *into* the identified one, so the
+  pre-signup pageviews join the account's history and the acquisition funnel
+  has a top.
+
+  Done from the server rather than by calling `posthog.identify()` in the
+  browser, because the pages a person lands on *after* signing in are the
+  console, and the console ships no snippet (`FountainWeb.Live.Hooks`). The
+  anonymous id is read out of posthog-js's own cookie by
+  `FountainWeb.Plugs.AnalyticsIdentity`, which is the only thing on the server
+  that ever sees it.
+
+  A no-op when the two ids are the same, when there is no anonymous id, or
+  when the visitor arrived with no PostHog cookie at all (an ad blocker, a
+  first request that skipped every public page, a direct API sign-in).
+  """
+  @spec alias_anonymous(subject(), String.t() | nil) :: :ok
+  def alias_anonymous(subject, anon_distinct_id)
+
+  def alias_anonymous(_subject, blank) when blank in [nil, ""], do: :ok
+
+  def alias_anonymous(subject, anon_distinct_id) when is_binary(anon_distinct_id) do
+    case distinct_id(subject, []) do
+      ^anon_distinct_id ->
+        :ok
+
+      id when is_binary(id) ->
+        capture("$identify", id, %{"$anon_distinct_id" => anon_distinct_id})
+
+      _ ->
+        :ok
+    end
+  end
+
+  def alias_anonymous(_subject, _anon), do: :ok
+
+  @doc """
+  What the browser snippet needs, or `nil` when there is to be no snippet.
+
+  The same project key the server sends with — one project, one person per
+  account, so a visitor's anonymous pageviews and their account's server-side
+  events land somewhere they can be joined (`alias_anonymous/2`). Returns
+  `nil` unless capture is on *and* `POSTHOG_BROWSER_CAPTURE` allows it: a
+  self-hoster who wants server-side product events without loading a
+  third-party script into their users' browsers sets that to false and keeps
+  everything else.
+  """
+  @spec browser_config() :: %{required(:api_key) => String.t(), optional(atom()) => any()} | nil
+  def browser_config do
+    key = Application.get_env(:fountain, :posthog_project_api_key)
+
+    if enabled?() and browser_capture?() and is_binary(key) and key != "" do
+      host = host()
+      %{api_key: key, api_host: host, assets_host: assets_host(host)}
+    end
+  end
+
+  defp browser_capture?,
+    do: Application.get_env(:fountain, :analytics_browser_capture, true) != false
+
+  defp host, do: Application.get_env(:fountain, :posthog_host, "https://us.i.posthog.com")
+
+  @doc """
+  Where posthog-js itself is served from, given the ingestion host.
+
+  PostHog Cloud serves ingestion from `<region>.i.posthog.com` and static
+  assets from `<region>-assets.i.posthog.com` — the snippet on posthog.com
+  hardcodes both — while a self-hosted instance serves both from one origin.
+  Deriving it keeps `POSTHOG_HOST` the single thing an operator sets, and
+  keeps the CSP entry (`FountainWeb.Router`) honest for cloud and self-host
+  alike.
+  """
+  @spec assets_host(String.t()) :: String.t()
+  def assets_host(host) when is_binary(host) do
+    case Regex.run(~r{^(https?://)([a-z0-9-]+)\.i\.posthog\.com/?$}i, host) do
+      [_, scheme, region] -> "#{scheme}#{region}-assets.i.posthog.com"
+      _ -> String.trim_trailing(host, "/")
+    end
+  end
+
+  @doc """
+  The origins the browser snippet talks to, for `FountainWeb.Router`'s CSP.
+
+  Always the configured pair, whether or not capture is on: the header is one
+  shared policy and naming an origin no page loads from costs nothing, while
+  recomputing the policy when a key appears would mean a CSP that depends on
+  runtime state a cached response may not share.
+  """
+  @spec browser_origins() :: [String.t()]
+  def browser_origins do
+    host = host()
+
+    [String.trim_trailing(host, "/"), assets_host(host)]
+    |> Enum.reject(&(&1 == ""))
+    |> Enum.uniq()
+  end
+
   # A context action name: dotted, lowercase, closed vocabulary
   # (`agent.created`, `team.contact.provisioned`). Anything else arriving from
   # the audit trail is the `:api` pipeline's request-log row, which is named
@@ -227,6 +347,45 @@ defmodule Fountain.Analytics do
   end
 
   def product_event?(_action, _actor), do: false
+
+  # The `:api` pipeline's request-log row, whose action is a request line:
+  # "POST /api/agents/:id". `FountainWeb.Plugs.Audit` builds it from the
+  # matched route pattern, so the tail is bounded by the router.
+  @api_request ~r{^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS) (/\S*)$}
+
+  @doc """
+  Split an `:api` pipeline request-log action into `{method, route}`.
+
+  `product_event?/2` refuses these rows and gives the reason: their *names*
+  are request lines, and one PostHog event definition per route — per uuid,
+  before `FountainWeb.Plugs.Audit` started recording the pattern — is
+  unbounded cardinality in a project that never garbage-collects definitions.
+
+  That argument is about the name, and only the name. It was read as "API
+  traffic does not belong in PostHog", which left the product with no answer
+  to "which endpoints does anyone actually call", "is the SDK erroring", or
+  "did that release change the shape of API usage" — questions the audit rows
+  had the data for all along.
+
+  So the row still becomes an event; it becomes **one** event,
+  `api.request`, with the route as a *property*. Cardinality moves from the
+  event definition, where it is permanent and unbounded, to a property value,
+  where PostHog is built to break down by it and the router bounds the set.
+  One name, one definition, and `route`, `method` and `status` are the three
+  breakdowns that answer all three questions.
+
+  Returns `:error` for anything that is not a request line, which is every
+  semantic context action.
+  """
+  @spec api_request(String.t()) :: {:ok, {String.t(), String.t()}} | :error
+  def api_request(action) when is_binary(action) do
+    case Regex.run(@api_request, action) do
+      [_, method, route] -> {:ok, {method, route}}
+      _ -> :error
+    end
+  end
+
+  def api_request(_action), do: :error
 
   @doc """
   Person properties derived from a user row.
@@ -343,14 +502,29 @@ defmodule Fountain.Analytics do
       "$lib" => @lib,
       "$lib_version" => version(),
       "$groups" => Map.merge(%{@group_type => instance()}, Keyword.get(opts, :groups, %{})),
-      # Without this PostHog geolocates whichever pod sent the batch and every
-      # person in the project appears to live in one datacentre. `nil` means
-      # "no location"; a request-scoped caller passes the real client IP.
-      "$ip" => Keyword.get(opts, :request_ip),
       "environment" => env()
     }
+    |> Map.merge(location(Keyword.get(opts, :request_ip)))
     |> Map.merge(feature_flag_properties(distinct_id))
   end
+
+  # Where the person is, or an explicit statement that we do not know.
+  #
+  # This used to send `"$ip" => nil` and call that "no location". It is not:
+  # PostHog fills a missing or null `$ip` from the address the batch arrived
+  # from — which, for a sink that flushes from a pod, is the deployment's
+  # egress address — and then geolocates that. It put **every one of 108
+  # pageviews in a single city** in the Fountain project, which is the exact
+  # failure the old comment believed it was preventing.
+  #
+  # `$geoip_disable` is the documented way to say "do not enrich this event",
+  # and it is what the server SDKs set by default. So: forward the real client
+  # address when the caller has one (any request-scoped capture), and suppress
+  # enrichment when it does not (a boot event, a background sweep, a metering
+  # row written by a worker). An unknown location is now absent rather than
+  # wrong, and a wrong one cannot come back by omission.
+  defp location(ip) when is_binary(ip) and ip != "", do: %{"$ip" => ip}
+  defp location(_), do: %{"$geoip_disable" => true}
 
   # `$feature/<key>` is what makes "did the flagged cohort behave differently"
   # answerable in PostHog without re-deriving the flag at query time. Read from

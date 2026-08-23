@@ -136,29 +136,115 @@ defmodule Fountain.AnalyticsBridgesTest do
     end
   end
 
-  describe "what the audit trail does not forward" do
-    test "the api pipeline's request-log row is audited but not captured" do
+  describe "the api pipeline's request log" do
+    test "becomes one api.request event with the route as a property" do
       user = insert_verified_user()
       forget_setup()
 
       {:ok, _} =
         Audit.record(%{
-          action: "DELETE /api/agents/02100b96-193b-4bdf-b9d9-d1f6e356061d",
+          action: "DELETE /api/agents/:id",
+          resource_type: "request",
+          user_id: user.id,
+          actor: "api",
+          metadata: %{"status" => 204}
+        })
+
+      # The name is fixed and the route is data. That is the whole trade: one
+      # permanent event definition instead of one per route, and `route` is
+      # something PostHog can break down by.
+      assert event = event_named("api.request")
+      assert event["properties"]["method"] == "DELETE"
+      assert event["properties"]["route"] == "/api/agents/:id"
+      assert event["properties"]["status"] == 204
+      assert event["properties"]["status_class"] == "2xx"
+      assert event["properties"]["actor"] == "api"
+
+      # Nothing is captured under the request line itself.
+      assert event_named("DELETE /api/agents/:id") == nil
+    end
+
+    test "a refused request is captured, which is the point of keeping the row" do
+      user = insert_verified_user()
+      forget_setup()
+
+      {:ok, _} =
+        Audit.record(%{
+          action: "POST /api/conversations",
+          resource_type: "request",
+          user_id: user.id,
+          actor: "api",
+          metadata: %{"status" => 403}
+        })
+
+      assert event = event_named("api.request")
+      assert event["properties"]["status"] == 403
+      assert event["properties"]["status_class"] == "4xx"
+    end
+
+    test "an unbounded route still yields exactly one event name" do
+      # `FountainWeb.Plugs.Audit` records the matched route pattern, so ids do
+      # not reach the action. If one ever did — a path that matched no route,
+      # via the plug's mask_ids fallback — it lands in a property, where the
+      # cost is a property value rather than a permanent event definition.
+      user = insert_verified_user()
+      forget_setup()
+
+      for id <- 1..3 do
+        {:ok, _} =
+          Audit.record(%{
+            action: "POST /api/conversations/0000000#{id}-0000-4000-8000-000000000000/read",
+            resource_type: "request",
+            user_id: user.id,
+            actor: "api",
+            metadata: %{"status" => 200}
+          })
+      end
+
+      events = captured()
+
+      assert length(events) == 3
+      assert Enum.map(events, & &1["event"]) |> Enum.uniq() == ["api.request"]
+      assert events |> Enum.map(& &1["properties"]["route"]) |> Enum.uniq() |> length() == 3
+    end
+
+    test "a row with no status is captured without inventing one" do
+      user = insert_verified_user()
+      forget_setup()
+
+      {:ok, _} =
+        Audit.record(%{
+          action: "GET /api/agents",
           resource_type: "request",
           user_id: user.id,
           actor: "api"
         })
 
-      assert captured() == []
-
-      # Still in the trail, which is the point: this drops nothing from the
-      # audit record, only from the product stream.
-      assert Enum.any?(
-               Fountain.Audit.list_for_user(user.id),
-               &(&1.action == "DELETE /api/agents/02100b96-193b-4bdf-b9d9-d1f6e356061d")
-             )
+      assert event = event_named("api.request")
+      assert event["properties"]["status"] == nil
+      assert event["properties"]["status_class"] == nil
     end
 
+    test "an unauthenticated refusal captures nothing, keeping persons meaning accounts" do
+      forget_setup()
+
+      {:ok, _} =
+        Audit.record(%{
+          action: "POST /api/conversations",
+          resource_type: "request",
+          user_id: nil,
+          actor: "api",
+          metadata: %{"status" => 401}
+        })
+
+      # `capture/4` drops a subject-less event by rule. A 401 on a bad
+      # credential has no principal, so it stays an access-log question and
+      # the audit row remains the record of it.
+      assert captured() == []
+    end
+  end
+
+  describe "what the audit trail does not forward" do
     test "an API key the system issued itself is not captured" do
       user = insert_verified_user()
       forget_setup()
