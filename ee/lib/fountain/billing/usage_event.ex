@@ -26,8 +26,12 @@ defmodule Fountain.Billing.UsageEvent do
     field :inserted_at, :utc_datetime
   end
 
+  # The closed vocabulary of things Fountain pays for. Sandbox lifecycle, and
+  # the teammate messages that carry a per-message provider charge on top of
+  # the monthly cost of an inbox or a number (`Fountain.Billing.Finance`).
   @valid_event_types ~w(sandbox_provisioned sandbox_provision_failed turn_started sandbox_terminated
-                         sandbox_suspended sandbox_resumed)
+                         sandbox_suspended sandbox_resumed
+                         comms_email_sent comms_sms_sent comms_sms_received)
 
   def changeset(usage_event, attrs) do
     usage_event

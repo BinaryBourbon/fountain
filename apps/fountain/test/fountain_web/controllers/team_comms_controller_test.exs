@@ -349,6 +349,63 @@ defmodule FountainWeb.TeamCommsControllerTest do
       refute inspect(event.metadata) =~ "+15550001111"
     end
 
+    test "a send is metered as well as audited — it costs money per message", %{
+      conn: conn,
+      raw_key: key,
+      conv: conv,
+      user: user,
+      contact: contact
+    } do
+      Req.Test.stub(AgentPhone, fn conn ->
+        Req.Test.json(conn, %{"id" => "sms_1", "status" => "queued", "channel" => "sms"})
+      end)
+
+      rpc(conn, key, conv.id, %{
+        "id" => 3,
+        "method" => "tools/call",
+        "params" => %{
+          "name" => "sms_send",
+          "arguments" => %{"to" => "+15550001111", "body" => "hi"}
+        }
+      })
+      |> json_response(200)
+
+      [event] = usage_events(user.id, "comms_sms_sent")
+      assert event.resource_id == contact.id
+      assert event.resource_type == "team_contact"
+      # The trail records what happened, never who it went to (ADR 0013).
+      refute inspect(event.metadata) =~ "+15550001111"
+    end
+
+    test "a read is not metered — only messages on the wire cost", %{
+      conn: conn,
+      raw_key: key,
+      conv: conv,
+      user: user
+    } do
+      Req.Test.stub(AgentPhone, fn conn ->
+        Req.Test.json(conn, %{"data" => [], "hasMore" => false})
+      end)
+
+      rpc(conn, key, conv.id, %{
+        "id" => 4,
+        "method" => "tools/call",
+        "params" => %{"name" => "sms_list", "arguments" => %{}}
+      })
+      |> json_response(200)
+
+      assert usage_events(user.id, "comms_sms_sent") == []
+    end
+
+    defp usage_events(user_id, event_type) do
+      import Ecto.Query
+
+      Fountain.Repo.all(
+        from e in Fountain.Billing.UsageEvent,
+          where: e.user_id == ^user_id and e.event_type == ^event_type
+      )
+    end
+
     test "a notification is 202 with no body", %{conn: conn, raw_key: key, conv: conv} do
       assert rpc(conn, key, conv.id, %{"method" => "notifications/initialized"}) |> response(202) ==
                ""

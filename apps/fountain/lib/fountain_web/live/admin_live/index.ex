@@ -520,7 +520,8 @@ defmodule FountainWeb.AdminLive.Index do
       conversations: 0,
       turns: 0,
       sandbox_minutes: 0.0,
-      sandbox_minutes_by_provider: %{}
+      sandbox_minutes_by_provider: %{},
+      turn_hours: 0.0
     }
 
     sandbox_counts = Quotas.active_sandbox_counts()
@@ -755,17 +756,18 @@ defmodule FountainWeb.AdminLive.Index do
       <section :if={@billing_enabled} class="space-y-3">
         <h2 class="text-lg font-medium">Billing</h2>
         <div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
-          <div class="bg-white rounded shadow border border-zinc-200 px-4 py-3">
+          <.link
+            navigate={~p"/admin/finance"}
+            class="bg-white rounded shadow border border-zinc-200 px-4 py-3 hover:border-zinc-400"
+          >
             <div class="text-xs text-zinc-500">MRR</div>
             <div class="text-2xl font-semibold tabular-nums">
               {format_mrr(@billing_overview.mrr_cents)}
             </div>
-            <div class="text-xs text-zinc-500">
-              {if @billing_overview.mrr_cents,
-                do: "active × monthly price",
-                else: "set STRIPE_PRICE_MONTHLY_CENTS"}
+            <div class="text-xs text-zinc-500" title={mrr_split(@billing_overview.mrr_by_plan)}>
+              active subscriptions, per plan · finance ↗
             </div>
-          </div>
+          </.link>
           <.link
             navigate={~p"/admin?status=trialing&sort=trial_end&dir=asc"}
             class="bg-white rounded shadow border border-zinc-200 px-4 py-3 hover:border-zinc-400"
@@ -904,7 +906,10 @@ defmodule FountainWeb.AdminLive.Index do
               >
                 Plan
               </th>
-              <th class="px-4 py-2" title="Last 30 days: conversations / turns / sandbox minutes">
+              <th
+                class="px-4 py-2"
+                title="Last 30 days: conversations · turns · turn hours (the unit a plan includes)"
+              >
                 Usage 30d
               </th>
               <th class="px-4 py-2">Sandboxes</th>
@@ -1075,11 +1080,16 @@ defmodule FountainWeb.AdminLive.Index do
                   </form>
                 </div>
               </td>
+              <%!-- Turn hours, not sandbox minutes. Sandbox time is what
+                    Fountain is billed and it is on /admin/finance; what a
+                    tenant *buys* is turn hours (Fountain.Plans), so that is
+                    the number to read beside their plan. The tooltip keeps
+                    the sandbox side one hover away. --%>
               <td
                 class="px-4 py-2 text-xs text-zinc-500 tabular-nums whitespace-nowrap"
-                title={provider_split(u.usage.sandbox_minutes_by_provider)}
+                title={usage_tooltip(u.usage)}
               >
-                {u.usage.conversations}c · {u.usage.turns}t · {round(u.usage.sandbox_minutes)}m
+                {u.usage.conversations}c · {u.usage.turns}t · {format_hours(u.usage.turn_hours)}
               </td>
               <td class="px-4 py-2">
                 <form
@@ -1309,15 +1319,27 @@ defmodule FountainWeb.AdminLive.Index do
   defp idle_share(%{active_seconds: 0}), do: 0.0
   defp idle_share(%{active_seconds: active, idle_seconds: idle}), do: idle / active
 
-  # Which provider a tenant's sandbox minutes ran on, for the usage cell's
-  # tooltip. Empty when the tenant had no sandbox time, so the attribute
-  # renders as nothing rather than as an empty tooltip.
-  defp provider_split(by_provider) when map_size(by_provider) == 0, do: nil
+  # The sandbox side of the usage cell, which the cell itself no longer shows:
+  # total active time and which provider it ran on. Nil when the tenant had no
+  # sandbox time, so the attribute renders as nothing rather than as an empty
+  # tooltip.
+  defp usage_tooltip(%{sandbox_minutes_by_provider: by_provider}) when map_size(by_provider) == 0,
+    do: nil
 
-  defp provider_split(by_provider) do
-    by_provider
-    |> Enum.sort()
-    |> Enum.map_join(" · ", fn {provider, minutes} -> "#{provider} #{round(minutes)}m" end)
+  defp usage_tooltip(usage) do
+    split =
+      usage.sandbox_minutes_by_provider
+      |> Enum.sort()
+      |> Enum.map_join(" · ", fn {provider, minutes} -> "#{provider} #{round(minutes)}m" end)
+
+    "#{round(usage.sandbox_minutes)}m sandbox time (#{split}) — what we are billed, on /admin/finance"
+  end
+
+  # Every active plan behind the MRR tile, for its tooltip.
+  defp mrr_split([]), do: nil
+
+  defp mrr_split(by_plan) do
+    Enum.map_join(by_plan, " · ", fn line -> "#{line.plan.name} ×#{line.accounts}" end)
   end
 
   defp format_hours(h) when h < 1, do: "#{round(h * 60)}m"

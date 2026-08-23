@@ -127,6 +127,49 @@ defmodule FountainWeb.DashboardLiveTest do
     refute html =~ ~s|href="/conversations/#{conv.id}"|
   end
 
+  describe "turn hours" do
+    test "the tile reports turn time, not the wall-clock the sandbox was awake", %{
+      conn: conn,
+      user: user
+    } do
+      # Ten hours awake, two with a prompt in flight. The old tile said "10h"
+      # and a customer could do nothing with it: what their plan includes, and
+      # what they are measured on, is the two.
+      {period_start, _} = Fountain.Billing.current_month_range()
+
+      sandbox =
+        insert_sandbox(
+          user_id: user.id,
+          provider: "sprites",
+          status: "terminated",
+          inserted_at: period_start,
+          terminated_at: DateTime.add(period_start, 10 * 3600, :second)
+        )
+
+      agent = insert_agent(user_id: user.id)
+      conv = insert_conversation(user_id: user.id, agent_id: agent.id, sandbox: sandbox)
+
+      {:ok, _} =
+        Fountain.Conversations._unsafe_create_turn(%{
+          conversation_id: conv.id,
+          turn_number: 1,
+          prompt: "hello",
+          status: "completed",
+          started_at: period_start,
+          ended_at: DateTime.add(period_start, 2 * 3600, :second)
+        })
+
+      {:ok, _lv, html} = live(conn, ~p"/dashboard")
+
+      assert html =~ "Turn hours"
+      assert html =~ "2.0"
+      # Billing is on in test, so the plan's allowance is beside it.
+      assert html =~ "of #{Fountain.Plans.included_turn_hours(user)} included"
+      # The sandbox side is still available, in the hint where it belongs.
+      assert html =~ "sandboxes were awake"
+    end
+  end
+
   describe "this month" do
     test "reports conversations, turns, sandbox time and tokens", %{conn: conn, user: user} do
       now = DateTime.utc_now() |> DateTime.truncate(:second)
@@ -160,7 +203,10 @@ defmodule FountainWeb.DashboardLiveTest do
       assert html =~ "This month"
       assert html =~ "Conversations"
       assert html =~ "Turns"
-      assert html =~ "Sandbox time"
+      # Turn hours, not sandbox time: what a plan includes, and the only one of
+      # the two a customer can act on.
+      assert html =~ "Turn hours"
+      refute html =~ "Sandbox time"
       assert html =~ "Tokens"
       # 1,500 in / 250 out, compacted.
       assert html =~ "1.5k / 250"

@@ -1008,14 +1008,18 @@ defmodule Fountain.BillingTest do
                conversations: 1,
                turns: 2,
                sandbox_minutes: 2.0,
-               sandbox_minutes_by_provider: %{"sprites" => 2.0}
+               sandbox_minutes_by_provider: %{"sprites" => 2.0},
+               # No turns overlapped the sandbox, so no allowance was spent —
+               # two minutes of cost against zero hours of work.
+               turn_hours: 0.0
              }
 
       assert summaries[b.id] == %{
                conversations: 0,
                turns: 1,
                sandbox_minutes: 0.0,
-               sandbox_minutes_by_provider: %{}
+               sandbox_minutes_by_provider: %{},
+               turn_hours: 0.0
              }
 
       refute Map.has_key?(summaries, quiet.id)

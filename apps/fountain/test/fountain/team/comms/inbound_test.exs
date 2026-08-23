@@ -97,6 +97,19 @@ defmodule Fountain.Team.Comms.InboundTest do
     assert event.resource_id == contact.id
     assert event.metadata["prompt_bytes"] == 7
     refute inspect(event.metadata) =~ "ship it"
+
+    # AgentPhone charges to receive, so an inbound text is metered on the same
+    # footing as a send — otherwise the finance panel prices only half of SMS.
+    import Ecto.Query
+
+    [usage] =
+      Repo.all(
+        from e in Fountain.Billing.UsageEvent,
+          where: e.user_id == ^user.id and e.event_type == "comms_sms_received"
+      )
+
+    assert usage.resource_id == contact.id
+    refute inspect(usage.metadata) =~ "ship it"
   end
 
   test "the sender is matched after normalization; anyone else is ignored" do

@@ -632,8 +632,10 @@ defmodule FountainWeb.AdminLiveTest do
       assert html =~ "MRR"
       assert html =~ "Trials ending in 7 days"
       assert html =~ "Conversions this month"
-      # no STRIPE_PRICE_MONTHLY_CENTS in test → honest placeholder, not a number
-      assert html =~ "set STRIPE_PRICE_MONTHLY_CENTS"
+      # MRR is priced from the plan catalog now, so it is a real number even
+      # with no price env var set — and the tile leads to the finance panel.
+      assert html =~ "active subscriptions, per plan"
+      assert html =~ "/admin/finance"
       # status chips link into the filtered user table from #285
       assert html =~ "/admin?status=active"
       assert html =~ "/admin?status=past_due"

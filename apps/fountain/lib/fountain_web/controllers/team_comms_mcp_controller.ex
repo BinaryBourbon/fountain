@@ -51,6 +51,12 @@ defmodule FountainWeb.TeamCommsMcpController do
   # A send is an effect, not a tenant-state mutation, so it is audited here
   # rather than in a context. Records what happened — never the recipients,
   # the subject or the body (ADR 0013).
+  #
+  # The same callback meters it. AgentMail and AgentPhone charge per message
+  # on top of the monthly cost of the inbox and the number, so a send is the
+  # one comms event with a variable price, and the finance panel could not
+  # price it from the contact rows alone. Both calls are best-effort by
+  # contract and neither can fail the send.
   defp audit_fn(contact, user) do
     fn tool, summary ->
       Audit.record(%{
@@ -61,6 +67,34 @@ defmodule FountainWeb.TeamCommsMcpController do
         actor: "sprite",
         metadata: Map.merge(%{"tool" => tool, "agent_id" => contact.agent_id}, summary)
       })
+
+      meter(tool, contact, user, summary)
     end
+  end
+
+  # Only the tools that actually put a message on the wire. `audit` is called
+  # for those alone today, so the fallback clause is a guard against a future
+  # tool joining the audit path without joining the rate card.
+  defp meter(tool, contact, user, summary) when tool in ~w(email_send email_reply) do
+    record_message(user, contact, "comms_email_sent", %{
+      "tool" => tool,
+      "recipients" => Map.get(summary, "recipients", 1)
+    })
+  end
+
+  defp meter("sms_send", contact, user, _summary) do
+    record_message(user, contact, "comms_sms_sent", %{"tool" => "sms_send"})
+  end
+
+  defp meter(_tool, _contact, _user, _summary), do: :ok
+
+  defp record_message(user, contact, event_type, metadata) do
+    Fountain.Billing.record_usage(
+      user.id,
+      event_type,
+      contact.id,
+      "team_contact",
+      Map.put(metadata, "agent_id", contact.agent_id)
+    )
   end
 end

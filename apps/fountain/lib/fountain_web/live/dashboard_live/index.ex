@@ -50,18 +50,32 @@ defmodule FountainWeb.DashboardLive.Index do
      |> assign_usage(user)}
   end
 
-  # This month, on the same calendar the billing page uses. The counts come
-  # from usage events, which are written whether or not billing is switched
-  # on — so a self-hosted console, which has no billing page at all, still
-  # gets to see what its agents have been doing.
+  # The window Stripe invoices where there is one, the calendar month
+  # otherwise — the same call the billing page makes, so the two pages cannot
+  # report different numbers for "this period". `period.source` says which it
+  # got, and the heading says so too: a customer whose invoice runs the 20th
+  # to the 20th was being shown a calendar month here and an invoiced period
+  # one click away.
+  #
+  # The counts come from usage events, which are written whether or not
+  # billing is switched on, so a self-hosted console still sees what its
+  # agents have been doing.
   defp assign_usage(socket, user) do
-    {period_start, period_end} = Fountain.Billing.current_month_range()
+    billing_enabled? = Fountain.Billing.enabled?()
+    period = Fountain.Billing.billing_period(user)
 
     socket
-    |> assign(:usage, Fountain.Billing.usage_summary(user.id, period_start, period_end))
-    |> assign(:tokens, Conversations.token_usage(user.id, period_start, period_end))
-    |> assign(:period_start, period_start)
-    |> assign(:billing_enabled?, Fountain.Billing.enabled?())
+    |> assign(:usage, Fountain.Billing.usage_summary(user.id, period.start, period.end))
+    |> assign(:tokens, Conversations.token_usage(user.id, period.start, period.end))
+    |> assign(:period, period)
+    |> assign(:period_start, period.start)
+    |> assign(:billing_enabled?, billing_enabled?)
+    # Two queries against the sandbox and turn rows, so it is skipped where
+    # there is no allowance to report at all.
+    |> assign(
+      :allowance,
+      billing_enabled? && Fountain.Billing.turn_hour_allowance(user, period: period)
+    )
   end
 
   @impl true
@@ -131,7 +145,9 @@ defmodule FountainWeb.DashboardLive.Index do
 
       <section>
         <div class="flex items-baseline justify-between mb-3">
-          <h2 class="text-lg font-medium">This month</h2>
+          <h2 class="text-lg font-medium">
+            {if @period.source == :subscription, do: "This billing period", else: "This month"}
+          </h2>
           <span class="text-xs text-[var(--color-text-muted)]">
             since {Calendar.strftime(@period_start, "%-d %B")}
             <a
@@ -146,10 +162,16 @@ defmodule FountainWeb.DashboardLive.Index do
         <div class="grid gap-4 grid-cols-2 lg:grid-cols-4">
           <.metric label="Conversations" value={format_count(@usage.conversations)} />
           <.metric label="Turns" value={format_count(@usage.turns)} />
+          <%!-- Turn hours, not sandbox time. Sandbox wall-clock is Fountain's
+                cost and nothing a customer buys or is measured on: it went up
+                while they slept, and the number that decides whether they are
+                inside their plan is this one (Fountain.Plans). The sandbox
+                figure stays in the hint, where it explains itself. --%>
           <.metric
-            label="Sandbox time"
-            value={format_minutes(@usage.sandbox_minutes)}
-            hint="Wall-clock time your agents' sandboxes were awake."
+            label="Turn hours"
+            value={turn_hours_value(assigns)}
+            sub={turn_hours_sub(assigns)}
+            hint={turn_hours_hint(assigns)}
           />
           <.metric
             label="Tokens"
@@ -217,6 +239,45 @@ defmodule FountainWeb.DashboardLive.Index do
       assigns.usage.sandbox_minutes == 0 and Conversations.total_input(assigns.tokens) == 0 and
       assigns.tokens.output == 0
   end
+
+  # Turn hours: the used side always, the allowance beside it when billing is
+  # on. Rounded to one place, which is the resolution a customer can act on.
+  defp turn_hours_value(%{allowance: %{used: used}}), do: format_hours(used)
+  defp turn_hours_value(%{usage: usage}), do: format_hours(billable_turn_hours(usage))
+
+  defp turn_hours_sub(%{allowance: %{included: included}}), do: "of #{included} included"
+  defp turn_hours_sub(_assigns), do: nil
+
+  defp turn_hours_hint(assigns) do
+    base =
+      "Time with a prompt in flight. An agent left running with nobody talking to it " <>
+        "spends none of this."
+
+    case assigns.usage.sandbox_minutes do
+      minutes when minutes > 0 ->
+        base <> " Your sandboxes were awake for #{format_minutes(minutes)}."
+
+      _ ->
+        base
+    end
+  end
+
+  # Billing off: there is no allowance, so the tile falls back to the same
+  # arithmetic `Billing.turn_hours_used/2` does — turn time on the providers
+  # the platform pays for, which excludes a tenant's own runner (ADR 0022).
+  defp billable_turn_hours(usage) do
+    Map.get(usage, :turn_hours, 0.0)
+  end
+
+  defp format_hours(hours) when is_number(hours) do
+    cond do
+      hours == 0 -> "0"
+      hours < 0.1 -> "<0.1"
+      true -> "#{Float.round(hours * 1.0, 1)}"
+    end
+  end
+
+  defp format_hours(_), do: "—"
 
   defp ready?(assigns) do
     assigns.has_credential? and assigns.agent_count > 0 and

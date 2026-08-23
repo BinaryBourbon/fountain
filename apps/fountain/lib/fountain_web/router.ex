@@ -622,6 +622,8 @@ defmodule FountainWeb.Router do
         {FountainWeb.Live.Hooks, :require_admin}
       ] do
       live "/admin", AdminLive.Index, :index
+      # Lives in ee/ with the rest of billing (#472): it is a revenue page.
+      live "/admin/finance", Live.AdminFinanceLive, :index
       live "/admin/users/:id", AdminLive.UserDetail, :show
       live "/admin/conversations/:id", AdminLive.ConversationDetail, :show
     end
