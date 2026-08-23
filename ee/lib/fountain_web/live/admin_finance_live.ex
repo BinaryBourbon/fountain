@@ -137,16 +137,16 @@ defmodule FountainWeb.Live.AdminFinanceLive do
     ~H"""
     <div class="space-y-8">
       <div>
-        <.admin_tabs current={:finance} billing_enabled={@billing_enabled} />
-        <h1 class="text-2xl font-semibold mt-4">Finance</h1>
-        <p class="text-sm text-zinc-500 mt-1">
-          Revenue against platform spend, per tenant, for {Calendar.strftime(
-            @finance.period_start,
-            "%B %Y"
-          )}. {if @months_ago == 0,
-            do: "The month so far; refreshes every 30s.",
-            else: "A closed month."}
-        </p>
+        <.admin_header title="Finance" current={:finance} billing_enabled={@billing_enabled}>
+          <:subtitle>
+            Revenue against platform spend, per tenant, for {Calendar.strftime(
+              @finance.period_start,
+              "%B %Y"
+            )}. {if @months_ago == 0,
+              do: "The month so far; refreshes every 30s.",
+              else: "A closed month."}
+          </:subtitle>
+        </.admin_header>
         <div class="flex flex-wrap gap-2 mt-3">
           <.link
             :for={n <- 0..5}
