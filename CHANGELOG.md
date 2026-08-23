@@ -16,6 +16,31 @@ upgrade, is in
 
 ## [Unreleased]
 
+### Changed
+
+- **Fountain is no longer MIT licensed** (ADR 0027). The server under
+  `apps/fountain` is now **AGPL-3.0-or-later**, `ee/` is under the **Elastic
+  License 2.0**, and `cli/` and `sdk/typescript` are **Apache-2.0**. Releases
+  through v0.12.0 were MIT and stay MIT, irrevocably, for anyone who has them.
+
+  The reason is narrow. MIT let a funded competitor take Fountain, improve it,
+  host it and return nothing, and the part that stung was not the revenue but
+  that nobody else running Fountain got any benefit from that work. AGPL
+  section 13 answers exactly that and nothing more. A competitor may still
+  host Fountain commercially, in direct competition with the hosted product.
+  They must do it in the open.
+
+  Nothing changes for an integrator. The CLI, the TypeScript SDK and the two
+  single-page apps are permissive on purpose, because an AGPL SDK would put a
+  copyleft obligation on every application that calls the API, which is
+  precisely the integration Fountain wants. Nothing changes for a self-hoster
+  either: `ee/` is free to run and your changes to it stay private, which is
+  what ELv2 grants and what the single-image build requires.
+
+  Contributions are inbound=outbound under the license of the directory they
+  touch, with a DCO (`git commit -s`) and deliberately no CLA. See `NOTICE`,
+  `CONTRIBUTING.md` and `decisions/0027-agpl-relicensing.md`.
+
 ### Added
 
 - **Product analytics in PostHog** (ADR 0025). Fountain has kept an audit

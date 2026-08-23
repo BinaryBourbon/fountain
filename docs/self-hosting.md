@@ -58,8 +58,25 @@ When something is wrong, start from
 
 ## Licence
 
-Fountain is MIT licensed. You can run your own instance, and you can do it
-commercially.
+The Fountain server uses the GNU AGPL v3.0 or later. You can run your own
+instance. You can run it commercially.
+
+The AGPL adds one obligation. Assume that you change the server, and that you
+offer the changed server to other people over a network. You must then offer
+those people the source of your changed version. A private instance for your
+own company does not trigger this obligation. You do not offer a service to
+third parties in that case.
+
+The `ee/` directory holds the Stripe integration. That directory uses the
+Elastic Licence 2.0. You can run the code in your own instance at no cost, and
+your changes stay private. You must not offer that code to third parties as a
+hosted service.
+
+The `cli/` directory and the TypeScript SDK use the Apache Licence 2.0. Your
+application gets no licence obligation when it calls the Fountain API.
+
+Releases up to v0.12.0 used the MIT licence, and those releases stay MIT. The
+`NOTICE` file at the repository root records the change.
 
 ## Known gaps
 

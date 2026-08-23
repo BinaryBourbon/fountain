@@ -2,7 +2,7 @@
   "name": "fountain-sdk",
   "version": "0.1.0",
   "description": "Run a coding agent on a real computer, with your repos and your credentials, in one call.",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "type": "module",
   "engines": {
     "node": ">=20.19"

@@ -29,8 +29,8 @@ fountain/                  umbrella root
       test/support/        DataCase, ConnCase, factory.ex
   ee/                      billing + growth email (welcome/trial/payment),
     lib/fountain/          compiled into the same :fountain app via
-    lib/fountain_web/      elixirc_paths/test_paths. Possible-license boundary
-    test/                  (MIT today) — decisions/0010 + its addendum.
+    lib/fountain_web/      elixirc_paths/test_paths. Licence boundary: ee/ is
+    test/                  Elastic 2.0, the server is AGPL-3.0 (0010, 0027).
                            Account email + Mailer are core (#475/#476).
   config/
     config.exs             shared config

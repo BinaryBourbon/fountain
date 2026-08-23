@@ -159,13 +159,26 @@ See [`CLAUDE.md`](CLAUDE.md) for architecture, test patterns, the tenant isolati
 
 ## Licence
 
-Fountain is [MIT licensed](LICENSE). Use it, run it, modify it, host it.
+Fountain is not licensed as a single unit. The short version:
 
-That includes [`ee/`](ee/): the Stripe billing surface and billing-adjacent
-growth email live there under [their own licence file](ee/LICENSE) —
-**today a byte-for-byte copy of the root MIT licence**. The directory
-boundary preserves the option of licensing that code differently someday; it
-is an option, not a plan of record, and nothing a community instance needs
-(auth, account email, conversations) lives behind it. See
-[`decisions/0010-ee-directory-boundary.md`](decisions/0010-ee-directory-boundary.md)
-and [`ee/README.md`](ee/README.md).
+| What | Licence | What it means for you |
+|---|---|---|
+| The server (`apps/fountain`) | [AGPL-3.0-or-later](LICENSE) | Run it, modify it, host it. If you host a modified version, your users are entitled to your source |
+| [`ee/`](ee/) — Stripe billing and growth email | [Elastic Licence 2.0](ee/LICENSE) | Free to run in your own instance, changes stay yours. You may not offer it to third parties as a hosted service |
+| [`cli/`](cli/), [`sdk/typescript`](sdk/typescript) | [Apache-2.0](cli/LICENSE) | Build on the API, ship the CLI inside a proprietary product, no obligations |
+
+The client surfaces are permissive on purpose. Integrating with Fountain
+should never put a licence obligation on your application, and an AGPL SDK
+would do exactly that.
+
+The copyleft is aimed at one thing: a company that improves Fountain and runs
+it as a service owes those improvements back to everyone else running it. It
+does not stop anyone hosting Fountain commercially, including in competition
+with the hosted product. It stops them doing it in private.
+
+Fountain was MIT licensed through v0.12.0 (2026-08-17) and those releases stay
+MIT. See [`NOTICE`](NOTICE) for the relicensing record and third-party
+attribution, [`CONTRIBUTING.md`](CONTRIBUTING.md) for how this applies to
+contributions, and
+[`decisions/0027-agpl-relicensing.md`](decisions/0027-agpl-relicensing.md) for
+the reasoning.
