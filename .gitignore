@@ -63,3 +63,6 @@ priv/plts/
 # Python (integrations/hermes)
 __pycache__/
 *.pyc
+
+# Build output of scripts/build-pages-tombstone.py.
+/_pages_tombstone/
