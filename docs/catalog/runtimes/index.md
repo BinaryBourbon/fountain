@@ -28,7 +28,7 @@ string word for word, then reads the prefix to decide which key to export.
 
 **All four speak ACP.** Gemini was the last one off it, and it joined on
 2026-08-22. So editor integration, the permission flow and the shared block
-format reach every runtime, and the choice is about the provider and the CLI
+format reach every runtime. The choice is about the provider and the CLI
 rather than about the transport.
 
 ## The rule that catches people
