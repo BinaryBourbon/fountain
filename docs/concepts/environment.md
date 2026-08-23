@@ -57,12 +57,18 @@ metadata:
   name: python-data-env
 spec:
   packages:
-    python: "3.12"
+    apt:
+      - jq
   networking_type: limited
   secrets:
-    - key: OPENAI_API_KEY
-      value: sk-...
+    OPENAI_API_KEY: sk-...
 ```
+
+`secrets` must be a map of `KEY: value`. The server keeps only the map form
+and drops any other shape without an error. The map form is also what the
+CLI's `${VAR}` substitution and secret-manager references resolve against.
+`packages` has two keys that install software, `apt` and `npm`. Other
+language toolchains go in `setup_script`.
 
 ### The network policy is not symmetric
 

@@ -13,6 +13,13 @@ Each entry has the same shape. Read one and you can skim the rest.
 | [Skills](skills/index.md) | One `SKILL.md` that Fountain writes into the sandbox. | 2 bundled, and any repo on GitHub. |
 | [MCP servers](mcp-servers/index.md) | One server that gives the runtime tools. | 3 hosted, and any server you declare. |
 
+## Start from a whole agent
+
+[Agents](agents/index.md) is the catalog of ready-to-apply manifests. One
+file holds an Environment, a Vault and an Agent, and one `fountain apply -f`
+reconciles all three. There is 1 entry, a
+[Fountain contributor](agents/fountain-contributor.md).
+
 ## Elsewhere in these docs
 
 Two catalogs are older than this section, and they keep their own pages for
