@@ -1,13 +1,14 @@
 defmodule Fountain.Docs.Compiler do
   @moduledoc """
-  Pure functions `Fountain.Docs` runs at compile time to turn the MkDocs
+  Pure functions `Fountain.Docs` runs at compile time to turn the authoring
   dialect in `docs/` into plain markdown. Split out because a module cannot
   call its own functions from its own body — and so the transforms can be
   tested directly.
 
   Covers exactly the dialect the docs use (see the `Fountain.Docs` moduledoc):
-  snippet includes, admonitions, and relative `.md` links. Not a general
-  MkDocs renderer.
+  snippet includes, admonitions, and relative `.md` links. The syntax is
+  inherited from the MkDocs Material site these pages were published as until
+  #1006; this is not, and never was, a general MkDocs renderer.
   """
 
   @doc ~S(`"index.md"` → `""`, `"integrations/index.md"` → `"integrations"`, else the rootname.)
@@ -20,7 +21,7 @@ defmodule Fountain.Docs.Compiler do
   end
 
   @doc """
-  Parses the `nav:` block of `mkdocs.yml` into the shape `Fountain.Docs`
+  Parses the `nav:` block of `docs/nav.yml` into the shape `Fountain.Docs`
   serves: `{title, file}` for a page and `{section_title, [{title, file}, ...]}`
   for a section, in document order.
 
@@ -31,20 +32,20 @@ defmodule Fountain.Docs.Compiler do
   the bug this parser exists to make impossible, so being unable to parse the
   nav has to fail the compile, not shrink the site.
 
-  Two levels is the whole depth. MkDocs nests as deep as you like; the in-app
-  sidebar at `/docs` renders exactly a section and its pages, so a third tier
-  raises here with a message that says to flatten it. That includes a page
-  indented past its siblings, which would otherwise be quietly promoted into
-  its grandparent section — the one silent outcome this parser must not have.
+  Two levels is the whole depth. The in-app sidebar at `/docs` renders exactly
+  a section and its pages, so a third tier raises here with a message that says
+  to flatten it. That includes a page indented past its siblings, which would
+  otherwise be quietly promoted into its grandparent section — the one silent
+  outcome this parser must not have.
 
   This replaced a hand-maintained copy of the nav in `Fountain.Docs`. Adding a
-  page to `mkdocs.yml` is now the whole change.
+  page to `docs/nav.yml` is now the whole change.
   """
   @spec parse_nav(String.t()) :: [{String.t(), String.t() | [{String.t(), String.t()}]}]
   def parse_nav(yaml) do
     case String.split(yaml, ~r/^nav:\n/m, parts: 2) do
       [_before, block] -> block |> nav_lines() |> Enum.reduce([], &nav_entry/2) |> finish_nav()
-      _ -> raise ArgumentError, "mkdocs.yml has no `nav:` block"
+      _ -> raise ArgumentError, "docs/nav.yml has no `nav:` block"
     end
   end
 
@@ -81,7 +82,7 @@ defmodule Fountain.Docs.Compiler do
         raise ArgumentError, one_level_message("nested nav section", line)
 
       _ ->
-        raise ArgumentError, "unparsed mkdocs.yml nav line: #{inspect(line)}"
+        raise ArgumentError, "unparsed docs/nav.yml nav line: #{inspect(line)}"
     end
   end
 
@@ -101,17 +102,16 @@ defmodule Fountain.Docs.Compiler do
     raise ArgumentError, "indented nav entry with no section above it: #{inspect(line)}"
   end
 
-  # The one thing a reader of either raise needs to know: the limit is ours,
-  # not MkDocs', and flattening is the fix. Without this they go looking for a
+  # The one thing a reader of either raise needs to know: the limit is the
+  # sidebar's, and flattening is the fix. Without this they go looking for a
   # typo in a line that is perfectly good YAML.
   defp one_level_message(what, line) do
     """
     #{what}: #{inspect(line)}
 
-    mkdocs.yml nav sections are one level deep. MkDocs itself nests freely, but
-    Fountain.Docs embeds the nav for the in-app sidebar at /docs, which renders
-    exactly two levels. Flatten this into a sibling top-level section, or make
-    it headings on a hub page.
+    docs/nav.yml sections are one level deep. Fountain.Docs embeds this nav for
+    the in-app sidebar at /docs, which renders exactly two levels. Flatten this
+    into a sibling top-level section, or make it headings on a hub page.
     """
   end
 
@@ -143,7 +143,7 @@ defmodule Fountain.Docs.Compiler do
   end
 
   # `--8<-- "FILE"` on its own line → the file's contents, read relative to
-  # the repo root — matching the `pymdownx.snippets` base_path in mkdocs.yml.
+  # the repo root.
   #
   # sobelow_skip ["Traversal.FileModule"] — runs at compile time only, on
   # snippet paths written in repo-controlled markdown; there is no user input.

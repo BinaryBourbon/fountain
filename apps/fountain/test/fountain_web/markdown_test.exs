@@ -316,9 +316,11 @@ end|
     # `promql` asks for it and cannot have it: Lumis ships no PromQL parser
     # (116 languages, none of them PromQL, and none aliasing to it), so there
     # is nothing to bake and adding it to `@languages` would fail the sibling
-    # test above and break the Dockerfile's cache step. The published MkDocs
-    # site does highlight it, because Pygments has a lexer, so the fence stays
-    # `promql` rather than degrading the public page to match the in-app one.
+    # test above and break the Dockerfile's cache step. The fence still says
+    # `promql`, because the fence names the language rather than requesting a
+    # renderer, and renaming it to hide the gap would be a lie a future parser
+    # never undoes. (Until #1006 there was a second reason: the MkDocs build
+    # highlighted it, Pygments having a lexer.)
     #
     # This list is the difference between a gap that is known and one that is
     # silent, which is the whole point of the test below. Adding to it means

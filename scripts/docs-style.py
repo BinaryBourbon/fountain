@@ -23,9 +23,12 @@ not a hinge in a sentence. `configuration.md` has 84 of them in its
 default column. Forcing those to "n/a" would make the table worse, and the
 rule exists to stop a dash carrying a clause, which a lone cell cannot do.
 
-`docs/superpowers/` is internal planning material, not in the nav and not
-served at /docs or on the site. Style rules for published pages should not
-apply to a historical artifact nobody reads.
+There is no directory exclusion any more. `docs/superpowers/` was one —
+internal planning material that sat under `docs/` without a nav entry, so
+MkDocs published it and /docs did not. #1006 retired the MkDocs site and made
+"in docs/ but not in the nav" a test failure, and those four pages moved to
+`superpowers/` at the repo root. Everything under `docs/` is now a published
+page, so every page under `docs/` is checked.
 
 A file whose first lines declare `<!-- GENERATED FILE` is skipped for the same
 reason code fences are: it quotes the world rather than describing it. Editing
@@ -49,9 +52,6 @@ ALLOW = ROOT / "scripts" / "docs-style-allow.txt"
 
 FORBIDDEN = ["simply", "coming soon", "obviously"]
 LIST_ITEM = re.compile(r"^\s*(?:[-*+]\s|\d+\.\s)")
-
-# Not in the nav, not served, not published. Historical planning material.
-EXCLUDED_DIRS = ("docs/superpowers/",)
 
 # Declared by a generated page in its own header, so adding one needs no edit
 # here. Checked against the first 2 KiB, which is past any front matter.
@@ -128,7 +128,7 @@ def main():
 
     for path in sorted(DOCS.rglob("*.md")):
         rel = str(path.relative_to(ROOT))
-        if rel in allow or rel.startswith(EXCLUDED_DIRS):
+        if rel in allow:
             continue
         if GENERATED_MARKER in path.read_text()[:2048]:
             generated.append(rel)

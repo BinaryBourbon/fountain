@@ -1,12 +1,16 @@
 defmodule Fountain.Docs do
   @moduledoc """
-  The public documentation site (`docs/` at the repo root), embedded at compile
-  time so the app can serve it at `/docs`.
+  The public documentation manual (`docs/` at the repo root), embedded at
+  compile time so the app can serve it at `/docs`.
 
-  The same markdown is published to GitHub Pages by `.github/workflows/docs.yml`
-  (MkDocs Material). This module is the in-app rendering path: pages are read at
-  compile time (`@external_resource`, so edits recompile in dev), preprocessed
-  from MkDocs dialect to plain markdown by `Fountain.Docs.Compiler`, and served
+  `/docs` is the only place this manual is published. It used to be built as a
+  static MkDocs Material site and deployed to GitHub Pages as well; that second
+  copy was retired once `/docs` served the same markdown from the same nav,
+  because two publishing paths for one set of pages is two things to keep
+  green (#1006).
+
+  Pages are read at compile time (`@external_resource`, so edits recompile in
+  dev), preprocessed to plain markdown by `Fountain.Docs.Compiler`, and served
   through the same `FountainWeb.Markdown` pipeline as `/help`. Compile-time
   embedding is also what ships the content — the release image never contains
   `docs/` itself, only these ~230 KB of strings in the beam file.
@@ -14,20 +18,17 @@ defmodule Fountain.Docs do
   This is distinct from `Fountain.Help`, the curated in-app help under
   `priv/help/` — that stays as it is; `/docs` is the full public manual.
 
-  The nav is **read from `mkdocs.yml` at compile time**, not mirrored here.
+  The nav is **read from `docs/nav.yml` at compile time**, not mirrored here.
   It used to be a hand-maintained copy that `docs_test.exs` diffed against the
-  real file, and the diff is what people hit: adding a page to `mkdocs.yml`
-  without editing this module failed a test in CI partition 3, which looks
-  entirely unrelated to the docs. Adding a page to `mkdocs.yml` is now the
-  whole change.
+  real file, and the diff is what people hit: adding a page without editing
+  this module failed a test in CI partition 3, which looks entirely unrelated
+  to the docs. Adding a page to `docs/nav.yml` is now the whole change.
 
-  Because `mkdocs.yml` is read at compile time it is also an
-  `@external_resource`, which means it must be COPYed into the Docker build
-  stage — see the note on the `@external_resource` list below.
-
-  The MkDocs dialect the preprocessing covers is deliberately small (snippet
-  includes, admonitions, relative `.md` links) — if a doc page starts using an
-  extension beyond that, check the page at `/docs`, don't assume.
+  The markdown dialect the preprocessing covers is deliberately small (snippet
+  includes, admonitions, relative `.md` links) — if a doc page starts using
+  something beyond that, check the page at `/docs`, don't assume. Nothing
+  renders these pages but this module, so there is no second renderer to
+  disagree with.
   """
 
   alias Fountain.Docs.Compiler
@@ -35,12 +36,12 @@ defmodule Fountain.Docs do
   @root Path.expand("../../../..", __DIR__)
   @docs_dir Path.join(@root, "docs")
 
-  @mkdocs_yml Path.join(@root, "mkdocs.yml")
+  @nav_yml Path.join(@docs_dir, "nav.yml")
 
-  # The nav, parsed from mkdocs.yml itself. `{title, file}` for a page,
+  # The nav, parsed from docs/nav.yml itself. `{title, file}` for a page,
   # `{section_title, [{title, file}]}` for a section — the same shape the
   # hand-maintained copy had, minus the maintaining.
-  @nav @mkdocs_yml |> File.read!() |> Compiler.parse_nav()
+  @nav @nav_yml |> File.read!() |> Compiler.parse_nav()
 
   # Everything read at compile time is listed here, so an edit recompiles the
   # module in dev — AND so `docs_test.exs` can assert the Dockerfile COPYs it
@@ -49,7 +50,7 @@ defmodule Fountain.Docs do
   # path outside what the Dockerfile COPYs does not degrade to a broken link.
   # It kills `mix release`, no image is produced, CI stays green, and the
   # deploy silently never happens (#884).
-  @external_resource @mkdocs_yml
+  @external_resource @nav_yml
 
   # docs/changelog.md pulls the repo-root CHANGELOG.md in via a snippet.
   @external_resource Path.join(@root, "CHANGELOG.md")
@@ -64,7 +65,7 @@ defmodule Fountain.Docs do
          end)
 
   @doc """
-  Sidebar structure, in mkdocs.yml order: `{title, slug}` for pages,
+  Sidebar structure, in nav.yml order: `{title, slug}` for pages,
   `{section_title, [{title, slug}, ...]}` for sections.
   """
   @spec nav() :: [{String.t(), String.t() | [{String.t(), String.t()}]}]
@@ -84,7 +85,7 @@ defmodule Fountain.Docs do
 
   @doc """
   The compiled nav in *source* shape — `{title, file}` rather than
-  `{title, slug}` — so tests can check the pages mkdocs.yml names against
+  `{title, slug}` — so tests can check the pages nav.yml names against
   what is on disk. This is what the module actually embedded, not a re-read
   of the file.
   """

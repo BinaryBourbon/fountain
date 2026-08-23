@@ -134,9 +134,9 @@ defmodule FountainWeb.Router do
     get "/", MarketingController, :home
     get "/terms", MarketingController, :terms
     get "/privacy", MarketingController, :privacy
-    # In-app mirror of the GitHub Pages docs site — content embedded at
-    # compile time by Fountain.Docs. Distinct from /help (curated in-app
-    # topics) and /api/docs (Swagger).
+    # The public manual, and since #1006 the only place it is published —
+    # content embedded at compile time by Fountain.Docs. Distinct from /help
+    # (curated in-app topics) and /api/docs (Swagger).
     get "/docs", DocsController, :show
     get "/docs/*page", DocsController, :show
   end

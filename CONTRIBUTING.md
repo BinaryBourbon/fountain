@@ -66,13 +66,23 @@ the alias still exits 0. Confirm you reached `N tests, 0 failures`.
 
 CI additionally runs `hex.audit`, the Go CLI checks (`go test ./...`,
 `go vet ./...` in `cli/`), a release boot check, OpenAPI validation, and the
-docs gates. If you touched `docs/`, run those too:
+docs gates. If you touched `docs/`, run the two prose gates too:
 
 ```bash
-mkdocs build --strict
 python3 scripts/docs-style.py
 vale lint docs
 ```
+
+The structural half — every page named in `docs/nav.yml`, every page on disk
+named there, and every internal `/docs` link and anchor — is in the test suite,
+so `mix precommit` already covers it:
+
+```bash
+mix test apps/fountain/test/fountain/docs_test.exs
+```
+
+To read a page as it will ship, start the server and open `/docs`. That route
+is the only place `docs/` is published.
 
 ## Pull requests
 

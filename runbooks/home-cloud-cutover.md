@@ -3,9 +3,9 @@
 > **Status: COMPLETED 2026-08-02.** The cutover happened; production runs on
 > the home-cloud k3s cluster and Render is decommissioned. Kept for the
 > record of how it was done — nothing below is a pending action. This file
-> lives in `runbooks/` (not `docs/`) on purpose: `mkdocs` publishes
-> everything under `docs/`, and a completed internal runbook enumerating
-> cluster topology does not belong on the public site.
+> lives in `runbooks/` (not `docs/`) on purpose: `docs/` is the public manual
+> served at `/docs`, and a completed internal runbook enumerating cluster
+> topology does not belong there.
 
 One-shot runbook for migrating fountain's production data and traffic
 from Render to the home-cloud k3s cluster. Pre-cutover scaffolding

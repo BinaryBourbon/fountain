@@ -5,7 +5,7 @@ assumptions beyond a cluster and an ingress controller. This is the generic
 counterpart to `k8s/` in the repo root, which is the maintainer's own cluster
 (CNPG, Traefik, Infisical, Flux) and is worth reading but not worth applying.
 
-The [compose path](https://binarybourbon.github.io/fountain/self-hosting/) is
+The [compose path](https://fountain.inevitable.fyi/docs/self-hosting) is
 simpler if you don't already live on Kubernetes — start there.
 
 ## What this does not include
@@ -56,7 +56,7 @@ kubectl exec -n fountain deploy/fountain -- \
 Edit the tag in `kustomization.yaml`'s `images:` block and re-apply. `vX.Y.Z`
 tags are immutable; `vX.Y` follows patches. Patch releases are always safe;
 pre-1.0 minor bumps may carry **Upgrade notes** in the
-[changelog](https://binarybourbon.github.io/fountain/changelog/). Migrations
+[changelog](https://fountain.inevitable.fyi/docs/changelog). Migrations
 run at boot, idempotently, under an advisory lock. Downgrades are not
 supported once a newer version's migrations have run — restore from a backup.
 
@@ -123,6 +123,6 @@ needs the new column.
 - **Backups**: `backup-cronjob.yaml` ships a nightly `pg_dump` to any
   S3-compatible bucket — commented out of `kustomization.yaml` until you
   create its secret; setup is at the top of the file, the restore drill in
-  [the docs](https://binarybourbon.github.io/fountain/operations/#backup-and-restore).
+  [the docs](https://fountain.inevitable.fyi/docs/guides/operate/back-up-and-restore).
   `MASTER_SECRETS_KEY` must still be backed up separately — a database backup
   alone cannot decrypt itself.

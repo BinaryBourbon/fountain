@@ -1,8 +1,10 @@
 defmodule FountainWeb.DocsControllerTest do
   use FountainWeb.ConnCase, async: true
 
-  # All requests here are unauthenticated on purpose: /docs mirrors the public
-  # GitHub Pages site, so it sits in the public marketing scope.
+  # All requests here are unauthenticated on purpose: /docs is the public
+  # manual, so it sits in the public marketing scope. Since #1006 it is the
+  # only place that manual is published, which makes the anonymous case the
+  # one that matters most — nobody reading setup.md has an account yet.
 
   describe "GET /docs" do
     test "serves the home page with the sidebar nav", %{conn: conn} do
@@ -14,7 +16,7 @@ defmodule FountainWeb.DocsControllerTest do
       assert body =~ ~s(href="/docs/integrations/sprites-contract")
     end
 
-    test "renders the admonition as a blockquote, not raw MkDocs syntax", %{conn: conn} do
+    test "renders the admonition as a blockquote, not its raw source syntax", %{conn: conn} do
       body = conn |> get(~p"/docs") |> html_response(200)
       assert body =~ "In a hurry?"
       refute body =~ "!!!"

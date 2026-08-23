@@ -25,7 +25,7 @@
 # truncated one looking valid.
 #
 # A backup nobody has restored is a hypothesis. The restore drill:
-# https://binarybourbon.github.io/fountain/operations/#backup-and-restore
+# https://fountain.inevitable.fyi/docs/guides/operate/back-up-and-restore
 #
 # And the standing rule: a database backup alone cannot decrypt itself.
 # MASTER_SECRETS_KEY is backed up separately, and a restore needs the same
