@@ -65,6 +65,12 @@ upgrade, is in
   total: a cost that quietly omitted the provider nobody priced would read as
   a cheap tenant, most convincingly on the expensive ones.
 
+  Every tenant row carries both plans the trial split introduced: the tier the
+  subscription is for, which prices its revenue, and the plan whose numbers
+  apply today, which the allowance column is measured against. A trialing
+  account read through the first would be measured against hours it has not
+  bought yet, and would report as inside an allowance it is over.
+
   It also does not assume **which** hours a provider bills. The rate can
   multiply every hour a sandbox was awake, or only the hours with a prompt in
   flight, and a toggle on the page switches between the two

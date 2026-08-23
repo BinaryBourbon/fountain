@@ -435,7 +435,11 @@ defmodule FountainWeb.Live.AdminFinanceLive do
                     {t.subscription_status}
                   </span>
                 </td>
-                <td class="px-3 py-2 text-xs">{t.plan.name}</td>
+                <%!-- Both plans, when they differ: the trial's numbers are
+                      what the allowance column is measured against, and the
+                      tier is what converting would bill. Showing only one of
+                      them makes the other column look wrong. --%>
+                <td class="px-3 py-2 text-xs">{plan_label(t)}</td>
                 <td class="px-3 py-2 text-right tabular-nums text-xs">
                   {money(t.revenue_cents)}
                   <div :if={t.contact_revenue_cents > 0} class="text-zinc-400">
@@ -536,6 +540,11 @@ defmodule FountainWeb.Live.AdminFinanceLive do
 
   defp pluralize(1, singular, _plural), do: singular
   defp pluralize(_n, _singular, plural), do: plural
+
+  defp plan_label(%{plan: plan, effective_plan: plan}), do: plan.name
+
+  defp plan_label(%{plan: plan, effective_plan: effective}),
+    do: "#{effective.name} → #{plan.name}"
 
   defp basis_label(:active), do: "active hours"
   defp basis_label(:turn), do: "turn hours"

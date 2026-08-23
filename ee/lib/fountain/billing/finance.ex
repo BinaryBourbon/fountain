@@ -24,6 +24,14 @@ defmodule Fountain.Billing.Finance do
   reported apart as at-risk rather than folded into MRR: it is revenue that
   has not arrived.
 
+  Every row carries two plans, because since #1022 they can differ. `:plan` is
+  `Plans.resolve/1` — the tier the subscription is *for*, which is what a
+  trial converts into and what its revenue lines are priced at.
+  `:effective_plan` is `Plans.effective/1` — whose entitlements apply *today*,
+  which during a trial is the smaller `trial` plan. The allowance columns read
+  the second. Reading the first would measure a trialing account against hours
+  it does not have yet, and report it inside an allowance it is over.
+
   ## Cost, and the rate card
 
   Fountain's spend is not in this codebase, and inventing it would make this
@@ -111,6 +119,7 @@ defmodule Fountain.Billing.Finance do
           user_id: binary(),
           email: String.t(),
           plan: Plans.t(),
+          effective_plan: Plans.t(),
           subscription_status: String.t(),
           revenue_cents: non_neg_integer(),
           plan_cents: non_neg_integer(),
@@ -472,8 +481,9 @@ defmodule Fountain.Billing.Finance do
   Turn hours sold against turn hours used — the utilization of the thing the
   plans actually include.
 
-  Sold counts every account whose plan is live for them, trials included: a
-  trial hands over the same allowance and costs the same to serve. Utilization
+  Sold counts every account whose plan is live for them, trials included at
+  the trial plan's smaller allowance (#1022) rather than at the tier they are
+  trialling — a trial that has not converted has not sold those hours. Utilization
   is what says whether the included hours are priced anywhere near what
   tenants do with them, which is the number #1016 step 4 was left open for.
   """
@@ -497,7 +507,16 @@ defmodule Fountain.Billing.Finance do
   ## ── one tenant ──────────────────────────────────────────────────────────
 
   defp tenant_row(user, usage, channels, messages, contacts, card, fraction) do
-    plan = Plans.resolve(user.plan)
+    # `plan` is the tier the subscription is for — what Stripe charges, and
+    # what a trial converts into. `effective_plan` is whose numbers apply
+    # today, which during a trial is the smaller `trial` plan (#1022).
+    #
+    # Revenue reads the first and the allowance reads the second, and using
+    # one for the other is the specific mistake this split exists to prevent:
+    # a trialing account measured against its future tier's 100 hours would
+    # look comfortably inside an allowance it is actually over.
+    plan = Plans.resolve(user)
+    effective_plan = Plans.effective(user)
     paying? = user.subscription_status in @paying
 
     plan_cents = plan.monthly_cents
@@ -531,8 +550,9 @@ defmodule Fountain.Billing.Finance do
       plan_cents: plan_cents,
       contact_revenue_cents: contact_revenue_cents,
       turn_hours: SandboxUsage.hours(turn_seconds),
-      included_turn_hours: plan.included_turn_hours,
-      allowance_used: allowance_used(turn_seconds, plan.included_turn_hours),
+      effective_plan: effective_plan,
+      included_turn_hours: effective_plan.included_turn_hours,
+      allowance_used: allowance_used(turn_seconds, effective_plan.included_turn_hours),
       active_hours: SandboxUsage.hours(usage.active_seconds),
       idle_hours: SandboxUsage.hours(usage.idle_seconds),
       inboxes: channels.inboxes,

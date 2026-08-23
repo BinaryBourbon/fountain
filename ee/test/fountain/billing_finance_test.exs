@@ -481,11 +481,30 @@ defmodule Fountain.Billing.FinanceTest do
 
       turn_hours = summary().turn_hours
 
-      # A trial hands over the same allowance and costs the same to serve; a
-      # cancelled account is no longer sold anything.
-      assert turn_hours.sold == 100 + 300
+      # The trialing account is sold the *trial's* 40, not the 300 of the tier
+      # it is trialling (#1022): hours it has not bought are not hours sold. A
+      # cancelled account is sold nothing at all.
+      assert turn_hours.sold == 100 + Plans.included_turn_hours("trial")
       # ...but hours a cancelled account burned this period are still hours.
       assert turn_hours.used == 8.0
+    end
+
+    test "a trialing account is measured against the trial's allowance (#1022)" do
+      # The specific trap the resolve/effective split exists for: 50 turn
+      # hours is comfortably inside Team's 300 and well over a trial's 40. Read
+      # through `resolve/1` this account looks fine; it is not.
+      user = subscriber("team", "trialing")
+      ran(user, "sprites", 50, 50)
+
+      row = row_for(summary(), user)
+
+      assert row.included_turn_hours == Plans.included_turn_hours("trial")
+      assert row.effective_plan.slug == "trial"
+      # `plan` stays the tier the trial converts into — that is what its
+      # revenue lines are priced at.
+      assert row.plan.slug == "team"
+      assert row.allowance_used > 1.0
+      assert summary().turn_hours.over_allowance == 1
     end
 
     test "an over-allowance tenant is counted" do
