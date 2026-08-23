@@ -31,7 +31,9 @@ curl -s -X POST "$FOUNTAIN_BASE_URL/api/agents" \
   }'
 ```
 
-The `model` field always uses the `provider/model` shape — even though codex/gemini don't pass it through to the CLI, the schema enforces the format.
+The `model` field always uses the `provider/model` shape. Only the *provider* half is validated: Fountain can only export credentials for anthropic / openai / google. The model id itself is passed to the runtime verbatim, so a model released after the last deploy works the day it ships.
+
+That means the models Fountain lists are **suggestions, not an allowlist** — and a provider can retire one at any time. Fountain does not call the provider to check an id at save time (the listing endpoints advertise models they no longer serve, so only a real, billed inference call would tell you, and only for that key at that moment). When a provider does refuse the model, the turn fails with the provider's own message, which usually names the replacement — change the agent's model and prompt again.
 
 ## Updating
 

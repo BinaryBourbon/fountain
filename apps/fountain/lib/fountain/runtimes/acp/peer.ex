@@ -439,6 +439,12 @@ defmodule Fountain.Runtimes.ACP.Peer do
       tag == :prompt and oauth_org_not_allowed?(error) ->
         fail(state, {:oauth_org_not_allowed, error_detail(error)})
 
+      # The provider refused the model itself (#970). Here rather than in the
+      # generic arm for the same reason as the clause above: the tenant can act
+      # on it, but only if it reaches them as a sentence.
+      tag == :prompt and model_unavailable?(error) ->
+        fail(state, {:model_unavailable, state.model, error_detail(error)})
+
       true ->
         fail(state, {:acp_error, tag, error})
     end
@@ -669,6 +675,41 @@ defmodule Fountain.Runtimes.ACP.Peer do
   # shape we did not anticipate, unlike a `get_in` chain would.
   defp oauth_org_not_allowed?(error),
     do: error |> inspect() |> String.contains?("oauth_org_not_allowed")
+
+  # The provider retired the model, or never had it, or this key cannot reach
+  # it. Google's is the one that prompted this (#970), and it is the awkward
+  # shape: the model was in Fountain's own catalog, `session/set_model`
+  # accepted it (google's listing endpoint still advertises models it has
+  # retired), and the refusal arrived only when the turn called it.
+  #
+  #     "This model models/gemini-2.5-pro is no longer available to new users.
+  #      Please update your code to use models/gemini-3.1-pro-preview ..."
+  #
+  # Left in the generic arm, that reached the tenant as an inspected
+  # `{:acp_error, :prompt, %{...}}` tuple: the one thing they have to change,
+  # printed in the one register they cannot act on.
+  #
+  # There is no field to key off. Google sends this as a 500, anthropic and
+  # openai as a 404 their adapters re-wrap, and none of the three marks the
+  # kind — so it is read out of the sentence. Both halves are required, a
+  # phrase *and* the word model, so that a "not found" about a file, a session
+  # or an MCP server is never read as a model refusal.
+  @model_gone_phrases [
+    "no longer available",
+    "does not exist or you do not have access",
+    "is not found for api version",
+    "model_not_found",
+    "model not found",
+    "unknown model",
+    "invalid model"
+  ]
+
+  defp model_unavailable?(error) do
+    text = error |> inspect() |> String.downcase()
+
+    String.contains?(text, "model") and
+      Enum.any?(@model_gone_phrases, &String.contains?(text, &1))
+  end
 
   # Prefer a method naming an API key in its `_meta`: that is what an agent
   # offers for "there is a key in the environment, use it", as against an

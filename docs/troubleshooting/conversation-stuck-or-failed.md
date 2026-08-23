@@ -29,6 +29,28 @@ fountain conv interrupt <conv-id>     # stop the in-flight turn, keep the sandbo
 fountain conv terminate <conv-id>     # destroy the sandbox, end the conversation
 ```
 
+## The provider refused the model
+
+A turn fails when the model provider refuses the agent's model. Fountain
+records a `model` stage event with the refused id. The `turn` stage event holds
+the provider's own message, and that message usually names a replacement.
+
+```
+The provider refused this agent's model (gemini-2.5-pro): This model
+models/gemini-2.5-pro is no longer available to new users. Please update
+your code to use models/gemini-3.1-pro-preview for the latest features
+and improvements.
+```
+
+Open the agent. Set the model field to the replacement. Send the prompt again.
+Each turn fails in the same way until that field changes.
+
+The models Fountain lists are advice, not a set of permitted values. Fountain
+sends any model id under a known provider to the runtime without a check. A
+model released after the last deploy therefore works on the day it ships. A
+provider can also retire a model at any time. A model that worked last month
+can fail today.
+
 ## What the statuses mean
 
 `failed` and `terminated` are the two terminal states. Fountain refuses a

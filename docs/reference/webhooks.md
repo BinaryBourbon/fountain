@@ -67,7 +67,7 @@ counter uses the same pair as its tags.
 | `reattach` | `started` `done` `failed` `interrupted` | The server reconnects to a sandbox after a restart. |
 | `turn` | `started` `done` `failed` `interrupted` | One prompt and its reply. |
 | `request` | `started` `done` | The agent asked permission for a tool. It got an answer, or the request expired. |
-| `model` | `failed` | The runtime refused the model the agent asks for. |
+| `model` | `failed` | The runtime or the provider refused the model the agent asks for. |
 | `session` | `done` | The runtime reported a session id for the conversation. |
 | `sandbox` | `done` | Fountain reclaimed the sandbox. The conversation stays resumable. |
 | `terminate` | `done` | The conversation ended. |
