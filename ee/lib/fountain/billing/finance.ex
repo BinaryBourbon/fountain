@@ -18,6 +18,16 @@ defmodule Fountain.Billing.Finance do
       `Plans.contact_monthly_cents/0` (#991), less the contacts an operator
       has comped.
 
+  Contact revenue is what `sync_contact_addon/1` would actually put on the
+  invoice, guards included — **not** the contact count times a price. Where a
+  deployment has no `STRIPE_PRICE_ID_CONTACT` (the state one stays in until an
+  operator deliberately leaves it, because setting it bills every existing
+  tenant on their next invoice) the add-on earns nothing, however many
+  contacts exist. `Plans.contact_monthly_cents/0` returns $5 regardless of
+  whether anything is configured to charge it, which is exactly how this panel
+  came to report revenue no invoice contained. The cost side still counts
+  every inbox and number, because Fountain pays for those either way.
+
   Only an `active` subscription contributes. A trialing account pays nothing
   yet and a comped one pays nothing by decision, so both count as zero
   revenue against real cost — which is the point of looking. `past_due` is
@@ -265,7 +275,7 @@ defmodule Fountain.Billing.Finance do
     usage = usage_by_user(rows)
     channels = Comms.channel_counts()
     messages = message_counts(period_start, period_end)
-    contacts = billable_contacts()
+    contacts = billable_contacts(users)
 
     tenants =
       users
@@ -422,23 +432,32 @@ defmodule Fountain.Billing.Finance do
 
   # Contact add-on revenue for active accounts only, grouped by the plan they
   # are on, so the per-plan table's two columns come from the same cohort.
+  #
+  # Empty on a deployment that does not bill contacts, which is what keeps the
+  # `/admin` MRR tile and this panel telling the same story: both read this,
+  # and both used to add $5 a contact against invoices charging nothing.
   defp active_contact_cents do
-    billable = billable_contacts()
-
-    plans =
+    users =
       Repo.all(
         from u in User,
           where: u.subscription_status in ^@paying,
-          select: {u.id, u.plan}
+          select: %{
+            id: u.id,
+            plan: u.plan,
+            subscription_status: u.subscription_status,
+            stripe_subscription_id: u.stripe_subscription_id
+          }
       )
 
-    Enum.reduce(plans, %{}, fn {user_id, slug}, acc ->
-      case Map.get(billable, user_id, 0) do
+    billable = billable_contacts(users)
+
+    Enum.reduce(users, %{}, fn user, acc ->
+      case Map.get(billable, user.id, 0) do
         0 ->
           acc
 
         count ->
-          key = Plans.resolve(slug).slug
+          key = Plans.resolve(user.plan).slug
           Map.update(acc, key, count, &(&1 + count))
       end
     end)
@@ -680,26 +699,68 @@ defmodule Fountain.Billing.Finance do
           id: u.id,
           email: u.email,
           plan: u.plan,
-          subscription_status: u.subscription_status
+          subscription_status: u.subscription_status,
+          # Not decoration: an account with no subscription has no item for
+          # the contact add-on to sit on, so `sync_contact_addon/1` bills it
+          # nothing however many contacts it holds.
+          stripe_subscription_id: u.stripe_subscription_id
         }
     )
   end
 
-  # The billable contact quantity per tenant — the same arithmetic
-  # `Billing.billable_contacts/1` does for the Stripe add-on item, in one
-  # query rather than one per row, so the panel's revenue line and the
-  # subscription item cannot disagree.
-  defp billable_contacts do
-    counts = Comms.contact_counts()
+  @doc """
+  Whether this deployment puts teammate contacts on an invoice at all.
 
-    comped =
-      Repo.all(from u in User, where: u.comped_contacts > 0, select: {u.id, u.comped_contacts})
-      |> Map.new()
+  False when billing is off, and false when `STRIPE_PRICE_ID_CONTACT` is
+  unset — which is the state a deployment stays in until an operator
+  deliberately leaves it, because setting that variable adds a line item to
+  the next invoice of every tenant who already holds contacts (#991).
 
-    Map.new(counts, fn {user_id, count} ->
-      {user_id, max(count - Map.get(comped, user_id, 0), 0)}
-    end)
+  While it is false the contacts are real, they cost Fountain real money, and
+  they earn nothing. That is a fact worth seeing rather than a zero to hide,
+  so the panel says it out loud.
+  """
+  @spec contacts_billed?() :: boolean()
+  def contacts_billed?, do: Billing.enabled?() and not is_nil(Plans.contact_price_id())
+
+  # The billable contact quantity per tenant: what `sync_contact_addon/1`
+  # would actually set the Stripe item to, in one query rather than one per
+  # row.
+  #
+  # It is not enough to copy `billable_contacts/1`'s subtraction, which is
+  # what this did and why the panel invented revenue. That function is the
+  # *last* step of `sync_contact_addon/1`, behind four guards that each mean
+  # "nothing is billed": billing off, no contact price on this deployment, a
+  # comped account, or an account with no Stripe subscription to hang an item
+  # on. Prod sits behind the second of those, so every contact was reported at
+  # $5 a month against invoices that charge nothing for them.
+  defp billable_contacts(users) do
+    if contacts_billed?() do
+      counts = Comms.contact_counts()
+
+      comped =
+        Repo.all(from u in User, where: u.comped_contacts > 0, select: {u.id, u.comped_contacts})
+        |> Map.new()
+
+      billable =
+        Map.new(users, fn user ->
+          {user.id, user.subscription_status != "comped" and subscribed?(user)}
+        end)
+
+      Map.new(counts, fn {user_id, count} ->
+        if Map.get(billable, user_id, false) do
+          {user_id, max(count - Map.get(comped, user_id, 0), 0)}
+        else
+          {user_id, 0}
+        end
+      end)
+    else
+      %{}
+    end
   end
+
+  defp subscribed?(%{stripe_subscription_id: id}), do: id not in [nil, ""]
+  defp subscribed?(_), do: false
 
   # Message counts per tenant for the period, one grouped query over the same
   # `usage_events` table the sandbox counts come from.
