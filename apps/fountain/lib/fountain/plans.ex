@@ -21,10 +21,10 @@ defmodule Fountain.Plans do
 
   | Plan | Concurrent | Teammate contacts | Price |
   |---|---|---|---|
-  | `solo` | 5 | 3 | $29/mo |
-  | `team` | 15 | 10 | $79/mo |
-  | `scale` | 40 | 40 | $199/mo |
-  | `legacy` | 15 | 10 | $29/mo (closed) |
+  | `solo` | 5 | 1 | $29/mo |
+  | `team` | 15 | 3 | $79/mo |
+  | `scale` | 40 | 10 | $199/mo |
+  | `legacy` | 15 | 3 | $29/mo (closed) |
 
   `legacy` is the flat price every account bought before the tiers existed.
   It is pinned to the old `STRIPE_PRICE_ID`, carries `team`'s capacity so that
@@ -88,7 +88,7 @@ defmodule Fountain.Plans do
       tagline: "One person, a handful of agents at a time.",
       monthly_cents: 2_900,
       concurrent_sandboxes: 5,
-      team_contacts: 3,
+      team_contacts: 1,
       order: 1
     },
     %{
@@ -97,7 +97,7 @@ defmodule Fountain.Plans do
       tagline: "A standing team of agents, working in parallel.",
       monthly_cents: 7_900,
       concurrent_sandboxes: 15,
-      team_contacts: 10,
+      team_contacts: 3,
       order: 2
     },
     %{
@@ -106,7 +106,7 @@ defmodule Fountain.Plans do
       tagline: "Fleet-sized fan-out, without asking first.",
       monthly_cents: 19_900,
       concurrent_sandboxes: 40,
-      team_contacts: 40,
+      team_contacts: 10,
       order: 3
     },
     %{
@@ -115,7 +115,7 @@ defmodule Fountain.Plans do
       tagline: "The original flat plan, at Team capacity.",
       monthly_cents: 2_900,
       concurrent_sandboxes: 15,
-      team_contacts: 10,
+      team_contacts: 3,
       order: 0,
       public?: false
     }

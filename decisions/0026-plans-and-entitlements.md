@@ -54,9 +54,9 @@ Three public tiers, differing in nothing but the cap `Quotas` already enforces:
 
 | Plan | Concurrent sandboxes | Contact ceiling | Price |
 |---|---|---|---|
-| Solo | 5 | 3 | $29/mo |
-| Team | 15 | 10 | $79/mo |
-| Scale | 40 | 40 | $199/mo |
+| Solo | 5 | 1 | $29/mo |
+| Team | 15 | 3 | $79/mo |
+| Scale | 40 | 10 | $199/mo |
 
 Concurrency is the only axis because it is the only number that is
 simultaneously a real cost to Fountain (capacity on the shared provider
@@ -135,8 +135,8 @@ order-dependent. A tenant with contacts carries two items.
 ### Teammate contacts: a per-unit add-on, plus a ceiling
 
 An AgentMail inbox and an AgentPhone number are a recurring per-teammate cost,
-which is the wrong shape for a flat tier: a tenant with fifteen numbers costs
-Fountain fifteen times what a tenant with one does, at the same price. So they
+which is the wrong shape for a flat tier: a tenant with ten numbers costs
+Fountain ten times what a tenant with one does, at the same price. So they
 are billed per unit — a second subscription item on the same subscription,
 whose quantity `Billing.sync_contact_addon/1` sets to the tenant's contact
 count.
@@ -251,7 +251,7 @@ re-entangles the gate with features.
 
 **Contacts included per tier.** Simplest to build and the easiest to explain,
 but it prices a genuinely per-unit cost as a flat one. A tier generous enough
-for the tenant with fifteen numbers is priced wrong for the tenant with one.
+for the tenant with ten numbers is priced wrong for the tenant with one.
 
 **Contacts as a separate subscription.** A second Stripe subscription per
 tenant would mean two invoices, two dunning paths, and a second thing for

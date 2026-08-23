@@ -18,10 +18,10 @@ sandboxes a tenant can run at the same time.
 
 | Plan | Concurrent sandboxes | Contact ceiling | Price |
 |---|---|---|---|
-| Solo | 5 | 3 | $29/mo |
-| Team | 15 | 10 | $79/mo |
-| Scale | 40 | 40 | $199/mo |
-| Legacy | 15 | 10 | $29/mo |
+| Solo | 5 | 1 | $29/mo |
+| Team | 15 | 3 | $79/mo |
+| Scale | 40 | 10 | $199/mo |
+| Legacy | 15 | 3 | $29/mo |
 
 Every plan carries the whole product. Only the cap differs. See
 [ADR 0026](https://github.com/jhgaylor/fountain/blob/main/decisions/0026-plans-and-entitlements.md)

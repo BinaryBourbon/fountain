@@ -51,10 +51,34 @@ defmodule Fountain.PlansTest do
       assert length(Enum.uniq(prices)) == length(prices)
     end
 
+    # Not an entitlement, but it still has to climb: a bigger plan allowing
+    # fewer teammate contacts than a smaller one would be a pricing bug that
+    # only shows up when somebody upgrades and loses a number.
+    test "the contact ceiling climbs with the plan, and starts above zero" do
+      ceilings = Enum.map(Plans.public(), & &1.team_contacts)
+      assert ceilings == Enum.sort(ceilings)
+      assert length(Enum.uniq(ceilings)) == length(ceilings)
+      assert Enum.min(ceilings) >= 1
+    end
+
+    # Written out rather than derived, so moving a number in the catalog is a
+    # deliberate edit here too — these are what customers are sold.
+    test "the ceilings are the ones we sell" do
+      assert Plans.team_contacts("solo") == 1
+      assert Plans.team_contacts("team") == 3
+      assert Plans.team_contacts("scale") == 10
+    end
+
     # The grandfathering promise: nobody's cap fell when the tiers landed.
     test "legacy carries Team's capacity at the old flat price" do
       legacy = Plans.fetch!("legacy")
-      assert legacy.concurrent_sandboxes == Plans.fetch!("team").concurrent_sandboxes
+      team = Plans.fetch!("team")
+
+      assert legacy.concurrent_sandboxes == team.concurrent_sandboxes
+      # Both axes, not just concurrency: "Team's capacity" has to keep meaning
+      # that when a ceiling moves, or a legacy account silently drifts off the
+      # plan it was promised.
+      assert legacy.team_contacts == team.team_contacts
       assert legacy.monthly_cents == Plans.fetch!("solo").monthly_cents
       refute legacy.public?
     end

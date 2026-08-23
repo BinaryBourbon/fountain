@@ -61,7 +61,7 @@ every plan.
 | | solo | team | scale | legacy |
 |---|---|---|---|---|
 | concurrent sandboxes | 5 | 15 | 40 | 15 |
-| teammate contacts | 3 | 10 | 40 | 10 |
+| teammate contacts | 1 | 3 | 10 | 3 |
 | price | $29 | $79 | $199 | $29 (closed) |
 
 Three rules that are easy to get wrong:
