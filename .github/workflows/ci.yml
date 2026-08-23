@@ -216,7 +216,7 @@ jobs:
           #
           # docs/nav.yml is under docs/ and so is covered by both greps here
           # without a special case — it used to be mkdocs.yml at the repo root,
-          # which needed naming twice (#1006).
+          # which needed naming twice (#1008).
           docs_touched=false
           if printf '%s\n' "${changed}" | grep -qE '^docs/'; then
             docs_touched=true
@@ -823,7 +823,7 @@ jobs:
       # on disk, every internal /docs link and every anchor — lives in
       # docs_test.exs and runs in the Elixir suite, so it needs nothing here.
       # That is what `mkdocs build --strict` used to carry, and the test is the
-      # stronger of the two: MkDocs never checked anchors (#1006).
+      # stronger of the two: MkDocs never checked anchors (#1008).
       - name: Docs style
         if: ${{ needs.changes.outputs.docs_touched == 'true' }}
         run: python3 scripts/docs-style.py
@@ -942,7 +942,7 @@ jobs:
   # pull request at all before this job existed — the GitHub Pages workflow was
   # push-to-main only — so a broken relative link or a page missing from the
   # nav passed CI and failed after the merge, on main, where nobody was
-  # looking. That workflow is gone (#1006); this job is the gate.
+  # looking. That workflow is gone (#1008); this job is the gate.
   #
   # The compile step is the load-bearing one. Fountain.Docs embeds every page
   # at compile time, so a snippet include pointing at a file that is not there
@@ -1062,7 +1062,7 @@ jobs:
 
       # docs_test.exs: the docs/nav.yml parser, the snippet-to-Dockerfile COPY
       # coverage, the dialect preprocessing, and every internal /docs link and
-      # anchor. Since #1006 it is the whole structural gate — there is no
+      # anchor. Since #1008 it is the whole structural gate — there is no
       # second renderer to build the pages strictly against.
       # docs_controller_test.exs: that the pages actually serve.
       - name: Docs tests

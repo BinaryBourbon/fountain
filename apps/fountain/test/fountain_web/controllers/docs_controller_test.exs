@@ -2,7 +2,7 @@ defmodule FountainWeb.DocsControllerTest do
   use FountainWeb.ConnCase, async: true
 
   # All requests here are unauthenticated on purpose: /docs is the public
-  # manual, so it sits in the public marketing scope. Since #1006 it is the
+  # manual, so it sits in the public marketing scope. Since #1008 it is the
   # only place that manual is published, which makes the anonymous case the
   # one that matters most — nobody reading setup.md has an account yet.
 

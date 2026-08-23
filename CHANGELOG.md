@@ -52,7 +52,7 @@ upgrade, is in
   `deploy/k8s/` and the SDK examples now point at
   `https://fountain.inevitable.fyi/docs/...`. Four of them had been broken
   since the docs IA campaign moved that content, because nothing checked
-  absolute links; they point at the right pages now (#1006)
+  absolute links; they point at the right pages now (#1008)
 
   The old site does not simply stop: it becomes a **tombstone**, one redirect
   per URL it used to answer, each pointing at the same page under `/docs` and
@@ -62,7 +62,7 @@ upgrade, is in
   `scripts/build-pages-tombstone.py` generates it from the nav and refuses to
   emit a redirect to a page that is not there;
   `.github/workflows/pages-tombstone.yml` publishes it by hand and is
-  `workflow_dispatch` only, so it is not a docs publishing path (#1006)
+  `workflow_dispatch` only, so it is not a docs publishing path (#1011)
 
 ### Changed
 

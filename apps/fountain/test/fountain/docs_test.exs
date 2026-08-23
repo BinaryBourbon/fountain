@@ -2,7 +2,7 @@ defmodule Fountain.DocsTest do
   @moduledoc """
   The embedded docs manual against `docs/nav.yml` and against itself.
 
-  Since #1006 retired the GitHub Pages build, this file is the *whole*
+  Since #1008 retired the GitHub Pages build, this file is the *whole*
   structural gate on `docs/`. `mkdocs build --strict` used to run on main and
   catch a relative link that did not resolve; nothing else renders these pages
   now, so the checks that replaced it live here: every page the nav names
@@ -260,7 +260,7 @@ defmodule Fountain.DocsTest do
     end
 
     @doc """
-    The other direction, and the one that had no gate before #1006. MkDocs
+    The other direction, and the one that had no gate before #1008. MkDocs
     built every page under `docs/` whether the nav named it or not, so a page
     left out of the nav was still reachable on the GitHub Pages site and its
     absence from `/docs` looked like a rendering quirk rather than a mistake.
@@ -348,7 +348,7 @@ defmodule Fountain.DocsTest do
     # The rendered target must carry the anchor as a heading id — MDEx emits
     # them on the trusted path (#765). Comrak's slug is now the only one that
     # matters: the MkDocs build that slugged the same headings differently for
-    # *duplicate* headings (comrak `-1`, python-markdown `_1`) is gone (#1006).
+    # *duplicate* headings (comrak `-1`, python-markdown `_1`) is gone (#1008).
     test "every internal /docs anchor link targets a heading on that page" do
       rendered =
         Map.new(Docs.slugs(), fn slug ->
