@@ -140,9 +140,8 @@ from the catalog.
 The rate variables are different from every other price here. They are what
 **you pay**, not what a tenant pays, and no other part of Fountain knows them.
 The admin finance panel at `/admin/finance` holds them next to your revenue,
-per tenant. The panel also switches between the two hour bases per view, so
-you can compare both totals against a real invoice and keep the one that
-matches.
+per tenant. The panel switches between the two hour bases per view. Compare
+both totals against a real invoice, then keep the basis that matches.
 
 Set none of them and the panel still works. It shows hours, inboxes, numbers
 and message counts, and it shows `—` in each money column. A rate you do not
