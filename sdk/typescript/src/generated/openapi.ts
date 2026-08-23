@@ -2201,6 +2201,8 @@ export interface components {
          * @description A named secret in a vault. Values are write-only — the API never returns them.
          */
         VaultSecret: {
+            /** Format: date-time */
+            expires_at?: string | null;
             /** Format: uuid */
             id: string;
             /** Format: date-time */
@@ -2850,6 +2852,11 @@ export interface components {
         };
         /** VaultSecretRequest */
         VaultSecretRequest: {
+            /**
+             * Format: date-time
+             * @description When the value stops working, as recorded by the owner. Advisory: the owner is emailed before this instant; nothing is enforced.
+             */
+            expires_at?: string | null;
             key: string;
             /** @description Secret value (write-only). */
             value: string;

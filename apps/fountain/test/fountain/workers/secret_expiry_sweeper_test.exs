@@ -49,7 +49,7 @@ defmodule Fountain.Workers.SecretExpirySweeperTest do
     assert :ok = perform_job(SecretExpirySweeper, %{})
 
     assert_email_sent(fn email ->
-      assert email.subject == "Your vault secret DEAD_TOKEN expires soon"
+      assert email.subject == "Your vault secret DEAD_TOKEN has expired"
       assert email.text_body =~ "DEAD_TOKEN"
     end)
   end

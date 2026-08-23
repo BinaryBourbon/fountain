@@ -59,7 +59,7 @@ defmodule FountainWeb.VaultsLive.Form do
          {:ok, _} <-
            Vaults.upsert_secret(
              socket.assigns.vault,
-             %{"key" => k, "value" => v, "expires_at" => parse_expiry(params["expires_at"])},
+             maybe_put_expiry(%{"key" => k, "value" => v}, params["expires_at"]),
              dek,
              FountainWeb.Audited.attribution(socket)
            ) do
@@ -127,16 +127,21 @@ defmodule FountainWeb.VaultsLive.Form do
     |> Map.new(fn {k, [first | _]} -> {to_string(k), first} end)
   end
 
-  # The date input submits "YYYY-MM-DD" or "". The recorded instant is the end
-  # of that day UTC: "expires on the 12th" means it still works on the 12th.
-  defp parse_expiry(date_string) when is_binary(date_string) and date_string != "" do
+  # The date input submits "YYYY-MM-DD" or "". A blank (or unparseable) date
+  # leaves `expires_at` out of the attrs entirely, so re-adding a key to
+  # rotate its value — where nothing prefills the date field — keeps the
+  # stored expiry instead of silently clearing it. Clearing is not a console
+  # action; send an explicit `expires_at: null` over the API for that.
+  # The recorded instant is the end of the chosen day UTC: "expires on the
+  # 12th" means it still works on the 12th.
+  defp maybe_put_expiry(attrs, date_string) when is_binary(date_string) and date_string != "" do
     case Date.from_iso8601(date_string) do
-      {:ok, date} -> DateTime.new!(date, ~T[23:59:59], "Etc/UTC")
-      {:error, _} -> nil
+      {:ok, date} -> Map.put(attrs, "expires_at", DateTime.new!(date, ~T[23:59:59], "Etc/UTC"))
+      {:error, _} -> attrs
     end
   end
 
-  defp parse_expiry(_), do: nil
+  defp maybe_put_expiry(attrs, _), do: attrs
 
   defp expiry_status(%{expires_at: nil}), do: nil
 
@@ -146,9 +151,14 @@ defmodule FountainWeb.VaultsLive.Form do
     cond do
       days < 0 -> {:expired, "expired #{DateTime.to_date(expires_at)}"}
       days == 0 -> {:expiring, "expires today"}
-      days <= 14 -> {:expiring, "expires in #{days}d"}
+      # Amber exactly when the email would have fired: one window, one config.
+      days <= expiry_notice_days() -> {:expiring, "expires in #{days}d"}
       true -> {:ok, "expires #{DateTime.to_date(expires_at)}"}
     end
+  end
+
+  defp expiry_notice_days do
+    Application.get_env(:fountain, :secret_expiry_notice_days, 7)
   end
 
   defp expiry_class(:expired), do: "text-rose-600"

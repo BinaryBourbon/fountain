@@ -61,7 +61,8 @@ defmodule Fountain.Workers.SecretExpirySweeper do
     |> select([s, v], %{secret: s, vault_name: v.name, user_id: v.user_id})
     |> Repo.all()
     |> Enum.group_by(& &1.user_id)
-    |> Enum.count(fn {user_id, entries} -> notify(user_id, entries) end)
+    |> Enum.map(fn {user_id, entries} -> notify(user_id, entries) end)
+    |> Enum.count(& &1)
   end
 
   defp due do

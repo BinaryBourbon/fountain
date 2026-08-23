@@ -292,7 +292,7 @@ POST   /api/vaults
 GET    /api/vaults/:id
 PUT    /api/vaults/:id
 DELETE /api/vaults/:id
-GET    /api/vaults/:id/secrets                # keys + timestamps only
+GET    /api/vaults/:id/secrets                # keys, timestamps, expiry only
 POST   /api/vaults/:id/secrets
 DELETE /api/vaults/:id/secrets/:key
 ```

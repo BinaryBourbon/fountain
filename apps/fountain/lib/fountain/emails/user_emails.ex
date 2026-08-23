@@ -136,10 +136,20 @@ defmodule Fountain.Emails.UserEmails do
     |> Mailer.deliver()
   end
 
-  defp secrets_expiring_subject([%{key: key}]), do: "Your vault secret #{key} expires soon"
+  defp secrets_expiring_subject([%{key: key} = entry]) do
+    if expired?(entry),
+      do: "Your vault secret #{key} has expired",
+      else: "Your vault secret #{key} expires soon"
+  end
 
-  defp secrets_expiring_subject(entries),
-    do: "#{length(entries)} of your vault secrets expire soon"
+  defp secrets_expiring_subject(entries) do
+    if Enum.any?(entries, &expired?/1),
+      do: "#{length(entries)} of your vault secrets have expired or expire soon",
+      else: "#{length(entries)} of your vault secrets expire soon"
+  end
+
+  defp expired?(%{expires_at: expires_at}),
+    do: DateTime.compare(expires_at, DateTime.utc_now()) == :lt
 
   @doc """
   Confirm an account deletion (#450).
@@ -344,7 +354,7 @@ defmodule Fountain.Emails.UserEmails do
   defp secrets_expiring_html(entries, url) do
     rows =
       Enum.map_join(entries, "\n", fn e ->
-        "<li><strong>#{e.key}</strong> in vault <strong>#{Plug.HTML.html_escape(e.vault_name)}</strong> — expires #{expiry_date(e.expires_at)}</li>"
+        "<li><strong>#{Plug.HTML.html_escape(e.key)}</strong> in vault <strong>#{Plug.HTML.html_escape(e.vault_name)}</strong> — expires #{expiry_date(e.expires_at)}</li>"
       end)
 
     """
