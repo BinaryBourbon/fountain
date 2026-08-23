@@ -47,7 +47,8 @@ defmodule FountainWeb.Markdown do
   #
   # `markdown_test.exs` fails if the docs corpus grows a fence in a language
   # this list does not name — a highlighter that quietly degrades is worse than
-  # one that is off, because nobody notices.
+  # one that is off, because nobody notices. Its `@unhighlightable` names the
+  # fences exempt from that rule, and why each one cannot be baked.
   #
   # `python` and `javascript` joined the list with the webhooks reference
   # (#700), which carries a signature verifier in each. A receiver author
