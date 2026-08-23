@@ -26,7 +26,7 @@ defmodule FountainWeb.TurnImageIngestTest do
   alias Fountain.Conversations
 
   setup do
-    user = insert_verified_user()
+    user = insert_active_user()
     {_key, raw_key} = insert_api_key(user)
     agent = insert_agent(user_id: user.id)
     {:ok, user: user, raw_key: raw_key, agent: agent}
@@ -98,7 +98,7 @@ defmodule FountainWeb.TurnImageIngestTest do
       # MatchError inside CachingBodyReader and surface as a 500 for every
       # endpoint — fixed here, so it is now the 413 it should always have been.
       oversized = Base.encode64(:binary.copy(<<0>>, 10 * 1024 * 1024 + 1))
-      user = insert_verified_user()
+      user = insert_active_user()
       {_key, raw_key} = insert_api_key(user)
       agent = insert_agent(user_id: user.id)
 

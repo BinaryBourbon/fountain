@@ -54,6 +54,7 @@ Three public tiers, differing in nothing but the cap `Quotas` already enforces:
 
 | Plan | Concurrent sandboxes | Contact ceiling | Price |
 |---|---|---|---|
+| Trial | 2 | 0 | free |
 | Solo | 5 | 1 | $29/mo |
 | Team | 15 | 3 | $79/mo |
 | Scale | 40 | 10 | $199/mo |
@@ -170,6 +171,45 @@ for them until they happened to add or remove one.
 `complete_checkout/4` re-attaches the item after adopting the subscription,
 best-effort and last, so a Stripe hiccup there cannot make the webhook fail and
 have Stripe redeliver an adoption that already succeeded.
+
+### The trial is a plan, and a smaller one
+
+A `trialing` account gets the `trial` plan's numbers — 2 concurrent, 40 turn
+hours, 0 teammate contacts — whatever tier its subscription names.
+
+Before this, a trial carried the full numbers of the tier it sat on (`solo`,
+because that is the price registration opens the trial with). Converting
+therefore bought the customer nothing on the day they paid, which is a strange
+thing for the moment you most want to feel like progress. It also made the
+customer portal's `end_trial` setting look punitive rather than generous: end
+the trial early and the customer loses free days for no gain. With the trial
+genuinely smaller, ending it *is* the upgrade.
+
+`Plans.effective/1` is the split. `resolve/1` keeps answering "what tier is
+this subscription for" — the price id, the plan picker, what the trial converts
+into. `effective/1` answers "whose numbers apply today". Every entitlement
+reader routes through the second when handed a `%User{}`; a bare slug carries
+no status and cannot, which is exactly how `turn_hour_allowance/2` first read
+the paid allowance for a trialing account.
+
+Two constraints shaped it:
+
+* **Only when billing is on.** `subscription_status` defaults to `"trialing"`
+  in the schema, so on a self-hosted instance every account would otherwise be
+  silently capped at two sandboxes — for someone paying their own provider
+  bill. The guard is `Billing.enabled?/0`, the same switch `DEFAULT_PLAN`
+  answers to.
+* **An operator override still wins.** `sandbox_limit_override` is an operator
+  naming a number for an account; a trial is not a reason to second-guess it.
+
+Zero contacts is the sharpest edge and the one most likely to be revisited: it
+means a prospective customer cannot evaluate teammate email and phone during
+their trial at all. It is set that way because each contact is a recurring bill
+from the moment it exists, and a free trial that mints one is an abuse vector
+with a monthly cost. One number in the catalog changes it.
+
+The trial's 40 hours keep the 20-per-slot ratio the other plans hold, rather
+than being chosen freely — the ladder stays derivable from one axis.
 
 ### Two levers for comping, deliberately separate
 

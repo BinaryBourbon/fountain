@@ -45,6 +45,20 @@ defmodule Fountain.Plans do
   | `team` | 15 | 300 | 3 | $79/mo |
   | `scale` | 40 | 800 | 10 | $199/mo |
   | `legacy` | 15 | 300 | 3 | $29/mo (closed) |
+  | `trial` | 2 | 40 | 0 | free (closed) |
+
+  ## The trial is a plan, and a smaller one
+
+  `trial` is what a `trialing` account gets, whatever tier its subscription
+  names — see `effective/1`. It is deliberately below every paid plan on every
+  axis, because a trial that hands over the full tier gives a converting
+  customer nothing on the day they pay, and the customer portal is configured
+  to end the trial on a plan change precisely so they get something.
+
+  Its zero contacts are the sharpest edge: an AgentMail inbox and an
+  AgentPhone number cost real money the moment they exist, and a free trial
+  that mints one is an abuse vector with a monthly bill attached. That is one
+  number in the catalog to change if the trade turns out to be wrong.
 
   `legacy` is the flat price every account bought before the tiers existed.
   It is pinned to the old `STRIPE_PRICE_ID`, carries `team`'s capacity so that
@@ -148,10 +162,28 @@ defmodule Fountain.Plans do
       team_contacts: 3,
       order: 0,
       public?: false
+    },
+    %{
+      slug: "trial",
+      name: "Trial",
+      tagline: "Enough to judge it by, for fourteen days.",
+      monthly_cents: 0,
+      concurrent_sandboxes: 2,
+      included_turn_hours: 40,
+      team_contacts: 0,
+      order: -1,
+      public?: false
     }
   ]
 
-  @slugs Enum.map(@plan_specs, & &1.slug)
+  # `trial` is derived, never stored. `users.plan` is written only from the
+  # Stripe price on a subscription and there is no trial price, so the column
+  # cannot hold it — and nothing should be able to put it there by hand
+  # either. Keeping it out of `@slugs` is what stops the changeset accepting
+  # it, the admin selector offering it, `change_plan/3` switching onto it, and
+  # the OpenAPI enums advertising a value the API can never return.
+  @storable_specs Enum.reject(@plan_specs, &(&1.slug == "trial"))
+  @slugs Enum.map(@storable_specs, & &1.slug)
   @sorted_specs Enum.sort_by(@plan_specs, & &1.order)
   @fallback_default "solo"
 
@@ -168,7 +200,12 @@ defmodule Fountain.Plans do
   @spec public() :: [t()]
   def public, do: Enum.filter(all(), & &1.public?)
 
-  @doc "Every known slug."
+  @doc """
+  Every slug a `users.plan` row may hold.
+
+  Excludes `trial`, which is derived from subscription status rather than
+  stored — see `effective/1`. `all/0` is the one that lists the whole catalog.
+  """
   @spec slugs() :: [String.t()]
   def slugs, do: @slugs
 
@@ -182,7 +219,13 @@ defmodule Fountain.Plans do
   @spec public_slugs() :: [String.t()]
   def public_slugs, do: Enum.map(public(), & &1.slug)
 
-  @doc "Whether `slug` names a plan in the catalog."
+  @doc """
+  Whether `slug` names a plan an account can be *put on*.
+
+  False for `trial`, on purpose: it is derived from subscription status, so
+  `DEFAULT_PLAN=trial` and `change_plan(user, "trial")` are both nonsense and
+  are refused here rather than deeper in.
+  """
   @spec known?(term()) :: boolean()
   def known?(slug) when is_binary(slug), do: slug in @slugs
   def known?(_), do: false
@@ -224,10 +267,55 @@ defmodule Fountain.Plans do
   def resolve(slug) when is_binary(slug), do: get(slug) || default()
   def resolve(_), do: default()
 
-  @doc "The concurrent-sandbox cap for a user, slug or plan."
+  @doc """
+  The plan whose numbers apply to this user **right now**.
+
+  Distinct from `resolve/1`, and the distinction is the point:
+
+    * `resolve/1` answers *what tier is this account subscribed to* — the thing
+      Stripe charges for, what the plan picker highlights, which price id to
+      use. For a trialing account that is the tier the trial converts into.
+    * `effective/1` answers *which numbers does this account get today*. While
+      the trial runs, that is the `trial` plan, not the tier being trialled.
+
+  A trial is a sample, not a smaller subscription. It carries lower limits so
+  that converting hands the customer something immediately, which is also why
+  the customer portal is configured to end the trial on a plan change rather
+  than continue it — continuing would take their money and leave them on these
+  numbers until the clock ran out.
+
+  Only applies when billing is on. `subscription_status` defaults to
+  `"trialing"` in the schema, so on a self-hosted instance every account would
+  otherwise be silently capped at the trial's two sandboxes — a bad surprise
+  for someone paying their own provider bill (see `default_slug/0`).
+
+  Every entitlement reader below goes through this, so passing a `%User{}` to
+  `concurrent_sandboxes/1` and friends gives the enforced number without the
+  caller having to know the trial exists. Passing a bare **slug** does not:
+  a slug has no status. `Billing.turn_hour_allowance/2` had exactly that bug
+  before this function existed.
+  """
+  @spec effective(term()) :: t()
+  def effective(%{subscription_status: "trialing"} = user) do
+    if trial_limits?(), do: fetch!("trial"), else: resolve(user)
+  end
+
+  def effective(subject), do: resolve(subject)
+
+  # `Fountain.Billing.enabled?/0` rather than reading the config here: core
+  # already calls it from Accounts, Legal and Funnel, and a second definition
+  # of "is this deployment commercial" is a thing that drifts.
+  defp trial_limits?, do: Fountain.Billing.enabled?()
+
+  @doc """
+  The concurrent-sandbox cap for a user, slug or plan.
+
+  Given a `%User{}` this is the *effective* number — the trial's while a trial
+  runs. Given a slug it is that plan's, because a slug carries no status.
+  """
   @spec concurrent_sandboxes(term()) :: non_neg_integer()
   def concurrent_sandboxes(%__MODULE__{concurrent_sandboxes: n}), do: n
-  def concurrent_sandboxes(subject), do: resolve(subject).concurrent_sandboxes
+  def concurrent_sandboxes(subject), do: effective(subject).concurrent_sandboxes
 
   @doc """
   The turn hours a user's, slug's or plan's subscription includes per billing
@@ -243,7 +331,7 @@ defmodule Fountain.Plans do
   """
   @spec included_turn_hours(term()) :: non_neg_integer()
   def included_turn_hours(%__MODULE__{included_turn_hours: n}), do: n
-  def included_turn_hours(subject), do: resolve(subject).included_turn_hours
+  def included_turn_hours(subject), do: effective(subject).included_turn_hours
 
   @doc """
   The most teammate contacts a user, slug or plan may hold at once.
@@ -253,7 +341,7 @@ defmodule Fountain.Plans do
   """
   @spec team_contacts(term()) :: non_neg_integer()
   def team_contacts(%__MODULE__{team_contacts: n}), do: n
-  def team_contacts(subject), do: resolve(subject).team_contacts
+  def team_contacts(subject), do: effective(subject).team_contacts
 
   @doc "Display price in cents for a user, slug or plan."
   @spec monthly_cents(term()) :: non_neg_integer()

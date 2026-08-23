@@ -6,7 +6,7 @@ defmodule FountainWeb.AdminLiveTest do
   alias Fountain.Accounts
 
   defp insert_admin(overrides \\ %{}) do
-    user = insert_verified_user(overrides)
+    user = insert_active_user(overrides)
     {:ok, admin} = Accounts.update_user_role(user, "admin")
     admin
   end
@@ -21,7 +21,7 @@ defmodule FountainWeb.AdminLiveTest do
     end
 
     test "regular user is redirected away from /admin", %{conn: conn} do
-      user = insert_verified_user()
+      user = insert_active_user()
       conn = login_user(conn, user)
       assert {:error, {:live_redirect, _}} = live(conn, ~p"/admin")
     end
@@ -35,7 +35,7 @@ defmodule FountainWeb.AdminLiveTest do
   describe "AdminLive.Index — user list" do
     test "displays all users", %{conn: conn} do
       admin = insert_admin()
-      other = insert_verified_user()
+      other = insert_active_user()
       conn = login_user(conn, admin)
       {:ok, _lv, html} = live(conn, ~p"/admin")
 
@@ -55,7 +55,7 @@ defmodule FountainWeb.AdminLiveTest do
   describe "AdminLive.Index — toggle_admin" do
     test "promotes a regular user to admin", %{conn: conn} do
       admin = insert_admin()
-      target = insert_verified_user()
+      target = insert_active_user()
       conn = login_user(conn, admin)
       {:ok, lv, _html} = live(conn, ~p"/admin")
 
@@ -96,7 +96,7 @@ defmodule FountainWeb.AdminLiveTest do
       conn = login_user(conn, admin)
       {:ok, lv, html_before} = live(conn, ~p"/admin")
 
-      new_user = insert_verified_user()
+      new_user = insert_active_user()
 
       send(lv.pid, :refresh)
       html_after = render(lv)
@@ -129,7 +129,7 @@ defmodule FountainWeb.AdminLiveTest do
       conn: conn
     } do
       admin = insert_admin()
-      owner = insert_verified_user()
+      owner = insert_active_user()
       sandbox = insert_sandbox(user_id: owner.id, status: "ready")
       conv = insert_conversation(user_id: owner.id, sandbox: sandbox)
 
@@ -285,7 +285,7 @@ defmodule FountainWeb.AdminLiveTest do
 
     test "admin can raise a user's cap", %{conn: conn} do
       admin = insert_admin()
-      target = insert_verified_user()
+      target = insert_active_user()
 
       conn = login_user(conn, admin)
       {:ok, lv, _html} = live(conn, ~p"/admin")
@@ -303,7 +303,7 @@ defmodule FountainWeb.AdminLiveTest do
     # entitlements of exactly the accounts an operator hand-manages.
     test "admin can set a user's plan", %{conn: conn} do
       admin = insert_admin()
-      target = insert_verified_user(plan: "solo")
+      target = insert_active_user(plan: "solo")
 
       conn = login_user(conn, admin)
       {:ok, lv, _html} = live(conn, ~p"/admin")
@@ -322,7 +322,7 @@ defmodule FountainWeb.AdminLiveTest do
 
     test "admin can comp a user's teammate contacts", %{conn: conn} do
       admin = insert_admin()
-      target = insert_verified_user(plan: "team")
+      target = insert_active_user(plan: "team")
 
       conn = login_user(conn, admin)
       {:ok, lv, _html} = live(conn, ~p"/admin")
@@ -348,7 +348,7 @@ defmodule FountainWeb.AdminLiveTest do
 
     test "an empty field clears the override and the cap follows the plan", %{conn: conn} do
       admin = insert_admin()
-      target = insert_verified_user(plan: "team")
+      target = insert_active_user(plan: "team")
       {:ok, _} = Fountain.Accounts.update_sandbox_limit(target, 25, actor: "admin")
 
       conn = login_user(conn, admin)
@@ -368,7 +368,7 @@ defmodule FountainWeb.AdminLiveTest do
 
     test "admin can drop a cap to zero to cut off an abusive tenant", %{conn: conn} do
       admin = insert_admin()
-      target = insert_verified_user()
+      target = insert_active_user()
 
       conn = login_user(conn, admin)
       {:ok, lv, _html} = live(conn, ~p"/admin")
@@ -385,7 +385,7 @@ defmodule FountainWeb.AdminLiveTest do
 
     test "a negative cap is rejected", %{conn: conn} do
       admin = insert_admin()
-      target = insert_verified_user()
+      target = insert_active_user()
 
       conn = login_user(conn, admin)
       {:ok, lv, _html} = live(conn, ~p"/admin")
@@ -400,7 +400,7 @@ defmodule FountainWeb.AdminLiveTest do
 
     test "a non-numeric cap is rejected", %{conn: conn} do
       admin = insert_admin()
-      target = insert_verified_user()
+      target = insert_active_user()
 
       conn = login_user(conn, admin)
       {:ok, lv, _html} = live(conn, ~p"/admin")
@@ -418,7 +418,7 @@ defmodule FountainWeb.AdminLiveTest do
     test "shows subscription status, trial end and a Stripe link", %{conn: conn} do
       admin = insert_admin()
 
-      user = insert_verified_user()
+      user = insert_active_user()
 
       user =
         Fountain.Repo.update!(
@@ -444,7 +444,7 @@ defmodule FountainWeb.AdminLiveTest do
 
       user =
         Fountain.Repo.update!(
-          Ecto.Changeset.change(insert_verified_user(),
+          Ecto.Changeset.change(insert_active_user(),
             subscription_status: "canceled",
             trial_ends_at: nil
           )
@@ -470,6 +470,8 @@ defmodule FountainWeb.AdminLiveTest do
 
     test "rejects a non-numeric day count", %{conn: conn} do
       admin = insert_admin()
+      # Trialing on purpose: the extend-trial form is only rendered for an
+      # account that has a trial, and `extend_trial/2` refuses an active one.
       user = insert_verified_user()
       conn = login_user(conn, admin)
       {:ok, lv, _html} = live(conn, ~p"/admin")
@@ -486,7 +488,7 @@ defmodule FountainWeb.AdminLiveTest do
   describe "AdminLive.Index — toggle_comp" do
     test "comps and un-comps an account, with audit events", %{conn: conn} do
       admin = insert_admin()
-      user = insert_verified_user()
+      user = insert_active_user()
       conn = login_user(conn, admin)
       {:ok, lv, _html} = live(conn, ~p"/admin")
 
@@ -553,7 +555,7 @@ defmodule FountainWeb.AdminLiveTest do
 
     test "shows the stalled-verified breakdown", %{conn: conn} do
       admin = insert_admin()
-      stalled = insert_verified_user()
+      stalled = insert_active_user()
       insert_agent(user_id: stalled.id)
       conn = login_user(conn, admin)
 
@@ -568,7 +570,7 @@ defmodule FountainWeb.AdminLiveTest do
   describe "AdminLive.Index — suspend (#287)" do
     test "suspends and unsuspends with audit events and a badge", %{conn: conn} do
       admin = insert_admin()
-      target = insert_verified_user()
+      target = insert_active_user()
       insert_sandbox(user_id: target.id, status: "ready")
       conn = login_user(conn, admin)
       {:ok, lv, _html} = live(conn, ~p"/admin")
@@ -613,7 +615,7 @@ defmodule FountainWeb.AdminLiveTest do
       admin = insert_admin()
 
       Fountain.Repo.update!(
-        Ecto.Changeset.change(insert_verified_user(), subscription_status: "active")
+        Ecto.Changeset.change(insert_active_user(), subscription_status: "active")
       )
 
       Fountain.Repo.insert_all("stripe_events", [
@@ -665,8 +667,8 @@ defmodule FountainWeb.AdminLiveTest do
     # assertions must target a third user, never the admin.
     test "?q= narrows the table to matching emails", %{conn: conn} do
       admin = insert_admin()
-      needle = insert_verified_user(%{email: "needle@example.com"})
-      straw = insert_verified_user(%{email: "straw@example.com"})
+      needle = insert_active_user(%{email: "needle@example.com"})
+      straw = insert_active_user(%{email: "straw@example.com"})
       conn = login_user(conn, admin)
 
       {:ok, _lv, html} = live(conn, ~p"/admin?q=needle")
@@ -677,8 +679,8 @@ defmodule FountainWeb.AdminLiveTest do
 
     test "typing in the search box patches the URL and filters", %{conn: conn} do
       admin = insert_admin()
-      needle = insert_verified_user(%{email: "needle@example.com"})
-      straw = insert_verified_user(%{email: "straw@example.com"})
+      needle = insert_active_user(%{email: "needle@example.com"})
+      straw = insert_active_user(%{email: "straw@example.com"})
       conn = login_user(conn, admin)
       {:ok, lv, _html} = live(conn, ~p"/admin")
 
@@ -694,11 +696,11 @@ defmodule FountainWeb.AdminLiveTest do
 
     test "filters by subscription status", %{conn: conn} do
       admin = insert_admin()
-      trialing = insert_verified_user(%{email: "still-trialing@example.com"})
+      trialing = insert_active_user(%{email: "still-trialing@example.com"})
 
       canceled =
         Fountain.Repo.update!(
-          Ecto.Changeset.change(insert_verified_user(), subscription_status: "canceled")
+          Ecto.Changeset.change(insert_active_user(), subscription_status: "canceled")
         )
 
       conn = login_user(conn, admin)
@@ -710,7 +712,7 @@ defmodule FountainWeb.AdminLiveTest do
 
     test "filters by verification state and badges unverified users", %{conn: conn} do
       admin = insert_admin()
-      verified = insert_verified_user(%{email: "is-verified@example.com"})
+      verified = insert_active_user(%{email: "is-verified@example.com"})
       unverified = insert_user()
       conn = login_user(conn, admin)
 
@@ -722,8 +724,8 @@ defmodule FountainWeb.AdminLiveTest do
 
     test "sorts by email via the header link", %{conn: conn} do
       admin = insert_admin()
-      insert_verified_user(%{email: "zzz-sort@example.com"})
-      insert_verified_user(%{email: "aaa-sort@example.com"})
+      insert_active_user(%{email: "zzz-sort@example.com"})
+      insert_active_user(%{email: "aaa-sort@example.com"})
       conn = login_user(conn, admin)
       {:ok, lv, _html} = live(conn, ~p"/admin")
 
@@ -811,7 +813,7 @@ defmodule FountainWeb.AdminLiveTest do
   describe "AdminLive.Index — usage column" do
     test "shows 30-day usage per user", %{conn: conn} do
       admin = insert_admin()
-      user = insert_verified_user()
+      user = insert_active_user()
       {:ok, _} = Fountain.Billing.record_usage(user.id, "turn_started", nil, nil)
       {:ok, _} = Fountain.Billing.record_usage(user.id, "sandbox_provisioned", nil, nil)
 
@@ -839,7 +841,7 @@ defmodule FountainWeb.AdminLiveTest do
 
     test "names each provider and the tenants behind it", %{conn: conn} do
       admin = insert_admin()
-      user = insert_verified_user()
+      user = insert_active_user()
       sandbox_run(user, "e2b", 30)
 
       conn = login_user(conn, admin)
@@ -853,7 +855,7 @@ defmodule FountainWeb.AdminLiveTest do
 
     test "marks a self-hosted runner as not our bill", %{conn: conn} do
       admin = insert_admin()
-      user = insert_verified_user()
+      user = insert_active_user()
       sandbox_run(user, "runner", 30)
 
       conn = login_user(conn, admin)
@@ -866,7 +868,7 @@ defmodule FountainWeb.AdminLiveTest do
       # The number that says whether the bill is avoidable. A sandbox that
       # never took a turn is 100% idle.
       admin = insert_admin()
-      user = insert_verified_user()
+      user = insert_active_user()
       sandbox_run(user, "e2b", 30)
 
       conn = login_user(conn, admin)
@@ -897,7 +899,7 @@ defmodule FountainWeb.AdminLiveErrorTest do
   alias Fountain.Accounts
 
   defp insert_admin(overrides \\ %{}) do
-    user = insert_verified_user(overrides)
+    user = insert_active_user(overrides)
     {:ok, admin} = Accounts.update_user_role(user, "admin")
     admin
   end
@@ -905,7 +907,7 @@ defmodule FountainWeb.AdminLiveErrorTest do
   describe "AdminLive.Index — toggle_admin error path" do
     test "shows error flash when update_user_role fails", %{conn: conn} do
       admin = insert_admin()
-      target = insert_verified_user()
+      target = insert_active_user()
       conn = login_user(conn, admin)
       {:ok, lv, _html} = live(conn, ~p"/admin")
 
@@ -928,7 +930,7 @@ defmodule FountainWeb.AdminLiveErrorTest do
 
       user =
         Fountain.Repo.update!(
-          Ecto.Changeset.change(insert_verified_user(),
+          Ecto.Changeset.change(insert_active_user(),
             subscription_status: "past_due",
             stripe_customer_id: "cus_lv_resync",
             stripe_subscription_id: "sub_lv_resync"
@@ -960,7 +962,7 @@ defmodule FountainWeb.AdminLiveErrorTest do
 
     test "a user with no subscription of record gets a customer sync enqueued", %{conn: conn} do
       admin = insert_admin()
-      user = insert_verified_user()
+      user = insert_active_user()
 
       conn = login_user(conn, admin)
       {:ok, lv, _html} = live(conn, ~p"/admin")

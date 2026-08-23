@@ -31,6 +31,26 @@ for why.
 to a new customer. It exists so that the accounts which bought the old price
 keep it, at Team capacity.
 
+### A trial is smaller than any plan
+
+A trial is not one of the plans above. It is its own, smaller one, and an
+account gets it for the first 14 days whatever tier the subscription names.
+
+| Plan | Concurrent sandboxes | Turn hours | Contact ceiling | Price |
+|---|---|---|---|---|
+| Trial | 2 | 40 | 0 | free |
+
+The trial is below every paid plan on every axis, so a customer who subscribes
+gets more capacity the same day. This is also why the customer portal ends the
+trial on a plan change instead of continuing it. To continue the trial would
+take the payment and leave the customer on these numbers.
+
+A trial includes no teammate contacts. An inbox and a phone number cost money
+as soon as they exist. A free trial that gives one away invites abuse.
+
+The trial applies only where billing is on. On a self-hosted instance every
+account carries the `trialing` status and none of these limits.
+
 The contact ceiling bounds teammate email and phone contacts. It is an abuse
 bound, not an allowance. Fountain charges for each contact separately.
 

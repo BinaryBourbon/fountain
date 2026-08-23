@@ -235,7 +235,7 @@ defmodule Fountain.Billing.TurnHoursTest do
 
   describe "turn_hour_allowance/2" do
     test "reports used against the plan's included hours" do
-      user = insert_verified_user(plan: "solo")
+      user = insert_active_user(plan: "solo")
 
       sandbox =
         sandbox_running(user, "sprites", ~U[2026-05-10 00:00:00Z], ~U[2026-05-11 00:00:00Z])
@@ -254,7 +254,7 @@ defmodule Fountain.Billing.TurnHoursTest do
     end
 
     test "remaining never goes negative, and over? is what says so" do
-      user = insert_verified_user(plan: "solo")
+      user = insert_active_user(plan: "solo")
 
       # 101 hours against Solo's 100: one hour over.
       sandbox =
@@ -284,8 +284,8 @@ defmodule Fountain.Billing.TurnHoursTest do
     end
 
     test "a bigger plan carries proportionally more" do
-      solo = insert_verified_user(plan: "solo")
-      scale = insert_verified_user(plan: "scale")
+      solo = insert_active_user(plan: "solo")
+      scale = insert_active_user(plan: "scale")
 
       assert Billing.turn_hour_allowance(scale).included >
                Billing.turn_hour_allowance(solo).included

@@ -91,10 +91,16 @@ defmodule Fountain.Quotas do
   """
   @spec sandbox_limit(binary()) :: non_neg_integer()
   def sandbox_limit(user_id) when is_binary(user_id) do
-    query = from u in User, where: u.id == ^user_id, select: {u.sandbox_limit_override, u.plan}
+    # `subscription_status` is selected because a trial is capped lower than
+    # the tier it trials (`Plans.effective/1`). Selecting only the plan slug
+    # would hand a trialing account the paid number.
+    query =
+      from u in User,
+        where: u.id == ^user_id,
+        select: {u.sandbox_limit_override, u.plan, u.subscription_status}
 
     case Repo.one(query) do
-      {override, plan} -> resolve_limit(override, plan)
+      {override, plan, status} -> resolve_limit(override, plan, status)
       nil -> Plans.concurrent_sandboxes(nil)
     end
   end
@@ -105,11 +111,16 @@ defmodule Fountain.Quotas do
   row (the same contract as `active_sandbox_counts/0`).
   """
   @spec sandbox_limit_for(User.t()) :: non_neg_integer()
-  def sandbox_limit_for(%User{sandbox_limit_override: override, plan: plan}),
-    do: resolve_limit(override, plan)
+  def sandbox_limit_for(%User{} = user),
+    do: resolve_limit(user.sandbox_limit_override, user.plan, user.subscription_status)
 
-  defp resolve_limit(override, _plan) when is_integer(override), do: override
-  defp resolve_limit(_override, plan), do: Plans.concurrent_sandboxes(plan)
+  # An explicit override beats everything, the trial included: it is the
+  # operator saying "this account, this number", and a trial is not a reason
+  # to second-guess that.
+  defp resolve_limit(override, _plan, _status) when is_integer(override), do: override
+
+  defp resolve_limit(_override, plan, status),
+    do: Plans.concurrent_sandboxes(%{plan: plan, subscription_status: status})
 
   @doc """
   Check `user_id` against the sandbox concurrency cap.

@@ -35,7 +35,13 @@ defmodule FountainWeb.Live.BillingLive do
          allowance: Billing.turn_hour_allowance(user, period: period),
          period: period,
          stripe_url_loading: false,
+         # Two plans, deliberately. `plan` is the tier the subscription names
+         # — what Stripe charges for, what the picker highlights. `effective_plan`
+         # is whose numbers apply today, which during a trial is the smaller
+         # `trial` plan (`Plans.effective/1`).
          plan: Billing.plan(user),
+         effective_plan: Plans.effective(user),
+         on_trial: user.subscription_status == "trialing" and Billing.enabled?(),
          sandbox_limit: Quotas.sandbox_limit_for(user),
          available_plans: Billing.available_plans()
        )}
@@ -170,19 +176,35 @@ defmodule FountainWeb.Live.BillingLive do
       <div class="rounded-lg border bg-white p-6 shadow-sm">
         <h2 class="mb-4 text-lg font-medium">Subscription</h2>
         <dl class="space-y-3">
+          <%!-- While a trial runs, `@plan` is the tier it converts into and
+                `@effective_plan` is the smaller set of numbers in force. Both
+                are named, because showing "Solo" beside Trial's two sandboxes
+                is how a customer concludes the product is broken. --%>
           <div class="flex items-center justify-between">
             <dt class="text-sm text-gray-500">Plan</dt>
-            <dd class="text-sm font-medium">{@plan.name}</dd>
+            <dd class="text-sm font-medium">
+              <span :if={@on_trial}>Trial, then {@plan.name}</span>
+              <span :if={!@on_trial}>{@plan.name}</span>
+            </dd>
           </div>
-          <%!-- The number the plan is sold on, and the one an operator
-                override can make differ from it — so show what is actually
-                enforced rather than what the tier says. --%>
+          <%!-- The number the plan is sold on, and the one a trial or an
+                operator override can make differ from it — so show what is
+                actually enforced rather than what the tier says. --%>
           <div class="flex items-center justify-between">
             <dt class="text-sm text-gray-500">Agents at once</dt>
             <dd class="text-sm font-medium">
               {@sandbox_limit}
-              <span :if={@sandbox_limit != @plan.concurrent_sandboxes} class="text-gray-500">
+              <span
+                :if={@sandbox_limit != @effective_plan.concurrent_sandboxes}
+                class="text-gray-500"
+              >
                 (adjusted for this account)
+              </span>
+              <span
+                :if={@on_trial and @sandbox_limit == @effective_plan.concurrent_sandboxes}
+                class="text-gray-500"
+              >
+                on trial, {@plan.concurrent_sandboxes} on {@plan.name}
               </span>
             </dd>
           </div>
@@ -333,6 +355,9 @@ defmodule FountainWeb.Live.BillingLive do
           <p class="text-sm tabular-nums">
             <span class="font-semibold">{format_hours(@allowance.used)}</span>
             <span class="text-gray-500">of {@allowance.included} included</span>
+            <%!-- Without this the trial's smaller allowance reads as the tier's,
+                  and a customer evaluating Solo judges it on Trial's number. --%>
+            <span :if={@on_trial} class="text-gray-500">on trial</span>
           </p>
         </div>
         <div class="mt-3 h-2 w-full overflow-hidden rounded-full bg-gray-100">
@@ -349,6 +374,10 @@ defmodule FountainWeb.Live.BillingLive do
           A turn hour is an hour with a prompt in flight. An agent sitting idle
           costs you nothing here, and neither does time on your own runner.
           Parked sandboxes are excluded from every number on this page.
+        </p>
+        <p :if={@on_trial} class="mt-2 text-xs text-gray-500">
+          A trial includes {@effective_plan.included_turn_hours} turn hours and {@effective_plan.concurrent_sandboxes} agents at once. {@plan.name} raises those to {@plan.included_turn_hours} and {@plan.concurrent_sandboxes} as soon as you subscribe — you do not
+          wait for the trial to run out.
         </p>
         <p :if={@allowance.over?} class="mt-2 text-xs text-amber-700">
           You are over the hours your plan includes. Nothing is limited and

@@ -422,7 +422,9 @@ defmodule FountainWeb.BillingLiveTest do
     end
 
     test "shows hours used against the plan's allowance", %{conn: conn} do
-      user = insert_verified_user(plan: "solo")
+      # Active: a trialing account is capped at the trial's 40 hours, which
+      # the trial-specific tests below cover.
+      user = insert_active_user(plan: "solo")
       busy_hours(user, 3)
 
       {:ok, _lv, html} = live(login_user(conn, user), ~p"/account/billing")
@@ -430,6 +432,24 @@ defmodule FountainWeb.BillingLiveTest do
       assert html =~ "Turn hours"
       assert html =~ "of 100 included"
       assert html =~ "A turn hour is an hour with a prompt in flight"
+    end
+
+    # The trap this could create: showing "Solo" beside Trial's numbers, so a
+    # customer evaluating Solo judges it on two sandboxes and forty hours and
+    # concludes the product is unusable. Both have to be named.
+    test "a trialing account sees the trial's numbers and what the tier raises them to",
+         %{conn: conn} do
+      user = insert_verified_user(plan: "team")
+
+      {:ok, _lv, html} = live(login_user(conn, user), ~p"/account/billing")
+
+      assert html =~ "Trial, then Team"
+      assert html =~ "of 40 included"
+      assert html =~ "on trial"
+      # The tier's numbers are stated as what subscribing raises them to.
+      assert html =~ "300"
+      assert html =~ "15"
+      refute html =~ "of 300 included"
     end
 
     test "says nothing is limited when a tenant is over", %{conn: conn} do

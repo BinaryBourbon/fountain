@@ -10,21 +10,21 @@ defmodule FountainWeb.AdminUserDetailLiveTest do
   alias Fountain.Repo
 
   defp insert_admin(overrides \\ %{}) do
-    user = insert_verified_user(overrides)
+    user = insert_active_user(overrides)
     {:ok, admin} = Accounts.update_user_role(user, "admin")
     admin
   end
 
   describe "access control" do
     test "regular user is redirected away", %{conn: conn} do
-      user = insert_verified_user()
-      target = insert_verified_user()
+      user = insert_active_user()
+      target = insert_active_user()
       conn = login_user(conn, user)
       assert {:error, {:live_redirect, _}} = live(conn, ~p"/admin/users/#{target.id}")
     end
 
     test "unauthenticated user is redirected to login", %{conn: conn} do
-      target = insert_verified_user()
+      target = insert_active_user()
       assert {:error, {:redirect, %{to: path}}} = live(conn, ~p"/admin/users/#{target.id}")
       assert path =~ "/auth/login"
     end
@@ -33,7 +33,7 @@ defmodule FountainWeb.AdminUserDetailLiveTest do
   describe "detail page" do
     test "shows another tenant's account, conversations and API-key metadata", %{conn: conn} do
       admin = insert_admin()
-      target = insert_verified_user()
+      target = insert_active_user()
       conv = insert_conversation(user_id: target.id)
       {_key, _raw} = insert_api_key(target, "support-visible-key")
 
@@ -49,7 +49,7 @@ defmodule FountainWeb.AdminUserDetailLiveTest do
 
     test "shows the tenant's turn hours against their plan (#1016)", %{conn: conn} do
       admin = insert_admin()
-      target = insert_verified_user(plan: "team")
+      target = insert_active_user(plan: "team")
 
       {:ok, _lv, html} = live(login_user(conn, admin), ~p"/admin/users/#{target.id}")
 
@@ -62,7 +62,7 @@ defmodule FountainWeb.AdminUserDetailLiveTest do
 
     test "shows admin actions taken against the account", %{conn: conn} do
       admin = insert_admin()
-      target = insert_verified_user()
+      target = insert_active_user()
 
       {:ok, _} =
         Fountain.Audit.record_admin(%{
@@ -80,7 +80,7 @@ defmodule FountainWeb.AdminUserDetailLiveTest do
 
     test "records an admin.user.viewed audit event on visit", %{conn: conn} do
       admin = insert_admin()
-      target = insert_verified_user()
+      target = insert_active_user()
 
       conn = login_user(conn, admin)
       {:ok, _lv, _html} = live(conn, ~p"/admin/users/#{target.id}")
@@ -107,7 +107,7 @@ defmodule FountainWeb.AdminUserDetailLiveTest do
   describe "invoices (#502)" do
     defp insert_target_with_customer(customer_id) do
       {:ok, user} =
-        insert_verified_user()
+        insert_active_user()
         |> Accounts.User.billing_changeset(%{stripe_customer_id: customer_id})
         |> Repo.update()
 
@@ -161,7 +161,7 @@ defmodule FountainWeb.AdminUserDetailLiveTest do
     end
 
     test "a user with no Stripe customer shows an empty state", %{conn: conn} do
-      target = insert_verified_user()
+      target = insert_active_user()
 
       {:ok, lv, _html} = live(login_user(conn, insert_admin()), ~p"/admin/users/#{target.id}")
 

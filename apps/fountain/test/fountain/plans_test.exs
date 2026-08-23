@@ -29,8 +29,10 @@ defmodule Fountain.PlansTest do
   end
 
   describe "the catalog" do
-    test "is ordered cheapest first, with the closed plan before them" do
-      assert Enum.map(Plans.all(), & &1.slug) == ~w(legacy solo team scale)
+    # `trial` sorts below `legacy`, which is what makes every real plan an
+    # upgrade from it and keeps it out of every "switch to" list.
+    test "is ordered cheapest first, with the two closed plans before them" do
+      assert Enum.map(Plans.all(), & &1.slug) == ~w(trial legacy solo team scale)
     end
 
     test "public/0 hides the closed plan" do
@@ -126,7 +128,9 @@ defmodule Fountain.PlansTest do
       assert_raise ArgumentError, ~r/unknown plan/, fn -> Plans.fetch!("enterprise") end
     end
 
-    test "slugs/0 lists every plan, including the closed one" do
+    # Storable slugs, so `legacy` is in and `trial` is not: a `users.plan` row
+    # can hold the closed flat plan but never the derived trial one.
+    test "slugs/0 lists every plan a row can hold, including the closed one" do
       assert Enum.sort(Plans.slugs()) == Enum.sort(~w(solo team scale legacy))
     end
 

@@ -1039,8 +1039,12 @@ defmodule FountainWeb.AdminLive.Index do
                       class="rounded border border-zinc-200 px-1 py-0.5 text-xs"
                       title={"#{u.plan.concurrent_sandboxes} concurrent · #{u.plan.team_contacts} contacts"}
                     >
+                      <%!-- Storable slugs only: `trial` is derived from
+                            subscription status, so offering it here would
+                            let an operator pin an account to a plan the
+                            column cannot hold. --%>
                       <option
-                        :for={p <- Fountain.Plans.all()}
+                        :for={p <- Enum.map(Fountain.Plans.slugs(), &Fountain.Plans.fetch!/1)}
                         value={p.slug}
                         selected={p.slug == u.plan.slug}
                       >
