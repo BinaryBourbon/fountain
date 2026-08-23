@@ -96,6 +96,32 @@ export class Run implements Promise<RunResult>, AsyncIterable<RunEvent> {
     this.abort.abort();
   }
 
+  /**
+   * Answer a permission request this turn is blocked on — the `requestId` and
+   * the `optionId` both come off a `{ type: "permission" }` event.
+   *
+   * ```ts
+   * for await (const event of run) {
+   *   if (event.type === "permission") {
+   *     const allow = event.request.options.find((o) => o.kind === "allow_once");
+   *     if (allow) await run.answer(event.request.requestId, allow.optionId);
+   *   }
+   * }
+   * ```
+   *
+   * Only an agent with an `ask` entry in its `permission_policy` produces
+   * these. Leave them unanswered and the server denies each one when it
+   * expires, so the turn finishes having skipped the work.
+   */
+  async answer(requestId: string, optionId: string): Promise<void> {
+    const id = await this.conversationId;
+    await this.http.request(
+      "POST",
+      `/api/conversations/${id}/requests/${encodeURIComponent(requestId)}`,
+      { body: { option_id: optionId } },
+    );
+  }
+
   /** Ask the agent to stop the turn it is on. The sandbox stays up. */
   async interrupt(): Promise<void> {
     const id = await this.conversationId;

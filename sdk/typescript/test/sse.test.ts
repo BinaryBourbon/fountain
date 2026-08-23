@@ -124,6 +124,58 @@ describe("TurnFollower", () => {
     assert.equal(follower.reason, "oom");
   });
 
+  test("a permission request becomes an answerable event", () => {
+    const follower = new TurnFollower(1);
+    follower.apply(stage("started", { turn_number: 1, turn_id: "t1" }));
+    const events = follower.apply(
+      output(
+        [
+          {
+            kind: "permission_request",
+            request_id: "req-1",
+            name: "rm -rf build",
+            tool_id: "tool-9",
+            summary: "Run rm -rf build",
+            options: [
+              { optionId: "allow", kind: "allow_once", name: "Allow once" },
+              { optionId: "deny", kind: "reject_once", name: "Deny" },
+            ],
+          },
+        ],
+        "t1",
+      ),
+    );
+
+    const ask = events.find((e) => e.type === "permission");
+    assert.ok(ask, "a permission_request block must surface as its own event");
+    assert.equal(ask.request.requestId, "req-1");
+    assert.equal(ask.request.summary, "Run rm -rf build");
+    assert.equal(ask.request.toolName, "rm -rf build");
+    assert.equal(ask.request.toolId, "tool-9");
+    assert.deepEqual(
+      ask.request.options.map((o) => o.optionId),
+      ["allow", "deny"],
+    );
+    // Asking is not saying, and it is not a tool the agent got to use.
+    assert.equal(follower.text, "");
+    assert.deepEqual(follower.toolsUsed, []);
+  });
+
+  test("an unanswerable ask is dropped rather than handed over", () => {
+    const follower = new TurnFollower(1);
+    follower.apply(stage("started", { turn_number: 1, turn_id: "t1" }));
+
+    const noId = follower.apply(
+      output([{ kind: "permission_request", options: [{ optionId: "allow" }] }], "t1"),
+    );
+    assert.equal(noId.some((e) => e.type === "permission"), false);
+
+    const noOptions = follower.apply(
+      output([{ kind: "permission_request", request_id: "req-2", options: [] }], "t1"),
+    );
+    assert.equal(noOptions.some((e) => e.type === "permission"), false);
+  });
+
   test("matches on turn_id once known, even if the turn number drifts", () => {
     const follower = new TurnFollower(3);
     follower.apply(stage("started", { turn_number: 3, turn_id: "t3" }));

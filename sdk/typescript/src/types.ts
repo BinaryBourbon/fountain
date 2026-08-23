@@ -72,6 +72,40 @@ export interface TeamEvent extends LogEvent {
 /** The log-event streams a conversation carries. */
 export type Stream = "stdout" | "stderr" | "acp" | "stage";
 
+/**
+ * One choice an agent offered when it asked permission. `optionId` is what an
+ * answer sends back; `kind` is the vocabulary a UI can render without reading
+ * the label (`allow_once`, `allow_always`, `reject_once`, `reject_always`, …).
+ * Runtimes may add fields, so the rest is left open.
+ */
+export interface PermissionOption {
+  optionId: string;
+  kind?: string;
+  name?: string;
+  [key: string]: unknown;
+}
+
+/**
+ * The agent is holding a tool call, waiting to be told whether to run it.
+ *
+ * Only agents with an `ask` entry in `permission_policy` produce these; the
+ * default is `auto_allow` and never asks. Nothing else in the turn advances
+ * until this is answered, and if nobody answers before the server's timeout it
+ * is denied — so a caller that ignores these on an `ask` agent gets a turn that
+ * does less than it was told to, not an error.
+ */
+export interface PermissionRequest {
+  /** Pass this to `answer`. */
+  requestId: string;
+  /** What the agent wants to do, in the runtime's words. */
+  summary: string | null;
+  /** The tool it is asking about. Claude titles this with the command itself. */
+  toolName: string | null;
+  toolId: string | null;
+  /** The choices the agent offered, in its order. Answer with one of these. */
+  options: PermissionOption[];
+}
+
 /** How a turn ended. `timeout` means the SDK stopped waiting, not that the agent did. */
 export type TurnState = "done" | "failed" | "interrupted" | "timeout";
 
@@ -82,6 +116,7 @@ export type RunEvent =
   | { type: "text"; text: string }
   | { type: "thinking"; text: string }
   | { type: "tool"; name: string; block: Block }
+  | { type: "permission"; request: PermissionRequest; block: Block }
   | { type: "block"; block: Block; event: LogEvent }
   | { type: "event"; event: LogEvent }
   | { type: "turn-end"; state: TurnState; exitCode: number | null; reason: string | null };

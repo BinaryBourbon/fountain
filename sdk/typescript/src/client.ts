@@ -144,16 +144,28 @@ export class Fountain {
     return new Conversation(this.api, conversationId);
   }
 
-  /** The account's conversations, newest first. */
+  /**
+   * The account's conversations, newest first.
+   *
+   * Roots only by default: a conversation an agent spawned from inside a
+   * sandbox is listed under its parent's tree, not again at the top level.
+   * Pass `{ rootsOnly: false }` for the flat list, children included.
+   */
   async conversations(opts: { rootsOnly?: boolean } = {}): Promise<ConversationRecord[]> {
     return this.api.list<ConversationRecord>("/api/conversations", {
       query: { roots_only: opts.rootsOnly === false ? undefined : "true" },
     });
   }
 
-  /** Who this key belongs to. The cheapest way to check a key works. */
+  /**
+   * Who this key belongs to. The cheapest way to check a key works.
+   *
+   * `request`, not `data`: this is one of the few endpoints that answers with
+   * the object itself rather than `{data: …}`, so unwrapping would hand back
+   * `null` for a call that succeeded. See `UNENVELOPED` in `test/server.ts`.
+   */
   async me(): Promise<AuthMe> {
-    return this.api.data<AuthMe>("GET", "/api/auth/me");
+    return this.api.request<AuthMe>("GET", "/api/auth/me");
   }
 
   /**

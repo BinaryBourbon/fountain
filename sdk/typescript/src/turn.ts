@@ -1,4 +1,4 @@
-import type { Block, LogEvent, RunEvent, TurnState } from "./types.ts";
+import type { Block, LogEvent, PermissionOption, PermissionRequest, RunEvent, TurnState } from "./types.ts";
 
 const TERMINAL_TURN_STATES = new Set(["done", "failed", "interrupted"]);
 
@@ -125,6 +125,14 @@ export class TurnFollower {
 
     this.breakBeforeText = true;
 
+    // The turn is now blocked until somebody answers. Surface it as its own
+    // event rather than a bare block, because a caller that does not handle it
+    // loses the tool call to the server's deny-on-timeout.
+    if (block.kind === "permission_request") {
+      const request = toPermissionRequest(block);
+      return request ? [{ type: "permission", request, block }] : [];
+    }
+
     if (block.kind === "tool_use") {
       const name = asString(block.name);
       if (!name) return [];
@@ -157,6 +165,37 @@ export class TurnFollower {
     const last = this.chunks[this.chunks.length - 1] ?? "";
     return last.endsWith("\n") ? "" : "\n\n";
   }
+}
+
+/**
+ * Read a `permission_request` block into something answerable.
+ *
+ * No `request_id` means there is nothing a caller could send back, and an
+ * empty `options` list means there is nothing they could choose — either way
+ * the block is a notice, not a question, so it is dropped rather than handed
+ * over as a request that cannot be answered.
+ */
+function toPermissionRequest(block: Block): PermissionRequest | null {
+  const requestId = asString(block.request_id);
+  if (!requestId) return null;
+
+  const options: PermissionOption[] = [];
+  for (const raw of block.options ?? []) {
+    if (!raw || typeof raw !== "object") continue;
+    const option = raw as Record<string, unknown>;
+    const optionId = asString(option.optionId) ?? asString(option.option_id);
+    if (!optionId) continue;
+    options.push({ ...option, optionId });
+  }
+  if (!options.length) return null;
+
+  return {
+    requestId,
+    summary: asString(block.summary) ?? asString(block.body),
+    toolName: asString(block.name),
+    toolId: asString(block.tool_id),
+    options,
+  };
 }
 
 function parseJson(raw: unknown): Record<string, unknown> | null {
