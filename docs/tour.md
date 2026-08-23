@@ -18,7 +18,7 @@ real run.
   the smallest one that works.
 
 ```bash
-npm install fountain-sdk   # see the SDK page: not on npm yet, build from the repo
+npm install fountain-sdk
 ```
 
 ```ts
