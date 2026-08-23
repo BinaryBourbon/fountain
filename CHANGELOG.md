@@ -16,6 +16,30 @@ upgrade, is in
 
 ## [Unreleased]
 
+
+### Fixed
+
+- **The finance panel reported teammate-contact revenue nobody was charged.**
+  It priced every non-comped contact at `Plans.contact_monthly_cents/0`, which
+  returns $5 whether or not anything is configured to charge it. The actual
+  billing path, `sync_contact_addon/1`, has four guards in front of that
+  arithmetic — billing off, **no `STRIPE_PRICE_ID_CONTACT` on this
+  deployment**, a comped account, or an account with no Stripe subscription to
+  hang an item on — and any one of them means the invoice says zero.
+
+  The panel copied only the last step, and a comment claimed the two "cannot
+  disagree". They disagreed for every deployment that had not set the contact
+  price, which is the state a deployment stays in on purpose: setting that
+  variable puts a line item on the next invoice of every tenant already
+  holding contacts (#991). `/admin`'s MRR tile inherited the same error
+  through `Finance.mrr/0`.
+
+  Contact revenue is now what the add-on would actually bill. Where nothing
+  bills for contacts the panel says so out loud rather than showing a bare
+  `$0.00` beside a cost section still counting real inboxes and numbers —
+  which is the true and useful shape of it: those contacts cost money and earn
+  none.
+
 ### Fixed
 
 - **ADR 0028 said a PostHog event definition is permanent. It is not.** The
