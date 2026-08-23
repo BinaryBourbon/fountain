@@ -26,7 +26,7 @@ defmodule Fountain.Team.Comms do
   import Ecto.Query, warn: false
   require Logger
 
-  alias Fountain.{Audit, Conversations, FeatureFlags, Repo, Team}
+  alias Fountain.{Accounts, Audit, Conversations, FeatureFlags, Plans, Repo, Team}
   alias Fountain.Team.Comms.{AgentMail, AgentPhone}
   alias Fountain.Team.Contact
 
@@ -61,6 +61,31 @@ defmodule Fountain.Team.Comms do
     Repo.one(from(c in Contact, where: c.user_id == ^user_id and c.agent_id == ^agent_id))
   end
 
+  @doc """
+  How many of this tenant's teammates hold a contact.
+
+  The billable quantity: `Fountain.Billing.sync_contact_addon/1` sets the
+  add-on subscription item to exactly this, and `Fountain.Plans` caps it.
+  """
+  @spec contact_count(binary()) :: non_neg_integer()
+  def contact_count(user_id) when is_binary(user_id) do
+    Repo.aggregate(from(c in Contact, where: c.user_id == ^user_id), :count, :id)
+  end
+
+  @doc """
+  Contact counts for every tenant with at least one, in a single query — for
+  the admin view, which shows the number on every row and must not run a count
+  per row (the same contract as `Fountain.Quotas.active_sandbox_counts/0`).
+
+  Returns `%{user_id => count}`; tenants with no contacts are absent.
+  """
+  @spec contact_counts() :: %{optional(binary()) => non_neg_integer()}
+  def contact_counts do
+    from(c in Contact, group_by: c.user_id, select: {c.user_id, count(c.id)})
+    |> Repo.all()
+    |> Map.new()
+  end
+
   @doc "Contacts for many teammates at once, `%{agent_id => %Contact{}}`."
   def contacts_by_agent(user_id, agent_ids) when is_binary(user_id) and is_list(agent_ids) do
     from(c in Contact, where: c.user_id == ^user_id and c.agent_id in ^agent_ids)
@@ -92,6 +117,7 @@ defmodule Fountain.Team.Comms do
     with :ok <- gate(user_id),
          %{name: name} = teammate <- Team.get_teammate(user_id, agent_id) || {:error, :not_found},
          :ok <- ensure_no_contact(user_id, agent_id),
+         :ok <- check_contact_ceiling(user_id),
          {:ok, requested} <-
            Ecto.Changeset.apply_action(Contact.request_changeset(attrs), :insert),
          {:ok, inbox} <- create_inbox(name, teammate, opts),
@@ -116,6 +142,7 @@ defmodule Fountain.Team.Comms do
             "prompt_from_number" => not is_nil(contact.prompt_from_number)
           })
 
+          bill_contacts(user_id)
           Team.broadcast_changed(user_id)
           {:ok, contact}
 
@@ -196,6 +223,7 @@ defmodule Fountain.Team.Comms do
              :ok <- release_phone(contact),
              {:ok, _} <- Repo.delete(contact) do
           record("team.contact.released", contact, opts, %{"channels" => channels(contact)})
+          bill_contacts(user_id)
           Team.broadcast_changed(user_id)
           :ok
         end
@@ -288,6 +316,37 @@ defmodule Fountain.Team.Comms do
       not configured?() -> {:error, :not_configured}
       true -> :ok
     end
+  end
+
+  # The plan's ceiling on how many teammates may hold a contact at once
+  # (`Fountain.Plans`). Contacts are billed per unit rather than included in a
+  # tier, so this is not an entitlement — it is the bound on how much Fountain
+  # can be made to buy in one burst while the quantity sync is failing, which
+  # is the window where it would be paying for numbers it is not charging for.
+  defp check_contact_ceiling(user_id) do
+    limit = Plans.team_contacts(Accounts.get_user(user_id))
+    count = contact_count(user_id)
+
+    if count < limit do
+      :ok
+    else
+      {:error, {:contact_limit_reached, %{count: count, limit: limit}}}
+    end
+  end
+
+  # Tell billing how many contacts this tenant now holds. Best-effort by
+  # rescuing, and deliberately after the row is committed rather than before:
+  # a Stripe hiccup must not fail a provision the providers have already
+  # completed, or strand a released number as un-released. The quantity is
+  # computed from the rows and re-set on every change, so the next
+  # provision or release repairs a drop — and `Fountain.Plans`' ceiling
+  # bounds how far it can drift before someone notices.
+  defp bill_contacts(user_id) do
+    Fountain.Billing.sync_contact_addon(user_id)
+  rescue
+    error ->
+      Logger.warning("contact add-on sync failed for #{user_id}: #{Exception.message(error)}")
+      :error
   end
 
   defp ensure_no_contact(user_id, agent_id) do

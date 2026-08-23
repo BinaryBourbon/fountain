@@ -173,7 +173,7 @@ defmodule FountainWeb.AdminController do
   )
 
   def set_sandbox_limit(conn, %{"id" => id, "limit" => limit})
-      when is_integer(limit) and limit >= 0 do
+      when is_nil(limit) or (is_integer(limit) and limit >= 0) do
     admin = conn.assigns.current_user
 
     with_user(conn, id, fn user ->
@@ -181,8 +181,9 @@ defmodule FountainWeb.AdminController do
         {:ok, updated} ->
           record_admin(admin, user, "admin.sandbox_limit.changed", %{
             "email" => user.email,
-            "from" => user.max_concurrent_sandboxes,
-            "to" => limit
+            "from" => user.sandbox_limit_override,
+            "to" => limit,
+            "plan" => Fountain.Plans.resolve(user.plan).slug
           })
 
           render_user(conn, updated)
@@ -194,7 +195,12 @@ defmodule FountainWeb.AdminController do
   end
 
   def set_sandbox_limit(conn, _params),
-    do: refuse(conn, "invalid_limit", "Limit must be a whole number of 0 or more.")
+    do:
+      refuse(
+        conn,
+        "invalid_limit",
+        "Limit must be a whole number of 0 or more, or null for the plan's cap."
+      )
 
   operation(:extend_trial,
     summary: "Extend an account's trial",

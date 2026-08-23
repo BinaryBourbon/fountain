@@ -1359,7 +1359,7 @@ export interface paths {
         put?: never;
         /**
          * Mint a Stripe Checkout URL
-         * @description Starts a subscription. Refused for a comped account, and refused with `subscription_exists` when Stripe already holds a live subscription — Checkout on top of one creates a second, duplicate subscription. Use the portal endpoint in that case.
+         * @description Starts a subscription. Refused for a comped account, and refused with `subscription_exists` when Stripe already holds a live subscription — Checkout on top of one creates a second, duplicate subscription. Use the portal endpoint in that case. `plan` names the tier to buy; omit it for this deployment's default.
          */
         post: operations["FountainWeb.BillingApiController.checkout"];
         delete?: never;
@@ -2673,8 +2673,8 @@ export interface components {
         };
         /** AdminSandboxLimitRequest */
         AdminSandboxLimitRequest: {
-            /** @description Concurrent sandbox cap. */
-            limit: number;
+            /** @description Override of the plan's concurrent-sandbox cap. Null clears it, handing the cap back to the plan. */
+            limit: number | null;
         };
         /** BuzzIdentityResponse */
         BuzzIdentityResponse: {
@@ -3358,6 +3358,8 @@ export interface components {
         AdminUser: {
             active_sandboxes?: number;
             cancel_at_period_end?: boolean | null;
+            /** @description Teammate contacts this account is not charged for. Distinct from a `comped` subscription_status, which makes everything free. */
+            comped_contacts?: number;
             /** Format: date-time */
             current_period_end?: string | null;
             email: string;
@@ -3371,11 +3373,19 @@ export interface components {
             inserted_at?: string;
             /** Format: date-time */
             last_activity_at?: string | null;
+            /** @description The concurrency cap actually enforced: the override, or the plan's. */
             max_concurrent_sandboxes?: number | null;
             /** Format: date-time */
             onboarding_completed_at?: string | null;
+            /**
+             * @description Plan slug
+             * @enum {string}
+             */
+            plan?: "solo" | "team" | "scale" | "legacy";
             /** @enum {string} */
             role: "admin" | "user";
+            /** @description Admin override of the plan's cap. Null means the plan's cap applies. */
+            sandbox_limit_override?: number | null;
             subscription_status?: string | null;
             suspended?: boolean;
             /** Format: date-time */
@@ -3598,6 +3608,19 @@ export interface components {
                     end?: string;
                     /** Format: date-time */
                     start?: string;
+                };
+                /** @description The account's plan and what it entitles them to. */
+                plan?: {
+                    /** @description The plan's concurrency cap. */
+                    concurrent_sandboxes?: number;
+                    monthly_cents?: number;
+                    name?: string;
+                    /** @description The cap actually enforced for this account. Differs from concurrent_sandboxes when an operator has set an override. */
+                    sandbox_limit?: number;
+                    /** @enum {string} */
+                    slug?: "solo" | "team" | "scale" | "legacy";
+                    /** @description Most teammate contacts this account may hold at once. */
+                    team_contacts?: number;
                 };
                 /** @enum {string|null} */
                 status: "trialing" | "active" | "past_due" | "canceled" | "comped" | null;
@@ -7245,7 +7268,10 @@ export interface operations {
     };
     "FountainWeb.BillingApiController.checkout": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Plan slug to subscribe to. */
+                plan?: "solo" | "team" | "scale";
+            };
             header?: never;
             path?: never;
             cookie?: never;

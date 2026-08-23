@@ -295,7 +295,75 @@ defmodule FountainWeb.AdminLiveTest do
       |> render_submit(%{"user_id" => target.id, "limit" => "25"})
 
       assert Fountain.Quotas.sandbox_limit(target.id) == 25
-      assert render(lv) =~ "Sandbox limit updated"
+      assert render(lv) =~ "Sandbox limit override set"
+    end
+
+    # A comped account cannot change its own plan — Billing.change_plan/3
+    # refuses — so without an admin door there is no way at all onto the
+    # entitlements of exactly the accounts an operator hand-manages.
+    test "admin can set a user's plan", %{conn: conn} do
+      admin = insert_admin()
+      target = insert_verified_user(plan: "solo")
+
+      conn = login_user(conn, admin)
+      {:ok, lv, _html} = live(conn, ~p"/admin")
+
+      lv
+      |> element("#plan-#{target.id}")
+      |> render_change(%{"user_id" => target.id, "plan" => "scale"})
+
+      assert Fountain.Accounts.get_user(target.id).plan == "scale"
+      assert Fountain.Quotas.sandbox_limit(target.id) == 40
+      # The privilege trail, not just the effect: record_admin/1 is
+      # best-effort and silently drops an event type missing from its closed
+      # allowlist, which is how admin actions have shipped unaudited before.
+      assert_admin_event(target.id, "admin.plan.changed")
+    end
+
+    test "admin can comp a user's teammate contacts", %{conn: conn} do
+      admin = insert_admin()
+      target = insert_verified_user(plan: "team")
+
+      conn = login_user(conn, admin)
+      {:ok, lv, _html} = live(conn, ~p"/admin")
+
+      lv
+      |> element("#comped-contacts-#{target.id}")
+      |> render_submit(%{"user_id" => target.id, "count" => "2"})
+
+      assert Fountain.Accounts.get_user(target.id).comped_contacts == 2
+      assert_admin_event(target.id, "admin.comped_contacts.changed")
+    end
+
+    defp assert_admin_event(target_id, event_type) do
+      types =
+        target_id
+        |> Fountain.Audit._unsafe_list_admin_events_for_target(50)
+        |> Enum.map(& &1.event_type)
+
+      assert event_type in types,
+             "no #{event_type} admin event recorded (got #{inspect(types)}) — " <>
+               "the type is probably missing from AdminEvent's allowlist"
+    end
+
+    test "an empty field clears the override and the cap follows the plan", %{conn: conn} do
+      admin = insert_admin()
+      target = insert_verified_user(plan: "team")
+      {:ok, _} = Fountain.Accounts.update_sandbox_limit(target, 25, actor: "admin")
+
+      conn = login_user(conn, admin)
+      {:ok, lv, _html} = live(conn, ~p"/admin")
+
+      lv
+      |> element("#sandbox-limit-#{target.id}")
+      |> render_submit(%{"user_id" => target.id, "limit" => ""})
+
+      assert render(lv) =~ "Override cleared"
+
+      assert Fountain.Quotas.sandbox_limit(target.id) ==
+               Fountain.Plans.fetch!("team").concurrent_sandboxes
+
+      assert Fountain.Accounts.get_user(target.id).sandbox_limit_override == nil
     end
 
     test "admin can drop a cap to zero to cut off an abusive tenant", %{conn: conn} do

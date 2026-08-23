@@ -35,6 +35,7 @@ defmodule Fountain.Billing do
   alias Fountain.Audit
   alias Fountain.Billing.SandboxUsage
   alias Fountain.Billing.UsageEvent
+  alias Fountain.Plans
   alias Fountain.Repo
 
   # ─── Error ─────────────────────────────────────────────────────────────────
@@ -196,22 +197,38 @@ defmodule Fountain.Billing do
   def start_trial_subscription(%User{stripe_customer_id: nil} = user), do: {:ok, user}
 
   def start_trial_subscription(%User{} = user) do
-    case Application.get_env(:fountain, :stripe_price_id) do
-      price when is_binary(price) and price != "" ->
-        create_trial_subscription(user, price)
+    case signup_plan() do
+      {slug, price_id} ->
+        create_trial_subscription(user, slug, price_id)
 
-      _ ->
+      :none ->
         require Logger
 
         Logger.warning(
-          "no STRIPE_PRICE_ID — user #{user.id} gets a local trial with no subscription"
+          "no plan price configured — user #{user.id} gets a local trial with no subscription"
         )
 
         record_local_trial(user)
     end
   end
 
-  defp create_trial_subscription(user, price_id) do
+  # The plan a trial opens on: this deployment's default (`DEFAULT_PLAN`,
+  # normally the entry tier), falling back to the closed flat price so that a
+  # deployment which has the old `STRIPE_PRICE_ID` set but not yet the per-plan
+  # ones keeps signing people up rather than silently minting free accounts.
+  # That fallback is the whole window between deploying this and finishing the
+  # Stripe setup, and it is the one an unattended overnight signup lands in.
+  defp signup_plan do
+    default = Plans.default()
+
+    cond do
+      is_binary(Plans.price_id(default)) -> {default.slug, Plans.price_id(default)}
+      is_binary(Plans.price_id("legacy")) -> {"legacy", Plans.price_id("legacy")}
+      true -> :none
+    end
+  end
+
+  defp create_trial_subscription(user, plan_slug, price_id) do
     case trial_end_param(user.trial_ends_at) do
       :expired ->
         # The locally-stamped clock has already ended this trial; opening a
@@ -221,7 +238,7 @@ defmodule Fountain.Billing do
         {:ok, user}
 
       trial_param ->
-        do_create_trial_subscription(user, price_id, trial_param)
+        do_create_trial_subscription(user, plan_slug, price_id, trial_param)
     end
   end
 
@@ -238,7 +255,7 @@ defmodule Fountain.Billing do
     end
   end
 
-  defp do_create_trial_subscription(user, price_id, trial_param) do
+  defp do_create_trial_subscription(user, plan_slug, price_id, trial_param) do
     params =
       Map.merge(
         %{
@@ -270,7 +287,8 @@ defmodule Fountain.Billing do
           # the realistic trigger for the duplicating retries above.
           subscription_status: coerce_status(to_string(sub.status), nil),
           trial_ends_at: unix_to_datetime(Map.get(sub, :trial_end)),
-          subscription_synced_at: DateTime.utc_now() |> DateTime.truncate(:second)
+          subscription_synced_at: DateTime.utc_now() |> DateTime.truncate(:second),
+          plan: plan_slug
         })
         |> Repo.update()
         |> audit_billing(user, "billing.trial.started", "stripe")
@@ -830,15 +848,25 @@ defmodule Fountain.Billing do
   Refuses a comped account. Callers must check `has_live_subscription?/1`
   first — Checkout opened on top of a live subscription creates a second,
   duplicate one.
-  """
-  @spec checkout_url(User.t(), String.t()) :: {:ok, String.t()} | {:error, term()}
-  def checkout_url(%User{subscription_status: "comped"}, _return_url), do: {:error, :comped}
 
-  def checkout_url(%User{} = user, return_url) do
+  `plan` names the tier to buy and defaults to this deployment's default. An
+  unknown or unpriced plan falls back to that default rather than to an empty
+  price string, which is what the single-price version did and what turned a
+  misconfigured `STRIPE_PRICE_ID` into an opaque Stripe error at the last
+  step of signup.
+  """
+  @spec checkout_url(User.t(), String.t(), String.t() | nil) ::
+          {:ok, String.t()} | {:error, term()}
+  def checkout_url(user, return_url, plan \\ nil)
+
+  def checkout_url(%User{subscription_status: "comped"}, _return_url, _plan),
+    do: {:error, :comped}
+
+  def checkout_url(%User{} = user, return_url, plan) do
     with {:ok, user} <- ensure_stripe_customer(user) do
       params = %{
         mode: :subscription,
-        line_items: [%{price: Application.get_env(:fountain, :stripe_price_id, ""), quantity: 1}],
+        line_items: [%{price: checkout_price_id(plan), quantity: 1}],
         success_url: return_url <> "?checkout=success",
         cancel_url: return_url,
         customer: user.stripe_customer_id,
@@ -854,6 +882,11 @@ defmodule Fountain.Billing do
         {:error, reason} -> {:error, reason}
       end
     end
+  end
+
+  defp checkout_price_id(plan) do
+    Plans.price_id(plan) || Plans.price_id(Plans.default()) ||
+      Application.get_env(:fountain, :stripe_price_id, "")
   end
 
   @doc """
@@ -900,6 +933,220 @@ defmodule Fountain.Billing do
     |> User.billing_changeset(%{stripe_customer_id: customer_id})
     |> Repo.update()
   end
+
+  # ─── Plans ──────────────────────────────────────────────────────────────────
+
+  @doc """
+  The user's plan (`Fountain.Plans`). Never nil — see `Plans.resolve/1`.
+  """
+  @spec plan(User.t()) :: Plans.t()
+  def plan(%User{} = user), do: Plans.resolve(user.plan)
+
+  @doc """
+  The plans this deployment can actually sell: the public catalog, minus any
+  whose Stripe price id is unset.
+
+  A tier with no price is not a cheaper tier, it is a broken button — Checkout
+  refuses the session and the customer sees a Stripe error. Filtering here is
+  what lets the price ids be rolled out one at a time.
+  """
+  @spec available_plans() :: [Plans.t()]
+  def available_plans do
+    if enabled?() do
+      Enum.filter(Plans.public(), &is_binary(Plans.price_id(&1)))
+    else
+      []
+    end
+  end
+
+  @doc """
+  Move `user` to `slug` by swapping the price on their existing subscription.
+
+  This is the upgrade path for anyone who already has a subscription, which
+  after registration is everybody: Checkout would open a *second* one. The
+  base plan item is repriced in place and the add-on item, if the tenant has
+  teammate contacts, is left alone.
+
+  Proration is Stripe's default `create_prorations`, so an upgrade mid-period
+  bills the difference immediately and a trial stays a trial — the price
+  change simply lands on whatever the trial converts to.
+
+  The local `plan` column is **not** written here. The
+  `customer.subscription.updated` event this call produces is what writes it
+  (`maybe_adopt_plan/3`), so the entitlement always follows what Stripe
+  actually charges rather than what we asked it to. A returned `{:ok, user}`
+  therefore still carries the old slug; reload after the webhook lands.
+
+  Returns `{:error, :comped}` for a comped account (an operator's decision is
+  not a customer's to change), `{:error, :unknown_plan}`, `{:error,
+  :plan_unavailable}` when the target has no price id on this deployment,
+  `{:error, :no_subscription}` when there is nothing to reprice — the caller
+  should send those to Checkout — and `{:error, :plan_item_not_found}` when
+  the subscription carries no item this deployment recognises.
+  """
+  @spec change_plan(User.t(), String.t(), keyword()) :: {:ok, User.t()} | {:error, term()}
+  def change_plan(user, slug, opts \\ [])
+
+  def change_plan(%User{subscription_status: "comped"}, _slug, _opts), do: {:error, :comped}
+
+  def change_plan(%User{stripe_subscription_id: id}, _slug, _opts) when id in [nil, ""],
+    do: {:error, :no_subscription}
+
+  def change_plan(%User{} = user, slug, opts) when is_binary(slug) do
+    with {:known, true} <- {:known, Plans.known?(slug)},
+         {:priced, price_id} when is_binary(price_id) <- {:priced, Plans.price_id(slug)},
+         {:ok, sub} <- Stripe.Subscription.retrieve(user.stripe_subscription_id),
+         {:item, item_id} when is_binary(item_id) <- {:item, plan_item_id(sub)},
+         # Repricing the item directly rather than through
+         # `Stripe.Subscription.update/2`: same call at the API, but the
+         # subscription-level `items` type in stripity_stripe has no `id`
+         # field, so the in-place edit cannot be expressed there.
+         {:ok, _updated} <-
+           Stripe.SubscriptionItem.update(item_id, %{
+             price: price_id,
+             proration_behavior: :create_prorations
+           }) do
+      Audit.record(%{
+        user_id: user.id,
+        action: "billing.plan.change_requested",
+        resource_type: "user",
+        resource_id: user.id,
+        actor: Keyword.get(opts, :actor, "self"),
+        request_ip: Keyword.get(opts, :request_ip),
+        metadata: %{"from" => Plans.resolve(user.plan).slug, "to" => slug}
+      })
+
+      {:ok, user}
+    else
+      {:known, false} -> {:error, :unknown_plan}
+      {:priced, _} -> {:error, :plan_unavailable}
+      {:item, _} -> {:error, :plan_item_not_found}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  # The subscription item holding a plan price — the one `change_plan/3`
+  # reprices. Deliberately not "the first item": a tenant with teammate
+  # contacts has two, and repricing the add-on item would swap their numbers
+  # for a subscription tier.
+  defp plan_item_id(sub) do
+    sub
+    |> subscription_items()
+    |> Enum.find_value(fn item ->
+      if item |> item_price_id() |> Plans.slug_for_price_id(), do: item_id(item)
+    end)
+  end
+
+  # ─── Teammate contact add-on ────────────────────────────────────────────────
+
+  @doc """
+  Bring the teammate-contact add-on item in line with how many contacts
+  `user_id` actually holds.
+
+  An AgentMail inbox and an AgentPhone number cost Fountain money every month
+  per teammate, so they are billed per unit rather than folded into a tier: a
+  second subscription item whose quantity is the tenant's contact count
+  (`Fountain.Team.Comms`).
+
+  **Set, never increment.** The quantity is computed from the contact rows,
+  so a dropped call, a retry, a crash between provisioning and syncing, or an
+  admin deleting rows directly all converge on the right number the next time
+  this runs. An increment would not: it would drift, and a tenant would be
+  billed for numbers they no longer have.
+
+  ## Comped contacts
+
+  Two levers, deliberately separate. A `comped` subscription makes everything
+  free and short-circuits here entirely. `users.comped_contacts` is the
+  narrower one: the first N contacts are not charged, so a tenant can pay for
+  their tier and still hold a number Fountain eats the cost of. The billed
+  quantity is `max(0, count - comped_contacts)`, which is why an allowance
+  larger than the contact count is harmless rather than a negative quantity
+  Stripe would reject.
+
+  Returns `{:ok, quantity}`, or `{:ok, :not_billed}` when there is nothing to
+  bill against — billing off, no subscription, or no contact price configured.
+  That last one is how a deployment offers teammate comms for free.
+  """
+  @spec sync_contact_addon(binary()) :: {:ok, non_neg_integer() | :not_billed} | {:error, term()}
+  def sync_contact_addon(user_id) when is_binary(user_id) do
+    price_id = Plans.contact_price_id()
+    user = Repo.get(User, user_id)
+
+    cond do
+      not enabled?() -> {:ok, :not_billed}
+      is_nil(price_id) -> {:ok, :not_billed}
+      is_nil(user) -> {:ok, :not_billed}
+      user.subscription_status == "comped" -> {:ok, :not_billed}
+      user.stripe_subscription_id in [nil, ""] -> {:ok, :not_billed}
+      true -> do_sync_contact_addon(user, price_id)
+    end
+  end
+
+  defp do_sync_contact_addon(%User{} = user, price_id) when is_binary(price_id) do
+    quantity = billable_contacts(user)
+
+    with {:ok, sub} <- Stripe.Subscription.retrieve(user.stripe_subscription_id),
+         {:ok, _} <- apply_contact_quantity(sub, price_id, quantity) do
+      {:ok, quantity}
+    end
+  end
+
+  @doc """
+  How many of a user's teammate contacts Stripe is billed for: the count they
+  hold, less their comped allowance, floored at zero.
+
+  Public because the admin surfaces show it beside the raw count — "3 contacts,
+  1 billed" is the sentence an operator needs, and recomputing the subtraction
+  at each call site is how the two drift.
+  """
+  @spec billable_contacts(User.t()) :: non_neg_integer()
+  def billable_contacts(%User{} = user) do
+    max(0, Fountain.Team.Comms.contact_count(user.id) - (user.comped_contacts || 0))
+  end
+
+  defp apply_contact_quantity(sub, price_id, quantity) when is_binary(price_id) do
+    existing =
+      sub
+      |> subscription_items()
+      |> Enum.find(fn item -> item_price_id(item) == price_id end)
+
+    cond do
+      # Nothing to bill and no item to bill it on: the common case for every
+      # tenant that has never used teammate comms. Adding a zero-quantity item
+      # would put a $0 line on every invoice for no reason.
+      is_nil(existing) and quantity == 0 ->
+        {:ok, :noop}
+
+      is_nil(existing) ->
+        Stripe.SubscriptionItem.create(%{
+          subscription: subscription_id(sub),
+          price: price_id,
+          quantity: quantity,
+          proration_behavior: :create_prorations
+        })
+
+      item_quantity(existing) == quantity ->
+        {:ok, :noop}
+
+      # Down to zero: delete the item rather than set quantity 0. Stripe
+      # rejects a zero quantity on a licensed price, and a lingering item is
+      # what puts "1 × contact" on the invoice of a tenant who released their
+      # last number.
+      quantity == 0 ->
+        Stripe.SubscriptionItem.delete(item_id(existing), %{
+          proration_behavior: :create_prorations
+        })
+
+      true ->
+        Stripe.SubscriptionItem.update(item_id(existing), %{
+          quantity: quantity,
+          proration_behavior: :create_prorations
+        })
+    end
+  end
+
+  defp subscription_id(%{id: id}) when is_binary(id), do: id
 
   # ─── Webhook sync ───────────────────────────────────────────────────────────
 
@@ -1223,6 +1470,7 @@ defmodule Fountain.Billing do
                 current_period_end: current_period_end
               }
               |> maybe_adopt_subscription_id(user, subscription_id, type)
+              |> maybe_adopt_plan(sub, type)
             )
             |> Repo.update()
             |> tap(fn
@@ -1389,7 +1637,43 @@ defmodule Fountain.Billing do
         attach_stripe_customer(user, customer_id)
       end
 
-    with {:ok, user} <- linked, do: adopt_subscription(user, subscription_id, event_created)
+    with {:ok, user} <- linked,
+         {:ok, user} <- adopt_subscription(user, subscription_id, event_created) do
+      # The teammate-contact add-on lives on the subscription, so a *new*
+      # subscription starts without it. Nothing else would notice: the
+      # quantity is only pushed on provision and release, so a tenant who
+      # cancelled (or was comped and then un-comped) and came back through
+      # Checkout would keep their numbers and stop being billed for them
+      # until they happened to add or remove one.
+      #
+      # Best-effort, and last: this event's job is to record the
+      # subscription, and a Stripe hiccup here must not make the webhook fail
+      # and Stripe redeliver an adoption that already succeeded.
+      resync_contact_addon(user)
+      {:ok, user}
+    end
+  end
+
+  defp resync_contact_addon(%User{} = user) do
+    if Fountain.Team.Comms.contact_count(user.id) > 0 do
+      case sync_contact_addon(user.id) do
+        {:ok, _} ->
+          :ok
+
+        {:error, reason} ->
+          Logger.error(
+            "[billing] could not re-attach the contact add-on for user #{user.id} " <>
+              "on subscription #{user.stripe_subscription_id}: #{inspect(reason)} — " <>
+              "they hold numbers that are not being billed"
+          )
+
+          :error
+      end
+    end
+  rescue
+    error ->
+      Logger.error("[billing] contact add-on resync raised: #{Exception.message(error)}")
+      :error
   end
 
   # Checkout in subscription mode always creates a *new* subscription, so a
@@ -1499,6 +1783,64 @@ defmodule Fountain.Billing do
        do: Map.put(attrs, :stripe_subscription_id, subscription_id)
 
   defp maybe_adopt_subscription_id(attrs, _user, _subscription_id, _type), do: attrs
+
+  # The plan follows the price on the subscription, which is what makes an
+  # upgrade take effect: Stripe is told to swap the item's price, and the
+  # entitlement changes when the resulting event lands. Three cases where the
+  # key is deliberately left out, so the stored plan stands:
+  #
+  #   * a deletion — the account is losing access, not changing tier, and the
+  #     plan it held is what a resubscription should default back to;
+  #   * a subscription whose items carry no price this deployment knows —
+  #     realistically an env var not yet set on the replica handling the
+  #     webhook, and nulling a paying tenant's entitlement over that is worse
+  #     than leaving it stale;
+  #   * an event whose object carries no items at all (a hand-built test
+  #     event, or a Stripe payload shape that changes under us).
+  defp maybe_adopt_plan(attrs, _sub, "customer.subscription.deleted"), do: attrs
+
+  defp maybe_adopt_plan(attrs, sub, _type) do
+    case plan_slug_from_subscription(sub) do
+      slug when is_binary(slug) -> Map.put(attrs, :plan, slug)
+      nil -> attrs
+    end
+  end
+
+  @doc false
+  # The plan slug named by a subscription's items, or nil.
+  #
+  # A subscription carries the base plan item and, when the tenant has
+  # teammate contacts, the add-on item as well. Only the base item maps to a
+  # plan — `Plans.slug_for_price_id/1` answers nil for the add-on price, which
+  # is exactly what makes "the first item that names a plan" correct rather
+  # than order-dependent.
+  def plan_slug_from_subscription(sub) do
+    sub
+    |> subscription_items()
+    |> Enum.find_value(fn item -> item |> item_price_id() |> Plans.slug_for_price_id() end)
+  end
+
+  # Stripe hands items back as a %Stripe.List{} of structs on the API path and
+  # as plain maps on some webhook paths; tests build both. Reading either
+  # shape here keeps that difference out of every call site.
+  defp subscription_items(%{items: %{data: data}}) when is_list(data), do: data
+  defp subscription_items(%{items: data}) when is_list(data), do: data
+  defp subscription_items(%{"items" => %{"data" => data}}) when is_list(data), do: data
+  defp subscription_items(_), do: []
+
+  defp item_price_id(%{price: %{id: id}}), do: id
+  defp item_price_id(%{price: id}) when is_binary(id), do: id
+  defp item_price_id(%{"price" => %{"id" => id}}), do: id
+  defp item_price_id(%{"price" => id}) when is_binary(id), do: id
+  defp item_price_id(_), do: nil
+
+  defp item_id(%{id: id}) when is_binary(id), do: id
+  defp item_id(%{"id" => id}) when is_binary(id), do: id
+  defp item_id(_), do: nil
+
+  defp item_quantity(%{quantity: n}) when is_integer(n), do: n
+  defp item_quantity(%{"quantity" => n}) when is_integer(n), do: n
+  defp item_quantity(_), do: 0
 
   defp event_created_at(%Stripe.Event{created: ts}) when is_integer(ts),
     do: DateTime.from_unix!(ts) |> DateTime.truncate(:second)

@@ -48,7 +48,15 @@ defmodule FountainWeb.AdminJSON do
       current_period_end: u.current_period_end,
       cancel_at_period_end: u.cancel_at_period_end,
       has_stripe_customer: u.stripe_customer_id not in [nil, ""],
-      max_concurrent_sandboxes: u.max_concurrent_sandboxes,
+      plan: Fountain.Plans.resolve(u.plan).slug,
+      # The cap actually enforced, keeping the field's old name and meaning
+      # for anything reading this API, plus the override that produced it —
+      # null when the cap is simply the plan's.
+      max_concurrent_sandboxes: Fountain.Quotas.sandbox_limit_for(u),
+      sandbox_limit_override: u.sandbox_limit_override,
+      # Teammate contacts this account is not charged for. Distinct from a
+      # `comped` subscription_status, which makes everything free.
+      comped_contacts: u.comped_contacts,
       active_sandboxes: Map.get(sandbox_counts, u.id, 0),
       onboarding_completed_at: u.onboarding_completed_at,
       last_activity_at: Map.get(u, :last_activity_at),

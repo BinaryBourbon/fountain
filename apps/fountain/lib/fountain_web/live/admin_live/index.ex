@@ -82,12 +82,13 @@ defmodule FountainWeb.AdminLive.Index do
     with_target_user(socket, id, fn user -> do_toggle_admin(socket, user) end)
   end
 
-  # The concurrency cap is the only lever for a noisy or abusive tenant
-  # (ADR 0005). Without this it is adjustable only with direct database access,
-  # which makes it useless in an incident.
+  # The concurrency cap normally comes from the tenant's plan. This overrides
+  # it, which is the only lever for a noisy or abusive tenant (ADR 0005) and
+  # the only way to hand a trusted one more than they pay for. Submitting the
+  # field empty clears the override and hands the cap back to the plan.
   @impl true
   def handle_event("set_sandbox_limit", %{"user_id" => id, "limit" => raw}, socket) do
-    with {limit, ""} <- Integer.parse(String.trim(raw)),
+    with {:ok, limit} <- parse_limit_override(raw),
          %Accounts.User{} = user <- Accounts.get_user(id),
          {:ok, _} <- Accounts.update_sandbox_limit(user, limit, actor: "admin") do
       Fountain.Audit.record_admin(%{
@@ -96,12 +97,18 @@ defmodule FountainWeb.AdminLive.Index do
         event_type: "admin.sandbox_limit.changed",
         metadata: %{
           "email" => user.email,
-          "from" => user.max_concurrent_sandboxes,
-          "to" => limit
+          "from" => user.sandbox_limit_override,
+          "to" => limit,
+          "plan" => Fountain.Plans.resolve(user.plan).slug
         }
       })
 
-      {:noreply, socket |> assign_users() |> put_flash(:info, "Sandbox limit updated")}
+      message =
+        if is_nil(limit),
+          do: "Override cleared — the cap follows the plan again",
+          else: "Sandbox limit override set"
+
+      {:noreply, socket |> assign_users() |> put_flash(:info, message)}
     else
       nil ->
         {:noreply,
@@ -110,7 +117,12 @@ defmodule FountainWeb.AdminLive.Index do
          |> put_flash(:error, "User not found — the account may have been deleted")}
 
       _ ->
-        {:noreply, put_flash(socket, :error, "Limit must be a whole number of 0 or more")}
+        {:noreply,
+         put_flash(
+           socket,
+           :error,
+           "Override must be a whole number of 0 or more, or empty for the plan's cap"
+         )}
     end
   end
 
@@ -118,7 +130,7 @@ defmodule FountainWeb.AdminLive.Index do
   # sent by hand (#399's lesson) — and all of these actions talk to Stripe.
   @impl true
   def handle_event(event, _params, %{assigns: %{billing_enabled: false}} = socket)
-      when event in ~w(extend_trial toggle_comp resync_stripe) do
+      when event in ~w(extend_trial toggle_comp resync_stripe set_plan set_comped_contacts) do
     {:noreply, put_flash(socket, :error, "Billing is disabled on this instance")}
   end
 
@@ -239,6 +251,69 @@ defmodule FountainWeb.AdminLive.Index do
   # Non-bang lookup for every admin action targeting a user row (#401): the
   # table is loaded at mount, so acting on a user deleted since (another
   # admin tab, self-deletion) made get_user! raise and kill the LiveView.
+  # A comped account cannot change its own plan (`Billing.change_plan/3`
+  # refuses, correctly — an operator's decision is not the customer's to
+  # revise), so without this there is no door at all onto the entitlements of
+  # exactly the accounts an operator hand-manages.
+  @impl true
+  def handle_event("set_plan", %{"user_id" => id, "plan" => plan}, socket) do
+    with %Accounts.User{} = user <- Accounts.get_user(id),
+         {:ok, updated} <- Accounts.update_plan(user, plan, actor: "admin") do
+      Fountain.Audit.record_admin(%{
+        actor_user_id: socket.assigns.current_user.id,
+        target_user_id: user.id,
+        event_type: "admin.plan.changed",
+        metadata: %{"email" => user.email, "from" => user.plan, "to" => updated.plan}
+      })
+
+      {:noreply,
+       socket
+       |> assign_users()
+       |> put_flash(:info, "Plan set to #{Fountain.Plans.resolve(updated.plan).name}")}
+    else
+      nil ->
+        {:noreply, put_flash(socket, :error, "User not found")}
+
+      _ ->
+        {:noreply, put_flash(socket, :error, "Unknown plan")}
+    end
+  end
+
+  # Free teammate contacts, distinct from a comped account (which makes
+  # everything free). The re-sync is what carries the change to Stripe;
+  # without it the new allowance would not apply until the tenant next added
+  # or removed a contact.
+  @impl true
+  def handle_event("set_comped_contacts", %{"user_id" => id, "count" => raw}, socket) do
+    with {count, ""} <- Integer.parse(String.trim(raw)),
+         true <- count >= 0,
+         %Accounts.User{} = user <- Accounts.get_user(id),
+         {:ok, updated} <- Accounts.update_comped_contacts(user, count, actor: "admin") do
+      Fountain.Audit.record_admin(%{
+        actor_user_id: socket.assigns.current_user.id,
+        target_user_id: user.id,
+        event_type: "admin.comped_contacts.changed",
+        metadata: %{
+          "email" => user.email,
+          "from" => user.comped_contacts,
+          "to" => updated.comped_contacts
+        }
+      })
+
+      message =
+        case Billing.sync_contact_addon(updated.id) do
+          {:ok, :not_billed} -> "Comped contacts updated (this account is not billed for them)"
+          {:ok, billed} -> "Comped contacts updated — Stripe now bills for #{billed}"
+          {:error, _} -> "Saved, but Stripe could not be reached — re-sync from this page"
+        end
+
+      {:noreply, socket |> assign_users() |> put_flash(:info, message)}
+    else
+      nil -> {:noreply, put_flash(socket, :error, "User not found")}
+      _ -> {:noreply, put_flash(socket, :error, "Must be a whole number of 0 or more")}
+    end
+  end
+
   defp with_target_user(socket, id, fun) do
     case Accounts.get_user(id) do
       nil ->
@@ -413,6 +488,21 @@ defmodule FountainWeb.AdminLive.Index do
     end
   end
 
+  # "" clears the override (the cap goes back to the plan's); anything else
+  # must be a whole number of zero or more.
+  defp parse_limit_override(raw) do
+    case String.trim(raw) do
+      "" ->
+        {:ok, nil}
+
+      trimmed ->
+        case Integer.parse(trimmed) do
+          {limit, ""} when limit >= 0 -> {:ok, limit}
+          _ -> :error
+        end
+    end
+  end
+
   defp assign_users(socket) do
     f = socket.assigns.filters
     now = DateTime.utc_now()
@@ -434,6 +524,9 @@ defmodule FountainWeb.AdminLive.Index do
     }
 
     sandbox_counts = Quotas.active_sandbox_counts()
+    # One grouped query, not one per row — the same contract as the sandbox
+    # counts above. The page refreshes on a timer.
+    contact_counts = Fountain.Team.Comms.contact_counts()
 
     %{users: users, total: total} =
       Accounts.list_users_admin(
@@ -451,6 +544,9 @@ defmodule FountainWeb.AdminLive.Index do
       Enum.map(users, fn u ->
         u
         |> Map.put(:active_sandboxes, Map.get(sandbox_counts, u.id, 0))
+        |> Map.put(:sandbox_limit, Fountain.Quotas.sandbox_limit_for(u))
+        |> Map.put(:plan, Fountain.Plans.resolve(u.plan))
+        |> Map.put(:contact_count, Map.get(contact_counts, u.id, 0))
         |> Map.put(:usage, Map.get(usage, u.id, no_usage))
       end)
 
@@ -801,6 +897,13 @@ defmodule FountainWeb.AdminLive.Index do
               <th :if={@billing_enabled} class="px-4 py-2">
                 <.sort_header label="Billing" col="trial_end" filters={@filters} />
               </th>
+              <th
+                :if={@billing_enabled}
+                class="px-4 py-2"
+                title="Plan, and teammate contacts this account is not charged for"
+              >
+                Plan
+              </th>
               <th class="px-4 py-2" title="Last 30 days: conversations / turns / sandbox minutes">
                 Usage 30d
               </th>
@@ -818,7 +921,7 @@ defmodule FountainWeb.AdminLive.Index do
           <tbody>
             <tr :if={@users == []}>
               <td
-                colspan={if @billing_enabled, do: "9", else: "8"}
+                colspan={if @billing_enabled, do: "10", else: "8"}
                 class="px-4 py-6 text-center text-sm text-zinc-500"
               >
                 No users match.
@@ -923,6 +1026,51 @@ defmodule FountainWeb.AdminLive.Index do
                   </div>
                 </div>
               </td>
+              <%!-- Plan and the free-contact allowance. Both are operator
+                    levers a customer cannot reach: change_plan/3 refuses for a
+                    comped account, and comped_contacts has no self-serve
+                    surface at all. --%>
+              <td :if={@billing_enabled} class="px-4 py-2">
+                <div class="space-y-1">
+                  <form phx-change="set_plan" id={"plan-#{u.id}"}>
+                    <input type="hidden" name="user_id" value={u.id} />
+                    <select
+                      name="plan"
+                      class="rounded border border-zinc-200 px-1 py-0.5 text-xs"
+                      title={"#{u.plan.concurrent_sandboxes} concurrent · #{u.plan.team_contacts} contacts"}
+                    >
+                      <option
+                        :for={p <- Fountain.Plans.all()}
+                        value={p.slug}
+                        selected={p.slug == u.plan.slug}
+                      >
+                        {p.name}{if not p.public?, do: " (closed)"}
+                      </option>
+                    </select>
+                  </form>
+                  <form
+                    phx-submit="set_comped_contacts"
+                    id={"comped-contacts-#{u.id}"}
+                    class="flex items-center gap-1"
+                  >
+                    <input type="hidden" name="user_id" value={u.id} />
+                    <input
+                      type="number"
+                      name="count"
+                      min="0"
+                      value={u.comped_contacts}
+                      title="Teammate contacts this account is not charged for"
+                      class="w-12 rounded border border-zinc-200 px-1 py-0.5 text-xs"
+                    />
+                    <button class="text-xs text-zinc-500 hover:text-zinc-900 underline">
+                      free
+                    </button>
+                    <span :if={u.contact_count > 0} class="text-xs text-zinc-400 tabular-nums">
+                      of {u.contact_count}
+                    </span>
+                  </form>
+                </div>
+              </td>
               <td
                 class="px-4 py-2 text-xs text-zinc-500 tabular-nums whitespace-nowrap"
                 title={provider_split(u.usage.sandbox_minutes_by_provider)}
@@ -938,18 +1086,23 @@ defmodule FountainWeb.AdminLive.Index do
                   <input type="hidden" name="user_id" value={u.id} />
                   <span class={[
                     "text-xs tabular-nums",
-                    if(u.active_sandboxes >= u.max_concurrent_sandboxes,
+                    if(u.active_sandboxes >= u.sandbox_limit,
                       do: "text-red-600 font-medium",
                       else: "text-zinc-500"
                     )
                   ]}>
-                    {u.active_sandboxes} /
+                    {u.active_sandboxes} / {u.sandbox_limit}
                   </span>
+                  <%!-- Empty means "no override": the cap is the plan's, shown
+                        as the placeholder so an admin can see what clearing
+                        the box would leave behind. --%>
                   <input
                     type="number"
                     name="limit"
                     min="0"
-                    value={u.max_concurrent_sandboxes}
+                    value={u.sandbox_limit_override}
+                    placeholder={u.plan.concurrent_sandboxes}
+                    title={"#{u.plan.name} plan: #{u.plan.concurrent_sandboxes} concurrent"}
                     class="w-14 rounded border border-zinc-200 px-1 py-0.5 text-xs"
                   />
                   <button class="text-xs text-zinc-500 hover:text-zinc-900 underline">set</button>

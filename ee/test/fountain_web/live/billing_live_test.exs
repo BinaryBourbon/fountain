@@ -386,4 +386,103 @@ defmodule FountainWeb.BillingLiveTest do
       refute Fountain.Repo.get(Fountain.Accounts.User, user.id).stripe_customer_id
     end
   end
+
+  describe "the plan picker" do
+    setup do
+      Application.put_env(:fountain, :stripe_price_ids, %{
+        "solo" => "price_solo",
+        "team" => "price_team",
+        "scale" => "price_scale"
+      })
+
+      on_exit(fn -> Application.delete_env(:fountain, :stripe_price_ids) end)
+      :ok
+    end
+
+    defp subscribed_user(plan) do
+      user = billing_state("active", "cus_picker")
+
+      {:ok, user} =
+        user
+        |> Fountain.Accounts.User.billing_changeset(%{
+          stripe_subscription_id: "sub_picker",
+          plan: plan
+        })
+        |> Fountain.Repo.update()
+
+      user
+    end
+
+    test "shows every sellable plan, marks the current one, and never the closed one",
+         %{conn: conn} do
+      user = subscribed_user("legacy")
+      {:ok, _lv, html} = live(login_user(conn, user), ~p"/account/billing")
+
+      assert html =~ "Change plan"
+      assert html =~ "Solo"
+      assert html =~ "Team"
+      assert html =~ "Scale"
+      # The current plan is named in the status card, but the picker offers
+      # only the three public tiers — a closed price is not something to
+      # switch back onto.
+      refute html =~ "Switch to Legacy"
+      assert html =~ "an earlier plan we no longer sell"
+    end
+
+    test "the current plan is not offered as a switch", %{conn: conn} do
+      user = subscribed_user("team")
+      {:ok, _lv, html} = live(login_user(conn, user), ~p"/account/billing")
+
+      assert html =~ "Current plan"
+      refute html =~ "Upgrade to Team"
+    end
+
+    test "is hidden for a comped account", %{conn: conn} do
+      user = billing_state("comped", "cus_comped")
+      {:ok, _lv, html} = live(login_user(conn, user), ~p"/account/billing")
+
+      refute html =~ "Change plan"
+    end
+
+    test "is hidden when there is no subscription to reprice", %{conn: conn} do
+      user = billing_state("canceled", "cus_none")
+      {:ok, _lv, html} = live(login_user(conn, user), ~p"/account/billing")
+
+      refute html =~ "Change plan"
+    end
+
+    test "a switch reports success and leaves the plan to the webhook", %{conn: conn} do
+      user = subscribed_user("solo")
+
+      stub(Stripe.Subscription, :retrieve, fn "sub_picker" ->
+        {:ok, %{id: "sub_picker", items: %{data: [%{id: "si", price: %{id: "price_solo"}}]}}}
+      end)
+
+      stub(Stripe.SubscriptionItem, :update, fn _, _ -> {:ok, %{id: "si"}} end)
+
+      {:ok, lv, _html} = live(login_user(conn, user), ~p"/account/billing")
+      html = render_click(lv, "change_plan", %{"plan" => "team"})
+
+      assert html =~ "Switched to Team"
+      assert Fountain.Repo.get(Fountain.Accounts.User, user.id).plan == "solo"
+    end
+
+    # The realistic cause is a price id removed from the config out from under
+    # a live subscription — most likely STRIPE_PRICE_ID, which every `legacy`
+    # account still points at. "Try again" would send them round a loop that
+    # cannot work, so this path says something different.
+    test "an unrecognised subscription price does not say 'try again'", %{conn: conn} do
+      user = subscribed_user("legacy")
+
+      stub(Stripe.Subscription, :retrieve, fn "sub_picker" ->
+        {:ok, %{id: "sub_picker", items: %{data: [%{id: "si", price: %{id: "price_gone"}}]}}}
+      end)
+
+      {:ok, lv, _html} = live(login_user(conn, user), ~p"/account/billing")
+      html = render_click(lv, "change_plan", %{"plan" => "team"})
+
+      assert html =~ "could not match your subscription to a plan"
+      refute html =~ "Please try again"
+    end
+  end
 end

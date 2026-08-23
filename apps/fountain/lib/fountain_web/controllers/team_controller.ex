@@ -323,6 +323,20 @@ defmodule FountainWeb.TeamController do
   defp comms_error(conn, :already_provisioned),
     do: conn |> put_status(:conflict) |> json(%{error: "contact_already_provisioned"})
 
+  # 402, the same status the subscription gate uses: the fix is a plan change,
+  # not a retry. The numbers are in the body so a client can say which cap was
+  # hit without having to know the catalog.
+  defp comms_error(conn, {:contact_limit_reached, %{count: count, limit: limit}}) do
+    conn
+    |> put_status(:payment_required)
+    |> json(%{
+      error: "contact_limit_reached",
+      message: "this plan allows #{limit} teammate contacts (#{count} in use)",
+      count: count,
+      limit: limit
+    })
+  end
+
   # 424, not 502: Cloudflare swaps an origin 502's body for its own error
   # page, which would hide which provider refused and why.
   defp comms_error(conn, {channel, reason}) when channel in [:email, :phone] do

@@ -10,6 +10,25 @@ server releases.
 
 ---
 
+## [0.1.2] — 2026-08-23
+
+### Added
+
+- Subscription plan types, generated from the server's OpenAPI spec
+  (fountain ADR 0026). `GET /api/account/billing` now returns a `plan` object —
+  `slug`, `name`, `monthly_cents`, `concurrent_sandboxes`, `sandbox_limit` and
+  `team_contacts` — and the checkout endpoint accepts a `plan` query parameter
+  naming the tier to buy.
+
+  Read `plan.sandbox_limit`, not `plan.concurrent_sandboxes`, when showing a
+  customer how many agents they may run at once. The first is what the server
+  actually enforces for that account; the second is the tier's number, and an
+  operator override can make them differ.
+
+- Admin account types carry `plan`, `sandbox_limit_override` and
+  `comped_contacts`. `max_concurrent_sandboxes` keeps its name and its meaning
+  — the cap in force — so nothing reading it breaks.
+
 ## [0.1.1] — 2026-08-23
 
 No code change from 0.1.0. This is the first release published by CI through

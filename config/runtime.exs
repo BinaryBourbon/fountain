@@ -607,14 +607,48 @@ case System.get_env("STRIPE_WEBHOOK_SECRET") do
     config :stripity_stripe, webhook_secret: secret
 end
 
-# Stripe Price ID for the subscription tier surfaced by Checkout.
-# Set per environment (test-mode price in dev, live-mode price in prod).
+# Stripe Price ID for the flat plan the tiers replaced. Every account that
+# subscribed before the tiers holds this price and resolves to the `legacy`
+# plan, so the variable keeps its old name and its old meaning rather than
+# being repointed underneath a running deployment (`Fountain.Plans`).
 config :fountain, :stripe_price_id, System.get_env("STRIPE_PRICE_ID")
 
-# Monthly price in cents, display-only, for the admin billing overview's MRR
-# tile (the API only tells us the price *id*). Unset → the tile says the price
-# isn't configured rather than showing a fabricated number. One amount on
-# purpose: a second price tier must change this shape, loudly.
+# Stripe Price IDs per plan, plus the teammate-contact add-on. Set per
+# environment (test-mode prices in dev, live-mode in prod). A plan with no
+# price here cannot be subscribed to, which is exactly right for a self-hosted
+# instance: it has no Stripe at all.
+config :fountain,
+       :stripe_price_ids,
+       %{
+         "solo" => System.get_env("STRIPE_PRICE_ID_SOLO"),
+         "team" => System.get_env("STRIPE_PRICE_ID_TEAM"),
+         "scale" => System.get_env("STRIPE_PRICE_ID_SCALE"),
+         "contact" => System.get_env("STRIPE_PRICE_ID_CONTACT")
+       }
+       |> Enum.reject(fn {_slug, id} -> id in [nil, ""] end)
+       |> Map.new()
+
+# The plan a user with no plan of their own gets — the tenants a self-hosted
+# instance never subscribed, and every account on a deployment with billing
+# off. `DEFAULT_PLAN=scale` is how a self-hoster paying their own provider
+# bill lifts the concurrency cap for everyone at once.
+case System.get_env("DEFAULT_PLAN") do
+  slug when slug in [nil, ""] -> :ok
+  slug -> config :fountain, :default_plan, slug
+end
+
+# Per-month price in cents for the teammate-contact add-on, display-only. The
+# amount Stripe charges is whatever STRIPE_PRICE_ID_CONTACT says;
+# `mix fountain.verify_plans` is what checks the two agree.
+case System.get_env("STRIPE_CONTACT_PRICE_CENTS") do
+  value when value in [nil, ""] -> :ok
+  value -> config :fountain, :stripe_contact_price_cents, String.to_integer(value)
+end
+
+# Monthly price in cents for the `legacy` flat plan, display-only, for the
+# admin billing overview's MRR tile (the API only tells us the price *id*).
+# Public plans carry their own display price in `Fountain.Plans`; this one
+# stays in config because the price it names is closed and unlisted.
 stripe_price_monthly_cents =
   case System.get_env("STRIPE_PRICE_MONTHLY_CENTS") do
     value when value in [nil, ""] -> nil

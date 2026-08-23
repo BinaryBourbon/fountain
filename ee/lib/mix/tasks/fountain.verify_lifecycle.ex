@@ -148,7 +148,14 @@ defmodule Mix.Tasks.Fountain.VerifyLifecycle do
   defp step_trial(%{user: user} = state) do
     price = ensure_price!()
     previous = Application.get_env(:fountain, :stripe_price_id)
+    previous_ids = Application.get_env(:fountain, :stripe_price_ids)
     Application.put_env(:fountain, :stripe_price_id, price)
+
+    # Pin the whole plan catalog at the scratch price too. Signup reads the
+    # default plan's price first (`Fountain.Plans`), so a real
+    # STRIPE_PRICE_ID_SOLO in the environment would otherwise win and the
+    # price this step picked would go unused.
+    Application.put_env(:fountain, :stripe_price_ids, %{"solo" => price})
 
     try do
       {:ok, user} = Billing.start_trial_subscription(user)
@@ -163,6 +170,7 @@ defmodule Mix.Tasks.Fountain.VerifyLifecycle do
       %{state | user: Repo.reload!(user)}
     after
       Application.put_env(:fountain, :stripe_price_id, previous)
+      Application.put_env(:fountain, :stripe_price_ids, previous_ids)
     end
   end
 
