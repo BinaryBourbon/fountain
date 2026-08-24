@@ -10,6 +10,14 @@ server releases.
 
 ---
 
+## [0.1.11] — 2026-08-24
+
+### Added
+
+- `Sandbox.checkpoint` — `{ id, at }` or `null`: the checkpoint Fountain
+  took of a persistent home the last time it parked, generated from the
+  server's spec. It is scoped to that machine (ADR 0023, #1073).
+
 ## [0.1.10] — 2026-08-24
 
 ### Added

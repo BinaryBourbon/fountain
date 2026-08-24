@@ -302,6 +302,9 @@ defmodule Fountain.Workers.SandboxReaper do
   # Reversible bookkeeping — the sandbox stays parked at the provider, and
   # the next prompt wakes it through the ordinary reattach path.
   defp park(sandbox) do
+    # A home is checkpointed at its quietest moment, where the provider can
+    # (ADR 0023, #1073); ephemeral sandboxes and failures skip straight on.
+    Fountain.Conversations.HomeCheckpoint.on_park(sandbox)
     {:ok, _} = Conversations.update_sandbox(sandbox, %{status: "suspended"})
 
     Logger.info(

@@ -38,6 +38,13 @@ agent, Fountain destroys the machine. A reset (`DELETE /api/sandboxes/:id`)
 also destroys the machine, and keeps the conversations. The next prompt builds
 a clean one.
 
+When a home parks, Fountain can take a checkpoint of its disk. The operator
+turns this on with `CHECKPOINT_CREATION_ENABLED`, and only a provider with
+checkpoints (Sprites) does it. The checkpoint belongs to that one machine.
+It can roll the machine back to its last park. It cannot rebuild a machine
+that the provider lost. `GET /api/sandboxes/:id` shows the checkpoint as
+`checkpoint`.
+
 ## Why the lifecycle belongs to the conversations on it
 
 Tie the machine to the runs on it, and three problems solve themselves.

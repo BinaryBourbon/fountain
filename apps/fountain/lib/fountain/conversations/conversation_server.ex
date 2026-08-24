@@ -24,7 +24,7 @@ defmodule Fountain.Conversations.ConversationServer do
     Vaults
   }
 
-  alias Fountain.Conversations.{Conversation, Lifecycle}
+  alias Fountain.Conversations.{Conversation, HomeCheckpoint, Lifecycle}
 
   # How often the sandbox lifetime bounds are evaluated. A minute is far finer
   # than the bounds themselves (an hour, a day), so the cost of the tick is
@@ -2234,6 +2234,9 @@ defmodule Fountain.Conversations.ConversationServer do
       sandbox = Conversations._unsafe_get_sandbox!(state.sandbox_id)
 
       if sandbox.status not in ["terminated", "failed"] do
+        # A home's disk is kept at its quietest moment, where the provider
+        # can (ADR 0023, #1073). Best-effort: the park goes ahead either way.
+        HomeCheckpoint.on_park(sandbox)
         {:ok, _} = Conversations.update_sandbox(sandbox, %{status: "suspended"})
       end
     end

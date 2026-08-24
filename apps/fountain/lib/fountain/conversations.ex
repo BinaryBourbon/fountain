@@ -1076,6 +1076,19 @@ defmodule Fountain.Conversations do
   end
 
   @doc """
+  Every conversation still holding `sandbox_id` — not `terminated` or
+  `failed` — as ids: for a machine event that belongs on all of their
+  transcripts, such as the checkpoint a park records.
+  """
+  def _unsafe_list_holder_ids(sandbox_id) when is_binary(sandbox_id) do
+    Repo.all(
+      from c in Conversation,
+        where: c.sandbox_id == ^sandbox_id and c.status not in ["terminated", "failed"],
+        select: c.id
+    )
+  end
+
+  @doc """
   The other conversations still holding `sandbox_id` — not `terminated` or
   `failed` — as ids: the machine's co-tenants, for a lifecycle decision one
   of them is about to make for all of them.

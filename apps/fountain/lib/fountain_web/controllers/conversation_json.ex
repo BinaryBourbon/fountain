@@ -91,6 +91,10 @@ defmodule FountainWeb.ConversationJSON do
       # single query; null means the provider has no such concept (or the
       # sandbox predates the field).
       url: s.provider_meta["public_url"],
+      # The checkpoint taken when this home last parked (ADR 0023, #1073):
+      # `{id, at}`, or null for an ephemeral sandbox, a provider without
+      # checkpoints, or a home that has not parked yet.
+      checkpoint: Fountain.Conversations.HomeCheckpoint.recorded(s),
       # Where a runner-backed sandbox lives (#834): the machine and the
       # directory, so a client says "on mac-mini · ~/…" without parsing the
       # name. Null for hosted providers.

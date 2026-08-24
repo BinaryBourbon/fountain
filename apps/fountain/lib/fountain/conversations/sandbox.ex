@@ -22,6 +22,8 @@ defmodule Fountain.Conversations.Sandbox do
   # the partial unique index (ADR 0023).
   @modes ~w(ephemeral persistent)
 
+  @type t :: %__MODULE__{}
+
   schema "sandboxes" do
     # Provider-scoped sandbox identity: the name Fountain mints
     # (`fountain-<tenant-prefix>-<hex>`) and uses as the primary external ref.
