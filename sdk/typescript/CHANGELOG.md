@@ -10,6 +10,16 @@ server releases.
 
 ---
 
+## [0.1.13] — 2026-08-24
+
+### Added
+
+- `GET /api/account/billing` carries `credits`: the prepaid balance in
+  cents, what expires and when, the purchased part, and the turn-hour
+  price. It is `null` while the deployment has not started burning
+  credits, so do not render a zero balance then. Nothing is refused at
+  zero yet (ADR 0030).
+
 ## [0.1.12] — 2026-08-24
 
 ### Changed

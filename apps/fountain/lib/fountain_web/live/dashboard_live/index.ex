@@ -76,6 +76,7 @@ defmodule FountainWeb.DashboardLive.Index do
       :allowance,
       billing_enabled? && Fountain.Billing.turn_hour_allowance(user, period: period)
     )
+    |> assign(:credits, Fountain.Credits.summary(user))
   end
 
   @impl true
@@ -174,6 +175,13 @@ defmodule FountainWeb.DashboardLive.Index do
             hint={turn_hours_hint(assigns)}
           />
           <.metric
+            :if={@credits.active?}
+            label="Credits"
+            value={Fountain.Credits.format_cents(@credits.balance_cents)}
+            sub={credits_sub(@credits)}
+            hint={"Conversation time costs #{Fountain.Credits.format_cents(@credits.turn_hour_cents)} per turn hour. Your plan adds credit every billing period; what you buy never expires."}
+          />
+          <.metric
             label="Tokens"
             value={format_tokens(@tokens)}
             sub={token_sub(@tokens)}
@@ -246,7 +254,13 @@ defmodule FountainWeb.DashboardLive.Index do
   defp turn_hours_value(%{usage: usage}), do: format_hours(billable_turn_hours(usage))
 
   defp turn_hours_sub(%{allowance: %{included: included}}), do: "of #{included} included"
+
   defp turn_hours_sub(_assigns), do: nil
+
+  defp credits_sub(%{expires_at: nil}), do: "remaining"
+
+  defp credits_sub(%{expiring_cents: cents, expires_at: at}),
+    do: "#{Fountain.Credits.format_cents(cents)} expires #{Calendar.strftime(at, "%b %-d")}"
 
   defp turn_hours_hint(assigns) do
     base =

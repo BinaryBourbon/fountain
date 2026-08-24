@@ -51,6 +51,7 @@ defmodule FountainWeb.BillingApiController do
         user: user,
         usage: Billing.usage_summary(user.id, period.start, period.end),
         allowance: Billing.turn_hour_allowance(user, period: period),
+        credits: Fountain.Credits.summary(user),
         period: period
       )
     end

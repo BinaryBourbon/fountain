@@ -1,7 +1,7 @@
 defmodule FountainWeb.BillingApiJSON do
   @moduledoc false
 
-  def show(%{user: user, usage: usage, allowance: allowance, period: period}) do
+  def show(%{user: user, usage: usage, allowance: allowance, credits: credits, period: period}) do
     %{
       data: %{
         status: user.subscription_status,
@@ -18,6 +18,10 @@ defmodule FountainWeb.BillingApiJSON do
         # cover a window the customer is not invoiced over, which a client
         # showing an allowance has to be able to say.
         period: %{start: period.start, end: period.end, source: period.source},
+        # The prepaid balance (ADR 0030), or null while the deployment has
+        # not started burning — a client must not render "$0.00" for an
+        # instance that has no ledger in play.
+        credits: credits_data(credits),
         usage: %{
           conversations: usage.conversations,
           turns: usage.turns,
@@ -37,6 +41,18 @@ defmodule FountainWeb.BillingApiJSON do
   end
 
   def url(%{url: url}), do: %{data: %{url: url}}
+
+  defp credits_data(%{active?: false}), do: nil
+
+  defp credits_data(c) do
+    %{
+      balance_cents: c.balance_cents,
+      expiring_cents: c.expiring_cents,
+      expires_at: c.expires_at,
+      purchased_cents: c.purchased_cents,
+      turn_hour_cents: c.turn_hour_cents
+    }
+  end
 
   # `concurrent_sandboxes` is the plan's number; `sandbox_limit` is what is
   # actually enforced for this account. They differ when an operator has set

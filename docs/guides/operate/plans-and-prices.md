@@ -80,6 +80,35 @@ billing page shows it to the tenant. The API reports it at
 `GET /api/account/billing`. The admin page for one account shows it beside the
 sandbox count.
 
+### Prepaid credits
+
+A tenant also holds a balance of prepaid credit, in cents. Fountain shows it
+in dollars. Conversation time comes out of that balance at a fixed price for
+each turn hour. The default price is $0.25, from `CREDIT_TURN_HOUR_CENTS`.
+Messages and monthly rent for a number or an inbox can also come out of it,
+at the prices `CREDIT_EMAIL_MESSAGE_CENTS`, `CREDIT_SMS_MESSAGE_CENTS`,
+`CREDIT_NUMBER_CENTS` and `CREDIT_INBOX_CENTS` set. Leave one unset, and
+that line costs nothing.
+
+Nothing moves until you set `CREDIT_PRICING_SINCE`. That variable is the
+instant Fountain starts to price turns. Set it to the time of the deploy,
+never earlier, or every tenant pays for a week of turns before they hold a
+grant.
+
+Each plan puts credit in at the start of every billing period. The amount is
+the plan's turn hours at the turn-hour price. Solo puts in $10, Team $25 and
+Scale $50. That credit expires at the end of the period. A trial gets $10
+once, and that credit expires with the trial. Credit a tenant buys never
+expires, and Fountain spends it last.
+
+Fountain refuses nothing at a zero balance yet. A balance can go below zero,
+because a turn that crosses zero finishes. The next grant or purchase brings
+it back.
+[ADR 0030](https://github.com/BinaryBourbon/fountain/blob/main/decisions/0030-prepaid-credits.md)
+records the decisions, and
+[issue 1086](https://github.com/BinaryBourbon/fountain/issues/1086) tracks
+the build.
+
 ### The billing period
 
 Fountain measures the hours over the period that Stripe invoices. The
