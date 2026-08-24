@@ -34,6 +34,16 @@ upgrade, is in
 
 ### Changed
 
+- **Turn hours add up per turn.** With several conversations on one sandbox
+  at once, a tenant's turn hours are the sum of their turns (two
+  conversations each running an hour on one machine spend two), while the
+  sandbox's busy time stays the union of the same intervals — the machine's
+  view, which a provider bill relates to. `SandboxUsage` reports both
+  (`turn_seconds` beside `busy_seconds`); the billing page, the API usage
+  summary and the admin finance panel now read the sum. On a sandbox with
+  one conversation the two numbers are equal, so nothing changes for
+  today's accounts. ADR 0026 addendum; ADR 0023 step 6.
+
 - **A sandbox several conversations hold is treated as one machine.**
   Three rules that used to be one conversation's to break (ADR 0023, steps
   4 and 5): a turn on an opencode or gemini sandbox is refused with

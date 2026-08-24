@@ -306,6 +306,16 @@ for the operator (`provider_spend/1`) rather than a customer-facing number.
 Hours on a self-hosted runner (0022) are excluded for the same reason from the
 other direction: Fountain pays nothing for that machine.
 
+> **Addendum, 2026-08-24 — summed per turn, not the sandbox's union.** Once
+> several conversations may run on one sandbox at the same time (0023, step
+> 6), "busy time" has two readings: the union of a sandbox's turn intervals
+> (how long the machine had any turn in flight, which is what a provider bill
+> relates to) and their sum (how much work the tenant did). The allowance is
+> spent in the sum — `SandboxUsage.turn_seconds` and
+> `turn_seconds_for_user/3` — so two conversations each running an hour on
+> one machine spend two hours of it. `busy_seconds` keeps the union and stays
+> capped at `active_seconds`; `turn_seconds` is not capped and may exceed it.
+
 The prod distribution this was set against, at the time of writing: the
 dogfood account burned 271 turn hours in a month against 11,091 active hours,
 and every other tenant was under half a turn hour. The ratio between those two

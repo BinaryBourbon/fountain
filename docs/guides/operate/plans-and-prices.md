@@ -60,7 +60,9 @@ bound, not an allowance. Fountain charges for each contact separately.
 Each plan includes 20 turn hours for each concurrent sandbox. A turn hour is
 one hour with a prompt in flight. An agent that waits for a person spends no
 turn hours. Time on a self-hosted runner also spends none, because Fountain
-pays nothing for that machine.
+pays nothing for that machine. Turn hours add up for each turn. Two
+conversations that each run for an hour on one sandbox spend two turn hours,
+on a sandbox that was busy for one.
 
 Fountain reports these hours and enforces nothing. No request fails because a
 tenant exceeds the included hours. The price of an overage is still an open

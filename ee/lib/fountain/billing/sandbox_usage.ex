@@ -74,6 +74,13 @@ defmodule Fountain.Billing.SandboxUsage do
   by construction, with `busy` capped at `active` so an odd row cannot produce
   negative idle.
 
+  Turn time (`turn_seconds`) is the *sum* of those same intervals, each clipped
+  to the period. What the plans sell (decisions/0026) is hours of work, and
+  two conversations each running an hour on one machine are two hours of work
+  on a machine that was busy for one (decisions/0023, step 6). It is not
+  capped at `active` and may exceed it; `busy` is the machine's view, `turn`
+  the tenant's.
+
   ## What a provider column does and does not mean
 
   `runner` is a tenant's own machine (decisions/0022) — real sandbox time, zero
@@ -116,7 +123,8 @@ defmodule Fountain.Billing.SandboxUsage do
 
   `active_seconds` is what the provider charges for. `busy_seconds` is the part
   of it with a turn in flight and `idle_seconds` the rest; the two add up to
-  `active_seconds`.
+  `active_seconds`. `turn_seconds` is the turns themselves, summed — the unit a
+  plan's allowance is spent in — and is not bounded by `active_seconds`.
 
   `user_id` is `nil` for sandboxes whose owner has been deleted.
   """
@@ -126,6 +134,7 @@ defmodule Fountain.Billing.SandboxUsage do
           active_seconds: non_neg_integer(),
           busy_seconds: non_neg_integer(),
           idle_seconds: non_neg_integer(),
+          turn_seconds: non_neg_integer(),
           sandboxes: pos_integer()
         }
 
@@ -159,16 +168,20 @@ defmodule Fountain.Billing.SandboxUsage do
     overlapping
     |> Enum.group_by(fn {sandbox, _} -> {sandbox.user_id, sandbox.provider} end)
     |> Enum.map(fn {{user_id, provider}, group} ->
-      {active, busy_total} =
-        Enum.reduce(group, {0, 0}, fn {sandbox, seconds}, {active_acc, busy_acc} ->
+      {active, busy_total, turn_total} =
+        Enum.reduce(group, {0, 0, 0}, fn {sandbox, seconds}, {active_acc, busy_acc, turn_acc} ->
           sandbox_active = max(seconds - Map.get(parked, sandbox.id, 0), 0)
+          {union, sum} = Map.get(busy, sandbox.id, {0, 0})
 
           # Capped per sandbox rather than per group: a single row whose turns
           # somehow outrun its own active window must not borrow headroom from
           # a sibling and hide the anomaly.
-          sandbox_busy = min(Map.get(busy, sandbox.id, 0), sandbox_active)
+          sandbox_busy = min(union, sandbox_active)
 
-          {active_acc + sandbox_active, busy_acc + sandbox_busy}
+          # Turn seconds are deliberately not capped: two conversations each
+          # running an hour on one machine are two hours of work on a machine
+          # that was busy for one (decisions/0023, step 6).
+          {active_acc + sandbox_active, busy_acc + sandbox_busy, turn_acc + sum}
         end)
 
       %{
@@ -177,6 +190,7 @@ defmodule Fountain.Billing.SandboxUsage do
         active_seconds: active,
         busy_seconds: busy_total,
         idle_seconds: active - busy_total,
+        turn_seconds: turn_total,
         sandboxes: length(group)
       }
     end)
@@ -196,6 +210,7 @@ defmodule Fountain.Billing.SandboxUsage do
             active_seconds: non_neg_integer(),
             busy_seconds: non_neg_integer(),
             idle_seconds: non_neg_integer(),
+            turn_seconds: non_neg_integer(),
             sandboxes: non_neg_integer(),
             users: non_neg_integer()
           }
@@ -209,6 +224,7 @@ defmodule Fountain.Billing.SandboxUsage do
          active_seconds: group |> Enum.map(& &1.active_seconds) |> Enum.sum(),
          busy_seconds: group |> Enum.map(& &1.busy_seconds) |> Enum.sum(),
          idle_seconds: group |> Enum.map(& &1.idle_seconds) |> Enum.sum(),
+         turn_seconds: group |> Enum.map(& &1.turn_seconds) |> Enum.sum(),
          sandboxes: group |> Enum.map(& &1.sandboxes) |> Enum.sum(),
          users: group |> Enum.map(& &1.user_id) |> Enum.uniq() |> length()
        }}
@@ -247,14 +263,14 @@ defmodule Fountain.Billing.SandboxUsage do
   end
 
   @doc """
-  One tenant's *turn* seconds per provider: `%{provider => busy_seconds}`.
+  One tenant's *busy* seconds per provider: `%{provider => busy_seconds}` —
+  for each sandbox, how long it had any turn in flight (a union).
 
   The same rows `for_user/3` reads, reporting the part of each with a prompt
-  actually in flight rather than the whole active window. This is the unit a
-  plan's included hours are measured in (`Fountain.Plans.included_turn_hours/1`):
-  an idle sandbox costs Fountain money and is reported by `for_user/3`, but
-  spending nothing of a customer's allowance is the deliberate choice — the
-  allowance measures work, not forgetfulness.
+  actually in flight rather than the whole active window. This is the
+  machine's view, the one a provider bill on the `:turn` basis relates to. The
+  tenant's allowance is spent in `turn_seconds_for_user/3`, which sums turns
+  instead: on a shared sandbox the two differ.
 
   Providers with no turn time in the period are absent rather than zero, so a
   tenant whose sandboxes all sat idle gets an empty map, not `%{"sprites" => 0}`.
@@ -268,6 +284,30 @@ defmodule Fountain.Billing.SandboxUsage do
     |> attribution(period_end, user_id: user_id)
     |> Enum.reject(&(&1.busy_seconds == 0))
     |> Map.new(&{&1.provider, &1.busy_seconds})
+  end
+
+  @doc """
+  One tenant's *turn* seconds per provider: `%{provider => turn_seconds}` —
+  the sum over its turns, each clipped to the period.
+
+  This is the unit a plan's included hours are measured in
+  (`Fountain.Plans.included_turn_hours/1`): an idle sandbox costs Fountain
+  money and is reported by `for_user/3`, but spending nothing of a customer's
+  allowance is the deliberate choice — the allowance measures work, not
+  forgetfulness. And it is a sum, not a union: two conversations each running
+  an hour on one machine are two hours of work (decisions/0023, step 6).
+
+  Same shape and absence rule as `busy_for_user/3`.
+  """
+  @spec turn_seconds_for_user(binary(), DateTime.t(), DateTime.t()) :: %{
+          optional(String.t()) => non_neg_integer()
+        }
+  def turn_seconds_for_user(user_id, %DateTime{} = period_start, %DateTime{} = period_end)
+      when is_binary(user_id) do
+    period_start
+    |> attribution(period_end, user_id: user_id)
+    |> Enum.reject(&(&1.turn_seconds == 0))
+    |> Map.new(&{&1.provider, &1.turn_seconds})
   end
 
   @doc """
@@ -401,22 +441,24 @@ defmodule Fountain.Billing.SandboxUsage do
           # A turn with no end is still running, or ended without the row being
           # written; either way it cannot outlive the sandbox.
           close = effective_end(sandbox, ceiling)
+          intervals = Enum.map(own, &{&1.started_at, &1.ended_at || close})
+          clipped = fn {from, to} -> span_seconds(from, to, period_start, ceiling) end
 
-          seconds =
-            own
-            |> Enum.map(&{&1.started_at, &1.ended_at || close})
-            |> merge_intervals()
-            |> Enum.map(fn {from, to} -> span_seconds(from, to, period_start, ceiling) end)
-            |> Enum.sum()
+          # Both readings of the same intervals: the union (how long the
+          # machine had any turn in flight — `busy_seconds`) and the sum (how
+          # much turn time the tenant spent — `turn_seconds`).
+          union = intervals |> merge_intervals() |> Enum.map(clipped) |> Enum.sum()
+          sum = intervals |> Enum.map(clipped) |> Enum.sum()
 
-          Map.put(acc, sandbox.id, seconds)
+          Map.put(acc, sandbox.id, {union, sum})
       end
     end)
   end
 
-  # Union, not sum: two conversations prompting on one sandbox at the same
-  # moment is one busy sandbox. Summing them would let busy exceed active and
-  # report negative idle.
+  # Union, not sum, for the busy figure: two conversations prompting on one
+  # sandbox at the same moment is one busy sandbox. Summing them would let busy
+  # exceed active and report negative idle. (The sum is kept separately as
+  # `turn_seconds`, where exceeding active is the point.)
   defp merge_intervals(intervals) do
     intervals
     |> Enum.sort_by(fn {from, _} -> from end, DateTime)

@@ -2018,6 +2018,10 @@ defmodule Fountain.Billing do
   (ADR 0022) is excluded too — Fountain pays nothing for it, so charging an
   allowance against it would be indefensible.
 
+  Summed per turn, not the sandbox's busy union: several conversations may run
+  on one sandbox at once (ADR 0023), and two of them each running an hour are
+  two hours of work on a machine that was busy for one.
+
   Pass a period as `{start, end}`; defaults to the tenant's `billing_period/2`.
   """
   @spec turn_hours_used(User.t(), keyword()) :: float()
@@ -2029,7 +2033,7 @@ defmodule Fountain.Billing do
       end
 
     user.id
-    |> SandboxUsage.busy_for_user(period_start, period_end)
+    |> SandboxUsage.turn_seconds_for_user(period_start, period_end)
     |> Enum.filter(fn {provider, _seconds} -> SandboxUsage.platform_cost?(provider) end)
     |> Enum.map(&elem(&1, 1))
     |> Enum.sum()
@@ -2097,8 +2101,9 @@ defmodule Fountain.Billing do
     provider, `%{provider => minutes}`. Providers the tenant did not use are
     absent. Minutes on different providers are bought at different prices, so
     this split is what makes the total attributable to a cost.
-  - `:turn_hours` — the part of that time with a prompt actually in flight, on
-    the providers Fountain pays for. The same number
+  - `:turn_hours` — hours of turns on the providers Fountain pays for, summed
+    per turn (two conversations each an hour on one machine are two, ADR 0023
+    step 6), not the sandbox's busy time. The same number
     `turn_hours_used/2` computes, carried here so a surface showing usage does
     not need a second pass over the same rows to show the unit a plan is
     denominated in (`Fountain.Plans.included_turn_hours/1`).
@@ -2146,7 +2151,7 @@ defmodule Fountain.Billing do
       turn_hours:
         rows
         |> Enum.filter(&SandboxUsage.platform_cost?(&1.provider))
-        |> Enum.map(& &1.busy_seconds)
+        |> Enum.map(& &1.turn_seconds)
         |> Enum.sum()
         |> SandboxUsage.hours()
     }
@@ -2229,7 +2234,7 @@ defmodule Fountain.Billing do
           turn_hours:
             usage.by_provider
             |> Enum.filter(&SandboxUsage.platform_cost?(&1.provider))
-            |> Enum.map(& &1.busy)
+            |> Enum.map(& &1.turn)
             |> Enum.sum()
             |> SandboxUsage.hours()
       })
