@@ -124,10 +124,14 @@ defmodule FountainWeb.ConversationControllerTest do
       unstamped = insert_conversation(user_id: user.id, agent_id: agent.id)
 
       shown = conn |> authed_with_key(raw_key) |> get("/api/conversations/#{stamped.id}")
-      assert %{"agent_version_id" => ^version_id, "agent_version" => 2} = json_response(shown, 200)["data"]
+
+      assert %{"agent_version_id" => ^version_id, "agent_version" => 2} =
+               json_response(shown, 200)["data"]
 
       shown = conn |> authed_with_key(raw_key) |> get("/api/conversations/#{unstamped.id}")
-      assert %{"agent_version_id" => nil, "agent_version" => nil} = json_response(shown, 200)["data"]
+
+      assert %{"agent_version_id" => nil, "agent_version" => nil} =
+               json_response(shown, 200)["data"]
 
       listed = conn |> authed_with_key(raw_key) |> get("/api/conversations")
       by_id = Map.new(json_response(listed, 200)["data"], &{&1["id"], &1})
