@@ -110,8 +110,24 @@ Five rules that are easy to get wrong:
   relates to; several conversations share one sandbox (ADR 0023), so the two
   differ and must not be swapped.
   `Billing.turn_hour_allowance/2` is the one shape every surface renders, so
-  they cannot disagree. **No gate reads it** (#1016 steps 4 and 5 are unbuilt);
-  do not add one without deciding the overage shape first.
+  they cannot disagree. **No gate reads it.** The gate reads the prepaid
+  balance instead — see the next rule.
+
+- **Credits are the usage currency, and two switches turn them on.**
+  ADR 0030: `Fountain.Credits` keeps a cents ledger (`credit_ledger`, cached
+  on `users.credit_balance_cents`, idempotent per row, never summed on a
+  gate). `CreditPricer` burns closed turns at `CREDIT_TURN_HOUR_CENTS`
+  (default 25) and comms messages when priced; `CreditGranter` puts
+  `included_turn_hours × price` in each period and expires the unspent part
+  (granted first, oldest expiry first, then purchased); `Credits.Purchases`
+  sells packs and claws back on refund or dispute; `Credits.Rent` takes a
+  month up front per contact. Nothing prices, grants or shows a balance
+  until `CREDIT_PRICING_SINCE` is set, and nothing is refused until
+  `CREDIT_ENFORCE=true` — then `Billing.check_spend/1` is the gate every
+  door must call (never `check_active/1` alone), and it short-circuits for
+  billing-off and comped before any balance read. The runbook order is in
+  `docs/guides/operate/billing.md`; **decisions/0030-prepaid-credits.md**
+  owns the rest.
 
 - **Usage is measured over the invoiced period, or says it is not.**
   `Billing.billing_period/2` returns `%{start, end, source}` — `:subscription`

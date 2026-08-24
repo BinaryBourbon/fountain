@@ -1,25 +1,40 @@
 ---
 type: ADR
 title: "Prepaid credits beside the capacity tiers: a cents ledger burned by turn-hours, rent and messages"
-description: "Tiers stay and buy capacity; usage is paid from a Fountain-owned ledger of integer cents, granted monthly by the tier and topped up by one-time Stripe Checkout packs, burned at $0.25 per conversation turn-hour, a month of rent up front per number or inbox, and per message. Zero is a soft stop. NOTHING HERE IS BUILT: the ledger, the workers, the purchase path, the gates and the migration are all phases 1 to 5 of #1086."
+description: "Tiers stay and buy capacity; usage is paid from a Fountain-owned ledger of integer cents, granted monthly by the tier and topped up by one-time Stripe Checkout packs, burned at $0.25 per conversation turn-hour, a month of rent up front per number or inbox, and per message. Zero is a soft stop. Built and inert behind CREDIT_PRICING_SINCE and CREDIT_ENFORCE; auto top-up and the allowance-surface removal are not built."
 tags: [billing, credits, entitlements, quotas, team-comms, finance]
-status: draft
+status: stable
 adr: "0030"
 adr_status: "Accepted"
 date: 2026-08-24
-generated: { by: human:jhgaylor, at: 2026-08-24T12:00:00-04:00 }
+generated: { by: human:jhgaylor, at: 2026-08-24T20:00:00-04:00 }
+verified: { by: human:jhgaylor, at: 2026-08-24T20:00:00-04:00 }
 stale_after: 2026-10-01
 ---
 
 # 0030 — Prepaid credits beside the capacity tiers: a cents ledger burned by turn-hours, rent and messages
 
-**Status:** Accepted, **not yet built.** This ADR is phase 0 of #1086: the
-decisions, taken so that code can start. Every mechanism named below —
-`Fountain.Credits`, the `credit_ledger` table, the pricing and rent workers,
-the Checkout pack path, the balance checks at the gates, the tier grant, the
-tenant migration — is unbuilt. The PR that builds each one removes its
-caveat here. Until then, the product bills exactly what ADR 0026 describes:
-a tier fee, a concurrency cap, and unenforced included turn hours.
+**Status:** Accepted. **Built, inert until switched on** (#1094–#1102,
+2026-08-24). What exists: `Fountain.Credits` and the `credit_ledger`
+(decisions 1, 5), `Workers.CreditPricer` (3), `Workers.CreditGranter` and
+the renewal-time grant (2), `Credits.Purchases` with refund and dispute
+clawback (5), `Billing.check_spend/1` at all five doors and inside the
+reservation lock, the 402, admin grants and the runway emails (6, 7),
+`Credits.Rent` with the seven-day grace (4, 6), `Release.start_credits/1`
+(8, phase 5), and `Billing.Reconciliation` on `/admin/finance` (8, #1038
+steps 1 and 2). Every surface shows the balance.
+
+Two operator switches, both off by default: `CREDIT_PRICING_SINCE` starts
+pricing and grants; `CREDIT_ENFORCE=true` turns the soft stop on. The
+order that keeps each step safe is in `docs/guides/operate/billing.md`.
+
+**Not built, on purpose:** auto top-up (#1086 phase 6); #1038 steps 3
+onward (sandbox size, storage, per-provider cost basis). **One deviation:**
+`Plans.included_turn_hours/1` and the turn-hour allowance surfaces stay
+until enforcement flips, because they remain true until then and a page
+that tells two stories is worse than one that tells the old one; the PR
+that flips `CREDIT_ENFORCE` on the hosted deployment removes them.
+`stale_after` stays set until that PR lands.
 
 ## Context
 

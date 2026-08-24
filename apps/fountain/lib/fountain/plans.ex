@@ -31,11 +31,13 @@ defmodule Fountain.Plans do
   meter measures work rather than forgetfulness. Hours on a tenant's own
   runner (ADR 0022) do not count either — Fountain pays nothing for them.
 
-  **Nothing enforces this yet.** `Fountain.Billing.turn_hour_allowance/2`
-  reports used against included and every surface displays it; no code path
-  refuses anything because of it. The overage shape — post-paid or prepaid
-  credits — is deliberately still open (#1016 step 4), to be decided with a
-  cycle of real numbers in hand.
+  **The hours are now a credit grant (ADR 0030).** `included_turn_hours` is
+  what `Fountain.Workers.CreditGranter` multiplies by the turn-hour price at
+  the start of each billing period; turns burn that balance at the same
+  price, and `Billing.check_spend/1` refuses new spend at zero once
+  `CREDIT_ENFORCE` is on. `Fountain.Billing.turn_hour_allowance/2` still
+  reports used against included on every surface, and stays until
+  enforcement flips on the hosted deployment.
 
   ## The catalog
 
