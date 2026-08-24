@@ -63,11 +63,13 @@ fountain acp [flags]
 Options:
 
 ```
-      --agent string         Fountain agent name or id to open sessions against
-      --environment string   environment name or id to provision each session's conversation from, instead of the agent's own
-      --log-level string     stderr log level: debug, info, warn, error (default "info")
-      --permission string    what happens before the agent runs a tool: auto_allow, ask, auto_deny, or key=verdict pairs (for example "execute=ask")
-      --vault string         vault name or id to attach to each session's conversation
+      --agent string          Fountain agent name or id to open sessions against
+      --environment string    environment name or id to provision each session's conversation from, instead of the agent's own
+      --log-level string      stderr log level: debug, info, warn, error (default "info")
+      --permission string     what happens before the agent runs a tool: auto_allow, ask, auto_deny, or key=verdict pairs (for example "execute=ask")
+      --sandbox string        sandbox id to attach each session's conversation to, instead of provisioning a new one
+      --sandbox-mode string   ephemeral or persistent: where each session's conversation runs, instead of the agent's default
+      --vault string          vault name or id to attach to each session's conversation
 ```
 
 ## `fountain agent list`

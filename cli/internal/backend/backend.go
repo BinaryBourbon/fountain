@@ -103,6 +103,10 @@ type ProvisionBody struct {
 	// Optional per-identity environment override (#783): the environment this
 	// identity's conversations are provisioned from instead of the agent's own.
 	EnvironmentID string `json:"environment_id,omitempty"`
+	// Optional per-identity sandbox mode (ADR 0023): `ephemeral` or
+	// `persistent`, where this identity's conversations run. Omitted means
+	// the agent's default.
+	SandboxMode string `json:"sandbox_mode,omitempty"`
 	// The harness's inbound author gate (#790). Omitted when the desktop sent
 	// none, so Fountain applies its own owner-only default.
 	RespondTo          string   `json:"respond_to,omitempty"`
@@ -127,6 +131,12 @@ func Info() InfoResponse {
       "type": "string",
       "title": "Fountain environment (optional)",
       "description": "Name or id of a Fountain environment to provision this identity's conversations from, instead of the agent's own. Leave blank to use the agent's."
+    },
+    "sandbox_mode": {
+      "type": "string",
+      "title": "Sandbox mode (optional)",
+      "enum": ["ephemeral", "persistent"],
+      "description": "Where this identity's conversations run: a sandbox per conversation, or the agent's one persistent machine. Leave blank to use the agent's default."
     }
   },
   "required": ["agent"]
@@ -191,6 +201,7 @@ func Deploy(req Request, f Fountain) DeployResponse {
 		AuthTag:        req.Agent.AuthTag,
 		DisplayName:    req.Agent.Name,
 		EnvironmentID:  envID,
+		SandboxMode:    cfg.SandboxMode,
 		// Pass the author gate through verbatim; Fountain validates the mode and
 		// the pubkeys and refuses an allowlist with nothing on it.
 		RespondTo:          strings.TrimSpace(req.Agent.RespondTo),
@@ -231,6 +242,7 @@ func derivePubkey(key string) (string, error) {
 type providerConfigFields struct {
 	Agent       string `json:"agent"`
 	Environment string `json:"environment"`
+	SandboxMode string `json:"sandbox_mode"`
 }
 
 func providerConfig(raw json.RawMessage) (providerConfigFields, error) {
@@ -240,8 +252,14 @@ func providerConfig(raw json.RawMessage) (providerConfigFields, error) {
 	}
 	cfg.Agent = strings.TrimSpace(cfg.Agent)
 	cfg.Environment = strings.TrimSpace(cfg.Environment)
+	cfg.SandboxMode = strings.TrimSpace(cfg.SandboxMode)
 	if cfg.Agent == "" {
 		return cfg, fmt.Errorf("no Fountain agent configured — set the `agent` field")
+	}
+	// Refused here, not at Fountain: the desktop shows this message, and a
+	// half-provisioned identity is worse than a rejected form.
+	if cfg.SandboxMode != "" && cfg.SandboxMode != "ephemeral" && cfg.SandboxMode != "persistent" {
+		return cfg, fmt.Errorf("sandbox_mode must be ephemeral or persistent, got %q", cfg.SandboxMode)
 	}
 	return cfg, nil
 }

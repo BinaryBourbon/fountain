@@ -1266,6 +1266,7 @@ defmodule Fountain.Conversations.ConversationServer do
     (state.runtime_module.default_env(agent, state.inference_credentials) || []) ++
       fountain_callback_env(state.callback_token) ++
       conversation_env(state.conversation_id) ++
+      sandbox_id_env(state.sandbox_id) ++
       sandbox_url_env(sandbox_url) ++
       otel_propagation_env() ++
       git_author_env() ++
@@ -1318,6 +1319,15 @@ defmodule Fountain.Conversations.ConversationServer do
 
   defp conversation_env(conv_id) when is_binary(conv_id),
     do: [{"FOUNTAIN_CONVERSATION_ID", conv_id}]
+
+  # The machine's own id, so the bundled fountain skill can put a child
+  # conversation onto this same sandbox (`sandbox_id` on the create, ADR 0023).
+  # Machine-scoped, not conversation-scoped: every conversation on the sandbox
+  # sees the same value, so unlike the conversation id it may live on the disk.
+  defp sandbox_id_env(nil), do: []
+
+  defp sandbox_id_env(sandbox_id) when is_binary(sandbox_id),
+    do: [{"FOUNTAIN_SANDBOX_ID", sandbox_id}]
 
   @doc false
   def git_author_env do

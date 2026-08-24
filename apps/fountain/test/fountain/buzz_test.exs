@@ -281,6 +281,32 @@ defmodule Fountain.BuzzTest do
                })
     end
 
+    # ADR 0023 step 8: an identity may name where its conversations run. It is
+    # a launch field like the environment override: stored, cleared when a
+    # re-provision omits it, and refused before the vault exists when invalid.
+    test "stores a sandbox_mode, and a re-provision without one clears it", %{
+      user: user,
+      params: params
+    } do
+      assert {:ok, identity} =
+               Buzz.provision_identity(user.id, Map.put(params, "sandbox_mode", "persistent"))
+
+      assert identity.sandbox_mode == "persistent"
+
+      assert {:ok, again} = Buzz.provision_identity(user.id, params)
+      assert is_nil(again.sandbox_mode)
+    end
+
+    test "an unknown sandbox_mode is refused and nothing is provisioned", %{
+      user: user,
+      params: params
+    } do
+      assert {:error, :invalid_sandbox_mode} =
+               Buzz.provision_identity(user.id, Map.put(params, "sandbox_mode", "forever"))
+
+      assert is_nil(Buzz.get_identity_by_pubkey(params["pubkey"], user.id))
+    end
+
     test "a foreign or unknown environment_id is not stored", %{user: user, params: params} do
       other = insert_verified_user()
       foreign = insert_env(user_id: other.id)
@@ -388,6 +414,23 @@ defmodule Fountain.BuzzTest do
                "acp,--agent,#{agent.id},--vault,#{vault.id},--environment,#{env.id}"
     end
 
+    # ADR 0023: the mode reaches the ACP child as --sandbox-mode, so every
+    # conversation the harness opens lands where the identity says.
+    test "a sandbox_mode is passed to the ACP child",
+         %{identity: identity, agent: agent, vault: vault} do
+      {:ok, identity} = Buzz.update_identity(identity, %{"sandbox_mode" => "persistent"})
+
+      assert {:ok, launch} =
+               Buzz.harness_launch(identity,
+                 buzz_acp_path: "/opt/buzz-acp",
+                 base_url: "https://fountain.example",
+                 fountain_bin: "fountain"
+               )
+
+      assert Map.new(launch.env)["BUZZ_ACP_AGENT_ARGS"] ==
+               "acp,--agent,#{agent.id},--vault,#{vault.id},--sandbox-mode,persistent"
+    end
+
     # #790: without BUZZ_ACP_RESPOND_TO the harness runs owner-only whatever the
     # desktop's record says; the identity's gate must reach the env.
     test "the author gate is set on the harness env",
@@ -428,6 +471,9 @@ defmodule Fountain.BuzzTest do
       env = insert_env(user_id: user.id)
       {:ok, moved} = Buzz.update_identity(identity, %{"environment_id" => env.id})
       assert Buzz.launch_config_changed?(identity, moved)
+
+      {:ok, homed} = Buzz.update_identity(identity, %{"sandbox_mode" => "persistent"})
+      assert Buzz.launch_config_changed?(identity, homed)
 
       # A field the harness never reads at launch is not a reason to bounce it.
       {:ok, disabled} = Buzz.update_identity(identity, %{"enabled" => false})

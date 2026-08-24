@@ -10,7 +10,7 @@
 | Bundled | Yes, in each sandbox. |
 | Declared by | Nobody. Fountain always adds it. |
 | Source | `apps/fountain/priv/sprite_skills/fountain/SKILL.md` |
-| Reads | `FOUNTAIN_BASE_URL`, `FOUNTAIN_TOKEN`, `FOUNTAIN_CONVERSATION_ID` |
+| Reads | `FOUNTAIN_BASE_URL`, `FOUNTAIN_TOKEN`, `FOUNTAIN_CONVERSATION_ID`, `FOUNTAIN_SANDBOX_ID` |
 
 ## What it gives the agent
 
@@ -39,6 +39,18 @@ stale copy. The agent must read the variable from its environment again.
 `X-Fountain-Parent-Conversation-Id: $FOUNTAIN_CONVERSATION_ID` on a
 `POST /api/conversations`, and Fountain records the parent. An operator can
 then rebuild the whole spawn chain.
+
+## A child on the same machine
+
+`FOUNTAIN_SANDBOX_ID` is the id of the sandbox the agent runs on. Send it as
+`sandbox_id` on a `POST /api/conversations`. The child conversation then runs
+on that same machine, with the same disk, at the same time. That only works
+for a child of the same agent, environment and vault.
+
+Without it, each child gets a sandbox of its own. When the agent runs in
+persistent mode, the child gets that machine instead. To name the other mode
+for one child, send `sandbox_mode` on the same call. See
+[Sandboxes](../../concepts/sandboxes.md).
 
 ## Limits
 

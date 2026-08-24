@@ -48,7 +48,7 @@ defmodule FountainWeb.BuzzAgentController do
       Map.take(
         params,
         ~w(name relay_url agent_id pubkey private_key_nsec auth_tag display_name environment_id
-           respond_to respond_to_allowlist)
+           sandbox_mode respond_to respond_to_allowlist)
       )
 
     # A converging deploy may change what the harness was launched with; the
@@ -76,6 +76,14 @@ defmodule FountainWeb.BuzzAgentController do
       # cannot be used to probe which ids exist.
       {:error, :environment_not_found} ->
         conn |> put_status(:not_found) |> json(%{error: "environment_not_found"})
+
+      {:error, :invalid_sandbox_mode} ->
+        conn
+        |> put_status(:unprocessable_entity)
+        |> json(%{
+          error: "invalid_sandbox_mode",
+          detail: "sandbox_mode must be ephemeral or persistent"
+        })
 
       # Field errors — an empty allowlist in allowlist mode, a malformed pubkey —
       # so a provider deploy can say *why* it was refused, not a bare 422.
@@ -187,6 +195,7 @@ defmodule FountainWeb.BuzzAgentController do
       agent_id: i.agent_id,
       vault_id: i.vault_id,
       environment_id: i.environment_id,
+      sandbox_mode: i.sandbox_mode,
       respond_to: i.respond_to,
       respond_to_allowlist: i.respond_to_allowlist,
       enabled: i.enabled,

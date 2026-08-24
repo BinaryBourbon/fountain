@@ -56,11 +56,16 @@ defmodule Fountain.Conversations.ConversationServerIdentityTest do
       refute "FOUNTAIN_CONVERSATION_ID" in file_keys
       refute "TRACEPARENT" in file_keys
 
+      # The machine's own id is machine-scoped, so it may sit beside the
+      # environment values on disk (ADR 0023: a child onto this sandbox).
+      assert {"FOUNTAIN_SANDBOX_ID", conv.sandbox_id} in file_env
+
       # The process is the conversation's: identity as env, and the session
       # tagged on its own command line.
       assert_receive {:spawned, cmd, args, opts}, 2_000
       spawn_env = Keyword.fetch!(opts, :env)
       assert {"FOUNTAIN_CONVERSATION_ID", conv.id} in spawn_env
+      assert {"FOUNTAIN_SANDBOX_ID", conv.sandbox_id} in spawn_env
       assert Enum.any?(spawn_env, &match?({"FOUNTAIN_TOKEN", token} when is_binary(token), &1))
       assert {"FROM_ENVIRONMENT", "yes"} in spawn_env
 
