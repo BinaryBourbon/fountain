@@ -2038,6 +2038,11 @@ export interface components {
             respond_to?: "owner-only" | "allowlist" | "anyone" | "nobody" | null;
             /** @description 64-hex pubkeys admitted in allowlist mode (BUZZ_ACP_RESPOND_TO_ALLOWLIST). Required non-empty when respond_to is allowlist; ignored otherwise. */
             respond_to_allowlist?: string[] | null;
+            /**
+             * @description Where this identity's conversations run (ADR 0023), passed to the harness as fountain acp --sandbox-mode. Omitted means the agent's own default; omitted on a re-provision clears a previously set one. A re-provision that changes it restarts a running harness.
+             * @enum {string|null}
+             */
+            sandbox_mode?: "ephemeral" | "persistent" | null;
         };
         /** ConversationCreateRequest */
         ConversationCreateRequest: {
@@ -2155,6 +2160,11 @@ export interface components {
             respond_to?: "owner-only" | "allowlist" | "anyone" | "nobody";
             /** @description 64-hex pubkeys admitted in allowlist mode. */
             respond_to_allowlist?: string[];
+            /**
+             * @description Where this identity's conversations run (ADR 0023): a sandbox per conversation, or the agent's one persistent machine. null means the agent's own default.
+             * @enum {string|null}
+             */
+            sandbox_mode?: "ephemeral" | "persistent" | null;
             /** Format: date-time */
             updated_at?: string;
             /** Format: uuid */

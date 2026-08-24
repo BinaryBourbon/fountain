@@ -10,6 +10,14 @@ server releases.
 
 ---
 
+## [0.1.9] — 2026-08-24
+
+### Changed
+
+- Generated types follow the server's Buzz identity schema: `sandbox_mode`
+  on `POST /api/buzz/agents` and in the identity JSON (server #1070). No
+  client method changed.
+
 ## [0.1.8] — 2026-08-24
 
 ### Added
