@@ -11,10 +11,14 @@ do.
 | Setting | Default | |
 |---|---|---|
 | `SANDBOX_IDLE_TIMEOUT_MINUTES` | `60` | No turn activity for this long **suspends** the sandbox. The sprite stays, scaled to zero. The next prompt wakes it, and the agent's memory is intact. |
-| `SANDBOX_MAX_LIFETIME_HOURS` | `24` | A ceiling on one continuous run, from creation or from the last wake. To cross it **destroys** the sprite. It is the backstop for a conversation that never stops. |
+| `SANDBOX_MAX_LIFETIME_HOURS` | `0` (off) | A ceiling on one continuous run, from creation or from the last wake. To cross it **destroys** an ephemeral sandbox, and **parks** a persistent one. Off by default, because a machine that runs all day is not a fault. |
 
-Set either one to `0` to stop it. A value that is not a non-negative integer
-refuses to boot, and it does not quietly turn the bound off.
+A `0` stops either bound. A value that is not a non-negative integer refuses
+to boot, and it does not quietly turn the bound off.
+
+With the ceiling off, the idle timeout is the one automatic stop. A sandbox
+that stays busy stays up, and the concurrent-sandbox cap bounds how many can
+be up at once.
 
 ## Which one you can be aggressive with
 
@@ -22,10 +26,12 @@ Neither bound ends the conversation. It stays resumable either way.
 
 You can be aggressive with the idle bound, because a suspend loses nothing.
 
-You cannot be aggressive with the max-lifetime ceiling. The runtime session
-lives on the disk that the ceiling destroys. After a ceiling reclaim, the next
-prompt provisions a fresh sandbox, and the agent starts with no memory of the
-earlier turns. Expect a user to state their context again after one.
+You cannot be aggressive with the max-lifetime ceiling, if you turn it on.
+The runtime session lives on the disk that the ceiling destroys. After a
+ceiling reclaim, the next prompt provisions a fresh sandbox, and the agent
+starts with no memory of the earlier turns. Expect a user to state their
+context again after one. Fountain parks a persistent home instead, and the
+home keeps its disk.
 
 Fountain never ages a suspended sandbox out. Its sprite stays at the provider
 until you terminate the conversation, or until somebody deletes the account.

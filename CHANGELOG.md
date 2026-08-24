@@ -46,6 +46,16 @@ upgrade, is in
 
 ### Changed
 
+- **A running sandbox is no longer destroyed at 24 hours.** The continuous-run
+  ceiling (`SANDBOX_MAX_LIFETIME_HOURS`, ADR 0017) now defaults to `0`, off,
+  for every sandbox mode: a tenant who wants a machine running all day is not
+  something to stop, and for a persistent home the disk is the product. The
+  idle timeout (`SANDBOX_IDLE_TIMEOUT_MINUTES`, still 60) is the only
+  automatic stop, and it parks rather than destroys; the plan's
+  concurrent-sandbox cap bounds how many machines stay up. An operator who
+  wants the old backstop sets the variable, and then an ephemeral sandbox is
+  destroyed at the ceiling and a home is parked, exactly as before. #936.
+
 - **Turn hours add up per turn.** With several conversations on one sandbox
   at once, a tenant's turn hours are the sum of their turns (two
   conversations each running an hour on one machine spend two), while the

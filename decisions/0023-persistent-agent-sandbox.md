@@ -78,9 +78,10 @@ Shipped as seven gates, one PR each, in dependency order:
   move into one owner.
 - At capacity a turn is refused (`sandbox_at_capacity`); the `queued` stage
   of the original step 4 was dropped with the lease and is not built.
-- The continuous-run ceiling (0017) still exists. A home at the ceiling is
-  parked, not destroyed (`Lifecycle`), which is the interim behaviour the
-  table names; removing the ceiling for every mode is its own change.
+- The continuous-run ceiling (0017) is **off by default** since #936's
+  fix (the PR after #1069). An operator who sets `SANDBOX_MAX_LIFETIME_HOURS`
+  gets the table's interim behaviour: a home at the ceiling is parked, not
+  destroyed (`Lifecycle`); an ephemeral sprite is destroyed.
 - Of the step 8 doors, `POST /api/conversations`, `fountain run`, the SDK
   and the agent form take the override. The ACP editor door
   (`session/new` `_meta`), Buzz provision and the `fountain` skill's fan-out
@@ -428,10 +429,10 @@ to show something a conversation-centric view cannot.
 
 - **Concurrency.** Parallel turns on one machine, per runtime capacity
   (step 4). Serialized-per-home was not what the target user wanted.
-- **Ceiling.** The 24 h continuous-run ceiling is going away for every mode,
-  in its own change — a tenant who wants a machine up 24/7 is not stopped.
-  Not this ADR's work. Interim: a home at the ceiling is suspended, never
-  destroyed (step 5).
+- **Ceiling.** The 24 h continuous-run ceiling went away for every mode in
+  its own change (#936) — a tenant who wants a machine up 24/7 is not
+  stopped. The knob stays for operators; when set, a home at the ceiling is
+  suspended, never destroyed (step 5).
 - **Identity key.** `(user_id, agent_id, environment_id, vault_id)` stays.
   The disk is materialized from the environment and vault at provision —
   env vars, packages, cloned repos, setup scripts — so a machine built from

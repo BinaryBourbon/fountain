@@ -483,7 +483,7 @@ end
 
 config :fountain,
   sandbox_idle_timeout_minutes: parse_bound.("SANDBOX_IDLE_TIMEOUT_MINUTES", "60"),
-  sandbox_max_lifetime_hours: parse_bound.("SANDBOX_MAX_LIFETIME_HOURS", "24")
+  sandbox_max_lifetime_hours: parse_bound.("SANDBOX_MAX_LIFETIME_HOURS", "0")
 
 # Webhooks (#700). On by default; a deployment with no outbound HTTP egress
 # can switch dispatch off entirely. WEBHOOK_ALLOW_HTTP relaxes the https-only

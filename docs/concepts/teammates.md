@@ -88,10 +88,9 @@ conversation to a channel.
 **Not a shared inbox.** One Agent has one team conversation. Two people who
 message the same teammate talk to the same thread and the same machine.
 
-**Not persistent memory.** The teammate's memory is the sandbox's disk. The
-max-lifetime ceiling destroys that sandbox and takes the memory with it, and
-the thread survives without it. Read
-[About conversations](conversation.md).
+**Not persistent memory.** The teammate's memory is the sandbox's disk. A
+terminate destroys that sandbox and takes the memory with it, and the thread
+survives without it. Read [About conversations](conversation.md).
 
 ## Where to go next
 

@@ -113,13 +113,14 @@ states around its lifecycle.
 A suspend is free and invisible. The disk survives, which keeps the runtime's
 session alive. So message five never explains messages one to four again.
 
-The ceiling costs you that. A sandbox that the max-lifetime bound destroys
-loses its disk. The stored transcript is intact and the conversation still
-resumes, and the agent's own memory of it has gone.
+A destroy costs you that. A sandbox that a terminate, or a configured
+max-lifetime bound, destroys loses its disk. The stored transcript is intact
+and the conversation still resumes, and the agent's own memory of it has gone.
 
 You can configure both bounds, with `SANDBOX_IDLE_TIMEOUT_MINUTES` and
-`SANDBOX_MAX_LIFETIME_HOURS`. `freshConversation()` is the deliberate version
-of the same thing. It gives you a new session on the *same* disk.
+`SANDBOX_MAX_LIFETIME_HOURS`. The ceiling is off by default.
+`freshConversation()` is the deliberate version of the same thing. It gives
+you a new session on the *same* disk.
 
 ## Who reads what
 

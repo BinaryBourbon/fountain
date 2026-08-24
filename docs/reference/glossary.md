@@ -64,7 +64,7 @@ on. The docs say **sandbox**.
 | **Inference credentials** | A user's own model provider keys, which they enter in the app. An operator never sets them. Read [Services Fountain uses](../integrations/index.md). |
 | **Log event** | One entry in a conversation's stream. It arrives over SSE, and `?blocks=true` parses it for you. |
 | **MCP server** | A Model Context Protocol server that an Agent gives its runtime. You declare it in `mcp_servers`. |
-| **Reaper** | The background sweep that suspends an idle sandbox, and destroys one that passed the ceiling. |
+| **Reaper** | The background sweep that suspends an idle sandbox, and destroys one that passed a configured ceiling. |
 | **Runner** | A machine you own that runs `fountain runner` and acts as a sandbox provider. Read [Self-hosted runners](../integrations/runners.md). |
 | **Runtime** | The coding-agent CLI that a sandbox runs. One of `claude`, `codex`, `gemini`, `opencode`. |
 | **Sandbox** | The isolated machine that one Conversation runs in. Fountain provisions it at launch and reclaims it on the lifetime rules. |

@@ -42,11 +42,11 @@ defmodule Fountain.SandboxBoundsConfigTest do
     Config.Reader.read!(@runtime_exs, env: :prod)[:fountain]
   end
 
-  test "defaults are an hour idle and a day absolute", %{base: base} do
+  test "defaults are an hour idle and no ceiling (#936)", %{base: base} do
     config = read_prod(base)
 
     assert config[:sandbox_idle_timeout_minutes] == 60
-    assert config[:sandbox_max_lifetime_hours] == 24
+    assert config[:sandbox_max_lifetime_hours] == 0
   end
 
   test "values are read from the environment", %{base: base} do

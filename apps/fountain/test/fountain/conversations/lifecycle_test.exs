@@ -26,13 +26,13 @@ defmodule Fountain.Conversations.LifecycleTest do
   defp ago(seconds), do: DateTime.add(DateTime.utc_now(), -seconds, :second)
 
   describe "configuration" do
-    test "defaults are an hour idle and a day absolute" do
+    test "defaults are an hour idle and no ceiling (#936)" do
       with_config([sandbox_idle_timeout_minutes: nil, sandbox_max_lifetime_hours: nil], fn ->
         Application.delete_env(:fountain, :sandbox_idle_timeout_minutes)
         Application.delete_env(:fountain, :sandbox_max_lifetime_hours)
 
         assert Lifecycle.idle_timeout_seconds() == 3600
-        assert Lifecycle.max_lifetime_seconds() == 86_400
+        assert Lifecycle.max_lifetime_seconds() == nil
       end)
     end
 
@@ -91,6 +91,16 @@ defmodule Fountain.Conversations.LifecycleTest do
     test "max lifetime is reported in preference to idle" do
       with_config([sandbox_idle_timeout_minutes: 60, sandbox_max_lifetime_hours: 24], fn ->
         assert {:expired, :max_lifetime} = Lifecycle.check(ago(90_000), ago(90_000), false)
+      end)
+    end
+
+    test "the default config never reaches the ceiling, however long the run (#936)" do
+      with_config([sandbox_idle_timeout_minutes: nil, sandbox_max_lifetime_hours: nil], fn ->
+        Application.delete_env(:fountain, :sandbox_idle_timeout_minutes)
+        Application.delete_env(:fountain, :sandbox_max_lifetime_hours)
+        # Ten days busy: still fine. Ten days idle: the idle bound, never the ceiling.
+        assert :ok = Lifecycle.check(ago(864_000), DateTime.utc_now(), true)
+        assert {:expired, :idle} = Lifecycle.check(ago(864_000), ago(864_000), false)
       end)
     end
 

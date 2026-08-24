@@ -140,7 +140,7 @@ defmodule Fountain.ComposePassthroughConfigTest do
         |> read_prod()
 
       assert cfg[:fountain][:sandbox_idle_timeout_minutes] == 60
-      assert cfg[:fountain][:sandbox_max_lifetime_hours] == 24
+      assert cfg[:fountain][:sandbox_max_lifetime_hours] == 0
     end
 
     test "a real value is parsed", %{base: base} do
