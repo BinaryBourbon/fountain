@@ -109,8 +109,19 @@ Sprites, a throwaway `claude` agent on haiku with no environment or vault):
   it and read three lines.
 - Deleting the agent terminated the home (`204`, row `terminated`).
 
-Open from the questions list: wake-on-any-inbound policy, and pricing the
-mode rather than the sandbox-minutes (#798).
+**Wake policy, decided 2026-08-24 (#1072):** a prompt to *any* conversation
+on a parked home wakes the machine — a Buzz message, a schedule firing, an
+API prompt, an AG-UI run all go through `ConversationServer.send_prompt/4`,
+and that is the one door — and it wakes it for that conversation alone. A
+co-tenant's server comes back on its own next prompt, which attaches to the
+machine that is already awake (no second resume, no new row). The idle clock
+is the union of every conversation's activity, so a wake for one keeps the
+machine up for all. There is no "owner's turns only" mode: an agent that
+should not answer at 3am is an agent whose channel is muted, not a machine
+that refuses to boot. `wake_policy_test.exs` states it.
+
+Open from the questions list: pricing the mode rather than the
+sandbox-minutes (#798).
 
 ## Context
 
@@ -421,10 +432,12 @@ to show something a conversation-centric view cannot.
 
 ## Open questions
 
-- Should a persistent home wake on **any** inbound (Buzz mention at 3am) or
-  only on the owner's turns? Today wake is per prompt; a home makes "the
-  agent is asleep" a visible product state.
 - Pricing: mode-based (always-on agent) vs sandbox-minutes as today (#798).
+
+### Resolved 2026-08-24
+
+- Wake on any inbound prompt, for that conversation alone; co-tenants
+  attach on their own next prompt. See the Outcome section (#1072).
 
 ### Resolved 2026-08-23
 
