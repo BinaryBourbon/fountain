@@ -769,10 +769,13 @@ defmodule Fountain.Conversations do
   """
   def get_conversation_with_activity(id, user_id) when is_binary(user_id) do
     case Repo.one(from(c in annotated_query(user_id), where: c.id == ^id)) do
-      nil -> nil
+      nil ->
+        nil
+
       # The first turn rides along, as it does on the list: `first_prompt` in
       # the JSON is what a client titles an untitled conversation with.
-      conv -> Repo.preload(conv, [:sandbox, :agent, :vault, :agent_version, turns: first_turn_query()])
+      conv ->
+        Repo.preload(conv, [:sandbox, :agent, :vault, :agent_version, turns: first_turn_query()])
     end
   end
 

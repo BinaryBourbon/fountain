@@ -79,8 +79,10 @@ defmodule FountainWeb.ConversationJSON do
   defp first_prompt(%Conversation{turns: [%Turn{turn_number: 1, prompt: prompt} | _]}), do: prompt
   defp first_prompt(_), do: nil
 
-  defp agent_version_number(%Conversation{agent_version: %Fountain.Agents.AgentVersion{version: v}}),
-    do: v
+  defp agent_version_number(%Conversation{
+         agent_version: %Fountain.Agents.AgentVersion{version: v}
+       }),
+       do: v
 
   defp agent_version_number(_), do: nil
 
