@@ -28,7 +28,12 @@ defmodule FountainWeb.CreditsSurfacesTest do
 
   defp subscriber do
     user = insert_active_user()
-    {:ok, user} = user |> User.billing_changeset(%{plan: "solo"}) |> Repo.update()
+
+    {:ok, user} =
+      user
+      |> User.billing_changeset(%{plan: "solo", stripe_customer_id: "cus_#{user.id}"})
+      |> Repo.update()
+
     user
   end
 
@@ -127,6 +132,71 @@ defmodule FountainWeb.CreditsSurfacesTest do
       assert html =~ "$12.34 bought"
     end
 
+    test "a subscriber sees the packs and buying redirects to Stripe; a trialist is told to subscribe",
+         %{conn: conn} do
+      user = subscriber()
+      {:ok, _lv, html} = live(login_user(conn, user), ~p"/account/billing")
+      assert html =~ "Buy $10.00"
+      assert html =~ "Buy $100.00"
+
+      Mimic.copy(Stripe.Checkout.Session)
+
+      Mimic.stub(Stripe.Checkout.Session, :create, fn _ ->
+        {:ok, %Stripe.Checkout.Session{url: "https://checkout.stripe.com/pack"}}
+      end)
+
+      {:ok, lv, _} = live(login_user(conn, user), ~p"/account/billing")
+
+      assert {:error, {:redirect, %{to: "https://checkout.stripe.com/pack"}}} =
+               render_click(lv, "buy_credits", %{"cents" => "2500"})
+
+      trial = insert_verified_user()
+      {:ok, _lv, html} = live(login_user(conn, trial), ~p"/account/billing")
+      refute html =~ "Buy $10.00"
+      assert html =~ "Subscribe to buy credits"
+    end
+
+    test "the credits checkout endpoint", %{conn: conn} do
+      user = subscriber()
+      {_rec, key} = insert_api_key(user)
+
+      Mimic.copy(Stripe.Checkout.Session)
+
+      Mimic.stub(Stripe.Checkout.Session, :create, fn _ ->
+        {:ok, %Stripe.Checkout.Session{url: "https://checkout.stripe.com/api"}}
+      end)
+
+      body =
+        conn
+        |> authed_with_key(key)
+        |> put_req_header("content-type", "application/json")
+        |> post("/api/account/billing/credits/checkout", %{"cents" => 1000})
+        |> json_response(200)
+
+      assert body["data"]["url"] == "https://checkout.stripe.com/api"
+
+      body =
+        conn
+        |> authed_with_key(key)
+        |> put_req_header("content-type", "application/json")
+        |> post("/api/account/billing/credits/checkout", %{"cents" => 999})
+        |> json_response(422)
+
+      assert body["error"] == "unknown_pack"
+
+      trial = insert_verified_user()
+      {_rec, tkey} = insert_api_key(trial)
+
+      body =
+        conn
+        |> authed_with_key(tkey)
+        |> put_req_header("content-type", "application/json")
+        |> post("/api/account/billing/credits/checkout", %{"cents" => 1000})
+        |> json_response(422)
+
+      assert body["error"] == "subscription_required"
+    end
+
     test "the API carries the same shape", %{conn: conn} do
       user = subscriber()
       expires = ~U[2099-09-01 00:00:00Z]
@@ -143,7 +213,8 @@ defmodule FountainWeb.CreditsSurfacesTest do
                "expiring_cents" => 1000,
                "expires_at" => "2099-09-01T00:00:00Z",
                "purchased_cents" => 0,
-               "turn_hour_cents" => 25
+               "turn_hour_cents" => 25,
+               "packs_cents" => [1000, 2500, 10_000]
              }
     end
   end

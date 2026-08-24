@@ -1867,6 +1867,11 @@ defmodule FountainWeb.Schemas do
                 turn_hour_cents: %Schema{
                   type: :integer,
                   description: "What one hour of turn time costs."
+                },
+                packs_cents: %Schema{
+                  type: :array,
+                  items: %Schema{type: :integer},
+                  description: "The packs on sale, ascending. Pass one to the credits checkout."
                 }
               }
             },
@@ -1908,6 +1913,24 @@ defmodule FountainWeb.Schemas do
         }
       },
       required: [:data]
+    })
+  end
+
+  defmodule CreditsCheckoutRequest do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "CreditsCheckoutRequest",
+      type: :object,
+      properties: %{
+        cents: %Schema{
+          type: :integer,
+          description: "The pack to buy, in cents. Must be one of credits.packs_cents."
+        }
+      },
+      required: [:cents],
+      example: %{"cents" => 2500}
     })
   end
 

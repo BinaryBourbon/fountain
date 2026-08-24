@@ -109,7 +109,21 @@ records the decisions, and
 [issue 1086](https://github.com/BinaryBourbon/fountain/issues/1086) tracks
 the build.
 
-### The billing period
+### Sell credit packs
+
+A subscriber can buy credit on the billing page, or with
+`POST /api/account/billing/credits/checkout`. The packs are the amounts in
+`CREDIT_PACKS_CENTS`, $10, $25 and $100 by default. Each purchase is a
+one-time Stripe Checkout. Stripe reports the payment on the webhook, and
+Fountain adds the credit then, not before.
+
+Subscribe your webhook endpoint to two more events, `charge.refunded` and
+`charge.dispute.created`. On each one, Fountain removes the refunded or
+disputed amount from the balance, and the balance can go below zero. If you
+do not subscribe to them, a refund leaves the credit in place, and the
+tenant keeps what they did not pay for. Fountain does not add a disputed
+amount back when you win the dispute. Add it by hand from the admin page.
+
 
 Fountain measures the hours over the period that Stripe invoices. The
 `users.current_period_start` column holds the start of that period, and

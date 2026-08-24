@@ -140,6 +140,47 @@ defmodule FountainWeb.BillingApiController do
 
   ## Private
 
+  operation(:credits_checkout,
+    summary: "Mint a Stripe Checkout URL for a credit pack",
+    description:
+      "A one-time payment for one of the packs this deployment sells " <>
+        "(`GET /api/account/billing` lists them under `credits.packs_cents`). " <>
+        "The balance moves when Stripe's webhook confirms payment, not when " <>
+        "this returns. Refused for a trialing account with " <>
+        "`subscription_required`, for a comped one with `comped`, and for an " <>
+        "amount that is not a pack with `unknown_pack`.",
+    request_body: {"Pack", "application/json", Schemas.CreditsCheckoutRequest, required: true},
+    responses: [
+      ok: {"Stripe URL", "application/json", Schemas.StripeUrlResponse},
+      forbidden: {"Insufficient scope", "application/json", Schemas.Error},
+      not_found: {"Billing disabled", "application/json", Schemas.Error},
+      unprocessable_entity: {"Refused", "application/json", Schemas.Error},
+      bad_gateway: {"Stripe unreachable", "application/json", Schemas.Error}
+    ]
+  )
+
+  def credits_checkout(conn, params) do
+    user = conn.assigns.current_user
+
+    with :ok <- require_billing(),
+         {:ok, cents} <- pack_param(params) do
+      user
+      |> Fountain.Credits.Purchases.checkout_url(cents, return_url())
+      |> render_url(conn)
+    else
+      {:error, :bad_cents} ->
+        conn
+        |> put_status(:unprocessable_entity)
+        |> json(%{error: "unknown_pack", message: "cents must be one of the packs on offer."})
+
+      other ->
+        other
+    end
+  end
+
+  defp pack_param(%{"cents" => cents}) when is_integer(cents) and cents > 0, do: {:ok, cents}
+  defp pack_param(_), do: {:error, :bad_cents}
+
   defp require_billing do
     if Billing.enabled?(), do: :ok, else: {:error, :billing_disabled}
   end
@@ -162,6 +203,21 @@ defmodule FountainWeb.BillingApiController do
       error: "comped",
       message: "This account is comped — there is nothing to pay and nothing to manage."
     })
+  end
+
+  defp render_url({:error, :subscription_required}, conn) do
+    conn
+    |> put_status(:unprocessable_entity)
+    |> json(%{
+      error: "subscription_required",
+      message: "Subscribe first, then you can buy credits."
+    })
+  end
+
+  defp render_url({:error, :unknown_pack}, conn) do
+    conn
+    |> put_status(:unprocessable_entity)
+    |> json(%{error: "unknown_pack", message: "cents must be one of the packs on offer."})
   end
 
   defp render_url({:error, :no_customer}, conn) do
