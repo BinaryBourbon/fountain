@@ -65,6 +65,11 @@ defmodule Fountain.Conversations.Conversation do
     # every time (a wake provisions a fresh sandbox from it too).
     belongs_to :environment, Environment
 
+    # Which shape of the agent this conversation launched under — provenance,
+    # like the snapshotted `runtime`. The live agent row still drives the
+    # sandbox; this only records what the config was at launch.
+    belongs_to :agent_version, Fountain.Agents.AgentVersion
+
     belongs_to :parent_conversation, __MODULE__,
       foreign_key: :parent_conversation_id,
       references: :id,
@@ -92,6 +97,7 @@ defmodule Fountain.Conversations.Conversation do
       :user_id,
       :sandbox_id,
       :agent_id,
+      :agent_version_id,
       :vault_id,
       :environment_id,
       :channel_id,
@@ -104,6 +110,7 @@ defmodule Fountain.Conversations.Conversation do
     |> validate_inclusion(:source, @sources)
     |> foreign_key_constraint(:sandbox_id)
     |> foreign_key_constraint(:agent_id)
+    |> foreign_key_constraint(:agent_version_id)
     |> foreign_key_constraint(:vault_id)
     |> foreign_key_constraint(:environment_id)
     |> foreign_key_constraint(:parent_conversation_id)

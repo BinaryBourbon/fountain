@@ -67,6 +67,18 @@ defmodule Fountain.ConversationsStartTest do
       assert sandbox.provider == "sprites"
     end
 
+    test "the conversation is stamped with the agent's current version" do
+      user = insert_active_user()
+      agent = insert_agent(user_id: user.id)
+      {:ok, _} = Agents.update_agent(agent, %{"description" => "edited"})
+      stub(Horde.DynamicSupervisor, :start_child, fn _s, _spec -> {:ok, spawn(fn -> :ok end)} end)
+
+      assert {:ok, conv} =
+               Conversations.start_conversation(%{"agent_id" => agent.id, "user_id" => user.id})
+
+      assert conv.agent_version_id == Agents.get_agent_version(agent.id, 2, user.id).id
+    end
+
     test "an agent pinned to a disabled provider is refused before any row is allocated" do
       user = insert_active_user()
       agent = insert_agent(user_id: user.id)

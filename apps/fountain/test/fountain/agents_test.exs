@@ -175,6 +175,85 @@ defmodule Fountain.AgentsTest do
     end
   end
 
+  describe "versions" do
+    test "create_agent writes version 1 with the full config" do
+      user = insert_verified_user()
+      agent = insert_agent(user_id: user.id, system: "be helpful")
+
+      assert [v1] = Agents.list_agent_versions(agent.id, user.id)
+      assert v1.version == 1
+      assert v1.config == Agents.snapshot_config(agent)
+      assert v1.config["system"] == "be helpful"
+    end
+
+    test "a config update writes the next version; a non-config write does not" do
+      user = insert_verified_user()
+      agent = insert_agent(user_id: user.id)
+
+      {:ok, updated} = Agents.update_agent(agent, %{"system" => "be terse"})
+
+      assert [v2, v1] = Agents.list_agent_versions(agent.id, user.id)
+      assert {v2.version, v1.version} == {2, 1}
+      assert v2.config == Agents.snapshot_config(updated)
+
+      # A save that moves nothing writes nothing.
+      {:ok, _} = Agents.update_agent(updated, %{"system" => "be terse"})
+      assert length(Agents.list_agent_versions(agent.id, user.id)) == 2
+    end
+
+    test "a rejected update writes no version" do
+      user = insert_verified_user()
+      agent = insert_agent(user_id: user.id)
+
+      {:error, _} = Agents.update_agent(agent, %{"name" => nil})
+      assert [_v1] = Agents.list_agent_versions(agent.id, user.id)
+    end
+
+    test "versions are tenant-scoped" do
+      user = insert_verified_user()
+      other = insert_verified_user()
+      agent = insert_agent(user_id: user.id)
+
+      assert Agents.list_agent_versions(agent.id, other.id) == []
+      assert Agents.get_agent_version(agent.id, 1, other.id) == nil
+    end
+
+    test "rollback_agent restores the old config as a new version" do
+      user = insert_verified_user()
+      agent = insert_agent(user_id: user.id, system: "be helpful")
+      {:ok, updated} = Agents.update_agent(agent, %{"system" => "be terse"})
+
+      v1 = Agents.get_agent_version(agent.id, 1, user.id)
+      assert {:ok, rolled_back} = Agents.rollback_agent(updated, v1)
+
+      assert rolled_back.system == "be helpful"
+      assert [v3 | _] = Agents.list_agent_versions(agent.id, user.id)
+      assert v3.version == 3
+      assert v3.config == v1.config
+    end
+
+    test "_unsafe_current_version_id tracks the newest version" do
+      user = insert_verified_user()
+      agent = insert_agent(user_id: user.id)
+
+      v1_id = Agents._unsafe_current_version_id(agent.id)
+      assert v1_id == Agents.get_agent_version(agent.id, 1, user.id).id
+
+      {:ok, _} = Agents.update_agent(agent, %{"description" => "edited"})
+
+      assert Agents._unsafe_current_version_id(agent.id) ==
+               Agents.get_agent_version(agent.id, 2, user.id).id
+    end
+
+    test "versions go with the agent on delete" do
+      user = insert_verified_user()
+      agent = insert_agent(user_id: user.id)
+
+      {:ok, _} = Agents.delete_agent(agent)
+      assert Agents.list_agent_versions(agent.id, user.id) == []
+    end
+  end
+
   describe "_unsafe_get_agent/1 and _unsafe_get_agent!/1" do
     test "_unsafe_get_agent returns the agent by id" do
       user = insert_verified_user()
