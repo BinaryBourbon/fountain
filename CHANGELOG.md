@@ -138,6 +138,16 @@ upgrade, is in
 
 ### Fixed
 
+- **A conversation's title was the model refusing its first prompt.** The
+  title generator handed the first prompt to a chat model with one line of
+  framing, so a prompt shaped like an instruction ("Run exactly this shell
+  command...") got answered rather than named, and "I can't execute shell
+  commands or access your system" became the conversation's title in the
+  sidebar, on the team page and in `GET /api/sandboxes` (#1074). The model
+  is now told it is naming a conversation it is not party to, and a reply
+  that opens in the first person, apologises or hedges is thrown away in
+  favour of the prompt's own first line.
+
 - **Deleting an agent that had a versioned conversation failed.** The
   delete cascades to the agent's versions, and Postgres re-checked the
   conversation's `agent_version_id` mid-cascade, before its own SET NULL

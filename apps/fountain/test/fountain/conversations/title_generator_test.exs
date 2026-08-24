@@ -132,4 +132,97 @@ defmodule Fountain.Conversations.TitleGeneratorTest do
                TitleGenerator.generate("deploy feature", %{gemini_api_key: "gemini-key"})
     end
   end
+
+  describe "generate/2 when the model answers the prompt instead of naming it (#1074)" do
+    test "a refusal falls back to the prompt's first line" do
+      prompt =
+        ~s(Run exactly this shell command and print its output verbatim: sh -c "hostname"\nthen stop)
+
+      Req
+      |> stub(:post, fn _url, _opts ->
+        {:ok,
+         %{
+           status: 200,
+           body: %{
+             "content" => [%{"text" => "I can't execute shell commands or access your system."}]
+           }
+         }}
+      end)
+
+      assert {:ok, title} = TitleGenerator.generate(prompt, %{anthropic_api_key: "sk-test"})
+
+      assert title ==
+               String.slice(
+                 "Run exactly this shell command and print its output verbatim: sh -c \"hostname\"",
+                 0,
+                 50
+               )
+
+      refute TitleGenerator.refusal?(title)
+    end
+
+    test "the system prompt tells the model not to answer" do
+      Req
+      |> expect(:post, fn _url, opts ->
+        system = Keyword.get(opts, :json)[:system]
+        assert system =~ "Do not answer it"
+        assert system =~ "title only"
+        {:ok, %{status: 200, body: %{"content" => [%{"text" => "Print the Hostname"}]}}}
+      end)
+
+      assert {:ok, "Print the Hostname"} =
+               TitleGenerator.generate("sh -c hostname", %{anthropic_api_key: "sk-test"})
+    end
+  end
+
+  describe "title_from_response/2" do
+    test "keeps a title that names the prompt" do
+      assert "Fix the Login Bug" == TitleGenerator.title_from_response("Fix the Login Bug", "x")
+    end
+
+    test "strips a trailing period and wrapping quotes" do
+      assert "Fix the Login Bug" ==
+               TitleGenerator.title_from_response("\"Fix the Login Bug.\"", "x")
+    end
+
+    for answer <- [
+          "I can't execute shell commands.",
+          "I cannot run that for you",
+          "I'm sorry, but I can't help with that",
+          "I'd be happy to help! Here is",
+          "Sorry, I can't do that",
+          "As an AI, I cannot execute commands",
+          "Unfortunately I cannot run commands",
+          "I ran the command and here is the output"
+        ] do
+      test "falls back when the model replies: #{answer}" do
+        assert "Print the hostname" ==
+                 TitleGenerator.title_from_response(unquote(answer), "Print the hostname")
+      end
+    end
+
+    test "an empty response falls back too" do
+      assert "Print the hostname" ==
+               TitleGenerator.title_from_response("  \n", "Print the hostname")
+    end
+
+    test "a title that merely contains a pronoun mid-sentence is kept" do
+      assert "Ship What I Owe Today" ==
+               TitleGenerator.title_from_response("Ship What I Owe Today", "x")
+
+      assert "Install Sorry-Cypress Dashboard" ==
+               TitleGenerator.title_from_response("Install Sorry-Cypress Dashboard", "x")
+    end
+  end
+
+  describe "fallback_title/1" do
+    test "takes the first non-blank line, cut to 50 characters" do
+      prompt = "\n\n   " <> String.duplicate("a", 70) <> "\nsecond line"
+      assert String.duplicate("a", 50) == TitleGenerator.fallback_title(prompt)
+    end
+
+    test "a blank prompt gives an empty title" do
+      assert "" == TitleGenerator.fallback_title("  \n ")
+    end
+  end
 end
