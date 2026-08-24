@@ -509,6 +509,122 @@ defmodule Fountain.Runtimes.ACP.PeerTest do
     end
   end
 
+  describe "the connection outlives the prompt (#817)" do
+    # Drive one full turn to its stop reason and hand back the pid.
+    defp answered_turn(ctx) do
+      pid = start_peer(ctx, [])
+      %{"id" => init_id} = next_write()
+      send_response(pid, init_id, %{"agentCapabilities" => caps()})
+      assert_receive {:acp, _ref, {:handshake_ms, _, "session/new"}}
+      %{"id" => new_id} = next_write()
+      send_response(pid, new_id, %{"sessionId" => "s"})
+      %{"id" => prompt_id} = next_write()
+      send_response(pid, prompt_id, %{"stopReason" => "end_turn"})
+      assert_receive {:acp, _ref, {:done, "end_turn", nil}}
+      pid
+    end
+
+    defp usage_update_line(meta) do
+      update = Map.merge(%{"sessionUpdate" => "usage_update", "used" => 10}, meta)
+      update_line(update)
+    end
+
+    test "the peer stays up after the stop reason", ctx do
+      pid = answered_turn(ctx)
+      assert Process.alive?(pid)
+    end
+
+    test "a second prompt reuses the connection — no second handshake", ctx do
+      pid = answered_turn(ctx)
+
+      assert :ok = Peer.prompt(pid, "again")
+
+      # The very next thing on the wire is the prompt itself: no initialize,
+      # no session/resume, no model pin.
+      assert %{"method" => "session/prompt", "id" => id, "params" => params} = next_write()
+      assert params["sessionId"] == "s"
+      assert [%{"type" => "text", "text" => "again"}] = params["prompt"]
+      assert_receive {:acp, _ref, {:prompt_sent, ^id}}
+      refute_received {:acp, _ref, {:handshake_ms, _, _}}
+
+      send_response(pid, id, %{"stopReason" => "end_turn"})
+      assert_receive {:acp, _ref, {:done, "end_turn", nil}}
+      assert Process.alive?(pid)
+    end
+
+    test "a second prompt carries its own images", ctx do
+      pid = answered_turn(ctx)
+
+      assert :ok = Peer.prompt(pid, "look", [%{media_type: "image/png", data: "abc"}])
+
+      assert %{"params" => %{"prompt" => [_text, image]}} = next_write()
+      assert image["type"] == "image" and image["data"] == Base.encode64("abc")
+    end
+
+    test "a prompt while one is outstanding is refused, not sent", ctx do
+      pid = start_peer(ctx, [])
+      %{"id" => init_id} = next_write()
+      send_response(pid, init_id, %{"agentCapabilities" => caps()})
+      %{"id" => new_id} = next_write()
+      send_response(pid, new_id, %{"sessionId" => "s"})
+      %{"method" => "session/prompt"} = next_write()
+
+      assert {:error, {:not_idle, :prompting}} = Peer.prompt(pid, "too soon")
+      refute_received {:wrote, _}
+    end
+
+    test "a prompt during the handshake is refused too", ctx do
+      pid = start_peer(ctx, [])
+      %{"method" => "initialize"} = next_write()
+
+      assert {:error, {:not_idle, :initializing}} = Peer.prompt(pid, "too soon")
+    end
+
+    test "an out-of-turn update is still reported", ctx do
+      pid = answered_turn(ctx)
+
+      Peer.stdout(pid, update_line(%{"sessionUpdate" => "agent_message_chunk"}))
+
+      assert_receive {:acp, _ref, {:lines, "acp", line}}
+      assert line =~ "agent_message_chunk"
+    end
+
+    test "cycle_end fires on a usage_update from the autonomous set", ctx do
+      pid = answered_turn(ctx)
+
+      Peer.stdout(
+        pid,
+        usage_update_line(%{"_meta" => %{"_claude/origin" => %{"kind" => "task-notification"}}})
+      )
+
+      assert_receive {:acp, _ref, {:cycle_end, "task-notification"}}
+    end
+
+    test "cycle_end does not fire on a plain usage_update, nor on a user origin", ctx do
+      pid = answered_turn(ctx)
+
+      Peer.stdout(pid, usage_update_line(%{}))
+
+      Peer.stdout(
+        pid,
+        usage_update_line(%{"_meta" => %{"_claude/origin" => %{"kind" => "user"}}})
+      )
+
+      assert_receive {:acp, _ref, {:lines, "acp", _}}
+      assert_receive {:acp, _ref, {:lines, "acp", _}}
+      refute_received {:acp, _ref, {:cycle_end, _}}
+    end
+
+    test "close stops the peer cleanly", ctx do
+      pid = answered_turn(ctx)
+      mon = Process.monitor(pid)
+
+      Peer.close(pid)
+
+      assert_receive {:DOWN, ^mon, :process, ^pid, :normal}
+    end
+  end
+
   describe "agent → client requests" do
     test "a permission request is auto-allowed, matching the legacy bypass flags", ctx do
       # Gate 2 keeps parity with `--dangerously-skip-permissions`: answering is
