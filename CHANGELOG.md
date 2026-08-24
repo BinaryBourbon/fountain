@@ -18,6 +18,18 @@ upgrade, is in
 
 ### Added
 
+- **A persistent sandbox per agent — the agent's computer.** An agent's
+  `sandbox_mode` is `ephemeral` (a sandbox per conversation, the default and
+  today's behaviour) or `persistent`: one machine per agent identity (agent,
+  environment, vault) that every conversation of that identity lands on and
+  shares, provisioned on the first launch and attached to on every later
+  one. A home survives a conversation ending, is parked rather than
+  destroyed at the ceiling, and is destroyed when its agent is deleted. A
+  launch may name the other mode (`sandbox_mode` on `POST /api/conversations`,
+  `fountain run --sandbox-mode`, the SDK's `run({ sandboxMode })`); a second
+  launch while the home is still provisioning gets `503 provisioning`.
+  Sandboxes carry `mode`. ADR 0023 gate 6.
+
 - **A second conversation on a sandbox you already have.** `sandbox_id` on
   `POST /api/conversations` attaches the new conversation to an existing
   machine instead of provisioning one: it must be yours, `ready` or
@@ -125,6 +137,13 @@ upgrade, is in
   separating the two. ADR 0026 carries an amendment with the reasoning.
 
 ### Fixed
+
+- **Deleting an agent that had a versioned conversation failed.** The
+  delete cascades to the agent's versions, and Postgres re-checked the
+  conversation's `agent_version_id` mid-cascade, before its own SET NULL
+  ran, so every agent with a conversation started since config versioning
+  (#1049) refused to delete with a foreign-key error. The conversations are
+  unpinned from their versions first now; the version was provenance only.
 
 - **A conversation interrupted mid-provision now rebuilds its sandbox instead of failing in `clone`.** A deploy or a Horde rebalance that killed a server during provisioning restarted it against the same half-built sprite, where `git clone` refused the existing checkout and the whole conversation failed. The restart now discards the remnant and provisions clean; the `provision started` event says so.
 

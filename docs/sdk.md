@@ -182,6 +182,7 @@ Here are the fields that need a word.
 | `system` | The agent's system prompt. |
 | `skills` | Either `{ source, ref? }`, which installs from GitHub, or `{ name, content }`, which Fountain writes into the sandbox word for word. Each entry takes exactly one shape. |
 | `sandbox_provider` | `sprites`, `e2b`, `daytona` or `runner`. A `null` takes the instance default. |
+| `sandbox_mode` | `ephemeral` (default) or `persistent`. Persistent gives the agent one machine of its own, and each conversation lands on it. |
 | `allowed_vault_ids` | Which vaults a conversation can attach. A `null` permits each one, `[]` permits none, and a list is an allowlist. A vault value overrides the environment, so this is what scopes who can override a config that somebody reviewed. |
 | `allowed_environment_ids` | The same shape. It covers a launch of the agent under a different environment. |
 

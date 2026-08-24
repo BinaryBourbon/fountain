@@ -190,8 +190,35 @@ defmodule Fountain.Agents do
   end
 
   @doc "Delete an agent. See `create_agent/2` for `opts`."
-  def delete_agent(%Agent{} = agent, opts \\ []),
-    do: agent |> Repo.delete() |> audited("agent.deleted", opts)
+  def delete_agent(%Agent{} = agent, opts \\ []) do
+    # A home is the agent's computer; without the agent its identity is gone
+    # (ADR 0023 step 5). Torn down before the row goes, while `agent_id` still
+    # names it — deletion would nilify the pointer and orphan the sprite.
+    # Ownership: `agent` came from the caller's scoped fetch.
+    _ = Fountain.Conversations._unsafe_destroy_homes_for_agent(agent.id)
+
+    # Unpin the agent's conversations from its versions before the row goes.
+    # Deleting the agent cascades to `agent_versions`, and Postgres re-checks
+    # `conversations.agent_version_id` while it is still setting
+    # `conversations.agent_id` to NULL in the same statement — before its own
+    # SET NULL for the version has run — so the delete failed with a
+    # foreign-key violation for every agent that had a versioned
+    # conversation (found building ADR 0023 gate 6; versioning is #1049).
+    # The version is provenance only, so clearing it here loses nothing the
+    # cascade would not have cleared anyway.
+    Repo.transaction(fn ->
+      Repo.update_all(
+        from(c in Fountain.Conversations.Conversation, where: c.agent_id == ^agent.id),
+        set: [agent_version_id: nil]
+      )
+
+      case Repo.delete(agent) do
+        {:ok, deleted} -> deleted
+        {:error, changeset} -> Repo.rollback(changeset)
+      end
+    end)
+    |> audited("agent.deleted", opts)
+  end
 
   @doc """
   Upload or replace the avatar for an agent.
@@ -269,6 +296,7 @@ defmodule Fountain.Agents do
     :model,
     :runtime,
     :sandbox_provider,
+    :sandbox_mode,
     :skills,
     :mcp_servers,
     :metadata,

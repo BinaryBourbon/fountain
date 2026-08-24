@@ -236,6 +236,16 @@ defmodule FountainWeb.FallbackController do
     })
   end
 
+  def call(conn, {:error, :invalid_sandbox_mode}) do
+    conn
+    |> put_status(:unprocessable_entity)
+    |> json(%{
+      error: "invalid_sandbox_mode",
+      message:
+        "sandbox_mode must be one of " <> Enum.join(Fountain.Agents.Agent.sandbox_modes(), ", ")
+    })
+  end
+
   def call(conn, {:error, :sandbox_runtime_mismatch}) do
     conn
     |> put_status(:unprocessable_entity)

@@ -2061,6 +2061,11 @@ export interface components {
              * @description Attach the conversation to a sandbox you already have instead of provisioning one (ADR 0023). The sandbox must be yours (404 sandbox_not_found), ready or suspended (409 sandbox_not_attachable), and built for the same agent, environment and vault as this launch (422 sandbox_identity_mismatch; 422 sandbox_runtime_mismatch if the agent's runtime changed since). The conversation opens idle on that machine; a prompt here wakes it. Several conversations then run on one disk at once, except on opencode and gemini, where a second turn is refused with 409 sandbox_at_capacity while one runs.
              */
             sandbox_id?: string | null;
+            /**
+             * @description Where this conversation runs (ADR 0023); null takes the agent's sandbox_mode. persistent lands on the agent identity's home — provisioning it if this is the first launch of that (agent, environment, vault), attaching to it otherwise, or 503 provisioning while the first launch is still building it. ephemeral provisions a sandbox for this conversation alone. Ignored when sandbox_id names a machine.
+             * @enum {string|null}
+             */
+            sandbox_mode?: "ephemeral" | "persistent" | null;
             /** @description Override the auto-generated sprite name. */
             sprite_name?: string;
             /** @description Optional display title. The team page names a teammate with it. */
@@ -2302,6 +2307,11 @@ export interface components {
             /** Format: date-time */
             last_resumed_at?: string | null;
             /**
+             * @description ephemeral: one conversation's machine, reclaimed with it. persistent: the agent identity's home, shared by its conversations and kept when one ends.
+             * @enum {string}
+             */
+            mode?: "ephemeral" | "persistent";
+            /**
              * @description The sandbox backend this row lives on.
              * @enum {string}
              */
@@ -2388,6 +2398,11 @@ export interface components {
             environment_id?: string | null;
             /** Format: uuid */
             id: string;
+            /**
+             * @description ephemeral: one conversation's machine, reclaimed with it. persistent: the agent identity's home, shared by its conversations and kept when one ends.
+             * @enum {string}
+             */
+            mode?: "ephemeral" | "persistent";
             /**
              * @description The sandbox backend this row lives on.
              * @enum {string}
@@ -2772,6 +2787,11 @@ export interface components {
             } | null;
             /** @enum {string} */
             runtime: "claude" | "codex" | "gemini" | "opencode";
+            /**
+             * @description Where a conversation of this agent runs by default (ADR 0023). ephemeral: a sandbox per conversation, reclaimed with it. persistent: one sandbox per agent identity (agent, environment, vault) — the agent's computer — that every conversation of that identity lands on and shares; it survives a conversation ending and is parked, not destroyed, at the ceiling. A launch may name the other with sandbox_mode on POST /api/conversations.
+             * @enum {string}
+             */
+            sandbox_mode?: "ephemeral" | "persistent";
             /**
              * @description Sandbox backend override; null inherits the instance default (SANDBOX_PROVIDER). Only providers configured on this instance are accepted
              * @enum {string|null}
@@ -3215,6 +3235,11 @@ export interface components {
             /** @enum {string} */
             runtime?: "claude" | "codex" | "gemini" | "opencode";
             /**
+             * @description Where a conversation of this agent runs by default (ADR 0023). ephemeral: a sandbox per conversation, reclaimed with it. persistent: one sandbox per agent identity (agent, environment, vault) — the agent's computer — that every conversation of that identity lands on and shares; it survives a conversation ending and is parked, not destroyed, at the ceiling. A launch may name the other with sandbox_mode on POST /api/conversations.
+             * @enum {string}
+             */
+            sandbox_mode?: "ephemeral" | "persistent";
+            /**
              * @description Sandbox backend override; null inherits the instance default (SANDBOX_PROVIDER). Only providers configured on this instance are accepted
              * @enum {string|null}
              */
@@ -3460,6 +3485,11 @@ export interface components {
             } | null;
             /** @enum {string} */
             runtime: "claude" | "codex" | "gemini" | "opencode";
+            /**
+             * @description Where a conversation of this agent runs by default (ADR 0023). ephemeral: a sandbox per conversation, reclaimed with it. persistent: one sandbox per agent identity (agent, environment, vault) — the agent's computer — that every conversation of that identity lands on and shares; it survives a conversation ending and is parked, not destroyed, at the ceiling. A launch may name the other with sandbox_mode on POST /api/conversations.
+             * @enum {string}
+             */
+            sandbox_mode?: "ephemeral" | "persistent";
             /**
              * @description Sandbox backend override; null inherits the instance default (SANDBOX_PROVIDER). Only providers configured on this instance are accepted
              * @enum {string|null}

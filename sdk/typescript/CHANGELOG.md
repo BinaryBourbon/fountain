@@ -10,6 +10,17 @@ server releases.
 
 ---
 
+## [0.1.7] — 2026-08-24
+
+### Added
+
+- `run({ sandboxMode })` — `"ephemeral"` or `"persistent"`, replacing the
+  agent's default for that conversation. A persistent conversation lands on
+  the agent's own machine, which Fountain makes on the first such launch;
+  while that first launch is still building it, a second one gets
+  `provisioning` (retryable). Agents carry `sandbox_mode` and sandboxes carry
+  `mode`, both generated from the server's spec (ADR 0023).
+
 ## [0.1.6] — 2026-08-24
 
 ### Added

@@ -239,11 +239,14 @@ defmodule Fountain.Conversations.ConversationServer do
               {:ok, _} = Conversations.update_conversation(conv, %{status: "terminated"})
 
               # A sandbox handed on to a successor conversation
-              # (`release_conversation/2`) is that conversation's computer now;
-              # terminating the retired thread must not take it down.
-              if is_binary(conv.sandbox_id) and
-                   not Conversations._unsafe_sandbox_held_by_other?(conv.sandbox_id, conv.id) do
-                sb = Conversations._unsafe_get_sandbox!(conv.sandbox_id)
+              # (`release_conversation/2`) is that conversation's computer now,
+              # and a home is the agent's (ADR 0023); terminating this thread
+              # must not take either down.
+              sandbox_id = conv.sandbox_id
+
+              if is_binary(sandbox_id) and
+                   not Conversations._unsafe_sandbox_kept_on_terminate?(sandbox_id, conv.id) do
+                sb = Conversations._unsafe_get_sandbox!(sandbox_id)
 
                 if sb.status not in ["terminated", "failed"] do
                   Conversations.update_sandbox(sb, %{status: "terminated", terminated_at: now})
@@ -1479,19 +1482,22 @@ defmodule Fountain.Conversations.ConversationServer do
   end
 
   def handle_call(:terminate_conv, _from, state) do
-    if Conversations._unsafe_sandbox_held_by_other?(state.sandbox_id, state.conversation_id) do
-      # The machine is shared (ADR 0023): end this conversation and leave the
-      # sprite to the others — the same guard the no-server path applies in
-      # terminate_conversation/2. A turn of ours still running is cut first,
-      # since nothing would be left to drive it; `handle: nil` so no stop path
-      # touches the sprite.
+    kept? =
+      Conversations._unsafe_sandbox_kept_on_terminate?(state.sandbox_id, state.conversation_id)
+
+    if kept? do
+      # The machine is shared, or it is the agent's home (ADR 0023): end this
+      # conversation and leave the sprite — the same guard the no-server path
+      # applies in terminate_conversation/2. A turn of ours still running is
+      # cut first, since nothing would be left to drive it; `handle: nil` so
+      # no stop path touches the sprite.
       state = if state.current_turn, do: interrupt_turn(state), else: state
       conv = Conversations._unsafe_get_conversation!(state.conversation_id)
       {:ok, _} = Conversations.update_conversation(conv, %{status: "terminated"})
 
       publish_stage(state.conversation_id, "terminate", "done", %{
         sandbox: "kept",
-        reason: "held_by_another_conversation"
+        reason: if(home?(state), do: "persistent_home", else: "held_by_another_conversation")
       })
 
       {:stop, :normal, :ok, %{state | handle: nil}}
@@ -2159,9 +2165,29 @@ defmodule Fountain.Conversations.ConversationServer do
   # for the conversation that never stops being busy; the conversation stays
   # `idle` and resumable — setting it `terminated` here would make a cost
   # control into data loss. See Fountain.Conversations.Lifecycle.
+  #
+  # A home is parked instead, where the provider can park: its disk is the
+  # agent's memory across every conversation, and destroying it at a busy
+  # ceiling would defeat the mode (ADR 0023 step 5). The ceiling itself is
+  # slated to go; until then this is the interim it names. A home on a
+  # provider that cannot park, or whose park call fails, is destroyed as an
+  # ephemeral one would be — an unparked machine keeps billing.
   defp reclaim_sandbox(state, :max_lifetime) do
-    destroy_sandbox(state, :max_lifetime)
+    with true <- home?(state),
+         :suspend <- Lifecycle.idle_action(provider(state)),
+         :ok <- suspend_sandbox(state) do
+      park_sandbox(state, :max_lifetime)
+    else
+      _ -> destroy_sandbox(state, :max_lifetime)
+    end
   end
+
+  # Whether this server's machine is a persistent home (ADR 0023).
+  defp home?(%{sandbox_id: sandbox_id}) when is_binary(sandbox_id) do
+    match?(%{mode: "persistent"}, Conversations._unsafe_get_sandbox(sandbox_id))
+  end
+
+  defp home?(_state), do: false
 
   defp reclaim_idle_machine(state) do
     with :suspend <- Lifecycle.idle_action(provider(state)),
@@ -2188,9 +2214,9 @@ defmodule Fountain.Conversations.ConversationServer do
   defp suspend_sandbox(%{handle: nil}), do: :ok
   defp suspend_sandbox(state), do: Fountain.Sandbox.suspend(state.handle)
 
-  defp park_sandbox(state) do
+  defp park_sandbox(state, reason \\ :idle) do
     Logger.info(
-      "suspending sandbox for conv #{state.conversation_id}: idle " <>
+      "suspending sandbox for conv #{state.conversation_id}: #{reason} " <>
         "(sprite #{inspect(state.handle && state.handle.name)})"
     )
 
@@ -2210,15 +2236,15 @@ defmodule Fountain.Conversations.ConversationServer do
     # clients already key on the "sandbox" stage); `event` is the discriminator.
     publish_stage(state.conversation_id, "sandbox", "done", %{
       event: "suspended",
-      reason: "idle",
-      message: Lifecycle.explain(:idle, :suspend)
+      reason: to_string(reason),
+      message: Lifecycle.explain(reason, :suspend)
     })
 
     :telemetry.execute([:fountain, :sandbox, :suspended], %{count: 1}, %{
       provider: provider(state)
     })
 
-    stop_cotenants(state, "suspended", "idle", Lifecycle.explain(:idle, :suspend))
+    stop_cotenants(state, "suspended", to_string(reason), Lifecycle.explain(reason, :suspend))
 
     {:stop, :normal, %{state | handle: nil}}
   end

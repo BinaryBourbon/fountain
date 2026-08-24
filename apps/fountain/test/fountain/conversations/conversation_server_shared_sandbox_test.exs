@@ -166,6 +166,31 @@ defmodule Fountain.Conversations.ConversationServerSharedSandboxTest do
       end)
     end
 
+    test "a home at the ceiling is parked, not destroyed (ADR 0023)" do
+      %{a: a, sandbox: sandbox} = shared_machine("claude")
+      {:ok, _} = Conversations.update_sandbox(sandbox, %{mode: "persistent"})
+      stub_happy_sprite()
+      reject(&Fountain.Sandbox.Sprites.destroy/1)
+      Mimic.stub(Fountain.Sandbox.Sprites, :suspend, fn _h -> :ok end)
+
+      with_bounds([sandbox_idle_timeout_minutes: 0, sandbox_max_lifetime_hours: 24], fn ->
+        {pid, ref} = start(a)
+
+        :sys.replace_state(pid, fn state ->
+          %{state | sandbox_started_at: DateTime.add(DateTime.utc_now(), -25 * 3600, :second)}
+        end)
+
+        send(pid, :lifecycle_check)
+        assert :normal = assert_stopped(ref)
+      end)
+
+      assert Repo.reload(sandbox).status == "suspended"
+
+      assert Enum.any?(sandbox_stages(a.id), fn d ->
+               d["event"] == "suspended" and d["reason"] == "max_lifetime"
+             end)
+    end
+
     test "a co-tenant told the machine is gone records it and stops" do
       %{b: b} = shared_machine("claude")
       stub_happy_sprite()

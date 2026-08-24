@@ -252,6 +252,24 @@ defmodule Fountain.AgentsTest do
       {:ok, _} = Agents.delete_agent(agent)
       assert Agents.list_agent_versions(agent.id, user.id) == []
     end
+
+    test "an agent with a versioned conversation can still be deleted" do
+      # Deleting the agent cascades to its versions, and Postgres re-checked
+      # the conversation's version FK mid-cascade — before its own SET NULL —
+      # so every agent with a conversation stamped by #1049 refused to go.
+      user = insert_verified_user()
+      agent = insert_agent(user_id: user.id)
+      {:ok, agent} = Agents.update_agent(agent, %{"description" => "v2"})
+      version_id = Agents._unsafe_current_version_id(agent.id)
+      conv = insert_conversation(user_id: user.id, agent: agent, agent_version_id: version_id)
+      assert conv.agent_version_id == version_id
+
+      assert {:ok, _} = Agents.delete_agent(agent)
+
+      reloaded = Fountain.Conversations._unsafe_get_conversation!(conv.id)
+      assert is_nil(reloaded.agent_id)
+      assert is_nil(reloaded.agent_version_id)
+    end
   end
 
   describe "_unsafe_get_agent/1 and _unsafe_get_agent!/1" do

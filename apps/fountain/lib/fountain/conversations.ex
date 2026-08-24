@@ -1699,10 +1699,16 @@ defmodule Fountain.Conversations do
          {:ok, runtime_module} <- Fountain.Runtimes.for_runtime(agent.runtime),
          {:ok, vault_id} <- resolve_vault_id(attrs["vault_id"], user_id, agent),
          {:ok, env_id} <- resolve_environment_id(attrs["environment_id"], user_id, agent),
+         {:ok, mode} <- resolve_sandbox_mode(attrs["sandbox_mode"], agent),
          {:ok, perm_policy} <- resolve_permission_policy(attrs["permission_policy"], agent),
          {:ok, parent_id} <- resolve_parent_id(attrs["parent_conversation_id"], user_id),
          :ok <- Fountain.Accounts.check_not_suspended(user_id),
          :ok <- Fountain.Billing.check_active(user_id),
+         # A persistent launch lands on the identity's home when there is one
+         # (ADR 0023 gate 6): `{:home, sandbox}` leaves the `with` and attaches
+         # below. Only when there is none does a machine get provisioned, and
+         # it is stamped as the home.
+         :new <- home_or_new(mode, user_id, agent, env_id || agent.environment_id, vault_id),
          {:ok, provider} <- resolve_sandbox_provider(agent),
          {:ok, sprite_name} <- mint_sprite_name(provider, user_id, attrs["sprite_name"]),
          # Quota check + row insert under one per-user advisory lock: checked
@@ -1716,6 +1722,7 @@ defmodule Fountain.Conversations do
                # later must name the same three.
                agent_id: agent.id,
                vault_id: vault_id,
+               mode: mode,
                sprite_name: sprite_name,
                status: "pending",
                provider: Atom.to_string(provider),
@@ -1810,9 +1817,146 @@ defmodule Fountain.Conversations do
           {:ok, result}
       end
     else
-      nil -> {:error, :not_found}
-      {:error, _} = err -> err
+      nil ->
+        {:error, :not_found}
+
+      # The identity already has a home: this launch is a conversation on it.
+      {:home, %Sandbox{} = home} ->
+        attach_conversation(home.id, attrs, opts)
+
+      # Two persistent launches of one identity raced to create its home and
+      # this one lost at the unique index. The winner's row is the home now;
+      # land on it rather than fail a request that asked for nothing unusual.
+      {:error, %Ecto.Changeset{errors: errors}} = err ->
+        if Keyword.has_key?(errors, :home) do
+          with %Agents.Agent{} = agent <- Agents.get_agent(agent_id, user_id),
+               {:ok, vault_id} <- resolve_vault_id(attrs["vault_id"], user_id, agent),
+               {:ok, env_id} <- resolve_environment_id(attrs["environment_id"], user_id, agent),
+               %Sandbox{} = home <-
+                 _unsafe_find_home(user_id, agent.id, env_id || agent.environment_id, vault_id) do
+            attach_conversation(home.id, attrs, opts)
+          else
+            _ -> err
+          end
+        else
+          err
+        end
+
+      {:error, _} = err ->
+        err
     end
+  end
+
+  # The launch's sandbox mode: the agent's default unless the launch names
+  # one (ADR 0023). Not an allowlisted override like `environment_id` — the
+  # mode is not a security boundary; the tenant scope on the sandbox is.
+  defp resolve_sandbox_mode(mode, %Agents.Agent{sandbox_mode: default}) when mode in [nil, ""],
+    do: {:ok, default || "ephemeral"}
+
+  defp resolve_sandbox_mode(mode, _agent) when is_binary(mode) do
+    if mode in Sandbox.modes(), do: {:ok, mode}, else: {:error, :invalid_sandbox_mode}
+  end
+
+  defp resolve_sandbox_mode(_mode, _agent), do: {:error, :invalid_sandbox_mode}
+
+  # `:new` when a machine has to be provisioned; `{:home, sandbox}` when the
+  # identity already has one to land on. A home still provisioning from its
+  # first launch cannot take a second conversation yet — its prompt would be
+  # handed to the wrong server — so it reads as `:provisioning`, the same
+  # retry-shortly answer a mid-provision conversation gives.
+  defp home_or_new("ephemeral", _user_id, _agent, _env_id, _vault_id), do: :new
+
+  defp home_or_new("persistent", user_id, %Agents.Agent{id: agent_id}, env_id, vault_id) do
+    case _unsafe_find_home(user_id, agent_id, env_id, vault_id) do
+      nil -> :new
+      %Sandbox{status: s} when s in ["pending", "starting"] -> {:error, :provisioning}
+      %Sandbox{} = home -> {:home, home}
+    end
+  end
+
+  @doc """
+  The live home of an agent identity — the one persistent sandbox for
+  `(user, agent, environment, vault)` that is not terminated or failed — or
+  nil. `nil` environment and vault are part of the identity, not wildcards.
+  `_unsafe_`: callers have resolved the agent tenant-scoped already.
+  """
+  def _unsafe_find_home(user_id, agent_id, env_id, vault_id)
+      when is_binary(user_id) and is_binary(agent_id) do
+    from(s in Sandbox,
+      where:
+        s.user_id == ^user_id and s.agent_id == ^agent_id and s.mode == "persistent" and
+          s.status not in ["terminated", "failed"],
+      order_by: [desc: s.inserted_at],
+      limit: 1
+    )
+    |> where_sandbox_environment(env_id)
+    |> where_sandbox_vault(vault_id)
+    |> Repo.one()
+  end
+
+  defp where_sandbox_vault(query, nil), do: from(s in query, where: is_nil(s.vault_id))
+  defp where_sandbox_vault(query, id), do: from(s in query, where: s.vault_id == ^id)
+
+  defp where_sandbox_environment(query, nil),
+    do: from(s in query, where: is_nil(s.environment_id))
+
+  defp where_sandbox_environment(query, id), do: from(s in query, where: s.environment_id == ^id)
+
+  @doc """
+  Whether terminating `conv_id` leaves its sandbox standing: a home is never
+  torn down by one conversation ending (ADR 0023 step 5), and neither is a
+  machine another live conversation still holds. Both `ConversationServer`
+  terminate paths ask this. `_unsafe_`: the caller owns `conv_id`.
+  """
+  def _unsafe_sandbox_kept_on_terminate?(sandbox_id, conv_id)
+      when is_binary(sandbox_id) and is_binary(conv_id) do
+    case _unsafe_get_sandbox(sandbox_id) do
+      %Sandbox{mode: "persistent"} -> true
+      _ -> _unsafe_sandbox_held_by_other?(sandbox_id, conv_id)
+    end
+  end
+
+  @doc """
+  Tear down every home of `agent_id` — what deleting the agent does, since
+  the identity the homes were built for is gone (ADR 0023 step 5). Each live
+  conversation on a home is terminated (a home survives that on its own), then
+  the sprite is destroyed and the row terminated. Best-effort per machine; a
+  provider error is logged and the row still retires, so the reaper's sweep
+  sees a terminal row rather than a live one nobody can find. Returns the
+  number of homes torn down. `_unsafe_`: the caller owns the agent.
+  """
+  def _unsafe_destroy_homes_for_agent(agent_id) when is_binary(agent_id) do
+    from(s in Sandbox,
+      where:
+        s.agent_id == ^agent_id and s.mode == "persistent" and
+          s.status not in ["terminated", "failed"]
+    )
+    |> Repo.all()
+    |> Enum.map(&_unsafe_destroy_home/1)
+    |> length()
+  end
+
+  @doc false
+  def _unsafe_destroy_home(%Sandbox{} = sandbox) do
+    sandbox = Repo.preload(sandbox, :conversations)
+
+    sandbox.conversations
+    |> Enum.reject(&(&1.status in ["terminated", "failed"]))
+    |> Enum.each(&ConversationServer.terminate_conversation(&1.id, actor: "system:home_reset"))
+
+    handle = Fountain.Sandbox.build_handle(sandbox_provider_atom(sandbox), sandbox.sprite_name)
+
+    case Fountain.Sandbox.destroy(handle) do
+      :ok ->
+        :ok
+
+      {:error, reason} ->
+        Logger.warning("home #{sandbox.sprite_name} destroy failed: #{inspect(reason)}")
+    end
+
+    now = DateTime.utc_now() |> DateTime.truncate(:second)
+    {:ok, _} = update_sandbox(sandbox, %{status: "terminated", terminated_at: now})
+    :ok
   end
 
   # A conversation on a machine the caller already has (ADR 0023 gate 3).
@@ -2550,6 +2694,15 @@ defmodule Fountain.Conversations do
     # Waking a dormant conversation provisions a fresh sprite, so it is subject
     # to the same gate as creating one. Without this, prompting an existing
     # conversation was an unmetered way past billing entirely.
+    # The replacement keeps the mode of the machine it replaces: a home whose
+    # sprite is gone is re-provisioned as the home, and every conversation on
+    # it follows (move_cotenants/3). The old row is retired *first* for a
+    # home — the partial unique index allows one live home per identity, and
+    # the probe has already said this sprite is gone (ADR 0023 gate 6).
+    old = if conv.sandbox_id, do: _unsafe_get_sandbox(conv.sandbox_id)
+    mode = (old && old.mode) || "ephemeral"
+    if mode == "persistent", do: _ = mark_old_sandbox_terminated(conv.sandbox_id)
+
     with :ok <- Fountain.Accounts.check_not_suspended(conv.user_id),
          :ok <- Fountain.Billing.check_active(conv.user_id),
          # A fresh sandbox is a fresh placement decision — re-resolve from
@@ -2567,6 +2720,7 @@ defmodule Fountain.Conversations do
                  environment_id: conv.environment_id || agent.environment_id,
                  agent_id: conv.agent_id,
                  vault_id: conv.vault_id,
+                 mode: mode,
                  sprite_name: sprite_name,
                  status: "pending",
                  provider: Atom.to_string(provider),

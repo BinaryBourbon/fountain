@@ -23,6 +23,11 @@ defmodule Fountain.Agents.Agent do
     # Optional sandbox-backend override; nil inherits the instance default
     # (SANDBOX_PROVIDER) at conversation start.
     field :sandbox_provider, :string
+    # Where a conversation of this agent runs by default (ADR 0023):
+    # `ephemeral`, a sandbox per conversation, or `persistent`, one sandbox
+    # per agent identity that every conversation lands on — the agent's
+    # computer. A launch may name the other; this is the default, not a rule.
+    field :sandbox_mode, :string, default: "ephemeral"
     # Each entry is one of:
     #   %{"name" => name, "content" => skill_md}     # inline SKILL.md
     #   %{"source" => "owner/repo", "name" => opt}   # github via skills.sh CLI
@@ -53,6 +58,11 @@ defmodule Fountain.Agents.Agent do
 
   def runtimes, do: @runtimes
 
+  @sandbox_modes ~w(ephemeral persistent)
+
+  @doc "The sandbox modes a launch may choose (ADR 0023)."
+  def sandbox_modes, do: @sandbox_modes
+
   def changeset(agent, attrs) do
     agent
     |> cast(attrs, [
@@ -62,6 +72,7 @@ defmodule Fountain.Agents.Agent do
       :model,
       :runtime,
       :sandbox_provider,
+      :sandbox_mode,
       :skills,
       :mcp_servers,
       :metadata,
@@ -73,6 +84,7 @@ defmodule Fountain.Agents.Agent do
     ])
     |> validate_required([:name, :model, :runtime])
     |> validate_inclusion(:runtime, @runtimes)
+    |> validate_inclusion(:sandbox_mode, @sandbox_modes)
     |> validate_format(:model, ~r{^[a-z0-9_-]+/[a-z0-9._-]+$},
       message: "must be in canonical provider/model_id form"
     )

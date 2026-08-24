@@ -236,6 +236,13 @@ checks the media type again at serve time.
 An agent object carries `conversation_count`. An environment carries
 `secret_count` and `agent_count`. A vault carries `secret_count`.
 
+An agent carries `sandbox_mode`, which is `ephemeral` or `persistent`. With
+`ephemeral`, each conversation gets a sandbox of its own. With `persistent`,
+the agent has one machine, and each conversation with the same environment
+and vault lands on it. That machine survives a conversation that ends, and
+Fountain parks it at the ceiling instead of a destroy. A launch can name the
+other mode with `sandbox_mode` on `POST /api/conversations`.
+
 They are on the list read and on the single-resource read. So "does this
 environment have a user, and is it safe to delete" is one request.
 
@@ -336,7 +343,7 @@ it again and again.
 
 ```
 GET    /api/conversations                  # list (?roots_only=true; ?agent_id= ?channel_id= ?status=idle,terminated)
-POST   /api/conversations                  # start (agent_id; optional vault_id, environment_id, sandbox_id, prompt, images)
+POST   /api/conversations                  # start (agent_id; optional vault_id, environment_id, sandbox_id, sandbox_mode, prompt, images)
 GET    /api/conversations/:id
 DELETE /api/conversations/:id
 POST   /api/conversations/:id/read         # clear unread state
@@ -362,6 +369,12 @@ Otherwise you get `404 sandbox_not_found`, `409 sandbox_not_attachable` or
 disk at the same time. On an opencode or gemini sandbox, only one turn runs
 at a time. A second prompt gets `409 sandbox_at_capacity` while the first
 one runs.
+
+`sandbox_mode` is `ephemeral` or `persistent`, and it replaces the agent's
+default for this conversation. A persistent conversation lands on the agent's
+own machine. Fountain makes that machine on the first persistent launch of an
+agent, environment and vault. A second launch while the first still builds
+it gets `503 provisioning`, so send again shortly.
 
 Whatever does not resolve is a `404`, so nobody can probe for an id.
 

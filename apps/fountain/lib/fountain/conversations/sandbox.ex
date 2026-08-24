@@ -15,6 +15,13 @@ defmodule Fountain.Conversations.Sandbox do
   # next prompt via the reattach path. See decisions/0017.
   @statuses ~w(pending starting ready suspended terminated failed)
 
+  # `ephemeral`: the conversation's machine, created with it and reclaimed
+  # with it. `persistent`: the agent identity's machine — a home — that every
+  # conversation of that identity lands on, kept when a conversation ends,
+  # parked rather than destroyed at the ceiling, and single per identity by
+  # the partial unique index (ADR 0023).
+  @modes ~w(ephemeral persistent)
+
   schema "sandboxes" do
     # Provider-scoped sandbox identity: the name Fountain mints
     # (`fountain-<tenant-prefix>-<hex>`) and uses as the primary external ref.
@@ -28,6 +35,7 @@ defmodule Fountain.Conversations.Sandbox do
     field :provider, :string, default: "sprites"
     # Adapter-opaque state (e.g. a server-assigned id). Never tenant-visible.
     field :provider_meta, :map, default: %{}
+    field :mode, :string, default: "ephemeral"
     field :terminated_at, :utc_datetime
     field :last_resumed_at, :utc_datetime
     belongs_to :environment, Environment
@@ -46,6 +54,9 @@ defmodule Fountain.Conversations.Sandbox do
 
   def statuses, do: @statuses
 
+  @doc "The sandbox modes (ADR 0023)."
+  def modes, do: @modes
+
   def changeset(sandbox, attrs) do
     sandbox
     |> cast(attrs, [
@@ -53,6 +64,7 @@ defmodule Fountain.Conversations.Sandbox do
       :status,
       :provider,
       :provider_meta,
+      :mode,
       :terminated_at,
       :last_resumed_at,
       :environment_id,
@@ -60,8 +72,15 @@ defmodule Fountain.Conversations.Sandbox do
       :vault_id,
       :user_id
     ])
-    |> validate_required([:sprite_name, :status, :provider, :user_id])
+    |> validate_required([:sprite_name, :status, :provider, :mode, :user_id])
     |> validate_inclusion(:status, @statuses)
+    |> validate_inclusion(:mode, @modes)
     |> validate_inclusion(:provider, Fountain.Sandbox.known_providers())
+    # One live home per identity. Surfaced under `:home` so a launch that
+    # lost the race to create it can tell and attach to the winner instead.
+    |> unique_constraint(:home,
+      name: :sandboxes_home_identity_index,
+      message: "a home for this agent, environment and vault already exists"
+    )
   end
 end

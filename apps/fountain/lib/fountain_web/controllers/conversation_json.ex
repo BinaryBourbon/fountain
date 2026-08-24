@@ -85,6 +85,7 @@ defmodule FountainWeb.ConversationJSON do
       agent_id: s.agent_id,
       environment_id: s.environment_id,
       vault_id: s.vault_id,
+      mode: s.mode,
       # The sandbox's own HTTP endpoint, for providers that give it one. Read
       # from the row rather than the provider so listing conversations stays a
       # single query; null means the provider has no such concept (or the
