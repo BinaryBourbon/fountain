@@ -1,22 +1,24 @@
 ---
 type: ADR
 title: "A persistent sandbox per agent, offered beside the sandbox-per-conversation model"
-description: "Sketch only — nothing here is built. Adds a second sandbox mode, chosen per launch and defaulted per agent, where one long-lived sandbox serves many conversations of an agent (the 'grokbot' shape), with turns running concurrently where the runtime allows (amended 2026-08-23); keeps the per-conversation mode as the default; names the seven places the code hard-codes 1:1 today. Companion design note: #805."
+description: "Built 2026-08-24 (#1057–#1068). Adds a second sandbox mode, chosen per launch and defaulted per agent, where one long-lived sandbox serves many conversations of an agent (the 'grokbot' shape), with turns running concurrently where the runtime allows (amended 2026-08-23); keeps the per-conversation mode as the default; names the seven places the code hard-codes 1:1 today. Companion design note: #805."
 tags: [sandbox, lifecycle, conversations, product]
-status: draft
+status: stable
 adr: "0023"
-adr_status: "Proposed"
+adr_status: "Accepted"
 date: 2026-08-17
 generated: { by: human:jhgaylor, at: 2026-08-17T17:30:00-04:00 }
-stale_after: 2026-10-01
+verified: { by: human:jhgaylor, at: 2026-08-23T23:30:00-04:00 }
+stale_after: 2027-02-01
 ---
 
 # 0023 — A persistent sandbox per agent, beside the sandbox-per-conversation model
 
-**Status:** Proposed — a design sketch. **Nothing described here is built.**
-The 1:1 model of today is the only one that exists; every mechanism below is
-a proposal, and the "what breaks today" section is a survey of the current
-code, not a list of fixed defects.
+**Status:** Accepted — built 2026-08-24. The "what breaks today" survey below
+describes `main` as it was on 2026-08-21; every item in it has since been
+fixed by the gates listed under **Outcome**. The decision text is kept as
+written (with its 2026-08-23 amendment); where the code differs from it, the
+outcome section says so.
 **Date:** 2026-08-17 (amended 2026-08-18: mode is chosen per launch and
 defaulted per agent, not fixed per agent; the machine carries a lease/refcount;
 `sandbox_id` attach — see #805 for the holistic picture this converges on)
@@ -47,6 +49,66 @@ citing "ADR 0021" for a persistent sandbox — #793, #805 — means this file.
 sketch — the sandbox as a first-class machine, a conversation as a binding of
 an agent to one. This ADR is the incremental proposal; #805 is what it should
 be measured against.
+
+## Outcome (2026-08-24)
+
+Shipped as seven gates, one PR each, in dependency order:
+
+| gate | what | PR |
+|---|---|---|
+| amendment | turns run concurrently per runtime capacity, not behind a lease | #1057 |
+| 1 | per-process identity env and sessions tagged with the conversation (`Fountain.Conversations.Identity`) — steps 2 and 3 | #1058 |
+| 2 | capacity (`Runtimes.ACP.concurrency/1`), the guarded live terminate, idle over the union of activity, `{:machine_gone, …}` to every co-tenant — steps 4, 5 and 7 | #1061 |
+| 3 | `sandbox_id` attach on `POST /api/conversations`, `GET /api/sandboxes[/:id]`, `sandboxes.agent_id`/`vault_id`, SDK 0.1.6, `fountain run --sandbox` — step 1 (attach half) and step 8 | #1064 |
+| 4 | turn hours summed per turn (`turn_seconds`) beside union `busy_seconds`; ADR 0026 addendum — step 6 | #1065 |
+| 5 | a wake onto a fresh sandbox takes the machine's co-tenants along — step 1 ("wake stops repointing") | #1067 |
+| 6 | `sandbox_mode` on the agent and on the launch, `home_or_new`/`_unsafe_find_home`, the partial unique index (`NULLS NOT DISTINCT`), home kept on terminate, parked at the ceiling, destroyed with its agent; SDK 0.1.7, `fountain run --sandbox-mode`, the agent form — steps 1, 5 and 8 | #1068 |
+| 7 | live smoke against production (below) | — |
+
+**Where the code differs from the text above.**
+
+- There is no `SandboxServer` process. The machine-operation lock is a
+  per-sandbox Postgres advisory lock taken by the conversation that needs it
+  (`Conversations` around `pg_advisory_xact_lock`), the refcount is the
+  conversation rows on the sandbox, and the idle clock is
+  `SandboxReaper.last_activity_at/1` over all of them. Each
+  `ConversationServer` keeps its own adapter, key and transcript exactly as
+  step 4 says; only the coordinator is a lock plus a query rather than a
+  registered process. Revisit if the handle and sprite env ever need to
+  move into one owner.
+- At capacity a turn is refused (`sandbox_at_capacity`); the `queued` stage
+  of the original step 4 was dropped with the lease and is not built.
+- The continuous-run ceiling (0017) still exists. A home at the ceiling is
+  parked, not destroyed (`Lifecycle`), which is the interim behaviour the
+  table names; removing the ceiling for every mode is its own change.
+- Of the step 8 doors, `POST /api/conversations`, `fountain run`, the SDK
+  and the agent form take the override. The ACP editor door
+  (`session/new` `_meta`), Buzz provision and the `fountain` skill's fan-out
+  take the agent's default and have no per-launch override yet. The
+  conversations app shows no "home" badge and there is no "reset home"
+  action; `GET /api/sandboxes/:id` is the sandbox's detail, and deleting the
+  agent is the reset.
+
+**Gate 7, run 2026-08-24 against production** (server `sha-94b6022f`,
+Sprites, a throwaway `claude` agent on haiku with no environment or vault):
+
+- First persistent launch provisioned one sandbox row (`mode = persistent`,
+  `agent_id` set); a second launch attached to it without provisioning —
+  one `sandboxes` row for three conversations.
+- Conversation B read the file conversation A wrote and appended to it:
+  one disk.
+- A turn on A and a turn on B, each `sleep 20`, started together and ended
+  within one second of each other — concurrent, not serialized — and each
+  transcript carried its own `FOUNTAIN_CONVERSATION_ID`.
+- After `kubectl rollout restart` of the server (what a deploy does), both
+  conversations reattached to the same sprite (`reattach` stage,
+  `no_running_turn`) and the file had every line: nothing re-provisioned.
+- Terminating B left the sandbox `ready`; a third conversation landed on
+  it and read three lines.
+- Deleting the agent terminated the home (`204`, row `terminated`).
+
+Open from the questions list: wake-on-any-inbound policy, and pricing the
+mode rather than the sandbox-minutes (#798).
 
 ## Context
 
@@ -134,7 +196,7 @@ by the identity a persistent mode needs; sprite names are random per call
 (`fountain-<tenant>-<hex>`) so nothing reuses by name; and checkpointing is
 disabled *because* names are fresh each time (`conversation_server.ex:748`).
 
-## Decision (proposed)
+## Decision
 
 Add a **sandbox mode** with two values. The mode is a property of the
 **launch**, defaulted from the agent — the same shape `environment_id` has had
