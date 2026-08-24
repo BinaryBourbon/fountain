@@ -383,6 +383,10 @@ defmodule Fountain.Conversations.ConversationServer do
       # Timer refusing an unanswered permission request (#940).
       permission_timer: nil,
       acp_peer_mon: nil,
+      # Timer closing an autonomous turn that went quiet without a
+      # `cycle_end` (#817) — an adapter too old to mark its origin must not
+      # hold a turn open forever. nil outside an autonomous turn.
+      autonomous_quiet: nil,
       # Bytes of replayed output to drop on reattach, keyed by stream.
       # Empty map outside a reattach window. See attempt_session_attach.
       replay_skip: %{},
@@ -1071,8 +1075,12 @@ defmodule Fountain.Conversations.ConversationServer do
     running_turn = find_running_turn(state.conversation_id)
 
     if is_nil(running_turn) do
-      publish_stage(state.conversation_id, "reattach", "done", %{outcome: "no_running_turn"})
-      state
+      # No turn was in flight, but a deploy also killed the idle peer that
+      # outlives a turn (#817), leaving its detachable adapter session running
+      # with nothing to drive it. Reap it — by this conversation's tag, never
+      # the head of the list: a co-tenant's live turn on the same machine must
+      # not be touched (ADR 0023, #1058).
+      reap_orphan_sessions(state)
     else
       case Fountain.Retry.with_backoff(fn -> Fountain.Sandbox.list_sessions(state.handle) end,
              label: "session list on reattach"
@@ -1103,6 +1111,40 @@ defmodule Fountain.Conversations.ConversationServer do
           mark_orphan(state, running_turn, "list_sessions_failed")
           state
       end
+    end
+  end
+
+  # After a restart with no turn in flight, stop this conversation's own
+  # leftover adapter sessions (#817). Matched by tag; a session tagged for
+  # another conversation, or untagged, is left alone.
+  defp reap_orphan_sessions(state) do
+    case Fountain.Sandbox.list_sessions(state.handle) do
+      {:ok, sessions} ->
+        mine =
+          Enum.filter(
+            sessions,
+            &(Fountain.Conversations.Identity.conversation_id(&1) == state.conversation_id)
+          )
+
+        Enum.each(mine, fn session ->
+          case Fountain.Sandbox.attach(state.handle, session.id, owner: self(), stdin: true) do
+            {:ok, command} -> Fountain.Sandbox.stop_command(command)
+            _ -> :ok
+          end
+        end)
+
+        outcome = if mine == [], do: "no_running_turn", else: "orphan_session_reaped"
+
+        publish_stage(state.conversation_id, "reattach", "done", %{
+          outcome: outcome,
+          reaped: length(mine)
+        })
+
+        state
+
+      {:error, _reason} ->
+        publish_stage(state.conversation_id, "reattach", "done", %{outcome: "no_running_turn"})
+        state
     end
   end
 
@@ -1172,6 +1214,9 @@ defmodule Fountain.Conversations.ConversationServer do
   end
 
   @replay_dedup_ttl_ms 10_000
+
+  # An autonomous turn with no `cycle_end` closes after this long a silence.
+  @autonomous_quiet_ms :timer.minutes(10)
 
   # An ACP turn is only alive while something answers the agent: a
   # `session/request_permission` left unanswered blocks it forever, and the
@@ -1449,9 +1494,14 @@ defmodule Fountain.Conversations.ConversationServer do
 
   @impl true
   def handle_call({:send_prompt, prompt, images}, _from, state) do
-    if state.current_command do
+    if user_turn_running?(state) do
       {:reply, {:error, :busy}, state}
     else
+      # A background cycle the agent was still narrating is closed by the
+      # human's prompt, not queued behind it (#817): its updates are already
+      # on the transcript, and the agent will fold whatever it was doing into
+      # the answer to this prompt.
+      state = close_autonomous_turn(state, "superseded_by_prompt")
       conv = Conversations._unsafe_get_conversation!(state.conversation_id)
 
       with :ok <- turn_gate(conv.user_id),
@@ -1464,7 +1514,10 @@ defmodule Fountain.Conversations.ConversationServer do
     end
   end
 
-  def handle_call(:interrupt, _from, %{current_command: nil} = state) do
+  # Busy means a turn, not a connection (#817): an idle adapter between
+  # turns is nothing to interrupt. An autonomous turn is interruptible — it
+  # is the one way to cut a background task the agent left running.
+  def handle_call(:interrupt, _from, %{current_turn: nil} = state) do
     {:reply, {:error, :idle}, state}
   end
 
@@ -1502,6 +1555,7 @@ defmodule Fountain.Conversations.ConversationServer do
       # cut first, since nothing would be left to drive it; `handle: nil` so
       # no stop path touches the sprite.
       state = if state.current_turn, do: interrupt_turn(state), else: state
+      state = drop_connection(state, "terminated")
       conv = Conversations._unsafe_get_conversation!(state.conversation_id)
       {:ok, _} = Conversations.update_conversation(conv, %{status: "terminated"})
 
@@ -1512,6 +1566,7 @@ defmodule Fountain.Conversations.ConversationServer do
 
       {:stop, :normal, :ok, %{state | handle: nil}}
     else
+      state = drop_connection(state, "terminated")
       if state.handle, do: _ = Fountain.Sandbox.destroy(state.handle)
       sandbox = Conversations._unsafe_get_sandbox!(state.sandbox_id)
 
@@ -1536,6 +1591,7 @@ defmodule Fountain.Conversations.ConversationServer do
   end
 
   def handle_call(:release_conv, _from, state) do
+    state = drop_connection(state, "released")
     conv = Conversations._unsafe_get_conversation!(state.conversation_id)
     {:ok, _} = Conversations.update_conversation(conv, %{status: "terminated"})
     publish_stage(state.conversation_id, "terminate", "done", %{event: "released"})
@@ -1556,7 +1612,7 @@ defmodule Fountain.Conversations.ConversationServer do
   # happen, and re-running is the failure this whole mechanism exists to avoid.
   @impl true
   def handle_cast({:initial_prompt, prompt, images}, state) do
-    if state.current_command do
+    if user_turn_running?(state) do
       Logger.warning(
         "conv #{state.conversation_id}: initial prompt arrived while a turn was running; dropping it"
       )
@@ -1567,6 +1623,7 @@ defmodule Fountain.Conversations.ConversationServer do
 
       case turn_gate(conv.user_id) do
         :ok ->
+          state = close_autonomous_turn(state, "superseded_by_prompt")
           agent = if conv.agent_id, do: Agents._unsafe_get_agent!(conv.agent_id)
           {:noreply, kick_turn(state, prompt, agent, images)}
 
@@ -1588,6 +1645,7 @@ defmodule Fountain.Conversations.ConversationServer do
   # server can do, and the wake path is what brings the machine back.
   def handle_cast({:machine_gone, event, reason, message}, state) do
     state = if state.current_turn, do: interrupt_turn(state), else: state
+    state = drop_connection(state, event)
 
     conv = Conversations._unsafe_get_conversation!(state.conversation_id)
     if conv.status == "running", do: Conversations.update_conversation(conv, %{status: "idle"})
@@ -1640,15 +1698,62 @@ defmodule Fountain.Conversations.ConversationServer do
   # Persisting goes through the server's own path so the ACP stream inherits
   # the log budget, the redaction pass and the replay skip. A peer writing rows
   # itself would bypass all three.
+  #
+  # A protocol line with no turn open is the agent talking out of turn (#817):
+  # a background task it left running has come back and it is narrating the
+  # follow-up. That opens an autonomous turn — a real row, so the log budget,
+  # redaction and the stage events apply unchanged — and every further line
+  # re-arms the quiet timer that closes it if no `cycle_end` ever does.
   def handle_info({:acp, ref, {:lines, stream, data}}, %{current_command_ref: ref} = state) do
-    if stream == "acp" and MapSet.member?(state.replay_dedup, data) do
-      # A replayed line we already hold (ACP reattach). Each persisted line
-      # suppresses at most one arrival, so a legitimate later repeat survives.
-      {:noreply, %{state | replay_dedup: MapSet.delete(state.replay_dedup, data)}}
-    else
-      {:noreply, persist_acp_lines(state, stream, data)}
+    cond do
+      stream == "acp" and MapSet.member?(state.replay_dedup, data) ->
+        # A replayed line we already hold (ACP reattach). Each persisted line
+        # suppresses at most one arrival, so a legitimate later repeat survives.
+        {:noreply, %{state | replay_dedup: MapSet.delete(state.replay_dedup, data)}}
+
+      stream == "acp" and is_nil(state.current_turn) ->
+        state = open_autonomous_turn(state)
+        {:noreply, persist_acp_lines(state, stream, data)}
+
+      stream == "acp" and autonomous_turn?(state) ->
+        state = arm_autonomous_quiet(state)
+        {:noreply, persist_acp_lines(state, stream, data)}
+
+      true ->
+        {:noreply, persist_acp_lines(state, stream, data)}
     end
   end
+
+  # The adapter marked the end of a background cycle (#817). The turn it
+  # opened closes here; a `cycle_end` with no autonomous turn open (its
+  # updates never reached us) is nothing to close.
+  def handle_info({:acp, ref, {:cycle_end, kind}}, %{current_command_ref: ref} = state) do
+    if autonomous_turn?(state) do
+      {:noreply,
+       finish_acp_turn(state, "completed", %{"origin" => kind}, %{
+         origin: "autonomous",
+         cycle: kind
+       })}
+    else
+      {:noreply, state}
+    end
+  end
+
+  # No `cycle_end` came. Close the autonomous turn as completed — the updates
+  # it collected are real — and say why.
+  def handle_info({:autonomous_quiet, turn_id}, %{current_turn: %{id: turn_id}} = state) do
+    if autonomous_turn?(state) do
+      {:noreply,
+       finish_acp_turn(state, "completed", %{"origin" => "quiet"}, %{
+         origin: "autonomous",
+         cycle: "quiet"
+       })}
+    else
+      {:noreply, state}
+    end
+  end
+
+  def handle_info({:autonomous_quiet, _turn_id}, state), do: {:noreply, state}
 
   # The runtime refused the agent's model. Published as a stage event so it
   # reaches every surface — the conversation view, the API, the CLI and an
@@ -1706,6 +1811,10 @@ defmodule Fountain.Conversations.ConversationServer do
         {:acp, ref, {:permission_ask, request_id, tool, options}},
         %{current_command_ref: ref} = state
       ) do
+    # An agent blocked mid-cycle asks out of turn (#817): the request needs a
+    # turn row to live on, exactly as an out-of-turn update does.
+    state = if is_nil(state.current_turn), do: open_autonomous_turn(state), else: state
+
     pending = %{
       "request_id" => request_id,
       "tool" => tool,
@@ -1849,14 +1958,13 @@ defmodule Fountain.Conversations.ConversationServer do
       end
 
     {:noreply,
-     finish_acp_turn(
-       state,
+     state
+     |> finish_acp_turn(
        "failed",
        %{"error" => message, "acp.oauth_org_not_allowed" => true},
-       %{
-         reason: message
-       }
-     )}
+       %{reason: message}
+     )
+     |> drop_connection("failed")}
   end
 
   # #970: the provider refused the model, so this turn and every later one on
@@ -1886,18 +1994,28 @@ defmodule Fountain.Conversations.ConversationServer do
     message = model_unavailable_message(requested, detail)
 
     {:noreply,
-     finish_acp_turn(state, "failed", %{"error" => message, "acp.model_unavailable" => true}, %{
+     state
+     |> finish_acp_turn("failed", %{"error" => message, "acp.model_unavailable" => true}, %{
        reason: message
-     })}
+     })
+     |> drop_connection("failed")}
   end
 
+  # A failed peer is not reusable: end the turn it was driving (if any) and
+  # drop the connection, so the next prompt spawns a fresh adapter.
   def handle_info({:acp, ref, {:failed, reason}}, %{current_command_ref: ref} = state) do
     Logger.error("conv #{state.conversation_id}: acp peer failed: #{inspect(reason)}")
 
-    {:noreply,
-     finish_acp_turn(state, "failed", %{"error" => inspect(reason)}, %{
-       reason: "acp: #{inspect(reason)}"
-     })}
+    state =
+      if state.current_turn do
+        finish_acp_turn(state, "failed", %{"error" => inspect(reason)}, %{
+          reason: "acp: #{inspect(reason)}"
+        })
+      else
+        state
+      end
+
+    {:noreply, drop_connection(state, "failed")}
   end
 
   # A report from a superseded turn's peer. The turn it belonged to is already
@@ -1920,8 +2038,23 @@ defmodule Fountain.Conversations.ConversationServer do
      })}
   end
 
-  def handle_info({:DOWN, mon, :process, _pid, _reason}, %{acp_peer_mon: mon} = state) do
-    {:noreply, %{state | acp_peer: nil, acp_peer_mon: nil}}
+  # The peer died between turns (#817): a lost connection, not a failed
+  # turn. Say so on the transcript, let the adapter go, and let the next
+  # prompt spawn a fresh one (`mode: :continue` → `session/resume`).
+  def handle_info({:DOWN, mon, :process, _pid, reason}, %{acp_peer_mon: mon} = state) do
+    Logger.warning("conv #{state.conversation_id}: idle acp peer down: #{inspect(reason)}")
+    state = %{state | acp_peer: nil, acp_peer_mon: nil}
+    {:noreply, drop_connection(state, "peer_down")}
+  end
+
+  # The adapter exited between turns (#817): the connection is gone, no turn
+  # is. Record it and clear the connection; the next prompt spawns afresh.
+  def handle_info(
+        {:exit, %{ref: ref}, code},
+        %{current_command_ref: ref, current_turn: nil} = state
+      ) do
+    Logger.info("conv #{state.conversation_id}: idle acp adapter exited #{code}")
+    {:noreply, connection_lost(state, "adapter_exited", %{exit_code: code})}
   end
 
   def handle_info({:exit, %{ref: ref}, code}, %{current_command_ref: ref} = state) do
@@ -1982,6 +2115,15 @@ defmodule Fountain.Conversations.ConversationServer do
   # :busy}, idle reclaim was suppressed (busy? true), the reaper skipped the
   # sandbox (server alive), and the sprite billed until max_lifetime. Fail
   # the turn and return to idle, exactly like a non-zero :exit.
+  def handle_info(
+        {:error, %{ref: ref}, reason},
+        %{current_command_ref: ref, current_turn: nil} = state
+      )
+      when not is_nil(ref) do
+    Logger.warning("sprite command error between turns: #{inspect(reason)} — connection lost")
+    {:noreply, connection_lost(state, "transport_error", %{reason: inspect(reason)})}
+  end
+
   def handle_info({:error, %{ref: ref}, reason}, %{current_command_ref: ref} = state)
       when not is_nil(ref) do
     Logger.error("sprite command error mid-turn: #{inspect(reason)} — failing the turn")
@@ -2051,7 +2193,9 @@ defmodule Fountain.Conversations.ConversationServer do
         {:noreply, state}
 
       true ->
-        case Lifecycle.check(started_at, state.last_activity_at, state.current_command != nil) do
+        # Busy is a turn in flight, autonomous ones included (#817) — an idle
+        # adapter between turns is not a reason to hold the sandbox open.
+        case Lifecycle.check(started_at, state.last_activity_at, state.current_turn != nil) do
           {:expired, reason} -> reclaim_sandbox(state, reason)
           :ok -> {:noreply, state}
         end
@@ -2230,6 +2374,9 @@ defmodule Fountain.Conversations.ConversationServer do
         "(sprite #{inspect(state.handle && state.handle.name)})"
     )
 
+    # A parked sprite never keeps a live adapter (#817).
+    state = drop_connection(state, "suspended")
+
     if state.sandbox_id do
       sandbox = Conversations._unsafe_get_sandbox!(state.sandbox_id)
 
@@ -2287,6 +2434,8 @@ defmodule Fountain.Conversations.ConversationServer do
       "reclaiming sandbox for conv #{state.conversation_id}: #{reason} " <>
         "(sprite #{inspect(state.handle && state.handle.name)})"
     )
+
+    state = drop_connection(state, "reclaimed")
 
     if state.handle, do: _ = Fountain.Sandbox.destroy(state.handle)
 
@@ -2612,7 +2761,12 @@ defmodule Fountain.Conversations.ConversationServer do
   # the other reason stdin stays open on the ACP path.
   defp interrupt_turn(state) do
     if state.acp_peer, do: Fountain.Runtimes.ACP.Peer.cancel(state.acp_peer)
+    # EOF before the handle goes: a detachable session survives its client
+    # disconnecting, so closing the WebSocket alone would leave the adapter —
+    # and whatever background task it was running — alive on the machine.
+    if state.current_command, do: Fountain.Sandbox.close_stdin(state.current_command)
     if state.current_command, do: Fountain.Sandbox.stop_command(state.current_command)
+    state = cancel_autonomous_quiet(state)
 
     {:ok, _turn} =
       Conversations._unsafe_update_turn(state.current_turn, %{
@@ -2704,8 +2858,6 @@ defmodule Fountain.Conversations.ConversationServer do
   end
 
   defp run_turn(state, conv, turn, prompt, agent, images) do
-    turn_number = turn.turn_number
-
     # Store images. A rejected image must not take the turn down with it: this
     # used to hard-match {:ok, _}, which is why validation could not be added to
     # the insert path without crashing the server mid-turn.
@@ -2749,6 +2901,20 @@ defmodule Fountain.Conversations.ConversationServer do
     # outlives its agent (deletion nilifies agent_id), and for a supported
     # runtime the legacy spawn path no longer exists to fall back to.
     acp? = Fountain.Runtimes.ACP.enabled?(conv.runtime)
+
+    # The connection outlives the turn (#817). If a peer from an earlier turn
+    # is still idle on this machine, this turn rides it — no spawn, no
+    # handshake, no `session/resume`, no model pin — so a background task it
+    # left running keeps running and codex's session grant survives.
+    if acp? and connection_alive?(state) do
+      resume_acp_connection(state, conv, turn, prompt, images)
+    else
+      run_fresh_turn(state, conv, turn, prompt, agent, images, acp?)
+    end
+  end
+
+  defp run_fresh_turn(state, conv, turn, prompt, agent, images, acp?) do
+    turn_number = turn.turn_number
 
     # Write image temp files to sprite. Only on the legacy path: ACP carries
     # images as content blocks inside `session/prompt`, so writing them into
@@ -2844,22 +3010,7 @@ defmodule Fountain.Conversations.ConversationServer do
     # so we open it explicitly and store the span context in state to
     # close it later. While this span is current, build_sprite_env
     # picks up the trace context as TRACEPARENT for the runtime CLI.
-    turn_span =
-      OpenTelemetry.Tracer.start_span("fountain.turn", %{
-        attributes: %{
-          "conv_id" => conv.id,
-          "turn_id" => turn.id,
-          "turn_number" => turn_number,
-          "mode" => Atom.to_string(mode),
-          "runtime" => to_string(conv.runtime),
-          "model" => agent && agent.model,
-          "agent_id" => agent && agent.id,
-          "user_id" => state.user_id,
-          "prompt_length" => byte_size(prompt),
-          "image_count" => length(images)
-        }
-      })
-
+    turn_span = open_turn_span(state, conv, turn, mode, agent)
     previous_span = OpenTelemetry.Tracer.set_current_span(turn_span)
 
     # Tag the detachable session with this conversation, on its own command
@@ -3273,6 +3424,26 @@ defmodule Fountain.Conversations.ConversationServer do
   defp finalize_tracer(nil), do: :ok
   defp finalize_tracer(tracer), do: Fountain.Runtimes.ACP.Tracer.finalize(tracer)
 
+  # The turn's OTel span. Opened explicitly (not via Telemetry.span) because a
+  # turn finishes asynchronously, in a later handler; the context is carried in
+  # state and closed there. `mode` is `:run` | `:continue` | `:autonomous`.
+  defp open_turn_span(state, conv, turn, mode, agent) do
+    OpenTelemetry.Tracer.start_span("fountain.turn", %{
+      attributes: %{
+        "conv_id" => conv.id,
+        "turn_id" => turn.id,
+        "turn_number" => turn.turn_number,
+        "mode" => Atom.to_string(mode),
+        "runtime" => to_string(conv.runtime),
+        "model" => agent && agent.model,
+        "agent_id" => agent && agent.id,
+        "user_id" => state.user_id,
+        "prompt_length" => byte_size(turn.prompt),
+        "image_count" => 0
+      }
+    })
+  end
+
   # gemini erases a session in the act of loading it (#659), so its store is
   # consolidated at the end of every turn — before the next turn's
   # `session/load` can collide with it. Best-effort and gemini-only; delete
@@ -3289,16 +3460,17 @@ defmodule Fountain.Conversations.ConversationServer do
 
   defp consolidate_gemini_session(_state), do: :ok
 
+  # End a turn, and only a turn (#817). The connection — `current_command`,
+  # `current_command_ref`, `acp_peer` — is left alive and idle for the next
+  # `prompt/3`; what is cleared here is the turn's own bookkeeping. The
+  # connection is closed elsewhere, by `drop_connection/2`, when the sandbox
+  # stops being this server's.
   defp finish_acp_turn(state, status, span_attrs, stage_meta) do
-    # Resolve a held permission request before the peer goes away (#940). The
-    # agent's blocked request dies with the process either way, but a card left
-    # open is a client waiting on an answer that can never arrive, and the
+    # Resolve a held permission request as the turn ends (#940): a card left
+    # open is a client waiting on an answer that can never come, and the
     # turn's `pending_permission` would stay set on a turn that is over.
     state = resolve_pending_permission(state, "turn_ended")
-
-    if state.current_command, do: Fountain.Sandbox.close_stdin(state.current_command)
-    stop_acp_peer(state)
-    consolidate_gemini_session(state)
+    state = cancel_autonomous_quiet(state)
 
     # Before the turn span ends: totals land on it, abandoned tool spans close.
     finalize_tracer(state.stream_tracer)
@@ -3329,15 +3501,195 @@ defmodule Fountain.Conversations.ConversationServer do
 
     %{
       touch_activity(state)
-      | current_command: nil,
-        current_command_ref: nil,
-        current_turn: nil,
+      | current_turn: nil,
         current_turn_span: nil,
         turn_metrics: nil,
-        stream_tracer: nil,
+        stream_tracer: nil
+    }
+  end
+
+  # ── the connection (#817) ─────────────────────────────────────────────────
+
+  # Whether an idle peer from an earlier turn is still driving this machine.
+  defp connection_alive?(%{acp_peer: peer}) when is_pid(peer), do: Process.alive?(peer)
+  defp connection_alive?(_state), do: false
+
+  defp user_turn_running?(%{current_turn: %{origin: "autonomous"}}), do: false
+  defp user_turn_running?(%{current_turn: turn}), do: not is_nil(turn)
+
+  defp autonomous_turn?(%{current_turn: %{origin: "autonomous"}}), do: true
+  defp autonomous_turn?(_state), do: false
+
+  # This turn rides the open connection: no spawn, no handshake. `Peer.prompt/3`
+  # reuses the session already open, so a background task keeps running and the
+  # runtime's per-session grants survive (#817).
+  defp resume_acp_connection(state, conv, turn, prompt, images) do
+    turn_span = open_turn_span(state, conv, turn, :continue, agent_for(conv))
+    previous_span = OpenTelemetry.Tracer.set_current_span(turn_span)
+
+    publish_stage(state.conversation_id, "turn", "started", %{
+      turn_id: turn.id,
+      turn_number: turn.turn_number,
+      mode: "continue",
+      connection: "reused"
+    })
+
+    started_mono = System.monotonic_time(:millisecond)
+
+    case Fountain.Runtimes.ACP.Peer.prompt(state.acp_peer, prompt, images) do
+      :ok ->
+        OpenTelemetry.Tracer.set_current_span(previous_span)
+
+        %{
+          touch_activity(state)
+          | current_turn: turn,
+            current_turn_span: turn_span,
+            turn_metrics: %{
+              started_mono: started_mono,
+              runtime: conv.runtime,
+              first_output?: false
+            },
+            stream_tracer: Fountain.Runtimes.ACP.Tracer.new(turn_span)
+        }
+
+      {:error, reason} ->
+        # The idle peer would not take the prompt (it died between the check
+        # and the call, or is wedged). Drop it and spawn fresh — the turn row
+        # already exists, so run the fresh path against it.
+        Logger.warning(
+          "conv #{state.conversation_id}: idle peer refused prompt (#{inspect(reason)}); respawning"
+        )
+
+        OpenTelemetry.Tracer.set_current_span(previous_span)
+        end_turn_span(turn_span, :error, %{"error" => "peer_refused_reuse"})
+        state = drop_connection(state, "peer_refused_reuse")
+        run_fresh_turn(state, conv, turn, prompt, agent_for(conv), images, true)
+    end
+  end
+
+  # Close the ACP connection: EOF the adapter so it exits (a detachable
+  # session outlives its client, so closing the socket alone leaves it and any
+  # background task running), consolidate gemini's store before the next
+  # `session/load` can collide, stop the peer, and clear the connection
+  # fields. An autonomous turn still open is completed first — its updates are
+  # real. Safe on a server with no connection.
+  defp drop_connection(%{acp_peer: nil, current_command: nil} = state, _why), do: state
+
+  defp drop_connection(state, why) do
+    state =
+      if autonomous_turn?(state) do
+        finish_acp_turn(state, "completed", %{"origin" => "connection_closed"}, %{
+          origin: "autonomous",
+          cycle: "connection_closed"
+        })
+      else
+        state
+      end
+
+    state = cancel_autonomous_quiet(state)
+    if state.current_command, do: Fountain.Sandbox.close_stdin(state.current_command)
+    consolidate_gemini_session(state)
+    stop_acp_peer(state)
+    if state.current_command, do: Fountain.Sandbox.stop_command(state.current_command)
+
+    _ = why
+
+    %{
+      state
+      | current_command: nil,
+        current_command_ref: nil,
         acp_peer: nil,
         acp_peer_mon: nil
     }
+  end
+
+  # The adapter went away between turns with no turn to fail (#817). Record it
+  # on the transcript and clear the connection; the next prompt spawns fresh.
+  defp connection_lost(state, reason, meta) do
+    publish_stage(
+      state.conversation_id,
+      "sandbox",
+      "done",
+      Map.merge(%{event: "connection_lost", reason: reason}, meta)
+    )
+
+    state = cancel_autonomous_quiet(state)
+    consolidate_gemini_session(state)
+
+    %{
+      state
+      | current_command: nil,
+        current_command_ref: nil,
+        acp_peer: nil,
+        acp_peer_mon: nil
+    }
+  end
+
+  # An out-of-turn protocol line opened a background cycle (#817). A real turn
+  # row so the log budget, redaction and stage events all apply; `origin:
+  # "autonomous"` and a marker prompt tell it from a user turn.
+  defp open_autonomous_turn(state) do
+    conv = Conversations._unsafe_get_conversation!(state.conversation_id)
+    turn_number = Conversations._unsafe_next_turn_number(state.conversation_id)
+
+    {:ok, turn} =
+      Conversations._unsafe_create_turn(%{
+        conversation_id: conv.id,
+        turn_number: turn_number,
+        prompt: "(background task follow-up)",
+        origin: "autonomous",
+        status: "running",
+        started_at: now()
+      })
+
+    turn_span = open_turn_span(state, conv, turn, :autonomous, agent_for(conv))
+
+    publish_stage(state.conversation_id, "turn", "started", %{
+      turn_id: turn.id,
+      turn_number: turn_number,
+      origin: "autonomous"
+    })
+
+    {:ok, _} = Conversations.update_conversation(conv, %{status: "running"})
+
+    arm_autonomous_quiet(%{
+      touch_activity(state)
+      | current_turn: turn,
+        current_turn_span: turn_span,
+        turn_metrics: nil,
+        stream_tracer: Fountain.Runtimes.ACP.Tracer.new(turn_span)
+    })
+  end
+
+  defp close_autonomous_turn(state, why) do
+    if autonomous_turn?(state) do
+      finish_acp_turn(state, "completed", %{"origin" => why}, %{origin: "autonomous", cycle: why})
+    else
+      state
+    end
+  end
+
+  defp arm_autonomous_quiet(state) do
+    state = cancel_autonomous_quiet(state)
+    turn_id = state.current_turn && state.current_turn.id
+
+    timer =
+      if turn_id do
+        Process.send_after(self(), {:autonomous_quiet, turn_id}, autonomous_quiet_ms())
+      end
+
+    %{state | autonomous_quiet: timer}
+  end
+
+  defp cancel_autonomous_quiet(%{autonomous_quiet: nil} = state), do: state
+
+  defp cancel_autonomous_quiet(%{autonomous_quiet: timer} = state) do
+    Process.cancel_timer(timer)
+    %{state | autonomous_quiet: nil}
+  end
+
+  defp autonomous_quiet_ms do
+    Application.get_env(:fountain, :autonomous_turn_quiet_ms, @autonomous_quiet_ms)
   end
 
   # Demonitor before stopping so the peer's own exit does not arrive as a

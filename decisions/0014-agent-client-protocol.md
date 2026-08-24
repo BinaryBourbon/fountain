@@ -8,7 +8,7 @@ adr: "0014"
 adr_status: "Accepted"
 date: 2026-08-09
 generated: { by: human:jhgaylor, at: 2026-08-22T04:44:07-04:00 }
-verified: { by: human:jhgaylor, at: 2026-08-22T04:44:07-04:00 }
+verified: { by: human:jhgaylor, at: 2026-08-24T00:00:00-04:00 }
 ---
 
 # 0014 — Speaking the Agent Client Protocol to runtimes
@@ -208,6 +208,48 @@ Nothing in ACP requires a connection to outlive a turn. So:
 > exactly one `session/prompt`, take the `stopReason`, close. Nothing is
 > attached between turns. `SandboxReaper`, the rehydrator and `Lifecycle` are
 > untouched by this ADR.
+
+> **Amendment, 2026-08-24 (#817). The connection is scoped to the sandbox
+> wake, not the turn.** The rule above is superseded. Closing the connection
+> at every `end_turn` was measured to cost two things the turn-scoped model
+> could not give back: it killed everything Claude Code left running in the
+> background — a `Monitor`, a `run_in_background` shell, a `ScheduleWakeup` —
+> because the adapter treats the connection as the session and disposes on
+> `connection.closed`; and it threw away codex's "Allow for Session" grant,
+> which lives in the runtime process (both measured on prod 2026-08-22, in the
+> addenda below). ACP also delivers a background task's follow-up as an
+> out-of-turn `session/update`, which a client that stops reading at the
+> prompt response never sees.
+>
+> So the peer now outlives its prompt (`Peer` #1080): after the response it
+> reports `{:done, …}` and waits in `:idle` for the next `prompt/3` on the
+> same session — no second `initialize`, `session/resume` or model pin. The
+> `ConversationServer` (#817 PR 3) keeps the peer across turns and closes it
+> only when the sandbox stops being its own: idle park, ceiling reclaim,
+> terminate, release, `{:machine_gone, …}`, shutdown. A `session/update` that
+> arrives with no turn open is a background cycle; the server opens an
+> **autonomous turn** for it (`turns.origin = "autonomous"`, #1083), a real
+> turn row so the log budget, redaction and stage events apply, closed on the
+> adapter's origin-marked `usage_update` (`{:cycle_end, kind}`) or after a
+> quiet period so an older CLI cannot hold one open forever.
+>
+> **The cost rule still holds, and is what keeps this bounded.** No ACP state
+> may become a reason to keep a sandbox alive. `Lifecycle`'s `busy?` reads the
+> *turn*, not the connection, so an idle peer between turns does not defer idle
+> reclaim; a live background cycle is a turn and does. When the sandbox is
+> parked or reclaimed the connection is closed first, so a parked sprite never
+> holds a live adapter. This is the "scoped to the sandbox's own idle window"
+> form the rule below already permitted — bounded by `Lifecycle` — not the
+> out-of-bounds session-scoped form.
+>
+> **What #817 keeps out of scope.** A background cycle in flight across a
+> deploy is still lost: the reattaching server finds no running turn and reaps
+> the orphaned adapter session — now **by the conversation's tag**
+> (`FOUNTAIN_CONVERSATION_ID`, #1058), never the head of the session list, so
+> a co-tenant's live turn on a shared machine (ADR 0023) is untouched.
+> Adopting a live idle session across a deploy needs a peer that joins an
+> adapter it never handshook with and cannot know which JSON-RPC ids the dead
+> peer burned; that is not v1.
 
 That is the shape we already run, with the protocol swapped in underneath it:
 

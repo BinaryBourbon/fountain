@@ -92,16 +92,17 @@ decides how long its own grant lasts, and the three runtimes disagree.
 | Runtime | How long an "always" answer lasts |
 |---|---|
 | claude | It writes a rule to a file in the sandbox. The rule holds for later turns. |
-| codex | `Allow for Session` lasts one turn. The option that amends the command policy goes to a file, and it holds. |
+| codex | `Allow for Session` lasts the whole sandbox wake (#817). The option that amends the command policy goes to a file, and it holds. |
 | opencode | This runtime never asks, so it grants nothing. |
 
 Every grant lives inside the sandbox. A new sandbox starts with none of them.
 
 Two limits are open work.
 
-- codex loses a session grant at the end of each turn. Fountain opens one
-  protocol connection per turn, and the grant lives in the runtime process.
-  See [#817](https://github.com/BinaryBourbon/fountain/issues/817) and
+- codex keeps a session grant across turns now. The protocol connection lives
+  for the sandbox wake, not one turn, so the grant in the runtime process
+  survives (#817). A grant is still lost when the sandbox parks or the
+  conversation ends. See
   [#996](https://github.com/BinaryBourbon/fountain/issues/996).
 - claude asks again for a command that writes outside the directory where it
   runs.

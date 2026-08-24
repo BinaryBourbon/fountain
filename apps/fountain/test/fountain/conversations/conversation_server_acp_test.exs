@@ -305,7 +305,11 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
       assert %{usage_input_tokens: 0} = Conversations._unsafe_get_conversation!(conv.id)
     end
 
-    test "the stop reason ends the turn and closes stdin", %{conv: conv, pid: pid, ref: ref} do
+    test "the stop reason ends the turn but leaves the connection open (#817)", %{
+      conv: conv,
+      pid: pid,
+      ref: ref
+    } do
       prompt_id = drive_to_prompt(pid, ref)
 
       reply(pid, ref, prompt_id, %{"stopReason" => "end_turn"})
@@ -315,8 +319,75 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
       refute is_nil(turn.ended_at)
       assert Conversations._unsafe_get_conversation!(conv.id).status == "idle"
 
-      # Closing stdin is what makes the adapter exit.
-      assert_receive :stdin_closed
+      # The connection outlives the turn: stdin is NOT closed, the peer is
+      # idle, and the command is still ours — a background task the agent
+      # left running keeps running.
+      refute_receive :stdin_closed, 100
+      state = :sys.get_state(pid)
+      assert is_pid(state.acp_peer)
+      refute is_nil(state.current_command)
+      assert is_nil(state.current_turn)
+    end
+
+    test "a second prompt reuses the connection — no handshake (#817)", %{
+      conv: conv,
+      pid: pid,
+      ref: ref
+    } do
+      prompt_id = drive_to_prompt(pid, ref)
+      reply(pid, ref, prompt_id, %{"stopReason" => "end_turn"})
+
+      assert :ok = GenServer.call(pid, {:send_prompt, "again", []})
+
+      # The very next thing on the wire is session/prompt on the open session:
+      # no initialize, no session/new, no session/resume.
+      assert %{"method" => "session/prompt"} = next_write()
+      assert length(Conversations._unsafe_list_turns(conv.id)) == 2
+    end
+
+    test "an out-of-turn update opens an autonomous turn; cycle_end closes it (#817)", %{
+      conv: conv,
+      pid: pid,
+      ref: ref
+    } do
+      prompt_id = drive_to_prompt(pid, ref)
+      reply(pid, ref, prompt_id, %{"stopReason" => "end_turn"})
+      assert is_nil(:sys.get_state(pid).current_turn)
+
+      # The agent's background task comes back and narrates, out of turn.
+      notify(pid, ref, %{"sessionUpdate" => "agent_message_chunk", "text" => "CI passed"})
+
+      autonomous = :sys.get_state(pid).current_turn
+      assert autonomous.origin == "autonomous"
+      assert Conversations._unsafe_get_conversation!(conv.id).status == "running"
+
+      # A usage_update carrying an autonomous origin ends the cycle.
+      notify(pid, ref, %{
+        "sessionUpdate" => "usage_update",
+        "_meta" => %{"_claude/origin" => %{"kind" => "task-notification"}}
+      })
+
+      assert is_nil(:sys.get_state(pid).current_turn)
+      assert Conversations._unsafe_get_conversation!(conv.id).status == "idle"
+
+      turns = Conversations._unsafe_list_turns(conv.id)
+      assert Enum.any?(turns, &(&1.origin == "autonomous" and &1.status == "completed"))
+    end
+
+    test "terminating the conversation closes the connection (#817)", %{
+      conv: conv,
+      pid: pid,
+      ref: ref
+    } do
+      prompt_id = drive_to_prompt(pid, ref)
+      reply(pid, ref, prompt_id, %{"stopReason" => "end_turn"})
+      assert is_pid(:sys.get_state(pid).acp_peer)
+
+      assert :ok = GenServer.call(pid, :terminate_conv)
+
+      # The adapter is EOF'd so it exits rather than lingering on the machine.
+      assert_receive :stdin_closed, 1_000
+      assert Conversations._unsafe_get_conversation!(conv.id).status == "terminated"
     end
 
     test "the process exit that follows is a no-op, not a second ending", %{
@@ -862,10 +933,14 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
 
       reply(pid, ref, 4, %{"stopReason" => "end_turn"})
 
-      assert_receive :stdin_closed, 1_000
+      settle(pid)
+      # The turn ends; the reattached connection stays open for the next one
+      # (#817), so stdin is not closed and the command is still ours.
+      refute_receive :stdin_closed, 100
       assert Fountain.Repo.reload!(turn).status == "completed"
       assert Conversations._unsafe_get_conversation!(conv.id).status == "idle"
-      assert :sys.get_state(pid).current_command == nil
+      refute :sys.get_state(pid).current_command == nil
+      assert is_pid(:sys.get_state(pid).acp_peer)
     end
 
     test "replayed lines already persisted are not written twice; new ones are", %{} do

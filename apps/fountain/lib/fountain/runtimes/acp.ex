@@ -5,7 +5,8 @@ defmodule Fountain.Runtimes.ACP do
   Gate 2 of [0014](decisions/0014-agent-client-protocol.md). This module is the
   *provisioning* side of the ACP path — which adapter, which version, how it
   gets into the sprite — and it deliberately holds no protocol state. The
-  session lives in `Fountain.Runtimes.ACP.Peer`, for one turn, and dies with it.
+  session lives in `Fountain.Runtimes.ACP.Peer`, which outlives the turn and
+  is closed when the sandbox wake ends (#817).
 
   ## The only path
 
