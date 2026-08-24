@@ -1,0 +1,201 @@
+defmodule Fountain.Conversations.ConversationServerIdentityTest do
+  # Per-process identity (ADR 0023 gate 1): the conversation a process belongs
+  # to travels with the process, never with the disk. The shared env file
+  # carries environment and vault values only; the callback token and the
+  # conversation id reach the adapter as process env; and the detachable
+  # session is tagged so a reattach after a deploy binds to *this*
+  # conversation's process rather than the head of the sandbox's list.
+  use Fountain.ConversationServerCase
+
+  alias Fountain.Sandbox.Session
+
+  setup do
+    user = insert_verified_user()
+    env = insert_env(user_id: user.id, env_vars: %{"FROM_ENVIRONMENT" => "yes"})
+    agent = insert_agent(user_id: user.id, runtime: "claude", environment_id: env.id)
+    {:ok, user: user, agent: agent, env: env}
+  end
+
+  defp stub_turn_boundary do
+    test = self()
+    ref = make_ref()
+
+    Mimic.stub(Fountain.Sandbox.Sprites, :spawn, fn _h, cmd, args, opts ->
+      send(test, {:spawned, cmd, args, opts})
+      {:ok, %Fountain.Sandbox.Command{provider: :sprites, ref: ref}}
+    end)
+
+    Mimic.stub(Fountain.Sandbox.Sprites, :write_stdin, fn _c, _data -> :ok end)
+    Mimic.stub(Fountain.Sandbox.Sprites, :close_stdin, fn _c -> :ok end)
+    Mimic.stub(Fountain.Sandbox.Sprites, :stop_command, fn _c -> :ok end)
+    ref
+  end
+
+  describe "a fresh provision" do
+    test "keeps the identity off the disk and on the process", %{user: user, agent: agent} do
+      conv = insert_conversation(user_id: user.id, agent: agent)
+      test = self()
+
+      stub_happy_sprite()
+      _ref = stub_turn_boundary()
+
+      Mimic.stub(Fountain.Conversations.Provisioning, :write_env_file, fn _h, env ->
+        send(test, {:env_file, env})
+        :ok
+      end)
+
+      {pid, _mon, :alive} = start_server(conv, initial_prompt: "hello")
+      on_exit(fn -> if Process.alive?(pid), do: GenServer.stop(pid) end)
+
+      assert_receive {:env_file, file_env}, 2_000
+      file_keys = Enum.map(file_env, fn {k, _} -> k end)
+
+      # The file is the machine's: environment values, no conversation.
+      assert "FROM_ENVIRONMENT" in file_keys
+      refute "FOUNTAIN_TOKEN" in file_keys
+      refute "FOUNTAIN_CONVERSATION_ID" in file_keys
+      refute "TRACEPARENT" in file_keys
+
+      # The process is the conversation's: identity as env, and the session
+      # tagged on its own command line.
+      assert_receive {:spawned, cmd, args, opts}, 2_000
+      spawn_env = Keyword.fetch!(opts, :env)
+      assert {"FOUNTAIN_CONVERSATION_ID", conv.id} in spawn_env
+      assert Enum.any?(spawn_env, &match?({"FOUNTAIN_TOKEN", token} when is_binary(token), &1))
+      assert {"FROM_ENVIRONMENT", "yes"} in spawn_env
+
+      assert cmd == "env"
+      assert ["FOUNTAIN_CONVERSATION_ID=" <> tag, "claude-agent-acp" | _] = args
+      assert tag == conv.id
+    end
+  end
+
+  describe "a reattach after a deploy" do
+    # A `ready` sandbox with a `running` ACP turn is what a server finds after
+    # a restart. The prompt id makes the attach a real one (#772).
+    defp reattach_fixture(%{user: user, agent: agent}) do
+      sandbox = insert_sandbox(user_id: user.id, status: "ready")
+
+      conv =
+        insert_conversation(
+          agent: agent,
+          user_id: user.id,
+          sandbox: sandbox,
+          status: "running",
+          runtime_session_id: "sess_live"
+        )
+
+      turn =
+        insert_turn(conv, %{
+          status: "running",
+          prompt: "long task",
+          started_at: DateTime.utc_now() |> DateTime.truncate(:second),
+          acp_prompt_id: 4
+        })
+
+      {conv, turn}
+    end
+
+    defp tagged(id, conv_id) do
+      %Session{id: id, command: "env FOUNTAIN_CONVERSATION_ID=#{conv_id} claude-agent-acp"}
+    end
+
+    defp reattach_outcomes(conv_id) do
+      conv_id
+      |> Conversations._unsafe_list_log_events()
+      |> Enum.filter(&(&1.kind == "stage" and &1.stage == "reattach"))
+      |> Enum.map(&Jason.decode!(&1.data))
+    end
+
+    test "binds to the session tagged with this conversation, not the head", ctx do
+      {conv, _turn} = reattach_fixture(ctx)
+
+      other_conv =
+        insert_conversation(user_id: ctx.user.id, agent: ctx.agent, sandbox: conv.sandbox)
+
+      stub_happy_sprite()
+      ref = stub_turn_boundary()
+      test = self()
+
+      Mimic.stub(Fountain.Sandbox.Sprites, :list_sessions, fn _h ->
+        {:ok, [tagged("theirs", other_conv.id), tagged("ours", conv.id)]}
+      end)
+
+      Mimic.stub(Fountain.Sandbox.Sprites, :attach, fn _h, id, _opts ->
+        send(test, {:attached, id})
+        {:ok, %Fountain.Sandbox.Command{provider: :sprites, ref: ref}}
+      end)
+
+      {pid, _mon, :alive} = start_server(conv)
+      on_exit(fn -> if Process.alive?(pid), do: GenServer.stop(pid) end)
+
+      assert_receive {:attached, "ours"}, 2_000
+      refute_received {:attached, "theirs"}
+      assert is_pid(:sys.get_state(pid).acp_peer)
+
+      assert Enum.any?(reattach_outcomes(conv.id), fn d ->
+               d["outcome"] == "session_attached" and d["session_id"] == "ours" and
+                 d["matched_by"] == "tag"
+             end)
+    end
+
+    test "never takes a session tagged for another conversation", ctx do
+      {conv, turn} = reattach_fixture(ctx)
+
+      other_conv =
+        insert_conversation(user_id: ctx.user.id, agent: ctx.agent, sandbox: conv.sandbox)
+
+      stub_happy_sprite()
+      _ref = stub_turn_boundary()
+      test = self()
+
+      Mimic.stub(Fountain.Sandbox.Sprites, :list_sessions, fn _h ->
+        {:ok, [tagged("theirs", other_conv.id)]}
+      end)
+
+      Mimic.stub(Fountain.Sandbox.Sprites, :attach, fn _h, id, _opts ->
+        send(test, {:attached, id})
+        {:error, :should_not_be_called}
+      end)
+
+      {pid, _mon, :alive} = start_server(conv)
+      on_exit(fn -> if Process.alive?(pid), do: GenServer.stop(pid) end)
+      _ = :sys.get_state(pid)
+
+      refute_received {:attached, _}
+      assert [%{id: turn_id, status: "interrupted"}] = Conversations._unsafe_list_turns(conv.id)
+      assert turn_id == turn.id
+      assert Conversations._unsafe_get_conversation!(conv.id).status == "idle"
+
+      assert Enum.any?(reattach_outcomes(conv.id), fn d ->
+               d["outcome"] == "turn_orphaned" and d["reason"] == "no_active_session"
+             end)
+    end
+
+    test "still binds to an untagged session from before tagging existed", ctx do
+      {conv, _turn} = reattach_fixture(ctx)
+
+      stub_happy_sprite()
+      ref = stub_turn_boundary()
+      test = self()
+
+      Mimic.stub(Fountain.Sandbox.Sprites, :list_sessions, fn _h ->
+        {:ok, [%Session{id: "legacy", command: "claude-agent-acp"}]}
+      end)
+
+      Mimic.stub(Fountain.Sandbox.Sprites, :attach, fn _h, id, _opts ->
+        send(test, {:attached, id})
+        {:ok, %Fountain.Sandbox.Command{provider: :sprites, ref: ref}}
+      end)
+
+      {pid, _mon, :alive} = start_server(conv)
+      on_exit(fn -> if Process.alive?(pid), do: GenServer.stop(pid) end)
+
+      assert_receive {:attached, "legacy"}, 2_000
+
+      assert Enum.any?(reattach_outcomes(conv.id), fn d ->
+               d["outcome"] == "session_attached" and d["matched_by"] == "untagged_head"
+             end)
+    end
+  end
+end

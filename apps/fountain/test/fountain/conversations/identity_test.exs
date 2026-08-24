@@ -1,0 +1,107 @@
+defmodule Fountain.Conversations.IdentityTest do
+  use ExUnit.Case, async: true
+
+  alias Fountain.Conversations.Identity
+  alias Fountain.Sandbox.Session
+
+  @conv "0b0f6e1a-4d4c-4c1a-9a2b-3c4d5e6f7a8b"
+  @other "ffffffff-1111-4222-8333-444444444444"
+
+  describe "disk_env/1" do
+    test "strips the per-conversation identity and keeps everything else" do
+      env = [
+        {"ANTHROPIC_API_KEY", "sk-1"},
+        {"FOUNTAIN_BASE_URL", "https://f.example"},
+        {"FOUNTAIN_TOKEN", "fk_secret"},
+        {"FOUNTAIN_CONVERSATION_ID", @conv},
+        {"TRACEPARENT", "00-abc-def-01"},
+        {"SANDBOX_URL", "https://sb.example"},
+        {"GITHUB_TOKEN", "ghp_x"}
+      ]
+
+      assert Identity.disk_env(env) == [
+               {"ANTHROPIC_API_KEY", "sk-1"},
+               {"FOUNTAIN_BASE_URL", "https://f.example"},
+               {"SANDBOX_URL", "https://sb.example"},
+               {"GITHUB_TOKEN", "ghp_x"}
+             ]
+    end
+
+    test "an empty env stays empty" do
+      assert Identity.disk_env([]) == []
+    end
+  end
+
+  describe "tag_command/3" do
+    test "wraps the command in env with the tag first" do
+      assert Identity.tag_command(@conv, "claude-agent-acp", ["--x"]) ==
+               {"env", ["FOUNTAIN_CONVERSATION_ID=#{@conv}", "claude-agent-acp", "--x"]}
+    end
+
+    test "round-trips through a provider's reported command line" do
+      {cmd, args} = Identity.tag_command(@conv, "codex-acp", [])
+      session = %Session{id: "1", command: Enum.join([cmd | args], " ")}
+      assert Identity.conversation_id(session) == @conv
+    end
+  end
+
+  describe "conversation_id/1" do
+    test "reads the tag wherever it sits on the line" do
+      assert Identity.conversation_id(%Session{
+               id: "1",
+               command: "/usr/bin/env FOUNTAIN_CONVERSATION_ID=#{@conv} gemini --acp"
+             }) == @conv
+    end
+
+    test "is nil for an untagged or absent command" do
+      assert Identity.conversation_id(%Session{id: "1", command: "claude-agent-acp"}) == nil
+      assert Identity.conversation_id(%Session{id: "1", command: nil}) == nil
+    end
+
+    test "does not match a value that is not a uuid" do
+      assert Identity.conversation_id(%Session{
+               id: "1",
+               command: "env FOUNTAIN_CONVERSATION_ID=nope claude-agent-acp"
+             }) == nil
+    end
+  end
+
+  describe "pick_session/2" do
+    defp tagged(id, conv, created \\ nil) do
+      %Session{
+        id: id,
+        command: "env FOUNTAIN_CONVERSATION_ID=#{conv} claude-agent-acp",
+        created_at: created
+      }
+    end
+
+    test "takes our tagged session over an earlier one tagged for another conversation" do
+      assert {:tagged, %Session{id: "ours"}} =
+               Identity.pick_session([tagged("theirs", @other), tagged("ours", @conv)], @conv)
+    end
+
+    test "never offers a session tagged for another conversation" do
+      assert :none = Identity.pick_session([tagged("theirs", @other)], @conv)
+    end
+
+    test "falls back to an untagged head only when nothing carries our tag" do
+      legacy = %Session{id: "legacy", command: "claude-agent-acp"}
+
+      assert {:untagged, ^legacy} =
+               Identity.pick_session([tagged("theirs", @other), legacy], @conv)
+
+      assert {:tagged, %Session{id: "ours"}} =
+               Identity.pick_session([legacy, tagged("ours", @conv)], @conv)
+    end
+
+    test "prefers the newest of several sessions tagged for us" do
+      old = tagged("old", @conv, ~U[2026-08-23 10:00:00Z])
+      new = tagged("new", @conv, ~U[2026-08-23 10:05:00Z])
+      assert {:tagged, %Session{id: "new"}} = Identity.pick_session([old, new], @conv)
+    end
+
+    test "an empty list is :none" do
+      assert :none = Identity.pick_session([], @conv)
+    end
+  end
+end

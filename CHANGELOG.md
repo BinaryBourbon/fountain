@@ -16,6 +16,22 @@ upgrade, is in
 
 ## [Unreleased]
 
+### Changed
+
+- **A conversation's identity travels with its process, not the sandbox's
+  disk.** `FOUNTAIN_TOKEN`, `FOUNTAIN_CONVERSATION_ID` and `TRACEPARENT` are
+  no longer written to `/home/sprite/.env`; they reach the agent as
+  environment on every spawn, exactly as before from the agent's point of
+  view. The runtime's detachable session is now started as
+  `env FOUNTAIN_CONVERSATION_ID=<id> <adapter> …`, and a reattach after a
+  deploy binds to the session carrying its own conversation's tag rather
+  than the head of the sandbox's session list — the prerequisite for several
+  conversations sharing one sandbox (ADR 0023, gate 1). A `setup_script`
+  that did `source .env` no longer sees the callback token; environment and
+  vault values are unaffected. The reattach stage event reports
+  `matched_by` (`tag`, or `untagged_head` for a session started before this
+  release).
+
 ### Added
 
 - **Agent config versioning with diff and rollback.** Every config change
