@@ -1,7 +1,7 @@
 ---
 type: ADR
 title: "Egress credential brokerage: the sandbox holds placeholders, the broker holds the credential"
-description: "Proposed, nothing built. Outbound HTTP credentials are attached at a forward proxy the sandbox reaches over HTTPS_PROXY, so the agent process holds only placeholders and the only host it may reach is the broker. Revised 2026-08-24 with the vendor, rollout, content-inspection and topology decisions, and with what 0023 changed underneath it."
+description: "Proposed, nothing built in the product. Outbound HTTP credentials are attached at a forward proxy the sandbox reaches over HTTPS_PROXY, so the agent process holds only placeholders and the only host it may reach is the broker. Gate 0 passed on 2026-08-24 against a real sandbox: brokered API calls and a private clone with no credential in the sandbox, cross-tenant probe refused, +258ms per request."
 tags: [security, secrets, sandbox, egress, governance]
 status: draft
 adr: "0019"
@@ -24,7 +24,15 @@ answered: the vendor (§8), whether brokering is a tenant-facing option (§9),
 whether the broker may read request bodies (§10), and where it runs (§11). The
 production numbers are refreshed below, and a new Context subsection records
 what [0023](0023-persistent-agent-sandbox.md) — which shipped on 2026-08-24,
-after this draft — changed underneath it. Still nothing is built.
+after this draft — changed underneath it.
+
+**Gate 0 passed on 2026-08-24**, against a real Sprites sandbox provisioned by
+production Fountain. What it proved, what it cost and what it found is in
+*Gates* below; nothing in the product changed, so the rest of this ADR still
+describes behaviour that is not built. The spike ran entirely on configuration
+already available to a tenant — an environment, a `limited` network policy and
+a setup script — which is why it needed no code and why its results are about
+the mechanism rather than about our implementation of it.
 
 Every code reference and every number below was re-checked against `main` and
 against production on 2026-08-24. The frontmatter carries no `verified` stamp
@@ -410,12 +418,20 @@ Three things follow that gate 0 has to hold, not hope:
   session for tenant A, ask for tenant B's vault, require a refusal.
 - **The proxy port has to be reachable from third-party sandboxes**, and Agent
   Vault's own guidance is to keep it on a trusted or private network. Our
-  sandboxes run on Sprites, E2B and Daytona, so it goes behind the existing
-  Cloudflare tunnel on its own hostname, authenticated per session, with the
-  management port (14321) not exposed at all.
+  sandboxes run on Sprites, E2B and Daytona, so it needs a public address.
+  **Not the Cloudflare tunnel** — that was this ADR's first answer and gate 0
+  disproved it: an HTTP forward proxy speaks `CONNECT`, which the tunnel does
+  not forward. What works, and is what the spike ran on, is a Traefik
+  `IngressRouteTCP` matching `HostSNI` with TLS terminated at Traefik on the
+  existing `websecure` entrypoint, forwarding plain TCP to the proxy. The
+  sandbox then uses an *HTTPS* proxy (`https://…@host:443`), so the hop that
+  carries the session token is encrypted rather than clear. The management
+  port (14321) is not exposed at all.
 - **We cannot co-locate with the sandbox**, which is the deployment Agent Vault
-  recommends for latency. Every brokered request is sandbox → us → origin
-  across the public internet. That is the number gate 0 measures, and the
+  recommends for latency. Measured at gate 0: **+258 ms per request** —
+  0.356s brokered against 0.098s direct from a control sandbox, with about
+  150 ms of that being the sandbox-to-broker leg alone. That is the price of
+  the broker living in one place and the sandboxes living in another, and the
   self-hosted runner ([0022](0022-self-hosted-runner-provider.md)) is the one
   topology where co-location is available.
 
@@ -475,29 +491,63 @@ found defect rather than a missing feature.
 
 ## Gates
 
-**Gate 0 — one credential, one conversation, end to end.** Agent Vault deployed
-on the home cloud (SQLite is enough for the spike, `AGENT_VAULT_MASTER_PASSWORD`
-set — passwordless mode leaves the DEK in plaintext in the database); one
-`GITHUB_TOKEN` converted to a placeholder, loaded broker-side from the DEK
-store; the CA written into the sandbox with `Fountain.Sandbox.write_file/4`,
-which every adapter already implements; the proxy and CA env added to
-`do_build_sprite_env/5`; `NetworkPolicy` narrowed to the broker on Sprites.
+**Gate 0 — passed 2026-08-24.** Agent Vault deployed in the home cloud
+(`agent-vault` namespace, SQLite on a volume, telemetry off — it defaults on),
+published at `broker.inevitable.fyi` by the Traefik TCP router in §11. Two
+vaults, `tenant-a` and `tenant-b`, a `proxy`-role session per sandbox, and
+`unmatched_host_policy=deny` set explicitly, because **the default is
+`passthrough`** and there is no CLI flag for it — only
+`PATCH /v1/vaults/{name}/settings`.
 
-It passes when all of these hold, and the numbers are written down before the
-spike rather than after:
+The whole gate ran on configuration a tenant already has: an environment
+carrying the proxy variables and a placeholder, `networking_type: limited`
+with the broker as the single allowed host, and a setup script as the probe.
+No Fountain code changed, which is why these results describe the mechanism
+rather than our implementation of it. It was also the **first `limited`
+environment this deployment has ever had**, so `apply_network_policy/3` ran in
+production for the first time.
 
-| | |
+| | result |
 |---|---|
-| brokered call | `gh api user` and `git clone https://…` succeed with a token the agent never held |
-| no credential in the sandbox | `env` and `/home/sprite/.env` show only the placeholder |
-| unmatched host | denied, with `unmatched_host_policy=deny` set explicitly — its default is the permissive one |
-| cross-tenant probe | tenant A's session asking for tenant B's vault via `X-Vault` is refused (§11) |
-| latency | added milliseconds per request, sandbox → broker → origin over the public internet |
-| provisioning cost | milliseconds to mint a session at provision time |
-| broker killed mid-turn | observed, and matching §6: the turn fails, nothing falls back to plaintext |
-| chain is possible | one absolute-form HTTP hop in front of Agent Vault is proven to work, so §10's content proxy stays available |
+| brokered call | `api.github.com/user` → 200 as the real account, and a **private repository cloned** over HTTPS, from a sandbox that held no credential |
+| no credential in the sandbox | `GITHUB_TOKEN` is 16 bytes beginning `__g`; `/home/sprite/.env` carries the placeholder |
+| unmatched host | `example.com` → 403 at the broker |
+| cross-tenant probe | tenant-b's session, with `X-Vault: tenant-a` spoofed, → 403. The vault binding is on the token, not the header |
+| latency | **+258 ms** per request (0.356s brokered, 0.098s direct from a control sandbox) |
+| provisioning cost | **≤170 ms** to mint a session, including exec overhead |
+| broker killed mid-turn | fails closed, and reports the wrong thing — see below |
+| chained hop | absolute-form HTTP through the proxy → 200, so §10's content proxy can sit in front without a second interception |
 
-The vendor question this gate used to carry is answered in §8.
+Four findings that change the work rather than confirming it:
+
+- **The proxy URL is `https://<session-token>:<vault>@host:443`, and both
+  userinfo fields are load-bearing.** With only the token, curl works and
+  **git prompts for a *proxy* password and aborts** — an error naming the
+  broker, not the repository, which is the sort of thing that costs an
+  afternoon. This belongs in the gate 1 contract beside the placeholder name.
+- **The CA belongs in the operating system trust store, not in per-tool
+  variables.** One `update-ca-certificates` satisfied curl, git and npm at
+  once. The variable route is worse than useless when a path is wrong:
+  `CURL_CA_BUNDLE` pointing at a missing file makes curl fail with no
+  fallback, and `NODE_EXTRA_CA_CERTS` alone left npm on "unable to verify the
+  first certificate".
+- **Deny-by-default finds egress nobody had enumerated.** Provisioning needs
+  `registry.npmjs.org` in the vault or the ACP adapter never installs, and the
+  turn then failed with `Forbidden: No broker service matching host
+  "opencode.ai:443"` — opencode routes model traffic through its own gateway
+  rather than the provider's API. Gate 3 is therefore not only about inference
+  credentials: every runtime brings its own hosts, and the broker is the thing
+  that makes them visible.
+- **Fail-closed happens, and says the wrong thing.** With the broker scaled to
+  zero every call returned 000, the setup stage still reported `exit_code: 0`
+  and `done`, and the conversation died at `{:opencode_install_exit, 1}`.
+  Nothing anywhere said "broker unreachable". §6 is satisfied by accident
+  today; gate 1 owes it a preflight.
+
+Two things this ADR argued from reading the code are now observed: the session
+token does reach the shared `/home/sprite/.env`, and `Redaction` scrubs the
+placeholder along with everything else, so probes have to print lengths rather
+than values.
 
 **Gate 1 — the placeholder contract.** Naming scheme, versioning, and a test that
 fails when the two sides disagree. Then all environment and vault secrets that
@@ -505,7 +555,11 @@ are outbound HTTP credentials, with the ones that are not explicitly classified
 and labelled per §7 — a third of what is stored, on today's numbers. Two items
 0023 adds: the broker session token joins `Identity`'s `@process_only` so it
 never reaches the shared `/home/sprite/.env`, and the session TTL is shorter
-than a park so a checkpoint cannot carry a live token.
+than a park so a checkpoint cannot carry a live token — noting Agent Vault's
+TTL floor is 300 seconds and its default is 24 hours. Gate 0 adds three more:
+the proxy URL shape above, the CA into the trust store rather than into six
+variables, and a broker preflight at provision time so an unreachable broker
+says so.
 
 **Gate 2 — `networking_type` migration.** `allowed_hosts` translated into broker
 service rules; both modes enforced at the broker; the floor made
@@ -519,7 +573,13 @@ site 0023's Context subsection names. 0016 §4's second purpose (metering)
 becomes available here and remains a separate decision.
 
 **Gate 4 — the joined trail.** Broker request log correlated to Conversation, and
-whatever surface makes the effect half readable next to the intent half.
+whatever surface makes the effect half readable next to the intent half. Gate 0
+read that log: it carries `matched_service`, `credential_keys`, `status` and
+`latency_ms`, and it carries `actor_type` and `actor_id` that come back
+**empty** for a vault-scoped session. So the join needs something the session
+alone does not give — an agent entity per conversation, or a vault per
+conversation — and that choice belongs at the front of this gate rather than
+at the end of it.
 
 Gates 0–2 are the security argument and are worth building on their own. Gates 3
 and 4 are where this ADR meets 0016, and neither is blocked on any ACP work.
