@@ -42,6 +42,11 @@ config :fountain, :oauth_clients, [
     id: "dns-desk",
     name: "DNS Desk",
     redirect_uris: ["http://localhost:5173/", "http://localhost:5174/"]
+  },
+  %{
+    id: "fountain-workbench",
+    name: "Fountain Workbench",
+    redirect_uris: ["http://localhost:5173/", "http://localhost:5174/"]
   }
 ]
 
