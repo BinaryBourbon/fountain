@@ -59,6 +59,17 @@ config :fountain,
   # the suite covers the pitch and flips it off per-test. See Fountain.Marketing.
   marketing_site: false
 
+# Prepaid credits (ADR 0030). Cents. `turn_hour_cents` is the customer price
+# of one hour of turn time; the comms prices are nil until an operator sets
+# them, and nil burns nothing (#1042). runtime.exs overrides from CREDIT_*.
+config :fountain, :credits,
+  turn_hour_cents: 25,
+  number_cents: nil,
+  inbox_cents: nil,
+  email_message_cents: nil,
+  sms_message_cents: nil,
+  packs_cents: [1_000, 2_500, 10_000]
+
 # Sandbox lifetime bounds. Crossing the idle bound SUSPENDS the sandbox — the
 # sprite stays (scaled to zero) and the next prompt resumes the agent with its
 # memory intact, so this bound is free to be aggressive. The max-lifetime

@@ -743,6 +743,50 @@ config :fountain, :agentphone_number_cents, contact_rate.("AGENTPHONE_NUMBER_CEN
 config :fountain, :agentmail_message_cents, contact_rate.("AGENTMAIL_MESSAGE_CENTS")
 config :fountain, :agentphone_message_cents, contact_rate.("AGENTPHONE_MESSAGE_CENTS")
 
+# Prepaid credits (ADR 0030): what the *customer* pays, in whole cents, as
+# distinct from the provider costs above. CREDIT_TURN_HOUR_CENTS is one hour
+# of turn time (default 25, a placeholder until #1038 gives a cost number).
+# The four comms prices default to unset, and unset burns nothing: contacts
+# bill nothing today and turning a price on is a price increase (#1042).
+# CREDIT_PACKS_CENTS lists the packs a tenant can buy, e.g. "1000,2500,10000".
+credit_cents = fn var ->
+  case System.get_env(var) do
+    value when value in [nil, ""] ->
+      nil
+
+    value ->
+      case Integer.parse(String.trim(value)) do
+        {cents, ""} when cents >= 0 -> cents
+        _ -> raise "#{var} must be a whole number of cents, 0 or more, got #{inspect(value)}"
+      end
+  end
+end
+
+credit_packs =
+  case System.get_env("CREDIT_PACKS_CENTS") do
+    value when value in [nil, ""] ->
+      [1_000, 2_500, 10_000]
+
+    value ->
+      value
+      |> String.split(",", trim: true)
+      |> Enum.map(fn cents ->
+        case Integer.parse(String.trim(cents)) do
+          {n, ""} when n > 0 -> n
+          _ -> raise "CREDIT_PACKS_CENTS: #{inspect(cents)} is not a positive number of cents"
+        end
+      end)
+      |> Enum.sort()
+  end
+
+config :fountain, :credits,
+  turn_hour_cents: credit_cents.("CREDIT_TURN_HOUR_CENTS") || 25,
+  number_cents: credit_cents.("CREDIT_NUMBER_CENTS"),
+  inbox_cents: credit_cents.("CREDIT_INBOX_CENTS"),
+  email_message_cents: credit_cents.("CREDIT_EMAIL_MESSAGE_CENTS"),
+  sms_message_cents: credit_cents.("CREDIT_SMS_MESSAGE_CENTS"),
+  packs_cents: credit_packs
+
 # Mail delivery.
 #
 # With no adapter configured this used to silently fall back to
