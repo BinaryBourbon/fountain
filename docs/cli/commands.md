@@ -301,10 +301,11 @@ fountain run <agent-name-or-id> [flags]
 Options:
 
 ```
-      --environment string   environment name or id to provision from, instead of the agent's own
-  -p, --prompt string        prompt text (required)
-      --sandbox string       sandbox id to attach to, instead of provisioning a new one
-      --vault string         vault name or id
+      --environment string    environment name or id to provision from, instead of the agent's own
+  -p, --prompt string         prompt text (required)
+      --sandbox string        sandbox id to attach to, instead of provisioning a new one
+      --sandbox-mode string   ephemeral or persistent, instead of the agent's default
+      --vault string          vault name or id
 ```
 
 ## `fountain runner`

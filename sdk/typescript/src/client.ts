@@ -53,6 +53,12 @@ export interface RunConfig extends RunOptions {
    * environment and vault; several conversations then share one disk.
    */
   sandbox?: string;
+  /**
+   * `"ephemeral"` (a sandbox for this conversation alone) or `"persistent"`
+   * (the agent's own machine, shared by every conversation of that agent,
+   * environment and vault). Defaults to the agent's `sandbox_mode`.
+   */
+  sandboxMode?: "ephemeral" | "persistent";
 }
 
 /**
@@ -133,6 +139,7 @@ export class Fountain {
           if (config.fresh) body.fresh = true;
           if (config.spriteName) body.sprite_name = config.spriteName;
           if (config.sandbox) body.sandbox_id = config.sandbox;
+          if (config.sandboxMode) body.sandbox_mode = config.sandboxMode;
 
           const conversation = await this.api.data<ConversationRecord>(
             "POST",

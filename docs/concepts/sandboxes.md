@@ -8,30 +8,50 @@ configure one, read [Self-host Fountain](../self-hosting.md).
 
 ## What a sandbox is
 
-A sandbox is the isolated machine that one [conversation](conversation.md)
-runs in.
+A sandbox is the isolated machine that a [conversation](conversation.md)
+runs in. Several conversations can run on one sandbox at the same time, each
+with its own transcript.
 
-It is not a primitive. You never create, name or address one. Fountain
-provisions it when a conversation starts. Fountain reclaims it when the
-conversation goes quiet, or when it runs too long.
+You never create one on its own. Fountain provisions a sandbox when a
+conversation starts. Fountain reclaims it when every conversation on it goes
+quiet, or when it runs too long. You can name one, with `sandbox_id`, to put
+a second conversation on it.
 
 That is deliberate. A sandbox you could create on its own would be a resource
 you could leak. The machine that nobody remembered to stop is what makes agent
 infrastructure expensive.
 
-## Why the lifecycle belongs to the conversation
+## Two modes
 
-Tie the machine to the run, and three problems solve themselves.
+An agent chooses a default, and a launch can name the other.
 
-Reclamation gets an owner. An idle conversation means an idle machine, and no
-separate record can go wrong.
+With `ephemeral`, the default, each conversation gets a sandbox of its own.
+When the conversation ends, the sandbox ends. This is the mode for a
+one-shot task, for a fan-out, and for input you do not trust.
+
+With `persistent`, the agent has one machine of its own. Each conversation
+with the same environment and vault lands on it. Notes, clones and installed
+tools accrue across conversations. So does anything a bad turn leaves
+behind, because the disk is shared. The machine survives a conversation that
+ends. Fountain parks it at the ceiling instead of a destroy. When you delete
+the agent, Fountain destroys the machine.
+
+## Why the lifecycle belongs to the conversations on it
+
+Tie the machine to the runs on it, and three problems solve themselves.
+
+Reclamation gets an owner. When every conversation on a machine is idle, the
+machine is idle, and no separate record can go wrong.
 
 Cost gets a shape that a user recognises. "This conversation cost something"
-reads clearly, and "you have 14 sandboxes" does not.
+reads clearly, and "you have 14 sandboxes" does not. Two conversations that
+each run for an hour on one machine spend two turn hours, on a machine that
+was busy for one.
 
 Memory gets somewhere to live. The runtime keeps its session on the sandbox's
 disk. To suspend and wake the machine is therefore the same act as to pause
-and resume the conversation. Read [About conversations](conversation.md).
+and resume the conversations on it. Read
+[About conversations](conversation.md).
 
 ## One seam, four backends
 

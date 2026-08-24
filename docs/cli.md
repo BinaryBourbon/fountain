@@ -149,6 +149,10 @@ The `--sandbox` flag attaches the conversation to a sandbox you already have,
 by id. Two conversations then share one disk. A conversation's `sandbox_id`
 names its sandbox.
 
+The `--sandbox-mode` flag is `ephemeral` or `persistent`. It replaces the
+agent's default for this conversation. A persistent conversation lands on the
+agent's own machine, and Fountain makes that machine on the first launch.
+
 ### Long-running turns
 
 The server closes an idle SSE connection after 60 seconds. So a turn that

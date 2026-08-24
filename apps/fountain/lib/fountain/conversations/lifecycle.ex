@@ -145,10 +145,18 @@ defmodule Fountain.Conversations.Lifecycle do
   The idle copy, by what actually happened. Same honesty rule as the two
   arms of `explain/1`: promise memory only where the disk survives.
   """
-  @spec explain(:idle, :suspend | :destroy) :: String.t()
+  @spec explain(:idle | :max_lifetime, :suspend | :destroy) :: String.t()
   def explain(:idle, :suspend) do
     "Sandbox suspended after #{minutes(idle_timeout_seconds())} minutes idle. " <>
       "Send another prompt to continue — the agent picks up right where it left off."
+  end
+
+  # A home at the ceiling is parked, not destroyed (ADR 0023): the disk stays,
+  # the turn that was in flight does not.
+  def explain(:max_lifetime, :suspend) do
+    "Sandbox suspended after reaching the #{hours(max_lifetime_seconds())} hour maximum " <>
+      "lifetime; a turn in flight was cut. Send another prompt to continue — the agent " <>
+      "picks up right where it left off."
   end
 
   def explain(:idle, :destroy) do

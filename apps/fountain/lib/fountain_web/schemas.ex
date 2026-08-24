@@ -36,6 +36,13 @@ defmodule FountainWeb.Schemas do
         },
         environment_id: %Schema{type: :string, format: :uuid, nullable: true},
         vault_id: %Schema{type: :string, format: :uuid, nullable: true},
+        mode: %Schema{
+          type: :string,
+          enum: ~w(ephemeral persistent),
+          description:
+            "ephemeral: one conversation's machine, reclaimed with it. persistent: the " <>
+              "agent identity's home, shared by its conversations and kept when one ends."
+        },
         url: %Schema{
           type: :string,
           nullable: true,
@@ -363,6 +370,18 @@ defmodule FountainWeb.Schemas do
           type: :string,
           description: "Override the auto-generated sprite name."
         },
+        sandbox_mode: %Schema{
+          type: :string,
+          enum: ~w(ephemeral persistent),
+          nullable: true,
+          description:
+            "Where this conversation runs (ADR 0023); null takes the agent's sandbox_mode. " <>
+              "persistent lands on the agent identity's home — provisioning it if this is " <>
+              "the first launch of that (agent, environment, vault), attaching to it " <>
+              "otherwise, or 503 provisioning while the first launch is still building it. " <>
+              "ephemeral provisions a sandbox for this conversation alone. Ignored when " <>
+              "sandbox_id names a machine."
+        },
         sandbox_id: %Schema{
           type: :string,
           format: :uuid,
@@ -543,6 +562,17 @@ defmodule FountainWeb.Schemas do
           description:
             "Sandbox backend override; null inherits the instance default " <>
               "(SANDBOX_PROVIDER). Only providers configured on this instance are accepted"
+        },
+        sandbox_mode: %Schema{
+          type: :string,
+          enum: ~w(ephemeral persistent),
+          description:
+            "Where a conversation of this agent runs by default (ADR 0023). ephemeral: a " <>
+              "sandbox per conversation, reclaimed with it. persistent: one sandbox per " <>
+              "agent identity (agent, environment, vault) — the agent's computer — that " <>
+              "every conversation of that identity lands on and shares; it survives a " <>
+              "conversation ending and is parked, not destroyed, at the ceiling. A launch " <>
+              "may name the other with sandbox_mode on POST /api/conversations."
         },
         environment_id: %Schema{type: :string, format: :uuid, nullable: true},
         permission_policy: %Schema{
@@ -800,6 +830,17 @@ defmodule FountainWeb.Schemas do
             "Sandbox backend override; null inherits the instance default " <>
               "(SANDBOX_PROVIDER). Only providers configured on this instance are accepted"
         },
+        sandbox_mode: %Schema{
+          type: :string,
+          enum: ~w(ephemeral persistent),
+          description:
+            "Where a conversation of this agent runs by default (ADR 0023). ephemeral: a " <>
+              "sandbox per conversation, reclaimed with it. persistent: one sandbox per " <>
+              "agent identity (agent, environment, vault) — the agent's computer — that " <>
+              "every conversation of that identity lands on and shares; it survives a " <>
+              "conversation ending and is parked, not destroyed, at the ceiling. A launch " <>
+              "may name the other with sandbox_mode on POST /api/conversations."
+        },
         permission_policy: %Schema{
           type: :object,
           nullable: true,
@@ -906,6 +947,17 @@ defmodule FountainWeb.Schemas do
           description:
             "Sandbox backend override; null inherits the instance default " <>
               "(SANDBOX_PROVIDER). Only providers configured on this instance are accepted"
+        },
+        sandbox_mode: %Schema{
+          type: :string,
+          enum: ~w(ephemeral persistent),
+          description:
+            "Where a conversation of this agent runs by default (ADR 0023). ephemeral: a " <>
+              "sandbox per conversation, reclaimed with it. persistent: one sandbox per " <>
+              "agent identity (agent, environment, vault) — the agent's computer — that " <>
+              "every conversation of that identity lands on and shares; it survives a " <>
+              "conversation ending and is parked, not destroyed, at the ceiling. A launch " <>
+              "may name the other with sandbox_mode on POST /api/conversations."
         },
         permission_policy: %Schema{
           type: :object,

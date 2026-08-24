@@ -98,6 +98,14 @@ defmodule FountainWeb.SchemaEnumGuardrailTest do
     {FountainWeb.Schemas.ManifestResource, "kind"} => {Manifest, :kinds},
     {FountainWeb.Schemas.OnboardingResponse, "data.state"} => {Accounts, :onboarding_states},
     {FountainWeb.Schemas.Sandbox, "status"} => {Sandbox, :statuses},
+    # The sandbox mode (ADR 0023 gate 6): on the agent as a default, on a
+    # launch as the choice, on the sandbox row as what it is.
+    {FountainWeb.Schemas.Sandbox, "mode"} => {Sandbox, :modes},
+    {FountainWeb.Schemas.SandboxDetail, "mode"} => {Sandbox, :modes},
+    {FountainWeb.Schemas.ConversationCreateRequest, "sandbox_mode"} => {Sandbox, :modes},
+    {FountainWeb.Schemas.Agent, "sandbox_mode"} => {Agent, :sandbox_modes},
+    {FountainWeb.Schemas.AgentRequest, "sandbox_mode"} => {Agent, :sandbox_modes},
+    {FountainWeb.Schemas.AgentUpdate, "sandbox_mode"} => {Agent, :sandbox_modes},
     # The sandbox listing (ADR 0023 gate 3): a sandbox with its conversations.
     {FountainWeb.Schemas.SandboxDetail, "status"} => {Sandbox, :statuses},
     {FountainWeb.Schemas.SandboxDetail, "provider"} => {Fountain.Sandbox, :known_providers},

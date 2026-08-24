@@ -79,6 +79,41 @@ defmodule FountainWeb.ConversationAttachControllerTest do
              |> json_response(422)
   end
 
+  test "sandbox_mode=persistent lands every launch of an identity on one home", ctx do
+    stub(Horde.DynamicSupervisor, :start_child, fn _s, _spec -> {:ok, spawn(fn -> :ok end)} end)
+
+    first =
+      ctx
+      |> create(%{"sandbox_mode" => "persistent"})
+      |> json_response(201)
+      |> Map.fetch!("data")
+
+    assert first["sandbox"]["mode"] == "persistent"
+
+    # Still provisioning: a second launch is told to retry, not given a
+    # second machine.
+    assert %{"error" => "provisioning"} =
+             ctx |> create(%{"sandbox_mode" => "persistent"}) |> json_response(503)
+
+    {:ok, _} =
+      Fountain.Conversations.update_sandbox(
+        Fountain.Conversations._unsafe_get_sandbox!(first["sandbox_id"]),
+        %{status: "ready"}
+      )
+
+    second =
+      ctx
+      |> create(%{"sandbox_mode" => "persistent"})
+      |> json_response(201)
+      |> Map.fetch!("data")
+
+    assert second["sandbox_id"] == first["sandbox_id"]
+    assert second["status"] == "idle"
+
+    # Refused at the door — the spec's enum, before the context sees it.
+    assert ctx |> create(%{"sandbox_mode" => "sometimes"}) |> json_response(422)
+  end
+
   test "a one-at-a-time runtime at capacity is a 409 when a prompt comes with it", ctx do
     agent = ctx.agent |> Ecto.Changeset.change(runtime: "opencode") |> Fountain.Repo.update!()
     {:ok, _} = Fountain.Conversations.update_conversation(ctx.first, %{runtime: "opencode"})
