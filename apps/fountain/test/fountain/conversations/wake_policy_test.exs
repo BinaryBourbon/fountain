@@ -12,7 +12,10 @@ defmodule Fountain.Conversations.WakePolicyTest do
   defp parked_home do
     user = insert_verified_user()
     agent = insert_agent(user_id: user.id, runtime: "claude")
-    sandbox = insert_sandbox(user_id: user.id, sprite_name: "test-sprite-home", mode: "persistent")
+
+    sandbox =
+      insert_sandbox(user_id: user.id, sprite_name: "test-sprite-home", mode: "persistent")
+
     {:ok, sandbox} = Conversations.update_sandbox(sandbox, %{status: "suspended"})
     a = insert_conversation(user_id: user.id, agent: agent, sandbox: sandbox, status: "idle")
     b = insert_conversation(user_id: user.id, agent: agent, sandbox: sandbox, status: "idle")
