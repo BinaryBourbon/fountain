@@ -10,6 +10,17 @@ server releases.
 
 ---
 
+## [0.1.4] — 2026-08-24
+
+### Added
+
+- `expires_at` on vault secrets, generated from the server's OpenAPI spec.
+  `VaultSecretRequest` accepts it (ISO 8601 date-time, or `null` to clear a
+  stored expiry) and `VaultSecret` returns it; a request that omits the field
+  leaves the stored expiry alone. It is advisory metadata: the server emails
+  the owner ahead of the date and enforces nothing on it, so an expired secret
+  is still injected as-is. Values stay write-only.
+
 ## [0.1.3] — 2026-08-23
 
 ### Added

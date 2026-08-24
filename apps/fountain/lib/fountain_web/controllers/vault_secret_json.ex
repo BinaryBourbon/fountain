@@ -11,6 +11,7 @@ defmodule FountainWeb.VaultSecretJSON do
       id: s.id,
       key: s.key,
       vault_id: s.vault_id,
+      expires_at: s.expires_at,
       inserted_at: s.inserted_at,
       updated_at: s.updated_at
     }

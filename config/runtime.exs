@@ -522,6 +522,11 @@ config :fountain,
   unverified_prune_after_days: parse_bound.("UNVERIFIED_PRUNE_AFTER_DAYS", "30"),
   unverified_prune_exempt: unverified_prune_exempt
 
+# How many days before a vault secret's recorded expiry the owner is emailed
+# (`Fountain.Workers.SecretExpirySweeper`). 0 disables the notice and the
+# matching amber badge on the vault page.
+config :fountain, secret_expiry_notice_days: parse_bound.("SECRET_EXPIRY_NOTICE_DAYS", "7")
+
 # CIDRs treated as proxies when resolving the client IP from X-Forwarded-For.
 # Only widen this to cover addresses that are genuinely proxies — anything
 # trusted here is stepped over, so an over-broad list lets a client spoof its

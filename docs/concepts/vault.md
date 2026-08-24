@@ -117,6 +117,21 @@ Use [inference credentials](../integrations/index.md) for model API keys.
 Those belong to one user, you enter them in the app, and they never belong in
 a Vault.
 
+## Secret expiry
+
+A secret can carry an expiry date. The date is optional metadata. Fountain
+does not block an expired secret, because an absent variable fails worse than
+a stale one.
+
+Fountain sends one email before the date arrives. The default notice window
+is seven days. Set `SECRET_EXPIRY_NOTICE_DAYS` to change the window. Set it
+to `0` to turn the notice off.
+
+Set the date when you write the secret, in the console or over the API. To
+extend the date, write the secret again with its value. A blank date in the
+console keeps the stored date. Send `expires_at: null` over the API to clear
+it.
+
 ## What we chose not to do
 
 We looked at precedence for each key, so that one Environment key could refuse

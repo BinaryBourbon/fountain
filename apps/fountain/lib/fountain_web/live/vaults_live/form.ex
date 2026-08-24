@@ -4,6 +4,7 @@ defmodule FountainWeb.VaultsLive.Form do
 
   alias Fountain.{Crypto, Vaults}
   alias Fountain.Vaults.Vault
+  alias Fountain.Workers.SecretExpirySweeper
 
   @impl true
   def mount(params, _session, socket) do
@@ -53,13 +54,13 @@ defmodule FountainWeb.VaultsLive.Form do
     save(socket, params)
   end
 
-  def handle_event("add_secret", %{"secret" => %{"key" => k, "value" => v}}, socket)
+  def handle_event("add_secret", %{"secret" => %{"key" => k, "value" => v} = params}, socket)
       when k != "" and v != "" do
     with {:ok, dek} <- Crypto.load_tenant_key(socket.assigns.user_id),
          {:ok, _} <-
            Vaults.upsert_secret(
              socket.assigns.vault,
-             %{"key" => k, "value" => v},
+             maybe_put_expiry(%{"key" => k, "value" => v}, params["expires_at"]),
              dek,
              FountainWeb.Audited.attribution(socket)
            ) do
@@ -127,6 +128,51 @@ defmodule FountainWeb.VaultsLive.Form do
     |> Map.new(fn {k, [first | _]} -> {to_string(k), first} end)
   end
 
+  # The date input submits "YYYY-MM-DD" or "". A blank (or unparseable) date
+  # leaves `expires_at` out of the attrs entirely, so re-adding a key to
+  # rotate its value — where nothing prefills the date field — keeps the
+  # stored expiry instead of silently clearing it. Clearing is not a console
+  # action; send an explicit `expires_at: null` over the API for that.
+  # The recorded instant is the end of the chosen day UTC: "expires on the
+  # 12th" means it still works on the 12th.
+  defp maybe_put_expiry(attrs, date_string) when is_binary(date_string) and date_string != "" do
+    case Date.from_iso8601(date_string) do
+      {:ok, date} -> Map.put(attrs, "expires_at", DateTime.new!(date, ~T[23:59:59], "Etc/UTC"))
+      {:error, _} -> attrs
+    end
+  end
+
+  defp maybe_put_expiry(attrs, _), do: attrs
+
+  defp expiry_status(%{expires_at: nil}), do: nil
+
+  defp expiry_status(%{expires_at: expires_at}) do
+    days = Date.diff(DateTime.to_date(expires_at), Date.utc_today())
+
+    cond do
+      days < 0 -> {:expired, "expired #{DateTime.to_date(expires_at)}"}
+      days == 0 -> {:expiring, "expires today"}
+      # Amber exactly when the email would have fired: one window, one config.
+      days <= SecretExpirySweeper.notice_days() -> {:expiring, "expires in #{days}d"}
+      true -> {:ok, "expires #{DateTime.to_date(expires_at)}"}
+    end
+  end
+
+  defp expiry_class(:expired), do: "text-rose-600"
+  defp expiry_class(:expiring), do: "text-amber-600"
+  defp expiry_class(:ok), do: "text-zinc-400"
+
+  defp updated_ago(%{updated_at: %DateTime{} = at}) do
+    days = Date.diff(Date.utc_today(), DateTime.to_date(at))
+
+    cond do
+      days <= 0 -> "updated today"
+      days == 1 -> "updated yesterday"
+      days < 60 -> "updated #{days}d ago"
+      true -> "updated #{div(days, 30)}mo ago"
+    end
+  end
+
   defp secret_error(cs) do
     cs
     |> Ecto.Changeset.traverse_errors(fn {msg, _} -> msg end)
@@ -191,6 +237,15 @@ defmodule FountainWeb.VaultsLive.Form do
             <tr :for={s <- @secrets} class="border-b border-zinc-100 last:border-0">
               <td class="py-2 font-mono">{s.key}</td>
               <td class="py-2 text-zinc-400 font-mono text-xs">•••••••</td>
+              <td class="py-2 text-xs text-zinc-400">{updated_ago(s)}</td>
+              <td class="py-2 text-xs">
+                <%= case expiry_status(s) do %>
+                  <% nil -> %>
+                    <span class="text-zinc-300">no expiry</span>
+                  <% {status, label} -> %>
+                    <span class={expiry_class(status)}>{label}</span>
+                <% end %>
+              </td>
               <td class="py-2 text-right">
                 <.btn_danger phx-click="delete_secret" phx-value-id={s.id} data-confirm="Delete?">
                   Delete
@@ -221,6 +276,12 @@ defmodule FountainWeb.VaultsLive.Form do
             name="secret[value]"
             placeholder="value"
             class="flex-[2] rounded border border-zinc-300 px-3 py-2 text-sm font-mono"
+          />
+          <input
+            type="date"
+            name="secret[expires_at]"
+            title="Expiry date (optional) — you get an email before it arrives"
+            class="rounded border border-zinc-300 px-3 py-2 text-sm"
           />
           <.btn type="submit">Add secret</.btn>
         </form>

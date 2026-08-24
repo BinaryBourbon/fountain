@@ -121,6 +121,62 @@ defmodule FountainWeb.SecretFormsLiveTest do
       assert Vaults.decrypted_env(vault, dek) == %{"TOKEN" => "v1"}
     end
 
+    test "add_secret records an optional expiry date and renders its status",
+         %{conn: conn, vault: vault} do
+      {:ok, view, _html} = live(conn, ~p"/vaults/#{vault.id}/edit")
+
+      soon = Date.utc_today() |> Date.add(3) |> Date.to_iso8601()
+
+      html =
+        render_submit(view, "add_secret", %{
+          "secret" => %{"key" => "TOKEN", "value" => "v1", "expires_at" => soon}
+        })
+
+      assert html =~ "expires in 3d"
+
+      [secret] = Vaults._unsafe_list_secrets(vault)
+      assert DateTime.to_date(secret.expires_at) == Date.add(Date.utc_today(), 3)
+    end
+
+    test "rotating a value with the date left blank keeps the stored expiry", %{
+      conn: conn,
+      vault: vault
+    } do
+      {:ok, view, _html} = live(conn, ~p"/vaults/#{vault.id}/edit")
+
+      soon = Date.utc_today() |> Date.add(3) |> Date.to_iso8601()
+
+      render_submit(view, "add_secret", %{
+        "secret" => %{"key" => "TOKEN", "value" => "v1", "expires_at" => soon}
+      })
+
+      # The rotation flow: same key, new value, date field empty because
+      # nothing prefills it. The recorded expiry must survive.
+      html =
+        render_submit(view, "add_secret", %{
+          "secret" => %{"key" => "TOKEN", "value" => "v2", "expires_at" => ""}
+        })
+
+      assert html =~ "expires in 3d"
+
+      [secret] = Vaults._unsafe_list_secrets(vault)
+      assert DateTime.to_date(secret.expires_at) == Date.add(Date.utc_today(), 3)
+    end
+
+    test "add_secret without an expiry renders no-expiry", %{conn: conn, vault: vault} do
+      {:ok, view, _html} = live(conn, ~p"/vaults/#{vault.id}/edit")
+
+      html =
+        render_submit(view, "add_secret", %{
+          "secret" => %{"key" => "TOKEN", "value" => "v1", "expires_at" => ""}
+        })
+
+      assert html =~ "no expiry"
+
+      [secret] = Vaults._unsafe_list_secrets(vault)
+      assert secret.expires_at == nil
+    end
+
     test "add_secret flashes instead of crashing when the tenant key cannot be loaded",
          %{conn: conn, vault: vault} do
       {:ok, view, _html} = live(conn, ~p"/vaults/#{vault.id}/edit")

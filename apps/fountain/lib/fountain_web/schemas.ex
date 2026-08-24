@@ -1196,6 +1196,7 @@ defmodule FountainWeb.Schemas do
         id: %Schema{type: :string, format: :uuid},
         key: %Schema{type: :string},
         vault_id: %Schema{type: :string, format: :uuid},
+        expires_at: %Schema{type: :string, format: :"date-time", nullable: true},
         inserted_at: %Schema{type: :string, format: :"date-time"},
         updated_at: %Schema{type: :string, format: :"date-time"}
       },
@@ -1216,7 +1217,15 @@ defmodule FountainWeb.Schemas do
       type: :object,
       properties: %{
         key: %Schema{type: :string},
-        value: %Schema{type: :string, description: "Secret value (write-only)."}
+        value: %Schema{type: :string, description: "Secret value (write-only)."},
+        expires_at: %Schema{
+          type: :string,
+          format: :"date-time",
+          nullable: true,
+          description:
+            "When the value stops working, as recorded by the owner. " <>
+              "Advisory: the owner is emailed before this instant; nothing is enforced."
+        }
       },
       required: [:key, :value]
     })

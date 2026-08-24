@@ -27,6 +27,17 @@ upgrade, is in
   (provenance only; the live agent row still drives the sandbox), and
   version history joins the account export. ADR 0029.
 
+- **Vault secrets can carry an expiry date.** `expires_at` is optional
+  metadata on a vault secret: the console shows staleness (last-updated age
+  and expiry status) on the vault page, and a daily sweep emails the owner
+  once per recorded expiry before the date arrives — 7 days ahead by
+  default (`SECRET_EXPIRY_NOTICE_DAYS`; `0` disables). Nothing is enforced
+  on the date: an expired secret keeps being injected, because a missing
+  env var fails worse than a stale one. The API accepts and returns
+  `expires_at` on vault secrets; values remain write-only. Changing the
+  expiry only works together with a value write today — a value-less
+  metadata update is #1053.
+
 ### Changed
 
 - **Plan concurrency caps retuned to 2 / 5 / 10.** Solo now allows 2
