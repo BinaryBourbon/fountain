@@ -204,6 +204,49 @@ defmodule FountainWeb.FallbackController do
     })
   end
 
+  # Attaching a conversation to an existing sandbox (ADR 0023 gate 3). 404
+  # for an unknown or foreign id, indistinguishable on purpose; 409 for a
+  # machine in a state nothing can attach to; 422 when the launch names a
+  # different identity than the disk was built from.
+  def call(conn, {:error, :sandbox_not_found}) do
+    conn
+    |> put_status(:not_found)
+    |> json(%{error: "sandbox_not_found"})
+  end
+
+  def call(conn, {:error, {:sandbox_not_attachable, status}}) do
+    conn
+    |> put_status(:conflict)
+    |> json(%{
+      error: "sandbox_not_attachable",
+      message:
+        "the sandbox is #{status}; a conversation attaches only to a ready or suspended one",
+      status: status
+    })
+  end
+
+  def call(conn, {:error, :sandbox_identity_mismatch}) do
+    conn
+    |> put_status(:unprocessable_entity)
+    |> json(%{
+      error: "sandbox_identity_mismatch",
+      message:
+        "the sandbox was built for a different agent, environment or vault; a conversation " <>
+          "attaches only with the same three"
+    })
+  end
+
+  def call(conn, {:error, :sandbox_runtime_mismatch}) do
+    conn
+    |> put_status(:unprocessable_entity)
+    |> json(%{
+      error: "sandbox_runtime_mismatch",
+      message:
+        "the agent's runtime changed since this sandbox was built and the disk was shaped " <>
+          "by the old one; start a new conversation instead"
+    })
+  end
+
   # The wake path could not reach the sandbox provider to check whether the
   # conversation's sandbox is still there (#799). Nothing was changed — the
   # row is deliberately left as it was rather than retired on a transport

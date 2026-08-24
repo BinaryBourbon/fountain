@@ -98,6 +98,11 @@ defmodule FountainWeb.SchemaEnumGuardrailTest do
     {FountainWeb.Schemas.ManifestResource, "kind"} => {Manifest, :kinds},
     {FountainWeb.Schemas.OnboardingResponse, "data.state"} => {Accounts, :onboarding_states},
     {FountainWeb.Schemas.Sandbox, "status"} => {Sandbox, :statuses},
+    # The sandbox listing (ADR 0023 gate 3): a sandbox with its conversations.
+    {FountainWeb.Schemas.SandboxDetail, "status"} => {Sandbox, :statuses},
+    {FountainWeb.Schemas.SandboxDetail, "provider"} => {Fountain.Sandbox, :known_providers},
+    {FountainWeb.Schemas.SandboxConversation, "status"} => {Conversation, :statuses},
+    {FountainWeb.Schemas.SandboxConversation, "runtime"} => {Agent, :runtimes},
     {FountainWeb.Schemas.Turn, "status"} => {Turn, :statuses},
     {FountainWeb.Schemas.Teammate, "presence.state"} =>
       {FountainWeb.TeamPresenter, :presence_states},

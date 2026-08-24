@@ -336,7 +336,7 @@ it again and again.
 
 ```
 GET    /api/conversations                  # list (?roots_only=true; ?agent_id= ?channel_id= ?status=idle,terminated)
-POST   /api/conversations                  # start (agent_id; optional vault_id, prompt, images)
+POST   /api/conversations                  # start (agent_id; optional vault_id, environment_id, sandbox_id, prompt, images)
 GET    /api/conversations/:id
 DELETE /api/conversations/:id
 POST   /api/conversations/:id/read         # clear unread state
@@ -353,6 +353,15 @@ GET    /api/conversations/:id/turns/:turn_id/images/:position   # image bytes
 A turn carries `image_count`. The image endpoint takes a `position` into that
 count, which starts at zero, and returns the raw bytes with the stored media
 type.
+
+`sandbox_id` attaches the new conversation to a sandbox you already have.
+Fountain then provisions nothing. The sandbox must be `ready` or `suspended`,
+and Fountain must have built it for the same agent, environment and vault.
+Otherwise you get `404 sandbox_not_found`, `409 sandbox_not_attachable` or
+`422 sandbox_identity_mismatch`. Several conversations can then run on one
+disk at the same time. On an opencode or gemini sandbox, only one turn runs
+at a time. A second prompt gets `409 sandbox_at_capacity` while the first
+one runs.
 
 Whatever does not resolve is a `404`, so nobody can probe for an id.
 
@@ -468,6 +477,22 @@ own, and the client lists them again.
 `Last-Event-ID` replays what you missed, across each conversation the stream
 follows. The first byte is a `: connected` comment. A heartbeat arrives every
 15 s. The stream closes after 60 s idle, so the client reconnects.
+
+## Sandboxes
+
+A sandbox is the computer a conversation runs on. One sandbox can hold
+several conversations.
+
+```
+GET    /api/sandboxes          # list (?status=ready,suspended)
+GET    /api/sandboxes/:id
+```
+
+Each sandbox carries `status`, `provider` and `url`. It also carries the
+`agent_id`, `environment_id` and `vault_id` that Fountain built it for, and
+`conversations`. Each entry there carries `mid_turn`, which is true while
+that conversation runs a turn. To put a second conversation on a sandbox,
+pass its id as `sandbox_id` to `POST /api/conversations`.
 
 ## Search
 
@@ -898,6 +923,7 @@ to walk the whole trail.
 | `402` | You need a live subscription. The code is `subscription_required`, and the body carries `upgrade_url`. |
 | `403` | The wrong tenant. |
 | `404` | Nothing found. |
+| `409` | The request conflicts with the current state. The codes are `no_runner_online`, `sandbox_at_capacity` and `sandbox_not_attachable`. |
 | `410` | Somebody terminated the conversation. The code is `conversation_terminated`. Stop, and do not try again. |
 | `422` | A validation error. |
 | `429` | The rate limit stopped you. |

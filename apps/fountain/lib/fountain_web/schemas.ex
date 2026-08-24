@@ -15,7 +15,9 @@ defmodule FountainWeb.Schemas do
 
     OpenApiSpex.schema(%{
       title: "Sandbox",
-      description: "One sprite lifespan owned by a conversation.",
+      description:
+        "One machine. Provisioned for a conversation; several conversations may run on " <>
+          "it at once (ADR 0023).",
       type: :object,
       properties: %{
         id: %Schema{type: :string, format: :uuid},
@@ -24,6 +26,16 @@ defmodule FountainWeb.Schemas do
           type: :string,
           enum: ~w(pending starting ready suspended terminated failed)
         },
+        agent_id: %Schema{
+          type: :string,
+          format: :uuid,
+          nullable: true,
+          description:
+            "The agent the machine was built for. With environment_id and vault_id it is " <>
+              "the identity a conversation must match to attach (sandbox_id on create)."
+        },
+        environment_id: %Schema{type: :string, format: :uuid, nullable: true},
+        vault_id: %Schema{type: :string, format: :uuid, nullable: true},
         url: %Schema{
           type: :string,
           nullable: true,
@@ -62,6 +74,51 @@ defmodule FountainWeb.Schemas do
         }
       },
       required: [:id, :sprite_name, :status]
+    })
+  end
+
+  defmodule SandboxConversation do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "SandboxConversation",
+      description: "A conversation on a sandbox, as the sandbox lists it.",
+      type: :object,
+      properties: %{
+        id: %Schema{type: :string, format: :uuid},
+        status: %Schema{type: :string, enum: ~w(pending running idle failed terminated)},
+        title: %Schema{type: :string, nullable: true},
+        runtime: %Schema{type: :string, enum: ~w(claude codex gemini opencode)},
+        mid_turn: %Schema{
+          type: :boolean,
+          description: "True while this conversation is running a turn on the machine."
+        },
+        inserted_at: %Schema{type: :string, format: :"date-time"}
+      },
+      required: [:id, :status, :mid_turn]
+    })
+  end
+
+  defmodule SandboxDetail do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "SandboxDetail",
+      description: "A sandbox with the conversations on it.",
+      type: :object,
+      properties:
+        Map.merge(Sandbox.schema().properties, %{
+          conversations: %Schema{
+            type: :array,
+            items: SandboxConversation,
+            description: "Every conversation ever opened on this machine, newest first."
+          },
+          inserted_at: %Schema{type: :string, format: :"date-time"},
+          last_resumed_at: %Schema{type: :string, format: :"date-time", nullable: true}
+        }),
+      required: [:id, :sprite_name, :status, :conversations]
     })
   end
 
@@ -305,6 +362,20 @@ defmodule FountainWeb.Schemas do
         sprite_name: %Schema{
           type: :string,
           description: "Override the auto-generated sprite name."
+        },
+        sandbox_id: %Schema{
+          type: :string,
+          format: :uuid,
+          nullable: true,
+          description:
+            "Attach the conversation to a sandbox you already have instead of provisioning " <>
+              "one (ADR 0023). The sandbox must be yours (404 sandbox_not_found), ready or " <>
+              "suspended (409 sandbox_not_attachable), and built for the same agent, " <>
+              "environment and vault as this launch (422 sandbox_identity_mismatch; 422 " <>
+              "sandbox_runtime_mismatch if the agent's runtime changed since). The " <>
+              "conversation opens idle on that machine; a prompt here wakes it. Several " <>
+              "conversations then run on one disk at once, except on opencode and gemini, " <>
+              "where a second turn is refused with 409 sandbox_at_capacity while one runs."
         },
         channel_id: %Schema{
           type: :string,
@@ -1006,6 +1077,8 @@ defmodule FountainWeb.Schemas do
   item_response(EnvironmentResponse, of: Environment)
 
   list_response(EnvironmentListResponse, of: Environment)
+  item_response(SandboxResponse, of: SandboxDetail)
+  list_response(SandboxListResponse, of: SandboxDetail)
 
   defmodule EnvironmentRequest do
     @moduledoc false

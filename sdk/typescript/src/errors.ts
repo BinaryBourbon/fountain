@@ -14,6 +14,11 @@ export type FountainErrorCode =
   | "provisioning"
   | "sprite_probe_failed"
   | "sandbox_quota_exceeded"
+  | "sandbox_at_capacity"
+  | "sandbox_not_found"
+  | "sandbox_not_attachable"
+  | "sandbox_identity_mismatch"
+  | "sandbox_runtime_mismatch"
   | "subscription_required"
   | "rate_limited"
   | "account_suspended"
@@ -81,6 +86,9 @@ const RETRYABLE_CODES = new Set([
   "provisioning",
   "sprite_probe_failed",
   "sandbox_quota_exceeded",
+  // Another conversation's turn is using a one-at-a-time runtime's sandbox;
+  // it clears when that turn ends.
+  "sandbox_at_capacity",
   "rate_limited",
 ]);
 

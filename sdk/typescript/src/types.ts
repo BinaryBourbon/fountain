@@ -22,6 +22,7 @@ export type {
   LogEvent,
   Repository,
   Runner,
+  SandboxRecord,
   Schedule,
   ScheduleInput,
   SchedulePatch,

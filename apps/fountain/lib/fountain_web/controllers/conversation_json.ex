@@ -73,12 +73,18 @@ defmodule FountainWeb.ConversationJSON do
     %{id: id, source: source, status: status, parent_id: parent_id}
   end
 
-  defp sandbox_data(%Sandbox{} = s) do
+  @doc false
+  def sandbox_data(%Sandbox{} = s) do
     %{
       id: s.id,
       sprite_name: s.sprite_name,
       status: s.status,
       provider: s.provider,
+      # The identity the disk was built from (ADR 0023): what a launch must
+      # match to attach to this machine with `sandbox_id`.
+      agent_id: s.agent_id,
+      environment_id: s.environment_id,
+      vault_id: s.vault_id,
       # The sandbox's own HTTP endpoint, for providers that give it one. Read
       # from the row rather than the provider so listing conversations stays a
       # single query; null means the provider has no such concept (or the
@@ -91,7 +97,7 @@ defmodule FountainWeb.ConversationJSON do
     }
   end
 
-  defp sandbox_data(_), do: nil
+  def sandbox_data(_), do: nil
 
   defp runner_data(nil), do: nil
 

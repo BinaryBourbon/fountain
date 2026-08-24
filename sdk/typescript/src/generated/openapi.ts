@@ -41,6 +41,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/sandboxes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List sandboxes
+         * @description Every sandbox the caller has provisioned, newest first, each with the conversations on it and which of them is mid-turn. `status` filters by a comma-separated list; without it every status is listed, terminated ones included.
+         */
+        get: operations["FountainWeb.SandboxController.index"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/vaults/{vault_id}/secrets/{id}": {
         parameters: {
             query?: never;
@@ -182,6 +202,23 @@ export interface paths {
          * @description Tears down the sprite and marks the conversation `terminated`. Idempotent for already-dead conversations.
          */
         post: operations["FountainWeb.ConversationController.terminate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sandboxes/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get a sandbox */
+        get: operations["FountainWeb.SandboxController.show"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1910,6 +1947,10 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** SandboxResponse */
+        SandboxResponse: {
+            data: components["schemas"]["SandboxDetail"];
+        };
         /** ApiKeyRequest */
         ApiKeyRequest: {
             /** @description What this key is for. */
@@ -2015,6 +2056,11 @@ export interface components {
             } | null;
             /** @description Optional first turn prompt. */
             prompt?: string;
+            /**
+             * Format: uuid
+             * @description Attach the conversation to a sandbox you already have instead of provisioning one (ADR 0023). The sandbox must be yours (404 sandbox_not_found), ready or suspended (409 sandbox_not_attachable), and built for the same agent, environment and vault as this launch (422 sandbox_identity_mismatch; 422 sandbox_runtime_mismatch if the agent's runtime changed since). The conversation opens idle on that machine; a prompt here wakes it. Several conversations then run on one disk at once, except on opencode and gemini, where a second turn is refused with 409 sandbox_at_capacity while one runs.
+             */
+            sandbox_id?: string | null;
             /** @description Override the auto-generated sprite name. */
             sprite_name?: string;
             /** @description Optional display title. The team page names a teammate with it. */
@@ -2236,6 +2282,50 @@ export interface components {
             option_id: string;
         };
         /**
+         * SandboxDetail
+         * @description A sandbox with the conversations on it.
+         */
+        SandboxDetail: {
+            /**
+             * Format: uuid
+             * @description The agent the machine was built for. With environment_id and vault_id it is the identity a conversation must match to attach (sandbox_id on create).
+             */
+            agent_id?: string | null;
+            /** @description Every conversation ever opened on this machine, newest first. */
+            conversations: components["schemas"]["SandboxConversation"][];
+            /** Format: uuid */
+            environment_id?: string | null;
+            /** Format: uuid */
+            id: string;
+            /** Format: date-time */
+            inserted_at?: string;
+            /** Format: date-time */
+            last_resumed_at?: string | null;
+            /**
+             * @description The sandbox backend this row lives on.
+             * @enum {string}
+             */
+            provider?: "sprites" | "e2b" | "daytona" | "runner";
+            /** @description For `provider: runner` — the user's own machine the sandbox lives on, and its directory there (#834). Null for hosted providers; the inner fields are null when the runner row was forgotten. */
+            runner?: {
+                hostname?: string | null;
+                /** Format: uuid */
+                id?: string | null;
+                name?: string | null;
+                /** @description Whether the runner daemon is connected right now. */
+                online: boolean;
+                /** @description The sandbox directory on the machine (`<root>/<name>`). */
+                path?: string | null;
+            } | null;
+            sprite_name: string;
+            /** @enum {string} */
+            status: "pending" | "starting" | "ready" | "suspended" | "terminated" | "failed";
+            /** @description The sandbox's own HTTP endpoint, where a service the agent starts is reachable. Null for providers that expose no such URL. The same value is available inside the sandbox as `SANDBOX_URL`. */
+            url?: string | null;
+            /** Format: uuid */
+            vault_id?: string | null;
+        };
+        /**
          * AvatarRequest
          * @description JSON form of an avatar upload. The raw-bytes form sends the image directly with an image content-type instead.
          */
@@ -2286,9 +2376,16 @@ export interface components {
         };
         /**
          * Sandbox
-         * @description One sprite lifespan owned by a conversation.
+         * @description One machine. Provisioned for a conversation; several conversations may run on it at once (ADR 0023).
          */
         Sandbox: {
+            /**
+             * Format: uuid
+             * @description The agent the machine was built for. With environment_id and vault_id it is the identity a conversation must match to attach (sandbox_id on create).
+             */
+            agent_id?: string | null;
+            /** Format: uuid */
+            environment_id?: string | null;
             /** Format: uuid */
             id: string;
             /**
@@ -2312,6 +2409,8 @@ export interface components {
             status: "pending" | "starting" | "ready" | "suspended" | "terminated" | "failed";
             /** @description The sandbox's own HTTP endpoint, where a service the agent starts is reachable. Null for providers that expose no such URL. The same value is available inside the sandbox as `SANDBOX_URL`. */
             url?: string | null;
+            /** Format: uuid */
+            vault_id?: string | null;
         };
         /**
          * TeammateContact
@@ -2351,6 +2450,23 @@ export interface components {
         /** Error */
         Error: {
             error: string;
+        };
+        /**
+         * SandboxConversation
+         * @description A conversation on a sandbox, as the sandbox lists it.
+         */
+        SandboxConversation: {
+            /** Format: uuid */
+            id: string;
+            /** Format: date-time */
+            inserted_at?: string;
+            /** @description True while this conversation is running a turn on the machine. */
+            mid_turn: boolean;
+            /** @enum {string} */
+            runtime?: "claude" | "codex" | "gemini" | "opencode";
+            /** @enum {string} */
+            status: "pending" | "running" | "idle" | "failed" | "terminated";
+            title?: string | null;
         };
         /** AdminCompRequest */
         AdminCompRequest: {
@@ -2573,6 +2689,10 @@ export interface components {
              */
             email: string;
             message: string;
+        };
+        /** SandboxListResponse */
+        SandboxListResponse: {
+            data: components["schemas"]["SandboxDetail"][];
         };
         /** InferenceCredentialListResponse */
         InferenceCredentialListResponse: {
@@ -3788,6 +3908,38 @@ export interface operations {
             };
         };
     };
+    "FountainWeb.SandboxController.index": {
+        parameters: {
+            query?: {
+                /** @description Comma-separated: pending, starting, ready, suspended, terminated, failed. */
+                status?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Sandboxes */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SandboxListResponse"];
+                };
+            };
+            /** @description Unknown status */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     "FountainWeb.VaultSecretController.delete": {
         parameters: {
             query?: never;
@@ -4127,6 +4279,37 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "FountainWeb.SandboxController.show": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Sandbox */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SandboxResponse"];
+                };
             };
             /** @description Not found */
             404: {

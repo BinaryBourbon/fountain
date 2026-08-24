@@ -84,6 +84,7 @@ func init() {
 	runCmd.Flags().StringP("prompt", "p", "", "prompt text (required)")
 	runCmd.Flags().String("vault", "", "vault name or id")
 	runCmd.Flags().String("environment", "", "environment name or id to provision from, instead of the agent's own")
+	runCmd.Flags().String("sandbox", "", "sandbox id to attach to, instead of provisioning a new one")
 	rootCmd.AddCommand(runCmd)
 }
 
@@ -277,6 +278,10 @@ func runAgent(cmd *cobra.Command, target string) error {
 	}
 	if environment != "" {
 		body["environment_id"] = resolveEnvironmentID(environment)
+	}
+	// Sandboxes have ids only, no names: nothing to resolve.
+	if sandbox, _ := cmd.Flags().GetString("sandbox"); sandbox != "" {
+		body["sandbox_id"] = sandbox
 	}
 
 	c := activeClient()
