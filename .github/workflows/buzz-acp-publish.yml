@@ -21,12 +21,14 @@ on:
     paths: ["buzz-acp.version", "buzz-acp.source"]
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build:
     name: Build buzz-acp ${{ matrix.arch }}
     runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: write
     strategy:
       fail-fast: false
       matrix:
