@@ -166,6 +166,9 @@ defmodule Fountain.Team.Comms do
          %{name: name} = teammate <- Team.get_teammate(user_id, agent_id) || {:error, :not_found},
          :ok <- ensure_no_contact(user_id, agent_id),
          :ok <- check_contact_ceiling(user_id),
+         # A month of rent up front (ADR 0030 decision 4); refuses only
+         # under enforcement when the balance cannot cover it.
+         :ok <- Fountain.Credits.Rent.check_provision(user_id),
          {:ok, requested} <-
            Ecto.Changeset.apply_action(Contact.request_changeset(attrs), :insert),
          {:ok, inbox} <- create_inbox(name, teammate, opts),
@@ -191,6 +194,7 @@ defmodule Fountain.Team.Comms do
           })
 
           bill_contacts(user_id)
+          contact = charge_first_month(contact)
           Team.broadcast_changed(user_id)
           {:ok, contact}
 
@@ -389,6 +393,23 @@ defmodule Fountain.Team.Comms do
   # computed from the rows and re-set on every change, so the next
   # provision or release repairs a drop — and `Fountain.Plans`' ceiling
   # bounds how far it can drift before someone notices.
+  # The first month's rent, after the row is committed (ADR 0030 decision
+  # 4). Best-effort by rescuing, like the add-on sync: the providers have
+  # already handed over a number, and a ledger hiccup must not strand it.
+  defp charge_first_month(%Contact{} = contact) do
+    case Fountain.Credits.Rent.charge(contact, contact.inserted_at, actor: "system:credit_rent") do
+      {:ok, %Contact{} = charged} -> charged
+      _ -> contact
+    end
+  rescue
+    error ->
+      Logger.warning(
+        "first month rent failed for contact #{contact.id}: #{Exception.message(error)}"
+      )
+
+      contact
+  end
+
   defp bill_contacts(user_id) do
     Fountain.Billing.sync_contact_addon(user_id)
   rescue
