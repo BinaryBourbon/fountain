@@ -46,6 +46,15 @@ upgrade, is in
 
 ### Changed
 
+- **The ACP peer outlives its prompt.** `Fountain.Runtimes.ACP.Peer` no
+  longer ends when the prompt is answered: it reports the stop reason and
+  waits in `:idle` for the next `prompt/3` on the same connection (no second
+  handshake, no `session/resume`, no model pin), reports an autonomous
+  cycle's end as `{:cycle_end, kind}` from the adapter's origin-marked
+  `usage_update`, and closes on `close/1`. Part 1 of 3 for #817. Nothing
+  changes in production yet: `ConversationServer` still stops the peer at
+  turn end, until part 3 moves the connection to the wake.
+
 - **A running sandbox is no longer destroyed at 24 hours.** The continuous-run
   ceiling (`SANDBOX_MAX_LIFETIME_HOURS`, ADR 0017) now defaults to `0`, off,
   for every sandbox mode: a tenant who wants a machine running all day is not

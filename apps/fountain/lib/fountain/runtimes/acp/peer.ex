@@ -1,11 +1,13 @@
 defmodule Fountain.Runtimes.ACP.Peer do
   @moduledoc """
-  One ACP connection, for exactly one turn.
+  One ACP connection, for as many turns as its owner sends it.
 
-  Gate 2 of [0014](decisions/0014-agent-client-protocol.md). The peer drives
-  `initialize` → (`session/new` | `session/resume` | `session/load`) →
-  `session/prompt` over the sprite's stdio, translates nothing itself, and
-  ends when the prompt is answered.
+  Gate 2 of [0014](decisions/0014-agent-client-protocol.md), widened by #817.
+  The peer drives `initialize` → (`session/new` | `session/resume` |
+  `session/load`) → `session/prompt` over the sprite's stdio, translates
+  nothing itself, and — once the prompt is answered — waits in `:idle` for
+  the next `prompt/3` rather than ending. The connection ends when the owner
+  calls `close/1`, when the owner dies, or when a write fails.
 
   ## Why this is not in `ConversationServer`
 
@@ -16,13 +18,32 @@ defmodule Fountain.Runtimes.ACP.Peer do
   conversation with states and a correlation table. They fail differently and
   should not share a mailbox.
 
-  ## Lifetime is the turn, and that is the economics
+  ## Lifetime is the wake, not the turn
 
-  0014's *Session lifetime* section is the load-bearing constraint: the ACP
-  connection is scoped to the turn, never to the session, so nothing is
-  attached between turns and `Lifecycle`/`SandboxReaper` keep reclaiming idle
-  sprites on exactly today's terms. The durable identity is
-  `conversation.runtime_session_id`, which we hand to `session/resume`.
+  0014 as first written scoped the connection to the turn: one `session/prompt`,
+  take the `stopReason`, close. #817 measured what that costs. The adapter
+  treats the connection as the session, so closing it at `end_turn` kills
+  everything Claude Code left running in the background — a `Monitor`, a
+  `run_in_background` shell, a `ScheduleWakeup` — and throws away codex's
+  "Allow for Session" grant; and ACP allows `session/update` *out of turn*,
+  which a client that stops reading at the prompt response never sees.
+
+  So the peer now outlives its prompt. After the prompt's response it reports
+  `{:done, stop, usage}` exactly as before and moves to `:idle`, where the
+  owner may send the next turn with `prompt/3` on the same connection — no
+  second `initialize`, no `session/resume`, no model pin. Updates that arrive
+  while idle are still reported as `{:lines, "acp", …}`; an autonomous cycle
+  (a background task's follow-up) is marked at its end by `{:cycle_end, kind}`
+  when the adapter's `usage_update` carries an origin from its autonomous set.
+  The owner decides what a turn is; the peer only parses the protocol.
+
+  What stays scoped to the turn is the *server's* accounting — the turn row,
+  the log budget, `busy?` — and what bounds the connection is the owner: it
+  closes the peer with `close/1` when the sandbox stops being its own (idle
+  park, terminate, release, server shutdown), never at turn end. The durable
+  identity is still `conversation.runtime_session_id`, handed to
+  `session/resume` on the next wake. The economics 0014 protects are
+  unchanged: a parked sprite has no peer.
 
   The peer is deliberately unlinked from its owner in both directions and
   monitored instead. A protocol bug here must fail a *turn*; linking would make
@@ -95,6 +116,12 @@ defmodule Fountain.Runtimes.ACP.Peer do
   @replay_quiet_ms 250
   @replay_max_ms 10_000
 
+  # The adapter's own set (claude-agent-acp `AUTONOMOUS_RESULT_ORIGINS`,
+  # re-verified at 0.70.0 in #817): a result whose origin is one of these
+  # "must never touch the user-turn lifecycle" — it is a background task's
+  # follow-up, not the answer to a prompt.
+  @autonomous_origins ~w(task-notification peer coordinator observer observer-activity)
+
   @typedoc "What the peer reports upward. `ref` is the sprite command's ref."
   @type payload ::
           {:lines, stream :: String.t(), data :: String.t()}
@@ -103,6 +130,7 @@ defmodule Fountain.Runtimes.ACP.Peer do
           | {:model_rejected, requested :: String.t(), detail :: String.t()}
           | {:handshake_ms, non_neg_integer(), method :: String.t()}
           | {:done, stop_reason :: String.t(), usage :: map() | nil}
+          | {:cycle_end, kind :: String.t()}
           | {:failed, term()}
 
   defmodule State do
@@ -154,7 +182,7 @@ defmodule Fountain.Runtimes.ACP.Peer do
   # ── public api ────────────────────────────────────────────────────────────
 
   @doc """
-  Start a peer for one turn.
+  Start a peer and send its first turn.
 
   Required opts: `:owner`, `:command`, `:ref`, `:prompt`, `:mode`,
   `:session_id`, `:cwd`.
@@ -168,6 +196,32 @@ defmodule Fountain.Runtimes.ACP.Peer do
 
   @doc "Feed a stdout chunk from the sprite. Chunks respect no message boundary."
   def stdout(pid, data), do: GenServer.cast(pid, {:stdout, data})
+
+  @doc """
+  Send the next turn on a connection that is `:idle` — the previous prompt was
+  answered and the peer stayed up (#817).
+
+  Reuses the session already open on this connection: no handshake, no
+  `session/resume`, no model pin. Reports `{:prompt_sent, id}` exactly as the
+  first prompt did, so the reattach contract is unchanged. Refused with
+  `{:error, {:not_idle, phase}}` while a prompt is outstanding or the
+  connection is still being set up — never a silent second prompt on the wire.
+  """
+  @spec prompt(pid(), String.t(), [map()]) :: :ok | {:error, {:not_idle, atom()}}
+  def prompt(pid, prompt, images \\ []) when is_binary(prompt) do
+    GenServer.call(pid, {:prompt, prompt, images})
+  end
+
+  @doc """
+  Close the connection cleanly.
+
+  The owner calls this when the sandbox stops being its own — idle park,
+  terminate, release, its own shutdown. The peer stops with `:normal`; the
+  sprite command is the owner's to stop. Safe to call on a peer that has
+  already gone.
+  """
+  @spec close(pid()) :: :ok
+  def close(pid), do: GenServer.cast(pid, :close)
 
   @doc """
   Ask the agent to stop the current turn.
@@ -289,6 +343,8 @@ defmodule Fountain.Runtimes.ACP.Peer do
 
   def handle_cast(:cancel, state), do: {:noreply, state}
 
+  def handle_cast(:close, state), do: {:stop, :normal, state}
+
   def handle_cast({:deny_permission, request_id}, state) do
     case state.pending_permission do
       %{request_id: ^request_id, id: id, options: options} ->
@@ -305,6 +361,18 @@ defmodule Fountain.Runtimes.ACP.Peer do
   end
 
   @impl true
+  def handle_call({:prompt, prompt, images}, _from, %State{phase: :idle} = state) do
+    state = send_prompt(%{state | prompt: prompt, images: images})
+
+    if state.phase == :failed,
+      do: {:reply, {:error, {:not_idle, :failed}}, state},
+      else: {:reply, :ok, state}
+  end
+
+  def handle_call({:prompt, _prompt, _images}, _from, state) do
+    {:reply, {:error, {:not_idle, state.phase}}, state}
+  end
+
   # Answering is a `call` so the caller learns whether the answer landed: the
   # request may already have been resolved by another attached client, by the
   # timeout, or by the turn ending, and "too late" and "wrong option" are
@@ -366,7 +434,9 @@ defmodule Fountain.Runtimes.ACP.Peer do
       # moduledoc. The timestamp is what the quiet period below measures.
       %{state | replay_last_ms: now_ms()}
     else
-      persist(state, "acp", Protocol.notification("session/update", params))
+      state
+      |> persist("acp", Protocol.notification("session/update", params))
+      |> report_cycle_end(params)
     end
   end
 
@@ -503,6 +573,32 @@ defmodule Fountain.Runtimes.ACP.Peer do
   # stdout. Those are output, not protocol, and the transcript is more useful
   # with them in it.
   defp handle_message({:invalid, line}, state), do: persist(state, "stdout", [line, "\n"])
+
+  # A `usage_update` whose origin is in the adapter's autonomous set marks the
+  # end of a background cycle (#817). Reported as its own payload so the owner
+  # can close the autonomous turn it opened without re-parsing persisted
+  # lines. A plain `usage_update` — the user turn's own — reports nothing.
+  defp report_cycle_end(state, params) do
+    case autonomous_origin(params) do
+      nil -> state
+      kind -> tap(state, &report(&1, {:cycle_end, kind}))
+    end
+  end
+
+  defp autonomous_origin(params) do
+    update = Map.get(params, "update") || %{}
+
+    with "usage_update" <- Map.get(update, "sessionUpdate"),
+         kind when is_binary(kind) <- origin_kind(update) || origin_kind(params),
+         true <- kind in @autonomous_origins do
+      kind
+    else
+      _ -> nil
+    end
+  end
+
+  defp origin_kind(%{"_meta" => %{"_claude/origin" => %{"kind" => kind}}}), do: kind
+  defp origin_kind(_), do: nil
 
   # Whether this is the request the peer is already holding open. An agent
   # cannot have two requests outstanding under one JSON-RPC id, so a matching
@@ -651,10 +747,13 @@ defmodule Fountain.Runtimes.ACP.Peer do
   # The turn's usage rides along with the stop reason (#827): it is the one
   # end-of-turn figure the runtime reports, and the response is the only place
   # it appears. nil when the runtime reports none.
+  #
+  # The turn is over; the connection is not (#817). `:idle` is where the next
+  # `prompt/3` is accepted, and where out-of-turn updates keep flowing up.
   defp handle_response(:prompt, result, state) do
     stop = Map.get(result, "stopReason") || "end_turn"
     report(state, {:done, stop, Usage.from_prompt_result(result)})
-    %{state | phase: :done}
+    %{state | phase: :idle}
   end
 
   # ── authentication ────────────────────────────────────────────────────────
