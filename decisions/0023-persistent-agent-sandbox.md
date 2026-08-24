@@ -78,6 +78,13 @@ Shipped as seven gates, one PR each, in dependency order:
   move into one owner.
 - At capacity a turn is refused (`sandbox_at_capacity`); the `queued` stage
   of the original step 4 was dropped with the lease and is not built.
+- Checkpointing (Consequences, "becomes meaningful"): a home is
+  checkpointed when it parks, behind `CHECKPOINT_CREATION_ENABLED` (#1073),
+  and the id is on `GET /api/sandboxes/:id`. A Sprites checkpoint is scoped
+  to the sprite that made it and the SDK cannot create a sprite from one, so
+  it rolls a home back and does **not** feed the `{:machine_gone, …}`
+  re-provision; a machine that is gone is rebuilt from environment, vault
+  and repositories. There is no retention: every park adds one.
 - The continuous-run ceiling (0017) is **off by default** since #936's
   fix (the PR after #1069). An operator who sets `SANDBOX_MAX_LIFETIME_HOURS`
   gets the table's interim behaviour: a home at the ceiling is parked, not

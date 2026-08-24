@@ -485,6 +485,13 @@ config :fountain,
   sandbox_idle_timeout_minutes: parse_bound.("SANDBOX_IDLE_TIMEOUT_MINUTES", "60"),
   sandbox_max_lifetime_hours: parse_bound.("SANDBOX_MAX_LIFETIME_HOURS", "0")
 
+# Checkpoints (#1073). Off by default: a Sprites checkpoint is scoped to the
+# sprite that made it (#654), so what it buys is rolling a persistent home
+# back to its last park — and every park adds one, with no retention yet.
+config :fountain,
+       :checkpoint_creation_enabled,
+       System.get_env("CHECKPOINT_CREATION_ENABLED", "false") == "true"
+
 # Webhooks (#700). On by default; a deployment with no outbound HTTP egress
 # can switch dispatch off entirely. WEBHOOK_ALLOW_HTTP relaxes the https-only
 # rule on endpoint URLs, which is for a self-hosted instance calling a

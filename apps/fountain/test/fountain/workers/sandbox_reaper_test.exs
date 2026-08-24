@@ -187,6 +187,48 @@ defmodule Fountain.Workers.SandboxReaperTest do
       assert Repo.reload(conv).status == "idle"
     end
 
+    test "parking a persistent home checkpoints it first, where the provider can" do
+      # The reaper is the park path for a home whose server is gone; the
+      # checkpoint is the machine's last-quiet state (ADR 0023, #1073).
+      user = insert_verified_user()
+      sandbox = insert_sandbox(user_id: user.id, status: "ready", mode: "persistent")
+      conv = insert_conversation(user_id: user.id, sandbox: sandbox, status: "idle")
+      insert_turn(conv, %{status: "completed"})
+      sandbox = age_rows(sandbox, conv, 60 * 5)
+
+      capture_destroys()
+      stub(Fountain.Sandbox, :supports?, fn :sprites, cap -> cap in [:suspend, :checkpoint] end)
+      stub(Fountain.Sandbox, :create_checkpoint, fn _handle, _opts -> {:ok, "v2"} end)
+
+      with_bounds([sandbox_idle_timeout_minutes: 60, sandbox_max_lifetime_hours: 24], fn ->
+        capture_log(fn -> assert {1, 0} = SandboxReaper.sweep_abandoned_sandboxes() end)
+      end)
+
+      reloaded = Repo.reload(sandbox)
+      assert reloaded.status == "suspended"
+      assert reloaded.provider_meta["checkpoint_id"] == "v2"
+      assert destroyed_names() == []
+    end
+
+    test "an ephemeral sandbox parks without a checkpoint" do
+      user = insert_verified_user()
+      sandbox = insert_sandbox(user_id: user.id, status: "ready")
+      conv = insert_conversation(user_id: user.id, sandbox: sandbox, status: "idle")
+      insert_turn(conv, %{status: "completed"})
+      sandbox = age_rows(sandbox, conv, 60 * 5)
+
+      capture_destroys()
+      stub(Fountain.Sandbox, :supports?, fn :sprites, cap -> cap in [:suspend, :checkpoint] end)
+      reject(&Fountain.Sandbox.create_checkpoint/2)
+
+      with_bounds([sandbox_idle_timeout_minutes: 60, sandbox_max_lifetime_hours: 24], fn ->
+        capture_log(fn -> assert {1, 0} = SandboxReaper.sweep_abandoned_sandboxes() end)
+      end)
+
+      assert Repo.reload(sandbox).status == "suspended"
+      refute Repo.reload(sandbox).provider_meta["checkpoint_id"]
+    end
+
     test "a suspended sandbox matches no pass, however old" do
       # The durable resting state: never released, never expired, never
       # destroyed — its sprite is the agent's memory (decisions/0017).

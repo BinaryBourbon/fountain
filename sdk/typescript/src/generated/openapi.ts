@@ -2310,6 +2310,12 @@ export interface components {
              * @description The agent the machine was built for. With environment_id and vault_id it is the identity a conversation must match to attach (sandbox_id on create).
              */
             agent_id?: string | null;
+            /** @description The checkpoint Fountain took of this home the last time it parked (ADR 0023). It is scoped to this machine: it can roll the machine back, not rebuild a machine that is gone. Null for an ephemeral sandbox, a provider without checkpoints, or a home that has not parked yet. */
+            checkpoint?: {
+                /** Format: date-time */
+                at?: string | null;
+                id?: string;
+            } | null;
             /** @description Every conversation ever opened on this machine, newest first. */
             conversations: components["schemas"]["SandboxConversation"][];
             /** Format: uuid */
@@ -2408,6 +2414,12 @@ export interface components {
              * @description The agent the machine was built for. With environment_id and vault_id it is the identity a conversation must match to attach (sandbox_id on create).
              */
             agent_id?: string | null;
+            /** @description The checkpoint Fountain took of this home the last time it parked (ADR 0023). It is scoped to this machine: it can roll the machine back, not rebuild a machine that is gone. Null for an ephemeral sandbox, a provider without checkpoints, or a home that has not parked yet. */
+            checkpoint?: {
+                /** Format: date-time */
+                at?: string | null;
+                id?: string;
+            } | null;
             /** Format: uuid */
             environment_id?: string | null;
             /** Format: uuid */

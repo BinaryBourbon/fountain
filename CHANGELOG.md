@@ -25,6 +25,19 @@ upgrade, is in
   for #817: additive and inert, nothing writes `autonomous` until part 3
   moves the ACP connection to the wake.
 
+- **A persistent home is checkpointed when it parks.** With
+  `CHECKPOINT_CREATION_ENABLED=true`, on a provider that has checkpoints
+  (Sprites), both park paths — the server's idle and ceiling reclaim, and
+  the reaper's park of a home with no live server — take a checkpoint of
+  the machine first and record it on the sandbox (`checkpoint: {id, at}` on
+  `GET /api/sandboxes[/:id]`) and as a `checkpoint` stage on every live
+  transcript. A checkpoint is scoped to the machine that made it: it can
+  roll that home back to its last park, and it cannot rebuild a home that
+  is gone — a lost machine is still rebuilt from environment, vault and
+  repositories. Every park adds one and none are deleted yet. Ephemeral
+  sandboxes are never checkpointed. The flag is now read from the
+  environment; it existed only as test config before. ADR 0023 (#1073).
+
 - **The last three launch doors take `sandbox_mode` and `sandbox_id`.**
   `fountain acp` gets `--sandbox-mode` and `--sandbox` for every session it
   opens, and a client may name either per session in `session/new` `_meta`

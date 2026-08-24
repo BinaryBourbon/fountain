@@ -51,6 +51,20 @@ defmodule FountainWeb.Schemas do
               "is reachable. Null for providers that expose no such URL. The " <>
               "same value is available inside the sandbox as `SANDBOX_URL`."
         },
+        checkpoint: %Schema{
+          type: :object,
+          nullable: true,
+          description:
+            "The checkpoint Fountain took of this home the last time it parked " <>
+              "(ADR 0023). It is scoped to this machine: it can roll the machine " <>
+              "back, not rebuild a machine that is gone. Null for an ephemeral " <>
+              "sandbox, a provider without checkpoints, or a home that has not " <>
+              "parked yet.",
+          properties: %{
+            id: %Schema{type: :string},
+            at: %Schema{type: :string, format: :"date-time", nullable: true}
+          }
+        },
         provider: %Schema{
           type: :string,
           enum: ~w(sprites e2b daytona runner),
