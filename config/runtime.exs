@@ -797,6 +797,9 @@ credit_pricing_since =
 
 config :fountain, :credits,
   pricing_since: credit_pricing_since,
+  # CREDIT_ENFORCE=true turns the soft stop on. Keep it off until a month of
+  # computed-versus-invoice deltas has been recorded (#1038, ADR 0030 §8).
+  enforce: System.get_env("CREDIT_ENFORCE") == "true",
   turn_hour_cents: credit_cents.("CREDIT_TURN_HOUR_CENTS") || 25,
   number_cents: credit_cents.("CREDIT_NUMBER_CENTS"),
   inbox_cents: credit_cents.("CREDIT_INBOX_CENTS"),

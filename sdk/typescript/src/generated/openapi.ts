@@ -543,6 +543,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/users/{id}/credits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Add prepaid credit to an account
+         * @description A `grant_admin` ledger row (ADR 0030): goodwill, a won dispute, an outage. It never expires and is spent after the tier's grant. There is deliberately no negative form here; a clawback is what a refund or dispute does through Stripe.
+         */
+        post: operations["FountainWeb.AdminController.grant_credits"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/team/{agent_id}/contact": {
         parameters: {
             query?: never;
@@ -2718,6 +2738,19 @@ export interface components {
         TokenRequest: {
             token: string;
         };
+        /**
+         * AdminCreditsRequest
+         * @example {
+         *       "cents": 1000,
+         *       "note": "won dispute dp_123"
+         *     }
+         */
+        AdminCreditsRequest: {
+            /** @description Credit to add, in cents. Never expires and is spent last. */
+            cents: number;
+            /** @description Why, for the audit trail. A won dispute, a goodwill credit, an outage. */
+            note?: string | null;
+        };
         /** TeamAddRequest */
         TeamAddRequest: {
             /** Format: uuid */
@@ -3578,6 +3611,8 @@ export interface components {
             cancel_at_period_end?: boolean | null;
             /** @description Teammate contacts this account is not charged for. Distinct from a `comped` subscription_status, which makes everything free. */
             comped_contacts?: number;
+            /** @description Prepaid balance in cents (ADR 0030). May be negative. Zero while credits are not active on this deployment. */
+            credit_balance_cents?: number;
             /** Format: date-time */
             current_period_end?: string | null;
             email: string;
@@ -5202,6 +5237,60 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MessageResponse"];
+                };
+            };
+        };
+    };
+    "FountainWeb.AdminController.grant_credits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        /** @description Credit */
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["AdminCreditsRequest"];
+            };
+        };
+        responses: {
+            /** @description Account */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminUserResponse"];
+                };
+            };
+            /** @description Admin required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Refused */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };

@@ -132,6 +132,7 @@ at a dead end, with no error to see. Read [Email](guides/operate/email.md).
 | `AGENTMAIL_MESSAGE_CENTS` | — | No. | What AgentMail charges for one email, in cents. Give the fraction, such as `0.2` for $2 per 1,000 emails. A whole number rounds this rate to zero. |
 | `AGENTPHONE_MESSAGE_CENTS` | — | No. | What AgentPhone charges for one SMS, in cents. Fountain counts an inbound message too, because AgentPhone charges for it. |
 | `CREDIT_PRICING_SINCE` | — | No. | The instant from which Fountain prices turns and messages into the prepaid ledger, as ISO 8601. Unset, Fountain prices nothing. |
+| `CREDIT_ENFORCE` | `false` | No. | Set `true` to refuse new sandboxes and new turns when the balance is zero or less. Turns in flight finish. Comped accounts and instances with billing off are never refused. |
 | `CREDIT_TURN_HOUR_CENTS` | `25` | No. | What a tenant pays for one hour of turn time, in whole cents, from their prepaid balance. |
 | `CREDIT_NUMBER_CENTS` | — | No. | What a tenant pays for one phone number each month, in whole cents. Unset means the number burns nothing. |
 | `CREDIT_INBOX_CENTS` | — | No. | What a tenant pays for one inbox each month, in whole cents. Unset means the inbox burns nothing. |

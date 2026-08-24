@@ -215,6 +215,27 @@ defmodule Fountain.Credits do
   end
 
   @doc """
+  Whether a zero balance refuses spend: `active?/0` and `credits.enforce`
+  (`CREDIT_ENFORCE=true`). Off, `gate/1` is always `:ok`.
+  """
+  @spec enforcing?() :: boolean()
+  def enforcing? do
+    active?() and
+      Keyword.get(Application.get_env(:fountain, :credits, []), :enforce, false) == true
+  end
+
+  @doc """
+  The spend gate (ADR 0030 decision 6): `:ok` unless enforcement is on and
+  `check_balance/1` says the tenant is out. Sits beside
+  `Billing.check_active/1` in `Billing.check_spend/1`; call that, not this,
+  from a door.
+  """
+  @spec gate(User.t() | binary()) :: :ok | {:error, :insufficient_credits}
+  def gate(subject) do
+    if enforcing?(), do: check_balance(subject), else: :ok
+  end
+
+  @doc """
   The one shape every surface renders (the billing page, the dashboard,
   `GET /api/account/billing`, the admin account view), so they cannot
   disagree.

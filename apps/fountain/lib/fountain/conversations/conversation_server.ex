@@ -3826,7 +3826,7 @@ defmodule Fountain.Conversations.ConversationServer do
   # continued service per live sandbox (#313). Suspension is the same shape.
   defp turn_gate(user_id) do
     with :ok <- Fountain.Accounts.check_not_suspended(user_id) do
-      Fountain.Billing.check_active(user_id)
+      Fountain.Billing.check_spend(user_id)
     end
   end
 

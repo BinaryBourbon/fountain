@@ -1555,6 +1555,11 @@ defmodule FountainWeb.Schemas do
             "Teammate contacts this account is not charged for. Distinct from a " <>
               "`comped` subscription_status, which makes everything free."
         },
+        credit_balance_cents: %Schema{
+          type: :integer,
+          description:
+            "Prepaid balance in cents (ADR 0030). May be negative. Zero while credits are not active on this deployment."
+        },
         active_sandboxes: %Schema{type: :integer},
         onboarding_completed_at: %Schema{type: :string, format: :"date-time", nullable: true},
         last_activity_at: %Schema{type: :string, format: :"date-time", nullable: true},
@@ -1643,6 +1648,30 @@ defmodule FountainWeb.Schemas do
       type: :object,
       properties: %{comped: %Schema{type: :boolean}},
       required: [:comped]
+    })
+  end
+
+  defmodule AdminCreditsRequest do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "AdminCreditsRequest",
+      type: :object,
+      properties: %{
+        cents: %Schema{
+          type: :integer,
+          minimum: 1,
+          description: "Credit to add, in cents. Never expires and is spent last."
+        },
+        note: %Schema{
+          type: :string,
+          nullable: true,
+          description: "Why, for the audit trail. A won dispute, a goodwill credit, an outage."
+        }
+      },
+      required: [:cents],
+      example: %{"cents" => 1000, "note" => "won dispute dp_123"}
     })
   end
 

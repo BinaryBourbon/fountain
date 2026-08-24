@@ -76,6 +76,9 @@ config :fountain, :credits,
   # When set, turns that ended at or after this instant are priced into the
   # ledger; nil means the pricer no-ops. runtime.exs reads CREDIT_PRICING_SINCE.
   pricing_since: nil,
+  # When true, a zero balance refuses new sandboxes and turns (ADR 0030
+  # decision 6). Off, the ledger is reported and nothing is refused.
+  enforce: false,
   turn_hour_cents: 25,
   number_cents: nil,
   inbox_cents: nil,

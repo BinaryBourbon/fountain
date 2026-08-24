@@ -89,28 +89,34 @@ defmodule Fountain.Workers.CreditPricer do
   end
 
   defp do_run(floor) do
-    %{turns: price_turns(floor), messages: price_messages(floor)}
+    {turns, touched} = price_turns(floor)
+    messages = price_messages(floor)
+    Enum.each(touched, &Fountain.Workers.CreditsEmail.notify_after_burn/1)
+    %{turns: turns, messages: messages}
   end
 
   # ---------------------------------------------------------------------------
   # Turns
   # ---------------------------------------------------------------------------
 
-  defp price_turns(floor), do: price_turns(floor, 0)
+  # Returns `{rows_written, user_ids_touched}`; the second is who to warn.
+  defp price_turns(floor), do: price_turns(floor, 0, MapSet.new())
 
-  defp price_turns(floor, written) do
+  defp price_turns(floor, written, touched) do
     case unpriced_turns(floor) do
       [] ->
-        written
+        {written, MapSet.to_list(touched)}
 
       turns ->
-        n = Enum.count(turns, &price_turn/1)
+        priced = Enum.filter(turns, &price_turn/1)
+        n = length(priced)
+        touched = Enum.reduce(priced, touched, &MapSet.put(&2, &1.user_id))
         # The anti-join hides what was just written, so the next page is the
         # next unpriced batch. A page that wrote nothing (every turn was free,
         # or a duplicate) would loop forever; stop on it.
         if n == 0 or length(turns) < @batch,
-          do: written + n,
-          else: price_turns(floor, written + n)
+          do: {written + n, MapSet.to_list(touched)},
+          else: price_turns(floor, written + n, touched)
     end
   end
 

@@ -151,6 +151,14 @@ defmodule FountainWeb.FallbackController do
     |> json(%{error: "subscription_required", upgrade_url: "/account/billing"})
   end
 
+  # Prepaid balance exhausted (ADR 0030 decision 6). Same 402 shape as the
+  # subscription gate, so a client with one handler covers both.
+  def call(conn, {:error, :insufficient_credits}) do
+    conn
+    |> put_status(:payment_required)
+    |> json(%{error: "insufficient_credits", upgrade_url: "/account/billing"})
+  end
+
   # Operator suspension (#287). 403 rather than 402: there is nothing the
   # caller can buy their way out of.
   def call(conn, {:error, :account_suspended}) do

@@ -52,6 +52,7 @@ defmodule Fountain.Audit.AdminEvent do
     admin.stripe.resynced
     admin.plan.changed
     admin.comped_contacts.changed
+    admin.credits.granted
   )
 
   def event_types, do: @event_types
