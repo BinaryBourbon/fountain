@@ -520,6 +520,15 @@ An ephemeral sandbox, or one that is already `terminated` or `failed`, gets
 `422 sandbox_not_resettable`. While a conversation on the sandbox runs a
 turn, the request gets `409 sandbox_mid_turn`.
 
+Three other requests retire a persistent sandbox, because each one moves the
+identity that the sandbox belongs to. A `PATCH /api/agents/:id` with a new
+`environment_id` retires the sandboxes built on the old environment. A
+`DELETE` on `/api/environments/:id` or on `/api/vaults/:id` retires the
+sandboxes built on that environment or that vault. Each request behaves like
+a reset. Fountain destroys the machine, keeps the conversations, and builds a
+new machine on the next prompt. A request also gets `409 sandbox_mid_turn`
+while a conversation on one of those sandboxes runs a turn.
+
 ## Search
 
 This is full-text search across the caller's conversations. A command palette

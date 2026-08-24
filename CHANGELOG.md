@@ -132,6 +132,28 @@ upgrade, is in
   one conversation the two numbers are equal, so nothing changes for
   today's accounts. ADR 0026 addendum; ADR 0023 step 6.
 
+- **A change that moves a home's identity retires the home.** A persistent
+  sandbox is keyed on `(user, agent, environment, vault)`. Moving an agent's
+  `environment_id`, deleting an environment, or deleting a vault moved that
+  key and left the machine `ready` under an identity nothing looks up — it
+  held a concurrency slot and a disk carrying the old environment's or
+  vault's secrets. All three now retire the affected homes the way
+  `DELETE /api/sandboxes/:id` does: the machine is destroyed, the
+  conversations on it are kept and told why (`sandbox`/`reset` with
+  `environment_changed`, `environment_deleted` or `vault_deleted`), and the
+  next prompt builds a machine on the identity that exists now. Audited as
+  `sandbox.reset` with the reason in the metadata. Each request is refused
+  with `409 sandbox_mid_turn` (a flash in the console) while a conversation
+  on one of those machines runs a turn, and nothing is written.
+
+  Deleting an environment or a vault was additionally broken outright: the
+  `ON DELETE SET NULL` on `sandboxes.environment_id` / `sandboxes.vault_id`
+  either turned the home into the *no environment* or *no vault* home for
+  its identity — so the next launch that asked for neither landed on a disk
+  holding the deleted secrets — or collided with
+  `sandboxes_home_identity_index` (`NULLS NOT DISTINCT`) and failed the
+  delete with an unhandled constraint error. #1084.
+
 - **A sandbox that is gone is gone for every conversation on it.** When a
   prompt wakes a conversation and finds its sandbox has vanished, the fresh
   machine it provisions now takes every live conversation that shared the old

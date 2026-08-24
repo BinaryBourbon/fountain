@@ -102,7 +102,10 @@ defmodule FountainWeb.EnvironmentController do
     parameters: [id: [in: :path, type: :string, required: true]],
     responses: [
       no_content: "Deleted",
-      not_found: {"Not found", "application/json", Schemas.Error}
+      not_found: {"Not found", "application/json", Schemas.Error},
+      conflict:
+        {"An agent is mid-turn on a persistent sandbox built on this environment",
+         "application/json", Schemas.Error}
     ]
   )
 
@@ -114,8 +117,9 @@ defmodule FountainWeb.EnvironmentController do
         {:error, :not_found}
 
       env ->
-        {:ok, _} = Environments.delete_environment(env, Audited.attribution(conn))
-        send_resp(conn, :no_content, "")
+        with {:ok, _} <- Environments.delete_environment(env, Audited.attribution(conn)) do
+          send_resp(conn, :no_content, "")
+        end
     end
   end
 end

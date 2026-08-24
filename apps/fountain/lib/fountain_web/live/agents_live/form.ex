@@ -441,6 +441,19 @@ defmodule FountainWeb.AgentsLive.Form do
          |> put_flash(:info, "Agent updated")
          |> push_navigate(to: ~p"/agents")}
 
+      # Moving the environment retires the homes built on the old one, and
+      # that cannot happen under a running turn (#1084). Not a field error —
+      # the form is fine, the timing is not.
+      {:error, :sandbox_mid_turn} ->
+        {:error,
+         put_flash(
+           socket,
+           :error,
+           "This agent is running a turn on its own machine right now. Changing its " <>
+             "environment rebuilds that machine, so wait for the turn to finish, or " <>
+             "interrupt it, then save again."
+         )}
+
       {:error, cs} ->
         {:error, assign(socket, :errors, changeset_errors(cs))}
     end

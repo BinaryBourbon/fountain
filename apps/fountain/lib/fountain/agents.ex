@@ -134,6 +134,24 @@ defmodule Fountain.Agents do
       |> Agent.changeset(attrs)
       |> validate_environment_owner()
 
+    # A home is keyed on (user, agent, environment, vault), so moving the
+    # agent's environment orphans every home built on the old one: the next
+    # launch looks under the new key and provisions a fresh machine, while the
+    # old one stays `ready` — holding a concurrency slot and a disk carrying
+    # the old environment's secrets (#1084). Asked here, before anything is
+    # written, so a mid-turn refusal costs the caller nothing.
+    # Ownership: `agent` came from the caller's scoped fetch, and every home
+    # in `orphans` is keyed on that agent id.
+    orphans = homes_orphaned_by_update(changeset, agent)
+
+    if Fountain.Conversations._unsafe_any_home_mid_turn?(orphans) do
+      {:error, :sandbox_mid_turn}
+    else
+      do_update_agent(changeset, orphans, opts)
+    end
+  end
+
+  defp do_update_agent(changeset, orphans, opts) do
     result =
       if snapshot_needed?(changeset) do
         Repo.transaction(fn ->
@@ -165,8 +183,46 @@ defmodule Fountain.Agents do
         Repo.update(changeset)
       end
 
+    result =
+      result
+      |> audited("agent.updated", merge_metadata(opts, Audit.changed_fields(changeset)))
+
+    # Only once the new identity is the committed one: a home torn down
+    # against an update that then failed would be rebuilt for nothing.
+    # Ownership: established above, by the scoped fetch that produced the agent
+    # these homes belong to.
+    case result do
+      {:ok, _} ->
+        _ =
+          Fountain.Conversations._unsafe_retire_orphaned_homes(
+            orphans,
+            "environment_changed",
+            opts
+          )
+
+      _ ->
+        :ok
+    end
+
     result
-    |> audited("agent.updated", merge_metadata(opts, Audit.changed_fields(changeset)))
+  end
+
+  # The homes an update orphans — only an `environment_id` that actually moves
+  # does it, and a vault is chosen per launch rather than stored on the agent.
+  # `[]` for a changeset that will not commit: nothing is orphaned by an
+  # update that does not happen, so nothing should be refused either.
+  defp homes_orphaned_by_update(%Ecto.Changeset{valid?: false}, _agent), do: []
+
+  # Ownership: `agent_id` comes from the struct the caller fetched scoped; the
+  # homes returned are the ones keyed on it.
+  defp homes_orphaned_by_update(changeset, %Agent{id: agent_id}) do
+    case Ecto.Changeset.fetch_change(changeset, :environment_id) do
+      {:ok, env_id} ->
+        Fountain.Conversations._unsafe_homes_orphaned_by_environment(agent_id, env_id)
+
+      :error ->
+        []
+    end
   end
 
   # An agent may only reference an environment owned by the same tenant —

@@ -1930,6 +1930,91 @@ defmodule Fountain.Conversations do
   end
 
   @doc """
+  Every live home built on `environment_id`, across the agents that name it.
+  `_unsafe_`: the caller owns the environment, and a home carries the same
+  `user_id` as the environment its identity names.
+  """
+  def _unsafe_homes_for_environment(environment_id) when is_binary(environment_id) do
+    live_homes(from(s in Sandbox, where: s.environment_id == ^environment_id))
+  end
+
+  @doc """
+  Every live home built on `vault_id`. Same ownership note as
+  `_unsafe_homes_for_environment/1`.
+  """
+  def _unsafe_homes_for_vault(vault_id) when is_binary(vault_id) do
+    live_homes(from(s in Sandbox, where: s.vault_id == ^vault_id))
+  end
+
+  @doc """
+  The homes of `agent_id` that moving it to `env_id` orphans: built for a
+  different environment, so the next launch looks under the new identity key,
+  finds nothing and provisions a fresh machine while these stay `ready` —
+  holding a concurrency slot and a disk with the old environment's secrets on
+  it (#1084). `nil` is an environment like any other here: an agent that
+  loses its environment orphans the homes that had one.
+  """
+  def _unsafe_homes_orphaned_by_environment(agent_id, env_id) when is_binary(agent_id) do
+    from(s in Sandbox, where: s.agent_id == ^agent_id)
+    |> where_environment_differs(env_id)
+    |> live_homes()
+  end
+
+  defp where_environment_differs(query, nil),
+    do: from(s in query, where: not is_nil(s.environment_id))
+
+  # `!=` is null-returning in SQL, so a home with no environment has to be
+  # named explicitly or it reads as "not different" and survives.
+  defp where_environment_differs(query, env_id),
+    do: from(s in query, where: is_nil(s.environment_id) or s.environment_id != ^env_id)
+
+  defp live_homes(query) do
+    from(s in query,
+      where: s.mode == "persistent" and s.status not in ["terminated", "failed"],
+      order_by: [asc: s.inserted_at]
+    )
+    |> Repo.all()
+  end
+
+  @doc """
+  Whether any of `homes` is running a turn — asked *before* a change that
+  would pull the machine out from under a working agent, so the refusal costs
+  nothing (#1084). Advisory only: each retirement re-checks under the
+  per-sandbox advisory lock, which is what actually makes a teardown safe.
+  """
+  def _unsafe_any_home_mid_turn?(homes) when is_list(homes) do
+    Enum.any?(homes, &(_unsafe_running_turns_elsewhere(&1.id, nil) > 0))
+  end
+
+  @doc """
+  Retire `homes` whose identity moved out from under them — the agent's
+  environment changed, or the environment or vault the key names was deleted
+  (#1084). Each goes through `reset_sandbox/2`, so the conversations on it are
+  kept and their next prompt builds a machine on the identity that exists now.
+
+  Best-effort per home, and deliberately so: a turn that starts between the
+  caller's check and this call leaves that one machine standing rather than
+  cutting the turn. The orphan is then what it was before this existed — a
+  `ready` row `fountain sandbox reset` clears — and the warning says which.
+  Returns the number retired.
+  """
+  def _unsafe_retire_orphaned_homes(homes, reason, opts \\ []) when is_list(homes) do
+    Enum.count(homes, fn home ->
+      case reset_sandbox(home, Keyword.put(opts, :reason, reason)) do
+        {:ok, _} ->
+          true
+
+        {:error, err} ->
+          Logger.warning(
+            "home #{home.id} orphaned by #{reason} was left standing: #{inspect(err)}"
+          )
+
+          false
+      end
+    end)
+  end
+
+  @doc """
   Tear down every home of `agent_id` — what deleting the agent does, since
   the identity the homes were built for is gone (ADR 0023 step 5). Each live
   conversation on a home is terminated (a home survives that on its own), then
@@ -1997,7 +2082,12 @@ defmodule Fountain.Conversations do
   check and the row flip share the per-sandbox advisory lock that turn
   creation takes, so a turn cannot slip in between them.
 
-  See `create_agent/2` for `opts` (`:actor`, `:request_ip`).
+  `opts[:reason]` says *why*, and reaches every transcript on the machine and
+  the audit row: `"home_reset"` (the owner asked — the default),
+  `"environment_changed"`, `"environment_deleted"` or `"vault_deleted"` when
+  the identity moved out from under the home (#1084).
+
+  See `create_agent/2` for the rest of `opts` (`:actor`, `:request_ip`).
   """
   def reset_sandbox(%Sandbox{} = sandbox, opts \\ []) do
     cond do
@@ -2042,9 +2132,8 @@ defmodule Fountain.Conversations do
       end)
 
     with {:ok, ids} <- result do
-      message =
-        "The sandbox was reset by its owner. The transcript is kept; the next prompt " <>
-          "builds a fresh machine, and the agent starts a new session there."
+      reason = Keyword.get(opts, :reason, "home_reset")
+      message = reset_message(reason)
 
       # A conversation with a live server is told through it — the server
       # cuts nothing (no turn is running), records the event on its own
@@ -2055,13 +2144,13 @@ defmodule Fountain.Conversations do
           nil ->
             publish_stage(id, "sandbox", "done", %{
               event: "reset",
-              reason: "home_reset",
+              reason: reason,
               by: "owner",
               message: message
             })
 
           pid ->
-            GenServer.cast(pid, {:machine_gone, "reset", "home_reset", message})
+            GenServer.cast(pid, {:machine_gone, "reset", reason, message})
         end
       end)
 
@@ -2077,13 +2166,33 @@ defmodule Fountain.Conversations do
         metadata: %{
           "agent_id" => sandbox.agent_id,
           "provider" => sandbox.provider,
-          "conversations" => length(ids)
+          "conversations" => length(ids),
+          "reason" => reason
         }
       })
 
       {:ok, _unsafe_get_sandbox!(sandbox.id)}
     end
   end
+
+  # What each transcript on a reset home is told. The tail is the same every
+  # time — the transcript survives, the next prompt builds a machine — because
+  # that is the part a reader needs; the head says whose decision it was.
+  @reset_tail "The transcript is kept; the next prompt builds a fresh machine, " <>
+                "and the agent starts a new session there."
+
+  defp reset_message("environment_changed"),
+    do:
+      "The agent moved to a different environment, so this machine is no longer its " <>
+        @reset_tail
+
+  defp reset_message("environment_deleted"),
+    do: "The environment this machine was built for was deleted. " <> @reset_tail
+
+  defp reset_message("vault_deleted"),
+    do: "The vault this machine was built for was deleted. " <> @reset_tail
+
+  defp reset_message(_owner), do: "The sandbox was reset by its owner. " <> @reset_tail
 
   # A conversation on a machine the caller already has (ADR 0023 gate 3).
   #

@@ -1932,7 +1932,7 @@ export interface paths {
         get: operations["FountainWeb.AgentController.show"];
         /**
          * Update an agent (partial)
-         * @description Every field is optional; the server merges into the existing record.
+         * @description Every field is optional; the server merges into the existing record. Moving `environment_id` retires the agent's persistent sandboxes built on the old environment, so the update is refused with `409 sandbox_mid_turn` while a conversation on one of them is running a turn.
          */
         put: operations["FountainWeb.AgentController.update"];
         post?: never;
@@ -1942,7 +1942,7 @@ export interface paths {
         head?: never;
         /**
          * Update an agent (partial)
-         * @description Every field is optional; the server merges into the existing record.
+         * @description Every field is optional; the server merges into the existing record. Moving `environment_id` retires the agent's persistent sandboxes built on the old environment, so the update is refused with `409 sandbox_mid_turn` while a conversation on one of them is running a turn.
          */
         patch: operations["FountainWeb.AgentController.update (2)"];
         trace?: never;
@@ -4202,6 +4202,15 @@ export interface operations {
             };
             /** @description Not found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description An agent is mid-turn on a persistent sandbox built on this environment */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -8832,6 +8841,15 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
+            /** @description An agent is mid-turn on a persistent sandbox built on this vault */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
         };
     };
     "FountainWeb.VaultController.update (2)": {
@@ -8996,6 +9014,15 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
+            /** @description An agent is mid-turn on a persistent sandbox the change retires */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
             /** @description Validation error */
             422: {
                 headers: {
@@ -9063,6 +9090,15 @@ export interface operations {
             };
             /** @description Not found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description An agent is mid-turn on a persistent sandbox the change retires */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

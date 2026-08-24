@@ -10,6 +10,19 @@ server releases.
 
 ---
 
+## [0.1.12] — 2026-08-24
+
+### Changed
+
+- `PATCH /api/agents/{id}`, `DELETE /api/environments/{id}` and
+  `DELETE /api/vaults/{id}` now carry a `409` response in the generated
+  types. Each of those requests can move a persistent home's identity key,
+  so the server retires the machine and refuses the request while a
+  conversation on it runs a turn (#1084). `FountainError` already maps 409
+  to `conflict`; the error body's `error` is `sandbox_mid_turn`.
+
+---
+
 ## [0.1.11] — 2026-08-24
 
 ### Added
