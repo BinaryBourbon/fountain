@@ -58,7 +58,11 @@ defmodule FountainWeb.AgentVersionControllerTest do
 
     # The path parameter is typed integer in the spec, so OpenApiSpex refuses
     # a non-number before the action runs (422, like every other cast error).
-    test "422s on a version that is not a number", %{conn: conn, raw_key: raw_key, agent: agent} do
+    test "422s on a version that is not a number", %{
+      conn: conn,
+      raw_key: raw_key,
+      agent: agent
+    } do
       conn = conn |> authed_with_key(raw_key) |> get("/api/agents/#{agent.id}/versions/latest")
 
       assert json_response(conn, 422)
