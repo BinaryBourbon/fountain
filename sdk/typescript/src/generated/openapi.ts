@@ -3787,6 +3787,19 @@ export interface components {
             data: {
                 /** @description Access continues until current_period_end. */
                 cancel_at_period_end?: boolean;
+                /** @description The prepaid balance, in cents. Null while this deployment has not started burning credits; a client must not show a zero balance then. Nothing is refused at zero yet. */
+                credits?: {
+                    /** @description May be negative: an in-flight turn that crosses zero finishes. */
+                    balance_cents?: number;
+                    /** Format: date-time */
+                    expires_at?: string | null;
+                    /** @description Unspent credit from the earliest live grant, which expires at expires_at. */
+                    expiring_cents?: number;
+                    /** @description The part of the balance that was bought. It never expires and is spent last. */
+                    purchased_cents?: number;
+                    /** @description What one hour of turn time costs. */
+                    turn_hour_cents?: number;
+                } | null;
                 /** Format: date-time */
                 current_period_end?: string | null;
                 /**

@@ -1841,6 +1841,35 @@ defmodule FountainWeb.Schemas do
                 }
               }
             },
+            credits: %Schema{
+              type: :object,
+              nullable: true,
+              description:
+                "The prepaid balance, in cents. Null while this deployment has " <>
+                  "not started burning credits; a client must not show a zero " <>
+                  "balance then. Nothing is refused at zero yet.",
+              properties: %{
+                balance_cents: %Schema{
+                  type: :integer,
+                  description: "May be negative: an in-flight turn that crosses zero finishes."
+                },
+                expiring_cents: %Schema{
+                  type: :integer,
+                  description:
+                    "Unspent credit from the earliest live grant, which expires at expires_at."
+                },
+                expires_at: %Schema{type: :string, format: :"date-time", nullable: true},
+                purchased_cents: %Schema{
+                  type: :integer,
+                  description:
+                    "The part of the balance that was bought. It never expires and is spent last."
+                },
+                turn_hour_cents: %Schema{
+                  type: :integer,
+                  description: "What one hour of turn time costs."
+                }
+              }
+            },
             usage: %Schema{
               type: :object,
               properties: %{

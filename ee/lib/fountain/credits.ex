@@ -203,6 +203,125 @@ defmodule Fountain.Credits do
     |> Repo.all()
   end
 
+  @doc """
+  Whether credits are live on this deployment: billing is on and
+  `credits.pricing_since` is set. Off, no surface shows a balance — there is
+  nothing to show, and a "$0.00" on a self-hosted console would be a lie.
+  """
+  @spec active?() :: boolean()
+  def active? do
+    Billing.enabled?() and
+      not is_nil(Keyword.get(Application.get_env(:fountain, :credits, []), :pricing_since))
+  end
+
+  @doc """
+  The one shape every surface renders (the billing page, the dashboard,
+  `GET /api/account/billing`, the admin account view), so they cannot
+  disagree.
+
+    * `:active?` — `active?/0`; when false the other numbers are zero and
+      should not be shown
+    * `:balance_cents` — the cached balance, possibly negative
+    * `:expiring_cents` / `:expires_at` — what the earliest live grant still
+      has unspent, and when it goes
+    * `:purchased_cents` — how much of the balance is paid-for money, which
+      never expires
+    * `:turn_hour_cents` — the price of one turn hour
+    * `:price_card` — `price_card/0`
+  """
+  @spec summary(User.t(), keyword()) :: %{
+          active?: boolean(),
+          balance_cents: integer(),
+          expiring_cents: non_neg_integer(),
+          expires_at: DateTime.t() | nil,
+          purchased_cents: non_neg_integer(),
+          turn_hour_cents: non_neg_integer(),
+          price_card: map()
+        }
+  def summary(%User{} = user, opts \\ []) do
+    now = Keyword.get(opts, :now) || DateTime.utc_now()
+    card = price_card()
+
+    if active?() do
+      balance = balance(user)
+      purchased = purchased_remaining(user.id, balance)
+
+      {expiring, expires_at} =
+        case live_grants(user.id, now) do
+          [] -> {0, nil}
+          [first | _] -> {unspent_of(first, balance), first.expires_at}
+        end
+
+      %{
+        active?: true,
+        balance_cents: balance,
+        expiring_cents: expiring,
+        expires_at: expires_at,
+        purchased_cents: purchased,
+        turn_hour_cents: card.turn_hour,
+        price_card: card
+      }
+    else
+      %{
+        active?: false,
+        balance_cents: 0,
+        expiring_cents: 0,
+        expires_at: nil,
+        purchased_cents: 0,
+        turn_hour_cents: card.turn_hour,
+        price_card: card
+      }
+    end
+  end
+
+  @doc "Grants that have not yet expired, earliest expiry first."
+  @spec live_grants(binary(), DateTime.t()) :: [LedgerEntry.t()]
+  def live_grants(user_id, %DateTime{} = now) when is_binary(user_id) do
+    from(e in LedgerEntry,
+      where: e.user_id == ^user_id and e.amount_cents > 0,
+      where: not is_nil(e.expires_at) and e.expires_at > ^now,
+      order_by: [asc: e.expires_at, asc: e.inserted_at]
+    )
+    |> Repo.all()
+  end
+
+  @doc """
+  How much of `grant` is still unspent, given the tenant's `balance`, under
+  the burn order *granted first, oldest expiry first, then purchased*.
+
+  Purchased money that remains is `min(purchases − clawbacks, balance)`,
+  because burns only reach it once every grant is gone. What is left after
+  that is spread over the live grants from the earliest expiry: this grant's
+  share is whatever exceeds the sum of the grants expiring after it, capped
+  at its own amount and floored at zero.
+  """
+  @spec unspent_of(LedgerEntry.t(), integer()) :: non_neg_integer()
+  def unspent_of(%LedgerEntry{} = grant, balance) when is_integer(balance) do
+    expirable = max(balance, 0) - purchased_remaining(grant.user_id, balance)
+
+    later_grants =
+      from(e in LedgerEntry,
+        where: e.user_id == ^grant.user_id and e.amount_cents > 0,
+        where: not is_nil(e.expires_at) and e.expires_at > ^grant.expires_at,
+        select: coalesce(sum(e.amount_cents), 0)
+      )
+      |> Repo.one()
+
+    (expirable - later_grants) |> max(0) |> min(grant.amount_cents)
+  end
+
+  defp purchased_remaining(user_id, balance) do
+    purchased_net =
+      from(e in LedgerEntry,
+        where: e.user_id == ^user_id,
+        where: (e.amount_cents > 0 and is_nil(e.expires_at)) or like(e.reason, "clawback_%"),
+        select: coalesce(sum(e.amount_cents), 0)
+      )
+      |> Repo.one()
+
+    purchased_net |> max(0) |> min(max(balance, 0))
+  end
+
   # ---------------------------------------------------------------------------
   # Writes
   # ---------------------------------------------------------------------------

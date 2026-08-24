@@ -14,6 +14,7 @@ defmodule FountainWeb.Live.BillingLive do
   use FountainWeb, :live_view
 
   alias Fountain.Billing
+  alias Fountain.Credits
   alias Fountain.Plans
   alias Fountain.Quotas
 
@@ -34,6 +35,10 @@ defmodule FountainWeb.Live.BillingLive do
          usage: usage,
          allowance: Billing.turn_hour_allowance(user, period: period),
          period: period,
+         # The prepaid balance (ADR 0030). `active?` false means the switch is
+         # off and the card is not rendered at all.
+         credits: Credits.summary(user),
+         ledger: Credits.list_entries(user.id, limit: 10),
          stripe_url_loading: false,
          # Two plans, deliberately. `plan` is the tier the subscription names
          # — what Stripe charges for, what the picker highlights. `effective_plan`
@@ -366,6 +371,66 @@ defmodule FountainWeb.Live.BillingLive do
         </p>
       </div>
 
+      <%!-- Prepaid credits (ADR 0030). Shown only once burning has started on
+            this deployment. Nothing refuses anything at zero yet (phase 4). --%>
+      <div :if={@credits.active?} class="rounded-lg border bg-white p-6 shadow-sm" id="credits">
+        <div class="flex items-baseline justify-between">
+          <h2 class="text-lg font-medium">Credits</h2>
+          <p class="text-sm tabular-nums">
+            <span class={[
+              "font-semibold",
+              @credits.balance_cents < 0 && "text-amber-700"
+            ]}>
+              {Credits.format_cents(@credits.balance_cents)}
+            </span>
+            <span class="text-gray-500">remaining</span>
+          </p>
+        </div>
+        <p class="mt-3 text-xs text-gray-500">
+          Conversation time costs {Credits.format_cents(@credits.turn_hour_cents)} per turn hour
+          and comes out of this balance. Your plan puts {Credits.format_cents(
+            Plans.included_turn_hours(@current_user) * @credits.turn_hour_cents
+          )} in at the start of every billing period; what is unused expires with the period.
+          Credits you buy never expire and are spent last.
+        </p>
+        <p :if={@credits.expires_at} class="mt-2 text-xs text-gray-500">
+          {Credits.format_cents(@credits.expiring_cents)} of this expires on {Calendar.strftime(
+            @credits.expires_at,
+            "%b %-d"
+          )}.
+          <span :if={@credits.purchased_cents > 0}>
+            {Credits.format_cents(@credits.purchased_cents)} is money you bought and keeps.
+          </span>
+        </p>
+        <p :if={@credits.balance_cents < 0} class="mt-2 text-xs text-amber-700">
+          Your balance is below zero. Nothing is limited yet; the next grant or purchase
+          brings it back up.
+        </p>
+        <table :if={@ledger != []} class="mt-4 w-full text-xs">
+          <thead class="text-left text-gray-500">
+            <tr>
+              <th class="py-1 font-normal">When</th>
+              <th class="py-1 font-normal">What</th>
+              <th class="py-1 text-right font-normal">Amount</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr :for={entry <- @ledger} class="border-t">
+              <td class="py-1 tabular-nums text-gray-500">
+                {Calendar.strftime(entry.inserted_at, "%b %-d")}
+              </td>
+              <td class="py-1">{ledger_label(entry)}</td>
+              <td class={[
+                "py-1 text-right tabular-nums",
+                entry.amount_cents < 0 && "text-gray-500"
+              ]}>
+                {Credits.format_cents(entry.amount_cents)}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
       <%!-- Turn hours against the plan's allowance. Reported only; nothing
             refuses anything because a tenant is over it (#1016 step 4). --%>
       <div class="rounded-lg border bg-white p-6 shadow-sm">
@@ -520,4 +585,26 @@ defmodule FountainWeb.Live.BillingLive do
   # 100, which Float.round/2 refuses — an over-allowance account 500s the page.
   defp meter_width(%{used: used, included: included}),
     do: (used / included * 100) |> Float.round(1) |> min(100.0)
+
+  defp ledger_label(%{reason: "grant_tier", metadata: %{"plan" => plan}}),
+    do: "#{String.capitalize(plan)} plan credit"
+
+  defp ledger_label(%{reason: "grant_tier"}), do: "Plan credit"
+  defp ledger_label(%{reason: "grant_trial"}), do: "Trial credit"
+  defp ledger_label(%{reason: "grant_admin"}), do: "Credit from Fountain"
+  defp ledger_label(%{reason: "purchase"}), do: "Purchase"
+
+  defp ledger_label(%{reason: "burn_turn", metadata: %{"turn_seconds" => s}}),
+    do: "Conversation time, #{format_seconds(s)}"
+
+  defp ledger_label(%{reason: "burn_turn"}), do: "Conversation time"
+  defp ledger_label(%{reason: "burn_rent"}), do: "Number or inbox, one month"
+  defp ledger_label(%{reason: "burn_message"}), do: "Message"
+  defp ledger_label(%{reason: "expire"}), do: "Expired with the period"
+  defp ledger_label(%{reason: "clawback_" <> _}), do: "Refund reversed"
+  defp ledger_label(%{reason: reason}), do: reason
+
+  defp format_seconds(s) when is_integer(s) and s < 60, do: "#{s}s"
+  defp format_seconds(s) when is_integer(s) and s < 3600, do: "#{div(s, 60)}m"
+  defp format_seconds(s) when is_integer(s), do: "#{Float.round(s / 3600, 1)}h"
 end

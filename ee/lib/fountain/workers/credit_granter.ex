@@ -248,7 +248,7 @@ defmodule Fountain.Workers.CreditGranter do
   # No — instead the anti-join stays and the cost is one row per fully-spent
   # grant per run, bounded by how many grants a tenant has ever had. Cheap.
   defp expire_grant(%LedgerEntry{} = grant) do
-    case unspent_of(grant, Credits.balance(grant.user_id)) do
+    case Credits.unspent_of(grant, Credits.balance(grant.user_id)) do
       0 ->
         false
 
@@ -273,37 +273,7 @@ defmodule Fountain.Workers.CreditGranter do
     end
   end
 
-  @doc """
-  How much of `grant` is still unspent, given the tenant's `balance`, under
-  the burn order *granted first, oldest expiry first, then purchased*.
-
-  Purchased money that remains is `min(purchases − clawbacks, balance)`,
-  because burns only reach it once every grant is gone. What is left after
-  that is spread over the live grants from the earliest expiry: this grant's
-  share is whatever exceeds the sum of the grants expiring after it, capped
-  at its own amount and floored at zero.
-  """
+  @doc "See `Fountain.Credits.unspent_of/2`; kept here for the tests that grew up with it."
   @spec unspent_of(LedgerEntry.t(), integer()) :: non_neg_integer()
-  def unspent_of(%LedgerEntry{} = grant, balance) when is_integer(balance) do
-    purchased_net =
-      from(e in LedgerEntry,
-        where: e.user_id == ^grant.user_id,
-        where: (e.amount_cents > 0 and is_nil(e.expires_at)) or like(e.reason, "clawback_%"),
-        select: coalesce(sum(e.amount_cents), 0)
-      )
-      |> Repo.one()
-
-    purchased_remaining = purchased_net |> max(0) |> min(max(balance, 0))
-    expirable = max(balance, 0) - purchased_remaining
-
-    later_grants =
-      from(e in LedgerEntry,
-        where: e.user_id == ^grant.user_id and e.amount_cents > 0,
-        where: not is_nil(e.expires_at) and e.expires_at > ^grant.expires_at,
-        select: coalesce(sum(e.amount_cents), 0)
-      )
-      |> Repo.one()
-
-    (expirable - later_grants) |> max(0) |> min(grant.amount_cents)
-  end
+  def unspent_of(%LedgerEntry{} = grant, balance), do: Credits.unspent_of(grant, balance)
 end
