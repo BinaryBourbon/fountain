@@ -26,6 +26,30 @@ defmodule Fountain.Conversations.TurnTest do
     test "default status is 'pending'" do
       assert %Turn{}.status == "pending"
     end
+
+    test "default origin is 'user'" do
+      assert %Turn{}.origin == "user"
+    end
+  end
+
+  describe "origin (#817)" do
+    test "origins/0 names the two kinds" do
+      assert Turn.origins() == ~w(user autonomous)
+    end
+
+    test "an unset origin is a user turn" do
+      assert changeset().changes[:origin] == nil
+      assert Ecto.Changeset.apply_changes(changeset()).origin == "user"
+    end
+
+    test "autonomous is accepted" do
+      assert changeset(%{origin: "autonomous"}).valid?
+    end
+
+    test "anything else is refused" do
+      errors = changeset(%{origin: "robot"}) |> errors_on()
+      assert "is invalid" in errors.origin
+    end
   end
 
   describe "changeset/2 with valid attrs" do

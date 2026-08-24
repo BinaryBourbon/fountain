@@ -10,7 +10,15 @@ server releases.
 
 ---
 
-## [0.1.9] — 2026-08-24
+## [0.1.10] — 2026-08-24
+
+### Added
+
+- `Turn.origin` — `"user"` for a prompt somebody sent, `"autonomous"` for a
+  turn the server opened for a background cycle the agent ran after its
+  prompt was answered (part 2 of BinaryBourbon/fountain#817). Generated from
+  the server's spec; optional in the type because rows from before the field
+  read as `user`.
 
 ### Changed
 

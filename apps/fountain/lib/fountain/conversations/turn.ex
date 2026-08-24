@@ -8,6 +8,10 @@ defmodule Fountain.Conversations.Turn do
   @foreign_key_type :binary_id
 
   @statuses ~w(pending running completed failed interrupted)
+  # `user`: a prompt somebody sent. `autonomous`: a turn the server opened
+  # for a background cycle that ran after the prompt was answered (#817) —
+  # the prompt column then carries a marker, not a person's words.
+  @origins ~w(user autonomous)
 
   schema "turns" do
     field :turn_number, :integer
@@ -35,12 +39,14 @@ defmodule Fountain.Conversations.Turn do
     # ends, for `Fountain.Search` (#826). nil while the turn runs and on
     # turns that predate the column (see `Fountain.Release.backfill_turn_replies/0`).
     field :reply_text, :string
+    field :origin, :string, default: "user"
     belongs_to :conversation, Conversation
     has_many :images, TurnImage, preload_order: [asc: :position]
     timestamps(type: :utc_datetime, updated_at: false)
   end
 
   def statuses, do: @statuses
+  def origins, do: @origins
 
   def changeset(turn, attrs) do
     turn
@@ -55,10 +61,12 @@ defmodule Fountain.Conversations.Turn do
       :pending_permission,
       :usage,
       :reply_text,
+      :origin,
       :conversation_id
     ])
     |> validate_required([:turn_number, :prompt, :status, :conversation_id])
     |> validate_inclusion(:status, @statuses)
+    |> validate_inclusion(:origin, @origins)
     |> unique_constraint([:conversation_id, :turn_number])
   end
 end

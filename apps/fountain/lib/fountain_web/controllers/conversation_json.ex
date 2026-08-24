@@ -156,6 +156,8 @@ defmodule FountainWeb.ConversationJSON do
       turn_number: t.turn_number,
       prompt: t.prompt,
       status: t.status,
+      # `user` or `autonomous` (#817); rows from before the column read as user.
+      origin: t.origin || "user",
       exit_code: t.exit_code,
       started_at: t.started_at,
       ended_at: t.ended_at,
