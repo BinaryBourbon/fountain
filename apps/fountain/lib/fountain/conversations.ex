@@ -431,7 +431,7 @@ defmodule Fountain.Conversations do
               )
         }
     )
-    |> Repo.preload([:agent, turns: first_turn_query()])
+    |> Repo.preload([:agent, :agent_version, turns: first_turn_query()])
   end
 
   @doc """
@@ -539,7 +539,7 @@ defmodule Fountain.Conversations do
   def _unsafe_get_conversation(id) do
     Conversation
     |> Repo.get(id)
-    |> Repo.preload([:sandbox, :agent, :vault])
+    |> Repo.preload([:sandbox, :agent, :vault, :agent_version])
   end
 
   @doc """
@@ -548,14 +548,14 @@ defmodule Fountain.Conversations do
   def _unsafe_get_conversation!(id) do
     Conversation
     |> Repo.get!(id)
-    |> Repo.preload([:sandbox, :agent, :vault])
+    |> Repo.preload([:sandbox, :agent, :vault, :agent_version])
   end
 
   @doc "Get conversation scoped to user. Returns nil on wrong owner or missing id."
   def get_conversation(id, user_id) when is_binary(user_id) do
     case Repo.get_by(Conversation, id: id, user_id: user_id) do
       nil -> nil
-      conv -> Repo.preload(conv, [:sandbox, :agent, :vault])
+      conv -> Repo.preload(conv, [:sandbox, :agent, :vault, :agent_version])
     end
   end
 
@@ -563,7 +563,7 @@ defmodule Fountain.Conversations do
   def get_conversation!(id, user_id) when is_binary(user_id) do
     Conversation
     |> Repo.get_by!(id: id, user_id: user_id)
-    |> Repo.preload([:sandbox, :agent, :vault])
+    |> Repo.preload([:sandbox, :agent, :vault, :agent_version])
   end
 
   @typedoc """
@@ -734,7 +734,7 @@ defmodule Fountain.Conversations do
       end)
 
     Repo.all(query)
-    |> Repo.preload([:agent, turns: first_turn_query()])
+    |> Repo.preload([:agent, :agent_version, turns: first_turn_query()])
   end
 
   @doc """
@@ -772,7 +772,7 @@ defmodule Fountain.Conversations do
       nil -> nil
       # The first turn rides along, as it does on the list: `first_prompt` in
       # the JSON is what a client titles an untitled conversation with.
-      conv -> Repo.preload(conv, [:sandbox, :agent, :vault, turns: first_turn_query()])
+      conv -> Repo.preload(conv, [:sandbox, :agent, :vault, :agent_version, turns: first_turn_query()])
     end
   end
 

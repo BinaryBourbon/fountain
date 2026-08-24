@@ -798,6 +798,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/agents/{id}/versions/{version}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get one config version of an agent
+         * @description One version by number, with its full config. A conversation's `agent_version` names the number to look up here.
+         */
+        get: operations["FountainWeb.AgentVersionController.show"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/webhooks/{id}": {
         parameters: {
             query?: never;
@@ -953,6 +973,26 @@ export interface paths {
         };
         /** List accounts (admin) */
         get: operations["FountainWeb.AdminController.index_users"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agents/{id}/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List an agent's config versions
+         * @description The agent's config history (ADR 0029), newest first. A version is written on create and on every update that changes a config field, so version 1 is the config the agent was created with. Read-only: rollback is a console action, and applies a version's config as a new edit rather than rewriting history.
+         */
+        get: operations["FountainWeb.AgentVersionController.index"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2325,6 +2365,10 @@ export interface components {
             /** Format: uri */
             url: string;
         };
+        /** AgentVersionListResponse */
+        AgentVersionListResponse: {
+            data: components["schemas"]["AgentVersion"][];
+        };
         /** RunnerListResponse */
         RunnerListResponse: {
             data: components["schemas"]["Runner"][];
@@ -2937,6 +2981,23 @@ export interface components {
             };
         };
         /**
+         * AgentVersion
+         * @description One immutable snapshot of an agent's config (ADR 0029), written on create and on every update that changes a config field. `config` holds the full values, keyed by the agent fields `Agent.changeset/2` casts (everything but ownership and the avatar). Versions are read-only over the API; rollback is a console action.
+         */
+        AgentVersion: {
+            /** Format: uuid */
+            agent_id: string;
+            config: {
+                [key: string]: unknown;
+            };
+            /** Format: uuid */
+            id: string;
+            /** Format: date-time */
+            inserted_at: string;
+            /** @description 1-based, monotonic per agent. */
+            version: number;
+        };
+        /**
          * Agent
          * @description An AI agent definition: runtime, model, skills, MCP, env.
          */
@@ -3080,6 +3141,13 @@ export interface components {
             readonly acp?: boolean;
             /** Format: uuid */
             agent_id?: string | null;
+            /** @description The version number behind agent_version_id, resolved on the list and get endpoints; null elsewhere and wherever agent_version_id is null. */
+            readonly agent_version?: number | null;
+            /**
+             * Format: uuid
+             * @description The agent config version this conversation launched under (ADR 0029): provenance only, the live agent still drives the sandbox. Null for a conversation that predates versioning. Resolve it at GET /api/agents/{agent_id}/versions/{agent_version}.
+             */
+            agent_version_id?: string | null;
             /** @description The external channel key this conversation is bound to, if it was created with one. */
             channel_id?: string | null;
             /**
@@ -3893,6 +3961,10 @@ export interface components {
              */
             turn_id?: string | null;
             turn_number?: number | null;
+        };
+        /** AgentVersionResponse */
+        AgentVersionResponse: {
+            data: components["schemas"]["AgentVersion"];
         };
         /** TeamScheduleListResponse */
         TeamScheduleListResponse: {
@@ -6149,6 +6221,39 @@ export interface operations {
             };
         };
     };
+    "FountainWeb.AgentVersionController.show": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                /** @description 1-based. */
+                version: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Version */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentVersionResponse"];
+                };
+            };
+            /** @description Agent or version not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     "FountainWeb.WebhookEndpointController.show": {
         parameters: {
             query?: never;
@@ -6750,6 +6855,37 @@ export interface operations {
             };
             /** @description Admin required */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "FountainWeb.AgentVersionController.index": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Versions */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentVersionListResponse"];
+                };
+            };
+            /** @description Agent not found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

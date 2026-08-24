@@ -331,6 +331,9 @@ defmodule Fountain.Exports do
   end
 
   defp agents_section(user_id) do
+    # One query for every agent's history rather than one per agent (#1051).
+    versions_by_agent = Agents.list_agent_versions_by_agent(user_id)
+
     user_id
     |> Agents.list_agents([])
     |> Enum.map(fn agent ->
@@ -352,8 +355,8 @@ defmodule Fountain.Exports do
         # Config history is tenant data holding full values (unlike the audit
         # trail), so an export without it would be incomplete.
         "versions" =>
-          agent.id
-          |> Agents.list_agent_versions(user_id)
+          versions_by_agent
+          |> Map.get(agent.id, [])
           |> Enum.map(fn v ->
             %{"version" => v.version, "config" => v.config, "created_at" => v.inserted_at}
           end)

@@ -44,6 +44,12 @@ defmodule FountainWeb.ConversationJSON do
       sandbox_id: c.sandbox_id,
       sandbox: sandbox_data(c.sandbox),
       agent_id: c.agent_id,
+      # Provenance (ADR 0029): which shape of the agent this conversation
+      # launched under. The id is always on the row; the number is resolved
+      # where `agent_version` was preloaded (index and show), null elsewhere
+      # and for conversations that predate versioning (#1051).
+      agent_version_id: c.agent_version_id,
+      agent_version: agent_version_number(c),
       vault_id: c.vault_id,
       environment_id: c.environment_id,
       permission_policy: c.permission_policy,
@@ -72,6 +78,11 @@ defmodule FountainWeb.ConversationJSON do
 
   defp first_prompt(%Conversation{turns: [%Turn{turn_number: 1, prompt: prompt} | _]}), do: prompt
   defp first_prompt(_), do: nil
+
+  defp agent_version_number(%Conversation{agent_version: %Fountain.Agents.AgentVersion{version: v}}),
+    do: v
+
+  defp agent_version_number(_), do: nil
 
   defp tree_node(%{id: id, source: source, status: status, parent_id: parent_id}) do
     %{id: id, source: source, status: status, parent_id: parent_id}

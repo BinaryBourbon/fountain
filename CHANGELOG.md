@@ -18,6 +18,16 @@ upgrade, is in
 
 ### Added
 
+- **Agent config versions over the API.** `GET /api/agents/:id/versions`
+  lists an agent's config history newest first and
+  `GET /api/agents/:id/versions/:version` returns one version with its full
+  config; both are read-only (rollback stays a console action). Every
+  conversation now reports the version it launched under as
+  `agent_version_id` plus the resolved `agent_version` number (null for
+  conversations that predate versioning; the number is resolved on the
+  conversation list and get endpoints). The account export fetches version
+  history in one query instead of one per agent. The TypeScript SDK's
+  generated types follow (SDK 1.9.0). #1051
 - **`BRAND_ASSETS_URL`.** A deployment can serve its own app icon, favicons
   and Open Graph card from any static host instead of the files in the
   release image: point the variable at a directory holding the six files
