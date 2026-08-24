@@ -163,7 +163,7 @@ defmodule Fountain.BillingGateTest do
     alias Fountain.Conversations.ConversationServer
 
     defp live_server_state(conv) do
-      %{current_command: nil, conversation_id: conv.id}
+      %{current_command: nil, current_turn: nil, conversation_id: conv.id}
     end
 
     test "send_prompt on a live server is refused after cancellation" do
