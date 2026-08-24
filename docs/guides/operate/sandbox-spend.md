@@ -52,8 +52,8 @@ Fountain pays. Each row shows the computed cost, the invoiced cost, and the
 delta. Use the form under the table to record what a provider charged for
 the month the page shows. A positive delta means the model under-reports.
 Record every month. After a month of deltas, you know which gaps in the
-model matter, and you know enough to turn credit enforcement on. The
-[billing guide](billing.md) has the order of steps.
+model matter, and you know enough to turn credit enforcement on. The order
+of steps is in [Start billing](billing.md).
 
 The same section shows how many usage events this node dropped since it
 booted. A dropped event makes the figures for that period approximate. The
