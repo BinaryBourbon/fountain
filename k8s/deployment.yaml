@@ -171,6 +171,15 @@ spec:
             # and no rate takes that whole tenant's cost to nil.
             - name: PROVIDER_HOURLY_CENTS
               value: sprites=10.76,e2b=5.45,daytona=5.45
+            # Prepaid credits (ADR 0030) went live at this instant: from here
+            # on, closed turns burn CREDIT_TURN_HOUR_CENTS (default 25) from
+            # the tenant's balance and each period's tier grant lands. Set to
+            # the deploy time, never earlier, or every tenant is billed for
+            # turns they ran before they held a grant. Enforcement is a
+            # separate switch (CREDIT_ENFORCE) and stays off until a month of
+            # provider invoices has been reconciled on /admin/finance.
+            - name: CREDIT_PRICING_SINCE
+              value: "2026-08-24T23:45:00Z"
             # AgentPhone: "$3.00/month" a number, "$0.02/message (inbound and
             # outbound)" — both directions, which is why inbound is metered.
             - name: AGENTPHONE_NUMBER_CENTS
