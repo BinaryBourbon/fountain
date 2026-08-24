@@ -10,6 +10,16 @@ server releases.
 
 ---
 
+## [0.1.5] — 2026-08-24
+
+### Fixed
+
+- No `User-Agent` header when running in a browser. Firefox lets a page set
+  one, which turned every call into a CORS preflight asking for `user-agent`,
+  and a Fountain whose allow-list did not name it refused the request ("CORS
+  Missing Allow Header") — the first thing a signed-in single-page app saw.
+  Node and other non-browser runtimes still send `fountain-sdk-js/<version>`.
+
 ## [0.1.4] — 2026-08-24
 
 ### Added
