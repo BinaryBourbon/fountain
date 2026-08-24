@@ -135,6 +135,7 @@ You can repeat `-i` and `--image`. Each one takes a local file path.
 fountain run <agent-name-or-id> -p "Audit the auth module"
 fountain run <agent-name-or-id> -p "Run the test suite" --vault staging-creds
 fountain run <agent-name-or-id> -p "Run the test suite" --environment staging
+fountain run <agent-name-or-id> -p "Now fix the failures" --sandbox <sandbox-id>
 ```
 
 `run` creates a conversation, then streams until the turn reaches a terminal
@@ -143,6 +144,10 @@ state.
 `--vault` layers a vault's secrets over the agent's environment, and the vault
 wins on a collision. `--environment` provisions from that environment, and not
 from the agent's own.
+
+The `--sandbox` flag attaches the conversation to a sandbox you already have,
+by id. Two conversations then share one disk. A conversation's `sandbox_id`
+names its sandbox.
 
 ### Long-running turns
 

@@ -16,6 +16,22 @@ upgrade, is in
 
 ## [Unreleased]
 
+### Added
+
+- **A second conversation on a sandbox you already have.** `sandbox_id` on
+  `POST /api/conversations` attaches the new conversation to an existing
+  machine instead of provisioning one: it must be yours, `ready` or
+  `suspended`, and built for the same agent, environment and vault
+  (`sandbox_not_found`, `sandbox_not_attachable`,
+  `sandbox_identity_mismatch`, `sandbox_runtime_mismatch` say which rule
+  refused). The conversation opens idle on that disk and a prompt wakes it;
+  several conversations then run there at once. `GET /api/sandboxes` and
+  `GET /api/sandboxes/:id` list the caller's machines with the conversations
+  on each and which is mid-turn. Sandboxes now record the `agent_id` and
+  `vault_id` they were built for (backfilled). `fountain run --sandbox` and
+  the SDK's `run({ sandbox })`, `sandboxes()` and `sandbox(id)` carry it.
+  ADR 0023 gate 3.
+
 ### Changed
 
 - **A sandbox several conversations hold is treated as one machine.**

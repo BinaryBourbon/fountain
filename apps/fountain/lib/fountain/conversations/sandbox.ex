@@ -31,6 +31,14 @@ defmodule Fountain.Conversations.Sandbox do
     field :terminated_at, :utc_datetime
     field :last_resumed_at, :utc_datetime
     belongs_to :environment, Environment
+    # The identity the disk was materialized from, with the environment
+    # (ADR 0023): env vars, packages, repos and setup scripts are written at
+    # provision, so a machine built for one agent, environment and vault is
+    # not a machine built for another. A conversation attaches only with the
+    # same three. Nilified when the agent or vault is deleted, like a
+    # conversation's own pointers — the row outlives them as history.
+    belongs_to :agent, Fountain.Agents.Agent
+    belongs_to :vault, Fountain.Vaults.Vault
     belongs_to :user, User
     has_many :conversations, Conversation
     timestamps(type: :utc_datetime)
@@ -48,6 +56,8 @@ defmodule Fountain.Conversations.Sandbox do
       :terminated_at,
       :last_resumed_at,
       :environment_id,
+      :agent_id,
+      :vault_id,
       :user_id
     ])
     |> validate_required([:sprite_name, :status, :provider, :user_id])

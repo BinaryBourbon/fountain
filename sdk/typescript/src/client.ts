@@ -6,7 +6,14 @@ import { Conversation } from "./conversation.ts";
 import { Agents, Environments, Vaults } from "./resources.ts";
 import { Team, normalizeStreams } from "./team.ts";
 import { streamPath, type StreamRequest } from "./sse.ts";
-import type { AuthMe, Catalog, ConversationRecord, LogEvent, SearchHit } from "./types.ts";
+import type {
+  AuthMe,
+  Catalog,
+  ConversationRecord,
+  LogEvent,
+  SandboxRecord,
+  SearchHit,
+} from "./types.ts";
 
 export interface FountainOptions extends ConfigOptions {
   /** Swap the fetch implementation — a test server, a proxy, an instrumented one. */
@@ -40,6 +47,12 @@ export interface RunConfig extends RunOptions {
   fresh?: boolean;
   /** Override the generated sandbox name. */
   spriteName?: string;
+  /**
+   * Attach to a sandbox you already have, by id, instead of provisioning a
+   * new one. It must be ready or suspended and built for the same agent,
+   * environment and vault; several conversations then share one disk.
+   */
+  sandbox?: string;
 }
 
 /**
@@ -119,6 +132,7 @@ export class Fountain {
           if (config.channelId) body.channel_id = config.channelId;
           if (config.fresh) body.fresh = true;
           if (config.spriteName) body.sprite_name = config.spriteName;
+          if (config.sandbox) body.sandbox_id = config.sandbox;
 
           const conversation = await this.api.data<ConversationRecord>(
             "POST",
@@ -175,6 +189,22 @@ export class Fountain {
    */
   async catalog(): Promise<Catalog> {
     return this.api.data<Catalog>("GET", "/api/catalog");
+  }
+
+  /**
+   * The account's sandboxes — the machines conversations run on — newest
+   * first, each with the conversations on it. Pass one's id as
+   * `run({ sandbox })` to put another conversation on it.
+   */
+  async sandboxes(opts: { status?: string[] } = {}): Promise<SandboxRecord[]> {
+    return this.api.list<SandboxRecord>("/api/sandboxes", {
+      query: { status: opts.status?.join(",") },
+    });
+  }
+
+  /** One sandbox, by id. */
+  async sandbox(id: string): Promise<SandboxRecord> {
+    return this.api.data<SandboxRecord>("GET", `/api/sandboxes/${id}`);
   }
 
   /** Full-text search across the caller's conversations. */

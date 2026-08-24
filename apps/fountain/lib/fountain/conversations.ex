@@ -1051,6 +1051,17 @@ defmodule Fountain.Conversations do
     )
   end
 
+  # No conversation to exclude: every running turn on the machine counts.
+  def _unsafe_running_turns_elsewhere(sandbox_id, nil) when is_binary(sandbox_id) do
+    Repo.one(
+      from t in Turn,
+        join: c in Conversation,
+        on: c.id == t.conversation_id,
+        where: c.sandbox_id == ^sandbox_id and t.status == "running",
+        select: count(t.id)
+    )
+  end
+
   @doc """
   Whether `sandbox_id` cannot take another turn from `conv_id` because other
   conversations already fill its runtime's capacity. Always false for
@@ -1059,7 +1070,8 @@ defmodule Fountain.Conversations do
   """
   def _unsafe_sandbox_at_capacity?(_sandbox_id, _conv_id, :unbounded), do: false
 
-  def _unsafe_sandbox_at_capacity?(sandbox_id, conv_id, capacity) when is_integer(capacity) do
+  def _unsafe_sandbox_at_capacity?(sandbox_id, conv_id, capacity)
+      when is_integer(capacity) and (is_binary(conv_id) or is_nil(conv_id)) do
     _unsafe_running_turns_elsewhere(sandbox_id, conv_id) >= capacity
   end
 
@@ -1671,7 +1683,17 @@ defmodule Fountain.Conversations do
     - `parent_conversation_id` — optional; UUID of the conversation that spawned this one
     - `title`                 — optional display title (the team page names a teammate with it)
   """
-  def start_conversation(%{"agent_id" => agent_id, "user_id" => user_id} = attrs, opts \\ [])
+  def start_conversation(attrs, opts \\ [])
+
+  # `sandbox_id`: attach to a machine the caller already has instead of
+  # provisioning one (ADR 0023 gate 3). Everything about the launch is
+  # resolved the same way; only the sandbox step differs.
+  def start_conversation(%{"sandbox_id" => sandbox_id} = attrs, opts)
+      when is_binary(sandbox_id) and sandbox_id != "" do
+    attach_conversation(sandbox_id, attrs, opts)
+  end
+
+  def start_conversation(%{"agent_id" => agent_id, "user_id" => user_id} = attrs, opts)
       when is_binary(user_id) do
     with %Agents.Agent{} = agent <- Agents.get_agent(agent_id, user_id) || {:error, :not_found},
          {:ok, runtime_module} <- Fountain.Runtimes.for_runtime(agent.runtime),
@@ -1690,6 +1712,10 @@ defmodule Fountain.Conversations do
            Fountain.Quotas.with_sandbox_reservation(user_id, fn ->
              create_sandbox(%{
                environment_id: env_id || agent.environment_id,
+               # The identity the disk is built from (ADR 0023); an attach
+               # later must name the same three.
+               agent_id: agent.id,
+               vault_id: vault_id,
                sprite_name: sprite_name,
                status: "pending",
                provider: Atom.to_string(provider),
@@ -1786,6 +1812,191 @@ defmodule Fountain.Conversations do
     else
       nil -> {:error, :not_found}
       {:error, _} = err -> err
+    end
+  end
+
+  # A conversation on a machine the caller already has (ADR 0023 gate 3).
+  #
+  # The launch is resolved exactly as a fresh one — agent, vault, environment,
+  # permission policy, parent, the account and billing gates — and then the
+  # sandbox is fetched tenant-scoped and checked instead of created: it must
+  # be `ready` or `suspended`, it must have been built for the same agent,
+  # environment and vault, and the runtime that shaped its disk must be the
+  # agent's runtime still. No quota reservation: nothing new is provisioned,
+  # and waking a `suspended` machine goes through the quota gate on the first
+  # prompt as every wake does. The conversation is opened `idle` with no
+  # server; a prompt supplied here is delivered through the ordinary wake
+  # path, so a `ready` machine reattaches and a `suspended` one resumes, and
+  # if that delivery is refused the row is removed again so a refused request
+  # creates nothing.
+  defp attach_conversation(
+         sandbox_id,
+         %{"agent_id" => agent_id, "user_id" => user_id} = attrs,
+         opts
+       )
+       when is_binary(user_id) do
+    with %Agents.Agent{} = agent <- Agents.get_agent(agent_id, user_id) || {:error, :not_found},
+         {:ok, _runtime_module} <- Fountain.Runtimes.for_runtime(agent.runtime),
+         {:ok, vault_id} <- resolve_vault_id(attrs["vault_id"], user_id, agent),
+         {:ok, env_id} <- resolve_environment_id(attrs["environment_id"], user_id, agent),
+         {:ok, perm_policy} <- resolve_permission_policy(attrs["permission_policy"], agent),
+         {:ok, parent_id} <- resolve_parent_id(attrs["parent_conversation_id"], user_id),
+         :ok <- Fountain.Accounts.check_not_suspended(user_id),
+         :ok <- Fountain.Billing.check_active(user_id),
+         %Sandbox{} = sandbox <- get_sandbox(sandbox_id, user_id) || {:error, :sandbox_not_found},
+         :ok <- check_attachable(sandbox, agent, vault_id, env_id),
+         :ok <- check_attach_capacity(sandbox, agent, attrs["prompt"]),
+         {:ok, conv} <-
+           create_conversation(%{
+             sandbox_id: sandbox.id,
+             agent_id: agent.id,
+             # Ownership: agent came from the scoped get_agent above.
+             agent_version_id: Agents._unsafe_current_version_id(agent.id),
+             vault_id: vault_id,
+             environment_id: env_id,
+             user_id: user_id,
+             runtime: agent.runtime,
+             status: "idle",
+             source: attrs["source"] || "api",
+             parent_conversation_id: parent_id,
+             channel_id: attrs["channel_id"],
+             title: attrs["title"],
+             permission_policy: perm_policy
+           }) do
+      Audit.record(%{
+        user_id: user_id,
+        action: "conversation.created",
+        resource_type: "conversation",
+        resource_id: conv.id,
+        actor: Keyword.get(opts, :actor, "self"),
+        request_ip: Keyword.get(opts, :request_ip),
+        metadata: %{
+          "agent_id" => agent.id,
+          "agent_name" => agent.name,
+          "source" => conv.source,
+          "with_prompt" => is_binary(attrs["prompt"]) and attrs["prompt"] != "",
+          "parent_conversation_id" => parent_id,
+          "sandbox_attached" => sandbox.id
+        }
+      })
+
+      broadcast_sidebar_update(user_id)
+      deliver_attach_prompt(conv, attrs, opts)
+    else
+      nil -> {:error, :not_found}
+      {:error, _} = err -> err
+    end
+  end
+
+  defp deliver_attach_prompt(conv, attrs, opts) do
+    prompt = attrs["prompt"]
+
+    if is_binary(prompt) and prompt != "" do
+      case ConversationServer.send_prompt(conv.id, prompt, attrs["images"] || [], opts) do
+        :ok ->
+          {:ok, _unsafe_get_conversation!(conv.id)}
+
+        {:error, _} = err ->
+          # Nothing ran. Take the row back so a refused request created
+          # nothing, exactly like a refused fresh launch.
+          _ = Repo.delete(conv)
+          broadcast_sidebar_update(conv.user_id)
+          err
+      end
+    else
+      {:ok, _unsafe_get_conversation!(conv.id)}
+    end
+  end
+
+  defp check_attachable(%Sandbox{status: status}, _agent, _vault_id, _env_id)
+       when status not in ["ready", "suspended"],
+       do: {:error, {:sandbox_not_attachable, status}}
+
+  defp check_attachable(%Sandbox{} = sandbox, %Agents.Agent{} = agent, vault_id, env_id) do
+    cond do
+      sandbox.agent_id != agent.id ->
+        {:error, :sandbox_identity_mismatch}
+
+      sandbox.vault_id != vault_id ->
+        {:error, :sandbox_identity_mismatch}
+
+      sandbox.environment_id != (env_id || agent.environment_id) ->
+        {:error, :sandbox_identity_mismatch}
+
+      # The disk was shaped by the runtime that first ran on it; an agent
+      # whose runtime changed since gets a new machine, not this one.
+      _unsafe_sandbox_runtime(sandbox.id) not in [nil, agent.runtime] ->
+        {:error, :sandbox_runtime_mismatch}
+
+      true ->
+        :ok
+    end
+  end
+
+  # With a prompt, the attach is a turn start too, so the capacity rule of
+  # step 4 applies at the door; without one, the later prompt is gated by
+  # `ConversationServer` as any prompt is.
+  defp check_attach_capacity(%Sandbox{} = sandbox, %Agents.Agent{runtime: runtime}, prompt)
+       when is_binary(prompt) and prompt != "" do
+    capacity = Fountain.Runtimes.ACP.concurrency(runtime)
+
+    if _unsafe_sandbox_at_capacity?(sandbox.id, nil, capacity),
+      do: {:error, :sandbox_at_capacity},
+      else: :ok
+  end
+
+  defp check_attach_capacity(_sandbox, _agent, _prompt), do: :ok
+
+  @doc "The runtime of the newest conversation on `sandbox_id`, or nil when it has none."
+  def _unsafe_sandbox_runtime(sandbox_id) when is_binary(sandbox_id) do
+    Repo.one(
+      from c in Conversation,
+        where: c.sandbox_id == ^sandbox_id,
+        order_by: [desc: c.inserted_at, desc: c.id],
+        limit: 1,
+        select: c.runtime
+    )
+  end
+
+  @doc "One of the caller's sandboxes, or nil. A foreign or malformed id reads as nil."
+  def get_sandbox(id, user_id) when is_binary(id) and is_binary(user_id) do
+    case Ecto.UUID.cast(id) do
+      {:ok, _} -> Repo.get_by(Sandbox, id: id, user_id: user_id)
+      :error -> nil
+    end
+  end
+
+  @doc """
+  The caller's sandboxes, newest first, each with its conversations (newest
+  first). `status: [...]` filters; anything else lists every status, the
+  terminated ones included — a machine's history is part of the account.
+  """
+  def list_sandboxes(user_id, opts \\ []) when is_binary(user_id) do
+    query =
+      from(s in Sandbox,
+        where: s.user_id == ^user_id,
+        order_by: [desc: s.inserted_at, desc: s.id]
+      )
+
+    query =
+      case Keyword.get(opts, :status) do
+        [_ | _] = statuses -> where(query, [s], s.status in ^statuses)
+        _ -> query
+      end
+
+    query
+    |> Repo.all()
+    |> Repo.preload(conversations: from(c in Conversation, order_by: [desc: c.inserted_at]))
+  end
+
+  @doc "`get_sandbox/2` with the conversations preloaded, newest first."
+  def get_sandbox_with_conversations(id, user_id) when is_binary(id) and is_binary(user_id) do
+    case get_sandbox(id, user_id) do
+      nil ->
+        nil
+
+      s ->
+        Repo.preload(s, conversations: from(c in Conversation, order_by: [desc: c.inserted_at]))
     end
   end
 
@@ -2354,6 +2565,8 @@ defmodule Fountain.Conversations do
              fn ->
                create_sandbox(%{
                  environment_id: conv.environment_id || agent.environment_id,
+                 agent_id: conv.agent_id,
+                 vault_id: conv.vault_id,
                  sprite_name: sprite_name,
                  status: "pending",
                  provider: Atom.to_string(provider),

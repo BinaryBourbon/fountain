@@ -39,6 +39,8 @@ export type VaultPatch = S["VaultUpdate"];
 
 /** One run of an agent inside a sandbox. */
 export type ConversationRecord = S["Conversation"];
+/** A machine, with the conversations on it. */
+export type SandboxRecord = S["SandboxDetail"];
 /** One prompt and everything the agent did in response. */
 export type Turn = S["Turn"];
 /** One row of a conversation's log feed. */

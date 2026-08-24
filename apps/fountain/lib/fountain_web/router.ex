@@ -457,6 +457,12 @@ defmodule FountainWeb.Router do
     get "/support/reports", SupportReportController, :index
     get "/support/reports/:id", SupportReportController, :show
 
+    # The machines conversations run on (ADR 0023 gate 3). Read-only: a
+    # sandbox is made by creating a conversation and reused by naming it as
+    # `sandbox_id` on the next one.
+    get "/sandboxes", SandboxController, :index
+    get "/sandboxes/:id", SandboxController, :show
+
     resources "/conversations", ConversationController, only: [:index, :show, :create, :delete] do
       post "/prompts", ConversationController, :prompt, as: :prompt
       post "/interrupt", ConversationController, :interrupt, as: :interrupt
