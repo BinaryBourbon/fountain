@@ -51,7 +51,11 @@ config :fountain, Oban,
        # (ADR 0030 decision 2). Idempotent per period and per grant. The
        # webhook will grant at renewal directly (phase 4); this is the
        # backstop. No-ops until CREDIT_PRICING_SINCE is set.
-       {"23 6 * * *", Fountain.Workers.CreditGranter}
+       {"23 6 * * *", Fountain.Workers.CreditGranter},
+       # 06:47 UTC daily: rent for numbers and inboxes, the grace reminders,
+       # and the release on day seven (ADR 0030 decision 4). No-ops until a
+       # rent price is set.
+       {"47 6 * * *", Fountain.Workers.CreditRentCollector}
      ]}
   ]
 

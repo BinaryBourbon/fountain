@@ -109,6 +109,18 @@ records the decisions, and
 [issue 1086](https://github.com/BinaryBourbon/fountain/issues/1086) tracks
 the build.
 
+### Rent for numbers and inboxes
+
+Set `CREDIT_NUMBER_CENTS` and `CREDIT_INBOX_CENTS`, and each teammate
+contact costs one month of rent up front, then one month on each monthly
+anniversary. Fountain takes the rent from the credit balance. With
+enforcement off, Fountain takes the rent even when the balance goes below
+zero. With enforcement on, Fountain refuses a new contact when the balance
+cannot cover the first month. A contact with unpaid rent gets seven days of
+grace. Fountain sends a reminder on day 0, day 3 and day 6. On day 7
+it releases the number and the inbox. You cannot recover a released
+number. A top-up during the grace pays the rent and keeps the number.
+
 ### Sell credit packs
 
 A subscriber can buy credit on the billing page, or with
