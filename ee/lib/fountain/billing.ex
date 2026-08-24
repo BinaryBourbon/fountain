@@ -2140,10 +2140,10 @@ defmodule Fountain.Billing do
       surface can label a calendar-month fallback as one
     * `:over?` — whether `:used` has passed `:included`
 
-  **Nothing acts on this.** No gate, no ceiling, no invoice line. Whether
-  going over means post-paid overage or exhausted prepaid credits is still
-  open (#1016 step 4) and is meant to be decided against a cycle of these
-  numbers rather than ahead of one.
+  **Nothing acts on this shape.** The decision it was waiting on is made
+  (ADR 0030): the hours are a prepaid credit grant, and what acts is
+  `check_spend/1` on the balance, not on this number. This stays as the
+  hours view until enforcement flips, then goes.
   """
   @spec turn_hour_allowance(User.t(), keyword()) :: %{
           used: float(),
