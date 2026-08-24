@@ -131,6 +131,12 @@ at a dead end, with no error to see. Read [Email](guides/operate/email.md).
 | `AGENTPHONE_NUMBER_CENTS` | — | No. | What AgentPhone charges for one number each month, in cents. |
 | `AGENTMAIL_MESSAGE_CENTS` | — | No. | What AgentMail charges for one email, in cents. Give the fraction, such as `0.2` for $2 per 1,000 emails. A whole number rounds this rate to zero. |
 | `AGENTPHONE_MESSAGE_CENTS` | — | No. | What AgentPhone charges for one SMS, in cents. Fountain counts an inbound message too, because AgentPhone charges for it. |
+| `CREDIT_TURN_HOUR_CENTS` | `25` | No. | What a tenant pays for one hour of turn time, in whole cents, from their prepaid balance. |
+| `CREDIT_NUMBER_CENTS` | — | No. | What a tenant pays for one phone number each month, in whole cents. Unset means the number burns nothing. |
+| `CREDIT_INBOX_CENTS` | — | No. | What a tenant pays for one inbox each month, in whole cents. Unset means the inbox burns nothing. |
+| `CREDIT_EMAIL_MESSAGE_CENTS` | — | No. | What a tenant pays for one email, in whole cents. Unset means an email burns nothing. |
+| `CREDIT_SMS_MESSAGE_CENTS` | — | No. | What a tenant pays for one SMS, sent or received, in whole cents. Unset means an SMS burns nothing. |
+| `CREDIT_PACKS_CENTS` | `1000,2500,10000` | No. | The credit packs a tenant can buy, in cents, as a list. |
 
 <!-- vale STE.IngForms = YES -->
 

@@ -36,6 +36,10 @@ defmodule Fountain.Accounts.User do
     # `comped` subscription_status, which makes everything free: this is the
     # tenant who pays for their tier and holds a number Fountain eats.
     field :comped_contacts, :integer, default: 0
+    # Cached sum of `credit_ledger` (ADR 0030). Written only by
+    # `Fountain.Credits`, in the same transaction as the ledger row; never
+    # cast from user input.
+    field :credit_balance_cents, :integer, default: 0
     field :role, :string, default: "user"
     field :stripe_customer_id, :string
     # The subscription of record. Webhook sync applies events for this

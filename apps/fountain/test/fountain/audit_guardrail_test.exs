@@ -105,7 +105,11 @@ defmodule Fountain.AuditGuardrailTest do
     {"webhook endpoint delete", &__MODULE__.do_webhook_delete/1, "webhook_endpoint.deleted"},
     {"webhook secret rotate", &__MODULE__.do_webhook_rotate/1, "webhook_endpoint.secret_rotated"},
     {"webhook endpoint disable", &__MODULE__.do_webhook_disable/1, "webhook_endpoint.disabled"},
-    {"webhook endpoint enable", &__MODULE__.do_webhook_enable/1, "webhook_endpoint.enabled"}
+    {"webhook endpoint enable", &__MODULE__.do_webhook_enable/1, "webhook_endpoint.enabled"},
+    # Prepaid credits (ADR 0030). Money in and money out are the two shapes;
+    # every reason family maps onto one of five `credit.*` actions.
+    {"credit grant", &__MODULE__.do_credit_grant/1, "credit.granted"},
+    {"credit debit", &__MODULE__.do_credit_debit/1, "credit.burned"}
   ]
 
   # Documented non-coverage. Mirrors the `Fountain.Audit` moduledoc; if the two
@@ -551,4 +555,14 @@ defmodule Fountain.AuditGuardrailTest do
   end
 
   def do_verify_email(user), do: {:ok, _} = Fountain.Accounts.verify_email(user)
+
+  def do_credit_grant(user) do
+    {:ok, _} =
+      Fountain.Credits.grant(user.id, 100, "grant_admin", idempotency_key: "guard-#{user.id}")
+  end
+
+  def do_credit_debit(user) do
+    {:ok, _} =
+      Fountain.Credits.debit(user.id, 1, "burn_turn", idempotency_key: "guard-b-#{user.id}")
+  end
 end
