@@ -19,13 +19,18 @@ export interface RequestOptions {
  * this string is already what Fountain's request logs are keyed on. The
  * version half is asserted against `package.json` by a test.
  */
-export const USER_AGENT = "fountain-sdk-js/0.1.4";
+export const USER_AGENT = "fountain-sdk-js/0.1.5";
 
 /**
  * The thin layer everything else is built on: one bearer token, JSON in and
  * out, and errors that say which call failed. `Fountain#api` exposes it
  * directly so a caller is never blocked by a verb this SDK did not wrap.
  */
+/** A page in a browser: `document` exists. Workers have none, and no page origin to preflight for. */
+function isBrowser(): boolean {
+  return typeof (globalThis as { document?: unknown }).document !== "undefined";
+}
+
 export class HttpClient {
   readonly config: ResolvedConfig;
   private readonly fetchImpl: FetchLike;
@@ -59,9 +64,14 @@ export class HttpClient {
     const headers: Record<string, string> = {
       Authorization: `Bearer ${this.config.apiKey}`,
       Accept: "application/json",
-      "User-Agent": USER_AGENT,
       ...extra,
     };
+    // A browser already has a user agent, and setting one is worse than
+    // useless there: Chrome drops it as a forbidden header, Firefox sends it —
+    // which makes every call a CORS preflight asking for `user-agent`, and a
+    // server whose allow-list does not name it refuses the request outright
+    // ("CORS Missing Allow Header"). Only a non-browser runtime gets the token.
+    if (!isBrowser()) headers["User-Agent"] = USER_AGENT;
     // Attribute conversations started from inside a sandbox to their parent.
     if (this.config.parentConversationId) {
       headers["X-Fountain-Parent-Conversation-Id"] = this.config.parentConversationId;

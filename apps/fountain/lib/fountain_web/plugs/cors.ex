@@ -21,7 +21,11 @@ defmodule FountainWeb.Plugs.Cors do
   import Plug.Conn
 
   @allowed_methods "GET, POST, PUT, PATCH, DELETE, OPTIONS"
-  @allowed_headers "authorization, content-type, last-event-id, accept"
+  # `user-agent` is here for the SDK: it stamps one on every request, and
+  # Firefox (unlike Chrome) lets a page set it, which turns the call into a
+  # preflight asking for a header this list did not name — "CORS Missing
+  # Allow Header" on the first request of a signed-in session.
+  @allowed_headers "authorization, content-type, last-event-id, accept, user-agent"
   @exposed_headers "retry-after, x-request-id"
 
   @impl true

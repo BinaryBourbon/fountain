@@ -7,7 +7,7 @@ import { join } from "node:path";
 // browser entry deliberately has none. Doing it here tests that wiring too.
 import "../src/node.ts";
 import { resolveConfig, conversationUrl, DEFAULT_BASE_URL } from "../src/config.ts";
-import { USER_AGENT } from "../src/http.ts";
+import { HttpClient, USER_AGENT } from "../src/http.ts";
 
 const VARS = [
   "FOUNTAIN_API_KEY",
@@ -132,5 +132,20 @@ describe("the version the server sees", () => {
   test("USER_AGENT carries the published version", () => {
     const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
     assert.equal(USER_AGENT, `fountain-sdk-js/${pkg.version}`);
+  });
+
+  // Firefox forwards a page-set User-Agent, which makes every call a CORS
+  // preflight for a header Fountain's allow-list may not name. A browser
+  // already has one; only a non-browser runtime should add the token.
+  test("the header is sent from Node and not from a page", () => {
+    const client = new HttpClient(resolveConfig({ apiKey: "ftn_x", baseUrl: "https://f.example" }));
+    assert.equal(client.headers()["User-Agent"], USER_AGENT);
+    const g = globalThis as { document?: unknown };
+    g.document = {};
+    try {
+      assert.equal(client.headers()["User-Agent"], undefined);
+    } finally {
+      delete g.document;
+    }
   });
 });
