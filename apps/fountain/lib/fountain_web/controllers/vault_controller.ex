@@ -98,7 +98,10 @@ defmodule FountainWeb.VaultController do
     parameters: [id: [in: :path, type: :string, required: true]],
     responses: [
       no_content: "Deleted",
-      not_found: {"Not found", "application/json", Schemas.Error}
+      not_found: {"Not found", "application/json", Schemas.Error},
+      conflict:
+        {"An agent is mid-turn on a persistent sandbox built on this vault", "application/json",
+         Schemas.Error}
     ]
   )
 
@@ -110,8 +113,9 @@ defmodule FountainWeb.VaultController do
         {:error, :not_found}
 
       vault ->
-        {:ok, _} = Vaults.delete_vault(vault, Audited.attribution(conn))
-        send_resp(conn, :no_content, "")
+        with {:ok, _} <- Vaults.delete_vault(vault, Audited.attribution(conn)) do
+          send_resp(conn, :no_content, "")
+        end
     end
   end
 end

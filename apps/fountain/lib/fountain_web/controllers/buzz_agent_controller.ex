@@ -11,6 +11,8 @@ defmodule FountainWeb.BuzzAgentController do
   use FountainWeb, :controller
   use OpenApiSpex.ControllerSpecs
 
+  require Logger
+
   alias Fountain.Buzz
   alias Fountain.Buzz.{BuzzIdentity, Manager}
   alias Fountain.Vaults
@@ -179,10 +181,19 @@ defmodule FountainWeb.BuzzAgentController do
   defp ensure_harness(nil, %BuzzIdentity{} = identity), do: Manager.start_harness(identity)
 
   defp delete_vault(%BuzzIdentity{vault_id: vault_id}, user_id) do
-    case Vaults.get_vault(vault_id, user_id) do
-      %Vaults.Vault{} = vault -> Vaults.delete_vault(vault, actor: "api")
-      _ -> :ok
+    with %Vaults.Vault{} = vault <- Vaults.get_vault(vault_id, user_id),
+         # A home built on this vault is retired first, and a running turn on
+         # one refuses the delete (#1084). The harness is stopped above, so
+         # this is a turn some other conversation is running on the same
+         # machine; the identity still goes and the vault is left for the
+         # owner rather than failing the request.
+         {:error, reason} <- Vaults.delete_vault(vault, actor: "api") do
+      Logger.warning(
+        "buzz identity deleted but its vault #{vault_id} was kept: #{inspect(reason)}"
+      )
     end
+
+    :ok
   end
 
   defp identity_json(%BuzzIdentity{} = i) do

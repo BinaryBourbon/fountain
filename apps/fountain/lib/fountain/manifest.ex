@@ -133,8 +133,24 @@ defmodule Fountain.Manifest do
           end
 
         case outcome do
-          {action, {:ok, _agent}} -> result("Agent", name, action, nil, [])
-          {_action, {:error, cs}} -> result("Agent", name, :error, changeset_errors(cs), [])
+          {action, {:ok, _agent}} ->
+            result("Agent", name, action, nil, [])
+
+          # Moving the agent's environment rebuilds its machine, which a
+          # running turn blocks (#1084). Reported against the field that
+          # caused it so `fountain apply` says what to do about it.
+          {_action, {:error, :sandbox_mid_turn}} ->
+            errors = %{
+              "environment" => [
+                "the agent is running a turn on its own machine; changing its " <>
+                  "environment rebuilds that machine — retry once the turn ends"
+              ]
+            }
+
+            result("Agent", name, :error, errors, [])
+
+          {_action, {:error, cs}} ->
+            result("Agent", name, :error, changeset_errors(cs), [])
         end
 
       {:error, ref} ->

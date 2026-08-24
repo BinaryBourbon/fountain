@@ -39,13 +39,26 @@ defmodule FountainWeb.VaultsLive.Index do
          |> put_flash(:error, "Vault not found — it may already be deleted")}
 
       vault ->
-        {:ok, _} = Vaults.delete_vault(vault, FountainWeb.Audited.attribution(socket))
+        # A vault whose home is mid-turn cannot go yet (#1084) — the machine
+        # would be pulled out from under a running turn.
+        flash =
+          case Vaults.delete_vault(vault, FountainWeb.Audited.attribution(socket)) do
+            {:ok, _} -> {:info, "Deleted #{vault.name}"}
+            {:error, :sandbox_mid_turn} -> {:error, mid_turn_message(vault.name)}
+          end
 
         {:noreply,
          socket
          |> assign(:vaults, load_vaults(socket.assigns.user_id, socket.assigns.filter_search))
-         |> put_flash(:info, "Deleted #{vault.name}")}
+         |> put_flash(elem(flash, 0), elem(flash, 1))}
     end
+  end
+
+  # An agent is working on the machine this row's identity names; the caller
+  # waits for the turn or interrupts it, then deletes again.
+  defp mid_turn_message(name) do
+    "#{name} is in use by an agent that is running a turn right now — wait for it to " <>
+      "finish, or interrupt it, then delete again"
   end
 
   defp load_vaults(user_id, search) do

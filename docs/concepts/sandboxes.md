@@ -38,6 +38,14 @@ agent, Fountain destroys the machine. A reset (`DELETE /api/sandboxes/:id`)
 also destroys the machine, and keeps the conversations. The next prompt builds
 a clean one.
 
+The machine belongs to one identity. Three changes move that identity. You
+move the agent to a different environment. You delete the environment. You
+delete the vault. Fountain retires the machine for each of them, and keeps the
+conversations, so the next prompt builds a machine on the identity that exists
+now. Fountain refuses each change with `409 sandbox_mid_turn` while a
+conversation on that machine runs a turn. Let the turn end, or stop it, then
+send the request again.
+
 When a home parks, Fountain can take a checkpoint of its disk. The operator
 turns this on with `CHECKPOINT_CREATION_ENABLED`, and only a provider with
 checkpoints (Sprites) does it. The checkpoint belongs to that one machine.

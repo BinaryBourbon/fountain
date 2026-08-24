@@ -140,9 +140,31 @@ defmodule Fountain.Environments do
     |> audited("environment.updated", merge_metadata(opts, Audit.changed_fields(changeset)))
   end
 
-  @doc "Delete an environment. See `create_environment/2` for `opts`."
-  def delete_environment(%Environment{} = env, opts \\ []),
-    do: env |> Repo.delete() |> audited("environment.deleted", opts)
+  @doc """
+  Delete an environment. See `create_environment/2` for `opts`.
+
+  The homes built on it go first (#1084), for the reason spelled out in
+  `Fountain.Vaults.delete_vault/2`: `sandboxes.environment_id` is
+  `ON DELETE SET NULL`, so a home left behind either becomes the *no
+  environment* home for its identity — next launch lands on a disk holding the
+  deleted environment's secrets — or collides with
+  `sandboxes_home_identity_index` and fails the delete outright.
+
+  Refused with `:sandbox_mid_turn` while a conversation on one of those homes
+  is running a turn.
+  """
+  def delete_environment(%Environment{} = env, opts \\ []) do
+    # Ownership: `env` came from the caller's scoped fetch, and a home carries
+    # the same `user_id` as the environment its identity names.
+    homes = Fountain.Conversations._unsafe_homes_for_environment(env.id)
+
+    if Fountain.Conversations._unsafe_any_home_mid_turn?(homes) do
+      {:error, :sandbox_mid_turn}
+    else
+      _ = Fountain.Conversations._unsafe_retire_orphaned_homes(homes, "environment_deleted", opts)
+      env |> Repo.delete() |> audited("environment.deleted", opts)
+    end
+  end
 
   # See the note in `Fountain.Agents.audited/3`: this runs outside any
   # enclosing transaction, because best-effort audit recording is only
