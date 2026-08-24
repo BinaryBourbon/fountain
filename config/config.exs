@@ -41,7 +41,12 @@ config :fountain, Oban,
        # Every minute: the tick for user-defined team schedules. Cheap — one
        # indexed query, usually empty — and a minute is the cron grain the
        # schedules are written in.
-       {"* * * * *", Fountain.Workers.TeamScheduler}
+       {"* * * * *", Fountain.Workers.TeamScheduler},
+       # Every 10 minutes: price closed turns and comms messages into the
+       # credit ledger (ADR 0030). Idempotent per turn and per event, so the
+       # cadence only sets how stale a balance can read. No-ops until
+       # CREDIT_PRICING_SINCE is set.
+       {"*/10 * * * *", Fountain.Workers.CreditPricer}
      ]}
   ]
 
@@ -63,6 +68,9 @@ config :fountain,
 # of one hour of turn time; the comms prices are nil until an operator sets
 # them, and nil burns nothing (#1042). runtime.exs overrides from CREDIT_*.
 config :fountain, :credits,
+  # When set, turns that ended at or after this instant are priced into the
+  # ledger; nil means the pricer no-ops. runtime.exs reads CREDIT_PRICING_SINCE.
+  pricing_since: nil,
   turn_hour_cents: 25,
   number_cents: nil,
   inbox_cents: nil,
