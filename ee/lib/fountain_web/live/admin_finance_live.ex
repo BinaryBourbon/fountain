@@ -37,6 +37,7 @@ defmodule FountainWeb.Live.AdminFinanceLive do
 
   alias Fountain.Billing
   alias Fountain.Billing.Finance
+  alias Fountain.Billing.Reconciliation
   alias Fountain.Billing.SandboxUsage
 
   @impl true
@@ -92,14 +93,59 @@ defmodule FountainWeb.Live.AdminFinanceLive do
   # queries), so it runs on 30s rather than 10s, and a closed month is not
   # recomputed at all — nothing in it can change.
   defp assign_finance(socket) do
-    assign(
-      socket,
-      :finance,
+    {period_start, _} = month_range(socket.assigns.months_ago)
+
+    finance =
       Finance.summary(
         period: month_range(socket.assigns.months_ago),
         basis: socket.assigns.basis
       )
-    )
+
+    invoices = Reconciliation.invoices_for(DateTime.to_date(period_start))
+
+    socket
+    |> assign(:finance, finance)
+    |> assign(:invoice_lines, Reconciliation.lines(finance, invoices))
+    |> assign(:dropped, Reconciliation.dropped_on_this_node())
+  end
+
+  # An invoice is typed in dollars and stored in cents; the month is the one
+  # the page is showing, so a closed month's bill lands on that month.
+  @impl true
+  def handle_event(
+        "record_invoice",
+        %{"provider" => provider, "amount" => amount} = params,
+        socket
+      ) do
+    {period_start, period_end} = month_range(socket.assigns.months_ago)
+
+    with {:ok, cents} <- parse_dollars(amount),
+         {:ok, _} <-
+           Reconciliation.record_invoice(
+             %{
+               "provider" => provider,
+               "period_start" => DateTime.to_date(period_start),
+               "period_end" => DateTime.to_date(period_end),
+               "amount_cents" => cents,
+               "note" => params["note"]
+             },
+             FountainWeb.Audited.attribution(socket)
+           ) do
+      {:noreply,
+       socket
+       |> put_flash(:info, "Recorded #{provider}'s invoice for the month.")
+       |> assign_finance()}
+    else
+      _ ->
+        {:noreply, put_flash(socket, :error, "Enter the invoice total in dollars, like 123.45.")}
+    end
+  end
+
+  defp parse_dollars(raw) when is_binary(raw) do
+    case Float.parse(String.trim(String.replace(raw, ["$", ","], ""))) do
+      {dollars, ""} when dollars >= 0 -> {:ok, round(dollars * 100)}
+      _ -> :error
+    end
   end
 
   # `months_ago` back from the current month, as a whole UTC month. Zero is
@@ -396,6 +442,81 @@ defmodule FountainWeb.Live.AdminFinanceLive do
           {money(@finance.unattributed_cost_cents)} of that belongs to deleted accounts and is in
           no tenant row below — spend nobody can be charged for.
         </div>
+      </section>
+
+      <%!-- ── Computed against invoiced (#1038) ── --%>
+      <section class="space-y-3" id="reconciliation">
+        <h2 class="text-lg font-medium">Provider invoices</h2>
+        <p class="text-xs text-zinc-500">
+          The computed cost is a model with an unknown error until a real invoice sits beside it.
+          Record each provider's bill for this month; the delta is invoiced minus computed, so a
+          positive number means the model under-reports.
+        </p>
+        <div
+          :if={@dropped > 0}
+          class="bg-amber-50 border border-amber-200 rounded px-4 py-2 text-xs text-amber-900"
+        >
+          {@dropped} metering {pluralize(@dropped, "event", "events")} dropped on this node since it
+          booted. The figures for any period that overlaps are approximate.
+        </div>
+        <table class="w-full text-sm bg-white rounded shadow border border-zinc-200">
+          <thead class="text-left text-xs text-zinc-500">
+            <tr>
+              <th class="px-3 py-2 font-normal">Provider</th>
+              <th class="px-3 py-2 font-normal text-right">Computed</th>
+              <th class="px-3 py-2 font-normal text-right">Invoiced</th>
+              <th class="px-3 py-2 font-normal text-right">Delta</th>
+              <th class="px-3 py-2 font-normal">Note</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr :for={line <- @invoice_lines} class="border-t border-zinc-100">
+              <td class="px-3 py-2">{line.provider}</td>
+              <td class="px-3 py-2 text-right tabular-nums">{money(line.computed_cents)}</td>
+              <td class="px-3 py-2 text-right tabular-nums">{money(line.recorded_cents)}</td>
+              <td class={[
+                "px-3 py-2 text-right tabular-nums",
+                line.delta_cents && line.delta_cents != 0 && "text-amber-700"
+              ]}>
+                {money(line.delta_cents)}
+              </td>
+              <td class="px-3 py-2 text-xs text-zinc-500">{line.note}</td>
+            </tr>
+          </tbody>
+        </table>
+        <form phx-submit="record_invoice" class="flex flex-wrap items-end gap-2 text-sm">
+          <label class="flex flex-col text-xs text-zinc-500">
+            Provider
+            <select
+              name="provider"
+              class="rounded border border-zinc-300 px-2 py-1 text-sm text-zinc-900"
+            >
+              <option :for={p <- Fountain.Billing.ProviderInvoice.providers()} value={p}>{p}</option>
+            </select>
+          </label>
+          <label class="flex flex-col text-xs text-zinc-500">
+            Invoice total ($)
+            <input
+              name="amount"
+              type="text"
+              inputmode="decimal"
+              placeholder="123.45"
+              class="rounded border border-zinc-300 px-2 py-1 text-sm text-zinc-900 w-28"
+            />
+          </label>
+          <label class="flex flex-col text-xs text-zinc-500">
+            Note
+            <input
+              name="note"
+              type="text"
+              placeholder="invoice number"
+              class="rounded border border-zinc-300 px-2 py-1 text-sm text-zinc-900 w-48"
+            />
+          </label>
+          <button type="submit" class="rounded bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white">
+            Record for {Calendar.strftime(@finance.period_start, "%B")}
+          </button>
+        </form>
       </section>
 
       <%!-- ── The row that matters ── --%>

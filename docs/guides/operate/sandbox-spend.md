@@ -44,6 +44,21 @@ names the accounts with the most hours, each with its own idle share.
 The panel is there whether or not you turn billing on. A self-hosted instance <!-- vale disable-line STE.IngForms -->
 still pays a provider.
 
+## Record the invoice next to the figure
+
+The computed cost is a model. Until a real invoice sits next to it, the
+error is unknown. The panel has a table with one row for each provider
+Fountain pays. Each row shows the computed cost, the invoiced cost, and the
+delta. Use the form under the table to record what a provider charged for
+the month the page shows. A positive delta means the model under-reports.
+Record every month. After a month of deltas, you know which gaps in the
+model matter, and you know enough to turn credit enforcement on. The
+[billing guide](billing.md) has the order of steps.
+
+The same section shows how many usage events this node dropped since it
+booted. A dropped event makes the figures for that period approximate. The
+count is for one node and resets when the node restarts.
+
 ## What each provider means for your bill
 
 | Provider | Who pays |

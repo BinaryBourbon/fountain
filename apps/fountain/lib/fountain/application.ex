@@ -20,6 +20,9 @@ defmodule Fountain.Application do
       Fountain.Telemetry.attach_otel_bridge()
     end
 
+    # Counts metering events this node drops, for /admin/finance (#1038).
+    Fountain.Billing.Reconciliation.attach_drop_counter()
+
     cluster_topologies = Application.get_env(:libcluster, :topologies, [])
 
     children =
