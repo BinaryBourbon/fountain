@@ -74,6 +74,7 @@ message.
 | `REGISTRATION_ALLOWED_EMAIL_DOMAINS` | any | — | A comma-separated list. Fountain refuses a signup outside these domains. Empty means no restriction. |
 | `UNVERIFIED_PRUNE_AFTER_DAYS` | `30` | — | Fountain deletes an account that never verified its email after this many days. Such an account can sign in and reach nothing, so it is a row and not a user. A `0` turns the sweep off. |
 | `UNVERIFIED_PRUNE_EXEMPT` | — | — | Comma-separated email substrings that the sweep never prunes. Use it for an operator or test account that stays unverified on purpose. |
+| `SECRET_EXPIRY_NOTICE_DAYS` | `7` | — | Days before a vault secret's recorded expiry that Fountain emails the owner. The vault page shows an amber badge for the same window. A `0` turns the notice off. |
 | `FIRST_USER_ADMIN` | `false` | — | A `true` promotes the first account that becomes verified to admin, while the instance has no admin. The audit trail records it (ADR 0011). Leave it off on a multi-tenant deployment, because it hands admin to whoever verifies first. |
 
 ## Email

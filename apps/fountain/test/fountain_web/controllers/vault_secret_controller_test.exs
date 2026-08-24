@@ -65,6 +65,29 @@ defmodule FountainWeb.VaultSecretControllerTest do
       assert body["data"]["expires_at"] == "2027-01-15T00:00:00Z"
     end
 
+    test "a write without expires_at keeps the stored expiry; null clears it",
+         %{conn: conn, user: user, raw_key: raw_key} do
+      vault = insert_vault(user_id: user.id)
+
+      post = fn body ->
+        conn |> authed_with_key(raw_key) |> post_json("/api/vaults/#{vault.id}/secrets", body)
+      end
+
+      post.(%{key: "API_TOKEN", value: "v1", expires_at: "2027-01-15T00:00:00Z"})
+
+      # Rotating the value with the key absent is not a request to change the
+      # expiry — the console's blank date field relies on the same rule.
+      kept = post.(%{key: "API_TOKEN", value: "v2"})
+      assert json_response(kept, 201)["data"]["expires_at"] == "2027-01-15T00:00:00Z"
+
+      # Clearing is explicit: the key present and null.
+      cleared = post.(%{key: "API_TOKEN", value: "v3", expires_at: nil})
+      assert json_response(cleared, 201)["data"]["expires_at"] == nil
+
+      [secret] = Fountain.Vaults._unsafe_list_secrets(vault)
+      assert secret.expires_at == nil
+    end
+
     test "returns 404 when vault belongs to another user", %{conn: conn, raw_key: raw_key} do
       other_user = insert_verified_user()
       other_vault = insert_vault(user_id: other_user.id)

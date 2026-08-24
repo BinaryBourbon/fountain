@@ -4,6 +4,7 @@ defmodule FountainWeb.VaultsLive.Form do
 
   alias Fountain.{Crypto, Vaults}
   alias Fountain.Vaults.Vault
+  alias Fountain.Workers.SecretExpirySweeper
 
   @impl true
   def mount(params, _session, socket) do
@@ -152,13 +153,9 @@ defmodule FountainWeb.VaultsLive.Form do
       days < 0 -> {:expired, "expired #{DateTime.to_date(expires_at)}"}
       days == 0 -> {:expiring, "expires today"}
       # Amber exactly when the email would have fired: one window, one config.
-      days <= expiry_notice_days() -> {:expiring, "expires in #{days}d"}
+      days <= SecretExpirySweeper.notice_days() -> {:expiring, "expires in #{days}d"}
       true -> {:ok, "expires #{DateTime.to_date(expires_at)}"}
     end
-  end
-
-  defp expiry_notice_days do
-    Application.get_env(:fountain, :secret_expiry_notice_days, 7)
   end
 
   defp expiry_class(:expired), do: "text-rose-600"

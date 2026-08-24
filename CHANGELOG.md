@@ -22,7 +22,7 @@ upgrade, is in
   metadata on a vault secret: the console shows staleness (last-updated age
   and expiry status) on the vault page, and a daily sweep emails the owner
   once per recorded expiry before the date arrives — 7 days ahead by
-  default (`secret_expiry_notice_days`; `0` disables). Nothing is enforced
+  default (`SECRET_EXPIRY_NOTICE_DAYS`; `0` disables). Nothing is enforced
   on the date: an expired secret keeps being injected, because a missing
   env var fails worse than a stale one. The API accepts and returns
   `expires_at` on vault secrets; values remain write-only. Changing the

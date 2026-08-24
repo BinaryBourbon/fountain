@@ -17,7 +17,9 @@ defmodule Fountain.Workers.SecretExpirySweeper do
   Config:
 
     * `:secret_expiry_notice_days` — how far ahead to warn, default 7.
-      `0` disables the sweep.
+      `0` disables the sweep. Set from `SECRET_EXPIRY_NOTICE_DAYS` in
+      `config/runtime.exs`; `notice_days/0` is the one reader, so the vault
+      page's amber badge and this sweep describe the same window.
   """
 
   use Oban.Worker, queue: :maintenance, max_attempts: 1
@@ -95,7 +97,14 @@ defmodule Fountain.Workers.SecretExpirySweeper do
     end
   end
 
-  defp notice_days do
+  @doc """
+  The notice window in days. `0` means the notice is off.
+
+  Read here and by `FountainWeb.VaultsLive.Form`, so the email and the
+  console badge cannot disagree about what "expiring soon" means.
+  """
+  @spec notice_days() :: non_neg_integer()
+  def notice_days do
     Application.get_env(:fountain, :secret_expiry_notice_days, 7)
   end
 end
