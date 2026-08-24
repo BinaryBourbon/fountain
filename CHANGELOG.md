@@ -93,6 +93,8 @@ upgrade, is in
 
 ### Fixed
 
+- **A conversation interrupted mid-provision now rebuilds its sandbox instead of failing in `clone`.** A deploy or a Horde rebalance that killed a server during provisioning restarted it against the same half-built sprite, where `git clone` refused the existing checkout and the whole conversation failed. The restart now discards the remnant and provisions clean; the `provision started` event says so.
+
 - **The finance panel reported teammate-contact revenue nobody was charged.**
   It priced every non-comped contact at `Plans.contact_monthly_cents/0`, which
   returns $5 whether or not anything is configured to charge it. The actual
