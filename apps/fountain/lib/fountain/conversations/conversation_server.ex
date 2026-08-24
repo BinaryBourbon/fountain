@@ -727,7 +727,12 @@ defmodule Fountain.Conversations.ConversationServer do
 
         write_runtime_config(handle, state.runtime_module, agent)
         write_instructions(handle, runtime, agent)
-        Fountain.Conversations.Provisioning.write_env_file(handle, sprite_env)
+        # The file is the machine's; the conversation's identity travels as
+        # process env on every spawn (`Fountain.Conversations.Identity`).
+        Fountain.Conversations.Provisioning.write_env_file(
+          handle,
+          Fountain.Conversations.Identity.disk_env(sprite_env)
+        )
 
         with :ok <-
                run_provisioning_pipeline(handle, env, sprite_env, secrets, state.conversation_id),
@@ -945,7 +950,12 @@ defmodule Fountain.Conversations.ConversationServer do
 
         # Refresh the .env file in case secrets/env_vars were edited
         # between the original provision and this reattach.
-        Fountain.Conversations.Provisioning.write_env_file(handle, sprite_env)
+        # The file is the machine's; the conversation's identity travels as
+        # process env on every spawn (`Fountain.Conversations.Identity`).
+        Fountain.Conversations.Provisioning.write_env_file(
+          handle,
+          Fountain.Conversations.Identity.disk_env(sprite_env)
+        )
         # Same for the agent's system prompt: an edit reaches the existing
         # computer on its next wake (#848).
         write_instructions(handle, conv.runtime || (agent && agent.runtime) || "claude", agent)
@@ -1052,7 +1062,21 @@ defmodule Fountain.Conversations.ConversationServer do
           # `is_active: false` while no client is connected, but the
           # underlying exec is alive and `attach_session` resumes its
           # stream (replaying the session buffer + live-tailing).
-          attempt_session_attach(state, running_turn, sessions)
+          #
+          # Match on the conversation tag, never the head of the list: with
+          # several conversations on one machine, the head is as likely to be
+          # someone else's process as ours (`Fountain.Conversations.Identity`).
+          case Fountain.Conversations.Identity.pick_session(sessions, state.conversation_id) do
+            :none ->
+              mark_orphan(state, running_turn, "no_active_session")
+              state
+
+            {:tagged, session} ->
+              attempt_session_attach(state, running_turn, session, "tag")
+
+            {:untagged, session} ->
+              attempt_session_attach(state, running_turn, session, "untagged_head")
+          end
 
         {:error, reason} ->
           Logger.warning("list_sessions failed during reattach: #{inspect(reason)}")
@@ -1062,12 +1086,7 @@ defmodule Fountain.Conversations.ConversationServer do
     end
   end
 
-  defp attempt_session_attach(state, running_turn, []) do
-    mark_orphan(state, running_turn, "no_active_session")
-    state
-  end
-
-  defp attempt_session_attach(state, running_turn, [session | _]) do
+  defp attempt_session_attach(state, running_turn, session, matched_by) do
     conv = Conversations._unsafe_get_conversation!(state.conversation_id)
     acp? = Fountain.Runtimes.ACP.enabled?(conv.runtime)
 
@@ -1100,6 +1119,7 @@ defmodule Fountain.Conversations.ConversationServer do
 
         publish_stage(state.conversation_id, "reattach", "done", %{
           outcome: "session_attached",
+          matched_by: matched_by,
           session_id: session.id,
           turn_id: running_turn.id,
           turn_number: running_turn.turn_number,
@@ -2638,6 +2658,11 @@ defmodule Fountain.Conversations.ConversationServer do
       })
 
     previous_span = OpenTelemetry.Tracer.set_current_span(turn_span)
+
+    # Tag the detachable session with this conversation, on its own command
+    # line, so a reattach after a deploy can tell it from another
+    # conversation's process on the same machine (ADR 0023 gate 1).
+    {cmd, args} = Fountain.Conversations.Identity.tag_command(state.conversation_id, cmd, args)
 
     # Stamped before the spawn so the duration covers the round trip to
     # sprites.dev — that latency is part of what the user waits through.

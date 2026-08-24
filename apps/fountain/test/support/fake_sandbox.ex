@@ -164,7 +164,9 @@ defmodule Fountain.Sandbox.Fake do
 
       Agent.update(@registry, fn state ->
         put_in(state, [name, :sessions, session_id], %{
-          command: cmd,
+          # The full line, as the runner daemon and the sprites API report it —
+          # a session's conversation tag lives in its argv.
+          command: Enum.join([cmd | args], " "),
           pid: pid,
           exit: nil,
           buffer: [],

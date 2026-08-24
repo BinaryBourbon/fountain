@@ -32,9 +32,15 @@ defmodule Fountain.Conversations.Provisioning do
   @env_file "/home/sprite/.env"
 
   @doc """
-  Write the merged sprite env (default + callback + env_vars + secrets)
-  to `/home/sprite/.env` so a `setup_script` that does `source .env`
-  picks up the variables. Mirrors the legacy AoD's `env_file.py`.
+  Write the machine's env (runtime defaults + env_vars + secrets) to
+  `/home/sprite/.env` so a `setup_script` that does `source .env` picks up
+  the variables. Mirrors the legacy AoD's `env_file.py`.
+
+  The per-conversation identity — `FOUNTAIN_TOKEN`, `FOUNTAIN_CONVERSATION_ID`,
+  `TRACEPARENT` — is not in this file: callers pass the env through
+  `Fountain.Conversations.Identity.disk_env/1` first. The file is shared by
+  every conversation on the machine; the identity reaches each process as
+  spawn env instead.
 
   Written with mode 600, and `chmod 600` again after the write as defense
   in depth — other sandbox users (if any) must not be able to read tokens.

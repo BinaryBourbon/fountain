@@ -166,8 +166,10 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
     end
 
     test "runs the pinned adapter rather than the claude CLI", %{pid: pid} do
-      assert_receive {:spawned, cmd, _args, opts}
-      assert cmd == ACP.adapter_bin("claude")
+      # Spawned through `env` so the session carries its conversation tag on
+      # its own command line (ADR 0023 gate 1); the adapter is argv[1].
+      assert_receive {:spawned, "env", ["FOUNTAIN_CONVERSATION_ID=" <> _, bin | _], opts}
+      assert bin == ACP.adapter_bin("claude")
       assert opts[:stdin] == true
     end
 
@@ -934,7 +936,7 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
     test "a gemini turn spawns the native ACP binary in its own workspace", ctx do
       {_pid, _ref} = start_acp_turn(ctx.conv)
 
-      assert_receive {:spawned, "gemini", ["--acp"], opts}
+      assert_receive {:spawned, "env", ["FOUNTAIN_CONVERSATION_ID=" <> _, "gemini", "--acp"], opts}
       # /home/sprite would reintroduce the EACCES noise this workspace exists
       # to avoid, and gemini walks up from cwd looking for a .git.
       assert opts[:dir] == "/tmp/gemini-workspace"
