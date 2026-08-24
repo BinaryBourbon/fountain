@@ -180,6 +180,23 @@ spec:
             # provider invoices has been reconciled on /admin/finance.
             - name: CREDIT_PRICING_SINCE
               value: "2026-08-24T23:45:00Z"
+            # The soft stop: a zero balance refuses new sandboxes and turns;
+            # in-flight turns finish. Two users, both known, so no month of
+            # reconciled invoices before this (ADR 0030 §8 waived by the
+            # operator on 2026-08-24).
+            - name: CREDIT_ENFORCE
+              value: "true"
+            # What a tenant pays, in whole cents: a phone number $3/month, an
+            # inbox $2/month, and 2c per email or SMS (each way). Rent is a
+            # month up front with a seven-day grace before release.
+            - name: CREDIT_NUMBER_CENTS
+              value: "300"
+            - name: CREDIT_INBOX_CENTS
+              value: "200"
+            - name: CREDIT_EMAIL_MESSAGE_CENTS
+              value: "2"
+            - name: CREDIT_SMS_MESSAGE_CENTS
+              value: "2"
             # AgentPhone: "$3.00/month" a number, "$0.02/message (inbound and
             # outbound)" — both directions, which is why inbound is metered.
             - name: AGENTPHONE_NUMBER_CENTS
