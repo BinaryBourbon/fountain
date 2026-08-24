@@ -236,6 +236,31 @@ defmodule FountainWeb.FallbackController do
     })
   end
 
+  # Reset (#1071): an ephemeral sandbox is a conversation's own and ends
+  # with it; a terminated or failed one is already gone.
+  def call(conn, {:error, {:sandbox_not_resettable, why}}) do
+    conn
+    |> put_status(:unprocessable_entity)
+    |> json(%{
+      error: "sandbox_not_resettable",
+      message: sandbox_not_resettable_message(why),
+      reason: why
+    })
+  end
+
+  # A reset while a turn runs would cut it from under the conversation; the
+  # caller waits for the turn to end, or interrupts it, then sends again.
+  def call(conn, {:error, :sandbox_mid_turn}) do
+    conn
+    |> put_status(:conflict)
+    |> json(%{
+      error: "sandbox_mid_turn",
+      message:
+        "a conversation on this sandbox is running a turn; wait for it to finish or " <>
+          "interrupt it, then send again"
+    })
+  end
+
   def call(conn, {:error, :invalid_sandbox_mode}) do
     conn
     |> put_status(:unprocessable_entity)
@@ -328,4 +353,10 @@ defmodule FountainWeb.FallbackController do
     |> put_status(:unprocessable_entity)
     |> json(%{error: to_string(reason)})
   end
+
+  defp sandbox_not_resettable_message("ephemeral"),
+    do: "only a persistent sandbox resets; an ephemeral one ends with its conversation"
+
+  defp sandbox_not_resettable_message(status),
+    do: "the sandbox is #{status}; there is nothing left to reset"
 end

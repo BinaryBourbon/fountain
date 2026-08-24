@@ -1944,6 +1944,16 @@ defmodule Fountain.Conversations do
     |> Enum.reject(&(&1.status in ["terminated", "failed"]))
     |> Enum.each(&ConversationServer.terminate_conversation(&1.id, actor: "system:home_reset"))
 
+    _unsafe_retire_home(sandbox)
+  end
+
+  # Destroy the sprite behind a home and retire its row. Best-effort on the
+  # provider side: a destroy error is logged and the row still goes
+  # `terminated`, so the reaper's sweep sees a terminal row rather than a
+  # live one nobody can find. What happens to the conversations on the home
+  # is the caller's decision — agent delete terminates them, a reset keeps
+  # them.
+  defp _unsafe_retire_home(%Sandbox{} = sandbox) do
     handle = Fountain.Sandbox.build_handle(sandbox_provider_atom(sandbox), sandbox.sprite_name)
 
     case Fountain.Sandbox.destroy(handle) do
@@ -1957,6 +1967,109 @@ defmodule Fountain.Conversations do
     now = DateTime.utc_now() |> DateTime.truncate(:second)
     {:ok, _} = update_sandbox(sandbox, %{status: "terminated", terminated_at: now})
     :ok
+  end
+
+  @doc """
+  Reset a home: destroy the agent's machine so the next launch on its
+  identity builds a clean one (ADR 0023 step 5, #1071). The conversations on
+  it stay — idle and resumable — because the disk was the problem, not the
+  transcripts; each is told the machine is gone, so its next prompt takes the
+  wake path, which provisions a fresh home and moves the others onto it.
+
+  `sandbox` came from the caller's scoped `get_sandbox/2`. Only a live
+  `persistent` sandbox resets: an ephemeral one is a conversation's own and
+  ends with it (`{:sandbox_not_resettable, "ephemeral"}`), a terminated or
+  failed one is already gone (`{:sandbox_not_resettable, status}`). Refused
+  with `:sandbox_mid_turn` while any conversation on it runs a turn — the
+  check and the row flip share the per-sandbox advisory lock that turn
+  creation takes, so a turn cannot slip in between them.
+
+  See `create_agent/2` for `opts` (`:actor`, `:request_ip`).
+  """
+  def reset_sandbox(%Sandbox{} = sandbox, opts \\ []) do
+    cond do
+      sandbox.mode != "persistent" ->
+        {:error, {:sandbox_not_resettable, "ephemeral"}}
+
+      sandbox.status in ["terminated", "failed"] ->
+        {:error, {:sandbox_not_resettable, sandbox.status}}
+
+      true ->
+        do_reset_sandbox(sandbox, opts)
+    end
+  end
+
+  defp do_reset_sandbox(%Sandbox{id: sandbox_id} = sandbox, opts) do
+    now = DateTime.utc_now() |> DateTime.truncate(:second)
+
+    result =
+      Repo.transaction(fn ->
+        Repo.query!("SELECT pg_advisory_xact_lock($1, $2)", [
+          @sandbox_lock_namespace,
+          :erlang.phash2(sandbox_id)
+        ])
+
+        if _unsafe_running_turns_elsewhere(sandbox_id, nil) > 0 do
+          Repo.rollback(:sandbox_mid_turn)
+        else
+          ids =
+            Repo.all(
+              from c in Conversation,
+                where: c.sandbox_id == ^sandbox_id and c.status not in ["terminated", "failed"],
+                select: c.id
+            )
+
+          # A fresh disk has no session to resume (#778).
+          Repo.update_all(from(c in Conversation, where: c.id in ^ids),
+            set: [runtime_session_id: nil, updated_at: now]
+          )
+
+          ids
+        end
+      end)
+
+    with {:ok, ids} <- result do
+      message =
+        "The sandbox was reset by its owner. The transcript is kept; the next prompt " <>
+          "builds a fresh machine, and the agent starts a new session there."
+
+      # A conversation with a live server is told through it — the server
+      # cuts nothing (no turn is running), records the event on its own
+      # transcript and stops. One without a server gets the event recorded
+      # here, so every transcript on the home says the same thing.
+      Enum.each(ids, fn id ->
+        case ConversationServer.whereis(id) do
+          nil ->
+            publish_stage(id, "sandbox", "done", %{
+              event: "reset",
+              reason: "home_reset",
+              by: "owner",
+              message: message
+            })
+
+          pid ->
+            GenServer.cast(pid, {:machine_gone, "reset", "home_reset", message})
+        end
+      end)
+
+      _unsafe_retire_home(sandbox)
+
+      Audit.record(%{
+        user_id: sandbox.user_id,
+        action: "sandbox.reset",
+        resource_type: "sandbox",
+        resource_id: sandbox.id,
+        actor: Keyword.get(opts, :actor, "self"),
+        request_ip: Keyword.get(opts, :request_ip),
+        metadata: %{
+          "agent_id" => sandbox.agent_id,
+          "provider" => sandbox.provider,
+          "conversations" => length(ids)
+        }
+      })
+
+      {:ok, _unsafe_get_sandbox!(sandbox.id)}
+    end
   end
 
   # A conversation on a machine the caller already has (ADR 0023 gate 3).

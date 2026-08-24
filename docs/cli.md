@@ -129,6 +129,22 @@ fountain conv delete <id>
 
 You can repeat `-i` and `--image`. Each one takes a local file path.
 
+## Sandboxes
+
+A sandbox is the computer a conversation runs on. One persistent sandbox can
+hold the conversations of one agent (ADR 0023).
+
+```bash
+fountain sandbox list [--json] [--status ready,suspended]
+fountain sandbox show <id>
+fountain sandbox reset <id>
+```
+
+`reset` destroys a persistent sandbox. The conversations on it stay. The next
+prompt on one of them builds a clean machine for the same agent, environment
+and vault. Fountain refuses the command while a conversation on the sandbox
+runs a turn, and for an ephemeral sandbox.
+
 ## Run an agent
 
 ```bash

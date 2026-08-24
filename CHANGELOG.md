@@ -18,6 +18,16 @@ upgrade, is in
 
 ### Added
 
+- **Reset a persistent sandbox.** `DELETE /api/sandboxes/:id` destroys an
+  agent's home so the next launch on the same agent, environment and vault
+  builds a clean machine — the conversations on it are kept, idle, and each
+  one's next prompt lands on the fresh home together with the others. Only a
+  live `persistent` sandbox resets (`422 sandbox_not_resettable`), and not
+  while a conversation on it is mid-turn (`409 sandbox_mid_turn`). Also
+  `fountain sandbox list|show|reset` and the SDK's `resetSandbox(id)`.
+  Audited as `sandbox.reset`. Until now the only reset was to delete the
+  agent (#1071, ADR 0023 step 5).
+
 - **A persistent sandbox per agent — the agent's computer.** An agent's
   `sandbox_mode` is `ephemeral` (a sandbox per conversation, the default and
   today's behaviour) or `persistent`: one machine per agent identity (agent,

@@ -499,13 +499,21 @@ several conversations.
 ```
 GET    /api/sandboxes          # list (?status=ready,suspended)
 GET    /api/sandboxes/:id
+DELETE /api/sandboxes/:id      # reset a persistent sandbox
 ```
 
-Each sandbox carries `status`, `provider` and `url`. It also carries the
-`agent_id`, `environment_id` and `vault_id` that Fountain built it for, and
-`conversations`. Each entry there carries `mid_turn`, which is true while
+Each sandbox carries `status`, `mode`, `provider` and `url`. It also carries
+the `agent_id`, `environment_id` and `vault_id` that Fountain built it for,
+and `conversations`. Each entry there carries `mid_turn`, which is true while
 that conversation runs a turn. To put a second conversation on a sandbox,
 pass its id as `sandbox_id` to `POST /api/conversations`.
+
+`DELETE` resets a `persistent` sandbox. Fountain destroys the machine and
+keeps the conversations on it. The next prompt on one of them builds a clean
+machine for the same agent, environment and vault. The response is `204`.
+An ephemeral sandbox, or one that is already `terminated` or `failed`, gets
+`422 sandbox_not_resettable`. While a conversation on the sandbox runs a
+turn, the request gets `409 sandbox_mid_turn`.
 
 ## Search
 

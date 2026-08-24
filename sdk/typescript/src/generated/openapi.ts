@@ -219,7 +219,11 @@ export interface paths {
         get: operations["FountainWeb.SandboxController.show"];
         put?: never;
         post?: never;
-        delete?: never;
+        /**
+         * Reset a sandbox
+         * @description Destroy a persistent sandbox — the agent's home — so the next launch on the same agent, environment and vault builds a clean machine. The conversations on it are kept, idle; each one's next prompt lands on the fresh home. Only a `persistent` sandbox that is not `terminated` or `failed` resets (`422 sandbox_not_resettable`), and not while any conversation on it is mid-turn (`409 sandbox_mid_turn`).
+         */
+        delete: operations["FountainWeb.SandboxController.delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -4343,6 +4347,53 @@ export interface operations {
             };
             /** @description Not found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "FountainWeb.SandboxController.delete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Reset */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A conversation on it is mid-turn */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not a live persistent sandbox */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };
