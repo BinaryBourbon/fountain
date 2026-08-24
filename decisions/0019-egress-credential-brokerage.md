@@ -8,7 +8,6 @@ adr: "0019"
 adr_status: "Proposed"
 date: 2026-08-14
 generated: { by: human:jhgaylor, at: 2026-08-14T04:45:00-04:00 }
-verified: { by: human:jhgaylor, at: 2026-08-24T12:00:00-04:00 }
 stale_after: 2026-11-24
 ---
 
@@ -26,6 +25,12 @@ whether the broker may read request bodies (§10), and where it runs (§11). The
 production numbers are refreshed below, and a new Context subsection records
 what [0023](0023-persistent-agent-sandbox.md) — which shipped on 2026-08-24,
 after this draft — changed underneath it. Still nothing is built.
+
+Every code reference and every number below was re-checked against `main` and
+against production on 2026-08-24. The frontmatter carries no `verified` stamp
+because that field records a human reading the code, and this revision's
+checking was done by an agent; the claim belongs here, at its true strength,
+rather than in a field that says something stronger.
 
 This ADR implements and generalises **[0016](0016-governance-as-an-acp-proxy.md)
 §4** (*credential brokerage: the sandbox holds no long-lived secret*), and
@@ -336,6 +341,29 @@ Two knobs do the work instead, and neither is a new product surface:
 Rollout is an operator ratchet, not an option: a per-tenant enable we hold,
 flipped tenant by tenant as classification is proven. With two tenants holding
 secrets, that ratchet is short.
+
+**The escape hatch is the classification, not a setting.** A tenant who wants a
+value in the sandbox anyway, having read everything above, marks the secret
+unbrokerable — the same label §7 already requires for the values no proxy can
+broker, `BUZZ_PRIVATE_KEY` among them. It stays envelope-encrypted, it is
+injected in the clear exactly as today, and both the UI and the API say so.
+That is the whole hatch: no new field, no second provisioning path, and the
+choice is visible on the thing it was made about.
+
+There is a second, blunter path, and it should be described rather than
+advertised: `environments.env_vars` is an ordinary map column and is injected
+verbatim, so a value put there reaches the sandbox untouched by any of this. It
+is the right home for configuration and the wrong home for a credential, for a
+reason that has nothing to do with brokering — unlike `secrets` and
+`vault_secrets` it is **not encrypted at rest**. A tenant who moves a token
+there to dodge the proxy trades a brokered credential for a plaintext row in
+Postgres. `Redaction` still scrubs it from the transcript; nothing else about it
+improves.
+
+Stated as one rule: **encrypted storage means brokered delivery, unless the
+secret is labelled unbrokerable.** Environment secrets and vault secrets are
+the same case here; the Vault primitive's override semantics (vault wins on key
+collision) are unchanged, since brokering happens after the merge.
 
 ### 10. The broker may read request bodies, and rewriting is not its job yet
 
