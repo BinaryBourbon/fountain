@@ -352,6 +352,7 @@ defmodule FountainWeb.Router do
     get "/billing", BillingApiController, :show
     post "/billing/portal", BillingApiController, :portal
     post "/billing/checkout", BillingApiController, :checkout
+    post "/billing/credits/checkout", BillingApiController, :credits_checkout
 
     # Export and deletion (#523). Deletion is irreversible and takes the
     # tenant key with it, so it wants the strongest credential the account has.

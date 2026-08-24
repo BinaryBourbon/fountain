@@ -10,6 +10,16 @@ server releases.
 
 ---
 
+## [0.1.14] — 2026-08-24
+
+### Added
+
+- `POST /api/account/billing/credits/checkout` mints a one-time Stripe
+  Checkout URL for a credit pack; `credits.packs_cents` on
+  `GET /api/account/billing` lists the packs. Refused with
+  `subscription_required` for a trialing account and `unknown_pack` for an
+  amount that is not on sale.
+
 ## [0.1.13] — 2026-08-24
 
 ### Added

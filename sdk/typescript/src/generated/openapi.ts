@@ -861,6 +861,26 @@ export interface paths {
         patch: operations["FountainWeb.BuzzAgentController.update (2)"];
         trace?: never;
     };
+    "/api/account/billing/credits/checkout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Mint a Stripe Checkout URL for a credit pack
+         * @description A one-time payment for one of the packs this deployment sells (`GET /api/account/billing` lists them under `credits.packs_cents`). The balance moves when Stripe's webhook confirms payment, not when this returns. Refused for a trialing account with `subscription_required`, for a comped one with `comped`, and for an amount that is not a pack with `unknown_pack`.
+         */
+        post: operations["FountainWeb.BillingApiController.credits_checkout"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/admin/users": {
         parameters: {
             query?: never;
@@ -3346,6 +3366,16 @@ export interface components {
         AdminAuditListResponse: {
             data: components["schemas"]["AuditEvent"][];
         };
+        /**
+         * CreditsCheckoutRequest
+         * @example {
+         *       "cents": 2500
+         *     }
+         */
+        CreditsCheckoutRequest: {
+            /** @description The pack to buy, in cents. Must be one of credits.packs_cents. */
+            cents: number;
+        };
         /** TeamScheduleResponse */
         TeamScheduleResponse: {
             data: components["schemas"]["TeamSchedule"];
@@ -3795,6 +3825,8 @@ export interface components {
                     expires_at?: string | null;
                     /** @description Unspent credit from the earliest live grant, which expires at expires_at. */
                     expiring_cents?: number;
+                    /** @description The packs on sale, ascending. Pass one to the credits checkout. */
+                    packs_cents?: number[];
                     /** @description The part of the balance that was bought. It never expires and is spent last. */
                     purchased_cents?: number;
                     /** @description What one hour of turn time costs. */
@@ -6167,6 +6199,67 @@ export interface operations {
             };
             /** @description Validation error */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "FountainWeb.BillingApiController.credits_checkout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Pack */
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreditsCheckoutRequest"];
+            };
+        };
+        responses: {
+            /** @description Stripe URL */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StripeUrlResponse"];
+                };
+            };
+            /** @description Insufficient scope */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Billing disabled */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Refused */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Stripe unreachable */
+            502: {
                 headers: {
                     [name: string]: unknown;
                 };

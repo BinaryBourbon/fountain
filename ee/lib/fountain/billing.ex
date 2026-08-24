@@ -1172,7 +1172,15 @@ defmodule Fountain.Billing do
   Returns `{:ok, :duplicate}` for an event already seen.
   """
   @spec handle_event(Stripe.Event.t()) ::
-          {:ok, User.t() | :ignored | :duplicate | :stale | :comped_ignored | :other_subscription}
+          {:ok,
+           User.t()
+           | :ignored
+           | :duplicate
+           | :stale
+           | :comped_ignored
+           | :other_subscription
+           | :credits_purchased
+           | :credits_clawed_back}
           | {:error, term()}
   def handle_event(%Stripe.Event{id: id, type: type} = event) when is_binary(id) do
     # Stripe side effects run BEFORE the claim transaction opens (#393):
@@ -1350,7 +1358,14 @@ defmodule Fountain.Billing do
   All other event types return `{:ok, :ignored}` without touching the DB.
   """
   @spec sync_subscription(Stripe.Event.t()) ::
-          {:ok, User.t() | :ignored | :stale | :comped_ignored | :other_subscription}
+          {:ok,
+           User.t()
+           | :ignored
+           | :stale
+           | :comped_ignored
+           | :other_subscription
+           | :credits_purchased
+           | :credits_clawed_back}
           | {:error, term()}
   def sync_subscription(
         %Stripe.Event{
@@ -1358,18 +1373,40 @@ defmodule Fountain.Billing do
           data: %{object: session}
         } = event
       ) do
-    customer_id = extract_stripe_id(Map.get(session, :customer))
-    subscription_id = extract_stripe_id(Map.get(session, :subscription))
-    user_id = Map.get(session, :client_reference_id)
+    if Fountain.Credits.Purchases.credits_session?(session) do
+      # A credit pack (ADR 0030), not a subscription: grant and stop. The
+      # session carries no subscription id, so the subscription path below
+      # would only backfill the customer id and ignore the money.
+      case Fountain.Credits.Purchases.complete(session) do
+        {:ok, _entry} -> {:ok, :credits_purchased}
+        {:ok, :duplicate, _entry} -> {:ok, :credits_purchased}
+        {:error, :user_not_found} -> {:error, :user_not_found}
+        {:error, reason} -> {:error, reason}
+      end
+    else
+      sync_subscription_checkout(session, event)
+    end
+  end
 
-    user =
-      get_user_by_stripe_customer_id(customer_id, :for_update) ||
-        get_user_for_update(user_id)
+  # charge.refunded and charge.dispute.created only matter for a credit pack
+  # (ADR 0030 decision 5); a refund on a subscription invoice is Stripe's to
+  # reconcile and changes no entitlement here. Neither names a customer we
+  # need to look up: the purchase row does.
+  def sync_subscription(%Stripe.Event{type: "charge.refunded", data: %{object: charge}}) do
+    case Fountain.Credits.Purchases.refund(charge) do
+      {:ok, :nothing} -> {:ok, :ignored}
+      {:ok, _entry} -> {:ok, :credits_clawed_back}
+      {:ok, :duplicate, _} -> {:ok, :credits_clawed_back}
+      {:error, reason} -> {:error, reason}
+    end
+  end
 
-    cond do
-      is_nil(customer_id) -> {:ok, :ignored}
-      is_nil(user) -> {:error, :user_not_found}
-      true -> complete_checkout(user, customer_id, subscription_id, event_created_at(event))
+  def sync_subscription(%Stripe.Event{type: "charge.dispute.created", data: %{object: dispute}}) do
+    case Fountain.Credits.Purchases.dispute(dispute) do
+      {:ok, :nothing} -> {:ok, :ignored}
+      {:ok, _entry} -> {:ok, :credits_clawed_back}
+      {:ok, :duplicate, _} -> {:ok, :credits_clawed_back}
+      {:error, reason} -> {:error, reason}
     end
   end
 
@@ -1587,6 +1624,22 @@ defmodule Fountain.Billing do
   end
 
   def sync_subscription(_event), do: {:ok, :ignored}
+
+  defp sync_subscription_checkout(session, event) do
+    customer_id = extract_stripe_id(Map.get(session, :customer))
+    subscription_id = extract_stripe_id(Map.get(session, :subscription))
+    user_id = Map.get(session, :client_reference_id)
+
+    user =
+      get_user_by_stripe_customer_id(customer_id, :for_update) ||
+        get_user_for_update(user_id)
+
+    cond do
+      is_nil(customer_id) -> {:ok, :ignored}
+      is_nil(user) -> {:error, :user_not_found}
+      true -> complete_checkout(user, customer_id, subscription_id, event_created_at(event))
+    end
+  end
 
   # ─── Lifecycle emails (#283) ────────────────────────────────────────────────
 

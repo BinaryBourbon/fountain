@@ -117,6 +117,37 @@ defmodule FountainWeb.Live.BillingLive do
     end
   end
 
+  # A credit pack is a one-time Checkout (ADR 0030 decision 5). Stripe's
+  # webhook grants it; the page reloads on return and shows the new balance.
+  @impl true
+  def handle_event("buy_credits", %{"cents" => cents}, socket) do
+    user = socket.assigns.current_user
+    socket = assign(socket, :stripe_url_loading, true)
+
+    with {cents, ""} <- Integer.parse(to_string(cents)),
+         {:ok, url} <- Credits.Purchases.checkout_url(user, cents, billing_return_url()) do
+      {:noreply, redirect(socket, external: url)}
+    else
+      {:error, :subscription_required} ->
+        {:noreply,
+         socket
+         |> assign(:stripe_url_loading, false)
+         |> put_flash(:error, "Subscribe first, then you can buy credits.")}
+
+      {:error, :comped} ->
+        {:noreply,
+         socket
+         |> assign(:stripe_url_loading, false)
+         |> put_flash(:info, "This account is comped — there is nothing to buy.")}
+
+      _ ->
+        {:noreply,
+         socket
+         |> assign(:stripe_url_loading, false)
+         |> put_flash(:error, "Unable to reach Stripe. Please try again.")}
+    end
+  end
+
   @impl true
   def handle_event("manage_subscription", _params, socket) do
     user = socket.assigns.current_user
@@ -405,6 +436,27 @@ defmodule FountainWeb.Live.BillingLive do
         <p :if={@credits.balance_cents < 0} class="mt-2 text-xs text-amber-700">
           Your balance is below zero. Nothing is limited yet; the next grant or purchase
           brings it back up.
+        </p>
+        <div
+          :if={@current_user.subscription_status in ~w(active past_due)}
+          class="mt-4 flex flex-wrap items-center gap-2"
+        >
+          <button
+            :for={cents <- Credits.packs()}
+            phx-click="buy_credits"
+            phx-value-cents={cents}
+            disabled={@stripe_url_loading}
+            class="rounded-md border border-indigo-600 px-3 py-1.5 text-sm font-medium text-indigo-700 hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Buy {Credits.format_cents(cents)}
+          </button>
+          <span class="text-xs text-gray-500">One-time payment. Never expires.</span>
+        </div>
+        <p
+          :if={@current_user.subscription_status == "trialing"}
+          class="mt-4 text-xs text-gray-500"
+        >
+          Subscribe to buy credits. Your trial credit is what you have until then.
         </p>
         <table :if={@ledger != []} class="mt-4 w-full text-xs">
           <thead class="text-left text-gray-500">
