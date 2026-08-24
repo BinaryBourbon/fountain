@@ -109,11 +109,18 @@ defmodule FountainWeb.ConversationControllerTest do
     # Provenance (ADR 0029, #1051): the stamp is on the row, the number is
     # resolved on show and index so a client can read it without a second
     # request; a conversation that predates versioning reports null for both.
-    test "reports the agent version it launched under", %{conn: conn, user: user, raw_key: raw_key} do
+    test "reports the agent version it launched under", %{
+      conn: conn,
+      user: user,
+      raw_key: raw_key
+    } do
       agent = insert_agent(user_id: user.id)
       {:ok, _} = Fountain.Agents.update_agent(agent, %{"description" => "edited"})
       version_id = Fountain.Agents._unsafe_current_version_id(agent.id)
-      stamped = insert_conversation(user_id: user.id, agent_id: agent.id, agent_version_id: version_id)
+
+      stamped =
+        insert_conversation(user_id: user.id, agent_id: agent.id, agent_version_id: version_id)
+
       unstamped = insert_conversation(user_id: user.id, agent_id: agent.id)
 
       shown = conn |> authed_with_key(raw_key) |> get("/api/conversations/#{stamped.id}")

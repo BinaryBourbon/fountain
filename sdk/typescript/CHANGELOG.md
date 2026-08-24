@@ -10,6 +10,19 @@ server releases.
 
 ---
 
+## [1.9.0] — 2026-08-25
+
+### Added
+
+- Agent config versions, generated from the server's OpenAPI spec (fountain
+  ADR 0029, #1051). `GET /api/agents/{id}/versions` lists an agent's config
+  history newest first and `GET /api/agents/{id}/versions/{version}` returns
+  one version with its full `config`; both are read-only. `Conversation`
+  gains `agent_version_id` and `agent_version`, the version the conversation
+  launched under (null for conversations that predate versioning; the number
+  is resolved on the conversation list and get endpoints). Types only: the
+  hand-written client does not yet wrap the new endpoints.
+
 ## [1.8.0] — 2026-08-25
 
 ### Changed
