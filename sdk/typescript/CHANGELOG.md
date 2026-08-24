@@ -20,6 +20,8 @@ server releases.
   the server's spec; optional in the type because rows from before the field
   read as `user`.
 
+## [0.1.9] — 2026-08-24
+
 ### Changed
 
 - Generated types follow the server's Buzz identity schema: `sandbox_mode`
