@@ -48,6 +48,36 @@ bin/fountain_server eval 'Fountain.Release.expire_legacy_trials(days: 14)'
 
 Run the dry run first. It reports, and it changes nothing.
 
+## Start prepaid credits
+
+Credits are off until you set `CREDIT_PRICING_SINCE`. Do these steps in
+this order, because each one protects the next.
+
+1. Set `CREDIT_PRICING_SINCE` to the time of the deploy, in ISO 8601. Do
+   not set an earlier time. An earlier time bills every tenant for turns
+   they ran before they held a grant.
+2. Deploy. From that instant, Fountain prices turns into the ledger and
+   shows the balance on the billing page. Fountain refuses nothing.
+3. Give every tenant their opening credit, so nobody starts at zero.
+
+   ```bash
+   # See who would be granted, change nothing:
+   bin/fountain_server eval 'Fountain.Release.start_credits(dry_run: true)'
+
+   # Grant the current period, pro-rated from CREDIT_PRICING_SINCE:
+   bin/fountain_server eval 'Fountain.Release.start_credits()'
+   ```
+
+   Run the dry run first. A rerun of the real task writes nothing new.
+4. Add `charge.refunded` and `charge.dispute.created` to your Stripe webhook
+   endpoint, so a refund takes the credit back.
+5. After a month of provider invoices reconciled on `/admin/finance`, set
+   `CREDIT_ENFORCE=true`. From then, a zero balance refuses new sandboxes and
+   new turns.
+
+[Launch plans and prices](plans-and-prices.md) covers the prices and the
+packs.
+
 ## Verify it worked
 
 Sign in as an account that is not an admin, then confirm it can still reach a

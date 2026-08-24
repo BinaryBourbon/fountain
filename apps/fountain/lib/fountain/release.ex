@@ -388,6 +388,94 @@ defmodule Fountain.Release do
 
   defp unix_datetime(_), do: nil
 
+  @doc """
+  Give every tenant their opening credit the day credits go live (ADR 0030,
+  #1086 phase 5): the current period's tier grant, pro-rated to the part of
+  the period after `CREDIT_PRICING_SINCE`, for every active subscriber, and
+  the trial's opening grant for every live trial. Nobody starts at zero.
+
+  Idempotent: each grant is keyed on the tenant and period, so a rerun writes
+  nothing new, and the daily `CreditGranter` would have done the same within
+  a day. Refuses to run while `CREDIT_PRICING_SINCE` is unset, because the
+  pro-rating needs it and a grant with no floor would hand out a full month
+  already spent unmetered.
+
+      bin/fountain_server eval 'Fountain.Release.start_credits(dry_run: true)'
+      bin/fountain_server eval 'Fountain.Release.start_credits()'
+  """
+  def start_credits(opts \\ []) do
+    with_repo(fn -> do_start_credits(opts) end)
+  end
+
+  defp do_start_credits(opts) do
+    import Ecto.Query
+    dry_run? = Keyword.get(opts, :dry_run, false)
+    since = Keyword.get(opts, :since) || Fountain.Workers.CreditPricer.pricing_since()
+    now = Keyword.get(opts, :now) || DateTime.utc_now()
+
+    cond do
+      not Fountain.Billing.enabled?() ->
+        IO.puts("Billing is off on this instance; credits do not apply. Nothing to do.")
+        {:ok, 0}
+
+      is_nil(since) ->
+        IO.warn("CREDIT_PRICING_SINCE is unset. Set it to the deploy time, then rerun.")
+        {:error, :pricing_since_unset}
+
+      true ->
+        subscribers =
+          Fountain.Repo.all(
+            from u in Fountain.Accounts.User,
+              where: u.subscription_status == "active",
+              where: not is_nil(u.current_period_start) and not is_nil(u.current_period_end),
+              where: u.current_period_start <= ^now and u.current_period_end > ^now
+          )
+
+        trials =
+          Fountain.Repo.all(
+            from u in Fountain.Accounts.User,
+              where: u.subscription_status == "trialing",
+              where: not is_nil(u.trial_ends_at) and u.trial_ends_at > ^now
+          )
+
+        if dry_run? do
+          IO.puts(
+            "#{length(subscribers)} active subscriber(s) inside a billing period and " <>
+              "#{length(trials)} live trial(s) would be granted, pro-rated from #{DateTime.to_iso8601(since)}."
+          )
+
+          {:ok, length(subscribers) + length(trials)}
+        else
+          granted =
+            (subscribers ++ trials)
+            |> Enum.map(
+              &Fountain.Workers.CreditGranter.grant_for_user(&1, since: since, now: now)
+            )
+            |> Enum.sum()
+
+          Fountain.Audit.record(%{
+            user_id: nil,
+            action: "release.credits_started",
+            resource_type: "release_task",
+            actor: "system:release_task",
+            metadata: %{
+              "subscribers" => length(subscribers),
+              "trials" => length(trials),
+              "granted" => granted,
+              "since" => DateTime.to_iso8601(since)
+            }
+          })
+
+          IO.puts(
+            "Granted #{granted} opening credit(s) across #{length(subscribers)} subscriber(s) " <>
+              "and #{length(trials)} trial(s). Reruns write nothing."
+          )
+
+          {:ok, granted}
+        end
+    end
+  end
+
   defp repos do
     Application.fetch_env!(@app, :ecto_repos)
   end
