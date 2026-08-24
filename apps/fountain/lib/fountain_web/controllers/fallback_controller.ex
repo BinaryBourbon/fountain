@@ -190,6 +190,20 @@ defmodule FountainWeb.FallbackController do
     })
   end
 
+  # A turn refused because another conversation is running one on the same
+  # sandbox and the runtime takes one at a time (ADR 0023 step 4). Not a
+  # queue: the caller sends again when the other turn ends, or interrupts it.
+  def call(conn, {:error, :sandbox_at_capacity}) do
+    conn
+    |> put_status(:conflict)
+    |> json(%{
+      error: "sandbox_at_capacity",
+      message:
+        "another conversation is running a turn on this sandbox and its runtime takes one " <>
+          "at a time; wait for it to finish or interrupt it, then send again"
+    })
+  end
+
   # The wake path could not reach the sandbox provider to check whether the
   # conversation's sandbox is still there (#799). Nothing was changed — the
   # row is deliberately left as it was rather than retired on a transport

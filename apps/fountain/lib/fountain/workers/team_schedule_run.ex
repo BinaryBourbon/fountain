@@ -47,7 +47,11 @@ defmodule Fountain.Workers.TeamScheduleRun do
 
           # A runner-backed teammate whose machine is off (#834) is the
           # same wait: it may come back within the window.
-          {:error, reason} when reason in [:busy, :provisioning, :runner_offline] ->
+          # A shared machine busy with another conversation's turn
+          # (`:sandbox_at_capacity`) frees itself the same way a busy
+          # teammate does.
+          {:error, reason}
+          when reason in [:busy, :provisioning, :runner_offline, :sandbox_at_capacity] ->
             if stale?(args), do: :ok, else: {:snooze, @snooze}
 
           {:error, reason} ->

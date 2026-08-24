@@ -989,6 +989,142 @@ defmodule Fountain.Conversations do
     end
   end
 
+  # Advisory-lock namespace for per-sandbox machine operations. Distinct from
+  # Quotas' per-user reservation (4315): this one is taken inside a turn
+  # start, and the two must never be mistaken for one another.
+  @sandbox_lock_namespace 4316
+
+  @doc """
+  Create a turn on a sandbox that may be shared, refusing when the runtime's
+  capacity is used up by another conversation's running turn.
+
+  `capacity` is `Fountain.Runtimes.ACP.concurrency/1`: `:unbounded` (claude,
+  codex — several processes on one disk is the laptop shape) inserts exactly
+  as `_unsafe_create_turn/1` does; an integer is checked and inserted under
+  a per-sandbox advisory lock, so two conversations prompting the same
+  opencode or gemini machine at the same moment cannot both win. Answers
+  `{:error, :sandbox_at_capacity}` rather than queueing (ADR 0023 step 4).
+  Usage is recorded after the transaction commits, never inside it.
+  """
+  def _unsafe_create_turn_on_sandbox(attrs, _sandbox_id, :unbounded),
+    do: _unsafe_create_turn(attrs)
+
+  def _unsafe_create_turn_on_sandbox(attrs, sandbox_id, capacity)
+      when is_binary(sandbox_id) and is_integer(capacity) and capacity > 0 do
+    conv_id = Map.fetch!(attrs, :conversation_id)
+
+    result =
+      Repo.transaction(fn ->
+        Repo.query!("SELECT pg_advisory_xact_lock($1, $2)", [
+          @sandbox_lock_namespace,
+          :erlang.phash2(sandbox_id)
+        ])
+
+        if _unsafe_running_turns_elsewhere(sandbox_id, conv_id) >= capacity do
+          Repo.rollback(:sandbox_at_capacity)
+        else
+          case %Turn{} |> Turn.changeset(attrs) |> Repo.insert() do
+            {:ok, turn} -> turn
+            {:error, changeset} -> Repo.rollback(changeset)
+          end
+        end
+      end)
+
+    with {:ok, turn} <- result do
+      record_turn_usage(turn)
+      {:ok, turn}
+    end
+  end
+
+  @doc """
+  How many turns are running right now on `sandbox_id` for conversations
+  other than `conv_id`. `_unsafe_`: the caller owns `conv_id`.
+  """
+  def _unsafe_running_turns_elsewhere(sandbox_id, conv_id)
+      when is_binary(sandbox_id) and is_binary(conv_id) do
+    Repo.one(
+      from t in Turn,
+        join: c in Conversation,
+        on: c.id == t.conversation_id,
+        where: c.sandbox_id == ^sandbox_id and c.id != ^conv_id and t.status == "running",
+        select: count(t.id)
+    )
+  end
+
+  @doc """
+  Whether `sandbox_id` cannot take another turn from `conv_id` because other
+  conversations already fill its runtime's capacity. Always false for
+  `:unbounded`. An unlocked read for the API door; the locked check is
+  `_unsafe_create_turn_on_sandbox/3`.
+  """
+  def _unsafe_sandbox_at_capacity?(_sandbox_id, _conv_id, :unbounded), do: false
+
+  def _unsafe_sandbox_at_capacity?(sandbox_id, conv_id, capacity) when is_integer(capacity) do
+    _unsafe_running_turns_elsewhere(sandbox_id, conv_id) >= capacity
+  end
+
+  @doc """
+  The other conversations still holding `sandbox_id` — not `terminated` or
+  `failed` — as ids: the machine's co-tenants, for a lifecycle decision one
+  of them is about to make for all of them.
+  """
+  def _unsafe_list_cotenant_ids(sandbox_id, conv_id)
+      when is_binary(sandbox_id) and is_binary(conv_id) do
+    Repo.all(
+      from c in Conversation,
+        where:
+          c.sandbox_id == ^sandbox_id and c.id != ^conv_id and
+            c.status not in ["terminated", "failed"],
+        select: c.id
+    )
+  end
+
+  @doc """
+  Whether any *other* conversation on `sandbox_id` is mid-turn, or was active
+  within the last `idle_seconds`.
+
+  A server that finds its own conversation idle asks this before parking the
+  machine everyone is on: the idle verdict is the machine's, taken over the
+  union of its conversations' activity (ADR 0023 step 5), not one
+  conversation's clock. Activity is a co-tenant's newest turn row (start or
+  end), falling back to the conversation's own `updated_at` for one that
+  never took a turn — the same fold `SandboxReaper.last_activity_at/1` makes
+  for a sandbox with no server at all. `nil` idle seconds (the bound is off)
+  is never busy.
+  """
+  def _unsafe_sandbox_busy_elsewhere?(
+        sandbox_id,
+        conv_id,
+        idle_seconds,
+        now \\ DateTime.utc_now()
+      )
+
+  def _unsafe_sandbox_busy_elsewhere?(_sandbox_id, _conv_id, nil, _now), do: false
+
+  def _unsafe_sandbox_busy_elsewhere?(sandbox_id, conv_id, idle_seconds, now)
+      when is_integer(idle_seconds) do
+    cutoff = now |> DateTime.add(-idle_seconds, :second) |> DateTime.truncate(:second)
+
+    case _unsafe_list_cotenant_ids(sandbox_id, conv_id) do
+      [] ->
+        false
+
+      cotenants ->
+        Repo.exists?(
+          from t in Turn,
+            where:
+              t.conversation_id in ^cotenants and
+                (t.status == "running" or t.inserted_at > ^cutoff or t.ended_at > ^cutoff)
+        ) or
+          Repo.exists?(
+            from c in Conversation,
+              left_join: t in Turn,
+              on: t.conversation_id == c.id,
+              where: c.id in ^cotenants and is_nil(t.id) and c.updated_at > ^cutoff
+          )
+    end
+  end
+
   # Turns carry no user_id of their own, so resolve it through the conversation.
   # One narrow select per turn, and turns are prompt-frequency rather than
   # request-frequency, so this is not a hot path.

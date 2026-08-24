@@ -148,7 +148,11 @@ defmodule Fountain.Runtimes.ACP do
       bin: "gemini",
       args: ["--acp"],
       package: nil,
-      version: nil
+      version: nil,
+      # One turn at a time on a shared sandbox: the session store is
+      # consolidated at the end of every turn, and a second live session
+      # during that consolidation is the collision it exists to avoid.
+      concurrency: 1
     },
     # Adapter, on the Codex App Server. The `zed-industries/codex-acp` that
     # earlier drafts named is archived; this is its successor under the
@@ -181,7 +185,11 @@ defmodule Fountain.Runtimes.ACP do
       args: ["acp"],
       package: nil,
       version: nil,
-      asks_permission: false
+      asks_permission: false,
+      # One turn at a time on a shared sandbox: `opencode acp` starts an HTTP
+      # server per process over one sqlite store — a port and a writer
+      # collision the moment a second one starts.
+      concurrency: 1
     }
   }
 
@@ -197,6 +205,30 @@ defmodule Fountain.Runtimes.ACP do
   @spec supported_runtimes() :: [String.t()]
   def supported_runtimes do
     @adapters |> Enum.reject(fn {_k, v} -> v[:blocked] end) |> Enum.map(&elem(&1, 0))
+  end
+
+  @doc """
+  How many turns may run at once on **one sandbox** for this runtime — the
+  machine's capacity for it, not the agent's (ADR 0023 step 4).
+
+  Several conversations may share a sandbox, each with its own adapter
+  process. What collides when two of those start on one disk is a property
+  of the runtime: claude and codex run one adapter per connection with
+  sessions keyed by explicit id and coexist the way several terminals do in
+  one repo (`:unbounded`); opencode and gemini keep state that two processes
+  cannot share (`1`, see the adapter table). A runtime without an adapter
+  entry has nothing to collide with and reads as `:unbounded`.
+
+  At capacity a turn is **refused**, not queued — `ConversationServer`
+  answers `{:error, :sandbox_at_capacity}` and the caller sends again when
+  the other turn ends.
+  """
+  @spec concurrency(String.t()) :: :unbounded | pos_integer()
+  def concurrency(runtime) when is_binary(runtime) do
+    case @adapters[runtime] do
+      %{concurrency: n} when is_integer(n) and n > 0 -> n
+      _ -> :unbounded
+    end
   end
 
   @doc """

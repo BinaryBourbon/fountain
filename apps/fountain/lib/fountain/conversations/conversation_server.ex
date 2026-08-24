@@ -1425,13 +1425,12 @@ defmodule Fountain.Conversations.ConversationServer do
     else
       conv = Conversations._unsafe_get_conversation!(state.conversation_id)
 
-      case turn_gate(conv.user_id) do
-        :ok ->
-          agent = if conv.agent_id, do: Agents._unsafe_get_agent!(conv.agent_id)
-          {:reply, :ok, kick_turn(state, prompt, agent, images)}
-
-        {:error, _} = err ->
-          {:reply, err, state}
+      with :ok <- turn_gate(conv.user_id),
+           :ok <- capacity_gate(state, conv) do
+        agent = if conv.agent_id, do: Agents._unsafe_get_agent!(conv.agent_id)
+        {:reply, :ok, kick_turn(state, prompt, agent, images)}
+      else
+        {:error, _} = err -> {:reply, err, state}
       end
     end
   end
@@ -1441,53 +1440,7 @@ defmodule Fountain.Conversations.ConversationServer do
   end
 
   def handle_call(:interrupt, _from, state) do
-    # Tell the agent before killing its process. `session/cancel` is a
-    # notification with no reply, so this costs one write and does not delay the
-    # kill below — but it is the difference between an agent that stops its
-    # tool calls and one that is shot mid-write. This is the other reason stdin
-    # stays open on the ACP path.
-    if state.acp_peer, do: Fountain.Runtimes.ACP.Peer.cancel(state.acp_peer)
-
-    Fountain.Sandbox.stop_command(state.current_command)
-
-    {:ok, _turn} =
-      Conversations._unsafe_update_turn(state.current_turn, %{
-        status: "interrupted",
-        ended_at: now()
-      })
-
-    publish_stage(state.conversation_id, "turn", "interrupted", %{
-      turn_id: state.current_turn.id,
-      turn_number: state.current_turn.turn_number
-    })
-
-    # Finalize stream tracer: close any tool spans still open (abandoned calls).
-    finalize_tracer(state.stream_tracer)
-
-    # An ACP turn can also end here — the adapter exits, is interrupted, or its
-    # socket drops before it ever answers `session/prompt`. The peer has nothing
-    # left to drive and must not outlive the turn.
-    stop_acp_peer(state)
-
-    end_turn_span(state.current_turn_span, :error, %{"outcome" => "interrupted"})
-
-    emit_turn_completed(state, "interrupted")
-
-    conv = Conversations._unsafe_get_conversation!(state.conversation_id)
-    {:ok, _} = Conversations.update_conversation(conv, %{status: "idle"})
-
-    {:reply, :ok,
-     %{
-       state
-       | current_command: nil,
-         current_command_ref: nil,
-         current_turn: nil,
-         current_turn_span: nil,
-         turn_metrics: nil,
-         stream_tracer: nil,
-         acp_peer: nil,
-         acp_peer_mon: nil
-     }}
+    {:reply, :ok, interrupt_turn(state)}
   end
 
   # First answer wins. The web apps and an editor (#708) are peer clients of
@@ -1510,16 +1463,34 @@ defmodule Fountain.Conversations.ConversationServer do
   end
 
   def handle_call(:terminate_conv, _from, state) do
-    if state.handle, do: _ = Fountain.Sandbox.destroy(state.handle)
-    sandbox = Conversations._unsafe_get_sandbox!(state.sandbox_id)
+    if Conversations._unsafe_sandbox_held_by_other?(state.sandbox_id, state.conversation_id) do
+      # The machine is shared (ADR 0023): end this conversation and leave the
+      # sprite to the others — the same guard the no-server path applies in
+      # terminate_conversation/2. A turn of ours still running is cut first,
+      # since nothing would be left to drive it; `handle: nil` so no stop path
+      # touches the sprite.
+      state = if state.current_turn, do: interrupt_turn(state), else: state
+      conv = Conversations._unsafe_get_conversation!(state.conversation_id)
+      {:ok, _} = Conversations.update_conversation(conv, %{status: "terminated"})
 
-    {:ok, _} =
-      Conversations.update_sandbox(sandbox, %{status: "terminated", terminated_at: now()})
+      publish_stage(state.conversation_id, "terminate", "done", %{
+        sandbox: "kept",
+        reason: "held_by_another_conversation"
+      })
 
-    conv = Conversations._unsafe_get_conversation!(state.conversation_id)
-    {:ok, _} = Conversations.update_conversation(conv, %{status: "terminated"})
-    publish_stage(state.conversation_id, "terminate", "done")
-    {:stop, :normal, :ok, state}
+      {:stop, :normal, :ok, %{state | handle: nil}}
+    else
+      if state.handle, do: _ = Fountain.Sandbox.destroy(state.handle)
+      sandbox = Conversations._unsafe_get_sandbox!(state.sandbox_id)
+
+      {:ok, _} =
+        Conversations.update_sandbox(sandbox, %{status: "terminated", terminated_at: now()})
+
+      conv = Conversations._unsafe_get_conversation!(state.conversation_id)
+      {:ok, _} = Conversations.update_conversation(conv, %{status: "terminated"})
+      publish_stage(state.conversation_id, "terminate", "done")
+      {:stop, :normal, :ok, state}
+    end
   end
 
   # End the conversation, keep the sandbox — see release_conversation/2. A
@@ -1577,6 +1548,26 @@ defmodule Fountain.Conversations.ConversationServer do
           {:noreply, state}
       end
     end
+  end
+
+  # Another conversation on this machine parked or destroyed it (see
+  # stop_cotenants/4). Record that on this transcript, cut a turn that has
+  # nothing left to run on, and stop: with no handle there is nothing this
+  # server can do, and the wake path is what brings the machine back.
+  def handle_cast({:machine_gone, event, reason, message}, state) do
+    state = if state.current_turn, do: interrupt_turn(state), else: state
+
+    conv = Conversations._unsafe_get_conversation!(state.conversation_id)
+    if conv.status == "running", do: Conversations.update_conversation(conv, %{status: "idle"})
+
+    publish_stage(state.conversation_id, "sandbox", "done", %{
+      event: event,
+      reason: reason,
+      by: "another_conversation",
+      message: message
+    })
+
+    {:stop, :normal, %{state | handle: nil}}
   end
 
   # Catch-all for the same reason as the handle_call one above (#315).
@@ -2133,6 +2124,30 @@ defmodule Fountain.Conversations.ConversationServer do
   # billing too, so both of those degrade to the destroy arm. The decision
   # lives in Lifecycle.idle_action/1.
   defp reclaim_sandbox(state, :idle) do
+    if Conversations._unsafe_sandbox_busy_elsewhere?(
+         state.sandbox_id,
+         state.conversation_id,
+         Lifecycle.idle_timeout_seconds()
+       ) do
+      # This conversation is idle; the machine is not. Another conversation
+      # on it is mid-turn or was active more recently than the bound, so the
+      # verdict is the machine's to reach, over all of them (ADR 0023 step 5).
+      # Checked again on the next tick.
+      {:noreply, state}
+    else
+      reclaim_idle_machine(state)
+    end
+  end
+
+  # Max lifetime: tear down and stop, whatever the provider. This bound exists
+  # for the conversation that never stops being busy; the conversation stays
+  # `idle` and resumable — setting it `terminated` here would make a cost
+  # control into data loss. See Fountain.Conversations.Lifecycle.
+  defp reclaim_sandbox(state, :max_lifetime) do
+    destroy_sandbox(state, :max_lifetime)
+  end
+
+  defp reclaim_idle_machine(state) do
     with :suspend <- Lifecycle.idle_action(provider(state)),
          :ok <- suspend_sandbox(state) do
       park_sandbox(state)
@@ -2148,14 +2163,6 @@ defmodule Fountain.Conversations.ConversationServer do
 
         destroy_sandbox(state, :idle)
     end
-  end
-
-  # Max lifetime: tear down and stop, whatever the provider. This bound exists
-  # for the conversation that never stops being busy; the conversation stays
-  # `idle` and resumable — setting it `terminated` here would make a cost
-  # control into data loss. See Fountain.Conversations.Lifecycle.
-  defp reclaim_sandbox(state, :max_lifetime) do
-    destroy_sandbox(state, :max_lifetime)
   end
 
   # Explicitly park the sandbox before the row flips: for Sprites this is a
@@ -2195,7 +2202,25 @@ defmodule Fountain.Conversations.ConversationServer do
       provider: provider(state)
     })
 
+    stop_cotenants(state, "suspended", "idle", Lifecycle.explain(:idle, :suspend))
+
     {:stop, :normal, %{state | handle: nil}}
+  end
+
+  # A park or a destroy is a machine operation: every other conversation on
+  # the sandbox loses its handle with it. Tell their servers, so each records
+  # what happened on its own transcript and stops — the next prompt then takes
+  # the wake path, the only path that brings the machine back. A cast: a
+  # co-tenant whose server is already gone is not an error here.
+  defp stop_cotenants(state, event, reason, message) do
+    state.sandbox_id
+    |> Conversations._unsafe_list_cotenant_ids(state.conversation_id)
+    |> Enum.each(fn conv_id ->
+      case whereis(conv_id) do
+        nil -> :ok
+        pid -> GenServer.cast(pid, {:machine_gone, event, reason, message})
+      end
+    end)
   end
 
   # Tear down the sandbox and stop; the conversation stays `idle` and
@@ -2237,6 +2262,8 @@ defmodule Fountain.Conversations.ConversationServer do
       reason: reason,
       provider: provider(state)
     })
+
+    stop_cotenants(state, "reclaimed", to_string(reason), reclaim_message(reason))
 
     {:stop, :normal, %{state | handle: nil}}
   end
@@ -2490,19 +2517,107 @@ defmodule Fountain.Conversations.ConversationServer do
     end
   end
 
+  # End the running turn without a verdict from the agent: the user asked, or
+  # the machine under it is going away. Tells the agent before killing its
+  # process — `session/cancel` is a notification with no reply, so it costs
+  # one write and does not delay the kill, but it is the difference between
+  # an agent that stops its tool calls and one that is shot mid-write. This is
+  # the other reason stdin stays open on the ACP path.
+  defp interrupt_turn(state) do
+    if state.acp_peer, do: Fountain.Runtimes.ACP.Peer.cancel(state.acp_peer)
+    if state.current_command, do: Fountain.Sandbox.stop_command(state.current_command)
+
+    {:ok, _turn} =
+      Conversations._unsafe_update_turn(state.current_turn, %{
+        status: "interrupted",
+        ended_at: now()
+      })
+
+    publish_stage(state.conversation_id, "turn", "interrupted", %{
+      turn_id: state.current_turn.id,
+      turn_number: state.current_turn.turn_number
+    })
+
+    # Finalize stream tracer: close any tool spans still open (abandoned calls).
+    finalize_tracer(state.stream_tracer)
+
+    # An ACP turn can also end here — the adapter exits, is interrupted, or its
+    # socket drops before it ever answers `session/prompt`. The peer has nothing
+    # left to drive and must not outlive the turn.
+    stop_acp_peer(state)
+
+    end_turn_span(state.current_turn_span, :error, %{"outcome" => "interrupted"})
+
+    emit_turn_completed(state, "interrupted")
+
+    conv = Conversations._unsafe_get_conversation!(state.conversation_id)
+    {:ok, _} = Conversations.update_conversation(conv, %{status: "idle"})
+
+    %{
+      state
+      | current_command: nil,
+        current_command_ref: nil,
+        current_turn: nil,
+        current_turn_span: nil,
+        turn_metrics: nil,
+        stream_tracer: nil,
+        acp_peer: nil,
+        acp_peer_mon: nil
+    }
+  end
+
+  # Whether this machine can take a turn from this conversation right now. An
+  # unlocked read — the locked check is inside the turn insert
+  # (`_unsafe_create_turn_on_sandbox/3`); this one exists so the API door gets
+  # a refusal to render rather than an `:ok` followed by a refused stage.
+  defp capacity_gate(state, conv) do
+    capacity = Fountain.Runtimes.ACP.concurrency(conv.runtime)
+
+    if Conversations._unsafe_sandbox_at_capacity?(state.sandbox_id, conv.id, capacity),
+      do: {:error, :sandbox_at_capacity},
+      else: :ok
+  end
+
   defp kick_turn(state, prompt, agent, images) do
     state = touch_activity(state)
     conv = Conversations._unsafe_get_conversation!(state.conversation_id)
     turn_number = Conversations._unsafe_next_turn_number(state.conversation_id)
 
-    {:ok, turn} =
-      Conversations._unsafe_create_turn(%{
-        conversation_id: conv.id,
-        turn_number: turn_number,
-        prompt: prompt,
-        status: "running",
-        started_at: now()
-      })
+    attrs = %{
+      conversation_id: conv.id,
+      turn_number: turn_number,
+      prompt: prompt,
+      status: "running",
+      started_at: now()
+    }
+
+    # The machine may be shared (ADR 0023). For a runtime that takes one turn
+    # at a time the insert is checked under the sandbox's lock, so two
+    # conversations prompting the same machine at once cannot both start.
+    capacity = Fountain.Runtimes.ACP.concurrency(conv.runtime)
+
+    case Conversations._unsafe_create_turn_on_sandbox(attrs, state.sandbox_id, capacity) do
+      {:ok, turn} ->
+        run_turn(state, conv, turn, prompt, agent, images)
+
+      {:error, :sandbox_at_capacity} ->
+        # Refused, not queued. Nothing was written; the conversation stays
+        # idle and the caller sends again when the other turn ends.
+        publish_stage(state.conversation_id, "sandbox", "done", %{
+          event: "at_capacity",
+          reason: "sandbox_at_capacity",
+          runtime: conv.runtime,
+          message:
+            "Another conversation is running a turn on this sandbox, and #{conv.runtime} " <>
+              "takes one turn at a time. Wait for it to finish, or interrupt it, then send again."
+        })
+
+        state
+    end
+  end
+
+  defp run_turn(state, conv, turn, prompt, agent, images) do
+    turn_number = turn.turn_number
 
     # Store images. A rejected image must not take the turn down with it: this
     # used to hard-match {:ok, _}, which is why validation could not be added to
