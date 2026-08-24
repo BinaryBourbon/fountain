@@ -1,3 +1,17 @@
+---
+type: ADR
+title: "Egress credential brokerage: the sandbox holds placeholders, the broker holds the credential"
+description: "Proposed, nothing built. Outbound HTTP credentials are attached at a forward proxy the sandbox reaches over HTTPS_PROXY, so the agent process holds only placeholders and the only host it may reach is the broker. Revised 2026-08-24 with the vendor, rollout, content-inspection and topology decisions, and with what 0023 changed underneath it."
+tags: [security, secrets, sandbox, egress, governance]
+status: draft
+adr: "0019"
+adr_status: "Proposed"
+date: 2026-08-14
+generated: { by: human:jhgaylor, at: 2026-08-14T04:45:00-04:00 }
+verified: { by: human:jhgaylor, at: 2026-08-24T12:00:00-04:00 }
+stale_after: 2026-11-24
+---
+
 # 0019 — Egress credential brokerage
 
 **Status:** Proposed — **nothing described here is built.** No broker is
@@ -5,6 +19,13 @@ deployed, no placeholder substitution exists, and `Fountain.Sandbox.NetworkPolic
 — which does exist — has never been applied to a single production sandbox. This
 ADR records a decision shape and the gates that decide whether we take it; the PR
 that builds each gate removes its caveat.
+
+**Revised 2026-08-24.** The four questions the first draft left open are
+answered: the vendor (§8), whether brokering is a tenant-facing option (§9),
+whether the broker may read request bodies (§10), and where it runs (§11). The
+production numbers are refreshed below, and a new Context subsection records
+what [0023](0023-persistent-agent-sandbox.md) — which shipped on 2026-08-24,
+after this draft — changed underneath it. Still nothing is built.
 
 This ADR implements and generalises **[0016](0016-governance-as-an-acp-proxy.md)
 §4** (*credential brokerage: the sandbox holds no long-lived secret*), and
@@ -44,15 +65,40 @@ chain; it needs `curl`.
 
 ### The control exists, is well designed, and has never once been used
 
-This is the fact that should decide the ADR. Production, 2026-08-14:
+This is the fact that should decide the ADR. Production, measured twice:
 
-| | |
-|---|---|
-| Environments with `networking_type = 'limited'` | **0** |
-| Environments with `networking_type = 'unrestricted'` | **20** |
-| Environment secrets (`secrets`) | 56 |
-| Vault secrets (`vault_secrets`) | 22 |
-| Inference credentials | 3 |
+| | 2026-08-14 | 2026-08-24 |
+|---|---|---|
+| Environments with `networking_type = 'limited'` | **0** | **0** |
+| Environments with `networking_type = 'unrestricted'` | **20** | **36** |
+| Environment secrets (`secrets`) | 56 | 79 |
+| Vault secrets (`vault_secrets`) | 22 | 50 |
+| Inference credentials | 3 | 6 |
+| **Plaintext credentials reaching sandboxes** | **78** | **135** |
+
+Ten days, no change in posture, 73% more exposure. The second column is the
+argument the first one only implied.
+
+Two further facts from the same query, neither of which the first draft had,
+and both of which make the work smaller than it reads:
+
+- **Two tenants hold every one of those secrets** (of 128 accounts). The
+  migration in gates 1 and 2 is a two-tenant migration, one of which is ours.
+- **Roughly half of what is stored is not a credential.** Grouping the 129
+  environment and vault secrets by key name: 73 are token-shaped
+  (`GITHUB_TOKEN` ×31, `RENDER_API_KEY` ×11, `POSTHOG_API_KEY` ×11,
+  `HONEYCOMB_API_KEY` ×11, `GH_TOKEN` ×4, `CLOUDFLARE_API_TOKEN`, …), 9 are
+  URLs or DSNs, and 40 are not secrets at all (`GIT_AUTHOR_NAME`,
+  `BUZZ_RELAY_URL`, `AGENT_APPS_PROJECT_ID`). The classification §7 demands is
+  therefore load-bearing rather than ceremonial: a scheme that assumes every
+  row in `secrets` is a brokerable HTTP credential is wrong about a third of
+  them.
+
+One of those keys is worth naming, because it is the shape of the residual gap
+and it is ours: `BUZZ_PRIVATE_KEY` (×6) signs Nostr events inside the process
+and talks to a relay over a WebSocket. No header-injecting proxy can broker
+it, at any point in the future. It is not an edge case to be closed later; it
+is the class §7 says must be labelled.
 
 `NetworkPolicy` is a good piece of design — intent-level, default-deny, with
 `allow: []` meaning deny-all and the Sprites fail-open-on-empty quirk absorbed by
@@ -118,6 +164,36 @@ The mechanism difference is the whole argument: `HTTPS_PROXY` is honoured by the
 **HTTP client stack**, not by the application's config surface. It covers every
 runtime, every CLI, every MCP server, and every `curl` in a `setup_script`,
 without asking any of them to cooperate and without a per-runtime survey.
+
+### 0023 landed underneath this draft
+
+[0023](0023-persistent-agent-sandbox.md) shipped on 2026-08-24: one sandbox can
+serve many conversations of an agent, turns can run concurrently on it, and a
+parked home is checkpointed. This draft was written against a 1:1 world and
+four of its assumptions need restating rather than reinterpreting.
+
+- **§5's "the token is scoped to the Conversation" still holds, and is now the
+  only shape that works.** The env is not baked into the machine: each
+  `ConversationServer` builds its own `sprite_env` and passes it on every
+  `exec` and `spawn` (`conversation_server.ex:1255`), so one machine can carry
+  two conversations with two different broker sessions. A token minted per
+  *sandbox* would make the proxy's request log unattributable the moment two
+  conversations share a machine, which is now the normal case.
+- **The session token must never reach the disk.**
+  `Fountain.Conversations.Identity.disk_env/1` strips the per-conversation
+  pairs before `/home/sprite/.env` is written, precisely because that file is
+  shared by every conversation on the machine. The broker session token joins
+  `@process_only` next to `FOUNTAIN_TOKEN`. Miss that one line and conversation
+  A can read B's token off the disk and spend B's credentials, which is a
+  worse failure than the one this ADR set out to fix.
+- **A checkpoint outlives the conversation.** Placeholders in a checkpointed
+  home are harmless, which is the win. A broker session token in one is a
+  credential that survives a park; session TTL must be shorter than a park, and
+  a wake must re-mint rather than reuse.
+- **`Claude.fall_back_to_api_key/2` is a second injection site**
+  (`conversation_server.ex:1819`). It puts a real API key into the sprite env
+  *mid-conversation*, after `build_sprite_env` has run. Gate 3 has to cover it
+  or the fallback quietly reintroduces the plaintext this ADR removes.
 
 ## Decision
 
@@ -214,17 +290,111 @@ unbrokered in the UI and the API**, rather than quietly counted under a claim
 that covers it. The honest version of the pitch is "outbound HTTP credentials are
 brokered", and the product surface should say exactly that.
 
-### 8. Vendor risk is a decision, not a footnote
+### 8. The vendor is Agent Vault, and the interface is ours
 
-Agent Vault is Infisical's **research preview**, and Infisical has already
-announced a commercial successor (Agent Proxy). Once secrets stop being injected
-as plaintext, the broker is load-bearing infrastructure on the provisioning path
-of every conversation — the least convenient thing to swap under duress.
+Decided 2026-08-24. Infisical's commercial successor, **Agent Proxy**, reached
+GA in July 2026, free on every plan, with 30-odd service presets. It is the
+better-supported product and it is the wrong one for us, for a structural
+reason rather than a maturity one: Agent Proxy is stateless and **fetches the
+credential back from an Infisical project**, so adopting it means mirroring
+every tenant secret into a second custodian's control plane and making their
+API a hard dependency of provisioning. Agent Vault keeps its own encrypted
+store, which we load from the DEK-encrypted tables that stay the system of
+record (§1).
 
-Gate 0 therefore includes a written answer to: do we run the open-source preview,
-adopt the commercial product, or treat the preview as a reference implementation
-of an interface we own? The decision is not made here; making it *before* gate 1
-is.
+So: **run the open-source preview, behind an interface we own.** Concretely,
+one `Fountain.Broker` module with the Agent Vault client inside it and the
+seam documented — not a behaviour plus a registry. [0018](0018-sandbox-provider-abstraction.md)
+earned its abstraction by having three providers; this has one, and the
+abstraction is worth building on the day there is a second.
+
+The preview's API is "subject to change" and that cost is accepted knowingly:
+the pin is ours to hold, and the alternative moves custody rather than risk.
+Agent Vault's own posture is reassuring where it counts — credentials are
+AES-256-GCM under a KEK/DEK wrap, the root CA private key is encrypted with the
+same DEK, and the sandbox's session token travels as `Proxy-Authorization`, a
+hop-by-hop header that never reaches the origin.
+
+### 9. Brokering is a property of the deployment and of the secret, not a tenant setting
+
+Decided 2026-08-24. There is no per-environment "broker this" toggle.
+
+The cost of an opt-in is not the boolean; it is that every secret-touching path
+carries two shapes forever, and that the safe one is the one nobody selects.
+That is the table in *Context* — a well-designed control, opt-in, at zero
+adoption. Repeating it with a second flag would be a deliberate repetition of a
+known failure.
+
+Two knobs do the work instead, and neither is a new product surface:
+
+- **Deployment.** A broker is configured or it is not. Self-hosters need that
+  switch regardless (see *Consequences*), and it is the honest place for it:
+  an instance either brokers or it says plainly that it does not.
+- **Secret.** Each secret is brokerable or unbrokerable per §7, which we owe
+  the UI anyway, and which a third of what is stored today requires.
+
+Rollout is an operator ratchet, not an option: a per-tenant enable we hold,
+flipped tenant by tenant as classification is proven. With two tenants holding
+secrets, that ratchet is short.
+
+### 10. The broker may read request bodies, and rewriting is not its job yet
+
+Decided 2026-08-24. TLS interception means the broker sees plaintext prompts and
+responses; that is accepted deliberately, not tolerated, because content
+inspection and eventual rewriting of what goes to and comes back from a model
+is wanted product behaviour.
+
+What does **not** follow is that the egress proxy is where rewriting should
+happen. At the proxy, model traffic is bytes: four provider dialects, SSE
+frames, tool-call deltas, prompt caching, compression. At the ACP seam
+([0016](0016-governance-as-an-acp-proxy.md)) the same content is already parsed
+into a structure Fountain defined. Rewriting belongs where the meaning is.
+
+The split, then:
+
+- **ACP-borne model traffic** — rewritten at the seam, when 0016 gets there.
+- **Everything else** — an MCP server calling a model directly, an agent's own
+  `curl` — is invisible to the seam, and is where a Fountain-owned content
+  proxy would eventually sit. Chained, not merged: sandbox → Fountain content
+  proxy (our CA, sees bodies, holds no credential) → Agent Vault (attaches the
+  credential) → origin. Agent Vault accepts absolute-form HTTP, so the inner
+  hop need not be intercepted twice.
+
+None of that is in scope for gates 0–4. It is recorded here so the topology
+chosen in §11 does not foreclose it, and gate 0 proves the chain is possible
+rather than assuming it.
+
+### 11. One instance, one vault per tenant
+
+Decided 2026-08-24. A single Agent Vault instance serves every tenant, with a
+**vault per tenant** and a session in the `proxy` vault role per conversation.
+Agent Vault's permission model is two independent axes — instance roles
+(`owner` / `member` / `no-access`) and vault roles (`admin` / `member` /
+`proxy`) — a token scoped to one vault cannot read another, and `proxy` is
+exactly "may broker requests, may not read credentials". The streams do not
+cross by construction rather than by our discipline.
+
+Three things follow that gate 0 has to hold, not hope:
+
+- **The vault binding must be on the token, not the header.** Agents select a
+  vault with `X-Vault`. A session token that honours a header naming someone
+  else's vault is a cross-tenant read, so the probe is explicit: take a valid
+  session for tenant A, ask for tenant B's vault, require a refusal.
+- **The proxy port has to be reachable from third-party sandboxes**, and Agent
+  Vault's own guidance is to keep it on a trusted or private network. Our
+  sandboxes run on Sprites, E2B and Daytona, so it goes behind the existing
+  Cloudflare tunnel on its own hostname, authenticated per session, with the
+  management port (14321) not exposed at all.
+- **We cannot co-locate with the sandbox**, which is the deployment Agent Vault
+  recommends for latency. Every brokered request is sandbox → us → origin
+  across the public internet. That is the number gate 0 measures, and the
+  self-hosted runner ([0022](0022-self-hosted-runner-provider.md)) is the one
+  topology where co-location is available.
+
+One instance holding every tenant's credentials and seeing every prompt is a
+large blast radius, and it is not a new one: the app server already holds the
+master key and decrypts all of it. Saying so plainly is better than pretending
+a second instance per tenant would be operated as carefully.
 
 ## Consequences
 
@@ -234,13 +404,14 @@ and one sandbox provider; this adds a third, and §6 deliberately makes it
 fail-closed rather than degrade. That needs an HA story and a monitored SLO
 before gate 1, not after.
 
-**The broker can read everything.** TLS interception means plaintext request
-bodies — including every prompt sent to a model API and every diff sent to
-GitHub. We would be adding a component that sees more tenant content than
-anything else we run, in order to stop leaking credentials. That trade is
-probably right and is definitely a trade; it belongs in the security posture
-docs and in any DPA, and it raises the bar on where the broker runs and who can
-read its logs.
+**The broker can read everything, and that is now a chosen capability.** TLS
+interception means plaintext request bodies — every prompt sent to a model API
+and every diff sent to GitHub. §10 accepts this rather than merely tolerating
+it, because content inspection is wanted. It belongs in the security posture
+docs and in any DPA regardless, and it raises the bar on where the broker runs
+(§11) and who can read its logs. The honest framing for a customer is that the
+broker sees what a proxy sees; a claim that it does not would be false the day
+we ship it.
 
 **Latency on every outbound request**, paid by the agent rather than by a tool
 call. Distinct from 0016's PDP latency, which lands per tool call; these
@@ -259,10 +430,11 @@ does not forfeit them, which was 0016's worry.
 
 **Self-hosters inherit another service.** The self-host story
 ([0011](0011-self-host-first-admin-bootstrap.md) and the 2026-08 audit) gets a
-new required component with its own database. If brokering is mandatory, the
-minimum viable self-host grows; if it is optional, self-hosted instances run the
-posture this ADR calls unacceptable. That tension needs an answer, and "optional
-but loudly labelled" is the likely one.
+new component with its own database. §9 resolves the tension by putting the
+switch at the deployment: an instance with no broker configured keeps today's
+behaviour and says so, and one with a broker brokers everything classified
+brokerable. What is not on offer is a per-environment toggle that lets a
+brokered instance run unbrokered conversations quietly.
 
 **0008's economics are untouched.** [0008](0008-byo-inference-credentials.md) is
 still the tenant's key and still the tenant's bill; only custody moves, exactly as
@@ -275,18 +447,37 @@ found defect rather than a missing feature.
 
 ## Gates
 
-**Gate 0 — one credential, one conversation, end to end.** A broker deployed
-somewhere real; one secret converted to a placeholder; `NetworkPolicy` narrowed
-to the broker; prove the agent can call `api.github.com` with a credential it
-never held, and cannot reach anything else. Success criteria written down first,
-as numbers: added per-request latency, provisioning-time cost of minting a token,
-and the observed behaviour when the broker is killed mid-conversation. Plus the
-vendor decision from §8.
+**Gate 0 — one credential, one conversation, end to end.** Agent Vault deployed
+on the home cloud (SQLite is enough for the spike, `AGENT_VAULT_MASTER_PASSWORD`
+set — passwordless mode leaves the DEK in plaintext in the database); one
+`GITHUB_TOKEN` converted to a placeholder, loaded broker-side from the DEK
+store; the CA written into the sandbox with `Fountain.Sandbox.write_file/4`,
+which every adapter already implements; the proxy and CA env added to
+`do_build_sprite_env/5`; `NetworkPolicy` narrowed to the broker on Sprites.
+
+It passes when all of these hold, and the numbers are written down before the
+spike rather than after:
+
+| | |
+|---|---|
+| brokered call | `gh api user` and `git clone https://…` succeed with a token the agent never held |
+| no credential in the sandbox | `env` and `/home/sprite/.env` show only the placeholder |
+| unmatched host | denied, with `unmatched_host_policy=deny` set explicitly — its default is the permissive one |
+| cross-tenant probe | tenant A's session asking for tenant B's vault via `X-Vault` is refused (§11) |
+| latency | added milliseconds per request, sandbox → broker → origin over the public internet |
+| provisioning cost | milliseconds to mint a session at provision time |
+| broker killed mid-turn | observed, and matching §6: the turn fails, nothing falls back to plaintext |
+| chain is possible | one absolute-form HTTP hop in front of Agent Vault is proven to work, so §10's content proxy stays available |
+
+The vendor question this gate used to carry is answered in §8.
 
 **Gate 1 — the placeholder contract.** Naming scheme, versioning, and a test that
 fails when the two sides disagree. Then all environment and vault secrets that
 are outbound HTTP credentials, with the ones that are not explicitly classified
-and labelled per §7.
+and labelled per §7 — a third of what is stored, on today's numbers. Two items
+0023 adds: the broker session token joins `Identity`'s `@process_only` so it
+never reaches the shared `/home/sprite/.env`, and the session TTL is shorter
+than a park so a checkpoint cannot carry a live token.
 
 **Gate 2 — `networking_type` migration.** `allowed_hosts` translated into broker
 service rules; both modes enforced at the broker; the floor made
@@ -295,8 +486,9 @@ this gate gets harder the longer it waits.
 
 **Gate 3 — inference credentials through the same path.** This absorbs 0016 gate
 3 and closes its base-URL question: brokering inference through the proxy needs no
-override survey. 0016 §4's second purpose (metering) becomes available here and
-remains a separate decision.
+override survey. Includes `Claude.fall_back_to_api_key/2`, the second injection
+site 0023's Context subsection names. 0016 §4's second purpose (metering)
+becomes available here and remains a separate decision.
 
 **Gate 4 — the joined trail.** Broker request log correlated to Conversation, and
 whatever surface makes the effect half readable next to the intent half.
