@@ -44,6 +44,13 @@ upgrade, is in
   one conversation the two numbers are equal, so nothing changes for
   today's accounts. ADR 0026 addendum; ADR 0023 step 6.
 
+- **A sandbox that is gone is gone for every conversation on it.** When a
+  prompt wakes a conversation and finds its sandbox has vanished, the fresh
+  machine it provisions now takes every live conversation that shared the old
+  one along (runtime sessions cleared, a `sandbox`/`replaced` stage event on
+  each transcript), instead of leaving them pointing at a terminated row and
+  provisioning a machine each on their next prompt. ADR 0023 gate 5.
+
 - **A sandbox several conversations hold is treated as one machine.**
   Three rules that used to be one conversation's to break (ADR 0023, steps
   4 and 5): a turn on an opencode or gemini sandbox is refused with

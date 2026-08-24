@@ -2597,10 +2597,15 @@ defmodule Fountain.Conversations do
       # handed the prompt instead of being raced by a second provision.
       case start_conversation_server(conv, new_sandbox.id, runtime_module, initial_prompt) do
         {:ok, _} ->
-          _ = mark_old_sandbox_terminated(conv.sandbox_id)
+          old_sandbox_id = conv.sandbox_id
+          _ = mark_old_sandbox_terminated(old_sandbox_id)
 
           {:ok, conv} =
             update_conversation(conv, %{sandbox_id: new_sandbox.id, status: "pending"})
+
+          # The machine was gone for everyone on it, not just the conversation
+          # that noticed (ADR 0023 gate 5).
+          move_cotenants(old_sandbox_id, new_sandbox.id, conv.id)
 
           {:ok, _unsafe_get_conversation!(conv.id)}
 
@@ -2638,6 +2643,61 @@ defmodule Fountain.Conversations do
   end
 
   defp assert_resumable(_), do: :ok
+
+  # A wake that found the sprite gone re-provisioned a machine for the
+  # conversation that woke. Every other live conversation on the old row was
+  # on the same dead disk, so it follows onto the new one (ADR 0023 gate 5) —
+  # the alternative leaves each co-tenant pointing at a `terminated` row and
+  # provisioning yet another machine on its own next prompt, and the shared
+  # disk they were sharing ends up as N disks.
+  #
+  # `old_sandbox_id` is the row the waking conversation *used* to name; by the
+  # time this runs the waking conversation itself already names the new one,
+  # so it is not among the co-tenants.
+  #
+  # A co-tenant whose server is somehow alive holds a handle to the dead
+  # sprite; it is told the machine is gone, cuts any turn, and stops, so its
+  # next prompt takes the wake path onto the new row. `runtime_session_id` is
+  # cleared for each: a fresh disk has no session to resume (#778).
+  defp move_cotenants(nil, _new_sandbox_id, _conv_id), do: :ok
+
+  defp move_cotenants(old_sandbox_id, new_sandbox_id, conv_id)
+       when is_binary(old_sandbox_id) and is_binary(new_sandbox_id) do
+    case _unsafe_list_cotenant_ids(old_sandbox_id, conv_id) do
+      [] ->
+        :ok
+
+      ids ->
+        message =
+          "The sandbox this conversation was on is gone; it moved to a fresh one together " <>
+            "with the conversations that shared it. The transcript is kept, but the agent " <>
+            "starts a new session and will not remember the earlier turns."
+
+        Enum.each(ids, fn id ->
+          case ConversationServer.whereis(id) do
+            nil -> :ok
+            pid -> GenServer.cast(pid, {:machine_gone, "replaced", "sprite_gone", message})
+          end
+        end)
+
+        now = DateTime.utc_now() |> DateTime.truncate(:second)
+
+        Repo.update_all(from(c in Conversation, where: c.id in ^ids),
+          set: [sandbox_id: new_sandbox_id, runtime_session_id: nil, updated_at: now]
+        )
+
+        Enum.each(ids, fn id ->
+          publish_stage(id, "sandbox", "done", %{
+            event: "replaced",
+            reason: "sprite_gone",
+            sandbox_id: new_sandbox_id,
+            message: message
+          })
+        end)
+
+        :ok
+    end
+  end
 
   defp mark_old_sandbox_terminated(nil), do: :ok
 
