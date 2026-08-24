@@ -10,6 +10,21 @@ server releases.
 
 ---
 
+## [0.1.6] — 2026-08-24
+
+### Added
+
+- `run({ sandbox })` attaches the new conversation to a sandbox you already
+  have, by id, instead of provisioning one — several conversations then run
+  on one disk at once (ADR 0023). `fountain.sandboxes()` and
+  `fountain.sandbox(id)` list your machines with the conversations on each
+  and which is mid-turn; `SandboxRecord` is their type. `Sandbox` records
+  now carry `agent_id`, `environment_id` and `vault_id`.
+- Error codes: `sandbox_not_found`, `sandbox_not_attachable`,
+  `sandbox_identity_mismatch`, `sandbox_runtime_mismatch`, and
+  `sandbox_at_capacity` (retryable — a one-at-a-time runtime's machine is
+  busy with another conversation's turn).
+
 ## [0.1.5] — 2026-08-24
 
 ### Fixed
