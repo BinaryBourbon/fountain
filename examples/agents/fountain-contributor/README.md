@@ -84,10 +84,13 @@ and test, so the suite runs in the sandbox without it.
 
 ## What "done" looks like
 
-A green `mix precommit` in the sandbox — the agent is told to read the
-output, not the exit code — and one pull request on
+A green `mix precommit` in the sandbox — the agent is told to run it in the
+foreground and read the output, not the exit code — and one pull request on
 [BinaryBourbon/fountain](https://github.com/BinaryBourbon/fountain), opened
 with `gh`, commits signed off (`git commit -s`) under your vault's identity.
+The turn that claims completion names the pushed commit sha and the gate
+output it saw: backgrounded work dies when a turn ends (#817), so "I'll push
+once the suite passes" pushes nothing.
 
 ## Guardrails
 

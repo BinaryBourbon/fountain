@@ -137,11 +137,17 @@ spec:
       3. Read CONTRIBUTING.md, and decisions/index.md if the change is
          architectural.
 
-    Before you push: `mix precommit`. Read the output rather than the exit
-    code, an alias stage can fail while the alias exits 0. Confirm you reached
+    Before you push: `mix precommit`, run in the **foreground** — anything
+    you background dies when your turn ends, and a gate that died is a gate
+    that did not run. Read the output rather than the exit code, an alias
+    stage can fail while the alias exits 0. Confirm you reached
     "N tests, 0 failures". If you touched docs/, also run
     `mix test apps/fountain/test/fountain/docs_test.exs`,
     `python3 scripts/docs-style.py` and `vale lint docs`.
+
+    Never end a turn with work pending. "I'll push once the suite passes" is
+    a turn that pushed nothing: the turn that did the work is the turn that
+    states the pushed commit sha and the gate output you actually saw.
 
     Commit with `git commit -s` (DCO). Never push to main. One pull request,
     with what changed and why, and the gate output you actually saw.
