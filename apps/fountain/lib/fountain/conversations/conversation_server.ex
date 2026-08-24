@@ -689,8 +689,23 @@ defmodule Fountain.Conversations.ConversationServer do
   end
 
   defp do_fresh_provision_inner(state, conv, sandbox, agent, env, secrets) do
+    # The row only ever becomes `starting` right here, so finding it already
+    # `starting` means an earlier attempt was interrupted mid-provision — a
+    # deploy or a Horde rebalance killed the server while it was blocked in
+    # this function. The sprite it was building is most likely still there.
+    interrupted? = sandbox.status == "starting"
+
     {:ok, _} = Conversations.update_sandbox(sandbox, %{status: "starting"})
-    publish_stage(state.conversation_id, "provision", "started")
+
+    publish_stage(
+      state.conversation_id,
+      "provision",
+      "started",
+      if(interrupted?,
+        do: %{retry: "an earlier attempt was interrupted; rebuilding the sandbox"},
+        else: %{}
+      )
+    )
 
     # A `limited` environment on a backend with no `:network_policy` capability
     # can only fail. It failed closed before, but several steps in, after a
@@ -705,7 +720,8 @@ defmodule Fountain.Conversations.ConversationServer do
                provider,
                env,
                state.conversation_id
-             ) do
+             ),
+           :ok <- discard_interrupted_attempt(provider, sandbox, interrupted?) do
         create_sandbox_handle(provider, sandbox)
       end
 
@@ -2375,6 +2391,38 @@ defmodule Fountain.Conversations.ConversationServer do
 
   # The row's provider decides where the sandbox is created; adopt-on-
   # already-exists is the adapter's job.
+  # A sandbox left behind by an interrupted attempt cannot be finished in
+  # place: `Sandbox.create` adopts an existing sprite by name, so a restarted
+  # server would re-run every step on a half-built machine — and the steps
+  # are not idempotent (`git clone` refuses a checkout that already exists,
+  # a setup script that starts services fails on the second start). Seen
+  # live when a deploy landed during an environment's `setup` stage: the
+  # restart re-provisioned onto the same sprite and died in `clone`. Tear the
+  # remnant down first; a sprite that is already gone is not an error.
+  defp discard_interrupted_attempt(_provider, _sandbox, false), do: :ok
+
+  defp discard_interrupted_attempt(provider, sandbox, true) do
+    Logger.warning(
+      "sandbox #{sandbox.id}: sprite #{sandbox.sprite_name} was left mid-provision by an " <>
+        "interrupted attempt; destroying it before provisioning again"
+    )
+
+    handle = Fountain.Sandbox.build_handle(provider, sandbox.sprite_name)
+
+    case Fountain.Sandbox.destroy(handle) do
+      :ok ->
+        :ok
+
+      {:error, reason} ->
+        Logger.info(
+          "sandbox #{sandbox.id}: discarding sprite #{sandbox.sprite_name} returned " <>
+            "#{inspect(reason)}; provisioning anyway"
+        )
+
+        :ok
+    end
+  end
+
   defp create_sandbox_handle(provider, sandbox) do
     Fountain.Retry.with_backoff(
       fn -> Fountain.Sandbox.create(provider, sandbox.sprite_name) end,
