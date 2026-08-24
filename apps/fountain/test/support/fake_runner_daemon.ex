@@ -110,7 +110,17 @@ defmodule Fountain.Runners.FakeDaemon do
     Process.unlink(socket)
     Process.unlink(daemon)
     ref = Process.monitor(socket)
-    if Process.alive?(socket), do: GenServer.stop(socket, :shutdown, 1_000)
+
+    # The socket may already be down — a test that closed it, or the daemon
+    # going first — and `Process.alive?/1` followed by `stop/3` is a race: a
+    # process that dies between the two turns this teardown into a `:noproc`
+    # exit that fails a test which already passed (main run 32676969894).
+    # Stop it if it is there; the monitor below settles the rest either way.
+    try do
+      GenServer.stop(socket, :shutdown, 1_000)
+    catch
+      :exit, _ -> :ok
+    end
 
     receive do
       {:DOWN, ^ref, :process, _, _} -> :ok
