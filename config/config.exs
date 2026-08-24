@@ -46,7 +46,12 @@ config :fountain, Oban,
        # credit ledger (ADR 0030). Idempotent per turn and per event, so the
        # cadence only sets how stale a balance can read. No-ops until
        # CREDIT_PRICING_SINCE is set.
-       {"*/10 * * * *", Fountain.Workers.CreditPricer}
+       {"*/10 * * * *", Fountain.Workers.CreditPricer},
+       # 06:23 UTC daily: tier and trial grants, and expiry of unspent grants
+       # (ADR 0030 decision 2). Idempotent per period and per grant. The
+       # webhook will grant at renewal directly (phase 4); this is the
+       # backstop. No-ops until CREDIT_PRICING_SINCE is set.
+       {"23 6 * * *", Fountain.Workers.CreditGranter}
      ]}
   ]
 
