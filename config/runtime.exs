@@ -779,7 +779,24 @@ credit_packs =
       |> Enum.sort()
   end
 
+# CREDIT_PRICING_SINCE is the instant burning starts, as ISO 8601
+# ("2026-09-01T00:00:00Z"). Unset, nothing is ever priced into the ledger:
+# the switch exists so a deploy that adds the pricer does not bill every
+# tenant for last week's turns before anyone has a grant (#1086 phase 5).
+credit_pricing_since =
+  case System.get_env("CREDIT_PRICING_SINCE") do
+    value when value in [nil, ""] ->
+      nil
+
+    value ->
+      case DateTime.from_iso8601(String.trim(value)) do
+        {:ok, at, _} -> at
+        _ -> raise "CREDIT_PRICING_SINCE must be an ISO 8601 instant, got #{inspect(value)}"
+      end
+  end
+
 config :fountain, :credits,
+  pricing_since: credit_pricing_since,
   turn_hour_cents: credit_cents.("CREDIT_TURN_HOUR_CENTS") || 25,
   number_cents: credit_cents.("CREDIT_NUMBER_CENTS"),
   inbox_cents: credit_cents.("CREDIT_INBOX_CENTS"),

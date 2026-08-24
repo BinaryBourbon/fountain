@@ -1,0 +1,148 @@
+defmodule Fountain.Workers.CreditPricerTest do
+  @moduledoc """
+  The pricer writes one burn per closed turn and per message, once, only on
+  providers Fountain pays for, only from the configured instant.
+  """
+
+  use Fountain.DataCase, async: true
+
+  alias Fountain.Billing
+  alias Fountain.Credits
+  alias Fountain.Workers.CreditPricer
+
+  @since ~U[2026-08-01 00:00:00Z]
+  @now ~U[2026-08-03 12:00:00Z]
+
+  defp closed_turn(conv, started, seconds) do
+    insert_turn(conv, %{
+      status: "completed",
+      started_at: started,
+      ended_at: DateTime.add(started, seconds, :second)
+    })
+  end
+
+  defp setup_conv(user, provider \\ "sprites") do
+    sandbox = insert_sandbox(user_id: user.id, provider: provider, status: "ready")
+    insert_conversation(user_id: user.id, sandbox: sandbox)
+  end
+
+  test "no-ops with no pricing_since and with billing off" do
+    user = insert_active_user()
+    conv = setup_conv(user)
+    closed_turn(conv, ~U[2026-08-02 10:00:00Z], 3600)
+
+    assert %{turns: 0, messages: 0} = CreditPricer.run(now: @now)
+
+    Application.put_env(:fountain, :billing_enabled, false)
+    on_exit(fn -> Application.put_env(:fountain, :billing_enabled, true) end)
+    assert %{turns: 0, messages: 0} = CreditPricer.run(since: @since, now: @now)
+    assert Credits.balance(user.id) == 0
+  end
+
+  test "a closed hour on sprites burns 25 cents, once, with the turn as the resource" do
+    user = insert_active_user()
+    conv = setup_conv(user)
+    turn = closed_turn(conv, ~U[2026-08-02 10:00:00Z], 3600)
+
+    assert %{turns: 1, messages: 0} = CreditPricer.run(since: @since, now: @now)
+    assert Credits.balance(user.id) == -25
+
+    [entry] = Credits.list_entries(user.id)
+    assert entry.reason == "burn_turn"
+    assert entry.resource_type == "turn"
+    assert entry.resource_id == turn.id
+    assert entry.idempotency_key == "burn_turn:#{turn.id}"
+    assert entry.metadata["turn_seconds"] == 3600
+    assert entry.metadata["provider"] == "sprites"
+
+    # Second run: nothing new.
+    assert %{turns: 0, messages: 0} = CreditPricer.run(since: @since, now: @now)
+    assert Credits.balance(user.id) == -25
+  end
+
+  test "open turns, runner turns, and turns before pricing_since are not priced" do
+    user = insert_active_user()
+    conv = setup_conv(user)
+    # Still running.
+    insert_turn(conv, %{status: "running", started_at: ~U[2026-08-02 10:00:00Z]})
+    # Closed before the floor.
+    closed_turn(conv, ~U[2026-07-30 10:00:00Z], 7200)
+    # The tenant's own machine.
+    runner_conv = setup_conv(user, "runner")
+    closed_turn(runner_conv, ~U[2026-08-02 11:00:00Z], 7200)
+
+    assert %{turns: 0, messages: 0} = CreditPricer.run(since: @since, now: @now)
+    assert Credits.balance(user.id) == 0
+  end
+
+  test "a turn that rounds to zero cents writes nothing and is not an error" do
+    user = insert_active_user()
+    conv = setup_conv(user)
+    closed_turn(conv, ~U[2026-08-02 10:00:00Z], 60)
+
+    assert %{turns: 0, messages: 0} = CreditPricer.run(since: @since, now: @now)
+    assert Credits.list_entries(user.id) == []
+  end
+
+  test "a comped tenant's turns are still written to the ledger" do
+    user = insert_active_user()
+    {:ok, user} = Billing.comp_account(user)
+    conv = setup_conv(user)
+    closed_turn(conv, ~U[2026-08-02 10:00:00Z], 3600)
+
+    assert %{turns: 1} = CreditPricer.run(since: @since, now: @now)
+    assert Credits.balance(user.id) == -25
+    assert :ok = Credits.check_balance(user.id)
+  end
+
+  test "the look-back never reaches further than seven days before now" do
+    user = insert_active_user()
+    conv = setup_conv(user)
+    closed_turn(conv, ~U[2026-07-20 10:00:00Z], 3600)
+    closed_turn(conv, ~U[2026-08-02 10:00:00Z], 3600)
+
+    assert %{turns: 1} = CreditPricer.run(since: ~U[2026-01-01 00:00:00Z], now: @now)
+  end
+
+  describe "messages" do
+    setup do
+      cfg = Application.get_env(:fountain, :credits)
+      on_exit(fn -> Application.put_env(:fountain, :credits, cfg) end)
+      :ok
+    end
+
+    test "an unpriced message burns nothing" do
+      user = insert_active_user()
+      {:ok, _} = Billing.record_usage(user.id, "comms_email_sent", nil, "contact", %{})
+      assert %{messages: 0} = CreditPricer.run(since: @since, now: @now)
+    end
+
+    test "a priced message burns once, inbound SMS included" do
+      user = insert_active_user()
+      cfg = Application.get_env(:fountain, :credits)
+
+      Application.put_env(
+        :fountain,
+        :credits,
+        Keyword.merge(cfg, email_message_cents: 1, sms_message_cents: 2)
+      )
+
+      {:ok, _} = Billing.record_usage(user.id, "comms_email_sent", nil, "contact", %{})
+      {:ok, _} = Billing.record_usage(user.id, "comms_sms_sent", nil, "contact", %{})
+      {:ok, _} = Billing.record_usage(user.id, "comms_sms_received", nil, "contact", %{})
+      # Not a message.
+      {:ok, _} = Billing.record_usage(user.id, "turn_started", nil, "conversation", %{})
+
+      assert %{messages: 3} = CreditPricer.run(since: @since, now: DateTime.utc_now())
+      assert Credits.balance(user.id) == -5
+      assert %{messages: 0} = CreditPricer.run(since: @since, now: DateTime.utc_now())
+
+      reasons = Credits.list_entries(user.id) |> Enum.map(& &1.reason) |> Enum.uniq()
+      assert reasons == ["burn_message"]
+    end
+  end
+
+  test "perform/1 is a thin shell over run/1" do
+    assert :ok = CreditPricer.perform(%Oban.Job{args: %{}})
+  end
+end
