@@ -240,7 +240,7 @@ An agent carries `sandbox_mode`, which is `ephemeral` or `persistent`. With
 `ephemeral`, each conversation gets a sandbox of its own. With `persistent`,
 the agent has one machine, and each conversation with the same environment
 and vault lands on it. That machine survives a conversation that ends, and
-Fountain parks it at the ceiling instead of a destroy. A launch can name the
+nothing stops it while it runs. A launch can name the
 other mode with `sandbox_mode` on `POST /api/conversations`.
 
 They are on the list read and on the single-resource read. So "does this

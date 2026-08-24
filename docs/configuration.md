@@ -56,7 +56,7 @@ message.
 | `DAYTONA_API_URL` | `https://app.daytona.io/api` | — | Repoints the Daytona API, for a Daytona you host yourself. |
 | `DAYTONA_SNAPSHOT` | The org default. | — | The snapshot, which is an image, that Fountain creates a new Daytona sandbox from. The organization must hold it. The default image has no agent CLI, so build one from `images/daytona/` for real use. |
 | `SANDBOX_IDLE_TIMEOUT_MINUTES` | `60` | — | No turn activity for this long, and Fountain reclaims the sandbox. The conversation stays [resumable](guides/operate/sandbox-lifetime.md). A `0` turns the bound off, and boot refuses whatever is not a non-negative integer. |
-| `SANDBOX_MAX_LIFETIME_HOURS` | `24` | — | The absolute ceiling on a sandbox's age, whatever the activity. The same `0` rule and the same boot refusal apply. |
+| `SANDBOX_MAX_LIFETIME_HOURS` | `0` (off) | — | A ceiling on one continuous run, whatever the activity. Off by default: nothing stops a sandbox that stays busy. Set it to park a persistent home, or destroy an ephemeral sandbox, after this many hours. The same boot refusal applies. |
 | `LOG_OUTPUT_BUDGET_MB` | `50` | — | The durable log volume for one conversation. Once a conversation has persisted this much sandbox output, Fountain writes one truncation marker and discards the rest. Retention bounds age, and this bounds rate. The same `0` rule and the same boot refusal apply. |
 
 ## Webhooks

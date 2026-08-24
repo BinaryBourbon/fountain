@@ -60,8 +60,8 @@ further prompt.
 error. The sandbox parks and scales to zero. The next prompt wakes it, and the
 agent's memory is intact.
 
-`idle` with a *destroyed* sandbox is what the max-lifetime ceiling leaves
-behind, or what an explicit reap leaves. The next prompt provisions a fresh
+`idle` with a *destroyed* sandbox is what an explicit reap leaves, or what a
+configured max-lifetime ceiling leaves behind. The next prompt provisions a fresh
 sandbox. Fountain leaves the stored transcript alone, but the agent starts a
 fresh session. Read [About conversations](../concepts/conversation.md), and
 the full table in [Conversation states](../reference/conversation-states.md).

@@ -61,13 +61,15 @@ config :fountain,
 
 # Sandbox lifetime bounds. Crossing the idle bound SUSPENDS the sandbox — the
 # sprite stays (scaled to zero) and the next prompt resumes the agent with its
-# memory intact, so this bound is free to be aggressive. Crossing the
-# max-lifetime ceiling DESTROYS the sprite, and the agent's session with it
-# (#649) — it exists to bound runaway busy compute. Set either to 0 to
-# disable. See Fountain.Conversations.Lifecycle and decisions/0017.
+# memory intact, so this bound is free to be aggressive. The max-lifetime
+# ceiling is OFF by default (#936): a tenant who wants a machine running
+# 24/7 is not something to stop. Set it to bound a continuous run; crossing
+# it parks a persistent home and destroys an ephemeral sprite, and the
+# agent's session with it (#649). 0 disables either bound. See
+# Fountain.Conversations.Lifecycle and decisions/0017.
 config :fountain,
   sandbox_idle_timeout_minutes: 60,
-  sandbox_max_lifetime_hours: 24
+  sandbox_max_lifetime_hours: 0
 
 config :fountain,
   ecto_repos: [Fountain.Repo],

@@ -42,11 +42,11 @@ supports.
 |---|---|---|---|
 | Suspend | Idle for `SANDBOX_IDLE_TIMEOUT_MINUTES`, 60 by default. | None. It stays `idle`. | Kept. The disk survives. |
 | Wake | The next prompt. | `idle` to `running`. | Kept. |
-| Destroy on ceiling | It ran for `SANDBOX_MAX_LIFETIME_HOURS`, 24 by default. | None. It stays resumable. | Lost. The next turn starts a fresh runtime session. |
+| Destroy on ceiling | It ran for `SANDBOX_MAX_LIFETIME_HOURS`. Off by default, so this never happens unless you set it. | None. It stays resumable. | Lost for an ephemeral sandbox. Fountain parks a persistent home, which keeps it. |
 | Destroy on idle | It went idle on a provider with no `:suspend` capability. | None. | Lost. |
 
-You set both bounds for each instance. A `0` turns either one off. Read the
-[configuration reference](../configuration.md).
+You set both bounds for each instance. A `0` turns either one off, and the
+ceiling starts off. Read the [configuration reference](../configuration.md).
 
 ## Warnings
 
@@ -60,9 +60,9 @@ Do not terminate a conversation you want back. Termination destroys the
 sandbox, and the memory the agent works from goes with it. The transcript
 stays.
 
-A sandbox that the ceiling reclaims leaves the conversation resumable, and
-leaves the agent without its earlier context. State what matters again on the
-next turn.
+A sandbox that a configured ceiling reclaims leaves the conversation
+resumable, and leaves the agent without its earlier context. State what
+matters again on the next turn.
 
 ## Where to go next
 

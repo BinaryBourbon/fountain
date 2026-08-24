@@ -64,18 +64,20 @@ sandbox. It scales to zero, and a parked sandbox costs nothing. The next
 prompt wakes it, and the agent's memory is intact. The runtime keeps its
 session on the sandbox's disk, and a suspended sandbox keeps its disk.
 
-**A ceiling destroys.** By default, 24 hours of continuous run time destroys
-the sandbox. The disk goes with it. The stored transcript survives and the
-conversation stays resumable. The next turn starts a fresh runtime session, so
-the agent answers without the earlier turns. Expect to state your context
-again after a ceiling reclaim.
+**Nothing stops a busy sandbox.** A conversation that keeps its sandbox busy
+keeps it up. There is no ceiling on a continuous run by default. A
+self-hoster can set one with `SANDBOX_MAX_LIFETIME_HOURS`. When set, to cross
+it destroys an ephemeral sandbox, and the disk goes with it. The stored
+transcript survives and the conversation stays resumable. The next turn
+starts a fresh runtime session, so the agent answers without the earlier
+turns. Fountain parks a persistent home instead.
 
-The difference matters. Suspend keeps the agent's memory. The ceiling does
+The difference matters. Suspend keeps the agent's memory. A destroy does
 not.
 
-A self-hoster can widen both bounds, or stop them. The settings are
-`SANDBOX_IDLE_TIMEOUT_MINUTES` and `SANDBOX_MAX_LIFETIME_HOURS`, and a `0`
-stops one. Read the [configuration reference](../configuration.md).
+A self-hoster can widen or stop the idle bound with
+`SANDBOX_IDLE_TIMEOUT_MINUTES`, and a `0` stops it. Read the
+[configuration reference](../configuration.md).
 
 Not every sandbox provider can suspend. A provider that does not advertise the
 capability destroys on idle. It does not fake a park, because a resume with a

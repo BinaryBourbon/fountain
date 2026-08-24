@@ -15,9 +15,13 @@ defmodule Fountain.Conversations.Lifecycle do
 
   * **Max lifetime** — a ceiling on a *continuous run*, measured from the
     sandbox's creation or its last wake from `suspended`
-    (`last_resumed_at || inserted_at`). Crossing it **destroys** the sprite.
-    It catches the case the idle bound cannot: a conversation that keeps
-    itself busy forever, burning compute unattended.
+    (`last_resumed_at || inserted_at`). Crossing it **destroys** an ephemeral
+    sprite and **parks** a persistent home (ADR 0023). **Off by default since
+    #936**: a tenant who wants a machine running 24/7 is not something to
+    stop, so nothing automatic stops a sandbox that keeps itself busy — the
+    idle timeout parks it once it stops, and the concurrent-sandbox cap
+    bounds how many can be up. An operator who wants the old backstop sets
+    `SANDBOX_MAX_LIFETIME_HOURS`.
 
   ## Why the split
 
@@ -43,7 +47,7 @@ defmodule Fountain.Conversations.Lifecycle do
   """
 
   @default_idle_minutes 60
-  @default_max_lifetime_hours 24
+  @default_max_lifetime_hours 0
 
   @doc "Idle timeout in seconds, or `nil` when disabled."
   @spec idle_timeout_seconds() :: pos_integer() | nil

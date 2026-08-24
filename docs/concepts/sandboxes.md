@@ -33,8 +33,8 @@ With `persistent`, the agent has one machine of its own. Each conversation
 with the same environment and vault lands on it. Notes, clones and installed
 tools accrue across conversations. What a bad turn leaves behind also
 accrues, because all of them use the one disk. The machine survives a
-conversation that ends. Fountain parks it at the ceiling instead of a destroy. When you delete
-the agent, Fountain destroys the machine.
+conversation that ends. Nothing stops it while it runs. When you delete the
+agent, Fountain destroys the machine.
 
 ## Why the lifecycle belongs to the conversations on it
 

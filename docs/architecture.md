@@ -167,10 +167,11 @@ a state of `started`, `done`, `failed` or `interrupted`.
     stays and scales itself to zero, and the sandbox parks in `suspended`. The
     next prompt wakes it with everything intact.
 
-    To cross the **max lifetime** *destroys* the sprite, and marks the sandbox
-    `terminated`. The conversation goes back to `idle`, and it is resumable at
-    the #649 price. The hourly reaper applies the same split to whatever a
-    crashed server left behind.
+    The **max lifetime** is off by default. When an operator sets it, to
+    cross it *destroys* an ephemeral sprite and marks the sandbox
+    `terminated`, or *parks* a persistent home. The conversation goes back to
+    `idle`, and it is resumable at the #649 price. The hourly reaper applies
+    the same split to whatever a crashed server left behind.
 7. **`terminate`.** An explicit `POST .../terminate` destroys the sprite and
    marks the conversation `terminated`. That is one of the two terminal
    states, next to `failed`.

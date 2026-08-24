@@ -16,6 +16,15 @@ verified: { by: human:jhgaylor, at: 2026-08-13T19:28:44-04:00 }
 **Status:** Accepted (built in the PR that added this document)
 **Date:** 2026-08-13
 
+**Amended 2026-08-24 (#936):** the max-lifetime ceiling this ADR keeps as the
+one destroying bound is now **off by default** (`SANDBOX_MAX_LIFETIME_HOURS`
+defaults to `0`). Decided 2026-08-23 with ADR 0023: a tenant who wants a
+machine running 24/7 is not something to stop, and a persistent home's disk
+is the product. The idle timeout is the only automatic stop; the
+concurrent-sandbox cap (0026) bounds how many machines a tenant can keep up.
+An operator who wants the backstop sets the variable, and then the text below
+applies as written (ephemeral: destroy; persistent home: park, per 0023).
+
 ## Context
 
 Since #233, both lifetime bounds destroyed the sprite: the ConversationServer
