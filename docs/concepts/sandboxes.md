@@ -55,6 +55,12 @@ disk. To suspend and wake the machine is therefore the same act as to pause
 and resume the conversations on it. Read
 [About conversations](conversation.md).
 
+A prompt to any conversation on a parked machine wakes it. The wake serves
+that conversation only. The other conversations on the machine start again
+on their own next prompt, and that prompt lands on the machine that is
+already awake. The idle clock counts the activity of every conversation on
+the machine, so one active conversation keeps the machine up for all of them.
+
 ## One seam, four backends
 
 Each backend plugs into the same seam, `Fountain.Sandbox`. The contract is
