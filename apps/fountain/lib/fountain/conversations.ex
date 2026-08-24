@@ -1716,7 +1716,7 @@ defmodule Fountain.Conversations do
          {:ok, perm_policy} <- resolve_permission_policy(attrs["permission_policy"], agent),
          {:ok, parent_id} <- resolve_parent_id(attrs["parent_conversation_id"], user_id),
          :ok <- Fountain.Accounts.check_not_suspended(user_id),
-         :ok <- Fountain.Billing.check_active(user_id),
+         :ok <- Fountain.Billing.check_spend(user_id),
          # A persistent launch lands on the identity's home when there is one
          # (ADR 0023 gate 6): `{:home, sandbox}` leaves the `with` and attaches
          # below. Only when there is none does a machine get provisioned, and
@@ -2221,7 +2221,7 @@ defmodule Fountain.Conversations do
          {:ok, perm_policy} <- resolve_permission_policy(attrs["permission_policy"], agent),
          {:ok, parent_id} <- resolve_parent_id(attrs["parent_conversation_id"], user_id),
          :ok <- Fountain.Accounts.check_not_suspended(user_id),
-         :ok <- Fountain.Billing.check_active(user_id),
+         :ok <- Fountain.Billing.check_spend(user_id),
          %Sandbox{} = sandbox <- get_sandbox(sandbox_id, user_id) || {:error, :sandbox_not_found},
          :ok <- check_attachable(sandbox, agent, vault_id, env_id),
          :ok <- check_attach_capacity(sandbox, agent, attrs["prompt"]),
@@ -2681,7 +2681,7 @@ defmodule Fountain.Conversations do
           # the quota gate. The per-turn gate in ConversationServer is the
           # backstop; this one makes the refusal synchronous at the API door.
           with :ok <- Fountain.Accounts.check_not_suspended(conv.user_id),
-               :ok <- Fountain.Billing.check_active(conv.user_id),
+               :ok <- Fountain.Billing.check_spend(conv.user_id),
                {:ok, _} <- wake_suspended_sandbox(conv.user_id, sandbox_id) do
             case start_conversation_server(conv, sandbox_id, runtime_module, initial_prompt) do
               {:error, {:already_started, winner_pid}} ->
@@ -2939,7 +2939,7 @@ defmodule Fountain.Conversations do
     if mode == "persistent", do: _ = mark_old_sandbox_terminated(conv.sandbox_id)
 
     with :ok <- Fountain.Accounts.check_not_suspended(conv.user_id),
-         :ok <- Fountain.Billing.check_active(conv.user_id),
+         :ok <- Fountain.Billing.check_spend(conv.user_id),
          # A fresh sandbox is a fresh placement decision — re-resolve from
          # the agent, so a conversation whose old sandbox died can migrate
          # providers naturally.

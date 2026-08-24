@@ -10,6 +10,17 @@ server releases.
 
 ---
 
+## [0.1.15] — 2026-08-24
+
+### Added
+
+- `POST /api/admin/users/{id}/credits` adds prepaid credit to an account
+  (`grant_admin`, never expires). Admin user objects carry
+  `credit_balance_cents`.
+- A `402 insufficient_credits` response (same shape as
+  `subscription_required`, with `upgrade_url`) on every door that spends,
+  once the operator turns enforcement on.
+
 ## [0.1.14] — 2026-08-24
 
 ### Added

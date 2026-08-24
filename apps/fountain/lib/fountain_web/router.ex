@@ -534,6 +534,7 @@ defmodule FountainWeb.Router do
     post "/users/:id/sandbox-limit", AdminController, :set_sandbox_limit
     post "/users/:id/extend-trial", AdminController, :extend_trial
     post "/users/:id/comp", AdminController, :set_comp
+    post "/users/:id/credits", AdminController, :grant_credits
     post "/users/:id/suspend", AdminController, :set_suspended
     post "/users/:id/resync-stripe", AdminController, :resync_stripe
     delete "/users/:id", AdminController, :delete_user

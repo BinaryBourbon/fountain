@@ -195,7 +195,12 @@ defmodule Fountain.Quotas do
         :erlang.phash2(user_id)
       ])
 
+      # The balance precheck lives under the same lock as the cap (ADR 0030
+      # decision 6): two requests at $0.01 must not both read "positive" and
+      # both provision. The turn that then burns it may still go negative;
+      # that is the soft stop, not a hole.
       with :ok <- check_sandbox_quota(user_id, quota_opts),
+           :ok <- Fountain.Credits.gate(user_id),
            {:ok, value} <- fun.() do
         value
       else

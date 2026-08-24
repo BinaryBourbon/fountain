@@ -248,6 +248,56 @@ defmodule FountainWeb.AdminController do
   def set_comp(conn, _params),
     do: refuse(conn, "invalid_request", "Send {\"comped\": true} or {\"comped\": false}.")
 
+  operation(:grant_credits,
+    summary: "Add prepaid credit to an account",
+    description:
+      "A `grant_admin` ledger row (ADR 0030): goodwill, a won dispute, an " <>
+        "outage. It never expires and is spent after the tier's grant. There " <>
+        "is deliberately no negative form here; a clawback is what a refund " <>
+        "or dispute does through Stripe.",
+    parameters: [id: [in: :path, type: :string, required: true]],
+    request_body: {"Credit", "application/json", Schemas.AdminCreditsRequest},
+    responses: [
+      ok: {"Account", "application/json", Schemas.AdminUserResponse},
+      forbidden: {"Admin required", "application/json", Schemas.Error},
+      not_found: {"Not found", "application/json", Schemas.Error},
+      unprocessable_entity: {"Refused", "application/json", Schemas.Error}
+    ]
+  )
+
+  def grant_credits(conn, %{"id" => id, "cents" => cents} = params)
+      when is_integer(cents) and cents > 0 do
+    admin = conn.assigns.current_user
+    note = params["note"]
+
+    with :ok <- require_billing() do
+      with_user(conn, id, fn user ->
+        case Fountain.Credits.grant(user.id, cents, "grant_admin",
+               idempotency_key: "grant_admin:#{Ecto.UUID.generate()}",
+               actor: "admin:#{admin.id}",
+               metadata: %{"note" => note}
+             ) do
+          {:ok, entry} ->
+            record_admin(admin, user, "admin.credits.granted", %{
+              "email" => user.email,
+              "cents" => cents,
+              "note" => note,
+              "ledger_entry_id" => entry.id
+            })
+
+            render_user(conn, Accounts.get_user(user.id))
+
+          {:error, _} ->
+            refuse(conn, "invalid_request", "Could not write the credit.")
+        end
+      end)
+    end
+  end
+
+  def grant_credits(conn, _params),
+    do:
+      refuse(conn, "invalid_request", "Send {\"cents\": <positive integer>, \"note\": \"...\"}.")
+
   operation(:set_suspended,
     summary: "Suspend or unsuspend an account",
     description:

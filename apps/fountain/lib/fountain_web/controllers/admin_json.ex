@@ -57,6 +57,9 @@ defmodule FountainWeb.AdminJSON do
       # Teammate contacts this account is not charged for. Distinct from a
       # `comped` subscription_status, which makes everything free.
       comped_contacts: u.comped_contacts,
+      # The prepaid balance (ADR 0030); meaningful only while credits are
+      # active on the deployment, zero otherwise.
+      credit_balance_cents: u.credit_balance_cents,
       active_sandboxes: Map.get(sandbox_counts, u.id, 0),
       onboarding_completed_at: u.onboarding_completed_at,
       last_activity_at: Map.get(u, :last_activity_at),

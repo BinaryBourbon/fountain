@@ -79,6 +79,17 @@ defmodule Fountain.Billing do
   def enabled?, do: Application.get_env(:fountain, :billing_enabled, true)
 
   @doc """
+  The gate every spend passes: `check_active/1` (subscribe first, ADR 0006)
+  and then the credit balance (ADR 0030 decision 6). One function so a new
+  door cannot pick up one half and forget the other.
+  """
+  @spec check_spend(User.t() | binary()) ::
+          :ok | {:error, :subscription_required | :insufficient_credits}
+  def check_spend(subject) do
+    with :ok <- check_active(subject), do: Fountain.Credits.gate(subject)
+  end
+
+  @doc """
   Non-raising gate, for `with` pipelines in contexts.
 
   Accepts a user or a user id. An unknown id fails closed: a caller that cannot
@@ -1526,8 +1537,12 @@ defmodule Fountain.Billing do
             )
             |> Repo.update()
             |> tap(fn
-              {:ok, updated} -> enqueue_lifecycle_email(user.subscription_status, updated)
-              _ -> :ok
+              {:ok, updated} ->
+                enqueue_lifecycle_email(user.subscription_status, updated)
+                grant_on_renewal(user, updated)
+
+              _ ->
+                :ok
             end)
             |> audit_billing(user, "billing.subscription.synced", "webhook", %{
               "event_type" => type
@@ -1624,6 +1639,24 @@ defmodule Fountain.Billing do
   end
 
   def sync_subscription(_event), do: {:ok, :ignored}
+
+  # A new billing period is the moment the tier grant is due (ADR 0030
+  # decision 2). The daily CreditGranter is the backstop; granting here means
+  # the customer is not negative for up to a day after renewing. Best-effort
+  # by rescuing: a ledger hiccup must not fail the subscription sync, and the
+  # sweep catches whatever this missed.
+  defp grant_on_renewal(
+         %User{current_period_start: before},
+         %User{current_period_start: after_} = updated
+       )
+       when not is_nil(after_) and before != after_ do
+    Fountain.Workers.CreditGranter.grant_for_user(updated)
+    :ok
+  rescue
+    e -> Logger.warning("credits: grant on renewal failed for #{updated.id}: #{inspect(e)}")
+  end
+
+  defp grant_on_renewal(_before, _after), do: :ok
 
   defp sync_subscription_checkout(session, event) do
     customer_id = extract_stripe_id(Map.get(session, :customer))
