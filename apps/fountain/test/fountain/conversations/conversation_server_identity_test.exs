@@ -109,7 +109,9 @@ defmodule Fountain.Conversations.ConversationServerIdentityTest do
 
     test "binds to the session tagged with this conversation, not the head", ctx do
       {conv, _turn} = reattach_fixture(ctx)
-      other_conv = insert_conversation(user_id: ctx.user.id, agent: ctx.agent, sandbox: conv.sandbox)
+
+      other_conv =
+        insert_conversation(user_id: ctx.user.id, agent: ctx.agent, sandbox: conv.sandbox)
 
       stub_happy_sprite()
       ref = stub_turn_boundary()
@@ -139,7 +141,9 @@ defmodule Fountain.Conversations.ConversationServerIdentityTest do
 
     test "never takes a session tagged for another conversation", ctx do
       {conv, turn} = reattach_fixture(ctx)
-      other_conv = insert_conversation(user_id: ctx.user.id, agent: ctx.agent, sandbox: conv.sandbox)
+
+      other_conv =
+        insert_conversation(user_id: ctx.user.id, agent: ctx.agent, sandbox: conv.sandbox)
 
       stub_happy_sprite()
       _ref = stub_turn_boundary()

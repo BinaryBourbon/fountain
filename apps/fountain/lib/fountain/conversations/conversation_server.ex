@@ -956,6 +956,7 @@ defmodule Fountain.Conversations.ConversationServer do
           handle,
           Fountain.Conversations.Identity.disk_env(sprite_env)
         )
+
         # Same for the agent's system prompt: an edit reaches the existing
         # computer on its next wake (#848).
         write_instructions(handle, conv.runtime || (agent && agent.runtime) || "claude", agent)

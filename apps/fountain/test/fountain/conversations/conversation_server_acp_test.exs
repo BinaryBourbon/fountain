@@ -936,7 +936,9 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
     test "a gemini turn spawns the native ACP binary in its own workspace", ctx do
       {_pid, _ref} = start_acp_turn(ctx.conv)
 
-      assert_receive {:spawned, "env", ["FOUNTAIN_CONVERSATION_ID=" <> _, "gemini", "--acp"], opts}
+      assert_receive {:spawned, "env", ["FOUNTAIN_CONVERSATION_ID=" <> _, "gemini", "--acp"],
+                      opts}
+
       # /home/sprite would reintroduce the EACCES noise this workspace exists
       # to avoid, and gemini walks up from cwd looking for a .git.
       assert opts[:dir] == "/tmp/gemini-workspace"
