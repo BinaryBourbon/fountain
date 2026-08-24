@@ -1,7 +1,7 @@
 ---
 type: ADR
 title: "A persistent sandbox per agent, offered beside the sandbox-per-conversation model"
-description: "Sketch only — nothing here is built. Adds a second sandbox mode, chosen per launch and defaulted per agent, where one long-lived sandbox serves many conversations of an agent (the 'grokbot' shape); keeps the per-conversation mode as the default; names the seven places the code hard-codes 1:1 today. Companion design note: #805."
+description: "Sketch only — nothing here is built. Adds a second sandbox mode, chosen per launch and defaulted per agent, where one long-lived sandbox serves many conversations of an agent (the 'grokbot' shape), with turns running concurrently where the runtime allows (amended 2026-08-23); keeps the per-conversation mode as the default; names the seven places the code hard-codes 1:1 today. Companion design note: #805."
 tags: [sandbox, lifecycle, conversations, product]
 status: draft
 adr: "0023"
@@ -20,6 +20,22 @@ code, not a list of fixed defects.
 **Date:** 2026-08-17 (amended 2026-08-18: mode is chosen per launch and
 defaulted per agent, not fixed per agent; the machine carries a lease/refcount;
 `sandbox_id` attach — see #805 for the holistic picture this converges on)
+
+**Amended 2026-08-23 — turns run concurrently, not serialized.** The target
+is a computer with several agent processes on it at once, each its own
+conversation with its own transcript — not the "room" of #1043 (a shared
+transcript, many agents), and not the one-turn-at-a-time lease the 2026-08-18
+draft proposed. A survey of `runtimes/acp.ex` and `runtimes/layout.ex` found
+that the shared-cwd / shared-sqlite / shared-port problems the lease existed
+to sidestep belong to two runtimes, not to the machine: claude and codex run
+one adapter process per connection with sessions keyed by explicit id and
+coexist on one disk the way several terminals do on a laptop; opencode starts
+an HTTP server per process over one sqlite store, and gemini's session store
+is consolidated at the end of every turn. So step 4 is now a per-runtime turn
+capacity enforced by a small per-sandbox process that serializes *machine
+operations* only, and the open questions on concurrency, ceiling, identity
+key and attach are resolved below. The same amendment records where this
+cuts across #817, whose approved plan assumed one adapter per sandbox.
 
 **Renumbered 2026-08-21:** this ADR was drafted as 0021 on 2026-08-18 and lost
 the number to [0021](0021-oauth-for-first-party-apps.md) (OAuth for first-party
@@ -70,7 +86,7 @@ with the other:
 |---|---|---|
 | Sandbox lifetime | = the conversation's | = the agent's (until reset/deleted) |
 | Cross-conversation memory | none | shared disk, shared runtime session store |
-| Concurrency | N conversations = N sandboxes, fully parallel | one machine; turns serialized (see below) |
+| Concurrency | N conversations = N sandboxes, fully parallel | one machine; turns concurrent where the runtime allows, one at a time where it does not (step 4) |
 | Best for | fan-out, one-shot tasks, untrusted inputs | assistants, channel bots, "my agent's computer" |
 | Blast radius of a bad turn | one conversation | the agent's whole state |
 
@@ -172,44 +188,95 @@ command line, or provider metadata where the adapter supports it), and make
 reattach filter `list_sessions` by it instead of taking the head. Also correct
 for ephemeral mode (it closes a latent bug that only 1:1 hides).
 
-**4. Serialize turns per home, and make the lease the machine's refcount.** One
-machine, one agent process at a time — this is the grokbot semantics and it
-sidesteps every shared-cwd, shared-sqlite, shared-port problem in one move.
-Mechanism: a per-sandbox lease (`Horde.Registry` keyed by
-`{:sandbox, sandbox_id}`, or a small `SandboxServer` that hands out one turn
-slot). The same registry answers "does any conversation hold this machine
-right now?", which is what every lifecycle decision in (5) needs — park, ceiling
-and destroy become **machine operations guarded by the lease**, not per-row
-flips made on one conversation's say-so. A ConversationServer that wants to `kick_turn`
-on a persistent home acquires the lease or queues; queued turns surface as a
-`queued` stage in the log so the UI/Buzz can show "waiting for the agent".
-Bound the queue (per-home depth, e.g. 8) and reject beyond it. Concurrent turns
-on one home are explicitly out of scope for v1 — if we ever want them, they
-need per-conversation cwd subdirs, and that gives up the shared-workspace
-property that is the point.
+**4. Turns run concurrently, up to a per-runtime capacity; a per-sandbox
+process owns the machine.** *(Rewritten 2026-08-23; the 2026-08-18 text
+serialized every turn behind a lease.)* Several conversations on one home run
+their turns at the same time, each with its own adapter process and its own
+transcript — the laptop shape, several terminals in one repo. What actually
+collides when two adapter processes start on one disk is a property of the
+runtime, not of the machine:
+
+| runtime | process model | shared state on disk | two at once |
+|---|---|---|---|
+| claude | `claude-agent-acp` per connection, spawns its own `claude` | `~/.claude/projects/<cwd>/<session>.jsonl` keyed by explicit id; `settings.local.json` grants; one `CLAUDE.md` | fine |
+| codex | `codex-acp` per connection, App Server per process | rollouts keyed by session id under `~/.codex` | fine |
+| opencode | `opencode acp` starts a local HTTP server per process | one sqlite store under `/tmp/.config/opencode`, one port | no — port and writer collision |
+| gemini | `gemini --acp` per process | a store that erases a session while loading it; `SessionStore.consolidate` runs at the end of every turn as the workaround | no — a second live session during consolidation is the collision the workaround exists to avoid |
+
+So `Runtimes.ACP.concurrency(runtime)` is unbounded for claude and codex and
+1 for opencode and gemini. Below capacity a turn simply starts. **At capacity
+the turn is refused** with a named error (`sandbox_at_capacity`), not queued:
+a queue is the whole lease this amendment removes, and it would only ever be
+exercised for the two runtimes the mode is not built for. Working-tree
+contention between two claude processes on one repo is the user's, as it is
+on a laptop; the audit trail records which conversation ran which turn, not
+which wrote which file (#805 already concedes this).
+
+Mechanism: a per-sandbox `SandboxServer`, registered in `Horde.Registry` under
+`{:sandbox, sandbox_id}`, that is a lock on **machine operations** and a
+counter — not a scheduler. It serializes provision, resume, park, destroy and
+re-provision (two prompts waking one suspended machine resume it once, and
+the second waits, as #803 already makes a prompt wait for a pending sandbox's
+server); it holds the refcount of live conversations and which are mid-turn;
+it keeps the idle and ceiling clock over the union of their activity
+(`SandboxReaper.last_activity_at/1` already computes exactly this); and it
+enforces the capacity above at turn start. Each `ConversationServer` keeps its
+own adapter, its own callback key and its own transcript, and asks the
+machine for a turn slot instead of flipping the row. The first cut is small —
+registry entry, refcount, clock, capacity check, the guarded terminate and
+park of step 5 — and the handle stays in each `ConversationServer` because
+`Fountain.Sandbox.build_handle/2` is pure and every server can rebuild it
+from the row; the handle and the sprite env move into the machine process
+later.
+
+**Where this cuts across #817.** #817's approved plan (2026-08-22, session-
+scoped ACP connections) states as its invariant 2 "at most one adapter
+connection per sandbox, cluster-wide", registered under this same
+`{:sandbox, sandbox_id}` key, and adds a "reap on reattach" step that stops
+every live ACP session on the sandbox when the reattaching server has no
+running turn. Both are one-process-per-computer assumptions: the first is the
+opposite of this mode, and the second would let conversation A's deploy
+reattach kill conversation B's turn in flight. The invariant becomes *one
+adapter per conversation* — which the existing conversation registry already
+provides — the registry key belongs to the `SandboxServer`, and the reap is by
+conversation tag (step 3). Everything else in #817 composes: each
+conversation's adapter stays alive between its turns, background follow-ups
+land on their own transcript, and codex's session grant survives per
+conversation. Step 3 therefore lands before #817's PR 3; its PRs 1 and 2 are
+unaffected.
 
 **5. Split the lifecycle by mode.**
 
 | Event | ephemeral (unchanged) | persistent |
 |---|---|---|
 | conversation terminated | destroy sprite, row `terminated` | revoke that conversation's callback key; sandbox untouched |
-| idle timeout | park row `suspended` | park only when **no** conversation on the home has a live server (registry check), else no-op |
-| max lifetime (continuous run) | destroy | **force-suspend**: kill the running exec sessions, park the row. Disk is the product; destroying it on a busy-ceiling would defeat the mode. State honestly in the stage message that the in-flight turn was cut. |
+| idle timeout | park row `suspended` | park only when **no** conversation on the home is mid-turn and the newest activity across all of them is past the timeout (the `SandboxServer` decides); parking closes every conversation's adapter |
+| max lifetime (continuous run) | destroy | **out of scope here — the ceiling itself is going away.** Decided 2026-08-23: a tenant who wants a machine running 24/7 is not something to stop, so the continuous-run ceiling (0017) is to be removed for every mode in its own change, not solved by this ADR. Until that lands, a home at the ceiling must not be destroyed (the disk is the product, #936); force-suspend, with every cut conversation's stage message saying so, is the interim behaviour. |
+| conversation terminated while others run | n/a | revoke the key, conversation `terminated`; the sprite is destroyed only when this was the last live conversation — the guard `_unsafe_sandbox_held_by_other?` that the no-server path already applies (`conversation_server.ex:245`) extends to the live `:terminate_conv` path |
 | provision failure | row `failed`, conv `failed` | row `failed`, conv `failed`; next conversation on the identity re-creates the home |
 | agent deleted / vault or env changed | n/a | destroy the home (identity no longer exists); a "reset home" action does the same on demand |
 | reaper abandoned pass | as today | as today — already N-aware |
 
-**6. Quota semantics stay "sandboxes", plus a turn bound.** A home counts as one
-toward `max_concurrent_sandboxes` while `ready`; serialization (4) means one
-home = at most one running turn, so the cap still bounds compute. Add
-`max_conversations_per_home` only if the queue depth from (4) proves
-insufficient.
+**6. The slot is the computer; the meter is two numbers.** *(Decided
+2026-08-23.)* A home counts as one toward `max_concurrent_sandboxes` while
+`ready`, exactly as `Quotas.active_sandbox_count/2` counts today, and there is
+no per-sandbox turn ceiling: four turns on one machine is one slot, on
+purpose. That makes a slot more compute than it was under 1:1, and the plans
+(0026) sell "concurrent sandboxes", so the sentence stays true. What changes
+is the meter. `SandboxUsage.merge_intervals/1` unions turn intervals ("two
+conversations prompting on one sandbox at the same moment is one busy
+sandbox"); that is right for **sandbox busy time** and wrong for **turn
+hours**, which is the plan's included allowance (#1016). Under concurrency
+turn hours **sum per turn** while sandbox busy time **stays a union** — two
+numbers, both computed from `turns`, and every usage surface labels which is
+which.
 
-**7. Runtimes.** claude and codex work as-is on a shared cwd once turns are
-serialized (sessions resumed by explicit id). opencode works once serialized
-(single db, single port). gemini stays excluded from persistent mode until it
-is on the ACP path (#659) — its legacy `--resume` is exactly the guess that
-breaks. Enforce with `Runtimes.ACP.supported_runtimes/0` at agent save time.
+**7. Runtimes.** claude and codex run concurrently on a shared cwd, sessions
+resumed by explicit id. opencode and gemini have capacity 1 (step 4): a home
+of either runtime takes one turn at a time and refuses a second. gemini is on
+the ACP path since #659, so its exclusion from the mode is lifted; its legacy
+`--resume` guess is gone (#941). Enforce with `Runtimes.ACP.concurrency/1` at
+turn start and `Runtimes.ACP.supported_runtimes/0` at agent save time.
 
 **8. Surface — every launch door, the same shape.** `PATCH /api/agents/:id`
 gets `sandbox_mode` (the default); the agent form gets a radio with the table
@@ -243,8 +310,8 @@ to show something a conversation-centric view cannot.
 - **Fan-out and persistence compose, per launch.** Children spawned via the
   `fountain` skill go through `start_conversation`, so a persistent parent can
   fan out ephemeral children (fresh disks, parallel) or, by passing its own
-  `sandbox_id`, children onto its home (shared disk, serialized) — the choice
-  is the launch's, not the agent's. Two agents can never share a home
+  `sandbox_id`, children onto its home (shared disk, running at once) — the
+  choice is the launch's, not the agent's. Two agents can never share a home
   (identity includes `agent_id`), so per-agent skill mounts at the
   runtime-global skills path do not collide.
 - **Steps 2 and 3 improve the ephemeral mode on their own** and should ship
@@ -255,19 +322,27 @@ to show something a conversation-centric view cannot.
   ADR anticipated: homes accumulate one sprite per agent identity per tenant,
   forever. Still treated as zero until it isn't; the retention knob 0017 names
   is the answer.
-- **Metering.** A home that stays `ready` under back-to-back turns from many
-  conversations bills as one sandbox. That is the intended cost shape but it
-  is a different plan shape from "runs"; billing may want to price the mode
-  (always-on agent) rather than the sandbox-minutes.
+- **Metering.** A home that stays `ready` under back-to-back or overlapping
+  turns from many conversations bills as one sandbox. That is the intended
+  cost shape but it is a different plan shape from "runs"; billing may want
+  to price the mode (always-on agent) rather than the sandbox-minutes. Turn
+  hours sum per turn regardless (step 6), so the allowance still sees every
+  turn.
 
 ## Alternatives considered
 
 - **Replace the per-conversation model outright.** No — fan-out and
   untrusted-input jobs want fresh disks; the two are different products.
-- **Per-conversation cwd subdirectories inside one sandbox, concurrent turns.**
-  Keeps parallelism but gives up the shared workspace that is the whole reason
-  people want this, and reintroduces the shared-`~/.claude`/sqlite/port
-  problems. Possible later as a third mode; not the first one.
+- **Serialize every turn behind a per-home lease** (the 2026-08-18 draft of
+  step 4). Sidesteps the shared-sqlite and shared-port problems in one move,
+  but the survey in step 4 shows those belong to opencode and gemini alone,
+  and serializing claude — the runtime the mode is for — would make one
+  computer slower than two. Replaced 2026-08-23 by per-runtime capacity.
+- **Per-conversation cwd subdirectories inside one sandbox.** Gives up the
+  shared workspace that is the whole reason people want this. Not needed for
+  concurrency, which the shared cwd supports for claude and codex. A
+  per-launch `cwd` (a different repo on the same computer) is a natural later
+  addition and needs nothing here.
 - **A shared sandbox per *user* (one machine for all agents).** Skill mounts,
   runtime configs and vault credentials from different agents would collide on
   one disk; the identity key would have to be the user and every credential
@@ -285,30 +360,53 @@ to show something a conversation-centric view cannot.
 - Should a persistent home wake on **any** inbound (Buzz mention at 3am) or
   only on the owner's turns? Today wake is per prompt; a home makes "the
   agent is asleep" a visible product state.
-- Ceiling behaviour: force-suspend as proposed, or exempt homes from the
-  continuous-run ceiling entirely (a chatty channel bot may never be idle for
-  four hours)?
-- Whether the identity key should ignore `environment_id` (one home per agent,
-  environment override refused in persistent mode) — simpler mental model,
-  fewer homes, at the cost of #783's flexibility. Put differently (#805):
-  should a home be re-materializable in place with a different environment or
-  vault, or is that always a different machine?
 - Pricing: mode-based (always-on agent) vs sandbox-minutes as today (#798).
-- Concurrency: is serialized-turns-per-home acceptable for v1, or does the
-  target user expect parallel turns on one machine?
-- Should `sandbox_id` attach be allowed onto a home that is currently
-  `suspended` (wake it) — probably yes — and onto one whose agent has since
-  changed runtime (probably refuse; the disk was shaped by the old one)?
+
+### Resolved 2026-08-23
+
+- **Concurrency.** Parallel turns on one machine, per runtime capacity
+  (step 4). Serialized-per-home was not what the target user wanted.
+- **Ceiling.** The 24 h continuous-run ceiling is going away for every mode,
+  in its own change — a tenant who wants a machine up 24/7 is not stopped.
+  Not this ADR's work. Interim: a home at the ceiling is suspended, never
+  destroyed (step 5).
+- **Identity key.** `(user_id, agent_id, environment_id, vault_id)` stays.
+  The disk is materialized from the environment and vault at provision —
+  env vars, packages, cloned repos, setup scripts — so a machine built from
+  one environment is not a machine built from another, and re-materializing
+  in place is not built. It is also the key channel resume already uses
+  (#727, #783).
+- **Attach.** `sandbox_id` onto a `suspended` home wakes it, under the quota
+  lock. Onto a home whose launch names a different environment, vault or
+  runtime: refused, the disk was shaped by the other one. Onto a home at
+  capacity (opencode, gemini): refused with `sandbox_at_capacity`.
+- **The cap and the meter.** The slot is the computer; turn hours sum per
+  turn, sandbox busy time stays a union (step 6).
 
 ## Gates (if accepted)
 
-1. Per-turn identity env + session tagging (steps 2–3) — ships alone,
-   ephemeral-only benefit, no schema change.
-2. `sandboxes.agent_id/vault_id/mode` + partial unique index + `find_or_create_home`.
-3. Per-home turn lease + queued stage.
-4. Lifecycle split (terminate / park / ceiling / reset / agent-delete).
-5. Agent default + per-launch `sandbox_mode` / `sandbox_id` on every door
-   (API, CLI, ACP `_meta`, Buzz provision, `fountain` skill), UI copy, docs;
-   gemini exclusion.
-6. Live smoke: two Buzz channels on one persistent agent, prove shared disk
-   and correct per-channel transcripts under interleaved turns.
+1. Per-process identity env + session tagging (steps 2–3) — ships alone,
+   fixes today's head-of-list reattach, no schema change. Lands before #817's
+   PR 3, which needs the tag for its reap.
+2. `SandboxServer`: machine-operation lock, refcount, idle/ceiling clock,
+   `Runtimes.ACP.concurrency/1` enforced at turn start; the guarded live
+   terminate and the union-clock park (steps 4–5). Its registry is the one
+   #817 planned, with the per-conversation invariant.
+3. `sandbox_id` attach on `POST /api/conversations` with the attach rules
+   above, `sandboxes.agent_id/vault_id`, and `GET /api/sandboxes` (+ `/:id`:
+   conversations on it, which are mid-turn). `Team.open_fresh_conversation`
+   re-based on it. From here two claude conversations run at once on one
+   sprite.
+4. The meter split: turn hours summed per turn beside the unioned sandbox
+   busy time in `SandboxUsage`, and the usage surfaces labelled.
+5. Wake re-provision moves every co-tenant: `create_fresh_sandbox_and_start/4`
+   repoints every conversation of the old row in one update, clearing each
+   `runtime_session_id` (#778).
+6. `sandboxes.mode` + partial unique index + `find_or_create_home`; agent
+   default + per-launch `sandbox_mode` on every door (API, CLI, ACP `_meta`,
+   Buzz provision, `fountain` skill), UI copy, docs; reset / agent-delete.
+7. Live smoke: two claude conversations on one sprite, both mid-turn, a
+   deploy in the middle — each reattaches to its own process, neither
+   transcript takes the other's output, terminating one leaves the other
+   running, idle park waits for both; then two Buzz channels on one
+   persistent agent under interleaved turns.
