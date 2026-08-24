@@ -16,6 +16,22 @@ upgrade, is in
 
 ## [Unreleased]
 
+### Fixed
+
+- **A background task the agent starts survives the turn that started it.**
+  Fountain closed the runtime connection at every `end_turn`, and the adapter
+  treats that connection as the session, so a `Monitor`, a `run_in_background`
+  shell or a `ScheduleWakeup` that Claude Code left running was killed the
+  moment the turn ended, and codex's "Allow for Session" grant was thrown away
+  before the next turn. The connection now lives for the sandbox wake, not one
+  turn: after a turn it waits idle for the next prompt on the same session — no
+  second handshake, no `session/resume` — and closes only when the sandbox
+  stops being the conversation's (idle park, ceiling, terminate, release,
+  shutdown). A follow-up the agent narrates after its turn ends lands on the
+  transcript as an `autonomous` turn. Across a deploy a follow-up in flight is
+  still lost, and its orphaned adapter session is reaped by the conversation's
+  tag so a co-tenant on a shared sandbox is untouched. ADR 0014, #817.
+
 ### Added
 
 - **Turns carry `origin`.** `user` for a prompt somebody sent, `autonomous`
