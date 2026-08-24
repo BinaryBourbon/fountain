@@ -3053,6 +3053,11 @@ export interface components {
             image_count?: number;
             /** Format: date-time */
             inserted_at?: string;
+            /**
+             * @description Who opened the turn: `user` for a prompt somebody sent, `autonomous` for a turn the server opened for a background cycle the agent ran after its prompt was answered (#817).
+             * @enum {string}
+             */
+            origin?: "user" | "autonomous";
             prompt: string;
             /** Format: date-time */
             started_at?: string | null;

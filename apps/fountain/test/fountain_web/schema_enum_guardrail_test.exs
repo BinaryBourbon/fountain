@@ -114,6 +114,7 @@ defmodule FountainWeb.SchemaEnumGuardrailTest do
     {FountainWeb.Schemas.SandboxConversation, "status"} => {Conversation, :statuses},
     {FountainWeb.Schemas.SandboxConversation, "runtime"} => {Agent, :runtimes},
     {FountainWeb.Schemas.Turn, "status"} => {Turn, :statuses},
+    {FountainWeb.Schemas.Turn, "origin"} => {Turn, :origins},
     {FountainWeb.Schemas.Teammate, "presence.state"} =>
       {FountainWeb.TeamPresenter, :presence_states},
     {FountainWeb.Schemas.Teammate, "preview.kind"} => {FountainWeb.TeamPresenter, :preview_kinds},

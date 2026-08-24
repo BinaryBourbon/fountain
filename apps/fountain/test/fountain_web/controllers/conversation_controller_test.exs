@@ -164,6 +164,17 @@ defmodule FountainWeb.ConversationControllerTest do
       assert turn.id in ids
     end
 
+    test "each turn says who opened it (#817)", %{conn: conn, user: user, raw_key: raw_key} do
+      conv = insert_conversation(user_id: user.id)
+      insert_turn(conv, [])
+      insert_turn(conv, origin: "autonomous", prompt: "(background task follow-up)")
+
+      conn = conn |> authed_with_key(raw_key) |> get("/api/conversations/#{conv.id}/turns")
+
+      origins = conn |> json_response(200) |> Map.fetch!("data") |> Enum.map(& &1["origin"])
+      assert Enum.sort(origins) == ["autonomous", "user"]
+    end
+
     test "carries each turn's usage and the conversation's usage_total (#827)", %{
       conn: conn,
       user: user,

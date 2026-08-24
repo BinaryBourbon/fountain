@@ -18,6 +18,13 @@ upgrade, is in
 
 ### Added
 
+- **Turns carry `origin`.** `user` for a prompt somebody sent, `autonomous`
+  for a turn the server opens for a background cycle the agent runs after
+  its prompt was answered — a `Monitor` firing, a scheduled wake-up. On
+  `GET /api/conversations/:id/turns` and in the SDK (0.1.9). Part 2 of 3
+  for #817: additive and inert, nothing writes `autonomous` until part 3
+  moves the ACP connection to the wake.
+
 - **The last three launch doors take `sandbox_mode` and `sandbox_id`.**
   `fountain acp` gets `--sandbox-mode` and `--sandbox` for every session it
   opens, and a client may name either per session in `session/new` `_meta`

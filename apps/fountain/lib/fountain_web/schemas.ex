@@ -498,6 +498,16 @@ defmodule FountainWeb.Schemas do
           type: :string,
           enum: ~w(pending running completed failed interrupted)
         },
+        # No `default:` here on purpose: one would make the generated TS
+        # field non-optional (see sdk/typescript notes).
+        origin: %Schema{
+          type: :string,
+          enum: ~w(user autonomous),
+          description:
+            "Who opened the turn: `user` for a prompt somebody sent, `autonomous` " <>
+              "for a turn the server opened for a background cycle the agent ran " <>
+              "after its prompt was answered (#817)."
+        },
         exit_code: %Schema{type: :integer, nullable: true},
         started_at: %Schema{type: :string, format: :"date-time", nullable: true},
         ended_at: %Schema{type: :string, format: :"date-time", nullable: true},

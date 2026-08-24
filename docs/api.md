@@ -361,6 +361,11 @@ A turn carries `image_count`. The image endpoint takes a `position` into that
 count, which starts at zero, and returns the raw bytes with the stored media
 type.
 
+A turn also carries `origin`. It is `user` for a prompt that somebody sent.
+It is `autonomous` for a turn that the server opened for a background cycle
+of the agent, after the answer to its prompt. In that case `prompt` holds a
+marker, not the words of a person.
+
 `sandbox_id` attaches the new conversation to a sandbox you already have.
 Fountain then provisions nothing. The sandbox must be `ready` or `suspended`,
 and Fountain must have built it for the same agent, environment and vault.
