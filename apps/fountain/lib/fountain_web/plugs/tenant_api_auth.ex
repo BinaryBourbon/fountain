@@ -4,8 +4,8 @@ defmodule FountainWeb.Plugs.TenantAPIAuth do
   looks up the API key, loads the owning user, and sets
   `conn.assigns.current_user`.
 
-  Updates `last_used_at` asynchronously via `Task.async` so it never blocks
-  the request.
+  Updates `last_used_at` in an unlinked task under `Fountain.TaskSupervisor`,
+  so the stamp never blocks the request and cannot take it down.
 
   Returns 401 JSON on failure. The response body includes a machine-readable
   `reason` so clients (especially in-sprite agents holding a rotated
@@ -30,7 +30,13 @@ defmodule FountainWeb.Plugs.TenantAPIAuth do
     with [auth_header] <- get_req_header(conn, "authorization"),
          "Bearer " <> raw_key <- auth_header,
          {:ok, user, api_key} <- Accounts.authenticate_api_key(raw_key) do
-      Task.async(fn -> Accounts.touch_api_key(raw_key) end)
+      # Unlinked and supervised (#1040). `Task.async` linked this to the conn
+      # process and nothing ever awaited it, so a pool blip stamping a column
+      # nothing reads on the hot path could kill a request that had already
+      # authenticated — and, under the SQL Sandbox, the test that made it.
+      Task.Supervisor.start_child(Fountain.TaskSupervisor, fn ->
+        Accounts.touch_api_key(raw_key)
+      end)
 
       conn
       |> assign(:current_user, user)

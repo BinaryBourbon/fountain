@@ -392,6 +392,16 @@ Mimic is available. Prefer integration tests through real changesets over heavy 
 - **Don't reach for `_unsafe_*` without established ownership.** These skip tenant scoping; the legitimate caller shapes (including the scoped-parent-fetch-then-`_unsafe_`-child pattern) are in the tenant isolation section above.
 - **Don't lower the test pool size below 20.** Pool exhaustion causes flaky timeouts.
 - **Don't remove `:ueberauth_test_mode` or `:rate_limit_test_isolation` from `config/test.exs`.** They're correctness guards, not performance flags.
+- **Don't start fire-and-forget work with `Task.async`.** It *links* to the
+  caller and nothing awaits it, so a transient failure in a write nobody wants
+  the result of takes the request process down — and under the SQL Sandbox that
+  process is the test, which is how a stamp on `last_used_at` failed a
+  scheduling test that had already passed (#1040). Use
+  `Task.Supervisor.start_child(Fountain.TaskSupervisor, fun)`: unlinked,
+  supervised, and a crash is logged. `DataCase` waits for the tasks a test
+  started before stopping the sandbox owner, so the write lands rather than
+  having its connection pulled away. `Task.async` is right where the caller
+  keeps the ref and handles the reply (`Analytics.Sink`).
 - **Don't push directly to `main`.** All changes go through PRs; the CI gate must pass.
 - **Don't add `async: false` to tests unless the test genuinely requires it** (e.g. global ETS state). The SQL Sandbox handles DB isolation.
 

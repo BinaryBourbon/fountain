@@ -1564,6 +1564,8 @@ defmodule Fountain.Conversations do
            create_conversation(%{
              sandbox_id: sandbox.id,
              agent_id: agent.id,
+             # Ownership: agent came from the scoped get_agent above.
+             agent_version_id: Agents._unsafe_current_version_id(agent.id),
              vault_id: vault_id,
              environment_id: env_id,
              user_id: user_id,

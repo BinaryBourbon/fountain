@@ -74,6 +74,8 @@ nav:
       - fountain-team: catalog/mcp-servers/fountain-team.md
       - fountain-buzz: catalog/mcp-servers/fountain-buzz.md
       - fountain-comms: catalog/mcp-servers/fountain-comms.md
+      - Agents: catalog/agents/index.md
+      - fountain-contributor (agent): catalog/agents/fountain-contributor.md
   - Sandbox providers:
       - The contract: integrations/sandbox-contract.md
       - Sprites: integrations/sprites.md

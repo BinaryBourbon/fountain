@@ -15,7 +15,7 @@ defmodule Fountain.Accounts do
   - `create_api_key/2` — issue a new API key (returns the plaintext once)
   - `revoke_api_key/2` — permanently invalidate a key
   - `get_user_by_api_key/1` — authenticate a raw API key string
-  - `touch_api_key/1` — update last_used_at (called async after auth)
+  - `touch_api_key/1` — update last_used_at (best-effort, off the request)
   - `upsert_oauth_user/3` — find-or-create user from OAuth callback
   """
 
@@ -786,8 +786,15 @@ defmodule Fountain.Accounts do
   end
 
   @doc """
-  Update `last_used_at` for the API key matching `raw_key`. Intended to be called
-  asynchronously (via `Task.async`) so it does not block the request.
+  Update `last_used_at` for the API key matching `raw_key`.
+
+  Called from an unlinked task under `Fountain.TaskSupervisor` (see
+  `FountainWeb.Plugs.TenantAPIAuth`) so it does not block the request, and
+  best-effort *by rescuing*, the position `Audit.record/1` takes for the same
+  reason: a failed stamp on a column nothing reads on the hot path is a log
+  line, never the reason an already-authenticated request fails (#1040).
+
+  Always returns `:ok`.
   """
   @spec touch_api_key(String.t()) :: :ok
   def touch_api_key(raw_key) when is_binary(raw_key) do
@@ -798,6 +805,10 @@ defmodule Fountain.Accounts do
     |> Repo.update_all(set: [last_used_at: now])
 
     :ok
+  rescue
+    e ->
+      Logger.warning("touch_api_key: last_used_at stamp failed: #{inspect(e)}")
+      :ok
   end
 
   ## Internal helpers

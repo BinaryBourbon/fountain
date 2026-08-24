@@ -348,7 +348,15 @@ defmodule Fountain.Exports do
         "allowed_environment_ids" => agent.allowed_environment_ids,
         "environment_id" => agent.environment_id,
         "created_at" => agent.inserted_at,
-        "updated_at" => agent.updated_at
+        "updated_at" => agent.updated_at,
+        # Config history is tenant data holding full values (unlike the audit
+        # trail), so an export without it would be incomplete.
+        "versions" =>
+          agent.id
+          |> Agents.list_agent_versions(user_id)
+          |> Enum.map(fn v ->
+            %{"version" => v.version, "config" => v.config, "created_at" => v.inserted_at}
+          end)
       }
     end)
   end

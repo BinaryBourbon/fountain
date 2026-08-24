@@ -30,6 +30,13 @@ defmodule Fountain.Application do
          repos: Application.fetch_env!(:fountain, :ecto_repos), skip: skip_migrations?()},
         {DNSCluster, query: Application.get_env(:fountain, :dns_cluster_query) || :ignore},
         {Phoenix.PubSub, name: Fountain.PubSub},
+        # Fire-and-forget work started from a request and never awaited: the
+        # `last_used_at` stamp on an API key, the password-reset email. These
+        # used to be `Task.async`, which *links* to the caller — so a transient
+        # failure in a write nobody wants the result of could take down the
+        # request process that started it, or the test that made the request
+        # (#1040). Supervised and unlinked, a crash here is a log line.
+        {Task.Supervisor, name: Fountain.TaskSupervisor},
         FountainWeb.Plugs.RateLimit.Sweeper,
         Fountain.Conversations.Redaction,
         Fountain.FeatureFlags.Cache,

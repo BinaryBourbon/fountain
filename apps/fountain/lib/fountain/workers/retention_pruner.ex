@@ -28,6 +28,11 @@ defmodule Fountain.Workers.RetentionPruner do
   history, and `turn_images` is deliberately absent — those rows are owned by
   their turn and go when the conversation does.
 
+  `agent_versions` is absent on purpose too: a version shares its agent's
+  lifetime (FK cascade) rather than aging out — a version older than every
+  conversation that ran it is still the only record of what the config was,
+  and the table only grows by one row per config edit.
+
   `admin_audit_events` is also absent, **on purpose** (#452): it is the
   privilege trail — who suspended, comped, deleted or looked at whose account
   — and it only gains a row per manual admin action, so it stays small for

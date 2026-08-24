@@ -5,6 +5,13 @@ defmodule Fountain.AccountsAdditionalTest do
   alias Fountain.Accounts.ApiKey
 
   import Fountain.Factory
+  import ExUnit.CaptureLog
+
+  # `assert_receive`'s 100 ms default is a bet on how fast another process gets
+  # scheduled, and a loaded CI runner loses it: the raise, rescue and log line
+  # below took longer than that on partition 6 and failed a test written to
+  # catch a timing flake. Nothing here waits the full window when it passes.
+  @receive_timeout 5_000
 
   # ── get_user_by_email/1 ─────────────────────────────────────────────────────
 
@@ -356,6 +363,25 @@ defmodule Fountain.AccountsAdditionalTest do
     test "returns :ok silently for an unknown key (no error)" do
       fake_raw = "ftn_" <> String.duplicate("b", 64)
       assert :ok = Accounts.touch_api_key(fake_raw)
+    end
+
+    # #1040: best-effort by rescuing, the position `Audit.record/1` takes. A
+    # process with no checked-out connection is what a pool blip looks like
+    # from inside the task, and the raise it produces must not escape.
+    test "returns :ok when the write cannot reach the database" do
+      user = insert_verified_user()
+      {:ok, {_key, raw_key}} = Accounts.create_api_key(user.id, "unreachable")
+      test_pid = self()
+
+      log =
+        capture_log(fn ->
+          # spawn/1, not Task.async: no `$callers`, so the sandbox has no
+          # connection to hand this process and `Repo.update_all` raises.
+          spawn(fn -> send(test_pid, {:touched, Accounts.touch_api_key(raw_key)}) end)
+          assert_receive {:touched, :ok}, @receive_timeout
+        end)
+
+      assert log =~ "touch_api_key: last_used_at stamp failed"
     end
   end
 

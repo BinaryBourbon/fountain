@@ -1,0 +1,159 @@
+# A Fountain agent that contributes to Fountain itself, configured to do what
+# a maintainer's laptop session does: the pinned toolchain, a database, the
+# full local gate, and one pull request at the end.
+#
+# Apply it, then start a conversation with your own vault attached:
+#
+#   fountain apply -f examples/agents/fountain-contributor/manifest.yml
+#   fountain run fountain-contributor --vault fountain-contributor-me \
+#     -p "Fix issue #NNN"
+#
+# Read the README next to this file before the first apply — the vault below
+# needs your credentials, and the first conversation pays for a from-source
+# Erlang build (subsequent ones warm-start from the checkpoint).
+apiVersion: fountain.dev/v1
+kind: Environment
+metadata:
+  name: fountain-contributor
+spec:
+  networking_type: unrestricted
+  packages:
+    apt:
+      - build-essential
+      - autoconf
+      - m4
+      - libncurses-dev
+      - libssl-dev
+      - unzip
+      - jq
+      - ripgrep
+      - postgresql
+      - postgresql-contrib
+      - python3
+  env_vars:
+    LANG: C.UTF-8
+    DATABASE_URL: postgres://postgres:postgres@localhost:5432/fountain_dev
+  repositories:
+    - url: https://github.com/BinaryBourbon/fountain
+      mount_path: /workspace/fountain
+      secret_key: GITHUB_TOKEN
+  setup_script: |
+    set -euxo pipefail
+
+    # The platform gives up on a setup step after 120s of *silence*, not
+    # 120s of runtime. The OTP build and the dialyzer PLT both go quiet for
+    # longer than that, so keep a ticker printing for the whole script.
+    (while true; do echo "[keepalive] $(date -u +%H:%M:%S)"; sleep 60; done) &
+    KEEPALIVE=$!
+    trap 'kill "$KEEPALIVE" 2>/dev/null || true' EXIT
+
+    # Postgres: apt installs a cluster but starts nothing in a sandbox, and
+    # the image's Debian release picks the major version — ask, don't assume.
+    PG_MAJOR=$(ls /etc/postgresql | sort -n | tail -1)
+    sudo pg_ctlcluster "$PG_MAJOR" main start
+    sudo -u postgres psql -c "ALTER ROLE postgres WITH LOGIN SUPERUSER PASSWORD 'postgres'"
+
+    # gh, for the pull request at the end of the job.
+    curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+      | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
+    echo "deb [signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
+      | sudo tee /etc/apt/sources.list.d/github-cli.list
+    sudo apt-get update -qq && sudo apt-get install -y -qq gh
+
+    # The pinned toolchain. mise reads .tool-versions from the checkout, so
+    # this builds the exact Erlang/Elixir CI runs. Slow once; the checkpoint
+    # absorbs it.
+    curl -fsSL https://mise.run | sh
+    export PATH="$HOME/.local/bin:$PATH"
+    echo 'eval "$(~/.local/bin/mise activate bash)"' >> ~/.bashrc
+    cd /workspace/fountain
+    mise install
+    mise use -g go@1.26.0
+    eval "$(mise env -s bash)"
+
+    mix local.hex --force && mix local.rebar --force
+    mix deps.get
+    mix setup
+    MIX_ENV=test mix ecto.create
+    MIX_ENV=test mix ecto.migrate
+
+    # The slow half of `mix precommit`, paid once into the checkpoint.
+    MIX_ENV=dev mix dialyzer --plt
+    MIX_ENV=test mix compile
+
+    # The docs and decisions gates, pinned the way .github/workflows/ci.yml
+    # pins them. docs-style.py needs only python3; vale is a single binary.
+    GOBIN="$HOME/.local/bin" go install github.com/okfcli/okf/cmd/okf@latest
+    curl -fsSL -o /tmp/vale.tar.gz \
+      https://github.com/stuffbucket/vale/releases/download/v0.15.0/vale_0.15.0_linux_amd64.tar.gz
+    echo "c6b85fd4da8ca2b0f631b17556c3f38bc3f30e9ce636517c00ad507c522c2a5c  /tmp/vale.tar.gz" | sha256sum -c -
+    tar -xzf /tmp/vale.tar.gz -C "$HOME/.local/bin" vale
+---
+# Your per-person overlay. Attach it at launch (`--vault`); its values win
+# over the environment's on key collision, and — measured on every provider —
+# over the platform's own defaults, which is what makes the git identity
+# below effective.
+apiVersion: fountain.dev/v1
+kind: Vault
+metadata:
+  name: fountain-contributor-me
+spec:
+  secrets:
+    # Clones the repo, authenticates gh, opens the pull request. `${VAR}`
+    # substitutes from your environment or from `--var` at apply time; a
+    # secret-manager ref like `op://Private/github/token` resolves through
+    # the 1Password CLI instead, if you keep it there — see the README.
+    GITHUB_TOKEN: ${GITHUB_TOKEN}
+    GH_TOKEN: ${GITHUB_TOKEN}
+    # Not secret, but the vault is the only per-person overlay we have, and
+    # these must override the platform default (`AoD <aod@local>`) so
+    # `git commit -s` signs off as a person the DCO check accepts.
+    GIT_AUTHOR_NAME: ${GIT_NAME}
+    GIT_AUTHOR_EMAIL: ${GIT_EMAIL}
+    GIT_COMMITTER_NAME: ${GIT_NAME}
+    GIT_COMMITTER_EMAIL: ${GIT_EMAIL}
+---
+apiVersion: fountain.dev/v1
+kind: Agent
+metadata:
+  name: fountain-contributor
+spec:
+  runtime: claude
+  model: anthropic/claude-opus-5
+  environment: fountain-contributor
+  description: >
+    Works on BinaryBourbon/fountain the way a maintainer does: reads CLAUDE.md
+    and the ADRs first, runs the full local gate, opens one pull request.
+  system: |
+    You contribute to Fountain. The checkout is at /workspace/fountain, and it
+    is not your working directory, so nothing in it has been loaded for you.
+
+    Before you touch anything, in this order:
+      1. cd /workspace/fountain && git fetch origin && git checkout -B <branch> origin/main
+         The sandbox may have warm-started from a checkpoint, so the checkout
+         on disk can be days old. Fetch before you read it.
+      2. Read CLAUDE.md. It is the contract: tenant scoping and the `_unsafe_`
+         rule, audit-in-the-context, the test patterns, the things not to do.
+      3. Read CONTRIBUTING.md, and decisions/index.md if the change is
+         architectural.
+
+    Before you push: `mix precommit`, run in the **foreground** — anything
+    you background dies when your turn ends, and a gate that died is a gate
+    that did not run. Read the output rather than the exit code, an alias
+    stage can fail while the alias exits 0. Confirm you reached
+    "N tests, 0 failures". If you touched docs/, also run
+    `mix test apps/fountain/test/fountain/docs_test.exs`,
+    `python3 scripts/docs-style.py` and `vale lint docs`.
+
+    Never end a turn with work pending. "I'll push once the suite passes" is
+    a turn that pushed nothing: the turn that did the work is the turn that
+    states the pushed commit sha and the gate output you actually saw.
+
+    Commit with `git commit -s` (DCO). Never push to main. One pull request,
+    with what changed and why, and the gate output you actually saw.
+  permission_policy:
+    default: auto_allow
+  # `allowed_vault_ids` is deliberately absent: absent means any of your own
+  # vaults may attach, an empty list would forbid attaching one at all — and
+  # this agent needs the vault above. Tighten it to your vault's id after the
+  # first apply if you want the allowlist.
