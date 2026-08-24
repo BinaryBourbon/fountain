@@ -78,9 +78,11 @@ defmodule Fountain.Release.CreditsTest do
     capture_io(fn -> assert {:ok, 0} = Release.start_credits(since: @since, now: @now) end)
     assert Credits.balance(solo.id) == div(1000 * 16 + 15, 31)
 
-    assert [_] =
-             Repo.all(
-               from(e in Fountain.Audit.Event, where: e.action == "release.credits_started")
+    # One row per real run, the rerun included: the task ran, even if it wrote nothing.
+    assert 2 ==
+             Repo.aggregate(
+               from(e in Fountain.Audit.Event, where: e.action == "release.credits_started"),
+               :count
              )
   end
 end
