@@ -604,21 +604,22 @@ defmodule Fountain.Billing.Finance do
   end
 
   # Turn seconds that spend a tenant's allowance: the providers Fountain pays
-  # for, so a tenant's own runner (ADR 0022) is excluded. The same filter
-  # `Billing.turn_hours_used/2` applies, and it has to be the same one — the
-  # allowance shown here and the allowance shown on the tenant's own billing
-  # page cannot come apart.
+  # for, so a tenant's own runner (ADR 0022) is excluded, summed per turn
+  # rather than the sandbox's busy union (ADR 0023 step 6). The same filter and
+  # the same figure `Billing.turn_hours_used/2` applies, and it has to be the
+  # same one — the allowance shown here and the allowance shown on the tenant's
+  # own billing page cannot come apart.
   defp billable_turn_seconds(usage) do
     usage.by_provider
     |> Enum.filter(&SandboxUsage.platform_cost?(&1.provider))
-    |> Enum.map(& &1.busy)
+    |> Enum.map(& &1.turn)
     |> Enum.sum()
   end
 
-  defp allowance_used(_busy_seconds, 0), do: nil
+  defp allowance_used(_turn_seconds, 0), do: nil
 
-  defp allowance_used(busy_seconds, included),
-    do: Float.round(SandboxUsage.hours(busy_seconds) / included, 4)
+  defp allowance_used(turn_seconds, included),
+    do: Float.round(SandboxUsage.hours(turn_seconds) / included, 4)
 
   ## ── pricing helpers ─────────────────────────────────────────────────────
 
@@ -810,6 +811,7 @@ defmodule Fountain.Billing.Finance do
          active_seconds: group |> Enum.map(& &1.active_seconds) |> Enum.sum(),
          busy_seconds: group |> Enum.map(& &1.busy_seconds) |> Enum.sum(),
          idle_seconds: group |> Enum.map(& &1.idle_seconds) |> Enum.sum(),
+         turn_seconds: group |> Enum.map(& &1.turn_seconds) |> Enum.sum(),
          by_provider:
            Enum.map(
              group,
@@ -817,7 +819,8 @@ defmodule Fountain.Billing.Finance do
                provider: &1.provider,
                active: &1.active_seconds,
                busy: &1.busy_seconds,
-               idle: &1.idle_seconds
+               idle: &1.idle_seconds,
+               turn: &1.turn_seconds
              }
            )
        }}

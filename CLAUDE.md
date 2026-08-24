@@ -103,8 +103,12 @@ Five rules that are easy to get wrong:
 
 - **A turn hour is not a sandbox hour, and nothing enforces either.**
   `included_turn_hours` is 20 per concurrent slot, measured against
-  `SandboxUsage`'s `busy_seconds` (a prompt in flight) on platform-paid
-  providers only — an idle sandbox and a self-hosted runner spend none of it.
+  `SandboxUsage`'s `turn_seconds` (the turns summed, each clipped to the
+  period) on platform-paid providers only — an idle sandbox and a self-hosted
+  runner spend none of it. `busy_seconds` is the *union* of the same intervals
+  (how long the machine had any turn in flight) and is what a provider bill
+  relates to; several conversations share one sandbox (ADR 0023), so the two
+  differ and must not be swapped.
   `Billing.turn_hour_allowance/2` is the one shape every surface renders, so
   they cannot disagree. **No gate reads it** (#1016 steps 4 and 5 are unbuilt);
   do not add one without deciding the overage shape first.

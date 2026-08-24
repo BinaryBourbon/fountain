@@ -349,6 +349,39 @@ defmodule Fountain.Billing.SandboxUsageTest do
       assert [row] = attribution()
       assert row.busy_seconds == 2400
       assert row.idle_seconds == 1200
+      # The tenant's view is the sum: two half-hour turns are an hour of work,
+      # on a machine that was busy for forty minutes (ADR 0023 step 6).
+      assert row.turn_seconds == 3600
+    end
+
+    test "turn seconds sum per turn and may exceed the machine's active time" do
+      # Several conversations on one sandbox at once (ADR 0023): each hour of
+      # each turn spends an hour of the allowance, however many share the disk.
+      user = insert_verified_user()
+
+      sandbox =
+        terminated_sandbox(user, "sprites", ~U[2026-05-10 12:00:00Z], ~U[2026-05-10 13:00:00Z])
+
+      turn(sandbox, user, ~U[2026-05-10 12:00:00Z], ~U[2026-05-10 13:00:00Z])
+      turn(sandbox, user, ~U[2026-05-10 12:00:00Z], ~U[2026-05-10 13:00:00Z])
+      turn(sandbox, user, ~U[2026-05-10 12:30:00Z], ~U[2026-05-10 13:00:00Z])
+
+      assert [row] = attribution()
+      assert row.active_seconds == 3600
+      assert row.busy_seconds == 3600
+      assert row.idle_seconds == 0
+      assert row.turn_seconds == 9000
+
+      assert SandboxUsage.by_provider([row])["sprites"].turn_seconds == 9000
+
+      assert SandboxUsage.turn_seconds_for_user(user.id, @period_start, @period_end) ==
+               %{"sprites" => 9000}
+
+      assert SandboxUsage.busy_for_user(user.id, @period_start, @period_end) ==
+               %{"sprites" => 3600}
+
+      # The allowance is spent in the sum.
+      assert Billing.turn_hours_used(user, period: {@period_start, @period_end}) == 2.5
     end
 
     test "a turn still running is busy up to the ceiling" do
@@ -451,6 +484,7 @@ defmodule Fountain.Billing.SandboxUsageTest do
                active_seconds: 1800,
                busy_seconds: 0,
                idle_seconds: 1800,
+               turn_seconds: 0,
                sandboxes: 2,
                users: 2
              }
@@ -459,6 +493,7 @@ defmodule Fountain.Billing.SandboxUsageTest do
                active_seconds: 300,
                busy_seconds: 0,
                idle_seconds: 300,
+               turn_seconds: 0,
                sandboxes: 1,
                users: 1
              }
