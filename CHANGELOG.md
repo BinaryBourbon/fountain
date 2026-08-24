@@ -18,6 +18,19 @@ upgrade, is in
 
 ### Changed
 
+- **A sandbox several conversations hold is treated as one machine.**
+  Three rules that used to be one conversation's to break (ADR 0023, steps
+  4 and 5): a turn on an opencode or gemini sandbox is refused with
+  `409 sandbox_at_capacity` while another conversation's turn runs there
+  (claude and codex run several at once — `Runtimes.ACP.concurrency/1`, and
+  the check is made under a per-sandbox lock so two prompts cannot both
+  start); terminating a conversation destroys the sprite only when it was
+  the last conversation on it; and the idle timeout parks the machine only
+  when every conversation on it has been quiet for the bound, at which
+  point the other conversations' servers are stopped so their next prompt
+  wakes it properly. Scheduled teammate runs treat `sandbox_at_capacity`
+  like a busy teammate and retry within their window.
+
 - **A conversation's identity travels with its process, not the sandbox's
   disk.** `FOUNTAIN_TOKEN`, `FOUNTAIN_CONVERSATION_ID` and `TRACEPARENT` are
   no longer written to `/home/sprite/.env`; they reach the agent as

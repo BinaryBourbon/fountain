@@ -284,6 +284,9 @@ defmodule Fountain.Team.Schedules do
 
   # What a run's failure reads as on the row and in the UI. Never the prompt.
   def describe_error(:busy), do: "teammate was busy"
+
+  def describe_error(:sandbox_at_capacity),
+    do: "teammate's computer was busy with another conversation"
   def describe_error(:provisioning), do: "teammate's computer was still starting"
   def describe_error(:not_found), do: "agent is not on the team"
   def describe_error(:subscription_required), do: "subscription inactive"
