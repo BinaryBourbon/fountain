@@ -339,6 +339,37 @@ Options:
       --root string        sandbox root (default: ~/.fountain/runners/<name>/sandboxes)
 ```
 
+## `fountain sandbox list`
+
+List sandboxes
+
+```
+fountain sandbox list [flags]
+```
+
+Options:
+
+```
+      --json            output JSON
+      --status string   comma-separated statuses to include (default: all)
+```
+
+## `fountain sandbox reset`
+
+Destroy a persistent sandbox; the next launch builds a clean one
+
+```
+fountain sandbox reset <id>
+```
+
+## `fountain sandbox show`
+
+Show a sandbox and the conversations on it
+
+```
+fountain sandbox show <id>
+```
+
 ## `fountain vault create`
 
 Create a vault

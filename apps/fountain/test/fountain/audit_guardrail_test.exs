@@ -56,6 +56,7 @@ defmodule Fountain.AuditGuardrailTest do
     {"inference credential write", &__MODULE__.do_cred_write/1, "inference_credential.write"},
     {"inference credential clear", &__MODULE__.do_cred_clear/1, "inference_credential.delete"},
     {"conversation delete", &__MODULE__.do_conv_delete/1, "conversation.deleted"},
+    {"sandbox reset", &__MODULE__.do_sandbox_reset/1, "sandbox.reset"},
     {"role change", &__MODULE__.do_role_change/1, "account.role_changed"},
     {"sandbox limit change", &__MODULE__.do_limit_change/1, "account.sandbox_limit_changed"},
     {"suspend", &__MODULE__.do_suspend/1, "account.suspended"},
@@ -310,6 +311,22 @@ defmodule Fountain.AuditGuardrailTest do
     sandbox = insert_sandbox(user_id: user.id, status: "ready")
     conv = insert_conversation(user_id: user.id, agent: agent, sandbox_id: sandbox.id)
     {:ok, _} = Conversations.delete_conversation(conv)
+  end
+
+  def do_sandbox_reset(user) do
+    agent = insert_agent(user_id: user.id)
+
+    home =
+      insert_sandbox(
+        user_id: user.id,
+        status: "ready",
+        mode: "persistent",
+        agent_id: agent.id,
+        provider: "sprites"
+      )
+
+    stub(Fountain.Sandbox.Sprites, :destroy, fn _h -> :ok end)
+    {:ok, _} = Conversations.reset_sandbox(home)
   end
 
   def do_team_add(user) do

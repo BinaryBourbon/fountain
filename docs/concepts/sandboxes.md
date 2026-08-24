@@ -34,7 +34,9 @@ with the same environment and vault lands on it. Notes, clones and installed
 tools accrue across conversations. What a bad turn leaves behind also
 accrues, because all of them use the one disk. The machine survives a
 conversation that ends. Nothing stops it while it runs. When you delete the
-agent, Fountain destroys the machine.
+agent, Fountain destroys the machine. A reset (`DELETE /api/sandboxes/:id`)
+also destroys the machine, and keeps the conversations. The next prompt builds
+a clean one.
 
 ## Why the lifecycle belongs to the conversations on it
 

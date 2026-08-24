@@ -10,6 +10,16 @@ server releases.
 
 ---
 
+## [0.1.8] — 2026-08-24
+
+### Added
+
+- `resetSandbox(id)` — `DELETE /api/sandboxes/:id`: destroy a persistent
+  sandbox (the agent's home) so the next launch on the same agent,
+  environment and vault builds a clean machine; the conversations on it are
+  kept. `sandbox_not_resettable` for an ephemeral or already-gone sandbox,
+  `sandbox_mid_turn` while a conversation on it runs a turn (#1071).
+
 ## [0.1.7] — 2026-08-24
 
 ### Added

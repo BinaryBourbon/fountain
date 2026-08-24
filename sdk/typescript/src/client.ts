@@ -214,6 +214,17 @@ export class Fountain {
     return this.api.data<SandboxRecord>("GET", `/api/sandboxes/${id}`);
   }
 
+  /**
+   * Reset a persistent sandbox: destroy the agent's home so the next launch
+   * on the same agent, environment and vault builds a clean machine. The
+   * conversations on it are kept. Refused (`sandbox_not_resettable`) for an
+   * ephemeral or already-gone sandbox, and (`sandbox_mid_turn`) while a
+   * conversation on it runs a turn.
+   */
+  async resetSandbox(id: string): Promise<void> {
+    await this.api.request("DELETE", `/api/sandboxes/${id}`);
+  }
+
   /** Full-text search across the caller's conversations. */
   async search(query: string, opts: { limit?: number } = {}): Promise<SearchHit[]> {
     return this.api.list<SearchHit>("/api/search", { query: { q: query, limit: opts.limit } });
