@@ -42,7 +42,6 @@ defmodule Fountain.Credits do
 
   import Ecto.Query
 
-  alias Ecto.Multi
   alias Fountain.Accounts.User
   alias Fountain.Audit
   alias Fountain.Billing
@@ -272,24 +271,25 @@ defmodule Fountain.Credits do
     user_id = Ecto.Changeset.get_field(changeset, :user_id)
     amount = Ecto.Changeset.get_field(changeset, :amount_cents)
 
-    Multi.new()
-    |> Multi.insert(:entry, changeset)
-    |> Multi.update_all(
-      :balance,
-      from(u in User, where: u.id == ^user_id),
-      inc: [credit_balance_cents: amount]
-    )
-    |> Repo.transaction()
-    |> case do
-      {:ok, %{entry: entry, balance: {1, _}}} ->
-        {:ok, entry}
-
-      {:ok, %{balance: {0, _}}} ->
+    Repo.transaction(fn ->
+      with {:ok, entry} <- Repo.insert(changeset),
+           {1, _} <-
+             Repo.update_all(from(u in User, where: u.id == ^user_id),
+               inc: [credit_balance_cents: amount]
+             ) do
+        entry
+      else
         # Cannot happen while the FK holds, but a ledger row without a user
         # row to carry its balance would be a silent drift.
-        {:error, :user_not_found}
+        {0, _} -> Repo.rollback(:user_not_found)
+        {:error, %Ecto.Changeset{} = cs} -> Repo.rollback(cs)
+      end
+    end)
+    |> case do
+      {:ok, entry} ->
+        {:ok, entry}
 
-      {:error, :entry, %Ecto.Changeset{errors: errors} = cs, _} ->
+      {:error, %Ecto.Changeset{errors: errors} = cs} ->
         if Keyword.has_key?(errors, :idempotency_key) do
           case get_by_key(key) do
             nil -> {:error, cs}
@@ -299,7 +299,7 @@ defmodule Fountain.Credits do
           {:error, cs}
         end
 
-      {:error, _step, reason, _} ->
+      {:error, reason} ->
         {:error, reason}
     end
   end
