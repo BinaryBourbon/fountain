@@ -189,7 +189,7 @@ func TestCreateConversationAttachesTheVault(t *testing.T) {
 	api := acpTestAPI(t, srv.URL)
 	api.vault = "buzz-philo"
 
-	id, _, err := api.CreateConversation(context.Background(), "agent-1", "", false)
+	id, _, err := api.CreateConversation(context.Background(), "agent-1", acp.SessionOptions{})
 	if err != nil {
 		t.Fatalf("CreateConversation: %v", err)
 	}
@@ -215,7 +215,7 @@ func TestCreateConversationOmitsTheVaultWhenUnset(t *testing.T) {
 
 	api := acpTestAPI(t, srv.URL)
 
-	if _, _, err := api.CreateConversation(context.Background(), "agent-1", "", false); err != nil {
+	if _, _, err := api.CreateConversation(context.Background(), "agent-1", acp.SessionOptions{}); err != nil {
 		t.Fatalf("CreateConversation: %v", err)
 	}
 	if _, present := body["vault_id"]; present {
@@ -245,7 +245,7 @@ func TestCreateConversationAttachesTheEnvironment(t *testing.T) {
 	api := acpTestAPI(t, srv.URL)
 	api.environment = "buzz-env"
 
-	if _, _, err := api.CreateConversation(context.Background(), "agent-1", "", false); err != nil {
+	if _, _, err := api.CreateConversation(context.Background(), "agent-1", acp.SessionOptions{}); err != nil {
 		t.Fatalf("CreateConversation: %v", err)
 	}
 	if body["environment_id"] != "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee" {
@@ -266,7 +266,7 @@ func TestCreateConversationOmitsTheEnvironmentWhenUnset(t *testing.T) {
 
 	api := acpTestAPI(t, srv.URL)
 
-	if _, _, err := api.CreateConversation(context.Background(), "agent-1", "", false); err != nil {
+	if _, _, err := api.CreateConversation(context.Background(), "agent-1", acp.SessionOptions{}); err != nil {
 		t.Fatalf("CreateConversation: %v", err)
 	}
 	if _, present := body["environment_id"]; present {
@@ -288,7 +288,7 @@ func TestCreateConversationSendsTheChannelKeyAndReadsResumed(t *testing.T) {
 
 	api := acpTestAPI(t, srv.URL)
 
-	id, resumed, err := api.CreateConversation(context.Background(), "agent-1", "chan-1", false)
+	id, resumed, err := api.CreateConversation(context.Background(), "agent-1", acp.SessionOptions{ChannelID: "chan-1"})
 	if err != nil {
 		t.Fatalf("CreateConversation: %v", err)
 	}
@@ -314,7 +314,7 @@ func TestCreateConversationOmitsTheChannelKeyWhenEmpty(t *testing.T) {
 	defer srv.Close()
 
 	api := acpTestAPI(t, srv.URL)
-	_, resumed, err := api.CreateConversation(context.Background(), "agent-1", "", false)
+	_, resumed, err := api.CreateConversation(context.Background(), "agent-1", acp.SessionOptions{})
 	if err != nil {
 		t.Fatalf("CreateConversation: %v", err)
 	}
@@ -340,7 +340,7 @@ func TestCreateConversationSendsFreshWithTheChannelKey(t *testing.T) {
 
 	api := acpTestAPI(t, srv.URL)
 
-	id, resumed, err := api.CreateConversation(context.Background(), "agent-1", "chan-1", true)
+	id, resumed, err := api.CreateConversation(context.Background(), "agent-1", acp.SessionOptions{ChannelID: "chan-1", Fresh: true})
 	if err != nil {
 		t.Fatalf("CreateConversation: %v", err)
 	}
@@ -353,7 +353,7 @@ func TestCreateConversationSendsFreshWithTheChannelKey(t *testing.T) {
 
 	// fresh without a channel key is meaningless and must not be sent.
 	body = nil
-	if _, _, err := api.CreateConversation(context.Background(), "agent-1", "", true); err != nil {
+	if _, _, err := api.CreateConversation(context.Background(), "agent-1", acp.SessionOptions{Fresh: true}); err != nil {
 		t.Fatalf("CreateConversation: %v", err)
 	}
 	if _, ok := body["fresh"]; ok {
@@ -370,7 +370,7 @@ func TestUnknownEnvironmentNameIsReported(t *testing.T) {
 	api := acpTestAPI(t, srv.URL)
 	api.environment = "not-an-env"
 
-	_, _, err := api.CreateConversation(context.Background(), "agent-1", "", false)
+	_, _, err := api.CreateConversation(context.Background(), "agent-1", acp.SessionOptions{})
 	if err == nil || !strings.Contains(err.Error(), "not-an-env") {
 		t.Fatalf("want an error naming the environment, got %v", err)
 	}
@@ -385,7 +385,7 @@ func TestUnknownVaultNameIsReported(t *testing.T) {
 	api := acpTestAPI(t, srv.URL)
 	api.vault = "not-a-vault"
 
-	_, _, err := api.CreateConversation(context.Background(), "agent-1", "", false)
+	_, _, err := api.CreateConversation(context.Background(), "agent-1", acp.SessionOptions{})
 	if err == nil || !strings.Contains(err.Error(), "not-a-vault") {
 		t.Fatalf("want an error naming the vault, got %v", err)
 	}
@@ -407,7 +407,7 @@ func TestCreateConversationCarriesThePermissionPolicy(t *testing.T) {
 	api := acpTestAPI(t, srv.URL)
 	api.permission = map[string]string{"default": "ask"}
 
-	if _, _, err := api.CreateConversation(context.Background(), "agent-1", "", false); err != nil {
+	if _, _, err := api.CreateConversation(context.Background(), "agent-1", acp.SessionOptions{}); err != nil {
 		t.Fatalf("CreateConversation: %v", err)
 	}
 
@@ -431,7 +431,7 @@ func TestCreateConversationOmitsThePermissionPolicyWhenUnset(t *testing.T) {
 
 	api := acpTestAPI(t, srv.URL)
 
-	if _, _, err := api.CreateConversation(context.Background(), "agent-1", "", false); err != nil {
+	if _, _, err := api.CreateConversation(context.Background(), "agent-1", acp.SessionOptions{}); err != nil {
 		t.Fatalf("CreateConversation: %v", err)
 	}
 	if _, present := body["permission_policy"]; present {
@@ -479,5 +479,80 @@ func TestParsePermissionPolicyRejectsAnUnknownVerdict(t *testing.T) {
 	}
 	if _, err := parsePermissionPolicy("=ask"); err == nil {
 		t.Error("accepted an empty tool key")
+	}
+}
+
+// ADR 0023: --sandbox-mode / --sandbox are the process defaults for where each
+// session's conversation runs, sent as sandbox_mode / sandbox_id.
+func TestCreateConversationCarriesTheSandboxFlags(t *testing.T) {
+	var body map[string]any
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"data":{"id":"conv-1"}}`))
+	}))
+	defer srv.Close()
+
+	api := acpTestAPI(t, srv.URL)
+	api.sandboxMode = "persistent"
+	api.sandboxID = "11111111-2222-3333-4444-555555555555"
+
+	if _, _, err := api.CreateConversation(context.Background(), "agent-1", acp.SessionOptions{}); err != nil {
+		t.Fatalf("CreateConversation: %v", err)
+	}
+	if body["sandbox_mode"] != "persistent" {
+		t.Errorf("sandbox_mode = %v, want persistent", body["sandbox_mode"])
+	}
+	if body["sandbox_id"] != "11111111-2222-3333-4444-555555555555" {
+		t.Errorf("sandbox_id = %v, want the flag's id", body["sandbox_id"])
+	}
+}
+
+// A session's own _meta wins over the process flags, for that session.
+func TestCreateConversationLetsTheSessionOverrideTheSandboxFlags(t *testing.T) {
+	var body map[string]any
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"data":{"id":"conv-1"}}`))
+	}))
+	defer srv.Close()
+
+	api := acpTestAPI(t, srv.URL)
+	api.sandboxMode = "persistent"
+
+	opts := acp.SessionOptions{SandboxMode: "ephemeral", SandboxID: "aaaaaaaa-0000-0000-0000-000000000000"}
+	if _, _, err := api.CreateConversation(context.Background(), "agent-1", opts); err != nil {
+		t.Fatalf("CreateConversation: %v", err)
+	}
+	if body["sandbox_mode"] != "ephemeral" {
+		t.Errorf("sandbox_mode = %v, want the session's ephemeral", body["sandbox_mode"])
+	}
+	if body["sandbox_id"] != "aaaaaaaa-0000-0000-0000-000000000000" {
+		t.Errorf("sandbox_id = %v, want the session's id", body["sandbox_id"])
+	}
+}
+
+// No flag, no _meta: no key, so the server applies the agent's default.
+func TestCreateConversationOmitsTheSandboxKeysWhenUnset(t *testing.T) {
+	var body map[string]any
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"data":{"id":"conv-1"}}`))
+	}))
+	defer srv.Close()
+
+	api := acpTestAPI(t, srv.URL)
+	if _, _, err := api.CreateConversation(context.Background(), "agent-1", acp.SessionOptions{}); err != nil {
+		t.Fatalf("CreateConversation: %v", err)
+	}
+	for _, key := range []string{"sandbox_mode", "sandbox_id"} {
+		if _, present := body[key]; present {
+			t.Errorf("%s sent as %v, want the key omitted", key, body[key])
+		}
 	}
 }

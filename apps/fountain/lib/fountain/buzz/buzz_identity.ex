@@ -52,6 +52,9 @@ defmodule Fountain.Buzz.BuzzIdentity do
     field :enabled, :boolean, default: true
     field :respond_to, :string, default: "owner-only"
     field :respond_to_allowlist, {:array, :string}, default: []
+    # Where this identity's conversations run (ADR 0023): `ephemeral`,
+    # `persistent`, or nil for the agent's own default.
+    field :sandbox_mode, :string
 
     belongs_to :user, User
     belongs_to :agent, Agent
@@ -69,6 +72,7 @@ defmodule Fountain.Buzz.BuzzIdentity do
     :enabled,
     :respond_to,
     :respond_to_allowlist,
+    :sandbox_mode,
     :user_id,
     :agent_id,
     :vault_id,
@@ -83,6 +87,7 @@ defmodule Fountain.Buzz.BuzzIdentity do
     |> validate_relay_url()
     |> validate_pubkey()
     |> validate_inclusion(:respond_to, @respond_to_modes)
+    |> validate_inclusion(:sandbox_mode, Fountain.Agents.Agent.sandbox_modes())
     |> validate_respond_to_allowlist()
     |> unique_constraint(:name, name: :buzz_identities_user_id_name_index)
     |> unique_constraint(:pubkey, name: :buzz_identities_user_id_pubkey_index)

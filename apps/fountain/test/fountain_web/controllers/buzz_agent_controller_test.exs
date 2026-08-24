@@ -117,6 +117,37 @@ defmodule FountainWeb.BuzzAgentControllerTest do
     assert json_response(conn, 201)["data"]["environment_id"] == env.id
   end
 
+  test "POST stores a sandbox_mode and returns it", %{
+    conn: conn,
+    raw_key: raw_key,
+    agent: agent
+  } do
+    conn =
+      conn
+      |> authed_with_key(raw_key)
+      |> put_req_header("content-type", "application/json")
+      |> post("/api/buzz/agents", Map.put(params(agent), "sandbox_mode", "persistent"))
+
+    assert json_response(conn, 201)["data"]["sandbox_mode"] == "persistent"
+  end
+
+  # The OpenAPI cast refuses the enum before the context sees it, the same way
+  # a bad respond_to is refused; the context's own check (buzz_test) covers a
+  # caller that reaches provision_identity another way.
+  test "POST with an unknown sandbox_mode is a 422 that names the field", %{
+    conn: conn,
+    raw_key: raw_key,
+    agent: agent
+  } do
+    conn =
+      conn
+      |> authed_with_key(raw_key)
+      |> put_req_header("content-type", "application/json")
+      |> post("/api/buzz/agents", Map.put(params(agent), "sandbox_mode", "forever"))
+
+    assert inspect(json_response(conn, 422)) =~ "sandbox_mode"
+  end
+
   test "POST with a foreign environment_id is a 404, and nothing is provisioned", %{
     conn: conn,
     raw_key: raw_key,

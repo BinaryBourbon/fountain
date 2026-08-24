@@ -234,3 +234,28 @@ func TestDeployRejectsABadKey(t *testing.T) {
 		t.Fatalf("expected a key-derivation error, got %+v", resp)
 	}
 }
+
+// ADR 0023: the optional sandbox mode rides as sandbox_mode; blank sends
+// nothing; anything else is refused before Fountain is asked.
+func TestDeployPassesTheSandboxMode(t *testing.T) {
+	f := &fakeFountain{resolveTo: "agent-uuid"}
+	resp := Deploy(deployReq(`{"agent":"my-agent","sandbox_mode":"persistent"}`), f)
+	if !resp.OK {
+		t.Fatalf("deploy failed: %+v", resp)
+	}
+	if f.gotBody.SandboxMode != "persistent" {
+		t.Fatalf("sandbox_mode = %q, want persistent", f.gotBody.SandboxMode)
+	}
+
+	f = &fakeFountain{resolveTo: "agent-uuid"}
+	resp = Deploy(deployReq(`{"agent":"my-agent","sandbox_mode":" "}`), f)
+	if !resp.OK || f.gotBody.SandboxMode != "" {
+		t.Fatalf("blank sandbox_mode: ok=%v body=%q, want ok and nothing sent", resp.OK, f.gotBody.SandboxMode)
+	}
+
+	f = &fakeFountain{resolveTo: "agent-uuid"}
+	resp = Deploy(deployReq(`{"agent":"my-agent","sandbox_mode":"forever"}`), f)
+	if resp.OK || f.gotBody.AgentID != "" {
+		t.Fatalf("bad sandbox_mode: ok=%v provisioned=%q, want a refusal before any call", resp.OK, f.gotBody.AgentID)
+	}
+}

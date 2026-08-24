@@ -82,13 +82,14 @@ Shipped as seven gates, one PR each, in dependency order:
   fix (the PR after #1069). An operator who sets `SANDBOX_MAX_LIFETIME_HOURS`
   gets the table's interim behaviour: a home at the ceiling is parked, not
   destroyed (`Lifecycle`); an ephemeral sprite is destroyed.
-- Of the step 8 doors, `POST /api/conversations`, `fountain run`, the SDK
-  and the agent form take the override. The ACP editor door
-  (`session/new` `_meta`), Buzz provision and the `fountain` skill's fan-out
-  take the agent's default and have no per-launch override yet. The
-  conversations app shows no "home" badge and there is no "reset home"
-  action; `GET /api/sandboxes/:id` is the sandbox's detail, and deleting the
-  agent is the reset.
+- Every step 8 door takes the override since #1070: `POST /api/conversations`,
+  `fountain run`, the SDK, the agent form, `fountain acp` (`--sandbox-mode` /
+  `--sandbox`, and `sandboxMode` / `sandboxId` in `session/new` `_meta`),
+  the Buzz identity's `sandbox_mode`, and the `fountain` skill through
+  `FOUNTAIN_SANDBOX_ID`. Channel resume takes the agent's default, as the
+  step says. The conversations app shows no "home" badge and there is no
+  "reset home" action; `GET /api/sandboxes/:id` is the sandbox's detail, and
+  deleting the agent is the reset.
 
 **Gate 7, run 2026-08-24 against production** (server `sha-94b6022f`,
 Sprites, a throwaway `claude` agent on haiku with no environment or vault):

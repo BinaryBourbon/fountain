@@ -18,6 +18,17 @@ upgrade, is in
 
 ### Added
 
+- **The last three launch doors take `sandbox_mode` and `sandbox_id`.**
+  `fountain acp` gets `--sandbox-mode` and `--sandbox` for every session it
+  opens, and a client may name either per session in `session/new` `_meta`
+  (`sandboxMode`, `sandboxId`). A hosted Buzz agent carries `sandbox_mode`
+  on its identity (`POST /api/buzz/agents`, the provider's settings form),
+  passed to its harness as `--sandbox-mode`; a change restarts the harness
+  like the other launch fields. The sandbox exports `FOUNTAIN_SANDBOX_ID`
+  beside `FOUNTAIN_CONVERSATION_ID`, so the `fountain` skill can put a child
+  onto the parent's own machine with `sandbox_id`. Channel resume still takes
+  the agent's default, on purpose. ADR 0023 step 8, #1070.
+
 - **Reset a persistent sandbox.** `DELETE /api/sandboxes/:id` destroys an
   agent's home so the next launch on the same agent, environment and vault
   builds a clean machine — the conversations on it are kept, idle, and each

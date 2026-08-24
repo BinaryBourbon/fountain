@@ -67,6 +67,8 @@ defmodule FountainWeb.SchemaEnumGuardrailTest do
     {FountainWeb.Schemas.BillingResponse, "data.plan.slug"} => {Fountain.Plans, :slugs},
     {FountainWeb.Schemas.BuzzIdentity, "respond_to"} => {BuzzIdentity, :respond_to_modes},
     {FountainWeb.Schemas.BuzzProvisionRequest, "respond_to"} => {BuzzIdentity, :respond_to_modes},
+    {FountainWeb.Schemas.BuzzIdentity, "sandbox_mode"} => {Agent, :sandbox_modes},
+    {FountainWeb.Schemas.BuzzProvisionRequest, "sandbox_mode"} => {Agent, :sandbox_modes},
     {FountainWeb.Schemas.BuzzAccessUpdateRequest, "respond_to"} =>
       {BuzzIdentity, :respond_to_modes},
     # The permission verdicts a policy may actually name today. Deliberately

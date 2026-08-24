@@ -698,6 +698,15 @@ defmodule FountainWeb.Schemas do
             "Environment this identity's conversations are provisioned from instead of " <>
               "the agent's own; null means the agent's."
         },
+        sandbox_mode: %Schema{
+          type: :string,
+          enum: ~w(ephemeral persistent),
+          nullable: true,
+          description:
+            "Where this identity's conversations run (ADR 0023): a sandbox per " <>
+              "conversation, or the agent's one persistent machine. null means the " <>
+              "agent's own default."
+        },
         respond_to: %Schema{
           type: :string,
           enum: ~w(owner-only allowlist anyone nobody),
@@ -751,6 +760,16 @@ defmodule FountainWeb.Schemas do
               "owned by the caller (404 otherwise) and, when the agent sets " <>
               "allowed_environment_ids, on that list (checked at conversation start). " <>
               "Omitted on a re-provision clears a previously set one."
+        },
+        sandbox_mode: %Schema{
+          type: :string,
+          enum: ~w(ephemeral persistent),
+          nullable: true,
+          description:
+            "Where this identity's conversations run (ADR 0023), passed to the harness " <>
+              "as fountain acp --sandbox-mode. Omitted means the agent's own default; " <>
+              "omitted on a re-provision clears a previously set one. A re-provision that " <>
+              "changes it restarts a running harness."
         },
         respond_to: %Schema{
           type: :string,

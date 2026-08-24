@@ -90,6 +90,7 @@ defmodule Fountain.Buzz do
   def provision_identity(user_id, params, opts \\ []) when is_binary(user_id) do
     with {:ok, fields} <- validate_provision(params),
          :ok <- check_environment(fields.environment_id, user_id),
+         :ok <- check_sandbox_mode(fields.sandbox_mode),
          {:ok, dek} <- Crypto.load_tenant_key(user_id),
          {:ok, vault} <- ensure_vault(user_id, fields, dek, opts),
          :ok <- write_buzz_secrets(vault, fields, dek, opts) do
@@ -113,6 +114,7 @@ defmodule Fountain.Buzz do
          auth_tag: params["auth_tag"],
          display_name: params["display_name"],
          environment_id: presence(params["environment_id"]),
+         sandbox_mode: presence(params["sandbox_mode"]),
          respond_to: presence(params["respond_to"]) || "owner-only",
          respond_to_allowlist: allowlist(params["respond_to_allowlist"])
        }}
@@ -143,6 +145,16 @@ defmodule Fountain.Buzz do
 
   # Scoped fetch: the environment's secrets materialise in this identity's
   # sandboxes, so a pointer at another tenant's must never be stored.
+  # Checked before the vault is created so a typo does not leave a half-
+  # provisioned identity behind; nil is the agent's own default.
+  defp check_sandbox_mode(nil), do: :ok
+
+  defp check_sandbox_mode(mode) do
+    if mode in Fountain.Agents.Agent.sandbox_modes(),
+      do: :ok,
+      else: {:error, :invalid_sandbox_mode}
+  end
+
   defp check_environment(nil, _user_id), do: :ok
 
   defp check_environment(id, user_id) do
@@ -186,6 +198,7 @@ defmodule Fountain.Buzz do
       "agent_id" => fields.agent_id,
       "vault_id" => vault.id,
       "environment_id" => fields.environment_id,
+      "sandbox_mode" => fields.sandbox_mode,
       "name" => fields.name,
       "relay_url" => fields.relay_url,
       "pubkey" => fields.pubkey,
@@ -202,7 +215,7 @@ defmodule Fountain.Buzz do
   end
 
   # Every identity field that ends up in the harness env or the ACP child's argv.
-  @launch_fields ~w(agent_id relay_url display_name environment_id respond_to respond_to_allowlist)a
+  @launch_fields ~w(agent_id relay_url display_name environment_id sandbox_mode respond_to respond_to_allowlist)a
 
   @doc """
   Whether a re-provision changed anything the running harness was launched
@@ -477,13 +490,16 @@ defmodule Fountain.Buzz do
   defp maybe_put_allowlist(env, _identity), do: env
 
   # Point the harness's ACP child at this Fountain agent + vault (+ environment
-  # override, #783), and keep the pool to one (the desktop's 10 is not our
-  # assumption).
+  # override, #783; + sandbox mode, ADR 0023), and keep the pool to one (the
+  # desktop's 10 is not our assumption).
   defp acp_wiring_env(%BuzzIdentity{} = identity, fountain_bin, agents) do
     args =
       ["acp", "--agent", identity.agent_id, "--vault", identity.vault_id]
       |> Kernel.++(
         if identity.environment_id, do: ["--environment", identity.environment_id], else: []
+      )
+      |> Kernel.++(
+        if identity.sandbox_mode, do: ["--sandbox-mode", identity.sandbox_mode], else: []
       )
       |> Enum.join(",")
 

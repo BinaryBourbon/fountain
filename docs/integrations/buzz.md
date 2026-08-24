@@ -107,6 +107,11 @@ stands the hosted agent up on your Fountain instance, then returns.
   secret. The environment stands in for the agent's own at provision, so one
   Fountain agent can back several Buzz identities, each on a different
   baseline. Leave it blank to use the agent's own.
+- They optionally ask **where the conversations run**, with
+  `"sandbox_mode": "persistent"` or `"ephemeral"`. A persistent identity keeps
+  one machine across its channels, so what one channel leaves on disk is there
+  for the next. Leave it blank to use the agent's default. See
+  [Sandboxes](../concepts/sandboxes.md).
 - The Fountain credentials are **ambient**. They are `FOUNTAIN_API_KEY` and
   `FOUNTAIN_BASE_URL`, from the environment or from the `fountain` CLI creds
   file. The provider refuses to carry a secret in its config, so your Fountain
