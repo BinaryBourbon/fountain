@@ -16,23 +16,52 @@ upgrade, is in
 
 ## [Unreleased]
 
-### Fixed
+### Added
 
-- **Broker, three findings from wiring the workbench to gate 4.**
-  `GET /api/conversations/:id/egress` needs full scope, like
-  `/api/secret-bindings`: a sandbox's sprite-scoped token could read the
-  request log — which secrets went to which host — for any conversation on
-  the tenant (#1152). Its 502 no longer leaks an inspected Elixir term as
-  `message`; the client gets "The egress broker did not answer." plus a
-  stable `reason` word (`econnrefused`, `api_error_503`, ...) and the detail
-  goes to the server log (#1153). The OpenAPI description of
-  `networking_config` says where `limited` is enforced (the broker on a
-  brokered account, the sandbox otherwise) instead of the pre-gate-2 sandbox
-  story, and `GET /api/auth/me` carries a read-only `brokered` so a client
-  can label the mode without probing `/api/secret-bindings` (#1154).
+- None yet.
+
+## [0.13.0] — 2026-08-25
 
 ### Upgrade notes
 
+- **Fountain is no longer MIT licensed** (ADR 0027, #998). From this release
+  the server under `apps/fountain` is AGPL-3.0-or-later, `ee/` is Elastic
+  License 2.0, and `cli/` and `sdk/typescript` are Apache-2.0. Releases
+  through v0.12.0 stay MIT. Details under Changed, in `LICENSE` and in
+  `decisions/0027-agpl-relicensing.md`.
+- **Subscription plans are gone; credits are the product** (ADR 0030,
+  ADR 0031). The upgrade is not a no-op for a deployment that had
+  `BILLING_ENABLED=true`:
+  - *Cancel live subscriptions in Stripe by hand.* Nothing on this release
+    reads, renews or cancels one. Comped accounts carry over
+    (`subscription_status = 'comped'` becomes `users.comped`).
+  - *Env vars no longer read:* `STRIPE_PRICE_ID`,
+    `STRIPE_PRICE_MONTHLY_CENTS`, `STRIPE_PRICE_ID_CONTACT`,
+    `STRIPE_CONTACT_PRICE_CENTS`, `DEFAULT_PLAN`, `CREDIT_PRICING_SINCE`,
+    `CREDIT_ENFORCE`. New: `CREDIT_PACKS_CENTS`, `CREDIT_TURN_HOUR_CENTS`,
+    `CREDIT_OPENING_CENTS` / `CREDIT_OPENING_DAYS`, `CREDIT_NUMBER_CENTS`,
+    `CREDIT_INBOX_CENTS`, `CREDIT_EMAIL_MESSAGE_CENTS`,
+    `CREDIT_SMS_MESSAGE_CENTS`, `SANDBOX_RESERVE_CENTS`, `SANDBOX_CAP_FLOOR`,
+    `SANDBOX_CAP_CEILING`, `SANDBOX_FLEET_CEILING`. See `.env.example`.
+  - *Run `Fountain.Release.rebuild_credit_lots()` once after the upgrade*
+    (`docs/guides/operate/run-a-release-task.md`). It replays every ledger
+    into lots and is safe to rerun.
+  - *The rolling deploy is not seamless across this boundary.* Two
+    migrations drop columns a v0.12.0 pod still selects (`users.plan`,
+    `subscription_status`, `stripe_subscription_id`, `comped_contacts`, ...).
+    A v0.12.0 pod that is still serving after the migrations run returns
+    errors until it is replaced. Run the migrations once the old pods are
+    gone, or accept a brief window of errors during the roll.
+  - *Breaking API and SDK changes* (SDK 0.2.0 → 1.0.0): `GET
+    /api/account/billing` loses `status`, `plan`, `trial_ends_at`,
+    `current_period_*`, `cancel_at_period_end` and
+    `usage.turn_hours_included` / `remaining`, and gains `credits`,
+    `sandbox_cap` and `comped`; `POST /api/account/billing/portal`,
+    `POST /api/account/billing/checkout`, `POST
+    /api/admin/users/:id/extend-trial` and `.../resync-stripe` are removed;
+    admin user objects lose `subscription_status` / `plan` /
+    `comped_contacts` and gain `comped`; credit is bought at `POST
+    /api/account/billing/credits/checkout`.
 - **`BILLING_ENABLED` is `CREDITS_ENABLED`** (#1144). The old name is still
   read for one release and logs a deprecation warning at boot; rename it in
   your environment before the next minor. The Oban queue `billing` is
@@ -40,46 +69,124 @@ upgrade, is in
   `BillingApiController` and `Fountain.Emails.BillingEmails` are
   `CreditsLive`, `CreditsApiController` and `CreditsEmails`; routes and API
   paths are unchanged.
-
-### Changed
-
-- **Feature status page.** `/docs/reference/feature-status` names the two
-  features that are not on for every hosted account, teammate email and
-  phone (alpha, `team_comms`) and brokered credentials (limited access,
-  `BROKER_TENANTS`), and each page that describes one now opens with a note
-  saying so. `api.md` gains the egress and secret-bindings routes.
-
-- `Billing.provider_spend/1` (the `/admin` and `/admin/sandboxes` hours) and
-  `Finance.cost/3` (the money on `/admin/finance`) read one fold,
-  `Finance.platform_totals/1`, instead of each summing the attribution rows
-  their own way.
-
-### Changed
-
-- **Billing debt 3/3: the billing page shows what was charged.**
-  `usage_summary/3` (billing page, dashboard, `GET /api/account/billing`)
-  and the admin table count conversations as the ones that ran a turn in
-  the month — from `turn_started` events, which survive a deleted
-  conversation and cover a persistent home that provisions nothing — rather
-  than as sandbox provisions, and carry `credit_burned_cents`: what the
-  ledger actually took for the window, shown as "Spent" beside the metered
-  hours. SDK 1.2.0.
-
-### Removed
-
-- **Billing debt 2/3: dead Stripe plumbing and the last plan-era wording.**
-  `Billing.attach_stripe_customer/2` (no callers), the admin user page's
-  "Invoices" section (it always rendered "None."), the unreachable "nothing
-  is paused yet" branch of the credits-exhausted email, and
-  `Credits.summary/2`'s duplicate `turn_hour_cents` (read it from
-  `price_card.turn_hour`; the API field is unchanged). The `/admin/users`
-  "Plan" column is "Credit"; every remaining "plan"/"tier"/"trial"/
-  "subscription"/"invoice" string in operator-visible text, docstrings,
-  comments, docs and test fixtures (CLI, SDK, Elixir) says what the code
-  does now.
+- **The conversation and team UIs are separate apps** (#869). Self-hosted:
+  either set `API_CORS_ORIGINS` and `OAUTH_CLIENTS` so the hosted apps can
+  reach your API, or set `CONVERSATIONS_APP_URL=""` and `TEAM_APP_URL=""` to
+  say this deployment has none. The old `/conversations*` and `/team*` paths
+  redirect. The full note is under Changed.
+- **`SANDBOX_MAX_LIFETIME_HOURS` defaults to `0`** (#1076). The 24-hour
+  destroy backstop is off unless you set it.
+- **`/` is a plain front door unless `MARKETING_SITE=true`** (#1015). A
+  deployment that wants the sales page must set it.
+- **`SANDBOX_RUNNERS_ENABLED` defaults to `true`** (ADR 0022, #833). Any
+  tenant may attach their own machine as a sandbox backend; set it to
+  `false` to keep the hosted providers only.
+- **Building the CLI needs Go 1.26** (#919), matching `cli/go.mod`. The
+  release binaries are unaffected.
 
 ### Added
 
+- **Credits are the product** (ADR 0030, ADR 0031; #1094–#1101,
+  #1108–#1110, #1114, #1116, #1122). There are no plans, tiers, trials or
+  subscriptions: an account holds a prepaid balance in cents
+  (`credit_ledger`, cached on `users.credit_balance_cents`), every door that
+  spends is gated on it (`402 insufficient_credits` with `upgrade_url`;
+  in-flight turns finish and may go negative), and Stripe is only the till:
+  packs (`CREDIT_PACKS_CENTS`) sell through one-time Checkout and
+  `charge.refunded` / `charge.dispute.created` claw back. Closed turns on
+  platform-paid providers burn `CREDIT_TURN_HOUR_CENTS` (default 25) against
+  turn seconds; teammate numbers and inboxes rent
+  `CREDIT_NUMBER_CENTS + CREDIT_INBOX_CENTS` a month up front with a
+  seven-day grace before release; email and SMS burn
+  `CREDIT_EMAIL_MESSAGE_CENTS` / `CREDIT_SMS_MESSAGE_CENTS` when set. Every
+  credit row is a lot with `remaining_cents`, consumed in a fixed order (the
+  lot a debit names, earliest expiry, then purchased). Verification grants
+  `CREDIT_OPENING_CENTS` ($5) expiring after `CREDIT_OPENING_DAYS` (14).
+  Runway emails go out at 20% and at zero; `POST
+  /api/admin/users/:id/credits` grants; `users.comped` is the one operator
+  lever. The balance, packs and ledger show on `/account/billing`, the
+  dashboard, `/admin/users`, `/admin/finance` and `GET /api/account/billing`
+  (`credits`, `sandbox_cap`, `comped`). SDK 1.0.0.
+- **The concurrency cap is funded by the balance, under a fleet ceiling**
+  (#1114). `sandbox_limit` is `sandbox_limit_override` if set, else
+  `clamp(balance ÷ SANDBOX_RESERVE_CENTS, SANDBOX_CAP_FLOOR, SANDBOX_CAP_CEILING)`
+  (defaults $2 / 2 / 20; comped and billing-off get the ceiling).
+  `SANDBOX_FLEET_CEILING` bounds live sandboxes across every tenant under a
+  global lock and refuses as `503 fleet_full` with `Retry-After`. Plans no
+  longer size the cap.
+- **A per-tool permission policy, and an `ask` that reaches a person**
+  (ADR 0014 gate 3, ADR 0015 gate 4; #947, #950, #952, #960, #963, #965,
+  #968). Every runtime used to run with its rail off behind a constant
+  auto-allow in the ACP peer. `permission_policy` on the agent (console
+  form, `POST` / `PATCH /api/agents`, returned on agent JSON) maps ACP tool
+  kinds to `allow` / `deny` / `ask` plus a default; a launch may only narrow
+  it. An `ask` surfaces as a `permission_request` block on the transcript
+  with a Fountain-minted `request_id`, is resolved by `POST
+  /api/conversations/:id/requests/:request_id` (a `request` stage event
+  records the answer), is forwarded verbatim to the editor that spawned
+  `fountain acp`, and is denied on expiry, disconnect or dismissal. A
+  reattach after a deploy does not re-ask a held request. opencode never
+  asks, so a policy on an opencode agent is refused rather than stored
+  (#961).
+- **Gemini runs on the ACP path** (#955, #964, #969). The last runtime on
+  the legacy spawn path moves to ACP: one session, resume, MCP and
+  permission mechanism for all four runtimes, and the last vendor
+  permission-bypass flag (`--approval-mode yolo`) is deleted. A workaround
+  stops `gemini --acp` erasing the session it is asked to load
+  (google-gemini/gemini-cli#28775).
+- **A self-hosted runner: your own machine as a sandbox backend** (ADR 0022,
+  #833). `fountain runner` is a Go daemon that dials out to Fountain over one
+  WebSocket (no inbound port, works behind NAT) and serves sandboxes as
+  directories on that machine, so an agent's disk never parks and nothing is
+  billed by the minute. Trusted mode: the agent runs as the daemon's user
+  with the daemon's network. `GET /api/runners`, `DELETE /api/runners/:id`,
+  an `/account/runners` page, `provider: "runner"` on the agent;
+  `SANDBOX_RUNNERS_ENABLED` (default true). Runner turns are never priced.
+- **Teammates that know each other: the `fountain-team` MCP and a bundled
+  `/create-team` skill** (#852, #855). Every team-channel conversation
+  carries an MCP server Fountain serves at `POST /api/mcp/team/:conversation_id`
+  with `list_teammates`, `get_teammate`, `send_to_teammate`, `read_teammate`
+  and `wait_for_teammate` (blocks server-side up to 90 s for a reply instead
+  of polling). `/create-team` is a second bundled skill beside `fountain`: a
+  five-question Q&A that proposes a roster and, only after a yes, creates
+  the agents and teammates.
+- **`POST /api/support/reports`: "Report a problem" with context** (#843,
+  #844). A client sends a category (`bug`, `stuck`, `question`, `idea`,
+  `other`), a message, a context map and an optional screenshot; Fountain
+  forwards it as a GitHub issue (`SUPPORT_GITHUB_REPO` +
+  `SUPPORT_GITHUB_TOKEN`) and/or mail to `SUPPORT_EMAIL`, and keeps the row
+  either way. Audited as `support.report.created`, never the message.
+- **A missing provider key is collected when a model first needs it**
+  (#841, #842). The agent form asks for the OpenAI or Gemini credential
+  inline the first time a model on that provider is chosen, instead of
+  asking for all four up front.
+- **`?blocks=true` on the team stream, and `Last-Event-ID` declared**
+  (#988). `/api/team/stream` returns server-parsed blocks like every other
+  feed instead of 422ing on the parameter; the SDK no longer special-cases
+  it.
+- **The finance panel shows the provider's invoice beside the computed
+  figure, and the dropped-event count** (#1038, #1102). `/admin/finance`
+  records what each provider actually charged for a month
+  (`provider_invoices`) and puts the computed cost and the delta next to it;
+  `[:fountain, :usage, :dropped]` is shown since boot so a period built on an
+  incomplete record says so.
+- **`PRODUCT_NAME` brands the chrome** (#1134, #1137, #1141). A deployment's
+  brand drives the console and marketing headers, `<title>`, the sign-in
+  and consent pages, the emails, `/terms`, `/privacy` and the © line; the
+  manual at `/docs`, the CLI, env vars and `apiVersion` stay "Fountain", the
+  engine. Default `Fountain`, so nothing changes unless set.
+- **Admin is one section per page** (#1041). `/admin` (funnel + tiles),
+  `/admin/users`, `/admin/sandboxes`, `/admin/billing` and
+  `/admin/activity` (paginated privilege trail) share a tab bar; the single
+  page that re-ran every query every ten seconds is gone.
+- **The `fountain-contributor` canned agent** (#1010, #1044, #1050).
+  `examples/agents/fountain-contributor/` is one `fountain apply` manifest
+  (environment, vault, agent) that rebuilds a maintainer's session in a
+  sandbox, with a README on cost, first-run time and what the vault needs; a
+  Go test keeps every example parsing.
+- **Traces export to a collector once one is configured** (#979). Setting
+  `OTEL_EXPORTER_OTLP_ENDPOINT` (OTLP over HTTP/protobuf, port 4318) is the
+  whole switch; unset still exports nowhere.
 - **The egress trail, ADR 0019 gate 4.** `GET /api/conversations/:id/egress`
   lists what a brokered conversation actually sent out: each request's
   host, the binding that matched (and so the credential attached), the
@@ -122,135 +229,6 @@ upgrade, is in
   Off unless `BROKER_URL` is set, and then only for the tenants in
   `BROKER_TENANTS`; an unbrokered conversation provisions byte-for-byte as
   before. No broker is deployed and no tenant is flipped by this change.
-
-### Fixed
-
-- A brokered sandbox lets `sudo` keep the proxy variables (a sudoers `env_keep` drop-in, installed beside the broker CA), so a setup script's `sudo apt-get install` reaches a mirror. Before, sudo's `env_reset` stripped `http_proxy`, apt resolved the mirror directly and the broker floor refused it with `Temporary failure resolving`; the first brokered provisions of real environments failed there. (#1158)
-
-- **Billing debt 1/3: the month is half-open, one gate, one cap rule.**
-  `Billing.month_range/2` replaces four hand-rolled month windows; its `end`
-  is the first instant of the next month, so the last second of every month
-  is no longer dropped from every usage query (`GET /api/account/billing`'s
-  `period.end` moves accordingly; SDK 1.1.1). `Credits.Rent` runs through
-  `Credits.check_balance/2` (`min:` a month's rent) instead of its own
-  balance read, so an expired-but-unswept grant funds a contact no more than
-  it funds a turn. Under the reservation lock the credit gate now runs
-  before the sandbox quota, so an unfunded account's cap is 0 everywhere
-  (`sandbox_limit/1` and `sandbox_limit_for/1` agree) and it is refused as
-  `insufficient_credits`, never as a 0/0 quota. `Credits.gate/1` is
-  `check_balance/2`; `Credits.active?/0` is gone (it was `Billing.enabled?/0`).
-  `Finance.deferred_cents/0` is the one deferred-balance query.
-
-### Changed
-
-- **Credits cleanup 3/3 (#1128).** The prose catches up with ADR 0031. ADR
-  0006 is marked superseded, ADR 0030's status block describes what is built
-  (no switches, no tiers, `CreditExpirer`), ADR 0026 and 0031 are corrected,
-  and the index is regenerated. CLAUDE.md loses the plans trailer and gains
-  the `require_pending_verification` hook row. The manual's API page lists
-  the endpoints that exist (`credits/checkout`, admin `credits`, `comped=`),
-  the 402 and 503 codes, and drops the portal, subscription checkout and
-  resync; the configuration, architecture, mail, Sprites, integrations,
-  dashboards, SDK and release-task pages, `.env.example`, the compose file,
-  the k8s configmap and the finance Grafana board no longer describe a
-  subscription, a trial or a plan. Every docstring and comment the review
-  found still describing the subscription era is rewritten, including the
-  `users` field comments that had drifted onto the wrong fields.
-
-### Removed
-
-- **Credits cleanup 2/3 (#1127).** The dead code and the dead columns the
-  subscription era left behind. Eight `users` columns are dropped by
-  migration (`plan`, `stripe_subscription_id`, `subscription_status`,
-  `trial_ends_at`, `subscription_synced_at`, `cancel_at_period_end`,
-  `current_period_start`, `current_period_end`). Gone with them: the
-  `:assign_subscription_state` LiveView hook, `Quotas.check_sandbox_quota!/2`
-  and `QuotaExceededError`, `Billing.billing_period/2` and
-  `turn_hours_used/2` (callers use `current_month_range/0` and
-  `usage_summary/3`), the `subscription_required` error (every 402 is
-  `insufficient_credits`), the `grant_tier` ledger reason, and the admin
-  `trial.extended` / `plan.changed` / `stripe.resynced` events. Renames:
-  `Billing.sync_subscription/1` → `apply_event/1`, `Workers.CreditGranter` →
-  `CreditExpirer`, the `grant_trial` ledger reason → `grant_opening` (data
-  migration), the funnel's `subscribed` stage → `funded`
-  (`fountain_funnel_funded` in Grafana), `Credits.enforcing?/0` folded into
-  `active?/0`. `Quotas.sandbox_limit_for/1` reports 0 for an unfunded
-  account rather than the floor the gate would refuse anyway. SDK 1.1.0
-  drops `period.source` from the billing response.
-
-### Fixed
-
-- **Credits cleanup 1/3 (#1126).** Six ledger bugs left by ADR 0031 and the
-  customer-facing text that still described subscriptions. An expiry now
-  takes only what its own grant still holds, read inside the ledger's
-  transaction, so a burn racing the sweep can no longer make it reach into
-  purchased money; a debit that names a lot never falls through to another.
-  A charge disputed and then refunded is clawed back once. An expired grant
-  stops funding new work the moment it passes (`check_balance/1` subtracts
-  expired-but-unswept lots) and the pricer's ten-minute tick runs the expiry
-  sweep. `Rent.charge/3` checks idempotency before the balance, so a re-charge
-  of a paid month on a short balance no longer starts a release clock. The
-  ledger lists and indexes open lots by `seq` (migration). The billing page,
-  the credit emails, the dashboard hint, the terms, privacy and home pages,
-  the quota and contact-limit messages and a scheduled run's error no longer
-  mention plans, trials or subscriptions; `credit.*` audit events refresh
-  PostHog person properties. `/admin/users` and `GET /api/admin/users` take
-  `comped=` in place of the silent no-op `status=` filter and `trial_end`
-  sort. SDK 1.0.1 names `insufficient_credits` and `fleet_full`.
-
-### Changed
-
-- **`k8s/` is gone; `deploy/` is the only Kubernetes directory** (ADR 0032
-  addendum). The manifest artifact now pins the image in
-  `deploy/k8s/kustomization.yaml`'s own `images:` block, and
-  `FOUNTAIN_BUILD_SHA` is baked into every main-line image as it always was
-  for releases. The artifact is generic; the Kubernetes guide shows how to
-  track `main` with Flux from it.
-- **The hosted instance's Kubernetes overlay left the repo** (ADR 0032).
-  `k8s/` held the maintainer's own cluster — CNPG, Infisical, Traefik,
-  hostnames, backups, alerts, the rate card, the OAuth client list — as an
-  overlay of `deploy/k8s/`, and `publish-manifests.yml` shipped both in the
-  manifest artifact. That overlay now lives in the private home-cloud repo,
-  applied on top of the artifact with Flux patches. `k8s/` keeps only the
-  image pin (`pin.yaml`), so the artifact is the portable baseline plus the
-  image built from that tree and nothing else. Self-hosters were never meant
-  to apply `k8s/`; the Erlang clustering env it used to demonstrate is now
-  written out in the Kubernetes guide. `.sops.yaml` is gone with it.
-
-### Removed
-
-- **The May-2026 planning material is gone from the tree.** `plan/`,
-  `superpowers/`, `OPERATING_MODEL.md` (the orchestrator briefs, specs and
-  bible from the aod-ex rebuild), `runbooks/` (the completed home-cloud
-  cutover) and `docs-redesign/` (the executed docs IA plan, #903) were
-  historical records with no reader; git history keeps them. The three files
-  tooling still cites moved to `standards/`: `voice-and-style.md`
-  (`scripts/docs-style.py`), `simplified-technical-english.md`
-  (`.vale-ste.yml`) and `catalog-template.md` (linked from the catalog).
-  `rel/` stays: `rel/overlays/bin/migrate` is the migration Job entrypoint.
-- **`ROADMAP.md` and the `/bootstrap` skill went with them.** Both were the
-  captain-picard orchestrator's bus files; the roadmap's "Now" had been empty
-  since the 2026-05-10 launch. The one thing they said that nothing else did,
-  the 100-WAU goal and the org/team gate behind it, moved to `CLAUDE.md`;
-  NC-6 is recorded in ADR 0007 and #1039.
-
-### Fixed
-
-- **A background task the agent starts survives the turn that started it.**
-  Fountain closed the runtime connection at every `end_turn`, and the adapter
-  treats that connection as the session, so a `Monitor`, a `run_in_background`
-  shell or a `ScheduleWakeup` that Claude Code left running was killed the
-  moment the turn ended, and codex's "Allow for Session" grant was thrown away
-  before the next turn. The connection now lives for the sandbox wake, not one
-  turn: after a turn it waits idle for the next prompt on the same session — no
-  second handshake, no `session/resume` — and closes only when the sandbox
-  stops being the conversation's (idle park, ceiling, terminate, release,
-  shutdown). A follow-up the agent narrates after its turn ends lands on the
-  transcript as an `autonomous` turn. Across a deploy a follow-up in flight is
-  still lost, and its orphaned adapter session is reaped by the conversation's
-  tag so a co-tenant on a shared sandbox is untouched. ADR 0014, #817.
-
-### Added
 
 - **Turns carry `origin`.** `user` for a prompt somebody sent, `autonomous`
   for a turn the server opens for a background cycle the agent runs after
@@ -319,95 +297,6 @@ upgrade, is in
   the SDK's `run({ sandbox })`, `sandboxes()` and `sandbox(id)` carry it.
   ADR 0023 gate 3.
 
-### Changed
-
-- **The ACP peer outlives its prompt.** `Fountain.Runtimes.ACP.Peer` no
-  longer ends when the prompt is answered: it reports the stop reason and
-  waits in `:idle` for the next `prompt/3` on the same connection (no second
-  handshake, no `session/resume`, no model pin), reports an autonomous
-  cycle's end as `{:cycle_end, kind}` from the adapter's origin-marked
-  `usage_update`, and closes on `close/1`. Part 1 of 3 for #817. Nothing
-  changes in production yet: `ConversationServer` still stops the peer at
-  turn end, until part 3 moves the connection to the wake.
-
-- **A running sandbox is no longer destroyed at 24 hours.** The continuous-run
-  ceiling (`SANDBOX_MAX_LIFETIME_HOURS`, ADR 0017) now defaults to `0`, off,
-  for every sandbox mode: a tenant who wants a machine running all day is not
-  something to stop, and for a persistent home the disk is the product. The
-  idle timeout (`SANDBOX_IDLE_TIMEOUT_MINUTES`, still 60) is the only
-  automatic stop, and it parks rather than destroys; the plan's
-  concurrent-sandbox cap bounds how many machines stay up. An operator who
-  wants the old backstop sets the variable, and then an ephemeral sandbox is
-  destroyed at the ceiling and a home is parked, exactly as before. #936.
-
-- **Turn hours add up per turn.** With several conversations on one sandbox
-  at once, a tenant's turn hours are the sum of their turns (two
-  conversations each running an hour on one machine spend two), while the
-  sandbox's busy time stays the union of the same intervals — the machine's
-  view, which a provider bill relates to. `SandboxUsage` reports both
-  (`turn_seconds` beside `busy_seconds`); the billing page, the API usage
-  summary and the admin finance panel now read the sum. On a sandbox with
-  one conversation the two numbers are equal, so nothing changes for
-  today's accounts. ADR 0026 addendum; ADR 0023 step 6.
-
-- **A change that moves a home's identity retires the home.** A persistent
-  sandbox is keyed on `(user, agent, environment, vault)`. Moving an agent's
-  `environment_id`, deleting an environment, or deleting a vault moved that
-  key and left the machine `ready` under an identity nothing looks up — it
-  held a concurrency slot and a disk carrying the old environment's or
-  vault's secrets. All three now retire the affected homes the way
-  `DELETE /api/sandboxes/:id` does: the machine is destroyed, the
-  conversations on it are kept and told why (`sandbox`/`reset` with
-  `environment_changed`, `environment_deleted` or `vault_deleted`), and the
-  next prompt builds a machine on the identity that exists now. Audited as
-  `sandbox.reset` with the reason in the metadata. Each request is refused
-  with `409 sandbox_mid_turn` (a flash in the console) while a conversation
-  on one of those machines runs a turn, and nothing is written.
-
-  Deleting an environment or a vault was additionally broken outright: the
-  `ON DELETE SET NULL` on `sandboxes.environment_id` / `sandboxes.vault_id`
-  either turned the home into the *no environment* or *no vault* home for
-  its identity — so the next launch that asked for neither landed on a disk
-  holding the deleted secrets — or collided with
-  `sandboxes_home_identity_index` (`NULLS NOT DISTINCT`) and failed the
-  delete with an unhandled constraint error. #1084.
-
-- **A sandbox that is gone is gone for every conversation on it.** When a
-  prompt wakes a conversation and finds its sandbox has vanished, the fresh
-  machine it provisions now takes every live conversation that shared the old
-  one along (runtime sessions cleared, a `sandbox`/`replaced` stage event on
-  each transcript), instead of leaving them pointing at a terminated row and
-  provisioning a machine each on their next prompt. ADR 0023 gate 5.
-
-- **A sandbox several conversations hold is treated as one machine.**
-  Three rules that used to be one conversation's to break (ADR 0023, steps
-  4 and 5): a turn on an opencode or gemini sandbox is refused with
-  `409 sandbox_at_capacity` while another conversation's turn runs there
-  (claude and codex run several at once — `Runtimes.ACP.concurrency/1`, and
-  the check is made under a per-sandbox lock so two prompts cannot both
-  start); terminating a conversation destroys the sprite only when it was
-  the last conversation on it; and the idle timeout parks the machine only
-  when every conversation on it has been quiet for the bound, at which
-  point the other conversations' servers are stopped so their next prompt
-  wakes it properly. Scheduled teammate runs treat `sandbox_at_capacity`
-  like a busy teammate and retry within their window.
-
-- **A conversation's identity travels with its process, not the sandbox's
-  disk.** `FOUNTAIN_TOKEN`, `FOUNTAIN_CONVERSATION_ID` and `TRACEPARENT` are
-  no longer written to `/home/sprite/.env`; they reach the agent as
-  environment on every spawn, exactly as before from the agent's point of
-  view. The runtime's detachable session is now started as
-  `env FOUNTAIN_CONVERSATION_ID=<id> <adapter> …`, and a reattach after a
-  deploy binds to the session carrying its own conversation's tag rather
-  than the head of the sandbox's session list — the prerequisite for several
-  conversations sharing one sandbox (ADR 0023, gate 1). A `setup_script`
-  that did `source .env` no longer sees the callback token; environment and
-  vault values are unaffected. The reattach stage event reports
-  `matched_by` (`tag`, or `untagged_head` for a session started before this
-  release).
-
-### Added
-
 - **Agent config versioning with diff and rollback.** Every config change
   writes an immutable version (version 1 backfilled for existing agents);
   the console's History page (`/agents/:id/versions`) diffs each version
@@ -427,107 +316,6 @@ upgrade, is in
   `expires_at` on vault secrets; values remain write-only. Changing the
   expiry only works together with a value write today — a value-less
   metadata update is #1053.
-
-### Changed
-
-- **Plan concurrency caps retuned to 2 / 5 / 10.** Solo now allows 2
-  concurrent sandboxes (was 5), Team 5 (was 15) and Scale 10 (was 40), with
-  the closed `legacy` plan following Team down to 5. Included turn hours stay
-  derived at 20 per slot, so they move with the caps: 40 / 100 / 200. Prices
-  do not change, no Stripe price is touched, and there is no migration — the
-  cap resolves from `users.plan` on each request, so the new numbers apply at
-  the next deploy.
-
-  **This lowers the cap on accounts that already have one.** A tenant sitting
-  above their new cap keeps the sandboxes they are running and is refused the
-  next start until they are under it. Per-account relief is
-  `sandbox_limit_override` from `/admin`, which still beats the plan in either
-  direction. Self-hosters are affected too: the default plan is `solo`, so an
-  instance with no billing drops from 5 to 2 unless it sets `DEFAULT_PLAN` or
-  an override.
-
-  The trial keeps 2 concurrent and 40 hours, which now ties Solo. The
-  invariant it is held to changed from "smaller than every paid plan on every
-  axis" to "never larger than one" — it stays strictly below Team and Scale,
-  and strictly below Solo on teammate contacts, which is the only axis still
-  separating the two. ADR 0026 carries an amendment with the reasoning.
-
-### Fixed
-
-- **A conversation's title was the model refusing its first prompt.** The
-  title generator handed the first prompt to a chat model with one line of
-  framing, so a prompt shaped like an instruction ("Run exactly this shell
-  command...") got answered rather than named, and "I can't execute shell
-  commands or access your system" became the conversation's title in the
-  sidebar, on the team page and in `GET /api/sandboxes` (#1074). The model
-  is now told it is naming a conversation it is not party to, and a reply
-  that opens in the first person, apologises or hedges is thrown away in
-  favour of the prompt's own first line.
-
-- **Deleting an agent that had a versioned conversation failed.** The
-  delete cascades to the agent's versions, and Postgres re-checked the
-  conversation's `agent_version_id` mid-cascade, before its own SET NULL
-  ran, so every agent with a conversation started since config versioning
-  (#1049) refused to delete with a foreign-key error. The conversations are
-  unpinned from their versions first now; the version was provenance only.
-
-- **A conversation interrupted mid-provision now rebuilds its sandbox instead of failing in `clone`.** A deploy or a Horde rebalance that killed a server during provisioning restarted it against the same half-built sprite, where `git clone` refused the existing checkout and the whole conversation failed. The restart now discards the remnant and provisions clean; the `provision started` event says so.
-
-- **The finance panel reported teammate-contact revenue nobody was charged.**
-  It priced every non-comped contact at `Plans.contact_monthly_cents/0`, which
-  returns $5 whether or not anything is configured to charge it. The actual
-  billing path, `sync_contact_addon/1`, has four guards in front of that
-  arithmetic — billing off, **no `STRIPE_PRICE_ID_CONTACT` on this
-  deployment**, a comped account, or an account with no Stripe subscription to
-  hang an item on — and any one of them means the invoice says zero.
-
-  The panel copied only the last step, and a comment claimed the two "cannot
-  disagree". They disagreed for every deployment that had not set the contact
-  price, which is the state a deployment stays in on purpose: setting that
-  variable puts a line item on the next invoice of every tenant already
-  holding contacts (#991). `/admin`'s MRR tile inherited the same error
-  through `Finance.mrr/0`.
-
-  Contact revenue is now what the add-on would actually bill. Where nothing
-  bills for contacts the panel says so out loud rather than showing a bare
-  `$0.00` beside a cost section still counting real inboxes and numbers —
-  which is the true and useful shape of it: those contacts cost money and earn
-  none.
-
-### Fixed
-
-- **ADR 0028 said a PostHog event definition is permanent. It is not.** The
-  claim came from ADR 0025 and was repeated without checking. Trying to act on
-  it is what disproved it: the nine request-line definitions `api.request`
-  retired stopped receiving events on 2026-08-22, and about a day later they
-  were gone from the project's taxonomy — a full listing returns 32
-  definitions with no request line among them, `?search=POST` returns zero,
-  and `?include_hidden=true` returns the same 32. The historical events remain
-  queryable; only the taxonomy entries went. The decision does not change and
-  neither does `product_event?/2` — 73 new names a day is still a taxonomy
-  nobody can read — but the cost is paid while those names exist rather than
-  forever, which is a weaker argument for the same conclusion. Corrected in
-  ADR 0028's new Correction section, in ADR 0025, in the `Fountain.Analytics`
-  and `FountainWeb.Plugs.Audit` docstrings, and in the configuration guide.
-
-
-### Fixed
-
-- **`/admin/finance` 500'd as soon as a rate card was configured.** #1029 made
-  rates fractional; `money/1` still matched only integers, and `rate_label/2`
-  passed it the raw rate. The page raised `FunctionClauseError` on
-  `money(5.45)` for every visit. It was invisible in CI because every test
-  used whole-number rates, and the one test that did use a fractional rate
-  exercised the arithmetic rather than the render — no test had ever rendered
-  the provider card with a rate set at all.
-
-  A rate is now shown in cents keeping its fraction (`10.76c/hour`), because
-  it is a rate and not a total: rounded to whole cents, 10.76 and 5.45 stop
-  being comparable and anything between 4.5 and 5.5 reads the same. `money/1`
-  also rounds a float rather than raising — every cost path already rounds
-  before display, but a cent of rounding is a better answer than a dead page.
-
-### Added
 
 - **The finance panel's rate card is filled in, and rates may be fractional.**
   `/admin/finance` shipped reporting hours with no money in them until an
@@ -555,8 +343,6 @@ upgrade, is in
   until paused) do not, and a deployment with real traffic on both wants a
   per-provider basis. It does not bite today: every hour on the bill is a
   Sprites hour.
-
-### Added
 
 - **The public pages are session recorded, and now say so.** This started as a
   side effect rather than a decision: session replay is switched on in the
@@ -641,149 +427,6 @@ upgrade, is in
   counts, because AgentPhone charges to receive. Best-effort by the same
   contract as every other usage event; neither call can fail a send.
 
-### Fixed
-
-- **Analytics no longer geolocates every person to the datacentre.**
-  `Fountain.Analytics` sent `"$ip" => nil` believing that meant "no location".
-  It does not: PostHog fills a missing `$ip` from the address the batch
-  arrived from, which for a server-side sink is a pod's egress address, and
-  then geolocates that — all 108 pageviews in the project reported a single
-  city. A capture with no client address now sets `$geoip_disable`, and the
-  console pageview hook forwards the address `Audited.put_client_ip/1` already
-  resolved at mount, under the same trusted-proxy rule the rate limiter uses.
-- **The CSP is built at runtime.** It is assembled per response rather than
-  baked into a module attribute, because `POSTHOG_HOST` is read in
-  `config/runtime.exs` — a compile-time policy would have carried whatever the
-  *build* saw (for a release, nothing) and blocked every self-hosted PostHog
-  behind a header that looked correct in the source.
-
-### Changed
-
-- **The admin MRR tile prices each account at its own plan.** It was
-  `active × STRIPE_PRICE_MONTHLY_CENTS` — one configured amount for
-  everybody. The comment said the day there was a second price would be loud;
-  it was not. #991 shipped four tiers and the tile went on charging every
-  active account the legacy $29, so a deployment selling Scale under-reported
-  its own revenue sevenfold. `Billing.overview_admin/1` now reads
-  `Fountain.Billing.Finance.mrr/0`, which prices from the plan catalog and
-  adds the teammate-contact add-on, and carries the per-plan split with it.
-  `STRIPE_PRICE_MONTHLY_CENTS` is no longer read there and stays what it says
-  it is: the closed `legacy` plan's display price.
-- **The dashboard's usage tile is turn hours, not sandbox time.** "Sandbox
-  time" was wall-clock hours a tenant's sandboxes were awake — Fountain's cost
-  signal, and nothing a customer buys or is measured on. It went up while they
-  slept. The tile now shows turn hours against the plan's included hours, the
-  unit `Fountain.Plans` actually denominates an allowance in, and the sandbox
-  figure moved into the hint. The whole "this month" section also moves to the
-  window Stripe invoices where there is one, so the dashboard and
-  `/account/billing` can no longer report different numbers for the same
-  period; the heading says which window it is on.
-- **`/admin`'s per-user usage column shows turn hours.** Same reasoning, one
-  page over: sandbox minutes belong next to the bill Fountain pays, on
-  `/admin/finance`. The sandbox total and its per-provider split stay in the
-  cell's tooltip.
-- `Billing.usage_summary/3` and `usage_summaries/2` both carry `turn_hours`
-  now, computed from the attribution pass they already ran. `usage_summary/3`
-  makes one pass where it used to make one and would have needed two. No API
-  field was renamed or removed.
-- **`/` is no longer the same page on every deployment.** The homepage sold a
-  product: a hero, a 14-day trial, a monthly price, and a footer calling
-  Fountain "managed agent infrastructure". Every self-hosted instance served
-  it, to an audience of the operator and their own team, none of whom are
-  buying a trial of the thing they already run. `/` now serves a plain front
-  door — the instance, a way in, and a link to `/docs` — unless the deployment
-  sets `MARKETING_SITE=true`. This is the reasoning `LEGAL_ENTITY` already
-  applies one page over (#517): an instance must not serve the upstream
-  project's terms, and it has no more business serving the upstream project's
-  sales copy. The flag is off by default, so a self-host is right without
-  reading this entry. It is deliberately not `BILLING_ENABLED`, which an
-  operator running Fountain commercially inside their own company may well
-  turn on.
-- **A closed instance stops advertising registration.** With
-  `REGISTRATION_ENABLED=false` the public pages still linked "Get started" and
-  "Register", and `Accounts.registration_allowed?/1` then refused the submit.
-  The nav, the footer and the new front door now hide the link. The context
-  check is unchanged and is still the control.
-
-### Removed
-
-- **The GitHub Pages documentation site.** `docs/` had two publishers: the
-  in-app manual at `/docs`, embedded at compile time by `Fountain.Docs`, and a
-  MkDocs Material build deployed to `binarybourbon.github.io/fountain` on every
-  push to `main`. They served the same markdown from the same nav, so the
-  second one bought nothing and cost a workflow, a `mkdocs build --strict` step
-  in two CI jobs, a Python toolchain, and a second renderer whose dialect the
-  first had to keep chasing. `/docs` is now the only place the manual is
-  published. It is public and needs no account, which is what made the Pages
-  copy redundant rather than load-bearing.
-
-  Gone with it: `.github/workflows/docs.yml`, `mkdocs.yml`,
-  `docs/requirements.txt` and the `mkdocs build` CI steps. The nav moved to
-  **`docs/nav.yml`**, same format, same parser, now inside the tree it
-  describes, so it needs no Dockerfile `COPY` and no special case in the CI
-  docs-path filter.
-
-  Two things the Pages build was quietly doing, both now handled:
-
-  - MkDocs built every page under `docs/` whether the nav named it or not, so
-    four pages under `docs/superpowers/` reached the public site while being
-    invisible at `/docs`. They are internal planning material from May 2026;
-    they moved to `superpowers/` at the repo root, beside `runbooks/`. A new
-    test fails on any page under `docs/` that the nav does not name, since such
-    a page is now published nowhere at all.
-  - `mkdocs build --strict` was the link checker. `docs_test.exs` already
-    checked every internal `/docs` link *and* every anchor, which MkDocs never
-    did, and it runs on every pull request rather than after the merge. It is
-    now the whole structural gate. The prose gates (`scripts/docs-style.py`,
-    `vale lint docs`) are unchanged.
-
-  Links into the old site from `README.md`, `CHANGELOG.md`, `docker-compose.yml`,
-  `deploy/k8s/` and the SDK examples now point at
-  `https://fountain.inevitable.fyi/docs/...`. Four of them had been broken
-  since the docs IA campaign moved that content, because nothing checked
-  absolute links; they point at the right pages now (#1008)
-
-  The old site does not simply stop: it becomes a **tombstone**, one redirect
-  per URL it used to answer, each pointing at the same page under `/docs` and
-  carrying the fragment across. Deleting the workflow would have left the last
-  snapshot serving forever, which is worse than a 404, and deleting the site
-  would have broken every link anyone ever made to it.
-  `scripts/build-pages-tombstone.py` generates it from the nav and refuses to
-  emit a redirect to a page that is not there;
-  `.github/workflows/pages-tombstone.yml` publishes it by hand and is
-  `workflow_dispatch` only, so it is not a docs publishing path (#1011)
-
-### Changed
-
-- **Fountain is no longer MIT licensed** (ADR 0027). The server under
-  `apps/fountain` is now **AGPL-3.0-or-later**, `ee/` is under the **Elastic
-  License 2.0**, and `cli/` and `sdk/typescript` are **Apache-2.0**. Releases
-  through v0.12.0 were MIT and stay MIT, irrevocably, for anyone who has them.
-
-  The reason is narrow. MIT let a funded competitor take Fountain, improve it,
-  host it and return nothing, and the part that stung was not the revenue but
-  that nobody else running Fountain got any benefit from that work. AGPL
-  section 13 answers exactly that and nothing more. A competitor may still
-  host Fountain commercially, in direct competition with the hosted product.
-  They must do it in the open.
-
-  Nothing changes for an integrator. The CLI, the TypeScript SDK and the two
-  single-page apps are permissive on purpose, because an AGPL SDK would put a
-  copyleft obligation on every application that calls the API, which is
-  precisely the integration Fountain wants. Nothing changes for a self-hoster
-  either: `ee/` is free to run and your changes to it stay private, which is
-  what ELv2 grants and what the single-image build requires.
-
-  Contributions come in under the Apache License 2.0 and go out under the
-  license of the directory they touch, with a DCO (`git commit -s`), no CLA
-  document and no bot. That preserves the ability to sell a commercial
-  exception to a company whose policy forbids the AGPL, which would otherwise
-  close at the first merged outside pull request. The asymmetry it creates is
-  stated in `CONTRIBUTING.md` rather than buried. See `NOTICE`,
-  `CONTRIBUTING.md` and `decisions/0027-agpl-relicensing.md`.
-
-### Added
-
 - **The SDK publishes itself from CI, with provenance**
   (`.github/workflows/sdk-publish.yml`). `@agentshit/fountain-sdk@0.1.0` reached
   npm from a laptop, authenticated by a long-lived token in a `~/.npmrc`. The
@@ -832,382 +475,6 @@ upgrade, is in
   before it adds providers together. And a counter that has never fired has no
   series at all, so every panel watching a rare failure ends in `or vector(0)`
   to read 0 rather than *No data*.
-
-- **Subscription plans, priced on concurrent sandboxes** (ADR 0026). Fountain
-  sold one flat price, and the only per-tenant entitlement — the
-  concurrent-sandbox cap — was a column an operator hand-set, tied to nothing
-  anybody paid. There are now three tiers that differ on exactly that axis and
-  on nothing else: Solo ($29, 5 at once), Team ($79, 15) and Scale ($199, 40).
-  Every plan still carries the whole product.
-
-  Accounts that bought the old flat price are on a fourth, closed plan,
-  `legacy`, pinned to the original `STRIPE_PRICE_ID`. It carries **Team's**
-  capacity at Solo's price, so nobody's cap fell at the changeover, and it
-  orders below every public plan, which makes it structurally upgrade-only.
-
-  `users.max_concurrent_sandboxes` is now the operator's *override* rather
-  than the entitlement, and null means "whatever the plan says". The Postgres
-  column keeps its name — the Elixir field is `sandbox_limit_override`, mapped
-  with Ecto's `:source` — because a rename breaks every pod still running the
-  previous release for the length of a rolling deploy, and making the column
-  nullable does not.
-
-  A tier switch reprices the existing subscription (`Billing.change_plan/3`)
-  rather than opening a second one, and writes nothing locally: the
-  `customer.subscription.updated` that comes back is what stamps
-  `users.plan`, so the entitlement always follows what Stripe actually
-  charges. A price this deployment does not recognise leaves the stored plan
-  alone rather than nulling a paying tenant's entitlement over an env var that
-  has not reached one replica yet.
-
-  New surfaces: a pricing table on `/`, a plan picker on `/account/billing`,
-  `plan` on `GET /api/account/billing` and on the admin user API, and a
-  `?plan=` on the checkout endpoint. Each shows only the plans whose price id
-  this deployment has, so they can be rolled out one at a time and a
-  self-hosted instance shows none. `DEFAULT_PLAN` (default `solo`) is the plan
-  for an account with no plan of its own, which is the one knob a self-hoster
-  needs.
-
-- **`mix fountain.verify_plans`.** The catalog holds a display price and
-  Stripe holds the charged price, with nothing linking them, so a mispointed
-  env var shows a customer one number and bills another. The task reads every
-  configured price from Stripe and fails if the amount, currency, interval or
-  active flag disagrees. Read-only, and safe against live mode.
-
-- **Teammate email and phone are billed per unit.** An AgentMail inbox and an
-  AgentPhone number are a recurring per-teammate cost, which is the wrong
-  shape for a flat tier. `Billing.sync_contact_addon/1` keeps a second
-  subscription item's quantity equal to the tenant's contact count — *set*
-  from the rows every time, never incremented, so a dropped call or a retry
-  converges rather than drifting. It runs after the row commits and is
-  best-effort: the providers have already been paid, and a Stripe hiccup must
-  not fail a provision they completed. A per-plan ceiling bounds the one
-  window that leaves open, refusing with 402 and buying nothing first.
-  Unset `STRIPE_PRICE_ID_CONTACT` keeps contacts free, which is what every
-  deployment does until it sets that variable.
-
-  Two levers comp a contact, deliberately separate. `comp_account/1` makes
-  everything free and short-circuits the add-on entirely. `users.comped_contacts`
-  is the narrower one — the first N contacts are not billed, so the quantity
-  pushed to Stripe is `max(0, count - comped_contacts)` — because the account
-  comp cannot express the case that actually comes up: a tenant who pays for
-  their tier and holds a number Fountain eats. Both are admin-only and audited.
-
-- **Admin can set a plan and a free-contact allowance** (`/admin`).
-  `Billing.change_plan/3` refuses for a comped account, correctly — an
-  operator's decision is not the customer's to revise — so without an admin
-  door a comped account had no way onto its own entitlements at all.
-
-### Fixed
-
-- **The teammate-contact add-on survives a resubscription.** The add-on item
-  lives on the subscription, so a *new* one starts without it, and the quantity
-  is otherwise only pushed on provision and release. A tenant who cancelled (or
-  was comped and then un-comped) and came back through Checkout kept their
-  numbers and stopped being billed for them until they happened to add or
-  remove one. `complete_checkout/4` now re-attaches the item after adopting the
-  subscription — best-effort and last, so a Stripe hiccup there cannot fail the
-  webhook and have Stripe redeliver an adoption that already succeeded.
-
-- **`admin.plan.changed` and `admin.comped_contacts.changed` are in
-  `AdminEvent`'s allowlist.** The list is closed and `record_admin/1` is
-  best-effort, so a missing type is dropped silently and the action ships with
-  no privilege trail. That has now bitten three times; the new admin tests
-  assert the trail rather than only the effect.
-
-- **Product analytics in PostHog** (ADR 0025). Fountain has kept an audit
-  trail, a billing meter and a set of OTel spans for a while, and none of them
-  could say whether the accounts that verified last week came back. It now
-  captures product events server-side into the same PostHog project that
-  already evaluates feature flags, so retention, funnels and cohorts stop
-  being SQL nobody has written yet.
-
-  The events come from choke points the code already had, never from
-  instrumented call sites: `Audit.record/1` (every audited mutation, under its
-  own action name), `Billing.record_usage/5` (`usage.turn_started` and the
-  other five metering events) and `Conversations.publish_stage/4` (how a turn
-  ended). Adding an instrumented action means auditing it, which the guardrail
-  test already forces. Console pageviews come from the LiveView auth hook, so
-  the console still loads no third-party script, and reading a flag captures
-  `$feature_flag_called` while stamping `$feature/<key>` onto every other
-  event.
-
-  The trail is a superset of the product stream, and two things it carries are
-  refused: the `:api` pipeline's request-log row, whose name holds a resource
-  id and would make a new PostHog event type per resource, and an API key
-  Fountain issued to itself (a sandbox credential, a Buzz harness credential,
-  an OAuth token). Those were 70% of the trail in its first day. A key a
-  person mints in the console or through the API is kept. Nothing is dropped
-  from the audit trail itself.
-
-  Nothing is sent without `POSTHOG_PROJECT_API_KEY`, and `POSTHOG_CAPTURE=false`
-  keeps flag evaluation while stopping capture. Events carry action names,
-  resource types, counts and sizes, never secret values, prompts or agent
-  output. `POSTHOG_PERSON_PII=false` drops the account email and leaves the
-  user id. Delivery is best-effort and bounded: events batch through one
-  process, a full queue or a failed request drops them, and each drop is
-  counted on `[:fountain, :analytics, :dropped]` so silence and health stay
-  distinguishable.
-
-- **Webhooks** (#700, ADR 0024). Until now the only way to learn that
-  something happened to a conversation was to hold an HTTP connection open,
-  which is a daemon every integrator had to write and a thing a GitHub Action,
-  a Lambda or a cron script cannot do at all. Fountain now POSTs conversation
-  lifecycle transitions to a URL you own, signed with an HMAC secret, retried
-  for about a day, with every attempt visible and redeliverable from
-  `/account/webhooks`, `/api/webhooks` and `fountain webhooks`.
-
-  Dispatch hangs off `publish_stage/4`, the same chokepoint the Prometheus
-  stage counter is built on, so a new lifecycle outcome cannot be added
-  without subscribers seeing it. A test reads the call sites out of the source
-  to keep that true. Conversation output stays on SSE: a chatty turn writes
-  thousands of chunks and none of them becomes an HTTP request.
-
-  The payload carries ids, a stage and a duration, and never conversation
-  content, on the same rule the audit trail runs on. The URL is checked for
-  shape when you save it, resolved and checked again before every request, and
-  then connected to by the address that was checked, with your hostname in the
-  `Host` header and TLS SNI. Redirects are never followed. See
-  [Webhooks](https://fountain.inevitable.fyi/docs/reference/webhooks).
-
-- **Sandbox spend attribution: which tenant, on which provider, ran how long.**
-  Fountain pays Sprites, E2B and Daytona by the second and had no way to say
-  whose seconds those were. `Fountain.Billing.SandboxUsage` now computes active
-  sandbox time per `{user, provider}` from the sandbox rows themselves, clipped
-  to the period asked about, with parked time subtracted. A **Sandbox spend by
-  provider** panel on `/admin` reports hours, sandboxes and tenants per
-  provider, names the accounts behind the total, and marks self-hosted runner
-  hours as the tenant's own hardware rather than our bill. Every total also
-  splits into **busy and idle** — busy being the union of the sandbox's turn
-  intervals, so two conversations prompting one sandbox at once count once —
-  because a sandbox nobody is prompting is charged at full rate and is the
-  part of the bill a shorter idle timeout (decisions/0017) actually removes.
-  An hours figure that cannot separate work from waiting says nothing about
-  whether the bill is avoidable. Each account sees
-  its own split on `/account/billing` and in `usage.sandbox_minutes_by_provider`
-  on `GET /api/account/billing`, and Prometheus gained
-  `fountain_sandboxes_by_provider_count` for the live view. Deliberately no
-  money anywhere: prices are per-provider and per-machine-size, and a made-up
-  rate would look authoritative. Documented in
-  `docs/guides/operate/sandbox-spend.md`. Closes the metering-correctness half
-  of #798.
-
-- **What we need from a sandbox platform** (`docs/integrations/platform-requirements.md`):
-  the ten things Fountain had to build itself because no backend promised them,
-  each with the workaround it costs us and an acceptance test a platform team can
-  run. Written for vendors rather than adapter authors, alongside a dated matrix
-  of where all four backends stand today.
-
-- **The SDK's surface, rebuilt from what the applications actually use.** The
-  eleven apps on the Fountain API each hand-wrote a client (2,644 lines
-  between them), and counting their methods says plainly what belongs in an
-  SDK: `markRead`, `listTurns`, a paged event drain and `createAgent` appear in
-  all eleven, and `/api/team` in ten. So the SDK gained `fountain.team`
-  (roster, `message()` returning a `Run`, history, fresh threads, routines and
-  the one-connection team stream), `conversation.markRead()`,
-  `conversation.history()`, `fountain.catalog()`, `fountain.search()` and
-  `fountain.events()`.
-
-- **A guided tour** (`docs/tour.md`): an agent that clones a repository, opens
-  a pull request, and then amends the same PR on a follow-up turn thirteen
-  seconds later because the sandbox is still up. Every number and output on the
-  page came from running it; `sdk/typescript/examples/pull-request.ts` is the
-  same thing runnable.
-
-  Errors are now keyed on the server's `error` code rather than the status,
-  because that is how every app branches: `ConversationBusyError` (a 400),
-  `QuotaExceededError` (a 429, carrying `activeSandboxes`/`limit`),
-  `NotReadyError` (a 503, carrying the server's `Retry-After`), plus
-  `fieldErrors` on 422 and a `retryable` flag on all of them.
-
-  The SDK also works in a browser now, which those apps all are: no module
-  reachable from the default entry imports a Node built-in, and the
-  credentials-file reader moved behind the `node` export condition. CI bundles
-  the entry for a browser to keep it that way.
-
-- **The SDK's types are generated from the OpenAPI spec.**
-  `sdk/typescript/src/generated/openapi.ts` comes from
-  `mix openapi.spec.json`; CI regenerates it and fails on a diff, so a schema
-  change in Elixir cannot leave the SDK describing an API that no longer
-  exists. Generating it immediately found one: see below.
-
-- **The E2B template and the Daytona snapshot are rebuilt by CI** (#692). Both
-  were hand-built artifacts from one afternoon in August, and nothing rebuilt
-  them when `images/` changed or refreshed the four agent CLIs baked into
-  them. A stale sandbox image does not announce itself: every conversation
-  pinned to that provider quietly runs a months-old `claude`, `codex`,
-  `gemini` or `opencode`. The new `Sandbox images` workflow rebuilds both on a
-  change to `images/`, once a week for the CLI versions, and on dispatch.
-
-  Each rebuild is smoke-tested in a real sandbox against
-  `scripts/sandbox-image/smoke.sh`, which is one file both providers ship
-  in-guest so they are held to the same contract. It does the global npm
-  install rather than reading the prefix setting, because #691's failure mode
-  was exit 243 with no output and the setting looked right. Pull requests run
-  the same Dockerfiles through `docker build` and the same smoke, with no
-  provider account involved — which is also what stands between an upstream
-  apt or npm break and the minutes when the Daytona snapshot name, which
-  cannot be rebuilt in place, does not exist.
-
-### Fixed
-
-- **`fountain.me()` returned `null` against a real Fountain**
-  (`sdk/typescript`). `GET /api/auth/me` is one of the nine endpoints that
-  answers with the object itself instead of `{data: …}`, and the SDK unwrapped
-  it anyway, so the call documented as "the cheapest way to check a key works"
-  handed back `null` on success. The test suite was green because the in-process
-  fake wrapped the response too, and the only test touching the path used the
-  raw `request()` escape hatch rather than the verb. The fake now answers
-  unenveloped, `me()` is tested through `me()`, and `test/server.ts` carries the
-  list of unenveloped endpoints so the next route added there is checked against
-  the real envelope.
-
-- **An opencode or gemini agent ignored its system prompt.** Both runtimes run
-  with `HOME=/tmp` — a workaround for a rename that fails across
-  `/home/sprite`'s ACL boundary — and their skills were written there
-  correctly. The system prompt was not: it went to
-  `/home/sprite/.config/opencode/AGENTS.md` and `/home/sprite/.gemini/GEMINI.md`,
-  which neither CLI reads. Every agent on
-  those two runtimes ran on its CLI's default persona, with nothing in the log
-  to say so, and the test asserted the same wrong paths. Both the `HOME` export
-  and the paths written under it now come from one table
-  (`Fountain.Runtimes.Layout`), so they cannot disagree, and a guardrail test
-  checks the agreement rather than the literals. claude and codex were never
-  affected.
-
-- **A sandbox that failed never recorded when it stopped.** Of the dozen
-  writers of a terminal sandbox status, the ones that terminated passed a
-  `terminated_at` and the ones that failed never did, so a failed sandbox
-  carried a null end for the rest of its life. `Conversations.update_sandbox/2`
-  now stamps the column at the same choke point that meters the transition, and
-  a migration repairs the backlog from `updated_at`. Without it, spend
-  attribution reads every historical failure as a sandbox that is still
-  running.
-
-- **Sandbox minutes only appeared when a sandbox died, and then all at once.**
-  The whole lifetime landed in whichever period the teardown happened to fall
-  in, so a long-lived agent reported zero for months and then a spike, a
-  sandbox spanning a month boundary billed entirely to the later month, and one
-  still running reported nothing at all. `usage_summary/3` and
-  `usage_summaries/2` now report the time that actually ran inside the period
-  asked about. `/account/billing` and the admin usage column change with them.
-
-- **Every line of every code block in `/docs` and `/help` had a light box
-  painted behind it.** Tailwind Typography's `code` variant matches the
-  `<code>` inside a `<pre>` as well as inline code, so the inline-code chip —
-  pale background, padding, rounded corners — was applied line by line inside
-  the dark code blocks. The chip is now scoped to inline code. While there:
-  fenced code is syntax highlighted (Lumis, `github_dark_high_contrast`,
-  whose background matches the console's `--color-code-bg`), as it already was
-  on the published MkDocs site, and admonitions — which arrive as blockquotes —
-  no longer render in italics wrapped in typographic quote marks. The
-  highlighter's tree-sitter parsers are baked into the image at build time:
-  it otherwise fetches them from a CDN on first use and caches them on disk,
-  and the deployment has neither the egress nor a writable filesystem, so a
-  self-hosted instance would render every fence plain.
-
-- **`Repository` declared neither `secret_key` nor `ref`.**
-  `Provisioning.clone_https/4` reads both — `secret_key` names the secret the
-  clone authenticates with, `ref` picks a branch — so a private repository
-  could not be expressed by a client generated from the spec. Without
-  `secret_key` the clone fails *inside the sandbox*: provisioning continues,
-  and the agent opens on an empty directory.
-
-- **`AgentRequest` did not declare `allowed_environment_ids`.** `AgentUpdate`
-  declared it and `Agent.changeset/2` has cast it since the allowlist shipped,
-  so `POST /api/agents` accepted the field while the spec said it did not — a
-  client generated from the spec could set the allowlist on `PATCH` and not on
-  `POST`.
-
-- **A TypeScript SDK** (`sdk/typescript`; not yet published to npm). Running
-  an agent is one call — `fountain.run(prompt, { agent, vault, environment })` —
-  which opens a conversation, follows the turn and hands back the answer, the
-  tools used and a URL a human can watch. The handle it returns can be awaited,
-  iterated for lifecycle events, or read as a text stream; `resume(id).send(...)`
-  continues in the same sandbox. Every integration that has ever talked to
-  Fountain wrote this wrapper first (the Hermes plugin, `fountain run`, the
-  bundled skill); this is that wrapper, once, with the turn-following rules and
-  the mid-turn reconnect in one place. Zero runtime dependencies, Node 20.19+.
-  Documented at `docs/sdk.md`.
-
-  The SDK also defines what it runs: `fountain.agents`, `fountain.environments`
-  and `fountain.vaults` each have `list`/`get`/`create`/`update`/`delete` taking
-  a name or an id, and the two latter carry `secrets.set`/`setAll`/`list`/
-  `delete`. `AgentInput` is the whole agent definition as one type — runtime,
-  model, system prompt, skills, MCP servers, sandbox provider and the two
-  allowlists — so `docs/sdk.md` can show a complete definition on one screen
-  instead of describing it. Payloads keep the API's own key names, so one
-  definition reads identically in the SDK, the REST API and a `fountain.yml`.
-
-### Fixed
-
-- **The dashboard's token total counted only fresh input.** A coding agent
-  re-reads its context every turn, so nearly everything it consumes arrives
-  as a cached read: a month of real work on the hosted instance was 1.5k
-  `input` against 41M `cache_read`. The tile said "1.5k in" for 44M tokens.
-  `Conversations.token_usage/3` now reports all four keys the runtimes send
-  and `total_input/1` sums the three that went into the model; the tile shows
-  that, and names the split on hover.
-
-- **A runtime reporting a malformed usage figure no longer breaks recording
-  it.** `turns.usage` is stored as the runtime sent it, but the conversation
-  counters it increments are bigints: a string or an object where a number
-  was expected raised inside the transaction. Anything that is not a
-  non-negative integer now counts as nothing, which is what an unreported
-  figure already counted as. Found while building the dashboard's token
-  total, which guards the same shape on the way out.
-
-### Changed
-
-- **The console's sidebar shows where you can go.** Account, API keys,
-  inference keys, runners, billing, security, the audit log and admin were in
-  a popup behind the user's email address; they are sections now. A
-  destination you cannot see is one you do not know you have — and the
-  conversation list that used to own that space is gone, so there was room.
-  What stays at the bottom is what is not a destination: who you are, sign
-  out, the theme toggle, and the build version a bug report quotes.
-
-- **Fountain's web UI is a console.** The conversation pages
-  (`/conversations`, `/conversations/new`, `/conversations/:id`,
-  `/conversations/:id/logs`), the team page (`/team`) and the onboarding
-  wizard (`/onboarding`) are gone from the server. Conversations and the team
-  are their own apps on the API —
-  [fountain-conversations](https://github.com/jhgaylor/fountain-conversations)
-  and [fountain-team](https://github.com/jhgaylor/fountain-team) — and what
-  stays here is the operator console: dashboard, agents, environments,
-  vaults, audit, API keys, account, admin.
-  - The old paths **redirect** (302) to the app that replaced them, or to the
-    dashboard where a deployment has no such app. Nothing 404s.
-  - Login, OAuth and email verification all land on `/dashboard`, whose
-    checklist — an inference credential, an agent, a conversation — replaced
-    the wizard. It also stamps `onboarding_completed_at` when the account
-    genuinely has those things, which is what the lifecycle funnel's
-    "onboarded" stage reads.
-  - The sidebar's conversation list, its filters and the preference columns
-    behind them are gone, along with the LiveView JS hooks and the d3 CDN
-    script only those pages used.
-  - The session-authenticated turn-image route went with the chat bubbles
-    that used it; the bearer route (`/api/conversations/:id/turns/:id/images/:n`)
-    is unchanged.
-
-  **Upgrade notes — self-hosted.** `/conversations` and `/team` now send a
-  browser to the hosted apps at `https://jakegaylor.com`. They are static
-  builds that take *your* Fountain's URL as input, so they work against your
-  server — but only once it admits that origin:
-
-  ```
-  API_CORS_ORIGINS=https://jakegaylor.com          # add to what you already set
-  ```
-
-  Add `https://jakegaylor.com/fountain-conversations/` and
-  `.../fountain-team/` to `OAUTH_CLIENTS` too if you want "Sign in with
-  Fountain" rather than pasting an API key. Prefer to host your own copies?
-  Point `CONVERSATIONS_APP_URL` / `TEAM_APP_URL` at them. Prefer neither? Set
-  both to `""`: the console stops offering them and the old paths land on the
-  dashboard instead of sending anyone off-site. Nothing about the API
-  changes — a deployment driven by the CLI or `/api` is unaffected either way.
-
-### Added
 
 - **Fountain speaks AG-UI.** `POST /api/agui/:agent_id` answers the
   [AG-UI](https://github.com/ag-ui-protocol/ag-ui) protocol's `RunAgentInput`
@@ -1364,7 +631,725 @@ upgrade, is in
   the standalone conversations app can carry the agents / environments /
   vaults pages without hard-coding any of it (#815).
 
+### Changed
+
+- **Feature status page.** `/docs/reference/feature-status` names the two
+  features that are not on for every hosted account, teammate email and
+  phone (alpha, `team_comms`) and brokered credentials (limited access,
+  `BROKER_TENANTS`), and each page that describes one now opens with a note
+  saying so. `api.md` gains the egress and secret-bindings routes.
+- **Subscription plans shipped and were retired inside this release**
+  (ADR 0026 → ADR 0030/0031; #991, #1036, and the plan, trial, MRR,
+  free-contact-allowance and `mix fountain.verify_plans` work that followed).
+  None of it is in v0.13.0; what replaced it is under Added ("Credits are
+  the product") and Upgrade notes. Self-hosters: with credits off, every
+  account gets `SANDBOX_CAP_CEILING` (20) concurrent sandboxes, so nothing
+  drops to 2 on upgrade.
+- `Billing.provider_spend/1` (the `/admin` and `/admin/sandboxes` hours) and
+  `Finance.cost/3` (the money on `/admin/finance`) read one fold,
+  `Finance.platform_totals/1`, instead of each summing the attribution rows
+  their own way.
+
+- **Billing debt 3/3: the billing page shows what was charged.**
+  `usage_summary/3` (billing page, dashboard, `GET /api/account/billing`)
+  and the admin table count conversations as the ones that ran a turn in
+  the month — from `turn_started` events, which survive a deleted
+  conversation and cover a persistent home that provisions nothing — rather
+  than as sandbox provisions, and carry `credit_burned_cents`: what the
+  ledger actually took for the window, shown as "Spent" beside the metered
+  hours. SDK 1.2.0.
+
+- **Credits cleanup 3/3 (#1128).** The prose catches up with ADR 0031. ADR
+  0006 is marked superseded, ADR 0030's status block describes what is built
+  (no switches, no tiers, `CreditExpirer`), ADR 0026 and 0031 are corrected,
+  and the index is regenerated. CLAUDE.md loses the plans trailer and gains
+  the `require_pending_verification` hook row. The manual's API page lists
+  the endpoints that exist (`credits/checkout`, admin `credits`, `comped=`),
+  the 402 and 503 codes, and drops the portal, subscription checkout and
+  resync; the configuration, architecture, mail, Sprites, integrations,
+  dashboards, SDK and release-task pages, `.env.example`, the compose file,
+  the k8s configmap and the finance Grafana board no longer describe a
+  subscription, a trial or a plan. Every docstring and comment the review
+  found still describing the subscription era is rewritten, including the
+  `users` field comments that had drifted onto the wrong fields.
+
+- **`k8s/` is gone; `deploy/` is the only Kubernetes directory** (ADR 0032
+  addendum). The manifest artifact now pins the image in
+  `deploy/k8s/kustomization.yaml`'s own `images:` block, and
+  `FOUNTAIN_BUILD_SHA` is baked into every main-line image as it always was
+  for releases. The artifact is generic; the Kubernetes guide shows how to
+  track `main` with Flux from it.
+- **The hosted instance's Kubernetes overlay left the repo** (ADR 0032).
+  `k8s/` held the maintainer's own cluster — CNPG, Infisical, Traefik,
+  hostnames, backups, alerts, the rate card, the OAuth client list — as an
+  overlay of `deploy/k8s/`, and `publish-manifests.yml` shipped both in the
+  manifest artifact. That overlay now lives in the private home-cloud repo,
+  applied on top of the artifact with Flux patches. `k8s/` keeps only the
+  image pin (`pin.yaml`), so the artifact is the portable baseline plus the
+  image built from that tree and nothing else. Self-hosters were never meant
+  to apply `k8s/`; the Erlang clustering env it used to demonstrate is now
+  written out in the Kubernetes guide. `.sops.yaml` is gone with it.
+
+- **The ACP peer outlives its prompt.** `Fountain.Runtimes.ACP.Peer` no
+  longer ends when the prompt is answered: it reports the stop reason and
+  waits in `:idle` for the next `prompt/3` on the same connection (no second
+  handshake, no `session/resume`, no model pin), reports an autonomous
+  cycle's end as `{:cycle_end, kind}` from the adapter's origin-marked
+  `usage_update`, and closes on `close/1`. Part 1 of 3 for #817. Nothing
+  changes in production yet: `ConversationServer` still stops the peer at
+  turn end, until part 3 moves the connection to the wake.
+
+- **A running sandbox is no longer destroyed at 24 hours.** The continuous-run
+  ceiling (`SANDBOX_MAX_LIFETIME_HOURS`, ADR 0017) now defaults to `0`, off,
+  for every sandbox mode: a tenant who wants a machine running all day is not
+  something to stop, and for a persistent home the disk is the product. The
+  idle timeout (`SANDBOX_IDLE_TIMEOUT_MINUTES`, still 60) is the only
+  automatic stop, and it parks rather than destroys; the plan's
+  concurrent-sandbox cap bounds how many machines stay up. An operator who
+  wants the old backstop sets the variable, and then an ephemeral sandbox is
+  destroyed at the ceiling and a home is parked, exactly as before. #936.
+
+- **Turn hours add up per turn.** With several conversations on one sandbox
+  at once, a tenant's turn hours are the sum of their turns (two
+  conversations each running an hour on one machine spend two), while the
+  sandbox's busy time stays the union of the same intervals — the machine's
+  view, which a provider bill relates to. `SandboxUsage` reports both
+  (`turn_seconds` beside `busy_seconds`); the billing page, the API usage
+  summary and the admin finance panel now read the sum. On a sandbox with
+  one conversation the two numbers are equal, so nothing changes for
+  today's accounts. ADR 0026 addendum; ADR 0023 step 6.
+
+- **A change that moves a home's identity retires the home.** A persistent
+  sandbox is keyed on `(user, agent, environment, vault)`. Moving an agent's
+  `environment_id`, deleting an environment, or deleting a vault moved that
+  key and left the machine `ready` under an identity nothing looks up — it
+  held a concurrency slot and a disk carrying the old environment's or
+  vault's secrets. All three now retire the affected homes the way
+  `DELETE /api/sandboxes/:id` does: the machine is destroyed, the
+  conversations on it are kept and told why (`sandbox`/`reset` with
+  `environment_changed`, `environment_deleted` or `vault_deleted`), and the
+  next prompt builds a machine on the identity that exists now. Audited as
+  `sandbox.reset` with the reason in the metadata. Each request is refused
+  with `409 sandbox_mid_turn` (a flash in the console) while a conversation
+  on one of those machines runs a turn, and nothing is written.
+
+  Deleting an environment or a vault was additionally broken outright: the
+  `ON DELETE SET NULL` on `sandboxes.environment_id` / `sandboxes.vault_id`
+  either turned the home into the *no environment* or *no vault* home for
+  its identity — so the next launch that asked for neither landed on a disk
+  holding the deleted secrets — or collided with
+  `sandboxes_home_identity_index` (`NULLS NOT DISTINCT`) and failed the
+  delete with an unhandled constraint error. #1084.
+
+- **A sandbox that is gone is gone for every conversation on it.** When a
+  prompt wakes a conversation and finds its sandbox has vanished, the fresh
+  machine it provisions now takes every live conversation that shared the old
+  one along (runtime sessions cleared, a `sandbox`/`replaced` stage event on
+  each transcript), instead of leaving them pointing at a terminated row and
+  provisioning a machine each on their next prompt. ADR 0023 gate 5.
+
+- **A sandbox several conversations hold is treated as one machine.**
+  Three rules that used to be one conversation's to break (ADR 0023, steps
+  4 and 5): a turn on an opencode or gemini sandbox is refused with
+  `409 sandbox_at_capacity` while another conversation's turn runs there
+  (claude and codex run several at once — `Runtimes.ACP.concurrency/1`, and
+  the check is made under a per-sandbox lock so two prompts cannot both
+  start); terminating a conversation destroys the sprite only when it was
+  the last conversation on it; and the idle timeout parks the machine only
+  when every conversation on it has been quiet for the bound, at which
+  point the other conversations' servers are stopped so their next prompt
+  wakes it properly. Scheduled teammate runs treat `sandbox_at_capacity`
+  like a busy teammate and retry within their window.
+
+- **A conversation's identity travels with its process, not the sandbox's
+  disk.** `FOUNTAIN_TOKEN`, `FOUNTAIN_CONVERSATION_ID` and `TRACEPARENT` are
+  no longer written to `/home/sprite/.env`; they reach the agent as
+  environment on every spawn, exactly as before from the agent's point of
+  view. The runtime's detachable session is now started as
+  `env FOUNTAIN_CONVERSATION_ID=<id> <adapter> …`, and a reattach after a
+  deploy binds to the session carrying its own conversation's tag rather
+  than the head of the sandbox's session list — the prerequisite for several
+  conversations sharing one sandbox (ADR 0023, gate 1). A `setup_script`
+  that did `source .env` no longer sees the callback token; environment and
+  vault values are unaffected. The reattach stage event reports
+  `matched_by` (`tag`, or `untagged_head` for a session started before this
+  release).
+
+- **The dashboard's usage tile is turn hours, not sandbox time.** "Sandbox
+  time" was wall-clock hours a tenant's sandboxes were awake — Fountain's cost
+  signal, and nothing a customer buys or is measured on. It went up while they
+  slept. The tile now shows turn hours against the plan's included hours, the
+  unit `Fountain.Plans` actually denominates an allowance in, and the sandbox
+  figure moved into the hint. The whole "this month" section also moves to the
+  window Stripe invoices where there is one, so the dashboard and
+  `/account/billing` can no longer report different numbers for the same
+  period; the heading says which window it is on.
+- **`/admin`'s per-user usage column shows turn hours.** Same reasoning, one
+  page over: sandbox minutes belong next to the bill Fountain pays, on
+  `/admin/finance`. The sandbox total and its per-provider split stay in the
+  cell's tooltip.
+- `Billing.usage_summary/3` and `usage_summaries/2` both carry `turn_hours`
+  now, computed from the attribution pass they already ran. `usage_summary/3`
+  makes one pass where it used to make one and would have needed two. No API
+  field was renamed or removed.
+- **`/` is no longer the same page on every deployment.** The homepage sold a
+  product: a hero, a 14-day trial, a monthly price, and a footer calling
+  Fountain "managed agent infrastructure". Every self-hosted instance served
+  it, to an audience of the operator and their own team, none of whom are
+  buying a trial of the thing they already run. `/` now serves a plain front
+  door — the instance, a way in, and a link to `/docs` — unless the deployment
+  sets `MARKETING_SITE=true`. This is the reasoning `LEGAL_ENTITY` already
+  applies one page over (#517): an instance must not serve the upstream
+  project's terms, and it has no more business serving the upstream project's
+  sales copy. The flag is off by default, so a self-host is right without
+  reading this entry. It is deliberately not `BILLING_ENABLED`, which an
+  operator running Fountain commercially inside their own company may well
+  turn on.
+- **A closed instance stops advertising registration.** With
+  `REGISTRATION_ENABLED=false` the public pages still linked "Get started" and
+  "Register", and `Accounts.registration_allowed?/1` then refused the submit.
+  The nav, the footer and the new front door now hide the link. The context
+  check is unchanged and is still the control.
+
+- **Fountain is no longer MIT licensed** (ADR 0027). The server under
+  `apps/fountain` is now **AGPL-3.0-or-later**, `ee/` is under the **Elastic
+  License 2.0**, and `cli/` and `sdk/typescript` are **Apache-2.0**. Releases
+  through v0.12.0 were MIT and stay MIT, irrevocably, for anyone who has them.
+
+  The reason is narrow. MIT let a funded competitor take Fountain, improve it,
+  host it and return nothing, and the part that stung was not the revenue but
+  that nobody else running Fountain got any benefit from that work. AGPL
+  section 13 answers exactly that and nothing more. A competitor may still
+  host Fountain commercially, in direct competition with the hosted product.
+  They must do it in the open.
+
+  Nothing changes for an integrator. The CLI, the TypeScript SDK and the two
+  single-page apps are permissive on purpose, because an AGPL SDK would put a
+  copyleft obligation on every application that calls the API, which is
+  precisely the integration Fountain wants. Nothing changes for a self-hoster
+  either: `ee/` is free to run and your changes to it stay private, which is
+  what ELv2 grants and what the single-image build requires.
+
+  Contributions come in under the Apache License 2.0 and go out under the
+  license of the directory they touch, with a DCO (`git commit -s`), no CLA
+  document and no bot. That preserves the ability to sell a commercial
+  exception to a company whose policy forbids the AGPL, which would otherwise
+  close at the first merged outside pull request. The asymmetry it creates is
+  stated in `CONTRIBUTING.md` rather than buried. See `NOTICE`,
+  `CONTRIBUTING.md` and `decisions/0027-agpl-relicensing.md`.
+
+- **The console's sidebar shows where you can go.** Account, API keys,
+  inference keys, runners, billing, security, the audit log and admin were in
+  a popup behind the user's email address; they are sections now. A
+  destination you cannot see is one you do not know you have — and the
+  conversation list that used to own that space is gone, so there was room.
+  What stays at the bottom is what is not a destination: who you are, sign
+  out, the theme toggle, and the build version a bug report quotes.
+
+- **Fountain's web UI is a console.** The conversation pages
+  (`/conversations`, `/conversations/new`, `/conversations/:id`,
+  `/conversations/:id/logs`), the team page (`/team`) and the onboarding
+  wizard (`/onboarding`) are gone from the server. Conversations and the team
+  are their own apps on the API —
+  [fountain-conversations](https://github.com/jhgaylor/fountain-conversations)
+  and [fountain-team](https://github.com/jhgaylor/fountain-team) — and what
+  stays here is the operator console: dashboard, agents, environments,
+  vaults, audit, API keys, account, admin.
+  - The old paths **redirect** (302) to the app that replaced them, or to the
+    dashboard where a deployment has no such app. Nothing 404s.
+  - Login, OAuth and email verification all land on `/dashboard`, whose
+    checklist — an inference credential, an agent, a conversation — replaced
+    the wizard. It also stamps `onboarding_completed_at` when the account
+    genuinely has those things, which is what the lifecycle funnel's
+    "onboarded" stage reads.
+  - The sidebar's conversation list, its filters and the preference columns
+    behind them are gone, along with the LiveView JS hooks and the d3 CDN
+    script only those pages used.
+  - The session-authenticated turn-image route went with the chat bubbles
+    that used it; the bearer route (`/api/conversations/:id/turns/:id/images/:n`)
+    is unchanged.
+
+  **Upgrade notes — self-hosted.** `/conversations` and `/team` now send a
+  browser to the hosted apps at `https://jakegaylor.com`. They are static
+  builds that take *your* Fountain's URL as input, so they work against your
+  server — but only once it admits that origin:
+
+  ```
+  API_CORS_ORIGINS=https://jakegaylor.com          # add to what you already set
+  ```
+
+  Add `https://jakegaylor.com/fountain-conversations/` and
+  `.../fountain-team/` to `OAUTH_CLIENTS` too if you want "Sign in with
+  Fountain" rather than pasting an API key. Prefer to host your own copies?
+  Point `CONVERSATIONS_APP_URL` / `TEAM_APP_URL` at them. Prefer neither? Set
+  both to `""`: the console stops offering them and the old paths land on the
+  dashboard instead of sending anyone off-site. Nothing about the API
+  changes — a deployment driven by the CLI or `/api` is unaffected either way.
+
 ### Fixed
+
+- **Every exit code Fountain ever recorded from Sprites was an invented 0**
+  (#994). The pinned `sprites-ex` fork decoded the one-byte exit frame as
+  four bytes, so no real exit ever matched and the socket close synthesised
+  `0`: a failing setup script reported a healthy sandbox and a `git clone`
+  that died produced `clone/done` and an agent with no repository. The real
+  code is read now.
+- **A warm start from a checkpoint skipped the network policy** (#990). An
+  egress policy is a live provider call, not a file on the disk image, so a
+  `limited` environment restored from a checkpoint provisioned with no
+  egress restriction at all, on every provider. The policy is applied on
+  every start.
+- **An agent's system prompt never reached the runtime** (#848, #849; wired
+  again after a squash-merge dropped the call sites). `agents.system` was
+  stored, edited and exported and never read at provision, so every agent
+  ran on its CLI's default persona. `Fountain.Runtimes.Instructions` writes
+  it, with a provenance header, into the runtime's user-level instructions
+  file on provision and reattach, and a wiring test fails if either stops.
+- **A claude agent's MCP servers now start** (#837, #838).
+  `claude-agent-acp` ignores the `mcpServers` passed on `session/new`
+  (agentclientprotocol/claude-agent-acp#883), so no claude agent's MCP
+  servers reached the model on any provider. Fountain provisions them as a
+  project `.mcp.json` plus `enableAllProjectMcpServers` in
+  `~/.claude/settings.json` instead.
+- **Model suggestions the providers had retired** (#978, #993).
+  `gemini-2.5-pro` / `gemini-2.5-flash` (404, "no longer available to new
+  users") give way to `gemini-3.1-pro-preview` and the 3.x flashes;
+  `gpt-5-codex`, both the suggestion and the codex form placeholder, is
+  retired for `gpt-5.3-codex`; `claude-opus-4-7` is listed. Every id was
+  verified by calling it.
+- **A refused model is named in the turn's error** (#992). The peer reads
+  the refusal out of the provider's sentence and fails the turn as
+  `model_unavailable` with the requested id, instead of an inspected
+  `{:acp_error, ...}` tuple; the `model` stage event carries the id.
+- **opencode is pinned by its canonical `provider/model` id** (#1157). Sent
+  the bare id, opencode said "model not found" and silently fell back to its
+  own default over its own gateway, so the configured provider was never
+  called.
+- **A backend that cannot enforce a `limited` environment is refused up
+  front, by name** (#987). A runner has no egress policy; pairing one with a
+  `limited` environment used to fail several steps into provisioning with a
+  transport-shaped reason, and is now refused before a sandbox is created,
+  with the console form saying which provider cannot.
+- **Channel resume skips a conversation whose sandbox is gone** (#985). A
+  `channel_id` bound to an `idle` conversation on a `terminated` or `failed`
+  sandbox opens a new conversation instead of resuming a cold agent inside a
+  transcript that reads as continuous; `suspended` stays resumable.
+- **Fifty `reattach started` events per restart** (#971, #977). Cluster
+  convergence re-entered reattach from the top and announced itself before
+  touching the sprite; the event is published once the sprite answers.
+- **A lost wake race on a reused sandbox dropped the prompt** (#667, #786).
+  The reuse arm now hands the prompt to the server that won, as the
+  fresh-sandbox arm already did.
+- **The team stream flushes a first byte immediately** (#810, #812), so an
+  ingress that buffers chunked responses (Cloudflare) no longer shows
+  "reconnecting" for the 15 s until the first heartbeat.
+- **A teammate on a ready sandbox with no turn yet is `online`**, not
+  "starting computer" (#839).
+- **Team comms hardening** (#853, #854, #858): an AgentPhone persona per
+  number, voice calls answered with a spoken decline, provider refusals
+  reported as 424 with the provider's reason, and a from-line stating the
+  trust boundary.
+- **The SDK no longer sets `User-Agent` in a browser** (#1062, SDK 0.1.5).
+  Firefox sends it and so turned every call into a CORS preflight the
+  allow-list refused; the CORS plug also allows the header for older builds.
+- **A best-effort write no longer takes the request down** (#1045).
+  `last_used_at` stamps and password-reset delivery ran in a linked
+  `Task.async`, so a connection blip on a column nothing reads could kill an
+  already-authenticated API call; they are supervised and unlinked now.
+- **The marketing page** (#951, #1024, #1027, #1107; renders only with
+  `MARKETING_SITE=true`): invented testimonials and a "first conversation in
+  under five minutes" figure are removed; the cap is described as refusing
+  the next sandbox, not queueing it; parked, idle and self-hosted time is
+  stated to cost nothing; the pricing section says what a credit buys in the
+  meter's own numbers.
+- **`/llms.txt` points at `/docs`** (#1013), not the authenticated `/help`
+  routes that rendered a login page to every agent following the index.
+- **Broker, three findings from wiring the workbench to gate 4.**
+  `GET /api/conversations/:id/egress` needs full scope, like
+  `/api/secret-bindings`: a sandbox's sprite-scoped token could read the
+  request log — which secrets went to which host — for any conversation on
+  the tenant (#1152). Its 502 no longer leaks an inspected Elixir term as
+  `message`; the client gets "The egress broker did not answer." plus a
+  stable `reason` word (`econnrefused`, `api_error_503`, ...) and the detail
+  goes to the server log (#1153). The OpenAPI description of
+  `networking_config` says where `limited` is enforced (the broker on a
+  brokered account, the sandbox otherwise) instead of the pre-gate-2 sandbox
+  story, and `GET /api/auth/me` carries a read-only `brokered` so a client
+  can label the mode without probing `/api/secret-bindings` (#1154).
+
+- A brokered sandbox lets `sudo` keep the proxy variables (a sudoers `env_keep` drop-in, installed beside the broker CA), so a setup script's `sudo apt-get install` reaches a mirror. Before, sudo's `env_reset` stripped `http_proxy`, apt resolved the mirror directly and the broker floor refused it with `Temporary failure resolving`; the first brokered provisions of real environments failed there. (#1158)
+
+- **Billing debt 1/3: the month is half-open, one gate, one cap rule.**
+  `Billing.month_range/2` replaces four hand-rolled month windows; its `end`
+  is the first instant of the next month, so the last second of every month
+  is no longer dropped from every usage query (`GET /api/account/billing`'s
+  `period.end` moves accordingly; SDK 1.1.1). `Credits.Rent` runs through
+  `Credits.check_balance/2` (`min:` a month's rent) instead of its own
+  balance read, so an expired-but-unswept grant funds a contact no more than
+  it funds a turn. Under the reservation lock the credit gate now runs
+  before the sandbox quota, so an unfunded account's cap is 0 everywhere
+  (`sandbox_limit/1` and `sandbox_limit_for/1` agree) and it is refused as
+  `insufficient_credits`, never as a 0/0 quota. `Credits.gate/1` is
+  `check_balance/2`; `Credits.active?/0` is gone (it was `Billing.enabled?/0`).
+  `Finance.deferred_cents/0` is the one deferred-balance query.
+
+- **Credits cleanup 1/3 (#1126).** Six ledger bugs left by ADR 0031 and the
+  customer-facing text that still described subscriptions. An expiry now
+  takes only what its own grant still holds, read inside the ledger's
+  transaction, so a burn racing the sweep can no longer make it reach into
+  purchased money; a debit that names a lot never falls through to another.
+  A charge disputed and then refunded is clawed back once. An expired grant
+  stops funding new work the moment it passes (`check_balance/1` subtracts
+  expired-but-unswept lots) and the pricer's ten-minute tick runs the expiry
+  sweep. `Rent.charge/3` checks idempotency before the balance, so a re-charge
+  of a paid month on a short balance no longer starts a release clock. The
+  ledger lists and indexes open lots by `seq` (migration). The billing page,
+  the credit emails, the dashboard hint, the terms, privacy and home pages,
+  the quota and contact-limit messages and a scheduled run's error no longer
+  mention plans, trials or subscriptions; `credit.*` audit events refresh
+  PostHog person properties. `/admin/users` and `GET /api/admin/users` take
+  `comped=` in place of the silent no-op `status=` filter and `trial_end`
+  sort. SDK 1.0.1 names `insufficient_credits` and `fleet_full`.
+
+- **A background task the agent starts survives the turn that started it.**
+  Fountain closed the runtime connection at every `end_turn`, and the adapter
+  treats that connection as the session, so a `Monitor`, a `run_in_background`
+  shell or a `ScheduleWakeup` that Claude Code left running was killed the
+  moment the turn ended, and codex's "Allow for Session" grant was thrown away
+  before the next turn. The connection now lives for the sandbox wake, not one
+  turn: after a turn it waits idle for the next prompt on the same session — no
+  second handshake, no `session/resume` — and closes only when the sandbox
+  stops being the conversation's (idle park, ceiling, terminate, release,
+  shutdown). A follow-up the agent narrates after its turn ends lands on the
+  transcript as an `autonomous` turn. Across a deploy a follow-up in flight is
+  still lost, and its orphaned adapter session is reaped by the conversation's
+  tag so a co-tenant on a shared sandbox is untouched. ADR 0014, #817.
+
+- **A conversation's title was the model refusing its first prompt.** The
+  title generator handed the first prompt to a chat model with one line of
+  framing, so a prompt shaped like an instruction ("Run exactly this shell
+  command...") got answered rather than named, and "I can't execute shell
+  commands or access your system" became the conversation's title in the
+  sidebar, on the team page and in `GET /api/sandboxes` (#1074). The model
+  is now told it is naming a conversation it is not party to, and a reply
+  that opens in the first person, apologises or hedges is thrown away in
+  favour of the prompt's own first line.
+
+- **Deleting an agent that had a versioned conversation failed.** The
+  delete cascades to the agent's versions, and Postgres re-checked the
+  conversation's `agent_version_id` mid-cascade, before its own SET NULL
+  ran, so every agent with a conversation started since config versioning
+  (#1049) refused to delete with a foreign-key error. The conversations are
+  unpinned from their versions first now; the version was provenance only.
+
+- **A conversation interrupted mid-provision now rebuilds its sandbox instead of failing in `clone`.** A deploy or a Horde rebalance that killed a server during provisioning restarted it against the same half-built sprite, where `git clone` refused the existing checkout and the whole conversation failed. The restart now discards the remnant and provisions clean; the `provision started` event says so.
+
+- **The finance panel reported teammate-contact revenue nobody was charged.**
+  It priced every non-comped contact at `Plans.contact_monthly_cents/0`, which
+  returns $5 whether or not anything is configured to charge it. The actual
+  billing path, `sync_contact_addon/1`, has four guards in front of that
+  arithmetic — billing off, **no `STRIPE_PRICE_ID_CONTACT` on this
+  deployment**, a comped account, or an account with no Stripe subscription to
+  hang an item on — and any one of them means the invoice says zero.
+
+  The panel copied only the last step, and a comment claimed the two "cannot
+  disagree". They disagreed for every deployment that had not set the contact
+  price, which is the state a deployment stays in on purpose: setting that
+  variable puts a line item on the next invoice of every tenant already
+  holding contacts (#991). `/admin`'s MRR tile inherited the same error
+  through `Finance.mrr/0`.
+
+  Contact revenue is now what the add-on would actually bill. Where nothing
+  bills for contacts the panel says so out loud rather than showing a bare
+  `$0.00` beside a cost section still counting real inboxes and numbers —
+  which is the true and useful shape of it: those contacts cost money and earn
+  none.
+
+- **ADR 0028 said a PostHog event definition is permanent. It is not.** The
+  claim came from ADR 0025 and was repeated without checking. Trying to act on
+  it is what disproved it: the nine request-line definitions `api.request`
+  retired stopped receiving events on 2026-08-22, and about a day later they
+  were gone from the project's taxonomy — a full listing returns 32
+  definitions with no request line among them, `?search=POST` returns zero,
+  and `?include_hidden=true` returns the same 32. The historical events remain
+  queryable; only the taxonomy entries went. The decision does not change and
+  neither does `product_event?/2` — 73 new names a day is still a taxonomy
+  nobody can read — but the cost is paid while those names exist rather than
+  forever, which is a weaker argument for the same conclusion. Corrected in
+  ADR 0028's new Correction section, in ADR 0025, in the `Fountain.Analytics`
+  and `FountainWeb.Plugs.Audit` docstrings, and in the configuration guide.
+
+- **`/admin/finance` 500'd as soon as a rate card was configured.** #1029 made
+  rates fractional; `money/1` still matched only integers, and `rate_label/2`
+  passed it the raw rate. The page raised `FunctionClauseError` on
+  `money(5.45)` for every visit. It was invisible in CI because every test
+  used whole-number rates, and the one test that did use a fractional rate
+  exercised the arithmetic rather than the render — no test had ever rendered
+  the provider card with a rate set at all.
+
+  A rate is now shown in cents keeping its fraction (`10.76c/hour`), because
+  it is a rate and not a total: rounded to whole cents, 10.76 and 5.45 stop
+  being comparable and anything between 4.5 and 5.5 reads the same. `money/1`
+  also rounds a float rather than raising — every cost path already rounds
+  before display, but a cent of rounding is a better answer than a dead page.
+
+- **Analytics no longer geolocates every person to the datacentre.**
+  `Fountain.Analytics` sent `"$ip" => nil` believing that meant "no location".
+  It does not: PostHog fills a missing `$ip` from the address the batch
+  arrived from, which for a server-side sink is a pod's egress address, and
+  then geolocates that — all 108 pageviews in the project reported a single
+  city. A capture with no client address now sets `$geoip_disable`, and the
+  console pageview hook forwards the address `Audited.put_client_ip/1` already
+  resolved at mount, under the same trusted-proxy rule the rate limiter uses.
+- **The CSP is built at runtime.** It is assembled per response rather than
+  baked into a module attribute, because `POSTHOG_HOST` is read in
+  `config/runtime.exs` — a compile-time policy would have carried whatever the
+  *build* saw (for a release, nothing) and blocked every self-hosted PostHog
+  behind a header that looked correct in the source.
+
+- **`admin.plan.changed` and `admin.comped_contacts.changed` are in
+  `AdminEvent`'s allowlist.** The list is closed and `record_admin/1` is
+  best-effort, so a missing type is dropped silently and the action ships with
+  no privilege trail. That has now bitten three times; the new admin tests
+  assert the trail rather than only the effect.
+
+- **Product analytics in PostHog** (ADR 0025). Fountain has kept an audit
+  trail, a billing meter and a set of OTel spans for a while, and none of them
+  could say whether the accounts that verified last week came back. It now
+  captures product events server-side into the same PostHog project that
+  already evaluates feature flags, so retention, funnels and cohorts stop
+  being SQL nobody has written yet.
+
+  The events come from choke points the code already had, never from
+  instrumented call sites: `Audit.record/1` (every audited mutation, under its
+  own action name), `Billing.record_usage/5` (`usage.turn_started` and the
+  other five metering events) and `Conversations.publish_stage/4` (how a turn
+  ended). Adding an instrumented action means auditing it, which the guardrail
+  test already forces. Console pageviews come from the LiveView auth hook, so
+  the console still loads no third-party script, and reading a flag captures
+  `$feature_flag_called` while stamping `$feature/<key>` onto every other
+  event.
+
+  The trail is a superset of the product stream, and two things it carries are
+  refused: the `:api` pipeline's request-log row, whose name holds a resource
+  id and would make a new PostHog event type per resource, and an API key
+  Fountain issued to itself (a sandbox credential, a Buzz harness credential,
+  an OAuth token). Those were 70% of the trail in its first day. A key a
+  person mints in the console or through the API is kept. Nothing is dropped
+  from the audit trail itself.
+
+  Nothing is sent without `POSTHOG_PROJECT_API_KEY`, and `POSTHOG_CAPTURE=false`
+  keeps flag evaluation while stopping capture. Events carry action names,
+  resource types, counts and sizes, never secret values, prompts or agent
+  output. `POSTHOG_PERSON_PII=false` drops the account email and leaves the
+  user id. Delivery is best-effort and bounded: events batch through one
+  process, a full queue or a failed request drops them, and each drop is
+  counted on `[:fountain, :analytics, :dropped]` so silence and health stay
+  distinguishable.
+
+- **Webhooks** (#700, ADR 0024). Until now the only way to learn that
+  something happened to a conversation was to hold an HTTP connection open,
+  which is a daemon every integrator had to write and a thing a GitHub Action,
+  a Lambda or a cron script cannot do at all. Fountain now POSTs conversation
+  lifecycle transitions to a URL you own, signed with an HMAC secret, retried
+  for about a day, with every attempt visible and redeliverable from
+  `/account/webhooks`, `/api/webhooks` and `fountain webhooks`.
+
+  Dispatch hangs off `publish_stage/4`, the same chokepoint the Prometheus
+  stage counter is built on, so a new lifecycle outcome cannot be added
+  without subscribers seeing it. A test reads the call sites out of the source
+  to keep that true. Conversation output stays on SSE: a chatty turn writes
+  thousands of chunks and none of them becomes an HTTP request.
+
+  The payload carries ids, a stage and a duration, and never conversation
+  content, on the same rule the audit trail runs on. The URL is checked for
+  shape when you save it, resolved and checked again before every request, and
+  then connected to by the address that was checked, with your hostname in the
+  `Host` header and TLS SNI. Redirects are never followed. See
+  [Webhooks](https://fountain.inevitable.fyi/docs/reference/webhooks).
+
+- **Sandbox spend attribution: which tenant, on which provider, ran how long.**
+  Fountain pays Sprites, E2B and Daytona by the second and had no way to say
+  whose seconds those were. `Fountain.Billing.SandboxUsage` now computes active
+  sandbox time per `{user, provider}` from the sandbox rows themselves, clipped
+  to the period asked about, with parked time subtracted. A **Sandbox spend by
+  provider** panel on `/admin` reports hours, sandboxes and tenants per
+  provider, names the accounts behind the total, and marks self-hosted runner
+  hours as the tenant's own hardware rather than our bill. Every total also
+  splits into **busy and idle** — busy being the union of the sandbox's turn
+  intervals, so two conversations prompting one sandbox at once count once —
+  because a sandbox nobody is prompting is charged at full rate and is the
+  part of the bill a shorter idle timeout (decisions/0017) actually removes.
+  An hours figure that cannot separate work from waiting says nothing about
+  whether the bill is avoidable. Each account sees
+  its own split on `/account/billing` and in `usage.sandbox_minutes_by_provider`
+  on `GET /api/account/billing`, and Prometheus gained
+  `fountain_sandboxes_by_provider_count` for the live view. Deliberately no
+  money anywhere: prices are per-provider and per-machine-size, and a made-up
+  rate would look authoritative. Documented in
+  `docs/guides/operate/sandbox-spend.md`. Closes the metering-correctness half
+  of #798.
+
+- **What we need from a sandbox platform** (`docs/integrations/platform-requirements.md`):
+  the ten things Fountain had to build itself because no backend promised them,
+  each with the workaround it costs us and an acceptance test a platform team can
+  run. Written for vendors rather than adapter authors, alongside a dated matrix
+  of where all four backends stand today.
+
+- **The SDK's surface, rebuilt from what the applications actually use.** The
+  eleven apps on the Fountain API each hand-wrote a client (2,644 lines
+  between them), and counting their methods says plainly what belongs in an
+  SDK: `markRead`, `listTurns`, a paged event drain and `createAgent` appear in
+  all eleven, and `/api/team` in ten. So the SDK gained `fountain.team`
+  (roster, `message()` returning a `Run`, history, fresh threads, routines and
+  the one-connection team stream), `conversation.markRead()`,
+  `conversation.history()`, `fountain.catalog()`, `fountain.search()` and
+  `fountain.events()`.
+
+- **A guided tour** (`docs/tour.md`): an agent that clones a repository, opens
+  a pull request, and then amends the same PR on a follow-up turn thirteen
+  seconds later because the sandbox is still up. Every number and output on the
+  page came from running it; `sdk/typescript/examples/pull-request.ts` is the
+  same thing runnable.
+
+  Errors are now keyed on the server's `error` code rather than the status,
+  because that is how every app branches: `ConversationBusyError` (a 400),
+  `QuotaExceededError` (a 429, carrying `activeSandboxes`/`limit`),
+  `NotReadyError` (a 503, carrying the server's `Retry-After`), plus
+  `fieldErrors` on 422 and a `retryable` flag on all of them.
+
+  The SDK also works in a browser now, which those apps all are: no module
+  reachable from the default entry imports a Node built-in, and the
+  credentials-file reader moved behind the `node` export condition. CI bundles
+  the entry for a browser to keep it that way.
+
+- **The SDK's types are generated from the OpenAPI spec.**
+  `sdk/typescript/src/generated/openapi.ts` comes from
+  `mix openapi.spec.json`; CI regenerates it and fails on a diff, so a schema
+  change in Elixir cannot leave the SDK describing an API that no longer
+  exists. Generating it immediately found one: see below.
+
+- **The E2B template and the Daytona snapshot are rebuilt by CI** (#692). Both
+  were hand-built artifacts from one afternoon in August, and nothing rebuilt
+  them when `images/` changed or refreshed the four agent CLIs baked into
+  them. A stale sandbox image does not announce itself: every conversation
+  pinned to that provider quietly runs a months-old `claude`, `codex`,
+  `gemini` or `opencode`. The new `Sandbox images` workflow rebuilds both on a
+  change to `images/`, once a week for the CLI versions, and on dispatch.
+
+  Each rebuild is smoke-tested in a real sandbox against
+  `scripts/sandbox-image/smoke.sh`, which is one file both providers ship
+  in-guest so they are held to the same contract. It does the global npm
+  install rather than reading the prefix setting, because #691's failure mode
+  was exit 243 with no output and the setting looked right. Pull requests run
+  the same Dockerfiles through `docker build` and the same smoke, with no
+  provider account involved — which is also what stands between an upstream
+  apt or npm break and the minutes when the Daytona snapshot name, which
+  cannot be rebuilt in place, does not exist.
+
+- **`fountain.me()` returned `null` against a real Fountain**
+  (`sdk/typescript`). `GET /api/auth/me` is one of the nine endpoints that
+  answers with the object itself instead of `{data: …}`, and the SDK unwrapped
+  it anyway, so the call documented as "the cheapest way to check a key works"
+  handed back `null` on success. The test suite was green because the in-process
+  fake wrapped the response too, and the only test touching the path used the
+  raw `request()` escape hatch rather than the verb. The fake now answers
+  unenveloped, `me()` is tested through `me()`, and `test/server.ts` carries the
+  list of unenveloped endpoints so the next route added there is checked against
+  the real envelope.
+
+- **An opencode or gemini agent ignored its system prompt.** Both runtimes run
+  with `HOME=/tmp` — a workaround for a rename that fails across
+  `/home/sprite`'s ACL boundary — and their skills were written there
+  correctly. The system prompt was not: it went to
+  `/home/sprite/.config/opencode/AGENTS.md` and `/home/sprite/.gemini/GEMINI.md`,
+  which neither CLI reads. Every agent on
+  those two runtimes ran on its CLI's default persona, with nothing in the log
+  to say so, and the test asserted the same wrong paths. Both the `HOME` export
+  and the paths written under it now come from one table
+  (`Fountain.Runtimes.Layout`), so they cannot disagree, and a guardrail test
+  checks the agreement rather than the literals. claude and codex were never
+  affected.
+
+- **A sandbox that failed never recorded when it stopped.** Of the dozen
+  writers of a terminal sandbox status, the ones that terminated passed a
+  `terminated_at` and the ones that failed never did, so a failed sandbox
+  carried a null end for the rest of its life. `Conversations.update_sandbox/2`
+  now stamps the column at the same choke point that meters the transition, and
+  a migration repairs the backlog from `updated_at`. Without it, spend
+  attribution reads every historical failure as a sandbox that is still
+  running.
+
+- **Sandbox minutes only appeared when a sandbox died, and then all at once.**
+  The whole lifetime landed in whichever period the teardown happened to fall
+  in, so a long-lived agent reported zero for months and then a spike, a
+  sandbox spanning a month boundary billed entirely to the later month, and one
+  still running reported nothing at all. `usage_summary/3` and
+  `usage_summaries/2` now report the time that actually ran inside the period
+  asked about. `/account/billing` and the admin usage column change with them.
+
+- **Every line of every code block in `/docs` and `/help` had a light box
+  painted behind it.** Tailwind Typography's `code` variant matches the
+  `<code>` inside a `<pre>` as well as inline code, so the inline-code chip —
+  pale background, padding, rounded corners — was applied line by line inside
+  the dark code blocks. The chip is now scoped to inline code. While there:
+  fenced code is syntax highlighted (Lumis, `github_dark_high_contrast`,
+  whose background matches the console's `--color-code-bg`), as it already was
+  on the published MkDocs site, and admonitions — which arrive as blockquotes —
+  no longer render in italics wrapped in typographic quote marks. The
+  highlighter's tree-sitter parsers are baked into the image at build time:
+  it otherwise fetches them from a CDN on first use and caches them on disk,
+  and the deployment has neither the egress nor a writable filesystem, so a
+  self-hosted instance would render every fence plain.
+
+- **`Repository` declared neither `secret_key` nor `ref`.**
+  `Provisioning.clone_https/4` reads both — `secret_key` names the secret the
+  clone authenticates with, `ref` picks a branch — so a private repository
+  could not be expressed by a client generated from the spec. Without
+  `secret_key` the clone fails *inside the sandbox*: provisioning continues,
+  and the agent opens on an empty directory.
+
+- **`AgentRequest` did not declare `allowed_environment_ids`.** `AgentUpdate`
+  declared it and `Agent.changeset/2` has cast it since the allowlist shipped,
+  so `POST /api/agents` accepted the field while the spec said it did not — a
+  client generated from the spec could set the allowlist on `PATCH` and not on
+  `POST`.
+
+- **A TypeScript SDK** (`sdk/typescript`; not yet published to npm). Running
+  an agent is one call — `fountain.run(prompt, { agent, vault, environment })` —
+  which opens a conversation, follows the turn and hands back the answer, the
+  tools used and a URL a human can watch. The handle it returns can be awaited,
+  iterated for lifecycle events, or read as a text stream; `resume(id).send(...)`
+  continues in the same sandbox. Every integration that has ever talked to
+  Fountain wrote this wrapper first (the Hermes plugin, `fountain run`, the
+  bundled skill); this is that wrapper, once, with the turn-following rules and
+  the mid-turn reconnect in one place. Zero runtime dependencies, Node 20.19+.
+  Documented at `docs/sdk.md`.
+
+  The SDK also defines what it runs: `fountain.agents`, `fountain.environments`
+  and `fountain.vaults` each have `list`/`get`/`create`/`update`/`delete` taking
+  a name or an id, and the two latter carry `secrets.set`/`setAll`/`list`/
+  `delete`. `AgentInput` is the whole agent definition as one type — runtime,
+  model, system prompt, skills, MCP servers, sandbox provider and the two
+  allowlists — so `docs/sdk.md` can show a complete definition on one screen
+  instead of describing it. Payloads keep the API's own key names, so one
+  definition reads identically in the SDK, the REST API and a `fountain.yml`.
+
+- **The dashboard's token total counted only fresh input.** A coding agent
+  re-reads its context every turn, so nearly everything it consumes arrives
+  as a cached read: a month of real work on the hosted instance was 1.5k
+  `input` against 41M `cache_read`. The tile said "1.5k in" for 44M tokens.
+  `Conversations.token_usage/3` now reports all four keys the runtimes send
+  and `total_input/1` sums the three that went into the model; the tile shows
+  that, and names the split on hover.
+
+- **A runtime reporting a malformed usage figure no longer breaks recording
+  it.** `turns.usage` is stored as the runtime sent it, but the conversation
+  counters it increments are bigints: a string or an object where a number
+  was expected raised inside the transaction. Anything that is not a
+  non-negative integer now counts as nothing, which is what an unreported
+  figure already counted as. Found while building the dashboard's token
+  total, which guards the same shape on the way out.
 
 - **The environment form offers only the package managers provisioning
   installs (`apt`, `npm`).** pip, cargo, gem and go were offered, stored and
@@ -1468,8 +1453,6 @@ upgrade, is in
   channel (it keeps running and is retired like any other idle one) and opens
   a new one as the binding. `fresh` is documented in the OpenAPI schema and
   ignored without `channel_id`.
-
-### Fixed
 
 - **A Claude OAuth token the org disallows now falls back to the Anthropic
   API key instead of failing every turn (#655).** `Fountain.Runtimes.Claude`
@@ -1588,6 +1571,99 @@ upgrade, is in
   moves to a build carrying block/buzz#6101 (`buzz-acp-v0.5.14-fountain.2`),
   which matches the command with mention text around it. #776 still tracks
   the repin to upstream — it now waits on #6101 as well as #6088.
+
+### Removed
+
+- **Billing debt 2/3: dead Stripe plumbing and the last plan-era wording.**
+  `Billing.attach_stripe_customer/2` (no callers), the admin user page's
+  "Invoices" section (it always rendered "None."), the unreachable "nothing
+  is paused yet" branch of the credits-exhausted email, and
+  `Credits.summary/2`'s duplicate `turn_hour_cents` (read it from
+  `price_card.turn_hour`; the API field is unchanged). The `/admin/users`
+  "Plan" column is "Credit"; every remaining "plan"/"tier"/"trial"/
+  "subscription"/"invoice" string in operator-visible text, docstrings,
+  comments, docs and test fixtures (CLI, SDK, Elixir) says what the code
+  does now.
+
+- **Credits cleanup 2/3 (#1127).** The dead code and the dead columns the
+  subscription era left behind. Eight `users` columns are dropped by
+  migration (`plan`, `stripe_subscription_id`, `subscription_status`,
+  `trial_ends_at`, `subscription_synced_at`, `cancel_at_period_end`,
+  `current_period_start`, `current_period_end`). Gone with them: the
+  `:assign_subscription_state` LiveView hook, `Quotas.check_sandbox_quota!/2`
+  and `QuotaExceededError`, `Billing.billing_period/2` and
+  `turn_hours_used/2` (callers use `current_month_range/0` and
+  `usage_summary/3`), the `subscription_required` error (every 402 is
+  `insufficient_credits`), the `grant_tier` ledger reason, and the admin
+  `trial.extended` / `plan.changed` / `stripe.resynced` events. Renames:
+  `Billing.sync_subscription/1` → `apply_event/1`, `Workers.CreditGranter` →
+  `CreditExpirer`, the `grant_trial` ledger reason → `grant_opening` (data
+  migration), the funnel's `subscribed` stage → `funded`
+  (`fountain_funnel_funded` in Grafana), `Credits.enforcing?/0` folded into
+  `active?/0`. `Quotas.sandbox_limit_for/1` reports 0 for an unfunded
+  account rather than the floor the gate would refuse anyway. SDK 1.1.0
+  drops `period.source` from the billing response.
+
+- **The May-2026 planning material is gone from the tree.** `plan/`,
+  `superpowers/`, `OPERATING_MODEL.md` (the orchestrator briefs, specs and
+  bible from the aod-ex rebuild), `runbooks/` (the completed home-cloud
+  cutover) and `docs-redesign/` (the executed docs IA plan, #903) were
+  historical records with no reader; git history keeps them. The three files
+  tooling still cites moved to `standards/`: `voice-and-style.md`
+  (`scripts/docs-style.py`), `simplified-technical-english.md`
+  (`.vale-ste.yml`) and `catalog-template.md` (linked from the catalog).
+  `rel/` stays: `rel/overlays/bin/migrate` is the migration Job entrypoint.
+- **`ROADMAP.md` and the `/bootstrap` skill went with them.** Both were the
+  captain-picard orchestrator's bus files; the roadmap's "Now" had been empty
+  since the 2026-05-10 launch. The one thing they said that nothing else did,
+  the 100-WAU goal and the org/team gate behind it, moved to `CLAUDE.md`;
+  NC-6 is recorded in ADR 0007 and #1039.
+
+- **The GitHub Pages documentation site.** `docs/` had two publishers: the
+  in-app manual at `/docs`, embedded at compile time by `Fountain.Docs`, and a
+  MkDocs Material build deployed to `binarybourbon.github.io/fountain` on every
+  push to `main`. They served the same markdown from the same nav, so the
+  second one bought nothing and cost a workflow, a `mkdocs build --strict` step
+  in two CI jobs, a Python toolchain, and a second renderer whose dialect the
+  first had to keep chasing. `/docs` is now the only place the manual is
+  published. It is public and needs no account, which is what made the Pages
+  copy redundant rather than load-bearing.
+
+  Gone with it: `.github/workflows/docs.yml`, `mkdocs.yml`,
+  `docs/requirements.txt` and the `mkdocs build` CI steps. The nav moved to
+  **`docs/nav.yml`**, same format, same parser, now inside the tree it
+  describes, so it needs no Dockerfile `COPY` and no special case in the CI
+  docs-path filter.
+
+  Two things the Pages build was quietly doing, both now handled:
+
+  - MkDocs built every page under `docs/` whether the nav named it or not, so
+    four pages under `docs/superpowers/` reached the public site while being
+    invisible at `/docs`. They are internal planning material from May 2026;
+    they moved to `superpowers/` at the repo root, beside `runbooks/`. A new
+    test fails on any page under `docs/` that the nav does not name, since such
+    a page is now published nowhere at all.
+  - `mkdocs build --strict` was the link checker. `docs_test.exs` already
+    checked every internal `/docs` link *and* every anchor, which MkDocs never
+    did, and it runs on every pull request rather than after the merge. It is
+    now the whole structural gate. The prose gates (`scripts/docs-style.py`,
+    `vale lint docs`) are unchanged.
+
+  Links into the old site from `README.md`, `CHANGELOG.md`, `docker-compose.yml`,
+  `deploy/k8s/` and the SDK examples now point at
+  `https://fountain.inevitable.fyi/docs/...`. Four of them had been broken
+  since the docs IA campaign moved that content, because nothing checked
+  absolute links; they point at the right pages now (#1008)
+
+  The old site does not simply stop: it becomes a **tombstone**, one redirect
+  per URL it used to answer, each pointing at the same page under `/docs` and
+  carrying the fragment across. Deleting the workflow would have left the last
+  snapshot serving forever, which is worse than a 404, and deleting the site
+  would have broken every link anyone ever made to it.
+  `scripts/build-pages-tombstone.py` generates it from the nav and refuses to
+  emit a redirect to a page that is not there;
+  `.github/workflows/pages-tombstone.yml` publishes it by hand and is
+  `workflow_dispatch` only, so it is not a docs publishing path (#1011)
 
 ## [0.12.0] — 2026-08-17
 
