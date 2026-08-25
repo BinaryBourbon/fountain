@@ -6,15 +6,14 @@ defmodule Fountain.Workers.UnverifiedAccountPruner do
   held on `/auth/verify-pending`, and the API refuses to mint or accept a key
   (#533). So after the grace period they are rows, not users. They are not free rows
   either: each carries a wrapped DEK, they distort every metric that counts
-  `users`, and 158 of them were briefly mistaken for a 159-person legacy trial
-  cohort (see `Fountain.Release.expire_legacy_trials/1`). The steady inflow is
-  drive-by/bot registration (#259).
+  `users`, and 158 of them were briefly mistaken for a 159-person legacy
+  cohort of the subscription era (#258). The steady inflow is drive-by/bot
+  registration (#259).
 
   Deletion goes through `Accounts.Deletion.delete_user/2` — the same teardown
-  as self-serve and admin deletion (Stripe cancellation first, sprites, audit
-  row) — never a bare `DELETE`. A registration-time Stripe trial subscription
-  (#244) is therefore cancelled rather than left to fire trial-ending emails
-  at an address that never asked for them.
+  as self-serve and admin deletion (sprites, audit row) — never a bare
+  `DELETE`. An unverified account holds no credit (the opening grant lands at
+  verification), so there is nothing to refund.
 
   Config:
 

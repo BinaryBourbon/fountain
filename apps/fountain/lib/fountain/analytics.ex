@@ -149,7 +149,7 @@ defmodule Fountain.Analytics do
   Send the account's current shape to PostHog as person properties.
 
   Called wherever the shape changes in a way a cohort would care about
-  (registration, verification, onboarding, a subscription transition), not on
+  (registration, verification, onboarding, a credit event), not on
   every request — person property writes are the expensive half of ingestion
   and the properties only change on those events.
   """

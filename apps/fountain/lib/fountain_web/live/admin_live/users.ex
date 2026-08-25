@@ -565,8 +565,8 @@ defmodule FountainWeb.AdminLive.Users do
               </td>
               <%!-- Turn hours, not sandbox minutes. Sandbox time is what
                     Fountain is billed and it is on /admin/finance; what a
-                    tenant *buys* is turn hours (Fountain.Plans), so that is
-                    the number to read beside their plan. The tooltip keeps
+                    tenant *buys* is turn hours (ADR 0031), so that is the
+                    number to read beside their balance. The tooltip keeps
                     the sandbox side one hover away. --%>
               <td
                 class="px-4 py-2 text-xs text-zinc-500 tabular-nums whitespace-nowrap"

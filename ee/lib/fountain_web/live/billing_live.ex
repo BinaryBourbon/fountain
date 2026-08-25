@@ -1,10 +1,11 @@
 defmodule FountainWeb.Live.BillingLive do
   @moduledoc """
-  `/account/billing` — subscription status, trial countdown, monthly usage
-  summary, and links to Stripe Checkout / Customer Portal.
+  `/account/billing` — the credit balance, what of it expires and when, the
+  ledger, this month's usage, and the buttons that open Stripe Checkout for
+  a credit pack.
 
-  Accessible to all authenticated users regardless of subscription status
-  (including `past_due` and `canceled`) so they can update payment details.
+  Accessible to every authenticated user whatever the balance, so an account
+  at zero can buy its way back.
 
   Purely billing since #479: data export and account deletion live on the
   core `/account` page. On a billing-disabled instance this page does not
@@ -186,8 +187,8 @@ defmodule FountainWeb.Live.BillingLive do
   # ─── Private helpers ───────────────────────────────────────────────────────────
 
   # Refused outright rather than relying on the button being hidden (#399):
-  # a stale socket or a hand-sent event must not open Checkout for an
-  # account whose subscriptions comp_account/1 deliberately cancelled.
+  # a stale socket or a hand-sent event must not open Checkout for a comped
+  # account, which has nothing to pay for.
   # Both surfaces mint the same URLs under the same rules, so the rules live in
   # the context (#524) rather than in a copy per surface.
   defp billing_return_url, do: FountainWeb.Endpoint.url() <> ~p"/account/billing"

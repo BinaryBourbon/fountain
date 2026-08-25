@@ -8,7 +8,7 @@ defmodule Fountain.Billing.Reconciliation do
   per month; `lines/2` produces, for every provider Fountain pays, the
   computed cents, the recorded cents, and the delta. A month of deltas is
   what turns each gap in the model from a silent bias into a measured one,
-  and is what gates enforcement (ADR 0030 §8).
+  and is what a price change should rest on (ADR 0030 §8).
 
   Recording an invoice is an admin act on platform data, not on a tenant, so
   the audit row carries no `user_id` and an `admin:<id>` actor.

@@ -36,9 +36,9 @@ defmodule FountainWeb.AuthMeController do
       # whether the browser will drop this user into the wizard.
       onboarding_state: user.onboarding_state,
       onboarding_completed: not is_nil(user.onboarding_completed_at),
-      # The key stays for JSON-shape compatibility, but on a billing-disabled
-      # instance the value is null even for accounts that carry pre-disable
-      # residue — there is no subscription for the status to be about (#480).
+      # Null on a billing-disabled instance, even for an account that was
+      # comped before billing was turned off — there is no balance for the
+      # flag to be about (#480).
       comped: if(Fountain.Billing.enabled?(), do: user.comped, else: nil)
     })
   end

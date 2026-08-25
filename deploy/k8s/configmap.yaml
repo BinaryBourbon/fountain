@@ -13,8 +13,8 @@ data:
   # set X-Forwarded-Proto or every request looks like http and redirect-loops.
   PUBLIC_URL: "https://fountain.example.com"
 
-  # The subscription gate is a lock with no key on a self-hosted instance
-  # unless you configure Stripe. Leave it off.
+  # Credits (ADR 0031) are a lock with no key on a self-hosted instance
+  # unless you configure Stripe. Leave them off.
   BILLING_ENABLED: "false"
 
   # An instance on the public internet with registration open will be found.

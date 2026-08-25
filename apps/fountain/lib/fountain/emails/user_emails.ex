@@ -8,7 +8,7 @@ defmodule Fountain.Emails.UserEmails do
   - Account suspended / unsuspended / deleted (from `Workers.AccountEmail`)
   - Email-change confirmation + notice (from `Workers.EmailChangeEmail`)
 
-  Billing-adjacent and growth mail (welcome, trial, payment lifecycle) lives
+  The welcome and the credit emails (credits low, exhausted, rent due) live
   in `Fountain.Emails.BillingEmails` under ee/ (#475) — it borrows
   `from_address/0` and `support_phrase/0` from here so the whole mail
   surface keeps one sender and one support-contact policy.
@@ -421,7 +421,7 @@ defmodule Fountain.Emails.UserEmails do
       </p>
       <p>
         <strong>Nothing is deleted.</strong> Your agents, environments, vaults and
-        conversation history stay exactly as they are, and your subscription is
+        conversation history stay exactly as they are, and your credit balance is
         not changed by a suspension.
       </p>
       <p style="color: #71717a; font-size: 13px;">
@@ -440,8 +440,8 @@ defmodule Fountain.Emails.UserEmails do
     keys stop working, and running conversations have been stopped.
 
     Nothing is deleted. Your agents, environments, vaults and conversation
-    history stay exactly as they are, and your subscription is not changed by
-    a suspension.
+    history stay exactly as they are, and your credit balance is not changed
+    by a suspension.
 
     If you believe this is an error, #{support_phrase()}.
     """
@@ -492,8 +492,8 @@ defmodule Fountain.Emails.UserEmails do
       <p>
         This confirms your Fountain account and its data — agents,
         environments, vaults, conversations and stored secrets — have been
-        permanently deleted. Any subscription was cancelled first; you will
-        not be charged again.
+        permanently deleted. Nothing recurs, so nothing was cancelled; you
+        will not be charged again.
       </p>
       <p style="color: #71717a; font-size: 13px;">
         Past invoices remain available from Stripe, as financial records.
@@ -514,7 +514,7 @@ defmodule Fountain.Emails.UserEmails do
 
     This confirms your Fountain account and its data — agents, environments,
     vaults, conversations and stored secrets — have been permanently deleted.
-    Any subscription was cancelled first; you will not be charged again.
+    Nothing recurs, so nothing was cancelled; you will not be charged again.
 
     Past invoices remain available from Stripe, as financial records. Database
     backups that predate the deletion age out on their own retention schedule.

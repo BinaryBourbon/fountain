@@ -12,24 +12,18 @@ defmodule Fountain.Accounts.Deletion do
 
   ## Order matters
 
-  1. **Cancel Stripe subscriptions.** First, and the only step that can abort
-     the whole operation. Deleting the account while an active subscription
-     keeps charging is the single worst outcome available here, so a
-     cancellation failure stops everything rather than being logged and stepped
-     over. Everything after this point is idempotent enough to retry.
-
-  2. **Destroy the tenant's sprites.** Before the row deletion, because the
+  1. **Destroy the tenant's sprites.** Before the row deletion, because the
      cascade takes `conversations` with it, and after that nothing links a
      sandbox to the user who was paying for it. Failures here are logged rather
      than fatal: `SandboxReaper` reconciles anything missed on its next run,
      which is exactly the case it exists for.
 
-  3. **Record the audit event.** Before the delete, and carrying the email and
+  2. **Record the audit event.** Before the delete, and carrying the email and
      user id in `metadata` — `audit_events.user_id` is `SET NULL` on delete, so
      an event that relies on the column alone would survive as an anonymous row
      saying an account was deleted, without saying which.
 
-  4. **Delete the user.** Postgres cascades take agents, api_keys,
+  3. **Delete the user.** Postgres cascades take agents, api_keys,
      conversations (and their turns and log events), environments, vaults,
      oauth_identities, inference_credentials and user_data_keys.
      `usage_events`, `audit_events` and `sandboxes` nilify instead, keeping
@@ -49,10 +43,10 @@ defmodule Fountain.Accounts.Deletion do
 
   ## Stripe
 
-  The subscription is cancelled; the Stripe customer is not deleted. Invoices
-  are financial records a business is required to retain, and Stripe is the
-  system of record for them. Cancelling stops the billing relationship without
-  destroying an accounting trail we are obliged to keep.
+  Nothing is cancelled, because nothing recurs (ADR 0031): a prepaid balance
+  goes with the row and its ledger. The Stripe customer is not deleted.
+  Charges and refunds are financial records a business is required to
+  retain, and Stripe is the system of record for them.
   """
 
   import Ecto.Query

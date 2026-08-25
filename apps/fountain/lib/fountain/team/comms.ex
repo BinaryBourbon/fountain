@@ -62,7 +62,8 @@ defmodule Fountain.Team.Comms do
   end
 
   @doc """
-  How many of this tenant's teammates hold a contact. `Fountain.Plans` caps it.
+  How many of this tenant's teammates hold a contact. `TEAM_CONTACT_CEILING`
+  bounds it.
   """
   @spec contact_count(binary()) :: non_neg_integer()
   def contact_count(user_id) when is_binary(user_id) do
@@ -365,11 +366,10 @@ defmodule Fountain.Team.Comms do
     end
   end
 
-  # The plan's ceiling on how many teammates may hold a contact at once
-  # (`Fountain.Plans`). Contacts are billed per unit rather than included in a
-  # tier, so this is not an entitlement — it is the bound on how much Fountain
-  # can be made to buy in one burst while the quantity sync is failing, which
-  # is the window where it would be paying for numbers it is not charging for.
+  # The ceiling on how many teammates may hold a contact at once
+  # (`TEAM_CONTACT_CEILING`, ADR 0031). Contacts are rented from the balance
+  # a month at a time, so this is not an allowance — it is the bound on how
+  # much Fountain can be made to buy in one burst.
   defp check_contact_ceiling(user_id) do
     limit = Application.get_env(:fountain, :team_contact_ceiling, 10)
     count = contact_count(user_id)
@@ -381,16 +381,10 @@ defmodule Fountain.Team.Comms do
     end
   end
 
-  # Tell billing how many contacts this tenant now holds. Best-effort by
-  # rescuing, and deliberately after the row is committed rather than before:
-  # a Stripe hiccup must not fail a provision the providers have already
-  # completed, or strand a released number as un-released. The quantity is
-  # computed from the rows and re-set on every change, so the next
-  # provision or release repairs a drop — and `Fountain.Plans`' ceiling
-  # bounds how far it can drift before someone notices.
   # The first month's rent, after the row is committed (ADR 0030 decision
-  # 4). Best-effort by rescuing, like the add-on sync: the providers have
-  # already handed over a number, and a ledger hiccup must not strand it.
+  # 4). Best-effort by rescuing: the providers have already handed over a
+  # number, and a ledger hiccup must not strand it; the daily rent pass
+  # charges a never-charged contact from its next sweep.
   defp charge_first_month(%Contact{} = contact) do
     case Fountain.Credits.Rent.charge(contact, contact.inserted_at, actor: "system:credit_rent") do
       {:ok, %Contact{} = charged} -> charged

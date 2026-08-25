@@ -671,7 +671,7 @@ jobs:
           fi
 
       # For the release boot check below, not for a test suite — this job runs
-      # none. /health/ready and expire_legacy_trials both read the database.
+      # none. /health/ready and the release task below both read the database.
       # Idempotent on purpose. The start above is backgrounded, and a step can
       # finish before the pull it launched does; if the container is not there
       # yet this starts it synchronously. Slower in that case, never wrong.
@@ -782,8 +782,8 @@ jobs:
 
           # Release tasks must be runnable while the server owns the ports,
           # and without PHX_SERVER — the shape they actually run in, both
-          # in-pod and via compose exec. expire_legacy_trials used to boot
-          # the entire app from eval and die on eaddrinuse against a running
+          # in-pod and via compose exec. A release task once booted the
+          # entire app from eval and died on eaddrinuse against a running
           # server; with PHX_SERVER=false the repo had no config at all.
           # Both regressions fail exactly here.
           echo "release task runs beside the live server:"

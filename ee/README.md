@@ -11,12 +11,13 @@ service. See `decisions/0027-agpl-relicensing.md`.
 
 ## Contents
 
-- **Billing** — the Stripe integration: `Fountain.Billing`, the usage-event
-  schema, the webhook controller, the billing LiveView, the
-  `stripe_customer_sync` worker, and the `fountain.verify_lifecycle` mix task.
-- **Billing-adjacent / growth email** — `Fountain.Emails.BillingEmails`
-  (welcome, trial, payment-lifecycle mail) and the `welcome_email`,
-  `trial_ending_email`, `lifecycle_email` workers.
+- **Credits** — `Fountain.Credits` and its ledger, purchases, rent, the
+  pricer, expirer and rent-collector workers, `Fountain.Billing` (Stripe
+  Checkout and the credit webhooks), the usage-event schema, the finance
+  panel and the billing LiveView.
+- **Credit and growth email** — `Fountain.Emails.BillingEmails` (welcome,
+  credits low, credits exhausted, rent due) and the `welcome_email` and
+  `credits_email` workers.
 
 Account email (verification, password reset, suspension/deletion notices,
 email change) and `Fountain.Mailer` are **core** — a community instance must

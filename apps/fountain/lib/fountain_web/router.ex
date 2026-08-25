@@ -244,7 +244,7 @@ defmodule FountainWeb.Router do
     post "/email/confirm", AccountSecurityController, :api_confirm_email_change
   end
 
-  ## ─── Stripe webhook (phase-3-billing) ───────────────────────────────────────────────────────────────────
+  ## ─── Stripe webhook (credit packs, ADR 0031) ───────────────────────────────────────────────────────────
   # No TenantAPIAuth: authenticated via Stripe-Signature header verification.
   # Must be reachable by Stripe's servers without a bearer token.
 
@@ -579,9 +579,9 @@ defmodule FountainWeb.Router do
 
     # ── The console ───────────────────────────────────────────────────────────
     # What Fountain's own UI is for: the account, its keys and credentials, and
-    # the three primitives a conversation runs on. No subscription gate — a
-    # lapsed account can still read and manage what it has, and the gate that
-    # protects spend is in the context (ADR 0006), not here.
+    # the three primitives a conversation runs on. No billing gate — an
+    # account at zero can still read and manage what it has, and the gate that
+    # protects spend is in the context (ADR 0031), not here.
     live_session :authenticated,
       on_mount: [{FountainWeb.Live.Hooks, :require_authenticated_user}] do
       live "/dashboard", DashboardLive.Index, :index
@@ -603,7 +603,7 @@ defmodule FountainWeb.Router do
       # ── Account page: data export + deletion (#479) ────────────────────────────────────────
       live "/account", Live.AccountLive, :index
 
-      # ── Phase-3-billing: account/billing. Redirects to /account when billing is disabled ────
+      # ── Credits: account/billing. Redirects to /account when billing is disabled ────────────
       live "/account/billing", Live.BillingLive, :index
 
       # ── BYO inference credentials (ADR 0008) ───────────────────────────────────────────────

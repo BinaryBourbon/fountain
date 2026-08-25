@@ -63,7 +63,7 @@ exactly the customers who spend the most.
    the card through Stripe Checkout is the identity check a subscription
    used to be.
 
-3. **The trial is an opening grant.** Registration posts `grant_trial` of
+3. **The trial is an opening grant.** Verification posts `grant_opening` of
    `CREDIT_OPENING_CENTS` (default $5; the ADR said $10, the operator set $5 on 2026-08-25) expiring `CREDIT_OPENING_DAYS`
    (default 14) later. Nothing else about a "trial" exists: no status, no
    clock, no sweep.
@@ -72,8 +72,8 @@ exactly the customers who spend the most.
    `cap = clamp(floor(balance ÷ SANDBOX_RESERVE_CENTS), SANDBOX_CAP_FLOOR, SANDBOX_CAP_CEILING)`
    with defaults reserve $2 (eight turn-hours), floor 2, ceiling 20;
    `users.sandbox_limit_override` still wins when set, as the operator's
-   lever for a tenant who has earned more. A $10 opening grant funds five
-   sandboxes; $100 funds twenty; zero funds none because the gate refuses
+   lever for a tenant who has earned more. The $5 opening grant funds the
+   floor of two; $100 funds twenty; zero funds none because the gate refuses
    first. Nobody can start a fleet they cannot pay for.
 
 5. **A fleet ceiling bounds the sum.** `SANDBOX_FLEET_CEILING` (default 20,

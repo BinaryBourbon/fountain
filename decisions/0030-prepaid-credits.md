@@ -1,38 +1,40 @@
 ---
 type: ADR
-title: "Prepaid credits beside the capacity tiers: a cents ledger burned by turn-hours, rent and messages"
-description: "Tiers stay and buy capacity; usage is paid from a Fountain-owned ledger of integer cents, granted monthly by the tier and topped up by one-time Stripe Checkout packs, burned at $0.25 per conversation turn-hour, a month of rent up front per number or inbox, and per message. Zero is a soft stop. Built and live on the hosted deployment; auto top-up is not built."
+title: "Prepaid credits: a cents ledger burned by turn-hours, rent and messages"
+description: "Usage is paid from a Fountain-owned ledger of integer cents, opened by a grant at verification and topped up by one-time Stripe Checkout packs, burned at $0.25 per conversation turn-hour, a month of rent up front per number or inbox, and per message. Zero is a soft stop. Decision 2's tiers were retired by ADR 0031; the ledger decisions stand and are live on the hosted deployment. Auto top-up is not built."
 tags: [billing, credits, entitlements, quotas, team-comms, finance]
 status: stable
 adr: "0030"
 adr_status: "Accepted"
 date: 2026-08-24
 generated: { by: human:jhgaylor, at: 2026-08-24T20:00:00-04:00 }
-verified: { by: human:jhgaylor, at: 2026-08-24T20:00:00-04:00 }
+verified: { by: agent:claude-code, at: 2026-08-25T05:00:00-04:00 }
 ---
 
 # 0030 — Prepaid credits beside the capacity tiers: a cents ledger burned by turn-hours, rent and messages
 
-**Status:** Accepted; decision 2 (tiers survive) is reversed by ADR 0031, which retires subscriptions and tiers and makes credits the only product. The rest stands. **Built, inert until switched on** (#1094–#1102,
-2026-08-24). What exists: `Fountain.Credits` and the `credit_ledger`
-(decisions 1, 5), `Workers.CreditPricer` (3), `Workers.CreditGranter` and
-the renewal-time grant (2), `Credits.Purchases` with refund and dispute
-clawback (5), `Billing.check_spend/1` at all five doors and inside the
+**Status:** Accepted, amended by [ADR 0031](0031-credits-are-the-product.md)
+(2026-08-25), which reversed decision 2: there are no tiers, no tier grants
+and no subscription, and credits are the only product. The ledger decisions
+(1, 3–8) stand and are **built and live** on the hosted deployment
+(#1094–#1102, #1116, #1124, #1126, #1127). What exists: `Fountain.Credits`
+and the `credit_ledger` with lots (decisions 1, 5), `Workers.CreditPricer`
+(3) which also sweeps expiries on its ten-minute tick, `Workers.CreditExpirer`
+as the daily backstop (2, expiry only), `Credits.grant_opening/2` posted at
+verification (ADR 0031 decision 3), `Credits.Purchases` with refund and
+dispute clawback (5), `Billing.check_spend/1` at every door and inside the
 reservation lock, the 402, admin grants and the runway emails (6, 7),
-`Credits.Rent` with the seven-day grace (4, 6), `Release.start_credits/1`
-(8, phase 5), and `Billing.Reconciliation` on `/admin/finance` (8, #1038
-steps 1 and 2). Every surface shows the balance.
+`Credits.Rent` with the seven-day grace (4, 6), and `Billing.Reconciliation`
+on `/admin/finance` (8, #1038 steps 1 and 2). Every surface shows the balance.
 
-Two operator switches, both off by default: `CREDIT_PRICING_SINCE` starts
-pricing and grants; `CREDIT_ENFORCE=true` turns the soft stop on. The
-order that keeps each step safe is in `docs/guides/operate/billing.md`.
+There are no operator switches: `BILLING_ENABLED` means credits on —
+priced, granted, gated and shown — and off means none of it.
+`CREDIT_PRICING_SINCE` and `CREDIT_ENFORCE` (#1104, #1105) and
+`Release.start_credits/1` were the phase-5 migration levers and were deleted
+once the hosted deployment had crossed over (#1121, #1116).
 
 **Not built, on purpose:** auto top-up (#1086 phase 6); #1038 steps 3
-onward (sandbox size, storage, per-provider cost basis). Both switches
-were turned on for the hosted deployment on 2026-08-24 (#1104, #1105) with
-§8's reconciled month waived by the operator (two known users), and the
-turn-hour allowance surfaces came out with the flip.
-`Plans.included_turn_hours/1` stays as what sizes the grant.
+onward (sandbox size, storage, per-provider cost basis).
 
 ## Context
 
@@ -132,8 +134,8 @@ worker restart cannot double-charge.
 ### 5. Fountain owns the ledger; Stripe is the till
 
 `credit_ledger` is the source of truth: append-only rows with a signed amount
-in cents, a closed `reason` vocabulary (`grant_tier`, `grant_trial`,
-`grant_admin`, `purchase`, `burn_turn`, `burn_rent`, `burn_message`,
+in cents, a closed `reason` vocabulary (`grant_opening`, `grant_admin`,
+`purchase`, `burn_turn`, `burn_rent`, `burn_message`,
 `expire`, `clawback_refund`, `clawback_dispute`), a resource reference, and
 an **idempotency key** unique per row. `users.credit_balance_cents` is a cache
 of the sum, maintained in the same transaction as the insert and reconciled by

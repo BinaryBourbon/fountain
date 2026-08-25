@@ -75,7 +75,7 @@ defmodule Fountain.Billing.SandboxUsage do
   negative idle.
 
   Turn time (`turn_seconds`) is the *sum* of those same intervals, each clipped
-  to the period. What the plans sell (decisions/0026) is hours of work, and
+  to the period. What credits buy (decisions/0031) is hours of work, and
   two conversations each running an hour on one machine are two hours of work
   on a machine that was busy for one (decisions/0023, step 6). It is not
   capped at `active` and may exceed it; `busy` is the machine's view, `turn`
@@ -123,8 +123,8 @@ defmodule Fountain.Billing.SandboxUsage do
 
   `active_seconds` is what the provider charges for. `busy_seconds` is the part
   of it with a turn in flight and `idle_seconds` the rest; the two add up to
-  `active_seconds`. `turn_seconds` is the turns themselves, summed — the unit a
-  plan's allowance is spent in — and is not bounded by `active_seconds`.
+  `active_seconds`. `turn_seconds` is the turns themselves, summed — the unit
+  credit is burned in — and is not bounded by `active_seconds`.
 
   `user_id` is `nil` for sandboxes whose owner has been deleted.
   """
@@ -269,7 +269,7 @@ defmodule Fountain.Billing.SandboxUsage do
   The same rows `for_user/3` reads, reporting the part of each with a prompt
   actually in flight rather than the whole active window. This is the
   machine's view, the one a provider bill on the `:turn` basis relates to. The
-  tenant's allowance is spent in `turn_seconds_for_user/3`, which sums turns
+  tenant's credit is burned in `turn_seconds_for_user/3`, which sums turns
   instead: on a shared sandbox the two differ.
 
   Providers with no turn time in the period are absent rather than zero, so a
@@ -290,11 +290,10 @@ defmodule Fountain.Billing.SandboxUsage do
   One tenant's *turn* seconds per provider: `%{provider => turn_seconds}` —
   the sum over its turns, each clipped to the period.
 
-  This is the unit a plan's included hours are measured in
-  (`Fountain.Credits.turn_cost_cents/1`): an idle sandbox costs Fountain
-  money and is reported by `for_user/3`, but spending nothing of a customer's
-  allowance is the deliberate choice — the allowance measures work, not
-  forgetfulness. And it is a sum, not a union: two conversations each running
+  This is the unit credit is burned in (`Fountain.Credits.turn_cost_cents/1`):
+  an idle sandbox costs Fountain money and is reported by `for_user/3`, but
+  burning none of a customer's credit for it is the deliberate choice — the
+  price measures work, not forgetfulness. And it is a sum, not a union: two conversations each running
   an hour on one machine are two hours of work (decisions/0023, step 6).
 
   Same shape and absence rule as `busy_for_user/3`.

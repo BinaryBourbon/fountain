@@ -5,8 +5,8 @@ defmodule Fountain.Workers.VerificationEmail do
   Registration used to send this with a bare `Task.async` and no `await`. The
   task was *linked* to the request process, so finishing the HTTP response
   could kill an in-flight send, and a delivery error had no retry and no log —
-  the same failure mode `Workers.StripeCustomerSync` was extracted for, one
-  step earlier in the funnel. This one was worse: with no resend route, a
+  the failure mode every request-path send has been extracted for since.
+  This one was worse: with no resend route, a
   dropped verification email left the account permanently unusable until the
   `UnverifiedAccountPruner` deleted it.
 

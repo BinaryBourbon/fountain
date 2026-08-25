@@ -4,11 +4,9 @@ defmodule Fountain.Credits.Purchases do
   decision 5): Fountain owns the ledger, Stripe is the till.
 
     * `checkout_url/3` opens a one-time Stripe Checkout in `mode: :payment`
-      for one of `Credits.packs/0`. Only a subscriber may buy — a trialing
-      account is refused (`{:error, :subscription_required}`), because
-      buying is a spend and the gate for spend is "subscribe first" (ADR
-      0006); a comped account is refused (`{:error, :comped}`) because it
-      has nothing to pay for.
+      for one of `Credits.packs/0`. Any account may buy, at any balance —
+      buying is how an account at zero gets going again; a comped account
+      is refused (`{:error, :comped}`) because it has nothing to pay for.
     * `complete/1` grants the pack when `checkout.session.completed` arrives
       for a payment-mode session Fountain opened, under `purchase:<session>`.
       The payment intent id is kept on the row so a refund can find it.

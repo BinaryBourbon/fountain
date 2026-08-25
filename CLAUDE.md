@@ -39,9 +39,9 @@ fountain/                  umbrella root
       test/fountain/       context unit tests (async: true, DataCase)
       test/fountain_web/   controller/LiveView integration tests
       test/support/        DataCase, ConnCase, factory.ex
-  ee/                      billing + growth email (welcome/trial/payment),
-    lib/fountain/          compiled into the same :fountain app via
-    lib/fountain_web/      elixirc_paths/test_paths. Licence boundary: ee/ is
+  ee/                      credits, Stripe and the credit emails (welcome,
+    lib/fountain/          credits-low/exhausted, rent-due), compiled into the
+    lib/fountain_web/      same :fountain app via elixirc_paths. Licence: ee/ is
     test/                  Elastic 2.0, the server is AGPL-3.0 (0010, 0027).
                            Account email + Mailer are core (#475/#476).
   config/
@@ -109,15 +109,9 @@ that are easy to get wrong:
   `CreditGranter` expires unspent grants; `Credits.Purchases` sells packs
   through one-time Checkout and claws back on `charge.refunded` /
   `charge.dispute.created`. Stripe holds no subscription and no price.
-  Usage is reported over the calendar month; `Billing.billing_period/2`
-  keeps the `%{start, end, source}` shape with `source: :calendar_month`.
+  Usage is reported over the calendar month (`Billing.current_month_range/0`).
   **decisions/0031-credits-are-the-product.md** and
   **decisions/0030-prepaid-credits.md** own the rest.
-
-Price ids come from config (`STRIPE_PRICE_ID_SOLO` and friends), the display
-cents from the catalog. `mix fountain.verify_plans` is the only thing that
-stops those two drifting — run it after any price change.
-**decisions/0026-plans-and-entitlements.md** owns all of this.
 
 ## Tenant isolation contract
 
@@ -215,7 +209,8 @@ no client re-parses a runtime dialect.
 
 | Hook | Unauthenticated | Authenticated but ineligible |
 |---|---|---|
-| `require_authenticated_user` | `redirect` to `/auth/login` | — |
+| `require_authenticated_user` | `redirect` to `/auth/login` | unverified: `redirect` to `/auth/verify-pending` |
+| `require_pending_verification` | `redirect` to `/auth/login` | already verified: `redirect` to the dashboard |
 | `require_admin` | `redirect` to `/auth/login` | `push_navigate` to `/dashboard` |
 
 The distinction matters in tests: plain `redirect` yields `{:redirect, _}` (the
@@ -417,7 +412,7 @@ See `.env.example` for the full list. Key ones for local dev:
 | `MASTER_SECRETS_KEY` | Platform master key for envelope encryption |
 | `SPRITES_TOKEN` | Token for the Sprites sandbox platform |
 | `GITHUB_OAUTH_CLIENT_ID/SECRET` | GitHub OAuth app |
-| `STRIPE_*` | Billing integration |
+| `STRIPE_SECRET_KEY` / `STRIPE_WEBHOOK_SECRET` | Credit-pack Checkout and the three credit webhooks (`BILLING_ENABLED=true` only) |
 | `RESEND_API_KEY` | Transactional email |
 
 ## Docs (`docs/`)

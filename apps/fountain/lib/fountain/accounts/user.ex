@@ -6,10 +6,6 @@ defmodule Fountain.Accounts.User do
   @foreign_key_type :binary_id
 
   @roles ~w(user admin)
-  # "comped" is operator-granted free access, set only from the admin panel.
-  # It is deliberately distinct from a nil trial_ends_at (the legacy accident
-  # expire_legacy_trials cleans up) so a comp can never be swept by a backfill,
-  # and Billing.sync_subscription refuses to overwrite it from webhooks.
   @theme_values ~w(light dark system)
   @visible_stream_values ~w(stdout stderr stage)
   @view_mode_values ~w(chat pretty raw)
@@ -22,41 +18,23 @@ defmodule Fountain.Accounts.User do
     field :email_verified_at, :utc_datetime
     field :onboarding_completed_at, :utc_datetime
     field :onboarding_state, :string, default: "step_1"
-    # Per-user override of the plan's concurrent-sandbox cap; null means "the
-    # plan's". The Postgres column is still `max_concurrent_sandboxes` — it
-    # predates plans and renaming it would break a rolling deploy — so the
-    # honest name lives here and the migration explains the split.
+    # Per-user override of the balance-funded concurrent-sandbox cap
+    # (`Fountain.Quotas.sandbox_limit/1`); null means the balance rule. The
+    # Postgres column is still `max_concurrent_sandboxes` — renaming it would
+    # break a rolling deploy — so the honest name lives here.
     field :sandbox_limit_override, :integer, source: :max_concurrent_sandboxes
-    # `Fountain.Plans` slug. Null means this deployment's `DEFAULT_PLAN`,
-    # which is how a self-hosted instance runs with no plan concept at all.
-    # Written from the Stripe price on the subscription, never guessed.
-    # Teammate contacts this account is not charged for. Distinct from a
-    # `comped` subscription_status, which makes everything free: this is the
-    # tenant who pays for their tier and holds a number Fountain eats.
     # Cached sum of `credit_ledger` (ADR 0030). Written only by
     # `Fountain.Credits`, in the same transaction as the ledger row; never
     # cast from user input.
     field :credit_balance_cents, :integer, default: 0
     field :role, :string, default: "user"
     field :stripe_customer_id, :string
-    # A free account (ADR 0031): the balance is never checked. The one operator lever.
+    # A free account (ADR 0031): the balance is never checked. Set only from
+    # the admin panel; the one operator lever.
     field :comped, :boolean, default: false
-    # The subscription of record. Webhook sync applies events for this
-    # subscription only — a customer can briefly carry two (mid-trial upgrade),
-    # and customer-keyed sync let the doomed one write the account's status.
+    # Set by an operator; a suspended account cannot sign in or spend.
     field :suspended_at, :utc_datetime
-    # Stripe `created` of the last subscription event applied — the ordering
-    # guard's watermark. See Billing.sync_subscription/1.
-    # A portal cancellation leaves the subscription "active" with this flag set;
-    # access continues until current_period_end, when `.deleted` fires. Synced
-    # from subscription webhooks so the UI can say "access until <date>".
-    # The invoiced period, both ends of it, synced from the Stripe
-    # subscription. `current_period_start` is what makes an allowance
-    # measurable over the window the customer is actually charged for rather
-    # than over a calendar month that drifts out of step with every renewal.
-    # Null on a trialing account Stripe has not reported a period for, on a
-    # comped account, and on a self-hosted deployment with no Stripe —
-    # `Fountain.Billing.billing_period/2` handles all three.
+    # Bumped to invalidate every session (password change, suspension).
     field :session_version, :integer, default: 0
     field :theme_preference, :string, default: "system"
     field :conversations_roots_only, :boolean, default: false

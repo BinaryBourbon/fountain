@@ -299,7 +299,7 @@ defmodule FountainWeb.ConversationController do
       not_found: {"Agent not found", "application/json", Schemas.Error},
       unprocessable_entity: {"Validation error", "application/json", Schemas.ChangesetError},
       payment_required:
-        {"Subscription required", "application/json",
+        {"Insufficient credits", "application/json",
          %OpenApiSpex.Schema{
            type: :object,
            properties: %{

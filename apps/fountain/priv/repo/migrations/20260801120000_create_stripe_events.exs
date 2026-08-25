@@ -3,8 +3,10 @@ defmodule Fountain.Repo.Migrations.CreateStripeEvents do
 
   # Stripe retries a failed delivery for up to three days, and does not promise
   # ordering. Without a record of what has already been applied, a redelivered
-  # `customer.subscription.updated{active}` arriving after `.deleted` silently
-  # reactivates a cancelled account — and the reverse locks out a paying one.
+  # event is applied twice. (Written for the subscription era; since ADR 0031
+  # the events are credit purchases and clawbacks, and the claim is what makes
+  # a redelivered purchase grant once. The `subscription_synced_at` column
+  # below was dropped by 20260825060000.)
   def change do
     create table(:stripe_events, primary_key: false) do
       # Stripe's own event id (evt_...) is the natural key; the unique index is

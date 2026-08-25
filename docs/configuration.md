@@ -139,11 +139,6 @@ at a dead end, with no error to see. Read [Email](guides/operate/email.md).
 
 <!-- vale STE.IngForms = YES -->
 
-Each plan sets one number that Fountain enforces: how many sandboxes the tenant
-can run at the same time. Run `mix fountain.verify_plans` after you set a price
-variable. The task reads each price from Stripe and fails if the amount differs
-from the catalog.
-
 The rate variables are different from every other price here. They are what
 **you pay**, not what a tenant pays, and no other part of Fountain knows them.
 The admin finance panel at `/admin/finance` holds them next to your revenue,
@@ -161,7 +156,7 @@ told us about are different facts.
 ## Public pages
 
 The `/` page is not the same page on every deployment. The Fountain project's
-own site shows the product page, with the price and the free trial. Every other
+own site shows the product page, with the prices and the opening credit. Every other
 deployment shows a plain front door: the name, a way in, and a link to this
 manual.
 

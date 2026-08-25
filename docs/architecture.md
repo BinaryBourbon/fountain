@@ -18,7 +18,7 @@ sidecar. To scale out is to run more replicas of the same image.
 | **Phoenix endpoint** | The one public listener. It serves the operator console, the REST API and the SSE streams, on one port. |
 | **Conversation server** | One process for each active conversation. It owns the sandbox. It provisions the sandbox, spawns a turn in it, streams the output back, and enforces the lifecycle bounds. It holds the decrypted tenant key in memory while it lives. Fountain registers it across the cluster, so exactly one exists for each conversation, whatever the replica count. |
 | **Rehydrator** | Runs once at boot. It finds the conversations that were live before the restart and starts their servers again. Those servers reattach to the sprite, which still runs, so a deploy kills no work. |
-| **Oban** | Background jobs, which are the Stripe syncs, the lifecycle emails and the account exports on the `exports` queue. It also runs the cron schedule below. |
+| **Oban** | Background jobs, which are the credit pricer and expirer, the rent collector, the credit emails and the account exports on the `exports` queue. It also runs the cron schedule below. |
 | **Metrics listener** | A second, private HTTP listener on `METRICS_PORT`, which is 9568 in production and off elsewhere. It serves `/metrics` and `/health`. It is deliberately apart from the public endpoint, so that no ingress rule can expose it by accident. |
 
 Here is the scheduled work. All times are UTC.
@@ -27,7 +27,10 @@ Here is the scheduled work. All times are UTC.
 |---|---|---|
 | Each hour at :07 | The sandbox reaper. | Reconciles the sandbox rows against sprites.dev. It frees a row stuck mid-provision, expires an abandoned sandbox, destroys a sprite whose row is already terminal, and reports an untracked sprite. |
 | 04:23 daily | The retention pruner. | Deletes a row past its retention. Log events and Stripe events go after 90 days, audit events after 365, usage events after 400, and a revoked API key after 30. |
-| 05:41 daily | The unverified-account pruner. | Deletes an account that never verified its email, after 30 days, through the full deletion path. That covers Stripe, sprites and audit. |
+| 05:41 daily | The unverified-account pruner. | Deletes an account that never verified its email, after 30 days, through the full deletion path. That covers sprites and audit. |
+| Each 10 minutes | The credit pricer. | Burns each closed turn and each priced message into the credit ledger, and sweeps each expired grant. |
+| 06:23 daily | The credit expirer. | Sweeps each expired grant. It is a backstop for the pricer. |
+| 06:47 daily | The rent collector. | Charges a month of rent for each teammate number and inbox on its anniversary, sends the reminders, and releases a contact after seven unpaid days. |
 
 ### Clustering
 
@@ -129,9 +132,10 @@ a state of `started`, `done`, `failed` or `interrupted`.
 1. **Gates.** A prompt arrives, through `POST /api/conversations` or through a
    client on it. Four gates apply, in order. The agent must exist *and belong
    to you*, because Fountain scopes each query in the system to one tenant.
-   The vault must be on the agent's allowlist. The subscription gate applies
-   when you turned Stripe on, and answers `402` otherwise. The quota for
-   concurrent sandboxes applies, and it is 2 for each user by default. <!-- vale disable-line STE.IngForms -->
+   The vault must be on the agent's allowlist. The credit gate applies when
+   `BILLING_ENABLED` is on, and answers `402` at a zero balance. The quota for
+   concurrent sandboxes applies. The balance funds it, between a floor of 2
+   and a ceiling of 20 for each user by default. <!-- vale disable-line STE.IngForms -->
 2. **`provision`.** Fountain creates the sandbox and conversation rows, as
    `pending`, then starts a conversation server. That server creates the
    sprite, mounts the skills, and mints a scoped API key that expires. The

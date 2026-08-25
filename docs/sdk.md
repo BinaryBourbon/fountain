@@ -343,7 +343,7 @@ try {
 | Class | Code / status | Retryable |
 |---|---|---|
 | `ConversationBusyError` | `conversation_busy` (400) | Yes. The turn in flight must finish. |
-| `NotReadyError` | `provisioning`, `sprite_probe_failed` (503) | Yes. It carries the server's `Retry-After`. |
+| `NotReadyError` | `provisioning`, `sprite_probe_failed`, `fleet_full` (503) | Yes. It carries the server's `Retry-After`. |
 | `QuotaExceededError` | `sandbox_quota_exceeded` (429) | Yes. Terminate a conversation first. |
 | `SubscriptionRequiredError` | `insufficient_credits` (402) | No. It carries `upgradeUrl`. |
 | `ValidationError` | 422 | No. Read `fieldErrors`. |

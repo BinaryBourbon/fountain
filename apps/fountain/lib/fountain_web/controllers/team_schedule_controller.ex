@@ -147,7 +147,7 @@ defmodule FountainWeb.TeamScheduleController do
         "is untouched. 400 `conversation_busy` while the teammate's previous turn is " <>
         "still running, 503 while its computer is still starting, 404 when an " <>
         "in-thread schedule's agent is not on the team; the sandbox quota and " <>
-        "subscription refusals are the same as `POST /api/conversations`. Audited as " <>
+        "credit refusals are the same as `POST /api/conversations`. Audited as " <>
         "`team.schedule.fired`.",
     parameters: @id_params,
     responses: [
