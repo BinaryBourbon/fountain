@@ -49,10 +49,14 @@
   <%!-- Footer --%>
   <footer class="border-t border-[var(--color-border)] bg-[var(--color-bg-1)]">
     <div class="max-w-5xl mx-auto px-6 py-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-[var(--color-text-muted)]">
-      <%!-- The project's copyright line and its one-line pitch belong on the
-        project's own site. Somebody else's deployment gets an attribution. --%>
+      <%!-- The hosted site's copyright line names the brand, and credits the
+        engine, which is open source. Somebody else's deployment gets an
+        attribution. --%>
       <span :if={Fountain.Marketing.site?()}>
-        © 2026 Fountain. Managed agent infrastructure for teams who'd rather build than configure.
+        © 2026 {Fountain.Brand.name()}. Managed agent infrastructure for teams who'd rather build than configure.
+        <span :if={Fountain.Brand.hosted?()}>
+          Built on {Fountain.Brand.engine()}, open source.
+        </span>
       </span>
       <span :if={!Fountain.Marketing.site?()}>Powered by Fountain.</span>
       <div class="flex items-center gap-4">
