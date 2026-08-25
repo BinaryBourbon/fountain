@@ -169,7 +169,7 @@ defmodule FountainWeb.DashboardLive.Index do
             label="Credits"
             value={Fountain.Credits.format_cents(@credits.balance_cents)}
             sub={credits_sub(@credits)}
-            hint={"Conversation time costs #{Fountain.Credits.format_cents(@credits.turn_hour_cents)} per turn hour. Credit you buy never expires; the opening credit expires on its date."}
+            hint={"Conversation time costs #{Fountain.Credits.format_cents(@credits.price_card.turn_hour)} per turn hour. Credit you buy never expires; the opening credit expires on its date."}
           />
           <.metric
             label="Tokens"

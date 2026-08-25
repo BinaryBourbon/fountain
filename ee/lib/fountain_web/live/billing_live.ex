@@ -76,8 +76,8 @@ defmodule FountainWeb.Live.BillingLive do
         )} you hold, up to {Fountain.Quotas.settings().cap_ceiling}.
       </p>
 
-      <%!-- Prepaid credits (ADR 0030). Shown only once burning has started on
-            this deployment. Nothing refuses anything at zero yet (phase 4). --%>
+      <%!-- Prepaid credits (ADR 0030, 0031): the balance, and the packs that
+            top it up. At zero, new work is refused until it is positive. --%>
       <div :if={@credits.active?} class="rounded-lg border bg-white p-6 shadow-sm" id="credits">
         <div class="flex items-baseline justify-between">
           <h2 class="text-lg font-medium">Credits</h2>
@@ -92,7 +92,7 @@ defmodule FountainWeb.Live.BillingLive do
           </p>
         </div>
         <p class="mt-3 text-xs text-gray-500">
-          Conversation time costs {Credits.format_cents(@credits.turn_hour_cents)} per turn hour
+          Conversation time costs {Credits.format_cents(@credits.price_card.turn_hour)} per turn hour
           and comes out of this balance. Credit you buy never expires; the opening credit
           expires on its date.
         </p>

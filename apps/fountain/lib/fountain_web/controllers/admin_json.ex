@@ -46,7 +46,7 @@ defmodule FountainWeb.AdminJSON do
       has_stripe_customer: u.stripe_customer_id not in [nil, ""],
       # The cap actually enforced, keeping the field's old name and meaning
       # for anything reading this API, plus the override that produced it —
-      # null when the cap is simply the plan's.
+      # null when the cap is simply the balance rule's.
       max_concurrent_sandboxes: Fountain.Quotas.sandbox_limit_for(u),
       sandbox_limit_override: u.sandbox_limit_override,
       # A free account (ADR 0031): the balance is never checked.

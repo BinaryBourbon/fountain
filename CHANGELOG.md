@@ -16,6 +16,19 @@ upgrade, is in
 
 ## [Unreleased]
 
+### Removed
+
+- **Billing debt 2/3: dead Stripe plumbing and the last plan-era wording.**
+  `Billing.attach_stripe_customer/2` (no callers), the admin user page's
+  "Invoices" section (it always rendered "None."), the unreachable "nothing
+  is paused yet" branch of the credits-exhausted email, and
+  `Credits.summary/2`'s duplicate `turn_hour_cents` (read it from
+  `price_card.turn_hour`; the API field is unchanged). The `/admin/users`
+  "Plan" column is "Credit"; every remaining "plan"/"tier"/"trial"/
+  "subscription"/"invoice" string in operator-visible text, docstrings,
+  comments, docs and test fixtures (CLI, SDK, Elixir) says what the code
+  does now.
+
 ### Added
 
 - **Egress credential brokerage, gate 1a (ADR 0019, #1090).** `Fountain.Broker`

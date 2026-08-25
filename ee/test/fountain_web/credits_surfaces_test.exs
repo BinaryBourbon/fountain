@@ -81,7 +81,7 @@ defmodule FountainWeb.CreditsSurfacesTest do
       assert summary.expiring_cents == 700
       assert summary.expires_at == expires
       assert summary.purchased_cents == 2500
-      assert summary.turn_hour_cents == 25
+      assert summary.price_card.turn_hour == 25
     end
 
     test "the billing page shows the balance, the price, the expiry and the ledger", %{conn: conn} do

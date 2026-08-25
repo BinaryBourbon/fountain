@@ -3,9 +3,8 @@ defmodule Fountain.Repo.Migrations.CreateCreditLedger do
 
   # ADR 0030 phase 2, step 1. The ledger is append-only and every row carries a
   # signed amount in cents; `users.credit_balance_cents` caches the sum so a
-  # gate never sums the ledger. Additive and inert: nothing writes a row until
-  # the pricing and grant workers land, and nothing reads the balance to
-  # refuse anything until phase 4.
+  # gate never sums the ledger. (Additive and inert when written; the pricer,
+  # the grants and the gate landed over the following days.)
   def change do
     create table(:credit_ledger, primary_key: false) do
       add :id, :binary_id, primary_key: true

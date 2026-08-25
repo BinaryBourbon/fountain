@@ -275,7 +275,7 @@
     {
       "type": "stat",
       "title": "Funded / activated",
-      "description": "Comped accounts are operator grants rather than conversions and are excluded. An account that converted and then canceled drops out of this stage.",
+      "description": "Comped accounts are operator grants rather than conversions and are excluded. An account that spent its balance to zero drops out of this stage.",
       "gridPos": {
         "h": 4,
         "w": 3,

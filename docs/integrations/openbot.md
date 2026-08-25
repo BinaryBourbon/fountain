@@ -179,7 +179,7 @@ answers in a couple of seconds.
 
 If a Fountain error arrives before the stream opens, it is an ordinary JSON
 response with a status, and OpenBot shows it in the channel. An unknown agent,
-no subscription and the sandbox quota are the three. Once the stream is open,
+no credit and the sandbox quota are the three. Once the stream is open,
 a failure arrives as `RUN_ERROR`.
 
 ## Model credentials

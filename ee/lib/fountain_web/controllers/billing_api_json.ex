@@ -35,7 +35,7 @@ defmodule FountainWeb.BillingApiJSON do
       expiring_cents: c.expiring_cents,
       expires_at: c.expires_at,
       purchased_cents: c.purchased_cents,
-      turn_hour_cents: c.turn_hour_cents,
+      turn_hour_cents: c.price_card.turn_hour,
       packs_cents: Fountain.Credits.packs()
     }
   end

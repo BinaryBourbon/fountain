@@ -29,10 +29,10 @@ func TestHTTPErrorError(t *testing.T) {
 		{
 			name: "upgrade_url is appended",
 			err: HTTPError{Status: 402, Body: map[string]any{
-				"error":       "subscription_required",
+				"error":       "insufficient_credits",
 				"upgrade_url": "/account/billing",
 			}},
-			want: "http 402: subscription_required (upgrade: /account/billing)",
+			want: "http 402: insufficient_credits (upgrade: /account/billing)",
 		},
 		{
 			name: "validation errors are flattened, not map-dumped",
