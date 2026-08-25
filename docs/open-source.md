@@ -29,10 +29,9 @@ service owes those improvements to everyone else who runs it. The licence does
 not stop a commercial host, in competition with Managoat or not. It stops a
 private one.
 
-Fountain was MIT through v0.12.0 (2026-08-17), and those releases stay MIT.
 The
 [NOTICE](https://github.com/BinaryBourbon/fountain/blob/main/NOTICE) file
-holds the relicence record and the third-party attribution.
+holds the third-party attribution.
 
 ## Where things live
 
