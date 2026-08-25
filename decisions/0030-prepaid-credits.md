@@ -13,7 +13,7 @@ verified: { by: human:jhgaylor, at: 2026-08-24T20:00:00-04:00 }
 
 # 0030 — Prepaid credits beside the capacity tiers: a cents ledger burned by turn-hours, rent and messages
 
-**Status:** Accepted. **Built, inert until switched on** (#1094–#1102,
+**Status:** Accepted; decision 2 (tiers survive) is reversed by ADR 0031, which retires subscriptions and tiers and makes credits the only product. The rest stands. **Built, inert until switched on** (#1094–#1102,
 2026-08-24). What exists: `Fountain.Credits` and the `credit_ledger`
 (decisions 1, 5), `Workers.CreditPricer` (3), `Workers.CreditGranter` and
 the renewal-time grant (2), `Credits.Purchases` with refund and dispute

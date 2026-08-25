@@ -13,7 +13,7 @@ verified: { by: human:jhgaylor, at: 2026-08-22T06:00:00-04:00 }
 
 # 0026 — Plans priced on concurrent sandboxes, with teammate contacts as a per-unit add-on
 
-**Status:** Accepted, amended by ADR 0030 (2026-08-25): the teammate-contact
+**Status:** Superseded by ADR 0031 (2026-08-25): the tiers, the subscription and the plan column are retired once its PRs land; the concurrency cap becomes a balance-funded protection. Until then, and as history: amended by ADR 0030 (2026-08-25): the teammate-contact
 add-on (`Billing.sync_contact_addon/1`, `STRIPE_PRICE_ID_CONTACT`,
 `users.comped_contacts`) was retired in favour of rent from the prepaid
 balance; the contact *ceiling* stays. Everything else described here is built: `Fountain.Plans`,
