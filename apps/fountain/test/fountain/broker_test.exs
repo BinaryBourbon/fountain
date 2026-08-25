@@ -240,6 +240,45 @@ defmodule Fountain.BrokerTest do
       assert {:ok, %{token: "t", expires_at: nil}} = Broker.prepare(@conv, %{"GH_TOKEN" => "g"})
     end
 
+    # Agent Vault answered 500 "Failed to create vault" for a duplicate name
+    # on prod (2026-08-25); the contract says 409. The vault list is the
+    # tiebreaker: present means ensured.
+    test "a refused create still counts when the vault is in the list" do
+      vault = Broker.vault_name(@conv)
+
+      stub(Req, :post, fn _req, opts ->
+        case Keyword.fetch!(opts, :url) do
+          "/v1/vaults" -> {:ok, %{status: 500, body: %{"error" => "Failed to create vault"}}}
+          "/v1/credentials" -> {:ok, %{status: 200, body: %{}}}
+          "/v1/sessions" -> {:ok, %{status: 201, body: %{"token" => "t", "expires_at" => "x"}}}
+        end
+      end)
+
+      stub(Req, :get, fn _req, opts ->
+        assert Keyword.fetch!(opts, :url) == "/v1/vaults"
+        {:ok, %{status: 200, body: %{"vaults" => [%{"name" => vault}, %{"name" => "other"}]}}}
+      end)
+
+      stub(Req, :patch, fn _r, _o -> {:ok, %{status: 200, body: %{}}} end)
+      stub(Req, :put, fn _r, _o -> {:ok, %{status: 200, body: %{}}} end)
+
+      assert {:ok, %{token: "t"}} = Broker.prepare(@conv, %{"GH_TOKEN" => "g"})
+    end
+
+    test "a refused create for a vault that is not there is the broker's error" do
+      stub(Req, :post, fn _req, opts ->
+        case Keyword.fetch!(opts, :url) do
+          "/v1/vaults" -> {:ok, %{status: 500, body: %{"error" => "Failed to create vault"}}}
+        end
+      end)
+
+      stub(Req, :get, fn _req, _opts ->
+        {:ok, %{status: 200, body: %{"vaults" => [%{"name" => "other"}]}}}
+      end)
+
+      assert {:error, {:broker, :vault, _}} = Broker.prepare(@conv, %{"GH_TOKEN" => "g"})
+    end
+
     test "GH_TOKEN alone binds the github services to GH_TOKEN" do
       test = self()
 
