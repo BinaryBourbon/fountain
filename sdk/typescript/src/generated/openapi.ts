@@ -3891,7 +3891,7 @@ export interface components {
                 plan?: {
                     /** @description The plan's concurrency cap. */
                     concurrent_sandboxes?: number;
-                    /** @description Turn hours the plan includes per billing period. Reported only: no request is refused for exceeding it. */
+                    /** @description Turn hours the plan's monthly credit grant is sized on: this times credits.turn_hour_cents lands at the start of each billing period. */
                     included_turn_hours?: number;
                     monthly_cents?: number;
                     name?: string;
@@ -3914,12 +3914,8 @@ export interface components {
                     sandbox_minutes_by_provider?: {
                         [key: string]: number;
                     };
-                    /** @description Hours with a prompt in flight, on providers Fountain pays for. The unit included_turn_hours is denominated in. An idle sandbox spends none of these; sandbox_minutes counts it. */
+                    /** @description Hours with a prompt in flight, on providers Fountain pays for; what burns credit. An idle sandbox spends none of these; sandbox_minutes counts it. */
                     turn_hours?: number;
-                    /** @description The plan's allowance, repeated here beside what was used. */
-                    turn_hours_included?: number;
-                    /** @description Clamped at zero; an account over its allowance is not owed hours. */
-                    turn_hours_remaining?: number;
                     turns?: number;
                 };
             };

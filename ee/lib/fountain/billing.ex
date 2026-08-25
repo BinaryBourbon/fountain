@@ -2127,49 +2127,6 @@ defmodule Fountain.Billing do
   end
 
   @doc """
-  The turn-hour meter, in one shape, for every surface that shows it: the
-  billing page, `GET /api/account/billing`, and the admin per-tenant view.
-
-  One function so the three cannot disagree about the window, the unit, or
-  which providers count.
-
-    * `:used` / `:included` — turn hours spent, and what the plan carries
-    * `:remaining` — clamped at zero; a tenant over their allowance is not
-      owed negative hours
-    * `:period` — the `billing_period/2` map, `:source` included, so a
-      surface can label a calendar-month fallback as one
-    * `:over?` — whether `:used` has passed `:included`
-
-  **Nothing acts on this shape.** The decision it was waiting on is made
-  (ADR 0030): the hours are a prepaid credit grant, and what acts is
-  `check_spend/1` on the balance, not on this number. This stays as the
-  hours view until enforcement flips, then goes.
-  """
-  @spec turn_hour_allowance(User.t(), keyword()) :: %{
-          used: float(),
-          included: non_neg_integer(),
-          remaining: float(),
-          period: %{start: DateTime.t(), end: DateTime.t(), source: atom()},
-          over?: boolean()
-        }
-  def turn_hour_allowance(%User{} = user, opts \\ []) do
-    period = Keyword.get(opts, :period) || billing_period(user)
-    used = turn_hours_used(user, period: {period.start, period.end})
-    # The user, not `user.plan`: a slug carries no subscription status, so
-    # passing one would quietly hand a trialing account the paid tier's
-    # allowance (`Plans.effective/1`).
-    included = Plans.included_turn_hours(user)
-
-    %{
-      used: used,
-      included: included,
-      remaining: Float.round(max(included - used, 0.0), 2),
-      period: period,
-      over?: used > included
-    }
-  end
-
-  @doc """
   Returns a usage summary for `user_id` over the given period.
 
   Fields:

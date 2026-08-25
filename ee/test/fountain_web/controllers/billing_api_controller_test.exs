@@ -76,7 +76,7 @@ defmodule FountainWeb.BillingApiControllerTest do
       assert body["data"]["period"]["source"] == "calendar_month"
     end
 
-    test "the plan's turn-hour allowance travels with the usage", %{
+    test "turn hours travel with the usage, beside the plan's grant size", %{
       conn: conn,
       user: user,
       key: key
@@ -121,11 +121,9 @@ defmodule FountainWeb.BillingApiControllerTest do
       included = Fountain.Plans.included_turn_hours(Fountain.Plans.default_slug())
 
       assert body["data"]["usage"]["turn_hours"] == expected
-      assert body["data"]["usage"]["turn_hours_included"] == included
       assert body["data"]["plan"]["included_turn_hours"] == included
-
-      assert body["data"]["usage"]["turn_hours_remaining"] ==
-               Float.round(included - expected, 2)
+      # The allowance shape is gone (ADR 0030): credits are what act.
+      refute Map.has_key?(body["data"]["usage"], "turn_hours_included")
     end
 
     test "an idle sandbox spends sandbox minutes and no turn hours", %{

@@ -109,9 +109,9 @@ Five rules that are easy to get wrong:
   (how long the machine had any turn in flight) and is what a provider bill
   relates to; several conversations share one sandbox (ADR 0023), so the two
   differ and must not be swapped.
-  `Billing.turn_hour_allowance/2` is the one shape every surface renders, so
-  they cannot disagree. **No gate reads it.** The gate reads the prepaid
-  balance instead — see the next rule.
+  `Billing.turn_hours_used/2` is the meter; nothing renders an "allowance"
+  any more (removed with the enforcement flip, ADR 0030). What acts is the
+  prepaid balance — see the next rule.
 
 - **Credits are the usage currency, and two switches turn them on.**
   ADR 0030: `Fountain.Credits` keeps a cents ledger (`credit_ledger`, cached
@@ -123,7 +123,8 @@ Five rules that are easy to get wrong:
   sells packs and claws back on refund or dispute; `Credits.Rent` takes a
   month up front per contact. Nothing prices, grants or shows a balance
   until `CREDIT_PRICING_SINCE` is set, and nothing is refused until
-  `CREDIT_ENFORCE=true` — then `Billing.check_spend/1` is the gate every
+  `CREDIT_ENFORCE=true` (both set on the hosted deployment since
+  2026-08-24) — `Billing.check_spend/1` is the gate every
   door must call (never `check_active/1` alone), and it short-circuits for
   billing-off and comped before any balance read. The runbook order is in
   `docs/guides/operate/billing.md`; **decisions/0030-prepaid-credits.md**

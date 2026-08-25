@@ -163,8 +163,8 @@ defmodule FountainWeb.DashboardLiveTest do
 
       assert html =~ "Turn hours"
       assert html =~ "2.0"
-      # Billing is on in test, so the plan's allowance is beside it.
-      assert html =~ "of #{Fountain.Plans.included_turn_hours(user)} included"
+      # No allowance beside it any more (ADR 0030): credits are the number.
+      refute html =~ "included"
       # The sandbox side is still available, in the hint where it belongs.
       assert html =~ "sandboxes were awake"
     end

@@ -78,7 +78,7 @@ defmodule FountainWeb.BillingLiveTest do
 
       assert html =~ "Subscription"
       assert html =~ "Usage this period"
-      assert html =~ "Turn hours"
+      assert html =~ "Subscription"
     end
   end
 
@@ -388,137 +388,6 @@ defmodule FountainWeb.BillingLiveTest do
     end
   end
 
-  describe "the turn-hour meter (#1016)" do
-    defp busy_hours(user, hours) do
-      now = DateTime.utc_now() |> DateTime.truncate(:second)
-      {period_start, _} = Billing.current_month_range()
-      started = Enum.max([DateTime.add(now, -hours * 3600, :second), period_start], DateTime)
-
-      sandbox =
-        insert_sandbox(
-          user_id: user.id,
-          provider: "sprites",
-          status: "terminated",
-          inserted_at: started,
-          terminated_at: now
-        )
-
-      agent = insert_agent(user_id: user.id)
-
-      conversation =
-        insert_conversation(user_id: user.id, agent_id: agent.id, sandbox: sandbox)
-
-      {:ok, _} =
-        Fountain.Conversations._unsafe_create_turn(%{
-          conversation_id: conversation.id,
-          turn_number: 1,
-          prompt: "hello",
-          status: "completed",
-          started_at: started,
-          ended_at: now
-        })
-
-      :ok
-    end
-
-    test "shows hours used against the plan's allowance", %{conn: conn} do
-      # Active: a trialing account is capped at the trial's 40 hours, which
-      # the trial-specific tests below cover.
-      user = insert_active_user(plan: "solo")
-      busy_hours(user, 3)
-
-      {:ok, _lv, html} = live(login_user(conn, user), ~p"/account/billing")
-
-      assert html =~ "Turn hours"
-      assert html =~ "of #{Fountain.Plans.included_turn_hours("solo")} included"
-      assert html =~ "A turn hour is an hour with a prompt in flight"
-    end
-
-    # The trap this could create: showing "Solo" beside Trial's numbers, so a
-    # customer evaluating Solo judges it on two sandboxes and forty hours and
-    # concludes the product is unusable. Both have to be named.
-    test "a trialing account sees the trial's numbers and what the tier raises them to",
-         %{conn: conn} do
-      user = insert_verified_user(plan: "team")
-
-      {:ok, _lv, html} = live(login_user(conn, user), ~p"/account/billing")
-
-      team = Fountain.Plans.fetch!("team")
-      trial = Fountain.Plans.fetch!("trial")
-
-      assert html =~ "Trial, then Team"
-      assert html =~ "of #{trial.included_turn_hours} included"
-      assert html =~ "on trial"
-      # The tier's numbers are stated as what subscribing raises them to.
-      assert html =~
-               "raises those to #{team.included_turn_hours} and #{team.concurrent_sandboxes}"
-
-      refute html =~ "of #{team.included_turn_hours} included"
-    end
-
-    # The trial ties the cheapest tier on concurrency and hours, so the
-    # "raises those to" sentence would name the numbers the customer already
-    # has. Subscribing at the bottom of the ladder buys the clock, not
-    # capacity, and the page has to say the true thing.
-    test "a trialing account on a tier that ties the trial is not promised a raise",
-         %{conn: conn} do
-      solo = Fountain.Plans.fetch!("solo")
-      trial = Fountain.Plans.fetch!("trial")
-      # Guard: if Solo ever climbs above the trial again, this test is
-      # asserting the wrong branch and should be deleted rather than fixed.
-      assert solo.concurrent_sandboxes == trial.concurrent_sandboxes
-      assert solo.included_turn_hours == trial.included_turn_hours
-
-      user = insert_verified_user(plan: "solo")
-
-      {:ok, _lv, html} = live(login_user(conn, user), ~p"/account/billing")
-
-      refute html =~ "raises those to"
-      assert html =~ "which is what Solo carries too"
-      assert html =~ "lifts the fourteen-day limit"
-    end
-
-    test "says nothing is limited when a tenant is over", %{conn: conn} do
-      user = insert_verified_user(plan: "solo")
-      busy_hours(user, 120)
-
-      {:ok, _lv, html} = live(login_user(conn, user), ~p"/account/billing")
-
-      # Reported, never enforced (#1016 step 4 is still open). A page that
-      # implied a limit it does not have would be worse than no meter.
-      assert html =~ "You are over the hours your plan includes"
-      assert html =~ "Nothing is limited and"
-    end
-
-    test "labels a calendar-month window as the fallback it is", %{conn: conn} do
-      # No Stripe period synced, so these numbers do not line up with an
-      # invoice. Saying so is the whole reason `billing_period/2` returns a
-      # source rather than a bare tuple.
-      user = insert_verified_user()
-
-      {:ok, _lv, html} = live(login_user(conn, user), ~p"/account/billing")
-
-      assert html =~ "we do not have an invoiced period for this account yet"
-    end
-
-    test "does not label the window when it is the invoiced one", %{conn: conn} do
-      now = DateTime.utc_now() |> DateTime.truncate(:second)
-
-      {:ok, user} =
-        insert_verified_user()
-        |> Fountain.Accounts.User.billing_changeset(%{
-          subscription_status: "active",
-          current_period_start: DateTime.add(now, -5, :day),
-          current_period_end: DateTime.add(now, 25, :day)
-        })
-        |> Fountain.Repo.update()
-
-      {:ok, _lv, html} = live(login_user(conn, user), ~p"/account/billing")
-
-      refute html =~ "we do not have an invoiced period for this account yet"
-    end
-  end
-
   describe "the plan picker" do
     setup do
       Application.put_env(:fountain, :stripe_price_ids, %{
@@ -562,8 +431,8 @@ defmodule FountainWeb.BillingLiveTest do
       # The hours are part of what a customer is choosing between. Derived
       # from the catalog: which numbers the tiers carry is pinned in
       # plans_test.exs, and this is about the picker rendering them.
-      assert html =~ "#{Fountain.Plans.included_turn_hours("solo")} turn hours included"
-      assert html =~ "#{Fountain.Plans.included_turn_hours("scale")} turn hours included"
+      assert html =~ "$10.00 of credit a month"
+      assert html =~ "$50.00 of credit a month"
     end
 
     test "the current plan is not offered as a switch", %{conn: conn} do

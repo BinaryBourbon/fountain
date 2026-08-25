@@ -33,7 +33,6 @@ defmodule FountainWeb.Live.BillingLive do
        assign(socket,
          page_title: "Billing",
          usage: usage,
-         allowance: Billing.turn_hour_allowance(user, period: period),
          period: period,
          # The prepaid balance (ADR 0030). `active?` false means the switch is
          # off and the card is not rendered at all.
@@ -376,7 +375,7 @@ defmodule FountainWeb.Live.BillingLive do
               {plan.concurrent_sandboxes} agents at once
             </p>
             <p class="mt-0.5 text-xs text-gray-500">
-              {plan.included_turn_hours} turn hours included
+              {Credits.format_cents(plan.included_turn_hours * Credits.price_card().turn_hour)} of credit a month
             </p>
             <div class="mt-3">
               <span :if={plan.slug == @plan.slug} class="text-xs font-medium text-indigo-700">
@@ -483,48 +482,6 @@ defmodule FountainWeb.Live.BillingLive do
         </table>
       </div>
 
-      <%!-- Turn hours against the plan's allowance. Reported only; nothing
-            refuses anything because a tenant is over it (#1016 step 4). --%>
-      <div class="rounded-lg border bg-white p-6 shadow-sm">
-        <div class="flex items-baseline justify-between">
-          <h2 class="text-lg font-medium">Turn hours</h2>
-          <p class="text-sm tabular-nums">
-            <span class="font-semibold">{format_hours(@allowance.used)}</span>
-            <span class="text-gray-500">of {@allowance.included} included</span>
-            <%!-- Without this the trial's smaller allowance reads as the tier's,
-                  and a customer evaluating Solo judges it on Trial's number. --%>
-            <span :if={@on_trial} class="text-gray-500">on trial</span>
-          </p>
-        </div>
-        <div class="mt-3 h-2 w-full overflow-hidden rounded-full bg-gray-100">
-          <div
-            class={[
-              "h-full rounded-full",
-              if(@allowance.over?, do: "bg-amber-500", else: "bg-indigo-500")
-            ]}
-            style={"width: #{meter_width(@allowance)}%"}
-          >
-          </div>
-        </div>
-        <p class="mt-3 text-xs text-gray-500">
-          A turn hour is an hour with a prompt in flight. An agent sitting idle
-          costs you nothing here, and neither does time on your own runner.
-          Parked sandboxes are excluded from every number on this page.
-        </p>
-        <p :if={@on_trial and @trial_raises_numbers?} class="mt-2 text-xs text-gray-500">
-          A trial includes {@effective_plan.included_turn_hours} turn hours and {@effective_plan.concurrent_sandboxes} agents at once. {@plan.name} raises those to {@plan.included_turn_hours} and {@plan.concurrent_sandboxes} as soon as you subscribe — you do not
-          wait for the trial to run out.
-        </p>
-        <p :if={@on_trial and not @trial_raises_numbers?} class="mt-2 text-xs text-gray-500">
-          A trial includes {@effective_plan.included_turn_hours} turn hours and {@effective_plan.concurrent_sandboxes} agents at once, which is what {@plan.name} carries too. Subscribing keeps those numbers and lifts the fourteen-day limit; a larger tier is what raises them.
-        </p>
-        <p :if={@allowance.over?} class="mt-2 text-xs text-amber-700">
-          You are over the hours your plan includes. Nothing is limited and
-          nothing extra is charged — we are showing you the number while we
-          work out what a fair overage looks like.
-        </p>
-      </div>
-
       <%!-- Usage over the billing period --%>
       <div class="rounded-lg border bg-white p-6 shadow-sm">
         <h2 class="mb-1 text-lg font-medium">Usage this period</h2>
@@ -625,18 +582,6 @@ defmodule FountainWeb.Live.BillingLive do
     |> Float.round(1)
     |> to_string()
   end
-
-  defp format_hours(hours), do: hours |> Float.round(1) |> to_string()
-
-  # Capped at 100 so an over-allowance account gets a full bar rather than one
-  # that overflows its track. `over?` is what says it went past, not the width.
-  # A plan with no hours (nothing sells one today) would divide by zero.
-  defp meter_width(%{included: included}) when included <= 0, do: 0
-
-  # `min/2` last and against a float: `min(101.5, 100)` returns the *integer*
-  # 100, which Float.round/2 refuses — an over-allowance account 500s the page.
-  defp meter_width(%{used: used, included: included}),
-    do: (used / included * 100) |> Float.round(1) |> min(100.0)
 
   defp ledger_label(%{reason: "grant_tier", metadata: %{"plan" => plan}}),
     do: "#{String.capitalize(plan)} plan credit"

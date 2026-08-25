@@ -53,11 +53,8 @@ defmodule FountainWeb.AdminUserDetailLiveTest do
 
       {:ok, _lv, html} = live(login_user(conn, admin), ~p"/admin/users/#{target.id}")
 
-      assert html =~ "Turn hours"
-      assert html =~ "0.0 / #{Fountain.Plans.included_turn_hours("team")}"
-      # No Stripe period on this account, so the window is a calendar month
-      # and support has to be able to see that before quoting the number.
-      assert html =~ "calendar month"
+      # The allowance tile is gone (ADR 0030); the balance is the number.
+      refute html =~ "Turn hours"
     end
 
     test "shows admin actions taken against the account", %{conn: conn} do
