@@ -86,13 +86,11 @@ defmodule Fountain.QuotasTest do
       assert Quotas.sandbox_limit(with_balance(insert_active_user(), 100_000).id) == 20
     end
 
-    test "a comped account gets the ceiling, and so does everyone with billing off" do
+    # Billing off is covered in credits_enforcement_test (async: false): it
+    # flips global config, which an async module must not do.
+    test "a comped account gets the ceiling" do
       {:ok, comped} = Fountain.Billing.comp_account(insert_active_user())
       assert Quotas.sandbox_limit(comped.id) == 20
-
-      Application.put_env(:fountain, :billing_enabled, false)
-      on_exit(fn -> Application.put_env(:fountain, :billing_enabled, true) end)
-      assert Quotas.sandbox_limit(insert_active_user().id) == 20
     end
 
     test "an override beats the balance, in either direction" do

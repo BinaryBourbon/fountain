@@ -72,6 +72,12 @@ defmodule Fountain.CreditsEnforcementTest do
       assert {:error, :subscription_required} = Billing.check_spend(canceled)
     end
 
+    test "billing off funds the ceiling, whatever the balance" do
+      Application.put_env(:fountain, :billing_enabled, false)
+      on_exit(fn -> Application.put_env(:fountain, :billing_enabled, true) end)
+      assert Quotas.sandbox_limit(insert_active_user().id) == Quotas.settings().cap_ceiling
+    end
+
     test "comped and billing-off never refuse" do
       # No Stripe customer, so comping cancels nothing upstream.
       {:ok, comped} = Billing.comp_account(insert_active_user())
