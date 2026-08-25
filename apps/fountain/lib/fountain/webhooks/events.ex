@@ -22,6 +22,7 @@ defmodule Fountain.Webhooks.Events do
     {"clone", ~w(started done failed)},
     {"packages", ~w(started done failed)},
     {"network", ~w(started done failed)},
+    {"broker", ~w(started done failed)},
     {"setup", ~w(started done failed)},
     {"checkpoint_restore", ~w(started done failed)},
     {"reattach", ~w(started done failed interrupted)},

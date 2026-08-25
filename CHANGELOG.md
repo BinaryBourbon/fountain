@@ -16,6 +16,15 @@ upgrade, is in
 
 ## [Unreleased]
 
+### Added
+
+- **Egress credential brokerage, gate 1a (ADR 0019, #1090).** `Fountain.Broker`
+  and the provisioning wiring for an Agent Vault forward proxy: a brokered
+  sandbox holds `__github_token__` where `GITHUB_TOKEN` was, the real value is
+  attached at the proxy, and the proxy's host is the one host it may reach.
+  Off unless `BROKER_URL` is set, and then only for the tenants in
+  `BROKER_TENANTS`; an unbrokered conversation provisions byte-for-byte as
+  before. No broker is deployed and no tenant is flipped by this change.
 ### Changed
 
 - **Credits cleanup 3/3 (#1128).** The prose catches up with ADR 0031. ADR

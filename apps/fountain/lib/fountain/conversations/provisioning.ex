@@ -25,6 +25,7 @@ defmodule Fountain.Conversations.Provisioning do
   alias Fountain.Environments.Environment
   alias Fountain.Retry
   alias Fountain.Sandbox
+  alias Fountain.Sandbox.Handle
   alias Fountain.Sandbox.NetworkPolicy
 
   require Logger
@@ -314,6 +315,134 @@ defmodule Fountain.Conversations.Provisioning do
   def check_network_policy_support(_provider, _env, _conv_id), do: :ok
 
   @doc """
+  Refuse a brokered pairing that cannot be enforced, before a sandbox exists
+  (ADR 0019 gate 1a). Same shape and reason as `check_network_policy_support/3`.
+
+  Three refusals, each by name: a `limited` environment (its `allowed_hosts`
+  become broker rules in gate 2, and a floor that ignored them would be a
+  policy the author did not write); a provider with no `:network_policy`,
+  unless `BROKER_ALLOW_UNENFORCED` says a development box may run advisory;
+  and a broker that does not answer `/health`, so an outage is reported as
+  one rather than as the install failure it would otherwise wear (§6).
+  """
+  @spec check_broker_support(boolean(), atom(), Environment.t() | nil, String.t()) ::
+          :ok | {:error, {:broker, atom()} | {:broker, :unreachable, term()}}
+  def check_broker_support(false, _provider, _env, _conv_id), do: :ok
+
+  def check_broker_support(true, provider, env, conv_id) do
+    cond do
+      match?(%Environment{networking_type: "limited"}, env) ->
+        publish_stage(conv_id, "broker", "failed", %{reason: "limited_environment_unsupported"})
+        {:error, {:broker, :limited_environment_unsupported}}
+
+      not Sandbox.supports?(provider, :network_policy) and not Fountain.Broker.allow_unenforced?() ->
+        publish_stage(conv_id, "broker", "failed", %{
+          provider: to_string(provider),
+          reason: "backend_lacks_network_policy"
+        })
+
+        {:error, {:broker, :backend_lacks_network_policy}}
+
+      true ->
+        case Fountain.Broker.preflight() do
+          :ok ->
+            :ok
+
+          {:error, {:broker, :unreachable, detail}} = err ->
+            publish_stage(conv_id, "broker", "failed", %{
+              reason: "broker_unreachable",
+              detail: inspect(detail)
+            })
+
+            err
+        end
+    end
+  end
+
+  @doc """
+  The network floor of a brokered sandbox: the broker's host is the one
+  domain it may reach, whatever the environment's `networking_type` says
+  (ADR 0019 §2). On a provider without `:network_policy` this is skipped,
+  which `check_broker_support/4` only allows under `BROKER_ALLOW_UNENFORCED`.
+  """
+  @spec apply_broker_floor(Handle.t(), String.t()) :: :ok | {:error, term()}
+  def apply_broker_floor(handle, conv_id) do
+    host = Fountain.Broker.proxy_host()
+
+    if Sandbox.supports?(handle, :network_policy) do
+      Fountain.Telemetry.span(
+        [:network_policy],
+        %{conv_id: conv_id, hosts: 1},
+        fn ->
+          publish_stage(conv_id, "network", "started", %{type: "broker", hosts: 1})
+
+          case Retry.with_backoff(
+                 fn -> Sandbox.apply_network_policy(handle, %NetworkPolicy{allow: [host]}) end,
+                 label: "broker network floor"
+               ) do
+            :ok ->
+              publish_stage(conv_id, "network", "done", %{type: "broker"})
+              {:ok, %{outcome: :ok}}
+
+            {:error, reason} ->
+              publish_stage(conv_id, "network", "failed", %{reason: inspect(reason)})
+              {{:error, {:network_policy, reason}}, %{outcome: :failed, reason: inspect(reason)}}
+          end
+        end
+      )
+    else
+      publish_stage(conv_id, "network", "done", %{type: "broker", enforced: false})
+      :ok
+    end
+  end
+
+  @doc """
+  Put the broker's root CA in the sandbox's operating-system trust store.
+  Gate 0 found that one `update-ca-certificates` satisfies curl, git and npm
+  at once, where per-tool variables each fail in their own way. Node is the
+  exception and reads `NODE_EXTRA_CA_CERTS`, which `Fountain.Broker.sandbox_env/1`
+  points at the same file.
+  """
+  @spec install_broker_ca(Handle.t(), String.t()) :: :ok | {:error, term()}
+  def install_broker_ca(handle, conv_id) do
+    path = Fountain.Broker.ca_path()
+    staging = Fountain.Broker.ca_staging_path()
+
+    # Written as the sandbox user where it may, then moved into the root-owned
+    # trust directory the way `install_packages/4` reaches apt: through sudo.
+    install =
+      "sudo install -D -m 644 #{shell_quote(staging)} #{shell_quote(path)} && " <>
+        "sudo update-ca-certificates"
+
+    with {:ok, pem} <- Fountain.Broker.ca_pem(),
+         :ok <-
+           Retry.with_backoff(fn -> Sandbox.write_file(handle, staging, pem, mode: 0o644) end,
+             label: "broker CA write"
+           ) do
+      case Sandbox.exec(handle, "bash", ["-lc", install],
+             stderr_to_stdout: true,
+             timeout: 60_000
+           ) do
+        {:ok, _out, 0} ->
+          :ok
+
+        {:ok, out, code} ->
+          publish_stage(conv_id, "broker", "failed", %{reason: "ca_install_exit", exit_code: code})
+
+          {:error, {:broker, :ca_install_exit, code, String.slice(to_string(out), 0, 500)}}
+
+        {:error, reason} ->
+          publish_stage(conv_id, "broker", "failed", %{reason: "ca_install_unreachable"})
+          {:error, {:broker, :ca_install, reason}}
+      end
+    else
+      {:error, reason} = err ->
+        publish_stage(conv_id, "broker", "failed", %{reason: inspect(reason)})
+        err
+    end
+  end
+
+  @doc """
   Apply the env's networking config to the sandbox. `unrestricted` is a
   no-op (sandboxes are open by default). `limited` builds an allowlist from
   `networking_config.allowed_hosts: [...]` and applies it as a default-deny
@@ -361,13 +490,19 @@ defmodule Fountain.Conversations.Provisioning do
   `mount_path`. HTTPS only, x-access-token auth via the env secret named
   by `secret_key`. Returns `:ok` or `{:error, ...}` on first failure.
   """
-  def clone_repositories(_handle, nil, _secrets, _conv_id), do: :ok
+  def clone_repositories(_handle, nil, _secrets, _sprite_env, _conv_id), do: :ok
 
-  def clone_repositories(_handle, %Environment{repositories: repos}, _secrets, _conv_id)
+  def clone_repositories(
+        _handle,
+        %Environment{repositories: repos},
+        _secrets,
+        _sprite_env,
+        _conv_id
+      )
       when repos in [nil, []],
       do: :ok
 
-  def clone_repositories(handle, %Environment{repositories: repos}, secrets, conv_id) do
+  def clone_repositories(handle, %Environment{repositories: repos}, secrets, sprite_env, conv_id) do
     Fountain.Telemetry.span(
       [:clone_repositories],
       %{conv_id: conv_id, count: length(repos)},
@@ -376,7 +511,7 @@ defmodule Fountain.Conversations.Provisioning do
 
         result =
           Enum.reduce_while(repos, :ok, fn repo, _ ->
-            case clone_one(handle, repo, secrets, conv_id) do
+            case clone_one(handle, repo, secrets, sprite_env, conv_id) do
               :ok -> {:cont, :ok}
               err -> {:halt, err}
             end
@@ -402,17 +537,26 @@ defmodule Fountain.Conversations.Provisioning do
   # case is covered by token auth, and enabling it would first have required
   # establishing that limited networking permits SSH at all. The implementation
   # lives in git history if real demand ever shows up.
-  defp clone_one(handle, %{"url" => url} = repo, secrets, conv_id) do
+  defp clone_one(handle, %{"url" => url} = repo, secrets, sprite_env, conv_id) do
     if is_binary(url) and String.starts_with?(url, "https://") do
-      clone_https(handle, repo, secrets, conv_id)
+      clone_https(handle, repo, secrets, sprite_env, conv_id)
     else
       {:error, {:clone_unsupported_url, url}}
     end
   end
 
-  defp clone_one(_, repo, _, _), do: {:error, {:clone_invalid_spec, repo}}
+  defp clone_one(_, repo, _, _, _), do: {:error, {:clone_invalid_spec, repo}}
 
-  defp clone_https(handle, %{"url" => url, "mount_path" => mount} = repo, secrets, conv_id) do
+  # `env:` is passed for the same reason every other step passes it: a
+  # brokered clone reaches GitHub only through `HTTPS_PROXY`, and git reads
+  # that from its environment. It was the one step that ran bare.
+  defp clone_https(
+         handle,
+         %{"url" => url, "mount_path" => mount} = repo,
+         secrets,
+         sprite_env,
+         conv_id
+       ) do
     auth_url = inject_token(url, repo["secret_key"], secrets)
 
     cmd =
@@ -422,6 +566,7 @@ defmodule Fountain.Conversations.Provisioning do
 
     # Not retried: a clone into a half-written directory is not idempotent.
     case Sandbox.exec(handle, "bash", ["-lc", cmd],
+           env: sprite_env,
            stderr_to_stdout: true,
            timeout: 600_000
          ) do

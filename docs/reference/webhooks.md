@@ -62,6 +62,7 @@ counter uses the same pair as its tags.
 | `clone` | `started` `done` `failed` | Fountain clones the repositories the environment declares. |
 | `packages` | `started` `done` `failed` | The environment's package commands run. |
 | `network` | `started` `done` `failed` | Fountain applies the egress policy to the sandbox. |
+| `broker` | `started` `done` `failed` | Fountain prepares the egress credential broker for the conversation, when brokerage is on for the tenant. A `failed` before any sandbox exists names the cause: the broker did not answer, or the provider cannot enforce the network floor. |
 | `setup` | `started` `done` `failed` | The environment's setup script runs. |
 | `checkpoint_restore` | `started` `done` `failed` | Fountain restores a checkpoint into the sandbox. |
 | `reattach` | `started` `done` `failed` `interrupted` | The server reconnects to a sandbox after a restart. |

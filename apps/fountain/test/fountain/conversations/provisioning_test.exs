@@ -69,6 +69,141 @@ defmodule Fountain.Conversations.ProvisioningTest do
     end
   end
 
+  describe "check_broker_support/4 (ADR 0019 gate 1a)" do
+    setup do
+      previous = Application.get_env(:fountain, :broker_allow_unenforced)
+      on_exit(fn -> Application.put_env(:fountain, :broker_allow_unenforced, previous) end)
+      Application.put_env(:fountain, :broker_allow_unenforced, false)
+      :ok
+    end
+
+    test "an unbrokered conversation is not checked at all" do
+      env = insert_env(%{"networking_type" => "limited"})
+      conv = insert_conversation()
+
+      reject(Fountain.Broker, :preflight, 0)
+      assert :ok = Provisioning.check_broker_support(false, :runner, env, conv.id)
+      assert stage_events(conv.id, "broker") == []
+    end
+
+    test "a limited environment is refused by name: its allowlist is gate 2" do
+      env = insert_env(%{"networking_type" => "limited"})
+      conv = insert_conversation()
+
+      reject(Fountain.Broker, :preflight, 0)
+
+      assert {:error, {:broker, :limited_environment_unsupported}} =
+               Provisioning.check_broker_support(true, :sprites, env, conv.id)
+
+      assert [event] = stage_events(conv.id, "broker")
+      assert event.state == "failed"
+      assert %{"reason" => "limited_environment_unsupported"} = Jason.decode!(event.data)
+    end
+
+    test "a backend without :network_policy is refused: placeholders without a floor are half a control" do
+      env = insert_env(%{"networking_type" => "unrestricted"})
+      conv = insert_conversation()
+
+      reject(Fountain.Broker, :preflight, 0)
+
+      assert {:error, {:broker, :backend_lacks_network_policy}} =
+               Provisioning.check_broker_support(true, :runner, env, conv.id)
+
+      assert [event] = stage_events(conv.id, "broker")
+
+      assert %{"reason" => "backend_lacks_network_policy", "provider" => "runner"} =
+               Jason.decode!(event.data)
+    end
+
+    test "BROKER_ALLOW_UNENFORCED lets a runner host an advisory broker, for development" do
+      Application.put_env(:fountain, :broker_allow_unenforced, true)
+      conv = insert_conversation()
+
+      expect(Fountain.Broker, :preflight, fn -> :ok end)
+      assert :ok = Provisioning.check_broker_support(true, :runner, nil, conv.id)
+    end
+
+    test "a broker that does not answer fails the conversation before a sandbox exists" do
+      conv = insert_conversation()
+
+      expect(Fountain.Broker, :preflight, fn ->
+        {:error, {:broker, :unreachable, :econnrefused}}
+      end)
+
+      assert {:error, {:broker, :unreachable, :econnrefused}} =
+               Provisioning.check_broker_support(true, :sprites, nil, conv.id)
+
+      assert [event] = stage_events(conv.id, "broker")
+      assert event.state == "failed"
+
+      assert %{"reason" => "broker_unreachable", "detail" => ":econnrefused"} =
+               Jason.decode!(event.data)
+    end
+  end
+
+  describe "apply_broker_floor/2" do
+    test "the broker host is the one allowed domain, whatever the environment says" do
+      conv = insert_conversation()
+      test = self()
+
+      stub(Fountain.Broker, :proxy_host, fn -> "broker.example" end)
+
+      Mimic.stub(Fountain.Sandbox.Sprites, :apply_network_policy, fn _handle, policy ->
+        send(test, {:policy, policy})
+        :ok
+      end)
+
+      assert :ok = Provisioning.apply_broker_floor(sandbox_handle(), conv.id)
+      assert_received {:policy, %Fountain.Sandbox.NetworkPolicy{allow: ["broker.example"]}}
+
+      assert [started, done] = stage_events(conv.id, "network")
+      assert %{"type" => "broker"} = Jason.decode!(started.data)
+      assert done.state == "done"
+    end
+  end
+
+  describe "install_broker_ca/2" do
+    test "writes the CA where update-ca-certificates reads it, then runs it" do
+      conv = insert_conversation()
+      test = self()
+
+      stub(Fountain.Broker, :ca_pem, fn -> {:ok, "PEM"} end)
+
+      Mimic.stub(Fountain.Sandbox.Sprites, :write_file, fn _h, path, data, opts ->
+        send(test, {:wrote, path, data, opts})
+        :ok
+      end)
+
+      Mimic.stub(Fountain.Sandbox.Sprites, :exec, fn _h, cmd, args, _opts ->
+        send(test, {:exec, cmd, args})
+        {:ok, "Updating certificates... 1 added", 0}
+      end)
+
+      assert :ok = Provisioning.install_broker_ca(sandbox_handle(), conv.id)
+      assert_received {:wrote, "/tmp/agent-vault-ca.crt", "PEM", [mode: 0o644]}
+
+      assert_received {:exec, "bash", ["-lc", cmd]}
+
+      assert cmd ==
+               "sudo install -D -m 644 '/tmp/agent-vault-ca.crt' " <>
+                 "'/usr/local/share/ca-certificates/agent-vault.crt' && sudo update-ca-certificates"
+    end
+
+    test "a failed install is a broker failure, by name" do
+      conv = insert_conversation()
+
+      stub(Fountain.Broker, :ca_pem, fn -> {:ok, "PEM"} end)
+      Mimic.stub(Fountain.Sandbox.Sprites, :write_file, fn _h, _p, _d, _o -> :ok end)
+      Mimic.stub(Fountain.Sandbox.Sprites, :exec, fn _h, _c, _a, _o -> {:ok, "no sudo", 1} end)
+
+      assert {:error, {:broker, :ca_install_exit, 1, "no sudo"}} =
+               Provisioning.install_broker_ca(sandbox_handle(), conv.id)
+
+      assert [event] = stage_events(conv.id, "broker")
+      assert %{"reason" => "ca_install_exit", "exit_code" => 1} = Jason.decode!(event.data)
+    end
+  end
+
   describe "check_network_policy_support/3" do
     test "a limited environment on a backend without :network_policy is refused by name" do
       env = insert_env(%{"networking_type" => "limited"})
