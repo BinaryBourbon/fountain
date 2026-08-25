@@ -239,37 +239,71 @@
       </div>
     </div>
 
-    <%!-- The two questions an engineer asks before signing up, answered where
-          they are asked rather than on the billing page they cannot see yet.
-
-          "What happens at the limit" has to be answered even though the answer
-          is currently "nothing": a plan that lists 800 hours and then says
-          nothing reads as a hard stop, and a hard stop on hours sounds like an
-          agent dying mid-task. Concurrency is a cap and behaves like one; hours
-          are not, and the page should not let the reader assume they are. --%>
-    <div class="mt-10 max-w-2xl mx-auto space-y-3 text-center text-xs text-[var(--color-text-muted)]">
-      <p>
-        <span class="text-[var(--color-text-secondary)]">
-          Going over the hours does not stop anything.
-        </span>
-        No agent is killed, no request is refused, and nothing extra is charged
-        today. We are still working out what a fair overage looks like, and you
-        will hear it from us before it changes.
-      </p>
-      <p>
-        <span class="text-[var(--color-text-secondary)]">
-          Running at the concurrency cap does.
-        </span>
-        A sandbox beyond it is refused rather than queued, so the number to
-        choose a plan on is how many agents you want working at once. Terminate
-        a conversation, or upgrade.
-      </p>
-      <p>
-        The 14-day trial runs {trial_plan().concurrent_sandboxes} agents at once
-        with {plan_turn_hours(trial_plan())}, so you can judge it
-        before paying. Subscribing lifts both the same day. No card to start,
-        and you can change plan or cancel at any time.
-      </p>
+    <%!-- How the money works, answered where the question is asked rather
+          than on the billing page a visitor cannot see yet. Every number here
+          is read from the same config the meter charges at (ADR 0030). --%>
+    <div id="how-billing-works" class="mt-12 max-w-2xl mx-auto">
+      <h3 class="text-lg font-semibold text-center text-[var(--color-text-primary)]">
+        How billing works
+      </h3>
+      <div class="mt-4 space-y-3 text-sm text-[var(--color-text-secondary)]">
+        <p>
+          <span class="font-medium text-[var(--color-text-primary)]">
+            Your plan buys two things.
+          </span>
+          How many agents may run at once, and a credit balance that refills at
+          the start of every billing period. Unused plan credit expires with the
+          period; credit you buy never does.
+        </p>
+        <p>
+          <span class="font-medium text-[var(--color-text-primary)]">
+            Agent time costs {turn_hour_price()} an hour, out of that balance.
+          </span>
+          An hour means an hour with a prompt in flight. A parked agent, an idle
+          one, and one running on your own machine cost nothing. Two agents
+          working for an hour on the same machine are two hours.
+        </p>
+        <p :if={rent_line() || message_line()}>
+          <span class="font-medium text-[var(--color-text-primary)]">
+            Teammate contacts come out of the same balance.
+          </span>
+          <span :if={rent_line()}>{String.capitalize(rent_line())}, a month up front.</span>
+          <span :if={message_line()}>Messages are {message_line()}.</span>
+        </p>
+        <p>
+          <span class="font-medium text-[var(--color-text-primary)]">
+            Need more? Buy credit in packs of {credit_packs()}.
+          </span>
+          One-time payments, no expiry, spent after your plan's credit.
+        </p>
+        <p>
+          <span class="font-medium text-[var(--color-text-primary)]">
+            At zero, new work pauses; nothing dies.
+          </span>
+          A new conversation or a new prompt is refused until the balance is
+          positive again. Anything already running finishes, even if that takes
+          the balance below zero. The next refill or purchase brings it back.
+        </p>
+        <p>
+          <span class="font-medium text-[var(--color-text-primary)]">
+            At the concurrency cap, the next start waits for you.
+          </span>
+          A sandbox beyond the cap is refused rather than queued, so the number
+          to choose a plan on is how many agents you want working at once.
+          Terminate a conversation, or upgrade.
+        </p>
+        <p>
+          <span class="font-medium text-[var(--color-text-primary)]">
+            Inference is never on our bill.
+          </span>
+          Bring your own model keys; Fountain does not charge for tokens.
+        </p>
+        <p class="text-xs text-[var(--color-text-muted)]">
+          The 14-day trial runs {trial_plan().concurrent_sandboxes} agents at once
+          with {plan_turn_hours(trial_plan())}, so you can judge it before paying.
+          No card to start, and you can change plan or cancel at any time.
+        </p>
+      </div>
     </div>
   </div>
 </section>

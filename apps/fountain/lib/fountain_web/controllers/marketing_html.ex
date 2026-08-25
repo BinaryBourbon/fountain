@@ -57,4 +57,43 @@ defmodule FountainWeb.MarketingHTML do
   hand is a page that will one day advertise limits the product does not have.
   """
   def trial_plan, do: Plans.fetch!("trial")
+
+  # The customer prices, read from the same card the ledger burns at, so the
+  # page cannot quote a number the meter does not charge (ADR 0030).
+  def turn_hour_price, do: Fountain.Credits.format_cents(Fountain.Credits.price_card().turn_hour)
+
+  def credit_packs do
+    Enum.map_join(Fountain.Credits.packs(), ", ", &Fountain.Credits.format_cents/1)
+  end
+
+  # Nil when this deployment charges nothing for a line, so the page says
+  # nothing about it rather than quoting $0.
+  def rent_line do
+    card = Fountain.Credits.price_card()
+
+    parts =
+      [
+        card.number_month &&
+          "a phone number #{Fountain.Credits.format_cents(card.number_month)} a month",
+        card.inbox_month &&
+          "an email inbox #{Fountain.Credits.format_cents(card.inbox_month)} a month"
+      ]
+      |> Enum.reject(&is_nil/1)
+
+    if parts == [], do: nil, else: Enum.join(parts, ", ")
+  end
+
+  def message_line do
+    card = Fountain.Credits.price_card()
+
+    parts =
+      [
+        card.email_message && "#{Fountain.Credits.format_cents(card.email_message)} an email",
+        card.sms_message &&
+          "#{Fountain.Credits.format_cents(card.sms_message)} a text, sent or received"
+      ]
+      |> Enum.reject(&is_nil/1)
+
+    if parts == [], do: nil, else: Enum.join(parts, " and ")
+  end
 end
