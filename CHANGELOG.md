@@ -59,6 +59,12 @@ upgrade, is in
 
 ### Added
 
+- **`limited` environments at the broker, ADR 0019 gate 2.** On a brokered
+  account a `limited` environment is no longer refused: the sandbox's policy
+  stays the broker-only floor, and the broker enforces `allowed_hosts`
+  (unmatched-host policy `deny`, one passthrough service per listed host) so
+  an unlisted host is refused with a 403 that names it. `unrestricted` is
+  passthrough at the broker, as before.
 - **Secret bindings, ADR 0019 gate 1b.** On an account the broker is on for,
   a secret can be bound to the hosts it is a credential for and the way it
   is sent (bearer, basic, API-key header, custom headers). A bound secret

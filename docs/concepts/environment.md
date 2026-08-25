@@ -83,6 +83,13 @@ out. That is deliberate, and it is not a defect. An empty allowlist that
 quietly meant "allow everything" would be the worst default for a policy whose
 whole purpose is restriction.
 
+On a hosted account with the egress credential broker on, the sandbox can
+reach only the broker. The broker then applies your policy. With
+`unrestricted`, a request goes through to any host, with only the credentials
+you bound. With `limited`, the broker refuses a request to a host that is not
+in `allowed_hosts`. The refusal is a 403 that names the host. The broker's
+request log shows each decision.
+
 Not every backend can hold egress. Sprites, E2B and Daytona can. A
 [self-hosted runner](../integrations/runners.md) cannot. The agent selects the
 backend, and the environment sets the policy. Fountain therefore compares the

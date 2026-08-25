@@ -410,6 +410,78 @@ defmodule Fountain.BrokerTest do
       assert_received {:credentials, %{"GITHUB_TOKEN_BASIC_USER" => "x-access-token"}}
     end
 
+    test "limited: deny at the broker, one passthrough service per allowed host" do
+      test = self()
+
+      stub(Req, :post, fn _r, opts ->
+        if opts[:url] == "/v1/sessions",
+          do: {:ok, %{status: 201, body: %{"token" => "t"}}},
+          else: {:ok, %{status: 200, body: %{}}}
+      end)
+
+      stub(Req, :patch, fn _r, opts ->
+        send(test, {:policy, opts[:json].unmatched_host_policy})
+        {:ok, %{status: 200, body: %{}}}
+      end)
+
+      stub(Req, :put, fn _r, opts ->
+        send(test, {:services, opts[:json].services})
+        {:ok, %{status: 200, body: %{}}}
+      end)
+
+      bindings = %{
+        "STRIPE_SECRET_KEY" => [bound(%{key: "STRIPE_SECRET_KEY", host: "api.stripe.com"})]
+      }
+
+      hosts = ["registry.npmjs.org", "API.Stripe.com", "*.github.com", " ", "registry.npmjs.org"]
+
+      assert {:ok, _} =
+               Broker.prepare(@conv, %{"STRIPE_SECRET_KEY" => "sk"}, bindings,
+                 network: {:limited, hosts}
+               )
+
+      assert_received {:policy, "deny"}
+      assert_received {:services, services}
+
+      # The credentialed host keeps its credential service; the rest pass through, once each.
+      assert [%{host: "api.stripe.com", auth: %{type: "bearer"}} | allow] = services
+
+      assert Enum.map(allow, &{&1.host, &1.auth}) == [
+               {"registry.npmjs.org", %{type: "passthrough"}},
+               {"*.github.com", %{type: "passthrough"}}
+             ]
+
+      assert Enum.all?(allow, &String.starts_with?(&1.name, "allow-"))
+    end
+
+    test "unrestricted: passthrough at the broker, no allow services" do
+      capture_services()
+
+      stub(Req, :patch, fn _r, opts ->
+        send(self(), {:policy, opts[:json].unmatched_host_policy})
+        {:ok, %{status: 200, body: %{}}}
+      end)
+
+      assert {:ok, _} = Broker.prepare(@conv, %{}, %{}, network: :unrestricted)
+      assert_received {:policy, "passthrough"}
+      assert_received {:services, []}
+    end
+
+    test "network_for/1 reads the environment's shape" do
+      assert Broker.network_for(%{
+               networking_type: "limited",
+               networking_config: %{"allowed_hosts" => ["a.example.com"]}
+             }) == {:limited, ["a.example.com"]}
+
+      assert Broker.network_for(%{networking_type: "limited", networking_config: %{}}) ==
+               {:limited, []}
+
+      assert Broker.network_for(%{networking_type: "unrestricted", networking_config: %{}}) ==
+               :unrestricted
+
+      assert Broker.network_for(nil) == :unrestricted
+    end
+
     test "service_name/2 is a stable broker slug" do
       assert Broker.service_name("STRIPE_SECRET_KEY", "api.stripe.com:443/v1/*") ==
                "stripe-secret-key-api-stripe-com-443-v1"

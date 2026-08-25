@@ -365,6 +365,8 @@ defmodule Fountain.Conversations.ConversationServer do
       # The tenant's enabled bindings by key (gate 1b), loaded once per
       # provision; what the broker's services are built from.
       broker_bindings: %{},
+      # The environment's networking shape, enforced at the broker (gate 2).
+      broker_network: :unrestricted,
       broker: nil,
       current_command: nil,
       current_command_ref: nil,
@@ -587,7 +589,8 @@ defmodule Fountain.Conversations.ConversationServer do
               tenant_key: dek,
               inference_credentials: inference_creds,
               brokered: brokered,
-              broker_bindings: bindings
+              broker_bindings: bindings,
+              broker_network: Fountain.Broker.network_for(env)
           }
 
         dispatch_provision(state, conv, sandbox, agent, env, vault, secrets)
@@ -1398,7 +1401,9 @@ defmodule Fountain.Conversations.ConversationServer do
         keys: state.brokered |> Map.keys() |> Enum.sort()
       })
 
-      case Fountain.Broker.prepare(state.conversation_id, state.brokered, state.broker_bindings) do
+      case Fountain.Broker.prepare(state.conversation_id, state.brokered, state.broker_bindings,
+             network: state.broker_network
+           ) do
         {:ok, session} ->
           publish_stage(state.conversation_id, "broker", "done", %{
             vault: session.vault,
@@ -1427,7 +1432,9 @@ defmodule Fountain.Conversations.ConversationServer do
 
   defp broker_refresh(%{broker: session} = state) do
     if Fountain.Broker.expiring?(session) do
-      case Fountain.Broker.prepare(state.conversation_id, state.brokered, state.broker_bindings) do
+      case Fountain.Broker.prepare(state.conversation_id, state.brokered, state.broker_bindings,
+             network: state.broker_network
+           ) do
         {:ok, fresh} ->
           keys = Fountain.Broker.env_keys()
           kept = Enum.reject(state.sprite_env, fn {k, _} -> to_string(k) in keys end)

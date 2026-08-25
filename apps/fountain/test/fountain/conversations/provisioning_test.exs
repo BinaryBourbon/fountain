@@ -86,18 +86,13 @@ defmodule Fountain.Conversations.ProvisioningTest do
       assert stage_events(conv.id, "broker") == []
     end
 
-    test "a limited environment is refused by name: its allowlist is gate 2" do
+    test "a limited environment passes: its allowlist is enforced at the broker (gate 2)" do
       env = insert_env(%{"networking_type" => "limited"})
       conv = insert_conversation()
 
-      reject(Fountain.Broker, :preflight, 0)
-
-      assert {:error, {:broker, :limited_environment_unsupported}} =
-               Provisioning.check_broker_support(true, :sprites, env, conv.id)
-
-      assert [event] = stage_events(conv.id, "broker")
-      assert event.state == "failed"
-      assert %{"reason" => "limited_environment_unsupported"} = Jason.decode!(event.data)
+      expect(Fountain.Broker, :preflight, fn -> :ok end)
+      assert :ok = Provisioning.check_broker_support(true, :sprites, env, conv.id)
+      assert stage_events(conv.id, "broker") == []
     end
 
     test "a backend without :network_policy is refused: placeholders without a floor are half a control" do

@@ -79,7 +79,7 @@ defmodule Fountain.Conversations.ConversationServerBrokerTest do
       _ref = stub_turn_boundary()
 
       reject(Fountain.Broker, :preflight, 0)
-      reject(Fountain.Broker, :prepare, 3)
+      reject(Fountain.Broker, :prepare, 4)
       reject(Fountain.Broker, :ca_pem, 0)
       reject(Fountain.Broker, :release, 1)
       reject(Req, :get, 2)
@@ -104,7 +104,7 @@ defmodule Fountain.Conversations.ConversationServerBrokerTest do
       stub_happy_sprite()
       _ref = stub_turn_boundary()
 
-      reject(Fountain.Broker, :prepare, 3)
+      reject(Fountain.Broker, :prepare, 4)
 
       {pid, _mon, :alive} = start_server(conv, initial_prompt: "hello")
       on_exit(fn -> if Process.alive?(pid), do: GenServer.stop(pid) end)
@@ -133,7 +133,7 @@ defmodule Fountain.Conversations.ConversationServerBrokerTest do
       stub(Fountain.Broker, :preflight, fn -> :ok end)
       stub(Fountain.Broker, :ca_pem, fn -> {:ok, "PEM"} end)
 
-      stub(Fountain.Broker, :prepare, fn conv_id, brokered, _bindings ->
+      stub(Fountain.Broker, :prepare, fn conv_id, brokered, _bindings, _opts ->
         send(test, {:prepared, conv_id, brokered})
         {:ok, @session}
       end)
@@ -216,7 +216,7 @@ defmodule Fountain.Conversations.ConversationServerBrokerTest do
       stub(Fountain.Broker, :preflight, fn -> {:error, {:broker, :unreachable, :econnrefused}} end)
 
       reject(Fountain.Sandbox.Sprites, :create, 2)
-      reject(Fountain.Broker, :prepare, 3)
+      reject(Fountain.Broker, :prepare, 4)
 
       {_pid, _mon, :stopped} = start_server(conv)
 
@@ -227,21 +227,44 @@ defmodule Fountain.Conversations.ConversationServerBrokerTest do
       assert Conversations._unsafe_get_conversation!(conv.id).status == "failed"
     end
 
-    test "a limited environment is refused before any sandbox is created", %{
+    test "a limited environment is brokered with its allowlist enforced at the broker", %{
       user: user
     } do
-      env = insert_env(user_id: user.id, networking_type: "limited")
+      env =
+        insert_env(
+          user_id: user.id,
+          networking_type: "limited",
+          networking_config: %{"allowed_hosts" => ["registry.npmjs.org", "api.anthropic.com"]}
+        )
+
       agent = insert_agent(user_id: user.id, runtime: "claude", environment_id: env.id)
       conv = insert_conversation(user_id: user.id, agent: agent)
+      test = self()
 
       stub_happy_sprite()
-      reject(Fountain.Broker, :preflight, 0)
-      reject(Fountain.Sandbox.Sprites, :create, 2)
+      _ref = stub_turn_boundary()
+      stub(Fountain.Broker, :preflight, fn -> :ok end)
+      stub(Fountain.Broker, :ca_pem, fn -> {:ok, "PEM"} end)
 
-      {_pid, _mon, :stopped} = start_server(conv)
+      stub(Fountain.Broker, :prepare, fn _c, _b, _bindings, opts ->
+        send(test, {:prepared_with, opts[:network]})
+        {:ok, @session}
+      end)
 
-      assert [event] = stage_events(conv.id, "broker")
-      assert %{"reason" => "limited_environment_unsupported"} = Jason.decode!(event.data)
+      Mimic.stub(Fountain.Sandbox.Sprites, :apply_network_policy, fn _h, policy ->
+        send(test, {:policy, policy})
+        :ok
+      end)
+
+      {pid, _mon, :alive} = start_server(conv, initial_prompt: "hello")
+      on_exit(fn -> if Process.alive?(pid), do: GenServer.stop(pid) end)
+
+      assert_receive {:prepared_with, {:limited, ["registry.npmjs.org", "api.anthropic.com"]}},
+                     2_000
+
+      # The sandbox's own policy is still the floor, whatever the environment listed.
+      assert_receive {:policy, %Fountain.Sandbox.NetworkPolicy{allow: ["broker.test"]}}, 2_000
+      assert_receive {:spawned, _, _, _}, 2_000
     end
 
     test "a failed session mint tears the sandbox down and releases the vault", %{
@@ -254,7 +277,7 @@ defmodule Fountain.Conversations.ConversationServerBrokerTest do
       stub_happy_sprite()
       stub(Fountain.Broker, :preflight, fn -> :ok end)
 
-      stub(Fountain.Broker, :prepare, fn _c, _b, _bindings ->
+      stub(Fountain.Broker, :prepare, fn _c, _b, _bindings, _opts ->
         {:error, {:broker, :session, :timeout}}
       end)
 
@@ -284,7 +307,7 @@ defmodule Fountain.Conversations.ConversationServerBrokerTest do
       _ref = stub_turn_boundary()
       stub(Fountain.Broker, :preflight, fn -> :ok end)
       stub(Fountain.Broker, :ca_pem, fn -> {:ok, "PEM"} end)
-      stub(Fountain.Broker, :prepare, fn _c, _b, _bindings -> {:ok, @session} end)
+      stub(Fountain.Broker, :prepare, fn _c, _b, _bindings, _opts -> {:ok, @session} end)
 
       stub(Fountain.Broker, :release, fn conv_id ->
         send(test, {:released, conv_id})
