@@ -103,6 +103,30 @@ defmodule Fountain.BrokerTest do
       assert Enum.map(env, &elem(&1, 0)) -- Broker.env_keys() == []
     end
 
+    test "sandbox_env points the non-Node toolchains at the full system CA bundle" do
+      configure()
+      env = Broker.sandbox_env(%{vault: "c-x", token: "av_sess_t", expires_at: nil})
+      bundle = "/etc/ssl/certs/ca-certificates.crt"
+
+      # Replacement-style CA vars must name the system bundle (real roots + the
+      # broker CA), never Broker.ca_path() alone — that one cert would make the
+      # tool reject every non-brokered host it also reaches.
+      assert {"SSL_CERT_FILE", bundle} in env
+      assert {"REQUESTS_CA_BUNDLE", bundle} in env
+      assert {"CARGO_HTTP_CAINFO", bundle} in env
+      refute {"SSL_CERT_FILE", Broker.ca_path()} in env
+
+      # uv reads its own webpki roots unless told to use the OS store.
+      assert {"UV_NATIVE_TLS", "1"} in env
+
+      # These are paths, not the session token, so they belong on the shared
+      # .env and must not be classed process-only.
+      for k <- ~w(SSL_CERT_FILE REQUESTS_CA_BUNDLE CARGO_HTTP_CAINFO UV_NATIVE_TLS) do
+        assert k in Broker.env_keys()
+        refute k in Broker.process_only_keys()
+      end
+    end
+
     test "every token-carrying variable is process-only" do
       for key <- Broker.process_only_keys(), do: assert(key in Broker.env_keys())
       assert "HTTPS_PROXY" in Broker.process_only_keys()

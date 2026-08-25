@@ -20,6 +20,19 @@ upgrade, is in
 
 - None yet.
 
+### Fixed
+
+- **Brokered sandboxes now trust the egress broker's MITM certificate across
+  the Python and Rust toolchains, not only Node.** A brokered `uv sync`,
+  `uv python install`, `pip install` or `cargo fetch` failed with
+  `invalid peer certificate: UnknownIssuer` the moment it reached a
+  MITM'd host, because those tools carry their own bundled roots and ignore
+  the OS trust store where the broker CA is installed. `Fountain.Broker.sandbox_env/1`
+  now also sets `SSL_CERT_FILE`, `REQUESTS_CA_BUNDLE` and `CARGO_HTTP_CAINFO`
+  to the full system CA bundle (real roots plus the broker CA — never the
+  broker CA alone, which would break non-brokered hosts like PyPI), and
+  `UV_NATIVE_TLS=1` so uv reads that store instead of its bundled webpki roots.
+
 ## [0.13.0] — 2026-08-25
 
 ### Upgrade notes
