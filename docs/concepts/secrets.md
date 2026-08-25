@@ -154,6 +154,12 @@ redaction that a new caller will one day forget.
 
 ## Bindings, when the broker is on
 
+!!! note "Limited access"
+    On the hosted platform the broker is on for the accounts we enrol by
+    hand. Without it, a secret enters the sandbox in the clear, and the
+    bindings page and routes are absent. Read
+    [Feature status](../reference/feature-status.md).
+
 <!-- vale STE.IngForms = NO -->
 On a hosted account with the egress credential broker on, a secret can have
 one or more **bindings**. A binding names a host. By default the broker

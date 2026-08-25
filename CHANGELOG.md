@@ -28,6 +28,12 @@ upgrade, is in
 
 ### Changed
 
+- **Feature status page.** `/docs/reference/feature-status` names the two
+  features that are not on for every hosted account, teammate email and
+  phone (alpha, `team_comms`) and brokered credentials (limited access,
+  `BROKER_TENANTS`), and each page that describes one now opens with a note
+  saying so. `api.md` gains the egress and secret-bindings routes.
+
 - `Billing.provider_spend/1` (the `/admin` and `/admin/sandboxes` hours) and
   `Finance.cost/3` (the money on `/admin/finance`) read one fold,
   `Finance.platform_totals/1`, instead of each summing the attribution rows

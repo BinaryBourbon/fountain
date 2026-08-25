@@ -80,6 +80,14 @@ teammate was busy for half an hour, or when the sandbox quota was full.
 
 Remove a teammate and Fountain deletes its schedules.
 
+## A teammate can have an email address and a phone number
+
+This is an alpha feature, and it is off by default on the hosted platform.
+Give a teammate a contact, and it gets an address and a number under keys
+that Fountain holds. Its sandbox never sees a key. Read
+[fountain-comms](../catalog/mcp-servers/fountain-comms.md) for the tools, and
+[Feature status](../reference/feature-status.md) for how to get it on.
+
 ## What a teammate is not
 
 **Not a primitive.** Nothing in the API creates a teammate. You bind a

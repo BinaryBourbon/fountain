@@ -99,6 +99,7 @@ nav:
       - TypeScript SDK: sdk.md
       - Conversation states: reference/conversation-states.md
       - Glossary: reference/glossary.md
+      - Feature status: reference/feature-status.md
   - Build a chat app:
       - The shape everyone clones: build/index.md
       - A team chat, end to end: build/team-chat.md
