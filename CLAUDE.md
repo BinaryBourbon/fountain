@@ -2,6 +2,18 @@
 
 This file is read by Claude Code (and other AI coding tools) at session start. Keep it accurate — stale guidance misleads every downstream dispatch.
 
+## Product and goal
+
+What Fountain is, in one paragraph, is the top of [README.md](README.md).
+The standing goal since the May-2026 launch is **100 weekly active users by
+month 6** (November 2026), and the one gate that hangs on it: org/team
+features stay out of scope until that traction shows. Onboarding is the open
+product decision on the way there (#1039). These two lines used to live in
+`OPERATING_MODEL.md` and `ROADMAP.md`, the bus files for the captain-picard
+orchestrator that built the first cut; that fleet stopped running against this
+repo after launch and both files were deleted, so this is now the only place
+the goal is written down.
+
 ## Quick start
 
 ```bash
