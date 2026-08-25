@@ -545,6 +545,47 @@ defmodule Fountain.BrokerTest do
       assert Broker.placeholder("GITHUB_TOKEN") == "__github_token__"
     end
 
+    test "two keys bound to one host share one service carrying both substitutions" do
+      capture_services()
+
+      creds = %{
+        claude_code_oauth_token: "sk-ant-oat01-real",
+        anthropic_api_key: "sk-ant-api03-real"
+      }
+
+      {_env_creds, brokered, implicit} = Broker.split_inference(creds)
+
+      assert {:ok, _} = Broker.prepare(@conv, brokered, implicit)
+      assert_received {:services, services}
+
+      assert [%{host: "api.anthropic.com", substitutions: subs}] = services
+
+      assert Enum.sort(Enum.map(subs, & &1.placeholder)) ==
+               ["sk-ant-api03-__anthropic_api_key__", "sk-ant-oat01-__claude_code_oauth_token__"]
+    end
+
+    test "merging keeps a header shape over a substitute-only twin" do
+      capture_services()
+
+      bindings = %{
+        "A_KEY" => [bound(%{key: "A_KEY", host: "api.example.com", auth_type: "substitute"})],
+        "B_KEY" => [bound(%{key: "B_KEY", host: "api.example.com", auth_type: "bearer"})]
+      }
+
+      assert {:ok, _} = Broker.prepare(@conv, %{"A_KEY" => "a", "B_KEY" => "b"}, bindings)
+
+      assert_received {:services,
+                       [
+                         %{
+                           host: "api.example.com",
+                           auth: %{type: "bearer", token: "B_KEY"},
+                           substitutions: subs
+                         }
+                       ]}
+
+      assert Enum.sort(Enum.map(subs, & &1.key)) == ["A_KEY", "B_KEY"]
+    end
+
     test "service_name/2 is a stable broker slug" do
       assert Broker.service_name("STRIPE_SECRET_KEY", "api.stripe.com:443/v1/*") ==
                "stripe-secret-key-api-stripe-com-443-v1"
