@@ -72,5 +72,5 @@ different paths.
 
 - [About agents](../../concepts/agent.md), where you set `runtime`.
 - [Skills](../skills/index.md).
-- [`fountain acp`](../../integrations/acp.md), the adapter that three of the
-  four speak through.
+- [`fountain acp`](../../integrations/acp.md), the adapter that drives all
+  four from an editor or a chat surface.

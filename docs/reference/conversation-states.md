@@ -56,9 +56,10 @@ new one.
 An interrupt applies to the turn in flight, and not to the conversation. The
 conversation returns to `idle` and stays usable.
 
-Do not terminate a conversation you want back. Termination destroys the
-sandbox, and the memory the agent works from goes with it. The transcript
-stays.
+Do not terminate a conversation you want back. On an ephemeral sandbox that
+no other conversation holds, termination destroys the sandbox, and the memory
+the agent works from goes with it. A persistent or shared sandbox stays up
+for the conversations that remain on it. The transcript stays in both cases.
 
 A sandbox that a configured ceiling reclaims leaves the conversation
 resumable, and leaves the agent without its earlier context. State what

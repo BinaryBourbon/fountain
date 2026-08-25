@@ -33,18 +33,27 @@ curl $FOUNTAIN_URL/llms.txt
 curl $FOUNTAIN_URL/llms-full.txt
 ```
 
-## There is no first-party MCP server
+## There is no MCP server for your IDE
 
 **Nobody built one.** An MCP server that exposes the four primitives as tools
-is an idea that Fountain discussed and did not build. No package exists to
-install, and no config block works. Use the `/skill` file above. It gives an
-agentic IDE the full API surface in one fetch.
+to an IDE is an idea that Fountain discussed and did not build. No package
+exists to install, and no config block works. Use the `/skill` file above. It
+gives an agentic IDE the full API surface in one fetch.
+
+Fountain does host three MCP servers, and each one serves a conversation's own
+sandbox, with that conversation's token. They are
+[fountain-team](catalog/mcp-servers/fountain-team.md),
+[fountain-comms](catalog/mcp-servers/fountain-comms.md) and
+[fountain-buzz](catalog/mcp-servers/fountain-buzz.md). An IDE cannot connect
+to them. Everything they do is also on the [REST API](api.md#team).
 
 ## How to use the API from an agent
 
 1. Load the skill from `/skill` when the session starts.
 2. Authenticate with a Fountain API key from the agent's environment.
-3. Start sub-agents with the CLI or the REST API.
+3. Start sub-agents with the CLI or the REST API. The
+   [team](api.md#team), [schedule](api.md#schedules) and
+   [sandbox](api.md#sandboxes) routes are on the same surface.
 
 Here is an example prompt.
 

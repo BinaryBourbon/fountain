@@ -83,8 +83,9 @@ tells the caller to try again in a minute.
 ## Give someone free credit
 
 To make an account pay **nothing at all**, comp the account. Open
-`/admin/users` and select `comp` on the row. Fountain never checks that
-account's balance.
+`/admin/users` and select `comp` on the row, or send
+`POST /api/admin/users/{id}/comp` with `{"comped": true}`. Fountain never
+checks that account's balance.
 
 To give an account credit that never expires, use the admin API:
 `POST /api/admin/users/{id}/credits` with `{"cents": 1000, "note": "why"}`.

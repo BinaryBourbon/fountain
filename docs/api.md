@@ -377,10 +377,11 @@ POST   /api/conversations                  # start (agent_id; optional vault_id,
 GET    /api/conversations/:id
 DELETE /api/conversations/:id
 POST   /api/conversations/:id/read         # clear unread state
+POST   /api/conversations/:id/requests/:request_id   # answer a permission request ({option_id})
 GET    /api/conversations/:id/tree         # the whole spawn tree this conversation belongs to
 POST   /api/conversations/:id/prompts      # follow-up turn
 POST   /api/conversations/:id/interrupt    # stop the running turn
-POST   /api/conversations/:id/terminate    # end the conversation and sandbox
+POST   /api/conversations/:id/terminate    # end the conversation; destroys the sandbox unless it is persistent or shared
 GET    /api/conversations/:id/turns
 GET    /api/conversations/:id/events       # log events as JSON (?streams=  ?after=  ?limit=)
 GET    /api/conversations/:id/stream       # SSE log stream (?streams=stdout,stderr,stage  ?wait=false)
@@ -420,6 +421,15 @@ default for this conversation. A persistent conversation lands on the agent's
 own machine. Fountain makes that machine on the first persistent launch of an
 agent, environment and vault. A second launch while the first still builds
 it gets `503 provisioning`, so send again shortly.
+
+`POST /api/conversations/:id/requests/:request_id` answers a permission
+request that blocks the agent. The request and its options arrive as a
+`permission_request` block on the event stream. Send `{option_id}`, and
+choose one of the `optionId` values that the block carried. The first answer
+wins. A request that another client, the timeout or the end of the turn
+resolved gets `409 permission_request_resolved`. An option the agent did not
+offer gets `422 unknown_option`. A sandbox's own token cannot answer, and
+gets `403 sprite_may_not_answer`.
 
 Whatever does not resolve is a `404`, so nobody can probe for an id.
 
@@ -717,11 +727,13 @@ From its next turn, the teammate holds seven MCP tools. Those are
 token. So no provider key enters the sandbox. The audit trail records each
 send as `team.contact.sent`, and never the content.
 
-There are four refusals. You get `404 team_comms_not_enabled` when the flag is
+There are five refusals. You get `404 team_comms_not_enabled` when the flag is
 off for the caller. You get `503 team_comms_not_configured` when the instance
-holds no keys. You get `409` for a second contact. You get
-`424 provider_error` when a provider refuses, where `channel` names which one.
-A provision is all or nothing.
+holds no keys. You get `409 contact_already_provisioned` for a second contact.
+You get `402 contact_limit_reached` when the account holds as many contacts
+as `TEAM_CONTACT_CEILING` permits, and the body carries `count` and `limit`.
+You get `424 provider_error` when a provider refuses, where `channel` names
+which one. A provision is all or nothing.
 
 `DELETE` releases both upstream, then forgets them. `GET /api/team/comms`
 answers `{enabled, configured}`, so a client knows whether to offer it. Read
@@ -995,10 +1007,10 @@ to walk the whole trail.
 |---|---|
 | `400` | The request body is invalid. |
 | `401` | The auth is absent or invalid. |
-| `402` | Your credit balance is zero or below. The code is `insufficient_credits`, and the body carries `upgrade_url`. The old `subscription_required` code does not occur. |
+| `402` | Your credit balance is zero or below. The code is `insufficient_credits`, and the body carries `upgrade_url`. The old `subscription_required` code does not occur. A teammate contact past the account's ceiling is `contact_limit_reached`. |
 | `403` | The wrong tenant. |
 | `404` | Nothing found. |
-| `409` | The request conflicts with the current state. The codes are `no_runner_online`, `sandbox_at_capacity` and `sandbox_not_attachable`. |
+| `409` | The request conflicts with the current state. The codes are `no_runner_online`, `sandbox_at_capacity`, `sandbox_not_attachable`, `sandbox_mid_turn`, `permission_request_resolved` and `contact_already_provisioned`. |
 | `410` | Somebody terminated the conversation. The code is `conversation_terminated`. Stop, and do not try again. |
 | `422` | A validation error. |
 | `429` | The rate limit stopped you. |

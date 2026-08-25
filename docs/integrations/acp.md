@@ -119,7 +119,9 @@ other field in `_meta`.
 | `freshSession` | With `channelId`, it skips the resume this one time. It unbinds the current conversation, which continues and then retires like any other idle one. It opens a new conversation, and binds the channel to that. A Buzz owner's `!rotate` turns into this ([#788](https://github.com/BinaryBourbon/fountain/pull/788)). Fountain ignores it without `channelId`. |
 
 The same knobs exist on the API, as `channel_id`, `fresh`, `sandbox_mode` and
-`sandbox_id` on `POST /api/conversations`.
+`sandbox_id` on `POST /api/conversations`. Read
+[Conversations](../api.md#conversations), and
+[Sandboxes](../api.md#sandboxes) for the list a `sandboxId` comes from.
 
 ## Permission prompts
 

@@ -176,9 +176,12 @@ a state of `started`, `done`, `failed` or `interrupted`.
     `terminated`, or *parks* a persistent home. The conversation goes back to
     `idle`, and it is resumable at the #649 price. The hourly reaper applies
     the same split to whatever a crashed server left behind.
-7. **`terminate`.** An explicit `POST .../terminate` destroys the sprite and
-   marks the conversation `terminated`. That is one of the two terminal
-   states, next to `failed`.
+7. **`terminate`.** An explicit `POST .../terminate` marks the conversation
+   `terminated`. That is one of the two terminal states, next to `failed`.
+   It destroys an ephemeral sprite that no other conversation holds. A
+   shared machine, or a persistent home, stays for the conversations that
+   remain on it. `DELETE /api/sandboxes/:id` resets a persistent home. Read
+   the [Sandboxes section](api.md#sandboxes) of the API reference.
 
 Here are the two status vocabularies, side by side.
 

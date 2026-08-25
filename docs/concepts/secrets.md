@@ -188,10 +188,13 @@ sandbox through the broker. Each row shows the host, the binding that matched
 and so the credential attached, the status, and the latency. A refused host
 shows the refusal. The list stays for `BROKER_LOG_RETENTION_HOURS` after the
 conversation ends. The route needs a key with full scope. The token a sandbox
-holds cannot read it.
+holds cannot read it. Read the
+[Conversations section](../api.md#conversations) of the API reference.
 
 You manage bindings on Account, then Credential bindings, or with
-`GET /api/secret-bindings` and its siblings. The page and the routes are only
+`GET /api/secret-bindings` and its siblings, in the
+[Secret bindings section](../api.md#secret-bindings) of the API reference.
+The page and the routes are only
 there when the broker is on for the account. A binding is about the name of
 a secret. So it applies to every environment and vault that holds a secret
 of that name.

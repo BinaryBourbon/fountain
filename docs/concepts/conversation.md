@@ -3,7 +3,8 @@
 This page explains what a Conversation is, and what happens to its sandbox
 over time. For the state table, read
 [Conversation states](../reference/conversation-states.md). For the endpoints,
-read the [API reference](../api.md).
+read the [Conversations section](../api.md#conversations) of the API
+reference.
 
 ## What a conversation is
 
@@ -94,9 +95,12 @@ conversations. You watch one work in the
 [conversations app](https://github.com/jhgaylor/fountain-conversations),
 a separate application on `/api`.
 
-**Not a sandbox you manage.** You never create, name or address a sandbox.
-Fountain provisions it when the Conversation starts, and reclaims it on the
-rules above.
+**Not a sandbox you create.** Fountain provisions the sandbox when the
+Conversation starts, and reclaims it on the rules above. You can still address
+one. `GET /api/sandboxes` lists them, `sandbox_id` on a launch puts a second
+Conversation on one, and `DELETE /api/sandboxes/:id` resets a persistent one.
+Read [About sandboxes](sandboxes.md) and the
+[Sandboxes section](../api.md#sandboxes) of the API reference.
 
 ## When to use something else
 
@@ -105,7 +109,7 @@ continues, and not one run for each task. A teammate is still a Conversation,
 bound to a reserved channel.
 
 Use a schedule when the run must happen without you. Read the
-[API reference](../api.md).
+[Schedules section](../api.md#schedules) of the API reference.
 
 ## Where to go next
 

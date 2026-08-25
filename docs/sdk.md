@@ -303,6 +303,27 @@ checkout is where the first turn left it, and the agent's session still holds
 what it learned. A [suspended](reference/conversation-states.md) sandbox wakes
 for it.
 
+## Sandboxes
+
+A sandbox is the machine a conversation runs on, and several conversations
+can share one. Two options on `run()` control that. The `sandbox` option
+names a sandbox you already have, by id, and the new conversation lands on
+it. The `sandboxMode` option is `"ephemeral"` or `"persistent"`, and it
+replaces the agent's default.
+
+```ts
+const first = await fountain.run("Clone the repo and run the tests", { agent: "reposage" });
+const { sandbox_id } = await fountain.resume(first.conversationId).get();
+await fountain.run("Now fix the failures", { agent: "reposage", sandbox: sandbox_id! });
+
+await fountain.sandboxes({ status: ["ready", "suspended"] });  // the list, with the conversations on each
+await fountain.sandbox(id);
+await fountain.resetSandbox(id);   // destroy a persistent machine; the conversations stay
+```
+
+`resetSandbox()` refuses an ephemeral sandbox, and one with a turn in flight.
+The [API reference](api.md#sandboxes) has the rules.
+
 ## Timeouts
 
 `run()` waits as long as the turn takes, and agent work fairly runs for hours.

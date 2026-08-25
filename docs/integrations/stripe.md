@@ -55,7 +55,7 @@ real money.
   event. A transient failure returns a 500, so that Stripe delivers it again.
 - A refund removes the refunded amount from the balance, and the balance can
   go below zero. A won dispute puts nothing back by itself. Add it by hand
-  from the admin panel.
+  from the admin panel, or with `POST /api/admin/users/:id/credits`.
 - A comped account cannot buy. It has nothing to pay for.
 
 ## Verify

@@ -39,8 +39,8 @@ against, and nothing more.
 You need two things from Fountain. The agent's id, and an API key.
 
 ```bash
-fountain agents list                 # the id
-fountain auth api-keys create openbot
+fountain agent list                  # the id
+fountain keys create openbot
 ```
 
 In OpenBot, open `/agents`, create a coworker, then complete four fields.
@@ -104,10 +104,12 @@ The results are the ones you would want.
   mint the same thread id share nothing.
 
 The conversations appear in Fountain like any others, with a `channel_id` of
-`agui:<threadId>`.
+`agui:<threadId>`. The API filters on it. Read
+[Conversations](../api.md#conversations).
 
 ```bash
-fountain conversations list --channel "agui:<threadId>"
+curl -H "Authorization: Bearer ftn_..." \
+  "https://your-fountain/api/conversations?channel_id=agui:<threadId>"
 ```
 
 ### The standing role
@@ -202,7 +204,10 @@ Fountain has no platform-level model key, on purpose
   OpenBot user in a deployment reaches Fountain as the account that owns it.
   OpenBot's own `actor.id` does not travel.
 - **No approvals.** OpenBot can hand control to a person mid-run. A Fountain
-  agent that asks permission for a tool call has nowhere to ask
+  agent that asks permission for a tool call has nowhere to ask on this
+  protocol. The API answers such a request at
+  `POST /api/conversations/:id/requests/:request_id`, and the AG-UI endpoint
+  does not carry it to the host
   ([#643](https://github.com/BinaryBourbon/fountain/issues/643)).
 - **Attachments do not travel.** An attachment on an OpenBot message does not
   reach Fountain. The prompt is text.

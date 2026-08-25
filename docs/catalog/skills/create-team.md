@@ -40,11 +40,16 @@ that teammates can reach each other.
 ## What it creates
 
 For each teammate it creates an [Agent](../../concepts/agent.md), then a
-[team membership](../../concepts/teammates.md). The membership opens that
-agent's one conversation and provisions its sandbox.
+[team membership](../../concepts/teammates.md), with `POST /api/team`. The
+membership opens that agent's one conversation and provisions its sandbox.
 
-You can edit everything it sets afterwards, from the team app. Brain, role and
-name are not decisions you are stuck with.
+When the team has a job that repeats, such as triage or a daily report, it
+can also create a [schedule](../../api.md#schedules) for a teammate. That is
+a cron line and a prompt, and the teammate runs it on its own.
+
+You can edit everything it sets afterwards, from the team app or with the
+[Team](../../api.md#team) routes. Brain, role and name are not decisions you
+are stuck with.
 
 ## Its own rules
 
@@ -61,10 +66,14 @@ helpful flow and a destructive one.
 ## Limits
 
 **It only adds.** It will not remove a teammate, rename one, or reorganise a
-team that already exists.
+team that already exists. The team app does those, and so do
+`DELETE /api/team/:agent_id` and `PATCH /api/team/:agent_id`. Read
+[Team](../../api.md#team).
 
-**It needs your inference credentials in place first.** It checks, then tells
-you what is absent. It does not create agents that cannot run.
+**It needs your inference credentials in place first.** It reads
+`GET /api/account/inference-credentials`, then tells you what is absent. It
+does not create agents that cannot run. Read
+[Inference credentials](../../api.md#inference-credentials).
 
 **Each teammate it creates provisions a sandbox.** A roster of five is five
 machines. Read
@@ -73,5 +82,6 @@ machines. Read
 ## Related
 
 - [Agents as teammates](../../concepts/teammates.md), what it builds.
+- [Team](../../api.md#team), the routes it calls.
 - [About agents](../../concepts/agent.md).
 - [Skills](index.md).

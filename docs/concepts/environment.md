@@ -92,7 +92,7 @@ reach only the broker. The broker then applies your policy. With
 `unrestricted`, a request goes through to any host, with only the credentials
 you bound. With `limited`, the broker refuses a request to a host that is not
 in `allowed_hosts`. The refusal is a 403 that names the host. The broker's
-request log shows each decision. List what the setup of the sandbox needs, such as
+request log, `GET /api/conversations/:id/egress`, shows each decision. List what the setup of the sandbox needs, such as
 `registry.npmjs.org` for the agent's adapter. A host with a bound credential,
 such as the model's API, needs no entry.
 
@@ -130,7 +130,8 @@ get a value that nobody can ever read back to check.
 
 Use [inference credentials](../integrations/index.md) for model API keys.
 Those belong to one user. An operator never sets them, and an Environment
-never stores them.
+never stores them. You set them in the console or over the
+[inference credentials API](../api.md#inference-credentials).
 
 ## Where to go next
 

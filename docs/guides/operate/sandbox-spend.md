@@ -44,6 +44,9 @@ names the accounts with the most hours, each with its own idle share.
 The panel is there whether or not you turn billing on. A self-hosted instance <!-- vale disable-line STE.IngForms -->
 still pays a provider.
 
+The list under the cards is also `GET /api/admin/sandboxes`, for a script.
+Read [Admin](../../api.md#admin).
+
 ## Record the invoice next to the figure
 
 The computed cost is a model. Until a real invoice sits next to it, the

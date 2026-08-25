@@ -10,7 +10,7 @@ An Agent is a named configuration for a coding agent that you can run again
 and again. It is config, and not a process. Nothing runs until a
 [Conversation](conversation.md) runs it.
 
-An Agent decides seven things.
+An Agent decides eight things.
 
 - **`model`**, as `provider/model-id`. An example is
   `anthropic/claude-sonnet-4-6`.
@@ -22,6 +22,8 @@ An Agent decides seven things.
 - **`mcp_servers`**, the MCP server definitions, with `${VAR}` substitution in
   their env.
 - **`metadata`**, a free-form map for your own records.
+- **`sandbox_mode`**, `ephemeral` or `persistent`. Read
+  [About sandboxes](sandboxes.md).
 
 ## Why it exists
 

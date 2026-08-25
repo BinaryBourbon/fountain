@@ -29,6 +29,12 @@ fountain conv interrupt <conv-id>     # stop the in-flight turn, keep the sandbo
 fountain conv terminate <conv-id>     # destroy the sandbox, end the conversation
 ```
 
+The sandbox itself has an API. `GET /api/sandboxes/:id` shows its status,
+its provider and each conversation on it. `DELETE /api/sandboxes/:id` resets
+a persistent sandbox. Fountain destroys the machine and keeps the
+conversations, and the next prompt builds a clean machine. Read
+[Sandboxes](../api.md#sandboxes).
+
 ## The provider refused the model
 
 A turn fails when the model provider refuses the agent's model. Fountain
@@ -60,8 +66,10 @@ further prompt.
 error. The sandbox parks and scales to zero. The next prompt wakes it, and the
 agent's memory is intact.
 
-`idle` with a *destroyed* sandbox is what an explicit reap leaves, or what a
-configured max-lifetime ceiling leaves behind. The next prompt provisions a fresh
+`idle` with a *destroyed* sandbox is what a reset, an admin reap or a
+configured max-lifetime ceiling leaves behind. A reset is
+`DELETE /api/sandboxes/:id`. An admin reap is
+`POST /api/admin/sandboxes/:id/reap`, or the admin page. The next prompt provisions a fresh
 sandbox. Fountain leaves the stored transcript alone, but the agent starts a
 fresh session. Read [About conversations](../concepts/conversation.md), and
 the full table in [Conversation states](../reference/conversation-states.md).
@@ -73,7 +81,11 @@ row. That row counts against the user's quota, which is 2 concurrent sandboxes
 by default.
 
 The reaper runs each hour at :07 and releases a row that has been stuck for
-more than 60 minutes. An admin can raise a user's cap from `/admin/users` at once.
+more than 60 minutes. An admin can raise a user's cap at once, from
+`/admin/users` or with `POST /api/admin/users/:id/sandbox-limit`. An admin
+can also see every sandbox with `GET /api/admin/sandboxes`, and release a
+stuck one with `POST /api/admin/sandboxes/:id/reap`. Read
+[Admin](../api.md#admin).
 
 The reaper logs one summary line for each run.
 

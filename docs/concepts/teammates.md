@@ -1,7 +1,8 @@
 # Agents as teammates
 
 This page explains what a teammate is, and why it is not a fifth primitive.
-For the endpoints, read the [API reference](../api.md).
+For the endpoints, read the [Team section](../api.md#team) of the API
+reference.
 
 ## What a teammate is
 
@@ -80,18 +81,24 @@ teammate was busy for half an hour, or when the sandbox quota was full.
 
 Remove a teammate and Fountain deletes its schedules.
 
+The team app, `fountain.team.schedules` in the SDK, and the
+[Schedules API](../api.md#schedules) all manage the same rows.
+
 ## A teammate can have an email address and a phone number
 
 This is an alpha feature, and it is off by default on the hosted platform.
 Give a teammate a contact, and it gets an address and a number under keys
-that Fountain holds. Its sandbox never sees a key. Read
-[fountain-comms](../catalog/mcp-servers/fountain-comms.md) for the tools, and
+that Fountain holds. Its sandbox never sees a key. The team app and
+`POST /api/team/:agent_id/contact` both give a teammate a contact. Read
+[fountain-comms](../catalog/mcp-servers/fountain-comms.md) for the tools,
+the [Team section](../api.md#team) of the API reference for the routes, and
 [Feature status](../reference/feature-status.md) for how to get it on.
 
 ## What a teammate is not
 
-**Not a primitive.** Nothing in the API creates a teammate. You bind a
-conversation to a channel.
+**Not a primitive.** `POST /api/team` adds a teammate, and it creates no new
+kind of object. It binds a conversation to the channel. The rest of the
+[Team API](../api.md#team) reads and writes that conversation.
 
 **Not a shared inbox.** One Agent has one team conversation. Two people who
 message the same teammate talk to the same thread and the same machine.
@@ -104,4 +111,5 @@ survives without it. Read [About conversations](conversation.md).
 
 - [About conversations](conversation.md), for the lifecycle below this one.
 - [About agents](agent.md).
-- [API reference](../api.md), for the team endpoints and schedules.
+- [Team](../api.md#team) and [Schedules](../api.md#schedules) in the API
+  reference, for the endpoints.
