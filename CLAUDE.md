@@ -106,7 +106,7 @@ that are easy to get wrong:
   consumes lots in order: the lot it names, earliest expiry, then purchased).
   `CreditPricer` burns closed turns at `CREDIT_TURN_HOUR_CENTS` (default 25)
   and comms messages when priced, seven days back;
-  `CreditGranter` expires unspent grants; `Credits.Purchases` sells packs
+  `CreditExpirer` (and the pricer's tick) expires unspent grants; `Credits.Purchases` sells packs
   through one-time Checkout and claws back on `charge.refunded` /
   `charge.dispute.created`. Stripe holds no subscription and no price.
   Usage is reported over the calendar month (`Billing.current_month_range/0`).
