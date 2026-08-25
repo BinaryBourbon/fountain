@@ -100,6 +100,25 @@ defmodule Fountain.Runtimes.ModelTest do
     end
   end
 
+  describe "acp_model/2" do
+    test "a single-provider runtime gets the bare id" do
+      assert Runtimes.Model.acp_model("claude", "anthropic/claude-sonnet-4-6") ==
+               "claude-sonnet-4-6"
+
+      assert Runtimes.Model.acp_model("codex", "openai/gpt-5.3-codex") == "gpt-5.3-codex"
+    end
+
+    test "opencode gets the canonical id, the only name it knows a model by" do
+      assert Runtimes.Model.acp_model("opencode", "anthropic/claude-sonnet-4-6") ==
+               "anthropic/claude-sonnet-4-6"
+    end
+
+    test "no parseable model, nothing to pin" do
+      assert Runtimes.Model.acp_model("opencode", "claude-sonnet-4-6") == nil
+      assert Runtimes.Model.acp_model("claude", nil) == nil
+    end
+  end
+
   describe "model_args/1" do
     test "strips the provider prefix" do
       assert Runtimes.Model.model_args(agent("claude", "anthropic/claude-sonnet-4-6")) ==
