@@ -16,6 +16,16 @@ upgrade, is in
 
 ## [Unreleased]
 
+### Added
+
+- **`BRAND_ASSETS_URL`.** A deployment can serve its own app icon, favicons
+  and Open Graph card from any static host instead of the files in the
+  release image: point the variable at a directory holding the six files
+  `Fountain.Brand.assets/0` names and the chrome links them, the card
+  unfurls with them and the CSP admits the origin on `img-src`. Unset,
+  nothing changes. Changing a brand's pixels no longer means rebuilding the
+  engine.
+
 ## [0.14.0] — 2026-08-25
 
 ### Upgrade notes
