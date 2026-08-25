@@ -86,7 +86,8 @@ defmodule Fountain.Credits.RentTest do
       assert Repo.reload!(fresh).rent_paid_through == ~U[2026-09-10 00:00:00Z]
       assert Repo.reload!(due).rent_paid_through == ~U[2026-09-01 00:00:00Z]
       assert Repo.reload!(paid).rent_paid_through == ~U[2026-09-01 00:00:00Z]
-      assert Credits.balance(user.id) == 500
+      # $10 held, two months charged.
+      assert Credits.balance(user.id) == 0
 
       assert %{charged: 0} = Rent.collect(now: ~U[2026-08-11 00:00:00Z])
     end
