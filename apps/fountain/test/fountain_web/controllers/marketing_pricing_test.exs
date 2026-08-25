@@ -72,9 +72,17 @@ defmodule FountainWeb.MarketingPricingTest do
 
     body = conn |> get(~p"/") |> html_response(200)
 
-    assert body =~ "Going over the hours does not stop anything"
-    assert body =~ "nothing extra is charged"
-    assert body =~ "Running at the concurrency cap does"
+    # What a credit buys, in the meter's own numbers (ADR 0030).
+    assert body =~ "How billing works"
+    assert body =~ "Agent time costs $0.25 an hour"
+    assert body =~ "Buy credit in packs of $10.00, $25.00, $100.00"
+    assert body =~ "At zero, new work pauses; nothing dies"
+    assert body =~ "Anything already running finishes"
+    # No rent or message price in test config, so the page says nothing about
+    # contacts rather than quoting $0.
+    refute body =~ "Teammate contacts come out of the same balance"
+    refute body =~ "Going over the hours does not stop anything"
+    assert body =~ "At the concurrency cap, the next start waits for you"
     assert body =~ "is refused rather than queued"
   end
 
@@ -106,7 +114,7 @@ defmodule FountainWeb.MarketingPricingTest do
     assert body =~
              "with #{Fountain.Credits.format_cents(trial.included_turn_hours * 25)} of credit"
 
-    assert body =~ "Subscribing lifts both the same day"
+    assert body =~ "so you can judge it before paying"
   end
 
   test "the hero quotes the cheapest sellable plan", %{conn: conn} do
@@ -159,5 +167,27 @@ defmodule FountainWeb.MarketingPricingTest do
   test "non-whole-dollar amounts render with cents" do
     assert Plans.format_usd(2950) == "$29.50"
     assert Plans.format_usd(2900) == "$29"
+  end
+
+  test "priced contacts and messages are quoted from the price card", %{conn: conn} do
+    cfg = Application.get_env(:fountain, :credits)
+    on_exit(fn -> Application.put_env(:fountain, :credits, cfg) end)
+
+    Application.put_env(
+      :fountain,
+      :credits,
+      Keyword.merge(cfg,
+        number_cents: 300,
+        inbox_cents: 200,
+        email_message_cents: 2,
+        sms_message_cents: 2
+      )
+    )
+
+    price_all()
+    body = conn |> get("/") |> html_response(200)
+    assert body =~ "A phone number $3.00 a month, an email inbox $2.00 a month"
+    assert body =~ "a month up front"
+    assert body =~ "$0.02 an email and $0.02 a text, sent or received"
   end
 end
