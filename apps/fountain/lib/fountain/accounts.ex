@@ -188,6 +188,7 @@ defmodule Fountain.Accounts do
         email_verified_at: DateTime.utc_now() |> DateTime.truncate(:second)
       )
       |> Repo.update()
+      |> tap(&grant_opening_credit/1)
       |> audited_account("auth.email.verified", "user", opts, fn _ -> %{} end)
 
     with {:ok, verified} <- result do
@@ -196,6 +197,19 @@ defmodule Fountain.Accounts do
       {:ok, verified}
     end
   end
+
+  # The opening credit (ADR 0031 decision 3) lands on the verification
+  # transition, whichever door finished it: the browser route, the API, or
+  # an OAuth signup that arrives verified. Best-effort by rescuing — a ledger
+  # hiccup must not fail a verification — and idempotent per account.
+  defp grant_opening_credit({:ok, %User{} = user}) do
+    Fountain.Credits.grant_opening(user)
+    :ok
+  rescue
+    e -> Logger.warning("opening credit for #{user.id} failed: #{inspect(e)}")
+  end
+
+  defp grant_opening_credit(_), do: :ok
 
   @doc """
   PubSub topic carrying a user's verification transition.
@@ -846,13 +860,7 @@ defmodule Fountain.Accounts do
   # exports. Both fields stay nil. Enabling billing later leaves these accounts
   # failing closed at the gate until the documented backfill runs —
   # Fountain.Release.expire_legacy_trials/1 starts their trial clocks.
-  defp put_trial_end(changeset) do
-    if Fountain.Billing.enabled?() do
-      Ecto.Changeset.put_change(changeset, :trial_ends_at, Fountain.Billing.trial_end_from_now())
-    else
-      Ecto.Changeset.put_change(changeset, :subscription_status, nil)
-    end
-  end
+  defp put_trial_end(changeset), do: changeset
 
   defp create_user_data_key(user_id) do
     dek = Crypto.generate_dek()
@@ -890,7 +898,6 @@ defmodule Fountain.Accounts do
   @sortable_columns %{
     "email" => :email,
     "joined" => :inserted_at,
-    "trial_end" => :trial_ends_at,
     "last_activity" => :last_activity
   }
 
@@ -900,7 +907,7 @@ defmodule Fountain.Accounts do
   Options:
 
   - `:search` — case-insensitive email substring
-  - `:status` — exact `subscription_status`
+  - `:comped` — `true` for free accounts
   - `:role` — `"admin"` or `"user"`
   - `:verified` — `true`/`false` (whether `email_verified_at` is set)
   - `:sort` — `"email"`, `"joined"`, `"trial_end"`, or `"last_activity"`
@@ -941,8 +948,8 @@ defmodule Fountain.Accounts do
       {:search, term}, q when is_binary(term) and term != "" ->
         where(q, [u], ilike(u.email, ^"%#{sanitize_like(term)}%"))
 
-      {:status, status}, q when is_binary(status) and status != "" ->
-        where(q, [u], u.subscription_status == ^status)
+      {:comped, comped}, q when is_boolean(comped) ->
+        where(q, [u], u.comped == ^comped)
 
       {:role, role}, q when role in ~w(admin user) ->
         where(q, [u], u.role == ^role)
@@ -1007,24 +1014,6 @@ defmodule Fountain.Accounts do
     |> Repo.update()
     |> audited_account("account.sandbox_limit_changed", "user", opts, fn updated ->
       %{"from" => user.sandbox_limit_override, "to" => updated.sandbox_limit_override}
-    end)
-  end
-
-  @doc """
-  Set a user's plan slug (`Fountain.Plans`). Admin-only.
-
-  The subscription normally decides this: `Billing.sync_subscription/1` maps
-  the Stripe price on the subscription to a slug. This is the correction path
-  for when it has not, or cannot — a comped account, or a price Stripe knows
-  and this deployment does not. It changes what the tenant may consume; it
-  does not change what Stripe charges them.
-  """
-  def update_plan(%User{} = user, plan, opts \\ []) do
-    user
-    |> User.plan_changeset(%{plan: plan})
-    |> Repo.update()
-    |> audited_account("account.plan_changed", "user", opts, fn updated ->
-      %{"from" => user.plan, "to" => updated.plan}
     end)
   end
 

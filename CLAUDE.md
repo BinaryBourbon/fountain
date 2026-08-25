@@ -63,90 +63,56 @@ fountain/                  umbrella root
 | **Agent** | A named, re-runnable agent config — model, runtime, skills, MCP servers, optional environment |
 | **Conversation** | A single run of an agent inside a Sprites sandbox. Has turns, log events, and a status lifecycle |
 
-## Plans and entitlements
+## Credits are the product (ADR 0031)
 
-`Fountain.Plans` is the catalog: three public tiers (`solo` / `team` /
-`scale`) plus a closed `legacy` one, differing on **one** axis — how many
-sandboxes a tenant may run at once. Everything else the product does is on
-every plan.
+There are no plans, no tiers and no subscription. `BILLING_ENABLED` means
+"credits on"; off, nothing is priced, granted, gated or shown. Six rules
+that are easy to get wrong:
 
-| | trial | solo | team | scale | legacy |
-|---|---|---|---|---|---|
-| concurrent sandboxes | 2 | 2 | 5 | 10 | 5 |
-| credit a month | $10 | $10 | $25 | $50 | $25 |
-| teammate contacts | 0 | 1 | 3 | 10 | 3 |
-| price | free | $29 | $79 | $199 | $29 (closed) |
-
-Five rules that are easy to get wrong:
-
-- **A trialing account gets `trial`'s numbers, not its tier's.**
-  `Plans.effective/1` is what applies today; `Plans.resolve/1` is the tier the
-  subscription names and what it converts into. Every entitlement reader
-  (`concurrent_sandboxes/1`, `included_credit_cents/1`, `team_contacts/1`) routes
-  through `effective/1` **when handed a `%User{}`** — hand it a bare slug and
-  it cannot know the status, which is how `turn_hour_allowance/2` first got it
-  wrong. The trial now *ties* Solo on concurrency and hours — the guardrail
-  is that it is never larger than a plan somebody pays for, and contacts are
-  the only axis still separating the two. Only applies when billing is on:
-  `subscription_status` defaults to `"trialing"`, so without that guard every
-  self-hosted account would be capped at two sandboxes. In tests, `insert_verified_user/1` is trialing —
-  `insert_active_user/1` is the one that gets the plan's numbers.
-
-- **The plan is not the cap.** `Quotas.sandbox_limit/1` returns
-  `users.sandbox_limit_override` when it is set and the plan's number
-  otherwise. Anything that displays a cap must show the enforced one
-  (`Quotas.sandbox_limit_for/1` for an already-loaded user), never
-  `plan.concurrent_sandboxes`. Note the Postgres column is still
-  `max_concurrent_sandboxes` — the Elixir field is mapped with Ecto's
-  `:source`, deliberately, so a rolling deploy does not break (see the
-  migration).
-- **Only the webhook writes `users.plan`.** `Billing.change_plan/3` asks
-  Stripe to reprice the subscription and writes nothing locally; the
-  `customer.subscription.updated` that comes back is what stamps the slug. So
-  the entitlement follows what Stripe charges, not what we asked for. An
-  unrecognised price leaves the stored plan alone rather than nulling it.
-- **Teammate contacts are rented from the prepaid balance, not a Stripe
-  item.** `Credits.Rent` takes `CREDIT_NUMBER_CENTS + CREDIT_INBOX_CENTS` a
-  month up front at provisioning and on each anniversary, with a seven-day
-  grace before release (ADR 0030 decision 4). The Stripe contact add-on and
-  `users.comped_contacts` are gone (batch 2 of #1086); the plan's
-  `team_contacts` number is an abuse ceiling on top, not an allowance. To
-  give someone free numbers, comp the account or grant them credit.
-
+- **The gate is the balance.** `Billing.check_spend/1` is `Credits.gate/1`:
+  `:ok` with billing off, for a comped account (`users.comped`, the one
+  operator lever), or a positive `credit_balance_cents`; else
+  `{:error, :insufficient_credits}` (402 with `upgrade_url`). Every door that
+  spends calls `check_spend/1`; the reservation lock in
+  `Quotas.with_sandbox_reservation/3` checks it too. In-flight turns finish
+  and may go negative (ADR 0030 decision 6). There is no `check_active/1`.
+- **The opening credit lands at verification.** `Accounts.verify_email/2`
+  posts `Credits.grant_opening/2` — `CREDIT_OPENING_CENTS` ($10) expiring
+  `CREDIT_OPENING_DAYS` (14) later, idempotent per account. In tests
+  `insert_verified_user/1` therefore holds $10 and may spend; drain it with a
+  `burn_turn` debit to test refusal. `insert_active_user/1` is the same
+  function, kept for readability.
+- **Concurrency is funded by the balance, under a fleet ceiling.**
+  `Quotas.sandbox_limit/1` = `sandbox_limit_override` if set, else
+  `clamp(balance ÷ SANDBOX_RESERVE_CENTS, SANDBOX_CAP_FLOOR, SANDBOX_CAP_CEILING)`
+  (defaults $2 / 2 / 20; comped and billing-off get the ceiling).
+  `SANDBOX_FLEET_CEILING` bounds live sandboxes across every tenant under a
+  global advisory lock taken before the per-user one; `:fleet_full` is 503,
+  not 402. Anything that displays a cap shows `Quotas.sandbox_limit_for/1`.
+- **Teammate contacts are rented from the balance, not a Stripe item.**
+  `Credits.Rent` takes `CREDIT_NUMBER_CENTS + CREDIT_INBOX_CENTS` a month up
+  front at provisioning and on each anniversary, with a seven-day grace before
+  release (ADR 0030 decision 4). `TEAM_CONTACT_CEILING` is an abuse ceiling,
+  not an allowance. Free numbers: comp the account, or grant credit.
 - **A turn hour is not a sandbox hour.** Turns burn credit against
-  `SandboxUsage`'s `turn_seconds` (the turns summed, each clipped to the
-  period) on platform-paid providers only — an idle sandbox and a self-hosted
-  runner spend none of it. `busy_seconds` is the *union* of the same intervals
-  (how long the machine had any turn in flight) and is what a provider bill
-  relates to; several conversations share one sandbox (ADR 0023), so the two
-  differ and must not be swapped. `Billing.turn_hours_used/2` is the meter;
-  what acts is the prepaid balance — see the next rule.
-
-- **Credits are the usage currency, and two switches turn them on.**
-  ADR 0030: `Fountain.Credits` keeps a cents ledger (`credit_ledger`, cached
-  on `users.credit_balance_cents`, idempotent per row, never summed on a
-  gate; every credit row is a lot with `remaining_cents`, and a debit
-  consumes lots in order: the lot it names, earliest expiry, then purchased). `CreditPricer` burns closed turns at `CREDIT_TURN_HOUR_CENTS`
-  (default 25) and comms messages when priced; `CreditGranter` puts
-  `Plans.included_credit_cents` in each period and expires the unspent part
-  (granted first, oldest expiry first, then purchased); `Credits.Purchases`
-  sells packs and claws back on refund or dispute; `Credits.Rent` takes a
-  month up front per contact. Nothing prices, grants or shows a balance
-  until `CREDIT_PRICING_SINCE` is set, and nothing is refused until
-  `CREDIT_ENFORCE=true` (both set on the hosted deployment since
-  2026-08-24) — `Billing.check_spend/1` is the gate every
-  door must call (never `check_active/1` alone), and it short-circuits for
-  billing-off and comped before any balance read. The runbook order is in
-  `docs/guides/operate/billing.md`; **decisions/0030-prepaid-credits.md**
-  owns the rest.
-
-- **Usage is measured over the invoiced period, or says it is not.**
-  `Billing.billing_period/2` returns `%{start, end, source}` — `:subscription`
-  from `users.current_period_start`/`_end`, `:calendar_month` when there is no
-  such period (comped, self-hosted, or no webhook yet). The fallback is never
-  silent: if you add a surface that shows a usage number, show the source too.
-  `Fountain.Release.backfill_billing_periods/1` fills the column from Stripe
-  for accounts that predate it.
+  `SandboxUsage`'s `turn_seconds` (summed per turn, clipped to the period) on
+  platform-paid providers only — an idle sandbox and a self-hosted runner
+  spend none of it. `busy_seconds` is the *union* of the same intervals and is
+  what a provider bill relates to; several conversations share one sandbox
+  (ADR 0023), so the two differ and must not be swapped.
+- **The ledger.** `Fountain.Credits` keeps a cents ledger (`credit_ledger`,
+  cached on `users.credit_balance_cents`, idempotent per row, never summed on
+  a gate; every credit row is a lot with `remaining_cents`, and a debit
+  consumes lots in order: the lot it names, earliest expiry, then purchased).
+  `CreditPricer` burns closed turns at `CREDIT_TURN_HOUR_CENTS` (default 25)
+  and comms messages when priced, never before `CREDIT_PRICING_SINCE`;
+  `CreditGranter` expires unspent grants; `Credits.Purchases` sells packs
+  through one-time Checkout and claws back on `charge.refunded` /
+  `charge.dispute.created`. Stripe holds no subscription and no price.
+  Usage is reported over the calendar month; `Billing.billing_period/2`
+  keeps the `%{start, end, source}` shape with `source: :calendar_month`.
+  **decisions/0031-credits-are-the-product.md** and
+  **decisions/0030-prepaid-credits.md** own the rest.
 
 Price ids come from config (`STRIPE_PRICE_ID_SOLO` and friends), the display
 cents from the catalog. `mix fountain.verify_plans` is the only thing that
@@ -251,16 +217,15 @@ no client re-parses a runtime dialect.
 |---|---|---|
 | `require_authenticated_user` | `redirect` to `/auth/login` | — |
 | `require_admin` | `redirect` to `/auth/login` | `push_navigate` to `/dashboard` |
-| `assign_subscription_state` | — | never halts; assigns `@subscription_active` |
+| `assign_subscription_state` | — | never halts; assigns `@subscription_active` (`Billing.check_spend/1 == :ok`) |
 
 The distinction matters in tests: plain `redirect` yields `{:redirect, _}` (the
 login redirect), while `push_navigate` yields `{:live_redirect, _}` (the
 non-admin case in `require_admin`).
 
-There is no router-level subscription gate. It guarded exactly one page,
-`/conversations/new`, which moved out to the app. The gate that protects spend
-is `Billing.assert_active!/1` **in the context** (ADR 0006), so every door gets
-it — see `ee/test/fountain/billing_gate_test.exs`.
+There is no router-level billing gate. The gate that protects spend is
+`Billing.check_spend/1` **in the context** (ADR 0031), so every door gets it
+— see `ee/test/fountain/credits_enforcement_test.exs`.
 
 ## Rate limiter
 

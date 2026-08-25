@@ -70,19 +70,5 @@ defmodule Fountain.ReleaseWithoutPubSubTest do
 
       assert Repo.reload!(user).role == "admin"
     end
-
-    test "expire_legacy_trials/1 backfills the trial clock" do
-      user =
-        insert_user()
-        |> Ecto.Changeset.change(subscription_status: "trialing", trial_ends_at: nil)
-        |> Repo.update!()
-
-      capture_io(fn ->
-        assert {:ok, count} = Release.expire_legacy_trials(days: 14)
-        assert count >= 1
-      end)
-
-      assert %DateTime{} = Repo.reload!(user).trial_ends_at
-    end
   end
 end

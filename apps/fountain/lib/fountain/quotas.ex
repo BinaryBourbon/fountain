@@ -99,10 +99,10 @@ defmodule Fountain.Quotas do
     query =
       from u in User,
         where: u.id == ^user_id,
-        select: {u.sandbox_limit_override, u.credit_balance_cents, u.subscription_status}
+        select: {u.sandbox_limit_override, u.credit_balance_cents, u.comped}
 
     case Repo.one(query) do
-      {override, balance, status} -> resolve_limit(override, balance, status)
+      {override, balance, comped} -> resolve_limit(override, balance, comped)
       nil -> settings().cap_floor
     end
   end
@@ -118,17 +118,17 @@ defmodule Fountain.Quotas do
       resolve_limit(
         user.sandbox_limit_override,
         user.credit_balance_cents,
-        user.subscription_status
+        user.comped
       )
 
-  defp resolve_limit(override, _balance, _status) when is_integer(override), do: override
+  defp resolve_limit(override, _balance, _comped) when is_integer(override), do: override
 
-  defp resolve_limit(_override, balance, status) do
+  defp resolve_limit(_override, balance, comped) do
     %{reserve_cents: reserve, cap_floor: floor, cap_ceiling: ceiling} = settings()
 
     cond do
       not Fountain.Billing.enabled?() -> ceiling
-      status == "comped" -> ceiling
+      comped == true -> ceiling
       true -> balance |> funded(reserve) |> max(floor) |> min(ceiling)
     end
   end

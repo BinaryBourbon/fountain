@@ -82,17 +82,12 @@ defmodule FountainWeb.AdminLive.Shell do
     """
   end
 
-  # Finance and Billing are two pages because they answer two questions.
-  # Billing is the state of the Stripe integration — who is on what status,
-  # which webhooks are failing. Finance is the money. Both are hidden on a
-  # deployment with billing off, where neither has anything to say.
+  # Finance is the money page: credit, cost, invoices, webhook failures. It is
+  # hidden on a deployment with billing off, where it has nothing to say.
   defp tabs(billing_enabled) do
     billing =
       if billing_enabled do
-        [
-          {:billing, "Billing", ~p"/admin/billing"},
-          {:finance, "Finance", ~p"/admin/finance"}
-        ]
+        [{:finance, "Finance", ~p"/admin/finance"}]
       else
         []
       end

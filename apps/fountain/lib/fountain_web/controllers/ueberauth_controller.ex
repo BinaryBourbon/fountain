@@ -80,7 +80,7 @@ defmodule FountainWeb.UeberauthController do
         # The email+password path does this after verification. OAuth skips
         # verification entirely (the provider asserts the address), so without
         # this every GitHub signup had no Stripe customer and no trial_ends_at.
-        Fountain.Workers.StripeCustomerSync.enqueue(user)
+        Fountain.Credits.grant_opening(user)
 
         # Same reasoning for the welcome email (#449): an OAuth signup is
         # created verified, so this is its verification transition.

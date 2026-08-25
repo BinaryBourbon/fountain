@@ -345,7 +345,7 @@ try {
 | `ConversationBusyError` | `conversation_busy` (400) | Yes. The turn in flight must finish. |
 | `NotReadyError` | `provisioning`, `sprite_probe_failed` (503) | Yes. It carries the server's `Retry-After`. |
 | `QuotaExceededError` | `sandbox_quota_exceeded` (429) | Yes. Terminate a conversation first. |
-| `SubscriptionRequiredError` | `subscription_required` (402) | No. It carries `upgradeUrl`. |
+| `SubscriptionRequiredError` | `insufficient_credits` (402) | No. It carries `upgradeUrl`. |
 | `ValidationError` | 422 | No. Read `fieldErrors`. |
 | `AuthError` and `NotFoundError` | 401 and 404 | No. |
 | `ConnectionError` | It never reached the server. | In a browser, the cause is usually CORS. |

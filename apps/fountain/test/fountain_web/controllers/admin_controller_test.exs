@@ -312,13 +312,11 @@ defmodule FountainWeb.AdminControllerTest do
       :ok
     end
 
-    test "extend-trial, comp and resync are all refused", %{key: key, target: target} do
+    test "comp and credit grants are refused", %{key: key, target: target} do
       # The UI hides the buttons; events could still be sent by hand (#399).
-      # Each of these talks to Stripe.
       for {path, payload} <- [
-            {"extend-trial", %{"days" => 7}},
             {"comp", %{"comped" => true}},
-            {"resync-stripe", %{}}
+            {"credits", %{"cents" => 100}}
           ] do
         body =
           build_conn()

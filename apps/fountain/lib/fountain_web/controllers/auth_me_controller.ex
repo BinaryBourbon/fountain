@@ -39,7 +39,7 @@ defmodule FountainWeb.AuthMeController do
       # The key stays for JSON-shape compatibility, but on a billing-disabled
       # instance the value is null even for accounts that carry pre-disable
       # residue — there is no subscription for the status to be about (#480).
-      subscription_status: if(Fountain.Billing.enabled?(), do: user.subscription_status)
+      comped: if(Fountain.Billing.enabled?(), do: user.comped, else: nil)
     })
   end
 end

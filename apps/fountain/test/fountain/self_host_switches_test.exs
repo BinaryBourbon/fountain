@@ -62,15 +62,16 @@ defmodule Fountain.SelfHostSwitchesTest do
     end
   end
 
+  # An account that cannot spend: the opening credit burned away.
   defp cancelled_user do
     user = insert_verified_user()
 
-    {:ok, user} =
-      user
-      |> Accounts.User.billing_changeset(%{subscription_status: "canceled"})
-      |> Fountain.Repo.update()
+    {:ok, _} =
+      Fountain.Credits.debit(user.id, Fountain.Credits.balance(user.id) + 1, "burn_turn",
+        idempotency_key: "drain-#{user.id}"
+      )
 
-    user
+    Fountain.Repo.reload!(user)
   end
 
   describe "the env-var side, read the way the release config provider does" do
@@ -151,27 +152,15 @@ defmodule Fountain.SelfHostSwitchesTest do
 
   describe "BILLING_ENABLED" do
     test "the gate is enforced by default" do
-      assert {:error, :subscription_required} = Billing.check_active(cancelled_user())
+      assert {:error, :insufficient_credits} = Billing.check_spend(cancelled_user())
     end
 
     test "disabling it lets a cancelled account through" do
       user = cancelled_user()
 
       with_env([billing_enabled: false], fn ->
-        assert :ok = Billing.check_active(user)
+        assert :ok = Billing.check_spend(user)
       end)
-    end
-
-    test "assert_active!/1 follows the same switch" do
-      user = cancelled_user()
-
-      with_env([billing_enabled: false], fn ->
-        assert :ok = Billing.assert_active!(user)
-      end)
-
-      assert_raise Billing.SubscriptionRequiredError, fn ->
-        Billing.assert_active!(user)
-      end
     end
 
     test "a conversation can start with billing disabled" do
@@ -191,120 +180,6 @@ defmodule Fountain.SelfHostSwitchesTest do
                    "user_id" => user.id
                  })
       end)
-    end
-  end
-
-  describe "BILLING_ENABLED=false leaves no trial residue (#480)" do
-    # Registration used to stamp a 14-day trial unconditionally (the
-    # free-forever incident made stamp-always the right hosted behavior), so
-    # every community account read as "trialing, ends <date>" in the admin
-    # list, /api/auth/me and GDPR exports — a trial nobody is on.
-
-    test "registration stamps neither a status nor a trial end" do
-      with_env([billing_enabled: false], fn ->
-        {:ok, user} =
-          Accounts.register_user(%{
-            "email" => "community-#{System.unique_integer([:positive])}@example.com",
-            "password" => "password123"
-          })
-
-        assert is_nil(user.subscription_status)
-        assert is_nil(user.trial_ends_at)
-      end)
-    end
-
-    test "OAuth signup stamps neither" do
-      with_env([billing_enabled: false], fn ->
-        {:ok, user, :new} =
-          Accounts.upsert_oauth_user(
-            "github",
-            "gh-#{System.unique_integer([:positive])}",
-            %{"email" => "oauth-community-#{System.unique_integer([:positive])}@example.com"}
-          )
-
-        assert is_nil(user.subscription_status)
-        assert is_nil(user.trial_ends_at)
-      end)
-    end
-
-    test "with billing enabled the hosted stamp-always behavior stands" do
-      # The stamp exists because 159 accounts whose Stripe call failed sat at
-      # nil forever. Disabling it must be scoped to the switch, not removed.
-      {:ok, user} =
-        Accounts.register_user(%{
-          "email" => "hosted-#{System.unique_integer([:positive])}@example.com",
-          "password" => "password123"
-        })
-
-      assert user.subscription_status == "trialing"
-      assert %DateTime{} = user.trial_ends_at
-    end
-
-    test "the gate still passes for a status-less account while disabled" do
-      with_env([billing_enabled: false], fn ->
-        {:ok, user} =
-          Accounts.register_user(%{
-            "email" => "gateless-#{System.unique_integer([:positive])}@example.com",
-            "password" => "password123"
-          })
-
-        assert :ok = Billing.check_active(user)
-      end)
-    end
-
-    test "after enabling billing a status-less account fails closed until the backfill runs" do
-      # The flip-on contract (documented in docs/self-hosting.md): accounts
-      # registered while billing was off have no trial to measure, so the gate
-      # refuses them rather than minting a silent free tier —
-      # Release.expire_legacy_trials/1 is the way to start their clocks.
-      user =
-        with_env([billing_enabled: false], fn ->
-          {:ok, user} =
-            Accounts.register_user(%{
-              "email" => "flip-on-#{System.unique_integer([:positive])}@example.com",
-              "password" => "password123"
-            })
-
-          user
-        end)
-
-      assert {:error, :subscription_required} = Billing.check_active(user)
-    end
-  end
-
-  describe "BILLING_ENABLED=false silences the Stripe sync (#335)" do
-    # Every signup enqueued a StripeCustomerSync that 401ed through all five
-    # attempts — dead Oban jobs and error noise a self-hoster has no way to
-    # know are benign.
-
-    test "enqueue is a no-op" do
-      user = insert_verified_user()
-
-      with_env([billing_enabled: false], fn ->
-        assert {:ok, :billing_disabled} = Fountain.Workers.StripeCustomerSync.enqueue(user)
-
-        refute_enqueued(worker: Fountain.Workers.StripeCustomerSync)
-      end)
-    end
-
-    test "an already-queued job completes without touching Stripe" do
-      # The flag can flip off with jobs still in the queue.
-      user = insert_verified_user()
-      Mimic.reject(&Stripe.Customer.create/1)
-
-      with_env([billing_enabled: false], fn ->
-        assert :ok =
-                 perform_job(Fountain.Workers.StripeCustomerSync, %{user_id: user.id})
-      end)
-
-      refute Fountain.Repo.reload(user).stripe_customer_id
-    end
-
-    test "enqueue still works when billing is on" do
-      user = insert_verified_user()
-
-      assert {:ok, %Oban.Job{}} = Fountain.Workers.StripeCustomerSync.enqueue(user)
-      assert_enqueued(worker: Fountain.Workers.StripeCustomerSync)
     end
   end
 
@@ -330,7 +205,8 @@ defmodule Fountain.SelfHostSwitchesTest do
       user = insert_verified_user()
 
       with_env([registration_enabled: false], fn ->
-        assert {:ok, ^user} = Accounts.authenticate_user(user.email, "password123")
+        assert {:ok, %{id: id}} = Accounts.authenticate_user(user.email, "password123")
+        assert id == user.id
       end)
     end
   end

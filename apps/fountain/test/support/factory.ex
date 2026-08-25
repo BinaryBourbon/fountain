@@ -9,6 +9,7 @@ defmodule Fountain.Factory do
   """
 
   alias Fountain.Repo
+  require Ecto.Query
   alias Fountain.Conversations.{Conversation, LogEvent, Sandbox, Turn}
 
   defp uniq, do: System.unique_integer([:positive, :monotonic]) |> Integer.to_string()
@@ -25,14 +26,7 @@ defmodule Fountain.Factory do
   def insert_user(overrides \\ %{}) do
     attrs = user_attrs(overrides)
     {:ok, user} = Fountain.Accounts.register_user(Map.delete(attrs, "plan"))
-
-    # `plan` is not a registration field — it follows the Stripe price on the
-    # subscription — so a test asking for one gets it stamped afterwards, the
-    # same way the webhook sync does.
-    case attrs["plan"] do
-      nil -> user
-      plan -> user |> Fountain.Accounts.User.plan_changeset(%{plan: plan}) |> Repo.update!()
-    end
+    user
   end
 
   def insert_verified_user(overrides \\ %{}) do
@@ -42,19 +36,31 @@ defmodule Fountain.Factory do
   end
 
   @doc """
-  A verified user with a live subscription — `subscription_status: "active"`.
-
-  `insert_verified_user/1` leaves the schema default, `"trialing"`, and a
-  trialing account is deliberately capped below its tier (`Fountain.Plans`'
-  `trial` plan): two sandboxes, forty turn hours, no teammate contacts. Reach
-  for this one whenever the test is about what a *plan* allows rather than
-  about the trial, or the plan's numbers will not be the ones in force.
+  A verified user. The same as `insert_verified_user/1` since ADR 0031 — there
+  is no subscription to be active — kept so the many tests that reach for
+  "an account that may spend" keep reading.
   """
-  def insert_active_user(overrides \\ %{}) do
-    overrides
-    |> insert_verified_user()
-    |> Fountain.Accounts.User.billing_changeset(%{subscription_status: "active"})
-    |> Repo.update!()
+  def insert_active_user(overrides \\ %{}), do: insert_verified_user(overrides)
+
+  @doc """
+  A verified user with an empty ledger: the opening credit every verified
+  account gets (ADR 0031) wiped and the balance recomputed to zero. For the
+  tests that assert exact ledger arithmetic from a blank slate; such an
+  account cannot spend until a test grants it something.
+  """
+  def insert_empty_user(overrides \\ %{}) do
+    user = insert_verified_user(overrides)
+    uid = user.id
+    Repo.delete_all(Ecto.Query.from(e in Fountain.Credits.LedgerEntry, where: e.user_id == ^uid))
+
+    Repo.delete_all(
+      Ecto.Query.from(a in Fountain.Audit.Event,
+        where: a.user_id == ^uid and like(a.action, "credit.%")
+      )
+    )
+
+    Fountain.Credits.recompute_balance(user.id)
+    Repo.reload!(user)
   end
 
   def insert_api_key(user, name \\ nil, opts \\ []) do

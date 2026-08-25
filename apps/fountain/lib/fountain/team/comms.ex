@@ -26,7 +26,7 @@ defmodule Fountain.Team.Comms do
   import Ecto.Query, warn: false
   require Logger
 
-  alias Fountain.{Accounts, Audit, Conversations, FeatureFlags, Plans, Repo, Team}
+  alias Fountain.{Audit, Conversations, FeatureFlags, Repo, Team}
   alias Fountain.Team.Comms.{AgentMail, AgentPhone}
   alias Fountain.Team.Contact
 
@@ -371,7 +371,7 @@ defmodule Fountain.Team.Comms do
   # can be made to buy in one burst while the quantity sync is failing, which
   # is the window where it would be paying for numbers it is not charging for.
   defp check_contact_ceiling(user_id) do
-    limit = Plans.team_contacts(Accounts.get_user(user_id))
+    limit = Application.get_env(:fountain, :team_contact_ceiling, 10)
     count = contact_count(user_id)
 
     if count < limit do

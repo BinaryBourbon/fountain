@@ -182,8 +182,7 @@ defmodule FountainWeb.AdminController do
           record_admin(admin, user, "admin.sandbox_limit.changed", %{
             "email" => user.email,
             "from" => user.sandbox_limit_override,
-            "to" => limit,
-            "plan" => Fountain.Plans.resolve(user.plan).slug
+            "to" => limit
           })
 
           render_user(conn, updated)
@@ -201,29 +200,6 @@ defmodule FountainWeb.AdminController do
         "invalid_limit",
         "Limit must be a whole number of 0 or more, or null for the plan's cap."
       )
-
-  operation(:extend_trial,
-    summary: "Extend an account's trial",
-    parameters: [id: [in: :path, type: :string, required: true]],
-    request_body: {"Days", "application/json", Schemas.AdminExtendTrialRequest},
-    responses: [
-      ok: {"Account", "application/json", Schemas.AdminUserResponse},
-      forbidden: {"Admin required", "application/json", Schemas.Error},
-      not_found: {"Not found", "application/json", Schemas.Error},
-      unprocessable_entity: {"Refused", "application/json", Schemas.Error}
-    ]
-  )
-
-  def extend_trial(conn, %{"id" => id, "days" => days}) when is_integer(days) and days > 0 do
-    admin = conn.assigns.current_user
-
-    with :ok <- require_billing() do
-      with_user(conn, id, fn user -> apply_extend_trial(conn, admin, user, days) end)
-    end
-  end
-
-  def extend_trial(conn, _params),
-    do: refuse(conn, "invalid_days", "Days must be a whole number of 1 or more.")
 
   operation(:set_comp,
     summary: "Comp or un-comp an account",
@@ -325,26 +301,6 @@ defmodule FountainWeb.AdminController do
 
   def set_suspended(conn, _params),
     do: refuse(conn, "invalid_request", "Send {\"suspended\": true} or {\"suspended\": false}.")
-
-  operation(:resync_stripe,
-    summary: "Re-read an account's subscription from Stripe",
-    description: "The in-app remedy for webhook drift (#502).",
-    parameters: [id: [in: :path, type: :string, required: true]],
-    responses: [
-      ok: {"Outcome", "application/json", Schemas.AdminResyncResponse},
-      forbidden: {"Admin required", "application/json", Schemas.Error},
-      not_found: {"Not found", "application/json", Schemas.Error},
-      unprocessable_entity: {"Refused", "application/json", Schemas.Error}
-    ]
-  )
-
-  def resync_stripe(conn, %{"id" => id}) do
-    admin = conn.assigns.current_user
-
-    with :ok <- require_billing() do
-      with_user(conn, id, fn user -> apply_resync(conn, admin, user) end)
-    end
-  end
 
   operation(:delete_user,
     summary: "Delete an account (admin)",
@@ -489,41 +445,19 @@ defmodule FountainWeb.AdminController do
     end
   end
 
-  defp apply_extend_trial(conn, admin, user, days) do
-    case Billing.extend_trial(user, days) do
-      {:ok, updated} ->
-        record_admin(admin, user, "admin.trial.extended", %{
-          "email" => user.email,
-          "from" => user.trial_ends_at && DateTime.to_iso8601(user.trial_ends_at),
-          "to" => DateTime.to_iso8601(updated.trial_ends_at)
-        })
-
-        render_user(conn, updated)
-
-      {:error, :active_subscription} ->
-        refuse(conn, "active_subscription", "Account has an active paid subscription.")
-
-      {:error, :comped} ->
-        refuse(conn, "comped", "Account is comped — there is no trial to extend.")
-
-      {:error, _} ->
-        stripe_refused(conn, "Could not extend the trial — Stripe refused.")
-    end
-  end
-
   defp apply_comp(conn, admin, user, true) do
     case Billing.comp_account(user) do
       {:ok, updated} ->
         record_admin(admin, user, "admin.comp.granted", %{
           "email" => user.email,
-          "from" => user.subscription_status,
-          "to" => updated.subscription_status
+          "from" => user.comped,
+          "to" => updated.comped
         })
 
         render_user(conn, updated)
 
       {:error, _} ->
-        stripe_refused(conn, "Could not comp the account — Stripe cancellation failed.")
+        refuse(conn, "invalid_request", "Could not comp the account.")
     end
   end
 
@@ -532,8 +466,8 @@ defmodule FountainWeb.AdminController do
       {:ok, updated} ->
         record_admin(admin, user, "admin.comp.revoked", %{
           "email" => user.email,
-          "from" => user.subscription_status,
-          "to" => updated.subscription_status
+          "from" => user.comped,
+          "to" => updated.comped
         })
 
         render_user(conn, updated)
@@ -576,35 +510,6 @@ defmodule FountainWeb.AdminController do
       end
     else
       render_user(conn, user)
-    end
-  end
-
-  defp apply_resync(conn, admin, user) do
-    case Billing.resync_from_stripe(user) do
-      {:ok, %Accounts.User{} = updated} ->
-        record_admin(admin, user, "admin.stripe.resynced", %{
-          "email" => user.email,
-          "from" => user.subscription_status,
-          "to" => updated.subscription_status
-        })
-
-        json(conn, %{
-          data: %{outcome: "resynced", subscription_status: updated.subscription_status}
-        })
-
-      {:ok, :sync_enqueued} ->
-        record_admin(admin, user, "admin.stripe.resynced", %{
-          "email" => user.email,
-          "outcome" => "customer_sync_enqueued"
-        })
-
-        json(conn, %{data: %{outcome: "customer_sync_enqueued"}})
-
-      {:error, :comped} ->
-        refuse(conn, "comped", "Account is comped — Stripe does not drive its status.")
-
-      {:error, _} ->
-        stripe_refused(conn, "Could not resync — Stripe refused the read.")
     end
   end
 
@@ -679,12 +584,6 @@ defmodule FountainWeb.AdminController do
     conn
     |> put_status(:unprocessable_entity)
     |> json(%{error: error, message: message})
-  end
-
-  defp stripe_refused(conn, message) do
-    conn
-    |> put_status(:bad_gateway)
-    |> json(%{error: "stripe_refused", message: message})
   end
 
   defp parse_int(nil, default), do: default

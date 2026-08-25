@@ -58,7 +58,6 @@ defmodule FountainWeb.EmailVerificationController do
                 # Task.async with no await, so it could be killed when the
                 # request process finished and a Stripe error vanished silently,
                 # leaving an account with no customer id.
-                Fountain.Workers.StripeCustomerSync.enqueue(verified_user)
 
                 # Only on this branch, never the already-verified one below —
                 # the welcome fires on the verification transition (#449).
@@ -142,7 +141,6 @@ defmodule FountainWeb.EmailVerificationController do
       {:ok, verified} ->
         # Same follow-on work the browser route does — the account must not
         # end up in a different state depending on which surface finished it.
-        Fountain.Workers.StripeCustomerSync.enqueue(verified)
         Fountain.Workers.WelcomeEmail.enqueue(verified)
 
         json(conn, %{

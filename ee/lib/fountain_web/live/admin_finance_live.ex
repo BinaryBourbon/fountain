@@ -248,12 +248,12 @@ defmodule FountainWeb.Live.AdminFinanceLive do
       <%!-- ── The three numbers, and the one that matters ── --%>
       <section class="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <div class="bg-white rounded shadow border border-zinc-200 px-4 py-3">
-          <div class="text-xs text-zinc-500">MRR</div>
+          <div class="text-xs text-zinc-500">Credit earned</div>
           <div class="text-2xl font-semibold tabular-nums">
-            {money(@finance.revenue.mrr_cents)}
+            {money(@finance.revenue.earned_cents)}
           </div>
           <div class="text-xs text-zinc-500">
-            active subscriptions, priced per plan
+            burned this period, at the customer price
           </div>
         </div>
         <div class="bg-white rounded shadow border border-zinc-200 px-4 py-3">
@@ -294,65 +294,34 @@ defmodule FountainWeb.Live.AdminFinanceLive do
         </div>
       </section>
 
-      <%!-- ── Revenue ── --%>
+      <%!-- ── Revenue: credit (ADR 0031) ── --%>
       <section :if={@billing_enabled} class="space-y-3">
         <h2 class="text-lg font-medium">Revenue</h2>
-        <div :if={@finance.revenue.by_plan == []} class="text-sm text-zinc-500">
-          No active subscriptions.
-        </div>
-        <table
-          :if={@finance.revenue.by_plan != []}
-          class="w-full text-sm bg-white rounded shadow border border-zinc-200"
-        >
-          <thead class="text-left text-zinc-500 border-b border-zinc-200">
-            <tr>
-              <th class="px-4 py-2">Plan</th>
-              <th class="px-4 py-2 text-right">Accounts</th>
-              <th class="px-4 py-2 text-right">Plan MRR</th>
-              <th class="px-4 py-2 text-right">Total</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr :for={line <- @finance.revenue.by_plan} class="border-b border-zinc-100">
-              <td class="px-4 py-2">
-                {line.plan.name}
-                <span class="text-xs text-zinc-400">
-                  {Fountain.Plans.format_usd(line.plan.monthly_cents)}/mo · {money(
-                    line.plan.included_credit_cents
-                  )} credit
-                </span>
-              </td>
-              <td class="px-4 py-2 text-right tabular-nums">{line.accounts}</td>
-              <td class="px-4 py-2 text-right tabular-nums">{money(line.plan_cents)}</td>
-              <td class="px-4 py-2 text-right tabular-nums font-medium">
-                {money(line.plan_cents)}
-              </td>
-            </tr>
-          </tbody>
-          <tfoot class="border-t border-zinc-200 font-medium">
-            <tr>
-              <td class="px-4 py-2" colspan="4">MRR</td>
-              <td class="px-4 py-2 text-right tabular-nums">
-                {money(@finance.revenue.mrr_cents)}
-              </td>
-            </tr>
-          </tfoot>
-        </table>
-        <div class="text-xs text-zinc-500 space-x-3">
-          <span title="What past_due accounts would bill at their current plan — revenue that has not arrived.">
-            At risk (past_due):
-            <span class="tabular-nums">{money(@finance.revenue.at_risk_cents)}</span>
-          </span>
-          <span title="What trialing accounts will bill if they convert.">
-            · In trial: <span class="tabular-nums">{money(@finance.revenue.trialing_cents)}</span>
-          </span>
-          <span title="What comped accounts would bill — the size of the discount, and it is not revenue.">
-            · Comped: <span class="tabular-nums">{money(@finance.revenue.comped_cents)}</span>
-          </span>
+        <div class="grid grid-cols-2 lg:grid-cols-3 gap-3">
+          <div class="bg-white rounded shadow border border-zinc-200 px-4 py-3">
+            <div class="text-xs text-zinc-500">Credit earned</div>
+            <div class="text-xl font-semibold tabular-nums">
+              {money(@finance.revenue.earned_cents)}
+            </div>
+            <div class="text-xs text-zinc-500">burned by paying accounts this period</div>
+          </div>
+          <div class="bg-white rounded shadow border border-zinc-200 px-4 py-3">
+            <div class="text-xs text-zinc-500">Credit sold</div>
+            <div class="text-xl font-semibold tabular-nums">
+              {money(@finance.revenue.sold_cents)}
+            </div>
+            <div class="text-xs text-zinc-500">packs bought this period; deferred until burned</div>
+          </div>
+          <div class="bg-white rounded shadow border border-zinc-200 px-4 py-3">
+            <div class="text-xs text-zinc-500">Comped burn</div>
+            <div class="text-xl font-semibold tabular-nums">
+              {money(@finance.revenue.comped_cents)}
+            </div>
+            <div class="text-xs text-zinc-500">what free accounts used, at the customer price</div>
+          </div>
         </div>
       </section>
 
-      <%!-- ── Cost ── --%>
       <section class="space-y-3">
         <h2 class="text-lg font-medium">Cost</h2>
         <div class="grid grid-cols-2 lg:grid-cols-3 gap-3">
@@ -518,7 +487,7 @@ defmodule FountainWeb.Live.AdminFinanceLive do
             <thead class="text-left text-zinc-500 border-b border-zinc-200">
               <tr>
                 <th class="px-3 py-2">Account</th>
-                <th class="px-3 py-2">Plan</th>
+                <th class="px-3 py-2 text-right">Balance</th>
                 <th class="px-3 py-2 text-right">Revenue</th>
                 <th class="px-3 py-2 text-right" title="Turn hours with a prompt in flight">
                   Turn h
@@ -553,18 +522,22 @@ defmodule FountainWeb.Live.AdminFinanceLive do
                   <.link navigate={~p"/admin/users/#{t.user_id}"} class="hover:underline">
                     {t.email}
                   </.link>
-                  <span class={[
-                    "ml-1 inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium border",
-                    subscription_status_color(t.subscription_status)
-                  ]}>
-                    {t.subscription_status}
+                  <span
+                    :if={t.comped}
+                    class={[
+                      "ml-1 inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium border",
+                      account_badge_class(true)
+                    ]}
+                  >
+                    comped
                   </span>
                 </td>
-                <%!-- Both plans, when they differ: the trial's numbers are
-                      what the allowance column is measured against, and the
-                      tier is what converting would bill. Showing only one of
-                      them makes the other column look wrong. --%>
-                <td class="px-3 py-2 text-xs">{plan_label(t)}</td>
+                <td class={[
+                  "px-3 py-2 text-right tabular-nums text-xs",
+                  t.credit_balance_cents < 0 && "text-amber-700"
+                ]}>
+                  {money(t.credit_balance_cents)}
+                </td>
                 <td class="px-3 py-2 text-right tabular-nums text-xs">
                   {money(t.revenue_cents)}
                 </td>
@@ -641,17 +614,17 @@ defmodule FountainWeb.Live.AdminFinanceLive do
   defp gross_margin(finance) do
     case total_cost(finance) do
       nil -> nil
-      cost -> finance.revenue.mrr_cents - cost
+      cost -> finance.revenue.earned_cents - cost
     end
   end
 
   defp margin_pct(finance) do
-    mrr = finance.revenue.mrr_cents
+    earned = finance.revenue.earned_cents
 
     case gross_margin(finance) do
       nil -> nil
-      _ when mrr <= 0 -> "no revenue to divide"
-      margin -> "#{round(margin / mrr * 100)}% of MRR"
+      _ when earned <= 0 -> "no revenue to divide"
+      margin -> "#{round(margin / earned * 100)}% of credit earned"
     end
   end
 
@@ -685,11 +658,6 @@ defmodule FountainWeb.Live.AdminFinanceLive do
 
   defp pluralize(1, singular, _plural), do: singular
   defp pluralize(_n, _singular, plural), do: plural
-
-  defp plan_label(%{plan: plan, effective_plan: plan}), do: plan.name
-
-  defp plan_label(%{plan: plan, effective_plan: effective}),
-    do: "#{effective.name} → #{plan.name}"
 
   defp basis_label(:active), do: "active hours"
   defp basis_label(:turn), do: "turn hours"

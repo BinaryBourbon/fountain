@@ -32,7 +32,7 @@ Include it, and the pattern is always safe to paste.
 |---|---|
 | `Fountain.Release.verify_email("a@b.c")` | Marks an account's email verified, and sends nothing. It is the escape hatch for a mail provider that broke. Since ADR 0011, `EMAIL_DELIVERY=none` self-verifies at registration. |
 | `Fountain.Release.promote_admin("a@b.c")` | Grants the admin role. The admin audit trail records it under a system actor. It is the manual alternative to `FIRST_USER_ADMIN=true` (ADR 0011). |
-| `Fountain.Release.expire_legacy_trials(dry_run: true)` | Reports. Drop `dry_run` and it backfills the trial end dates on legacy `trialing` accounts that have none. |
+| `Fountain.Release.rebuild_credit_lots()` | Replays every credit ledger and rewrites the lots. Safe to rerun. |
 | `Fountain.Release.migrate()` | Runs the migrations that are due, by hand. It is what `bin/migrate` runs. They already run at each boot, unless `MIGRATE_ON_BOOT=false`. In that case this, in a Job before the rollout, is how they run at all. That switch never skips it. |
 | `Fountain.Release.rollback(Fountain.Repo, version)` | Rolls migrations back to a version. It is a last resort. Read [Upgrade an instance](upgrade.md) first. |
 
@@ -41,13 +41,10 @@ Include it, and the pattern is always safe to paste.
 Use `rollback/2` to reverse one migration that you understand. Do not attempt
 to reverse a whole release's migrations on production data.
 
-`expire_legacy_trials/1` changes account state. Run it with `dry_run: true`
-first, and read the report.
 
 ## Related
 
 - [Upgrade an instance](upgrade.md).
-- [Start billing](billing.md), which is where `expire_legacy_trials/1` <!-- vale disable-line STE.IngForms -->
-  matters.
+- [Start billing](billing.md). <!-- vale disable-line STE.IngForms -->
 - [Nobody can log in](../../troubleshooting/nobody-can-log-in.md), which is
   where `verify_email/1` matters.

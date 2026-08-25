@@ -118,25 +118,17 @@ defmodule Fountain.Billing.Finance do
   alias Fountain.Billing
   alias Fountain.Billing.SandboxUsage
   alias Fountain.Billing.UsageEvent
-  alias Fountain.Plans
   alias Fountain.Repo
   alias Fountain.Team.Comms
 
   @message_events ~w(comms_email_sent comms_sms_sent comms_sms_received)
 
-  # Statuses that are paying today. `trialing` will be, `past_due` was, and
-  # `comped` never will be — none of them is MRR.
-  @paying ~w(active)
-
   @typedoc "One tenant's money for a period. Every `*_cents` may be `nil` when the rate card is silent."
   @type tenant_row :: %{
           user_id: binary(),
           email: String.t(),
-          plan: Plans.t(),
-          effective_plan: Plans.t(),
-          subscription_status: String.t(),
+          comped: boolean(),
           revenue_cents: non_neg_integer(),
-          plan_cents: non_neg_integer(),
           turn_hours: float(),
           credit_granted_cents: non_neg_integer(),
           credit_burned_cents: non_neg_integer(),
@@ -308,109 +300,19 @@ defmodule Fountain.Billing.Finance do
   ## ── revenue ─────────────────────────────────────────────────────────────
 
   @doc """
-  Recurring revenue, by plan, from the tenant rows `summary/1` built.
-
-  `:mrr_cents` counts `active` subscriptions only. It replaced a single
-  `active × STRIPE_PRICE_MONTHLY_CENTS`, which had been silently wrong since
-  the tiers landed (#991): it charged every active account the legacy price,
-  so a deployment selling Scale under-reported its own revenue by a factor of
-  seven.
-
-  `:at_risk_cents` is what `past_due` accounts would be paying, and
-  `:comped_cents` what comped ones would — both real numbers an operator
-  wants, neither of them MRR.
+  Revenue is credit (ADR 0031): what was **sold** (packs, cash in — a
+  liability until burned), what was **earned** (credit burned by turns, rent
+  and messages), and what comps cost (burn on comped accounts, which nobody
+  paid for). There is no MRR.
   """
   @spec revenue([tenant_row()]) :: map()
   def revenue(tenants) when is_list(tenants) do
-    paying = Enum.filter(tenants, &(&1.subscription_status in @paying))
-
-    by_plan =
-      paying
-      |> Enum.group_by(& &1.plan.slug)
-      |> Enum.map(fn {slug, group} ->
-        %{
-          plan: Plans.resolve(slug),
-          accounts: length(group),
-          plan_cents: group |> Enum.map(& &1.plan_cents) |> Enum.sum()
-        }
-      end)
-      |> Enum.sort_by(& &1.plan.order)
-
     %{
-      mrr_cents: paying |> Enum.map(& &1.revenue_cents) |> Enum.sum(),
-      plan_cents: paying |> Enum.map(& &1.plan_cents) |> Enum.sum(),
-      # Packs sold in the period, by anyone. Not MRR: one-time, and a
-      # liability until burned (`credits/1` carries the deferred balance).
-      credit_sales_cents: tenants |> Enum.map(& &1.credit_sold_cents) |> Enum.sum(),
-      by_plan: by_plan,
-      at_risk_cents: status_cents(tenants, "past_due"),
-      comped_cents: status_cents(tenants, "comped"),
-      trialing_cents: status_cents(tenants, "trialing")
+      sold_cents: tenants |> Enum.map(& &1.credit_sold_cents) |> Enum.sum(),
+      earned_cents: tenants |> Enum.map(& &1.revenue_cents) |> Enum.sum(),
+      comped_cents:
+        tenants |> Enum.filter(& &1.comped) |> Enum.map(& &1.credit_burned_cents) |> Enum.sum()
     }
-  end
-
-  # What a non-paying cohort *would* bill at their current plan — the size of
-  # the conversion, or of the discount.
-  defp status_cents(tenants, status) do
-    tenants
-    |> Enum.filter(&(&1.subscription_status == status))
-    |> Enum.map(& &1.plan_cents)
-    |> Enum.sum()
-  end
-
-  @doc """
-  Monthly recurring revenue on its own, in two grouped queries — for `/admin`,
-  which wants the number without the whole finance pass behind it.
-
-  Same arithmetic as `revenue/1`, and `finance_test.exs` asserts the two agree:
-  a tile and a table that disagree about MRR is how an operator stops trusting
-  both.
-
-  Replaces `active × STRIPE_PRICE_MONTHLY_CENTS`, which had been quietly wrong
-  since the tiers landed (#991) — it charged every active account the legacy
-  $29, so a deployment selling Scale under-reported itself sevenfold.
-  """
-  @spec mrr() :: %{
-          mrr_cents: non_neg_integer(),
-          plan_cents: non_neg_integer(),
-          by_plan: [map()]
-        }
-  def mrr do
-    counts =
-      Repo.all(
-        from u in User,
-          where: u.subscription_status in ^@paying,
-          group_by: u.plan,
-          select: {u.plan, count(u.id)}
-      )
-
-    by_plan =
-      counts
-      |> Enum.map(fn {slug, accounts} ->
-        plan = Plans.resolve(slug)
-
-        %{
-          plan: plan,
-          accounts: accounts,
-          plan_cents: accounts * plan.monthly_cents
-        }
-      end)
-      # A null `plan` and an unknown slug both resolve to the deployment
-      # default, so two groups can land on one plan; merge them rather than
-      # rendering the same tier twice.
-      |> Enum.group_by(& &1.plan.slug)
-      |> Enum.map(fn {_slug, group} ->
-        %{
-          plan: hd(group).plan,
-          accounts: group |> Enum.map(& &1.accounts) |> Enum.sum(),
-          plan_cents: group |> Enum.map(& &1.plan_cents) |> Enum.sum()
-        }
-      end)
-      |> Enum.sort_by(& &1.plan.order)
-
-    plan_cents = by_plan |> Enum.map(& &1.plan_cents) |> Enum.sum()
-
-    %{mrr_cents: plan_cents, plan_cents: plan_cents, by_plan: by_plan}
   end
 
   ## ── cost ────────────────────────────────────────────────────────────────
@@ -497,19 +399,6 @@ defmodule Fountain.Billing.Finance do
   ## ── one tenant ──────────────────────────────────────────────────────────
 
   defp tenant_row(user, usage, channels, messages, ledger, card, fraction) do
-    # `plan` is the tier the subscription is for — what Stripe charges, and
-    # what a trial converts into. `effective_plan` is whose numbers apply
-    # today, which during a trial is the smaller `trial` plan (#1022).
-    #
-    # Revenue reads the first and the grant reads the second, and using one
-    # for the other is the specific mistake this split exists to prevent: a
-    # trialing account is granted the trial's $10, not its future tier's $50.
-    plan = Plans.resolve(user)
-    effective_plan = Plans.effective(user)
-    paying? = user.subscription_status in @paying
-
-    plan_cents = plan.monthly_cents
-
     sandbox_cost =
       sum_or_nil(
         usage.by_provider,
@@ -522,22 +411,16 @@ defmodule Fountain.Billing.Finance do
 
     cost = add_or_nil([sandbox_cost, contact_cost, message_cost])
 
-    # Revenue is what they are billed *this month*, so it is the full monthly
-    # price rather than a pro-rated one, while the recurring contact cost above
-    # is pro-rated to the window being looked at. They are answering different
-    # questions and a part-month view will show the two out of step; the panel
-    # says which window it is on.
-    revenue_cents = if paying?, do: plan_cents, else: 0
+    # Earned revenue is credit burned, unless the account is comped and the
+    # burn was never paid for.
+    revenue_cents = if user.comped, do: 0, else: ledger.burned
 
     %{
       user_id: user.id,
       email: user.email,
-      plan: plan,
-      subscription_status: user.subscription_status,
+      comped: user.comped,
       revenue_cents: revenue_cents,
-      plan_cents: plan_cents,
       turn_hours: SandboxUsage.hours(turn_seconds),
-      effective_plan: effective_plan,
       credit_granted_cents: ledger.granted,
       credit_burned_cents: ledger.burned,
       credit_sold_cents: ledger.sold,
@@ -642,21 +525,16 @@ defmodule Fountain.Billing.Finance do
 
   ## ── the reads ───────────────────────────────────────────────────────────
 
-  # Every account that can carry a plan. Deleted accounts are gone; suspended
-  # ones are still subscribed and still cost money, so they stay.
+  # Every account. Deleted accounts are gone; suspended ones still cost money,
+  # so they stay.
   defp paying_users do
     Repo.all(
       from u in User,
         select: %{
           id: u.id,
           email: u.email,
-          plan: u.plan,
-          subscription_status: u.subscription_status,
-          credit_balance_cents: u.credit_balance_cents,
-          # Not decoration: an account with no subscription has no item for
-          # the contact add-on to sit on, so `sync_contact_addon/1` bills it
-          # nothing however many contacts it holds.
-          stripe_subscription_id: u.stripe_subscription_id
+          comped: u.comped,
+          credit_balance_cents: u.credit_balance_cents
         }
     )
   end

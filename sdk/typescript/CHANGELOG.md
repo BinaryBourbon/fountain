@@ -10,6 +10,28 @@ server releases.
 
 ---
 
+## [1.0.0] — 2026-08-25
+
+### Changed
+
+- Credits are the product (ADR 0031). `GET /api/account/billing` returns
+  `comped`, `has_stripe_customer`, `sandbox_cap`, `period`, `credits` and
+  `usage`; the subscription fields (`status`, `plan`, `trial_ends_at`,
+  `current_period_*`, `cancel_at_period_end`) are gone.
+- A `402` now carries `insufficient_credits` (mapped to
+  `SubscriptionRequiredError`, kept under that name); a full fleet is
+  `503 fleet_full` (mapped to `NotReadyError`).
+- Admin user objects carry `comped` instead of `subscription_status`,
+  `plan`, `trial_ends_at` and the period fields; `/api/auth/me` carries
+  `comped`.
+
+### Removed
+
+- `POST /api/account/billing/portal`, `POST /api/account/billing/checkout`,
+  `POST /api/admin/users/{id}/extend-trial`,
+  `POST /api/admin/users/{id}/resync-stripe`. Buying credit is
+  `POST /api/account/billing/credits/checkout`.
+
 ## [0.4.0] — 2026-08-25
 
 ### Removed

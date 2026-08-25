@@ -27,7 +27,7 @@ defmodule Fountain.Workers.CreditPricerTest do
   end
 
   test "no-ops with no pricing_since and with billing off" do
-    user = insert_active_user()
+    user = insert_empty_user()
     conv = setup_conv(user)
     closed_turn(conv, ~U[2026-08-02 10:00:00Z], 3600)
 
@@ -40,7 +40,7 @@ defmodule Fountain.Workers.CreditPricerTest do
   end
 
   test "a closed hour on sprites burns 25 cents, once, with the turn as the resource" do
-    user = insert_active_user()
+    user = insert_empty_user()
     conv = setup_conv(user)
     turn = closed_turn(conv, ~U[2026-08-02 10:00:00Z], 3600)
 
@@ -61,7 +61,7 @@ defmodule Fountain.Workers.CreditPricerTest do
   end
 
   test "open turns, runner turns, and turns before pricing_since are not priced" do
-    user = insert_active_user()
+    user = insert_empty_user()
     conv = setup_conv(user)
     # Still running.
     insert_turn(conv, %{status: "running", started_at: ~U[2026-08-02 10:00:00Z]})
@@ -76,7 +76,7 @@ defmodule Fountain.Workers.CreditPricerTest do
   end
 
   test "a turn that rounds to zero cents writes nothing and is not an error" do
-    user = insert_active_user()
+    user = insert_empty_user()
     conv = setup_conv(user)
     closed_turn(conv, ~U[2026-08-02 10:00:00Z], 60)
 
@@ -85,7 +85,7 @@ defmodule Fountain.Workers.CreditPricerTest do
   end
 
   test "a comped tenant's turns are still written to the ledger" do
-    user = insert_active_user()
+    user = insert_empty_user()
     {:ok, user} = Billing.comp_account(user)
     conv = setup_conv(user)
     closed_turn(conv, ~U[2026-08-02 10:00:00Z], 3600)
@@ -96,7 +96,7 @@ defmodule Fountain.Workers.CreditPricerTest do
   end
 
   test "the look-back never reaches further than seven days before now" do
-    user = insert_active_user()
+    user = insert_empty_user()
     conv = setup_conv(user)
     closed_turn(conv, ~U[2026-07-20 10:00:00Z], 3600)
     closed_turn(conv, ~U[2026-08-02 10:00:00Z], 3600)
@@ -112,13 +112,13 @@ defmodule Fountain.Workers.CreditPricerTest do
     end
 
     test "an unpriced message burns nothing" do
-      user = insert_active_user()
+      user = insert_empty_user()
       {:ok, _} = Billing.record_usage(user.id, "comms_email_sent", nil, "contact", %{})
       assert %{messages: 0} = CreditPricer.run(since: @since, now: @now)
     end
 
     test "a priced message burns once, inbound SMS included" do
-      user = insert_active_user()
+      user = insert_empty_user()
       cfg = Application.get_env(:fountain, :credits)
 
       Application.put_env(

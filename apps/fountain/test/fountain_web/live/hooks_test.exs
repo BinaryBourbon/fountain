@@ -8,29 +8,19 @@ defmodule FountainWeb.Live.HooksTest do
 
   # ── helpers ─────────────────────────────────────────────────────────────────
 
-  # Insert a verified user whose subscription_status is "canceled".
-  # Uses the billing_changeset so the value passes validation.
+  # An account that cannot spend (ADR 0031): the opening credit burned away.
   defp insert_canceled_user do
     user = insert_verified_user()
 
-    {:ok, updated} =
-      user
-      |> User.billing_changeset(%{subscription_status: "canceled"})
-      |> Repo.update()
+    {:ok, _} =
+      Fountain.Credits.debit(user.id, Fountain.Credits.balance(user.id) + 1, "burn_turn",
+        idempotency_key: "drain-#{user.id}"
+      )
 
-    updated
+    Repo.reload!(user)
   end
 
-  defp insert_past_due_user do
-    user = insert_verified_user()
-
-    {:ok, updated} =
-      user
-      |> User.billing_changeset(%{subscription_status: "past_due"})
-      |> Repo.update()
-
-    updated
-  end
+  defp insert_past_due_user, do: insert_canceled_user()
 
   # ── :require_authenticated_user ─────────────────────────────────────────────
 
@@ -96,8 +86,8 @@ defmodule FountainWeb.Live.HooksTest do
   #
   # There is no router-level subscription gate any more: it guarded exactly one
   # page, /conversations/new, which moved out to the conversations app. The
-  # gate that protects spend is `Billing.assert_active!/1` in the context, so
-  # every door gets it — see ee/test/fountain/billing_gate_test.exs.
+  # gate that protects spend is `Billing.check_spend/1` in the context, so
+  # every door gets it — see ee/test/fountain/credits_enforcement_test.exs.
 
   describe ":assign_subscription_state hook" do
     test "a past_due account still reaches the console", %{conn: conn} do

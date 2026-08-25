@@ -354,23 +354,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/admin/users/{id}/extend-trial": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Extend an account's trial */
-        post: operations["FountainWeb.AdminController.extend_trial"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/conversations/{conversation_id}/prompts": {
         parameters: {
             query?: never;
@@ -439,26 +422,6 @@ export interface paths {
          * @description Sets the conversation's `last_read_at` to now, which is what clears its unread state. Idempotent.
          */
         post: operations["FountainWeb.ConversationController.read"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/account/billing/portal": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Mint a Stripe Billing Portal URL
-         * @description Where an existing customer manages payment methods, invoices and cancellation. Refused for a comped account and for an account that has never been a Stripe customer.
-         */
-        post: operations["FountainWeb.BillingApiController.portal"];
         delete?: never;
         options?: never;
         head?: never;
@@ -669,26 +632,6 @@ export interface paths {
          * @description Opens the agent's team conversation — which provisions its sandbox — with an optional name (the conversation title), environment (provision from it instead of the agent's own; must satisfy `allowed_environment_ids`) and vault (must satisfy `allowed_vault_ids`). 201 with the teammate; 200 when the agent was already on the team (its live conversation is returned, the attributes ignored).
          */
         post: operations["FountainWeb.TeamController.create"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/admin/users/{id}/resync-stripe": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Re-read an account's subscription from Stripe
-         * @description The in-app remedy for webhook drift (#502).
-         */
-        post: operations["FountainWeb.AdminController.resync_stripe"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1427,26 +1370,6 @@ export interface paths {
          * @description Sets what the teammate is called — its conversation's title (#831). `name` null or blank goes back to the agent's name. The name carries over to the fresh conversation opened when this one is past resuming. Audited as `team.renamed`; the stream sends `team` so clients re-list.
          */
         patch: operations["FountainWeb.TeamController.update"];
-        trace?: never;
-    };
-    "/api/account/billing/checkout": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Mint a Stripe Checkout URL
-         * @description Starts a subscription. Refused for a comped account, and refused with `subscription_exists` when Stripe already holds a live subscription — Checkout on top of one creates a second, duplicate subscription. Use the portal endpoint in that case. `plan` names the tier to buy; omit it for this deployment's default.
-         */
-        post: operations["FountainWeb.BillingApiController.checkout"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
         trace?: never;
     };
     "/api/team/comms": {
@@ -2917,18 +2840,20 @@ export interface components {
          * @description Identity of the account the bearer token belongs to.
          */
         AuthMeResponse: {
+            /** @description Null when billing is off. */
+            comped?: boolean | null;
             /** Format: email */
-            email: string;
-            email_verified: boolean;
+            email?: string;
+            email_verified?: boolean;
+            /** Format: date-time */
+            expires_at?: string | null;
             /** Format: uuid */
             id: string;
             onboarding_completed?: boolean;
             /** @description Wizard position. Only `completed` means anything to an API client. */
             onboarding_state?: string | null;
             /** @enum {string} */
-            role: "user" | "admin";
-            /** @description Always null when billing is disabled on the instance (#480). */
-            subscription_status?: string | null;
+            role?: "user" | "admin";
         };
         /** SupportReportCreateRequest */
         SupportReportCreateRequest: {
@@ -3384,14 +3309,6 @@ export interface components {
             };
             name: string;
         };
-        /** AdminResyncResponse */
-        AdminResyncResponse: {
-            data: {
-                /** @enum {string} */
-                outcome: "resynced" | "customer_sync_enqueued";
-                subscription_status?: string | null;
-            };
-        };
         /**
          * AdminAuditListResponse
          * @description Cross-tenant audit events; each carries the tenant it belongs to.
@@ -3608,11 +3525,10 @@ export interface components {
          */
         AdminUser: {
             active_sandboxes?: number;
-            cancel_at_period_end?: boolean | null;
+            /** @description A free account: the balance is never checked (ADR 0031). */
+            comped?: boolean;
             /** @description Prepaid balance in cents (ADR 0030). May be negative. Zero while credits are not active on this deployment. */
             credit_balance_cents?: number;
-            /** Format: date-time */
-            current_period_end?: string | null;
             email: string;
             email_verified?: boolean;
             /** Format: date-time */
@@ -3628,21 +3544,13 @@ export interface components {
             max_concurrent_sandboxes?: number | null;
             /** Format: date-time */
             onboarding_completed_at?: string | null;
-            /**
-             * @description Plan slug
-             * @enum {string}
-             */
-            plan?: "solo" | "team" | "scale" | "legacy";
             /** @enum {string} */
             role: "admin" | "user";
             /** @description Admin override of the plan's cap. Null means the plan's cap applies. */
             sandbox_limit_override?: number | null;
-            subscription_status?: string | null;
             suspended?: boolean;
             /** Format: date-time */
             suspended_at?: string | null;
-            /** Format: date-time */
-            trial_ends_at?: string | null;
         };
         /** EnvironmentRequest */
         EnvironmentRequest: {
@@ -3785,10 +3693,6 @@ export interface components {
             /** Format: password */
             password: string;
         };
-        /** AdminExtendTrialRequest */
-        AdminExtendTrialRequest: {
-            days: number;
-        };
         /** AuditEventListResponse */
         AuditEventListResponse: {
             data: components["schemas"]["AuditEvent"][];
@@ -3848,8 +3752,6 @@ export interface components {
         /** BillingResponse */
         BillingResponse: {
             data: {
-                /** @description Access continues until current_period_end. */
-                cancel_at_period_end?: boolean;
                 /** @description The prepaid balance, in cents. Null while this deployment has not started burning credits; a client must not show a zero balance then. Nothing is refused at zero yet. */
                 credits?: {
                     /** @description May be negative: an in-flight turn that crosses zero finishes. */
@@ -3865,45 +3767,18 @@ export interface components {
                     /** @description What one hour of turn time costs. */
                     turn_hour_cents?: number;
                 } | null;
-                /** Format: date-time */
-                current_period_end?: string | null;
-                /**
-                 * Format: date-time
-                 * @description Start of the period Stripe is invoicing. Null for a comped account, a deployment without Stripe, and any subscription that has not sent a webhook since this field existed.
-                 */
-                current_period_start?: string | null;
                 has_stripe_customer?: boolean;
-                /** @description The window the usage numbers cover: the period Stripe is invoicing, or the current calendar month when there is no such period. */
+                /** @description The calendar month the usage numbers cover. */
                 period?: {
                     /** Format: date-time */
                     end?: string;
-                    /**
-                     * @description `calendar_month` means these numbers do not line up with an invoice — the account is comped, self-hosted, or has not reported a period yet.
-                     * @enum {string}
-                     */
-                    source?: "subscription" | "calendar_month";
+                    /** @enum {string} */
+                    source?: "calendar_month";
                     /** Format: date-time */
                     start?: string;
                 };
-                /** @description The account's plan and what it entitles them to. */
-                plan?: {
-                    /** @description The plan's concurrency cap. */
-                    concurrent_sandboxes?: number;
-                    /** @description Credit the plan puts into the balance at the start of each billing period, in cents. Unused plan credit expires with the period. */
-                    included_credit_cents?: number;
-                    monthly_cents?: number;
-                    name?: string;
-                    /** @description The cap actually enforced for this account. Differs from concurrent_sandboxes when an operator has set an override. */
-                    sandbox_limit?: number;
-                    /** @enum {string} */
-                    slug?: "solo" | "team" | "scale" | "legacy";
-                    /** @description Most teammate contacts this account may hold at once. */
-                    team_contacts?: number;
-                };
-                /** @enum {string|null} */
-                status: "trialing" | "active" | "past_due" | "canceled" | "comped" | null;
-                /** Format: date-time */
-                trial_ends_at?: string | null;
+                /** @description How many sandboxes this account may run at once: an admin override, or what the balance funds (ADR 0031). */
+                sandbox_cap?: number;
                 usage: {
                     conversations?: number;
                     /** @description Active sandbox minutes inside the period, parked time excluded. */
@@ -4842,60 +4717,6 @@ export interface operations {
             };
         };
     };
-    "FountainWeb.AdminController.extend_trial": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        /** @description Days */
-        requestBody?: {
-            content: {
-                "application/json": components["schemas"]["AdminExtendTrialRequest"];
-            };
-        };
-        responses: {
-            /** @description Account */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AdminUserResponse"];
-                };
-            };
-            /** @description Admin required */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Refused */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-        };
-    };
     "FountainWeb.ConversationController.prompt": {
         parameters: {
             query?: never;
@@ -5032,62 +4853,6 @@ export interface operations {
             };
             /** @description Not found */
             404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-        };
-    };
-    "FountainWeb.BillingApiController.portal": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Stripe URL */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["StripeUrlResponse"];
-                };
-            };
-            /** @description Insufficient scope */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Billing disabled */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Nothing to manage */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Stripe unreachable */
-            502: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -5637,55 +5402,6 @@ export interface operations {
                 };
             };
             /** @description Not allowed by the agent */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-        };
-    };
-    "FountainWeb.AdminController.resync_stripe": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Outcome */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AdminResyncResponse"];
-                };
-            };
-            /** @description Admin required */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Refused */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -7771,74 +7487,6 @@ export interface operations {
             };
             /** @description Name too long */
             422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-        };
-    };
-    "FountainWeb.BillingApiController.checkout": {
-        parameters: {
-            query?: {
-                /** @description Plan slug to subscribe to. */
-                plan?: "solo" | "team" | "scale";
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Stripe URL */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["StripeUrlResponse"];
-                };
-            };
-            /** @description Insufficient scope */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Billing disabled */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Live subscription exists */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Comped */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Stripe unreachable */
-            502: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -1,6 +1,6 @@
 defmodule Fountain.Team.CommsPlanTest do
   @moduledoc """
-  The plan's ceiling on teammate contacts, and the add-on quantity sync that
+  The ceiling on teammate contacts (`TEAM_CONTACT_CEILING`), and that
   runs when one is provisioned or released.
 
   Contacts are billed per unit, so the ceiling is not an entitlement. It bounds
@@ -79,15 +79,15 @@ defmodule Fountain.Team.CommsPlanTest do
   end
 
   defp fill_to_ceiling(user) do
-    for n <- 1..Plans.team_contacts(user) do
+    for n <- 1..Application.get_env(:fountain, :team_contact_ceiling, 10) do
       {_agent, {:ok, _contact}} = provision(user, "mate-#{n}")
     end
   end
 
   describe "contact_count/1" do
     test "counts only this tenant's contacts" do
-      user = insert_active_user(plan: "team")
-      other = insert_active_user(plan: "team")
+      user = insert_active_user()
+      other = insert_active_user()
 
       {_a, {:ok, _}} = provision(user, "Ada")
       {_b, {:ok, _}} = provision(other, "Bob")
@@ -97,35 +97,41 @@ defmodule Fountain.Team.CommsPlanTest do
     end
   end
 
-  describe "the plan ceiling" do
+  describe "the contact ceiling" do
     test "a teammate under the ceiling gets a contact" do
-      user = insert_active_user(plan: "solo")
+      user = insert_active_user()
       assert {_agent, {:ok, _contact}} = provision(user, "Ada")
     end
 
     test "refuses at the ceiling, and says which one" do
-      user = insert_active_user(plan: "solo")
+      user = insert_active_user()
       fill_to_ceiling(user)
 
-      limit = Plans.team_contacts("solo")
+      limit = Application.get_env(:fountain, :team_contact_ceiling, 10)
       {_agent, result} = provision(user, "one-too-many")
 
       assert {:error, {:contact_limit_reached, %{count: ^limit, limit: ^limit}}} = result
     end
 
-    test "a bigger plan allows more" do
-      solo = Plans.team_contacts("solo")
-      user = insert_active_user(plan: "team")
+    test "a raised ceiling allows more" do
+      previous = Application.get_env(:fountain, :team_contact_ceiling)
+      on_exit(fn -> Application.put_env(:fountain, :team_contact_ceiling, previous) end)
+      Application.put_env(:fountain, :team_contact_ceiling, 2)
 
-      for n <- 1..(solo + 1) do
-        assert {_agent, {:ok, _}} = provision(user, "mate-#{n}")
-      end
+      user = insert_active_user()
+      {_a, {:ok, _}} = provision(user, "mate-1")
+      {_b, {:ok, _}} = provision(user, "mate-2")
+      {_c, refused} = provision(user, "mate-3")
+      assert {:error, {:contact_limit_reached, _}} = refused
+
+      Application.put_env(:fountain, :team_contact_ceiling, 3)
+      assert {_agent, {:ok, _}} = provision(user, "mate-4")
     end
 
     # Nothing is bought before the ceiling is checked: a refused provision must
     # not leave an orphan inbox or number behind at the provider.
     test "buys nothing when it refuses" do
-      user = insert_active_user(plan: "solo")
+      user = insert_active_user()
       fill_to_ceiling(user)
       before = Comms.contact_count(user.id)
 
@@ -137,7 +143,7 @@ defmodule Fountain.Team.CommsPlanTest do
     end
 
     test "releasing one makes room again" do
-      user = insert_active_user(plan: "solo")
+      user = insert_active_user()
       fill_to_ceiling(user)
       {agent, _} = provision(user, "refused")
 

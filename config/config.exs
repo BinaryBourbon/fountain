@@ -28,11 +28,6 @@ config :fountain, Oban,
        # 05:41 UTC — after the 03:17 backup and the 04:23 retention prune, so
        # a backup always captures the accounts before the sweep removes them.
        {"41 5 * * *", Fountain.Workers.UnverifiedAccountPruner},
-       # 06:53 UTC — backstop for trials Stripe never closed out (#504). The
-       # 48h grace inside the sweep means Stripe's webhook retries always get
-       # the first shot; daily is fast enough for a backstop. The worker
-       # no-ops when billing is disabled.
-       {"53 6 * * *", Fountain.Workers.TrialSweeper},
        # 17:07 UTC — vault-secret expiry notices land mid-day for the US and
        # end-of-day for Europe, when someone is at a keyboard to rotate the
        # credential; the notice window is days wide, so the hour is about
@@ -78,6 +73,9 @@ config :fountain,
 # with users.sandbox_limit_override winning when set. fleet_ceiling bounds
 # the sum across every tenant to what the providers allow. runtime.exs
 # overrides from SANDBOX_*.
+# Teammate contacts a tenant may hold at once — an abuse ceiling, not a price.
+config :fountain, :team_contact_ceiling, 10
+
 config :fountain, :sandboxes,
   reserve_cents: 200,
   cap_floor: 2,
@@ -91,9 +89,10 @@ config :fountain, :credits,
   # When set, turns that ended at or after this instant are priced into the
   # ledger; nil means the pricer no-ops. runtime.exs reads CREDIT_PRICING_SINCE.
   pricing_since: nil,
-  # When true, a zero balance refuses new sandboxes and turns (ADR 0030
-  # decision 6). Off, the ledger is reported and nothing is refused.
-  enforce: false,
+  # The opening grant a new account gets (ADR 0031 decision 3), and how
+  # long it lasts.
+  opening_cents: 1_000,
+  opening_days: 14,
   turn_hour_cents: 25,
   number_cents: nil,
   inbox_cents: nil,

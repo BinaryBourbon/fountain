@@ -93,25 +93,4 @@ defmodule Fountain.AccountsSuspensionTest do
                })
     end
   end
-
-  describe "billing while suspended" do
-    test "webhooks still sync a suspended account's subscription status" do
-      user = insert_verified_user()
-
-      user =
-        Repo.update!(Ecto.Changeset.change(user, stripe_customer_id: "cus_suspension_test"))
-
-      {:ok, _, _} = Accounts.suspend_user(user)
-
-      event = %Stripe.Event{
-        type: "customer.subscription.updated",
-        data: %{object: %{customer: "cus_suspension_test", status: "active", trial_end: nil}}
-      }
-
-      assert {:ok, synced} = Fountain.Billing.sync_subscription(event)
-      assert synced.subscription_status == "active"
-      # and the suspension survives the sync
-      assert synced.suspended_at
-    end
-  end
 end

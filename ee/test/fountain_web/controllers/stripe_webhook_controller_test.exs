@@ -110,11 +110,9 @@ defmodule FountainWeb.StripeWebhookControllerTest do
 
       assert conn.status == 200
 
-      # The 200 alone is vacuous — the controller 200s on every handle_event
-      # outcome (#337). The state change is the assertion that can fail when
-      # the apply path breaks.
-      assert Fountain.Repo.get!(Fountain.Accounts.User, user.id).subscription_status ==
-               "active"
+      # A subscription event is nobody's business any more (ADR 0031):
+      # acknowledged, ignored, and the account untouched.
+      refute Fountain.Repo.get!(Fountain.Accounts.User, user.id).comped
     end
 
     # The :retry/500 arm (#337 gave every outcome a 200; #414 flagged that the
@@ -227,7 +225,7 @@ defmodule FountainWeb.StripeWebhookControllerTest do
     test "a transient failure persists a row; a retried failure bumps the count", %{conn: conn} do
       event = %Stripe.Event{
         id: "evt_fail_persist",
-        type: "customer.subscription.updated",
+        type: "charge.refunded",
         data: %{object: %{status: "active", customer: "cus_x", trial_end: nil}}
       }
 
@@ -236,7 +234,7 @@ defmodule FountainWeb.StripeWebhookControllerTest do
       assert post_stubbed(conn, event).status == 500
 
       row = failure_row("evt_fail_persist")
-      assert %{count: 1, resolved_at: nil, type: "customer.subscription.updated"} = row
+      assert %{count: 1, resolved_at: nil, type: "charge.refunded"} = row
       assert row.error =~ "database_unavailable"
 
       assert post_stubbed(conn, event).status == 500
@@ -246,10 +244,20 @@ defmodule FountainWeb.StripeWebhookControllerTest do
     @tag capture_log: true
     test "an unknown customer is acked to Stripe but recorded — the event is gone for good",
          %{conn: conn} do
+      # A credit pack for a customer we do not know (ADR 0031: subscription
+      # events are ignored outright and record nothing).
       event = %Stripe.Event{
         id: "evt_fail_nobody",
-        type: "customer.subscription.updated",
-        data: %{object: %{status: "active", customer: "cus_nobody", trial_end: nil}}
+        type: "checkout.session.completed",
+        data: %{
+          object: %{
+            id: "cs_nobody",
+            mode: "payment",
+            customer: "cus_nobody",
+            client_reference_id: nil,
+            metadata: %{"fountain_credits_cents" => "1000"}
+          }
+        }
       }
 
       assert post_stubbed(conn, event).status == 200

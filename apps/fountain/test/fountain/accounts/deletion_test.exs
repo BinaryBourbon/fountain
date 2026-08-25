@@ -179,111 +179,11 @@ defmodule Fountain.Accounts.DeletionTest do
   end
 
   describe "billing" do
-    test "subscriptions are cancelled before anything is destroyed" do
-      user = billing_user(%{stripe_customer_id: "cus_123", subscription_status: "active"})
-
-      test = self()
-
-      stub(Stripe.Subscription, :list, fn %{customer: "cus_123"} ->
-        {:ok, %{data: [%{id: "sub_1", status: "active"}], has_more: false}}
-      end)
-
-      stub(Stripe.Subscription, :cancel, fn "sub_1" ->
-        send(test, :cancelled)
-        {:ok, %{}}
-      end)
-
-      capture_log(fn -> assert {:ok, _} = Deletion.delete_user(user) end)
-
-      assert_received :cancelled
+    test "nothing is cancelled upstream: there is no subscription (ADR 0031)" do
+      user = billing_user(%{stripe_customer_id: "cus_123"})
+      reject(&Stripe.Customer.delete/1)
+      assert {:ok, _} = Deletion.delete_user(user, actor: "self")
       refute Repo.get(User, user.id)
-    end
-
-    test "a cancellation failure aborts and destroys nothing" do
-      # The worst outcome available here is an account that no longer exists but
-      # is still being charged — the person has nowhere left to log in and
-      # cancel from. So this is the one failure that stops everything.
-      user = billing_user(%{stripe_customer_id: "cus_123", subscription_status: "active"})
-      sandbox = insert_sandbox(user_id: user.id, status: "ready")
-      reject(&Fountain.Sandbox.Sprites.destroy/1)
-
-      stub(Stripe.Subscription, :list, fn _ -> {:error, :stripe_down} end)
-
-      capture_log(fn ->
-        assert {:error, {:stripe, :stripe_down}} = Deletion.delete_user(user)
-      end)
-
-      assert Repo.get(User, user.id)
-      assert Repo.get(Sandbox, sandbox.id).status == "ready"
-    end
-
-    test "a trialing subscription is cancelled too" do
-      # Filtering the Stripe query to `status: "active"` would be the obvious
-      # thing and would miss this: a trial has not charged yet, but it will.
-      user = billing_user(%{stripe_customer_id: "cus_123", subscription_status: "trialing"})
-
-      test = self()
-
-      stub(Stripe.Subscription, :list, fn _ ->
-        {:ok, %{data: [%{id: "sub_trial", status: "trialing"}], has_more: false}}
-      end)
-
-      stub(Stripe.Subscription, :cancel, fn id -> send(test, {:cancelled, id}) && {:ok, %{}} end)
-
-      capture_log(fn -> assert {:ok, _} = Deletion.delete_user(user) end)
-
-      assert_received {:cancelled, "sub_trial"}
-    end
-
-    test "an already-cancelled subscription is left alone" do
-      user = billing_user(%{stripe_customer_id: "cus_123", subscription_status: "canceled"})
-
-      stub(Stripe.Subscription, :list, fn _ ->
-        {:ok, %{data: [%{id: "sub_old", status: "canceled"}], has_more: false}}
-      end)
-
-      reject(&Stripe.Subscription.cancel/1)
-
-      capture_log(fn -> assert {:ok, _} = Deletion.delete_user(user) end)
-    end
-
-    test "a paged subscription list aborts rather than half-cancelling" do
-      # Cancelling page one and reporting success would leave the rest charging
-      # an account that no longer exists.
-      user = billing_user(%{stripe_customer_id: "cus_123", subscription_status: "active"})
-
-      stub(Stripe.Subscription, :list, fn _ ->
-        {:ok, %{data: [%{id: "sub_1", status: "active"}], has_more: true}}
-      end)
-
-      capture_log(fn ->
-        assert {:error, {:stripe, :too_many_subscriptions}} = Deletion.delete_user(user)
-      end)
-
-      assert Repo.get(User, user.id)
-    end
-
-    test "a user with no Stripe customer needs no cancellation" do
-      user = insert_verified_user()
-      reject(&Stripe.Subscription.list/1)
-
-      capture_log(fn -> assert {:ok, _} = Deletion.delete_user(user) end)
-    end
-
-    test "Stripe is not consulted when billing is disabled" do
-      # A self-hosted instance has no Stripe at all; reaching for it would make
-      # deletion fail there.
-      user = billing_user(%{stripe_customer_id: "cus_123", subscription_status: "active"})
-      reject(&Stripe.Subscription.list/1)
-
-      previous = Application.get_env(:fountain, :billing_enabled)
-      Application.put_env(:fountain, :billing_enabled, false)
-
-      try do
-        capture_log(fn -> assert {:ok, _} = Deletion.delete_user(user) end)
-      after
-        Application.put_env(:fountain, :billing_enabled, previous)
-      end
     end
   end
 

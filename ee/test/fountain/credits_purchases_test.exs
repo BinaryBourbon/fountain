@@ -17,13 +17,10 @@ defmodule Fountain.Credits.PurchasesTest do
 
   @return "https://fountain.test/account/billing"
 
-  defp with_status(user, status) do
+  defp with_status(user, _status) do
     {:ok, user} =
       user
-      |> User.billing_changeset(%{
-        subscription_status: status,
-        stripe_customer_id: "cus_#{user.id}"
-      })
+      |> User.billing_changeset(%{stripe_customer_id: "cus_#{user.id}"})
       |> Repo.update()
 
     user
@@ -46,7 +43,7 @@ defmodule Fountain.Credits.PurchasesTest do
 
   describe "checkout_url/3" do
     test "opens a payment-mode session for a pack, with the pack in the metadata" do
-      user = insert_active_user() |> with_status("active")
+      user = insert_empty_user() |> with_status("active")
       test = self()
 
       expect(Stripe.Checkout.Session, :create, fn params ->
@@ -68,27 +65,21 @@ defmodule Fountain.Credits.PurchasesTest do
       assert params.success_url == @return <> "?credits=success"
     end
 
-    test "a trialing account cannot buy, a comped one has nothing to buy, and only packs sell" do
+    test "a comped account has nothing to buy, and only packs sell" do
       reject(&Stripe.Checkout.Session.create/1)
 
-      trial = insert_verified_user()
-      assert {:error, :subscription_required} = Purchases.checkout_url(trial, 1000, @return)
-
-      canceled = insert_active_user() |> with_status("canceled")
-      assert {:error, :subscription_required} = Purchases.checkout_url(canceled, 1000, @return)
-
-      comped = insert_active_user()
+      comped = insert_empty_user()
       {:ok, comped} = Billing.comp_account(comped)
       assert {:error, :comped} = Purchases.checkout_url(comped, 1000, @return)
 
-      active = insert_active_user() |> with_status("active")
+      active = insert_empty_user() |> with_status("active")
       assert {:error, :unknown_pack} = Purchases.checkout_url(active, 1234, @return)
     end
   end
 
   describe "complete/1" do
     test "grants the pack once, keyed by the session, with the payment intent on the row" do
-      user = insert_active_user() |> with_status("active")
+      user = insert_empty_user() |> with_status("active")
       s = session(user, 2500)
 
       assert {:ok, entry} = Purchases.complete(s)
@@ -103,7 +94,7 @@ defmodule Fountain.Credits.PurchasesTest do
     end
 
     test "a subscription-mode session is not ours" do
-      user = insert_active_user() |> with_status("active")
+      user = insert_empty_user() |> with_status("active")
 
       assert {:error, :not_credits} =
                Purchases.complete(%{
@@ -125,7 +116,7 @@ defmodule Fountain.Credits.PurchasesTest do
 
   describe "refund/1 and dispute/1" do
     setup do
-      user = insert_active_user() |> with_status("active")
+      user = insert_empty_user() |> with_status("active")
       {:ok, _} = Purchases.complete(session(user, 2500))
       %{user: user}
     end
@@ -184,7 +175,7 @@ defmodule Fountain.Credits.PurchasesTest do
 
   describe "through the webhook" do
     test "checkout.session.completed in payment mode grants; refund and dispute claw back", %{} do
-      user = insert_active_user() |> with_status("active")
+      user = insert_empty_user() |> with_status("active")
 
       grant = %Stripe.Event{
         id: "evt_credits_1",
@@ -227,8 +218,8 @@ defmodule Fountain.Credits.PurchasesTest do
       assert {:ok, :ignored} = Billing.handle_event(other)
     end
 
-    test "a subscription checkout still takes the subscription path" do
-      user = insert_verified_user()
+    test "a subscription checkout is ignored" do
+      user = insert_empty_user()
 
       event = %Stripe.Event{
         type: "checkout.session.completed",
@@ -242,8 +233,10 @@ defmodule Fountain.Credits.PurchasesTest do
         }
       }
 
-      assert {:ok, %User{stripe_customer_id: "cus_orphan"}} = Billing.sync_subscription(event)
+      # ADR 0031: not ours, acknowledged and ignored; nothing is written.
+      assert {:ok, :ignored} = Billing.sync_subscription(event)
       assert Credits.balance(user.id) == 0
+      assert Repo.reload!(user).stripe_customer_id == nil
     end
   end
 end

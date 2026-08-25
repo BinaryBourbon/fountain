@@ -323,8 +323,8 @@ defmodule Fountain.Exports do
       "id" => user.id,
       "email" => user.email,
       "role" => user.role,
-      "subscription_status" => user.subscription_status,
-      "trial_ends_at" => user.trial_ends_at,
+      "comped" => user.comped,
+      "credit_balance_cents" => user.credit_balance_cents,
       "email_verified_at" => user.email_verified_at,
       "created_at" => user.inserted_at
     }

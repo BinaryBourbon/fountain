@@ -20,10 +20,10 @@
       Sign in
     </a>
   </div>
-  <p :if={monthly_price()} class="text-xs text-[var(--color-text-muted)]">
-    Free 14-day trial — then from {monthly_price()}/mo. Cancel anytime.
+  <p :if={pricing?()} class="text-xs text-[var(--color-text-muted)]">
+    {elem(opening_credit(), 0)} of credit to start — then pay only for what your agents do.
   </p>
-  <p :if={!monthly_price()} class="text-xs text-[var(--color-text-muted)]">
+  <p :if={!pricing?()} class="text-xs text-[var(--color-text-muted)]">
     Free 14-day trial. Cancel anytime.
   </p>
 </section>
@@ -182,62 +182,61 @@
   </p>
 </section>
 
-<%!-- Pricing. Rendered only for the plans this deployment can actually sell,
-      so a self-hosted instance (and a hosted one mid-rollout) shows nothing
-      rather than a tier whose button leads to a Stripe error. --%>
+<%!-- Pricing (ADR 0031): credits are the product. Rendered only where the
+      deployment bills, so a self-hosted instance shows nothing. --%>
 <section
-  :if={pricing_plans() != []}
+  :if={pricing?()}
   id="pricing"
   class="bg-[var(--color-bg-1)] border-t border-[var(--color-border)]"
 >
   <div class="max-w-5xl mx-auto px-6 py-20">
     <h2 class="text-2xl font-semibold text-center text-[var(--color-text-primary)]">
-      Pay for how many agents run at once
+      Pay for what your agents do
     </h2>
     <p class="mt-3 mb-12 text-center text-[var(--color-text-secondary)] max-w-xl mx-auto">
-      Every plan has the whole product in it. What changes is how many sandboxes
-      you can have running side by side. Bring your own model keys — Fountain
-      never bills you for inference.
+      No plans, no seats, no monthly fee. Buy credit, and every hour an agent
+      works comes out of it. Bring your own model keys — Fountain never bills
+      you for inference.
     </p>
 
     <div class="grid gap-6 md:grid-cols-3">
-      <div
-        :for={plan <- pricing_plans()}
-        class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-0)] p-6 flex flex-col"
-      >
-        <h3 class="text-lg font-semibold text-[var(--color-text-primary)]">{plan.name}</h3>
-        <p class="mt-1 text-sm text-[var(--color-text-muted)] min-h-[2.5rem]">{plan.tagline}</p>
-        <p class="mt-4">
-          <span class="text-3xl font-semibold text-[var(--color-text-primary)]">
-            {plan_price(plan)}
-          </span>
-          <span class="text-sm text-[var(--color-text-muted)]">/mo</span>
+      <div class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-0)] p-6">
+        <p class="text-3xl font-semibold text-[var(--color-text-primary)]">{turn_hour_price()}</p>
+        <p class="mt-1 text-sm font-medium text-[var(--color-text-primary)]">per agent hour</p>
+        <p class="mt-2 text-xs text-[var(--color-text-muted)]">
+          An hour with a prompt in flight. A parked agent, an idle one, and one
+          running on your own machine all cost nothing.
         </p>
-        <p class="mt-3 text-sm font-medium text-[var(--color-text-primary)]">
-          {plan_capacity(plan)}
+      </div>
+      <div class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-0)] p-6">
+        <p class="text-3xl font-semibold text-[var(--color-text-primary)]">
+          {elem(opening_credit(), 0)}
         </p>
-        <p class="mt-1 text-xs text-[var(--color-text-muted)]">
-          concurrent sandboxes. A start beyond the cap is refused until one frees.
+        <p class="mt-1 text-sm font-medium text-[var(--color-text-primary)]">to start, free</p>
+        <p class="mt-2 text-xs text-[var(--color-text-muted)]">
+          Good for {elem(opening_credit(), 1)} days. No card to sign up; add one when you buy more.
         </p>
-        <p class="mt-3 text-sm font-medium text-[var(--color-text-primary)]">
-          {plan_turn_hours(plan)}
+      </div>
+      <div class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-0)] p-6">
+        <p class="text-3xl font-semibold text-[var(--color-text-primary)]">
+          {elem(cap_rule(), 2)}
         </p>
-        <%!-- Naming parking explicitly, rather than the softer "not while it
-              waits": scale-to-zero is the strongest claim in the product, and
-              a pricing page that only gestures at it quietly undercuts the
-              thing the rest of the page is arguing. --%>
-        <p class="mt-1 text-xs text-[var(--color-text-muted)]">
-          counted only while a prompt is in flight. A parked agent, an idle one,
-          and one running on your own machine all cost nothing.
+        <p class="mt-1 text-sm font-medium text-[var(--color-text-primary)]">
+          agents at once, at most
         </p>
-        <a
-          href={~p"/auth/register"}
-          class="mt-6 inline-flex items-center justify-center px-4 py-2 rounded-lg border border-[var(--color-border)] text-[var(--color-text-primary)] text-sm font-medium hover:bg-[var(--color-bg-2)] transition-colors"
-        >
-          Start free trial
-        </a>
+        <p class="mt-2 text-xs text-[var(--color-text-muted)]">
+          One more for every {elem(cap_rule(), 0)} you hold, from {elem(cap_rule(), 1)}. Need more? Ask.
+        </p>
       </div>
     </div>
+    <p class="mt-6 text-center">
+      <a
+        href={~p"/auth/register"}
+        class="inline-flex items-center justify-center px-5 py-2.5 rounded-lg bg-[var(--color-brand)] text-white text-sm font-medium hover:bg-[var(--color-brand-hover)] transition-colors"
+      >
+        Start with {elem(opening_credit(), 0)} free
+      </a>
+    </p>
 
     <%!-- How the money works, answered where the question is asked rather
           than on the billing page a visitor cannot see yet. Every number here
@@ -249,11 +248,13 @@
       <div class="mt-4 space-y-3 text-sm text-[var(--color-text-secondary)]">
         <p>
           <span class="font-medium text-[var(--color-text-primary)]">
-            Your plan buys two things.
+            Credit is the whole product.
           </span>
-          How many agents may run at once, and a credit balance that refills at
-          the start of every billing period. Unused plan credit expires with the
-          period; credit you buy never does.
+          You start with {elem(opening_credit(), 0)}, which expires after {elem(
+            opening_credit(),
+            1
+          )} days.
+          Credit you buy never expires.
         </p>
         <p>
           <span class="font-medium text-[var(--color-text-primary)]">
@@ -286,11 +287,13 @@
         </p>
         <p>
           <span class="font-medium text-[var(--color-text-primary)]">
-            At the concurrency cap, the next start waits for you.
+            Your balance sets how many agents run at once.
           </span>
-          A sandbox beyond the cap is refused rather than queued, so the number
-          to choose a plan on is how many agents you want working at once.
-          Terminate a conversation, or upgrade.
+          One sandbox for every {elem(cap_rule(), 0)} you hold, from {elem(cap_rule(), 1)} up to {elem(
+            cap_rule(),
+            2
+          )}.
+          A start beyond that is refused rather than queued; terminate a conversation, or top up.
         </p>
         <p>
           <span class="font-medium text-[var(--color-text-primary)]">
@@ -299,9 +302,7 @@
           Bring your own model keys; Fountain does not charge for tokens.
         </p>
         <p class="text-xs text-[var(--color-text-muted)]">
-          The 14-day trial runs {trial_plan().concurrent_sandboxes} agents at once
-          with {plan_turn_hours(trial_plan())}, so you can judge it before paying.
-          No card to start, and you can change plan or cancel at any time.
+          No card to start. Buy credit when the opening grant runs out, and only then.
         </p>
       </div>
     </div>

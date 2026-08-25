@@ -15,24 +15,11 @@ defmodule Fountain.Billing.TurnHoursTest do
   alias Fountain.Billing
   alias Fountain.Billing.SandboxUsage
   alias Fountain.Conversations
-  alias Fountain.Plans
 
   # A period wholly in the past, so `attribution/3`'s ceiling is the period end
   # rather than the wall clock and every expected figure is exact.
   @period_start ~U[2026-05-01 00:00:00Z]
   @period_end ~U[2026-06-01 00:00:00Z]
-
-  defp with_period(user, period_start, period_end) do
-    {:ok, user} =
-      user
-      |> Fountain.Accounts.User.billing_changeset(%{
-        current_period_start: period_start,
-        current_period_end: period_end
-      })
-      |> Repo.update()
-
-    user
-  end
 
   defp sandbox_running(user, provider, started, ended) do
     insert_sandbox(
@@ -60,31 +47,6 @@ defmodule Fountain.Billing.TurnHoursTest do
   end
 
   describe "billing_period/2" do
-    test "uses the Stripe period when one is stored and it contains now" do
-      user =
-        insert_verified_user()
-        |> with_period(~U[2026-05-20 00:00:00Z], ~U[2026-06-20 00:00:00Z])
-
-      assert %{
-               start: ~U[2026-05-20 00:00:00Z],
-               end: ~U[2026-06-20 00:00:00Z],
-               source: :subscription
-             } = Billing.billing_period(user, ~U[2026-06-01 12:00:00Z])
-    end
-
-    test "the mid-month subscriber's window is theirs, not the calendar's" do
-      # The case the whole column exists for: subscribe on the 20th and every
-      # allowance boundary lines up with the invoice instead of the 1st.
-      user =
-        insert_verified_user()
-        |> with_period(~U[2026-05-20 00:00:00Z], ~U[2026-06-20 00:00:00Z])
-
-      period = Billing.billing_period(user, ~U[2026-06-05 00:00:00Z])
-
-      assert period.start.day == 20
-      refute period.start.day == 1
-    end
-
     test "falls back to the calendar month, and says so, with no period stored" do
       user = insert_verified_user()
 
@@ -92,33 +54,6 @@ defmodule Fountain.Billing.TurnHoursTest do
 
       assert period.source == :calendar_month
       assert period.start.day == 1
-    end
-
-    test "a half-synced period is not a period" do
-      # An end with no start is exactly the state every existing subscription
-      # was in the moment the column shipped. Deriving the start from it is
-      # what the issue warned against, so it falls back instead.
-      user = insert_verified_user() |> with_period(nil, ~U[2026-06-20 00:00:00Z])
-
-      assert Billing.billing_period(user, ~U[2026-06-05 00:00:00Z]).source == :calendar_month
-    end
-
-    test "a period that has already ended falls back rather than reporting a stale window" do
-      # A cancelled subscription's final period, or the seconds between a
-      # renewal and the webhook reporting the new one.
-      user =
-        insert_verified_user()
-        |> with_period(~U[2026-01-20 00:00:00Z], ~U[2026-02-20 00:00:00Z])
-
-      assert Billing.billing_period(user, ~U[2026-06-05 00:00:00Z]).source == :calendar_month
-    end
-
-    test "a period that has not started yet falls back too" do
-      user =
-        insert_verified_user()
-        |> with_period(~U[2026-09-20 00:00:00Z], ~U[2026-10-20 00:00:00Z])
-
-      assert Billing.billing_period(user, ~U[2026-06-05 00:00:00Z]).source == :calendar_month
     end
   end
 
@@ -201,18 +136,15 @@ defmodule Fountain.Billing.TurnHoursTest do
     end
 
     test "defaults to the tenant's billing period" do
-      user =
-        insert_verified_user()
-        |> with_period(@period_start, @period_end)
+      user = insert_verified_user()
 
       sandbox =
         sandbox_running(user, "sprites", ~U[2026-05-10 00:00:00Z], ~U[2026-05-11 00:00:00Z])
 
       turn(sandbox, user, ~U[2026-05-10 12:00:00Z], ~U[2026-05-10 13:00:00Z])
 
-      # The stored period has ended, so this falls back to the current calendar
-      # month — which contains none of the turn above. The point of the
-      # assertion is that the default window is *derived*, not hardcoded.
+      # The default window is the current calendar month (ADR 0031), which
+      # contains none of the turn above; the explicit period finds it.
       assert Billing.turn_hours_used(user) == 0.0
       assert Billing.turn_hours_used(user, period: {@period_start, @period_end}) == 1.0
     end

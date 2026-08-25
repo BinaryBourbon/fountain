@@ -88,8 +88,7 @@ defmodule FountainWeb.AdminLive.Users do
         metadata: %{
           "email" => user.email,
           "from" => user.sandbox_limit_override,
-          "to" => limit,
-          "plan" => Fountain.Plans.resolve(user.plan).slug
+          "to" => limit
         }
       })
 
@@ -120,62 +119,13 @@ defmodule FountainWeb.AdminLive.Users do
   # sent by hand (#399's lesson) — and all of these actions talk to Stripe.
   @impl true
   def handle_event(event, _params, %{assigns: %{billing_enabled: false}} = socket)
-      when event in ~w(extend_trial toggle_comp resync_stripe set_plan) do
+      when event in ~w(toggle_comp) do
     {:noreply, put_flash(socket, :error, "Billing is disabled on this instance")}
-  end
-
-  @impl true
-  def handle_event("extend_trial", %{"user_id" => id, "days" => raw}, socket) do
-    with {days, ""} when days > 0 <- Integer.parse(String.trim(raw)),
-         %Accounts.User{} = user <- Accounts.get_user(id),
-         {:ok, updated} <- Billing.extend_trial(user, days) do
-      Fountain.Audit.record_admin(%{
-        actor_user_id: socket.assigns.current_user.id,
-        target_user_id: user.id,
-        event_type: "admin.trial.extended",
-        metadata: %{
-          "email" => user.email,
-          "from" => user.trial_ends_at && DateTime.to_iso8601(user.trial_ends_at),
-          "to" => DateTime.to_iso8601(updated.trial_ends_at)
-        }
-      })
-
-      {:noreply,
-       socket
-       |> assign_users()
-       |> put_flash(:info, "Trial extended to #{format_date(updated.trial_ends_at)}")}
-    else
-      {:error, :active_subscription} ->
-        {:noreply, put_flash(socket, :error, "Account has an active paid subscription")}
-
-      {:error, :comped} ->
-        {:noreply, put_flash(socket, :error, "Account is comped — nothing to extend")}
-
-      {:error, _} ->
-        {:noreply, put_flash(socket, :error, "Could not extend trial — Stripe refused")}
-
-      nil ->
-        {:noreply,
-         socket
-         |> assign_users()
-         |> put_flash(:error, "User not found — the account may have been deleted")}
-
-      _ ->
-        {:noreply, put_flash(socket, :error, "Days must be a whole number of 1 or more")}
-    end
   end
 
   @impl true
   def handle_event("toggle_comp", %{"id" => id}, socket) do
     with_target_user(socket, id, fn user -> do_toggle_comp(socket, user) end)
-  end
-
-  # The in-app remedy for webhook drift (#502): re-read the subscription of
-  # record from Stripe and adopt what it says, without a Stripe dashboard
-  # round-trip.
-  @impl true
-  def handle_event("resync_stripe", %{"id" => id}, socket) do
-    with_target_user(socket, id, fn user -> do_resync_stripe(socket, user) end)
   end
 
   # The reversible abuse lever between comp and delete (#287): sessions die,
@@ -206,37 +156,6 @@ defmodule FountainWeb.AdminLive.Users do
       {:noreply, put_flash(socket, :error, "Use your own account page to delete your account")}
     else
       with_target_user(socket, id, fn user -> do_delete_user(socket, admin, user) end)
-    end
-  end
-
-  # Non-bang lookup for every admin action targeting a user row (#401): the
-  # table is loaded at mount, so acting on a user deleted since (another
-  # admin tab, self-deletion) made get_user! raise and kill the LiveView.
-  # A comped account cannot change its own plan (`Billing.change_plan/3`
-  # refuses, correctly — an operator's decision is not the customer's to
-  # revise), so without this there is no door at all onto the entitlements of
-  # exactly the accounts an operator hand-manages.
-  @impl true
-  def handle_event("set_plan", %{"user_id" => id, "plan" => plan}, socket) do
-    with %Accounts.User{} = user <- Accounts.get_user(id),
-         {:ok, updated} <- Accounts.update_plan(user, plan, actor: "admin") do
-      Fountain.Audit.record_admin(%{
-        actor_user_id: socket.assigns.current_user.id,
-        target_user_id: user.id,
-        event_type: "admin.plan.changed",
-        metadata: %{"email" => user.email, "from" => user.plan, "to" => updated.plan}
-      })
-
-      {:noreply,
-       socket
-       |> assign_users()
-       |> put_flash(:info, "Plan set to #{Fountain.Plans.resolve(updated.plan).name}")}
-    else
-      nil ->
-        {:noreply, put_flash(socket, :error, "User not found")}
-
-      _ ->
-        {:noreply, put_flash(socket, :error, "Unknown plan")}
     end
   end
 
@@ -275,7 +194,7 @@ defmodule FountainWeb.AdminLive.Users do
 
   defp do_toggle_comp(socket, user) do
     result =
-      if user.subscription_status == "comped",
+      if user.comped,
         do: {Billing.revoke_comp(user), "admin.comp.revoked"},
         else: {Billing.comp_account(user), "admin.comp.granted"}
 
@@ -287,60 +206,18 @@ defmodule FountainWeb.AdminLive.Users do
           event_type: event_type,
           metadata: %{
             "email" => user.email,
-            "from" => user.subscription_status,
-            "to" => updated.subscription_status
-          }
-        })
-
-        {:noreply,
-         socket |> assign_users() |> put_flash(:info, "Now #{updated.subscription_status}")}
-
-      {{:error, _}, _} ->
-        {:noreply,
-         put_flash(socket, :error, "Could not change comp — Stripe cancellation failed")}
-    end
-  end
-
-  defp do_resync_stripe(socket, user) do
-    case Billing.resync_from_stripe(user) do
-      {:ok, %Accounts.User{} = updated} ->
-        Fountain.Audit.record_admin(%{
-          actor_user_id: socket.assigns.current_user.id,
-          target_user_id: user.id,
-          event_type: "admin.stripe.resynced",
-          metadata: %{
-            "email" => user.email,
-            "from" => user.subscription_status,
-            "to" => updated.subscription_status
+            "from" => user.comped,
+            "to" => updated.comped
           }
         })
 
         {:noreply,
          socket
          |> assign_users()
-         |> put_flash(:info, "Resynced from Stripe — status #{updated.subscription_status}")}
+         |> put_flash(:info, if(updated.comped, do: "Comped", else: "Comp revoked"))}
 
-      {:ok, :sync_enqueued} ->
-        Fountain.Audit.record_admin(%{
-          actor_user_id: socket.assigns.current_user.id,
-          target_user_id: user.id,
-          event_type: "admin.stripe.resynced",
-          metadata: %{"email" => user.email, "outcome" => "customer_sync_enqueued"}
-        })
-
-        {:noreply,
-         put_flash(
-           socket,
-           :info,
-           "No subscription on record — customer sync enqueued, check back shortly"
-         )}
-
-      {:error, :comped} ->
-        {:noreply,
-         put_flash(socket, :error, "Account is comped — Stripe does not drive its status")}
-
-      {:error, _} ->
-        {:noreply, put_flash(socket, :error, "Could not resync — Stripe refused the read")}
+      {{:error, _}, _} ->
+        {:noreply, put_flash(socket, :error, "Could not change comp")}
     end
   end
 
@@ -467,7 +344,6 @@ defmodule FountainWeb.AdminLive.Users do
         u
         |> Map.put(:active_sandboxes, Map.get(sandbox_counts, u.id, 0))
         |> Map.put(:sandbox_limit, Fountain.Quotas.sandbox_limit_for(u))
-        |> Map.put(:plan, Fountain.Plans.resolve(u.plan))
         |> Map.put(:contact_count, Map.get(contact_counts, u.id, 0))
         |> Map.put(:usage, Map.get(usage, u.id, no_usage))
       end)
@@ -677,98 +553,29 @@ defmodule FountainWeb.AdminLive.Users do
                 </span>
               </td>
               <td :if={@billing_enabled} class="px-4 py-2">
-                <div class="space-y-1">
-                  <div class="flex items-center gap-2">
-                    <span class={[
-                      "inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium border",
-                      subscription_status_color(u.subscription_status)
-                    ]}>
-                      {u.subscription_status}
-                    </span>
-                    <span
-                      :if={u.subscription_status == "trialing" and u.trial_ends_at}
-                      class="text-xs text-zinc-500"
-                    >
-                      ends {format_date(u.trial_ends_at)}
-                    </span>
-                    <a
-                      :if={u.stripe_customer_id not in [nil, ""]}
-                      href={"https://dashboard.stripe.com/customers/#{u.stripe_customer_id}"}
-                      target="_blank"
-                      rel="noopener"
-                      class="text-xs text-zinc-400 hover:text-zinc-700 underline"
-                    >
-                      stripe ↗
-                    </a>
-                  </div>
-                  <div class="flex items-center gap-2">
-                    <form
-                      :if={u.subscription_status not in ["active", "comped"]}
-                      phx-submit="extend_trial"
-                      id={"extend-trial-#{u.id}"}
-                      class="flex items-center gap-1"
-                    >
-                      <input type="hidden" name="user_id" value={u.id} />
-                      <input
-                        type="number"
-                        name="days"
-                        min="1"
-                        value="14"
-                        class="w-12 rounded border border-zinc-200 px-1 py-0.5 text-xs"
-                      />
-                      <button class="text-xs text-zinc-500 hover:text-zinc-900 underline">
-                        extend trial
-                      </button>
-                    </form>
-                    <button
-                      phx-click="toggle_comp"
-                      phx-value-id={u.id}
-                      data-confirm={
-                        if u.subscription_status == "comped",
-                          do: "Revoke #{u.email}'s comp? They become canceled and must subscribe.",
-                          else:
-                            "Comp #{u.email}? Free access until revoked. Any Stripe subscription is cancelled."
-                      }
-                      class="text-xs text-zinc-500 hover:text-zinc-900 underline"
-                    >
-                      {if u.subscription_status == "comped", do: "revoke comp", else: "comp"}
-                    </button>
-                    <button
-                      :if={u.subscription_status != "comped"}
-                      phx-click="resync_stripe"
-                      phx-value-id={u.id}
-                      title="Re-read subscription state from Stripe — repairs webhook drift"
-                      class="text-xs text-zinc-500 hover:text-zinc-900 underline"
-                    >
-                      resync
-                    </button>
-                  </div>
-                </div>
-              </td>
-              <%!-- The plan: an operator lever a customer cannot reach, since
-                    change_plan/3 refuses for a comped account. --%>
-              <td :if={@billing_enabled} class="px-4 py-2">
-                <div class="space-y-1">
-                  <form phx-change="set_plan" id={"plan-#{u.id}"}>
-                    <input type="hidden" name="user_id" value={u.id} />
-                    <select
-                      name="plan"
-                      class="rounded border border-zinc-200 px-1 py-0.5 text-xs"
-                      title={"#{u.plan.concurrent_sandboxes} concurrent · #{u.plan.team_contacts} contacts"}
-                    >
-                      <%!-- Storable slugs only: `trial` is derived from
-                            subscription status, so offering it here would
-                            let an operator pin an account to a plan the
-                            column cannot hold. --%>
-                      <option
-                        :for={p <- Enum.map(Fountain.Plans.slugs(), &Fountain.Plans.fetch!/1)}
-                        value={p.slug}
-                        selected={p.slug == u.plan.slug}
-                      >
-                        {p.name}{if not p.public?, do: " (closed)"}
-                      </option>
-                    </select>
-                  </form>
+                <div class="flex flex-col gap-1">
+                  <span class={[
+                    "inline-flex w-fit items-center rounded px-1.5 py-0.5 text-xs font-medium border",
+                    account_badge_class(u.comped)
+                  ]}>
+                    {if u.comped,
+                      do: "comped",
+                      else: Fountain.Credits.format_cents(u.credit_balance_cents)}
+                  </span>
+                  <button
+                    phx-click="toggle_comp"
+                    phx-value-id={u.id}
+                    data-confirm={
+                      if u.comped,
+                        do:
+                          "Revoke #{u.email}'s comp? Their balance is checked again from the next spend.",
+                        else:
+                          "Comp #{u.email}? Their balance is never checked and nothing is refused."
+                    }
+                    class="text-xs text-zinc-500 hover:text-zinc-900 underline text-left"
+                  >
+                    {if u.comped, do: "revoke comp", else: "comp"}
+                  </button>
                 </div>
               </td>
               <%!-- Turn hours, not sandbox minutes. Sandbox time is what
@@ -806,8 +613,8 @@ defmodule FountainWeb.AdminLive.Users do
                     name="limit"
                     min="0"
                     value={u.sandbox_limit_override}
-                    placeholder={u.plan.concurrent_sandboxes}
-                    title={"#{u.plan.name} plan: #{u.plan.concurrent_sandboxes} concurrent"}
+                    placeholder={u.sandbox_limit}
+                    title="Empty: what the balance funds (ADR 0031)"
                     class="w-14 rounded border border-zinc-200 px-1 py-0.5 text-xs"
                   />
                   <button class="text-xs text-zinc-500 hover:text-zinc-900 underline">set</button>
@@ -850,7 +657,7 @@ defmodule FountainWeb.AdminLive.Users do
                   :if={u.id != @current_user.id}
                   phx-click="delete_user"
                   phx-value-id={u.id}
-                  data-confirm={"Permanently delete #{u.email}? This cancels their subscription, destroys their sandboxes and erases their data. It cannot be undone."}
+                  data-confirm={"Permanently delete #{u.email}? This destroys their sandboxes and erases their data. It cannot be undone."}
                   class="text-xs text-red-600 hover:text-red-800 underline"
                 >
                   Delete

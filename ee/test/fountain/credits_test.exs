@@ -19,7 +19,7 @@ defmodule Fountain.CreditsTest do
 
   describe "grant/4 and debit/4" do
     test "a grant moves the cached balance by exactly the row" do
-      user = insert_active_user()
+      user = insert_empty_user()
       assert Credits.balance(user) == 0
 
       assert {:ok, %LedgerEntry{amount_cents: 1000, reason: "grant_tier"}} =
@@ -30,7 +30,7 @@ defmodule Fountain.CreditsTest do
     end
 
     test "a debit is stored negative and may take the balance below zero" do
-      user = insert_active_user()
+      user = insert_empty_user()
       {:ok, _} = Credits.grant(user.id, 100, "purchase", idempotency_key: "p1")
 
       assert {:ok, %LedgerEntry{amount_cents: -250}} =
@@ -40,7 +40,7 @@ defmodule Fountain.CreditsTest do
     end
 
     test "posting the same idempotency key twice writes nothing" do
-      user = insert_active_user()
+      user = insert_empty_user()
       {:ok, first} = Credits.grant(user.id, 500, "purchase", idempotency_key: "dup")
 
       assert {:ok, :duplicate, ^first} =
@@ -51,7 +51,7 @@ defmodule Fountain.CreditsTest do
     end
 
     test "the sign follows the reason" do
-      user = insert_active_user()
+      user = insert_empty_user()
 
       assert {:error, %Ecto.Changeset{} = cs} =
                Credits.post(user.id, -5, "grant_tier", idempotency_key: "neg-grant")
@@ -75,7 +75,7 @@ defmodule Fountain.CreditsTest do
     end
 
     test "a rejected row leaves no audit event, a posted one leaves exactly one" do
-      user = insert_active_user()
+      user = insert_empty_user()
       {:error, _} = Credits.post(user.id, 0, "purchase", idempotency_key: "z")
 
       assert Audit.list_recent_for_user(user.id, 50) |> Enum.filter(&(&1.action =~ "credit.")) ==
@@ -95,7 +95,7 @@ defmodule Fountain.CreditsTest do
     end
 
     test "each reason family has its own audit action" do
-      user = insert_active_user()
+      user = insert_empty_user()
       {:ok, _} = Credits.grant(user.id, 10, "purchase", idempotency_key: "a1")
       {:ok, _} = Credits.debit(user.id, 1, "burn_rent", idempotency_key: "a2")
       {:ok, _} = Credits.debit(user.id, 1, "expire", idempotency_key: "a3")
@@ -109,7 +109,7 @@ defmodule Fountain.CreditsTest do
     end
 
     test "a grant can carry an expiry and a resource reference" do
-      user = insert_active_user()
+      user = insert_empty_user()
       at = ~U[2026-09-01 00:00:00Z]
 
       {:ok, entry} =
@@ -125,7 +125,7 @@ defmodule Fountain.CreditsTest do
     end
 
     test "concurrent posts of one key move the balance once" do
-      user = insert_active_user()
+      user = insert_empty_user()
 
       results =
         1..8
@@ -146,7 +146,7 @@ defmodule Fountain.CreditsTest do
 
   describe "check_balance/1" do
     test "answers ok with billing off before reading anything" do
-      user = insert_active_user()
+      user = insert_empty_user()
       Application.put_env(:fountain, :billing_enabled, false)
       on_exit(fn -> Application.put_env(:fountain, :billing_enabled, true) end)
       assert :ok = Credits.check_balance(user)
@@ -154,15 +154,15 @@ defmodule Fountain.CreditsTest do
     end
 
     test "a comped tenant is never short of credits" do
-      user = insert_active_user()
+      user = insert_empty_user()
       {:ok, user} = Fountain.Billing.comp_account(user)
-      assert user.subscription_status == "comped"
+      assert user.comped
       assert :ok = Credits.check_balance(user)
       assert :ok = Credits.check_balance(user.id)
     end
 
     test "zero and negative are insufficient, positive is ok" do
-      user = insert_active_user()
+      user = insert_empty_user()
       assert {:error, :insufficient_credits} = Credits.check_balance(user)
       {:ok, _} = Credits.grant(user.id, 1, "purchase", idempotency_key: "one")
       assert :ok = Credits.check_balance(user.id)
@@ -173,7 +173,7 @@ defmodule Fountain.CreditsTest do
 
   describe "recompute_balance/1 and drift/0" do
     test "repairs a cache that disagrees with the ledger" do
-      user = insert_active_user()
+      user = insert_empty_user()
       {:ok, _} = Credits.grant(user.id, 300, "purchase", idempotency_key: "r1")
       {:ok, _} = Credits.debit(user.id, 120, "burn_turn", idempotency_key: "r2")
 
@@ -217,7 +217,7 @@ defmodule Fountain.CreditsTest do
     defp remaining(entry), do: Credits.unspent_of(entry, 0)
 
     test "a debit consumes the earliest-expiring lot first, then purchased money" do
-      user = insert_active_user()
+      user = insert_empty_user()
 
       {:ok, late} =
         Credits.grant(user.id, 1000, "grant_tier",
@@ -245,7 +245,7 @@ defmodule Fountain.CreditsTest do
     end
 
     test "a named lot is consumed first, and debt beyond the lots is carried by the balance" do
-      user = insert_active_user()
+      user = insert_empty_user()
 
       {:ok, a} =
         Credits.grant(user.id, 100, "grant_tier",
@@ -265,7 +265,7 @@ defmodule Fountain.CreditsTest do
     end
 
     test "a credit posted into debt repays it first" do
-      user = insert_active_user()
+      user = insert_empty_user()
       {:ok, _} = Credits.debit(user.id, 30, "burn_turn", idempotency_key: "debt")
       {:ok, lot} = Credits.grant(user.id, 100, "purchase", idempotency_key: "p")
       assert remaining(lot) == 70
@@ -273,7 +273,7 @@ defmodule Fountain.CreditsTest do
     end
 
     test "rebuild_lots replays the ledger to the same lots the live path wrote" do
-      user = insert_active_user()
+      user = insert_empty_user()
 
       {:ok, g} =
         Credits.grant(user.id, 1000, "grant_tier",

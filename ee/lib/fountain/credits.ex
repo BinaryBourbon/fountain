@@ -152,11 +152,10 @@ defmodule Fountain.Credits do
     end
   end
 
-  defp comped?(%User{subscription_status: status}), do: status == "comped"
+  defp comped?(%User{comped: comped}), do: comped == true
 
   defp comped?(user_id) when is_binary(user_id) do
-    from(u in User, where: u.id == ^user_id, select: u.subscription_status)
-    |> Repo.one() == "comped"
+    from(u in User, where: u.id == ^user_id, select: u.comped) |> Repo.one() == true
   end
 
   @doc "The ledger for one tenant, newest first. `:limit` defaults to 100."
@@ -213,25 +212,19 @@ defmodule Fountain.Credits do
   end
 
   @doc """
-  Whether credits are live on this deployment: billing is on and
-  `credits.pricing_since` is set. Off, no surface shows a balance — there is
-  nothing to show, and a "$0.00" on a self-hosted console would be a lie.
+  Whether credits are live on this deployment: billing is on (ADR 0031).
+  Off, no surface shows a balance — there is nothing to show, and a "$0.00"
+  on a self-hosted console would be a lie.
   """
   @spec active?() :: boolean()
-  def active? do
-    Billing.enabled?() and
-      not is_nil(Keyword.get(Application.get_env(:fountain, :credits, []), :pricing_since))
-  end
+  def active?, do: Billing.enabled?()
 
   @doc """
-  Whether a zero balance refuses spend: `active?/0` and `credits.enforce`
-  (`CREDIT_ENFORCE=true`). Off, `gate/1` is always `:ok`.
+  Whether a zero balance refuses spend: the same as `active?/0` since
+  ADR 0031. Off, `gate/1` is always `:ok`.
   """
   @spec enforcing?() :: boolean()
-  def enforcing? do
-    active?() and
-      Keyword.get(Application.get_env(:fountain, :credits, []), :enforce, false) == true
-  end
+  def enforcing?, do: active?()
 
   @doc """
   The spend gate (ADR 0030 decision 6): `:ok` unless enforcement is on and
@@ -339,6 +332,34 @@ defmodule Fountain.Credits do
   # ---------------------------------------------------------------------------
   # Writes
   # ---------------------------------------------------------------------------
+
+  @doc """
+  The opening grant a new account gets (ADR 0031 decision 3):
+  `credits.opening_cents` expiring `credits.opening_days` after now, once per
+  account. Nothing when billing is off.
+  """
+  @spec grant_opening(User.t() | binary(), keyword()) :: post_result() | {:ok, :not_billed}
+  def grant_opening(subject, opts \\ [])
+  def grant_opening(%User{id: id}, opts), do: grant_opening(id, opts)
+
+  def grant_opening(user_id, opts) when is_binary(user_id) do
+    cfg = Application.get_env(:fountain, :credits, [])
+    cents = Keyword.get(cfg, :opening_cents, 1_000)
+    days = Keyword.get(cfg, :opening_days, 14)
+    now = Keyword.get(opts, :now) || DateTime.utc_now()
+
+    if Billing.enabled?() and cents > 0 do
+      grant(user_id, cents, "grant_trial",
+        idempotency_key: "grant_trial:#{user_id}",
+        expires_at: now |> DateTime.add(days * 86_400, :second) |> DateTime.truncate(:second),
+        resource_type: "trial",
+        resource_id: user_id,
+        actor: Keyword.get(opts, :actor, "system:registration")
+      )
+    else
+      {:ok, :not_billed}
+    end
+  end
 
   @doc """
   Put money in. `reason` is one of `LedgerEntry.credit_reasons/0`; `cents` is

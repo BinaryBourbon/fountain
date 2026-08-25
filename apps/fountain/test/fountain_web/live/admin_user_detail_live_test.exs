@@ -49,7 +49,7 @@ defmodule FountainWeb.AdminUserDetailLiveTest do
 
     test "shows the tenant's turn hours against their plan (#1016)", %{conn: conn} do
       admin = insert_admin()
-      target = insert_active_user(plan: "team")
+      target = insert_active_user()
 
       {:ok, _lv, html} = live(login_user(conn, admin), ~p"/admin/users/#{target.id}")
 
@@ -98,71 +98,6 @@ defmodule FountainWeb.AdminUserDetailLiveTest do
 
       assert {:error, {:live_redirect, %{to: "/admin"}}} =
                live(conn, ~p"/admin/users/#{Ecto.UUID.generate()}")
-    end
-  end
-
-  describe "invoices (#502)" do
-    defp insert_target_with_customer(customer_id) do
-      {:ok, user} =
-        insert_active_user()
-        |> Accounts.User.billing_changeset(%{stripe_customer_id: customer_id})
-        |> Repo.update()
-
-      user
-    end
-
-    # Both arities, or the miss silently falls through to the live client
-    # (#474): stripity_stripe functions carry a default opts arg.
-    defp stub_invoice_list(result) do
-      stub(Stripe.Invoice, :list, fn _params -> result end)
-      stub(Stripe.Invoice, :list, fn _params, _opts -> result end)
-    end
-
-    test "renders the invoice history fetched from Stripe", %{conn: conn} do
-      target = insert_target_with_customer("cus_inv_lv")
-
-      stub_invoice_list(
-        {:ok,
-         %Stripe.List{
-           data: [
-             %Stripe.Invoice{
-               id: "in_lv_1",
-               number: "INV-2026-0001",
-               status: "paid",
-               total: 2900,
-               currency: "usd",
-               created: 1_754_000_000
-             }
-           ]
-         }}
-      )
-
-      {:ok, lv, _html} = live(login_user(conn, insert_admin()), ~p"/admin/users/#{target.id}")
-
-      invoices = lv |> element("#invoices") |> render()
-      assert invoices =~ "INV-2026-0001"
-      assert invoices =~ "paid"
-      assert invoices =~ "$29.00"
-      assert invoices =~ "https://dashboard.stripe.com/invoices/in_lv_1"
-    end
-
-    test "a Stripe failure degrades to an error note, not a broken page", %{conn: conn} do
-      target = insert_target_with_customer("cus_inv_down")
-      stub_invoice_list({:error, :stripe_down})
-
-      {:ok, lv, _html} = live(login_user(conn, insert_admin()), ~p"/admin/users/#{target.id}")
-
-      invoices = lv |> element("#invoices") |> render()
-      assert invoices =~ "Couldn&#39;t load invoices from Stripe"
-      assert invoices =~ "https://dashboard.stripe.com/customers/cus_inv_down"
-    end
-
-    test "a user with no Stripe customer shows an empty state", %{conn: conn} do
-      target = insert_active_user()
-
-      {:ok, lv, _html} = live(login_user(conn, insert_admin()), ~p"/admin/users/#{target.id}")
-
-      assert lv |> element("#invoices") |> render() =~ "None."
     end
   end
 end

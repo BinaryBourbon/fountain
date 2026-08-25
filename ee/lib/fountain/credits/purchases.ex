@@ -49,12 +49,7 @@ defmodule Fountain.Credits.Purchases do
   """
   @spec checkout_url(User.t(), pos_integer(), String.t()) ::
           {:ok, String.t()} | {:error, term()}
-  def checkout_url(%User{subscription_status: "comped"}, _cents, _return_url),
-    do: {:error, :comped}
-
-  def checkout_url(%User{subscription_status: status}, _cents, _return_url)
-      when status not in ~w(active past_due),
-      do: {:error, :subscription_required}
+  def checkout_url(%User{comped: true}, _cents, _return_url), do: {:error, :comped}
 
   def checkout_url(%User{} = user, cents, return_url) when is_integer(cents) do
     if cents in Credits.packs() do
