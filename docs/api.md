@@ -150,6 +150,12 @@ The checkout refuses a comped account with `422`. It answers `502` when
 Stripe is unreachable, and guesses nothing. On an instance with payment off,
 both endpoints are a `404` with `"billing": "disabled"`.
 
+`GET /api/account/billing` reports the month as `usage`. The `conversations`
+count is the conversations that ran a turn in the month. The
+`credit_burned_cents` value is the credit the ledger took in the month, and
+`turn_hours` is the metered time. The two do not agree to the cent, because the
+pricer charges a turn when it ends.
+
 `GET /api/auth/me` carries `comped`. It is `true` for an account an operator
 made free, and `null` when payment is off.
 

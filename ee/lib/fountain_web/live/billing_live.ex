@@ -158,7 +158,13 @@ defmodule FountainWeb.Live.BillingLive do
             "%b %-d, %Y"
           )}
         </p>
-        <dl class="grid grid-cols-3 gap-4">
+        <dl class="grid grid-cols-4 gap-4">
+          <div class="rounded-md bg-gray-50 p-4 text-center">
+            <dt class="text-xs text-gray-500">Spent</dt>
+            <dd class="mt-1 text-2xl font-semibold">
+              {Credits.format_cents(@usage.credit_burned_cents)}
+            </dd>
+          </div>
           <div class="rounded-md bg-gray-50 p-4 text-center">
             <dt class="text-xs text-gray-500">Conversations</dt>
             <dd class="mt-1 text-2xl font-semibold">{@usage.conversations}</dd>

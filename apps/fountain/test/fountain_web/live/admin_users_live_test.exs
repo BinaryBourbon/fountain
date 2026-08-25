@@ -446,8 +446,11 @@ defmodule FountainWeb.AdminUsersLiveTest do
     test "shows 30-day usage per user", %{conn: conn} do
       admin = insert_admin()
       user = insert_active_user()
-      {:ok, _} = Fountain.Billing.record_usage(user.id, "turn_started", nil, nil)
-      {:ok, _} = Fountain.Billing.record_usage(user.id, "sandbox_provisioned", nil, nil)
+
+      {:ok, _} =
+        Fountain.Billing.record_usage(user.id, "turn_started", nil, nil, %{
+          "conversation_id" => Ecto.UUID.generate()
+        })
 
       conn = login_user(conn, admin)
       {:ok, _lv, html} = live(conn, ~p"/admin/users")

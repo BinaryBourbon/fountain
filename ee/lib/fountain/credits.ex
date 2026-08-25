@@ -199,6 +199,29 @@ defmodule Fountain.Credits do
     |> Repo.all()
   end
 
+  @doc """
+  Cents the ledger took from one tenant in `[period_start, period_end)`:
+  every `burn_*` row by `inserted_at`, as a positive number. Zero with
+  billing off. This is what the customer was charged for the window; the
+  usage numbers beside it are what will be charged when in-flight turns
+  close, and the two are not expected to agree to the cent.
+  """
+  @spec burned_between(binary(), DateTime.t(), DateTime.t()) :: non_neg_integer()
+  def burned_between(user_id, %DateTime{} = period_start, %DateTime{} = period_end)
+      when is_binary(user_id) do
+    if Billing.enabled?() do
+      from(e in LedgerEntry,
+        where: e.user_id == ^user_id and like(e.reason, "burn_%"),
+        where: e.inserted_at >= ^period_start and e.inserted_at < ^period_end,
+        select: coalesce(sum(e.amount_cents), 0)
+      )
+      |> Repo.one()
+      |> Kernel.-()
+    else
+      0
+    end
+  end
+
   @doc "One entry by idempotency key, or nil."
   @spec get_by_key(String.t()) :: LedgerEntry.t() | nil
   def get_by_key(key) when is_binary(key), do: Repo.get_by(LedgerEntry, idempotency_key: key)
