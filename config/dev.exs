@@ -47,6 +47,11 @@ config :fountain, :oauth_clients, [
     id: "fountain-workbench",
     name: "Fountain Workbench",
     redirect_uris: ["http://localhost:5173/", "http://localhost:5174/"]
+  },
+  %{
+    id: "reflex",
+    name: "Reflex",
+    redirect_uris: ["http://localhost:5183/"]
   }
 ]
 
