@@ -74,6 +74,36 @@ defmodule Fountain.BillingTest do
     end
   end
 
+  describe "month_range/2" do
+    test "is half-open: the last second of the month is inside it" do
+      now = ~U[2026-02-14 12:00:00Z]
+      %{start: s, end: e} = Billing.month_range(0, now: now)
+      assert s == ~U[2026-02-01 00:00:00Z]
+      assert e == ~U[2026-03-01 00:00:00Z]
+      assert DateTime.compare(~U[2026-02-28 23:59:59Z], e) == :lt
+
+      assert %{start: ~U[2025-12-01 00:00:00Z], end: ~U[2026-01-01 00:00:00Z]} =
+               Billing.month_range(2, now: now)
+
+      {ts, te} = Billing.current_month_range()
+      assert ts.day == 1 and te.day == 1 and te.hour == 0
+    end
+
+    test "usage_summary/3 counts an event in the month's last second" do
+      user = insert_verified_user()
+      %{start: s, end: e} = Billing.month_range(0, now: ~U[2026-02-14 12:00:00Z])
+
+      {:ok, _} =
+        Billing.record_usage(user.id, "turn_started", Ecto.UUID.generate(), "conversation")
+
+      Repo.update_all(Fountain.Billing.UsageEvent,
+        set: [inserted_at: ~U[2026-02-28 23:59:59Z]]
+      )
+
+      assert Billing.usage_summary(user.id, s, e).turns == 1
+    end
+  end
+
   describe "emit/5" do
     setup do
       {:ok, user: insert_verified_user()}

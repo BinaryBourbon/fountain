@@ -295,21 +295,34 @@ defmodule Fountain.Billing do
   """
   @spec current_month_range() :: {DateTime.t(), DateTime.t()}
   def current_month_range do
-    now = DateTime.utc_now()
-    period_start = %DateTime{now | day: 1, hour: 0, minute: 0, second: 0, microsecond: {0, 0}}
-    last_day = :calendar.last_day_of_the_month(now.year, now.month)
-
-    period_end = %DateTime{
-      now
-      | day: last_day,
-        hour: 23,
-        minute: 59,
-        second: 59,
-        microsecond: {0, 0}
-    }
-
+    %{start: period_start, end: period_end} = month_range()
     {period_start, period_end}
   end
+
+  @doc """
+  One whole UTC calendar month as a **half-open** `%{start, end}`:
+  `months_ago` back from the running month (0, the default, is this month;
+  `:now` pins the clock).
+  `end` is the first instant of the next month, so every consumer that
+  filters `>= start and < end` covers the whole month — the old inclusive
+  `23:59:59` end (a Stripe `current_period_end` habit) dropped the last
+  second of every month from every query. A surface that prints the window
+  shows `end` minus a second, or its date minus a day.
+  """
+  @spec month_range(non_neg_integer(), keyword()) :: %{start: DateTime.t(), end: DateTime.t()}
+  def month_range(months_ago \\ 0, opts \\ []) when is_integer(months_ago) and months_ago >= 0 do
+    now = Keyword.get(opts, :now) || DateTime.utc_now()
+    total = now.year * 12 + (now.month - 1) - months_ago
+    {year, month} = {div(total, 12), rem(total, 12) + 1}
+
+    %{
+      start: month_start(year, month),
+      end: month_start(year + div(month, 12), rem(month, 12) + 1)
+    }
+  end
+
+  defp month_start(year, month),
+    do: DateTime.new!(Date.new!(year, month, 1), ~T[00:00:00], "Etc/UTC")
 
   @doc """
   Returns a usage summary for `user_id` over the given period.
@@ -577,15 +590,8 @@ defmodule Fountain.Billing do
     funded =
       Repo.one(from(u in User, where: u.credit_balance_cents > 0, select: count(u.id))) || 0
 
-    deferred =
-      Repo.one(
-        from(u in User,
-          where: u.credit_balance_cents > 0,
-          select: coalesce(sum(u.credit_balance_cents), 0)
-        )
-      )
-
-    month_start = %{now | day: 1, hour: 0, minute: 0, second: 0, microsecond: {0, 6}}
+    deferred = Fountain.Billing.Finance.deferred_cents()
+    %{start: month_start} = month_range(0, now: now)
 
     purchases_this_month =
       Repo.one(

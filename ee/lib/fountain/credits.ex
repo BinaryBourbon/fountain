@@ -144,13 +144,19 @@ defmodule Fountain.Credits do
   past its date stops funding new work the moment it passes, not when the
   expiry sweep gets round to writing the row (`Workers.CreditExpirer`).
   `Billing.check_spend/1` is the door; every spend calls that.
+
+  Options: `:now` pins the clock for the expiry read; `:min` is the least
+  spendable balance that passes (default 1 cent — "positive"). Rent passes a
+  month's rent, so a contact is refused unless its first month is covered.
   """
   @spec check_balance(User.t() | binary(), keyword()) :: :ok | {:error, :insufficient_credits}
   def check_balance(subject, opts \\ []) do
+    min = Keyword.get(opts, :min, 1)
+
     cond do
       not Billing.enabled?() -> :ok
       comped?(subject) -> :ok
-      spendable(subject, Keyword.get(opts, :now) || DateTime.utc_now()) > 0 -> :ok
+      spendable(subject, Keyword.get(opts, :now) || DateTime.utc_now()) >= min -> :ok
       true -> {:error, :insufficient_credits}
     end
   end
@@ -234,30 +240,19 @@ defmodule Fountain.Credits do
   end
 
   @doc """
-  Whether credits are live on this deployment: billing is on (ADR 0031).
-  Off, no surface shows a balance — there is nothing to show, and a "$0.00"
-  on a self-hosted console would be a lie.
-  """
-  @spec active?() :: boolean()
-  def active?, do: Billing.enabled?()
-
-  @doc """
-  The spend gate (ADR 0030 decision 6, ADR 0031): `:ok` unless credits are
-  active and `check_balance/1` says the tenant is out. `Billing.check_spend/1`
-  is this; call that, not this, from a door.
+  The spend gate (ADR 0030 decision 6, ADR 0031): `check_balance/2` with the
+  defaults. `Billing.check_spend/1` is this; call that, not this, from a door.
   """
   @spec gate(User.t() | binary()) :: :ok | {:error, :insufficient_credits}
-  def gate(subject) do
-    if active?(), do: check_balance(subject), else: :ok
-  end
+  def gate(subject), do: check_balance(subject)
 
   @doc """
   The one shape every surface renders (the billing page, the dashboard,
   `GET /api/account/billing`, the admin account view), so they cannot
   disagree.
 
-    * `:active?` — `active?/0`; when false the other numbers are zero and
-      should not be shown
+    * `:active?` — `Billing.enabled?/0`; when false the other numbers are
+      zero and should not be shown
     * `:balance_cents` — the cached balance, possibly negative
     * `:expiring_cents` / `:expires_at` — what the earliest live grant still
       has unspent, and when it goes
@@ -279,7 +274,7 @@ defmodule Fountain.Credits do
     now = Keyword.get(opts, :now) || DateTime.utc_now()
     card = price_card()
 
-    if active?() do
+    if Billing.enabled?() do
       balance = balance(user)
       purchased = purchased_remaining(user.id)
 

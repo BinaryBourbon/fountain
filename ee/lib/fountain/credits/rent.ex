@@ -5,13 +5,15 @@ defmodule Fountain.Credits.Rent do
 
     * `month_cents/0` is `CREDIT_NUMBER_CENTS + CREDIT_INBOX_CENTS`; unset
       prices are zero, and zero rent means nothing here does anything.
-    * `check_provision/1` refuses a new contact when enforcement is on and
-      the balance is short of one month (`{:error, :insufficient_credits}`).
+    * `check_provision/1` refuses a new contact when the spendable balance is
+      short of one month (`{:error, :insufficient_credits}`); it is the same
+      gate every other spend passes (`Credits.check_balance/2`), so a comped
+      account and a billing-off deployment are never refused.
     * `charge/3` debits one month for a contact under
       `burn_rent:<contact>:<period_start>` and moves `rent_paid_through` one
-      month on. With enforcement off the debit always lands, negative or not.
-      With it on, a short balance leaves the row unpaid and stamps
-      `rent_due_at`, which starts the grace.
+      month on. A comped account is charged whatever its balance (the ledger
+      is how Finance sees a comp's cost). A short balance leaves the row
+      unpaid and stamps `rent_due_at`, which starts the grace.
     * `collect/1` is the daily pass: charge every contact whose month is up,
       email the tenant at day 0, 3 and 6 of the grace, and release the
       contact on day 7 through `Team.Comms.release_contact/3`. Release is
@@ -40,25 +42,24 @@ defmodule Fountain.Credits.Rent do
 
   @doc "Whether rent is charged at all: credits active and a price set."
   @spec charging?() :: boolean()
-  def charging?, do: Credits.active?() and month_cents() > 0
+  def charging?, do: Fountain.Billing.enabled?() and month_cents() > 0
 
   @doc """
-  Whether a tenant may provision a contact. Only refuses under enforcement,
-  and only when the balance cannot cover the first month.
+  Whether a tenant may provision a contact: the credit gate
+  (`Credits.check_balance/2`, so billing-off and comped pass, and an expired
+  lot does not count) with the first month's rent as the minimum. `:ok` when
+  nothing is charged.
   """
   @spec check_provision(binary()) :: :ok | {:error, :insufficient_credits}
   def check_provision(user_id) when is_binary(user_id) do
-    if Credits.active?() and not comped?(user_id) and month_cents() > 0 and
-         Credits.balance(user_id) < month_cents(),
-       do: {:error, :insufficient_credits},
-       else: :ok
+    if charging?(), do: Credits.check_balance(user_id, min: month_cents()), else: :ok
   end
 
   @doc """
   Debit one month starting at `period_start` for `contact`. Returns
   `{:ok, contact}` with `rent_paid_through` advanced, `{:ok, :duplicate,
   contact}` when that month was already charged, `{:error,
-  :insufficient_credits}` when enforcement refused it (and `rent_due_at` is
+  :insufficient_credits}` when the gate refused it (and `rent_due_at` is
   now set), or `{:ok, :free}` when nothing is charged on this deployment.
   """
   @spec charge(Contact.t(), DateTime.t(), keyword()) ::
@@ -80,8 +81,7 @@ defmodule Fountain.Credits.Rent do
 
         {:ok, :duplicate, contact}
 
-      Credits.active?() and not comped?(contact.user_id) and
-          Credits.balance(contact.user_id) < cents ->
+      Credits.check_balance(contact.user_id, min: cents) != :ok ->
         {:ok, _} = stamp(contact, rent_due_at: contact.rent_due_at || truncate(now))
         {:error, :insufficient_credits}
 
@@ -223,15 +223,6 @@ defmodule Fountain.Credits.Rent do
     day = min(date.day, Date.days_in_month(Date.new!(y, m, 1)))
     {:ok, next} = DateTime.new(Date.new!(y, m, day), DateTime.to_time(at), "Etc/UTC")
     truncate(next)
-  end
-
-  # A comped account is never refused anything (Billing.comp_account/2), rent
-  # included: the month is still written, so Finance sees the cost.
-  defp comped?(user_id) do
-    case Fountain.Accounts.get_user(user_id) do
-      %{comped: true} -> true
-      _ -> false
-    end
   end
 
   defp truncate(dt), do: DateTime.truncate(dt, :second)

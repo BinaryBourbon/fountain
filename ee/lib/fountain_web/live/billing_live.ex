@@ -21,8 +21,7 @@ defmodule FountainWeb.Live.BillingLive do
   def mount(_params, _session, socket) do
     if Billing.enabled?() do
       user = socket.assigns.current_user
-      {period_start, period_end} = Billing.current_month_range()
-      period = %{start: period_start, end: period_end}
+      period = Billing.month_range()
 
       {:ok,
        assign(socket,
@@ -154,7 +153,10 @@ defmodule FountainWeb.Live.BillingLive do
       <div class="rounded-lg border bg-white p-6 shadow-sm">
         <h2 class="mb-1 text-lg font-medium">Usage this period</h2>
         <p class="mb-4 text-xs text-gray-400">
-          {Calendar.strftime(@period.start, "%b %-d")} – {Calendar.strftime(@period.end, "%b %-d, %Y")}
+          {Calendar.strftime(@period.start, "%b %-d")} – {Calendar.strftime(
+            DateTime.add(@period.end, -1, :second),
+            "%b %-d, %Y"
+          )}
         </p>
         <dl class="grid grid-cols-3 gap-4">
           <div class="rounded-md bg-gray-50 p-4 text-center">

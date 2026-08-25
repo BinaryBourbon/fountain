@@ -123,7 +123,7 @@ defmodule FountainWeb.Live.AdminFinanceLive do
              %{
                "provider" => provider,
                "period_start" => DateTime.to_date(period_start),
-               "period_end" => DateTime.to_date(period_end),
+               "period_end" => period_end |> DateTime.add(-1, :second) |> DateTime.to_date(),
                "amount_cents" => cents,
                "note" => params["note"]
              },
@@ -146,34 +146,11 @@ defmodule FountainWeb.Live.AdminFinanceLive do
     end
   end
 
-  # `months_ago` back from the current month, as a whole UTC month. Zero is
-  # the running month, which is the default and the only one still moving.
-  defp month_range(0), do: Billing.current_month_range()
-
+  # `months_ago` back from the current month, as a whole half-open UTC month
+  # (`Billing.month_range/1`). Zero is the running month, the only one moving.
   defp month_range(months_ago) do
-    now = DateTime.utc_now()
-    total = now.year * 12 + (now.month - 1) - months_ago
-    {year, month} = {div(total, 12), rem(total, 12) + 1}
-
-    start = %DateTime{
-      now
-      | year: year,
-        month: month,
-        day: 1,
-        hour: 0,
-        minute: 0,
-        second: 0,
-        microsecond: {0, 0}
-    }
-
-    %DateTime{
-      start
-      | day: :calendar.last_day_of_the_month(year, month),
-        hour: 23,
-        minute: 59,
-        second: 59
-    }
-    |> then(&{start, &1})
+    %{start: period_start, end: period_end} = Billing.month_range(months_ago)
+    {period_start, period_end}
   end
 
   @impl true

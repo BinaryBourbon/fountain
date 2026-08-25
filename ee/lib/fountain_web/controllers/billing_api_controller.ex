@@ -44,8 +44,7 @@ defmodule FountainWeb.BillingApiController do
   def show(conn, _params) do
     with :ok <- require_billing() do
       user = conn.assigns.current_user
-      {period_start, period_end} = Billing.current_month_range()
-      period = %{start: period_start, end: period_end}
+      period = Billing.month_range()
 
       render(conn, :show,
         user: user,

@@ -110,6 +110,19 @@ defmodule Fountain.Credits.RentTest do
       assert Credits.balance(user.id) == -500
     end
 
+    test "an expired but unswept grant does not fund a contact (the same gate as a turn)" do
+      user = insert_empty_user()
+
+      {:ok, _} =
+        Credits.grant(user.id, 5_000, "grant_opening",
+          idempotency_key: "old",
+          expires_at: ~U[2026-01-01 00:00:00Z]
+        )
+
+      assert Credits.balance(user.id) == 5_000
+      assert {:error, :insufficient_credits} = Rent.check_provision(user.id)
+    end
+
     test "provisioning is refused below a month, and allowed at it" do
       user = insert_empty_user()
       assert {:error, :insufficient_credits} = Rent.check_provision(user.id)

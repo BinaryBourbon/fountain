@@ -372,9 +372,13 @@ defmodule Fountain.Billing.Finance do
     }
   end
 
-  # Every positive balance, whoever holds it — a deleted account's ledger is
-  # gone with the account (ADR 0009), so this is what is owed today.
-  defp deferred_cents do
+  @doc """
+  Every positive balance, whoever holds it — a deleted account's ledger is
+  gone with the account (ADR 0009), so this is what is owed today. The one
+  query behind both the finance page and the `/admin` tile.
+  """
+  @spec deferred_cents() :: non_neg_integer()
+  def deferred_cents do
     Repo.one(
       from u in User,
         where: u.credit_balance_cents > 0,

@@ -10,6 +10,14 @@ server releases.
 
 ---
 
+## [1.1.1] — 2026-08-25
+
+### Changed
+
+- `GET /api/account/billing` `period.end` is now the first instant of the
+  next month (a half-open window) rather than `23:59:59` of the last day.
+  Render the window as `end` minus a second.
+
 ## [1.1.0] — 2026-08-25
 
 ### Removed
