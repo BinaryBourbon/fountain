@@ -46,7 +46,8 @@ defmodule FountainWeb.AdminLive.Index do
     |> assign_billing_overview()
   end
 
-  # overview_admin/0 runs real queries (MRR, status counts, webhook events);
+  # overview_admin/0 runs real queries (funded accounts, deferred credit,
+  # webhook events);
   # on a billing-disabled instance nothing renders them, so don't run them.
   defp assign_billing_overview(socket) do
     if socket.assigns.billing_enabled do
@@ -79,7 +80,7 @@ defmodule FountainWeb.AdminLive.Index do
                                                                 do: "event is",
                                                                 else: "events are"} failing
         </span>
-        — subscription state may lag Stripe. See Billing ↗
+        — a purchase or a clawback may not have reached the ledger. See Billing ↗
       </.link>
 
       <section class="space-y-3">

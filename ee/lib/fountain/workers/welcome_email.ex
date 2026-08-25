@@ -11,9 +11,9 @@ defmodule Fountain.Workers.WelcomeEmail do
   after they signed up.
   """
 
-  # fields must include :worker — StripeCustomerSync is enqueued in the same
+  # fields must include :worker — other workers are enqueued in the same
   # request with byte-identical args (%{user_id: ...}), and a [:args]-only
-  # uniqueness key silently swallows this job as its duplicate.
+  # uniqueness key silently swallows this job as their duplicate.
   use Oban.Worker,
     queue: :mailer,
     max_attempts: 5,

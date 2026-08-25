@@ -1541,12 +1541,13 @@ defmodule FountainWeb.Schemas do
         max_concurrent_sandboxes: %Schema{
           type: :integer,
           nullable: true,
-          description: "The concurrency cap actually enforced: the override, or the plan's."
+          description:
+            "The concurrency cap actually enforced: the override, or the balance rule's."
         },
         sandbox_limit_override: %Schema{
           type: :integer,
           nullable: true,
-          description: "Admin override of the plan's cap. Null means the plan's cap applies."
+          description: "Admin override of the cap. Null means the balance rule applies."
         },
         credit_balance_cents: %Schema{
           type: :integer,
@@ -1612,8 +1613,8 @@ defmodule FountainWeb.Schemas do
           minimum: 0,
           nullable: true,
           description:
-            "Override of the plan's concurrent-sandbox cap. Null clears it, " <>
-              "handing the cap back to the plan."
+            "Override of the balance-funded concurrent-sandbox cap. Null clears it, " <>
+              "handing the cap back to the balance rule."
         }
       },
       required: [:limit]

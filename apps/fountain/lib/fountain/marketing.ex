@@ -3,13 +3,13 @@ defmodule Fountain.Marketing do
   Whether this deployment is the Fountain project's own marketing site.
 
   `/` serves one of two pages. The hosted deployment serves the product pitch:
-  a hero, a price, a free trial. Every other deployment serves a plain front
+  a hero, the prices, the opening credit. Every other deployment serves a plain front
   door — the instance, a way in, and a link to the manual.
 
   The reasoning is `Fountain.Legal`'s (#517), one page over. A self-hosted
   instance must never serve the upstream project's legal terms, and it has no
   more business serving the upstream project's sales copy: nobody running
-  Fountain for their own team is selling a 14-day trial of it.
+  Fountain for their own team is selling credit for it.
 
   Off unless `MARKETING_SITE=true` (config/runtime.exs), so a self-host is
   right by default and the hosted deployment opts in — the same shape, for the

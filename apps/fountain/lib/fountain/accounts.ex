@@ -889,7 +889,7 @@ defmodule Fountain.Accounts do
   - `:comped` — `true` for free accounts
   - `:role` — `"admin"` or `"user"`
   - `:verified` — `true`/`false` (whether `email_verified_at` is set)
-  - `:sort` — `"email"`, `"joined"`, `"trial_end"`, or `"last_activity"`
+  - `:sort` — `"email"`, `"joined"`, or `"last_activity"`
     (unknown values fall back to `"joined"`)
   - `:dir` — `"asc"` or `"desc"` (default `"desc"`)
   - `:page` / `:per_page` — 1-based offset pagination
@@ -982,10 +982,11 @@ defmodule Fountain.Accounts do
   @doc """
   Override a user's concurrent-sandbox cap (ADR 0005). Admin-only.
 
-  The cap normally comes from the plan (`Fountain.Plans`). This is the
-  operator's override for the two things a plan cannot express: raising the
-  cap for a trusted tenant, and dropping it to zero during abuse. `nil` clears
-  the override and hands the cap back to the plan.
+  The cap normally follows the credit balance (`Fountain.Quotas.sandbox_limit/1`,
+  ADR 0031). This is the operator's override for the two things the balance
+  rule cannot express: raising the cap for a trusted tenant, and dropping it
+  to zero during abuse. `nil` clears the override and hands the cap back to
+  the balance.
   """
   def update_sandbox_limit(%User{} = user, limit, opts \\ []) do
     user
@@ -1014,11 +1015,10 @@ defmodule Fountain.Accounts do
   termination logs and moves on rather than failing the suspend; `SandboxReaper`
   sweeps stragglers. Login and API-key auth refuse while `suspended_at` is set.
 
-  Billing is deliberately untouched: the Stripe subscription keeps running and
-  webhooks keep syncing status (like comped, inverted — the status is accurate,
-  the gate is elsewhere). A suspension is short-lived or becomes a deletion;
-  pausing Stripe would add a resume path for an account we may be about to
-  destroy.
+  Billing is deliberately untouched: the credit ledger keeps its balance and
+  the pricer keeps burning whatever was already running (like comped,
+  inverted — the balance is accurate, the gate is elsewhere). A suspension is
+  short-lived or becomes a deletion.
 
   Returns `{:ok, user, reaped_count}`.
   """
@@ -1103,7 +1103,7 @@ defmodule Fountain.Accounts do
   def suspended?(%User{suspended_at: suspended_at}), do: not is_nil(suspended_at)
 
   @doc """
-  Provisioning-path backstop, shaped like `Billing.check_active/1`: sessions
+  Provisioning-path backstop, shaped like `Billing.check_spend/1`: sessions
   and API keys already refuse suspended accounts, but every route to a sprite
   should fail even if a surface slips. An unknown id fails closed.
   """

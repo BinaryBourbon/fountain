@@ -16,6 +16,22 @@ upgrade, is in
 
 ## [Unreleased]
 
+### Changed
+
+- **Credits cleanup 3/3 (#1128).** The prose catches up with ADR 0031. ADR
+  0006 is marked superseded, ADR 0030's status block describes what is built
+  (no switches, no tiers, `CreditExpirer`), ADR 0026 and 0031 are corrected,
+  and the index is regenerated. CLAUDE.md loses the plans trailer and gains
+  the `require_pending_verification` hook row. The manual's API page lists
+  the endpoints that exist (`credits/checkout`, admin `credits`, `comped=`),
+  the 402 and 503 codes, and drops the portal, subscription checkout and
+  resync; the configuration, architecture, mail, Sprites, integrations,
+  dashboards, SDK and release-task pages, `.env.example`, the compose file,
+  the k8s configmap and the finance Grafana board no longer describe a
+  subscription, a trial or a plan. Every docstring and comment the review
+  found still describing the subscription era is rewritten, including the
+  `users` field comments that had drifted onto the wrong fields.
+
 ### Removed
 
 - **Credits cleanup 2/3 (#1127).** The dead code and the dead columns the

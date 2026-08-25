@@ -49,10 +49,7 @@ defmodule FountainWeb.AdminJSON do
       # null when the cap is simply the plan's.
       max_concurrent_sandboxes: Fountain.Quotas.sandbox_limit_for(u),
       sandbox_limit_override: u.sandbox_limit_override,
-      # Teammate contacts this account is not charged for. Distinct from a
-      # `comped` subscription_status, which makes everything free.
-      # The prepaid balance (ADR 0030); meaningful only while credits are
-      # active on the deployment, zero otherwise.
+      # A free account (ADR 0031): the balance is never checked.
       comped: u.comped,
       credit_balance_cents: u.credit_balance_cents,
       active_sandboxes: Map.get(sandbox_counts, u.id, 0),

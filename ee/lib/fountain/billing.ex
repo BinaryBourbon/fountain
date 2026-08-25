@@ -33,12 +33,11 @@ defmodule Fountain.Billing do
   def check_spend(subject), do: Fountain.Credits.gate(subject)
 
   @doc """
-  Creates a Stripe Customer for the given user.
+  Creates a Stripe Customer for the given user and stores its id.
 
-  Customer only. Starting the trial is `start_trial_subscription/1`, kept
-  separate because this function is also on the Checkout path — where the user
-  is about to buy, and opening a trialing subscription moments before a paid one
-  would be wrong.
+  Customer only: a customer is what Checkout attaches a credit-pack payment
+  to, and what a refund or dispute is traced back through. Nothing is
+  subscribed and nothing is charged here (ADR 0031).
   """
   @spec create_stripe_customer(User.t()) :: {:ok, User.t()} | {:error, term()}
   def create_stripe_customer(%User{} = user) do
@@ -150,8 +149,8 @@ defmodule Fountain.Billing do
 
   A failed apply rolls the `stripe_events` claim back by design, so without
   this a failing event leaves zero DB trace — the failure exists only in
-  Stripe's dashboard and our logs, and subscription state silently lags
-  reality. One row per event id: a retried delivery bumps `failure_count`
+  Stripe's dashboard and our logs, and a purchase or a clawback silently
+  never reaches the ledger. One row per event id: a retried delivery bumps `failure_count`
   and `last_failed_at` (and un-resolves a previously resolved row) rather
   than accumulating a row per attempt across Stripe's three days of retries.
 
@@ -557,35 +556,17 @@ defmodule Fountain.Billing do
   The numbers an operator checks daily, in one read-only pass — for the admin
   panel (no tenant scoping; the caller is behind `require_admin`).
 
-  - `status_counts` — users per `subscription_status`
-  - `trials_ending_7d` — trialing users whose `trial_ends_at` is within the
-    next 7 days
-  - `conversions_this_month` — `checkout.session.completed` webhook events
+  - `funded` — accounts with a positive credit balance
+  - `deferred_cents` — the sum of every positive balance: credit granted or
+    sold and not yet spent
+  - `purchases_this_month` — `checkout.session.completed` webhook events
     since the start of the current UTC month. Every verified webhook is
     claimed into `stripe_events` before handling, so the claim table is a
-    complete record of checkouts — including a canceled user coming back.
-  - `mrr_cents` / `mrr_by_plan` — recurring revenue, priced per plan from
-    `Fountain.Billing.Finance.mrr/0`: each active subscription at its own
-    tier's price. Deliberately `active`
-    only: `past_due` is at-risk revenue, comped is not revenue.
+    complete record of checkouts.
+  - `webhook_failures` — unresolved rows from `record_webhook_failure/2`
 
-    It used to be `active × :stripe_price_monthly_cents`, one configured
-    amount for everybody. The day there was a second price was supposed to be
-    loud and was not — #991 shipped four tiers and this tile went on charging
-    every account the legacy $29, under-reporting a deployment selling Scale
-    by a factor of seven. The catalog has held every plan's price since, so
-    there is nothing left to configure and nothing left to get out of step.
-    `STRIPE_PRICE_MONTHLY_CENTS` is no longer read here.
-  - `recent_events` — the last processed webhook events, newest first.
-  - `failed_events` — unresolved webhook processing failures, most recently
-    failed first (#501). Failed deliveries are never claimed (the claim rolls
-    back with the failed apply), so these come from `stripe_webhook_failures`,
-    written by the controller outside the rolled-back transaction.
-
-  Options: `:now` pins the clock, `:event_limit` caps
-  `recent_events`/`failed_events` (default 10).
+  Read the function for the exact keys; they are what `/admin` renders.
   """
-  @spec overview_admin(keyword()) :: map()
   def overview_admin(opts \\ []) do
     now = Keyword.get(opts, :now, DateTime.utc_now())
     event_limit = Keyword.get(opts, :event_limit, 10)

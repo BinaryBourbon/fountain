@@ -3,17 +3,17 @@ type: ADR
 title: "Hard Stripe billing gate at launch with a 14-day trial"
 description: "Hard Stripe billing gate at launch with a 14-day trial; past_due is read-only, canceled is blocked with 402. The gate protects spend, not features."
 tags: [billing, stripe]
-status: stable
+status: deprecated
 adr: "0006"
-adr_status: "Accepted"
+adr_status: "Superseded"
 date: 2026-05-09
 generated: { by: human:jhgaylor, at: 2026-08-05T02:16:38-04:00 }
-verified: { by: human:jhgaylor, at: 2026-08-05T02:16:38-04:00 }
+verified: { by: agent:claude-code, at: 2026-08-25T05:00:00-04:00 }
 ---
 
 # 0006 — Hard Stripe billing gate at launch with a 14-day trial
 
-**Status:** Accepted — 2026-05-09.
+**Status:** Superseded by [ADR 0031](0031-credits-are-the-product.md) (2026-08-25). There is no subscription, no trial and no `subscription_status`; the gate that protects spend is the credit balance (`Billing.check_spend/1` = `Credits.gate/1`), and a refusal is `402 insufficient_credits`. What survives from here is the *shape* of the decision — a hard gate on spend at the doors, not on features, with the console readable regardless — and the Stripe webhook plumbing, now carrying credit packs. The text below is history: it describes the gate as built on 2026-05-09 and amended through 2026-08-05, none of which is in the code.
 
 ## Context
 

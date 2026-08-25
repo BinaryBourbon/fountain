@@ -27,8 +27,9 @@ defmodule Fountain.Funnel do
     can be deleted, usage events predate nothing after metering (#213) — either
     alone under-counts.
   - **funded** — holds a positive credit balance (ADR 0031). Comped accounts
-    are operator-granted, not conversions, and are excluded; converted-then-
-    canceled users drop out of this stage (a churn view is #286's job).
+    are operator-granted, not conversions, and are excluded; an account that
+    spent its balance to zero drops out of this stage (a churn view is #286's
+    job).
 
   Everything is computed from one pass over `users` plus two grouped min
   queries — O(users) in memory, which is fine well past 10k users; push the

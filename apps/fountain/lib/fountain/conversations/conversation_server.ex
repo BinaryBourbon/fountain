@@ -3820,10 +3820,10 @@ defmodule Fountain.Conversations.ConversationServer do
   # Every turn passes through here, whichever door it came in by — the
   # controller/LiveView call above, or the queued initial prompt a wake
   # delivers as a cast. The provisioning gates cover fresh sprites only; a
-  # live server (or the reuse arm of a wake) outlives the subscription state
-  # it was started under, and each turn resets the idle clock, so an expired
-  # trial or failed card otherwise bought up to the 24h max lifetime of
-  # continued service per live sandbox (#313). Suspension is the same shape.
+  # live server (or the reuse arm of a wake) outlives the balance it was
+  # started under, and each turn resets the idle clock, so a balance spent to
+  # zero otherwise bought up to the 24h max lifetime of continued service per
+  # live sandbox (#313). Suspension is the same shape.
   defp turn_gate(user_id) do
     with :ok <- Fountain.Accounts.check_not_suspended(user_id) do
       Fountain.Billing.check_spend(user_id)

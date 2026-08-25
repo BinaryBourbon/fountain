@@ -2,8 +2,10 @@ defmodule Fountain.Workers.CreditExpirer do
   @moduledoc """
   Takes the unused free money back out (ADR 0030 decision 2, ADR 0031): a
   grant whose `expires_at` has passed loses what its lot still holds, under
-  `expire:<grant_id>`. Daily. The opening grant is posted at registration
-  (`Credits.grant_opening/2`); there are no tier grants any more.
+  `expire:<grant_id>`. Daily, and on every tick of `Workers.CreditPricer`, so
+  an expired grant is swept within minutes rather than at the next 06:23. The
+  opening grant is posted at verification (`Credits.grant_opening/2`); an
+  operator's grant never expires.
   """
 
   use Oban.Worker, queue: :billing, max_attempts: 3, unique: [period: 60]

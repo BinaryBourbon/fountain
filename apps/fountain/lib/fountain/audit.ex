@@ -42,10 +42,9 @@ defmodule Fountain.Audit do
     * `Conversations.mark_read/2` and theme/preference updates — reading and
       display settings are not state changes anyone audits.
 
-  Two system paths record a **summary per run** rather than per row, for the
-  same reason: `Workers.RetentionPruner` (which deletes `audit_events`, so the
-  trail must be able to account for its own shrinkage) and the trial-backfill
-  release task.
+  One system path records a **summary per run** rather than per row, for the
+  same reason: `Workers.RetentionPruner`, which deletes `audit_events`, so the
+  trail must be able to account for its own shrinkage.
   """
 
   import Ecto.Query
@@ -122,9 +121,9 @@ defmodule Fountain.Audit do
     #     says why the name cannot be the route;
     #   * nothing — a self-issued API key, which was 70% of the trail.
     #
-    # `refresh_person/1` runs for all three. A subscription transition
-    # recorded against a system actor changes the account's shape whether or
-    # not the row itself is worth counting.
+    # `refresh_person/1` runs for all three. A credit event recorded against
+    # a system actor changes the account's shape whether or not the row
+    # itself is worth counting.
     refresh_person(event)
 
     cond do
@@ -195,7 +194,7 @@ defmodule Fountain.Audit do
   # An action that changes the *shape* of the account, not just its contents.
   # These are the only ones worth re-reading the user row for: PostHog person
   # properties are what cohorts are built from, and they go stale the moment a
-  # trial converts or an account is suspended. Everything else (an agent
+  # balance moves or an account is suspended. Everything else (an agent
   # created, a secret written) leaves the person unchanged, and refreshing on
   # those would put a `SELECT` on every audited mutation in the system.
   @person_refreshing_prefixes ~w(account. auth. billing. credit. admin.)

@@ -3,8 +3,8 @@ defmodule FountainWeb.Live.AdminFinanceLive do
   `/admin/finance` — what Fountain is paid, what Fountain pays, and the gap,
   per tenant.
 
-  `/admin` had both halves and never put them together: an MRR tile with no
-  cost beside it, and a sandbox-hours table with no money in it. Neither could
+  `/admin` had both halves and never put them together: a deferred-credit
+  tile with no cost beside it, and a sandbox-hours table with no money in it. Neither could
   answer the only question an operator actually asks a finance page, which is
   which accounts cost more than they bring in.
 
@@ -22,10 +22,9 @@ defmodule FountainWeb.Live.AdminFinanceLive do
       the page offers both and labels the one it is on. Active hours and turn
       hours sit on every row either way, because the gap between them is idle
       time and that is the lever on the bill.
-    * **The window is one calendar month for everybody.** Per-tenant invoiced
-      periods each start on a different day, and a total over windows like
-      that is not a number that can be held next to a provider invoice. A
-      tenant's own invoiced period stays on their detail page.
+    * **The window is one calendar month for everybody.** That is the window
+      a provider invoice covers, so a total over it is a number that can be
+      held next to one.
 
   Read-only. Every lever stays on `/admin` next to its confirmation.
   """

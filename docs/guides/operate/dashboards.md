@@ -78,7 +78,7 @@ Read this one when somebody reports a problem.
 
 Read this one for volume and speed.
 
-- **Lifecycle funnel**. Registered, verified, onboarded, activated, subscribed,
+- **Lifecycle funnel**. Registered, verified, onboarded, activated, funded,
   and the conversion between each pair. The counts are all time, so read the
   slope rather than the level.
 - **What agents actually do**. Turn outcomes per hour, the failure share, and
@@ -99,7 +99,7 @@ Read this one for cost drivers.
 - **Usage events dropped**. Any value above zero means the instance lost
   billable rows.
 - **Sandbox-minutes accrued per hour**. An estimate. See the traps below.
-- **Conversion to paid**. Counts, never revenue. Stripe holds the money.
+- **Funded accounts**. Counts, never revenue. The ledger holds the money.
 
 ## PostHog
 
@@ -126,9 +126,8 @@ Every tile carries a description that states what it measures and why.
 
 | Tile | Question |
 |---|---|
-| `Billable metering events`. | The six event types that build the invoice. |
+| `Billable metering events`. | The nine event types that build the invoice. |
 | `Accounts driving the sandbox bill`. | Top twenty accounts by provisions and turns. |
-| `Usage by subscription status`. | How much billable work comes from accounts that pay. |
 | `Cost concentration`. | More accounts, or heavier accounts. |
 | `Is metering still recording`. | Two independent event streams, compared. |
 
@@ -140,7 +139,7 @@ point that the action already had to pass through.
 | Choke point | Events |
 |---|---|
 | `Fountain.Audit.record/1`. | Each audited mutation, under its own action name. |
-| `Fountain.Billing.record_usage/5`. | The six `usage.` events. |
+| `Fountain.Billing.record_usage/5`. | The nine `usage.` events. |
 | `Conversations.publish_stage/4`. | `conversation.turn.done` and the other outcome stages. |
 | `FountainWeb.Live.Hooks`. | `$pageview` for the console. |
 

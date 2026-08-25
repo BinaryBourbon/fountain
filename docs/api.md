@@ -135,9 +135,8 @@ re-enters that wizard. Complete it over the API and the loop closes.
 ### Billing
 
 ```
-GET    /api/account/billing           # balance, cap, current-month usage
-POST   /api/account/billing/portal    # Stripe Billing Portal URL
-POST   /api/account/billing/checkout  # Stripe Checkout URL
+GET    /api/account/billing                   # balance, cap, current-month usage
+POST   /api/account/billing/credits/checkout  # Stripe Checkout URL for a credit pack
 ```
 
 Stripe needs a browser to finish, so the URL is what you get. Mint it here,
@@ -147,9 +146,12 @@ supplied would be an open redirect.
 `credits/checkout` returns a one-time Stripe Checkout URL for a credit pack.
 The balance moves when Stripe's webhook confirms the payment.
 
-Both refuse a comped account with `422`. Both answer `502` when Stripe is
-unreachable, and guess nothing. On an instance with payment off, all three are
-a `404` with `"billing": "disabled"`.
+The checkout refuses a comped account with `422`. It answers `502` when
+Stripe is unreachable, and guesses nothing. On an instance with payment off,
+both endpoints are a `404` with `"billing": "disabled"`.
+
+`GET /api/auth/me` carries `comped`. It is `true` for an account an operator
+made free, and `null` when payment is off.
 
 ### Data export and deletion
 
@@ -862,13 +864,13 @@ Each action mirrors the admin UI, and its refusals with it. Each one records
 the same privilege-trail event.
 
 ```
-GET    /api/admin/users                     # ?q= ?status= ?role= ?verified= ?sort= ?dir= ?page= ?per_page=
+GET    /api/admin/users                     # ?q= ?comped= ?role= ?verified= ?sort= ?dir= ?page= ?per_page=
 GET    /api/admin/users/:id
 POST   /api/admin/users/:id/role            # {"role": "admin"|"user"}
 POST   /api/admin/users/:id/sandbox-limit   # {"limit": n}
 POST   /api/admin/users/:id/comp            # {"comped": true|false}
 POST   /api/admin/users/:id/suspend         # {"suspended": true|false}
-POST   /api/admin/users/:id/resync-stripe
+POST   /api/admin/users/:id/credits         # {"cents": n, "note": "..."}: grant credit
 DELETE /api/admin/users/:id
 GET    /api/admin/sandboxes
 POST   /api/admin/sandboxes/:id/reap
@@ -953,7 +955,7 @@ to walk the whole trail.
 |---|---|
 | `400` | The request body is invalid. |
 | `401` | The auth is absent or invalid. |
-| `402` | Your credit balance is zero or below. The code is `insufficient_credits`, and the body carries `upgrade_url`. |
+| `402` | Your credit balance is zero or below. The code is `insufficient_credits`, and the body carries `upgrade_url`. The old `subscription_required` code does not occur. |
 | `403` | The wrong tenant. |
 | `404` | Nothing found. |
 | `409` | The request conflicts with the current state. The codes are `no_runner_online`, `sandbox_at_capacity` and `sandbox_not_attachable`. |
@@ -961,6 +963,7 @@ to walk the whole trail.
 | `422` | A validation error. |
 | `429` | The rate limit stopped you. |
 | `500` | An internal error. |
+| `503` | The instance is at its fleet ceiling, or a sandbox is not up yet. The codes are `fleet_full`, `provisioning` and `sprite_probe_failed`, and the response carries `Retry-After`. |
 
 ## LLM-native discovery
 

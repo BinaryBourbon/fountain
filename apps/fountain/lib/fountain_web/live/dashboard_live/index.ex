@@ -156,8 +156,8 @@ defmodule FountainWeb.DashboardLive.Index do
           <.metric label="Turns" value={format_count(@usage.turns)} />
           <%!-- Turn hours, not sandbox time. Sandbox wall-clock is Fountain's
                 cost and nothing a customer buys or is measured on: it went up
-                while they slept, and the number that decides whether they are
-                inside their plan is this one (Fountain.Plans). The sandbox
+                while they slept, and the number their credit burns against
+                is this one (ADR 0031). The sandbox
                 figure stays in the hint, where it explains itself. --%>
           <.metric
             label="Turn hours"

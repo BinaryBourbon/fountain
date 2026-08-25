@@ -324,7 +324,7 @@ export interface paths {
          *
          *     `threadId` binds to a conversation (`agui:<threadId>`): the first run opens one, later runs prompt it. Only the newest user message is sent — the agent's memory lives in its sandbox, not in the replayed transcript.
          *
-         *     Errors before the stream opens are ordinary JSON responses (404 for an unknown agent, 402 without a subscription); once it is open, failure arrives as `RUN_ERROR`.
+         *     Errors before the stream opens are ordinary JSON responses (404 for an unknown agent, 402 with no credit); once it is open, failure arrives as `RUN_ERROR`.
          */
         post: operations["FountainWeb.AguiController.run"];
         delete?: never;
@@ -1122,7 +1122,7 @@ export interface paths {
         put?: never;
         /**
          * Run a schedule now
-         * @description The same path as the page's "Run now": the prompt goes where the schedule says (the teammate's thread, or a one-off computer) and `last_run_at`, `last_conversation_id` and `last_error` are stamped either way. The cron is untouched. 400 `conversation_busy` while the teammate's previous turn is still running, 503 while its computer is still starting, 404 when an in-thread schedule's agent is not on the team; the sandbox quota and subscription refusals are the same as `POST /api/conversations`. Audited as `team.schedule.fired`.
+         * @description The same path as the page's "Run now": the prompt goes where the schedule says (the teammate's thread, or a one-off computer) and `last_run_at`, `last_conversation_id` and `last_error` are stamped either way. The cron is untouched. 400 `conversation_busy` while the teammate's previous turn is still running, 503 while its computer is still starting, 404 when an in-thread schedule's agent is not on the team; the sandbox quota and credit refusals are the same as `POST /api/conversations`. Audited as `team.schedule.fired`.
          */
         post: operations["FountainWeb.TeamScheduleController.run"];
         delete?: never;
@@ -2817,7 +2817,7 @@ export interface components {
         };
         /** AdminSandboxLimitRequest */
         AdminSandboxLimitRequest: {
-            /** @description Override of the plan's concurrent-sandbox cap. Null clears it, handing the cap back to the plan. */
+            /** @description Override of the balance-funded concurrent-sandbox cap. Null clears it, handing the cap back to the balance rule. */
             limit: number | null;
         };
         /** BuzzIdentityResponse */
@@ -3540,13 +3540,13 @@ export interface components {
             inserted_at?: string;
             /** Format: date-time */
             last_activity_at?: string | null;
-            /** @description The concurrency cap actually enforced: the override, or the plan's. */
+            /** @description The concurrency cap actually enforced: the override, or the balance rule's. */
             max_concurrent_sandboxes?: number | null;
             /** Format: date-time */
             onboarding_completed_at?: string | null;
             /** @enum {string} */
             role: "admin" | "user";
-            /** @description Admin override of the plan's cap. Null means the plan's cap applies. */
+            /** @description Admin override of the cap. Null means the balance rule applies. */
             sandbox_limit_override?: number | null;
             suspended?: boolean;
             /** Format: date-time */
@@ -5742,7 +5742,7 @@ export interface operations {
                     "application/json": components["schemas"]["ConversationResponse"];
                 };
             };
-            /** @description Subscription required */
+            /** @description Insufficient credits */
             402: {
                 headers: {
                     [name: string]: unknown;

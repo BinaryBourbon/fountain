@@ -219,7 +219,7 @@ defmodule Fountain.Team do
   Idempotent — an agent already on the team gets its existing live
   conversation back, `attrs` ignored, and nothing is recorded, since nothing
   changed. Returns `{:ok, conv}` or the `start_conversation/2` error
-  (`:not_found`, `:subscription_required`, `{:sandbox_quota_exceeded, _}`,
+  (`:not_found`, `:insufficient_credits`, `{:sandbox_quota_exceeded, _}`,
   ...). `opts` is audit attribution, plus an optional `:source` (`"ui"` or
   `"api"`, default `"ui"`) recorded on the conversation.
   """
@@ -363,7 +363,7 @@ defmodule Fountain.Team do
 
   Returns `{:ok, conv}` with the conversation the message went to, or the
   `send_prompt`/`start_conversation` error unchanged (`:busy`,
-  `:provisioning`, `:subscription_required`, ...).
+  `:provisioning`, `:insufficient_credits`, ...).
   """
   def send_message(user_id, agent_id, text, images \\ [], opts \\ [])
       when is_binary(user_id) and is_binary(agent_id) and is_binary(text) do

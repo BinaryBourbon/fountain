@@ -2,10 +2,10 @@ defmodule FountainWeb.BillingApiController do
   @moduledoc """
   Billing self-serve over the API (#524).
 
-  All user-facing billing lived in `BillingLive`: the usage summary, Checkout
-  session minting, Portal session minting. `GET /api/auth/me` exposed
-  `subscription_status` and nothing else, so a CLI user who hit the
-  subscription gate got a 402 with no programmatic way out of it.
+  All user-facing billing lived in `BillingLive`: the balance, the usage
+  summary and Checkout minting. `GET /api/auth/me` exposed nothing about
+  money, so a CLI user who hit the credit gate got a 402 with no programmatic
+  way out of it. This is the way out: read the balance, mint a Checkout URL.
 
   Stripe requires a browser to finish, so URLs are the deliverable — this mints
   them, the user opens them. Return URLs are server-chosen on purpose: a

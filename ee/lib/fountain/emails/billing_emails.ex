@@ -1,6 +1,6 @@
 defmodule Fountain.Emails.BillingEmails do
   @moduledoc """
-  Swoosh templates for billing-adjacent and growth email (EE).
+  Swoosh templates for the credit emails and the welcome (EE).
 
   Split out of `Fountain.Emails.UserEmails` in #475: account mail
   (verification, password reset, suspension, deletion, email change) is core;
@@ -8,10 +8,10 @@ defmodule Fountain.Emails.BillingEmails do
 
   Sends:
   - Welcome (once, on the verification transition, from `Workers.WelcomeEmail`)
-  - Trial ending (3 days out, from Stripe's trial_will_end)
-  - Trial expired / payment failed / payment action required / payment
-    recovered / subscription cancelled (from `Workers.LifecycleEmail`,
-    enqueued on webhook status transitions and `invoice.*` events)
+  - Credits low and credits exhausted (from `Workers.CreditsEmail`, after a
+    burn crosses the threshold or zero)
+  - Rent due (from `Workers.CreditsEmail`, on days 0, 3 and 6 of the grace
+    for a teammate's number or inbox)
 
   Shares `UserEmails.from_address/0` and `UserEmails.support_phrase/0` so the
   whole mail surface keeps one sender and one support-contact policy.
@@ -28,9 +28,8 @@ defmodule Fountain.Emails.BillingEmails do
 
   The first email that isn't a chore: everything before it is a verification
   link and everything after it is billing. Says what to do next (the console,
-  which lists what is still missing) and, for trialing accounts, when the
-  trial ends — the same phrasing `deliver_trial_ending_email/2` will use
-  later, so the two emails agree on the date.
+  which lists what is still missing) and, with billing on, what the opening
+  credit is and how long it lasts.
   """
   @spec deliver_welcome_email(User.t()) :: {:ok, term()} | {:error, term()}
   def deliver_welcome_email(%User{} = user) do

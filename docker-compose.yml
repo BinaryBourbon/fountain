@@ -101,8 +101,8 @@ services:
       REGISTRATION_ALLOWED_EMAIL_DOMAINS: ${REGISTRATION_ALLOWED_EMAIL_DOMAINS:-}
 
       # Off by default (the app's own default since #336, pinned here too):
-      # the subscription gate is meaningful for the hosted service and is a
-      # lock with no key on a self-hosted instance.
+      # credits (ADR 0031) are meaningful for the hosted service and a lock
+      # with no key on a self-hosted instance.
       BILLING_ENABLED: ${BILLING_ENABLED:-false}
 
       # No mail by default, so a first run needs nothing external. Accounts

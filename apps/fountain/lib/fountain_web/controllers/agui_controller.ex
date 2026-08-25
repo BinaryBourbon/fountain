@@ -97,7 +97,7 @@ defmodule FountainWeb.AguiController do
         "later runs prompt it. Only the newest user message is sent — the agent's memory " <>
         "lives in its sandbox, not in the replayed transcript.\n\n" <>
         "Errors before the stream opens are ordinary JSON responses (404 for an unknown " <>
-        "agent, 402 without a subscription); once it is open, failure arrives as `RUN_ERROR`.",
+        "agent, 402 with no credit); once it is open, failure arrives as `RUN_ERROR`.",
     parameters: [
       agent_id: [in: :path, type: :string, required: true, description: "The agent to run."],
       activity: [

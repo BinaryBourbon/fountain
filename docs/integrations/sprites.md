@@ -38,14 +38,14 @@ setup on the provider side.
 
 **One platform token pays for each Sprites sandbox.** Fountain provisions
 every tenant's Sprites sandboxes with `SPRITES_TOKEN`, and the bill lands on
-that token's account. On the hosted instance, the subscription price recovers
-it. On yours, you pay. Two results follow.
+that token's account. On the hosted instance, the credit a tenant burns
+recovers it. On yours, you pay. Two results follow.
 
 - Each signup that can start a conversation can spend your money. Close
   registration, or restrict it, before you put an instance on the internet.
-- Fountain caps concurrency for each user. The plan sets the cap, and it is 2
-  on the default plan. An admin can override it for one user from the admin
-  panel. A sandbox counts from the moment a provision starts, because that is
+- Fountain caps concurrency for each user. The credit balance sets the cap,
+  between a floor of 2 and a ceiling of 20. An admin can override it for one
+  user from the admin panel. A sandbox counts from the moment a provision starts, because that is
   the moment it starts to cost money.
 
 Fountain never shows the token to a tenant, to the admin UI, or to a sandbox.

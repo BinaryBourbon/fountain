@@ -4,9 +4,9 @@ defmodule Fountain.Credits do
 
   A tenant's balance is a number of **cents**, cached on
   `users.credit_balance_cents` and backed by the append-only `credit_ledger`.
-  Money comes in as a grant (the tier's monthly allowance, the trial's opening
-  grant, an operator's comp) or a purchase, and goes out as a burn (turn
-  hours, rent, messages), an expiry, or a clawback after a refund or dispute.
+  Money comes in as a grant (the opening grant at verification, an operator's
+  grant) or a purchase, and goes out as a burn (turn hours, rent, messages),
+  an expiry, or a clawback after a refund or dispute.
 
   Three properties every writer relies on:
 
@@ -30,16 +30,16 @@ defmodule Fountain.Credits do
     * **Short-circuit before the ledger.** `check_balance/1` answers `:ok` for
       a deployment with billing off and for a comped tenant *before* reading
       the balance, so a self-hosted install and a comp never brick at zero
-      (the `turn_hour_allowance/2` trialing-defaults failure class, ADR 0030
-      decision 7).
+      (ADR 0030 decision 7).
 
-  ## What is built
+  ## Who writes and who reads
 
-  This module: post, grant, debit, balance, check_balance, list, recompute,
-  and the price card. **Nothing calls `check_balance/1` to refuse anything
-  yet** — that is #1086 phase 4 — and nothing writes burn rows until the
-  pricing workers land (phase 2, steps 2 and 3). The ledger exists so that
-  they have somewhere to write.
+  `Workers.CreditPricer` burns closed turns and priced messages;
+  `Credits.Rent` burns rent; `Workers.CreditExpirer` (and the pricer's tick)
+  expires grants; `Credits.Purchases` grants packs and claws them back;
+  `grant_opening/2` is posted by `Accounts.verify_email/2`; an operator grants
+  from the admin panel. `gate/1`, behind `Billing.check_spend/1`, is what
+  every door reads (ADR 0031).
 
   ## Audit
 

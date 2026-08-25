@@ -3,32 +3,18 @@ defmodule Fountain.Billing.Finance do
   What Fountain is paid and what Fountain pays, per tenant, over a period.
 
   The pieces have existed for a while and never met. `Billing.overview_admin/1`
-  had revenue with no cost beside it, `Billing.provider_spend/1` had cost with
-  no revenue beside it and deliberately no money in it at all, and
-  `Billing.turn_hour_allowance/2` had the sold unit but only ever for one
-  tenant at a time. This module puts the three on one row so the question
-  "which tenants cost more than they pay" has an answer.
+  had revenue with no cost beside it, and `Billing.provider_spend/1` had cost
+  with no revenue beside it and deliberately no money in it at all. This
+  module puts the two on one row so the question "which tenants cost more
+  than they pay" has an answer.
 
   ## Revenue
 
-  The plan — `Fountain.Plans.monthly_cents/1` for the tenant's tier — is the
-  recurring line. Teammate contacts are not a second subscription item any
-  more: they are rented from the prepaid balance (`Fountain.Credits.Rent`),
-  so their revenue is credit burned, reported under `credits/1`.
-
-  Only an `active` subscription contributes. A trialing account pays nothing
-  yet and a comped one pays nothing by decision, so both count as zero
-  revenue against real cost — which is the point of looking. `past_due` is
-  reported apart as at-risk rather than folded into MRR: it is revenue that
-  has not arrived.
-
-  Every row carries two plans, because since #1022 they can differ. `:plan` is
-  `Plans.resolve/1` — the tier the subscription is *for*, which is what a
-  trial converts into and what its revenue lines are priced at.
-  `:effective_plan` is `Plans.effective/1` — whose entitlements apply *today*,
-  which during a trial is the smaller `trial` plan. The allowance columns read
-  the second. Reading the first would measure a trialing account against hours
-  it does not have yet, and report it inside an allowance it is over.
+  Credits are the product (ADR 0031): a tenant's revenue is the credit it
+  burned in the period — turn hours, rent for numbers and inboxes
+  (`Fountain.Credits.Rent`), messages — reported under `credits/1` beside what
+  was granted and what was sold. A comped account burns credit like any other
+  (the ledger is how a comp's cost is seen) but paid for none of it.
 
   ## Cost, and the rate card
 
@@ -443,9 +429,9 @@ defmodule Fountain.Billing.Finance do
   # Turn seconds that spend a tenant's allowance: the providers Fountain pays
   # for, so a tenant's own runner (ADR 0022) is excluded, summed per turn
   # rather than the sandbox's busy union (ADR 0023 step 6). The same filter and
-  # the same figure `Billing.turn_hours_used/2` applies, and it has to be the
-  # same one — the allowance shown here and the allowance shown on the tenant's
-  # own billing page cannot come apart.
+  # the same figure `Billing.usage_summary/3` reports and `CreditPricer` burns,
+  # and it has to be the same one — the hours shown here and the hours on the
+  # tenant's own billing page cannot come apart.
   defp billable_turn_seconds(usage) do
     usage.by_provider
     |> Enum.filter(&SandboxUsage.platform_cost?(&1.provider))

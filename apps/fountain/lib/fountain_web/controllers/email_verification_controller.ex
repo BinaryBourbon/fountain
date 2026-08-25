@@ -12,10 +12,9 @@ defmodule FountainWeb.EmailVerificationController do
   prompts for the token from that URL. Both routes accept the same token —
   there is one verification secret, not two.
 
-  After a successful verification, a Stripe Customer record is created
-  via the `Fountain.Workers.StripeCustomerSync` job so that
-  the Stripe Customer exists before the trial ends, avoiding a race at
-  upgrade time.
+  A successful verification posts the opening credit
+  (`Accounts.verify_email/2` → `Credits.grant_opening/2`, ADR 0031) and
+  enqueues the welcome email.
   """
 
   use FountainWeb, :controller

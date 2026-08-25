@@ -3,7 +3,7 @@ defmodule FountainWeb.AdminController do
   Operator surface over the API (#527).
 
   Every admin operation was `AdminLive`-only, so nothing could be scripted: a
-  bulk trial extension, a suspension from an incident runbook, a nightly export
+  bulk credit grant, a suspension from an incident runbook, a nightly export
   of the privilege trail all meant a human clicking. This mirrors the LiveView's
   actions one-for-one, including its refusals.
 
