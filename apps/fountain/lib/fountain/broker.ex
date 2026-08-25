@@ -276,7 +276,30 @@ defmodule Fountain.Broker do
         []
       end
 
-    bound ++ catalog
+    merge_by_host(bound ++ catalog)
+  end
+
+  # The broker matches exactly one service per host, so two keys bound to
+  # the same host must share one entry: the first declared keeps its name
+  # and auth shape, and the substitutions of every key are carried together.
+  # Found live: an account with both an Anthropic API key and an OAuth token
+  # got two services for api.anthropic.com, the API-key one won, and the
+  # OAuth placeholder went through unreplaced — a 401.
+  defp merge_by_host(services) do
+    services
+    |> Enum.reduce([], fn svc, acc ->
+      case Enum.find_index(acc, &(&1.host == svc.host)) do
+        nil ->
+          acc ++ [svc]
+
+        i ->
+          List.update_at(acc, i, fn kept ->
+            subs = Enum.uniq_by(kept.substitutions ++ svc.substitutions, & &1.key)
+            auth = if kept.auth == %{type: "passthrough"}, do: svc.auth, else: kept.auth
+            %{kept | substitutions: subs, auth: auth}
+          end)
+      end
+    end)
   end
 
   # Both names may be present after the merge; the git URL is written with
