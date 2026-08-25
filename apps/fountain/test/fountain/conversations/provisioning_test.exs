@@ -110,6 +110,7 @@ defmodule Fountain.Conversations.ProvisioningTest do
                Provisioning.check_broker_support(true, :runner, env, conv.id)
 
       assert [event] = stage_events(conv.id, "broker")
+
       assert %{"reason" => "backend_lacks_network_policy", "provider" => "runner"} =
                Jason.decode!(event.data)
     end
@@ -125,14 +126,18 @@ defmodule Fountain.Conversations.ProvisioningTest do
     test "a broker that does not answer fails the conversation before a sandbox exists" do
       conv = insert_conversation()
 
-      expect(Fountain.Broker, :preflight, fn -> {:error, {:broker, :unreachable, :econnrefused}} end)
+      expect(Fountain.Broker, :preflight, fn ->
+        {:error, {:broker, :unreachable, :econnrefused}}
+      end)
 
       assert {:error, {:broker, :unreachable, :econnrefused}} =
                Provisioning.check_broker_support(true, :sprites, nil, conv.id)
 
       assert [event] = stage_events(conv.id, "broker")
       assert event.state == "failed"
-      assert %{"reason" => "broker_unreachable", "detail" => ":econnrefused"} = Jason.decode!(event.data)
+
+      assert %{"reason" => "broker_unreachable", "detail" => ":econnrefused"} =
+               Jason.decode!(event.data)
     end
   end
 

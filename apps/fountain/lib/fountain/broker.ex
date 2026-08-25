@@ -130,7 +130,8 @@ defmodule Fountain.Broker do
   placeholder in the first map and its real value is in the second. Keys with
   an empty value are left alone: there is nothing to broker.
   """
-  @spec split(%{String.t() => String.t()}) :: {%{String.t() => String.t()}, %{String.t() => String.t()}}
+  @spec split(%{String.t() => String.t()}) ::
+          {%{String.t() => String.t()}, %{String.t() => String.t()}}
   def split(secrets) when is_map(secrets) do
     Enum.reduce(secrets, {%{}, %{}}, fn {k, v}, {sandbox, brokered} ->
       if Map.has_key?(@catalog, k) and is_binary(v) and v != "" do

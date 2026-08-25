@@ -428,6 +428,7 @@ defmodule Fountain.Conversations.Provisioning do
 
         {:ok, out, code} ->
           publish_stage(conv_id, "broker", "failed", %{reason: "ca_install_exit", exit_code: code})
+
           {:error, {:broker, :ca_install_exit, code, String.slice(to_string(out), 0, 500)}}
 
         {:error, reason} ->

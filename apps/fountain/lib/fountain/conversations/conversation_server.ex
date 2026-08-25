@@ -1442,8 +1442,11 @@ defmodule Fountain.Conversations.ConversationServer do
 
       Task.Supervisor.start_child(Fountain.TaskSupervisor, fn ->
         case Fountain.Broker.release(conv_id) do
-          :ok -> :ok
-          {:error, reason} -> Logger.warning("broker release for conv #{conv_id}: #{inspect(reason)}")
+          :ok ->
+            :ok
+
+          {:error, reason} ->
+            Logger.warning("broker release for conv #{conv_id}: #{inspect(reason)}")
         end
       end)
     end

@@ -159,10 +159,10 @@ defmodule Fountain.Conversations.ConversationServerBrokerTest do
       end)
 
       Mimic.stub(Fountain.Conversations.Provisioning, :clone_repositories, fn _h,
-                                                                             _e,
-                                                                             secrets,
-                                                                             sprite_env,
-                                                                             _c ->
+                                                                              _e,
+                                                                              secrets,
+                                                                              sprite_env,
+                                                                              _c ->
         send(test, {:clone, secrets, sprite_env})
         :ok
       end)
@@ -212,7 +212,9 @@ defmodule Fountain.Conversations.ConversationServerBrokerTest do
       conv = insert_conversation(user_id: user.id, agent: agent)
 
       stub_happy_sprite()
+
       stub(Fountain.Broker, :preflight, fn -> {:error, {:broker, :unreachable, :econnrefused}} end)
+
       reject(Fountain.Sandbox.Sprites, :create, 2)
       reject(Fountain.Broker, :prepare, 2)
 

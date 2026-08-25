@@ -132,9 +132,18 @@ defmodule Fountain.BrokerTest do
         send(test, {:post, url, Keyword.get(opts, :json), req.options[:auth]})
 
         case url do
-          "/v1/vaults" -> {:ok, %{status: 201, body: %{"name" => "c-x"}}}
-          "/v1/credentials" -> {:ok, %{status: 200, body: %{"set" => ["GITHUB_TOKEN"]}}}
-          "/v1/sessions" -> {:ok, %{status: 201, body: %{"token" => "av_sess_conv", "expires_at" => "2030-01-01T00:00:00Z"}}}
+          "/v1/vaults" ->
+            {:ok, %{status: 201, body: %{"name" => "c-x"}}}
+
+          "/v1/credentials" ->
+            {:ok, %{status: 200, body: %{"set" => ["GITHUB_TOKEN"]}}}
+
+          "/v1/sessions" ->
+            {:ok,
+             %{
+               status: 201,
+               body: %{"token" => "av_sess_conv", "expires_at" => "2030-01-01T00:00:00Z"}
+             }}
         end
       end)
 
@@ -166,7 +175,11 @@ defmodule Fountain.BrokerTest do
       assert_received {:put, "/v1/vaults/" <> _, %{services: services}}
 
       assert [
-               %{name: "github-api", host: "api.github.com", auth: %{type: "bearer", token: "GITHUB_TOKEN"}},
+               %{
+                 name: "github-api",
+                 host: "api.github.com",
+                 auth: %{type: "bearer", token: "GITHUB_TOKEN"}
+               },
                %{
                  name: "github-git",
                  host: "github.com",
@@ -174,7 +187,9 @@ defmodule Fountain.BrokerTest do
                }
              ] = services
 
-      assert_received {:post, "/v1/sessions", %{vault: ^vault, vault_role: "proxy", ttl_seconds: ttl}, _}
+      assert_received {:post, "/v1/sessions",
+                       %{vault: ^vault, vault_role: "proxy", ttl_seconds: ttl}, _}
+
       assert ttl == Application.get_env(:fountain, :broker_session_ttl_seconds, 21_600)
     end
 
@@ -211,7 +226,9 @@ defmodule Fountain.BrokerTest do
       end)
 
       assert {:ok, _} = Broker.prepare(@conv, %{"GH_TOKEN" => "g"})
-      assert_received {:services, [%{auth: %{token: "GH_TOKEN"}}, %{auth: %{password: "GH_TOKEN"}}]}
+
+      assert_received {:services,
+                       [%{auth: %{token: "GH_TOKEN"}}, %{auth: %{password: "GH_TOKEN"}}]}
     end
 
     test "a broker error stops the chain and names the step" do
