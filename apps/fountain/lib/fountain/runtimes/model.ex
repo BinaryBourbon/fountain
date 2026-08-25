@@ -189,4 +189,24 @@ defmodule Fountain.Runtimes.Model do
   end
 
   def model_args(_agent), do: []
+
+  @doc """
+  The id to pin over ACP (`session/set_model` or the `model` config option).
+
+  A single-provider runtime names its models bare (`claude-sonnet-4-6`); a
+  multi-provider one (opencode) only knows them by the canonical
+  `provider/model_id`, and a bare id is "model not found" there — after which
+  opencode quietly falls back to its own default over its own gateway, and
+  the provider the tenant configured is never called. Measured live on
+  2026-08-25 with the egress broker's log in front of it.
+  """
+  def acp_model(runtime, model) when is_binary(runtime) do
+    case {provider_for_runtime(runtime), split(model)} do
+      {_, {nil, nil}} -> nil
+      {nil, _} -> model
+      {_provider, {_, id}} -> id
+    end
+  end
+
+  def acp_model(_runtime, model), do: id(model)
 end

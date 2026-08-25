@@ -3304,7 +3304,12 @@ defmodule Fountain.Conversations.ConversationServer do
                         buzz_mcp_servers(state) ++
                         team_mcp_servers(state) ++
                         team_comms_mcp_servers(state),
-                    model: agent && Fountain.Runtimes.Model.id(agent.model),
+                    model:
+                      agent &&
+                        Fountain.Runtimes.Model.acp_model(
+                          conv.runtime || agent.runtime,
+                          agent.model
+                        ),
                     permission_policy: effective_permission_policy(conv, agent)
                   )
                 else
