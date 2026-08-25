@@ -291,7 +291,7 @@ defmodule Fountain.Billing.SandboxUsage do
   the sum over its turns, each clipped to the period.
 
   This is the unit a plan's included hours are measured in
-  (`Fountain.Plans.included_turn_hours/1`): an idle sandbox costs Fountain
+  (`Fountain.Credits.turn_cost_cents/1`): an idle sandbox costs Fountain
   money and is reported by `for_user/3`, but spending nothing of a customer's
   allowance is the deliberate choice — the allowance measures work, not
   forgetfulness. And it is a sum, not a union: two conversations each running

@@ -66,7 +66,7 @@ defmodule FountainWeb.Live.BillingLive do
     tier = Plans.resolve(user.plan)
     now = Plans.effective(user)
 
-    tier.included_turn_hours > now.included_turn_hours or
+    tier.included_credit_cents > now.included_credit_cents or
       tier.concurrent_sandboxes > now.concurrent_sandboxes
   end
 
@@ -375,7 +375,7 @@ defmodule FountainWeb.Live.BillingLive do
               {plan.concurrent_sandboxes} agents at once
             </p>
             <p class="mt-0.5 text-xs text-gray-500">
-              {Credits.format_cents(plan.included_turn_hours * Credits.price_card().turn_hour)} of credit a month
+              {Credits.format_cents(plan.included_credit_cents)} of credit a month
             </p>
             <div class="mt-3">
               <span :if={plan.slug == @plan.slug} class="text-xs font-medium text-indigo-700">
@@ -419,7 +419,7 @@ defmodule FountainWeb.Live.BillingLive do
         <p class="mt-3 text-xs text-gray-500">
           Conversation time costs {Credits.format_cents(@credits.turn_hour_cents)} per turn hour
           and comes out of this balance. Your plan puts {Credits.format_cents(
-            Plans.included_turn_hours(@current_user) * @credits.turn_hour_cents
+            Plans.included_credit_cents(@current_user)
           )} in at the start of every billing period; what is unused expires with the period.
           Credits you buy never expire and are spent last.
         </p>

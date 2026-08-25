@@ -71,8 +71,7 @@ defmodule Fountain.Workers.CreditsEmail do
   @doc "Cents under which a balance is 'low': 20 % of the tier grant, or $2."
   @spec runway_line(Accounts.User.t()) :: pos_integer()
   def runway_line(user) do
-    grant = Fountain.Plans.included_turn_hours(user) * Credits.price_card().turn_hour
-    max(div(grant, 5), 200)
+    max(div(Fountain.Plans.included_credit_cents(user), 5), 200)
   end
 
   @impl Oban.Worker

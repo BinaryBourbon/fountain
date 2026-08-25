@@ -1833,12 +1833,11 @@ defmodule FountainWeb.Schemas do
                   type: :integer,
                   description: "The plan's concurrency cap."
                 },
-                included_turn_hours: %Schema{
+                included_credit_cents: %Schema{
                   type: :integer,
                   description:
-                    "Turn hours the plan's monthly credit grant is sized on: " <>
-                      "this times credits.turn_hour_cents lands at the start of " <>
-                      "each billing period."
+                    "Credit the plan puts into the balance at the start of each " <>
+                      "billing period, in cents. Unused plan credit expires with the period."
                 },
                 sandbox_limit: %Schema{
                   type: :integer,

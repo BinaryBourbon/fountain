@@ -50,21 +50,21 @@ defmodule Fountain.PlansTest do
     # The allowance is derived, not chosen per tier (#1016). Asserting the
     # ratio is what makes breaking it a deliberate act rather than a typo in
     # one of four near-identical literals.
-    test "included turn hours are 20 per concurrent slot, on every plan" do
+    test "included credit is $5 per concurrent slot, on every plan" do
       for plan <- Plans.all() do
-        assert plan.included_turn_hours == plan.concurrent_sandboxes * 20,
-               "#{plan.slug} carries #{plan.included_turn_hours} hours for " <>
+        assert plan.included_credit_cents == plan.concurrent_sandboxes * 500,
+               "#{plan.slug} carries #{plan.included_credit_cents} cents for " <>
                  "#{plan.concurrent_sandboxes} slots"
       end
     end
 
     test "the closed plan carries Team's hours, as it carries Team's capacity" do
-      assert Plans.fetch!("legacy").included_turn_hours ==
-               Plans.fetch!("team").included_turn_hours
+      assert Plans.fetch!("legacy").included_credit_cents ==
+               Plans.fetch!("team").included_credit_cents
     end
 
     test "each public plan includes strictly more hours than the one below" do
-      hours = Enum.map(Plans.public(), & &1.included_turn_hours)
+      hours = Enum.map(Plans.public(), & &1.included_credit_cents)
       assert hours == Enum.sort(hours)
       assert length(Enum.uniq(hours)) == length(hours)
     end
@@ -150,7 +150,7 @@ defmodule Fountain.PlansTest do
 
       for subject <- [plan, "scale", %{plan: "scale"}] do
         assert Plans.concurrent_sandboxes(subject) == plan.concurrent_sandboxes
-        assert Plans.included_turn_hours(subject) == plan.included_turn_hours
+        assert Plans.included_credit_cents(subject) == plan.included_credit_cents
         assert Plans.team_contacts(subject) == plan.team_contacts
         assert Plans.monthly_cents(subject) == plan.monthly_cents
       end

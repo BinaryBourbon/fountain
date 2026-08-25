@@ -10,6 +10,15 @@ server releases.
 
 ---
 
+## [0.3.0] — 2026-08-25
+
+### Changed
+
+- `plan.included_turn_hours` on `GET /api/account/billing` is now
+  `plan.included_credit_cents`: what the plan puts into the prepaid balance
+  each billing period, in cents. A plan is denominated in credit, not hours,
+  so a change to the turn-hour price never changes what a plan includes.
+
 ## [0.2.0] — 2026-08-24
 
 ### Removed

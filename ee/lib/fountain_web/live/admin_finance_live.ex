@@ -277,17 +277,19 @@ defmodule FountainWeb.Live.AdminFinanceLive do
           </div>
         </div>
         <div class="bg-white rounded shadow border border-zinc-200 px-4 py-3">
-          <div class="text-xs text-zinc-500">Turn hours used / sold</div>
+          <div class="text-xs text-zinc-500">Credits burned / granted + sold</div>
           <div class="text-2xl font-semibold tabular-nums">
-            {Float.round(@finance.turn_hours.used, 1)}
-            <span class="text-base text-zinc-400">/ {@finance.turn_hours.sold}</span>
+            {money(@finance.credits.burned_cents)}
+            <span class="text-base text-zinc-400">
+              / {money(@finance.credits.granted_cents + @finance.credits.sold_cents)}
+            </span>
           </div>
           <div class="text-xs text-zinc-500">
-            {if @finance.turn_hours.utilization,
-              do: "#{round(@finance.turn_hours.utilization * 100)}% of the allowance sold",
-              else: "nothing sold"}
-            <span :if={@finance.turn_hours.over_allowance > 0} class="text-amber-700">
-              · {@finance.turn_hours.over_allowance} over
+            {if @finance.credits.utilization,
+              do: "#{round(@finance.credits.utilization * 100)}% of what tenants hold",
+              else: "nothing granted or sold"} · {money(@finance.credits.deferred_cents)} deferred
+            <span :if={@finance.credits.negative_balances > 0} class="text-amber-700">
+              · {@finance.credits.negative_balances} below zero
             </span>
           </div>
         </div>
@@ -317,7 +319,9 @@ defmodule FountainWeb.Live.AdminFinanceLive do
               <td class="px-4 py-2">
                 {line.plan.name}
                 <span class="text-xs text-zinc-400">
-                  {Fountain.Plans.format_usd(line.plan.monthly_cents)}/mo · {line.plan.included_turn_hours}h
+                  {Fountain.Plans.format_usd(line.plan.monthly_cents)}/mo · {money(
+                    line.plan.included_credit_cents
+                  )} credit
                 </span>
               </td>
               <td class="px-4 py-2 text-right tabular-nums">{line.accounts}</td>
@@ -525,7 +529,7 @@ defmodule FountainWeb.Live.AdminFinanceLive do
         <p class="text-xs text-zinc-500">
           Worst margin first. <strong>Active hours</strong>
           is what a provider charges for; <strong>turn hours</strong>
-          is the part with a prompt in flight, which is what the plan includes. The gap is idle time.
+          is the part with a prompt in flight, which is what burns credit. The gap is idle time.
         </p>
         <div class="overflow-x-auto">
           <table class="w-full text-sm bg-white rounded shadow border border-zinc-200">
@@ -534,11 +538,14 @@ defmodule FountainWeb.Live.AdminFinanceLive do
                 <th class="px-3 py-2">Account</th>
                 <th class="px-3 py-2">Plan</th>
                 <th class="px-3 py-2 text-right">Revenue</th>
+                <th class="px-3 py-2 text-right" title="Turn hours with a prompt in flight">
+                  Turn h
+                </th>
                 <th
                   class="px-3 py-2 text-right"
-                  title="Turn hours used against the plan's included hours"
+                  title="Credit burned this period, and the balance held now"
                 >
-                  Turn h
+                  Credits
                 </th>
                 <th
                   class="px-3 py-2 text-right"
@@ -554,7 +561,7 @@ defmodule FountainWeb.Live.AdminFinanceLive do
             </thead>
             <tbody>
               <tr :if={@finance.tenants == []}>
-                <td colspan="9" class="px-3 py-6 text-center text-sm text-zinc-500">No accounts.</td>
+                <td colspan="10" class="px-3 py-6 text-center text-sm text-zinc-500">No accounts.</td>
               </tr>
               <tr
                 :for={t <- @finance.tenants}
@@ -582,12 +589,15 @@ defmodule FountainWeb.Live.AdminFinanceLive do
                     incl. {money(t.contact_revenue_cents)} contacts
                   </div>
                 </td>
+                <td class="px-3 py-2 text-right tabular-nums text-xs">
+                  {Float.round(t.turn_hours, 1)}
+                </td>
                 <td class={[
                   "px-3 py-2 text-right tabular-nums text-xs",
-                  t.allowance_used && t.allowance_used > 1.0 && "text-amber-700 font-medium"
+                  t.credit_balance_cents < 0 && "text-amber-700 font-medium"
                 ]}>
-                  {Float.round(t.turn_hours, 1)}
-                  <span class="text-zinc-400">/ {t.included_turn_hours}</span>
+                  {money(t.credit_burned_cents)}
+                  <div class="text-zinc-400">{money(t.credit_balance_cents)} held</div>
                 </td>
                 <td class="px-3 py-2 text-right tabular-nums text-xs">
                   {Float.round(t.active_hours, 1)}
@@ -707,9 +717,9 @@ defmodule FountainWeb.Live.AdminFinanceLive do
 
   # The hours the reported cost was actually computed from, so the tile's
   # subtitle cannot claim one basis while its number came from the other.
-  defp billed_hours(%{cost: cost, turn_hours: turn_hours}) do
+  defp billed_hours(%{cost: cost, tenants: tenants}) do
     case cost.basis do
-      :turn -> turn_hours.used
+      :turn -> tenants |> Enum.map(& &1.turn_hours) |> Enum.sum() |> Float.round(2)
       :active -> cost.active_hours
     end
   end

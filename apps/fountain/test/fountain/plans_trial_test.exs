@@ -34,7 +34,7 @@ defmodule Fountain.PlansTrialTest do
 
       for plan <- Plans.public() do
         assert trial.concurrent_sandboxes <= plan.concurrent_sandboxes
-        assert trial.included_turn_hours <= plan.included_turn_hours
+        assert trial.included_credit_cents <= plan.included_credit_cents
         assert trial.team_contacts <= plan.team_contacts
       end
     end
@@ -59,9 +59,9 @@ defmodule Fountain.PlansTrialTest do
       assert trial.monthly_cents == 0
     end
 
-    test "holds the 20-hours-per-slot ratio the other plans do" do
+    test "holds the $5-per-slot ratio the other plans do" do
       trial = Plans.fetch!("trial")
-      assert trial.included_turn_hours == trial.concurrent_sandboxes * 20
+      assert trial.included_credit_cents == trial.concurrent_sandboxes * 500
     end
 
     # `users.plan` is written only from the Stripe price on a subscription and
@@ -98,7 +98,7 @@ defmodule Fountain.PlansTrialTest do
 
       assert Plans.effective(user).slug == "trial"
       assert Plans.concurrent_sandboxes(user) == 2
-      assert Plans.included_turn_hours(user) == 40
+      assert Plans.included_credit_cents(user) == 1000
       assert Plans.team_contacts(user) == 0
     end
 
@@ -124,7 +124,7 @@ defmodule Fountain.PlansTrialTest do
     # the paid allowance.
     test "a bare slug is the plan's own number, trial or not" do
       assert Plans.concurrent_sandboxes("scale") == 10
-      assert Plans.included_turn_hours("scale") == 200
+      assert Plans.included_credit_cents("scale") == 5000
     end
 
     # `subscription_status` defaults to "trialing" in the schema, so without

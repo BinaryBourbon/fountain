@@ -16,12 +16,12 @@ commercial instance with `BILLING_ENABLED=true`. Read
 A plan sets one number that Fountain enforces. That number is the count of
 sandboxes a tenant can run at the same time.
 
-| Plan | Concurrent sandboxes | Turn hours | Contact ceiling | Price |
+| Plan | Concurrent sandboxes | Credit a month | Contact ceiling | Price |
 |---|---|---|---|---|
-| Solo | 2 | 40 | 1 | $29/mo |
-| Team | 5 | 100 | 3 | $79/mo |
-| Scale | 10 | 200 | 10 | $199/mo |
-| Legacy | 5 | 100 | 3 | $29/mo |
+| Solo | 2 | $10 | 1 | $29/mo |
+| Team | 5 | $25 | 3 | $79/mo |
+| Scale | 10 | $50 | 10 | $199/mo |
+| Legacy | 5 | $25 | 3 | $29/mo |
 
 Every plan carries the whole product. Only the cap differs. See
 [ADR 0026](https://github.com/jhgaylor/fountain/blob/main/decisions/0026-plans-and-entitlements.md)
@@ -36,11 +36,11 @@ keep it, at Team capacity.
 A trial is not one of the plans above. It is its own plan, and an account gets
 it for the first 14 days whatever tier the subscription names.
 
-| Plan | Concurrent sandboxes | Turn hours | Contact ceiling | Price |
+| Plan | Concurrent sandboxes | Credit a month | Contact ceiling | Price |
 |---|---|---|---|---|
-| Trial | 2 | 40 | 0 | free |
+| Trial | 2 | $10 | 0 | free |
 
-The trial matches Solo on capacity and hours. It stays below Team and Scale.
+The trial matches Solo on capacity and credit. It stays below Team and Scale.
 No trial is larger than a plan that a customer pays for, so a subscription is
 never a downgrade. This is also why the customer portal ends the trial on a
 plan change instead of continuing it.
@@ -57,16 +57,17 @@ bound, not an allowance. Fountain charges for each contact separately.
 
 ### Turn hours measure work, not clock time
 
-Each plan includes 20 turn hours for each concurrent sandbox. A turn hour is
-one hour with a prompt in flight. An agent that waits for a person spends no
+Each plan includes $5 of credit a month for each concurrent sandbox, which
+is 20 turn hours at the default price. A turn hour is one hour with a prompt
+in flight. An agent that waits for a person spends no
 turn hours. Time on a self-hosted runner also spends none, because Fountain
 pays nothing for that machine. Turn hours add up for each turn. Two
 conversations that each run for an hour on one sandbox spend two turn hours,
 on a sandbox that was busy for one.
 
-The hours are a credit grant. At the start of each billing period, Fountain
-puts the plan's hours, at the turn-hour price, into the tenant's balance.
-Each turn takes its time out at the same price. The two limits behave
+The credit is a grant. At the start of each billing period, Fountain puts
+the plan's credit into the tenant's balance. Each turn takes its time out at
+the turn-hour price. The two limits behave
 differently. Fountain refuses the next start for a tenant at the concurrency
 cap. A tenant at a zero balance gets a refusal for new sandboxes and new
 turns, and turns in flight finish. See "Prepaid credits" below.
@@ -86,9 +87,9 @@ instant Fountain starts to price turns. Set it to the time of the deploy,
 never earlier, or every tenant pays for a week of turns before they hold a
 grant.
 
-Each plan puts credit in at the start of every billing period. The amount is
-the plan's turn hours at the turn-hour price. Solo puts in $10, Team $25 and
-Scale $50. That credit expires at the end of the period. A trial gets $10
+Each plan puts credit in at the start of every billing period. Solo puts in
+$10, Team $25 and Scale $50. A change to the turn-hour price changes what an
+hour costs, not what a plan puts in. That credit expires at the end of the period. A trial gets $10
 once, and that credit expires with the trial. Credit a tenant buys never
 expires, and Fountain spends it last.
 

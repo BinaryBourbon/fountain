@@ -2149,7 +2149,7 @@ defmodule Fountain.Billing do
     step 6), not the sandbox's busy time. The same number
     `turn_hours_used/2` computes, carried here so a surface showing usage does
     not need a second pass over the same rows to show the unit a plan is
-    denominated in (`Fountain.Plans.included_turn_hours/1`).
+    denominated in (`Fountain.Credits.turn_cost_cents/1`).
   """
   @spec usage_summary(binary(), DateTime.t(), DateTime.t()) ::
           %{
@@ -2212,7 +2212,7 @@ defmodule Fountain.Billing do
   the admin table shows both. `sandbox_minutes` is wall-clock sandbox time —
   what a provider bills Fountain, so minutes, per provider, because the
   providers charge differently. `turn_hours` is time with a prompt in flight —
-  what a *plan* includes (`Fountain.Plans.included_turn_hours/1`), so hours,
+  what a *plan* includes (`Fountain.Credits.turn_cost_cents/1`), so hours,
   and summed only over the providers Fountain pays for, exactly as
   `turn_hours_used/2` computes it for one tenant.
   """

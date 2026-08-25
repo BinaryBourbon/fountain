@@ -64,7 +64,7 @@ defmodule FountainWeb.BillingApiJSON do
       name: plan.name,
       monthly_cents: plan.monthly_cents,
       concurrent_sandboxes: plan.concurrent_sandboxes,
-      included_turn_hours: plan.included_turn_hours,
+      included_credit_cents: plan.included_credit_cents,
       sandbox_limit: Fountain.Quotas.sandbox_limit_for(user),
       team_contacts: plan.team_contacts
     }

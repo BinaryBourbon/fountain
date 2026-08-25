@@ -45,7 +45,7 @@ defmodule FountainWeb.MarketingPricingTest do
       assert body =~ "#{plan.concurrent_sandboxes} agents at once"
 
       assert body =~
-               "#{Fountain.Credits.format_cents(plan.included_turn_hours * 25)} of credit a month"
+               "#{Fountain.Credits.format_cents(plan.included_credit_cents)} of credit a month"
     end
   end
 
@@ -112,7 +112,7 @@ defmodule FountainWeb.MarketingPricingTest do
     assert body =~ "#{trial.concurrent_sandboxes} agents at once"
 
     assert body =~
-             "with #{Fountain.Credits.format_cents(trial.included_turn_hours * 25)} of credit"
+             "with #{Fountain.Credits.format_cents(trial.included_credit_cents)} of credit"
 
     assert body =~ "so you can judge it before paying"
   end

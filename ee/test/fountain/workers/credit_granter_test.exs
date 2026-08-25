@@ -68,7 +68,7 @@ defmodule Fountain.Workers.CreditGranterTest do
       assert entry.reason == "grant_tier"
       assert entry.expires_at == @pe
       assert entry.idempotency_key == "grant_tier:#{solo.id}:#{DateTime.to_iso8601(@ps)}"
-      assert entry.metadata == %{"plan" => "solo", "hours" => 40}
+      assert entry.metadata == %{"plan" => "solo"}
 
       assert %{tier: 0} = CreditGranter.run(since: @since, now: @now)
       assert Credits.balance(solo.id) == 1000

@@ -551,49 +551,44 @@ defmodule Fountain.Billing.FinanceTest do
   ## ── the totals ───────────────────────────────────────────────────────────
 
   describe "summary/1" do
-    test "turn hours sold counts live accounts, used counts everybody" do
-      subscriber("solo")
-      trialing = subscriber("team", "trialing")
-      ran(trialing, "sprites", 5, 5)
-      cancelled = subscriber("scale", "canceled")
-      ran(cancelled, "sprites", 3, 3)
+    test "credits: granted, burned and sold over the period, deferred balance today" do
+      user = subscriber("solo")
+      other = subscriber("team")
+      at = DateTime.add(@period_start, 3600, :second)
 
-      turn_hours = summary().turn_hours
+      {:ok, _} = Fountain.Credits.grant(user.id, 1000, "grant_tier", idempotency_key: "g1")
+      {:ok, _} = Fountain.Credits.grant(user.id, 2500, "purchase", idempotency_key: "p1")
+      {:ok, _} = Fountain.Credits.debit(user.id, 700, "burn_turn", idempotency_key: "b1")
+      {:ok, _} = Fountain.Credits.grant(other.id, 2500, "grant_tier", idempotency_key: "g2")
+      # An expiry is neither granted nor burned.
+      {:ok, _} = Fountain.Credits.debit(other.id, 2500, "expire", idempotency_key: "x1")
 
-      # The trialing account is sold the *trial's* hours, not the tier's it is
-      # trialling (#1022): hours it has not bought are not hours sold. A
-      # cancelled account is sold nothing at all.
-      assert turn_hours.sold ==
-               Plans.included_turn_hours("solo") + Plans.included_turn_hours("trial")
+      # The ledger stamps now; the summary is over a fixed past month, so
+      # place the rows inside it.
+      Repo.update_all(Fountain.Credits.LedgerEntry, set: [inserted_at: at])
 
-      # ...but hours a cancelled account burned this period are still hours.
-      assert turn_hours.used == 8.0
-    end
-
-    test "a trialing account is measured against the trial's allowance (#1022)" do
-      # The specific trap the resolve/effective split exists for: 50 turn
-      # hours is comfortably inside Team's 100 and well over a trial's 40. Read
-      # through `resolve/1` this account looks fine; it is not.
-      user = subscriber("team", "trialing")
-      ran(user, "sprites", 50, 50)
+      credits = summary().credits
+      assert credits.granted_cents == 3500
+      assert credits.burned_cents == 700
+      assert credits.sold_cents == 2500
+      # user holds 2800, other holds 0.
+      assert credits.deferred_cents == 2800
+      assert credits.negative_balances == 0
+      assert credits.utilization == Float.round(700 / 6000, 4)
 
       row = row_for(summary(), user)
-
-      assert row.included_turn_hours == Plans.included_turn_hours("trial")
-      assert row.effective_plan.slug == "trial"
-      # `plan` stays the tier the trial converts into — that is what its
-      # revenue lines are priced at.
-      assert row.plan.slug == "team"
-      assert row.allowance_used > 1.0
-      assert summary().turn_hours.over_allowance == 1
+      assert row.credit_granted_cents == 1000
+      assert row.credit_burned_cents == 700
+      assert row.credit_sold_cents == 2500
+      assert row.credit_balance_cents == 2800
+      assert summary().revenue.credit_sales_cents == 2500
     end
 
-    test "an over-allowance tenant is counted" do
+    test "a balance below zero is counted" do
       user = subscriber("solo")
-      ran(user, "sprites", 150, 150)
-
-      assert summary().turn_hours.over_allowance == 1
-      assert row_for(summary(), user).allowance_used > 1.0
+      {:ok, _} = Fountain.Credits.debit(user.id, 5, "burn_turn", idempotency_key: "neg")
+      assert summary().credits.negative_balances == 1
+      assert row_for(summary(), user).credit_balance_cents == -5
     end
 
     test "spend by a deleted account stays in the total and out of the rows" do
