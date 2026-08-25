@@ -92,9 +92,15 @@ exactly the customers who spend the most.
    `CREDIT_PRICING_SINCE` are retired as switches: pricing starts when
    billing is on.
 
-7. **Persistent-home rent is a follow-up.** Idle time on a parked home
-   (ADR 0023) is Fountain's cost and the fleet ceiling is what bounds it for
-   now; pricing the mode (#798) is decided separately.
+7. **Persistent-home rent is a follow-up (#1120).** Idle time on a parked
+   home (ADR 0023) is Fountain's cost and the fleet ceiling is what bounds it
+   for now. The question is not "rent for a mode": `ephemeral` and
+   `persistent` are one lifecycle policy on the machine, not two products
+   (#805, the design note 0023 is the incremental step toward), and a parked
+   ephemeral sandbox costs Fountain the same storage as a parked home. What
+   #1120 has to choose is whether the machine's *kept* time is priced as rent
+   per machine (the `Credits.Rent` shape) or metered per parked minute (#798,
+   what `SandboxUsage` is halfway to). Read #805 before deciding.
 
 ## Consequences
 
