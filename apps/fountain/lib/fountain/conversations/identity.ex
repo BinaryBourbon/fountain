@@ -45,7 +45,12 @@ defmodule Fountain.Conversations.Identity do
 
   # Per-conversation pairs. `FOUNTAIN_BASE_URL` stays on disk: it is the same
   # for every conversation and a setup script may legitimately read it.
-  @process_only [@tag_key, "FOUNTAIN_TOKEN", "TRACEPARENT"]
+  #
+  # The broker proxy address carries the conversation's session token (ADR
+  # 0019 §5), so it is per-conversation too: on disk it would be a
+  # cross-conversation read of a credential that brokers another tenant's
+  # vault. `Fountain.Broker.process_only_keys/0` names the variables.
+  @process_only [@tag_key, "FOUNTAIN_TOKEN", "TRACEPARENT"] ++ Fountain.Broker.process_only_keys()
 
   @tag_re ~r/(?:^|\s)FOUNTAIN_CONVERSATION_ID=([0-9a-fA-F-]{36})(?:\s|$)/
 

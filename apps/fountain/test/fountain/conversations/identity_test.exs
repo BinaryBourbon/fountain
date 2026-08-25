@@ -30,6 +30,22 @@ defmodule Fountain.Conversations.IdentityTest do
     test "an empty env stays empty" do
       assert Identity.disk_env([]) == []
     end
+
+    test "keeps the broker proxy address, which carries a session token, off the disk" do
+      env = [
+        {"HTTPS_PROXY", "http://av_sess_x@broker.example:14322"},
+        {"HTTP_PROXY", "http://av_sess_x@broker.example:14322"},
+        {"https_proxy", "http://av_sess_x@broker.example:14322"},
+        {"http_proxy", "http://av_sess_x@broker.example:14322"},
+        {"NODE_EXTRA_CA_CERTS", "/usr/local/share/ca-certificates/agent-vault.crt"},
+        {"GITHUB_TOKEN", "__github_token__"}
+      ]
+
+      assert Identity.disk_env(env) == [
+               {"NODE_EXTRA_CA_CERTS", "/usr/local/share/ca-certificates/agent-vault.crt"},
+               {"GITHUB_TOKEN", "__github_token__"}
+             ]
+    end
   end
 
   describe "tag_command/3" do

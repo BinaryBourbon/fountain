@@ -358,6 +358,11 @@ defmodule Fountain.Conversations.ConversationServer do
       user_id: nil,
       handle: nil,
       sprite_env: [],
+      # ADR 0019 gate 1a. `brokered` holds the catalog secrets the sandbox
+      # never sees (the broker gets them); `broker` is the minted session.
+      # Both stay empty/nil on an unbrokered conversation.
+      brokered: %{},
+      broker: nil,
       current_command: nil,
       current_command_ref: nil,
       current_turn: nil,
@@ -566,7 +571,7 @@ defmodule Fountain.Conversations.ConversationServer do
 
     case load_tenant_state(conv.user_id) do
       {:ok, dek, inference_creds} ->
-        secrets = merge_secrets(env, vault, dek)
+        {secrets, brokered} = split_brokered(conv.user_id, merge_secrets(env, vault, dek))
 
         state =
           %{
@@ -574,7 +579,8 @@ defmodule Fountain.Conversations.ConversationServer do
             | user_id: conv.user_id,
               runtime_session_id: conv.runtime_session_id,
               tenant_key: dek,
-              inference_credentials: inference_creds
+              inference_credentials: inference_creds,
+              brokered: brokered
           }
 
         dispatch_provision(state, conv, sandbox, agent, env, vault, secrets)
@@ -728,6 +734,13 @@ defmodule Fountain.Conversations.ConversationServer do
                env,
                state.conversation_id
              ),
+           :ok <-
+             Fountain.Conversations.Provisioning.check_broker_support(
+               brokered?(state),
+               provider,
+               env,
+               state.conversation_id
+             ),
            :ok <- discard_interrupted_attempt(provider, sandbox, interrupted?) do
         create_sandbox_handle(provider, sandbox)
       end
@@ -746,19 +759,30 @@ defmodule Fountain.Conversations.ConversationServer do
         # the agent needs it in its environment before the first turn runs.
         sandbox_url = record_sandbox_url(sandbox, handle)
 
-        sprite_env = build_sprite_env(state, agent, env, secrets, sandbox_url)
-
-        write_runtime_config(handle, state.runtime_module, agent)
-        write_instructions(handle, runtime, agent)
-        # The file is the machine's; the conversation's identity travels as
-        # process env on every spawn (`Fountain.Conversations.Identity`).
-        Fountain.Conversations.Provisioning.write_env_file(
-          handle,
-          Fountain.Conversations.Identity.disk_env(sprite_env)
-        )
-
-        with :ok <-
-               run_provisioning_pipeline(handle, env, sprite_env, secrets, state.conversation_id),
+        # The broker session is minted before the env is built, because the
+        # env carries it; the CA is installed before anything dials out,
+        # because nothing dials out without it (ADR 0019 gate 1a).
+        with {:ok, state} <- broker_prepare(state),
+             sprite_env = build_sprite_env(state, agent, env, secrets, sandbox_url),
+             _ = write_runtime_config(handle, state.runtime_module, agent),
+             _ = write_instructions(handle, runtime, agent),
+             # The file is the machine's; the conversation's identity travels as
+             # process env on every spawn (`Fountain.Conversations.Identity`).
+             _ =
+               Fountain.Conversations.Provisioning.write_env_file(
+                 handle,
+                 Fountain.Conversations.Identity.disk_env(sprite_env)
+               ),
+             :ok <- broker_install_ca(state, handle),
+             :ok <-
+               run_provisioning_pipeline(
+                 handle,
+                 env,
+                 sprite_env,
+                 secrets,
+                 state.conversation_id,
+                 brokered?(state)
+               ),
              :ok <-
                prepare_runtime_sprite(handle, runtime, state.runtime_module, agent, sprite_env) do
           {:ok, _} = Conversations.update_sandbox(sandbox, %{status: "ready"})
@@ -788,6 +812,7 @@ defmodule Fountain.Conversations.ConversationServer do
           {:error, reason} ->
             Logger.error("provision step failed: #{inspect(reason)}")
             _ = Fountain.Sandbox.destroy(handle)
+            broker_release(state)
             {:ok, _} = Conversations.update_sandbox(sandbox, %{status: "failed"})
 
             publish_stage(state.conversation_id, "provision", "failed", %{
@@ -819,10 +844,10 @@ defmodule Fountain.Conversations.ConversationServer do
   # carries no policy. Skipping it turned a `limited` environment into an
   # unrestricted one, silently, and reported `provision/done`. It costs one
   # fast API call, so the warm start pays nothing for it.
-  defp run_provisioning_pipeline(handle, env, sprite_env, secrets, conv_id) do
+  defp run_provisioning_pipeline(handle, env, sprite_env, secrets, conv_id, brokered?) do
     case attempt_warm_start(handle, env, conv_id) do
       :warm_started ->
-        Fountain.Conversations.Provisioning.apply_network_policy(handle, env, conv_id)
+        apply_egress_policy(handle, env, conv_id, brokered?)
 
       :cold ->
         with :ok <-
@@ -832,13 +857,13 @@ defmodule Fountain.Conversations.ConversationServer do
                  sprite_env,
                  conv_id
                ),
-             :ok <-
-               Fountain.Conversations.Provisioning.apply_network_policy(handle, env, conv_id),
+             :ok <- apply_egress_policy(handle, env, conv_id, brokered?),
              :ok <-
                Fountain.Conversations.Provisioning.clone_repositories(
                  handle,
                  env,
                  secrets,
+                 sprite_env,
                  conv_id
                ) do
           run_setup_script(handle, env, sprite_env, conv_id)
@@ -958,60 +983,71 @@ defmodule Fountain.Conversations.ConversationServer do
         sandbox.sprite_name
       )
 
-    case Fountain.Retry.with_backoff(
-           fn -> Fountain.Sandbox.get(handle) end,
-           label: "sprite lookup on wake"
-         ) do
-      {:ok, _info} ->
-        publish_stage(state.conversation_id, "reattach", "started", %{
-          sprite_name: sandbox.sprite_name,
-          node: to_string(node())
-        })
+    # A broker failure lands in the transient arm below: it says nothing
+    # about the sandbox, and the next wake mints again.
+    with {:ok, _info} <-
+           Fountain.Retry.with_backoff(
+             fn -> Fountain.Sandbox.get(handle) end,
+             label: "sprite lookup on wake"
+           ),
+         {:ok, state} <- broker_prepare(state) do
+      publish_stage(state.conversation_id, "reattach", "started", %{
+        sprite_name: sandbox.sprite_name,
+        node: to_string(node())
+      })
 
-        {state, _conv} = rotate_callback_api_key(state, conv)
-        sprite_env = build_sprite_env(state, agent, env, secrets)
+      {state, _conv} = rotate_callback_api_key(state, conv)
+      sprite_env = build_sprite_env(state, agent, env, secrets)
 
-        # Refresh the .env file in case secrets/env_vars were edited
-        # between the original provision and this reattach.
-        # The file is the machine's; the conversation's identity travels as
-        # process env on every spawn (`Fountain.Conversations.Identity`).
-        Fountain.Conversations.Provisioning.write_env_file(
-          handle,
-          Fountain.Conversations.Identity.disk_env(sprite_env)
-        )
+      # A machine provisioned before its tenant was brokered has no CA yet;
+      # on one that has it this is an idempotent rewrite. Best effort here:
+      # the turn's own failure says more than a refused wake would.
+      case broker_install_ca(state, handle) do
+        :ok -> :ok
+        {:error, reason} -> Logger.warning("broker CA install on wake: #{inspect(reason)}")
+      end
 
-        # Same for the agent's system prompt: an edit reaches the existing
-        # computer on its next wake (#848).
-        write_instructions(handle, conv.runtime || (agent && agent.runtime) || "claude", agent)
+      # Refresh the .env file in case secrets/env_vars were edited
+      # between the original provision and this reattach.
+      # The file is the machine's; the conversation's identity travels as
+      # process env on every spawn (`Fountain.Conversations.Identity`).
+      Fountain.Conversations.Provisioning.write_env_file(
+        handle,
+        Fountain.Conversations.Identity.disk_env(sprite_env)
+      )
 
-        # Normally the wake path already flipped suspended → ready under the
-        # quota reservation; this covers the reaper parking the row mid-wake.
-        # Without it the row would stay `suspended` under a live server —
-        # invisible to the quota and unreachable by any reaper pass.
-        sandbox =
-          if sandbox.status == "suspended" do
-            {:ok, s} =
-              Conversations.update_sandbox(sandbox, %{
-                status: "ready",
-                last_resumed_at: DateTime.utc_now() |> DateTime.truncate(:second)
-              })
+      # Same for the agent's system prompt: an edit reaches the existing
+      # computer on its next wake (#848).
+      write_instructions(handle, conv.runtime || (agent && agent.runtime) || "claude", agent)
 
-            s
-          else
-            sandbox
-          end
+      # Normally the wake path already flipped suspended → ready under the
+      # quota reservation; this covers the reaper parking the row mid-wake.
+      # Without it the row would stay `suspended` under a live server —
+      # invisible to the quota and unreachable by any reaper pass.
+      sandbox =
+        if sandbox.status == "suspended" do
+          {:ok, s} =
+            Conversations.update_sandbox(sandbox, %{
+              status: "ready",
+              last_resumed_at: DateTime.utc_now() |> DateTime.truncate(:second)
+            })
 
-        new_state = %{
-          state
-          | handle: handle,
-            sprite_env: sprite_env,
-            sandbox_started_at: sandbox_clock_start(sandbox)
-        }
+          s
+        else
+          sandbox
+        end
 
-        new_state = reattach_running_turn(new_state)
+      new_state = %{
+        state
+        | handle: handle,
+          sprite_env: sprite_env,
+          sandbox_started_at: sandbox_clock_start(sandbox)
+      }
 
-        {:noreply, new_state}
+      new_state = reattach_running_turn(new_state)
 
+      {:noreply, new_state}
+    else
       {:error, :not_found} ->
         # The provider says the sandbox is gone. That is the one answer that
         # justifies retiring the row: the disk no longer exists, so the next
@@ -1319,8 +1355,107 @@ defmodule Fountain.Conversations.ConversationServer do
         do: Enum.map(env.env_vars, fn {k, v} -> {to_string(k), to_string(v)} end),
         else: []
       ) ++
-      Enum.map(secrets, fn {k, v} -> {k, v} end)
+      Enum.map(secrets, fn {k, v} -> {k, v} end) ++
+      broker_env(state)
   end
+
+  # ── Egress credential brokerage (ADR 0019 gate 1a) ─────────────────────────
+
+  defp brokered?(state), do: Fountain.Broker.enabled_for?(state.user_id)
+
+  # On a brokered conversation the catalog keys leave the secrets map here,
+  # before the MCP substitution and the env are built from it, so both see
+  # the placeholder and neither sees the value.
+  defp split_brokered(user_id, secrets) do
+    if Fountain.Broker.enabled_for?(user_id),
+      do: Fountain.Broker.split(secrets),
+      else: {secrets, %{}}
+  end
+
+  defp broker_env(%{broker: nil}), do: []
+  defp broker_env(%{broker: session}), do: Fountain.Broker.sandbox_env(session)
+
+  # Mint (or re-mint) the conversation's proxy session. A no-op that returns
+  # the state untouched when the conversation is not brokered.
+  defp broker_prepare(state) do
+    if brokered?(state) do
+      publish_stage(state.conversation_id, "broker", "started", %{
+        keys: state.brokered |> Map.keys() |> Enum.sort()
+      })
+
+      case Fountain.Broker.prepare(state.conversation_id, state.brokered) do
+        {:ok, session} ->
+          publish_stage(state.conversation_id, "broker", "done", %{
+            vault: session.vault,
+            expires_at: session.expires_at
+          })
+
+          {:ok, %{state | broker: session}}
+
+        {:error, reason} ->
+          publish_stage(state.conversation_id, "broker", "failed", %{reason: inspect(reason)})
+          {:error, reason}
+      end
+    else
+      {:ok, state}
+    end
+  end
+
+  defp broker_install_ca(%{broker: nil}, _handle), do: :ok
+
+  defp broker_install_ca(state, handle),
+    do: Fountain.Conversations.Provisioning.install_broker_ca(handle, state.conversation_id)
+
+  # A session near its end is replaced before the turn that would outlive it.
+  # The env is rebuilt with the new token; everything else in it is unchanged.
+  defp broker_refresh(%{broker: nil} = state), do: state
+
+  defp broker_refresh(%{broker: session} = state) do
+    if Fountain.Broker.expiring?(session) do
+      case Fountain.Broker.prepare(state.conversation_id, state.brokered) do
+        {:ok, fresh} ->
+          keys = Fountain.Broker.env_keys()
+          kept = Enum.reject(state.sprite_env, fn {k, _} -> to_string(k) in keys end)
+          %{state | broker: fresh, sprite_env: kept ++ Fountain.Broker.sandbox_env(fresh)}
+
+        {:error, reason} ->
+          # The turn runs on the old token, and fails at the proxy if it has
+          # expired. Fail loud there rather than silently here.
+          Logger.warning(
+            "conv #{state.conversation_id}: broker session refresh failed: #{inspect(reason)}"
+          )
+
+          state
+      end
+    else
+      state
+    end
+  end
+
+  # The vault and every session in it go when the conversation's sandbox
+  # does. Best effort and off the caller's path: a broker that is down at
+  # teardown must not keep a sandbox alive, and the vault is idempotently
+  # recreated on the next provision anyway.
+  defp broker_release(state) do
+    if brokered?(state) do
+      conv_id = state.conversation_id
+
+      Task.Supervisor.start_child(Fountain.TaskSupervisor, fn ->
+        case Fountain.Broker.release(conv_id) do
+          :ok -> :ok
+          {:error, reason} -> Logger.warning("broker release for conv #{conv_id}: #{inspect(reason)}")
+        end
+      end)
+    end
+
+    :ok
+  end
+
+  defp apply_egress_policy(handle, env, conv_id, false),
+    do: Fountain.Conversations.Provisioning.apply_network_policy(handle, env, conv_id)
+
+  defp apply_egress_policy(handle, _env, conv_id, true),
+    do: Fountain.Conversations.Provisioning.apply_broker_floor(handle, conv_id)
 
   # The sandbox's own HTTP endpoint, so an agent asked "what's the URL?" can
   # answer. Without it the agent has no way to know: the platform assigns the
@@ -1568,6 +1703,7 @@ defmodule Fountain.Conversations.ConversationServer do
     else
       state = drop_connection(state, "terminated")
       if state.handle, do: _ = Fountain.Sandbox.destroy(state.handle)
+      broker_release(state)
       sandbox = Conversations._unsafe_get_sandbox!(state.sandbox_id)
 
       {:ok, _} =
@@ -2438,6 +2574,7 @@ defmodule Fountain.Conversations.ConversationServer do
     state = drop_connection(state, "reclaimed")
 
     if state.handle, do: _ = Fountain.Sandbox.destroy(state.handle)
+    broker_release(state)
 
     if state.sandbox_id do
       sandbox = Conversations._unsafe_get_sandbox!(state.sandbox_id)
@@ -3024,6 +3161,8 @@ defmodule Fountain.Conversations.ConversationServer do
     # run to time, and a stamp left in state would attach itself to the
     # next turn.
     turn_started_mono = System.monotonic_time(:millisecond)
+
+    state = broker_refresh(state)
 
     try do
       spawn_opts =

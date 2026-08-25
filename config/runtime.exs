@@ -174,6 +174,47 @@ config :fountain, :daytona_api_key, daytona_api_key
 config :fountain, :daytona_api_url, daytona_api_url
 config :fountain, :daytona_snapshot, daytona_snapshot
 
+# Egress credential brokerage (ADR 0019, gate 1a). Blank means off: no broker
+# call is made, and every conversation provisions exactly as it did before
+# the feature existed. The same "" counts-as-unset rule as SPRITES_TOKEN.
+blank_to_nil = fn
+  blank when blank in [nil, ""] -> nil
+  value -> value
+end
+
+broker_url = blank_to_nil.(System.get_env("BROKER_URL"))
+broker_token = blank_to_nil.(System.get_env("BROKER_TOKEN"))
+broker_proxy_url = blank_to_nil.(System.get_env("BROKER_PROXY_URL"))
+
+if broker_url && (is_nil(broker_token) || is_nil(broker_proxy_url)) do
+  raise "BROKER_URL is set, so BROKER_TOKEN and BROKER_PROXY_URL must be set too"
+end
+
+broker_tenants =
+  case System.get_env("BROKER_TENANTS") do
+    blank when blank in [nil, ""] -> []
+    list -> list |> String.split(",") |> Enum.map(&String.trim/1) |> Enum.reject(&(&1 == ""))
+  end
+
+broker_session_ttl =
+  case System.get_env("BROKER_SESSION_TTL_SECONDS") do
+    blank when blank in [nil, ""] ->
+      21_600
+
+    raw ->
+      case Integer.parse(raw) do
+        {n, ""} when n >= 300 and n <= 604_800 -> n
+        _ -> raise "BROKER_SESSION_TTL_SECONDS must be an integer between 300 and 604800"
+      end
+  end
+
+config :fountain, :broker_url, broker_url
+config :fountain, :broker_token, broker_token
+config :fountain, :broker_proxy_url, broker_proxy_url
+config :fountain, :broker_tenants, broker_tenants
+config :fountain, :broker_session_ttl_seconds, broker_session_ttl
+config :fountain, :broker_allow_unenforced, System.get_env("BROKER_ALLOW_UNENFORCED") == "true"
+
 # Self-hosted runners (ADR 0022) need no platform credential; the switch is an
 # operator opt-out. Blank counts as unset (enabled).
 runners_enabled =
