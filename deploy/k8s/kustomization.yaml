@@ -27,4 +27,4 @@ images:
   # Released tags: vX.Y.Z (immutable) and vX.Y (newest patch in the line).
   # https://fountain.inevitable.fyi/docs/guides/operate/upgrade#how-versions-work
   - name: ghcr.io/binarybourbon/fountain
-    newTag: v0.12.0
+    newTag: v0.13.0
