@@ -5,7 +5,7 @@ defmodule FountainWeb.MarketingHTML do
   embed_templates "marketing_html/*"
 
   @doc "Whether the pricing section renders at all: only where the deployment bills."
-  def pricing?, do: Fountain.Billing.enabled?()
+  def pricing?, do: Fountain.Credits.enabled?()
 
   @doc "The opening credit a new account gets, and how long it lasts."
   def opening_credit do

@@ -42,7 +42,7 @@ defmodule Fountain.Credits.Rent do
 
   @doc "Whether rent is charged at all: credits active and a price set."
   @spec charging?() :: boolean()
-  def charging?, do: Fountain.Billing.enabled?() and month_cents() > 0
+  def charging?, do: Fountain.Credits.enabled?() and month_cents() > 0
 
   @doc """
   Whether a tenant may provision a contact: the credit gate

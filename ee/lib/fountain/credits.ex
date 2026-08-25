@@ -53,7 +53,6 @@ defmodule Fountain.Credits do
 
   alias Fountain.Accounts.User
   alias Fountain.Audit
-  alias Fountain.Billing
   alias Fountain.Credits.LedgerEntry
   alias Fountain.Repo
 
@@ -61,6 +60,14 @@ defmodule Fountain.Credits do
 
   @type post_result ::
           {:ok, LedgerEntry.t()} | {:ok, :duplicate, LedgerEntry.t()} | {:error, term()}
+
+  @doc """
+  Whether credits are on for this deployment (`CREDITS_ENABLED`, ADR 0031).
+  Off, nothing is priced, granted, gated or shown: a self-hosted install
+  runs with no money in it at all.
+  """
+  @spec enabled?() :: boolean()
+  def enabled?, do: Application.get_env(:fountain, :credits_enabled, true)
 
   # ---------------------------------------------------------------------------
   # Prices
@@ -154,7 +161,7 @@ defmodule Fountain.Credits do
     min = Keyword.get(opts, :min, 1)
 
     cond do
-      not Billing.enabled?() -> :ok
+      not enabled?() -> :ok
       comped?(subject) -> :ok
       spendable(subject, Keyword.get(opts, :now) || DateTime.utc_now()) >= min -> :ok
       true -> {:error, :insufficient_credits}
@@ -209,7 +216,7 @@ defmodule Fountain.Credits do
   @spec burned_between(binary(), DateTime.t(), DateTime.t()) :: non_neg_integer()
   def burned_between(user_id, %DateTime{} = period_start, %DateTime{} = period_end)
       when is_binary(user_id) do
-    if Billing.enabled?() do
+    if enabled?() do
       from(e in LedgerEntry,
         where: e.user_id == ^user_id and like(e.reason, "burn_%"),
         where: e.inserted_at >= ^period_start and e.inserted_at < ^period_end,
@@ -274,7 +281,7 @@ defmodule Fountain.Credits do
   `GET /api/account/billing`, the admin account view), so they cannot
   disagree.
 
-    * `:active?` — `Billing.enabled?/0`; when false the other numbers are
+    * `:active?` — `Credits.enabled?/0`; when false the other numbers are
       zero and should not be shown
     * `:balance_cents` — the cached balance, possibly negative
     * `:expiring_cents` / `:expires_at` — what the earliest live grant still
@@ -296,7 +303,7 @@ defmodule Fountain.Credits do
     now = Keyword.get(opts, :now) || DateTime.utc_now()
     card = price_card()
 
-    if Billing.enabled?() do
+    if enabled?() do
       balance = balance(user)
       purchased = purchased_remaining(user.id)
 
@@ -373,7 +380,7 @@ defmodule Fountain.Credits do
     days = Keyword.get(cfg, :opening_days, 14)
     now = Keyword.get(opts, :now) || DateTime.utc_now()
 
-    if Billing.enabled?() and cents > 0 do
+    if enabled?() and cents > 0 do
       grant(user_id, cents, "grant_opening",
         idempotency_key: "grant_opening:#{user_id}",
         expires_at: now |> DateTime.add(days * 86_400, :second) |> DateTime.truncate(:second),

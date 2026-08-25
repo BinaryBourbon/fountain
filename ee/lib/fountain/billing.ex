@@ -1,5 +1,11 @@
 defmodule Fountain.Billing do
   @moduledoc """
+  The money side that is not the ledger: the Stripe customer and webhooks,
+  usage summaries, provider spend and the admin overview. The name stays
+  (#1144) — this is billing in the sense of "what Fountain is billed and
+  reports", not the retired subscription; the switch, the gate and the
+  customer-facing surfaces are `Fountain.Credits` and `Credits*`.
+
   Billing context (ADR 0031): the credit gate, the Stripe till, and usage
   aggregation.
 
@@ -20,9 +26,6 @@ defmodule Fountain.Billing do
   alias Fountain.Billing.SandboxUsage
   alias Fountain.Billing.UsageEvent
   alias Fountain.Repo
-
-  @doc "Whether this deployment bills at all: credits on (ADR 0031)."
-  def enabled?, do: Application.get_env(:fountain, :billing_enabled, true)
 
   @doc """
   The gate every spend passes (ADR 0031): the balance. `:ok` when billing is

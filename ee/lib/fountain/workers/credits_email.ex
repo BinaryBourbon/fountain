@@ -13,13 +13,13 @@ defmodule Fountain.Workers.CreditsEmail do
   """
 
   use Oban.Worker,
-    queue: :billing,
+    queue: :credits,
     max_attempts: 5,
     unique: [period: 30 * 86_400, fields: [:args]]
 
   require Logger
 
-  alias Fountain.{Accounts, Credits, Emails.BillingEmails}
+  alias Fountain.{Accounts, Credits, Emails.CreditsEmails}
 
   @emails ~w(credits_low credits_exhausted rent_due)
 
@@ -53,7 +53,7 @@ defmodule Fountain.Workers.CreditsEmail do
   """
   @spec notify_after_burn(String.t()) :: :ok
   def notify_after_burn(user_id) when is_binary(user_id) do
-    with true <- Fountain.Billing.enabled?(),
+    with true <- Fountain.Credits.enabled?(),
          %{comped: false} = user <-
            Accounts.get_user(user_id) do
       balance = Credits.balance(user)
@@ -87,7 +87,7 @@ defmodule Fountain.Workers.CreditsEmail do
     with %{} = user <- Accounts.get_user(user_id),
          %{rent_due_at: %DateTime{}} = contact <-
            Fountain.Repo.get(Fountain.Team.Contact, contact_id) do
-      BillingEmails.deliver_rent_due_email(user, contact, days_left) |> log(user, "rent_due")
+      CreditsEmails.deliver_rent_due_email(user, contact, days_left) |> log(user, "rent_due")
     else
       # Paid or released in the meantime: the reminder would be a lie.
       _ -> :ok
@@ -107,10 +107,10 @@ defmodule Fountain.Workers.CreditsEmail do
             :ok
 
           email == "credits_exhausted" and balance <= 0 ->
-            BillingEmails.deliver_credits_exhausted_email(user, balance) |> log(user, email)
+            CreditsEmails.deliver_credits_exhausted_email(user, balance) |> log(user, email)
 
           email == "credits_low" and balance > 0 and balance <= runway_line() ->
-            BillingEmails.deliver_credits_low_email(user, balance) |> log(user, email)
+            CreditsEmails.deliver_credits_low_email(user, balance) |> log(user, email)
 
           true ->
             :ok

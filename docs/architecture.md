@@ -82,7 +82,7 @@ the key is half of that sentence.
 |---|---|---|
 | **Postgres** | Everything. | `GET /health/ready` returns 503, and a load balancer drains the instance. The app stays up and does not restart, because a restart does not fix Postgres. That is why [the restart check deliberately checks nothing](guides/operate/observability.md#health-endpoints). Recovery happens on its own. A replica that *boots* against a database that is down fails instead, because migrations run at boot. |
 | **sprites.dev** | Conversations. | A new provision and a wake both fail, after bounded retries with backoff. Fountain then marks the conversation `failed`, or leaves it resumable if it was a wake. Everything else still works, which is sign-in, dashboards, agent, environment and vault management, and past logs. Readiness deliberately leaves it out, because a third party's uptime does not belong on the request path. |
-| **Stripe** | Payment for credit packs, which is optional under `BILLING_ENABLED`. | Checkout fails with a visible error. The account page itself still renders, from local state. Stripe delivers a webhook again until Fountain acknowledges it. Fountain expires the opening credit against the local clock, so an outage delays a purchase and does not open the gate. |
+| **Stripe** | Payment for credit packs, which is optional under `CREDITS_ENABLED`. | Checkout fails with a visible error. The account page itself still renders, from local state. Stripe delivers a webhook again until Fountain acknowledges it. Fountain expires the opening credit against the local clock, so an outage delays a purchase and does not open the gate. |
 | **Mail**, from Resend or SMTP. | Signup verification, and password reset. | Both dead-end while the provider is down. The escape hatch is `Fountain.Release.verify_email/1`. Read [Email](guides/operate/email.md). `EMAIL_DELIVERY=none` is a different thing, because an account then self-verifies (ADR 0011). |
 | **GitHub OAuth** | The OAuth login button, which is optional. | That button, and nothing else. Email and password auth still works. |
 | **Sentry** | Error reports, which are optional. | It is inert without a DSN, and nothing depends on it. |
@@ -133,7 +133,7 @@ a state of `started`, `done`, `failed` or `interrupted`.
    client on it. Four gates apply, in order. The agent must exist *and belong
    to you*, because Fountain scopes each query in the system to one tenant.
    The vault must be on the agent's allowlist. The credit gate applies when
-   `BILLING_ENABLED` is on, and answers `402` at a zero balance. The quota for
+   `CREDITS_ENABLED` is on, and answers `402` at a zero balance. The quota for
    concurrent sandboxes applies. The balance funds it, between a floor of 2
    and a ceiling of 20 for each user by default. <!-- vale disable-line STE.IngForms -->
 2. **`provision`.** Fountain creates the sandbox and conversation rows, as
@@ -206,5 +206,5 @@ level, which says what to run and what the output means, is
 | A container restarts in a loop at boot. | Migrations cannot reach Postgres, so the boot fails before it opens a listener. |
 | The stream is dead for some viewers and correct for others, on several replicas. | The Erlang cluster, through `CLUSTER_DNS_QUERY`. |
 | A signup never completes. | Mail delivery. Read [Email](guides/operate/email.md). |
-| `402 insufficient_credits` on a self-hosted instance. | `BILLING_ENABLED` must be `false`. |
+| `402 insufficient_credits` on a self-hosted instance. | `CREDITS_ENABLED` must be `false`. |
 | A sandbox suspends between prompts, and the work resumes on the next one. | That is the design. Read [lifecycle bounds](guides/operate/sandbox-lifetime.md). |

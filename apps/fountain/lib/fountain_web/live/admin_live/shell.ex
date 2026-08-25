@@ -27,7 +27,7 @@ defmodule FountainWeb.AdminLive.Shell do
   """
   attr :title, :string, required: true
   attr :current, :atom, required: true
-  attr :billing_enabled, :boolean, default: false
+  attr :credits_enabled, :boolean, default: false
   slot :subtitle
   slot :actions
 
@@ -44,7 +44,7 @@ defmodule FountainWeb.AdminLive.Shell do
         <div :if={@actions != []} class="flex items-center gap-2">{render_slot(@actions)}</div>
       </div>
 
-      <.admin_tabs current={@current} billing_enabled={@billing_enabled} />
+      <.admin_tabs current={@current} credits_enabled={@credits_enabled} />
     </div>
     """
   end
@@ -54,10 +54,10 @@ defmodule FountainWeb.AdminLive.Shell do
   page titles itself with the record it is showing).
   """
   attr :current, :atom, required: true
-  attr :billing_enabled, :boolean, default: false
+  attr :credits_enabled, :boolean, default: false
 
   def admin_tabs(assigns) do
-    assigns = assign(assigns, :tabs, tabs(assigns.billing_enabled))
+    assigns = assign(assigns, :tabs, tabs(assigns.credits_enabled))
 
     ~H"""
     <nav
@@ -84,9 +84,9 @@ defmodule FountainWeb.AdminLive.Shell do
 
   # Finance is the money page: credit, cost, invoices, webhook failures. It is
   # hidden on a deployment with billing off, where it has nothing to say.
-  defp tabs(billing_enabled) do
+  defp tabs(credits_enabled) do
     billing =
-      if billing_enabled do
+      if credits_enabled do
         [{:finance, "Finance", ~p"/admin/finance"}]
       else
         []

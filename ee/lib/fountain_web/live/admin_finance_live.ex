@@ -46,7 +46,7 @@ defmodule FountainWeb.Live.AdminFinanceLive do
     {:ok,
      socket
      |> assign(:page_title, "Admin · Finance")
-     |> assign(:billing_enabled, Billing.enabled?())
+     |> assign(:credits_enabled, Fountain.Credits.enabled?())
      |> assign(:months_ago, 0)
      |> assign(:basis, Finance.default_basis())
      |> assign_finance()}
@@ -158,7 +158,7 @@ defmodule FountainWeb.Live.AdminFinanceLive do
     ~H"""
     <div class="space-y-8">
       <div>
-        <.admin_header title="Finance" current={:finance} billing_enabled={@billing_enabled}>
+        <.admin_header title="Finance" current={:finance} credits_enabled={@credits_enabled}>
           <:subtitle>
             Revenue against platform spend, per tenant, for {Calendar.strftime(
               @finance.period_start,
@@ -271,7 +271,7 @@ defmodule FountainWeb.Live.AdminFinanceLive do
       </section>
 
       <%!-- ── Revenue: credit (ADR 0031) ── --%>
-      <section :if={@billing_enabled} class="space-y-3">
+      <section :if={@credits_enabled} class="space-y-3">
         <h2 class="text-lg font-medium">Revenue</h2>
         <div class="grid grid-cols-2 lg:grid-cols-3 gap-3">
           <div class="bg-white rounded shadow border border-zinc-200 px-4 py-3">

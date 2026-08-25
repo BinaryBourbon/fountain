@@ -12,7 +12,7 @@ defmodule FountainWeb.AdminController do
     * the same self-action refusals — no suspending or deleting yourself, and
       (new here) no revoking your own admin role, which over an API is a
       lockout one typo away rather than a button you can see;
-    * billing actions refuse when `billing_enabled` is false, because they talk
+    * billing actions refuse when `credits_enabled` is false, because they talk
       to Stripe;
     * the same `admin.*` privilege-trail events, so an action taken with curl
       is as visible as one taken with a mouse.
@@ -569,7 +569,7 @@ defmodule FountainWeb.AdminController do
   # The UI hides billing buttons on a billing-disabled instance, but events can
   # still be sent by hand (#399's lesson) — and these all talk to Stripe.
   defp require_billing do
-    if Billing.enabled?(), do: :ok, else: {:error, :billing_disabled}
+    if Fountain.Credits.enabled?(), do: :ok, else: {:error, :billing_disabled}
   end
 
   defp refuse(conn, error, message) do

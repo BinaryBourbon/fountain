@@ -349,8 +349,8 @@ defmodule FountainWeb.Router do
 
     # Billing self-serve (#524). The controller lives in ee/ with the rest of
     # billing; the route has to be here, like the Stripe webhook above.
-    get "/billing", BillingApiController, :show
-    post "/billing/credits/checkout", BillingApiController, :credits_checkout
+    get "/billing", CreditsApiController, :show
+    post "/billing/credits/checkout", CreditsApiController, :credits_checkout
 
     # Export and deletion (#523). Deletion is irreversible and takes the
     # tenant key with it, so it wants the strongest credential the account has.
@@ -604,7 +604,7 @@ defmodule FountainWeb.Router do
       live "/account", Live.AccountLive, :index
 
       # ── Credits: account/billing. Redirects to /account when billing is disabled ────────────
-      live "/account/billing", Live.BillingLive, :index
+      live "/account/billing", Live.CreditsLive, :index
 
       # ── BYO inference credentials (ADR 0008) ───────────────────────────────────────────────
       live "/account/inference-credentials", InferenceCredentialsLive.Index, :index

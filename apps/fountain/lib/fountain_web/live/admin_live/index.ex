@@ -28,7 +28,7 @@ defmodule FountainWeb.AdminLive.Index do
     {:ok,
      socket
      |> assign(:page_title, "Admin")
-     |> assign(:billing_enabled, Billing.enabled?())
+     |> assign(:credits_enabled, Fountain.Credits.enabled?())
      |> assign_overview()}
   end
 
@@ -50,7 +50,7 @@ defmodule FountainWeb.AdminLive.Index do
   # webhook events);
   # on a billing-disabled instance nothing renders them, so don't run them.
   defp assign_billing_overview(socket) do
-    if socket.assigns.billing_enabled do
+    if socket.assigns.credits_enabled do
       assign(socket, :billing_overview, Billing.overview_admin())
     else
       assign(socket, :billing_overview, nil)
@@ -61,7 +61,7 @@ defmodule FountainWeb.AdminLive.Index do
   def render(assigns) do
     ~H"""
     <div class="space-y-6">
-      <.admin_header title="Admin" current={:overview} billing_enabled={@billing_enabled}>
+      <.admin_header title="Admin" current={:overview} credits_enabled={@credits_enabled}>
         <:subtitle>System overview. Refreshes every 10s.</:subtitle>
       </.admin_header>
 
@@ -69,7 +69,7 @@ defmodule FountainWeb.AdminLive.Index do
             count is not the point: which webhooks, and how long they have
             been failing, is on the billing page. --%>
       <.link
-        :if={@billing_enabled and @billing_overview.failed_events != []}
+        :if={@credits_enabled and @billing_overview.failed_events != []}
         navigate={~p"/admin/finance"}
         class="block bg-red-50 border border-red-200 rounded px-4 py-3 text-sm text-red-900 hover:border-red-400"
       >
@@ -88,7 +88,7 @@ defmodule FountainWeb.AdminLive.Index do
         <div class="grid grid-cols-2 sm:grid-cols-5 gap-3">
           <div
             :for={stage <- @funnel.stages}
-            :if={stage.key != :funded or @billing_enabled}
+            :if={stage.key != :funded or @credits_enabled}
             class="bg-white rounded shadow border border-zinc-200 px-4 py-3"
           >
             <div class="text-xs text-zinc-500">{stage_label(stage.key)}</div>
@@ -124,7 +124,7 @@ defmodule FountainWeb.AdminLive.Index do
         <h2 class="text-lg font-medium">At a glance</h2>
         <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <.link
-            :if={@billing_enabled}
+            :if={@credits_enabled}
             navigate={~p"/admin/finance"}
             class="bg-white rounded shadow border border-zinc-200 px-4 py-3 hover:border-zinc-400"
           >
@@ -138,7 +138,7 @@ defmodule FountainWeb.AdminLive.Index do
           </.link>
 
           <.link
-            :if={@billing_enabled}
+            :if={@credits_enabled}
             navigate={~p"/admin/finance"}
             class="bg-white rounded shadow border border-zinc-200 px-4 py-3 hover:border-zinc-400"
           >

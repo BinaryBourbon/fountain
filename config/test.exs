@@ -25,10 +25,10 @@ config :ueberauth, Ueberauth.Strategy.Github.OAuth,
   client_id: "test-github-client-id",
   client_secret: "test-github-client-secret"
 
-# The runtime BILLING_ENABLED switch defaults to off (#336) but is not applied
+# The runtime CREDITS_ENABLED switch defaults to off (#336) but is not applied
 # in :test (see config/runtime.exs) — the suite pins the gate on here and
 # toggles it per-test via the application env.
-config :fountain, :billing_enabled, true
+config :fountain, :credits_enabled, true
 
 # `/` serves the marketing page in :test (MARKETING_SITE is not read in :test —
 # see config/runtime.exs), so the existing homepage tests keep covering the

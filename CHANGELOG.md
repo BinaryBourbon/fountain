@@ -16,6 +16,16 @@ upgrade, is in
 
 ## [Unreleased]
 
+### Upgrade notes
+
+- **`BILLING_ENABLED` is `CREDITS_ENABLED`** (#1144). The old name is still
+  read for one release and logs a deprecation warning at boot; rename it in
+  your environment before the next minor. The Oban queue `billing` is
+  `credits` (a migration moves any waiting job). `FountainWeb.Live.BillingLive`,
+  `BillingApiController` and `Fountain.Emails.BillingEmails` are
+  `CreditsLive`, `CreditsApiController` and `CreditsEmails`; routes and API
+  paths are unchanged.
+
 ### Changed
 
 - `Billing.provider_spend/1` (the `/admin` and `/admin/sandboxes` hours) and

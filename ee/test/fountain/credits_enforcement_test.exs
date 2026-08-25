@@ -51,10 +51,10 @@ defmodule Fountain.CreditsEnforcementTest do
 
   describe "check_spend/1 with billing off" do
     test "a zero balance refuses nothing" do
-      Application.put_env(:fountain, :billing_enabled, false)
-      on_exit(fn -> Application.put_env(:fountain, :billing_enabled, true) end)
+      Application.put_env(:fountain, :credits_enabled, false)
+      on_exit(fn -> Application.put_env(:fountain, :credits_enabled, true) end)
       user = subscriber()
-      refute Fountain.Billing.enabled?()
+      refute Fountain.Credits.enabled?()
       assert :ok = Credits.gate(user)
       assert :ok = Billing.check_spend(user)
     end
@@ -63,7 +63,7 @@ defmodule Fountain.CreditsEnforcementTest do
   describe "check_spend/1 with billing on" do
     test "zero refuses, positive passes" do
       user = drained(subscriber())
-      assert Fountain.Billing.enabled?()
+      assert Fountain.Credits.enabled?()
       assert {:error, :insufficient_credits} = Billing.check_spend(user)
       assert {:error, :insufficient_credits} = Billing.check_spend(user.id)
 
@@ -72,8 +72,8 @@ defmodule Fountain.CreditsEnforcementTest do
     end
 
     test "billing off funds the ceiling, whatever the balance" do
-      Application.put_env(:fountain, :billing_enabled, false)
-      on_exit(fn -> Application.put_env(:fountain, :billing_enabled, true) end)
+      Application.put_env(:fountain, :credits_enabled, false)
+      on_exit(fn -> Application.put_env(:fountain, :credits_enabled, true) end)
       assert Quotas.sandbox_limit(insert_empty_user().id) == Quotas.settings().cap_ceiling
     end
 
@@ -82,8 +82,8 @@ defmodule Fountain.CreditsEnforcementTest do
       {:ok, comped} = Billing.comp_account(insert_empty_user())
       assert :ok = Billing.check_spend(comped)
 
-      Application.put_env(:fountain, :billing_enabled, false)
-      on_exit(fn -> Application.put_env(:fountain, :billing_enabled, true) end)
+      Application.put_env(:fountain, :credits_enabled, false)
+      on_exit(fn -> Application.put_env(:fountain, :credits_enabled, true) end)
       assert :ok = Billing.check_spend(subscriber())
     end
 

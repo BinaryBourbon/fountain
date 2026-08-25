@@ -9,7 +9,7 @@ defmodule Fountain.Emails.UserEmails do
   - Email-change confirmation + notice (from `Workers.EmailChangeEmail`)
 
   The welcome and the credit emails (credits low, exhausted, rent due) live
-  in `Fountain.Emails.BillingEmails` under ee/ (#475) — it borrows
+  in `Fountain.Emails.CreditsEmails` under ee/ (#475) — it borrows
   `from_address/0` and `support_phrase/0` from here so the whole mail
   surface keeps one sender and one support-contact policy.
   """
@@ -286,11 +286,11 @@ defmodule Fountain.Emails.UserEmails do
   end
 
   # The deployment's brand (PRODUCT_NAME), which is what every subject line and
-  # body calls the service. Public: BillingEmails (ee/) shares it too.
+  # body calls the service. Public: CreditsEmails (ee/) shares it too.
   @doc false
   def brand, do: Fountain.Brand.name()
 
-  # Public (not defp): Fountain.Emails.BillingEmails (ee/) shares the sender
+  # Public (not defp): Fountain.Emails.CreditsEmails (ee/) shares the sender
   # and support-contact policy rather than duplicating it.
   @doc false
   def from_address do

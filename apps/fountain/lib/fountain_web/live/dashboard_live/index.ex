@@ -57,7 +57,7 @@ defmodule FountainWeb.DashboardLive.Index do
   # billing is switched on, so a self-hosted console still sees what its
   # agents have been doing.
   defp assign_usage(socket, user) do
-    billing_enabled? = Fountain.Billing.enabled?()
+    credits_enabled? = Fountain.Credits.enabled?()
     period = Fountain.Billing.month_range()
 
     socket
@@ -65,7 +65,7 @@ defmodule FountainWeb.DashboardLive.Index do
     |> assign(:tokens, Conversations.token_usage(user.id, period.start, period.end))
     |> assign(:period, period)
     |> assign(:period_start, period.start)
-    |> assign(:billing_enabled?, billing_enabled?)
+    |> assign(:credits_enabled?, credits_enabled?)
     |> assign(:credits, Fountain.Credits.summary(user))
   end
 
@@ -142,7 +142,7 @@ defmodule FountainWeb.DashboardLive.Index do
           <span class="text-xs text-[var(--color-text-muted)]">
             since {Calendar.strftime(@period_start, "%-d %B")}
             <a
-              :if={@billing_enabled?}
+              :if={@credits_enabled?}
               href={~p"/account/billing"}
               class="ml-2 text-[var(--color-brand)] hover:underline"
             >

@@ -113,14 +113,14 @@ at a dead end, with no error to see. Read [Email](guides/operate/email.md).
 
 ## Payment
 
-<!-- "billing" is a Technical Name here: BILLING_ENABLED is the flag, and the
+<!-- "billing" is a Technical Name here: CREDITS_ENABLED is the flag, and the
      Elixir context carries the word. STE exempts a Technical Name from Rule
      3.4, and the linter has no vocabulary hook for that rule. -->
 <!-- vale STE.IngForms = NO -->
 
 | Variable | Default | Required | Effect |
 |---|---|---|---|
-| `BILLING_ENABLED` | `false` | — | Credits on. Off by default: on a self-hosted instance there is nothing to sell. On, every account holds a credit balance, turns and contacts burn it, and a zero balance refuses new work. |
+| `CREDITS_ENABLED` | `false` | — | Credits on. Off by default: on a self-hosted instance there is nothing to sell. On, every account holds a credit balance, turns and contacts burn it, and a zero balance refuses new work. |
 | `STRIPE_SECRET_KEY` | — | For billing. | The Stripe API key. |
 | `STRIPE_WEBHOOK_SECRET` | — | For billing. | Verifies the signature on a `POST /api/stripe/webhook`. |
 | `PROVIDER_HOURLY_CENTS` | — | No. | What you pay each sandbox provider, in cents per sandbox hour, as `sprites=10.76,e2b=5.45`. Rates can be fractional. A provider you leave out stays unpriced. |

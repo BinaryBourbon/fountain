@@ -1,8 +1,8 @@
-defmodule FountainWeb.BillingApiController do
+defmodule FountainWeb.CreditsApiController do
   @moduledoc """
   Billing self-serve over the API (#524).
 
-  All user-facing billing lived in `BillingLive`: the balance, the usage
+  All user-facing billing lived in `CreditsLive`: the balance, the usage
   summary and Checkout minting. `GET /api/auth/me` exposed nothing about
   money, so a CLI user who hit the credit gate got a 402 with no programmatic
   way out of it. This is the way out: read the balance, mint a Checkout URL.
@@ -97,7 +97,7 @@ defmodule FountainWeb.BillingApiController do
   defp pack_param(_), do: {:error, :bad_cents}
 
   defp require_billing do
-    if Billing.enabled?(), do: :ok, else: {:error, :billing_disabled}
+    if Fountain.Credits.enabled?(), do: :ok, else: {:error, :billing_disabled}
   end
 
   defp render_url({:ok, url}, conn), do: render(conn, :url, url: url)

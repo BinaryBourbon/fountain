@@ -101,7 +101,7 @@ defmodule FountainWeb.Layouts do
               <.nav_link href={~p"/account/runners"} label="Runners" current={@current_path} />
               <.nav_link href={~p"/account/webhooks"} label="Webhooks" current={@current_path} />
               <.nav_link
-                :if={Fountain.Billing.enabled?()}
+                :if={Fountain.Credits.enabled?()}
                 href={~p"/account/billing"}
                 label="Billing"
                 current={@current_path}

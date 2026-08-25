@@ -27,7 +27,7 @@ reservation lock, the 402, admin grants and the runway emails (6, 7),
 `Credits.Rent` with the seven-day grace (4, 6), and `Billing.Reconciliation`
 on `/admin/finance` (8, #1038 steps 1 and 2). Every surface shows the balance.
 
-There are no operator switches: `BILLING_ENABLED` means credits on —
+There are no operator switches: `CREDITS_ENABLED` means credits on —
 priced, granted, gated and shown — and off means none of it.
 `CREDIT_PRICING_SINCE` and `CREDIT_ENFORCE` (#1104, #1105) and
 `Release.start_credits/1` were the phase-5 migration levers and were deleted

@@ -1,7 +1,7 @@
 # Start billing
 
 <!-- "billing" is a Technical Name here: the product surface, the
-     BILLING_ENABLED flag and the Elixir context all carry it. STE exempts a
+     CREDITS_ENABLED flag and the Elixir context all carry it. STE exempts a
      Technical Name from the -ing rule, and the linter has no vocabulary
      hook for that rule, so the exemption is declared for the page. -->
 <!-- vale STE.IngForms = NO -->
@@ -10,7 +10,7 @@ This guide shows you how to start billing, and why you probably must not.
 
 ## Leave it off unless you run Fountain commercially
 
-Billing is off by default (`BILLING_ENABLED=false`), and the compose file pins
+Billing is off by default (`CREDITS_ENABLED=false`), and the compose file pins
 it off as well. On your own instance it is a meter with no till. Leave it
 off, unless you run Fountain commercially and you configured Stripe.
 
@@ -41,7 +41,7 @@ provider plan allows.
 2. Configure Stripe. The [Stripe integration guide](../../integrations/stripe.md)
    covers `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` and the three webhook
    events.
-3. Set `BILLING_ENABLED=true` and deploy. The pricer looks back seven days,
+3. Set `CREDITS_ENABLED=true` and deploy. The pricer looks back seven days,
    so it prices the turns from the last week too. Comp or credit the
    accounts you do not want to charge for them.
 

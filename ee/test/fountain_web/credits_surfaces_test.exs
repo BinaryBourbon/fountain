@@ -39,10 +39,10 @@ defmodule FountainWeb.CreditsSurfacesTest do
 
   describe "billing off" do
     test "no balance anywhere, and the API says 404", %{conn: conn} do
-      Application.put_env(:fountain, :billing_enabled, false)
-      on_exit(fn -> Application.put_env(:fountain, :billing_enabled, true) end)
+      Application.put_env(:fountain, :credits_enabled, false)
+      on_exit(fn -> Application.put_env(:fountain, :credits_enabled, true) end)
       user = subscriber()
-      refute Fountain.Billing.enabled?()
+      refute Fountain.Credits.enabled?()
       assert %{active?: false, balance_cents: 0} = Credits.summary(user)
 
       # The billing page does not exist on a billing-off instance; the

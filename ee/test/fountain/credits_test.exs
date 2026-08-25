@@ -147,8 +147,8 @@ defmodule Fountain.CreditsTest do
   describe "check_balance/1" do
     test "answers ok with billing off before reading anything" do
       user = insert_empty_user()
-      Application.put_env(:fountain, :billing_enabled, false)
-      on_exit(fn -> Application.put_env(:fountain, :billing_enabled, true) end)
+      Application.put_env(:fountain, :credits_enabled, false)
+      on_exit(fn -> Application.put_env(:fountain, :credits_enabled, true) end)
       assert :ok = Credits.check_balance(user)
       assert :ok = Credits.check_balance(user.id)
     end

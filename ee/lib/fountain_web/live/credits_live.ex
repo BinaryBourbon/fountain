@@ -1,4 +1,4 @@
-defmodule FountainWeb.Live.BillingLive do
+defmodule FountainWeb.Live.CreditsLive do
   @moduledoc """
   `/account/billing` — the credit balance, what of it expires and when, the
   ledger, this month's usage, and the buttons that open Stripe Checkout for
@@ -19,7 +19,7 @@ defmodule FountainWeb.Live.BillingLive do
 
   @impl true
   def mount(_params, _session, socket) do
-    if Billing.enabled?() do
+    if Credits.enabled?() do
       user = socket.assigns.current_user
       period = Billing.month_range()
 

@@ -60,7 +60,7 @@ account is the operator.
 Here is what sends email today. Account verification, with a 24-hour link.
 Password reset, with a 1-hour link.
 
-With `BILLING_ENABLED` on, three credit emails go out as well. Credits low.
+With `CREDITS_ENABLED` on, three credit emails go out as well. Credits low.
 Credits exhausted. Rent due for a teammate number or inbox.
 
 An OAuth signup skips verification, so [GitHub OAuth](github-oauth.md) with

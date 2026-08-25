@@ -31,11 +31,10 @@ defmodule Fountain.Workers.CreditPricer do
   ledger of fractional cents is a ledger nobody can reconcile.
   """
 
-  use Oban.Worker, queue: :billing, max_attempts: 3, unique: [period: 60]
+  use Oban.Worker, queue: :credits, max_attempts: 3, unique: [period: 60]
 
   import Ecto.Query
 
-  alias Fountain.Billing
   alias Fountain.Billing.SandboxUsage
   alias Fountain.Billing.UsageEvent
   alias Fountain.Conversations.Conversation
@@ -91,7 +90,7 @@ defmodule Fountain.Workers.CreditPricer do
           lookback
       end
 
-    if Billing.enabled?(),
+    if Credits.enabled?(),
       do: do_run(floor, now),
       else: %{turns: 0, messages: 0, expired: 0}
   end
