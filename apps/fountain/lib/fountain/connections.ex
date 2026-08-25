@@ -103,7 +103,9 @@ defmodule Fountain.Connections do
   @doc "Where the provider sends the browser back. Shown in the console to paste into the app registration."
   @spec redirect_uri(Provider.t() | String.t()) :: String.t()
   def redirect_uri(%Provider{id: id}), do: redirect_uri(id)
-  def redirect_uri(id) when is_binary(id), do: Fountain.PublicUrl.base() <> "/connections/#{id}/callback"
+
+  def redirect_uri(id) when is_binary(id),
+    do: Fountain.PublicUrl.base() <> "/connections/#{id}/callback"
 
   @doc """
   Define an `oauth2` provider from the tenant's own app registration. The
@@ -176,7 +178,11 @@ defmodule Fountain.Connections do
       client =
         cond do
           manual? ->
-            {:ok, %{"client_source" => "manual", "token_endpoint_auth" => attrs["token_endpoint_auth"] || "client_secret_post"}}
+            {:ok,
+             %{
+               "client_source" => "manual",
+               "token_endpoint_auth" => attrs["token_endpoint_auth"] || "client_secret_post"
+             }}
 
           attrs["client_source"] == "dcr" and attrs["issuer"] == md["issuer"] and
               present?(attrs["client_id"]) ->
@@ -306,7 +312,8 @@ defmodule Fountain.Connections do
           {:ok, Connection.t()} | {:error, Ecto.Changeset.t() | atom()}
   def connect(user_id, provider, grant, opts \\ [])
 
-  def connect(user_id, "google", grant, opts), do: connect(user_id, Google.provider(), grant, opts)
+  def connect(user_id, "google", grant, opts),
+    do: connect(user_id, Google.provider(), grant, opts)
 
   def connect(user_id, %Provider{} = provider, grant, opts)
       when is_binary(user_id) and is_map(grant) do

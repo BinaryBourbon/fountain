@@ -119,9 +119,12 @@ defmodule Fountain.AuditGuardrailTest do
     {"connection expire", &__MODULE__.do_connection_expire/1, "connection.expired"},
     # Connection providers (#1186): the tenant's own OAuth apps and the MCP
     # authorization servers Fountain discovered. The secret is never in the trail.
-    {"connection provider create", &__MODULE__.do_provider_create/1, "connection_provider.created"},
-    {"connection provider update", &__MODULE__.do_provider_update/1, "connection_provider.updated"},
-    {"connection provider delete", &__MODULE__.do_provider_delete/1, "connection_provider.deleted"},
+    {"connection provider create", &__MODULE__.do_provider_create/1,
+     "connection_provider.created"},
+    {"connection provider update", &__MODULE__.do_provider_update/1,
+     "connection_provider.updated"},
+    {"connection provider delete", &__MODULE__.do_provider_delete/1,
+     "connection_provider.deleted"},
     {"credit grant", &__MODULE__.do_credit_grant/1, "credit.granted"},
     {"credit debit", &__MODULE__.do_credit_debit/1, "credit.burned"}
   ]

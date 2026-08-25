@@ -56,14 +56,20 @@ defmodule FountainWeb.ConnectionProviderJSON do
   def describe({:discovery, message}) when is_binary(message), do: message
   def describe({:unsafe_url, url, reason}), do: "#{url} #{UrlGuard.message(reason)}"
   def describe({:unsafe_url, reason}), do: "the URL #{UrlGuard.message(reason)}"
-  def describe({:mcp_server, status}) when is_integer(status), do: "the MCP server answered #{status}"
-  def describe({:mcp_server, reason}), do: "the MCP server could not be reached: #{inspect(reason)}"
+
+  def describe({:mcp_server, status}) when is_integer(status),
+    do: "the MCP server answered #{status}"
+
+  def describe({:mcp_server, reason}),
+    do: "the MCP server could not be reached: #{inspect(reason)}"
 
   def describe({:metadata, url, status}) when is_integer(status),
     do: "#{url} answered #{status}"
 
   def describe({:metadata, url, reason}), do: "#{url}: #{inspect(reason)}"
-  def describe(:no_authorization_server), do: "the resource metadata names no authorization server"
+
+  def describe(:no_authorization_server),
+    do: "the resource metadata names no authorization server"
 
   def describe({:authorization_server, issuer, :no_metadata}),
     do: "#{issuer} publishes no authorization server metadata"
@@ -75,6 +81,9 @@ defmodule FountainWeb.ConnectionProviderJSON do
     do: "client registration answered #{status}: #{inspect(body)}"
 
   def describe({:registration, reason}), do: "client registration failed: #{inspect(reason)}"
-  def describe(:no_registration_endpoint), do: "the authorization server offers no client registration"
+
+  def describe(:no_registration_endpoint),
+    do: "the authorization server offers no client registration"
+
   def describe(reason), do: inspect(reason)
 end

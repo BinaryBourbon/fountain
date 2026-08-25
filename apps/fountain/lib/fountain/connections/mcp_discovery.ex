@@ -103,8 +103,9 @@ defmodule Fountain.Connections.McpDiscovery do
 
     if path in ["", "/"],
       do: URI.to_string(%{origin | path: "/.well-known/oauth-protected-resource"}),
-      else: {URI.to_string(%{origin | path: "/.well-known/oauth-protected-resource" <> path}),
-             URI.to_string(%{origin | path: "/.well-known/oauth-protected-resource"})}
+      else:
+        {URI.to_string(%{origin | path: "/.well-known/oauth-protected-resource" <> path}),
+         URI.to_string(%{origin | path: "/.well-known/oauth-protected-resource"})}
   end
 
   defp fetch_json({first, fallback}) do
@@ -155,13 +156,16 @@ defmodule Fountain.Connections.McpDiscovery do
         |> Enum.uniq()
         |> Enum.map(&URI.to_string(%{origin | path: &1}))
 
-      Enum.reduce_while(candidates, {:error, {:authorization_server, issuer, :no_metadata}}, fn url,
-                                                                                               acc ->
-        case fetch_json(url) do
-          {:ok, md} -> {:halt, {:ok, md}}
-          _ -> {:cont, acc}
+      Enum.reduce_while(
+        candidates,
+        {:error, {:authorization_server, issuer, :no_metadata}},
+        fn url, acc ->
+          case fetch_json(url) do
+            {:ok, md} -> {:halt, {:ok, md}}
+            _ -> {:cont, acc}
+          end
         end
-      end)
+      )
     end
   end
 
@@ -239,7 +243,9 @@ defmodule Fountain.Connections.McpDiscovery do
        when m in ["client_secret_post", "client_secret_basic", "none"],
        do: m
 
-  defp auth_method(%{"client_secret" => s}) when is_binary(s) and s != "", do: "client_secret_post"
+  defp auth_method(%{"client_secret" => s}) when is_binary(s) and s != "",
+    do: "client_secret_post"
+
   defp auth_method(_), do: "none"
 
   defp guard(url) do

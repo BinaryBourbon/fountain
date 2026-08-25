@@ -195,7 +195,10 @@ defmodule Fountain.Connections.OAuth do
     with :ok <- guard(p, p.token_url) do
       {form, opts} = client_auth(p, form)
 
-      case Req.post(req(), [url: p.token_url, form: form, headers: [accept: "application/json"]] ++ opts) do
+      case Req.post(
+             req(),
+             [url: p.token_url, form: form, headers: [accept: "application/json"]] ++ opts
+           ) do
         {:ok, %{status: status, body: body}} when status in 200..299 ->
           decode_token_body(body)
 
@@ -250,9 +253,14 @@ defmodule Fountain.Connections.OAuth do
 
   # ── the account label ──────────────────────────────────────────────────────
 
-  defp account_label(%Provider{userinfo_url: url} = p, access) when is_binary(url) and url != "" do
+  defp account_label(%Provider{userinfo_url: url} = p, access)
+       when is_binary(url) and url != "" do
     with :ok <- guard(p, url) do
-      case Req.get(req(), url: url, auth: {:bearer, access}, headers: [accept: "application/json"]) do
+      case Req.get(req(),
+             url: url,
+             auth: {:bearer, access},
+             headers: [accept: "application/json"]
+           ) do
         {:ok, %{status: 200, body: body}} when is_map(body) ->
           case dig(body, p.account_label_path || "email") do
             label when is_binary(label) and label != "" -> {:ok, label}

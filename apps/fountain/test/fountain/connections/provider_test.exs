@@ -39,7 +39,10 @@ defmodule Fountain.Connections.ProviderTest do
       assert "is a platform provider" in errors_on(cs).slug
 
       assert {:error, cs} =
-               Connections.create_provider(user.id, Map.merge(base, %{"slug" => "x", "token_hosts" => ["*"]}))
+               Connections.create_provider(
+                 user.id,
+                 Map.merge(base, %{"slug" => "x", "token_hosts" => ["*"]})
+               )
 
       assert "may not contain a wildcard" in errors_on(cs).token_hosts
 
@@ -62,13 +65,19 @@ defmodule Fountain.Connections.ProviderTest do
       assert {:error, cs} =
                Connections.create_provider(
                  user.id,
-                 Map.merge(base, %{"slug" => "x", "authorize_url" => "https://metadata.google.internal/a"})
+                 Map.merge(base, %{
+                   "slug" => "x",
+                   "authorize_url" => "https://metadata.google.internal/a"
+                 })
                )
 
       assert "must not be an internal host" in errors_on(cs).authorize_url
 
       assert {:error, cs} =
-               Connections.create_provider(user.id, Map.merge(base, %{"slug" => "x", "client_secret" => ""}))
+               Connections.create_provider(
+                 user.id,
+                 Map.merge(base, %{"slug" => "x", "client_secret" => ""})
+               )
 
       assert "can't be blank" in errors_on(cs).client_secret
 
@@ -76,7 +85,11 @@ defmodule Fountain.Connections.ProviderTest do
       assert {:ok, _} =
                Connections.create_provider(
                  user.id,
-                 Map.merge(base, %{"slug" => "pub", "client_secret" => "", "token_endpoint_auth" => "none"})
+                 Map.merge(base, %{
+                   "slug" => "pub",
+                   "client_secret" => "",
+                   "token_endpoint_auth" => "none"
+                 })
                )
     end
 
@@ -101,7 +114,9 @@ defmodule Fountain.Connections.ProviderTest do
       Req.Test.stub(OAuth, fn req -> Req.Test.json(req, %{}) end)
       c = insert_connection(user, provider: p, account_email: "me")
 
-      assert {:ok, p2} = Connections.update_provider(p, %{"name" => "Renamed", "client_secret" => ""})
+      assert {:ok, p2} =
+               Connections.update_provider(p, %{"name" => "Renamed", "client_secret" => ""})
+
       assert p2.name == "Renamed"
       assert p2.client_secret_ciphertext == p.client_secret_ciphertext
 
@@ -116,7 +131,11 @@ defmodule Fountain.Connections.ProviderTest do
       assert {:ok, _} = Connections.delete_provider(p3)
       refute Connections.get_provider(p.id, user.id)
       refute Connections.get_connection(c.id, user.id)
-      assert Enum.any?(events ++ Fountain.Audit.list_recent_for_user(user.id), &(&1.action == "connection_provider.deleted"))
+
+      assert Enum.any?(
+               events ++ Fountain.Audit.list_recent_for_user(user.id),
+               &(&1.action == "connection_provider.deleted")
+             )
     end
   end
 
@@ -144,12 +163,28 @@ defmodule Fountain.Connections.ProviderTest do
       Req.Test.stub(OAuth, fn _ -> flunk("nothing to refresh with") end)
 
       soon = DateTime.utc_now() |> DateTime.add(60, :second) |> DateTime.truncate(:second)
-      live = insert_connection(user, provider: p, refresh_token: nil, access_token: "a-1", expires_at: soon)
+
+      live =
+        insert_connection(user,
+          provider: p,
+          refresh_token: nil,
+          access_token: "a-1",
+          expires_at: soon
+        )
+
       assert is_nil(live.refresh_token_ciphertext)
       assert {:ok, "a-1"} = Connections.access_token(live)
 
       past = DateTime.utc_now() |> DateTime.add(-1, :second) |> DateTime.truncate(:second)
-      c = insert_connection(user, provider: p, refresh_token: nil, access_token: "a-1", expires_at: past)
+
+      c =
+        insert_connection(user,
+          provider: p,
+          refresh_token: nil,
+          access_token: "a-1",
+          expires_at: past
+        )
+
       assert {:error, :expired} = Connections.access_token(c)
       assert %Connection{status: "expired"} = Connections.get_connection(c.id, user.id)
       assert Connections.synthetic_secrets(user.id) == %{live.env_key => "a-1"}
@@ -158,7 +193,14 @@ defmodule Fountain.Connections.ProviderTest do
       assert "connection.expired" in actions
 
       # Reconnecting the same account replaces it and reactivates.
-      c = insert_connection(user, provider: p, refresh_token: nil, access_token: "a-2", expires_at: nil)
+      c =
+        insert_connection(user,
+          provider: p,
+          refresh_token: nil,
+          access_token: "a-2",
+          expires_at: nil
+        )
+
       assert c.status == "active"
       assert {:ok, "a-2"} = Connections.access_token(c)
     end
@@ -173,19 +215,42 @@ defmodule Fountain.Connections.ProviderTest do
 
     test "refresh rotates the refresh token when the provider sends a new one, with basic client auth" do
       user = insert_verified_user()
-      p = insert_provider(user, token_endpoint_auth: "client_secret_basic", client_id: "cid", client_secret: "csec")
+
+      p =
+        insert_provider(user,
+          token_endpoint_auth: "client_secret_basic",
+          client_id: "cid",
+          client_secret: "csec"
+        )
+
       soon = DateTime.utc_now() |> DateTime.add(60, :second) |> DateTime.truncate(:second)
-      c = insert_connection(user, provider: p, refresh_token: "r-1", access_token: "a-old", expires_at: soon)
+
+      c =
+        insert_connection(user,
+          provider: p,
+          refresh_token: "r-1",
+          access_token: "a-old",
+          expires_at: soon
+        )
 
       Req.Test.stub(OAuth, fn req ->
         assert req.request_path == "/oauth/token"
-        assert Plug.Conn.get_req_header(req, "authorization") == ["Basic " <> Base.encode64("cid:csec")]
+
+        assert Plug.Conn.get_req_header(req, "authorization") == [
+                 "Basic " <> Base.encode64("cid:csec")
+               ]
+
         {:ok, body, _} = Plug.Conn.read_body(req)
         params = URI.decode_query(body)
         assert params["grant_type"] == "refresh_token"
         assert params["refresh_token"] == "r-1"
         refute Map.has_key?(params, "client_secret")
-        Req.Test.json(req, %{"access_token" => "a-new", "refresh_token" => "r-2", "expires_in" => 100})
+
+        Req.Test.json(req, %{
+          "access_token" => "a-new",
+          "refresh_token" => "r-2",
+          "expires_in" => 100
+        })
       end)
 
       assert {:ok, "a-new"} = Connections.access_token(c)
@@ -232,13 +297,24 @@ defmodule Fountain.Connections.ProviderTest do
   describe "OAuth.exchange_code/4 on a tenant provider" do
     test "sends PKCE, the client secret in the body, and reads the label from the userinfo path" do
       user = insert_verified_user()
-      p = insert_provider(user, pkce: true, account_label_path: "data.login", client_id: "cid", client_secret: "csec")
+
+      p =
+        insert_provider(user,
+          pkce: true,
+          account_label_path: "data.login",
+          client_id: "cid",
+          client_secret: "csec"
+        )
+
       {:ok, p} = Connections.unlock_provider(p)
       verifier = OAuth.code_verifier()
       url = OAuth.authorize_url(p, "https://f.example/cb", "st", verifier)
       q = url |> URI.parse() |> Map.fetch!(:query) |> URI.decode_query()
       assert q["code_challenge_method"] == "S256"
-      assert q["code_challenge"] == :crypto.hash(:sha256, verifier) |> Base.url_encode64(padding: false)
+
+      assert q["code_challenge"] ==
+               :crypto.hash(:sha256, verifier) |> Base.url_encode64(padding: false)
+
       assert q["client_id"] == "cid"
       refute Map.has_key?(q, "access_type")
 
@@ -250,7 +326,11 @@ defmodule Fountain.Connections.ProviderTest do
             assert form["code_verifier"] == verifier
             assert form["client_secret"] == "csec"
             # GitHub's shape: no expiry, no refresh token, a form-encoded body.
-            Plug.Conn.send_resp(req, 200, "access_token=gho_1&scope=repo%2Cread%3Auser&token_type=bearer")
+            Plug.Conn.send_resp(
+              req,
+              200,
+              "access_token=gho_1&scope=repo%2Cread%3Auser&token_type=bearer"
+            )
 
           "/user" ->
             assert Plug.Conn.get_req_header(req, "authorization") == ["Bearer gho_1"]
@@ -270,9 +350,14 @@ defmodule Fountain.Connections.ProviderTest do
       user = insert_verified_user()
       p = insert_provider(user, userinfo_url: nil, account_label_path: nil)
       {:ok, p} = Connections.unlock_provider(p)
-      Req.Test.stub(OAuth, fn req -> Req.Test.json(req, %{"access_token" => "t", "expires_in" => 10}) end)
 
-      assert {:ok, %{account_email: nil} = grant} = OAuth.exchange_code(p, "code", "https://f.example/cb")
+      Req.Test.stub(OAuth, fn req ->
+        Req.Test.json(req, %{"access_token" => "t", "expires_in" => 10})
+      end)
+
+      assert {:ok, %{account_email: nil} = grant} =
+               OAuth.exchange_code(p, "code", "https://f.example/cb")
+
       assert {:ok, c} = Connections.connect(user.id, p, grant, account_label: "work")
       assert c.account_email == "work"
       assert {:ok, c} = Connections.connect(user.id, p, grant)
@@ -288,7 +373,11 @@ defmodule Fountain.Connections.ProviderTest do
       by_id = %{c.id => c}
 
       servers = %{
-        "linear" => %{"type" => "http", "url" => "https://mcp.linear.app/mcp", "connection" => c.id},
+        "linear" => %{
+          "type" => "http",
+          "url" => "https://mcp.linear.app/mcp",
+          "connection" => c.id
+        },
         "gmail" => %{"connection" => Ecto.UUID.generate()},
         "fs" => %{"command" => "npx"}
       }
@@ -304,13 +393,19 @@ defmodule Fountain.Connections.ProviderTest do
       assert resolved["gmail"]["url"] =~ "/api/mcp/gmail/conv/"
       assert resolved["fs"] == %{"command" => "npx"}
 
-      assert McpServers.remote_hosts(servers, by_id) == %{"LINEAR_ACCESS_TOKEN" => ["mcp.linear.app"]}
+      assert McpServers.remote_hosts(servers, by_id) == %{
+               "LINEAR_ACCESS_TOKEN" => ["mcp.linear.app"]
+             }
 
       # An unknown or inactive connection drops the remote entry rather than
       # shipping a URL the broker would not attach anything to.
-      assert McpServers.resolve(servers, "conv", "cb-token", %{}) |> Map.keys() |> Enum.sort() == ["fs", "gmail"]
+      assert McpServers.resolve(servers, "conv", "cb-token", %{}) |> Map.keys() |> Enum.sort() ==
+               ["fs", "gmail"]
+
       assert McpServers.remote_hosts(servers, %{}) == %{}
-      assert Enum.sort(McpServers.connection_ids(servers)) == Enum.sort([c.id, servers["gmail"]["connection"]])
+
+      assert Enum.sort(McpServers.connection_ids(servers)) ==
+               Enum.sort([c.id, servers["gmail"]["connection"]])
     end
   end
 end

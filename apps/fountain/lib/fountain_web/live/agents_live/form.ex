@@ -626,6 +626,7 @@ defmodule FountainWeb.AgentsLive.Form do
       url -> %{"type" => "http", "url" => url, "connection" => s["connection"]}
     end
   end
+
   defp mcp_server_config(%{"kind" => "raw", "raw" => raw}) when is_map(raw), do: raw
 
   defp mcp_server_config(s) do

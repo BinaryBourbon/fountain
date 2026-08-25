@@ -181,10 +181,17 @@ defmodule Fountain.Connections.Provider do
   defp validate_token_hosts(changeset) do
     validate_change(changeset, :token_hosts, fn :token_hosts, hosts ->
       cond do
-        length(hosts) > 32 -> [token_hosts: "at most 32 hosts"]
-        Enum.any?(hosts, &String.contains?(&1, "*")) -> [token_hosts: "may not contain a wildcard"]
-        Enum.any?(hosts, &(not Regex.match?(@host_re, &1))) -> [token_hosts: "must be hostnames"]
-        true -> []
+        length(hosts) > 32 ->
+          [token_hosts: "at most 32 hosts"]
+
+        Enum.any?(hosts, &String.contains?(&1, "*")) ->
+          [token_hosts: "may not contain a wildcard"]
+
+        Enum.any?(hosts, &(not Regex.match?(@host_re, &1))) ->
+          [token_hosts: "must be hostnames"]
+
+        true ->
+          []
       end
     end)
   end

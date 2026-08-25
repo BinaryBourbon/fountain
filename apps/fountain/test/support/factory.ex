@@ -116,21 +116,21 @@ defmodule Fountain.Factory do
     n = uniq()
 
     Map.merge(
-        %{
-          "slug" => "svc-#{n}",
-          "name" => "Service #{n}",
-          "kind" => "oauth2",
-          "authorize_url" => "https://svc.example/oauth/authorize",
-          "token_url" => "https://svc.example/oauth/token",
-          "userinfo_url" => "https://svc.example/user",
-          "account_label_path" => "login",
-          "scopes" => ["read"],
-          "client_id" => "client-#{n}",
-          "client_secret" => "secret-#{n}",
-          "token_hosts" => ["api.svc.example"]
-        },
-        overrides
-      )
+      %{
+        "slug" => "svc-#{n}",
+        "name" => "Service #{n}",
+        "kind" => "oauth2",
+        "authorize_url" => "https://svc.example/oauth/authorize",
+        "token_url" => "https://svc.example/oauth/token",
+        "userinfo_url" => "https://svc.example/user",
+        "account_label_path" => "login",
+        "scopes" => ["read"],
+        "client_id" => "client-#{n}",
+        "client_secret" => "secret-#{n}",
+        "token_hosts" => ["api.svc.example"]
+      },
+      overrides
+    )
   end
 
   # ── environments ──────────────────────────────────────────────────────────

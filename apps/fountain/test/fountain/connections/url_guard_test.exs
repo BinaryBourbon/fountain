@@ -35,7 +35,14 @@ defmodule Fountain.Connections.UrlGuardTest do
   end
 
   test "messages name the rule" do
-    for reason <- [:not_https, :no_host, :ip_literal, :internal_host, :private_address, :unresolvable] do
+    for reason <- [
+          :not_https,
+          :no_host,
+          :ip_literal,
+          :internal_host,
+          :private_address,
+          :unresolvable
+        ] do
       assert is_binary(UrlGuard.message(reason))
     end
   end

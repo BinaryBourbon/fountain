@@ -129,7 +129,10 @@ defmodule FountainWeb.ConnectionsControllerTest do
     assert redirected_to(conn) =~ "/auth/login"
   end
 
-  test "a tenant provider runs the same round trip with PKCE and its own client", %{conn: conn, user: user} do
+  test "a tenant provider runs the same round trip with PKCE and its own client", %{
+    conn: conn,
+    user: user
+  } do
     p = insert_provider(user, slug: "github", pkce: true, client_id: "cid", client_secret: "csec")
 
     conn = get(conn, ~p"/connections/#{p.id}/start")
@@ -149,7 +152,12 @@ defmodule FountainWeb.ConnectionsControllerTest do
           form = URI.decode_query(body)
           assert form["code_verifier"] == verifier
           assert form["client_secret"] == "csec"
-          Req.Test.json(req, %{"access_token" => "at", "refresh_token" => "rt", "expires_in" => 100})
+
+          Req.Test.json(req, %{
+            "access_token" => "at",
+            "refresh_token" => "rt",
+            "expires_in" => 100
+          })
 
         "/user" ->
           Req.Test.json(req, %{"login" => "octocat"})
@@ -159,14 +167,28 @@ defmodule FountainWeb.ConnectionsControllerTest do
     conn = get(conn, ~p"/connections/#{p.id}/callback?code=c&state=#{params["state"]}")
     assert redirected_to(conn) == ~p"/account/connections"
     assert Phoenix.Flash.get(conn.assigns.flash, :info) == "Connected octocat."
-    assert [%{provider: "github", provider_id: pid, env_key: "GITHUB_ACCESS_TOKEN"}] = Connections.list_connections(user.id)
+
+    assert [%{provider: "github", provider_id: pid, env_key: "GITHUB_ACCESS_TOKEN"}] =
+             Connections.list_connections(user.id)
+
     assert pid == p.id
   end
 
-  test "a callback for another provider than the one started is refused", %{conn: conn, user: user} do
+  test "a callback for another provider than the one started is refused", %{
+    conn: conn,
+    user: user
+  } do
     p = insert_provider(user)
     conn = get(conn, ~p"/connections/google/start")
-    state = conn |> redirected_to() |> URI.parse() |> Map.fetch!(:query) |> URI.decode_query() |> Map.fetch!("state")
+
+    state =
+      conn
+      |> redirected_to()
+      |> URI.parse()
+      |> Map.fetch!(:query)
+      |> URI.decode_query()
+      |> Map.fetch!("state")
+
     Req.Test.stub(OAuth, fn _ -> flunk("no exchange") end)
 
     conn = get(conn, ~p"/connections/#{p.id}/callback?code=c&state=#{state}")
@@ -181,9 +203,12 @@ defmodule FountainWeb.ConnectionsControllerTest do
     # An mcp provider whose server offers no registration has no client yet.
     Req.Test.stub(OAuth, fn req ->
       case req.request_path do
-        "/mcp" -> Plug.Conn.send_resp(req, 401, "")
+        "/mcp" ->
+          Plug.Conn.send_resp(req, 401, "")
+
         "/.well-known/oauth-protected-resource/mcp" ->
           Req.Test.json(req, %{"authorization_servers" => ["https://auth.example"]})
+
         "/.well-known/oauth-authorization-server" ->
           Req.Test.json(req, %{
             "issuer" => "https://auth.example",

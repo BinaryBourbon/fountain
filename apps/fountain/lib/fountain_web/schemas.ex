@@ -3925,5 +3925,4 @@ defmodule FountainWeb.Schemas do
       }
     })
   end
-
 end

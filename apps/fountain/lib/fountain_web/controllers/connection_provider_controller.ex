@@ -136,7 +136,11 @@ defmodule FountainWeb.ConnectionProviderController do
     with %Provider{user_id: uid} = provider when is_binary(uid) <-
            Connections.get_provider(id, user.id) || {:error, :not_found},
          {:ok, provider} <-
-           Connections.update_provider(provider, provider_attrs(params), Audited.attribution(conn)) do
+           Connections.update_provider(
+             provider,
+             provider_attrs(params),
+             Audited.attribution(conn)
+           ) do
       render(conn, :show, provider: provider)
     else
       %Provider{} -> {:error, :not_found}
@@ -209,7 +213,10 @@ defmodule FountainWeb.ConnectionProviderController do
   defp discovery_error(conn, reason) do
     conn
     |> put_status(:unprocessable_entity)
-    |> json(%{error: "discovery_failed", detail: FountainWeb.ConnectionProviderJSON.describe(reason)})
+    |> json(%{
+      error: "discovery_failed",
+      detail: FountainWeb.ConnectionProviderJSON.describe(reason)
+    })
   end
 
   defp require_connections(conn, _opts) do

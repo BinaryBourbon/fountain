@@ -56,9 +56,10 @@ defmodule FountainWeb.ConnectionsLiveTest do
     refute html =~ ~s(href="/connections/google/start")
   end
 
-  test "adds an OAuth app from a preset, shows its redirect URI and connect link, edits and deletes it", %{
-    conn: conn
-  } do
+  test "adds an OAuth app from a preset, shows its redirect URI and connect link, edits and deletes it",
+       %{
+         conn: conn
+       } do
     user = insert_verified_user()
     enable_broker_for([user.id])
     {:ok, lv, html} = conn |> login_user(user) |> live(~p"/account/connections")
@@ -105,7 +106,12 @@ defmodule FountainWeb.ConnectionsLiveTest do
     html =
       lv
       |> form("#provider-form", %{
-        "provider" => %{"kind" => "oauth2", "name" => "Bad", "slug" => "bad", "authorize_url" => "http://x/a"}
+        "provider" => %{
+          "kind" => "oauth2",
+          "name" => "Bad",
+          "slug" => "bad",
+          "authorize_url" => "http://x/a"
+        }
       })
       |> render_submit()
 
@@ -122,7 +128,9 @@ defmodule FountainWeb.ConnectionsLiveTest do
       |> render_submit()
 
     assert html =~ "Saved GH"
-    assert Connections.get_provider(p.id, user.id).client_secret_ciphertext == p.client_secret_ciphertext
+
+    assert Connections.get_provider(p.id, user.id).client_secret_ciphertext ==
+             p.client_secret_ciphertext
 
     html = lv |> element("#provider-#{p.id} button", "Delete") |> render_click()
     assert html =~ "Deleted GH"
@@ -186,7 +194,15 @@ defmodule FountainWeb.ConnectionsLiveTest do
     enable_broker_for([user.id])
     p = insert_provider(user, slug: "svc")
     past = DateTime.utc_now() |> DateTime.add(-1, :second) |> DateTime.truncate(:second)
-    c = insert_connection(user, provider: p, refresh_token: nil, expires_at: past, account_email: "me")
+
+    c =
+      insert_connection(user,
+        provider: p,
+        refresh_token: nil,
+        expires_at: past,
+        account_email: "me"
+      )
+
     {:error, :expired} = Connections.access_token(c)
 
     {:ok, _lv, html} = conn |> login_user(user) |> live(~p"/account/connections")

@@ -37,7 +37,11 @@ defmodule Fountain.Connections.McpDiscoveryTest do
             "code_challenge_methods_supported" => ["S256"],
             "token_endpoint_auth_methods_supported" => ["client_secret_post", "none"]
           }
-          |> then(&if registers?, do: Map.put(&1, "registration_endpoint", "https://auth.example/register"), else: &1)
+          |> then(
+            &if registers?,
+              do: Map.put(&1, "registration_endpoint", "https://auth.example/register"),
+              else: &1
+          )
         )
 
       {"POST", "/register"} ->
@@ -74,11 +78,18 @@ defmodule Fountain.Connections.McpDiscoveryTest do
     test "falls back to the well-known path when the server names no resource metadata" do
       Req.Test.stub(OAuth, fn req ->
         case req.request_path do
-          "/mcp" -> Plug.Conn.send_resp(req, 401, "")
-          "/.well-known/oauth-protected-resource/mcp" -> Plug.Conn.send_resp(req, 404, "")
+          "/mcp" ->
+            Plug.Conn.send_resp(req, 401, "")
+
+          "/.well-known/oauth-protected-resource/mcp" ->
+            Plug.Conn.send_resp(req, 404, "")
+
           "/.well-known/oauth-protected-resource" ->
             Req.Test.json(req, %{"authorization_servers" => ["https://auth.example/tenant"]})
-          "/.well-known/oauth-authorization-server/tenant" -> Plug.Conn.send_resp(req, 404, "")
+
+          "/.well-known/oauth-authorization-server/tenant" ->
+            Plug.Conn.send_resp(req, 404, "")
+
           "/tenant/.well-known/openid-configuration" ->
             Req.Test.json(req, %{
               "issuer" => "https://auth.example/tenant",
@@ -95,13 +106,17 @@ defmodule Fountain.Connections.McpDiscoveryTest do
     end
 
     test "refuses a non-https server and a metadata chain that points somewhere private" do
-      assert {:error, {:unsafe_url, _, :not_https}} = McpDiscovery.discover("http://mcp.example/mcp")
+      assert {:error, {:unsafe_url, _, :not_https}} =
+               McpDiscovery.discover("http://mcp.example/mcp")
 
       Req.Test.stub(OAuth, fn req ->
         case req.request_path do
           "/mcp" ->
             req
-            |> Plug.Conn.put_resp_header("www-authenticate", ~s(Bearer resource_metadata="https://169.254.169.254/latest"))
+            |> Plug.Conn.put_resp_header(
+              "www-authenticate",
+              ~s(Bearer resource_metadata="https://169.254.169.254/latest")
+            )
             |> Plug.Conn.send_resp(401, "")
         end
       end)
@@ -128,6 +143,7 @@ defmodule Fountain.Connections.McpDiscoveryTest do
       {:ok, md} = McpDiscovery.discover("https://mcp.example/mcp")
 
       assert {:ok, client} = McpDiscovery.register(md, "https://f.example/connections/x/callback")
+
       assert client == %{
                "client_id" => "dcr-client",
                "client_secret" => "dcr-secret",
@@ -135,7 +151,8 @@ defmodule Fountain.Connections.McpDiscoveryTest do
                "client_source" => "dcr"
              }
 
-      assert {:error, :no_registration_endpoint} = McpDiscovery.register(%{}, "https://f.example/cb")
+      assert {:error, :no_registration_endpoint} =
+               McpDiscovery.register(%{}, "https://f.example/cb")
     end
   end
 
@@ -144,7 +161,9 @@ defmodule Fountain.Connections.McpDiscoveryTest do
       user = insert_verified_user()
       Req.Test.stub(OAuth, &conforming_server/1)
 
-      assert {:ok, %Provider{} = p} = Connections.discover_provider(user.id, "https://mcp.example/mcp")
+      assert {:ok, %Provider{} = p} =
+               Connections.discover_provider(user.id, "https://mcp.example/mcp")
+
       assert p.kind == "mcp"
       assert p.slug == "mcp-example"
       assert p.name == "mcp-example"
@@ -167,7 +186,9 @@ defmodule Fountain.Connections.McpDiscoveryTest do
       end)
 
       assert {:ok, p2} =
-               Connections.discover_provider(user.id, "https://mcp.example/mcp", %{"slug" => "second"})
+               Connections.discover_provider(user.id, "https://mcp.example/mcp", %{
+                 "slug" => "second"
+               })
 
       assert p2.client_id == "dcr-client"
       assert p2.client_source == "dcr"

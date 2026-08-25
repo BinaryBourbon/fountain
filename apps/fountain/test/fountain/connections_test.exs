@@ -180,7 +180,13 @@ defmodule Fountain.ConnectionsTest do
 
   describe "OAuth.authorize_url/3 for Google" do
     test "asks for offline access with a forced consent, so a refresh token comes back" do
-      url = OAuth.authorize_url(Google.provider(), "https://f.example/connections/google/callback", "st")
+      url =
+        OAuth.authorize_url(
+          Google.provider(),
+          "https://f.example/connections/google/callback",
+          "st"
+        )
+
       %URI{query: q} = URI.parse(url)
       params = URI.decode_query(q)
 

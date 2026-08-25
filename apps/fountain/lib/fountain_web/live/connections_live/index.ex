@@ -165,7 +165,10 @@ defmodule FountainWeb.ConnectionsLive.Index do
 
   def handle_event("new_provider", _params, socket) do
     {:noreply,
-     socket |> assign(:provider_form, @blank_form) |> assign(:editing_id, nil) |> assign(:provider_errors, [])}
+     socket
+     |> assign(:provider_form, @blank_form)
+     |> assign(:editing_id, nil)
+     |> assign(:provider_errors, [])}
   end
 
   def handle_event("preset", %{"slug" => slug}, socket) do
@@ -196,7 +199,12 @@ defmodule FountainWeb.ConnectionsLive.Index do
   end
 
   def handle_event("validate_provider", %{"provider" => params}, socket) do
-    {:noreply, assign(socket, :provider_form, Map.merge(socket.assigns.provider_form || @blank_form, params))}
+    {:noreply,
+     assign(
+       socket,
+       :provider_form,
+       Map.merge(socket.assigns.provider_form || @blank_form, params)
+     )}
   end
 
   def handle_event("save_provider", %{"provider" => params}, socket) do
@@ -222,7 +230,10 @@ defmodule FountainWeb.ConnectionsLive.Index do
       {:ok, p} ->
         {:noreply,
          socket
-         |> put_flash(:info, "Saved #{p.name}. Register #{Connections.redirect_uri(p)} as its redirect URI.")
+         |> put_flash(
+           :info,
+           "Saved #{p.name}. Register #{Connections.redirect_uri(p)} as its redirect URI."
+         )
          |> assign(:provider_form, nil)
          |> assign(:editing_id, nil)
          |> assign(:provider_errors, [])
@@ -243,8 +254,11 @@ defmodule FountainWeb.ConnectionsLive.Index do
     case Connections.get_provider(id, socket.assigns.user_id) do
       %Provider{user_id: uid} = p when is_binary(uid) ->
         case Connections.delete_provider(p, Audited.attribution(socket)) do
-          {:ok, _} -> {:noreply, socket |> put_flash(:info, "Deleted #{p.name}.") |> reload()}
-          {:error, reason} -> {:noreply, put_flash(socket, :error, "Could not delete: #{inspect(reason)}")}
+          {:ok, _} ->
+            {:noreply, socket |> put_flash(:info, "Deleted #{p.name}.") |> reload()}
+
+          {:error, reason} ->
+            {:noreply, put_flash(socket, :error, "Could not delete: #{inspect(reason)}")}
         end
 
       _ ->
@@ -270,7 +284,12 @@ defmodule FountainWeb.ConnectionsLive.Index do
       |> put_present("client_id", params["client_id"])
       |> put_present("client_secret", params["client_secret"])
 
-    case Connections.discover_provider(socket.assigns.user_id, url, attrs, Audited.attribution(socket)) do
+    case Connections.discover_provider(
+           socket.assigns.user_id,
+           url,
+           attrs,
+           Audited.attribution(socket)
+         ) do
       {:ok, p} ->
         {:noreply,
          socket
@@ -281,7 +300,8 @@ defmodule FountainWeb.ConnectionsLive.Index do
          |> reload()}
 
       {:error, %Ecto.Changeset{} = cs} ->
-        {:noreply, put_flash(socket, :error, "Could not save the server: #{errors(cs) |> Enum.join("; ")}")}
+        {:noreply,
+         put_flash(socket, :error, "Could not save the server: #{errors(cs) |> Enum.join("; ")}")}
 
       {:error, reason} ->
         {:noreply,
@@ -293,9 +313,19 @@ defmodule FountainWeb.ConnectionsLive.Index do
     case Connections.get_provider(id, socket.assigns.user_id) do
       %Provider{kind: "mcp"} = p ->
         case Connections.rediscover_provider(p, Audited.attribution(socket)) do
-          {:ok, p} -> {:noreply, socket |> put_flash(:info, discovered_message(p)) |> reload()}
-          {:error, %Ecto.Changeset{} = cs} -> {:noreply, put_flash(socket, :error, Enum.join(errors(cs), "; "))}
-          {:error, reason} -> {:noreply, put_flash(socket, :error, "Discovery failed: #{ConnectionProviderJSON.describe(reason)}")}
+          {:ok, p} ->
+            {:noreply, socket |> put_flash(:info, discovered_message(p)) |> reload()}
+
+          {:error, %Ecto.Changeset{} = cs} ->
+            {:noreply, put_flash(socket, :error, Enum.join(errors(cs), "; "))}
+
+          {:error, reason} ->
+            {:noreply,
+             put_flash(
+               socket,
+               :error,
+               "Discovery failed: #{ConnectionProviderJSON.describe(reason)}"
+             )}
         end
 
       _ ->
@@ -350,7 +380,9 @@ defmodule FountainWeb.ConnectionsLive.Index do
     |> Map.update("scopes", [], &split_words/1)
     |> Map.update("token_hosts", [], &split_words/1)
     |> Map.update("pkce", true, &(&1 in ["true", "on"]))
-    |> Enum.reject(fn {k, v} -> k in ~w(revoke_url userinfo_url account_label_path slug env_key) and v == "" end)
+    |> Enum.reject(fn {k, v} ->
+      k in ~w(revoke_url userinfo_url account_label_path slug env_key) and v == ""
+    end)
     |> Map.new()
   end
 
@@ -416,10 +448,16 @@ defmodule FountainWeb.ConnectionsLive.Index do
               <div class="flex items-center gap-2">
                 <span class="font-medium">{p.name}</span>
                 <span class="rounded-full bg-[var(--color-bg-2)] px-2 py-0.5 text-xs">{p.kind}</span>
-                <span :if={Provider.platform?(p)} class="rounded-full bg-[var(--color-bg-2)] px-2 py-0.5 text-xs">
+                <span
+                  :if={Provider.platform?(p)}
+                  class="rounded-full bg-[var(--color-bg-2)] px-2 py-0.5 text-xs"
+                >
                   platform
                 </span>
-                <span :if={p.client_source == "dcr"} class="rounded-full bg-[var(--color-bg-2)] px-2 py-0.5 text-xs">
+                <span
+                  :if={p.client_source == "dcr"}
+                  class="rounded-full bg-[var(--color-bg-2)] px-2 py-0.5 text-xs"
+                >
                   registered automatically
                 </span>
               </div>
@@ -428,14 +466,21 @@ defmodule FountainWeb.ConnectionsLive.Index do
               </p>
               <p class="text-xs text-[var(--color-text-secondary)]">
                 Brokered as <code class="font-mono">{p.env_key}</code>
-                <span :if={p.token_hosts != []}>to <code class="font-mono">{Enum.join(p.token_hosts, ", ")}</code></span>
+                <span :if={p.token_hosts != []}>
+                  to <code class="font-mono">{Enum.join(p.token_hosts, ", ")}</code>
+                </span>
               </p>
               <p :if={p.mcp_url} class="text-xs text-[var(--color-text-secondary)]">
                 Server <code class="font-mono">{p.mcp_url}</code>
-                <span :if={p.issuer}>· authorization by <code class="font-mono">{p.issuer}</code></span>
+                <span :if={p.issuer}>
+                  · authorization by <code class="font-mono">{p.issuer}</code>
+                </span>
               </p>
               <p :if={!Provider.platform?(p)} class="text-xs text-[var(--color-text-secondary)]">
-                Redirect URI <code class="font-mono select-all" data-role="redirect-uri">{Connections.redirect_uri(p)}</code>
+                Redirect URI
+                <code class="font-mono select-all" data-role="redirect-uri">
+                  {Connections.redirect_uri(p)}
+                </code>
               </p>
             </div>
             <div class="flex flex-col items-end gap-2 shrink-0">
@@ -467,7 +512,10 @@ defmodule FountainWeb.ConnectionsLive.Index do
                   Connect
                 </button>
               </form>
-              <span :if={!configured?(p) and Provider.platform?(p)} class="text-xs text-[var(--color-text-secondary)]">
+              <span
+                :if={!configured?(p) and Provider.platform?(p)}
+                class="text-xs text-[var(--color-text-secondary)]"
+              >
                 Not configured on this deployment (<code class="font-mono">GOOGLE_OAUTH_CLIENT_ID</code>).
               </span>
               <span :if={!configured?(p) and !Provider.platform?(p)} class="text-xs text-red-700">
@@ -521,13 +569,28 @@ defmodule FountainWeb.ConnectionsLive.Index do
               </button>
             </div>
           </div>
-          <ul :if={@provider_errors != []} class="text-sm text-red-700 list-disc pl-5" data-role="provider-errors">
+          <ul
+            :if={@provider_errors != []}
+            class="text-sm text-red-700 list-disc pl-5"
+            data-role="provider-errors"
+          >
             <li :for={e <- @provider_errors}>{e}</li>
           </ul>
           <input type="hidden" name="provider[kind]" value={@provider_form["kind"]} />
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <.input name="provider[name]" label="Name" value={@provider_form["name"]} id="provider_name" />
-            <.input name="provider[slug]" label="Slug" value={@provider_form["slug"]} id="provider_slug" placeholder="github" />
+            <.input
+              name="provider[name]"
+              label="Name"
+              value={@provider_form["name"]}
+              id="provider_name"
+            />
+            <.input
+              name="provider[slug]"
+              label="Slug"
+              value={@provider_form["slug"]}
+              id="provider_slug"
+              placeholder="github"
+            />
             <.input
               :if={@provider_form["kind"] == "oauth2"}
               name="provider[authorize_url]"
@@ -542,8 +605,18 @@ defmodule FountainWeb.ConnectionsLive.Index do
               value={@provider_form["token_url"]}
               id="provider_token_url"
             />
-            <.input name="provider[revoke_url]" label="Revoke URL (optional)" value={@provider_form["revoke_url"]} id="provider_revoke_url" />
-            <.input name="provider[userinfo_url]" label="Userinfo URL (optional)" value={@provider_form["userinfo_url"]} id="provider_userinfo_url" />
+            <.input
+              name="provider[revoke_url]"
+              label="Revoke URL (optional)"
+              value={@provider_form["revoke_url"]}
+              id="provider_revoke_url"
+            />
+            <.input
+              name="provider[userinfo_url]"
+              label="Userinfo URL (optional)"
+              value={@provider_form["userinfo_url"]}
+              id="provider_userinfo_url"
+            />
             <.input
               name="provider[account_label_path]"
               label="Account name path in userinfo"
@@ -551,17 +624,34 @@ defmodule FountainWeb.ConnectionsLive.Index do
               id="provider_account_label_path"
               placeholder="email"
             />
-            <.input name="provider[scopes]" label="Scopes (space-separated)" value={@provider_form["scopes"]} id="provider_scopes" />
-            <.input name="provider[client_id]" label="Client id" value={@provider_form["client_id"]} id="provider_client_id" />
+            <.input
+              name="provider[scopes]"
+              label="Scopes (space-separated)"
+              value={@provider_form["scopes"]}
+              id="provider_scopes"
+            />
+            <.input
+              name="provider[client_id]"
+              label="Client id"
+              value={@provider_form["client_id"]}
+              id="provider_client_id"
+            />
             <.input
               name="provider[client_secret]"
               type="password"
-              label={if @editing_id, do: "Client secret (blank keeps the stored one)", else: "Client secret"}
+              label={
+                if @editing_id,
+                  do: "Client secret (blank keeps the stored one)",
+                  else: "Client secret"
+              }
               value={@provider_form["client_secret"]}
               id="provider_client_secret"
             />
             <div class="space-y-1">
-              <label for="provider_token_endpoint_auth" class="block text-sm font-medium text-zinc-700">
+              <label
+                for="provider_token_endpoint_auth"
+                class="block text-sm font-medium text-zinc-700"
+              >
                 Client authentication
               </label>
               <select
@@ -570,7 +660,13 @@ defmodule FountainWeb.ConnectionsLive.Index do
                 class="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm"
               >
                 <option
-                  :for={{label, v} <- [{"Secret in the form body", "client_secret_post"}, {"HTTP basic", "client_secret_basic"}, {"None (public client)", "none"}]}
+                  :for={
+                    {label, v} <- [
+                      {"Secret in the form body", "client_secret_post"},
+                      {"HTTP basic", "client_secret_basic"},
+                      {"None (public client)", "none"}
+                    ]
+                  }
                   value={v}
                   selected={@provider_form["token_endpoint_auth"] == v}
                 >
@@ -580,19 +676,43 @@ defmodule FountainWeb.ConnectionsLive.Index do
             </div>
             <div class="space-y-1">
               <label for="provider_pkce" class="block text-sm font-medium text-zinc-700">PKCE</label>
-              <select id="provider_pkce" name="provider[pkce]" class="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm">
+              <select
+                id="provider_pkce"
+                name="provider[pkce]"
+                class="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm"
+              >
                 <option value="true" selected={@provider_form["pkce"] == "true"}>On (S256)</option>
                 <option value="false" selected={@provider_form["pkce"] == "false"}>Off</option>
               </select>
             </div>
-            <.input name="provider[env_key]" label="Env var (blank derives from the slug)" value={@provider_form["env_key"]} id="provider_env_key" placeholder="GITHUB_ACCESS_TOKEN" />
-            <.input name="provider[token_hosts]" label="Token hosts (space-separated)" value={@provider_form["token_hosts"]} id="provider_token_hosts" placeholder="api.github.com" />
+            <.input
+              name="provider[env_key]"
+              label="Env var (blank derives from the slug)"
+              value={@provider_form["env_key"]}
+              id="provider_env_key"
+              placeholder="GITHUB_ACCESS_TOKEN"
+            />
+            <.input
+              name="provider[token_hosts]"
+              label="Token hosts (space-separated)"
+              value={@provider_form["token_hosts"]}
+              id="provider_token_hosts"
+              placeholder="api.github.com"
+            />
           </div>
           <div class="flex gap-2">
-            <button type="submit" class="rounded-md bg-zinc-900 px-3 py-2 text-sm text-white hover:bg-zinc-700" data-role="save-provider">
+            <button
+              type="submit"
+              class="rounded-md bg-zinc-900 px-3 py-2 text-sm text-white hover:bg-zinc-700"
+              data-role="save-provider"
+            >
               Save
             </button>
-            <button type="button" phx-click="cancel_provider" class="rounded-md border border-[var(--color-border)] px-3 py-2 text-sm">
+            <button
+              type="button"
+              phx-click="cancel_provider"
+              class="rounded-md border border-[var(--color-border)] px-3 py-2 text-sm"
+            >
               Cancel
             </button>
           </div>
@@ -620,15 +740,33 @@ defmodule FountainWeb.ConnectionsLive.Index do
               class="flex-1 rounded-md border border-zinc-300 px-3 py-2 text-sm"
               data-role="mcp-url"
             />
-            <button type="submit" class="rounded-md bg-zinc-900 px-3 py-2 text-sm text-white hover:bg-zinc-700" data-role="discover">
+            <button
+              type="submit"
+              class="rounded-md bg-zinc-900 px-3 py-2 text-sm text-white hover:bg-zinc-700"
+              data-role="discover"
+            >
               Discover
             </button>
           </div>
           <details class="text-xs">
-            <summary class="cursor-pointer text-[var(--color-text-secondary)]">Client id and secret (optional)</summary>
+            <summary class="cursor-pointer text-[var(--color-text-secondary)]">
+              Client id and secret (optional)
+            </summary>
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
-              <input type="text" name="client_id" value={@mcp_client_id} placeholder="Client id" class="rounded-md border border-zinc-300 px-3 py-2 text-sm" />
-              <input type="password" name="client_secret" value={@mcp_client_secret} placeholder="Client secret" class="rounded-md border border-zinc-300 px-3 py-2 text-sm" />
+              <input
+                type="text"
+                name="client_id"
+                value={@mcp_client_id}
+                placeholder="Client id"
+                class="rounded-md border border-zinc-300 px-3 py-2 text-sm"
+              />
+              <input
+                type="password"
+                name="client_secret"
+                value={@mcp_client_secret}
+                placeholder="Client secret"
+                class="rounded-md border border-zinc-300 px-3 py-2 text-sm"
+              />
             </div>
           </details>
         </form>
@@ -662,7 +800,8 @@ defmodule FountainWeb.ConnectionsLive.Index do
               </span>
             </div>
             <p class="text-xs text-[var(--color-text-secondary)]">
-              {c.provider} · brokered as <code class="font-mono">{c.env_key}</code> · id <code class="font-mono">{c.id}</code>
+              {c.provider} · brokered as <code class="font-mono">{c.env_key}</code>
+              · id <code class="font-mono">{c.id}</code>
             </p>
             <p :if={c.provider == "google"} class="text-xs text-[var(--color-text-secondary)]">
               In an agent's MCP servers:
@@ -670,7 +809,9 @@ defmodule FountainWeb.ConnectionsLive.Index do
             </p>
             <p :if={c.provider != "google"} class="text-xs text-[var(--color-text-secondary)]">
               In an agent's MCP servers:
-              <code class="font-mono">{~s({"<name>": {"type": "http", "url": "https://…/mcp", "connection": "#{c.id}"}})}</code>
+              <code class="font-mono">
+                {~s({"<name>": {"type": "http", "url": "https://…/mcp", "connection": "#{c.id}"}})}
+              </code>
               or a stdio server that reads <code class="font-mono">{c.env_key}</code>.
             </p>
             <p :if={c.status == "revoked"} class="text-xs text-red-700">

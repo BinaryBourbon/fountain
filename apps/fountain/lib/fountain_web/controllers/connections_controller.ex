@@ -44,7 +44,9 @@ defmodule FountainWeb.ConnectionsController do
         "verifier" => verifier,
         "label" => blank_to_nil(params["label"])
       })
-      |> redirect(external: OAuth.authorize_url(provider, redirect_uri(provider), state, verifier))
+      |> redirect(
+        external: OAuth.authorize_url(provider, redirect_uri(provider), state, verifier)
+      )
     else
       :unknown ->
         back(conn, :error, "Unknown provider.")
@@ -97,14 +99,23 @@ defmodule FountainWeb.ConnectionsController do
         )
 
       {:error, reason} ->
-        back(conn, :error, "#{provider_name(provider_id, user.id)} sign-in failed: #{describe(reason)}")
+        back(
+          conn,
+          :error,
+          "#{provider_name(provider_id, user.id)} sign-in failed: #{describe(reason)}"
+        )
     end
   end
 
   def callback(conn, %{"provider" => provider_id, "error" => error}) do
     conn = delete_session(conn, :connections_oauth)
     user = conn.assigns.current_user
-    back(conn, :error, "#{provider_name(provider_id, user.id)} sign-in was not completed (#{error}).")
+
+    back(
+      conn,
+      :error,
+      "#{provider_name(provider_id, user.id)} sign-in was not completed (#{error})."
+    )
   end
 
   def callback(conn, _params), do: back(conn, :error, "Unknown provider or a malformed callback.")
@@ -140,7 +151,9 @@ defmodule FountainWeb.ConnectionsController do
 
   defp describe(:invalid_grant), do: "the code was refused"
   defp describe({:http, status, _body}), do: "the provider answered #{status}"
-  defp describe({:unsafe_url, reason}), do: "the provider's URL #{Connections.UrlGuard.message(reason)}"
+
+  defp describe({:unsafe_url, reason}),
+    do: "the provider's URL #{Connections.UrlGuard.message(reason)}"
 
   defp describe({:userinfo, :no_label, path}),
     do: "the account name was not at `#{path}` in the userinfo response"

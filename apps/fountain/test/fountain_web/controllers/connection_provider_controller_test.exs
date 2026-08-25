@@ -44,10 +44,11 @@ defmodule FountainWeb.ConnectionProviderControllerTest do
              conn |> post("/api/connection-providers", @github) |> json_response(404)
   end
 
-  test "creates, lists, shows, edits and deletes an oauth2 provider without ever returning the secret", %{
-    conn: conn,
-    user: user
-  } do
+  test "creates, lists, shows, edits and deletes an oauth2 provider without ever returning the secret",
+       %{
+         conn: conn,
+         user: user
+       } do
     created = conn |> post("/api/connection-providers", @github) |> json_response(201)
     assert created["slug"] == "github"
     assert created["env_key"] == "GITHUB_ACCESS_TOKEN"
@@ -58,17 +59,26 @@ defmodule FountainWeb.ConnectionProviderControllerTest do
     assert created["connect_url"] =~ "/connections/#{created["id"]}/start"
     refute inspect(created) =~ "top-secret"
 
-    assert %{"data" => [google, github]} = conn |> get("/api/connection-providers") |> json_response(200)
+    assert %{"data" => [google, github]} =
+             conn |> get("/api/connection-providers") |> json_response(200)
+
     assert google["id"] == "google"
     assert github["id"] == created["id"]
-    assert conn |> get("/api/connection-providers/google") |> json_response(200) |> Map.fetch!("platform")
+
+    assert conn
+           |> get("/api/connection-providers/google")
+           |> json_response(200)
+           |> Map.fetch!("platform")
 
     # The same list answers on the connections route, for older clients.
     assert %{"data" => [_, _]} = conn |> get("/api/connections/providers") |> json_response(200)
 
     updated =
       conn
-      |> patch("/api/connection-providers/#{created["id"]}", %{"name" => "GH", "client_secret" => ""})
+      |> patch("/api/connection-providers/#{created["id"]}", %{
+        "name" => "GH",
+        "client_secret" => ""
+      })
       |> json_response(200)
 
     assert updated["name"] == "GH"
@@ -80,7 +90,10 @@ defmodule FountainWeb.ConnectionProviderControllerTest do
              |> json_response(422)
 
     # The platform provider is read-only.
-    assert conn |> patch("/api/connection-providers/google", %{"name" => "x"}) |> json_response(404)
+    assert conn
+           |> patch("/api/connection-providers/google", %{"name" => "x"})
+           |> json_response(404)
+
     assert conn |> delete("/api/connection-providers/google") |> json_response(404)
 
     assert conn |> delete("/api/connection-providers/#{created["id"]}") |> response(204)
@@ -93,7 +106,11 @@ defmodule FountainWeb.ConnectionProviderControllerTest do
     theirs = insert_provider(other)
 
     assert conn |> get("/api/connection-providers/#{theirs.id}") |> json_response(404)
-    assert conn |> patch("/api/connection-providers/#{theirs.id}", %{"name" => "x"}) |> json_response(404)
+
+    assert conn
+           |> patch("/api/connection-providers/#{theirs.id}", %{"name" => "x"})
+           |> json_response(404)
+
     assert conn |> delete("/api/connection-providers/#{theirs.id}") |> json_response(404)
 
     {_k, sprite_key} = insert_sprite_api_key(user)
@@ -134,7 +151,10 @@ defmodule FountainWeb.ConnectionProviderControllerTest do
 
     created =
       conn
-      |> post("/api/connection-providers", %{"kind" => "mcp", "mcp_url" => "https://mcp.example/mcp"})
+      |> post("/api/connection-providers", %{
+        "kind" => "mcp",
+        "mcp_url" => "https://mcp.example/mcp"
+      })
       |> json_response(201)
 
     assert created["kind"] == "mcp"
@@ -145,11 +165,16 @@ defmodule FountainWeb.ConnectionProviderControllerTest do
     assert created["token_hosts"] == ["mcp.example"]
     assert created["pkce"] == true
 
-    assert conn |> post("/api/connection-providers/#{created["id"]}/discover") |> json_response(200)
+    assert conn
+           |> post("/api/connection-providers/#{created["id"]}/discover")
+           |> json_response(200)
 
     assert %{"error" => "discovery_failed", "detail" => detail} =
              conn
-             |> post("/api/connection-providers", %{"kind" => "mcp", "mcp_url" => "http://mcp.example/mcp"})
+             |> post("/api/connection-providers", %{
+               "kind" => "mcp",
+               "mcp_url" => "http://mcp.example/mcp"
+             })
              |> json_response(422)
 
     assert detail =~ "https"
