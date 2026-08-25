@@ -197,5 +197,4 @@ defmodule FountainWeb.AdminLive.Index do
   defp stage_label(:subscribed), do: "Subscribed"
 
   defp format_pct(fraction), do: "#{round(fraction * 100)}%"
-
 end

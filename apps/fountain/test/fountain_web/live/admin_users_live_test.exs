@@ -321,7 +321,10 @@ defmodule FountainWeb.AdminUsersLiveTest do
 
     test "filters comped from billed accounts (#1126)", %{conn: conn} do
       admin = insert_admin()
-      {:ok, comped} = Fountain.Billing.comp_account(insert_active_user(%{email: "comped@example.com"}))
+
+      {:ok, comped} =
+        Fountain.Billing.comp_account(insert_active_user(%{email: "comped@example.com"}))
+
       billed = insert_active_user(%{email: "billed@example.com"})
       conn = login_user(conn, admin)
       {:ok, lv, _html} = live(conn, ~p"/admin/users?comped=yes")
