@@ -99,6 +99,17 @@ defmodule Fountain.Credits.RentTest do
       :ok
     end
 
+    test "a comped account is never refused rent, and never enters the grace" do
+      {:ok, user} = Fountain.Billing.comp_account(insert_empty_user())
+      assert :ok = Rent.check_provision(user.id)
+      c = contact(user, %{rent_paid_through: ~U[2026-08-01 00:00:00Z]})
+
+      assert {:ok, %Contact{rent_due_at: nil}} =
+               Rent.charge(c, ~U[2026-08-01 00:00:00Z], now: ~U[2026-08-02 00:00:00Z])
+
+      assert Credits.balance(user.id) == -500
+    end
+
     test "provisioning is refused below a month, and allowed at it" do
       user = insert_empty_user()
       assert {:error, :insufficient_credits} = Rent.check_provision(user.id)

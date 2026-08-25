@@ -67,18 +67,20 @@ defmodule Fountain.Workers.CreditPricer do
   """
   @spec run(keyword()) :: %{turns: non_neg_integer(), messages: non_neg_integer()}
   def run(opts \\ []) do
-    since = Keyword.get(opts, :since)
-
-    cond do
-      not Billing.enabled?() -> %{turns: 0, messages: 0}
-      is_nil(since) -> %{turns: 0, messages: 0}
-      true -> do_run(floor(since, Keyword.get(opts, :now) || DateTime.utc_now()))
-    end
-  end
-
-  defp floor(since, now) do
+    now = Keyword.get(opts, :now) || DateTime.utc_now()
     lookback = DateTime.add(now, -@lookback_days * 86_400, :second)
-    if DateTime.compare(since, lookback) == :gt, do: since, else: lookback
+
+    # `:since` is a test override that can only narrow the window.
+    floor =
+      case Keyword.get(opts, :since) do
+        %DateTime{} = since ->
+          if DateTime.compare(since, lookback) == :gt, do: since, else: lookback
+
+        nil ->
+          lookback
+      end
+
+    if Billing.enabled?(), do: do_run(floor), else: %{turns: 0, messages: 0}
   end
 
   defp do_run(floor) do

@@ -48,9 +48,10 @@ defmodule Fountain.Credits.Rent do
   """
   @spec check_provision(binary()) :: :ok | {:error, :insufficient_credits}
   def check_provision(user_id) when is_binary(user_id) do
-    if Credits.enforcing?() and month_cents() > 0 and Credits.balance(user_id) < month_cents(),
-      do: {:error, :insufficient_credits},
-      else: :ok
+    if Credits.enforcing?() and not comped?(user_id) and month_cents() > 0 and
+         Credits.balance(user_id) < month_cents(),
+       do: {:error, :insufficient_credits},
+       else: :ok
   end
 
   @doc """
@@ -70,7 +71,8 @@ defmodule Fountain.Credits.Rent do
       not charging?() ->
         {:ok, :free}
 
-      Credits.enforcing?() and Credits.balance(contact.user_id) < cents ->
+      Credits.enforcing?() and not comped?(contact.user_id) and
+          Credits.balance(contact.user_id) < cents ->
         {:ok, _} = stamp(contact, rent_due_at: contact.rent_due_at || truncate(now))
         {:error, :insufficient_credits}
 
@@ -214,6 +216,15 @@ defmodule Fountain.Credits.Rent do
     day = min(date.day, Date.days_in_month(Date.new!(y, m, 1)))
     {:ok, next} = DateTime.new(Date.new!(y, m, day), DateTime.to_time(at), "Etc/UTC")
     truncate(next)
+  end
+
+  # A comped account is never refused anything (Billing.comp_account/2), rent
+  # included: the month is still written, so Finance sees the cost.
+  defp comped?(user_id) do
+    case Fountain.Accounts.get_user(user_id) do
+      %{comped: true} -> true
+      _ -> false
+    end
   end
 
   defp truncate(dt), do: DateTime.truncate(dt, :second)
