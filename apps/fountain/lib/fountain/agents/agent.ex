@@ -92,6 +92,7 @@ defmodule Fountain.Agents.Agent do
     |> validate_sandbox_provider()
     |> validate_length(:name, min: 1, max: 200)
     |> validate_skills()
+    |> validate_mcp_servers()
     |> validate_permission_policy()
     |> unique_constraint(:name, name: :agents_user_id_name_index)
     |> foreign_key_constraint(:environment_id)
@@ -219,6 +220,26 @@ defmodule Fountain.Agents.Agent do
       true ->
         []
     end
+  end
+
+  # An entry may name a connection instead of a server (#1178):
+  # `%{"connection" => "<id>"}`, rewritten at spawn into the Fountain-served
+  # server. Only the shape is checked here — a connection that is gone or
+  # revoked by the time a conversation runs fails at the tool call with a
+  # reason, which is the contract; a changeset cannot know the future.
+  defp validate_mcp_servers(changeset) do
+    validate_change(changeset, :mcp_servers, fn :mcp_servers, servers ->
+      if is_map(servers) do
+        servers
+        |> Enum.filter(fn {_name, entry} -> is_map(entry) and Map.has_key?(entry, "connection") end)
+        |> Enum.reject(fn {_name, %{"connection" => id}} ->
+          is_binary(id) and match?({:ok, _}, Ecto.UUID.cast(id))
+        end)
+        |> Enum.map(fn {name, _} -> {:mcp_servers, "#{name}: connection must be a connection id"} end)
+      else
+        [mcp_servers: "must be a map of server name to server config"]
+      end
+    end)
   end
 
   defp validate_skills(changeset) do

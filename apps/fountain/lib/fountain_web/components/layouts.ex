@@ -105,6 +105,12 @@ defmodule FountainWeb.Layouts do
                 label="Credential bindings"
                 current={@current_path}
               />
+              <.nav_link
+                :if={assigns[:current_user] && Fountain.Broker.enabled_for?(assigns.current_user.id)}
+                href={~p"/account/connections"}
+                label="Connections"
+                current={@current_path}
+              />
               <.nav_link href={~p"/account/webhooks"} label="Webhooks" current={@current_path} />
               <.nav_link
                 :if={Fountain.Credits.enabled?()}

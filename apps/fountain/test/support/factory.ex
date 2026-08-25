@@ -77,6 +77,30 @@ defmodule Fountain.Factory do
     insert_api_key(user, "sprite:#{uniq()}", Keyword.put_new(opts, :scopes, ["sprite"]))
   end
 
+  # ── connections (#1178) ───────────────────────────────────────────────────
+
+  @doc """
+  A stored Google connection with a refresh token and a fresh access token,
+  as `Fountain.Connections.connect/4` would persist after a consent. No
+  network: the grant map is what `Google.exchange_code/2` returns.
+  """
+  def insert_connection(user, overrides \\ %{}) do
+    overrides = Map.new(overrides, fn {k, v} -> {to_string(k), v} end)
+
+    grant = %{
+      refresh_token: overrides["refresh_token"] || "refresh-#{uniq()}",
+      access_token: overrides["access_token"] || "access-#{uniq()}",
+      expires_at:
+        overrides["expires_at"] ||
+          DateTime.utc_now() |> DateTime.add(3600, :second) |> DateTime.truncate(:second),
+      scopes: overrides["scopes"] || Fountain.Connections.Google.scopes(),
+      account_email: overrides["account_email"] || "user-#{uniq()}@example.com"
+    }
+
+    {:ok, conn} = Fountain.Connections.connect(user.id, "google", grant)
+    conn
+  end
+
   # ── environments ──────────────────────────────────────────────────────────
 
   def env_attrs(overrides \\ %{}) do

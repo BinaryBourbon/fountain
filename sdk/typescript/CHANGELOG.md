@@ -10,6 +10,18 @@ server releases.
 
 ---
 
+## [1.7.0] — 2026-08-25
+
+### Added
+
+- `client.connections`: the provider accounts the tenant signed in to once,
+  whose credentials Fountain holds (#1178). `list()`, `get(id)`,
+  `providers()` (what the deployment can connect and the console URL that
+  starts the flow) and `delete(id)`. Connecting is a browser round trip, so
+  there is no `create`. An agent uses one by naming it in `mcp_servers`:
+  `{ gmail: { connection: "<id>" } }`. `Connection` and `ConnectionProvider`
+  types. Only for accounts the egress broker is on for.
+
 ## [1.6.0] — 2026-08-25
 
 ### Added

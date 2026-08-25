@@ -110,6 +110,14 @@ config :fountain, :agentphone_req_options, plug: {Req.Test, Fountain.Team.Comms.
 config :fountain, :agentphone_webhook_secret, "whsec_test"
 config :fountain, :posthog_req_options, plug: {Req.Test, Fountain.FeatureFlags}
 
+# Connections (#1178): a Google OAuth client so the flow is "configured", and
+# Req.Test plugs so no test reaches Google. Same failure mode as AgentMail
+# above: an unstubbed call fails loudly.
+config :fountain, :google_oauth_client_id, "google-test-client-id"
+config :fountain, :google_oauth_client_secret, "google-test-client-secret"
+config :fountain, :google_oauth_req_options, plug: {Req.Test, Fountain.Connections.Google}
+config :fountain, :gmail_req_options, plug: {Req.Test, Fountain.Connections.Gmail}
+
 # Product analytics (`Fountain.Analytics`). Capture is inert without a project
 # API key, which the suite deliberately does not set — so the default here is
 # "nothing is sent", and a test that wants to assert on a payload sets the key

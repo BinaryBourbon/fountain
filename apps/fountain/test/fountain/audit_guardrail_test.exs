@@ -113,6 +113,8 @@ defmodule Fountain.AuditGuardrailTest do
     {"secret binding create", &__MODULE__.do_binding_create/1, "secret_binding.created"},
     {"secret binding update", &__MODULE__.do_binding_update/1, "secret_binding.updated"},
     {"secret binding delete", &__MODULE__.do_binding_delete/1, "secret_binding.deleted"},
+    {"connection connect", &__MODULE__.do_connection_connect/1, "connection.created"},
+    {"connection revoke", &__MODULE__.do_connection_revoke/1, "connection.revoked"},
     {"credit grant", &__MODULE__.do_credit_grant/1, "credit.granted"},
     {"credit debit", &__MODULE__.do_credit_debit/1, "credit.burned"}
   ]
@@ -318,6 +320,13 @@ defmodule Fountain.AuditGuardrailTest do
       })
 
     {:ok, _} = Fountain.SecretBindings.delete_binding(b)
+  end
+
+  def do_connection_connect(user), do: insert_connection(user)
+
+  def do_connection_revoke(user) do
+    Req.Test.stub(Fountain.Connections.Google, fn conn -> Req.Test.json(conn, %{}) end)
+    {:ok, _} = Fountain.Connections.revoke(insert_connection(user))
   end
 
   def do_runner_register(user) do
