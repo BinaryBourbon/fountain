@@ -16,6 +16,19 @@ upgrade, is in
 
 ## [Unreleased]
 
+### Changed
+
+- **The hosted instance's Kubernetes overlay left the repo** (ADR 0032).
+  `k8s/` held the maintainer's own cluster — CNPG, Infisical, Traefik,
+  hostnames, backups, alerts, the rate card, the OAuth client list — as an
+  overlay of `deploy/k8s/`, and `publish-manifests.yml` shipped both in the
+  manifest artifact. That overlay now lives in the private home-cloud repo,
+  applied on top of the artifact with Flux patches. `k8s/` keeps only the
+  image pin (`pin.yaml`), so the artifact is the portable baseline plus the
+  image built from that tree and nothing else. Self-hosters were never meant
+  to apply `k8s/`; the Erlang clustering env it used to demonstrate is now
+  written out in the Kubernetes guide. `.sops.yaml` is gone with it.
+
 ### Fixed
 
 - **A background task the agent starts survives the turn that started it.**

@@ -5,16 +5,17 @@
 # Grafana's provisioning directory. So a dashboard ships with the app, in the
 # app's own namespace, and no Grafana state is edited by hand.
 #
-# Referenced from ../../k8s/kustomization.yaml rather than from
-# ../k8s/kustomization.yaml, because the portable baseline must not assume a
-# Grafana exists, let alone one running that sidecar. A self-hoster who has
-# one adds this directory to their own overlay; a self-hoster who does not
-# imports the JSON by hand, which is what docs/guides/operate/observability.md
+# Not referenced from ../k8s/kustomization.yaml, because the portable
+# baseline must not assume a Grafana exists, let alone one running that
+# sidecar. The hosted instance applies this directory as its own Flux
+# Kustomization from the manifest artifact (decisions/0032); a self-hoster
+# who has the sidecar adds it to their overlay, and one who does not imports
+# the JSON by hand, which is what docs/guides/operate/observability.md
 # describes.
 #
 # The generator root has to be this directory: kustomize refuses to load
 # generator files from above its own root, so `files: ../grafana/*.json` from
-# k8s/ would fail the build rather than reach across.
+# another directory would fail the build rather than reach across.
 #
 # fountain-dashboard.json is deliberately NOT here. It is the starter, built
 # for a self-hoster with an empty Grafana and documented as an import; the ops

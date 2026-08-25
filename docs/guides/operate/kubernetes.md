@@ -16,12 +16,51 @@ choices about probes and scale in inline comments.
 
 ## Do not apply `k8s/`
 
-`k8s/` in this repository is a different thing. It is the maintainer's own
-cluster, with CNPG, Traefik, cert-manager, Infisical, Flux, Longhorn and
-personal hostnames.
+`k8s/` in this repository is a different thing. It is the image pin that the
+manifest artifact for the hosted instance carries, and nothing else. The
+maintainer's own cluster, with CNPG, Traefik, cert-manager, Infisical, Flux,
+Longhorn and personal hostnames, is a private overlay on that artifact. It
+is not in this repository.
 
-Read it, because it shows the full Erlang cluster wiring for more than one
-replica. Do not apply it.
+The section below lists the Erlang cluster wiring for more than one replica.
+
+## Run more than one replica
+
+The baseline runs one replica. With more, the pods must form an Erlang
+cluster, or conversation streams break for the viewer on the other pod. Read
+[Architecture](../../architecture.md#clustering) for why.
+
+Add a headless Service that selects the fountain pods. Then set these
+variables on the container.
+
+```yaml
+- name: POD_IP
+  valueFrom:
+    fieldRef:
+      fieldPath: status.podIP
+- name: RELEASE_DISTRIBUTION
+  value: name
+# The basename must be `fountain_server`, the release name. libcluster
+# derives the peer node name from it.
+- name: RELEASE_NODE
+  value: fountain_server@$(POD_IP)
+# The same value on every pod. A missing cookie lets each pod generate its
+# own, and the pods never connect.
+- name: RELEASE_COOKIE
+  valueFrom:
+    secretKeyRef:
+      name: fountain-secrets
+      key: RELEASE_COOKIE
+# Pin the distribution port, so a NetworkPolicy can name it.
+- name: ERL_AFLAGS
+  value: "-kernel inet_dist_listen_min 9100 inet_dist_listen_max 9100"
+# The headless Service, as a FQDN.
+- name: CLUSTER_DNS_QUERY
+  value: fountain-headless.fountain.svc.cluster.local
+```
+
+`POD_IP` must come before `RELEASE_NODE`. Kubernetes substitutes only the
+variables declared earlier. Also open ports 4369 and 9100 between the pods.
 
 ## Two things to decide
 

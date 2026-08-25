@@ -61,7 +61,7 @@ config :fountain, Oban,
 
 # Self-hosting switches. In dev and prod, runtime.exs overrides billing from
 # BILLING_ENABLED — off unless set (#336); the hosted deployment opts in via
-# k8s/deployment.yaml. The `true` here reaches only :test (runtime.exs skips
+# the hosted overlay. The `true` here reaches only :test (runtime.exs skips
 # the override there), where config/test.exs also pins it, so the suite
 # exercises the gate as enforced and flips it off per-test.
 config :fountain,
