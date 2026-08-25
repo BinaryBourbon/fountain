@@ -169,6 +169,7 @@ Your deployment is not the Fountain project, so the front door is the default.
 
 | Variable | Default | Required | Effect |
 |---|---|---|---|
+| `PRODUCT_NAME` | `Fountain` | — | The name the console, the sign-in page, the OAuth consent screen and each email subject use for this deployment. Set it when you sell a hosted deployment under a different brand. The CLI, the API and this manual keep the name Fountain, because that is the name of the engine. When the two differ, each manual page opens with one line that says so. |
 | `MARKETING_SITE` | `false` | — | A `true` serves the Fountain project's product page at `/`. It also puts the project's copyright line in the footer. Turn it on only if you operate the project's own site. |
 
 ## Legal pages

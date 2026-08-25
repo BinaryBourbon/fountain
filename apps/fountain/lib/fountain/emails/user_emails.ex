@@ -34,7 +34,7 @@ defmodule Fountain.Emails.UserEmails do
     new()
     |> from(from_address())
     |> to({user.email, user.email})
-    |> subject("Verify your Fountain account")
+    |> subject("Verify your #{brand()} account")
     |> html_body(verification_html(verify_url))
     |> text_body(verification_text(verify_url))
     |> Mailer.deliver()
@@ -54,7 +54,7 @@ defmodule Fountain.Emails.UserEmails do
     new()
     |> from(from_address())
     |> to({user.email, user.email})
-    |> subject("Reset your Fountain password")
+    |> subject("Reset your #{brand()} password")
     |> html_body(reset_html(reset_url))
     |> text_body(reset_text(reset_url))
     |> Mailer.deliver()
@@ -73,7 +73,7 @@ defmodule Fountain.Emails.UserEmails do
     new()
     |> from(from_address())
     |> to({user.email, user.email})
-    |> subject("Your Fountain account has been suspended")
+    |> subject("Your #{brand()} account has been suspended")
     |> html_body(account_suspended_html())
     |> text_body(account_suspended_text())
     |> Mailer.deliver()
@@ -87,7 +87,7 @@ defmodule Fountain.Emails.UserEmails do
     new()
     |> from(from_address())
     |> to({user.email, user.email})
-    |> subject("Your Fountain account is available again")
+    |> subject("Your #{brand()} account is available again")
     |> html_body(account_unsuspended_html(login_url))
     |> text_body(account_unsuspended_text(login_url))
     |> Mailer.deliver()
@@ -109,7 +109,7 @@ defmodule Fountain.Emails.UserEmails do
     new()
     |> from(from_address())
     |> to({user.email, user.email})
-    |> subject("Your Fountain webhook to #{host} was switched off")
+    |> subject("Your #{brand()} webhook to #{host} was switched off")
     |> html_body(webhook_disabled_html(host, reason, url))
     |> text_body(webhook_disabled_text(host, reason, url))
     |> Mailer.deliver()
@@ -163,7 +163,7 @@ defmodule Fountain.Emails.UserEmails do
     new()
     |> from(from_address())
     |> to({email, email})
-    |> subject("Your Fountain account has been deleted")
+    |> subject("Your #{brand()} account has been deleted")
     |> html_body(account_deleted_html())
     |> text_body(account_deleted_text())
     |> Mailer.deliver()
@@ -183,7 +183,7 @@ defmodule Fountain.Emails.UserEmails do
     new()
     |> from(from_address())
     |> to({new_email, new_email})
-    |> subject("Confirm your new Fountain email address")
+    |> subject("Confirm your new #{brand()} email address")
     |> html_body(email_change_html(confirm_url))
     |> text_body(email_change_text(confirm_url))
     |> Mailer.deliver()
@@ -200,7 +200,7 @@ defmodule Fountain.Emails.UserEmails do
     new()
     |> from(from_address())
     |> to({old_email, old_email})
-    |> subject("Your Fountain email address was changed")
+    |> subject("Your #{brand()} email address was changed")
     |> html_body(email_changed_notice_html(new_email))
     |> text_body(email_changed_notice_text(new_email))
     |> Mailer.deliver()
@@ -213,9 +213,9 @@ defmodule Fountain.Emails.UserEmails do
     <!DOCTYPE html>
     <html>
     <body style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 24px;">
-      <h2>Confirm your new Fountain email address</h2>
+      <h2>Confirm your new #{brand()} email address</h2>
       <p>
-        A Fountain account asked to change its email address to this one.
+        A #{brand()} account asked to change its email address to this one.
         Click the button below to confirm — the change only happens when you
         do. The link expires in 24 hours.
       </p>
@@ -240,9 +240,9 @@ defmodule Fountain.Emails.UserEmails do
 
   defp email_change_text(url) do
     """
-    Confirm your new Fountain email address
+    Confirm your new #{brand()} email address
 
-    A Fountain account asked to change its email address to this one. Open
+    A #{brand()} account asked to change its email address to this one. Open
     the link below to confirm — the change only happens when you do. The link
     expires in 24 hours.
 
@@ -258,9 +258,9 @@ defmodule Fountain.Emails.UserEmails do
     <!DOCTYPE html>
     <html>
     <body style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 24px;">
-      <h2>Your Fountain email address was changed</h2>
+      <h2>Your #{brand()} email address was changed</h2>
       <p>
-        The email address on your Fountain account was changed to
+        The email address on your #{brand()} account was changed to
         <strong>#{new_email}</strong>. This address can no longer be used to
         sign in.
       </p>
@@ -275,15 +275,20 @@ defmodule Fountain.Emails.UserEmails do
 
   defp email_changed_notice_text(new_email) do
     """
-    Your Fountain email address was changed
+    Your #{brand()} email address was changed
 
-    The email address on your Fountain account was changed to #{new_email}.
+    The email address on your #{brand()} account was changed to #{new_email}.
     This address can no longer be used to sign in.
 
     If you made this change, no action is needed. If you did not,
     #{support_phrase()} immediately — do not wait.
     """
   end
+
+  # The deployment's brand (PRODUCT_NAME), which is what every subject line and
+  # body calls the service. Public: BillingEmails (ee/) shares it too.
+  @doc false
+  def brand, do: Fountain.Brand.name()
 
   # Public (not defp): Fountain.Emails.BillingEmails (ee/) shares the sender
   # and support-contact policy rather than duplicating it.
@@ -315,7 +320,7 @@ defmodule Fountain.Emails.UserEmails do
     <body style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 24px;">
       <h2>A webhook endpoint was switched off</h2>
       <p>
-        Fountain stopped delivering events to <strong>#{host}</strong> after
+        #{brand()} stopped delivering events to <strong>#{host}</strong> after
         repeated failures. The last one was: #{reason}.
       </p>
       <p>
@@ -337,7 +342,7 @@ defmodule Fountain.Emails.UserEmails do
     """
     A webhook endpoint was switched off
 
-    Fountain stopped delivering events to #{host} after repeated failures.
+    #{brand()} stopped delivering events to #{host} after repeated failures.
     The last one was: #{reason}.
 
     Nothing else changed. Your agents and conversations carry on; only the
@@ -369,7 +374,7 @@ defmodule Fountain.Emails.UserEmails do
         #{rows}
       </ul>
       <p>
-        Nothing stops on that date on Fountain's side — but an agent handed an
+        Nothing stops on that date on #{brand()}'s side — but an agent handed an
         expired credential fails mid-conversation, which is a worse place to
         find out. Rotate the value and record the new expiry.
       </p>
@@ -396,7 +401,7 @@ defmodule Fountain.Emails.UserEmails do
 
     #{rows}
 
-    Nothing stops on that date on Fountain's side — but an agent handed an
+    Nothing stops on that date on #{brand()}'s side — but an agent handed an
     expired credential fails mid-conversation, which is a worse place to
     find out. Rotate the value and record the new expiry.
 
@@ -414,7 +419,7 @@ defmodule Fountain.Emails.UserEmails do
     <!DOCTYPE html>
     <html>
     <body style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 24px;">
-      <h2>Your Fountain account has been suspended</h2>
+      <h2>Your #{brand()} account has been suspended</h2>
       <p>
         Your account has been suspended: existing sessions are signed out, API
         keys stop working, and running conversations have been stopped.
@@ -434,7 +439,7 @@ defmodule Fountain.Emails.UserEmails do
 
   defp account_suspended_text do
     """
-    Your Fountain account has been suspended
+    Your #{brand()} account has been suspended
 
     Your account has been suspended: existing sessions are signed out, API
     keys stop working, and running conversations have been stopped.
@@ -452,7 +457,7 @@ defmodule Fountain.Emails.UserEmails do
     <!DOCTYPE html>
     <html>
     <body style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 24px;">
-      <h2>Your Fountain account is available again</h2>
+      <h2>Your #{brand()} account is available again</h2>
       <p>
         The suspension on your account has been lifted. Sign in to pick up
         where you left off — everything is as you left it.
@@ -474,7 +479,7 @@ defmodule Fountain.Emails.UserEmails do
 
   defp account_unsuspended_text(login_url) do
     """
-    Your Fountain account is available again
+    Your #{brand()} account is available again
 
     The suspension on your account has been lifted. Sign in to pick up where
     you left off — everything is as you left it:
@@ -488,9 +493,9 @@ defmodule Fountain.Emails.UserEmails do
     <!DOCTYPE html>
     <html>
     <body style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 24px;">
-      <h2>Your Fountain account has been deleted</h2>
+      <h2>Your #{brand()} account has been deleted</h2>
       <p>
-        This confirms your Fountain account and its data — agents,
+        This confirms your #{brand()} account and its data — agents,
         environments, vaults, conversations and stored secrets — have been
         permanently deleted. Any subscription was cancelled first; you will
         not be charged again.
@@ -510,9 +515,9 @@ defmodule Fountain.Emails.UserEmails do
 
   defp account_deleted_text do
     """
-    Your Fountain account has been deleted
+    Your #{brand()} account has been deleted
 
-    This confirms your Fountain account and its data — agents, environments,
+    This confirms your #{brand()} account and its data — agents, environments,
     vaults, conversations and stored secrets — have been permanently deleted.
     Any subscription was cancelled first; you will not be charged again.
 
@@ -528,7 +533,7 @@ defmodule Fountain.Emails.UserEmails do
     <!DOCTYPE html>
     <html>
     <body style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 24px;">
-      <h2>Verify your Fountain account</h2>
+      <h2>Verify your #{brand()} account</h2>
       <p>Click the button below to verify your email address. This link expires in 24 hours.</p>
       <p style="margin: 32px 0;">
         <a href="#{url}"
@@ -541,7 +546,7 @@ defmodule Fountain.Emails.UserEmails do
         <a href="#{url}" style="color: #3b82f6;">#{url}</a>
       </p>
       <p style="color: #71717a; font-size: 13px;">
-        If you didn't sign up for Fountain, you can safely ignore this email.
+        If you didn't sign up for #{brand()}, you can safely ignore this email.
       </p>
     </body>
     </html>
@@ -550,14 +555,14 @@ defmodule Fountain.Emails.UserEmails do
 
   defp verification_text(url) do
     """
-    Verify your Fountain account
+    Verify your #{brand()} account
 
     Click the link below to verify your email address.
     This link expires in 24 hours.
 
     #{url}
 
-    If you didn't sign up for Fountain, you can safely ignore this email.
+    If you didn't sign up for #{brand()}, you can safely ignore this email.
     """
   end
 
@@ -566,7 +571,7 @@ defmodule Fountain.Emails.UserEmails do
     <!DOCTYPE html>
     <html>
     <body style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 24px;">
-      <h2>Reset your Fountain password</h2>
+      <h2>Reset your #{brand()} password</h2>
       <p>Someone requested a password reset for your account. Click the button below to set a new password. This link expires in 1 hour.</p>
       <p style="margin: 32px 0;">
         <a href="#{url}"
@@ -589,7 +594,7 @@ defmodule Fountain.Emails.UserEmails do
 
   defp reset_text(url) do
     """
-    Reset your Fountain password
+    Reset your #{brand()} password
 
     Someone requested a password reset for your account.
     Click the link below to set a new password.

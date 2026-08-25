@@ -347,6 +347,16 @@ if config_env() != :test do
   config :fountain, :billing_enabled, System.get_env("BILLING_ENABLED", "false") != "false"
 end
 
+# What the chrome calls this deployment (Fountain.Brand): the sidebar header,
+# the <title>, the sign-in and consent pages and every email subject. The
+# engine stays Fountain everywhere it is named as the engine — the CLI, the
+# API, the manual — so a hosted deployment under another brand sets this and
+# the manual explains the split at the top of every page.
+case System.get_env("PRODUCT_NAME") do
+  nil -> :ok
+  value -> config :fountain, :product_name, String.trim(value)
+end
+
 # Which page `/` serves. The hosted deployment shows the product pitch; every
 # other deployment shows a plain front door, for the reason a self-hosted
 # instance does not serve the upstream project's legal terms either. Off by
