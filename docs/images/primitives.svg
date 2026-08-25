@@ -1,0 +1,62 @@
+<svg viewBox="0 0 740 352" role="img" aria-label="Three templates and one machine. Agent, Environment and Vault are rows a tenant writes once. When a conversation starts, Fountain builds a sandbox from the Environment, runs the Agent on it as a conversation, and merges the Environment's and the Vault's secrets, the Vault winning. On a hosted account with the egress broker on, a bound secret goes to the broker and the sandbox gets a placeholder; the sandbox reaches the internet only through the broker, which attaches the value. On any other account the secrets enter the sandbox as environment variables." xmlns="http://www.w3.org/2000/svg">
+  <rect width="740" height="352" fill="#ffffff"/>
+  <defs>
+    <marker id="pr-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#1b2530"/></marker>
+    <marker id="pr-b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#c98a2b"/></marker>
+  </defs>
+  <g fill="none" stroke="#1b2530" stroke-width="1.4">
+    <rect x="14" y="30" width="196" height="52" rx="8" stroke="#8a93a3"/>
+    <rect x="14" y="110" width="196" height="52" rx="8" stroke="#8a93a3"/>
+    <rect x="14" y="190" width="196" height="52" rx="8" stroke="#8a93a3"/>
+    <rect x="270" y="176" width="196" height="66" rx="8" stroke="#2f8fb3" stroke-width="1.8"/>
+    <rect x="510" y="16" width="216" height="196" rx="8" stroke="#2f8fb3" stroke-width="1.8"/>
+    <rect x="522" y="44" width="96" height="42" rx="6"/>
+    <rect x="626" y="44" width="88" height="42" rx="6"/>
+    <rect x="522" y="110" width="192" height="42" rx="6" stroke-dasharray="4 3"/>
+    <rect x="522" y="160" width="192" height="40" rx="6" stroke-dasharray="4 3"/>
+    <rect x="510" y="262" width="216" height="52" rx="8" stroke="#c98a2b" stroke-width="1.8" stroke-dasharray="6 4"/>
+  </g>
+  <g font-family="ui-monospace, Menlo, monospace" fill="#1b2530">
+    <text x="14" y="20" font-size="10.5" fill="#8a93a3">TEMPLATES · rows, written once</text>
+    <text x="24" y="50" font-size="12.5" font-weight="600">Agent</text>
+    <text x="24" y="66" font-size="10" fill="#8a93a3">model, runtime, skills</text>
+    <text x="24" y="130" font-size="12.5" font-weight="600">Environment</text>
+    <text x="24" y="146" font-size="10" fill="#8a93a3">packages, repos, secrets</text>
+    <text x="24" y="210" font-size="12.5" font-weight="600">Vault</text>
+    <text x="24" y="226" font-size="10" fill="#8a93a3">secret overrides, per run</text>
+    <text x="282" y="196" font-size="12.5" font-weight="600" fill="#2f8fb3">Fountain, at launch</text>
+    <text x="282" y="212" font-size="10">merge env ∪ vault, vault wins</text>
+    <text x="282" y="228" font-size="10">split: broker or sandbox</text>
+    <text x="510" y="8" font-size="10.5" fill="#8a93a3">RUNS · the machine</text>
+    <text x="522" y="36" font-size="12.5" font-weight="600" fill="#2f8fb3">Sandbox</text>
+    <text x="530" y="62" font-size="10">Conversation</text>
+    <text x="530" y="76" font-size="10" fill="#8a93a3">transcript</text>
+    <text x="634" y="62" font-size="10">Conversation</text>
+    <text x="634" y="76" font-size="10" fill="#8a93a3">shares it</text>
+    <text x="530" y="128" font-size="10">env: config, placeholders</text>
+    <text x="530" y="142" font-size="9.5" fill="#8a93a3">GITHUB_TOKEN=__github_token__</text>
+    <text x="530" y="177" font-size="10">machine: built, warm,</text>
+    <text x="530" y="191" font-size="10" fill="#8a93a3">metered, reclaimed</text>
+    <text x="522" y="282" font-size="12.5" font-weight="600" fill="#c98a2b">Egress broker</text>
+    <text x="522" y="298" font-size="10" fill="#c98a2b">hosted, when the broker is on</text>
+    <text x="522" y="332" font-size="10" fill="#8a93a3">→ GitHub, model APIs, yours</text>
+  </g>
+  <g fill="none" stroke="#1b2530" stroke-width="1.4" marker-end="url(#pr-a)">
+    <path d="M210,56 H508"/>
+    <path d="M210,136 H488 V180"/>
+    <path d="M210,150 H244 V190 H268"/>
+    <path d="M210,216 H244 V222 H268"/>
+    <path d="M466,200 H496 V130 H520"/>
+  </g>
+  <g fill="none" stroke="#c98a2b" stroke-width="1.6" marker-end="url(#pr-b)">
+    <path d="M368,242 V290 H508"/>
+    <path d="M618,212 V260"/>
+  </g>
+  <g font-family="ui-monospace, Menlo, monospace" font-size="10" fill="#8a93a3">
+    <text x="300" y="50">runs as a conversation</text>
+    <text x="300" y="130">builds the machine</text>
+    <text x="418" y="120">placeholders</text>
+    <text x="380" y="284" fill="#c98a2b">values, per conversation</text>
+    <text x="612" y="244" fill="#c98a2b" text-anchor="end">HTTPS_PROXY, only exit</text>
+  </g>
+</svg>
