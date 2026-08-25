@@ -73,6 +73,17 @@ config :fountain,
   # the suite covers the pitch and flips it off per-test. See Fountain.Marketing.
   marketing_site: false
 
+# Concurrency (ADR 0031). A tenant may run as many sandboxes at once as
+# their balance funds: clamp(balance / reserve_cents, cap_floor, cap_ceiling),
+# with users.sandbox_limit_override winning when set. fleet_ceiling bounds
+# the sum across every tenant to what the providers allow. runtime.exs
+# overrides from SANDBOX_*.
+config :fountain, :sandboxes,
+  reserve_cents: 200,
+  cap_floor: 2,
+  cap_ceiling: 20,
+  fleet_ceiling: 20
+
 # Prepaid credits (ADR 0030). Cents. `turn_hour_cents` is the customer price
 # of one hour of turn time; the comms prices are nil until an operator sets
 # them, and nil burns nothing (#1042). runtime.exs overrides from CREDIT_*.

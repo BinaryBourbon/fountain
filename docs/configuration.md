@@ -129,6 +129,10 @@ at a dead end, with no error to see. Read [Email](guides/operate/email.md).
 | `AGENTPHONE_NUMBER_CENTS` | — | No. | What AgentPhone charges for one number each month, in cents. |
 | `AGENTMAIL_MESSAGE_CENTS` | — | No. | What AgentMail charges for one email, in cents. Give the fraction, such as `0.2` for $2 per 1,000 emails. A whole number rounds this rate to zero. |
 | `AGENTPHONE_MESSAGE_CENTS` | — | No. | What AgentPhone charges for one SMS, in cents. Fountain counts an inbound message too, because AgentPhone charges for it. |
+| `SANDBOX_RESERVE_CENTS` | `200` | No. | The credit one live sandbox needs in the balance. A tenant may run `balance / reserve` sandboxes at once, between the floor and the ceiling. |
+| `SANDBOX_CAP_FLOOR` | `2` | No. | The fewest sandboxes a tenant with a positive balance may run at once. |
+| `SANDBOX_CAP_CEILING` | `20` | No. | The most sandboxes one tenant may run at once, unless an admin override raises it. |
+| `SANDBOX_FLEET_CEILING` | `20` | No. | The most live sandboxes across every tenant. Set it to what your sandbox provider plan allows. A start beyond it gets `503 fleet_full`. |
 | `CREDIT_PRICING_SINCE` | — | No. | The instant from which Fountain prices turns and messages into the prepaid ledger, as ISO 8601. Unset, Fountain prices nothing. |
 | `CREDIT_ENFORCE` | `false` | No. | Set `true` to refuse new sandboxes and new turns when the balance is zero or less. Turns in flight finish. Comped accounts and instances with billing off are never refused. |
 | `CREDIT_TURN_HOUR_CENTS` | `25` | No. | What a tenant pays for one hour of turn time, in whole cents, from their prepaid balance. |

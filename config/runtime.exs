@@ -639,6 +639,29 @@ config :fountain,
        |> Enum.reject(fn {_slug, id} -> id in [nil, ""] end)
        |> Map.new()
 
+# Concurrency (ADR 0031): the reserve one live sandbox needs in the balance,
+# the per-account floor and ceiling the balance rule is clamped to, and the
+# fleet ceiling — the most live sandboxes the deployment will run in total,
+# which is the provider plan's number (Sprites' $20 plan allows about 20).
+sandbox_int = fn var, default ->
+  case System.get_env(var) do
+    value when value in [nil, ""] ->
+      default
+
+    value ->
+      case Integer.parse(String.trim(value)) do
+        {n, ""} when n >= 0 -> n
+        _ -> raise "#{var} must be a whole number, 0 or more, got #{inspect(value)}"
+      end
+  end
+end
+
+config :fountain, :sandboxes,
+  reserve_cents: sandbox_int.("SANDBOX_RESERVE_CENTS", 200),
+  cap_floor: sandbox_int.("SANDBOX_CAP_FLOOR", 2),
+  cap_ceiling: sandbox_int.("SANDBOX_CAP_CEILING", 20),
+  fleet_ceiling: sandbox_int.("SANDBOX_FLEET_CEILING", 20)
+
 # The plan a user with no plan of their own gets — the tenants a self-hosted
 # instance never subscribed, and every account on a deployment with billing
 # off. `DEFAULT_PLAN=scale` is how a self-hoster paying their own provider

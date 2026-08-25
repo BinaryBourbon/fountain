@@ -183,6 +183,19 @@ defmodule FountainWeb.FallbackController do
     })
   end
 
+  # Every provider slot the deployment has is in use, whoever holds them
+  # (ADR 0031). 503 with a retry hint: capacity, not the caller's quota and
+  # not a billing state.
+  def call(conn, {:error, :fleet_full}) do
+    conn
+    |> put_resp_header("retry-after", "60")
+    |> put_status(:service_unavailable)
+    |> json(%{
+      error: "fleet_full",
+      message: "Every sandbox slot is in use right now. Try again in a minute."
+    })
+  end
+
   # The ConversationServer did not answer within the call timeout — almost
   # always a server still inside handle_continue(:provision), whose blocked
   # mailbox makes every call wait the full 30s and exit (#412). 503 with

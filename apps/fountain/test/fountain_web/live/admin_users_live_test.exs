@@ -154,9 +154,6 @@ defmodule FountainWeb.AdminUsersLiveTest do
 
       assert Fountain.Accounts.get_user(target.id).plan == "scale"
 
-      assert Fountain.Quotas.sandbox_limit(target.id) ==
-               Fountain.Plans.concurrent_sandboxes("scale")
-
       # The privilege trail, not just the effect: record_admin/1 is
       # best-effort and silently drops an event type missing from its closed
       # allowlist, which is how admin actions have shipped unaudited before.
@@ -174,7 +171,7 @@ defmodule FountainWeb.AdminUsersLiveTest do
                "the type is probably missing from AdminEvent's allowlist"
     end
 
-    test "an empty field clears the override and the cap follows the plan", %{conn: conn} do
+    test "an empty field clears the override and the cap follows the balance", %{conn: conn} do
       admin = insert_admin()
       target = insert_active_user(plan: "team")
       {:ok, _} = Fountain.Accounts.update_sandbox_limit(target, 25, actor: "admin")
@@ -188,8 +185,7 @@ defmodule FountainWeb.AdminUsersLiveTest do
 
       assert render(lv) =~ "Override cleared"
 
-      assert Fountain.Quotas.sandbox_limit(target.id) ==
-               Fountain.Plans.fetch!("team").concurrent_sandboxes
+      assert Fountain.Quotas.sandbox_limit(target.id) == Fountain.Quotas.default_limit()
 
       assert Fountain.Accounts.get_user(target.id).sandbox_limit_override == nil
     end
