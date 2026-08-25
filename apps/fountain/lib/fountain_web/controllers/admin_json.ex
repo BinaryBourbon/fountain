@@ -43,12 +43,7 @@ defmodule FountainWeb.AdminJSON do
       email_verified_at: u.email_verified_at,
       suspended: not is_nil(u.suspended_at),
       suspended_at: u.suspended_at,
-      subscription_status: u.subscription_status,
-      trial_ends_at: u.trial_ends_at,
-      current_period_end: u.current_period_end,
-      cancel_at_period_end: u.cancel_at_period_end,
       has_stripe_customer: u.stripe_customer_id not in [nil, ""],
-      plan: Fountain.Plans.resolve(u.plan).slug,
       # The cap actually enforced, keeping the field's old name and meaning
       # for anything reading this API, plus the override that produced it —
       # null when the cap is simply the plan's.
@@ -58,6 +53,7 @@ defmodule FountainWeb.AdminJSON do
       # `comped` subscription_status, which makes everything free.
       # The prepaid balance (ADR 0030); meaningful only while credits are
       # active on the deployment, zero otherwise.
+      comped: u.comped,
       credit_balance_cents: u.credit_balance_cents,
       active_sandboxes: Map.get(sandbox_counts, u.id, 0),
       onboarding_completed_at: u.onboarding_completed_at,

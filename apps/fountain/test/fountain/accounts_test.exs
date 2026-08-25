@@ -66,17 +66,15 @@ defmodule Fountain.AccountsTest do
     end
   end
 
-  describe "User.billing_changeset/2" do
-    test "accepts valid subscription_status" do
-      for status <- ~w(trialing active past_due canceled) do
-        cs = User.billing_changeset(%User{}, %{subscription_status: status})
-        assert cs.valid?, "expected #{status} to be valid"
-      end
+  describe "User.billing_changeset/2 and comp_changeset/2" do
+    test "billing casts only the Stripe customer id" do
+      cs = User.billing_changeset(%User{}, %{stripe_customer_id: "cus_1", comped: true})
+      assert cs.changes == %{stripe_customer_id: "cus_1"}
     end
 
-    test "rejects unknown subscription_status" do
-      cs = User.billing_changeset(%User{}, %{subscription_status: "unknown"})
-      assert "is invalid" in errors_on(cs, :subscription_status)
+    test "comp casts the flag and requires it" do
+      assert User.comp_changeset(%User{}, %{comped: true}).valid?
+      refute User.comp_changeset(%User{}, %{comped: nil}).valid?
     end
   end
 

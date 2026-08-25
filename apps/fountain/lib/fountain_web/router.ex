@@ -350,8 +350,6 @@ defmodule FountainWeb.Router do
     # Billing self-serve (#524). The controller lives in ee/ with the rest of
     # billing; the route has to be here, like the Stripe webhook above.
     get "/billing", BillingApiController, :show
-    post "/billing/portal", BillingApiController, :portal
-    post "/billing/checkout", BillingApiController, :checkout
     post "/billing/credits/checkout", BillingApiController, :credits_checkout
 
     # Export and deletion (#523). Deletion is irreversible and takes the
@@ -532,11 +530,9 @@ defmodule FountainWeb.Router do
     get "/users/:id", AdminController, :show_user
     post "/users/:id/role", AdminController, :set_role
     post "/users/:id/sandbox-limit", AdminController, :set_sandbox_limit
-    post "/users/:id/extend-trial", AdminController, :extend_trial
     post "/users/:id/comp", AdminController, :set_comp
     post "/users/:id/credits", AdminController, :grant_credits
     post "/users/:id/suspend", AdminController, :set_suspended
-    post "/users/:id/resync-stripe", AdminController, :resync_stripe
     delete "/users/:id", AdminController, :delete_user
 
     get "/sandboxes", AdminController, :index_sandboxes
@@ -637,7 +633,6 @@ defmodule FountainWeb.Router do
       live "/admin", AdminLive.Index, :index
       live "/admin/users", AdminLive.Users, :index
       live "/admin/sandboxes", AdminLive.Sandboxes, :index
-      live "/admin/billing", AdminLive.Billing, :index
       live "/admin/activity", AdminLive.Activity, :index
       # Lives in ee/ with the rest of billing (#472): it is a revenue page.
       live "/admin/finance", Live.AdminFinanceLive, :index

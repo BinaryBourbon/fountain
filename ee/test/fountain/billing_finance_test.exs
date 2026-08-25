@@ -1,6 +1,6 @@
 defmodule Fountain.Billing.FinanceTest do
   @moduledoc """
-  The finance panel's numbers: revenue per plan, cost per tenant, and the
+  The finance panel's numbers: credit revenue, cost per tenant, and the
   margin between them.
 
   Three properties carry the page, and each is tested against the way it would
@@ -9,9 +9,8 @@ defmodule Fountain.Billing.FinanceTest do
     * **`nil` is not zero.** An unpriced line has to stay unpriced all the way
       to the total. A cost that silently drops the part nobody gave a rate for
       reads as a cheap tenant.
-    * **Revenue is per plan.** The number this replaced charged every active
-      account the legacy price, which was invisible precisely because it was
-      still a plausible-looking dollar figure.
+    * **Revenue is credit burned (ADR 0031).** Sold credit is cash and a
+      liability until burned; a comped account's burn is never revenue.
     * **The cost basis changes the price and never the hours.** Which hours a
       provider bills is a fact about their invoice, so the panel offers both;
       a toggle whose arithmetic did not differ would be decoration.
@@ -23,7 +22,6 @@ defmodule Fountain.Billing.FinanceTest do
   alias Fountain.Billing
   alias Fountain.Billing.Finance
   alias Fountain.Conversations
-  alias Fountain.Plans
 
   # Wholly in the past, so the attribution ceiling is the period end and every
   # figure below is exact rather than a function of the wall clock.
@@ -64,21 +62,7 @@ defmodule Fountain.Billing.FinanceTest do
     Enum.each(opts, fn {key, value} -> Application.put_env(:fountain, key, value) end)
   end
 
-  defp subscriber(plan, status \\ "active") do
-    user = insert_verified_user()
-
-    {:ok, user} =
-      user
-      |> Ecto.Changeset.change(
-        plan: plan,
-        subscription_status: status,
-        # A real subscription, so the account reads as subscribed.
-        stripe_subscription_id: "sub_#{System.unique_integer([:positive])}"
-      )
-      |> Repo.update()
-
-    user
-  end
+  defp subscriber(_plan, _status \\ "active"), do: insert_empty_user()
 
   # A sandbox that ran for `hours`, with a prompt in flight for `busy_hours` of
   # them. The rest is idle: real cost, no allowance spent.
@@ -389,64 +373,25 @@ defmodule Fountain.Billing.FinanceTest do
   ## ── revenue ──────────────────────────────────────────────────────────────
 
   describe "revenue" do
-    test "each active account is priced at its own plan, not one flat price" do
-      # The bug this replaced: `active × STRIPE_PRICE_MONTHLY_CENTS` billed the
-      # Scale account $29.
-      subscriber("solo")
-      subscriber("team")
-      subscriber("scale")
+    test "earned is credit burned by paying accounts; sold is packs; comped burn is neither" do
+      paying = subscriber("solo")
+      comped = subscriber("solo")
+      {:ok, _} = Billing.comp_account(comped)
+      at = DateTime.add(@period_start, 3600, :second)
+
+      {:ok, _} = Fountain.Credits.grant(paying.id, 2500, "purchase", idempotency_key: "p")
+      {:ok, _} = Fountain.Credits.debit(paying.id, 700, "burn_turn", idempotency_key: "b1")
+      {:ok, _} = Fountain.Credits.debit(comped.id, 300, "burn_turn", idempotency_key: "b2")
+      Repo.update_all(Fountain.Credits.LedgerEntry, set: [inserted_at: at])
 
       revenue = summary().revenue
+      assert revenue.sold_cents == 2500
+      assert revenue.earned_cents == 700
+      assert revenue.comped_cents == 300
 
-      assert revenue.mrr_cents ==
-               Plans.monthly_cents("solo") + Plans.monthly_cents("team") +
-                 Plans.monthly_cents("scale")
-
-      assert [%{plan: %{slug: "solo"}}, %{plan: %{slug: "team"}}, %{plan: %{slug: "scale"}}] =
-               revenue.by_plan
-    end
-
-    test "only active subscriptions are MRR" do
-      subscriber("scale", "trialing")
-      subscriber("scale", "past_due")
-      subscriber("scale", "comped")
-      subscriber("scale", "canceled")
-
-      revenue = summary().revenue
-
-      assert revenue.mrr_cents == 0
-      # ...but each cohort is reported at what it would bill, which is the
-      # number an operator actually wants from them.
-      assert revenue.trialing_cents == Plans.monthly_cents("scale")
-      assert revenue.at_risk_cents == Plans.monthly_cents("scale")
-      assert revenue.comped_cents == Plans.monthly_cents("scale")
-    end
-
-    test "mrr/0 agrees with the full pass" do
-      # Two code paths to the same number is two chances to disagree, and a
-      # tile that contradicts the table below it destroys trust in both.
-      subscriber("solo")
-      subscriber("team")
-      user = subscriber("scale")
-      contact(user, email: true, phone: true)
-
-      assert Finance.mrr().mrr_cents == summary().revenue.mrr_cents
-    end
-
-    test "mrr/0 merges a null plan into the deployment default" do
-      # A row with no plan resolves to the default; so does an unknown slug.
-      # Rendered as two groups they would show the same tier twice.
-      user = insert_verified_user()
-
-      {:ok, _} =
-        user
-        |> Ecto.Changeset.change(plan: nil, subscription_status: "active")
-        |> Repo.update()
-
-      other = subscriber(Plans.default_slug())
-
-      assert other
-      assert [%{accounts: 2}] = Finance.mrr().by_plan
+      assert row_for(summary(), paying).revenue_cents == 700
+      assert row_for(summary(), comped).revenue_cents == 0
+      assert row_for(summary(), comped).comped
     end
   end
 
@@ -464,11 +409,13 @@ defmodule Fountain.Billing.FinanceTest do
 
       summary = summary()
 
-      assert row_for(summary, expensive).margin_cents ==
-               Plans.monthly_cents("solo") - 50_000
+      # No credit burned in the ledger for this period, so revenue is zero and
+      # the margin is the cost, negative.
+      assert row_for(summary, expensive).margin_cents == -50_000
 
       assert row_for(summary, expensive).margin_cents < 0
-      assert row_for(summary, cheap).margin_cents > 0
+      # One hour at $5 with nothing burned: also negative, but far less so.
+      assert row_for(summary, cheap).margin_cents == -500
       assert hd(summary.tenants).user_id == expensive.id
     end
 
@@ -519,7 +466,7 @@ defmodule Fountain.Billing.FinanceTest do
       assert row.credit_burned_cents == 700
       assert row.credit_sold_cents == 2500
       assert row.credit_balance_cents == 2800
-      assert summary().revenue.credit_sales_cents == 2500
+      assert summary().revenue.sold_cents == 2500
     end
 
     test "a balance below zero is counted" do

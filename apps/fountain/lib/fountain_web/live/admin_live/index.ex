@@ -20,7 +20,6 @@ defmodule FountainWeb.AdminLive.Index do
 
   alias Fountain.{Billing, Conversations}
   alias Fountain.Billing.SandboxUsage
-  alias FountainWeb.AdminLive.Users
 
   @impl true
   def mount(_params, _session, socket) do
@@ -70,7 +69,7 @@ defmodule FountainWeb.AdminLive.Index do
             been failing, is on the billing page. --%>
       <.link
         :if={@billing_enabled and @billing_overview.failed_events != []}
-        navigate={~p"/admin/billing"}
+        navigate={~p"/admin/finance"}
         class="block bg-red-50 border border-red-200 rounded px-4 py-3 text-sm text-red-900 hover:border-red-400"
       >
         <span class="font-medium">
@@ -128,23 +127,25 @@ defmodule FountainWeb.AdminLive.Index do
             navigate={~p"/admin/finance"}
             class="bg-white rounded shadow border border-zinc-200 px-4 py-3 hover:border-zinc-400"
           >
-            <div class="text-xs text-zinc-500">MRR</div>
+            <div class="text-xs text-zinc-500">Deferred credit</div>
             <div class="text-2xl font-semibold tabular-nums">
-              {format_mrr(@billing_overview.mrr_cents)}
+              {format_mrr(@billing_overview.deferred_cents)}
             </div>
-            <div class="text-xs text-zinc-500">active subscriptions · finance ↗</div>
+            <div class="text-xs text-zinc-500">
+              held by {@billing_overview.funded} funded accounts · finance ↗
+            </div>
           </.link>
 
           <.link
             :if={@billing_enabled}
-            navigate={Users.users_path(%{status: "trialing", sort: "trial_end", dir: "asc"})}
+            navigate={~p"/admin/finance"}
             class="bg-white rounded shadow border border-zinc-200 px-4 py-3 hover:border-zinc-400"
           >
-            <div class="text-xs text-zinc-500">Trials ending in 7 days</div>
+            <div class="text-xs text-zinc-500">Packs bought this month</div>
             <div class="text-2xl font-semibold tabular-nums">
-              {@billing_overview.trials_ending_7d}
+              {@billing_overview.purchases_this_month}
             </div>
-            <div class="text-xs text-zinc-500">soonest first ↗</div>
+            <div class="text-xs text-zinc-500">{@billing_overview.comped} comped accounts ↗</div>
           </.link>
 
           <.link

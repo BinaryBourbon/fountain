@@ -10,7 +10,6 @@ defmodule Fountain.Accounts.User do
   # It is deliberately distinct from a nil trial_ends_at (the legacy accident
   # expire_legacy_trials cleans up) so a comp can never be swept by a backfill,
   # and Billing.sync_subscription refuses to overwrite it from webhooks.
-  @subscription_statuses ~w(trialing active past_due canceled comped)
   @theme_values ~w(light dark system)
   @visible_stream_values ~w(stdout stderr stage)
   @view_mode_values ~w(chat pretty raw)
@@ -31,7 +30,6 @@ defmodule Fountain.Accounts.User do
     # `Fountain.Plans` slug. Null means this deployment's `DEFAULT_PLAN`,
     # which is how a self-hosted instance runs with no plan concept at all.
     # Written from the Stripe price on the subscription, never guessed.
-    field :plan, :string
     # Teammate contacts this account is not charged for. Distinct from a
     # `comped` subscription_status, which makes everything free: this is the
     # tenant who pays for their tier and holds a number Fountain eats.
@@ -41,20 +39,17 @@ defmodule Fountain.Accounts.User do
     field :credit_balance_cents, :integer, default: 0
     field :role, :string, default: "user"
     field :stripe_customer_id, :string
+    # A free account (ADR 0031): the balance is never checked. The one operator lever.
+    field :comped, :boolean, default: false
     # The subscription of record. Webhook sync applies events for this
     # subscription only — a customer can briefly carry two (mid-trial upgrade),
     # and customer-keyed sync let the doomed one write the account's status.
-    field :stripe_subscription_id, :string
-    field :subscription_status, :string, default: "trialing"
-    field :trial_ends_at, :utc_datetime
     field :suspended_at, :utc_datetime
     # Stripe `created` of the last subscription event applied — the ordering
     # guard's watermark. See Billing.sync_subscription/1.
-    field :subscription_synced_at, :utc_datetime
     # A portal cancellation leaves the subscription "active" with this flag set;
     # access continues until current_period_end, when `.deleted` fires. Synced
     # from subscription webhooks so the UI can say "access until <date>".
-    field :cancel_at_period_end, :boolean, default: false
     # The invoiced period, both ends of it, synced from the Stripe
     # subscription. `current_period_start` is what makes an allowance
     # measurable over the window the customer is actually charged for rather
@@ -62,8 +57,6 @@ defmodule Fountain.Accounts.User do
     # Null on a trialing account Stripe has not reported a period for, on a
     # comped account, and on a self-hosted deployment with no Stripe —
     # `Fountain.Billing.billing_period/2` handles all three.
-    field :current_period_start, :utc_datetime
-    field :current_period_end, :utc_datetime
     field :session_version, :integer, default: 0
     field :theme_preference, :string, default: "system"
     field :conversations_roots_only, :boolean, default: false
@@ -78,7 +71,6 @@ defmodule Fountain.Accounts.User do
   end
 
   def roles, do: @roles
-  def subscription_statuses, do: @subscription_statuses
 
   @doc "Changeset for new user registration (email + password path)."
   def registration_changeset(user, attrs) do
@@ -121,36 +113,16 @@ defmodule Fountain.Accounts.User do
     |> validate_number(:sandbox_limit_override, greater_than_or_equal_to: 0)
   end
 
-  @doc """
-  Changeset for the plan slug. Driven by the Stripe price on the
-  subscription (`Fountain.Billing.sync_subscription/1`) or set by an admin.
-  """
-  def plan_changeset(user, attrs) do
-    user
-    |> cast(attrs, [:plan])
-    |> validate_inclusion(:plan, Fountain.Plans.slugs())
-  end
-
   @doc "Changeset for billing field updates (driven by Stripe webhooks)."
   def billing_changeset(user, attrs) do
     user
-    |> cast(attrs, [
-      :stripe_customer_id,
-      :stripe_subscription_id,
-      :subscription_status,
-      :trial_ends_at,
-      :subscription_synced_at,
-      :cancel_at_period_end,
-      :current_period_start,
-      :current_period_end,
-      # Only ever put here when the price on the subscription mapped to a
-      # known plan. An unrecognised price leaves the key out entirely rather
-      # than nulling a tenant's entitlement from a half-configured replica.
-      :plan
-    ])
-    |> validate_inclusion(:subscription_status, @subscription_statuses)
-    |> validate_inclusion(:plan, Fountain.Plans.slugs())
+    |> cast(attrs, [:stripe_customer_id])
     |> unique_constraint(:stripe_customer_id)
+  end
+
+  @doc "Admin-only: the comp flag (ADR 0031)."
+  def comp_changeset(user, attrs) do
+    user |> cast(attrs, [:comped]) |> validate_required([:comped])
   end
 
   @doc "Changeset for updating theme preference (light | dark | system)."

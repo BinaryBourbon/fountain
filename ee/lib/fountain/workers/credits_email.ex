@@ -3,7 +3,7 @@ defmodule Fountain.Workers.CreditsEmail do
   Runway warnings for the prepaid balance (ADR 0030 decision 6).
 
   Two kinds: `"credits_low"` when the balance drops under the runway line
-  (20 % of the period's tier grant, or $2, whichever is larger) and
+  (20 % of the opening grant, or $2, whichever is larger) and
   `"credits_exhausted"` when it reaches zero. Enqueued by the pricer after a
   burn; unique per user and kind for thirty days, so a tenant hovering at
   the line gets one email a period, not one a burn.
@@ -54,7 +54,7 @@ defmodule Fountain.Workers.CreditsEmail do
   @spec notify_after_burn(String.t()) :: :ok
   def notify_after_burn(user_id) when is_binary(user_id) do
     with true <- Credits.active?(),
-         %{subscription_status: status} = user when status != "comped" <-
+         %{comped: false} = user <-
            Accounts.get_user(user_id) do
       balance = Credits.balance(user)
 
@@ -68,10 +68,11 @@ defmodule Fountain.Workers.CreditsEmail do
     :ok
   end
 
-  @doc "Cents under which a balance is 'low': 20 % of the tier grant, or $2."
+  @doc "Cents under which a balance is 'low': 20 % of the opening grant, or $2."
   @spec runway_line(Accounts.User.t()) :: pos_integer()
-  def runway_line(user) do
-    max(div(Fountain.Plans.included_credit_cents(user), 5), 200)
+  def runway_line(_user) do
+    opening = Application.get_env(:fountain, :credits, []) |> Keyword.get(:opening_cents, 1_000)
+    max(div(opening, 5), 200)
   end
 
   @impl Oban.Worker
@@ -102,7 +103,7 @@ defmodule Fountain.Workers.CreditsEmail do
         balance = Credits.balance(user)
 
         cond do
-          user.subscription_status == "comped" ->
+          user.comped ->
             :ok
 
           email == "credits_exhausted" and balance <= 0 ->

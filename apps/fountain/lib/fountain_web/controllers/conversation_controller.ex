@@ -873,10 +873,5 @@ defmodule FountainWeb.ConversationController do
   # Wraps assert_active! so it fits into the `with` pipeline without propagating
   # the raw exception. Returns {:error, :subscription_required} for the else
   # clause to render a structured 402 response.
-  defp gate_subscription(user) do
-    Billing.assert_active!(user)
-    :ok
-  rescue
-    Billing.SubscriptionRequiredError -> {:error, :subscription_required}
-  end
+  defp gate_subscription(user), do: Billing.check_spend(user)
 end

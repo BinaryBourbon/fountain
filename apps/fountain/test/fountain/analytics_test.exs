@@ -49,11 +49,10 @@ defmodule Fountain.AnalyticsTest do
         id: @user_id,
         email: "someone@example.com",
         role: "user",
-        subscription_status: "trialing",
+        comped: false,
+        credit_balance_cents: 0,
         onboarding_state: "step_1",
-        plan: "solo",
         sandbox_limit_override: nil,
-        cancel_at_period_end: false,
         inserted_at: ~U[2026-01-01 00:00:00Z]
       },
       attrs
@@ -171,12 +170,12 @@ defmodule Fountain.AnalyticsTest do
     end
 
     test "sets the account's shape as person properties" do
-      Analytics.identify(user(%{subscription_status: "active", role: "admin"}))
+      Analytics.identify(user(%{comped: true, role: "admin"}))
 
       assert_receive {:posthog, "/batch/", %{"batch" => [event]}}
       assert event["event"] == "$identify"
       set = event["properties"]["$set"]
-      assert set["subscription_status"] == "active"
+      assert set["comped"] == true
       assert set["role"] == "admin"
       assert set["email_verified"] == false
       assert set["onboarded"] == false

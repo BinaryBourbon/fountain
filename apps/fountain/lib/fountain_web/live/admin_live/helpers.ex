@@ -7,11 +7,8 @@ defmodule FountainWeb.AdminLive.Helpers do
   badges identically.
   """
 
-  def subscription_status_color("active"), do: "bg-green-100 text-green-800 border-green-200"
-  def subscription_status_color("trialing"), do: "bg-blue-100 text-blue-800 border-blue-200"
-  def subscription_status_color("comped"), do: "bg-purple-100 text-purple-800 border-purple-200"
-  def subscription_status_color("past_due"), do: "bg-amber-100 text-amber-800 border-amber-200"
-  def subscription_status_color(_), do: "bg-zinc-100 text-zinc-500 border-zinc-200"
+  def account_badge_class(true), do: "bg-purple-100 text-purple-800 border-purple-200"
+  def account_badge_class(_), do: "bg-zinc-100 text-zinc-500 border-zinc-200"
 
   def sandbox_status_color("running"), do: "bg-blue-100 text-blue-800 border-blue-200"
   def sandbox_status_color("ready"), do: "bg-green-100 text-green-800 border-green-200"

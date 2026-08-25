@@ -19,27 +19,13 @@ defmodule Fountain.Workers.WelcomeEmailTest do
       end)
     end
 
-    test "tells a trialing user when the trial ends" do
+    test "tells the new account what it starts with (ADR 0031)" do
       user = insert_verified_user()
-      assert user.subscription_status == "trialing"
-      assert %DateTime{} = user.trial_ends_at
 
       assert :ok = perform_job(WelcomeEmail, %{"user_id" => user.id})
 
       assert_email_sent(fn email ->
-        assert email.text_body =~ "free trial ends"
-      end)
-    end
-
-    test "omits trial copy for a non-trialing account" do
-      user = insert_verified_user()
-      {:ok, _} = user |> Ecto.Changeset.change(subscription_status: "comped") |> Repo.update()
-
-      assert :ok = perform_job(WelcomeEmail, %{"user_id" => user.id})
-
-      assert_email_sent(fn email ->
-        refute email.text_body =~ "free trial"
-        assert email.subject == "Welcome to Fountain"
+        assert email.text_body =~ "starts with $10.00 of credit, good for 14 days"
       end)
     end
 

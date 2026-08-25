@@ -80,11 +80,11 @@ defmodule Fountain.AuditTest do
       b_ids = user_b.id |> Audit.list_recent_for_user() |> Enum.map(& &1.id)
 
       refute event.id in b_ids
-      # Registration and the verification that `insert_verified_user` performs
-      # are both audited in the context now (#544, #593), so a fresh verified
-      # account opens with two events rather than one.
+      # Registration, the verification that `insert_verified_user` performs and
+      # the opening credit that verification posts (ADR 0031) are all audited
+      # in the context, so a fresh verified account opens with three events.
       assert Audit.list_recent_for_user(user_b.id) |> Enum.map(& &1.action) ==
-               ["auth.email.verified", "account.registered"]
+               ["auth.email.verified", "credit.granted", "account.registered"]
     end
 
     test "respects limit" do
@@ -247,7 +247,12 @@ defmodule Fountain.AuditTest do
       # registration is the first thing in every trail. The properties under
       # test are distinctness, sort order, and the absence of the other
       # tenant's "environment".
-      assert Audit.list_resource_types_for_user(user.id) == ["agent", "user", "vault"]
+      assert Audit.list_resource_types_for_user(user.id) == [
+               "agent",
+               "credit_ledger",
+               "user",
+               "vault"
+             ]
     end
 
     test "the unscoped list spans tenants" do

@@ -96,27 +96,6 @@ defmodule FountainWeb.AccountDeletionLiveTest do
 
       assert Repo.get(User, user.id)
     end
-
-    test "a Stripe failure reports it and keeps the account", %{conn: conn} do
-      user = insert_verified_user()
-
-      {:ok, user} =
-        user
-        |> User.billing_changeset(%{stripe_customer_id: "cus_x", subscription_status: "active"})
-        |> Repo.update()
-
-      stub(Stripe.Subscription, :list, fn _ -> {:error, :down} end)
-
-      {:ok, lv, _html} = live(login_user(conn, user), ~p"/account")
-
-      html =
-        with_log(fn -> render_submit(lv, "delete_account", %{"email" => user.email}) end)
-        |> elem(0)
-
-      assert html =~ "subscription could not be cancelled"
-      assert html =~ "nothing was deleted"
-      assert Repo.get(User, user.id)
-    end
   end
 
   describe "admin" do

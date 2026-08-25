@@ -5,6 +5,16 @@ defmodule Fountain.FunnelTest do
 
   defp set!(user, changes), do: Repo.update!(Ecto.Changeset.change(user, changes))
 
+  # An account that cannot spend: the opening credit burned away.
+  defp drain!(user) do
+    {:ok, _} =
+      Fountain.Credits.debit(user.id, Fountain.Credits.balance(user.id) + 1, "burn_turn",
+        idempotency_key: "drain-#{user.id}"
+      )
+
+    Fountain.Repo.reload!(user)
+  end
+
   defp at(hours_ago) do
     DateTime.utc_now()
     |> DateTime.add(-round(hours_ago * 3600), :second)
@@ -28,7 +38,7 @@ defmodule Fountain.FunnelTest do
 
     test "counts each stage cumulatively" do
       _registered_only = insert_user()
-      _verified_only = insert_verified_user()
+      verified_only = insert_verified_user()
 
       onboarded = insert_verified_user()
       set!(onboarded, onboarding_completed_at: at(1))
@@ -37,9 +47,12 @@ defmodule Fountain.FunnelTest do
       set!(activated, onboarding_completed_at: at(2))
       insert_conversation(user_id: activated.id)
 
+      # Every verified account holds the opening credit, so "funded" is the
+      # ones that still have some: drain the others.
       subscribed = insert_verified_user()
-      set!(subscribed, onboarding_completed_at: at(3), subscription_status: "active")
+      set!(subscribed, onboarding_completed_at: at(3))
       insert_conversation(user_id: subscribed.id)
+      for u <- [verified_only, onboarded, activated], do: drain!(u)
 
       summary = Funnel.summary_admin()
 
@@ -55,10 +68,9 @@ defmodule Fountain.FunnelTest do
       assert stage(summary, :subscribed).conversion == 1 / 2
     end
 
-    test "past_due counts as subscribed; comped and canceled do not" do
-      set!(insert_verified_user(), subscription_status: "past_due")
-      set!(insert_verified_user(), subscription_status: "comped")
-      set!(insert_verified_user(), subscription_status: "canceled")
+    test "a positive balance counts as funded; a drained one does not" do
+      _funded = insert_verified_user()
+      drain!(insert_verified_user())
 
       assert stage(Funnel.summary_admin(), :subscribed).count == 1
     end

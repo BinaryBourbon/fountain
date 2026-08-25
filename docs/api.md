@@ -135,7 +135,7 @@ re-enters that wizard. Complete it over the API and the loop closes.
 ### Billing
 
 ```
-GET    /api/account/billing           # status, trial/period dates, current-month usage
+GET    /api/account/billing           # balance, cap, current-month usage
 POST   /api/account/billing/portal    # Stripe Billing Portal URL
 POST   /api/account/billing/checkout  # Stripe Checkout URL
 ```
@@ -144,9 +144,8 @@ Stripe needs a browser to finish, so the URL is what you get. Mint it here,
 and open it there. The server chooses the return URLs. A URL that a caller
 supplied would be an open redirect.
 
-`checkout` refuses with `409 subscription_exists` when Stripe already holds a
-live subscription. Checkout on top of one creates a duplicate, so use the
-portal instead.
+`credits/checkout` returns a one-time Stripe Checkout URL for a credit pack.
+The balance moves when Stripe's webhook confirms the payment.
 
 Both refuse a comped account with `422`. Both answer `502` when Stripe is
 unreachable, and guess nothing. On an instance with payment off, all three are
@@ -166,7 +165,7 @@ An export builds in the background, and the API has no PubSub. So poll
 `GET /api/account/exports` until `downloadable` is true. One account holds one
 export at most, and takes one request each hour.
 
-To delete the account cancels the subscription, destroys the sandboxes, and
+To delete the account destroys the sandboxes, and
 removes each resource **and the tenant encryption key**. It needs the
 confirmation body, which is the API's version of the typed-email gate in the
 UI. It also needs a `full`-scoped key.
@@ -867,7 +866,6 @@ GET    /api/admin/users                     # ?q= ?status= ?role= ?verified= ?so
 GET    /api/admin/users/:id
 POST   /api/admin/users/:id/role            # {"role": "admin"|"user"}
 POST   /api/admin/users/:id/sandbox-limit   # {"limit": n}
-POST   /api/admin/users/:id/extend-trial    # {"days": n}
 POST   /api/admin/users/:id/comp            # {"comped": true|false}
 POST   /api/admin/users/:id/suspend         # {"suspended": true|false}
 POST   /api/admin/users/:id/resync-stripe
@@ -883,7 +881,7 @@ change its role. Use another admin, or `DELETE /api/account` to delete your
 own.
 
 The payment actions are `404` with `"billing": "disabled"` on an instance
-with payment off. Those actions are extend-trial, comp and resync-stripe.
+with payment off. Those actions are comp and credits.
 
 A read across tenants returns metadata alone. Prompt content and output
 content never cross a tenant boundary, whatever the role.
@@ -955,7 +953,7 @@ to walk the whole trail.
 |---|---|
 | `400` | The request body is invalid. |
 | `401` | The auth is absent or invalid. |
-| `402` | You need a live subscription. The code is `subscription_required`, and the body carries `upgrade_url`. |
+| `402` | Your credit balance is zero or below. The code is `insufficient_credits`, and the body carries `upgrade_url`. |
 | `403` | The wrong tenant. |
 | `404` | Nothing found. |
 | `409` | The request conflicts with the current state. The codes are `no_runner_online`, `sandbox_at_capacity` and `sandbox_not_attachable`. |

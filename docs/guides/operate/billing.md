@@ -6,87 +6,69 @@
      hook for that rule, so the exemption is declared for the page. -->
 <!-- vale STE.IngForms = NO -->
 
-This guide shows you how to start the subscription gate, and why you probably
-must not.
+This guide shows you how to start billing, and why you probably must not.
 
 ## Leave it off unless you run Fountain commercially
 
 Billing is off by default (`BILLING_ENABLED=false`), and the compose file pins
-it off as well.
+it off as well. On your own instance it is a meter with no till. Leave it
+off, unless you run Fountain commercially and you configured Stripe.
 
-The subscription gate exists for the hosted service. On your own instance it
-is a lock with no key. Leave it off, unless you run Fountain commercially and
-you configured Stripe.
+With billing off, no account has a balance and nothing burns. Fountain
+refuses nothing. Nothing that looks like billing appears in the UI, in the
+admin panel or in the API.
 
-With billing off, an account carries no subscription status and no trial
-clock. Nothing that looks like billing appears in the UI, in the admin panel
-or in the API.
+## What billing is
+
+Credits are the product. Each account holds a balance in cents. A new account
+starts with `CREDIT_OPENING_CENTS` ($10) for `CREDIT_OPENING_DAYS` (14). Each
+turn burns `CREDIT_TURN_HOUR_CENTS` an hour. A phone number and an inbox each
+cost a month of rent up front. A message costs its price. A tenant buys more
+credit in packs. There are no plans and no subscription. See
+[Prices](plans-and-prices.md).
+
+A tenant may run as many sandboxes at once as the balance funds, between
+`SANDBOX_CAP_FLOOR` and `SANDBOX_CAP_CEILING`, and the whole deployment stops
+at `SANDBOX_FLEET_CEILING`. Set the fleet ceiling to what your sandbox
+provider plan allows.
 
 ## Start it
 
-Set `BILLING_ENABLED=true`, then configure Stripe. The
-[Stripe integration guide](../../integrations/stripe.md) covers
-`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` and the provider side.
+1. Set `CREDIT_PRICING_SINCE` to the time of the deploy, in ISO 8601. Fountain
+   never prices a turn from before that instant, so nobody pays for work they
+   did while billing was off.
+2. Set the prices. `CREDIT_TURN_HOUR_CENTS` defaults to 25. Set
+   `CREDIT_NUMBER_CENTS`, `CREDIT_INBOX_CENTS`, `CREDIT_EMAIL_MESSAGE_CENTS`
+   and `CREDIT_SMS_MESSAGE_CENTS` if you charge for contacts. Unset, those
+   lines cost nothing.
+3. Configure Stripe. The [Stripe integration guide](../../integrations/stripe.md)
+   covers `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` and the three webhook
+   events.
+4. Set `BILLING_ENABLED=true` and deploy.
 
-Then choose what you sell. [Launch plans and prices](plans-and-prices.md)
-covers the three tiers and the price variable for each one. It also covers the
-verifier that finds a price which disagrees with the catalog.
+## Give the accounts you already have their opening credit
 
-## Start the clocks on the accounts you already have
-
-An account created while billing was off has no trial to measure. It **fails
-closed** at the subscription gate the moment you turn billing on. Start those
-trial clocks explicitly.
+An account that verified its email while billing was off holds nothing. It
+gets a refusal at the first spend the moment you turn billing on. Give those
+accounts the opening credit in the admin panel, or with the admin API:
 
 ```bash
-# See who would be affected, change nothing:
-bin/fountain_server eval 'Fountain.Release.expire_legacy_trials(dry_run: true)'
-
-# Mark them trialing with 14 days from now:
-bin/fountain_server eval 'Fountain.Release.expire_legacy_trials(days: 14)'
+curl -X POST "$FOUNTAIN_URL/api/admin/users/$USER_ID/credits" \
+  -H "Authorization: Bearer $ADMIN_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"cents": 1000, "note": "opening credit, billing started"}'
 ```
-
-Run the dry run first. It reports, and it changes nothing.
-
-## Start prepaid credits
-
-Credits are off until you set `CREDIT_PRICING_SINCE`. Do these steps in
-this order, because each one protects the next.
-
-1. Set `CREDIT_PRICING_SINCE` to the time of the deploy, in ISO 8601. Do
-   not set an earlier time. An earlier time bills every tenant for turns
-   they ran before they held a grant.
-2. Deploy. From that instant, Fountain prices turns into the ledger and
-   shows the balance on the billing page. Fountain refuses nothing.
-3. Give every tenant their opening credit, so nobody starts at zero.
-
-   ```bash
-   # See who would be granted, change nothing:
-   bin/fountain_server eval 'Fountain.Release.start_credits(dry_run: true)'
-
-   # Grant the current period, pro-rated from CREDIT_PRICING_SINCE:
-   bin/fountain_server eval 'Fountain.Release.start_credits()'
-   ```
-
-   Run the dry run first. A rerun of the real task writes nothing new.
-4. Add `charge.refunded` and `charge.dispute.created` to your Stripe webhook
-   endpoint, so a refund takes the credit back.
-5. After a month of provider invoices reconciled on `/admin/finance`, set
-   `CREDIT_ENFORCE=true`. From then, a zero balance refuses new sandboxes and
-   new turns.
-
-[Launch plans and prices](plans-and-prices.md) covers the prices and the
-packs.
 
 ## Verify it worked
 
-Sign in as an account that is not an admin, then confirm it can still reach a
-gated action. An account that cannot is one the backfill missed.
+Sign in as an account that is not an admin. The billing page shows the
+balance and the packs. Start a conversation and wait for the turn to end.
+The balance falls at the next run of the pricer, at most ten minutes later.
 
 ## Related
 
 - [Stripe integration guide](../../integrations/stripe.md).
-- [Launch plans and prices](plans-and-prices.md).
+- [Prices](plans-and-prices.md).
 - [See what sandboxes cost](sandbox-spend.md), for what each account runs and
   which provider you pay for it.
 - [Run a release task](run-a-release-task.md).

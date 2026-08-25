@@ -13,7 +13,6 @@ defmodule FountainWeb.AdminFinanceLiveTest do
 
   alias Fountain.Accounts
   alias Fountain.Conversations
-  alias Fountain.Plans
   alias Fountain.Repo
 
   @rate_keys [
@@ -40,19 +39,11 @@ defmodule FountainWeb.AdminFinanceLiveTest do
   end
 
   defp insert_admin do
-    {:ok, admin} = Accounts.update_user_role(insert_verified_user(), "admin")
+    {:ok, admin} = Accounts.update_user_role(insert_empty_user(), "admin")
     admin
   end
 
-  defp subscriber(plan) do
-    insert_verified_user()
-    |> Ecto.Changeset.change(
-      plan: plan,
-      subscription_status: "active",
-      stripe_subscription_id: "sub_#{System.unique_integer([:positive])}"
-    )
-    |> Repo.update!()
-  end
+  defp subscriber(_plan), do: insert_empty_user()
 
   # A sandbox in the current month, awake for `hours` with a prompt in flight
   # for `busy_hours`. Anchored to the start of this month so the page's default
@@ -91,7 +82,7 @@ defmodule FountainWeb.AdminFinanceLiveTest do
 
   describe "access control" do
     test "a regular user is pushed back to the dashboard", %{conn: conn} do
-      conn = login_user(conn, insert_verified_user())
+      conn = login_user(conn, insert_empty_user())
       assert {:error, {:live_redirect, _}} = live(conn, ~p"/admin/finance")
     end
 
@@ -111,8 +102,8 @@ defmodule FountainWeb.AdminFinanceLiveTest do
 
       assert html =~ "No rate card is configured"
       assert html =~ "PROVIDER_HOURLY_CENTS"
-      # Revenue is known regardless — it comes from the plan catalog.
-      assert html =~ Plans.format_usd(Plans.monthly_cents("solo"))
+      # Revenue is credit, known regardless of the rate card.
+      assert html =~ "Credit earned"
       # ...and the hours are real even with nothing priced.
       assert html =~ "10.0"
       assert html =~ user.email
@@ -145,8 +136,9 @@ defmodule FountainWeb.AdminFinanceLiveTest do
 
       {:ok, _lv, html} = live(login_user(conn, admin), ~p"/admin/finance")
 
+      # 100 hours at $5 with nothing burned this period: the whole cost is the loss.
       assert html =~ "text-red-700"
-      assert html =~ "-$471.00"
+      assert html =~ "-$500.00"
       assert html =~ user.email
     end
   end
@@ -277,15 +269,18 @@ defmodule FountainWeb.AdminFinanceLiveTest do
   end
 
   describe "/admin" do
-    test "the MRR tile links here and is priced per plan", %{conn: conn} do
+    test "the deferred-credit tile links here and sums the balances", %{conn: conn} do
       admin = insert_admin()
-      subscriber("scale")
+      user = subscriber("scale")
+      {:ok, _} = Fountain.Credits.grant(user.id, 12_345, "purchase", idempotency_key: "p")
 
       {:ok, _lv, html} = live(login_user(conn, admin), ~p"/admin")
 
       assert html =~ "/admin/finance"
-      # $199, not the legacy $29 the tile used to charge everybody.
-      assert html =~ "$199.00/mo"
+      assert html =~ "Deferred credit"
+      # The opening credits of every account in the test DB are in the sum too,
+      # so only the pack's own figure is asserted through the total's shape.
+      assert html =~ "funded accounts"
     end
   end
 end

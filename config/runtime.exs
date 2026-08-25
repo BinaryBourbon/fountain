@@ -619,84 +619,6 @@ case System.get_env("STRIPE_WEBHOOK_SECRET") do
     config :stripity_stripe, webhook_secret: secret
 end
 
-# Stripe Price ID for the flat plan the tiers replaced. Every account that
-# subscribed before the tiers holds this price and resolves to the `legacy`
-# plan, so the variable keeps its old name and its old meaning rather than
-# being repointed underneath a running deployment (`Fountain.Plans`).
-config :fountain, :stripe_price_id, System.get_env("STRIPE_PRICE_ID")
-
-# Stripe Price IDs per plan, plus the teammate-contact add-on. Set per
-# environment (test-mode prices in dev, live-mode in prod). A plan with no
-# price here cannot be subscribed to, which is exactly right for a self-hosted
-# instance: it has no Stripe at all.
-config :fountain,
-       :stripe_price_ids,
-       %{
-         "solo" => System.get_env("STRIPE_PRICE_ID_SOLO"),
-         "team" => System.get_env("STRIPE_PRICE_ID_TEAM"),
-         "scale" => System.get_env("STRIPE_PRICE_ID_SCALE")
-       }
-       |> Enum.reject(fn {_slug, id} -> id in [nil, ""] end)
-       |> Map.new()
-
-# Concurrency (ADR 0031): the reserve one live sandbox needs in the balance,
-# the per-account floor and ceiling the balance rule is clamped to, and the
-# fleet ceiling — the most live sandboxes the deployment will run in total,
-# which is the provider plan's number (Sprites' $20 plan allows about 20).
-sandbox_int = fn var, default ->
-  case System.get_env(var) do
-    value when value in [nil, ""] ->
-      default
-
-    value ->
-      case Integer.parse(String.trim(value)) do
-        {n, ""} when n >= 0 -> n
-        _ -> raise "#{var} must be a whole number, 0 or more, got #{inspect(value)}"
-      end
-  end
-end
-
-config :fountain, :sandboxes,
-  reserve_cents: sandbox_int.("SANDBOX_RESERVE_CENTS", 200),
-  cap_floor: sandbox_int.("SANDBOX_CAP_FLOOR", 2),
-  cap_ceiling: sandbox_int.("SANDBOX_CAP_CEILING", 20),
-  fleet_ceiling: sandbox_int.("SANDBOX_FLEET_CEILING", 20)
-
-# The plan a user with no plan of their own gets — the tenants a self-hosted
-# instance never subscribed, and every account on a deployment with billing
-# off. `DEFAULT_PLAN=scale` is how a self-hoster paying their own provider
-# bill lifts the concurrency cap for everyone at once.
-case System.get_env("DEFAULT_PLAN") do
-  slug when slug in [nil, ""] -> :ok
-  slug -> config :fountain, :default_plan, slug
-end
-
-# Monthly price in cents for the `legacy` flat plan, display-only, for the
-# admin billing overview's MRR tile (the API only tells us the price *id*).
-# Public plans carry their own display price in `Fountain.Plans`; this one
-# stays in config because the price it names is closed and unlisted.
-stripe_price_monthly_cents =
-  case System.get_env("STRIPE_PRICE_MONTHLY_CENTS") do
-    value when value in [nil, ""] -> nil
-    value -> String.to_integer(value)
-  end
-
-config :fountain, :stripe_price_monthly_cents, stripe_price_monthly_cents
-
-# ── The finance panel's rate card (/admin/finance) ────────────────────────────
-#
-# What Fountain *pays*, which is nowhere else in this codebase: provider
-# prices are per-machine-size and negotiated, and AgentMail/AgentPhone bill
-# per unit and per message. `Fountain.Billing.Finance` reports hours and units
-# with no money at all until these are set, and an unpriced line stays `nil`
-# rather than collapsing to zero — a cost of $0 and a cost nobody has told us
-# reads very differently next to revenue.
-#
-# PROVIDER_HOURLY_CENTS is cents per sandbox hour, per provider, and may be
-# fractional:
-#   PROVIDER_HOURLY_CENTS="sprites=10.76,e2b=5.45,daytona=5.45"
-# A provider absent from the list is unpriced. `runner` is never priced: it is
-# the tenant's own machine (ADR 0022) and costs Fountain nothing.
 # Cents, whole or fractional. Fractional is the normal case for a per-message
 # rate: AgentMail bills about $0.002 an email, which as a whole number of cents
 # is zero, and the panel would report email as free.
@@ -809,11 +731,37 @@ credit_pricing_since =
       end
   end
 
+# Concurrency (ADR 0031): the reserve one live sandbox needs in the balance,
+# the per-account floor and ceiling the balance rule is clamped to, and the
+# fleet ceiling — the most live sandboxes the deployment will run in total,
+# which is the provider plan's number (Sprites' $20 plan allows about 20).
+sandbox_int = fn var, default ->
+  case System.get_env(var) do
+    value when value in [nil, ""] ->
+      default
+
+    value ->
+      case Integer.parse(String.trim(value)) do
+        {n, ""} when n >= 0 -> n
+        _ -> raise "#{var} must be a whole number, 0 or more, got #{inspect(value)}"
+      end
+  end
+end
+
+config :fountain, :sandboxes,
+  reserve_cents: sandbox_int.("SANDBOX_RESERVE_CENTS", 200),
+  cap_floor: sandbox_int.("SANDBOX_CAP_FLOOR", 2),
+  cap_ceiling: sandbox_int.("SANDBOX_CAP_CEILING", 20),
+  fleet_ceiling: sandbox_int.("SANDBOX_FLEET_CEILING", 20)
+
+# Teammate contacts one account may hold at once — an abuse ceiling.
+config :fountain, :team_contact_ceiling, sandbox_int.("TEAM_CONTACT_CEILING", 10)
+
 config :fountain, :credits,
   pricing_since: credit_pricing_since,
-  # CREDIT_ENFORCE=true turns the soft stop on. Keep it off until a month of
-  # computed-versus-invoice deltas has been recorded (#1038, ADR 0030 §8).
-  enforce: System.get_env("CREDIT_ENFORCE") == "true",
+  # The opening grant a new account gets, and how many days it lasts.
+  opening_cents: credit_cents.("CREDIT_OPENING_CENTS") || 1_000,
+  opening_days: credit_cents.("CREDIT_OPENING_DAYS") || 14,
   turn_hour_cents: credit_cents.("CREDIT_TURN_HOUR_CENTS") || 25,
   number_cents: credit_cents.("CREDIT_NUMBER_CENTS"),
   inbox_cents: credit_cents.("CREDIT_INBOX_CENTS"),

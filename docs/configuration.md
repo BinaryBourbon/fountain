@@ -114,15 +114,9 @@ at a dead end, with no error to see. Read [Email](guides/operate/email.md).
 
 | Variable | Default | Required | Effect |
 |---|---|---|---|
-| `BILLING_ENABLED` | `false` | — | The subscription gate. It is off by default, because on a self-hosted instance it is a lock with no key. Set `true` only if you run Fountain commercially, with Stripe configured. |
+| `BILLING_ENABLED` | `false` | — | Credits on. Off by default: on a self-hosted instance there is nothing to sell. On, every account holds a credit balance, turns and contacts burn it, and a zero balance refuses new work. |
 | `STRIPE_SECRET_KEY` | — | For billing. | The Stripe API key. |
 | `STRIPE_WEBHOOK_SECRET` | — | For billing. | Verifies the signature on a `POST /api/stripe/webhook`. |
-| `STRIPE_PRICE_ID` | — | No. | The flat price that the plans replaced. Accounts that bought it stay on the closed `legacy` plan. A new deployment does not need it. |
-| `STRIPE_PRICE_ID_SOLO` | — | For the Solo plan. | The Stripe price for Solo. A plan with no price stays off the pricing table and off the plan picker. |
-| `STRIPE_PRICE_ID_TEAM` | — | For the Team plan. | The Stripe price for Team. |
-| `STRIPE_PRICE_ID_SCALE` | — | For the Scale plan. | The Stripe price for Scale. |
-| `STRIPE_PRICE_MONTHLY_CENTS` | — | No. | The monthly price of the `legacy` plan, in cents, such as `2900`. It is for display alone. The admin MRR tile reads every other plan's price from the catalog. |
-| `DEFAULT_PLAN` | `solo` | No. | The plan for an account that has no plan of its own. On a self-hosted instance that is every account. Set `DEFAULT_PLAN=scale` to give every account the highest concurrency cap. |
 | `PROVIDER_HOURLY_CENTS` | — | No. | What you pay each sandbox provider, in cents per sandbox hour, as `sprites=10.76,e2b=5.45`. Rates can be fractional. A provider you leave out stays unpriced. |
 | `PROVIDER_COST_BASIS` | `active` | No. | Which hours the provider rate multiplies. An `active` counts every hour a sandbox was awake. A `turn` counts only the hours with a prompt in flight. Use `turn` where the provider drops to near-zero between prompts. |
 | `AGENTMAIL_INBOX_CENTS` | — | No. | What AgentMail charges for one inbox each month, in cents. |
@@ -133,8 +127,10 @@ at a dead end, with no error to see. Read [Email](guides/operate/email.md).
 | `SANDBOX_CAP_FLOOR` | `2` | No. | The fewest sandboxes a tenant with a positive balance may run at once. |
 | `SANDBOX_CAP_CEILING` | `20` | No. | The most sandboxes one tenant may run at once, unless an admin override raises it. |
 | `SANDBOX_FLEET_CEILING` | `20` | No. | The most live sandboxes across every tenant. Set it to what your sandbox provider plan allows. A start beyond it gets `503 fleet_full`. |
-| `CREDIT_PRICING_SINCE` | — | No. | The instant from which Fountain prices turns and messages into the prepaid ledger, as ISO 8601. Unset, Fountain prices nothing. |
-| `CREDIT_ENFORCE` | `false` | No. | Set `true` to refuse new sandboxes and new turns when the balance is zero or less. Turns in flight finish. Comped accounts and instances with billing off are never refused. |
+| `CREDIT_OPENING_CENTS` | `1000` | No. | The credit a new account starts with, in cents. |
+| `CREDIT_OPENING_DAYS` | `14` | No. | How many days the opening credit lasts. |
+| `TEAM_CONTACT_CEILING` | `10` | No. | The most teammate contacts one account may hold at once. |
+| `CREDIT_PRICING_SINCE` | — | No. | A floor: Fountain never prices a turn or a message from before this instant, as ISO 8601. Set it at the deploy that starts billing, so old turns stay free. |
 | `CREDIT_TURN_HOUR_CENTS` | `25` | No. | What a tenant pays for one hour of turn time, in whole cents, from their prepaid balance. |
 | `CREDIT_NUMBER_CENTS` | — | No. | What a tenant pays for one phone number each month, in whole cents. Unset means the number burns nothing. |
 | `CREDIT_INBOX_CENTS` | — | No. | What a tenant pays for one inbox each month, in whole cents. Unset means the inbox burns nothing. |

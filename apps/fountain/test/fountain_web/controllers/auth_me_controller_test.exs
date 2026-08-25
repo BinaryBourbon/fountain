@@ -27,13 +27,13 @@ defmodule FountainWeb.AuthMeControllerTest do
                "id" => id,
                "email" => email,
                "role" => role,
-               "subscription_status" => subscription_status
+               "comped" => comped
              } = json_response(conn, 200)
 
       assert id == user.id
       assert email == user.email
       assert role == user.role
-      assert subscription_status == user.subscription_status
+      assert comped == false
     end
 
     test "returns 401 when no API key is provided", %{conn: conn} do
@@ -62,7 +62,7 @@ defmodule FountainWeb.AuthMeControllerTest do
       assert %{"role" => "admin"} = json_response(conn, 200)
     end
 
-    test "subscription_status is null when billing is disabled — key kept for shape compat (#480)",
+    test "comped is null when billing is disabled — key kept for shape compat (#480)",
          %{conn: conn} do
       # Residue case on purpose: even an account that still carries a status
       # from before the flag flipped must not leak it to API consumers.
@@ -76,8 +76,8 @@ defmodule FountainWeb.AuthMeControllerTest do
           |> get("/api/auth/me")
 
         body = json_response(conn, 200)
-        assert Map.has_key?(body, "subscription_status")
-        assert body["subscription_status"] == nil
+        assert Map.has_key?(body, "comped")
+        assert body["comped"] == nil
       end)
     end
 

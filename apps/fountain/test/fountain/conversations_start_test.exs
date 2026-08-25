@@ -120,7 +120,7 @@ defmodule Fountain.ConversationsStartTest do
       user = insert_active_user()
       agent = insert_agent(user_id: user.id)
 
-      limit = Fountain.Quotas.default_limit()
+      limit = Fountain.Quotas.sandbox_limit(user.id)
       for _ <- 1..limit, do: insert_sandbox(user_id: user.id, status: "ready")
 
       assert {:error, {:sandbox_quota_exceeded, %{count: ^limit, limit: ^limit}}} =
@@ -131,7 +131,7 @@ defmodule Fountain.ConversationsStartTest do
       user = insert_active_user()
       agent = insert_agent(user_id: user.id)
 
-      for _ <- 1..Fountain.Quotas.default_limit(),
+      for _ <- 1..Fountain.Quotas.sandbox_limit(user.id),
           do: insert_sandbox(user_id: user.id, status: "ready")
 
       before = Fountain.Quotas.active_sandbox_count(user.id)
@@ -148,7 +148,7 @@ defmodule Fountain.ConversationsStartTest do
       capped = insert_active_user()
       other = insert_active_user()
 
-      for _ <- 1..Fountain.Quotas.default_limit(),
+      for _ <- 1..Fountain.Quotas.sandbox_limit(capped.id),
           do: insert_sandbox(user_id: capped.id, status: "ready")
 
       agent = insert_agent(user_id: other.id)
@@ -164,7 +164,7 @@ defmodule Fountain.ConversationsStartTest do
       agent = insert_agent(user_id: user.id)
 
       [first | _] =
-        for _ <- 1..Fountain.Quotas.default_limit(),
+        for _ <- 1..Fountain.Quotas.sandbox_limit(user.id),
             do: insert_sandbox(user_id: user.id, status: "ready")
 
       assert {:error, _} =

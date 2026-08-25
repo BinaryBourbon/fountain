@@ -22,37 +22,39 @@ defmodule FountainWeb.CreditsSurfacesTest do
   end
 
   defp insert_admin do
-    {:ok, admin} = Fountain.Accounts.update_user_role(insert_active_user(), "admin")
+    {:ok, admin} = Fountain.Accounts.update_user_role(insert_empty_user(), "admin")
     admin
   end
 
   defp subscriber do
-    user = insert_active_user()
+    user = insert_empty_user()
 
     {:ok, user} =
       user
-      |> User.billing_changeset(%{plan: "solo", stripe_customer_id: "cus_#{user.id}"})
+      |> User.billing_changeset(%{stripe_customer_id: "cus_#{user.id}"})
       |> Repo.update()
 
     user
   end
 
-  describe "switch off" do
-    test "no balance anywhere, and the API says null", %{conn: conn} do
+  describe "billing off" do
+    test "no balance anywhere, and the API says 404", %{conn: conn} do
+      Application.put_env(:fountain, :billing_enabled, false)
+      on_exit(fn -> Application.put_env(:fountain, :billing_enabled, true) end)
       user = subscriber()
       refute Credits.active?()
       assert %{active?: false, balance_cents: 0} = Credits.summary(user)
 
-      {:ok, _lv, html} = live(login_user(conn, user), ~p"/account/billing")
-      refute html =~ "id=\"credits\""
+      # The billing page does not exist on a billing-off instance; the
+      # dashboard shows no balance; the API says billing is disabled.
+      assert {:error, {:redirect, %{to: "/account"}}} =
+               live(login_user(conn, user), ~p"/account/billing")
 
       {:ok, _lv, html} = live(login_user(conn, user), ~p"/dashboard")
       refute html =~ "Credits"
 
       {_rec, key} = insert_api_key(user)
-      body = conn |> authed_with_key(key) |> get("/api/account/billing") |> json_response(200)
-      assert Map.has_key?(body["data"], "credits")
-      assert body["data"]["credits"] == nil
+      assert conn |> authed_with_key(key) |> get("/api/account/billing") |> json_response(404)
     end
   end
 
@@ -132,7 +134,7 @@ defmodule FountainWeb.CreditsSurfacesTest do
       assert html =~ "$12.34 bought"
     end
 
-    test "a subscriber sees the packs and buying redirects to Stripe; a trialist is told to subscribe",
+    test "an account sees the packs and buying redirects to Stripe",
          %{conn: conn} do
       user = subscriber()
       {:ok, _lv, html} = live(login_user(conn, user), ~p"/account/billing")
@@ -149,11 +151,6 @@ defmodule FountainWeb.CreditsSurfacesTest do
 
       assert {:error, {:redirect, %{to: "https://checkout.stripe.com/pack"}}} =
                render_click(lv, "buy_credits", %{"cents" => "2500"})
-
-      trial = insert_verified_user()
-      {:ok, _lv, html} = live(login_user(conn, trial), ~p"/account/billing")
-      refute html =~ "Buy $10.00"
-      assert html =~ "Subscribe to buy credits"
     end
 
     test "the credits checkout endpoint", %{conn: conn} do
@@ -183,18 +180,6 @@ defmodule FountainWeb.CreditsSurfacesTest do
         |> json_response(422)
 
       assert body["error"] == "unknown_pack"
-
-      trial = insert_verified_user()
-      {_rec, tkey} = insert_api_key(trial)
-
-      body =
-        conn
-        |> authed_with_key(tkey)
-        |> put_req_header("content-type", "application/json")
-        |> post("/api/account/billing/credits/checkout", %{"cents" => 1000})
-        |> json_response(422)
-
-      assert body["error"] == "subscription_required"
     end
 
     test "the API carries the same shape", %{conn: conn} do

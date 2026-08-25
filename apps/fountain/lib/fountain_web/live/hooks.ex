@@ -75,7 +75,7 @@ defmodule FountainWeb.Live.Hooks do
   end
 
   def on_mount(:assign_subscription_state, _params, _session, socket) do
-    active = Billing.check_active(socket.assigns.current_user) == :ok
+    active = Billing.check_spend(socket.assigns.current_user) == :ok
     {:cont, assign(socket, :subscription_active, active)}
   end
 

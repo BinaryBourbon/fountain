@@ -1,23 +1,27 @@
 ---
 type: ADR
 title: "Credits are the product: no tiers, concurrency as a balance-funded protection under a fleet ceiling"
-description: "Retire the subscription tiers. A tenant buys credit, burns it on turns, rent and messages, and may run as many sandboxes at once as their balance funds, up to a per-account ceiling and the fleet ceiling the providers allow. Stripe stays only as the till for one-time packs. Supersedes ADR 0026 and the subscription gate of ADR 0006; amends ADR 0030 decision 2. Not yet built."
+description: "Retire the subscription tiers. A tenant buys credit, burns it on turns, rent and messages, and may run as many sandboxes at once as their balance funds, up to a per-account ceiling and the fleet ceiling the providers allow. Stripe stays only as the till for one-time packs. Supersedes ADR 0026 and the subscription gate of ADR 0006; amends ADR 0030 decision 2. Built; persistent-home rent is not."
 tags: [billing, credits, quotas, plans]
-status: draft
+status: stable
 adr: "0031"
 adr_status: "Accepted"
 date: 2026-08-25
 generated: { by: human:jhgaylor, at: 2026-08-25T02:00:00-04:00 }
+verified: { by: human:jhgaylor, at: 2026-08-25T04:00:00-04:00 }
 stale_after: 2026-10-15
 ---
 
 # 0031 — Credits are the product: no tiers, concurrency as a balance-funded protection under a fleet ceiling
 
-**Status:** Accepted, **not yet built.** Three PRs follow: the switches
-(credits stand on their own, without `BILLING_ENABLED` meaning "Stripe
-subscriptions"), the balance-funded cap and fleet ceiling in `Quotas`, and
-the retirement of subscriptions, tiers and the trial machinery. Until the
-last lands, ADR 0030's "tiers survive" is what runs.
+**Status:** Accepted, built (#1114 the cap and fleet ceiling; the
+retirement PR that follows it). What runs: `Billing.check_spend/1` is the
+balance gate; `Accounts.verify_email/2` posts the opening grant;
+`Quotas.sandbox_limit/1` is balance-funded under `SANDBOX_FLEET_CEILING`;
+`Fountain.Plans`, `users.plan`, the subscription statuses, the trial
+machinery, plan Checkout, the portal and `verify_plans` are gone, with the
+subscription columns left unread in Postgres for one release. Stripe holds
+no subscription and no price. Persistent-home rent (decision 7) is not built.
 
 ## Context
 

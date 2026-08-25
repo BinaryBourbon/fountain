@@ -1533,12 +1533,11 @@ defmodule FountainWeb.Schemas do
         email_verified_at: %Schema{type: :string, format: :"date-time", nullable: true},
         suspended: %Schema{type: :boolean},
         suspended_at: %Schema{type: :string, format: :"date-time", nullable: true},
-        subscription_status: %Schema{type: :string, nullable: true},
-        trial_ends_at: %Schema{type: :string, format: :"date-time", nullable: true},
-        current_period_end: %Schema{type: :string, format: :"date-time", nullable: true},
-        cancel_at_period_end: %Schema{type: :boolean, nullable: true},
+        comped: %Schema{
+          type: :boolean,
+          description: "A free account: the balance is never checked (ADR 0031)."
+        },
         has_stripe_customer: %Schema{type: :boolean},
-        plan: %Schema{type: :string, description: "Plan slug", enum: Fountain.Plans.slugs()},
         max_concurrent_sandboxes: %Schema{
           type: :integer,
           nullable: true,
@@ -1693,7 +1692,7 @@ defmodule FountainWeb.Schemas do
           type: :object,
           properties: %{
             outcome: %Schema{type: :string, enum: ~w(resynced customer_sync_enqueued)},
-            subscription_status: %Schema{type: :string, nullable: true}
+            comped: %Schema{type: :boolean}
           },
           required: [:outcome]
         }
@@ -1795,73 +1794,20 @@ defmodule FountainWeb.Schemas do
         data: %Schema{
           type: :object,
           properties: %{
-            status: %Schema{
-              type: :string,
-              enum: ~w(trialing active past_due canceled comped),
-              nullable: true
-            },
-            trial_ends_at: %Schema{type: :string, format: :"date-time", nullable: true},
-            current_period_start: %Schema{
-              type: :string,
-              format: :"date-time",
-              nullable: true,
+            sandbox_cap: %Schema{
+              type: :integer,
               description:
-                "Start of the period Stripe is invoicing. Null for a comped " <>
-                  "account, a deployment without Stripe, and any subscription " <>
-                  "that has not sent a webhook since this field existed."
-            },
-            current_period_end: %Schema{type: :string, format: :"date-time", nullable: true},
-            cancel_at_period_end: %Schema{
-              type: :boolean,
-              description: "Access continues until current_period_end."
+                "How many sandboxes this account may run at once: an admin override, " <>
+                  "or what the balance funds (ADR 0031)."
             },
             has_stripe_customer: %Schema{type: :boolean},
-            plan: %Schema{
-              type: :object,
-              description: "The account's plan and what it entitles them to.",
-              properties: %{
-                slug: %Schema{type: :string, enum: Fountain.Plans.slugs()},
-                name: %Schema{type: :string},
-                monthly_cents: %Schema{type: :integer},
-                concurrent_sandboxes: %Schema{
-                  type: :integer,
-                  description: "The plan's concurrency cap."
-                },
-                included_credit_cents: %Schema{
-                  type: :integer,
-                  description:
-                    "Credit the plan puts into the balance at the start of each " <>
-                      "billing period, in cents. Unused plan credit expires with the period."
-                },
-                sandbox_limit: %Schema{
-                  type: :integer,
-                  description:
-                    "The cap actually enforced for this account. Differs from " <>
-                      "concurrent_sandboxes when an operator has set an override."
-                },
-                team_contacts: %Schema{
-                  type: :integer,
-                  description: "Most teammate contacts this account may hold at once."
-                }
-              }
-            },
             period: %Schema{
               type: :object,
-              description:
-                "The window the usage numbers cover: the period Stripe is " <>
-                  "invoicing, or the current calendar month when there is no " <>
-                  "such period.",
+              description: "The calendar month the usage numbers cover.",
               properties: %{
                 start: %Schema{type: :string, format: :"date-time"},
                 end: %Schema{type: :string, format: :"date-time"},
-                source: %Schema{
-                  type: :string,
-                  enum: ~w(subscription calendar_month),
-                  description:
-                    "`calendar_month` means these numbers do not line up with " <>
-                      "an invoice — the account is comped, self-hosted, or has " <>
-                      "not reported a period yet."
-                }
+                source: %Schema{type: :string, enum: ~w(calendar_month)}
               }
             },
             credits: %Schema{
@@ -1924,7 +1870,7 @@ defmodule FountainWeb.Schemas do
               }
             }
           },
-          required: [:status, :usage]
+          required: [:usage]
         }
       },
       required: [:data]
@@ -3226,13 +3172,10 @@ defmodule FountainWeb.Schemas do
           description: "Wizard position. Only `completed` means anything to an API client."
         },
         onboarding_completed: %Schema{type: :boolean},
-        subscription_status: %Schema{
-          type: :string,
-          nullable: true,
-          description: "Always null when billing is disabled on the instance (#480)."
-        }
+        comped: %Schema{type: :boolean, nullable: true, description: "Null when billing is off."},
+        expires_at: %Schema{type: :string, format: :"date-time", nullable: true}
       },
-      required: [:id, :email, :role, :email_verified]
+      required: [:id, :name, :prefix, :created_at]
     })
   end
 

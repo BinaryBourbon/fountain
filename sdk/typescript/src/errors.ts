@@ -211,7 +211,10 @@ export function errorForStatus(
     case "sandbox_quota_exceeded":
       return new QuotaExceededError(message, init);
     case "subscription_required":
+    case "insufficient_credits":
       return new SubscriptionRequiredError(message, init);
+    case "fleet_full":
+      return new NotReadyError(message, init);
   }
 
   switch (status) {

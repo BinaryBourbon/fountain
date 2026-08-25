@@ -57,10 +57,7 @@ defmodule FountainWeb.AdminLive.UserDetail do
 
   @impl true
   def handle_info(:load_invoices, socket) do
-    case Fountain.Billing.list_invoices(socket.assigns.user) do
-      {:ok, invoices} -> {:noreply, assign(socket, :invoices, invoices)}
-      {:error, _reason} -> {:noreply, assign(socket, :invoices, :error)}
-    end
+    {:noreply, assign(socket, :invoices, [])}
   end
 
   # Ownership context for the _unsafe_ call below: this is an admin surface
@@ -112,10 +109,12 @@ defmodule FountainWeb.AdminLive.UserDetail do
             :if={@billing_enabled}
             class={[
               "inline-flex items-center rounded px-1.5 py-0.5 font-medium border",
-              subscription_status_color(@user.subscription_status)
+              account_badge_class(@user.comped)
             ]}
           >
-            {@user.subscription_status}
+            {if @user.comped,
+              do: "comped",
+              else: Fountain.Credits.format_cents(@user.credit_balance_cents)}
           </span>
           <span
             :if={is_nil(@user.email_verified_at)}
@@ -150,24 +149,6 @@ defmodule FountainWeb.AdminLive.UserDetail do
             last active {if @last_activity_at, do: format_date(@last_activity_at), else: "—"}
           </div>
         </div>
-        <div :if={@billing_enabled} class="bg-white rounded shadow border border-zinc-200 px-4 py-3">
-          <div class="text-xs text-zinc-500">Trial / period</div>
-          <div class="text-sm font-medium">
-            {cond do
-              @user.subscription_status == "trialing" && @user.trial_ends_at ->
-                "trial ends #{format_date(@user.trial_ends_at)}"
-
-              @user.cancel_at_period_end && @user.current_period_end ->
-                "access until #{format_date(@user.current_period_end)}"
-
-              true ->
-                "—"
-            end}
-          </div>
-          <div class="text-xs text-zinc-500">
-            onboarding {@user.onboarding_state}
-          </div>
-        </div>
         <div
           :if={not @billing_enabled}
           class="bg-white rounded shadow border border-zinc-200 px-4 py-3"
@@ -188,7 +169,7 @@ defmodule FountainWeb.AdminLive.UserDetail do
           <div class="text-xs text-zinc-500">
             active / limit · {if @user.sandbox_limit_override,
               do: "override",
-              else: "#{Fountain.Plans.resolve(@user.plan).name} plan"}
+              else: "what the balance funds"}
           </div>
         </div>
         <div :if={@credits.active?} class="bg-white rounded shadow border border-zinc-200 px-4 py-3">

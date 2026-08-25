@@ -1,26 +1,13 @@
 defmodule FountainWeb.BillingApiJSON do
   @moduledoc false
 
-  def show(%{user: user, usage: usage, credits: credits, period: period}) do
+  def show(%{user: user, usage: usage, credits: credits, sandbox_cap: cap, period: period}) do
     %{
       data: %{
-        status: user.subscription_status,
-        plan: plan_data(user),
-        trial_ends_at: user.trial_ends_at,
-        current_period_start: user.current_period_start,
-        current_period_end: user.current_period_end,
-        # Only an active subscription can be pending cancellation; once the
-        # `.deleted` event lands the status is canceled and the flag clears.
-        cancel_at_period_end:
-          user.subscription_status == "active" and user.cancel_at_period_end == true,
+        comped: user.comped,
         has_stripe_customer: user.stripe_customer_id not in [nil, ""],
-        # `source` is not decoration: `calendar_month` means these numbers
-        # cover a window the customer is not invoiced over, which a client
-        # showing an allowance has to be able to say.
+        sandbox_cap: cap,
         period: %{start: period.start, end: period.end, source: period.source},
-        # The prepaid balance (ADR 0030), or null while the deployment has
-        # not started burning — a client must not render "$0.00" for an
-        # instance that has no ledger in play.
         credits: credits_data(credits),
         usage: %{
           conversations: usage.conversations,
@@ -50,23 +37,6 @@ defmodule FountainWeb.BillingApiJSON do
       purchased_cents: c.purchased_cents,
       turn_hour_cents: c.turn_hour_cents,
       packs_cents: Fountain.Credits.packs()
-    }
-  end
-
-  # `concurrent_sandboxes` is the plan's number; `sandbox_limit` is what is
-  # actually enforced for this account. They differ when an operator has set
-  # an override, and a client showing "3 of 5 running" needs the second one.
-  defp plan_data(user) do
-    plan = Fountain.Plans.resolve(user.plan)
-
-    %{
-      slug: plan.slug,
-      name: plan.name,
-      monthly_cents: plan.monthly_cents,
-      concurrent_sandboxes: plan.concurrent_sandboxes,
-      included_credit_cents: plan.included_credit_cents,
-      sandbox_limit: Fountain.Quotas.sandbox_limit_for(user),
-      team_contacts: plan.team_contacts
     }
   end
 end

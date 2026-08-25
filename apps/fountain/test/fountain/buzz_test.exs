@@ -388,7 +388,8 @@ defmodule Fountain.BuzzTest do
       assert String.starts_with?(env["FOUNTAIN_API_KEY"], "ftn_")
 
       # That key is real, sprite-scoped, and owned by the identity's user.
-      assert {:ok, ^user, key} = Accounts.authenticate_api_key(env["FOUNTAIN_API_KEY"])
+      assert {:ok, %{id: user_id}, key} = Accounts.authenticate_api_key(env["FOUNTAIN_API_KEY"])
+      assert user_id == user.id
       assert key.scopes == ["sprite"]
 
       # The launch reports the key id so the caller can revoke it on stop.

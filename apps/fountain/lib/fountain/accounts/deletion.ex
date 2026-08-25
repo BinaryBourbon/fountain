@@ -61,7 +61,7 @@ defmodule Fountain.Accounts.Deletion do
 
   alias Fountain.Accounts.User
   alias Fountain.Conversations.{ConversationServer, Sandbox}
-  alias Fountain.{Audit, Billing, Conversations, Repo}
+  alias Fountain.{Audit, Conversations, Repo}
 
   # Includes `suspended`: parked sprites are excluded from the concurrency
   # quota but still exist at sprites.dev, and deletion nilifies user_id — a
@@ -124,25 +124,10 @@ defmodule Fountain.Accounts.Deletion do
 
   # ── stripe ────────────────────────────────────────────────────────────────
 
-  defp cancel_billing(%User{stripe_customer_id: nil}), do: :ok
-
-  defp cancel_billing(%User{} = user) do
-    if Billing.enabled?() do
-      case Billing.cancel_subscriptions(user) do
-        {:ok, _count} ->
-          :ok
-
-        {:error, reason} ->
-          # Hard stop. Deleting the local account while Stripe keeps charging is
-          # worse than refusing to delete, and it is not recoverable by the user
-          # — they would no longer have an account to log into and cancel from.
-          Logger.error("account deletion aborted for #{user.id}: #{inspect(reason)}")
-          {:error, {:stripe, reason}}
-      end
-    else
-      :ok
-    end
-  end
+  # There is no subscription to cancel (ADR 0031): a customer with no open
+  # payment is nothing Stripe keeps charging. The customer object stays for
+  # the refund trail.
+  defp cancel_billing(%User{}), do: :ok
 
   # ── sprites ───────────────────────────────────────────────────────────────
 

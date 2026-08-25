@@ -42,7 +42,7 @@ defmodule Fountain.Credits.RentTest do
     switch(pricing_since: @since)
     assert Rent.month_cents() == 0
     refute Rent.charging?()
-    user = insert_active_user()
+    user = insert_empty_user()
     assert {:ok, :free} = Rent.charge(contact(user), ~U[2026-08-01 00:00:00Z])
     assert %{charged: 0, reminded: 0, released: 0} = Rent.collect(now: ~U[2026-08-10 00:00:00Z])
   end
@@ -52,28 +52,29 @@ defmodule Fountain.Credits.RentTest do
     assert Rent.add_month(~U[2026-12-15 00:00:00Z]) == ~U[2027-01-15 00:00:00Z]
   end
 
-  describe "with a price and enforcement off" do
+  describe "with a price and a funded account" do
     setup do
-      switch(pricing_since: @since, enforce: false, number_cents: 300, inbox_cents: 200)
+      switch(pricing_since: @since, number_cents: 300, inbox_cents: 200)
       :ok
     end
 
+    # The opening credit ($10) funds two months of rent.
     test "charge takes a month up front, once per period, and moves the paid-through date" do
-      user = insert_active_user()
+      user = insert_verified_user()
       c = contact(user)
       start = ~U[2026-08-05 10:00:00Z]
 
       assert {:ok, %Contact{rent_paid_through: ~U[2026-09-05 10:00:00Z]}} = Rent.charge(c, start)
-      assert Credits.balance(user.id) == -500
-      [entry] = Credits.list_entries(user.id)
-      assert entry.reason == "burn_rent" and entry.resource_id == c.id
+      assert Credits.balance(user.id) == 500
+      [entry] = Credits.list_entries(user.id) |> Enum.filter(&(&1.reason == "burn_rent"))
+      assert entry.resource_id == c.id
 
       assert {:ok, :duplicate, _} = Rent.charge(c, start)
-      assert Credits.balance(user.id) == -500
+      assert Credits.balance(user.id) == 500
     end
 
     test "collect charges every contact whose month is up, starting a never-charged one now" do
-      user = insert_active_user()
+      user = insert_verified_user()
       fresh = contact(user)
       due = contact(user, %{rent_paid_through: ~U[2026-08-01 00:00:00Z]})
       paid = contact(user, %{rent_paid_through: ~U[2026-09-01 00:00:00Z]})
@@ -82,7 +83,7 @@ defmodule Fountain.Credits.RentTest do
       assert Repo.reload!(fresh).rent_paid_through == ~U[2026-09-10 00:00:00Z]
       assert Repo.reload!(due).rent_paid_through == ~U[2026-09-01 00:00:00Z]
       assert Repo.reload!(paid).rent_paid_through == ~U[2026-09-01 00:00:00Z]
-      assert Credits.balance(user.id) == -1000
+      assert Credits.balance(user.id) == 0
 
       assert %{charged: 0} = Rent.collect(now: ~U[2026-08-11 00:00:00Z])
     end
@@ -95,14 +96,14 @@ defmodule Fountain.Credits.RentTest do
     end
 
     test "provisioning is refused below a month, and allowed at it" do
-      user = insert_active_user()
+      user = insert_empty_user()
       assert {:error, :insufficient_credits} = Rent.check_provision(user.id)
       {:ok, _} = Credits.grant(user.id, 500, "purchase", idempotency_key: "p")
       assert :ok = Rent.check_provision(user.id)
     end
 
     test "a short balance leaves the month unpaid and starts the grace" do
-      user = insert_active_user()
+      user = insert_empty_user()
       c = contact(user, %{rent_paid_through: ~U[2026-08-01 00:00:00Z]})
       now = ~U[2026-08-02 00:00:00Z]
 
@@ -112,7 +113,7 @@ defmodule Fountain.Credits.RentTest do
     end
 
     test "grace: reminders on day 0, 3 and 6; a top-up pays; release on day 7" do
-      user = insert_active_user()
+      user = insert_empty_user()
       c = contact(user, %{rent_paid_through: ~U[2026-08-01 00:00:00Z]})
       day0 = ~U[2026-08-02 00:00:00Z]
 
@@ -149,7 +150,7 @@ defmodule Fountain.Credits.RentTest do
     end
 
     test "day 7 with no top-up releases the contact" do
-      user = insert_active_user()
+      user = insert_empty_user()
 
       c =
         contact(user, %{
@@ -175,7 +176,7 @@ defmodule Fountain.Credits.RentTest do
 
   test "the rent email is dropped once the contact is paid or gone" do
     switch(pricing_since: @since, number_cents: 300, inbox_cents: 200)
-    user = insert_active_user()
+    user = insert_empty_user()
     c = contact(user, %{rent_due_at: ~U[2026-08-02 00:00:00Z]})
     test = self()
 

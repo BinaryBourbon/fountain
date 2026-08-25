@@ -237,8 +237,8 @@ defmodule FountainWeb.ConversationControllerTest do
     end
   end
 
-  describe "subscription gate" do
-    test "POST /api/conversations/:id/prompts returns 402 when cancelled", %{
+  describe "credit gate" do
+    test "POST /api/conversations/:id/prompts returns 402 when out of credit", %{
       conn: conn,
       user: user,
       raw_key: raw_key
@@ -248,7 +248,7 @@ defmodule FountainWeb.ConversationControllerTest do
       conv = insert_conversation(user_id: user.id)
 
       stub(ConversationServer, :send_prompt, fn _id, _prompt, _images, _opts ->
-        {:error, :subscription_required}
+        {:error, :insufficient_credits}
       end)
 
       conn =
@@ -257,11 +257,11 @@ defmodule FountainWeb.ConversationControllerTest do
         |> post_json("/api/conversations/#{conv.id}/prompts", %{"prompt" => "hi"})
 
       body = json_response(conn, 402)
-      assert body["error"] == "subscription_required"
+      assert body["error"] == "insufficient_credits"
       assert body["upgrade_url"] == "/account/billing"
     end
 
-    test "POST /api/conversations returns 402 when cancelled", %{
+    test "POST /api/conversations returns 402 when out of credit", %{
       conn: conn,
       user: user,
       raw_key: raw_key
@@ -269,16 +269,16 @@ defmodule FountainWeb.ConversationControllerTest do
       agent = insert_agent(user_id: user.id)
 
       {:ok, _} =
-        user
-        |> Fountain.Accounts.User.billing_changeset(%{subscription_status: "canceled"})
-        |> Fountain.Repo.update()
+        Fountain.Credits.debit(user.id, Fountain.Credits.balance(user.id) + 1, "burn_turn",
+          idempotency_key: "drain-#{user.id}"
+        )
 
       conn =
         conn
         |> authed_with_key(raw_key)
         |> post_json("/api/conversations", %{"agent_id" => agent.id})
 
-      assert json_response(conn, 402)["error"] == "subscription_required"
+      assert json_response(conn, 402)["error"] == "insufficient_credits"
     end
   end
 
@@ -290,7 +290,7 @@ defmodule FountainWeb.ConversationControllerTest do
     } do
       agent = insert_agent(user_id: user.id)
 
-      limit = Fountain.Quotas.default_limit()
+      limit = Fountain.Quotas.sandbox_limit(user.id)
       for _ <- 1..limit, do: insert_sandbox(user_id: user.id, status: "ready")
 
       conn =
@@ -390,12 +390,16 @@ defmodule FountainWeb.ConversationControllerTest do
   end
 
   describe "POST /api/conversations" do
-    test "returns 402 when user has a canceled subscription", %{
+    test "returns 402 when the balance is gone", %{
       conn: conn,
       user: user,
       raw_key: raw_key
     } do
-      Fountain.Repo.update!(Ecto.Changeset.change(user, subscription_status: "canceled"))
+      {:ok, _} =
+        Fountain.Credits.debit(user.id, Fountain.Credits.balance(user.id) + 1, "burn_turn",
+          idempotency_key: "drain-#{user.id}"
+        )
+
       agent = insert_agent(user_id: user.id)
 
       conn =

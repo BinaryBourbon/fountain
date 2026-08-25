@@ -25,62 +25,61 @@ defmodule Fountain.CreditsEnforcementTest do
     on_exit(fn -> Application.put_env(:fountain, :credits, cfg) end)
   end
 
+  # The opening credit burned away: an account that cannot spend.
+  defp drained(user) do
+    case Credits.balance(user.id) do
+      0 ->
+        user
+
+      cents ->
+        {:ok, _} = Credits.debit(user.id, cents, "burn_turn", idempotency_key: "drain-#{user.id}")
+    end
+
+    Repo.reload!(user)
+  end
+
   defp subscriber(attrs \\ %{}) do
-    user = insert_active_user()
+    user = insert_empty_user()
 
     {:ok, user} =
       user
-      |> User.billing_changeset(
-        Map.merge(%{plan: "solo", stripe_customer_id: "cus_#{user.id}"}, attrs)
-      )
+      |> User.billing_changeset(Map.merge(%{stripe_customer_id: "cus_#{user.id}"}, attrs))
       |> Repo.update()
 
     user
   end
 
-  describe "check_spend/1 with enforcement off" do
-    setup do
-      switch(pricing_since: @since, enforce: false)
-      :ok
-    end
-
+  describe "check_spend/1 with billing off" do
     test "a zero balance refuses nothing" do
+      Application.put_env(:fountain, :billing_enabled, false)
+      on_exit(fn -> Application.put_env(:fountain, :billing_enabled, true) end)
       user = subscriber()
       refute Credits.enforcing?()
       assert :ok = Credits.gate(user)
       assert :ok = Billing.check_spend(user)
-      assert {:error, :insufficient_credits} = Credits.check_balance(user)
     end
   end
 
-  describe "check_spend/1 with enforcement on" do
-    setup do
-      switch(pricing_since: @since, enforce: true)
-      :ok
-    end
-
-    test "zero refuses, positive passes, subscription comes first" do
-      user = subscriber()
+  describe "check_spend/1 with billing on" do
+    test "zero refuses, positive passes" do
+      user = drained(subscriber())
       assert Credits.enforcing?()
       assert {:error, :insufficient_credits} = Billing.check_spend(user)
       assert {:error, :insufficient_credits} = Billing.check_spend(user.id)
 
       {:ok, _} = Credits.grant(user.id, 1, "purchase", idempotency_key: "p")
       assert :ok = Billing.check_spend(user.id)
-
-      canceled = subscriber(%{subscription_status: "canceled"})
-      assert {:error, :subscription_required} = Billing.check_spend(canceled)
     end
 
     test "billing off funds the ceiling, whatever the balance" do
       Application.put_env(:fountain, :billing_enabled, false)
       on_exit(fn -> Application.put_env(:fountain, :billing_enabled, true) end)
-      assert Quotas.sandbox_limit(insert_active_user().id) == Quotas.settings().cap_ceiling
+      assert Quotas.sandbox_limit(insert_empty_user().id) == Quotas.settings().cap_ceiling
     end
 
     test "comped and billing-off never refuse" do
       # No Stripe customer, so comping cancels nothing upstream.
-      {:ok, comped} = Billing.comp_account(insert_active_user())
+      {:ok, comped} = Billing.comp_account(insert_empty_user())
       assert :ok = Billing.check_spend(comped)
 
       Application.put_env(:fountain, :billing_enabled, false)
@@ -131,46 +130,10 @@ defmodule Fountain.CreditsEnforcementTest do
     end
   end
 
-  describe "the renewal grant" do
-    setup do
-      switch(pricing_since: @since, enforce: false)
-      :ok
-    end
-
-    test "a new period on the subscription webhook grants the tier at once" do
-      user = subscriber(%{stripe_subscription_id: "sub_r"})
-      # A period that contains now: the grant is only due inside the period.
-      ps = DateTime.utc_now() |> DateTime.add(-5 * 86_400, :second) |> DateTime.truncate(:second)
-      pe = DateTime.add(ps, 30 * 86_400, :second)
-
-      event = %Stripe.Event{
-        id: "evt_renew_#{user.id}",
-        type: "customer.subscription.updated",
-        created: DateTime.utc_now() |> DateTime.to_unix(),
-        data: %{
-          object: %{
-            id: "sub_r",
-            customer: user.stripe_customer_id,
-            status: "active",
-            trial_end: nil,
-            cancel_at_period_end: false,
-            current_period_start: DateTime.to_unix(ps),
-            current_period_end: DateTime.to_unix(pe)
-          }
-        }
-      }
-
-      assert {:ok, %User{current_period_start: ^ps}} = Billing.handle_event(event)
-      assert Credits.balance(user.id) == 1000
-      [entry] = Credits.list_entries(user.id)
-      assert entry.reason == "grant_tier" and entry.expires_at == pe
-    end
-  end
-
   describe "the admin grant" do
     setup do
       switch(pricing_since: @since, enforce: false)
-      admin = insert_verified_user()
+      admin = insert_empty_user()
       {:ok, admin} = Accounts.update_user_role(admin, "admin")
       {_rec, key} = insert_api_key(admin)
       %{admin: admin, key: key}
@@ -220,9 +183,8 @@ defmodule Fountain.CreditsEnforcementTest do
       :ok
     end
 
-    test "the runway line is 20% of the tier grant or $2" do
+    test "the runway line is 20% of the opening grant or $2" do
       assert CreditsEmail.runway_line(subscriber()) == 200
-      assert CreditsEmail.runway_line(subscriber(%{plan: "scale"})) == 1000
     end
 
     test "notify_after_burn enqueues low then exhausted, once each" do

@@ -20,16 +20,12 @@ defmodule Fountain.AccountsAdminListingTest do
       assert %{users: [], total: 0} = Accounts.list_users_admin(search: "_nderscore@example")
     end
 
-    test "filters by subscription status" do
-      trialing = insert_verified_user()
+    test "filters by comped" do
+      _paying = insert_verified_user()
+      comped = Repo.update!(Ecto.Changeset.change(insert_verified_user(), comped: true))
 
-      _canceled =
-        Repo.update!(
-          Ecto.Changeset.change(insert_verified_user(), subscription_status: "canceled")
-        )
-
-      %{users: users} = Accounts.list_users_admin(status: "trialing")
-      assert Enum.map(users, & &1.id) == [trialing.id]
+      %{users: users} = Accounts.list_users_admin(comped: true)
+      assert Enum.map(users, & &1.id) == [comped.id]
     end
 
     test "filters by role" do
@@ -60,13 +56,12 @@ defmodule Fountain.AccountsAdminListingTest do
 
       match =
         Repo.update!(
-          Ecto.Changeset.change(
-            insert_verified_user(%{email: "combo-b@example.com"}),
-            subscription_status: "canceled"
+          Ecto.Changeset.change(insert_verified_user(%{email: "combo-b@example.com"}),
+            comped: true
           )
         )
 
-      %{users: users, total: 1} = Accounts.list_users_admin(search: "combo", status: "canceled")
+      %{users: users, total: 1} = Accounts.list_users_admin(search: "combo", comped: true)
       assert Enum.map(users, & &1.id) == [match.id]
     end
   end
@@ -97,23 +92,6 @@ defmodule Fountain.AccountsAdminListingTest do
                Accounts.list_users_admin(sort: "email", dir: "asc")
 
       assert {first, second} == {a.id, b.id}
-    end
-
-    test "sorts by trial end" do
-      later =
-        Repo.update!(
-          Ecto.Changeset.change(insert_verified_user(), trial_ends_at: ~U[2027-06-01 00:00:00Z])
-        )
-
-      sooner =
-        Repo.update!(
-          Ecto.Changeset.change(insert_verified_user(), trial_ends_at: ~U[2027-01-01 00:00:00Z])
-        )
-
-      assert %{users: [%{id: first}, %{id: second}]} =
-               Accounts.list_users_admin(sort: "trial_end", dir: "asc")
-
-      assert {first, second} == {sooner.id, later.id}
     end
 
     test "sorts by last activity, users without any activity always last" do

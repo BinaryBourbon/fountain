@@ -3,9 +3,9 @@ type: ADR
 title: "Plans priced on concurrent sandboxes, with teammate contacts as a per-unit add-on"
 description: "Three public tiers (Solo/Team/Scale) that differ only in the concurrent-sandbox cap Quotas already enforces, a closed `legacy` plan carrying Team capacity at the old flat price, users.sandbox_limit_override demoted to an operator lever, and teammate email/phone billed as a quantity subscription item rather than folded into a tier."
 tags: [billing, entitlements, quotas, team-comms]
-status: stable
+status: deprecated
 adr: "0026"
-adr_status: "Accepted"
+adr_status: "Superseded by 0031"
 date: 2026-08-22
 generated: { by: human:jhgaylor, at: 2026-08-22T06:00:00-04:00 }
 verified: { by: human:jhgaylor, at: 2026-08-22T06:00:00-04:00 }

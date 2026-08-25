@@ -26,7 +26,7 @@ defmodule Fountain.Funnel do
     or a `sandbox_provisioned` usage event. The union matters: conversations
     can be deleted, usage events predate nothing after metering (#213) — either
     alone under-counts.
-  - **subscribed** — `subscription_status` in active/past_due. Comped accounts
+  - **funded** — holds a positive credit balance (ADR 0031). Comped accounts
     are operator-granted, not conversions, and are excluded; converted-then-
     canceled users drop out of this stage (a churn view is #286's job).
 
@@ -43,8 +43,6 @@ defmodule Fountain.Funnel do
   alias Fountain.Billing.UsageEvent
   alias Fountain.Conversations.Conversation
   alias Fountain.Repo
-
-  @subscribed_statuses ~w(active past_due)
 
   @type stage :: %{
           key: atom(),
@@ -75,7 +73,7 @@ defmodule Fountain.Funnel do
             verified_at: u.email_verified_at,
             onboarded_at: u.onboarding_completed_at,
             onboarding_state: u.onboarding_state,
-            subscription_status: u.subscription_status
+            credit_balance_cents: u.credit_balance_cents
           }
       )
 
@@ -92,7 +90,7 @@ defmodule Fountain.Funnel do
     # keeps its shape — the admin panel hides the tile (#481).
     subscribed =
       if Fountain.Billing.enabled?(),
-        do: Enum.filter(users, &(&1.subscription_status in @subscribed_statuses)),
+        do: Enum.filter(users, &(&1.credit_balance_cents > 0)),
         else: []
 
     stages = [

@@ -72,14 +72,21 @@ defmodule Fountain.QuotasTest do
       user
     end
 
-    test "nothing in the balance funds the floor" do
-      assert Quotas.sandbox_limit(insert_active_user().id) == 2
+    # Every verified account holds the $10 opening grant: five sandboxes.
+    test "the opening grant funds five; nothing in the balance funds the floor" do
+      user = insert_active_user()
+      assert Quotas.sandbox_limit(user.id) == 5
+
+      {:ok, _} =
+        Fountain.Credits.debit(user.id, 1_000, "burn_turn", idempotency_key: "drain-#{user.id}")
+
+      assert Quotas.sandbox_limit(user.id) == 2
     end
 
     test "the cap follows the balance, one sandbox per reserve" do
-      assert Quotas.sandbox_limit(with_balance(insert_active_user(), 1_000).id) == 5
-      assert Quotas.sandbox_limit(with_balance(insert_active_user(), 2_199).id) == 10
-      assert Quotas.sandbox_limit(with_balance(insert_active_user(), 100).id) == 2
+      assert Quotas.sandbox_limit(with_balance(insert_active_user(), 1_000).id) == 10
+      assert Quotas.sandbox_limit(with_balance(insert_active_user(), 1_199).id) == 10
+      assert Quotas.sandbox_limit(with_balance(insert_active_user(), 100).id) == 5
     end
 
     test "the ceiling bounds it however large the balance" do
@@ -113,7 +120,7 @@ defmodule Fountain.QuotasTest do
       user = with_balance(insert_active_user(), 1_000)
       {:ok, user} = Fountain.Accounts.update_sandbox_limit(user, 1)
       {:ok, user} = Fountain.Accounts.update_sandbox_limit(user, nil)
-      assert Quotas.sandbox_limit(user.id) == 5
+      assert Quotas.sandbox_limit(user.id) == 10
     end
 
     test "an unknown user gets the floor rather than being unlimited" do
@@ -150,13 +157,20 @@ defmodule Fountain.QuotasTest do
     # The admin table renders it per row and must not query per row, so it has
     # to agree with the querying version for every combination that matters.
     test "agrees with sandbox_limit/1 without touching the database" do
-      for plan <- ["solo", "team", "scale", "legacy", nil],
+      for cents <- [0, 1_000, 5_000, 100_000],
           override <- [nil, 0, 25] do
-        user = insert_active_user(plan: plan)
-        {:ok, user} = Fountain.Accounts.update_sandbox_limit(user, override)
+        user = insert_active_user()
+
+        if cents > 0,
+          do:
+            {:ok, _} =
+              Fountain.Credits.grant(user.id, cents, "purchase", idempotency_key: "q-#{user.id}")
+
+        {:ok, user} =
+          Fountain.Accounts.update_sandbox_limit(Fountain.Repo.reload!(user), override)
 
         assert Quotas.sandbox_limit_for(user) == Quotas.sandbox_limit(user.id),
-               "plan=#{inspect(plan)} override=#{inspect(override)}"
+               "cents=#{cents} override=#{inspect(override)}"
       end
     end
   end
@@ -175,7 +189,7 @@ defmodule Fountain.QuotasTest do
     # break six unrelated tests.
     test "denies at the cap" do
       user = insert_active_user()
-      limit = Quotas.default_limit()
+      limit = Quotas.sandbox_limit(user.id)
       for _ <- 1..limit, do: insert_sandbox(user_id: user.id, status: "ready")
 
       assert {:error, {:sandbox_quota_exceeded, %{count: ^limit, limit: ^limit}}} =
@@ -184,7 +198,7 @@ defmodule Fountain.QuotasTest do
 
     test "denies above the cap" do
       user = insert_active_user()
-      limit = Quotas.default_limit()
+      limit = Quotas.sandbox_limit(user.id)
       over = limit + 2
       for _ <- 1..over, do: insert_sandbox(user_id: user.id, status: "ready")
 
@@ -195,7 +209,9 @@ defmodule Fountain.QuotasTest do
     test "one tenant at its cap does not affect another" do
       user = insert_active_user()
       other = insert_active_user()
-      for _ <- 1..Quotas.default_limit(), do: insert_sandbox(user_id: user.id, status: "ready")
+
+      for _ <- 1..Quotas.sandbox_limit(user.id),
+          do: insert_sandbox(user_id: user.id, status: "ready")
 
       assert {:error, _} = Quotas.check_sandbox_quota(user.id)
       assert :ok = Quotas.check_sandbox_quota(other.id)
@@ -205,7 +221,7 @@ defmodule Fountain.QuotasTest do
       user = insert_active_user()
 
       [replacing | _] =
-        for _ <- 1..Quotas.default_limit(),
+        for _ <- 1..Quotas.sandbox_limit(user.id),
             do: insert_sandbox(user_id: user.id, status: "ready")
 
       assert {:error, _} = Quotas.check_sandbox_quota(user.id)
@@ -214,7 +230,7 @@ defmodule Fountain.QuotasTest do
 
     test "a raised cap admits more" do
       user = insert_active_user()
-      limit = Quotas.default_limit()
+      limit = Quotas.sandbox_limit(user.id)
       for _ <- 1..limit, do: insert_sandbox(user_id: user.id, status: "ready")
       assert {:error, _} = Quotas.check_sandbox_quota(user.id)
 
@@ -253,7 +269,7 @@ defmodule Fountain.QuotasTest do
 
     test "refuses at the cap and creates nothing" do
       user = insert_active_user()
-      limit = Quotas.default_limit()
+      limit = Quotas.sandbox_limit(user.id)
       for _ <- 1..limit, do: insert_sandbox(user_id: user.id, status: "ready")
 
       assert {:error, {:sandbox_quota_exceeded, %{count: ^limit, limit: ^limit}}} =
@@ -281,7 +297,7 @@ defmodule Fountain.QuotasTest do
       user = insert_active_user()
 
       sandboxes =
-        for _ <- 1..Quotas.default_limit(),
+        for _ <- 1..Quotas.sandbox_limit(user.id),
             do: insert_sandbox(user_id: user.id, status: "ready")
 
       replacing = hd(sandboxes)
@@ -300,7 +316,7 @@ defmodule Fountain.QuotasTest do
 
     test "raises at the cap with the counts in the message" do
       user = insert_active_user()
-      limit = Quotas.default_limit()
+      limit = Quotas.sandbox_limit(user.id)
       for _ <- 1..limit, do: insert_sandbox(user_id: user.id, status: "ready")
 
       err =
