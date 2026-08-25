@@ -681,6 +681,21 @@ if github_client_id = System.get_env("GITHUB_OAUTH_CLIENT_ID") do
     client_secret: System.get_env("GITHUB_OAUTH_CLIENT_SECRET")
 end
 
+# Google OAuth client for connections (#1178): a tenant signs in to Google
+# once in the console and Fountain holds the refresh token. Not the sign-in
+# provider — that is GitHub above. Absent stays absent, so the console says
+# the feature is not configured rather than sending anyone to Google with
+# an empty client id.
+case System.get_env("GOOGLE_OAUTH_CLIENT_ID") do
+  blank when blank in [nil, ""] ->
+    :ok
+
+  google_client_id ->
+    config :fountain,
+      google_oauth_client_id: google_client_id,
+      google_oauth_client_secret: System.get_env("GOOGLE_OAUTH_CLIENT_SECRET")
+end
+
 # Stripe (§5.2)
 config :stripity_stripe, api_key: System.get_env("STRIPE_SECRET_KEY")
 

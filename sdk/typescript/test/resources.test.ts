@@ -161,6 +161,42 @@ describe("environments and their secrets", () => {
   });
 });
 
+describe("connections", () => {
+  const CONNECTION = {
+    id: "cccccccc-1111-1111-1111-111111111111",
+    provider: "google",
+    account_email: "me@example.com",
+    scopes: ["openid", "email", "https://www.googleapis.com/auth/gmail.modify"],
+    env_key: "GOOGLE_ACCESS_TOKEN",
+    status: "active",
+    expires_at: null,
+    revoked_at: null,
+    created_at: "2026-08-25T00:00:00Z",
+    updated_at: "2026-08-25T00:00:00Z",
+  };
+
+  test("list, get, providers and delete", async () => {
+    fake.connections = [CONNECTION];
+    const fountain = client();
+
+    const all = await fountain.connections.list();
+    assert.equal(all.length, 1);
+    assert.equal(all[0]?.account_email, "me@example.com");
+
+    const one = await fountain.connections.get(CONNECTION.id);
+    assert.equal(one.env_key, "GOOGLE_ACCESS_TOKEN");
+    assert.equal(one.status, "active");
+
+    const [google] = await fountain.connections.providers();
+    assert.equal(google?.provider, "google");
+    assert.match(String(google?.connect_url), /\/connections\/google\/start$/);
+
+    await fountain.connections.delete(CONNECTION.id);
+    assert.equal(fake.connections.length, 0);
+    await assert.rejects(() => fountain.connections.get(CONNECTION.id), NotFoundError);
+  });
+});
+
 describe("vaults", () => {
   test("create and read back", async () => {
     const fountain = client();

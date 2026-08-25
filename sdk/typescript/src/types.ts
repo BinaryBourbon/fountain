@@ -13,6 +13,8 @@ export type {
   AuthMe,
   Block,
   Catalog,
+  Connection,
+  ConnectionProvider,
   ConversationRecord,
   ConversationTreeNode,
   Environment,

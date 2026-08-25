@@ -3616,4 +3616,88 @@ defmodule FountainWeb.Schemas do
       required: [:email, :message]
     })
   end
+
+  defmodule Connection do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "Connection",
+      description:
+        "A provider account the tenant signed in to once, whose credential " <>
+          "Fountain holds (#1178). Agents get the capability, never the token: " <>
+          "an agent's `mcp_servers` names the connection " <>
+          ~s|(`{"gmail": {"connection": "<id>"}}`) and Fountain serves the Gmail | <>
+          "tools; and the access token is brokered under `env_key` for an MCP " <>
+          "server the tenant runs. Only for accounts the egress broker is on for.",
+      type: :object,
+      properties: %{
+        id: %Schema{type: :string, format: :uuid},
+        provider: %Schema{type: :string, enum: ["google"]},
+        account_email: %Schema{type: :string, description: "The connected account."},
+        scopes: %Schema{type: :array, items: %Schema{type: :string}},
+        env_key: %Schema{
+          type: :string,
+          description:
+            "The env var name the access token is brokered under (`GOOGLE_ACCESS_TOKEN`)."
+        },
+        status: %Schema{
+          type: :string,
+          enum: ["active", "revoked"],
+          description:
+            "`revoked` once the tenant cut it or the provider refused the refresh token; " <>
+              "the row stays so the console can say why the tools stopped. Reconnect to replace it."
+        },
+        expires_at: %Schema{
+          type: :string,
+          format: :"date-time",
+          nullable: true,
+          description: "When the cached access token expires. Refreshed on use."
+        },
+        revoked_at: %Schema{type: :string, format: :"date-time", nullable: true},
+        created_at: %Schema{type: :string, format: :"date-time"},
+        updated_at: %Schema{type: :string, format: :"date-time"}
+      },
+      required: [:id, :provider, :account_email, :scopes, :env_key, :status]
+    })
+  end
+
+  list_response(ConnectionListResponse, of: Connection)
+
+  defmodule ConnectionProvidersResponse do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "ConnectionProvidersResponse",
+      description:
+        "Which providers this deployment can connect, and the URL that starts each flow.",
+      type: :object,
+      properties: %{
+        data: %Schema{
+          type: :array,
+          items: %Schema{
+            type: :object,
+            properties: %{
+              provider: %Schema{type: :string},
+              configured: %Schema{
+                type: :boolean,
+                description: "False when the deployment has no OAuth client for it."
+              },
+              scopes: %Schema{type: :array, items: %Schema{type: :string}},
+              env_key: %Schema{type: :string},
+              connect_url: %Schema{
+                type: :string,
+                description:
+                  "Where to send the account owner, in a browser signed in to the console, " <>
+                    "to connect an account. The flow ends back on the Connections page."
+              }
+            },
+            required: [:provider, :configured, :scopes, :env_key, :connect_url]
+          }
+        }
+      },
+      required: [:data]
+    })
+  end
 end

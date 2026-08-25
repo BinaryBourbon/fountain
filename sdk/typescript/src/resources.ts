@@ -4,6 +4,8 @@ import type {
   Agent,
   AgentInput,
   AgentPatch,
+  Connection,
+  ConnectionProvider,
   Environment,
   EnvironmentInput,
   EnvironmentPatch,
@@ -150,6 +152,42 @@ export class Environments extends Collection<Environment, EnvironmentInput, Envi
   constructor(http: HttpClient, resolver: Resolver) {
     super(http, resolver, "/api/environments", "environment");
     this.secrets = new Secrets(http, resolver, this.path, this.what);
+  }
+}
+
+/**
+ * The provider accounts this tenant has signed in to, whose credentials
+ * Fountain holds (#1178). Connecting one is a browser round trip — send the
+ * account owner to `connect_url` from `providers()` — so there is no `create`
+ * here. An agent uses one by naming it in `mcp_servers`:
+ * `{ gmail: { connection: "<id>" } }`. Only for accounts the egress broker is
+ * on for; elsewhere every call is a `NotFoundError` (`connections_not_enabled`).
+ */
+export class Connections {
+  private readonly http: HttpClient;
+
+  constructor(http: HttpClient) {
+    this.http = http;
+  }
+
+  /** Every connection on the account, active or revoked. Never a token. */
+  async list(): Promise<Connection[]> {
+    return this.http.list<Connection>("/api/connections");
+  }
+
+  /** One connection by id. Unenveloped, as the server answers `show`. */
+  async get(id: string): Promise<Connection> {
+    return this.http.request<Connection>("GET", `/api/connections/${encodeURIComponent(id)}`);
+  }
+
+  /** What this deployment can connect, with the URL that starts each flow. */
+  async providers(): Promise<ConnectionProvider[]> {
+    return this.http.list<ConnectionProvider>("/api/connections/providers");
+  }
+
+  /** Revoke at the provider and delete. Agents that name it get `connection revoked`. */
+  async delete(id: string): Promise<void> {
+    await this.http.request("DELETE", `/api/connections/${encodeURIComponent(id)}`);
   }
 }
 

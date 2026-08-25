@@ -18,7 +18,31 @@ upgrade, is in
 
 ### Added
 
-- None yet.
+- **Connections: sign in to Google once, and agents get Gmail without ever
+  holding the credential** (#1178). For accounts the egress broker is on for,
+  the console's new *Account → Connections* page runs Google's
+  authorization-code flow (`access_type=offline`, `prompt=consent`) and
+  Fountain keeps the refresh token DEK-encrypted like any tenant secret.
+  Two ways an agent uses it, neither of which puts a Google token in a
+  sandbox:
+  - **A Fountain-served Gmail MCP server.** An agent's `mcp_servers` names
+    the connection — `{"gmail": {"connection": "<id>"}}` — and the
+    conversation gets `gmail_search`, `gmail_get_thread`, `gmail_get_message`,
+    `gmail_send`, `gmail_reply`, `gmail_modify_labels` and
+    `gmail_list_labels`, served at `POST /api/mcp/gmail/:conversation_id/:connection_id`
+    and authenticated by the callback token the sandbox already holds. The
+    token is refreshed server-side per call; a revoked connection answers
+    `connection revoked`, not a 401.
+  - **A brokered `GOOGLE_ACCESS_TOKEN`.** The access token is a synthetic
+    secret brokered like an inference key (ADR 0019): the sandbox holds a
+    placeholder, the broker attaches the value as a bearer to
+    `gmail.googleapis.com` / `www.googleapis.com`, and a binding of your own
+    on that name sends it to an MCP server you run instead. Tokens rotate
+    hourly; the conversation server re-uploads a rotated one at the next
+    turn kick, so a shared sandbox (ADR 0023) outlives them.
+  - `GET/DELETE /api/connections`, `GET /api/connections/providers`, in the
+    OpenAPI spec and the TypeScript SDK (`client.connections`). Configured
+    by `GOOGLE_OAUTH_CLIENT_ID` / `GOOGLE_OAUTH_CLIENT_SECRET`.
 
 ### Fixed
 

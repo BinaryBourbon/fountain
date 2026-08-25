@@ -44,6 +44,8 @@ defmodule FountainWeb.SchemaEnumGuardrailTest do
   # list of atoms is stringified first — the domain keeps them as atoms, the
   # wire carries strings.
   @derived %{
+    {FountainWeb.Schemas.Connection, "provider"} => {Fountain.Connections.Connection, :providers},
+    {FountainWeb.Schemas.Connection, "status"} => {Fountain.Connections.Connection, :statuses},
     {FountainWeb.Schemas.AdminRoleRequest, "role"} => {User, :roles},
     {FountainWeb.Schemas.AdminUser, "role"} => {User, :roles},
     {FountainWeb.Schemas.AuthMeResponse, "role"} => {User, :roles},

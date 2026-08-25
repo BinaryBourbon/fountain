@@ -365,6 +365,10 @@ defmodule Fountain.Conversations.ConversationServer do
       # The tenant's enabled bindings by key (gate 1b), loaded once per
       # provision; what the broker's services are built from.
       broker_bindings: %{},
+      # The env var names of the tenant's connections brokered into this
+      # conversation (#1178): their access tokens rotate hourly, so each turn
+      # kick re-reads them and re-prepares the vault when one has changed.
+      connection_keys: [],
       # The environment's networking shape, enforced at the broker (gate 2).
       broker_network: :unrestricted,
       # What the runtime's default_env/2 is handed (gate 3): the real
@@ -581,8 +585,10 @@ defmodule Fountain.Conversations.ConversationServer do
       {:ok, dek, inference_creds} ->
         bindings = broker_bindings(conv.user_id)
 
-        {secrets, brokered} =
-          split_brokered(conv.user_id, merge_secrets(env, vault, dek), bindings)
+        {merged, bindings, connection_keys} =
+          add_connection_secrets(conv.user_id, merge_secrets(env, vault, dek), bindings)
+
+        {secrets, brokered} = split_brokered(conv.user_id, merged, bindings)
 
         {env_creds, brokered, bindings} =
           split_inference(conv.user_id, inference_creds, brokered, bindings)
@@ -597,6 +603,7 @@ defmodule Fountain.Conversations.ConversationServer do
               env_credentials: env_creds,
               brokered: brokered,
               broker_bindings: bindings,
+              connection_keys: connection_keys,
               broker_network: Fountain.Broker.network_for(env)
           }
 
@@ -781,7 +788,12 @@ defmodule Fountain.Conversations.ConversationServer do
         # because nothing dials out without it (ADR 0019 gate 1a).
         with {:ok, state} <- broker_prepare(state),
              sprite_env = build_sprite_env(state, agent, env, secrets, sandbox_url),
-             _ = write_runtime_config(handle, state.runtime_module, agent),
+             _ =
+               write_runtime_config(
+                 handle,
+                 state.runtime_module,
+                 with_connection_servers(agent, state)
+               ),
              _ = write_instructions(handle, runtime, agent),
              # The file is the machine's; the conversation's identity travels as
              # process env on every spawn (`Fountain.Conversations.Identity`).
@@ -1015,6 +1027,12 @@ defmodule Fountain.Conversations.ConversationServer do
 
       {state, _conv} = rotate_callback_api_key(state, conv)
       sprite_env = build_sprite_env(state, agent, env, secrets)
+
+      # The callback token just rotated, and for claude the connection MCP
+      # servers carry it in `.mcp.json` (#1178): rewrite the file so the
+      # next turn's tools authenticate. Idempotent for an agent without one.
+      _ =
+        write_runtime_config(handle, state.runtime_module, with_connection_servers(agent, state))
 
       # A machine provisioned before its tenant was brokered has no CA yet;
       # on one that has it this is an idempotent rewrite. Best effort here:
@@ -1389,6 +1407,87 @@ defmodule Fountain.Conversations.ConversationServer do
       else: {secrets, %{}}
   end
 
+  # A tenant's connections (#1178) contribute their access tokens as
+  # synthetic secrets, brokered like inference keys: the sandbox gets a
+  # placeholder, the broker gets the value with an implicit bearer binding
+  # to the provider's hosts. A tenant's own secret of the same name wins,
+  # as does their own binding on it (which is how the token reaches an MCP
+  # server they run). Only for brokered tenants — without the broker the
+  # token would have to enter the sandbox in the clear, which is the thing
+  # connections exist to avoid.
+  defp add_connection_secrets(user_id, merged, bindings) do
+    if Fountain.Broker.enabled_for?(user_id) do
+      synthetic = Fountain.Connections.synthetic_secrets(user_id)
+
+      {merged, bindings, keys} =
+        Enum.reduce(synthetic, {merged, bindings, []}, fn {key, token}, {m, b, keys} ->
+          if Map.has_key?(m, key) do
+            {m, b, keys}
+          else
+            b =
+              if Map.has_key?(b, key),
+                do: b,
+                else: Map.put(b, key, connection_bindings(key))
+
+            {Map.put(m, key, token), b, [key | keys]}
+          end
+        end)
+
+      {merged, bindings, Enum.sort(keys)}
+    else
+      {merged, bindings, []}
+    end
+  end
+
+  defp connection_bindings(key) do
+    Enum.map(Fountain.Connections.implicit_hosts(key), fn host ->
+      %Fountain.SecretBindings.Binding{
+        key: key,
+        host: host,
+        auth_type: "bearer",
+        headers: %{},
+        enabled: true
+      }
+    end)
+  end
+
+  # Re-read the brokered connection tokens; a rotated one is swapped into
+  # `brokered` and the caller re-prepares the vault. A refresh that fails
+  # leaves the old token in place: the turn runs on it and, if it has
+  # expired, fails at the provider with a reason rather than silently here.
+  defp refresh_connection_secrets(%{connection_keys: []} = state), do: {state, false}
+
+  defp refresh_connection_secrets(%{connection_keys: keys, user_id: user_id} = state) do
+    fresh = user_id |> Fountain.Connections.synthetic_secrets() |> Map.take(keys)
+
+    rotated =
+      Enum.filter(fresh, fn {k, v} -> Map.get(state.brokered, k) != v end)
+
+    if rotated == [] do
+      {state, false}
+    else
+      {%{state | brokered: Map.merge(state.brokered, Map.new(rotated))}, true}
+    end
+  end
+
+  # An agent whose `mcp_servers` names a connection gets the entry rewritten
+  # into the Fountain-served server (#1178), authenticated by the
+  # conversation's callback token. Not for an unbrokered tenant: the entry
+  # is dropped and the agent runs without it.
+  defp with_connection_servers(nil, _state), do: nil
+
+  defp with_connection_servers(%{mcp_servers: servers} = agent, state) when is_map(servers) do
+    token = if Fountain.Broker.enabled_for?(state.user_id), do: state.callback_token
+
+    %{
+      agent
+      | mcp_servers:
+          Fountain.Connections.McpServers.resolve(servers, state.conversation_id, token)
+    }
+  end
+
+  defp with_connection_servers(agent, _state), do: agent
+
   # Only read for a brokered tenant: for everyone else the table is rows
   # nobody consults, and this path stays free of a query.
   defp broker_bindings(user_id) do
@@ -1492,7 +1591,9 @@ defmodule Fountain.Conversations.ConversationServer do
   defp broker_refresh(%{broker: nil} = state), do: state
 
   defp broker_refresh(%{broker: session} = state) do
-    if Fountain.Broker.expiring?(session) do
+    {state, rotated?} = refresh_connection_secrets(state)
+
+    if rotated? or Fountain.Broker.expiring?(session) do
       case Fountain.Broker.prepare(state.conversation_id, state.brokered, state.broker_bindings,
              network: state.broker_network
            ) do
@@ -3300,7 +3401,7 @@ defmodule Fountain.Conversations.ConversationServer do
                     cwd: cwd,
                     images: images,
                     mcp_servers:
-                      Fountain.Runtimes.ACP.mcp_servers(agent) ++
+                      Fountain.Runtimes.ACP.mcp_servers(with_connection_servers(agent, state)) ++
                         buzz_mcp_servers(state) ++
                         team_mcp_servers(state) ++
                         team_comms_mcp_servers(state),

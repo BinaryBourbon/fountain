@@ -111,6 +111,8 @@ at a dead end, with no error to see. Read [Email](guides/operate/email.md).
 |---|---|---|---|
 | `GITHUB_OAUTH_CLIENT_ID` | — | — | Turns the GitHub sign-in button on. Unset, Fountain hides the button, and email and password auth still works. |
 | `GITHUB_OAUTH_CLIENT_SECRET` | — | — | |
+| `GOOGLE_OAUTH_CLIENT_ID` | — | — | Turns the Google connection on, for accounts the egress broker is on for. A tenant connects Gmail once on the Connections page, and Fountain keeps the refresh token. Register a Web client in Google Cloud with the redirect URI `<PUBLIC_URL>/connections/google/callback`, and enable the Gmail API. Unset, the page says the feature is not configured. |
+| `GOOGLE_OAUTH_CLIENT_SECRET` | — | — | |
 
 ## Payment
 

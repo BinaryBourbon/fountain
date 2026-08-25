@@ -322,6 +322,20 @@ defmodule FountainWeb.Router do
     delete "/:id", RunnerController, :delete
   end
 
+  # Connections (#1178): the provider accounts the tenant has signed in to.
+  # Full scope: a conversation-scoped token must not be able to list or cut
+  # the account's connections. Connecting one needs a browser and a session,
+  # so it is not an API operation — `GET /api/connections/providers` says
+  # where to send the owner.
+  scope "/api/connections", FountainWeb do
+    pipe_through [:accepts_json, :api, :require_full_scope]
+
+    get "/", ConnectionController, :index
+    get "/providers", ConnectionController, :providers
+    get "/:id", ConnectionController, :show
+    delete "/:id", ConnectionController, :delete
+  end
+
   # Secret bindings (ADR 0019 gate 1b). Full scope for the same reason as
   # runners: a conversation-scoped token must not be able to redirect the
   # account's credentials to another host.
@@ -422,6 +436,10 @@ defmodule FountainWeb.Router do
     # number (flag `team_comms`). Same transport; the AgentMail/AgentPhone
     # keys stay server-side.
     post "/mcp/team-comms/:conversation_id", TeamCommsMcpController, :handle
+
+    # The Gmail tools for a Google connection the conversation's agent names
+    # (#1178). Same transport; the Google token stays server-side.
+    post "/mcp/gmail/:conversation_id/:connection_id", GmailMcpController, :handle
 
     resources "/environments", EnvironmentController, except: [:new, :edit] do
       resources "/secrets", SecretController, only: [:index, :create, :delete]
@@ -585,6 +603,12 @@ defmodule FountainWeb.Router do
     post "/account/security/password", AccountSecurityController, :change_password
     post "/account/security/email", AccountSecurityController, :request_email_change
 
+    # ── Connections (#1178): the OAuth round trip to a provider. Session-
+    # authenticated so the grant lands on the signed-in account; the page
+    # they start from is ConnectionsLive below ───────────────────────────
+    get "/connections/:provider/start", ConnectionsController, :start
+    get "/connections/:provider/callback", ConnectionsController, :callback
+
     # ── The pages that moved out (#867) ───────────────────────────────────────
     # Conversations and the team roster are their own apps on the API now, and
     # onboarding is the dashboard's own first-run guidance. These paths are in
@@ -637,6 +661,9 @@ defmodule FountainWeb.Router do
 
       # ── Secret bindings at the egress broker (ADR 0019 gate 1b) ────────────────────────────
       live "/account/bindings", SecretBindingsLive.Index, :index
+
+      # ── Connections: provider accounts Fountain holds the credential for (#1178) ────────────
+      live "/account/connections", ConnectionsLive.Index, :index
 
       # ── Outbound webhooks (#700) ───────────────────────────────────────────────────────────
       live "/account/webhooks", WebhooksLive.Index, :index

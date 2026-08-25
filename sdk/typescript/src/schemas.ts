@@ -80,6 +80,10 @@ export type SearchHit = S["SearchHit"];
 /** A node in a conversation's spawn tree. */
 export type ConversationTreeNode = S["ConversationTreeNode"];
 export type Runner = S["Runner"];
+/** A provider account the tenant signed in to once; Fountain holds the credential (#1178). */
+export type Connection = S["Connection"];
+/** A provider this deployment can connect, and the console URL that starts the flow. */
+export type ConnectionProvider = S["ConnectionProvidersResponse"]["data"][number];
 export type Repository = S["Repository"];
 export type ImageInput = S["ImageInput"];
 export type AuthMe = S["AuthMeResponse"];

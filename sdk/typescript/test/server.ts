@@ -64,6 +64,8 @@ export class FakeFountain {
   environments: Record<string, unknown>[] = [
     { id: "bbbbbbbb-1111-1111-1111-111111111111", name: "monorepo" },
   ];
+  /** Connections (#1178), as `GET /api/connections` lists them. */
+  connections: Record<string, unknown>[] = [];
   /** Secrets by `${collection}:${parentId}` → key → value. Never read back out. */
   readonly secrets = new Map<string, Map<string, string>>();
   /** agent_id → the teammate row `/api/team` returns. */
@@ -209,6 +211,35 @@ export class FakeFountain {
     if (path === "/api/search") return json(res, 200, { data: [{ conversation_id: "conv-1", snippet: "hit" }] });
 
     if (path.startsWith("/api/team")) return this.team(req, res, path, url, body);
+
+    // Connections (#1178): list / providers / one / delete. Enveloped like
+    // the real controller. No create — that is a browser round trip.
+    if (path === "/api/connections/providers") {
+      return json(res, 200, {
+        data: [
+          {
+            provider: "google",
+            configured: true,
+            scopes: ["openid", "email", "https://www.googleapis.com/auth/gmail.modify"],
+            env_key: "GOOGLE_ACCESS_TOKEN",
+            connect_url: "https://fountain.test/connections/google/start",
+          },
+        ],
+      });
+    }
+    if (path === "/api/connections") return json(res, 200, { data: this.connections });
+    const connection = /^\/api\/connections\/([^/]+)$/.exec(path);
+    if (connection) {
+      const found = this.connections.find((c) => c.id === connection[1]);
+      if (!found) return json(res, 404, { error: "not_found" });
+      if (req.method === "DELETE") {
+        this.connections = this.connections.filter((c) => c !== found);
+        res.statusCode = 204;
+        res.end();
+        return;
+      }
+      return json(res, 200, found);
+    }
 
     const collection = /^\/api\/(agents|vaults|environments)(?:\/([^/]+))?(?:\/(secrets)(?:\/(.+))?)?$/.exec(path);
     if (collection) {

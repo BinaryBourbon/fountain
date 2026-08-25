@@ -34,6 +34,7 @@ defmodule FountainWeb.AgentsLive.Form do
      |> assign(:errors, %{})
      |> assign(:skills, agent_to_skill_list(agent.skills || []))
      |> assign(:mcp_servers, agent_to_mcp_server_list(agent.mcp_servers || %{}))
+     |> assign(:connections, connections_for(user_id))
      |> assign(:avatar_tab, :upload)
      |> assign(:avatar_base, "robot")
      |> assign(:avatar_mood, "serious")
@@ -124,18 +125,60 @@ defmodule FountainWeb.AgentsLive.Form do
     end)
   end
 
+  # Three shapes an entry can have: a stdio server the form edits field by
+  # field; a connection (#1178) that names a Google account Fountain holds
+  # the credential for; and anything else (an HTTP/SSE server written
+  # through the API), carried through untouched so saving the form does not
+  # silently drop it.
   defp agent_to_mcp_server_list(mcp_servers) do
-    Enum.map(mcp_servers, fn {name, config} ->
-      args_str = (config["args"] || []) |> Enum.join("\n")
-      env_vars = (config["env"] || %{}) |> Enum.map(fn {k, v} -> %{"key" => k, "value" => v} end)
+    Enum.map(mcp_servers, fn
+      {name, %{"connection" => id} = _config} when is_binary(id) ->
+        %{
+          "name" => name,
+          "kind" => "connection",
+          "connection" => id,
+          "command" => "",
+          "args" => "",
+          "env_vars" => []
+        }
 
-      %{
-        "name" => name,
-        "command" => config["command"] || "",
-        "args" => args_str,
-        "env_vars" => env_vars
-      }
+      {name, %{"command" => _} = config} ->
+        stdio_server(name, config)
+
+      {name, config} when is_map(config) and map_size(config) > 0 ->
+        %{
+          "name" => name,
+          "kind" => "raw",
+          "raw" => config,
+          "command" => "",
+          "args" => "",
+          "env_vars" => []
+        }
+
+      {name, config} ->
+        stdio_server(name, config || %{})
     end)
+  end
+
+  defp stdio_server(name, config) do
+    args_str = (config["args"] || []) |> Enum.join("\n")
+    env_vars = (config["env"] || %{}) |> Enum.map(fn {k, v} -> %{"key" => k, "value" => v} end)
+
+    %{
+      "name" => name,
+      "kind" => "stdio",
+      "command" => config["command"] || "",
+      "args" => args_str,
+      "env_vars" => env_vars
+    }
+  end
+
+  # The active connections the form can offer, only where connections exist
+  # (accounts the broker is on for). Elsewhere the select is not rendered.
+  defp connections_for(user_id) do
+    if Fountain.Broker.enabled_for?(user_id),
+      do: Fountain.Connections.active_connections(user_id),
+      else: []
   end
 
   # Each runtime but opencode only reaches one provider, and the changeset
@@ -219,7 +262,7 @@ defmodule FountainWeb.AgentsLive.Form do
   def handle_event("add_mcp_server", _, socket) do
     servers =
       socket.assigns.mcp_servers ++
-        [%{"name" => "", "command" => "", "args" => "", "env_vars" => []}]
+        [%{"name" => "", "kind" => "stdio", "command" => "", "args" => "", "env_vars" => []}]
 
     {:noreply, assign(socket, :mcp_servers, servers)}
   end
@@ -336,24 +379,7 @@ defmodule FountainWeb.AgentsLive.Form do
         |> Enum.reject(&is_nil/1)
 
       mcp_map =
-        Map.new(mcp_servers_list, fn s ->
-          args =
-            (s["args"] || "")
-            |> String.split("\n")
-            |> Enum.map(&String.trim/1)
-            |> Enum.reject(&(&1 == ""))
-
-          env_map =
-            (s["env_vars"] || [])
-            |> Map.new(fn %{"key" => k, "value" => v} -> {k, v} end)
-            |> Map.reject(fn {k, _} -> k == "" end)
-
-          config = %{"command" => s["command"] || ""}
-          config = if args != [], do: Map.put(config, "args", args), else: config
-          config = if map_size(env_map) > 0, do: Map.put(config, "env", env_map), else: config
-
-          {s["name"] || "", config}
-        end)
+        Map.new(mcp_servers_list, fn s -> {s["name"] || "", mcp_server_config(s)} end)
         |> Map.reject(fn {k, _} -> k == "" end)
 
       attrs =
@@ -510,7 +536,7 @@ defmodule FountainWeb.AgentsLive.Form do
       servers_map when is_map(servers_map) ->
         servers_map
         |> Enum.sort_by(fn {k, _} -> String.to_integer(k) end)
-        |> Enum.map(fn {_, s} ->
+        |> Enum.map(fn {k, s} ->
           env_vars =
             case s["env_vars"] do
               nil ->
@@ -525,7 +551,14 @@ defmodule FountainWeb.AgentsLive.Form do
                 []
             end
 
-          Map.put(s, "env_vars", env_vars)
+          # A pass-through entry has no editable fields, so its config is not
+          # in the params: carry it over from the row it came from.
+          current = Enum.at(current_servers, String.to_integer(k)) || %{}
+
+          s
+          |> Map.put("env_vars", env_vars)
+          |> Map.put_new("kind", current["kind"] || "stdio")
+          |> then(&if &1["kind"] == "raw", do: Map.put(&1, "raw", current["raw"]), else: &1)
         end)
 
       _ ->
@@ -575,9 +608,33 @@ defmodule FountainWeb.AgentsLive.Form do
       length(names) != length(Enum.uniq(names)) ->
         {:error, "mcp_servers_json", "server names must be unique"}
 
+      Enum.any?(servers, &(&1["kind"] == "connection" and (&1["connection"] || "") == "")) ->
+        {:error, "mcp_servers_json", "pick a connection for each connection server"}
+
       true ->
         :ok
     end
+  end
+
+  # The stored shape for one form row (the inverse of agent_to_mcp_server_list/1).
+  defp mcp_server_config(%{"kind" => "connection"} = s), do: %{"connection" => s["connection"]}
+  defp mcp_server_config(%{"kind" => "raw", "raw" => raw}) when is_map(raw), do: raw
+
+  defp mcp_server_config(s) do
+    args =
+      (s["args"] || "")
+      |> String.split("\n")
+      |> Enum.map(&String.trim/1)
+      |> Enum.reject(&(&1 == ""))
+
+    env_map =
+      (s["env_vars"] || [])
+      |> Map.new(fn %{"key" => k, "value" => v} -> {k, v} end)
+      |> Map.reject(fn {k, _} -> k == "" end)
+
+    config = %{"command" => s["command"] || ""}
+    config = if args != [], do: Map.put(config, "args", args), else: config
+    if map_size(env_map) > 0, do: Map.put(config, "env", env_map), else: config
   end
 
   defp nil_if_blank(map, key),
@@ -1133,7 +1190,62 @@ defmodule FountainWeb.AgentsLive.Form do
               value={server["name"] || ""}
               placeholder="github"
             />
+
+            <%!-- A connection (#1178): Fountain serves the server and holds the
+                  credential. Only offered where the account has one. --%>
+            <div :if={@connections != [] and server["kind"] != "raw"} class="space-y-1">
+              <label for={"mcp_#{i}_kind"} class="block text-sm font-medium text-zinc-700">
+                Type
+              </label>
+              <select
+                id={"mcp_#{i}_kind"}
+                name={"agent[mcp_servers][#{i}][kind]"}
+                class="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm"
+              >
+                <option
+                  :for={
+                    {label, kind} <- [
+                      {"Command (stdio)", "stdio"},
+                      {"Connected account (Gmail)", "connection"}
+                    ]
+                  }
+                  value={kind}
+                  selected={(server["kind"] || "stdio") == kind}
+                >
+                  {label}
+                </option>
+              </select>
+            </div>
+            <div :if={server["kind"] == "connection"} class="space-y-1">
+              <label for={"mcp_#{i}_connection"} class="block text-sm font-medium text-zinc-700">
+                Connection
+              </label>
+              <select
+                id={"mcp_#{i}_connection"}
+                name={"agent[mcp_servers][#{i}][connection]"}
+                class="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm"
+              >
+                <option value="">Pick a connected account</option>
+                <option
+                  :for={c <- @connections}
+                  value={c.id}
+                  selected={server["connection"] == c.id}
+                >
+                  {c.account_email} ({c.provider})
+                </option>
+              </select>
+            </div>
+            <p :if={server["kind"] == "connection"} class="text-xs text-zinc-500">
+              Fountain serves the Gmail tools for this account and never puts a Google token in the sandbox.
+            </p>
+
+            <div :if={server["kind"] == "raw"} class="text-xs text-zinc-500">
+              A remote server defined through the API (kept as is):
+              <code class="font-mono">{Jason.encode!(server["raw"])}</code>
+            </div>
+
             <.input
+              :if={server["kind"] in [nil, "stdio"]}
               id={"mcp_#{i}_command"}
               name={"agent[mcp_servers][#{i}][command]"}
               label="Command"
@@ -1141,6 +1253,7 @@ defmodule FountainWeb.AgentsLive.Form do
               placeholder="npx"
             />
             <.input
+              :if={server["kind"] in [nil, "stdio"]}
               id={"mcp_#{i}_args"}
               name={"agent[mcp_servers][#{i}][args]"}
               type="textarea"
@@ -1150,7 +1263,7 @@ defmodule FountainWeb.AgentsLive.Form do
               placeholder="-y&#10;@modelcontextprotocol/server-github"
             />
 
-            <div class="space-y-1.5">
+            <div :if={server["kind"] in [nil, "stdio"]} class="space-y-1.5">
               <label class="block text-xs font-medium text-zinc-600">Env vars (optional)</label>
 
               <div class="space-y-1">

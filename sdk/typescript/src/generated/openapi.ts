@@ -505,6 +505,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/connections/providers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List connectable providers
+         * @description The providers this deployment has an OAuth client for, the scopes each asks for, the env var its token is brokered under, and the console URL that starts the flow (a browser signed in as the account owner).
+         */
+        get: operations["FountainWeb.ConnectionController.providers"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/auth/resend-verification": {
         parameters: {
             query?: never;
@@ -540,6 +560,27 @@ export interface paths {
         put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/connections/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get a connection */
+        get: operations["FountainWeb.ConnectionController.show"];
+        put?: never;
+        post?: never;
+        /**
+         * Revoke and delete a connection
+         * @description Tells the provider to forget the grant, then deletes the row. The next tool call from an agent that names it fails with `connection revoked`.
+         */
+        delete: operations["FountainWeb.ConnectionController.delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1525,6 +1566,26 @@ export interface paths {
          * @description Revokes the API key in the `Authorization` header — what an app does on sign-out. Idempotent: an already-revoked key is 204 too (it would not have authenticated).
          */
         post: operations["FountainWeb.OAuthTokenController.revoke"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/connections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List connections
+         * @description Every provider account the tenant has connected, active or revoked. Only for accounts the egress broker is on for (ADR 0019); 404 otherwise.
+         */
+        get: operations["FountainWeb.ConnectionController.index"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -2810,6 +2871,10 @@ export interface components {
         SandboxListResponse: {
             data: components["schemas"]["SandboxDetail"][];
         };
+        /** ConnectionListResponse */
+        ConnectionListResponse: {
+            data: components["schemas"]["Connection"][];
+        };
         /** InferenceCredentialListResponse */
         InferenceCredentialListResponse: {
             data: components["schemas"]["InferenceCredentialStatus"][];
@@ -3467,6 +3532,37 @@ export interface components {
             name: string;
         };
         /**
+         * Connection
+         * @description A provider account the tenant signed in to once, whose credential Fountain holds (#1178). Agents get the capability, never the token: an agent's `mcp_servers` names the connection (`{"gmail": {"connection": "<id>"}}`) and Fountain serves the Gmail tools; and the access token is brokered under `env_key` for an MCP server the tenant runs. Only for accounts the egress broker is on for.
+         */
+        Connection: {
+            /** @description The connected account. */
+            account_email: string;
+            /** Format: date-time */
+            created_at?: string;
+            /** @description The env var name the access token is brokered under (`GOOGLE_ACCESS_TOKEN`). */
+            env_key: string;
+            /**
+             * Format: date-time
+             * @description When the cached access token expires. Refreshed on use.
+             */
+            expires_at?: string | null;
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            provider: "google";
+            /** Format: date-time */
+            revoked_at?: string | null;
+            scopes: string[];
+            /**
+             * @description `revoked` once the tenant cut it or the provider refused the refresh token; the row stays so the console can say why the tools stopped. Reconnect to replace it.
+             * @enum {string}
+             */
+            status: "active" | "revoked";
+            /** Format: date-time */
+            updated_at?: string;
+        };
+        /**
          * AdminAuditListResponse
          * @description Cross-tenant audit events; each carries the tenant it belongs to.
          */
@@ -3732,6 +3828,21 @@ export interface components {
             };
             repositories?: components["schemas"]["Repository"][];
             setup_script?: string;
+        };
+        /**
+         * ConnectionProvidersResponse
+         * @description Which providers this deployment can connect, and the URL that starts each flow.
+         */
+        ConnectionProvidersResponse: {
+            data: {
+                /** @description False when the deployment has no OAuth client for it. */
+                configured: boolean;
+                /** @description Where to send the account owner, in a browser signed in to the console, to connect an account. The flow ends back on the Connections page. */
+                connect_url: string;
+                env_key: string;
+                provider: string;
+                scopes: string[];
+            }[];
         };
         /** AdminUserResponse */
         AdminUserResponse: {
@@ -5337,6 +5448,44 @@ export interface operations {
             };
         };
     };
+    "FountainWeb.ConnectionController.providers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Providers */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectionProvidersResponse"];
+                };
+            };
+            /** @description Missing or invalid key */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Connections are not enabled for this account */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     "FountainWeb.RegistrationController.api_resend": {
         parameters: {
             query?: never;
@@ -5386,6 +5535,86 @@ export interface operations {
                 };
             };
             /** @description No such image */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "FountainWeb.ConnectionController.show": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Connection id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Connection */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Connection"];
+                };
+            };
+            /** @description Missing or invalid key */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "FountainWeb.ConnectionController.delete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Connection id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing or invalid key */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not found */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -8092,6 +8321,44 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    "FountainWeb.ConnectionController.index": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Connections */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectionListResponse"];
+                };
+            };
+            /** @description Missing or invalid key */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Connections are not enabled for this account */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
             };
         };
     };
