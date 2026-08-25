@@ -658,10 +658,12 @@ service per host — the first run had the API-key service win the host and
 the OAuth placeholder go upstream unreplaced); **Codex** (`codex login
 --with-api-key` accepts `sk-__openai_api_key__`, the turn's `api.openai.com`
 call matched the service; its `chatgpt.com` login probe passes through and
-401s, harmless); **OpenCode** (routes model traffic to its own gateway,
-`opencode.ai`, passthrough, which needed no credential of ours — it never
-called `api.anthropic.com`, so the Anthropic substitution is unexercised on
-that runtime, and the placeholder did no harm). Gemini is covered by the same
+401s, harmless); **OpenCode** (first run went to its own gateway, `opencode.ai`,
+passthrough and credential-free, because Fountain pinned the model by its
+bare id and opencode only knows `provider/model_id` — fixed in #1157; the
+rerun called `api.anthropic.com` through the matched service and Anthropic
+answered "credit balance is too low", which only an authenticated key gets,
+so the substitution holds there as well). Gemini is covered by the same
 substitution mechanism on `?key=` and remains unverified live.
 
 **Gate 4 — built 2026-08-25.** The join is the vault name: §11's vault per
