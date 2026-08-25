@@ -90,6 +90,10 @@ defmodule Fountain.Broker do
   @spec ca_path() :: String.t()
   def ca_path, do: @ca_path
 
+  @doc "Where the PEM is written first, as the sandbox user, before sudo moves it into the trust store."
+  @spec ca_staging_path() :: String.t()
+  def ca_staging_path, do: "/tmp/agent-vault-ca.crt"
+
   # ---------------------------------------------------------------------------
   # The catalog and the placeholder rule
 
@@ -196,12 +200,13 @@ defmodule Fountain.Broker do
 
   @doc """
   The environment pairs a brokered sandbox gets. `HTTPS_PROXY` carries the
-  session token, so it is process-only (`Identity.@process_only`); the lower
-  case twins are for apt and the tools that only read those.
+  session token (as `http://<token>:<vault>@host:port`), so it is process-only
+  (`Identity.@process_only`); the lower case twins are for apt and the tools
+  that only read those.
   """
   @spec sandbox_env(session()) :: [{String.t(), String.t()}]
-  def sandbox_env(%{token: token}) do
-    url = proxy_url_with(token)
+  def sandbox_env(%{token: token, vault: vault}) do
+    url = proxy_url_with(token, vault)
 
     [
       {"HTTPS_PROXY", url},
@@ -221,9 +226,12 @@ defmodule Fountain.Broker do
   @spec process_only_keys() :: [String.t()]
   def process_only_keys, do: ~w(HTTPS_PROXY HTTP_PROXY https_proxy http_proxy)
 
-  defp proxy_url_with(token) do
+  # Both userinfo fields, on purpose (gate 0): with the token alone curl is
+  # happy and git stops to ask for a *proxy* password. The broker reads
+  # `Basic base64(token:vault)` and requires the vault to match the token's.
+  defp proxy_url_with(token, vault) do
     uri = URI.parse(proxy_url())
-    URI.to_string(%{uri | userinfo: token})
+    URI.to_string(%{uri | userinfo: token <> ":" <> vault})
   end
 
   @doc "True when the session ends within `within_seconds` (default ten minutes), or has no known end."

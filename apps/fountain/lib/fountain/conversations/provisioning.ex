@@ -406,13 +406,20 @@ defmodule Fountain.Conversations.Provisioning do
   @spec install_broker_ca(Handle.t(), String.t()) :: :ok | {:error, term()}
   def install_broker_ca(handle, conv_id) do
     path = Fountain.Broker.ca_path()
+    staging = Fountain.Broker.ca_staging_path()
+
+    # Written as the sandbox user where it may, then moved into the root-owned
+    # trust directory the way `install_packages/4` reaches apt: through sudo.
+    install =
+      "sudo install -D -m 644 #{shell_quote(staging)} #{shell_quote(path)} && " <>
+        "sudo update-ca-certificates"
 
     with {:ok, pem} <- Fountain.Broker.ca_pem(),
          :ok <-
-           Retry.with_backoff(fn -> Sandbox.write_file(handle, path, pem, mode: 0o644) end,
+           Retry.with_backoff(fn -> Sandbox.write_file(handle, staging, pem, mode: 0o644) end,
              label: "broker CA write"
            ) do
-      case Sandbox.exec(handle, "bash", ["-lc", "sudo update-ca-certificates"],
+      case Sandbox.exec(handle, "bash", ["-lc", install],
              stderr_to_stdout: true,
              timeout: 60_000
            ) do

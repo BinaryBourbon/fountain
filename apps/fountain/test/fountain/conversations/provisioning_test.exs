@@ -175,8 +175,13 @@ defmodule Fountain.Conversations.ProvisioningTest do
       end)
 
       assert :ok = Provisioning.install_broker_ca(sandbox_handle(), conv.id)
-      assert_received {:wrote, "/usr/local/share/ca-certificates/agent-vault.crt", "PEM", [mode: 0o644]}
-      assert_received {:exec, "bash", ["-lc", "sudo update-ca-certificates"]}
+      assert_received {:wrote, "/tmp/agent-vault-ca.crt", "PEM", [mode: 0o644]}
+
+      assert_received {:exec, "bash", ["-lc", cmd]}
+
+      assert cmd ==
+               "sudo install -D -m 644 '/tmp/agent-vault-ca.crt' " <>
+                 "'/usr/local/share/ca-certificates/agent-vault.crt' && sudo update-ca-certificates"
     end
 
     test "a failed install is a broker failure, by name" do

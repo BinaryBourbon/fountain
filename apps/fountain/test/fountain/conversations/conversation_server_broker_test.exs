@@ -180,7 +180,7 @@ defmodule Fountain.Conversations.ConversationServerBrokerTest do
       spawn_env = Keyword.fetch!(opts, :env)
       assert {"GITHUB_TOKEN", "__github_token__"} in spawn_env
       assert {"DATABASE_URL", "postgres://x"} in spawn_env
-      assert {"HTTPS_PROXY", "http://av_sess_conv@broker.test:14322"} in spawn_env
+      assert {"HTTPS_PROXY", "http://av_sess_conv:c-test@broker.test:14322"} in spawn_env
       assert {"NODE_EXTRA_CA_CERTS", Fountain.Broker.ca_path()} in spawn_env
       refute Enum.any?(spawn_env, fn {_, v} -> v == "ghp_real" end)
 
@@ -194,13 +194,13 @@ defmodule Fountain.Conversations.ConversationServerBrokerTest do
       assert_receive {:policy, %Fountain.Sandbox.NetworkPolicy{allow: ["broker.test"]}}, 2_000
 
       # The CA, in the OS trust store.
-      assert_receive {:wrote, "/usr/local/share/ca-certificates/agent-vault.crt", "PEM"}, 2_000
-      assert_receive {:exec, ["-lc", "sudo update-ca-certificates"]}, 2_000
+      assert_receive {:wrote, "/tmp/agent-vault-ca.crt", "PEM"}, 2_000
+      assert_receive {:exec, ["-lc", "sudo install -D -m 644 " <> _]}, 2_000
 
       # The clone sees the placeholder and the proxy, so git goes through the
       # broker and the broker rewrites the auth header.
       assert_receive {:clone, %{"GITHUB_TOKEN" => "__github_token__"}, clone_env}, 2_000
-      assert {"HTTPS_PROXY", "http://av_sess_conv@broker.test:14322"} in clone_env
+      assert {"HTTPS_PROXY", "http://av_sess_conv:c-test@broker.test:14322"} in clone_env
 
       assert Enum.map(stage_events(conv.id, "broker"), & &1.state) == ["started", "done"]
     end

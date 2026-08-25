@@ -91,14 +91,14 @@ defmodule Fountain.BrokerTest do
       assert String.length(Broker.vault_name(@conv)) <= 64
     end
 
-    test "sandbox_env carries the token inside the proxy address, and the CA path" do
+    test "sandbox_env carries token and vault inside the proxy address, and the CA path" do
       configure()
       env = Broker.sandbox_env(%{vault: "c-x", token: "av_sess_t", expires_at: nil})
 
-      assert {"HTTPS_PROXY", "http://av_sess_t@broker.test:14322"} in env
-      assert {"HTTP_PROXY", "http://av_sess_t@broker.test:14322"} in env
-      assert {"https_proxy", "http://av_sess_t@broker.test:14322"} in env
-      assert {"http_proxy", "http://av_sess_t@broker.test:14322"} in env
+      assert {"HTTPS_PROXY", "http://av_sess_t:c-x@broker.test:14322"} in env
+      assert {"HTTP_PROXY", "http://av_sess_t:c-x@broker.test:14322"} in env
+      assert {"https_proxy", "http://av_sess_t:c-x@broker.test:14322"} in env
+      assert {"http_proxy", "http://av_sess_t:c-x@broker.test:14322"} in env
       assert {"NODE_EXTRA_CA_CERTS", Broker.ca_path()} in env
       assert Enum.map(env, &elem(&1, 0)) -- Broker.env_keys() == []
     end
