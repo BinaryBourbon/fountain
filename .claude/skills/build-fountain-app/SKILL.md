@@ -1,6 +1,6 @@
 ---
 name: build-fountain-app
-description: Build an application on top of the Fountain API — a browser app, a bot, an internal tool, anything that hires agents, sends them prompts and renders what they do. Use whenever the user says "build an app on Fountain", "a client for Fountain", "another fountain-team / workbench / demo app", "Sign in with Fountain", or wants to ship something that talks to /api from its own origin. Covers the shape (static SPA on the SDK, or a small server in front), auth (OAuth code + PKCE, tokens are API keys), streaming, the server-side registration an app needs (API_CORS_ORIGINS, OAUTH_CLIENTS), a hosting recipe for any static host or container, and the traps every previous app hit.
+description: Build an application on top of the Fountain API — a browser app, a bot, an internal tool, anything that hires agents, sends them prompts and renders what they do. Use whenever the user says "build an app on Fountain", "a client for Fountain", "another fountain-team / workbench / demo app", "Sign in with Fountain", or wants to ship something that talks to /api from its own origin. Covers the published TypeScript SDK (@agentshit/fountain-sdk), the shape (static SPA on the SDK, or a small server in front), auth (OAuth code + PKCE, tokens are API keys), streaming, the server-side registration an app needs (API_CORS_ORIGINS, OAUTH_CLIENTS), a hosting recipe for any static host or container, and the traps every previous app hit.
 ---
 
 # Build an app on Fountain
@@ -27,6 +27,59 @@ code, do not re-derive it**:
 - `docs/sdk.md` — the SDK surface, the error table, the browser section
 - `docs/api.md` — every route, incl. *Sign in with Fountain*
 - `sdk/typescript/examples/*.ts` — compiled in CI, so they are true
+
+## The SDK is the client
+
+[`@agentshit/fountain-sdk`](https://www.npmjs.com/package/@agentshit/fountain-sdk)
+is published on npm (1.0.0, Apache-2.0, no runtime dependencies, Node ≥ 20.19,
+browser-safe by default). Its source is `sdk/typescript/` in this repo;
+`docs/sdk.md` is the manual and `sdk/typescript/examples/*.ts` are compiled
+in CI. Do not hand-roll a `fetch` wrapper, an SSE parser or an ACP block
+parser — the SDK is those, done once, and its types are generated from the
+server's OpenAPI document so they cannot drift.
+
+```bash
+npm install @agentshit/fountain-sdk
+```
+
+```ts
+import { Fountain, ConversationBusyError } from "@agentshit/fountain-sdk";
+
+const fountain = new Fountain({ baseUrl, apiKey });   // in a browser: what the person gave you
+const me = await fountain.me();                        // the cheapest check that a key works
+
+// one-shot: an agent on a machine, streamed
+const run = fountain.run("Any disks over 80%?", { agent: "watchtower" });
+for await (const chunk of run.textStream) append(chunk);
+const result = await run;                              // state: done | failed | interrupted | timeout
+
+// a team: hire, message, one stream for the whole roster
+await fountain.team.add("watchtower", { name: "Watchtower" });
+try { await fountain.team.message("watchtower", text); }
+catch (e) { if (e instanceof ConversationBusyError) queue.push(text); else throw e; }
+for await (const ev of fountain.team.stream({ streams: ["stage"] })) route(ev);
+
+// a thread: prompts + parsed blocks, paged to the end
+const conv = fountain.resume(conversationId);
+const [turns, events] = await Promise.all([conv.turns(), conv.history({ streams: ["acp", "stdout"] })]);
+
+// anything the SDK does not wrap
+await fountain.request("GET", "/api/audit", { query: { limit: 50 } });
+```
+
+What it gives you that raw `fetch` does not: `Run` handles you can await or
+stream; `blocks: true` on every feed; reconnect from the last event id; the
+name-or-id resolver on agents/environments/vaults; and one error class per
+server `code` (`ConversationBusyError`, `NotReadyError` with `retryAfter`,
+`QuotaExceededError`, `SubscriptionRequiredError` with `upgradeUrl`,
+`ValidationError` with `fieldErrors`, `ConnectionError` — in a browser,
+CORS). In Node the credentials resolve from `FOUNTAIN_API_KEY` /
+`FOUNTAIN_BASE_URL` and `~/.fountain/credentials`, same as the CLI; in a
+browser you pass them. Add nothing to its headers (see the Firefox trap).
+
+The SDK versions independently of the server; the API is additive, so an
+older SDK keeps working against a newer Fountain. Other languages: the
+OpenAPI document at `GET /api/openapi.json` is the contract.
 
 ## 1. Decide the shape
 
