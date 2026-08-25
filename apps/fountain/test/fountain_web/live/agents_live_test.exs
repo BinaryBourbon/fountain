@@ -358,3 +358,93 @@ defmodule FountainWeb.AgentsLive.NetworkPolicyNoteTest do
     end
   end
 end
+
+defmodule FountainWeb.AgentsLive.ConnectionsFormTest do
+  # async: false because it flips the broker ratchet (application-wide config).
+  use FountainWeb.ConnCase, async: false
+
+  import Phoenix.LiveViewTest
+  import Fountain.BrokerTestHelpers
+
+  defp with_credential(user) do
+    {:ok, dek} = Fountain.Crypto.load_tenant_key(user.id)
+
+    {:ok, _} =
+      Fountain.InferenceCredentials.put_credential(user.id, dek, :anthropic_api_key, "sk-ant-x")
+
+    user
+  end
+
+  describe "MCP servers that are not a command (#1178)" do
+    test "a connection can be attached as an MCP server and survives a later save", %{conn: conn} do
+      user = with_credential(insert_verified_user())
+      enable_broker_for([user.id])
+      connection = insert_connection(user, account_email: "me@example.com")
+      agent = insert_agent(user_id: user.id)
+      conn = login_user(conn, user)
+
+      {:ok, view, _html} = live(conn, ~p"/agents/#{agent.id}/edit")
+      html = view |> element("button", "+ Add server") |> render_click()
+      assert html =~ "Connected account (Gmail)"
+
+      # Switching the type reveals the connection select.
+      html =
+        view
+        |> element("form[phx-change=validate]")
+        |> render_change(%{
+          "agent" => %{"mcp_servers" => %{"0" => %{"name" => "gmail", "kind" => "connection"}}}
+        })
+
+      assert html =~ "me@example.com (google)"
+
+      view
+      |> form("form", %{
+        "agent" => %{
+          "name" => agent.name,
+          "model" => agent.model,
+          "runtime" => agent.runtime,
+          "mcp_servers" => %{
+            "0" => %{"name" => "gmail", "kind" => "connection", "connection" => connection.id}
+          }
+        }
+      })
+      |> render_submit()
+
+      assert %{"gmail" => %{"connection" => id}} =
+               Fountain.Agents.get_agent(agent.id, user.id).mcp_servers
+
+      assert id == connection.id
+
+      # Reopen and save with no change to the row: the entry is kept.
+      {:ok, view, html} = live(conn, ~p"/agents/#{agent.id}/edit")
+      assert html =~ "me@example.com (google)"
+
+      view
+      |> form("form", %{
+        "agent" => %{"name" => agent.name, "model" => agent.model, "runtime" => agent.runtime}
+      })
+      |> render_submit()
+
+      assert %{"gmail" => %{"connection" => ^id}} =
+               Fountain.Agents.get_agent(agent.id, user.id).mcp_servers
+    end
+
+    test "a remote server written through the API survives a save from the form", %{conn: conn} do
+      user = with_credential(insert_verified_user())
+      remote = %{"type" => "http", "url" => "https://mcp.example.com/sse"}
+      agent = insert_agent(user_id: user.id, mcp_servers: %{"remote" => remote})
+      conn = login_user(conn, user)
+
+      {:ok, view, html} = live(conn, ~p"/agents/#{agent.id}/edit")
+      assert html =~ "kept as is"
+
+      view
+      |> form("form", %{
+        "agent" => %{"name" => "renamed", "model" => agent.model, "runtime" => agent.runtime}
+      })
+      |> render_submit()
+
+      assert Fountain.Agents.get_agent(agent.id, user.id).mcp_servers == %{"remote" => remote}
+    end
+  end
+end
