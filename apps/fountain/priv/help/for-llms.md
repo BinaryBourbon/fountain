@@ -14,7 +14,7 @@ Point your agent at Fountain in one command:
 
 ```sh
 mkdir -p ~/.claude/skills/fountain
-curl -fsSL https://fountain.inevitable.fyi/skill > ~/.claude/skills/fountain/SKILL.md
+curl -fsSL https://managoat.com/skill > ~/.claude/skills/fountain/SKILL.md
 ```
 
 Self-hosted instance? Substitute your base URL. The skill text itself reads `$FOUNTAIN_BASE_URL` and `$FOUNTAIN_API_KEY` from the agent's environment, so it's not pinned to one host.

@@ -6,7 +6,7 @@ cluster (CNPG, Traefik, Infisical, Flux) is this baseline plus a private
 overlay that lives outside the repo (decisions/0032); there is no other
 Kubernetes directory here.
 
-The [compose path](https://fountain.inevitable.fyi/docs/self-hosting) is
+The [compose path](https://managoat.com/docs/self-hosting) is
 simpler if you don't already live on Kubernetes — start there.
 
 ## What this does not include
@@ -57,7 +57,7 @@ kubectl exec -n fountain deploy/fountain -- \
 Edit the tag in `kustomization.yaml`'s `images:` block and re-apply. `vX.Y.Z`
 tags are immutable; `vX.Y` follows patches. Patch releases are always safe;
 pre-1.0 minor bumps may carry **Upgrade notes** in the
-[changelog](https://fountain.inevitable.fyi/docs/changelog). Migrations
+[changelog](https://managoat.com/docs/changelog). Migrations
 run at boot, idempotently, under an advisory lock. Downgrades are not
 supported once a newer version's migrations have run — restore from a backup.
 
@@ -124,6 +124,6 @@ needs the new column.
 - **Backups**: `backup-cronjob.yaml` ships a nightly `pg_dump` to any
   S3-compatible bucket — commented out of `kustomization.yaml` until you
   create its secret; setup is at the top of the file, the restore drill in
-  [the docs](https://fountain.inevitable.fyi/docs/guides/operate/back-up-and-restore).
+  [the docs](https://managoat.com/docs/guides/operate/back-up-and-restore).
   `MASTER_SECRETS_KEY` must still be backed up separately — a database backup
   alone cannot decrypt itself.

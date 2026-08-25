@@ -1,4 +1,4 @@
-export const DEFAULT_BASE_URL = "https://fountain.inevitable.fyi";
+export const DEFAULT_BASE_URL = "https://managoat.com";
 
 /** Where a human reads a transcript. Fountain's own UI is a console (see CLAUDE.md). */
 export const DEFAULT_APP_URL = "https://jakegaylor.com/fountain-conversations/";

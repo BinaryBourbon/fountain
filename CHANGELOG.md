@@ -16,6 +16,14 @@ upgrade, is in
 
 ## [Unreleased]
 
+### Changed
+
+- **The hosted Fountain is `managoat.com`** (#1177). The CLI's and the
+  TypeScript SDK's compile-time default base URL, the docs, the sample
+  compose and k8s files and the hermes plugin now name the new host; the
+  old `fountain.inevitable.fyi` keeps answering and redirects. Self-hosters
+  who set `FOUNTAIN_BASE_URL` are unaffected. SDK 1.8.0 carries the change.
+
 ### Added
 
 - **Connections: sign in to Google once, and agents get Gmail without ever

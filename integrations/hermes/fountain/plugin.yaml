@@ -19,7 +19,7 @@ config_schema:
   base_url:
     type: str
     default: ""
-    description: Fountain instance URL. Falls back to FOUNTAIN_BASE_URL, then ~/.fountain/credentials, then https://fountain.inevitable.fyi.
+    description: Fountain instance URL. Falls back to FOUNTAIN_BASE_URL, then ~/.fountain/credentials, then https://managoat.com.
   api_key:
     type: str
     default: ""

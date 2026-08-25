@@ -10,6 +10,15 @@ server releases.
 
 ---
 
+## [1.8.0] — 2026-08-25
+
+### Changed
+
+- `DEFAULT_BASE_URL` is `https://managoat.com`, the hosted Fountain's new
+  domain (fountain#1177). The old host redirects, so an SDK pinned before
+  this release keeps working; set `baseUrl` explicitly for a self-hosted
+  instance either way.
+
 ## [1.7.0] — 2026-08-25
 
 ### Added

@@ -8,7 +8,7 @@ stale, drifting further from `/docs` with every docs PR.
 
 This builds a site of redirects instead. Every URL the old site answered keeps
 answering, and sends the reader to the same page at
-https://fountain.inevitable.fyi/docs. It is published once, by hand, from
+https://managoat.com/docs. It is published once, by hand, from
 `.github/workflows/pages-tombstone.yml`.
 
 MkDocs served directory URLs, so `setup.md` was `/fountain/setup/` and
@@ -28,7 +28,7 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 NAV = ROOT / "docs" / "nav.yml"
-DOCS = "https://fountain.inevitable.fyi/docs"
+DOCS = "https://managoat.com/docs"
 
 # The two line shapes docs/nav.yml uses, same as the Elixir parser. A page
 # entry at any indent; a section header carries no file and is skipped.

@@ -349,7 +349,7 @@ one section for each profile. It writes each value in double quotes.
 ```ini
 [default]
 api_key = "ftn_..."
-base_url = "https://fountain.inevitable.fyi"
+base_url = "https://managoat.com"
 ```
 
 The CLI writes the file `0600`, and the directory `0700`.
@@ -370,12 +370,12 @@ FOUNTAIN_API_KEY=ftn_... FOUNTAIN_BASE_URL=https://other.example.com fountain ag
 The CLI resolves both the key and the URL in the same order. It reads the
 environment variable, then the active profile in the credentials file. For the
 URL alone it then falls back to the built-in default,
-`https://fountain.inevitable.fyi`.
+`https://managoat.com`.
 
 **Do you self-host?** That built-in default is the hosted instance, and not
 yours.
 
 Run `fountain auth login` with `FOUNTAIN_BASE_URL` pointed at your instance.
 Do that first, before each other command. A CLI with no config, and `FOUNTAIN_API_KEY`
-exported, sends that key to `fountain.inevitable.fyi`. Configure the URL
+exported, sends that key to `managoat.com`. Configure the URL
 before the key.
