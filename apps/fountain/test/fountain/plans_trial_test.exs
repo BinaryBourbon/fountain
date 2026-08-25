@@ -152,17 +152,17 @@ defmodule Fountain.PlansTrialTest do
     # The cap is the balance's, not the plan's (ADR 0031); the plan tests
     # above are about what a trial is, and this one is about what it may run.
     test "a trialing account with nothing in its balance gets the floor, whatever its tier" do
-      user = trialing("scale")
+      user = insert_verified_user(plan: "scale")
       assert Quotas.sandbox_limit(user.id) == Quotas.default_limit()
       assert Quotas.sandbox_limit_for(reload(user)) == Quotas.default_limit()
     end
 
     test "an operator override beats the balance, in both directions" do
-      up = trialing("solo")
+      up = insert_verified_user(plan: "solo")
       {:ok, up} = Fountain.Accounts.update_sandbox_limit(up, 25)
       assert Quotas.sandbox_limit(up.id) == 25
 
-      down = trialing("scale")
+      down = insert_verified_user(plan: "scale")
       {:ok, down} = Fountain.Accounts.update_sandbox_limit(down, 0)
       assert Quotas.sandbox_limit(down.id) == 0
     end
