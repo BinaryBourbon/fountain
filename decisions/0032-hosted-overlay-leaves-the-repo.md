@@ -1,7 +1,7 @@
 ---
 type: ADR
 title: "The hosted instance's overlay leaves the repo; the manifest artifact is only the baseline plus the image pin"
-description: "The maintainer's cluster-specific manifests (CNPG, Infisical, Traefik, hostnames, backups, alerts, Erlang clustering) move from k8s/ to the private home-cloud repo, which applies them on top of the OCI manifest artifact with Flux patches and a sibling Kustomization. k8s/ keeps only the image pin. Built in the same PR."
+description: "The maintainer's cluster-specific manifests (CNPG, Infisical, Traefik, hostnames, backups, alerts, Erlang clustering) move from k8s/ to the private home-cloud repo, which applies them on top of the OCI manifest artifact with Flux patches and a sibling Kustomization. k8s/ then went entirely (addendum): the artifact pins the image in deploy/k8s's own `images:` block and FOUNTAIN_BUILD_SHA is baked into the image. Built."
 tags: [deploy, infra, open-source, flux]
 status: stable
 adr: "0032"
@@ -117,6 +117,30 @@ half at all: it would be 100% infra and 0% product.
   The CNPG `Cluster` and the Namespace carry
   `kustomize.toolkit.fluxcd.io/prune: disabled` through it and after.
   home-cloud's `platform/fountain-site/README.md` has the checklist.
+
+## Addendum (2026-08-25): `k8s/` is gone too
+
+Decision 1 left a ten-line pin layer behind. It existed for two values the
+baseline could not hold without a patch, and both found a better home:
+
+- **The image tag** is written into the staged `deploy/k8s/kustomization.yaml`'s
+  existing `images:` block (`newTag: v0.12.0` → `newTag: sha-<commit>`),
+  same verify-or-fail. The artifact is now `deploy/` as committed plus that
+  one rewritten line; Flux's path is `./deploy/k8s`.
+- **`FOUNTAIN_BUILD_SHA`** is baked into the image by `build.yml`
+  (`BUILD_SHA`), as `release.yml` always did. The reason it was removed —
+  an image built from tree T should not claim to be one commit — was
+  already not honoured by the manifest pin, which wrote the *image's*
+  commit, not the deployed one. Baking says the same thing with no patch.
+
+`deploy/` is the only Kubernetes directory in the repo. The artifact is
+generic: any Flux could consume it and track `main` the way the hosted
+instance does (`docs/guides/operate/kubernetes.md`).
+
+The cutover order reversed: this repo first (the artifact loses `./k8s`,
+home-cloud's `fountain` goes `BuildFailed` and applies nothing), then
+home-cloud flips its path. The other order would have built the current
+artifact's `./deploy/k8s` with the *release* pin and rolled prod back.
 
 ## Alternatives considered
 

@@ -18,6 +18,12 @@ upgrade, is in
 
 ### Changed
 
+- **`k8s/` is gone; `deploy/` is the only Kubernetes directory** (ADR 0032
+  addendum). The manifest artifact now pins the image in
+  `deploy/k8s/kustomization.yaml`'s own `images:` block, and
+  `FOUNTAIN_BUILD_SHA` is baked into every main-line image as it always was
+  for releases. The artifact is generic; the Kubernetes guide shows how to
+  track `main` with Flux from it.
 - **The hosted instance's Kubernetes overlay left the repo** (ADR 0032).
   `k8s/` held the maintainer's own cluster — CNPG, Infisical, Traefik,
   hostnames, backups, alerts, the rate card, the OAuth client list — as an

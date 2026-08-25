@@ -5,7 +5,7 @@
 # Grafana's provisioning directory. So a dashboard ships with the app, in the
 # app's own namespace, and no Grafana state is edited by hand.
 #
-# Not referenced from ../k8s/kustomization.yaml, because the portable
+# Not referenced from ../k8s/kustomization.yaml (the baseline), because the portable
 # baseline must not assume a Grafana exists, let alone one running that
 # sidecar. The hosted instance applies this directory as its own Flux
 # Kustomization from the manifest artifact (decisions/0032); a self-hoster
