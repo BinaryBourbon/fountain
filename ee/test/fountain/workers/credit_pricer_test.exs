@@ -31,8 +31,6 @@ defmodule Fountain.Workers.CreditPricerTest do
     conv = setup_conv(user)
     closed_turn(conv, ~U[2026-08-02 10:00:00Z], 3600)
 
-    assert %{turns: 0, messages: 0} = CreditPricer.run(now: @now)
-
     Application.put_env(:fountain, :billing_enabled, false)
     on_exit(fn -> Application.put_env(:fountain, :billing_enabled, true) end)
     assert %{turns: 0, messages: 0} = CreditPricer.run(since: @since, now: @now)
@@ -142,7 +140,17 @@ defmodule Fountain.Workers.CreditPricerTest do
     end
   end
 
-  test "perform/1 is a thin shell over run/1" do
+  test "perform/1 prices a turn closed within the last seven days — no option needed" do
+    user = insert_empty_user()
+    conv = setup_conv(user)
+
+    closed_turn(
+      conv,
+      DateTime.add(DateTime.utc_now(), -3600, :second) |> DateTime.truncate(:second),
+      3600
+    )
+
     assert :ok = CreditPricer.perform(%Oban.Job{args: %{}})
+    assert Credits.balance(user.id) == -25
   end
 end
