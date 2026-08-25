@@ -393,11 +393,23 @@ defmodule Fountain.Conversations.Provisioning do
   end
 
   @doc """
-  Put the broker's root CA in the sandbox's operating-system trust store.
+  Put the broker's root CA in the sandbox's operating-system trust store,
+  and let `sudo` keep the proxy variables.
+
   Gate 0 found that one `update-ca-certificates` satisfies curl, git and npm
   at once, where per-tool variables each fail in their own way. Node is the
   exception and reads `NODE_EXTRA_CA_CERTS`, which `Fountain.Broker.sandbox_env/1`
   points at the same file.
+
+  The sudoers drop-in is what lets a setup script's `sudo apt-get install`
+  reach a mirror at all: sudo's `env_reset` strips `http_proxy` and friends,
+  apt then resolves the mirror directly, and the broker floor (only the
+  broker's host is reachable) refuses it as `Temporary failure resolving`.
+  The first brokered provisions of a real environment failed exactly there.
+  `env_keep` preserves the variables for the sudo'd process without writing
+  the session token anywhere, which an `apt.conf` proxy entry would do. The
+  file is checked with `visudo -c` before it is installed, since a bad
+  sudoers fragment disables sudo outright.
   """
   @spec install_broker_ca(Handle.t(), String.t()) :: :ok | {:error, term()}
   def install_broker_ca(handle, conv_id) do
@@ -408,7 +420,7 @@ defmodule Fountain.Conversations.Provisioning do
     # trust directory the way `install_packages/4` reaches apt: through sudo.
     install =
       "sudo install -D -m 644 #{shell_quote(staging)} #{shell_quote(path)} && " <>
-        "sudo update-ca-certificates"
+        "sudo update-ca-certificates && " <> sudo_env_keep_command()
 
     with {:ok, pem} <- Fountain.Broker.ca_pem(),
          :ok <-
@@ -436,6 +448,22 @@ defmodule Fountain.Conversations.Provisioning do
         publish_stage(conv_id, "broker", "failed", %{reason: inspect(reason)})
         err
     end
+  end
+
+  @sudoers_staging "/tmp/fountain-broker-proxy.sudoers"
+  @sudoers_path "/etc/sudoers.d/fountain-broker-proxy"
+
+  @doc "The sudoers drop-in that keeps `Fountain.Broker.env_keys/0` across `sudo`."
+  @spec sudoers_path() :: String.t()
+  def sudoers_path, do: @sudoers_path
+
+  defp sudo_env_keep_command do
+    keep = Enum.join(Fountain.Broker.env_keys(), " ")
+    line = ~s(Defaults env_keep += "#{keep}")
+
+    "printf '%s\\n' #{shell_quote(line)} > #{shell_quote(@sudoers_staging)} && " <>
+      "sudo visudo -cf #{shell_quote(@sudoers_staging)} && " <>
+      "sudo install -m 440 #{shell_quote(@sudoers_staging)} #{shell_quote(@sudoers_path)}"
   end
 
   @doc """

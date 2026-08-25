@@ -181,7 +181,33 @@ defmodule Fountain.Conversations.ProvisioningTest do
 
       assert cmd ==
                "sudo install -D -m 644 '/tmp/agent-vault-ca.crt' " <>
-                 "'/usr/local/share/ca-certificates/agent-vault.crt' && sudo update-ca-certificates"
+                 "'/usr/local/share/ca-certificates/agent-vault.crt' && sudo update-ca-certificates && " <>
+                 "printf '%s\\n' 'Defaults env_keep += \"HTTPS_PROXY HTTP_PROXY https_proxy http_proxy " <>
+                 "NO_PROXY NODE_EXTRA_CA_CERTS\"' > '/tmp/fountain-broker-proxy.sudoers' && " <>
+                 "sudo visudo -cf '/tmp/fountain-broker-proxy.sudoers' && " <>
+                 "sudo install -m 440 '/tmp/fountain-broker-proxy.sudoers' '/etc/sudoers.d/fountain-broker-proxy'"
+    end
+
+    test "sudo keeps every proxy variable the broker sets, so `sudo apt-get` reaches a mirror" do
+      conv = insert_conversation()
+      test = self()
+
+      stub(Fountain.Broker, :ca_pem, fn -> {:ok, "PEM"} end)
+      Mimic.stub(Fountain.Sandbox.Sprites, :write_file, fn _h, _p, _d, _o -> :ok end)
+
+      Mimic.stub(Fountain.Sandbox.Sprites, :exec, fn _h, _cmd, [_, script], _opts ->
+        send(test, {:script, script})
+        {:ok, "", 0}
+      end)
+
+      assert :ok = Provisioning.install_broker_ca(sandbox_handle(), conv.id)
+      assert_received {:script, script}
+
+      # The token-bearing variables must survive sudo for apt's sake, but the
+      # drop-in itself carries only names, never the proxy URL.
+      for key <- Fountain.Broker.env_keys(), do: assert(script =~ key)
+      refute script =~ "@"
+      assert script =~ "visudo -cf"
     end
 
     test "a failed install is a broker failure, by name" do
