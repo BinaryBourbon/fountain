@@ -46,6 +46,11 @@ upgrade, is in
   (`scripts/docs-style.py`), `simplified-technical-english.md`
   (`.vale-ste.yml`) and `catalog-template.md` (linked from the catalog).
   `rel/` stays: `rel/overlays/bin/migrate` is the migration Job entrypoint.
+- **`ROADMAP.md` and the `/bootstrap` skill went with them.** Both were the
+  captain-picard orchestrator's bus files; the roadmap's "Now" had been empty
+  since the 2026-05-10 launch. The one thing they said that nothing else did,
+  the 100-WAU goal and the org/team gate behind it, moved to `CLAUDE.md`;
+  NC-6 is recorded in ADR 0007 and #1039.
 
 ### Fixed
 
