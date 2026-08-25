@@ -161,6 +161,7 @@ defmodule Fountain.Credits.Purchases do
         if delta > 0 do
           Credits.debit(purchase.user_id, delta, "clawback_refund",
             idempotency_key: "clawback_refund:#{charge_id}:#{refunded}",
+            lot_id: purchase.id,
             resource_type: "stripe_charge",
             resource_id: charge_id,
             actor: "system:stripe_webhook",
@@ -181,6 +182,7 @@ defmodule Fountain.Credits.Purchases do
       %LedgerEntry{} = purchase when amount > 0 ->
         Credits.debit(purchase.user_id, amount, "clawback_dispute",
           idempotency_key: "clawback_dispute:#{Map.get(dispute, :id)}",
+          lot_id: purchase.id,
           resource_type: "stripe_dispute",
           resource_id: Map.get(dispute, :id),
           actor: "system:stripe_webhook",

@@ -186,8 +186,14 @@ defmodule Fountain.Workers.CreditGranterTest do
     test "a clawback reduces what counts as purchased" do
       user = subscriber("solo")
       assert %{tier: 1} = CreditGranter.run(since: @since, now: @now)
-      {:ok, _} = Credits.grant(user.id, 2500, "purchase", idempotency_key: "buy")
-      {:ok, _} = Credits.debit(user.id, 2500, "clawback_refund", idempotency_key: "refund")
+      {:ok, bought} = Credits.grant(user.id, 2500, "purchase", idempotency_key: "buy")
+      # A clawback names its purchase lot, as Purchases does.
+      {:ok, _} =
+        Credits.debit(user.id, 2500, "clawback_refund",
+          idempotency_key: "refund",
+          lot_id: bought.id
+        )
+
       # Balance 1000, all of it grant.
       assert %{expired: 1} = CreditGranter.run(since: @since, now: ~U[2026-09-01 00:00:01Z])
       assert Credits.balance(user.id) == 0
