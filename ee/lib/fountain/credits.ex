@@ -137,19 +137,38 @@ defmodule Fountain.Credits do
 
   @doc """
   Whether the tenant may spend. `:ok` when billing is off or the account is
-  comped, before any balance read; `:ok` when the cached balance is positive;
-  `{:error, :insufficient_credits}` otherwise.
+  comped, before any balance read; `:ok` when the spendable balance is
+  positive; `{:error, :insufficient_credits}` otherwise.
 
-  Nothing calls this to refuse anything yet (#1086 phase 4).
+  Spendable is the cached balance less what expired lots still hold: a grant
+  past its date stops funding new work the moment it passes, not when the
+  expiry sweep gets round to writing the row (`Workers.CreditGranter`).
+  `Billing.check_spend/1` is the door; every spend calls that.
   """
-  @spec check_balance(User.t() | binary()) :: :ok | {:error, :insufficient_credits}
-  def check_balance(subject) do
+  @spec check_balance(User.t() | binary(), keyword()) :: :ok | {:error, :insufficient_credits}
+  def check_balance(subject, opts \\ []) do
     cond do
       not Billing.enabled?() -> :ok
       comped?(subject) -> :ok
-      balance(subject) > 0 -> :ok
+      spendable(subject, Keyword.get(opts, :now) || DateTime.utc_now()) > 0 -> :ok
       true -> {:error, :insufficient_credits}
     end
+  end
+
+  defp spendable(subject, now), do: balance(subject) - expired_unspent(user_id_of(subject), now)
+
+  defp user_id_of(%User{id: id}), do: id
+  defp user_id_of(user_id) when is_binary(user_id), do: user_id
+
+  # What lots past their date still hold: money the sweep will take back and
+  # that must not fund new work in the meantime.
+  defp expired_unspent(user_id, now) do
+    from(e in LedgerEntry,
+      where: e.user_id == ^user_id and e.remaining_cents > 0,
+      where: not is_nil(e.expires_at) and e.expires_at <= ^now,
+      select: coalesce(sum(e.remaining_cents), 0)
+    )
+    |> Repo.one()
   end
 
   defp comped?(%User{comped: comped}), do: comped == true
@@ -158,14 +177,17 @@ defmodule Fountain.Credits do
     from(u in User, where: u.id == ^user_id, select: u.comped) |> Repo.one() == true
   end
 
-  @doc "The ledger for one tenant, newest first. `:limit` defaults to 100."
+  @doc """
+  The ledger for one tenant, newest first by `seq` (insertion order; a grant
+  and its burn can share an `inserted_at` second). `:limit` defaults to 100.
+  """
   @spec list_entries(binary(), keyword()) :: [LedgerEntry.t()]
   def list_entries(user_id, opts \\ []) when is_binary(user_id) do
     limit = Keyword.get(opts, :limit, 100)
 
     from(e in LedgerEntry,
       where: e.user_id == ^user_id,
-      order_by: [desc: e.inserted_at, desc: e.id],
+      order_by: [desc: e.seq],
       limit: ^limit
     )
     |> Repo.all()
@@ -378,10 +400,49 @@ defmodule Fountain.Credits do
   Take money out. `reason` is one of `LedgerEntry.debit_reasons/0`; `cents` is
   positive and is stored negated. A debit may drive the balance below zero;
   refusing to spend is the gate's job, not the ledger's.
+
+  With `:lot_id` the debit consumes only that lot (an expiry takes from its
+  own grant, a clawback from its own purchase) and whatever the lot cannot
+  cover is debt on the balance — it never falls through to another lot,
+  which is how an expiry could once take paid money.
   """
   @spec debit(binary(), pos_integer(), String.t(), keyword()) :: post_result()
   def debit(user_id, cents, reason, opts) when is_integer(cents) and cents > 0 do
     post(user_id, -cents, reason, opts)
+  end
+
+  @doc """
+  Expire `grant`: debit what its lot still holds, under `expire:<grant_id>`,
+  from that lot only. The amount is read inside the transaction, under the
+  same row lock every post takes, so a burn racing the sweep cannot leave
+  the expiry taking more than the grant had left. `{:ok, :nothing}` when the
+  lot was already spent to zero (no row is written; a zero row is invalid).
+  """
+  @spec expire_lot(LedgerEntry.t(), keyword()) :: post_result() | {:ok, :nothing}
+  def expire_lot(%LedgerEntry{amount_cents: granted} = grant, opts \\ []) when granted > 0 do
+    opts =
+      opts
+      |> Keyword.put(:idempotency_key, "expire:#{grant.id}")
+      |> Keyword.put(:lot_id, grant.id)
+      |> Keyword.put(:cap_to_lot, true)
+      |> Keyword.put_new(:resource_type, "credit_ledger")
+      |> Keyword.put_new(:resource_id, grant.id)
+      |> Keyword.put_new(:metadata, %{
+        "grant_reason" => grant.reason,
+        "granted_cents" => grant.amount_cents
+      })
+
+    case post(grant.user_id, -granted, "expire", opts) do
+      {:error, :nothing_to_take} ->
+        # A lot at zero is either spent or already expired; say which.
+        case get_by_key(opts[:idempotency_key]) do
+          nil -> {:ok, :nothing}
+          existing -> {:ok, :duplicate, existing}
+        end
+
+      other ->
+        other
+    end
   end
 
   @doc """
@@ -410,7 +471,9 @@ defmodule Fountain.Credits do
     changeset = LedgerEntry.changeset(%LedgerEntry{}, attrs)
 
     if changeset.valid? do
-      changeset |> insert_and_move(Keyword.get(opts, :lot_id)) |> audited(opts)
+      changeset
+      |> insert_and_move(Keyword.get(opts, :lot_id), Keyword.get(opts, :cap_to_lot, false))
+      |> audited(opts)
     else
       {:error, changeset}
     end
@@ -420,10 +483,10 @@ defmodule Fountain.Credits do
   # *after* attempting the insert rather than by a lookup first: two workers
   # posting the same key at once must not both see "absent" and both move the
   # balance. A duplicate aborts the transaction, so the balance is untouched.
-  defp insert_and_move(changeset, lot_id) do
+  defp insert_and_move(changeset, lot_id, cap_to_lot) do
     key = Ecto.Changeset.get_field(changeset, :idempotency_key)
     user_id = Ecto.Changeset.get_field(changeset, :user_id)
-    amount = Ecto.Changeset.get_field(changeset, :amount_cents)
+    requested = Ecto.Changeset.get_field(changeset, :amount_cents)
 
     Repo.transaction(fn ->
       # The user row is the lock for this tenant's lots: every post takes it,
@@ -433,11 +496,25 @@ defmodule Fountain.Credits do
           Repo.rollback(:user_not_found)
 
         %User{credit_balance_cents: before} ->
+          # An expiry takes what its lot still holds, read under the lock.
+          amount =
+            if cap_to_lot and requested < 0,
+              do: -min(-requested, lot_remaining(lot_id)),
+              else: requested
+
+          if amount == 0, do: Repo.rollback(:nothing_to_take)
+
           changeset =
-            if amount > 0,
-              do:
-                Ecto.Changeset.put_change(changeset, :remaining_cents, lot_size(amount, before)),
-              else: changeset
+            cond do
+              amount > 0 ->
+                Ecto.Changeset.put_change(changeset, :remaining_cents, lot_size(amount, before))
+
+              amount != requested ->
+                Ecto.Changeset.put_change(changeset, :amount_cents, amount)
+
+              true ->
+                changeset
+            end
 
           case Repo.insert(changeset) do
             {:ok, entry} ->
@@ -477,22 +554,37 @@ defmodule Fountain.Credits do
   # A credit posted into debt repays it first; only the rest is spendable.
   defp lot_size(amount, balance_before), do: amount - min(amount, max(-balance_before, 0))
 
-  # Take `cents` from the open lots in order: the named lot, then the
-  # earliest expiry, then non-expiring money. Whatever no lot covers is debt,
-  # which the balance carries and the next credit repays.
+  defp lot_remaining(nil), do: 0
+
+  defp lot_remaining(lot_id) do
+    from(e in LedgerEntry, where: e.id == ^lot_id, select: e.remaining_cents)
+    |> Repo.one()
+    |> Kernel.||(0)
+  end
+
+  # Take `cents` from the open lots. A named lot is the only lot consumed
+  # (an expiry or a clawback must never reach into another grant or into
+  # paid money); otherwise the earliest expiry first, then non-expiring
+  # money. Whatever no lot covers is debt, which the balance carries and the
+  # next credit repays.
   defp consume_lots(user_id, cents, lot_id) do
     open =
-      from(e in LedgerEntry,
-        where: e.user_id == ^user_id and e.remaining_cents > 0,
-        order_by: [
-          asc:
-            fragment("case when ? then 0 else 1 end", e.id == ^(lot_id || Ecto.UUID.generate())),
-          asc: fragment("case when ? is null then 1 else 0 end", e.expires_at),
-          asc: e.expires_at,
-          asc: e.seq
-        ],
-        select: {e.id, e.remaining_cents}
-      )
+      if lot_id do
+        from(e in LedgerEntry,
+          where: e.id == ^lot_id and e.user_id == ^user_id and e.remaining_cents > 0,
+          select: {e.id, e.remaining_cents}
+        )
+      else
+        from(e in LedgerEntry,
+          where: e.user_id == ^user_id and e.remaining_cents > 0,
+          order_by: [
+            asc: fragment("case when ? is null then 1 else 0 end", e.expires_at),
+            asc: e.expires_at,
+            asc: e.seq
+          ],
+          select: {e.id, e.remaining_cents}
+        )
+      end
       |> Repo.all()
 
     # What is left after the lots is debt, carried by the balance.
@@ -548,7 +640,10 @@ defmodule Fountain.Credits do
 
       lots
     end)
-    |> then(fn {:ok, n} -> n end)
+    |> case do
+      {:ok, n} -> n
+      {:error, reason} -> raise "rebuild_lots(#{user_id}) rolled back: #{inspect(reason)}"
+    end
   end
 
   # The lot a historical debit was aimed at: an expiry names its grant as
@@ -590,6 +685,9 @@ defmodule Fountain.Credits do
   defp audit_action("burn_" <> _), do: "credit.burned"
   defp audit_action("expire"), do: "credit.expired"
   defp audit_action("clawback_" <> _), do: "credit.clawed_back"
+  # The changeset's inclusion check makes this unreachable; the row has
+  # committed by the time it runs, so a miss must not raise on the way out.
+  defp audit_action(_other), do: "credit.posted"
 
   @doc ~S|Cents as a dollar string for display: `1240` → `"$12.40"`, `-5` → `"-$0.05"`.|
   @spec format_cents(integer()) :: String.t()

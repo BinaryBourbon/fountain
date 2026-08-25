@@ -15,8 +15,12 @@ defmodule Fountain.Workers.CreditPricer do
       `burn_message:<event_id>`. A `nil` price burns nothing (#1042).
 
   Rows are written for every tenant, comped included: the ledger is also how
-  `Finance` sees what a comp cost. Enforcement is `check_balance/1`'s job and
-  is not wired yet (#1086 phase 4).
+  `Finance` sees what a comp cost. Refusing spend is `Credits.gate/1`'s job,
+  behind `Billing.check_spend/1`; this worker only writes what happened.
+
+  Every tick also runs the expiry pass (`Workers.CreditGranter.run/1`), so a
+  grant past its date is swept within ten minutes rather than at the daily
+  06:23 sweep; the gate already ignores an expired lot in the meantime.
 
   No-ops when billing is off. The look-back is seven days, so a restart after an
   outage catches up without scanning the whole table; a turn older than that
@@ -50,11 +54,14 @@ defmodule Fountain.Workers.CreditPricer do
   @impl Oban.Worker
   def perform(_job) do
     case run() do
-      %{turns: 0, messages: 0} ->
+      %{turns: 0, messages: 0, expired: 0} ->
         :ok
 
       counts ->
-        Logger.info("credit pricer: burned #{counts.turns} turns, #{counts.messages} messages")
+        Logger.info(
+          "credit pricer: burned #{counts.turns} turns, #{counts.messages} messages, " <>
+            "expired #{counts.expired} grants"
+        )
     end
 
     :ok
@@ -62,10 +69,14 @@ defmodule Fountain.Workers.CreditPricer do
 
   @doc """
   Run both passes now. `:now` pins the clock; `:since` overrides the
-  configured floor. Returns `%{turns: n, messages: n}` — rows written, not
-  rows seen.
+  configured floor. Returns `%{turns: n, messages: n, expired: n}` — rows
+  written, not rows seen.
   """
-  @spec run(keyword()) :: %{turns: non_neg_integer(), messages: non_neg_integer()}
+  @spec run(keyword()) :: %{
+          turns: non_neg_integer(),
+          messages: non_neg_integer(),
+          expired: non_neg_integer()
+        }
   def run(opts \\ []) do
     now = Keyword.get(opts, :now) || DateTime.utc_now()
     lookback = DateTime.add(now, -@lookback_days * 86_400, :second)
@@ -80,14 +91,18 @@ defmodule Fountain.Workers.CreditPricer do
           lookback
       end
 
-    if Billing.enabled?(), do: do_run(floor), else: %{turns: 0, messages: 0}
+    if Billing.enabled?(),
+      do: do_run(floor, now),
+      else: %{turns: 0, messages: 0, expired: 0}
   end
 
-  defp do_run(floor) do
+  defp do_run(floor, now) do
     {turns, touched} = price_turns(floor)
     messages = price_messages(floor)
     Enum.each(touched, &Fountain.Workers.CreditsEmail.notify_after_burn/1)
-    %{turns: turns, messages: messages}
+    # Burns first, so a turn consumes the grant before the grant is swept.
+    %{expired: expired} = Fountain.Workers.CreditGranter.run(now: now)
+    %{turns: turns, messages: messages, expired: expired}
   end
 
   # ---------------------------------------------------------------------------

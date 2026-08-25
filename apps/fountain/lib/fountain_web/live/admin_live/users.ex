@@ -23,8 +23,7 @@ defmodule FountainWeb.AdminLive.Users do
 
   @usage_window_days 30
   @per_page 25
-  @statuses ~w(trialing active past_due canceled comped)
-  @sorts ~w(email joined trial_end last_activity)
+  @sorts ~w(email joined last_activity)
 
   @impl true
   def mount(_params, _session, socket) do
@@ -58,9 +57,9 @@ defmodule FountainWeb.AdminLive.Users do
     filters = %{
       socket.assigns.filters
       | search: params["q"] || "",
-        status: if(params["status"] in @statuses, do: params["status"]),
+        comped: parse_yes_no(params["comped"]),
         role: if(params["role"] in ~w(admin user), do: params["role"]),
-        verified: parse_verified(params["verified"]),
+        verified: parse_yes_no(params["verified"]),
         page: 1
     }
 
@@ -330,7 +329,7 @@ defmodule FountainWeb.AdminLive.Users do
     %{users: users, total: total} =
       Accounts.list_users_admin(
         search: f.search,
-        status: f.status,
+        comped: f.comped,
         role: f.role,
         verified: f.verified,
         sort: f.sort,
@@ -356,18 +355,22 @@ defmodule FountainWeb.AdminLive.Users do
   defp parse_filters(params) do
     %{
       search: params["q"] || "",
-      status: if(params["status"] in @statuses, do: params["status"]),
+      comped: parse_yes_no(params["comped"]),
       role: if(params["role"] in ~w(admin user), do: params["role"]),
-      verified: parse_verified(params["verified"]),
+      verified: parse_yes_no(params["verified"]),
       sort: if(params["sort"] in @sorts, do: params["sort"], else: "joined"),
       dir: if(params["dir"] in ~w(asc desc), do: params["dir"], else: "desc"),
       page: parse_page(params["page"])
     }
   end
 
-  defp parse_verified("yes"), do: true
-  defp parse_verified("no"), do: false
-  defp parse_verified(_), do: nil
+  defp parse_yes_no("yes"), do: true
+  defp parse_yes_no("no"), do: false
+  defp parse_yes_no(_), do: nil
+
+  defp yes_no(true), do: "yes"
+  defp yes_no(false), do: "no"
+  defp yes_no(_), do: nil
 
   defp parse_page(raw) do
     case is_binary(raw) && Integer.parse(raw) do
@@ -380,21 +383,16 @@ defmodule FountainWeb.AdminLive.Users do
   `/admin/users` carrying `filters` as query params.
 
   Public because the pages that link *into* a filtered list build the same
-  URL — the billing page's status chips, the overview's "trials ending"
+  URL — the finance page, the overview's "funded accounts"
   tile — and a second hand-rolled copy of this would drift.
   """
   def users_path(f) do
     params =
       [
         q: if(f[:search] not in [nil, ""], do: f[:search]),
-        status: f[:status],
+        comped: yes_no(f[:comped]),
         role: f[:role],
-        verified:
-          case f[:verified] do
-            true -> "yes"
-            false -> "no"
-            _ -> nil
-          end,
+        verified: yes_no(f[:verified]),
         sort: if(f[:sort] && f[:sort] != "joined", do: f[:sort]),
         dir: if(f[:dir] && f[:dir] != "desc", do: f[:dir]),
         page: if(f[:page] && f[:page] > 1, do: f[:page])
@@ -455,17 +453,12 @@ defmodule FountainWeb.AdminLive.Users do
           />
           <select
             :if={@billing_enabled}
-            name="status"
+            name="comped"
             class="rounded border border-zinc-200 px-1 py-1 text-xs"
           >
-            <option value="">any status</option>
-            <option
-              :for={s <- ~w(trialing active past_due canceled comped)}
-              value={s}
-              selected={@filters.status == s}
-            >
-              {s}
-            </option>
+            <option value="">comped or billed</option>
+            <option value="yes" selected={@filters.comped == true}>comped</option>
+            <option value="no" selected={@filters.comped == false}>billed</option>
           </select>
           <select name="role" class="rounded border border-zinc-200 px-1 py-1 text-xs">
             <option value="">any role</option>
@@ -487,7 +480,7 @@ defmodule FountainWeb.AdminLive.Users do
               </th>
               <th class="px-4 py-2">Role</th>
               <th :if={@billing_enabled} class="px-4 py-2">
-                <.sort_header label="Billing" col="trial_end" filters={@filters} />
+                Billing
               </th>
               <th
                 :if={@billing_enabled}

@@ -53,34 +53,25 @@ defmodule Fountain.Workers.CreditGranter do
     |> Enum.count(&expire_grant/1)
   end
 
-  # Zero unspent is still "handled": a zero-amount row is invalid, so the
-  # grant would be re-examined every run. Mark it with a no-op-sized row?
-  # No — instead the anti-join stays and the cost is one row per fully-spent
-  # grant per run, bounded by how many grants a tenant has ever had. Cheap.
+  # A fully-spent grant writes nothing (a zero row is invalid) and so is
+  # re-examined every run; the anti-join keeps that to one cheap row per
+  # spent grant per run. The amount is read inside the ledger's transaction
+  # (`Credits.expire_lot/2`), so a burn racing this sweep cannot make the
+  # expiry take more than the grant still had.
   defp expire_grant(%LedgerEntry{} = grant) do
-    case Credits.unspent_of(grant, Credits.balance(grant.user_id)) do
-      0 ->
+    case Credits.expire_lot(grant, actor: "system:credit_granter") do
+      {:ok, :nothing} ->
         false
 
-      cents ->
-        case Credits.debit(grant.user_id, cents, "expire",
-               idempotency_key: "expire:#{grant.id}",
-               lot_id: grant.id,
-               resource_type: "credit_ledger",
-               resource_id: grant.id,
-               actor: "system:credit_granter",
-               metadata: %{"grant_reason" => grant.reason, "granted_cents" => grant.amount_cents}
-             ) do
-          {:ok, _} ->
-            true
+      {:ok, _} ->
+        true
 
-          {:ok, :duplicate, _} ->
-            false
+      {:ok, :duplicate, _} ->
+        false
 
-          {:error, why} ->
-            Logger.warning("credit granter: expire #{grant.id} failed: #{inspect(why)}")
-            false
-        end
+      {:error, why} ->
+        Logger.warning("credit granter: expire #{grant.id} failed: #{inspect(why)}")
+        false
     end
   end
 

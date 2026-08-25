@@ -323,15 +323,15 @@ defmodule FountainWeb.TeamController do
   defp comms_error(conn, :already_provisioned),
     do: conn |> put_status(:conflict) |> json(%{error: "contact_already_provisioned"})
 
-  # 402, the same status the subscription gate uses: the fix is a plan change,
-  # not a retry. The numbers are in the body so a client can say which cap was
-  # hit without having to know the catalog.
+  # 402, the same status the credit gate uses: the fix is an operator's
+  # decision, not a retry. The numbers are in the body so a client can say
+  # which ceiling was hit.
   defp comms_error(conn, {:contact_limit_reached, %{count: count, limit: limit}}) do
     conn
     |> put_status(:payment_required)
     |> json(%{
       error: "contact_limit_reached",
-      message: "this plan allows #{limit} teammate contacts (#{count} in use)",
+      message: "this account may hold #{limit} teammate contacts (#{count} in use)",
       count: count,
       limit: limit
     })

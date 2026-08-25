@@ -290,7 +290,7 @@ defmodule Fountain.Team.Schedules do
 
   def describe_error(:provisioning), do: "teammate's computer was still starting"
   def describe_error(:not_found), do: "agent is not on the team"
-  def describe_error(:subscription_required), do: "subscription inactive"
+  def describe_error(:insufficient_credits), do: "out of credit"
   def describe_error(:runner_offline), do: "teammate's machine is offline"
   def describe_error(:sprite_probe_failed), do: "could not reach the sandbox provider"
 

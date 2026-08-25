@@ -27,11 +27,10 @@ defmodule FountainWeb.BillingApiController do
   tags(["Billing"])
 
   operation(:show,
-    summary: "Subscription status and current-period usage",
+    summary: "Credit balance and current-month usage",
     description:
-      "Trial and period dates alongside the usage numbers the billing page " <>
-        "shows, measured over the period Stripe invoices where one is known " <>
-        "and the calendar month otherwise (`period.source` says which). " <>
+      "The credit balance, what of it expires and when, and the usage numbers " <>
+        "the billing page shows, measured over the calendar month. " <>
         "On an instance with billing disabled this is a 404 carrying " <>
         "`billing: \"disabled\"`, mirroring the UI, which redirects away from " <>
         "the billing page entirely.",

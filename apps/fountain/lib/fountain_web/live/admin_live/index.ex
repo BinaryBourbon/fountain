@@ -129,7 +129,7 @@ defmodule FountainWeb.AdminLive.Index do
           >
             <div class="text-xs text-zinc-500">Deferred credit</div>
             <div class="text-2xl font-semibold tabular-nums">
-              {format_mrr(@billing_overview.deferred_cents)}
+              {Fountain.Credits.format_cents(@billing_overview.deferred_cents || 0)}
             </div>
             <div class="text-xs text-zinc-500">
               held by {@billing_overview.funded} funded accounts · finance ↗
@@ -197,12 +197,4 @@ defmodule FountainWeb.AdminLive.Index do
   defp stage_label(:subscribed), do: "Subscribed"
 
   defp format_pct(fraction), do: "#{round(fraction * 100)}%"
-
-  defp format_mrr(nil), do: "—"
-
-  defp format_mrr(cents) do
-    dollars = div(cents, 100)
-    remainder = rem(cents, 100)
-    "$#{dollars}.#{String.pad_leading(to_string(remainder), 2, "0")}/mo"
-  end
 end

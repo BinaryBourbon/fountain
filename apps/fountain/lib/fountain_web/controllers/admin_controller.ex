@@ -34,7 +34,6 @@ defmodule FountainWeb.AdminController do
 
   @default_per_page 25
   @max_per_page 100
-  @statuses ~w(trialing active past_due canceled comped)
 
   tags(["Admin"])
 
@@ -44,10 +43,11 @@ defmodule FountainWeb.AdminController do
     summary: "List accounts (admin)",
     parameters: [
       q: [in: :query, type: :string, required: false, description: "Email substring."],
-      status: [
+      comped: [
         in: :query,
-        type: %OpenApiSpex.Schema{type: :string, enum: @statuses},
-        required: false
+        type: :boolean,
+        required: false,
+        description: "Only comped accounts (`true`) or only billed ones (`false`)."
       ],
       role: [
         in: :query,
@@ -57,7 +57,7 @@ defmodule FountainWeb.AdminController do
       verified: [in: :query, type: :boolean, required: false],
       sort: [
         in: :query,
-        type: %OpenApiSpex.Schema{type: :string, enum: ~w(email joined trial_end last_activity)},
+        type: %OpenApiSpex.Schema{type: :string, enum: ~w(email joined last_activity)},
         required: false
       ],
       dir: [
@@ -86,7 +86,7 @@ defmodule FountainWeb.AdminController do
     %{users: users, total: total} =
       Accounts.list_users_admin(
         search: params["q"] || "",
-        status: if(params["status"] in @statuses, do: params["status"]),
+        comped: parse_verified(params["comped"]),
         role: if(params["role"] in ~w(admin user), do: params["role"]),
         verified: parse_verified(params["verified"]),
         sort: params["sort"],

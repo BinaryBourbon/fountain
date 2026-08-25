@@ -198,7 +198,7 @@ defmodule Fountain.Audit do
   # trial converts or an account is suspended. Everything else (an agent
   # created, a secret written) leaves the person unchanged, and refreshing on
   # those would put a `SELECT` on every audited mutation in the system.
-  @person_refreshing_prefixes ~w(account. auth. billing. admin.)
+  @person_refreshing_prefixes ~w(account. auth. billing. credit. admin.)
 
   defp refresh_person(%Event{user_id: user_id, action: action}) do
     if String.starts_with?(action, @person_refreshing_prefixes) do

@@ -161,6 +161,24 @@ defmodule Fountain.CreditsTest do
       assert :ok = Credits.check_balance(user.id)
     end
 
+    test "an expired lot the sweep has not written yet is not spendable" do
+      user = insert_empty_user()
+
+      {:ok, _} =
+        Credits.grant(user.id, 500, "grant_trial",
+          idempotency_key: "g",
+          expires_at: ~U[2026-09-01 00:00:00Z]
+        )
+
+      assert :ok = Credits.check_balance(user.id, now: ~U[2026-08-31 00:00:00Z])
+
+      assert {:error, :insufficient_credits} =
+               Credits.check_balance(user.id, now: ~U[2026-09-01 00:00:01Z])
+
+      {:ok, _} = Credits.grant(user.id, 100, "purchase", idempotency_key: "p")
+      assert :ok = Credits.check_balance(user.id, now: ~U[2026-09-01 00:00:01Z])
+    end
+
     test "zero and negative are insufficient, positive is ok" do
       user = insert_empty_user()
       assert {:error, :insufficient_credits} = Credits.check_balance(user)
@@ -262,6 +280,65 @@ defmodule Fountain.CreditsTest do
       {:ok, _} = Credits.debit(user.id, 200, "burn_turn", idempotency_key: "d")
       assert remaining(a) == 0 and remaining(b) == 0
       assert Credits.balance(user.id) == -60
+    end
+
+    test "a named lot is the only lot a debit reaches; the rest is debt (#1126)" do
+      user = insert_empty_user()
+
+      {:ok, grant} =
+        Credits.grant(user.id, 1000, "grant_trial",
+          idempotency_key: "g",
+          expires_at: ~U[2099-01-01 00:00:00Z]
+        )
+
+      {:ok, bought} = Credits.grant(user.id, 2500, "purchase", idempotency_key: "p")
+
+      # A clawback bigger than its purchase must not reach into the grant.
+      {:ok, _} =
+        Credits.debit(user.id, 3000, "clawback_refund", idempotency_key: "c", lot_id: bought.id)
+
+      assert remaining(bought) == 0
+      assert remaining(grant) == 1000
+      assert Credits.balance(user.id) == 500
+    end
+
+    test "expire_lot takes what the grant still holds, read under the lock, never paid money" do
+      user = insert_empty_user()
+
+      {:ok, grant} =
+        Credits.grant(user.id, 1000, "grant_trial",
+          idempotency_key: "g",
+          expires_at: ~U[2026-01-01 00:00:00Z]
+        )
+
+      {:ok, bought} = Credits.grant(user.id, 2500, "purchase", idempotency_key: "p")
+      {:ok, _} = Credits.debit(user.id, 700, "burn_turn", idempotency_key: "b")
+
+      assert {:ok, expiry} = Credits.expire_lot(grant)
+      assert expiry.amount_cents == -300
+      assert expiry.idempotency_key == "expire:#{grant.id}"
+      assert remaining(grant) == 0
+      assert remaining(bought) == 2500
+      assert Credits.balance(user.id) == 2500
+
+      assert {:ok, :duplicate, _} = Credits.expire_lot(grant)
+
+      {:ok, spent} =
+        Credits.grant(user.id, 100, "grant_trial",
+          idempotency_key: "s",
+          expires_at: ~U[2026-01-01 00:00:00Z]
+        )
+
+      {:ok, _} = Credits.debit(user.id, 2600, "burn_turn", idempotency_key: "b2")
+      assert {:ok, :nothing} = Credits.expire_lot(spent)
+      assert Credits.balance(user.id) == 0
+    end
+
+    test "list_entries is newest first by seq, not by the second the row landed in" do
+      user = insert_empty_user()
+      {:ok, g} = Credits.grant(user.id, 100, "purchase", idempotency_key: "g")
+      {:ok, b} = Credits.debit(user.id, 40, "burn_turn", idempotency_key: "b")
+      assert Enum.map(Credits.list_entries(user.id), & &1.id) == [b.id, g.id]
     end
 
     test "a credit posted into debt repays it first" do

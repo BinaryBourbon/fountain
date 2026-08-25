@@ -10,6 +10,17 @@ server releases.
 
 ---
 
+## [1.0.1] — 2026-08-25
+
+### Changed
+
+- `FountainErrorCode` names `insufficient_credits` and `fleet_full`, which
+  `errorForStatus` already mapped; the 402 message says the account is out
+  of credit rather than lacking a subscription.
+- `GET /api/admin/users` takes `comped` (boolean) in place of the retired
+  `status` filter, and `sort` no longer offers `trial_end`; the billing
+  endpoint's summary reads "Credit balance and current-month usage".
+
 ## [1.0.0] — 2026-08-25
 
 ### Changed

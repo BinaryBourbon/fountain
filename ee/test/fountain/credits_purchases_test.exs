@@ -155,6 +155,24 @@ defmodule Fountain.Credits.PurchasesTest do
                Purchases.refund(%{id: "ch_y", payment_intent: nil, amount_refunded: 500})
     end
 
+    test "a charge disputed and then refunded is clawed back once (#1126)", %{user: user} do
+      d = %{
+        id: "dp_1",
+        charge: "ch_1",
+        payment_intent: "pi_1",
+        amount: 2500,
+        reason: "fraudulent"
+      }
+
+      assert {:ok, _} = Purchases.dispute(d)
+      assert Credits.balance(user.id) == 0
+
+      assert {:ok, :nothing} =
+               Purchases.refund(%{id: "ch_1", payment_intent: "pi_1", amount_refunded: 2500})
+
+      assert Credits.balance(user.id) == 0
+    end
+
     test "a dispute claws back its amount once", %{user: user} do
       d = %{
         id: "dp_1",

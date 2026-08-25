@@ -329,4 +329,8 @@ defmodule Fountain.Team.SchedulesTest do
     {:ok, conv} = Schedules.run_schedule(s)
     assert Conversations.get_conversation(conv.id, user.id)
   end
+
+  test "a broke scheduled run is described in words, not as an atom (#1126)" do
+    assert Schedules.describe_error(:insufficient_credits) == "out of credit"
+  end
 end

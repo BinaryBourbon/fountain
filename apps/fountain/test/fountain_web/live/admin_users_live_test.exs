@@ -319,6 +319,30 @@ defmodule FountainWeb.AdminUsersLiveTest do
       refute html =~ straw.email
     end
 
+    test "filters comped from billed accounts (#1126)", %{conn: conn} do
+      admin = insert_admin()
+
+      {:ok, comped} =
+        Fountain.Billing.comp_account(insert_active_user(%{email: "comped@example.com"}))
+
+      billed = insert_active_user(%{email: "billed@example.com"})
+      conn = login_user(conn, admin)
+      {:ok, lv, _html} = live(conn, ~p"/admin/users?comped=yes")
+
+      html = render(lv)
+      assert html =~ comped.email
+      refute html =~ billed.email
+
+      html =
+        lv
+        |> form("#user-filters")
+        |> render_change(%{"q" => "", "comped" => "no", "role" => "", "verified" => ""})
+
+      assert_patch(lv, ~p"/admin/users?comped=no")
+      refute html =~ comped.email
+      assert html =~ billed.email
+    end
+
     test "filters by verification state and badges unverified users", %{conn: conn} do
       admin = insert_admin()
       verified = insert_active_user(%{email: "is-verified@example.com"})

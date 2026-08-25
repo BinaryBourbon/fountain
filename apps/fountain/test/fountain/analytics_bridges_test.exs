@@ -133,6 +133,13 @@ defmodule Fountain.AnalyticsBridgesTest do
         Audit.record(%{action: "agent.created", resource_type: "agent", user_id: user.id})
 
       refute event_named("$identify")
+
+      # Every money event is `credit.*` since ADR 0031; the balance and the
+      # cap it funds are person properties, so it must refresh too (#1126).
+      {:ok, _} =
+        Audit.record(%{action: "credit.burned", resource_type: "credit_ledger", user_id: user.id})
+
+      assert event_named("$identify")
     end
   end
 
