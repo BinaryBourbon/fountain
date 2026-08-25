@@ -198,9 +198,8 @@ Fountain. The long form of the split, and where everything lives, is
 (`decisions/0034-project-site-is-the-product-site.md` says why there is no
 separate project site).
 
-Fountain was MIT licensed through v0.12.0 (2026-08-17) and those releases stay
-MIT. See [`NOTICE`](NOTICE) for the relicensing record and third-party
-attribution, [`CONTRIBUTING.md`](CONTRIBUTING.md) for how this applies to
+See [`NOTICE`](NOTICE) for third-party attribution,
+[`CONTRIBUTING.md`](CONTRIBUTING.md) for how the licences apply to
 contributions, and
 [`decisions/0027-agpl-relicensing.md`](decisions/0027-agpl-relicensing.md) for
 the reasoning.
