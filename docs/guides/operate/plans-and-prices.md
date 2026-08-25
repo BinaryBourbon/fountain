@@ -28,7 +28,7 @@ hours, on a sandbox that was busy for one.
 
 ## The opening credit
 
-A new account gets `CREDIT_OPENING_CENTS` ($10) when it verifies its email.
+A new account gets `CREDIT_OPENING_CENTS` ($5) when it verifies its email.
 That credit expires `CREDIT_OPENING_DAYS` (14) days later. Credit a tenant
 buys never expires, and Fountain spends it last.
 

@@ -21,7 +21,7 @@ admin panel or in the API.
 ## What billing is
 
 Credits are the product. Each account holds a balance in cents. A new account
-starts with `CREDIT_OPENING_CENTS` ($10) for `CREDIT_OPENING_DAYS` (14). Each
+starts with `CREDIT_OPENING_CENTS` ($5) for `CREDIT_OPENING_DAYS` (14). Each
 turn burns `CREDIT_TURN_HOUR_CENTS` an hour. A phone number and an inbox each
 cost a month of rent up front. A message costs its price. A tenant buys more
 credit in packs. There are no plans and no subscription. See

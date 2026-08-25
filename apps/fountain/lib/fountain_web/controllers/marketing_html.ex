@@ -11,7 +11,7 @@ defmodule FountainWeb.MarketingHTML do
   def opening_credit do
     cfg = Application.get_env(:fountain, :credits, [])
 
-    {Fountain.Credits.format_cents(Keyword.get(cfg, :opening_cents, 1_000)),
+    {Fountain.Credits.format_cents(Keyword.get(cfg, :opening_cents, 500)),
      Keyword.get(cfg, :opening_days, 14)}
   end
 

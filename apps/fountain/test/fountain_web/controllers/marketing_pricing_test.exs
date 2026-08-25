@@ -26,12 +26,12 @@ defmodule FountainWeb.MarketingPricingTest do
     assert body =~ "Pay for what your agents do"
     assert body =~ "$0.25"
     assert body =~ "per agent hour"
-    assert body =~ "$10.00"
+    assert body =~ "$5.00"
     assert body =~ "to start, free"
     assert body =~ "Good for 14 days"
     assert body =~ "agents at once, at most"
     assert body =~ "One more for every $2.00 you hold, from 2"
-    assert body =~ "Start with $10.00 free"
+    assert body =~ "Start with $5.00 free"
     refute body =~ "/mo"
   end
 
@@ -65,7 +65,7 @@ defmodule FountainWeb.MarketingPricingTest do
 
   test "the hero quotes the opening credit", %{conn: conn} do
     body = conn |> get(~p"/") |> html_response(200)
-    assert body =~ "$10.00 of credit to start"
+    assert body =~ "$5.00 of credit to start"
   end
 
   test "omits pricing when billing is disabled", %{conn: conn} do

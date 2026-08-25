@@ -38,7 +38,7 @@ defmodule FountainWeb.BillingApiControllerTest do
       assert body["data"]["comped"] == false
       assert body["data"]["has_stripe_customer"] == false
       # The opening credit funds five sandboxes (ADR 0031).
-      assert body["data"]["sandbox_cap"] == 5
+      assert body["data"]["sandbox_cap"] == 2
       refute Map.has_key?(body["data"], "status")
       refute Map.has_key?(body["data"], "plan")
       assert body["data"]["usage"]["conversations"] == 0
