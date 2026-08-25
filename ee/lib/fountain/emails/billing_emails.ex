@@ -23,6 +23,8 @@ defmodule Fountain.Emails.BillingEmails do
   alias Fountain.Emails.UserEmails
   alias Fountain.Mailer
 
+  defp brand, do: UserEmails.brand()
+
   @doc """
   Welcome a just-verified user (#449).
 
@@ -44,7 +46,7 @@ defmodule Fountain.Emails.BillingEmails do
     new()
     |> from(UserEmails.from_address())
     |> to({user.email, user.email})
-    |> subject("Welcome to Fountain")
+    |> subject("Welcome to #{brand()}")
     |> html_body(welcome_html(start_url, trial_text))
     |> text_body(welcome_text(start_url, trial_text))
     |> Mailer.deliver()
@@ -68,7 +70,7 @@ defmodule Fountain.Emails.BillingEmails do
     <!DOCTYPE html>
     <html>
     <body style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 24px;">
-      <h2>Welcome to Fountain</h2>
+      <h2>Welcome to #{brand()}</h2>
       <p>
         Your account is verified and ready. Set up an agent, give it an
         environment, and start a conversation — it runs in an isolated sandbox
@@ -92,7 +94,7 @@ defmodule Fountain.Emails.BillingEmails do
 
   defp welcome_text(start_url, trial_text) do
     """
-    Welcome to Fountain
+    Welcome to #{brand()}
 
     Your account is verified and ready. Set up an agent, give it an
     environment, and start a conversation — it runs in an isolated sandbox
@@ -114,7 +116,7 @@ defmodule Fountain.Emails.BillingEmails do
     new()
     |> from(UserEmails.from_address())
     |> to({user.email, user.email})
-    |> subject("Your Fountain credit is running low")
+    |> subject("Your #{brand()} credit is running low")
     |> html_body(credits_html("Your credit is running low", balance, billing_url, false))
     |> text_body(credits_text("Your credit is running low", balance, billing_url, false))
     |> Mailer.deliver()
@@ -132,7 +134,7 @@ defmodule Fountain.Emails.BillingEmails do
     new()
     |> from(UserEmails.from_address())
     |> to({user.email, user.email})
-    |> subject("Your Fountain credit has run out")
+    |> subject("Your #{brand()} credit has run out")
     |> html_body(credits_html("Your credit has run out", balance, billing_url, true))
     |> text_body(credits_text("Your credit has run out", balance, billing_url, true))
     |> Mailer.deliver()

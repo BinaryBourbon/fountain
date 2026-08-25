@@ -13,11 +13,11 @@ defmodule FountainWeb.OAuthAuthorizeHTML do
         <input type="hidden" name="_csrf_token" value={get_csrf_token()} />
         <input :for={{k, v} <- @params} type="hidden" name={k} value={v} />
         <div class="space-y-1">
-          <div class="text-xs uppercase tracking-wide text-zinc-500">Fountain</div>
+          <div class="text-xs uppercase tracking-wide text-zinc-500">{Fountain.Brand.name()}</div>
           <h1 class="text-xl font-semibold">Sign in to {@client.name}?</h1>
           <p class="text-sm text-zinc-600">
             <span class="font-medium">{@client.name}</span>
-            is asking to use your Fountain account. Allowing it issues an API key it will use to
+            is asking to use your {Fountain.Brand.name()} account. Allowing it issues an API key it will use to
             act as you — start conversations, run agents, read your environments and vaults. You can
             revoke it any time under <a href={~p"/api-keys"} class="underline">Account → API keys</a>.
           </p>

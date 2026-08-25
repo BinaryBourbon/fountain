@@ -49,7 +49,9 @@ defmodule FountainWeb.Layouts do
           <div class="flex items-center justify-between p-4 border-b border-[var(--color-border)] shrink-0">
             <.link href={~p"/dashboard"} class="flex items-center gap-2">
               <img src="/images/app-icon.png" alt="" class="size-7 rounded-md" />
-              <span class="font-semibold text-sm text-[var(--color-text-primary)]">Fountain</span>
+              <span class="font-semibold text-sm text-[var(--color-text-primary)]">
+                {Fountain.Brand.name()}
+              </span>
             </.link>
             <label
               for="sidebar-toggle"
@@ -190,7 +192,9 @@ defmodule FountainWeb.Layouts do
                 />
               </svg>
             </label>
-            <span class="font-semibold text-sm text-[var(--color-text-primary)]">Fountain</span>
+            <span class="font-semibold text-sm text-[var(--color-text-primary)]">
+              {Fountain.Brand.name()}
+            </span>
           </div>
 
           <main class="flex-1 p-6">
