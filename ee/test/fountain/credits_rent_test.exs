@@ -61,6 +61,8 @@ defmodule Fountain.Credits.RentTest do
     # The opening credit ($10) funds two months of rent.
     test "charge takes a month up front, once per period, and moves the paid-through date" do
       user = insert_verified_user()
+      # $5 opening credit plus $5 bought: one month of rent, with $5 to spare.
+      {:ok, _} = Credits.grant(user.id, 500, "purchase", idempotency_key: "top-up")
       c = contact(user)
       start = ~U[2026-08-05 10:00:00Z]
 
@@ -75,6 +77,7 @@ defmodule Fountain.Credits.RentTest do
 
     test "collect charges every contact whose month is up, starting a never-charged one now" do
       user = insert_verified_user()
+      {:ok, _} = Credits.grant(user.id, 500, "purchase", idempotency_key: "top-up")
       fresh = contact(user)
       due = contact(user, %{rent_paid_through: ~U[2026-08-01 00:00:00Z]})
       paid = contact(user, %{rent_paid_through: ~U[2026-09-01 00:00:00Z]})
@@ -83,6 +86,7 @@ defmodule Fountain.Credits.RentTest do
       assert Repo.reload!(fresh).rent_paid_through == ~U[2026-09-10 00:00:00Z]
       assert Repo.reload!(due).rent_paid_through == ~U[2026-09-01 00:00:00Z]
       assert Repo.reload!(paid).rent_paid_through == ~U[2026-09-01 00:00:00Z]
+      # $10 held, two months charged.
       assert Credits.balance(user.id) == 0
 
       assert %{charged: 0} = Rent.collect(now: ~U[2026-08-11 00:00:00Z])

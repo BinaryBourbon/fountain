@@ -86,7 +86,7 @@ config :fountain, :sandboxes,
 config :fountain, :credits,
   # The opening grant a new account gets (ADR 0031 decision 3), and how
   # long it lasts.
-  opening_cents: 1_000,
+  opening_cents: 500,
   opening_days: 14,
   turn_hour_cents: 25,
   number_cents: nil,

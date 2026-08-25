@@ -71,7 +71,7 @@ defmodule Fountain.Workers.CreditsEmail do
   @doc "Cents under which a balance is 'low': 20 % of the opening grant, or $2."
   @spec runway_line(Accounts.User.t()) :: pos_integer()
   def runway_line(_user) do
-    opening = Application.get_env(:fountain, :credits, []) |> Keyword.get(:opening_cents, 1_000)
+    opening = Application.get_env(:fountain, :credits, []) |> Keyword.get(:opening_cents, 500)
     max(div(opening, 5), 200)
   end
 

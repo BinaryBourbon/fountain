@@ -77,9 +77,9 @@ that are easy to get wrong:
   `Quotas.with_sandbox_reservation/3` checks it too. In-flight turns finish
   and may go negative (ADR 0030 decision 6). There is no `check_active/1`.
 - **The opening credit lands at verification.** `Accounts.verify_email/2`
-  posts `Credits.grant_opening/2` — `CREDIT_OPENING_CENTS` ($10) expiring
+  posts `Credits.grant_opening/2` — `CREDIT_OPENING_CENTS` ($5) expiring
   `CREDIT_OPENING_DAYS` (14) later, idempotent per account. In tests
-  `insert_verified_user/1` therefore holds $10 and may spend; drain it with a
+  `insert_verified_user/1` therefore holds $5 and may spend; drain it with a
   `burn_turn` debit to test refusal. `insert_active_user/1` is the same
   function, kept for readability.
 - **Concurrency is funded by the balance, under a fleet ceiling.**

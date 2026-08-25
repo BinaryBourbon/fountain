@@ -64,7 +64,7 @@ exactly the customers who spend the most.
    used to be.
 
 3. **The trial is an opening grant.** Registration posts `grant_trial` of
-   `CREDIT_OPENING_CENTS` (default $10) expiring `CREDIT_OPENING_DAYS`
+   `CREDIT_OPENING_CENTS` (default $5; the ADR said $10, the operator set $5 on 2026-08-25) expiring `CREDIT_OPENING_DAYS`
    (default 14) later. Nothing else about a "trial" exists: no status, no
    clock, no sweep.
 

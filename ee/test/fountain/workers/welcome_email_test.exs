@@ -25,7 +25,7 @@ defmodule Fountain.Workers.WelcomeEmailTest do
       assert :ok = perform_job(WelcomeEmail, %{"user_id" => user.id})
 
       assert_email_sent(fn email ->
-        assert email.text_body =~ "starts with $10.00 of credit, good for 14 days"
+        assert email.text_body =~ "starts with $5.00 of credit, good for 14 days"
       end)
     end
 

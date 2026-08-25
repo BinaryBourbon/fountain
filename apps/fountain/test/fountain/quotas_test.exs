@@ -73,9 +73,9 @@ defmodule Fountain.QuotasTest do
     end
 
     # Every verified account holds the $10 opening grant: five sandboxes.
-    test "the opening grant funds five; nothing in the balance funds the floor" do
+    test "the opening grant funds the floor; so does nothing at all" do
       user = insert_active_user()
-      assert Quotas.sandbox_limit(user.id) == 5
+      assert Quotas.sandbox_limit(user.id) == 2
 
       {:ok, _} =
         Fountain.Credits.debit(user.id, 1_000, "burn_turn", idempotency_key: "drain-#{user.id}")
@@ -84,9 +84,9 @@ defmodule Fountain.QuotasTest do
     end
 
     test "the cap follows the balance, one sandbox per reserve" do
-      assert Quotas.sandbox_limit(with_balance(insert_active_user(), 1_000).id) == 10
-      assert Quotas.sandbox_limit(with_balance(insert_active_user(), 1_199).id) == 10
-      assert Quotas.sandbox_limit(with_balance(insert_active_user(), 100).id) == 5
+      assert Quotas.sandbox_limit(with_balance(insert_active_user(), 1_000).id) == 7
+      assert Quotas.sandbox_limit(with_balance(insert_active_user(), 1_199).id) == 8
+      assert Quotas.sandbox_limit(with_balance(insert_active_user(), 100).id) == 3
     end
 
     test "the ceiling bounds it however large the balance" do
@@ -120,7 +120,7 @@ defmodule Fountain.QuotasTest do
       user = with_balance(insert_active_user(), 1_000)
       {:ok, user} = Fountain.Accounts.update_sandbox_limit(user, 1)
       {:ok, user} = Fountain.Accounts.update_sandbox_limit(user, nil)
-      assert Quotas.sandbox_limit(user.id) == 10
+      assert Quotas.sandbox_limit(user.id) == 7
     end
 
     test "an unknown user gets the floor rather than being unlimited" do

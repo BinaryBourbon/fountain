@@ -344,7 +344,7 @@ defmodule Fountain.Credits do
 
   def grant_opening(user_id, opts) when is_binary(user_id) do
     cfg = Application.get_env(:fountain, :credits, [])
-    cents = Keyword.get(cfg, :opening_cents, 1_000)
+    cents = Keyword.get(cfg, :opening_cents, 500)
     days = Keyword.get(cfg, :opening_days, 14)
     now = Keyword.get(opts, :now) || DateTime.utc_now()
 

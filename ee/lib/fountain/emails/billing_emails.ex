@@ -56,7 +56,7 @@ defmodule Fountain.Emails.BillingEmails do
   defp welcome_trial_phrase(%User{}) do
     if Fountain.Billing.enabled?() do
       cfg = Application.get_env(:fountain, :credits, [])
-      cents = Keyword.get(cfg, :opening_cents, 1_000)
+      cents = Keyword.get(cfg, :opening_cents, 500)
       days = Keyword.get(cfg, :opening_days, 14)
 
       "Your account starts with #{Fountain.Credits.format_cents(cents)} of credit, good for " <>

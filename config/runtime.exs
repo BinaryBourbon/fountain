@@ -743,7 +743,7 @@ config :fountain, :team_contact_ceiling, sandbox_int.("TEAM_CONTACT_CEILING", 10
 
 config :fountain, :credits,
   # The opening grant a new account gets, and how many days it lasts.
-  opening_cents: credit_cents.("CREDIT_OPENING_CENTS") || 1_000,
+  opening_cents: credit_cents.("CREDIT_OPENING_CENTS") || 500,
   opening_days: credit_cents.("CREDIT_OPENING_DAYS") || 14,
   turn_hour_cents: credit_cents.("CREDIT_TURN_HOUR_CENTS") || 25,
   number_cents: credit_cents.("CREDIT_NUMBER_CENTS"),
