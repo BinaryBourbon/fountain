@@ -213,7 +213,9 @@ defmodule FountainWeb.SecretBindingsLive.Index do
   defp changeset_error(changeset) do
     changeset
     |> Ecto.Changeset.traverse_errors(fn {msg, opts} ->
-      Regex.replace(~r"%{(\w+)}", msg, fn _, key -> to_string(opts[String.to_atom(key)]) end)
+      Regex.replace(~r"%{(\w+)}", msg, fn _, key ->
+        Enum.find_value(opts, "", fn {k, v} -> if Atom.to_string(k) == key, do: to_string(v) end)
+      end)
     end)
     |> Enum.map_join("; ", fn {field, msgs} -> "#{field} #{Enum.join(msgs, ", ")}" end)
   end

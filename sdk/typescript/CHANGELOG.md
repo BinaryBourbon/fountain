@@ -10,6 +10,16 @@ server releases.
 
 ---
 
+## [1.3.0] — 2026-08-25
+
+### Added
+
+- Generated types for `/api/secret-bindings` (list, create, update, delete,
+  presets): which hosts a secret is attached to at the egress broker, and how
+  (ADR 0019 gate 1b). Only answers on an account the broker is on for; 404
+  `brokerage_not_enabled` otherwise. No client wrapper yet — use the raw
+  types with `client.request`.
+
 ## [1.2.0] — 2026-08-25
 
 ### Added
