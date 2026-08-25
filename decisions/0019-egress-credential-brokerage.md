@@ -1,7 +1,7 @@
 ---
 type: ADR
 title: "Egress credential brokerage: the sandbox holds placeholders, the broker holds the credential"
-description: "Proposed, nothing built in the product. Outbound HTTP credentials are attached at a forward proxy the sandbox reaches over HTTPS_PROXY, so the agent process holds only placeholders and the only host it may reach is the broker. Gate 0 passed on 2026-08-24 against a real sandbox: brokered API calls and a private clone with no credential in the sandbox, cross-tenant probe refused, +258ms per request."
+description: "Proposed; gate 1a is built and off by default (BROKER_URL blank), no tenant flipped. Outbound HTTP credentials are attached at a forward proxy the sandbox reaches over HTTPS_PROXY, so the agent process holds only placeholders and the only host it may reach is the broker. Gate 0 passed on 2026-08-24 against a real sandbox: brokered API calls and a private clone with no credential in the sandbox, cross-tenant probe refused, +258ms per request."
 tags: [security, secrets, sandbox, egress, governance]
 status: draft
 adr: "0019"
@@ -13,11 +13,19 @@ stale_after: 2026-11-24
 
 # 0019 — Egress credential brokerage
 
-**Status:** Proposed — **nothing described here is built.** No broker is
-deployed, no placeholder substitution exists, and `Fountain.Sandbox.NetworkPolicy`
-— which does exist — has never been applied to a single production sandbox. This
-ADR records a decision shape and the gates that decide whether we take it; the PR
-that builds each gate removes its caveat.
+**Status:** Proposed — **gate 1a is built, and nothing is on.** `Fountain.Broker`
+and the provisioning wiring exist on `main` (#1090 PRs 1–3), behind `BROKER_URL`:
+blank, and every conversation provisions exactly as it did before the module
+existed; set, and only the tenants in `BROKER_TENANTS` are brokered, for
+`GITHUB_TOKEN` / `GH_TOKEN` only. No broker is deployed (#1090 PR 4, in
+fountain-ops), no tenant is flipped, and `Fountain.Sandbox.NetworkPolicy` has
+still been applied to no production sandbox outside gate 0. Gates 1b–4 are not
+built. Each later PR removes its own caveat here.
+
+**Revised 2026-08-25 (gate 1a).** Building it changed three things below,
+each marked in place: §11 is a vault per *conversation*, not per tenant; the
+proxy URL in *Gates* is the broker's own listener, not Traefik's front; and the
+CA goes through `sudo` because the trust directory is root-owned.
 
 **Revised 2026-08-24.** The four questions the first draft left open are
 answered: the vendor (§8), whether brokering is a tenant-facing option (§9),
@@ -400,10 +408,25 @@ None of that is in scope for gates 0–4. It is recorded here so the topology
 chosen in §11 does not foreclose it, and gate 0 proves the chain is possible
 rather than assuming it.
 
-### 11. One instance, one vault per tenant
+### 11. One instance, one vault per conversation
 
-Decided 2026-08-24. A single Agent Vault instance serves every tenant, with a
-**vault per tenant** and a session in the `proxy` vault role per conversation.
+Decided 2026-08-24 as a vault per tenant; **amended 2026-08-25, on building
+gate 1a, to a vault per conversation** (`c-<conversation id>`, created at
+provision, deleted when the conversation ends). Two facts forced it. A tenant
+who runs two conversations at once with different `GITHUB_TOKEN`s — the
+vault-per-launch identity swap the Vault primitive exists for — would load
+both into one broker vault under one key, and the last write would win for
+both conversations. And the broker's request log attributes a request to a
+user or agent token, never to a session token: `actor_type` and `actor_id`
+are empty for every vault-scoped session, so a per-tenant vault could never
+answer gate 4's "which conversation sent this". The vault name is the join.
+
+The tenant-level guarantee this section cared about is unchanged: a session
+is bound to one vault by the token, so no session can read or broker another
+vault, another conversation's or another tenant's. What follows still holds.
+
+A single Agent Vault instance serves every tenant, with a session in the
+`proxy` vault role per conversation.
 Agent Vault's permission model is two independent axes — instance roles
 (`owner` / `member` / `no-access`) and vault roles (`admin` / `member` /
 `proxy`) — a token scoped to one vault cannot read another, and `proxy` is
@@ -520,14 +543,18 @@ production for the first time.
 
 Four findings that change the work rather than confirming it:
 
-- **The proxy URL is `https://<session-token>:<vault>@host:443`, and both
-  userinfo fields are load-bearing.** With only the token, curl works and
-  **git prompts for a *proxy* password and aborts** — an error naming the
-  broker, not the repository, which is the sort of thing that costs an
-  afternoon. This belongs in the gate 1 contract beside the placeholder name.
+- **The proxy URL carries both userinfo fields, and both are load-bearing.**
+  With only the token, curl works and **git prompts for a *proxy* password and
+  aborts** — an error naming the broker, not the repository, which is the sort
+  of thing that costs an afternoon. Gate 1a builds it as
+  `http://<session-token>:<vault>@host:port` (corrected 2026-08-25: gate 0's
+  `https://…@host:443` was the Traefik front in §11; the broker's own listener
+  is plain HTTP, and the sandbox trusts its CA for the intercepted upstream).
 - **The CA belongs in the operating system trust store, not in per-tool
   variables.** One `update-ca-certificates` satisfied curl, git and npm at
-  once. The variable route is worse than useless when a path is wrong:
+  once (gate 1a adds `NODE_EXTRA_CA_CERTS` for Node, which reads its own
+  bundle, and writes the PEM to `/tmp` first: the trust directory is
+  root-owned, so it is `sudo install`ed there the way apt is reached). The variable route is worse than useless when a path is wrong:
   `CURL_CA_BUNDLE` pointing at a missing file makes curl fail with no
   fallback, and `NODE_EXTRA_CA_CERTS` alone left npm on "unable to verify the
   first certificate".
@@ -548,6 +575,20 @@ Two things this ADR argued from reading the code are now observed: the session
 token does reach the shared `/home/sprite/.env`, and `Redaction` scrubs the
 placeholder along with everything else, so probes have to print lengths rather
 than values.
+
+**Gate 1a — built 2026-08-25 (#1090 PRs 1–3), not flipped for any tenant.**
+The narrower slice #1090 argued for: catalog bindings only (`GITHUB_TOKEN` /
+`GH_TOKEN` to `api.github.com` as a bearer and to `github.com` as basic
+`x-access-token`), one operator-held tenant list, no schema change. Verified
+end to end against a real Agent Vault and a Linux runner with no cloud in the
+loop: a private clone with a 16-byte placeholder in the sandbox, the token off
+the shared `.env`, a stopped broker refused by name before any sandbox exists,
+and the vault deleted with the conversation. The `allow: [broker]` floor is
+applied on any provider that advertises `:network_policy` and is what a runner
+cannot enforce, so a runner needs `BROKER_ALLOW_UNENFORCED` and is for
+development only. The placeholder is **not** a lookup key — the broker
+replaces the auth header wholesale — so the "contract" below reduces to a
+plausibility rule.
 
 **Gate 1 — the placeholder contract.** Naming scheme, versioning, and a test that
 fails when the two sides disagree. Then all environment and vault secrets that
