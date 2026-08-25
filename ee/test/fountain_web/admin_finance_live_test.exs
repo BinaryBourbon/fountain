@@ -151,30 +151,6 @@ defmodule FountainWeb.AdminFinanceLiveTest do
     end
   end
 
-  describe "contacts that nothing bills for" do
-    test "says why the add-on column is zero", %{conn: conn} do
-      admin = insert_admin()
-      subscriber("team")
-
-      {:ok, _lv, html} = live(login_user(conn, admin), ~p"/admin/finance")
-
-      assert html =~ "Teammate contacts are not billed on this deployment"
-      assert html =~ "STRIPE_PRICE_ID_CONTACT"
-    end
-
-    test "no such note once a contact price exists", %{conn: conn} do
-      Application.put_env(:fountain, :stripe_price_ids, %{"contact" => "price_contact_test"})
-      on_exit(fn -> Application.delete_env(:fountain, :stripe_price_ids) end)
-
-      admin = insert_admin()
-      subscriber("team")
-
-      {:ok, _lv, html} = live(login_user(conn, admin), ~p"/admin/finance")
-
-      refute html =~ "not billed on this deployment"
-    end
-  end
-
   describe "fractional rates" do
     # The gap that took /admin/finance down in prod the moment a rate card was
     # configured: every rate here was a whole number, and `money/1` only

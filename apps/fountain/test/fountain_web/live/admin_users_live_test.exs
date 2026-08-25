@@ -163,21 +163,6 @@ defmodule FountainWeb.AdminUsersLiveTest do
       assert_admin_event(target.id, "admin.plan.changed")
     end
 
-    test "admin can comp a user's teammate contacts", %{conn: conn} do
-      admin = insert_admin()
-      target = insert_active_user(plan: "team")
-
-      conn = login_user(conn, admin)
-      {:ok, lv, _html} = live(conn, ~p"/admin/users")
-
-      lv
-      |> element("#comped-contacts-#{target.id}")
-      |> render_submit(%{"user_id" => target.id, "count" => "2"})
-
-      assert Fountain.Accounts.get_user(target.id).comped_contacts == 2
-      assert_admin_event(target.id, "admin.comped_contacts.changed")
-    end
-
     defp assert_admin_event(target_id, event_type) do
       types =
         target_id

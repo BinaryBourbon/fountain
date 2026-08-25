@@ -56,7 +56,6 @@ defmodule FountainWeb.AdminJSON do
       sandbox_limit_override: u.sandbox_limit_override,
       # Teammate contacts this account is not charged for. Distinct from a
       # `comped` subscription_status, which makes everything free.
-      comped_contacts: u.comped_contacts,
       # The prepaid balance (ADR 0030); meaningful only while credits are
       # active on the deployment, zero otherwise.
       credit_balance_cents: u.credit_balance_cents,

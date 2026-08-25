@@ -155,20 +155,6 @@ defmodule Fountain.PlansTest do
         assert Plans.monthly_cents(subject) == plan.monthly_cents
       end
     end
-
-    test "the contact add-on has a display price, overridable by config" do
-      assert Plans.contact_monthly_cents() == 500
-
-      Application.put_env(:fountain, :stripe_contact_price_cents, 1200)
-      on_exit(fn -> Application.delete_env(:fountain, :stripe_contact_price_cents) end)
-
-      assert Plans.contact_monthly_cents() == 1200
-    end
-
-    test "the contact add-on price id is nil when unconfigured" do
-      Application.put_env(:fountain, :stripe_price_ids, %{"solo" => "price_solo"})
-      assert Plans.contact_price_id() == nil
-    end
   end
 
   describe "resolve/1" do
@@ -226,7 +212,6 @@ defmodule Fountain.PlansTest do
       Application.put_env(:fountain, :stripe_price_id, nil)
 
       assert Plans.price_id("solo") == nil
-      assert Plans.contact_price_id() == nil
       assert Plans.slug_for_price_id("price_anything") == nil
     end
 
@@ -236,11 +221,6 @@ defmodule Fountain.PlansTest do
 
     # The webhook leans on this: nil must mean "leave the stored plan alone",
     # so the add-on price must never look like a tier.
-    test "the contact add-on price maps to no plan" do
-      assert Plans.slug_for_price_id("price_contact") == nil
-      assert Plans.contact_price_id() == "price_contact"
-    end
-
     test "an unknown price maps to no plan" do
       assert Plans.slug_for_price_id("price_someone_elses") == nil
       assert Plans.slug_for_price_id(nil) == nil

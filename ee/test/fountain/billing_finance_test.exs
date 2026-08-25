@@ -72,20 +72,12 @@ defmodule Fountain.Billing.FinanceTest do
       |> Ecto.Changeset.change(
         plan: plan,
         subscription_status: status,
-        # A real subscription: the contact add-on needs an item to sit on, and
-        # `sync_contact_addon/1` bills nothing without one.
+        # A real subscription, so the account reads as subscribed.
         stripe_subscription_id: "sub_#{System.unique_integer([:positive])}"
       )
       |> Repo.update()
 
     user
-  end
-
-  # Turn on contact billing for a test. Off by default, which is both the
-  # shipped default and prod's actual state.
-  defp bill_contacts! do
-    Application.put_env(:fountain, :stripe_price_ids, %{"contact" => "price_contact_test"})
-    on_exit(fn -> Application.delete_env(:fountain, :stripe_price_ids) end)
   end
 
   # A sandbox that ran for `hours`, with a prompt in flight for `busy_hours` of
@@ -430,61 +422,7 @@ defmodule Fountain.Billing.FinanceTest do
       assert revenue.comped_cents == Plans.monthly_cents("scale")
     end
 
-    test "the contact add-on is revenue, less what an operator comped" do
-      bill_contacts!()
-      user = subscriber("team")
-      contact(user, email: true, phone: true)
-      contact(user, email: true, phone: true)
-      contact(user, email: true, phone: true)
-      {:ok, _} = Accounts.update_comped_contacts(user, 1, actor: "admin")
-
-      row = row_for(summary(), user)
-
-      assert row.contact_revenue_cents == 2 * Plans.contact_monthly_cents()
-      assert row.revenue_cents == Plans.monthly_cents("team") + row.contact_revenue_cents
-    end
-
-    test "comping more contacts than exist does not become negative revenue" do
-      bill_contacts!()
-      user = subscriber("team")
-      contact(user, email: true, phone: true)
-      {:ok, _} = Accounts.update_comped_contacts(user, 5, actor: "admin")
-
-      assert row_for(summary(), user).contact_revenue_cents == 0
-    end
-
-    test "contacts earn nothing where the deployment does not bill for them" do
-      # Prod's actual state: STRIPE_PRICE_ID_CONTACT unset, so
-      # `sync_contact_addon/1` returns :not_billed and Stripe charges nothing.
-      # The panel used to report $5 a contact against those invoices.
-      user = subscriber("team")
-      contact(user, email: true, phone: true)
-      contact(user, email: true, phone: true)
-
-      refute Finance.contacts_billed?()
-
-      row = row_for(summary(), user)
-
-      assert row.contact_revenue_cents == 0
-      assert row.revenue_cents == Plans.monthly_cents("team")
-      # The cost side is untouched: we pay AgentMail and AgentPhone regardless.
-      assert row.inboxes == 2
-      assert row.numbers == 2
-      # ...and the tile that reads the same numbers agrees.
-      assert Finance.mrr().contact_cents == 0
-    end
-
-    test "an account with no Stripe subscription has no item to bill the add-on on" do
-      bill_contacts!()
-      user = subscriber("team")
-      Repo.update!(Ecto.Changeset.change(user, stripe_subscription_id: nil))
-      contact(user, email: true, phone: true)
-
-      assert row_for(summary(), user).contact_revenue_cents == 0
-    end
-
     test "mrr/0 agrees with the full pass" do
-      bill_contacts!()
       # Two code paths to the same number is two chances to disagree, and a
       # tile that contradicts the table below it destroys trust in both.
       subscriber("solo")

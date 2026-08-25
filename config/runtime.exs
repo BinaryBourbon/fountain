@@ -634,8 +634,7 @@ config :fountain,
        %{
          "solo" => System.get_env("STRIPE_PRICE_ID_SOLO"),
          "team" => System.get_env("STRIPE_PRICE_ID_TEAM"),
-         "scale" => System.get_env("STRIPE_PRICE_ID_SCALE"),
-         "contact" => System.get_env("STRIPE_PRICE_ID_CONTACT")
+         "scale" => System.get_env("STRIPE_PRICE_ID_SCALE")
        }
        |> Enum.reject(fn {_slug, id} -> id in [nil, ""] end)
        |> Map.new()
@@ -647,14 +646,6 @@ config :fountain,
 case System.get_env("DEFAULT_PLAN") do
   slug when slug in [nil, ""] -> :ok
   slug -> config :fountain, :default_plan, slug
-end
-
-# Per-month price in cents for the teammate-contact add-on, display-only. The
-# amount Stripe charges is whatever STRIPE_PRICE_ID_CONTACT says;
-# `mix fountain.verify_plans` is what checks the two agree.
-case System.get_env("STRIPE_CONTACT_PRICE_CENTS") do
-  value when value in [nil, ""] -> :ok
-  value -> config :fountain, :stripe_contact_price_cents, String.to_integer(value)
 end
 
 # Monthly price in cents for the `legacy` flat plan, display-only, for the

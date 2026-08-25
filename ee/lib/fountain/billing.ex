@@ -978,8 +978,8 @@ defmodule Fountain.Billing do
 
   This is the upgrade path for anyone who already has a subscription, which
   after registration is everybody: Checkout would open a *second* one. The
-  base plan item is repriced in place and the add-on item, if the tenant has
-  teammate contacts, is left alone.
+  base plan item is repriced in place; any other item on the subscription is
+  left alone.
 
   Proration is Stripe's default `create_prorations`, so an upgrade mid-period
   bills the difference immediately and a trial stays a trial — the price
@@ -1050,117 +1050,6 @@ defmodule Fountain.Billing do
       if item |> item_price_id() |> Plans.slug_for_price_id(), do: item_id(item)
     end)
   end
-
-  # ─── Teammate contact add-on ────────────────────────────────────────────────
-
-  @doc """
-  Bring the teammate-contact add-on item in line with how many contacts
-  `user_id` actually holds.
-
-  An AgentMail inbox and an AgentPhone number cost Fountain money every month
-  per teammate, so they are billed per unit rather than folded into a tier: a
-  second subscription item whose quantity is the tenant's contact count
-  (`Fountain.Team.Comms`).
-
-  **Set, never increment.** The quantity is computed from the contact rows,
-  so a dropped call, a retry, a crash between provisioning and syncing, or an
-  admin deleting rows directly all converge on the right number the next time
-  this runs. An increment would not: it would drift, and a tenant would be
-  billed for numbers they no longer have.
-
-  ## Comped contacts
-
-  Two levers, deliberately separate. A `comped` subscription makes everything
-  free and short-circuits here entirely. `users.comped_contacts` is the
-  narrower one: the first N contacts are not charged, so a tenant can pay for
-  their tier and still hold a number Fountain eats the cost of. The billed
-  quantity is `max(0, count - comped_contacts)`, which is why an allowance
-  larger than the contact count is harmless rather than a negative quantity
-  Stripe would reject.
-
-  Returns `{:ok, quantity}`, or `{:ok, :not_billed}` when there is nothing to
-  bill against — billing off, no subscription, or no contact price configured.
-  That last one is how a deployment offers teammate comms for free.
-  """
-  @spec sync_contact_addon(binary()) :: {:ok, non_neg_integer() | :not_billed} | {:error, term()}
-  def sync_contact_addon(user_id) when is_binary(user_id) do
-    price_id = Plans.contact_price_id()
-    user = Repo.get(User, user_id)
-
-    cond do
-      not enabled?() -> {:ok, :not_billed}
-      is_nil(price_id) -> {:ok, :not_billed}
-      is_nil(user) -> {:ok, :not_billed}
-      user.subscription_status == "comped" -> {:ok, :not_billed}
-      user.stripe_subscription_id in [nil, ""] -> {:ok, :not_billed}
-      true -> do_sync_contact_addon(user, price_id)
-    end
-  end
-
-  defp do_sync_contact_addon(%User{} = user, price_id) when is_binary(price_id) do
-    quantity = billable_contacts(user)
-
-    with {:ok, sub} <- Stripe.Subscription.retrieve(user.stripe_subscription_id),
-         {:ok, _} <- apply_contact_quantity(sub, price_id, quantity) do
-      {:ok, quantity}
-    end
-  end
-
-  @doc """
-  How many of a user's teammate contacts Stripe is billed for: the count they
-  hold, less their comped allowance, floored at zero.
-
-  Public because the admin surfaces show it beside the raw count — "3 contacts,
-  1 billed" is the sentence an operator needs, and recomputing the subtraction
-  at each call site is how the two drift.
-  """
-  @spec billable_contacts(User.t()) :: non_neg_integer()
-  def billable_contacts(%User{} = user) do
-    max(0, Fountain.Team.Comms.contact_count(user.id) - (user.comped_contacts || 0))
-  end
-
-  defp apply_contact_quantity(sub, price_id, quantity) when is_binary(price_id) do
-    existing =
-      sub
-      |> subscription_items()
-      |> Enum.find(fn item -> item_price_id(item) == price_id end)
-
-    cond do
-      # Nothing to bill and no item to bill it on: the common case for every
-      # tenant that has never used teammate comms. Adding a zero-quantity item
-      # would put a $0 line on every invoice for no reason.
-      is_nil(existing) and quantity == 0 ->
-        {:ok, :noop}
-
-      is_nil(existing) ->
-        Stripe.SubscriptionItem.create(%{
-          subscription: subscription_id(sub),
-          price: price_id,
-          quantity: quantity,
-          proration_behavior: :create_prorations
-        })
-
-      item_quantity(existing) == quantity ->
-        {:ok, :noop}
-
-      # Down to zero: delete the item rather than set quantity 0. Stripe
-      # rejects a zero quantity on a licensed price, and a lingering item is
-      # what puts "1 × contact" on the invoice of a tenant who released their
-      # last number.
-      quantity == 0 ->
-        Stripe.SubscriptionItem.delete(item_id(existing), %{
-          proration_behavior: :create_prorations
-        })
-
-      true ->
-        Stripe.SubscriptionItem.update(item_id(existing), %{
-          quantity: quantity,
-          proration_behavior: :create_prorations
-        })
-    end
-  end
-
-  defp subscription_id(%{id: id}) when is_binary(id), do: id
 
   # ─── Webhook sync ───────────────────────────────────────────────────────────
 
@@ -1738,43 +1627,9 @@ defmodule Fountain.Billing do
         attach_stripe_customer(user, customer_id)
       end
 
-    with {:ok, user} <- linked,
-         {:ok, user} <- adopt_subscription(user, subscription_id, event_created) do
-      # The teammate-contact add-on lives on the subscription, so a *new*
-      # subscription starts without it. Nothing else would notice: the
-      # quantity is only pushed on provision and release, so a tenant who
-      # cancelled (or was comped and then un-comped) and came back through
-      # Checkout would keep their numbers and stop being billed for them
-      # until they happened to add or remove one.
-      #
-      # Best-effort, and last: this event's job is to record the
-      # subscription, and a Stripe hiccup here must not make the webhook fail
-      # and Stripe redeliver an adoption that already succeeded.
-      resync_contact_addon(user)
-      {:ok, user}
+    with {:ok, user} <- linked do
+      adopt_subscription(user, subscription_id, event_created)
     end
-  end
-
-  defp resync_contact_addon(%User{} = user) do
-    if Fountain.Team.Comms.contact_count(user.id) > 0 do
-      case sync_contact_addon(user.id) do
-        {:ok, _} ->
-          :ok
-
-        {:error, reason} ->
-          Logger.error(
-            "[billing] could not re-attach the contact add-on for user #{user.id} " <>
-              "on subscription #{user.stripe_subscription_id}: #{inspect(reason)} — " <>
-              "they hold numbers that are not being billed"
-          )
-
-          :error
-      end
-    end
-  rescue
-    error ->
-      Logger.error("[billing] contact add-on resync raised: #{Exception.message(error)}")
-      :error
   end
 
   # Checkout in subscription mode always creates a *new* subscription, so a
@@ -1992,10 +1847,6 @@ defmodule Fountain.Billing do
   defp item_id(%{id: id}) when is_binary(id), do: id
   defp item_id(%{"id" => id}) when is_binary(id), do: id
   defp item_id(_), do: nil
-
-  defp item_quantity(%{quantity: n}) when is_integer(n), do: n
-  defp item_quantity(%{"quantity" => n}) when is_integer(n), do: n
-  defp item_quantity(_), do: 0
 
   defp event_created_at(%Stripe.Event{created: ts}) when is_integer(ts),
     do: DateTime.from_unix!(ts) |> DateTime.truncate(:second)
@@ -2380,7 +2231,7 @@ defmodule Fountain.Billing do
     complete record of checkouts — including a canceled user coming back.
   - `mrr_cents` / `mrr_by_plan` — recurring revenue, priced per plan from
     `Fountain.Billing.Finance.mrr/0`: each active subscription at its own
-    tier's price, plus the teammate-contact add-on. Deliberately `active`
+    tier's price. Deliberately `active`
     only: `past_due` is at-risk revenue, comped is not revenue.
 
     It used to be `active × :stripe_price_monthly_cents`, one configured

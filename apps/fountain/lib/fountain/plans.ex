@@ -62,12 +62,11 @@ defmodule Fountain.Plans do
   ## Teammate contacts are a ceiling, not an allowance
 
   An AgentMail inbox and an AgentPhone number cost real money per teammate per
-  month, so they are **billed as an add-on** — a second subscription item whose
-  quantity is the tenant's contact count (`Fountain.Billing.sync_contact_addon/1`).
-  Any plan can buy them. `team_contacts/1` is therefore an abuse ceiling rather
-  than an entitlement: it bounds what a single account can provision in one
-  burst if the quantity sync is failing, which is exactly the window in which
-  Fountain would be paying for numbers it is not charging for.
+  month, so they are **rented from the prepaid balance** — a month up front
+  at provisioning and on each anniversary (`Fountain.Credits.Rent`, ADR 0030).
+  Any plan can hold them. `team_contacts/1` is therefore an abuse ceiling
+  rather than an entitlement: it bounds what a single account can provision
+  in one burst.
 
   ## Resolution, and self-hosting
 
@@ -394,25 +393,6 @@ defmodule Fountain.Plans do
   end
 
   def slug_for_price_id(_), do: nil
-
-  @doc """
-  The Stripe price id for one teammate contact — the add-on item whose
-  quantity is a tenant's contact count. `nil` when unconfigured, which is how
-  a deployment runs teammate comms without charging for them.
-  """
-  @spec contact_price_id() :: String.t() | nil
-  def contact_price_id do
-    case Map.get(price_ids(), "contact") do
-      id when is_binary(id) and id != "" -> id
-      _ -> nil
-    end
-  end
-
-  @doc "Display price in cents for one teammate contact per month."
-  @spec contact_monthly_cents() :: non_neg_integer()
-  def contact_monthly_cents do
-    Application.get_env(:fountain, :stripe_contact_price_cents, 500)
-  end
 
   @doc """
   Format cents the way every price surface shows them: `2900` → `"$29"`,

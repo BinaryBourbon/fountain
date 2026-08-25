@@ -93,13 +93,13 @@ Five rules that are easy to get wrong:
   `customer.subscription.updated` that comes back is what stamps the slug. So
   the entitlement follows what Stripe charges, not what we asked for. An
   unrecognised price leaves the stored plan alone rather than nulling it.
-- **Teammate contacts are billed per unit, not included in a tier.**
-  `Billing.sync_contact_addon/1` *sets* an add-on subscription item's quantity
-  from the contact rows (never increments), best-effort, after the row
-  commits. The plan's `team_contacts` number is an abuse ceiling on top, not
-  an allowance. Two levers comp one: `comp_account/1` makes everything free,
-  `users.comped_contacts` takes N off the billed quantity for a tenant who
-  still pays for their tier.
+- **Teammate contacts are rented from the prepaid balance, not a Stripe
+  item.** `Credits.Rent` takes `CREDIT_NUMBER_CENTS + CREDIT_INBOX_CENTS` a
+  month up front at provisioning and on each anniversary, with a seven-day
+  grace before release (ADR 0030 decision 4). The Stripe contact add-on and
+  `users.comped_contacts` are gone (batch 2 of #1086); the plan's
+  `team_contacts` number is an abuse ceiling on top, not an allowance. To
+  give someone free numbers, comp the account or grant them credit.
 
 - **A turn hour is not a sandbox hour.** Turns burn credit against
   `SandboxUsage`'s `turn_seconds` (the turns summed, each clipped to the

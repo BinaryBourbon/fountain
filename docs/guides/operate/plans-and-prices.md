@@ -169,10 +169,9 @@ tenant who downgrades that the new cap applies to their next conversation.
 Create one recurring monthly price for each plan you want to sell. Use USD.
 Use a licensed price, not a metered one.
 
-Create a fourth price for the teammate contact add-on if you charge for
-teammate email and phone. Make that price licensed and monthly as well.
-
-Record the four price ids. Each one starts with `price_`.
+Record the three price ids. Each one starts with `price_`. Teammate email
+and phone are not a Stripe price: Fountain rents them from the prepaid
+balance. See "Rent for numbers and inboxes" above.
 
 ## Set the variables
 
@@ -184,7 +183,6 @@ time.
 STRIPE_PRICE_ID_SOLO=price_...
 STRIPE_PRICE_ID_TEAM=price_...
 STRIPE_PRICE_ID_SCALE=price_...
-STRIPE_PRICE_ID_CONTACT=price_...
 ```
 
 Keep `STRIPE_PRICE_ID` at its current value. It names the old flat price, and
@@ -232,38 +230,21 @@ the plan.
 ## Charge for teammate contacts
 
 An AgentMail inbox and an AgentPhone number cost you money every month, for as
-long as the teammate holds them. Fountain bills them per unit, on a second
-item on the same subscription.
-
-Set `STRIPE_PRICE_ID_CONTACT` to start that. Fountain then sets the quantity
-of that item to the number of contacts the tenant holds. It computes the
-quantity from the contact rows every time, so a failed call repairs itself at
-the next provision or release.
-
-Set `STRIPE_CONTACT_PRICE_CENTS` to the same amount, for display.
-
-!!! warning "This is a customer-facing change"
-
-    A tenant who has teammate contacts today pays nothing for them. A line
-    item appears on their next invoice once you set this variable. Tell them
-    first.
+long as the teammate holds them. Fountain rents them from the tenant's prepaid
+balance, a month up front. Set `CREDIT_NUMBER_CENTS` and `CREDIT_INBOX_CENTS`
+to start that. See "Rent for numbers and inboxes" above for the grace period
+and the release.
 
 ## Give someone free numbers
 
-Two levers, and they answer different questions.
+To make an account pay **nothing at all**, comp the account. Open
+`/admin/users` and select `comp` on the row. Fountain cancels the Stripe
+subscriptions and stops all charges. A comped account holds numbers and
+inboxes without rent.
 
-To make an account pay **nothing at all**, comp the account. Open `/admin/users` and
-select `comp` on the row. Fountain cancels the Stripe subscriptions and stops
-all charges, contacts included. The teammate keeps the inbox and the number.
-
-To let an account **pay for its plan and still hold a free number**, set the
-comped contact count. Open `/admin/users`, put a number in the field beside the plan,
-then select `free`. Fountain bills for the contacts above that count, and for
-none if the count covers them all.
-
-The second lever is the one for a staff account, a partner, or a customer you
-gave a number to as an apology. The first makes their plan free as well, which
-is more than you usually want.
+To let an account **pay for its plan and still hold a number**, add credit to
+it. `POST /api/admin/users/{id}/credits` adds credit that never expires. A
+month of rent for one contact is the number price plus the inbox price.
 
 ## Reverse the change
 

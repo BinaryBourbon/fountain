@@ -11,22 +11,10 @@ defmodule Fountain.Billing.Finance do
 
   ## Revenue
 
-  Two lines, both from what the tenant is actually subscribed to:
-
-    * the **plan** — `Fountain.Plans.monthly_cents/1` for their tier;
-    * the **teammate-contact add-on** — the billable contact count times
-      `Plans.contact_monthly_cents/0` (#991), less the contacts an operator
-      has comped.
-
-  Contact revenue is what `sync_contact_addon/1` would actually put on the
-  invoice, guards included — **not** the contact count times a price. Where a
-  deployment has no `STRIPE_PRICE_ID_CONTACT` (the state one stays in until an
-  operator deliberately leaves it, because setting it bills every existing
-  tenant on their next invoice) the add-on earns nothing, however many
-  contacts exist. `Plans.contact_monthly_cents/0` returns $5 regardless of
-  whether anything is configured to charge it, which is exactly how this panel
-  came to report revenue no invoice contained. The cost side still counts
-  every inbox and number, because Fountain pays for those either way.
+  The plan — `Fountain.Plans.monthly_cents/1` for the tenant's tier — is the
+  recurring line. Teammate contacts are not a second subscription item any
+  more: they are rented from the prepaid balance (`Fountain.Credits.Rent`),
+  so their revenue is credit burned, reported under `credits/1`.
 
   Only an `active` subscription contributes. A trialing account pays nothing
   yet and a comped one pays nothing by decision, so both count as zero
@@ -149,7 +137,6 @@ defmodule Fountain.Billing.Finance do
           subscription_status: String.t(),
           revenue_cents: non_neg_integer(),
           plan_cents: non_neg_integer(),
-          contact_revenue_cents: non_neg_integer(),
           turn_hours: float(),
           credit_granted_cents: non_neg_integer(),
           credit_burned_cents: non_neg_integer(),
@@ -281,7 +268,6 @@ defmodule Fountain.Billing.Finance do
     usage = usage_by_user(rows)
     channels = Comms.channel_counts()
     messages = message_counts(period_start, period_end)
-    contacts = billable_contacts(users)
     ledger = ledger_by_user(period_start, period_end)
 
     tenants =
@@ -292,7 +278,6 @@ defmodule Fountain.Billing.Finance do
           Map.get(usage, &1.id, empty_usage()),
           Map.get(channels, &1.id, %{inboxes: 0, numbers: 0}),
           Map.get(messages, &1.id, empty_messages()),
-          Map.get(contacts, &1.id, 0),
           Map.get(ledger, &1.id, empty_ledger()),
           card,
           fraction
@@ -346,8 +331,7 @@ defmodule Fountain.Billing.Finance do
         %{
           plan: Plans.resolve(slug),
           accounts: length(group),
-          plan_cents: group |> Enum.map(& &1.plan_cents) |> Enum.sum(),
-          contact_cents: group |> Enum.map(& &1.contact_revenue_cents) |> Enum.sum()
+          plan_cents: group |> Enum.map(& &1.plan_cents) |> Enum.sum()
         }
       end)
       |> Enum.sort_by(& &1.plan.order)
@@ -355,7 +339,6 @@ defmodule Fountain.Billing.Finance do
     %{
       mrr_cents: paying |> Enum.map(& &1.revenue_cents) |> Enum.sum(),
       plan_cents: paying |> Enum.map(& &1.plan_cents) |> Enum.sum(),
-      contact_cents: paying |> Enum.map(& &1.contact_revenue_cents) |> Enum.sum(),
       # Packs sold in the period, by anyone. Not MRR: one-time, and a
       # liability until burned (`credits/1` carries the deferred balance).
       credit_sales_cents: tenants |> Enum.map(& &1.credit_sold_cents) |> Enum.sum(),
@@ -371,7 +354,7 @@ defmodule Fountain.Billing.Finance do
   defp status_cents(tenants, status) do
     tenants
     |> Enum.filter(&(&1.subscription_status == status))
-    |> Enum.map(&(&1.plan_cents + &1.contact_revenue_cents))
+    |> Enum.map(& &1.plan_cents)
     |> Enum.sum()
   end
 
@@ -390,7 +373,6 @@ defmodule Fountain.Billing.Finance do
   @spec mrr() :: %{
           mrr_cents: non_neg_integer(),
           plan_cents: non_neg_integer(),
-          contact_cents: non_neg_integer(),
           by_plan: [map()]
         }
   def mrr do
@@ -402,8 +384,6 @@ defmodule Fountain.Billing.Finance do
           select: {u.plan, count(u.id)}
       )
 
-    contacts = active_contact_cents()
-
     by_plan =
       counts
       |> Enum.map(fn {slug, accounts} ->
@@ -412,8 +392,7 @@ defmodule Fountain.Billing.Finance do
         %{
           plan: plan,
           accounts: accounts,
-          plan_cents: accounts * plan.monthly_cents,
-          contact_cents: Map.get(contacts, plan.slug, 0)
+          plan_cents: accounts * plan.monthly_cents
         }
       end)
       # A null `plan` and an unknown slug both resolve to the deployment
@@ -424,55 +403,14 @@ defmodule Fountain.Billing.Finance do
         %{
           plan: hd(group).plan,
           accounts: group |> Enum.map(& &1.accounts) |> Enum.sum(),
-          plan_cents: group |> Enum.map(& &1.plan_cents) |> Enum.sum(),
-          contact_cents: hd(group).contact_cents
+          plan_cents: group |> Enum.map(& &1.plan_cents) |> Enum.sum()
         }
       end)
       |> Enum.sort_by(& &1.plan.order)
 
     plan_cents = by_plan |> Enum.map(& &1.plan_cents) |> Enum.sum()
-    contact_cents = by_plan |> Enum.map(& &1.contact_cents) |> Enum.sum()
 
-    %{
-      mrr_cents: plan_cents + contact_cents,
-      plan_cents: plan_cents,
-      contact_cents: contact_cents,
-      by_plan: by_plan
-    }
-  end
-
-  # Contact add-on revenue for active accounts only, grouped by the plan they
-  # are on, so the per-plan table's two columns come from the same cohort.
-  #
-  # Empty on a deployment that does not bill contacts, which is what keeps the
-  # `/admin` MRR tile and this panel telling the same story: both read this,
-  # and both used to add $5 a contact against invoices charging nothing.
-  defp active_contact_cents do
-    users =
-      Repo.all(
-        from u in User,
-          where: u.subscription_status in ^@paying,
-          select: %{
-            id: u.id,
-            plan: u.plan,
-            subscription_status: u.subscription_status,
-            stripe_subscription_id: u.stripe_subscription_id
-          }
-      )
-
-    billable = billable_contacts(users)
-
-    Enum.reduce(users, %{}, fn user, acc ->
-      case Map.get(billable, user.id, 0) do
-        0 ->
-          acc
-
-        count ->
-          key = Plans.resolve(user.plan).slug
-          Map.update(acc, key, count, &(&1 + count))
-      end
-    end)
-    |> Map.new(fn {slug, count} -> {slug, count * Plans.contact_monthly_cents()} end)
+    %{mrr_cents: plan_cents, plan_cents: plan_cents, by_plan: by_plan}
   end
 
   ## ── cost ────────────────────────────────────────────────────────────────
@@ -558,7 +496,7 @@ defmodule Fountain.Billing.Finance do
 
   ## ── one tenant ──────────────────────────────────────────────────────────
 
-  defp tenant_row(user, usage, channels, messages, contacts, ledger, card, fraction) do
+  defp tenant_row(user, usage, channels, messages, ledger, card, fraction) do
     # `plan` is the tier the subscription is for — what Stripe charges, and
     # what a trial converts into. `effective_plan` is whose numbers apply
     # today, which during a trial is the smaller `trial` plan (#1022).
@@ -571,7 +509,6 @@ defmodule Fountain.Billing.Finance do
     paying? = user.subscription_status in @paying
 
     plan_cents = plan.monthly_cents
-    contact_revenue_cents = contacts * Plans.contact_monthly_cents()
 
     sandbox_cost =
       sum_or_nil(
@@ -590,7 +527,7 @@ defmodule Fountain.Billing.Finance do
     # is pro-rated to the window being looked at. They are answering different
     # questions and a part-month view will show the two out of step; the panel
     # says which window it is on.
-    revenue_cents = if paying?, do: plan_cents + contact_revenue_cents, else: 0
+    revenue_cents = if paying?, do: plan_cents, else: 0
 
     %{
       user_id: user.id,
@@ -599,7 +536,6 @@ defmodule Fountain.Billing.Finance do
       subscription_status: user.subscription_status,
       revenue_cents: revenue_cents,
       plan_cents: plan_cents,
-      contact_revenue_cents: contact_revenue_cents,
       turn_hours: SandboxUsage.hours(turn_seconds),
       effective_plan: effective_plan,
       credit_granted_cents: ledger.granted,
@@ -724,60 +660,6 @@ defmodule Fountain.Billing.Finance do
         }
     )
   end
-
-  @doc """
-  Whether this deployment puts teammate contacts on an invoice at all.
-
-  False when billing is off, and false when `STRIPE_PRICE_ID_CONTACT` is
-  unset — which is the state a deployment stays in until an operator
-  deliberately leaves it, because setting that variable adds a line item to
-  the next invoice of every tenant who already holds contacts (#991).
-
-  While it is false the contacts are real, they cost Fountain real money, and
-  they earn nothing. That is a fact worth seeing rather than a zero to hide,
-  so the panel says it out loud.
-  """
-  @spec contacts_billed?() :: boolean()
-  def contacts_billed?, do: Billing.enabled?() and not is_nil(Plans.contact_price_id())
-
-  # The billable contact quantity per tenant: what `sync_contact_addon/1`
-  # would actually set the Stripe item to, in one query rather than one per
-  # row.
-  #
-  # It is not enough to copy `billable_contacts/1`'s subtraction, which is
-  # what this did and why the panel invented revenue. That function is the
-  # *last* step of `sync_contact_addon/1`, behind four guards that each mean
-  # "nothing is billed": billing off, no contact price on this deployment, a
-  # comped account, or an account with no Stripe subscription to hang an item
-  # on. Prod sits behind the second of those, so every contact was reported at
-  # $5 a month against invoices that charge nothing for them.
-  defp billable_contacts(users) do
-    if contacts_billed?() do
-      counts = Comms.contact_counts()
-
-      comped =
-        Repo.all(from u in User, where: u.comped_contacts > 0, select: {u.id, u.comped_contacts})
-        |> Map.new()
-
-      billable =
-        Map.new(users, fn user ->
-          {user.id, user.subscription_status != "comped" and subscribed?(user)}
-        end)
-
-      Map.new(counts, fn {user_id, count} ->
-        if Map.get(billable, user_id, false) do
-          {user_id, max(count - Map.get(comped, user_id, 0), 0)}
-        else
-          {user_id, 0}
-        end
-      end)
-    else
-      %{}
-    end
-  end
-
-  defp subscribed?(%{stripe_subscription_id: id}), do: id not in [nil, ""]
-  defp subscribed?(_), do: false
 
   # Message counts per tenant for the period, one grouped query over the same
   # `usage_events` table the sandbox counts come from.
