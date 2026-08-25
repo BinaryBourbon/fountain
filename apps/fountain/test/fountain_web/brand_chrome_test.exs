@@ -38,6 +38,30 @@ defmodule FountainWeb.BrandChromeTest do
     assert_email_sent(subject: "Verify your Managoat account")
   end
 
+  test "the marketing page and legal pages name the brand; the CLI stays fountain", %{conn: conn} do
+    home = conn |> get(~p"/") |> html_response(200)
+    assert home =~ "Managoat runs an agent on a cloud sandbox"
+    assert home =~ "Managoat scrubs them from the output"
+    assert home =~ ">fountain</code> CLI"
+    assert home =~ "© 2026 Managoat."
+    assert home =~ "Built on Fountain, open source."
+
+    for path <- [~p"/terms", ~p"/privacy"] do
+      html = conn |> get(path) |> html_response(200)
+      assert html =~ "Managoat"
+      refute html =~ "the Fountain service"
+      refute html =~ "Fountain is operated by"
+      refute html =~ "Fountain lets you"
+    end
+  end
+
+  test "without the brand the marketing site credits nobody", %{conn: conn} do
+    Application.delete_env(:fountain, :product_name)
+    home = conn |> get(~p"/") |> html_response(200)
+    assert home =~ "© 2026 Fountain."
+    refute home =~ "Built on Fountain"
+  end
+
   test "without the brand the docs show no note", %{conn: conn} do
     Application.delete_env(:fountain, :product_name)
     html = conn |> get(~p"/docs") |> html_response(200)
