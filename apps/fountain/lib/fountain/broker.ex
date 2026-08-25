@@ -23,6 +23,17 @@ defmodule Fountain.Broker do
     HTTPS, basic `x-access-token`) — gate 1a's default, kept so a tenant who
     never opens the bindings page keeps working.
   * Every other secret reaches the sandbox exactly as before.
+
+  ## The network policy (gate 2)
+
+  The sandbox's own policy is always the floor, `allow: [broker]`. What the
+  environment's `networking_type` says is enforced **at the broker**:
+  `unrestricted` sets the vault's unmatched-host policy to `passthrough`, so
+  the agent may reach any host but only ever with the credentials it was
+  granted; `limited` sets it to `deny` and turns `allowed_hosts` into
+  passthrough services, so an unlisted host is refused with a 403 that names
+  the host. Tenant intent is preserved and gains per-host visibility in the
+  broker's request log.
   * Only tenants listed in `BROKER_TENANTS`: the operator ratchet of §9.
   * Only `unrestricted` environments. Translating `limited`'s `allowed_hosts`
     into broker rules is gate 2; a brokered `limited` environment is refused
@@ -341,19 +352,52 @@ defmodule Fountain.Broker do
   provision and reattach, so an edited secret reaches the broker on the next
   wake, the same way the `.env` file is refreshed.
   """
-  @spec prepare(String.t(), %{String.t() => String.t()}, bindings()) ::
+  @typedoc "What the environment's `networking_type` asks for: reach anything, or only these hosts."
+  @type network :: :unrestricted | {:limited, [String.t()]}
+
+  @spec prepare(String.t(), %{String.t() => String.t()}, bindings(), keyword()) ::
           {:ok, session()} | {:error, term()}
-  def prepare(conversation_id, brokered, bindings \\ %{})
+  def prepare(conversation_id, brokered, bindings \\ %{}, opts \\ [])
       when is_binary(conversation_id) and is_map(brokered) and is_map(bindings) do
     vault = vault_name(conversation_id)
+    network = Keyword.get(opts, :network, :unrestricted)
+    credentialed = services_for(brokered, bindings)
 
     with :ok <- ensure_vault(vault),
-         :ok <- set_policy(vault, "passthrough"),
+         :ok <- set_policy(vault, policy_for(network)),
          :ok <- put_credentials(vault, credentials_for(brokered, bindings)),
-         :ok <- put_services(vault, services_for(brokered, bindings)) do
+         :ok <- put_services(vault, credentialed ++ allow_services(network, credentialed)) do
       mint_session(vault, conversation_id)
     end
   end
+
+  defp policy_for(:unrestricted), do: "passthrough"
+  defp policy_for({:limited, _hosts}), do: "deny"
+
+  # `limited`: one passthrough service per allowed host, so the deny policy
+  # has something to match. A host that already carries a credential service
+  # is skipped — the credentialed entry is the one that must win there.
+  defp allow_services(:unrestricted, _credentialed), do: []
+
+  defp allow_services({:limited, hosts}, credentialed) do
+    taken = MapSet.new(credentialed, & &1.host)
+
+    hosts
+    |> Enum.map(&(&1 |> to_string() |> String.trim() |> String.downcase()))
+    |> Enum.reject(&(&1 == "" or MapSet.member?(taken, &1)))
+    |> Enum.uniq()
+    |> Enum.map(fn host ->
+      %{name: service_name("ALLOW", host), host: host, auth: %{type: "passthrough"}}
+    end)
+  end
+
+  @doc "The network shape an environment asks for, as `prepare/4` takes it."
+  @spec network_for(map() | nil) :: network()
+  def network_for(%{networking_type: "limited", networking_config: config}) do
+    {:limited, (config && (config["allowed_hosts"] || config[:allowed_hosts])) || []}
+  end
+
+  def network_for(_), do: :unrestricted
 
   @doc "Delete the conversation's vault: its credentials, services and sessions go with it."
   @spec release(String.t()) :: :ok | {:error, term()}

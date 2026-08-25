@@ -318,23 +318,19 @@ defmodule Fountain.Conversations.Provisioning do
   Refuse a brokered pairing that cannot be enforced, before a sandbox exists
   (ADR 0019 gate 1a). Same shape and reason as `check_network_policy_support/3`.
 
-  Three refusals, each by name: a `limited` environment (its `allowed_hosts`
-  become broker rules in gate 2, and a floor that ignored them would be a
-  policy the author did not write); a provider with no `:network_policy`,
-  unless `BROKER_ALLOW_UNENFORCED` says a development box may run advisory;
-  and a broker that does not answer `/health`, so an outage is reported as
-  one rather than as the install failure it would otherwise wear (§6).
+  Two refusals, each by name: a provider with no `:network_policy`, unless
+  `BROKER_ALLOW_UNENFORCED` says a development box may run advisory; and a
+  broker that does not answer `/health`, so an outage is reported as one
+  rather than as the install failure it would otherwise wear (§6). A
+  `limited` environment is not refused since gate 2: its `allowed_hosts` are
+  enforced at the broker (`Fountain.Broker.network_for/1`).
   """
   @spec check_broker_support(boolean(), atom(), Environment.t() | nil, String.t()) ::
           :ok | {:error, {:broker, atom()} | {:broker, :unreachable, term()}}
   def check_broker_support(false, _provider, _env, _conv_id), do: :ok
 
-  def check_broker_support(true, provider, env, conv_id) do
+  def check_broker_support(true, provider, _env, conv_id) do
     cond do
-      match?(%Environment{networking_type: "limited"}, env) ->
-        publish_stage(conv_id, "broker", "failed", %{reason: "limited_environment_unsupported"})
-        {:error, {:broker, :limited_environment_unsupported}}
-
       not Sandbox.supports?(provider, :network_policy) and not Fountain.Broker.allow_unenforced?() ->
         publish_stage(conv_id, "broker", "failed", %{
           provider: to_string(provider),

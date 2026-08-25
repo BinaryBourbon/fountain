@@ -23,7 +23,8 @@ published at `broker.inevitable.fyi` by the Traefik TCP router of §11), and
 the hosted deployment names **one** tenant, the maintainer's own account
 (home-cloud#131, 2026-08-25). Its done-when was observed on a production
 Sprites conversation the same day — see *Gate 1a* under *Gates*. Everyone else
-is byte-for-byte on the old path. Gate 1b (bindings) is built; gates 2–4 are not. #1090 is closed and each
+is byte-for-byte on the old path. Gates 1b (bindings) and 2 (`limited` at the broker) are built; 3 and 4 are
+not. #1090 is closed and each
 later gate gets its own tracker.
 
 **Revised 2026-08-25 (gate 1a).** Building it changed three things below,
@@ -623,10 +624,15 @@ the proxy URL shape above, the CA into the trust store rather than into six
 variables, and a broker preflight at provision time so an unreachable broker
 says so.
 
-**Gate 2 — `networking_type` migration.** `allowed_hosts` translated into broker
-service rules; both modes enforced at the broker; the floor made
-non-negotiable. Cheap today precisely because zero environments use `limited`;
-this gate gets harder the longer it waits.
+**Gate 2 — built 2026-08-25.** `allowed_hosts` translated into broker
+passthrough services under `unmatched_host_policy=deny`; `unrestricted` is
+`passthrough`; the sandbox's own policy is the `allow: [broker]` floor in both
+cases, and the preflight no longer refuses a `limited` environment on a
+brokered tenant. A host that carries a credential binding keeps its credential
+service rather than gaining a passthrough twin. What §3 asked for, and what
+gate 0 warned about: under `deny` the tenant lists what provisioning and the
+runtime need (`registry.npmjs.org`, the model host), exactly as a Sprites
+`limited` environment already required.
 
 **Gate 3 — inference credentials through the same path.** This absorbs 0016 gate
 3 and closes its base-URL question: brokering inference through the proxy needs no
