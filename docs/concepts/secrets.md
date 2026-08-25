@@ -181,7 +181,8 @@ After a conversation, `GET /api/conversations/:id/egress` lists what left the
 sandbox through the broker. Each row shows the host, the binding that matched
 and so the credential attached, the status, and the latency. A refused host
 shows the refusal. The list stays for `BROKER_LOG_RETENTION_HOURS` after the
-conversation ends.
+conversation ends. The route needs a key with full scope. The token a sandbox
+holds cannot read it.
 
 You manage bindings on Account, then Credential bindings, or with
 `GET /api/secret-bindings` and its siblings. The page and the routes are only

@@ -36,6 +36,35 @@ defmodule FountainWeb.AuthMeControllerTest do
       assert comped == false
     end
 
+    test "carries brokered, false off the broker ratchet and true on it", %{conn: conn} do
+      user = insert_verified_user()
+      {_key_record, raw_key} = insert_api_key(user)
+
+      assert %{"brokered" => false} =
+               conn |> authed_with_key(raw_key) |> get("/api/auth/me") |> json_response(200)
+
+      previous =
+        for k <- [:broker_url, :broker_token, :broker_proxy_url, :broker_tenants],
+            do: {k, Application.get_env(:fountain, k)}
+
+      on_exit(fn ->
+        for {k, v} <- previous,
+            do:
+              if(is_nil(v),
+                do: Application.delete_env(:fountain, k),
+                else: Application.put_env(:fountain, k, v)
+              )
+      end)
+
+      Application.put_env(:fountain, :broker_url, "http://broker.test:14321")
+      Application.put_env(:fountain, :broker_token, "t")
+      Application.put_env(:fountain, :broker_proxy_url, "http://broker.test:14322")
+      Application.put_env(:fountain, :broker_tenants, [user.id])
+
+      assert %{"brokered" => true} =
+               conn |> authed_with_key(raw_key) |> get("/api/auth/me") |> json_response(200)
+    end
+
     test "returns 401 when no API key is provided", %{conn: conn} do
       conn = get(conn, "/api/auth/me")
       assert conn.status == 401

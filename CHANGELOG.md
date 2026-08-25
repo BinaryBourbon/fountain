@@ -16,6 +16,21 @@ upgrade, is in
 
 ## [Unreleased]
 
+### Fixed
+
+- **Broker, three findings from wiring the workbench to gate 4.**
+  `GET /api/conversations/:id/egress` needs full scope, like
+  `/api/secret-bindings`: a sandbox's sprite-scoped token could read the
+  request log — which secrets went to which host — for any conversation on
+  the tenant (#1152). Its 502 no longer leaks an inspected Elixir term as
+  `message`; the client gets "The egress broker did not answer." plus a
+  stable `reason` word (`econnrefused`, `api_error_503`, ...) and the detail
+  goes to the server log (#1153). The OpenAPI description of
+  `networking_config` says where `limited` is enforced (the broker on a
+  brokered account, the sandbox otherwise) instead of the pre-gate-2 sandbox
+  story, and `GET /api/auth/me` carries a read-only `brokered` so a client
+  can label the mode without probing `/api/secret-bindings` (#1154).
+
 ### Upgrade notes
 
 - **`BILLING_ENABLED` is `CREDITS_ENABLED`** (#1144). The old name is still

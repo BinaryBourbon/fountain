@@ -70,6 +70,25 @@ defmodule FountainWeb.SchemaWrappers do
   end
 
   @doc """
+  The one description of `networking_config`, shared by `Environment`,
+  `EnvironmentRequest` and `EnvironmentUpdate`. It lives here rather than as
+  a module attribute because each `Schemas.*` module is its own `defmodule`
+  and attributes do not cross that boundary; three copies is how it went
+  stale at ADR 0019 gate 2 (#1154).
+  """
+  def networking_config_description do
+    "Refines networking_type: limited. allowed_hosts is the only key honored " <>
+      "today; unknown keys are ignored. Where the policy is enforced depends on " <>
+      "the account: on a brokered account (`brokered: true` on GET /api/auth/me) " <>
+      "the sandbox can reach only the egress broker, and under limited the " <>
+      "broker refuses any host not in allowed_hosts with a 403 that names it, " <>
+      "while a host with a bound credential needs no entry. On an unbrokered " <>
+      "account the sandbox itself allows only the allowlisted domains. Either " <>
+      "way, limited with no allowed_hosts (or an empty list) is a deny-all, " <>
+      "not an allow-all."
+  end
+
+  @doc """
   Build the envelope map `OpenApiSpex.schema/1` expects.
 
   The title is the module's own last segment, which is what all twenty-two

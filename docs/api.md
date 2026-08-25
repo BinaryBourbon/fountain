@@ -157,7 +157,9 @@ count is the conversations that ran a turn in the month. The
 pricer charges a turn when it ends.
 
 `GET /api/auth/me` carries `comped`. It is `true` for an account an operator
-made free, and `null` when payment is off.
+made free, and `null` when payment is off. It also carries `brokered`. It is
+`true` when the account runs behind the egress credential broker. See
+[Secrets](concepts/secrets.md).
 
 ### Data export and deletion
 

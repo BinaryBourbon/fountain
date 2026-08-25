@@ -3,6 +3,8 @@ defmodule FountainWeb.ConversationController do
   use FountainWeb, :controller
   use OpenApiSpex.ControllerSpecs
 
+  require Logger
+
   alias Fountain.Billing
   alias Fountain.Conversations
   alias Fountain.Conversations.{ConversationServer, LogEvent}
@@ -186,7 +188,9 @@ defmodule FountainWeb.ConversationController do
     responses: [
       ok: {"Egress", "application/json", Schemas.EgressListResponse},
       not_found: {"Not found", "application/json", Schemas.Error},
-      bad_gateway: {"The broker did not answer", "application/json", Schemas.Error}
+      forbidden: {"The key lacks full scope", "application/json", Schemas.Error},
+      bad_gateway:
+        {"The broker did not answer", "application/json", Schemas.BrokerUnavailableError}
     ]
   )
 
@@ -206,15 +210,35 @@ defmodule FountainWeb.ConversationController do
               render(conn, :egress, events: events, next: next, brokered: true)
 
             {:error, reason} ->
+              # The inspected term is an internal shape, not an API message;
+              # it goes to the log, and the client gets a sentence plus a
+              # stable `reason` word it can branch on (#1153).
+              Logger.warning("broker request_log failed for #{conv.id}: #{inspect(reason)}")
+
               conn
               |> put_status(:bad_gateway)
-              |> json(%{error: "broker_unavailable", message: inspect(reason)})
+              |> json(%{
+                error: "broker_unavailable",
+                message: "The egress broker did not answer.",
+                reason: broker_reason(reason)
+              })
           end
         else
           render(conn, :egress, events: [], next: nil, brokered: false)
         end
     end
   end
+
+  # `{:broker, :request_log, :econnrefused}` -> "econnrefused";
+  # `{:broker, :request_log, {:api_error, 503, _}}` -> "api_error_503".
+  defp broker_reason({:broker, _call, inner}), do: broker_reason(inner)
+  defp broker_reason({:api_error, status, _body}), do: "api_error_#{status}"
+  defp broker_reason(atom) when is_atom(atom), do: Atom.to_string(atom)
+
+  defp broker_reason(%{__exception__: true} = e),
+    do: e.__struct__ |> inspect() |> Macro.underscore()
+
+  defp broker_reason(_), do: "unknown"
 
   defp egress_limit(nil), do: 100
 

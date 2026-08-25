@@ -5,7 +5,8 @@ defmodule FountainWeb.Schemas do
   `Schemas.Agent`).
   """
 
-  import FountainWeb.SchemaWrappers, only: [list_response: 2, item_response: 2]
+  import FountainWeb.SchemaWrappers,
+    only: [list_response: 2, item_response: 2, networking_config_description: 0]
 
   alias OpenApiSpex.Schema
 
@@ -1130,12 +1131,7 @@ defmodule FountainWeb.Schemas do
         networking_type: %Schema{type: :string, enum: ~w(unrestricted limited)},
         networking_config: %Schema{
           type: :object,
-          description:
-            "Refines networking_type: limited. allowed_hosts is the only key " <>
-              "honored today; unknown keys are ignored. Under limited, egress is " <>
-              "restricted to the allowlisted domains. With no allowed_hosts (or an " <>
-              "empty list), the sandbox denies all egress by default — this is a " <>
-              "deny-all, not an allow-all.",
+          description: networking_config_description(),
           properties: %{
             allowed_hosts: %Schema{
               type: :array,
@@ -1190,12 +1186,7 @@ defmodule FountainWeb.Schemas do
         networking_type: %Schema{type: :string, enum: ~w(unrestricted limited)},
         networking_config: %Schema{
           type: :object,
-          description:
-            "Refines networking_type: limited. allowed_hosts is the only key " <>
-              "honored today; unknown keys are ignored. Under limited, egress is " <>
-              "restricted to the allowlisted domains. With no allowed_hosts (or an " <>
-              "empty list), the sandbox denies all egress by default — this is a " <>
-              "deny-all, not an allow-all.",
+          description: networking_config_description(),
           properties: %{
             allowed_hosts: %Schema{
               type: :array,
@@ -1231,12 +1222,7 @@ defmodule FountainWeb.Schemas do
         networking_type: %Schema{type: :string, enum: ~w(unrestricted limited)},
         networking_config: %Schema{
           type: :object,
-          description:
-            "Refines networking_type: limited. allowed_hosts is the only key " <>
-              "honored today; unknown keys are ignored. Under limited, egress is " <>
-              "restricted to the allowlisted domains. With no allowed_hosts (or an " <>
-              "empty list), the sandbox denies all egress by default — this is a " <>
-              "deny-all, not an allow-all.",
+          description: networking_config_description(),
           properties: %{
             allowed_hosts: %Schema{
               type: :array,
@@ -2973,6 +2959,29 @@ defmodule FountainWeb.Schemas do
     })
   end
 
+  defmodule BrokerUnavailableError do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "BrokerUnavailableError",
+      description: "The egress broker did not answer the request log call.",
+      type: :object,
+      properties: %{
+        error: %Schema{type: :string, enum: ["broker_unavailable"]},
+        message: %Schema{type: :string, description: "A sentence for a human."},
+        reason: %Schema{
+          type: :string,
+          description:
+            "A stable word for a client to branch on: `econnrefused`, `timeout`, " <>
+              "`nxdomain`, `api_error_<status>`, or `unknown`. The detail is in " <>
+              "the server log, not here."
+        }
+      },
+      required: [:error, :message, :reason]
+    })
+  end
+
   defmodule ManifestResource do
     @moduledoc false
     require OpenApiSpex
@@ -3174,6 +3183,15 @@ defmodule FountainWeb.Schemas do
         },
         onboarding_completed: %Schema{type: :boolean},
         comped: %Schema{type: :boolean, nullable: true, description: "Null when billing is off."},
+        brokered: %Schema{
+          type: :boolean,
+          description:
+            "Whether this account's conversations run behind the egress credential " <>
+              "broker (ADR 0019): secrets with bindings stay at the broker, a limited " <>
+              "environment is enforced there, and /api/secret-bindings and " <>
+              "/api/conversations/:id/egress have content. Read-only; an operator " <>
+              "sets it."
+        },
         expires_at: %Schema{type: :string, format: :"date-time", nullable: true}
       },
       required: [:id, :name, :prefix, :created_at]
