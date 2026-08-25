@@ -81,6 +81,12 @@ defmodule Fountain.Broker do
 
   @ca_path "/usr/local/share/ca-certificates/agent-vault.crt"
 
+  # The OS trust bundle update-ca-certificates rebuilds — real roots plus the
+  # broker CA install_broker_ca added. Point replacement-style CA vars here,
+  # never at @ca_path alone: that is one cert, and a tool told to trust only it
+  # rejects every non-brokered host (pypi, crates.io) it also has to reach.
+  @system_ca_bundle "/etc/ssl/certs/ca-certificates.crt"
+
   @typedoc "A minted proxy session for one conversation."
   @type session :: %{
           vault: String.t(),
@@ -400,6 +406,16 @@ defmodule Fountain.Broker do
   session token (as `http://<token>:<vault>@host:port`), so it is process-only
   (`Identity.@process_only`); the lower case twins are for apt and the tools
   that only read those.
+
+  The CA variables make each toolchain trust the broker's MITM certificate.
+  `install_broker_ca` puts the CA in the OS trust store, which curl, git and
+  anything on OpenSSL then read — but a tool with its own bundled roots does
+  not. Node is told through `NODE_EXTRA_CA_CERTS` (additive, so the broker CA
+  alone); the rest replace their bundle and so must name the full system bundle
+  (`@system_ca_bundle`), not the broker CA on its own. `UV_NATIVE_TLS` turns uv
+  off its bundled webpki roots and onto that same OS store. Without these, a
+  brokered `uv sync`, `pip install`, or `cargo fetch` fails with
+  `invalid peer certificate: UnknownIssuer` the moment it reaches a MITM'd host.
   """
   @spec sandbox_env(session()) :: [{String.t(), String.t()}]
   def sandbox_env(%{token: token, vault: vault}) do
@@ -411,13 +427,19 @@ defmodule Fountain.Broker do
       {"https_proxy", url},
       {"http_proxy", url},
       {"NO_PROXY", "localhost,127.0.0.1"},
-      {"NODE_EXTRA_CA_CERTS", @ca_path}
+      {"NODE_EXTRA_CA_CERTS", @ca_path},
+      {"SSL_CERT_FILE", @system_ca_bundle},
+      {"REQUESTS_CA_BUNDLE", @system_ca_bundle},
+      {"CARGO_HTTP_CAINFO", @system_ca_bundle},
+      {"UV_NATIVE_TLS", "1"}
     ]
   end
 
   @doc "Every variable `sandbox_env/1` sets, for a refresh to replace."
   @spec env_keys() :: [String.t()]
-  def env_keys, do: ~w(HTTPS_PROXY HTTP_PROXY https_proxy http_proxy NO_PROXY NODE_EXTRA_CA_CERTS)
+  def env_keys,
+    do:
+      ~w(HTTPS_PROXY HTTP_PROXY https_proxy http_proxy NO_PROXY NODE_EXTRA_CA_CERTS SSL_CERT_FILE REQUESTS_CA_BUNDLE CARGO_HTTP_CAINFO UV_NATIVE_TLS)
 
   @doc "The variables that carry the session token, which `Identity` keeps off the shared `.env`."
   @spec process_only_keys() :: [String.t()]

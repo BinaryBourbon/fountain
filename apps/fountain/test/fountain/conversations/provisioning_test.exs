@@ -183,7 +183,8 @@ defmodule Fountain.Conversations.ProvisioningTest do
                "sudo install -D -m 644 '/tmp/agent-vault-ca.crt' " <>
                  "'/usr/local/share/ca-certificates/agent-vault.crt' && sudo update-ca-certificates && " <>
                  "printf '%s\\n' 'Defaults env_keep += \"HTTPS_PROXY HTTP_PROXY https_proxy http_proxy " <>
-                 "NO_PROXY NODE_EXTRA_CA_CERTS\"' > '/tmp/fountain-broker-proxy.sudoers' && " <>
+                 "NO_PROXY NODE_EXTRA_CA_CERTS SSL_CERT_FILE REQUESTS_CA_BUNDLE CARGO_HTTP_CAINFO " <>
+                 "UV_NATIVE_TLS\"' > '/tmp/fountain-broker-proxy.sudoers' && " <>
                  "sudo visudo -cf '/tmp/fountain-broker-proxy.sudoers' && " <>
                  "sudo install -m 440 '/tmp/fountain-broker-proxy.sudoers' '/etc/sudoers.d/fountain-broker-proxy'"
     end
