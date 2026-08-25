@@ -4,6 +4,22 @@ defmodule FountainWeb.MarketingHTML do
 
   embed_templates "marketing_html/*"
 
+  @doc "The SDK call on the homepage, kept out of the template so its braces are not HEEx."
+  def sdk_example do
+    """
+    import { Fountain } from "@agentshit/fountain-sdk";
+
+    const fountain = new Fountain(); // FOUNTAIN_API_KEY
+
+    const run = await fountain.run(
+      "Fix the failing test and open a PR",
+      { agent: "reviewer" }
+    );
+
+    console.log(run.output);\
+    """
+  end
+
   @doc "Whether the pricing section renders at all: only where the deployment bills."
   def pricing?, do: Fountain.Credits.enabled?()
 
