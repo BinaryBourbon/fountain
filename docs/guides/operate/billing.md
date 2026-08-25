@@ -34,17 +34,16 @@ provider plan allows.
 
 ## Start it
 
-1. Set `CREDIT_PRICING_SINCE` to the time of the deploy, in ISO 8601. Fountain
-   never prices a turn from before that instant, so nobody pays for work they
-   did while billing was off.
-2. Set the prices. `CREDIT_TURN_HOUR_CENTS` defaults to 25. Set
+1. Set the prices. `CREDIT_TURN_HOUR_CENTS` defaults to 25. Set
    `CREDIT_NUMBER_CENTS`, `CREDIT_INBOX_CENTS`, `CREDIT_EMAIL_MESSAGE_CENTS`
    and `CREDIT_SMS_MESSAGE_CENTS` if you charge for contacts. Unset, those
    lines cost nothing.
-3. Configure Stripe. The [Stripe integration guide](../../integrations/stripe.md)
+2. Configure Stripe. The [Stripe integration guide](../../integrations/stripe.md)
    covers `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` and the three webhook
    events.
-4. Set `BILLING_ENABLED=true` and deploy.
+3. Set `BILLING_ENABLED=true` and deploy. The pricer looks back seven days, so
+   turns from the last week are priced too; comp or credit the accounts you
+   do not want to charge for them.
 
 ## Give the accounts you already have their opening credit
 

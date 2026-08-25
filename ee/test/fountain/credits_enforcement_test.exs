@@ -132,7 +132,7 @@ defmodule Fountain.CreditsEnforcementTest do
 
   describe "the admin grant" do
     setup do
-      switch(pricing_since: @since, enforce: false)
+      switch(enforce: false)
       admin = insert_empty_user()
       {:ok, admin} = Accounts.update_user_role(admin, "admin")
       {_rec, key} = insert_api_key(admin)
@@ -179,7 +179,7 @@ defmodule Fountain.CreditsEnforcementTest do
 
   describe "runway emails" do
     setup do
-      switch(pricing_since: @since, enforce: false)
+      switch(enforce: false)
       :ok
     end
 
