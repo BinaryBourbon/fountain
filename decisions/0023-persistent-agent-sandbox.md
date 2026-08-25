@@ -144,7 +144,10 @@ should not answer at 3am is an agent whose channel is muted, not a machine
 that refuses to boot. `wake_policy_test.exs` states it.
 
 Open from the questions list: pricing the mode rather than the
-sandbox-minutes (#798).
+sandbox-minutes (#798). Now tracked as #1120 (rent for a persistent home,
+ADR 0031 decision 7). Note the framing there: the two modes are one
+lifecycle policy on the machine (#805), so the price goes on the machine's
+kept time, not on `persistent` as a product.
 
 ## Context
 
