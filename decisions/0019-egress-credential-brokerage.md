@@ -648,8 +648,21 @@ shape for tenant bindings: a binding is "this secret may go to this host",
 and the explicit header shapes are for an API the agent cannot address
 itself; `basic` is the one shape substitution cannot reach, since the client
 encodes the value. 0016 §4's second purpose (metering) remains a separate
-decision. Not verified live yet: whether `codex login --with-api-key` accepts
-the placeholder, and OpenCode's own gateway host.
+decision.
+
+Verified on production, 2026-08-25, one conversation per runtime on the
+maintainer's account, each answering `PONG` with no real credential in the
+sandbox: **Claude** (OAuth placeholder substituted on `api.anthropic.com`,
+after #1155 taught the broker to carry every key's substitution on one
+service per host — the first run had the API-key service win the host and
+the OAuth placeholder go upstream unreplaced); **Codex** (`codex login
+--with-api-key` accepts `sk-__openai_api_key__`, the turn's `api.openai.com`
+call matched the service; its `chatgpt.com` login probe passes through and
+401s, harmless); **OpenCode** (routes model traffic to its own gateway,
+`opencode.ai`, passthrough, which needed no credential of ours — it never
+called `api.anthropic.com`, so the Anthropic substitution is unexercised on
+that runtime, and the placeholder did no harm). Gemini is covered by the same
+substitution mechanism on `?key=` and remains unverified live.
 
 **Gate 4 — built 2026-08-25.** The join is the vault name: §11's vault per
 conversation is exactly what the empty `actor_*` fields on a session-scoped
