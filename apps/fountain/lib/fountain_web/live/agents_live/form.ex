@@ -132,11 +132,12 @@ defmodule FountainWeb.AgentsLive.Form do
   # silently drop it.
   defp agent_to_mcp_server_list(mcp_servers) do
     Enum.map(mcp_servers, fn
-      {name, %{"connection" => id} = _config} when is_binary(id) ->
+      {name, %{"connection" => id} = config} when is_binary(id) ->
         %{
           "name" => name,
           "kind" => "connection",
           "connection" => id,
+          "url" => config["url"] || "",
           "command" => "",
           "args" => "",
           "env_vars" => []
@@ -617,7 +618,14 @@ defmodule FountainWeb.AgentsLive.Form do
   end
 
   # The stored shape for one form row (the inverse of agent_to_mcp_server_list/1).
-  defp mcp_server_config(%{"kind" => "connection"} = s), do: %{"connection" => s["connection"]}
+  # A connection entry is either the Fountain-served server (a bare
+  # connection) or a remote server of the tenant's (URL + connection, #1186).
+  defp mcp_server_config(%{"kind" => "connection"} = s) do
+    case String.trim(s["url"] || "") do
+      "" -> %{"connection" => s["connection"]}
+      url -> %{"type" => "http", "url" => url, "connection" => s["connection"]}
+    end
+  end
   defp mcp_server_config(%{"kind" => "raw", "raw" => raw}) when is_map(raw), do: raw
 
   defp mcp_server_config(s) do
@@ -1206,7 +1214,7 @@ defmodule FountainWeb.AgentsLive.Form do
                   :for={
                     {label, kind} <- [
                       {"Command (stdio)", "stdio"},
-                      {"Connected account (Gmail)", "connection"}
+                      {"Connected account", "connection"}
                     ]
                   }
                   value={kind}
@@ -1235,8 +1243,18 @@ defmodule FountainWeb.AgentsLive.Form do
                 </option>
               </select>
             </div>
+            <.input
+              :if={server["kind"] == "connection"}
+              id={"mcp_#{i}_url"}
+              name={"agent[mcp_servers][#{i}][url]"}
+              label="Remote server URL (optional)"
+              value={server["url"] || ""}
+              placeholder="https://mcp.example.com/mcp"
+            />
             <p :if={server["kind"] == "connection"} class="text-xs text-zinc-500">
-              Fountain serves the Gmail tools for this account and never puts a Google token in the sandbox.
+              With a URL, the sandbox calls that server and the egress broker attaches the
+              account's token to it. Without one, a Google account gets the Fountain-served
+              Gmail tools. Either way no token enters the sandbox.
             </p>
 
             <div :if={server["kind"] == "raw"} class="text-xs text-zinc-500">

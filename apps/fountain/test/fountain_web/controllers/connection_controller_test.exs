@@ -5,7 +5,7 @@ defmodule FountainWeb.ConnectionControllerTest do
   import Fountain.BrokerTestHelpers
 
   alias Fountain.Connections
-  alias Fountain.Connections.Google
+  alias Fountain.Connections.{Google, OAuth}
 
   setup %{conn: conn} do
     user = insert_verified_user()
@@ -56,7 +56,7 @@ defmodule FountainWeb.ConnectionControllerTest do
     assert %{"id" => ^id, "provider" => "google"} =
              conn |> get("/api/connections/#{id}") |> json_response(200)
 
-    Req.Test.stub(Google, fn req -> Req.Test.json(req, %{}) end)
+    Req.Test.stub(OAuth, fn req -> Req.Test.json(req, %{}) end)
     assert conn |> delete("/api/connections/#{id}") |> response(204)
     assert Connections.list_connections(user.id) == []
     assert conn |> get("/api/connections/#{id}") |> json_response(404)
@@ -64,7 +64,9 @@ defmodule FountainWeb.ConnectionControllerTest do
 
   test "providers names Google, its scopes and where to start", %{conn: conn} do
     assert %{"data" => [google]} = conn |> get("/api/connections/providers") |> json_response(200)
-    assert google["provider"] == "google"
+    assert google["id"] == "google"
+    assert google["slug"] == "google"
+    assert google["platform"] == true
     assert google["configured"] == true
     assert google["env_key"] == "GOOGLE_ACCESS_TOKEN"
     assert google["connect_url"] =~ "/connections/google/start"

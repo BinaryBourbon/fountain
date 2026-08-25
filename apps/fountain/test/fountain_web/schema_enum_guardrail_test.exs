@@ -44,8 +44,16 @@ defmodule FountainWeb.SchemaEnumGuardrailTest do
   # list of atoms is stringified first — the domain keeps them as atoms, the
   # wire carries strings.
   @derived %{
-    {FountainWeb.Schemas.Connection, "provider"} => {Fountain.Connections.Connection, :providers},
     {FountainWeb.Schemas.Connection, "status"} => {Fountain.Connections.Connection, :statuses},
+    # Connection providers (#1186): the kinds, the client-auth methods and
+    # where a client came from are the provider schema's own lists.
+    {FountainWeb.Schemas.ConnectionProvider, "kind"} => {Fountain.Connections.Provider, :kinds},
+    {FountainWeb.Schemas.ConnectionProviderRequest, "kind"} =>
+      {Fountain.Connections.Provider, :kinds},
+    {FountainWeb.Schemas.ConnectionProvider, "token_endpoint_auth"} =>
+      {Fountain.Connections.Provider, :token_endpoint_auths},
+    {FountainWeb.Schemas.ConnectionProviderRequest, "token_endpoint_auth"} =>
+      {Fountain.Connections.Provider, :token_endpoint_auths},
     {FountainWeb.Schemas.AdminRoleRequest, "role"} => {User, :roles},
     {FountainWeb.Schemas.AdminUser, "role"} => {User, :roles},
     {FountainWeb.Schemas.AuthMeResponse, "role"} => {User, :roles},
@@ -138,6 +146,10 @@ defmodule FountainWeb.SchemaEnumGuardrailTest do
   # Enums with no domain list behind them. Each entry needs a reason: the
   # point of the list is that adding to it is a deliberate act.
   @api_local %{
+    # `client_source` is nullable on the wire (no client yet), so the enum
+    # carries a nil the domain list does not.
+    {FountainWeb.Schemas.ConnectionProvider, "client_source"} =>
+      "Provider.client_sources/0 plus nil for a provider with no client yet",
     # Outcomes of two admin actions. Computed in the controller from what the
     # action did; they describe an HTTP response, not a stored value.
     {FountainWeb.Schemas.AdminReapResponse, "data.outcome"} =>

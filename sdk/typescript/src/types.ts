@@ -15,6 +15,8 @@ export type {
   Catalog,
   Connection,
   ConnectionProvider,
+  ConnectionProviderInput,
+  ConnectionProviderPatch,
   ConversationRecord,
   ConversationTreeNode,
   Environment,

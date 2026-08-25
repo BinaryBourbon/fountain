@@ -2,7 +2,7 @@ defmodule Fountain.ConnectionsTest do
   use Fountain.DataCase, async: true
 
   alias Fountain.{Connections, Crypto}
-  alias Fountain.Connections.{Connection, Google, McpServers}
+  alias Fountain.Connections.{Connection, Google, McpServers, OAuth, Provider}
 
   describe "connect/4" do
     test "stores the grant encrypted, active, under the provider's env key" do
@@ -21,7 +21,7 @@ defmodule Fountain.ConnectionsTest do
 
     test "the same account connected again replaces the tokens and reactivates" do
       user = insert_verified_user()
-      Req.Test.stub(Google, fn conn -> Req.Test.json(conn, %{}) end)
+      Req.Test.stub(OAuth, fn conn -> Req.Test.json(conn, %{}) end)
 
       first = insert_connection(user, account_email: "me@example.com", refresh_token: "r-1")
       {:ok, revoked} = Connections.revoke(first)
@@ -50,7 +50,7 @@ defmodule Fountain.ConnectionsTest do
     test "returns the cached token while it is fresh, without a network call" do
       user = insert_verified_user()
       conn = insert_connection(user, access_token: "a-fresh")
-      Req.Test.stub(Google, fn _ -> flunk("should not refresh a fresh token") end)
+      Req.Test.stub(OAuth, fn _ -> flunk("should not refresh a fresh token") end)
 
       assert {:ok, "a-fresh"} = Connections.access_token(conn)
     end
@@ -66,7 +66,7 @@ defmodule Fountain.ConnectionsTest do
             DateTime.utc_now() |> DateTime.add(60, :second) |> DateTime.truncate(:second)
         )
 
-      Req.Test.stub(Google, fn req ->
+      Req.Test.stub(OAuth, fn req ->
         assert req.request_path == "/token"
         {:ok, body, _} = Plug.Conn.read_body(req)
         params = URI.decode_query(body)
@@ -78,7 +78,7 @@ defmodule Fountain.ConnectionsTest do
       assert {:ok, "a-new"} = Connections.access_token(conn)
 
       # Cached: the next read does not hit Google.
-      Req.Test.stub(Google, fn _ -> flunk("second read should be cached") end)
+      Req.Test.stub(OAuth, fn _ -> flunk("second read should be cached") end)
       fresh = Connections.get_connection(conn.id, user.id)
       assert {:ok, "a-new"} = Connections.access_token(fresh)
       assert DateTime.diff(fresh.expires_at, DateTime.utc_now()) > 3000
@@ -93,7 +93,7 @@ defmodule Fountain.ConnectionsTest do
             DateTime.utc_now() |> DateTime.add(-10, :second) |> DateTime.truncate(:second)
         )
 
-      Req.Test.stub(Google, fn req ->
+      Req.Test.stub(OAuth, fn req ->
         req |> Plug.Conn.put_status(400) |> Req.Test.json(%{"error" => "invalid_grant"})
       end)
 
@@ -106,9 +106,9 @@ defmodule Fountain.ConnectionsTest do
 
     test "a revoked connection answers :revoked without a network call" do
       user = insert_verified_user()
-      Req.Test.stub(Google, fn conn -> Req.Test.json(conn, %{}) end)
+      Req.Test.stub(OAuth, fn conn -> Req.Test.json(conn, %{}) end)
       {:ok, revoked} = Connections.revoke(insert_connection(user))
-      Req.Test.stub(Google, fn _ -> flunk("no call for a revoked connection") end)
+      Req.Test.stub(OAuth, fn _ -> flunk("no call for a revoked connection") end)
 
       assert {:error, :revoked} = Connections.access_token(revoked)
     end
@@ -120,7 +120,7 @@ defmodule Fountain.ConnectionsTest do
       conn = insert_connection(user, refresh_token: "r-gone")
       test_pid = self()
 
-      Req.Test.stub(Google, fn req ->
+      Req.Test.stub(OAuth, fn req ->
         {:ok, body, _} = Plug.Conn.read_body(req)
         send(test_pid, {:revoked, req.request_path, URI.decode_query(body)["token"]})
         Req.Test.json(req, %{})
@@ -136,7 +136,7 @@ defmodule Fountain.ConnectionsTest do
   describe "synthetic_secrets/1 and env_keys/1" do
     test "active connections contribute their token under env_key; revoked ones do not" do
       user = insert_verified_user()
-      Req.Test.stub(Google, fn conn -> Req.Test.json(conn, %{}) end)
+      Req.Test.stub(OAuth, fn conn -> Req.Test.json(conn, %{}) end)
       active = insert_connection(user, access_token: "a-live", account_email: "a@example.com")
       {:ok, _} = Connections.revoke(insert_connection(user, account_email: "b@example.com"))
 
@@ -145,9 +145,9 @@ defmodule Fountain.ConnectionsTest do
       assert Enum.sort(Connections.env_keys(user.id)) ==
                ["GOOGLE_ACCESS_TOKEN", "GOOGLE_ACCESS_TOKEN_2"]
 
-      assert Connections.implicit_hosts(active.env_key) == Google.token_hosts()
-      assert Connections.implicit_hosts("GOOGLE_ACCESS_TOKEN_2") == Google.token_hosts()
-      assert Connections.implicit_hosts("OTHER") == []
+      assert Connections.implicit_hosts(user.id, active.env_key) == Google.token_hosts()
+      assert Connections.implicit_hosts(user.id, "GOOGLE_ACCESS_TOKEN_2") == Google.token_hosts()
+      assert Connections.implicit_hosts(user.id, "OTHER") == []
     end
   end
 
@@ -178,9 +178,9 @@ defmodule Fountain.ConnectionsTest do
     end
   end
 
-  describe "Google.authorize_url/2" do
+  describe "OAuth.authorize_url/3 for Google" do
     test "asks for offline access with a forced consent, so a refresh token comes back" do
-      url = Google.authorize_url("https://f.example/connections/google/callback", "st")
+      url = OAuth.authorize_url(Google.provider(), "https://f.example/connections/google/callback", "st")
       %URI{query: q} = URI.parse(url)
       params = URI.decode_query(q)
 

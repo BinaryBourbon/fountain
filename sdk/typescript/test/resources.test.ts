@@ -187,13 +187,51 @@ describe("connections", () => {
     assert.equal(one.env_key, "GOOGLE_ACCESS_TOKEN");
     assert.equal(one.status, "active");
 
-    const [google] = await fountain.connections.providers();
-    assert.equal(google?.provider, "google");
+    const [google] = await fountain.connections.providers.list();
+    assert.equal(google?.id, "google");
+    assert.equal(google?.platform, true);
     assert.match(String(google?.connect_url), /\/connections\/google\/start$/);
 
     await fountain.connections.delete(CONNECTION.id);
     assert.equal(fake.connections.length, 0);
     await assert.rejects(() => fountain.connections.get(CONNECTION.id), NotFoundError);
+  });
+});
+
+describe("connection providers", () => {
+  test("create, get, update, discover and delete a tenant provider", async () => {
+    const fountain = client();
+
+    const github = await fountain.connections.providers.create({
+      kind: "oauth2",
+      slug: "github",
+      name: "GitHub",
+      authorize_url: "https://github.com/login/oauth/authorize",
+      token_url: "https://github.com/login/oauth/access_token",
+      client_id: "Iv1.abc",
+      client_secret: "shh",
+      token_hosts: ["api.github.com"],
+    });
+    assert.equal(github.slug, "github");
+    assert.equal(github.platform, false);
+    assert.equal((github as Record<string, unknown>).client_secret, undefined);
+
+    const all = await fountain.connections.providers.list();
+    assert.deepEqual(
+      all.map((p) => p.id),
+      ["google", github.id],
+    );
+    assert.equal((await fountain.connections.providers.get("google")).platform, true);
+
+    const renamed = await fountain.connections.providers.update(github.id, { name: "GH" });
+    assert.equal(renamed.name, "GH");
+
+    const mcp = await fountain.connections.providers.create({ kind: "mcp", mcp_url: "https://mcp.test/mcp" });
+    assert.equal(mcp.client_source, "dcr");
+    assert.equal((await fountain.connections.providers.discover(mcp.id)).id, mcp.id);
+
+    await fountain.connections.providers.delete(github.id);
+    await assert.rejects(() => fountain.connections.providers.get(github.id), NotFoundError);
   });
 });
 

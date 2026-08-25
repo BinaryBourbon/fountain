@@ -7,12 +7,14 @@ defmodule FountainWeb.ConnectionJSON do
 
   def show(%{connection: c}), do: summary(c)
 
-  def providers(%{providers: providers}), do: %{data: providers}
+  def providers(%{providers: providers}),
+    do: %{data: Enum.map(providers, &FountainWeb.ConnectionProviderJSON.summary/1)}
 
   defp summary(%Connection{} = c) do
     %{
       id: c.id,
       provider: c.provider,
+      provider_id: c.provider_id,
       account_email: c.account_email,
       scopes: c.scopes,
       env_key: c.env_key,

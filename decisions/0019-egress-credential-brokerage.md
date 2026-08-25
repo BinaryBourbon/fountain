@@ -715,3 +715,40 @@ and 4 are where this ADR meets 0016, and neither is blocked on any ACP work.
   table marks as the one ACP *cannot* see, so waiting for ACP to fix it is waiting
   for the wrong thing. 0016 already names the signal — if buyers ask about egress
   before approvals, the substrate is the product.
+
+## Amendment (2026-08-25): rotating secrets, and the vault is per conversation
+
+Two facts the gates established that the decision above does not state.
+Both are built; neither changes a gate.
+
+**A brokered secret may rotate while a conversation is open.** The design
+assumed a secret's value is fixed for the life of the vault it was uploaded
+to. Connections (#1178, ADR 0033) broke that: an OAuth access token lives an
+hour, and a conversation can run for longer. The contract is therefore:
+
+- The value the broker holds for a key is a *snapshot*. The sandbox never
+  learns the value, so a rotation is invisible to it; the placeholder it
+  carries is stable for the life of the conversation.
+- `Fountain.Conversations.ConversationServer` re-reads every connection key
+  it brokered (`connection_keys` in its state) at each **turn kick**, and
+  when a value differs from the snapshot it re-prepares the vault with the
+  new value before the turn runs. A refresh that fails leaves the old value
+  in place: the turn runs on it and, if it has lapsed, fails at the provider
+  with a reason rather than silently here.
+- Rotation is per key, not per vault: the other secrets in the vault are
+  untouched, and a binding a tenant added or removed between turns is
+  picked up on the same re-prepare.
+- A rotated secret is never re-sent to the sandbox. Nothing in the sandbox
+  depends on the value, which is the whole point.
+
+**The broker vault is per conversation, not per tenant.** §11 above says
+per tenant. Gate 1a built `c-<conversation uuid without dashes>` instead,
+for two reasons found while building it: a tenant running two conversations
+with different `GITHUB_TOKEN`s (one from an environment, one from a vault)
+would collide on one key with last-write-wins, and gate 4's request-log
+attribution needs a vault whose name *is* the conversation, because
+session-scoped tokens leave the log's actor fields empty. The vault is
+released with the conversation (the log is kept for
+`BROKER_LOG_RETENTION_HOURS`, then the reaper deletes it). Nothing in the
+rest of this decision depends on the per-tenant shape.
+

@@ -10,6 +10,32 @@ server releases.
 
 ---
 
+## [1.13.0] — 2026-09-01
+
+### Added
+
+- `client.connections.providers`: where connections get their tokens (#1186).
+  `list()` (Google first, then the tenant's own), `get(id)`, `create(input)`,
+  `update(id, patch)`, `delete(id)` and `discover(id)`. `kind: "oauth2"` is
+  the tenant's own app registration at a service; `kind: "mcp"` takes only
+  `mcp_url`, and Fountain discovers the authorization server (RFC 9728 /
+  8414) and registers a client there (RFC 7591) where it can. Each provider
+  carries the `redirect_uri` to register at the service, the `env_key` its
+  tokens are brokered under and the `token_hosts` the broker attaches them
+  to. `ConnectionProvider`, `ConnectionProviderInput` and
+  `ConnectionProviderPatch` types.
+- `Connection.provider_id` (null for Google) and the `expired` status, for a
+  provider that issues no refresh token.
+- An agent attaches a remote MCP server with a connection:
+  `{ linear: { type: "http", url: "https://mcp.linear.app/mcp", connection: "<id>" } }`.
+
+### Changed
+
+- **Breaking:** `client.connections.providers()` (a method) is now
+  `client.connections.providers.list()`, and each entry is a full
+  `ConnectionProvider` (`id`, `slug`, `platform`, `configured`, …) rather
+  than the old `{provider, configured, scopes, env_key, connect_url}` row.
+
 ## [1.12.0] — 2026-08-31
 
 ### Added

@@ -17,7 +17,6 @@ defmodule FountainWeb.ConnectionController do
   use OpenApiSpex.ControllerSpecs
 
   alias Fountain.{Broker, Connections}
-  alias Fountain.Connections.Google
   alias FountainWeb.Audited
   alias FountainWeb.Schemas
 
@@ -48,11 +47,13 @@ defmodule FountainWeb.ConnectionController do
   operation(:providers,
     summary: "List connectable providers",
     description:
-      "The providers this deployment has an OAuth client for, the scopes each " <>
-        "asks for, the env var its token is brokered under, and the console URL " <>
-        "that starts the flow (a browser signed in as the account owner).",
+      "Every provider this account can connect — Google, and the tenant's own " <>
+        "(#1186) — with the scopes each asks for, the env var its token is " <>
+        "brokered under, and the console URL that starts the flow (a browser " <>
+        "signed in as the account owner). The same list as " <>
+        "`GET /api/connection-providers`.",
     responses: [
-      ok: {"Providers", "application/json", Schemas.ConnectionProvidersResponse},
+      ok: {"Providers", "application/json", Schemas.ConnectionProviderListResponse},
       not_found:
         {"Connections are not enabled for this account", "application/json", Schemas.Error},
       unauthorized: {"Missing or invalid key", "application/json", Schemas.Error}
@@ -60,17 +61,8 @@ defmodule FountainWeb.ConnectionController do
   )
 
   def providers(conn, _params) do
-    render(conn, :providers,
-      providers: [
-        %{
-          provider: "google",
-          configured: Google.configured?(),
-          scopes: Google.scopes(),
-          env_key: Google.env_key(),
-          connect_url: Fountain.PublicUrl.base() <> "/connections/google/start"
-        }
-      ]
-    )
+    user = conn.assigns.current_user
+    render(conn, :providers, providers: Connections.all_providers(user.id))
   end
 
   operation(:show,

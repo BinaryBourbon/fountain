@@ -5,7 +5,7 @@ defmodule FountainWeb.GmailMcpControllerTest do
   import Fountain.BrokerTestHelpers
 
   alias Fountain.Connections
-  alias Fountain.Connections.{Gmail, Google}
+  alias Fountain.Connections.{Gmail, Google, OAuth}
 
   setup do
     user = insert_verified_user()
@@ -164,7 +164,7 @@ defmodule FountainWeb.GmailMcpControllerTest do
   end
 
   test "a revoked connection answers 'connection revoked', not a 401 from Google", ctx do
-    Req.Test.stub(Google, fn req -> Req.Test.json(req, %{}) end)
+    Req.Test.stub(OAuth, fn req -> Req.Test.json(req, %{}) end)
     {:ok, _} = Connections.revoke(ctx.connection)
     Req.Test.stub(Gmail, fn _ -> flunk("Gmail must not be called for a revoked connection") end)
 
@@ -190,7 +190,7 @@ defmodule FountainWeb.GmailMcpControllerTest do
         refresh_token: "rt"
       )
 
-    Req.Test.stub(Google, fn req ->
+    Req.Test.stub(OAuth, fn req ->
       assert req.request_path == "/token"
       Req.Test.json(req, %{"access_token" => "at-refreshed", "expires_in" => 3600})
     end)

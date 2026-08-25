@@ -82,8 +82,15 @@ export type ConversationTreeNode = S["ConversationTreeNode"];
 export type Runner = S["Runner"];
 /** A provider account the tenant signed in to once; Fountain holds the credential (#1178). */
 export type Connection = S["Connection"];
-/** A provider this deployment can connect, and the console URL that starts the flow. */
-export type ConnectionProvider = S["ConnectionProvidersResponse"]["data"][number];
+/**
+ * Where a connection's tokens come from (#1186): the platform provider
+ * (Google, id `google`), the tenant's own OAuth app at a service (`oauth2`),
+ * or a remote MCP server whose authorization Fountain discovered (`mcp`).
+ */
+export type ConnectionProvider = S["ConnectionProvider"];
+/** Defining one. `kind: "mcp"` needs only `mcp_url`; the rest comes from discovery. */
+export type ConnectionProviderInput = S["ConnectionProviderRequest"];
+export type ConnectionProviderPatch = Partial<ConnectionProviderInput>;
 export type Repository = S["Repository"];
 export type ImageInput = S["ImageInput"];
 export type AuthMe = S["AuthMeResponse"];
