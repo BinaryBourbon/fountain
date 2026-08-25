@@ -2,6 +2,17 @@
 
 A multi-tenant API and UI for managing agents, repos, secrets, and conversations. It's for people who want to create sandboxed coding agent instances with preconfigured sets of env vars, MCP servers, skills, repos, and packages. Users treat Fountain as a building block for their own workflows, but also use the UI to get started and to debug. It exists because running Claude instances with worktrees locally — and shuffling MCP configurations and skill setups by hand — is painful.
 
+## In one picture
+
+<img src="docs/images/primitives.svg" alt="Three templates and one machine: Agent, Environment and Vault are rows written once; a Conversation runs the Agent on a sandbox that Fountain builds from the Environment; secrets merge, the Vault winning; on a hosted account with the egress broker on, a bound secret goes to the broker and the sandbox gets a placeholder." width="740">
+
+Agent, Environment and Vault are templates: rows you write once and use many
+times. A Conversation is a run of an Agent on a machine that Fountain builds,
+warms, meters and reclaims. Secrets merge at launch, the Vault winning; on a
+hosted account with the egress broker on, a bound secret never enters the
+sandbox at all. [The four primitives](docs/primitives.md) says why there are
+four.
+
 ## Self-hosting
 
 Run your own instance: [docs/self-hosting.md](docs/self-hosting.md).
