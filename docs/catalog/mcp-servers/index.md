@@ -34,7 +34,8 @@ the token reaches only that conversation's owner.
 
 **Fountain recomputes the injection at each turn.** A capability granted
 mid-session appears on the next turn, and not at the next provision. Give a
-teammate a contact while it works, and it can send mail on its next reply.
+teammate a contact while it works, with `POST /api/team/:agent_id/contact`,
+and it can send mail on its next reply. Read [Team](../../api.md#team).
 
 Fountain scopes each call to one tenant. A message that goes through a tool
 lands in the thread of the teammate who gets it. It lands exactly as a message

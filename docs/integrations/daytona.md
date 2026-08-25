@@ -1,8 +1,8 @@
 # Daytona
 
-[Daytona](https://daytona.io) is one of the three
-[sandbox providers](sandbox-contract.md), and of the three it matches the
-contract most closely.
+[Daytona](https://daytona.io) is one of the four
+[sandbox providers](sandbox-contract.md), and of the three hosted ones it
+matches the contract most closely.
 
 `DAYTONA_API_KEY` turns it on. `SANDBOX_PROVIDER=daytona` makes it the default
 for a new sandbox, and one agent can pin it with `sandbox_provider`. A sandbox

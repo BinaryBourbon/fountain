@@ -15,9 +15,9 @@ Start with [Deploy an instance](guides/operate/deploy.md).
 | **A sandbox provider** | [sprites.dev](https://sprites.dev) is the default. [E2B](integrations/e2b.md) and [Daytona](integrations/daytona.md) are two more hosts. A user can also bring their own machine with [`fountain runner`](integrations/runners.md), which needs no credential. The app boots without a provider, but then each conversation fails. |
 | **A mail provider** | Resend, or any SMTP server. Read [Configure email](guides/operate/email.md). It is a decision, and not an optional extra. |
 
-A sandbox runs on one of three backends. Somebody else runs all three of
-them as a service, so a Fountain instance is not self-contained. Self-hosted
-Daytona comes closest.
+A sandbox runs on one of three hosted backends, or on a user's own runner.
+Somebody else runs all three hosted backends as a service, so a Fountain
+instance is not self-contained. Self-hosted Daytona comes closest.
 
 | Provider | Turned on by | When idle | Notes |
 |---|---|---|---|

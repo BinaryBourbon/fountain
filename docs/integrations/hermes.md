@@ -141,16 +141,19 @@ on the environment's setup script.
 ## Limits
 
 - **No permission prompts.** A Fountain agent runs under the sandbox's own
-  policy, so there is nothing for Hermes to approve. #643 forwards a
-  permission request to a client, and it lands for `fountain acp` clients
-  first. This plugin polls the log feed, so neither outcome changes it.
+  policy, so there is nothing for Hermes to approve. Fountain forwards a
+  permission request to an ACP client, and the API answers one at
+  `POST /api/conversations/:id/requests/:request_id`. This plugin polls the
+  log feed and answers none, so an `ask` policy waits until the server's
+  timeout refuses it. Read [Conversations](../api.md#conversations).
 - **Text only, and one direction.** The plugin returns the agent's text and
   the names of the tools it used. A file the agent wrote stays in the sandbox.
   Push it from the environment's repo, or ask the agent to print it. A prompt
   cannot carry an image through the plugin.
 - **You choose an agent, and you do not manage one here.** To create or edit
-  an agent, an environment or a vault, use Fountain's console, the CLI or
-  `fountain apply`. The plugin lists what exists, and runs it.
+  an agent, an environment or a vault, use Fountain's console, the
+  [API](../api.md), the CLI or `fountain apply`. The plugin lists what
+  exists, and runs it.
 
 The plugin's source and its tests are at
 [`integrations/hermes/`](https://github.com/BinaryBourbon/fountain/tree/main/integrations/hermes)

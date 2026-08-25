@@ -35,6 +35,14 @@ home keeps its disk.
 
 Fountain never ages a suspended sandbox out. Its sprite stays at the provider
 until you terminate the conversation, or until somebody deletes the account.
+A user can also reset a persistent sandbox with `DELETE /api/sandboxes/:id`,
+and an admin can reap one with `POST /api/admin/sandboxes/:id/reap`.
+`GET /api/sandboxes?status=suspended` lists the parked ones. Read
+[Sandboxes](../../api.md#sandboxes).
+
+With `CHECKPOINT_CREATION_ENABLED=true`, Fountain takes a checkpoint of a
+persistent sandbox each time it parks, on a provider that has checkpoints.
+Read the [configuration reference](../../configuration.md#sandboxes).
 
 ## Not every provider can suspend
 

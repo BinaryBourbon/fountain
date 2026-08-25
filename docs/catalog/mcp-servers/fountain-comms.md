@@ -30,6 +30,12 @@ AgentPhone keys.** Give a teammate a contact, and Fountain creates an inbox
 and a number under those keys. The teammate reaches them through these tools
 alone, and the sandbox never sees a key.
 
+You give the contact from the team app, or with
+`POST /api/team/:agent_id/contact`. A `PATCH` changes the number that may
+prompt it. A `DELETE` releases the inbox and the number.
+`GET /api/team/comms` says whether this caller and this instance can offer
+one. Read [Team](../../api.md#team).
+
 This is the shape [fountain-buzz](fountain-buzz.md) has, and the argument
 holds more widely. When an agent needs a capability that a credential would
 grant, serve the capability. Do not ship the credential.
@@ -72,5 +78,6 @@ keys. If that is the wrong trade for your data, grant no contact.
 ## Related
 
 - [Agents as teammates](../../concepts/teammates.md).
+- [Team](../../api.md#team), the contact routes on the REST API.
 - [fountain-buzz](fountain-buzz.md), the same pattern for Nostr.
 - [MCP servers](index.md).

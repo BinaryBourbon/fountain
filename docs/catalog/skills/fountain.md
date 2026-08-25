@@ -52,6 +52,10 @@ persistent mode, the child gets that machine instead. To name the other mode
 for one child, send `sandbox_mode` on the same call. See
 [Sandboxes](../../concepts/sandboxes.md).
 
+`GET /api/sandboxes` lists the machines the token's owner has, with the
+conversations on each. Read [Sandboxes](../../api.md#sandboxes) and
+[Conversations](../../api.md#conversations) for the fields.
+
 ## Limits
 
 **A spawned agent has the same skill.** Nothing stops recursion, so the skill

@@ -4,7 +4,9 @@ This page explains what a sandbox is, why Fountain does not let you create
 one, and what changes when you move to a different provider. For the
 executable contract a backend must meet, read
 [the sandbox contract](../integrations/sandbox-contract.md). To choose and
-configure one, read [Self-host Fountain](../self-hosting.md).
+configure one, read [Self-host Fountain](../self-hosting.md). For the
+endpoints, read the [Sandboxes section](../api.md#sandboxes) of the API
+reference.
 
 ## What a sandbox is
 
@@ -15,7 +17,8 @@ with its own transcript.
 You never create one on its own. Fountain provisions a sandbox when a
 conversation starts. Fountain reclaims it when every conversation on it goes
 quiet, or when it runs too long. You can name one, with `sandbox_id`, to put
-a second conversation on it.
+a second conversation on it. `GET /api/sandboxes` lists them, and
+`fountain sandbox` does the same from the CLI.
 
 That is deliberate. A sandbox you could create on its own would be a resource
 you could leak. The machine that nobody remembered to stop is what makes agent

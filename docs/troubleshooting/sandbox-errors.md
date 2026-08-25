@@ -45,8 +45,11 @@ If you scrape metrics, a failure to provision shows as
 
 A user at their quota for concurrent sandboxes, which is 2 by default, sees a
 provision fail while the provider is healthy. A crashed provision leaves a row
-that counts until the reaper releases it, each hour at :07. Read
-[A conversation is stuck or failed](conversation-stuck-or-failed.md).
+that counts until the reaper releases it, each hour at :07. An admin can
+release it now with `POST /api/admin/sandboxes/:id/reap`, or raise the cap
+with `POST /api/admin/users/:id/sandbox-limit`. Read
+[A conversation is stuck or failed](conversation-stuck-or-failed.md) and
+[Admin](../api.md#admin).
 
 ## Related
 

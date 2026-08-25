@@ -43,8 +43,9 @@ The team is a reserved channel, `fountain:team`. Any other string is yours.
 await fountain.run(text, { agent: "watchtower", channelId: `slack:${channel}` });
 ```
 
-You get the same behaviour, and one sandbox for each thread, with no team API
-at all. [AG-UI](../integrations/openbot.md) binds one coworker channel to one
+You get the same behaviour, and one sandbox for each thread, and you use none
+of the [team API](../api.md#team) for it.
+[AG-UI](../integrations/openbot.md) binds one coworker channel to one
 conversation this way, and [Buzz](../integrations/buzz.md) binds a Nostr
 thread.
 
@@ -101,7 +102,8 @@ states around its lifecycle.
                                        │      └── next message ┘
                                        │          wakes it, memory intact
                                        │
-                                       │  24 h running (default)
+                                       │  a terminate, or a configured
+                                       │  max-lifetime ceiling (off by default)
                                        ▼
                                    terminated — the thread stays readable and
                                    resumable; the next turn starts a new

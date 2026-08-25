@@ -62,7 +62,7 @@ message.
 | `DAYTONA_API_KEY` | — | For the `daytona` provider. | The [Daytona](https://daytona.io) API key. Its presence turns the provider on. |
 | `DAYTONA_API_URL` | `https://app.daytona.io/api` | — | Repoints the Daytona API, for a Daytona you host yourself. |
 | `DAYTONA_SNAPSHOT` | The org default. | — | The snapshot, which is an image, that Fountain creates a new Daytona sandbox from. The organization must hold it. The default image has no agent CLI, so build one from `images/daytona/` for real use. |
-| `SANDBOX_IDLE_TIMEOUT_MINUTES` | `60` | — | No turn activity for this long, and Fountain reclaims the sandbox. The conversation stays [resumable](guides/operate/sandbox-lifetime.md). A `0` turns the bound off, and boot refuses whatever is not a non-negative integer. |
+| `SANDBOX_IDLE_TIMEOUT_MINUTES` | `60` | — | No turn activity for this long, and Fountain parks the sandbox. A provider without `:suspend` destroys it instead. The conversation stays [resumable](guides/operate/sandbox-lifetime.md) either way. A `0` turns the bound off, and boot refuses whatever is not a non-negative integer. |
 | `SANDBOX_MAX_LIFETIME_HOURS` | `0` (off) | — | A ceiling on one continuous run, whatever the activity. Off by default: nothing stops a sandbox that stays busy. Set it to park a persistent home, or destroy an ephemeral sandbox, after this many hours. The same boot refusal applies. |
 | `CHECKPOINT_CREATION_ENABLED` | `false` | — | Set to `true`, and Fountain takes a checkpoint of each persistent home when it parks, on a provider that has checkpoints (Sprites). The checkpoint belongs to that one machine. It can roll the machine back, and it cannot rebuild a machine that the provider lost. Each park adds one checkpoint, and Fountain does not delete old ones. The same flag also makes Fountain checkpoint each environment after it provisions a sandbox, which Sprites cannot restore into a new sandbox. |
 | `LOG_OUTPUT_BUDGET_MB` | `50` | — | The durable log volume for one conversation. Once a conversation has persisted this much sandbox output, Fountain writes one truncation marker and discards the rest. Retention bounds age, and this bounds rate. The same `0` rule and the same boot refusal apply. |
@@ -384,7 +384,9 @@ and read on both.
 
 Fountain holds the provider keys and serves the tools itself, so a key never
 enters a sandbox. With either key unset, the feature reports itself
-unavailable, even where the flag is on.
+unavailable, even where the flag is on. `GET /api/team/comms` reports that
+state, and `POST /api/team/:agent_id/contact` provisions a contact. Read
+[Team](api.md#team).
 
 | Variable | Default | Required | Effect |
 |---|---|---|---|

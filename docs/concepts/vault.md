@@ -114,8 +114,9 @@ Use `env_vars` on an Environment for a value that is not sensitive. A Vault
 that holds one non-secret is a Vault that somebody later assumes is secret.
 
 Use [inference credentials](../integrations/index.md) for model API keys.
-Those belong to one user, you enter them in the app, and they never belong in
-a Vault.
+Those belong to one user, and they never belong in a Vault. You enter them in
+the console or over the
+[inference credentials API](../api.md#inference-credentials).
 
 ## Secret expiry
 

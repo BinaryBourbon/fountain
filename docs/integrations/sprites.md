@@ -1,6 +1,6 @@
 # Sprites
 
-[sprites.dev](https://sprites.dev) is the first of the three
+[sprites.dev](https://sprites.dev) is the first of the four
 [sandbox providers](sandbox-contract.md), and the instance default
 (`SANDBOX_PROVIDER=sprites`). It is a hosted service. A Fountain instance
 needs at least one provider credential. With none configured, each
@@ -45,7 +45,8 @@ recovers it. On yours, you pay. Two results follow.
   registration, or restrict it, before you put an instance on the internet.
 - Fountain caps concurrency for each user. The credit balance sets the cap,
   between a floor of 2 and a ceiling of 20. An admin can override it for one
-  user from the admin panel. A sandbox counts from the moment a provision starts, because that is
+  user from the admin panel, or with `POST /api/admin/users/:id/sandbox-limit`.
+  A sandbox counts from the moment a provision starts, because that is
   the moment it starts to cost money.
 
 Fountain never shows the token to a tenant, to the admin UI, or to a sandbox.

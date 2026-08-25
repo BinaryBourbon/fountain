@@ -67,7 +67,7 @@ on. The docs say **sandbox**.
 | **Reaper** | The background sweep that suspends an idle sandbox, and destroys one that passed a configured ceiling. |
 | **Runner** | A machine you own that runs `fountain runner` and acts as a sandbox provider. Read [Self-hosted runners](../integrations/runners.md). |
 | **Runtime** | The coding-agent CLI that a sandbox runs. One of `claude`, `codex`, `gemini`, `opencode`. |
-| **Sandbox** | The isolated machine that one Conversation runs in. Fountain provisions it at launch and reclaims it on the lifetime rules. |
+| **Sandbox** | The isolated machine that a Conversation runs in. Several Conversations can share one. Fountain provisions it at launch and reclaims it on the lifetime rules. `GET /api/sandboxes` lists them. |
 | **Sandbox provider** | A backend that Fountain provisions sandboxes on. Sprites, E2B, Daytona, or a self-hosted runner. Read [the sandbox contract](../integrations/sandbox-contract.md). |
 | **Skill** | A `SKILL.md` that Fountain writes into the sandbox, inline or from GitHub. |
 | **Sprite** | One sandbox on the Sprites provider. Not a Fountain concept. Read [Sprites](../integrations/sprites.md). |
@@ -82,5 +82,7 @@ A **team** is not an object. Read
 [Agents as teammates](../concepts/teammates.md).
 
 A **sandbox** is not an object you create. Fountain provisions it when a
-Conversation starts, and reclaims it when the Conversation ends. Read
+Conversation starts. You can list one, put a second Conversation on it with
+`sandbox_id`, and reset a persistent one. Read
+[Sandboxes](../api.md#sandboxes) and
 [About conversations](../concepts/conversation.md).

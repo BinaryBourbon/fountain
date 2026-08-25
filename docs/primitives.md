@@ -149,8 +149,11 @@ channel `fountain:team`. Read
 [Agents as teammates](concepts/teammates.md).
 
 A **sandbox** is not an object you create. Fountain gives you one when a
-Conversation starts, and takes it back when the Conversation ends. Read
-[About conversations](concepts/conversation.md).
+Conversation starts. An ephemeral sandbox ends with its Conversation, and a
+persistent one stays as the Agent's own machine. You can list a sandbox, put
+a second Conversation on it with `sandbox_id`, and reset a persistent one.
+Read [About sandboxes](concepts/sandboxes.md) and the
+[Sandboxes section](api.md#sandboxes) of the API reference.
 
 ## Where to go next
 

@@ -35,6 +35,11 @@ A message sent this way lands in the thread of the teammate who gets it. It
 lands exactly as a message typed on the team page does, and the reader sees
 who sent it. There is no back channel.
 
+The same roster is on the REST API, for a caller outside the sandbox.
+`GET /api/team` lists it, and `POST /api/team/:agent_id/messages` sends a
+turn. Read [Team](../../api.md#team). These tools are the view from inside
+a teammate's own conversation, and they add no capability of their own.
+
 ## Two things that catch agents out
 
 **`send_to_teammate` can fail with `busy` or `starting`.** A teammate in the
@@ -63,6 +68,7 @@ you listed can be busy when you send.
 ## Related
 
 - [Agents as teammates](../../concepts/teammates.md), what this acts on.
+- [Team](../../api.md#team), the same roster over the REST API.
 - [MCP servers](index.md).
 - [create-team](../skills/create-team.md), which builds the roster these tools
   read.
