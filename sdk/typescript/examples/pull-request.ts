@@ -11,7 +11,7 @@
  * Everything it creates — environment, vault, agent, sandbox — is deleted on
  * the way out, including when a step throws.
  *
- * Walkthrough: https://fountain.inevitable.fyi/docs/tour
+ * Walkthrough: https://managoat.com/docs/tour
  *
  * (Inside this repository the import below resolves to the SDK itself, so run
  * `npm run build` in sdk/typescript first. Installed from npm it just works.)

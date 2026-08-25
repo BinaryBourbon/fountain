@@ -56,7 +56,7 @@ console.log(run.text, run.url);
 
 The sandbox is still there afterwards: `fountain.resume(run.conversationId).send("...")`
 continues on the same machine, with the same checkout and the same session.
-See [`sdk/typescript/`](sdk/typescript/) or the [SDK docs](https://fountain.inevitable.fyi/docs/sdk).
+See [`sdk/typescript/`](sdk/typescript/) or the [SDK docs](https://managoat.com/docs/sdk).
 
 ## Get started with the CLI
 

@@ -101,7 +101,7 @@ class SettingsTests(unittest.TestCase):
 
     def test_no_key_anywhere(self):
         self.creds.unlink()
-        self.assertEqual(resolve_settings(), ("https://fountain.inevitable.fyi", ""))
+        self.assertEqual(resolve_settings(), ("https://managoat.com", ""))
         with self.assertRaises(FountainError):
             FountainClient("https://x", "")
 

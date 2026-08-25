@@ -2,7 +2,7 @@
 
 Every conversation gets three env vars in its sprite:
 
-- `FOUNTAIN_BASE_URL` — your Fountain server's public URL (e.g. `https://fountain.inevitable.fyi`)
+- `FOUNTAIN_BASE_URL` — your Fountain server's public URL (e.g. `https://managoat.com`)
 - `FOUNTAIN_TOKEN` — an API key the conversation can use to call back
 - `FOUNTAIN_CONVERSATION_ID` — the spawning conversation's UUID, used to record provenance via `X-Fountain-Parent-Conversation-Id`
 

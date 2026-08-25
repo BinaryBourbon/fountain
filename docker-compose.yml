@@ -165,7 +165,7 @@ services:
   # against bad migrations and fat fingers, not a dead machine — copy dumps
   # off-host too, and back up MASTER_SECRETS_KEY separately: a database
   # backup alone cannot decrypt itself. Restore drill:
-  # https://fountain.inevitable.fyi/docs/guides/operate/back-up-and-restore
+  # https://managoat.com/docs/guides/operate/back-up-and-restore
   backup:
     image: postgres:16
     profiles: ["backup"]

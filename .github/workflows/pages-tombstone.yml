@@ -6,7 +6,7 @@
 # drifting further from /docs with every docs PR.
 #
 # So the site becomes a tombstone. Every URL it used to answer still answers
-# and redirects to the same page at https://fountain.inevitable.fyi/docs.
+# and redirects to the same page at https://managoat.com/docs.
 #
 # DELIBERATELY `workflow_dispatch` ONLY. This is not a docs publishing path
 # and must not become one — nothing here reads a page's content, only the nav.

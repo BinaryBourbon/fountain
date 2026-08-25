@@ -21,7 +21,7 @@ For one-off scripting you can skip the credentials file and export the key direc
 
 ```bash
 export FOUNTAIN_API_KEY=...                        # an API key from `fountain keys create`
-export FOUNTAIN_BASE_URL=http://localhost:4000     # only if not pointing at fountain.inevitable.fyi
+export FOUNTAIN_BASE_URL=http://localhost:4000     # only if not pointing at managoat.com
 ```
 
 ## 2. Create an environment
