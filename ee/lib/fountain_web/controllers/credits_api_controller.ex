@@ -26,7 +26,11 @@ defmodule FountainWeb.CreditsApiController do
 
   tags(["Billing"])
 
+  # The operation ids are keys in the SDK's generated `operations` map, so
+  # they keep the module's old name (#1144) rather than breaking a consumer
+  # over a rename.
   operation(:show,
+    operation_id: "FountainWeb.BillingApiController.show",
     summary: "Credit balance and current-month usage",
     description:
       "The credit balance, what of it expires and when, and the usage numbers " <>
@@ -57,6 +61,7 @@ defmodule FountainWeb.CreditsApiController do
   end
 
   operation(:credits_checkout,
+    operation_id: "FountainWeb.BillingApiController.credits_checkout",
     summary: "Mint a Stripe Checkout URL for a credit pack",
     description:
       "A one-time payment for one of the packs this deployment sells " <>
