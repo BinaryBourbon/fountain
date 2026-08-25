@@ -53,6 +53,7 @@ message.
 | `BROKER_PROXY_URL` | — | With `BROKER_URL`. | The proxy address a sandbox dials, for example `http://broker.example.com:14322`. It is not the same as `BROKER_URL` when the sandboxes are on a different network from Fountain. Its host is the one host a brokered sandbox may reach. |
 | `BROKER_TENANTS` | — | — | A comma separated list of user ids. Fountain brokers the conversations of these users. All other users provision as before. This is the operator ratchet of ADR 0019, and it is not a tenant setting. |
 | `BROKER_SESSION_TTL_SECONDS` | `21600` | — | How long a proxy session token lives. Fountain mints a new one on each provision and each reattach, and again before a turn when the current one is near its end. Agent Vault accepts 300 to 604800. |
+| `BROKER_LOG_RETENTION_HOURS` | `168` | — | How long a conversation's vault on the broker keeps its request log after the conversation ends. `GET /api/conversations/:id/egress` reads it. A daily job deletes older vaults. Keep it at or below the broker's own log retention. |
 | `BROKER_ALLOW_UNENFORCED` | `false` | — | A `true` lets a brokered conversation run on a provider that has no network policy, for example a self-hosted runner. The sandbox then holds placeholders and a proxy address, but nothing stops a process from a direct connection that avoids the proxy. For development only. |
 | `E2B_API_KEY` | — | For the `e2b` provider. | The [E2B](https://e2b.dev) API key. Its presence turns the provider on. |
 | `E2B_BASE_URL` | `https://api.e2b.app` | — | Repoints the E2B control plane. |

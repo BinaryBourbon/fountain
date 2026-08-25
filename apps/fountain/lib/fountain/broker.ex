@@ -111,6 +111,10 @@ defmodule Fountain.Broker do
   @spec proxy_host() :: String.t()
   def proxy_host, do: URI.parse(proxy_url()).host
 
+  @doc "How long a released conversation's vault keeps its request log before the reaper deletes it."
+  @spec log_retention_hours() :: pos_integer()
+  def log_retention_hours, do: Application.get_env(:fountain, :broker_log_retention_hours, 168)
+
   @doc "Whether a provider without `:network_policy` may host a brokered conversation."
   @spec allow_unenforced?() :: boolean()
   def allow_unenforced?, do: Application.get_env(:fountain, :broker_allow_unenforced, false)
@@ -492,14 +496,160 @@ defmodule Fountain.Broker do
 
   def network_for(_), do: :unrestricted
 
-  @doc "Delete the conversation's vault: its credentials, services and sessions go with it."
+  @doc """
+  Release a conversation's vault at the end of its life: every credential,
+  service and session goes, so nothing brokers on its behalf again — but
+  the vault itself stays, because its request log is the effect half of the
+  audit trail (gate 4) and deleting the vault would take it. A missing vault
+  is already released. `Fountain.Workers.BrokerVaultReaper` deletes the vault
+  once the log is past `BROKER_LOG_RETENTION_HOURS`.
+  """
   @spec release(String.t()) :: :ok | {:error, term()}
   def release(conversation_id) when is_binary(conversation_id) do
     vault = vault_name(conversation_id)
 
+    with {:ok, true} <- vault_exists?(vault),
+         :ok <- revoke_sessions(vault),
+         :ok <- clear_services(vault),
+         :ok <- clear_credentials(vault) do
+      :ok
+    else
+      {:ok, false} -> :ok
+      {:error, _} = err -> err
+    end
+  end
+
+  @doc "Delete a vault outright, log and all. The reaper's call, never provisioning's."
+  @spec delete_vault(String.t()) :: :ok | {:error, term()}
+  def delete_vault(vault) when is_binary(vault) do
     case Req.delete(req(), url: "/v1/vaults/#{vault}") do
       {:ok, %{status: status}} when status in 200..299 -> :ok
       {:ok, %{status: 404}} -> :ok
+      other -> {:error, {:broker, :delete_vault, normalize(other)}}
+    end
+  end
+
+  @doc "Every vault on the broker, by name. The owner token sees them all."
+  @spec list_vaults() :: {:ok, [String.t()]} | {:error, term()}
+  def list_vaults do
+    case Req.get(req(), url: "/v1/vaults") do
+      {:ok, %{status: 200, body: %{"vaults" => vaults}}} -> {:ok, Enum.map(vaults, & &1["name"])}
+      other -> {:error, {:broker, :list_vaults, normalize(other)}}
+    end
+  end
+
+  @doc "The conversation id a vault name was made from, or nil for a vault that is not ours."
+  @spec conversation_id_for_vault(String.t()) :: String.t() | nil
+  def conversation_id_for_vault("c-" <> hex) when byte_size(hex) == 32 do
+    case Ecto.UUID.cast(
+           String.replace(hex, ~r/(.{8})(.{4})(.{4})(.{4})(.{12})/, "\\1-\\2-\\3-\\4-\\5")
+         ) do
+      {:ok, id} -> id
+      :error -> nil
+    end
+  end
+
+  def conversation_id_for_vault(_), do: nil
+
+  @typedoc "One outbound request the broker handled for a conversation."
+  @type egress_event :: %{
+          id: integer(),
+          at: DateTime.t() | nil,
+          method: String.t(),
+          host: String.t(),
+          path: String.t(),
+          service: String.t() | nil,
+          credential_keys: [String.t()],
+          status: integer() | nil,
+          latency_ms: integer() | nil,
+          error: String.t() | nil
+        }
+
+  @doc """
+  The broker's request log for a conversation, newest first (gate 4): what
+  actually left the sandbox, to which host, with which credential attached,
+  and what came back. `before:` pages by the previous page's oldest `id`.
+  """
+  @spec request_log(String.t(), keyword()) ::
+          {:ok, %{events: [egress_event()], next: integer() | nil}} | {:error, term()}
+  def request_log(conversation_id, opts \\ []) when is_binary(conversation_id) do
+    vault = vault_name(conversation_id)
+
+    params =
+      [limit: Keyword.get(opts, :limit, 100)] ++ if(b = opts[:before], do: [before: b], else: [])
+
+    case Req.get(req(), url: "/v1/vaults/#{vault}/logs", params: params) do
+      {:ok, %{status: 200, body: %{"logs" => logs} = body}} ->
+        {:ok, %{events: Enum.map(logs, &egress_event/1), next: body["next_cursor"]}}
+
+      {:ok, %{status: 404}} ->
+        {:ok, %{events: [], next: nil}}
+
+      other ->
+        {:error, {:broker, :request_log, normalize(other)}}
+    end
+  end
+
+  defp egress_event(row) do
+    %{
+      id: row["id"],
+      at: parse_time(row["created_at"]),
+      method: row["method"],
+      host: row["host"],
+      path: row["path"],
+      service: presence(row["matched_service"]),
+      credential_keys: row["credential_keys"] || [],
+      status: row["status"],
+      latency_ms: row["latency_ms"],
+      error: presence(row["error_code"])
+    }
+  end
+
+  defp presence(nil), do: nil
+  defp presence(""), do: nil
+  defp presence(v), do: v
+
+  defp vault_exists?(vault) do
+    case Req.get(req(), url: "/v1/vaults/#{vault}/settings") do
+      {:ok, %{status: 200}} -> {:ok, true}
+      {:ok, %{status: 404}} -> {:ok, false}
+      other -> {:error, {:broker, :release, normalize(other)}}
+    end
+  end
+
+  defp revoke_sessions(vault) do
+    with {:ok, %{status: 200, body: %{"sessions" => sessions}}} <-
+           Req.get(req(), url: "/v1/sessions", params: [vault: vault]) do
+      Enum.reduce_while(sessions, :ok, fn %{"id" => id}, :ok ->
+        case Req.delete(req(), url: "/v1/sessions/#{id}", params: [vault: vault]) do
+          {:ok, %{status: status}} when status in 200..299 or status == 404 -> {:cont, :ok}
+          other -> {:halt, {:error, {:broker, :release, normalize(other)}}}
+        end
+      end)
+    else
+      other -> {:error, {:broker, :release, normalize(other)}}
+    end
+  end
+
+  defp clear_services(vault) do
+    case Req.delete(req(), url: "/v1/vaults/#{vault}/services") do
+      {:ok, %{status: status}} when status in 200..299 or status == 404 -> :ok
+      other -> {:error, {:broker, :release, normalize(other)}}
+    end
+  end
+
+  defp clear_credentials(vault) do
+    with {:ok, %{status: 200, body: %{"keys" => keys}}} <-
+           Req.get(req(), url: "/v1/credentials", params: [vault: vault]) do
+      if keys == [] do
+        :ok
+      else
+        case Req.delete(req(), url: "/v1/credentials", json: %{vault: vault, keys: keys}) do
+          {:ok, %{status: status}} when status in 200..299 -> :ok
+          other -> {:error, {:broker, :release, normalize(other)}}
+        end
+      end
+    else
       other -> {:error, {:broker, :release, normalize(other)}}
     end
   end

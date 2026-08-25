@@ -59,6 +59,13 @@ upgrade, is in
 
 ### Added
 
+- **The egress trail, ADR 0019 gate 4.** `GET /api/conversations/:id/egress`
+  lists what a brokered conversation actually sent out: each request's
+  host, the binding that matched (and so the credential attached), the
+  status and latency, refusals included. A conversation's vault on the
+  broker now keeps its request log after the conversation ends (credentials,
+  services and sessions are stripped; the vault stays) for
+  `BROKER_LOG_RETENTION_HOURS`, and a daily job deletes older ones.
 - **Inference credentials through the broker, ADR 0019 gate 3.** On a
   brokered account the runtime's credential (`CLAUDE_CODE_OAUTH_TOKEN` or
   `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`) is a vendor-shaped

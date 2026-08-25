@@ -33,6 +33,7 @@ config :fountain, Oban,
        # credential; the notice window is days wide, so the hour is about
        # being read, not about precision.
        {"7 17 * * *", Fountain.Workers.SecretExpirySweeper},
+       {"31 3 * * *", Fountain.Workers.BrokerVaultReaper},
        # Every minute: the tick for user-defined team schedules. Cheap — one
        # indexed query, usually empty — and a minute is the cron grain the
        # schedules are written in.

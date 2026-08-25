@@ -488,6 +488,8 @@ defmodule FountainWeb.Router do
       # the conversation is tenant-scoped before the request id is looked at.
       post "/requests/:request_id", ConversationController, :answer_request, as: :answer_request
       get "/tree", ConversationController, :tree, as: :tree
+      # What left the sandbox through the egress broker (ADR 0019 gate 4).
+      get "/egress", ConversationController, :egress, as: :egress
     end
   end
 

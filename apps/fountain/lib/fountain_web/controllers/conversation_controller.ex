@@ -165,6 +165,75 @@ defmodule FountainWeb.ConversationController do
     ]
   )
 
+  operation(:egress,
+    summary: "List what the conversation sent out through the egress broker",
+    description:
+      "The broker's request log for this conversation, newest first: each " <>
+        "outbound HTTP request the sandbox made, the host, the service that " <>
+        "matched (and so which credential was attached), the status and " <>
+        "latency (ADR 0019 gate 4). Empty, with `brokered: false`, for a " <>
+        "conversation that was not brokered. The log outlives the conversation " <>
+        "for `BROKER_LOG_RETENTION_HOURS`.",
+    parameters: [
+      conversation_id: [in: :path, type: :string, required: true],
+      limit: [in: :query, type: :integer, description: "1 to 500, default 100"],
+      before: [
+        in: :query,
+        type: :integer,
+        description: "Page: the `next` value of the previous page"
+      ]
+    ],
+    responses: [
+      ok: {"Egress", "application/json", Schemas.EgressListResponse},
+      not_found: {"Not found", "application/json", Schemas.Error},
+      bad_gateway: {"The broker did not answer", "application/json", Schemas.Error}
+    ]
+  )
+
+  def egress(conn, %{"conversation_id" => id} = params) do
+    user = conn.assigns.current_user
+
+    case Conversations.get_conversation(id, user.id) do
+      nil ->
+        {:error, :not_found}
+
+      conv ->
+        if Fountain.Broker.enabled_for?(user.id) do
+          opts = [limit: egress_limit(params["limit"])] ++ egress_before(params["before"])
+
+          case Fountain.Broker.request_log(conv.id, opts) do
+            {:ok, %{events: events, next: next}} ->
+              render(conn, :egress, events: events, next: next, brokered: true)
+
+            {:error, reason} ->
+              conn
+              |> put_status(:bad_gateway)
+              |> json(%{error: "broker_unavailable", message: inspect(reason)})
+          end
+        else
+          render(conn, :egress, events: [], next: nil, brokered: false)
+        end
+    end
+  end
+
+  defp egress_limit(nil), do: 100
+
+  defp egress_limit(raw) do
+    case Integer.parse(to_string(raw)) do
+      {n, ""} when n in 1..500 -> n
+      _ -> 100
+    end
+  end
+
+  defp egress_before(nil), do: []
+
+  defp egress_before(raw) do
+    case Integer.parse(to_string(raw)) do
+      {n, ""} when n > 0 -> [before: n]
+      _ -> []
+    end
+  end
+
   def turns(conn, %{"conversation_id" => id}) do
     user = conn.assigns.current_user
 

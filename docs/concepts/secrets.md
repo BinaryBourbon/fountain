@@ -177,6 +177,12 @@ too. `CLAUDE_CODE_OAUTH_TOKEN` and `ANTHROPIC_API_KEY` go to
 placeholder that keeps the vendor's prefix, such as
 `sk-ant-oat01-__claude_code_oauth_token__`.
 
+After a conversation, `GET /api/conversations/:id/egress` lists what left the
+sandbox through the broker. Each row shows the host, the binding that matched
+and so the credential attached, the status, and the latency. A refused host
+shows the refusal. The list stays for `BROKER_LOG_RETENTION_HOURS` after the
+conversation ends.
+
 You manage bindings on Account, then Credential bindings, or with
 `GET /api/secret-bindings` and its siblings. The page and the routes are only
 there when the broker is on for the account. A binding is about the name of

@@ -10,6 +10,13 @@ server releases.
 
 ---
 
+## [1.5.0] — 2026-08-25
+
+### Added
+
+- Generated types for `GET /api/conversations/:id/egress`: what a brokered
+  conversation sent out through the egress broker (ADR 0019 gate 4).
+
 ## [1.4.0] — 2026-08-25
 
 ### Changed

@@ -23,8 +23,8 @@ published at `broker.inevitable.fyi` by the Traefik TCP router of §11), and
 the hosted deployment names **one** tenant, the maintainer's own account
 (home-cloud#131, 2026-08-25). Its done-when was observed on a production
 Sprites conversation the same day — see *Gate 1a* under *Gates*. Everyone else
-is byte-for-byte on the old path. Gates 1b (bindings), 2 (`limited` at the broker) and 3 (inference
-credentials) are built; 4 is not. #1090 is closed and each
+is byte-for-byte on the old path. Every gate is built: 1a and 1b (placeholders, bindings), 2 (`limited` at the
+broker), 3 (inference credentials) and 4 (the egress trail). #1090 is closed and each
 later gate gets its own tracker.
 
 **Revised 2026-08-25 (gate 1a).** Building it changed three things below,
@@ -651,14 +651,18 @@ encodes the value. 0016 §4's second purpose (metering) remains a separate
 decision. Not verified live yet: whether `codex login --with-api-key` accepts
 the placeholder, and OpenCode's own gateway host.
 
-**Gate 4 — the joined trail.** Broker request log correlated to Conversation, and
-whatever surface makes the effect half readable next to the intent half. Gate 0
-read that log: it carries `matched_service`, `credential_keys`, `status` and
-`latency_ms`, and it carries `actor_type` and `actor_id` that come back
-**empty** for a vault-scoped session. So the join needs something the session
-alone does not give — an agent entity per conversation, or a vault per
-conversation — and that choice belongs at the front of this gate rather than
-at the end of it.
+**Gate 4 — built 2026-08-25.** The join is the vault name: §11's vault per
+conversation is exactly what the empty `actor_*` fields on a session-scoped
+row needed. `GET /api/conversations/:id/egress` returns the broker's request
+log for the conversation, newest first — host, matched service (and so which
+credential was attached), status, latency, and the broker's refusal code —
+beside the intent half in `/events`. To keep the log, `Broker.release/1` no
+longer deletes the vault at the end of a conversation: it revokes the
+sessions and clears the credentials and services, and
+`Fountain.Workers.BrokerVaultReaper` deletes the vault once the conversation
+has been over for `BROKER_LOG_RETENTION_HOURS` (168 by default, at or below
+the broker's own retention), along with any vault of ours whose conversation
+no longer exists.
 
 Gates 0–2 are the security argument and are worth building on their own. Gates 3
 and 4 are where this ADR meets 0016, and neither is blocked on any ACP work.
