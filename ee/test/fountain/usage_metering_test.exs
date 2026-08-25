@@ -201,10 +201,11 @@ defmodule Fountain.UsageMeteringTest do
       assert events_for(user.id, "sandbox_provision_failed") == []
     end
 
-    test "keeps the two billing-page numbers in agreement when provisioning fails" do
-      # Before this event existed, a sandbox that died during provisioning
-      # contributed sandbox minutes but no conversation, so the billing page
-      # diverged for exactly the accounts where something was going wrong.
+    test "a sandbox that died provisioning is minutes with no conversation, and says so" do
+      # A conversation is one that ran a turn (billing debt 3/3). A sandbox
+      # that died during provisioning ran none, so it is sandbox minutes with
+      # no conversation beside them — which is the honest reading of "cost
+      # with nothing to show for it" — and its death is still on record.
       user = insert_verified_user()
       sandbox = insert_sandbox(user_id: user.id, status: "starting")
 
@@ -221,7 +222,7 @@ defmodule Fountain.UsageMeteringTest do
           DateTime.utc_now() |> DateTime.add(3600, :second)
         )
 
-      assert summary.conversations == 1
+      assert summary.conversations == 0
       assert length(events_for(user.id, "sandbox_terminated")) == 1
     end
   end
@@ -306,6 +307,11 @@ defmodule Fountain.UsageMeteringTest do
 
       insert_sandbox(user_id: a.id, status: "pending")
       |> Conversations.update_sandbox(%{status: "ready"})
+
+      {:ok, _} =
+        Billing.record_usage(a.id, "turn_started", nil, nil, %{
+          "conversation_id" => Ecto.UUID.generate()
+        })
 
       window = {
         DateTime.utc_now() |> DateTime.add(-3600, :second),
