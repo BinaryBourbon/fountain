@@ -1,7 +1,7 @@
 ---
 type: ADR
 title: "Egress credential brokerage: the sandbox holds placeholders, the broker holds the credential"
-description: "Proposed; gate 1a is built and off by default (BROKER_URL blank), no tenant flipped. Outbound HTTP credentials are attached at a forward proxy the sandbox reaches over HTTPS_PROXY, so the agent process holds only placeholders and the only host it may reach is the broker. Gate 0 passed on 2026-08-24 against a real sandbox: brokered API calls and a private clone with no credential in the sandbox, cross-tenant probe refused, +258ms per request."
+description: "Proposed; gate 1a is built and live for one tenant (the maintainer) since 2026-08-25, off for everyone else. Outbound HTTP credentials are attached at a forward proxy the sandbox reaches over HTTPS_PROXY, so the agent process holds only placeholders and the only host it may reach is the broker. Gate 0 passed on 2026-08-24 against a real sandbox: brokered API calls and a private clone with no credential in the sandbox, cross-tenant probe refused, +258ms per request."
 tags: [security, secrets, sandbox, egress, governance]
 status: draft
 adr: "0019"
@@ -13,14 +13,18 @@ stale_after: 2026-11-24
 
 # 0019 — Egress credential brokerage
 
-**Status:** Proposed — **gate 1a is built, and nothing is on.** `Fountain.Broker`
-and the provisioning wiring exist on `main` (#1090 PRs 1–3), behind `BROKER_URL`:
-blank, and every conversation provisions exactly as it did before the module
-existed; set, and only the tenants in `BROKER_TENANTS` are brokered, for
-`GITHUB_TOKEN` / `GH_TOKEN` only. No broker is deployed (#1090 PR 4, in
-fountain-ops), no tenant is flipped, and `Fountain.Sandbox.NetworkPolicy` has
-still been applied to no production sandbox outside gate 0. Gates 1b–4 are not
-built. Each later PR removes its own caveat here.
+**Status:** Proposed — **gate 1a is built and live for one tenant.**
+`Fountain.Broker` and the provisioning wiring exist on `main` (#1090 PRs 1–3),
+behind `BROKER_URL`: blank, and every conversation provisions exactly as it did
+before the module existed; set, and only the tenants in `BROKER_TENANTS` are
+brokered, for `GITHUB_TOKEN` / `GH_TOKEN` only. The broker is deployed under
+Flux in home-cloud (jhgaylor/home-cloud#128: Agent Vault on a CNPG cluster,
+published at `broker.inevitable.fyi` by the Traefik TCP router of §11), and
+the hosted deployment names **one** tenant, the maintainer's own account
+(home-cloud#131, 2026-08-25). Its done-when was observed on a production
+Sprites conversation the same day — see *Gate 1a* under *Gates*. Everyone else
+is byte-for-byte on the old path. Gates 1b–4 are not built; #1090 is closed
+and each later gate gets its own tracker.
 
 **Revised 2026-08-25 (gate 1a).** Building it changed three things below,
 each marked in place: §11 is a vault per *conversation*, not per tenant; the
@@ -576,17 +580,22 @@ token does reach the shared `/home/sprite/.env`, and `Redaction` scrubs the
 placeholder along with everything else, so probes have to print lengths rather
 than values.
 
-**Gate 1a — built 2026-08-25 (#1090 PRs 1–3), not flipped for any tenant.**
+**Gate 1a — built and flipped for one tenant, 2026-08-25 (#1090, closed).**
 The narrower slice #1090 argued for: catalog bindings only (`GITHUB_TOKEN` /
 `GH_TOKEN` to `api.github.com` as a bearer and to `github.com` as basic
 `x-access-token`), one operator-held tenant list, no schema change. Verified
 end to end against a real Agent Vault and a Linux runner with no cloud in the
 loop: a private clone with a 16-byte placeholder in the sandbox, the token off
 the shared `.env`, a stopped broker refused by name before any sandbox exists,
-and the vault deleted with the conversation. The `allow: [broker]` floor is
-applied on any provider that advertises `:network_policy` and is what a runner
-cannot enforce, so a runner needs `BROKER_ALLOW_UNENFORCED` and is for
-development only. The placeholder is **not** a lookup key — the broker
+and the vault deleted with the conversation. Then on production, on the
+maintainer's account, on Sprites: the private clone with a 16-byte
+placeholder, `HTTPS_PROXY` absent from `/home/sprite/.env`, and **direct egress
+refused** by the `allow: [broker]` floor while the same hosts answered through
+the proxy — the one line a runner cannot show, since it has no network policy
+(a runner needs `BROKER_ALLOW_UNENFORCED` and is for development only). The
+turn's own model calls and the ACP adapter's npm install passed through the
+proxy as passthrough, which is gate 3's shape already visible in the broker's
+request log. The placeholder is **not** a lookup key — the broker
 replaces the auth header wholesale — so the "contract" below reduces to a
 plausibility rule.
 
