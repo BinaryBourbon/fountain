@@ -10,27 +10,27 @@
     {Fountain.Brand.name()} is the hosted enterprise edition of {Fountain.Brand.engine()}
   </p>
   <h1 class="text-4xl sm:text-5xl font-bold tracking-tight text-[var(--color-text-primary)] mb-5 leading-tight">
-    Have the conversation. Skip the infrastructure.
+    Give your app a coding agent. Skip the machine it needs.
   </h1>
   <p class="text-lg sm:text-xl text-[var(--color-text-secondary)] max-w-2xl mx-auto mb-10">
-    {Fountain.Brand.name()} runs an agent on a cloud sandbox and hands your app a conversation with it. Send a prompt, read the reply. The sandbox parks between messages and wakes with its work intact — and you never provision, secure, or pay for an idle machine.
+    {Fountain.Brand.name()} runs Claude Code, Codex, Gemini or OpenCode on a cloud sandbox it builds for you. Send a prompt over the API, read the reply. The sandbox parks between messages and wakes with its work intact, so there is no box to provision, lock down, or pay for while nobody is talking.
   </p>
   <div class="flex flex-col sm:flex-row gap-3 justify-center mb-4">
     <a
       href={~p"/auth/register"}
       class="inline-flex items-center justify-center px-6 py-3 rounded-lg bg-[var(--color-brand)] text-white font-medium hover:bg-[var(--color-brand-hover)] transition-colors text-sm"
     >
-      Start free — no credit card
+      Run your first agent free
     </a>
     <a
-      href={~p"/auth/login"}
+      href={~p"/docs/tour"}
       class="inline-flex items-center justify-center px-6 py-3 rounded-lg border border-[var(--color-border)] text-[var(--color-text-primary)] font-medium hover:bg-[var(--color-bg-2)] transition-colors text-sm"
     >
-      Sign in
+      Read the 40-line tour
     </a>
   </div>
   <p :if={pricing?()} class="text-xs text-[var(--color-text-muted)]">
-    {elem(opening_credit(), 0)} of credit to start — then pay only for what your agents do.
+    {elem(opening_credit(), 0)} of credit to start, no card. Bring your own model key; you pay for machine time, never for tokens.
   </p>
   <p :if={!pricing?()} class="text-xs text-[var(--color-text-muted)]">
     Free to use on this install.
@@ -40,155 +40,264 @@
 <%!-- Problem --%>
 <section class="bg-[var(--color-bg-1)] border-y border-[var(--color-border)]">
   <div class="max-w-5xl mx-auto px-6 py-16">
-    <h2 class="text-2xl font-semibold text-[var(--color-text-primary)] mb-6 text-center">
-      The agent is the easy part.
+    <h2 class="text-2xl font-semibold text-[var(--color-text-primary)] mb-3 text-center">
+      The agent takes an afternoon. The machine under it takes a quarter.
     </h2>
+    <p class="text-center text-[var(--color-text-secondary)] max-w-xl mx-auto mb-8">
+      Want an agent that fixes a failing test, answers a customer, or opens a pull request from inside your product? Before it can, somebody has to build all of this:
+    </p>
     <ul class="max-w-xl mx-auto space-y-4 text-[var(--color-text-secondary)]">
       <li class="flex items-start gap-3">
         <span class="mt-2 size-1.5 rounded-full bg-[var(--color-brand)] flex-shrink-0"></span>
         <span>
-          An agent needs a machine: a filesystem, a shell, a package manager, a network. That is real infrastructure, and it is not the thing you set out to build.
+          <span class="font-medium text-[var(--color-text-primary)]">A machine.</span>
+          A filesystem, a shell, a package manager, a checkout, a network. Real infrastructure, and not the thing you set out to ship.
         </span>
       </li>
       <li class="flex items-start gap-3">
         <span class="mt-2 size-1.5 rounded-full bg-[var(--color-brand)] flex-shrink-0"></span>
         <span>
-          It needs real credentials, and those must never reach the prompt, the model's context, or the logs you keep.
+          <span class="font-medium text-[var(--color-text-primary)]">
+            A way to hand it secrets.
+          </span>
+          A GitHub token that can push, an API key that can charge. None of it may reach the prompt, the model's context, or the transcript you keep.
         </span>
       </li>
       <li class="flex items-start gap-3">
         <span class="mt-2 size-1.5 rounded-full bg-[var(--color-brand)] flex-shrink-0"></span>
         <span>
-          Something has to start that machine, park it when nobody is talking, wake it on the next message, and keep every account's work apart.
+          <span class="font-medium text-[var(--color-text-primary)]">An owner.</span>
+          Something that starts the machine, parks it when the talk stops, wakes it on the next message, keeps every account's work apart, and stops it before the bill notices.
         </span>
       </li>
     </ul>
+    <p class="text-center text-[var(--color-text-secondary)] max-w-xl mx-auto mt-8">
+      {Fountain.Brand.name()} is that machine, that vault and that owner. You keep the conversation.
+    </p>
+  </div>
+</section>
+
+<%!-- How it works --%>
+<section class="max-w-5xl mx-auto px-6 py-16">
+  <h2 class="text-2xl font-semibold text-[var(--color-text-primary)] mb-10 text-center">
+    Three rows and one call.
+  </h2>
+  <div class="grid md:grid-cols-2 gap-10 items-start">
+    <ol class="space-y-6 text-[var(--color-text-secondary)]">
+      <li class="flex items-start gap-4">
+        <span class="flex-shrink-0 size-7 rounded-full bg-[var(--color-brand)] text-white text-sm font-semibold flex items-center justify-center">
+          1
+        </span>
+        <span>
+          <span class="font-medium text-[var(--color-text-primary)]">
+            Describe the machine once.
+          </span>
+          An Environment names the repositories, packages, setup scripts and env vars an agent wakes up with. Write it in the console, the CLI, or a YAML manifest.
+        </span>
+      </li>
+      <li class="flex items-start gap-4">
+        <span class="flex-shrink-0 size-7 rounded-full bg-[var(--color-brand)] text-white text-sm font-semibold flex items-center justify-center">
+          2
+        </span>
+        <span>
+          <span class="font-medium text-[var(--color-text-primary)]">Name the agent.</span>
+          Pick the runtime and the model, add skills and MCP servers, attach the Environment. Or start from a ready-made one and change what you need.
+        </span>
+      </li>
+      <li class="flex items-start gap-4">
+        <span class="flex-shrink-0 size-7 rounded-full bg-[var(--color-brand)] text-white text-sm font-semibold flex items-center justify-center">
+          3
+        </span>
+        <span>
+          <span class="font-medium text-[var(--color-text-primary)]">Send a prompt.</span>
+          A sandbox spawns, the agent works, the reply streams back. Send another and it picks up where it left off. That is the whole integration.
+        </span>
+      </li>
+    </ol>
+    <pre
+      class="rounded-xl border border-[var(--color-border)] bg-[var(--color-code-bg)] text-[var(--color-code-text)] p-5 text-sm leading-relaxed overflow-x-auto"
+      phx-no-format
+    ><code>{sdk_example()}</code></pre>
   </div>
 </section>
 
 <%!-- Feature cards --%>
-<section class="max-w-5xl mx-auto px-6 py-16">
-  <h2 class="text-2xl font-semibold text-[var(--color-text-primary)] mb-10 text-center">
-    What you stop building.
-  </h2>
-  <div class="grid sm:grid-cols-2 gap-6">
-    <%!-- Self-serve onboarding --%>
-    <div class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-1)] p-6">
-      <div class="size-9 rounded-lg bg-[var(--color-bg-2)] flex items-center justify-center mb-4">
-        <svg
-          class="size-5 text-[var(--color-brand)]"
-          viewBox="0 0 20 20"
-          fill="currentColor"
-          aria-hidden="true"
-        >
-          <path
-            fill-rule="evenodd"
-            d="M10 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm-7 9a7 7 0 1 1 14 0H3Z"
-            clip-rule="evenodd"
-          />
-        </svg>
+<section class="bg-[var(--color-bg-1)] border-y border-[var(--color-border)]">
+  <div class="max-w-5xl mx-auto px-6 py-16">
+    <h2 class="text-2xl font-semibold text-[var(--color-text-primary)] mb-10 text-center">
+      What you stop building.
+    </h2>
+    <div class="grid sm:grid-cols-2 gap-6">
+      <%!-- Per-user threads --%>
+      <div class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-0)] p-6">
+        <div class="size-9 rounded-lg bg-[var(--color-bg-2)] flex items-center justify-center mb-4">
+          <svg
+            class="size-5 text-[var(--color-brand)]"
+            viewBox="0 0 20 20"
+            fill="currentColor"
+            aria-hidden="true"
+          >
+            <path
+              fill-rule="evenodd"
+              d="M10 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm-7 9a7 7 0 1 1 14 0H3Z"
+              clip-rule="evenodd"
+            />
+          </svg>
+        </div>
+        <h3 class="font-semibold text-[var(--color-text-primary)] mb-2">
+          One machine per user, one thread per user
+        </h3>
+        <p class="text-sm text-[var(--color-text-secondary)] leading-relaxed">
+          Bind a conversation to any id you already have, such as a Slack channel, a customer, or a row in your database. Each one gets a durable thread on its own sandbox. No lookup table, and nothing to carry between messages.
+        </p>
       </div>
-      <h3 class="font-semibold text-[var(--color-text-primary)] mb-2">
-        A thread and a machine per user
-      </h3>
-      <p class="text-sm text-[var(--color-text-secondary)] leading-relaxed">
-        Bind a conversation to any channel id — a Slack channel, a customer, a row in your own product — and each one gets a durable thread on a sandbox of its own. No lookup table to keep, and nothing to carry between messages.
-      </p>
-    </div>
 
-    <%!-- Vaults --%>
-    <div class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-1)] p-6">
-      <div class="size-9 rounded-lg bg-[var(--color-bg-2)] flex items-center justify-center mb-4">
-        <svg
-          class="size-5 text-[var(--color-brand)]"
-          viewBox="0 0 20 20"
-          fill="currentColor"
-          aria-hidden="true"
-        >
-          <path
-            fill-rule="evenodd"
-            d="M10 1a4.5 4.5 0 0 0-4.5 4.5V9H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6a2 2 0 0 0-2-2h-.5V5.5A4.5 4.5 0 0 0 10 1Zm3 8V5.5a3 3 0 1 0-6 0V9h6Z"
-            clip-rule="evenodd"
-          />
-        </svg>
+      <%!-- Vaults --%>
+      <div class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-0)] p-6">
+        <div class="size-9 rounded-lg bg-[var(--color-bg-2)] flex items-center justify-center mb-4">
+          <svg
+            class="size-5 text-[var(--color-brand)]"
+            viewBox="0 0 20 20"
+            fill="currentColor"
+            aria-hidden="true"
+          >
+            <path
+              fill-rule="evenodd"
+              d="M10 1a4.5 4.5 0 0 0-4.5 4.5V9H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6a2 2 0 0 0-2-2h-.5V5.5A4.5 4.5 0 0 0 10 1Zm3 8V5.5a3 3 0 1 0-6 0V9h6Z"
+              clip-rule="evenodd"
+            />
+          </svg>
+        </div>
+        <h3 class="font-semibold text-[var(--color-text-primary)] mb-2">
+          Secrets the model never sees
+        </h3>
+        <p class="text-sm text-[var(--color-text-secondary)] leading-relaxed">
+          Environments and Vaults are encrypted at rest and merge when the sandbox spawns, arriving as plain environment variables. They stay out of the prompt and the model's context, and {Fountain.Brand.name()} scrubs them from every line of output it stores.
+        </p>
       </div>
-      <h3 class="font-semibold text-[var(--color-text-primary)] mb-2">
-        Credentials that never reach the prompt
-      </h3>
-      <p class="text-sm text-[var(--color-text-secondary)] leading-relaxed">
-        Environments and Vaults merge when the sandbox spawns and arrive as ordinary environment variables. They stay out of the prompt and the model's context, and {Fountain.Brand.name()} scrubs them from the output it stores.
-      </p>
-    </div>
 
-    <%!-- Log viewer --%>
-    <div class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-1)] p-6">
-      <div class="size-9 rounded-lg bg-[var(--color-bg-2)] flex items-center justify-center mb-4">
-        <svg
-          class="size-5 text-[var(--color-brand)]"
-          viewBox="0 0 20 20"
-          fill="currentColor"
-          aria-hidden="true"
-        >
-          <path
-            fill-rule="evenodd"
-            d="M2 4.25A2.25 2.25 0 0 1 4.25 2h11.5A2.25 2.25 0 0 1 18 4.25v8.5A2.25 2.25 0 0 1 15.75 15h-3.105a3.501 3.501 0 0 0 1.1 1.677A.75.75 0 0 1 13.26 18H6.74a.75.75 0 0 1-.484-1.323A3.501 3.501 0 0 0 7.355 15H4.25A2.25 2.25 0 0 1 2 12.75v-8.5Zm1.5 0a.75.75 0 0 1 .75-.75h11.5a.75.75 0 0 1 .75.75v7.5a.75.75 0 0 1-.75.75H4.25a.75.75 0 0 1-.75-.75v-7.5Z"
-            clip-rule="evenodd"
-          />
-        </svg>
+      <%!-- Live stream --%>
+      <div class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-0)] p-6">
+        <div class="size-9 rounded-lg bg-[var(--color-bg-2)] flex items-center justify-center mb-4">
+          <svg
+            class="size-5 text-[var(--color-brand)]"
+            viewBox="0 0 20 20"
+            fill="currentColor"
+            aria-hidden="true"
+          >
+            <path
+              fill-rule="evenodd"
+              d="M2 4.25A2.25 2.25 0 0 1 4.25 2h11.5A2.25 2.25 0 0 1 18 4.25v8.5A2.25 2.25 0 0 1 15.75 15h-3.105a3.501 3.501 0 0 0 1.1 1.677A.75.75 0 0 1 13.26 18H6.74a.75.75 0 0 1-.484-1.323A3.501 3.501 0 0 0 7.355 15H4.25A2.25 2.25 0 0 1 2 12.75v-8.5Zm1.5 0a.75.75 0 0 1 .75-.75h11.5a.75.75 0 0 1 .75.75v7.5a.75.75 0 0 1-.75.75H4.25a.75.75 0 0 1-.75-.75v-7.5Z"
+              clip-rule="evenodd"
+            />
+          </svg>
+        </div>
+        <h3 class="font-semibold text-[var(--color-text-primary)] mb-2">
+          Watch every turn as it happens
+        </h3>
+        <p class="text-sm text-[var(--color-text-secondary)] leading-relaxed">
+          Output and lifecycle events stream over SSE. Ask for <code
+            class="text-[var(--color-code-text)] bg-[var(--color-code-bg)] rounded px-1 py-0.5 text-xs"
+            phx-no-format
+          >?blocks=true</code> and the server parses each runtime's dialect for you, so your client renders one shape whether the agent is Claude Code or Codex.
+        </p>
       </div>
-      <h3 class="font-semibold text-[var(--color-text-primary)] mb-2">
-        Watch any turn, live
-      </h3>
-      <p class="text-sm text-[var(--color-text-secondary)] leading-relaxed">
-        Output and lifecycle events stream over SSE as they happen. Ask for <code
-          class="text-[var(--color-code-text)] bg-[var(--color-code-bg)] rounded px-1 py-0.5 text-xs"
-          phx-no-format
-        >?blocks=true</code> and the server parses each runtime's dialect for you, so your client renders one shape instead of four.
-      </p>
-    </div>
 
-    <%!-- Three surfaces --%>
-    <div class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-1)] p-6">
-      <div class="size-9 rounded-lg bg-[var(--color-bg-2)] flex items-center justify-center mb-4">
-        <svg
-          class="size-5 text-[var(--color-brand)]"
-          viewBox="0 0 20 20"
-          fill="currentColor"
-          aria-hidden="true"
-        >
-          <path d="M3.25 4A2.25 2.25 0 0 0 1 6.25v7.5A2.25 2.25 0 0 0 3.25 16h7.5A2.25 2.25 0 0 0 13 13.75v-7.5A2.25 2.25 0 0 0 10.75 4h-7.5ZM19 4.75a.75.75 0 0 0-1.28-.53l-3 3a.75.75 0 0 0-.22.53v4.5c0 .199.079.39.22.53l3 3a.75.75 0 0 0 1.28-.53V4.75Z" />
-        </svg>
+      <%!-- Surfaces --%>
+      <div class="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-0)] p-6">
+        <div class="size-9 rounded-lg bg-[var(--color-bg-2)] flex items-center justify-center mb-4">
+          <svg
+            class="size-5 text-[var(--color-brand)]"
+            viewBox="0 0 20 20"
+            fill="currentColor"
+            aria-hidden="true"
+          >
+            <path d="M3.25 4A2.25 2.25 0 0 0 1 6.25v7.5A2.25 2.25 0 0 0 3.25 16h7.5A2.25 2.25 0 0 0 13 13.75v-7.5A2.25 2.25 0 0 0 10.75 4h-7.5ZM19 4.75a.75.75 0 0 0-1.28-.53l-3 3a.75.75 0 0 0-.22.53v4.5c0 .199.079.39.22.53l3 3a.75.75 0 0 0 1.28-.53V4.75Z" />
+          </svg>
+        </div>
+        <h3 class="font-semibold text-[var(--color-text-primary)] mb-2">
+          Reach it from wherever you already are
+        </h3>
+        <p class="text-sm text-[var(--color-text-secondary)] leading-relaxed">
+          REST and SSE for your own code, a TypeScript SDK, a <code
+            class="text-[var(--color-code-text)] bg-[var(--color-code-bg)] rounded px-1 py-0.5 text-xs"
+            phx-no-format
+          >fountain</code> CLI, ACP for your editor, AG-UI for a coworker platform. Everything the SDK does, <code
+            class="text-[var(--color-code-text)] bg-[var(--color-code-bg)] rounded px-1 py-0.5 text-xs"
+            phx-no-format
+          >curl</code> can do.
+        </p>
       </div>
-      <h3 class="font-semibold text-[var(--color-text-primary)] mb-2">
-        Reach it the way you already build
-      </h3>
-      <p class="text-sm text-[var(--color-text-secondary)] leading-relaxed">
-        ACP for an editor or a chat surface, AG-UI for a coworker platform, REST and SSE for your own code, plus a TypeScript SDK and a <code
-          class="text-[var(--color-code-text)] bg-[var(--color-code-bg)] rounded px-1 py-0.5 text-xs"
-          phx-no-format
-        >fountain</code> CLI. The people using what you build need never learn that an agent is there.
-      </p>
     </div>
   </div>
 </section>
 
-<%!-- Footer CTA --%>
-<section class="max-w-5xl mx-auto px-6 py-20 text-center">
-  <h2 class="text-2xl sm:text-3xl font-bold text-[var(--color-text-primary)] mb-4">
-    Start with credit on us.
+<%!-- Objections --%>
+<section class="max-w-5xl mx-auto px-6 py-16">
+  <h2 class="text-2xl font-semibold text-[var(--color-text-primary)] mb-10 text-center">
+    Things you would ask before signing up.
   </h2>
-  <p class="text-[var(--color-text-secondary)] mb-8 max-w-lg mx-auto">
-    Your first conversation runs in minutes. There is no machine to provision, and no credit card to enter.
-  </p>
-  <a
-    href={~p"/auth/register"}
-    class="inline-flex items-center justify-center px-8 py-3 rounded-lg bg-[var(--color-brand)] text-white font-medium hover:bg-[var(--color-brand-hover)] transition-colors"
-  >
-    Get started free
-  </a>
-  <p class="mt-4 text-sm text-[var(--color-text-muted)]">
-    Nothing recurs. No lock-in.
-  </p>
+  <dl class="max-w-2xl mx-auto space-y-6 text-[var(--color-text-secondary)]">
+    <div>
+      <dt class="font-medium text-[var(--color-text-primary)]">Do I need a model key?</dt>
+      <dd class="mt-1 text-sm leading-relaxed">
+        Yes. Bring an Anthropic, OpenAI or Google key and the agent bills your own account for tokens. {Fountain.Brand.name()} charges for the sandbox hours, never for inference, so there is no markup on the model.
+      </dd>
+    </div>
+    <div>
+      <dt class="font-medium text-[var(--color-text-primary)]">
+        What happens to the sandbox when I stop talking?
+      </dt>
+      <dd class="mt-1 text-sm leading-relaxed">
+        It parks. The filesystem, the checkout and the agent's memory survive, and a parked sandbox costs nothing. The next message wakes it in seconds instead of minutes.
+      </dd>
+    </div>
+    <div>
+      <dt class="font-medium text-[var(--color-text-primary)]">
+        Is my work separate from everyone else's?
+      </dt>
+      <dd class="mt-1 text-sm leading-relaxed">
+        Every query is scoped to your account, every sandbox belongs to one conversation, and your secrets are encrypted with a key derived for your tenant alone.
+      </dd>
+    </div>
+    <div>
+      <dt class="font-medium text-[var(--color-text-primary)]">Can I run it myself?</dt>
+      <dd class="mt-1 text-sm leading-relaxed">
+        Yes.
+        <span :if={Fountain.Brand.hosted?()}>
+          {Fountain.Brand.name()} is the hosted edition of {Fountain.Brand.engine()}, an open-source server
+        </span>
+        <span :if={!Fountain.Brand.hosted?()}>{Fountain.Brand.engine()} is open source</span>, and you can run it on your own hardware, with your own sandboxes. <a
+          href={~p"/docs/open-source"}
+          class="underline underline-offset-2 hover:text-[var(--color-text-primary)]"
+        >Read about the open-source engine</a>.
+      </dd>
+    </div>
+  </dl>
+</section>
+
+<%!-- Footer CTA --%>
+<section class="bg-[var(--color-bg-1)] border-t border-[var(--color-border)]">
+  <div class="max-w-5xl mx-auto px-6 py-20 text-center">
+    <h2 class="text-2xl sm:text-3xl font-bold text-[var(--color-text-primary)] mb-4">
+      Your first agent runs in minutes.
+    </h2>
+    <p class="text-[var(--color-text-secondary)] mb-8 max-w-lg mx-auto">
+      Sign up, paste a model key, send a prompt. No machine to provision, no card to enter, nothing that renews.
+    </p>
+    <a
+      href={~p"/auth/register"}
+      class="inline-flex items-center justify-center px-8 py-3 rounded-lg bg-[var(--color-brand)] text-white font-medium hover:bg-[var(--color-brand-hover)] transition-colors"
+    >
+      Run your first agent free
+    </a>
+    <p class="mt-4 text-sm text-[var(--color-text-muted)]">
+      Already have an account? <a
+        href={~p"/auth/login"}
+        class="underline underline-offset-2 hover:text-[var(--color-text-primary)]"
+      >Sign in</a>.
+    </p>
+  </div>
 </section>
 
 <%!-- Pricing (ADR 0031): credits are the product. Rendered only where the

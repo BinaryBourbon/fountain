@@ -40,8 +40,8 @@ defmodule FountainWeb.BrandChromeTest do
 
   test "the marketing page and legal pages name the brand; the CLI stays fountain", %{conn: conn} do
     home = conn |> get(~p"/") |> html_response(200)
-    assert home =~ "Managoat runs an agent on a cloud sandbox"
-    assert home =~ "Managoat scrubs them from the output"
+    assert home =~ "Managoat runs Claude Code, Codex, Gemini or OpenCode on a cloud sandbox"
+    assert home =~ "Managoat scrubs them from every line of output"
     assert home =~ ">fountain</code> CLI"
     assert home =~ "© 2026 Managoat."
     assert home =~ ~s(data-role="hosted-enterprise")
