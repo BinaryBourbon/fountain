@@ -9,5 +9,5 @@
 # If you find yourself adding a line, prefer fixing the page. The whole backlog
 # was 76 pages, 219 errors and 343 warnings, and it came down page by page.
 #
-# The standard is docs-redesign/08-simplified-technical-english.md.
+# The standard is standards/simplified-technical-english.md.
 # The config, including the permanent exemptions, is .vale-ste.yml.

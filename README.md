@@ -159,7 +159,7 @@ See [`SETUP.md`](SETUP.md) for the full local bootstrap (mise + Postgres + deps)
 
 ## Contributing
 
-See [`CLAUDE.md`](CLAUDE.md) for architecture, test patterns, the tenant isolation contract, and things to avoid. Architecturally significant choices are recorded as ADRs in [`decisions/`](decisions/). The maintainer runs an agent-team workflow on this repo — [`OPERATING_MODEL.md`](OPERATING_MODEL.md) and [`ROADMAP.md`](ROADMAP.md) document it, but you don't need either to contribute.
+See [`CLAUDE.md`](CLAUDE.md) for architecture, test patterns, the tenant isolation contract, and things to avoid. Architecturally significant choices are recorded as ADRs in [`decisions/`](decisions/).
 
 ## Licence
 

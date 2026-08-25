@@ -264,8 +264,7 @@ defmodule Fountain.DocsTest do
     built every page under `docs/` whether the nav named it or not, so a page
     left out of the nav was still reachable on the GitHub Pages site and its
     absence from `/docs` looked like a rendering quirk rather than a mistake.
-    Four such pages had accumulated (`docs/superpowers/`, since moved to the
-    repo root).
+    Four such pages had accumulated (`docs/superpowers/`, since deleted).
 
     With Pages gone, `/docs` is the only reader of `docs/`, so a page missing
     from the nav is a page that is published nowhere at all — written, merged,
@@ -291,8 +290,8 @@ defmodule Fountain.DocsTest do
 
              /docs is the only place docs/ is published, so a page the nav does
              not name is published nowhere. Add it to docs/nav.yml, or move it
-             out of docs/ — runbooks/, decisions/ and superpowers/ are all
-             deliberately unpublished.
+             out of docs/ — decisions/ and standards/ are deliberately
+             unpublished.
              """
     end
   end

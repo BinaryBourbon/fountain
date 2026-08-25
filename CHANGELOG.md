@@ -29,6 +29,18 @@ upgrade, is in
   to apply `k8s/`; the Erlang clustering env it used to demonstrate is now
   written out in the Kubernetes guide. `.sops.yaml` is gone with it.
 
+### Removed
+
+- **The May-2026 planning material is gone from the tree.** `plan/`,
+  `superpowers/`, `OPERATING_MODEL.md` (the orchestrator briefs, specs and
+  bible from the aod-ex rebuild), `runbooks/` (the completed home-cloud
+  cutover) and `docs-redesign/` (the executed docs IA plan, #903) were
+  historical records with no reader; git history keeps them. The three files
+  tooling still cites moved to `standards/`: `voice-and-style.md`
+  (`scripts/docs-style.py`), `simplified-technical-english.md`
+  (`.vale-ste.yml`) and `catalog-template.md` (linked from the catalog).
+  `rel/` stays: `rel/overlays/bin/migrate` is the migration Job entrypoint.
+
 ### Fixed
 
 - **A background task the agent starts survives the turn that started it.**

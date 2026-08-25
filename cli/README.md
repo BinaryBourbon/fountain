@@ -72,8 +72,7 @@ needs at provision time was moved into the server app as
 `Fountain.Substitution`; everything else was deleted.
 
 The `up` / `down` self-deploy commands were removed before the Go port
-(see [phase-3-cli](../plan/phase-3-cli/engineer-brief.md)) and are not
-reintroduced.
+and are not reintroduced.
 
 ## Install
 

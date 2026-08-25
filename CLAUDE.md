@@ -478,10 +478,10 @@ Guardrails that trip people who only edit markdown:
 - **A page not in the nav is published nowhere.** `docs_test.exs` walks
   `docs/**/*.md` both ways: every page the nav names exists, and every page on
   disk is named. There is no allowlist. If a markdown file should not be read
-  at `/docs`, it belongs somewhere else — `runbooks/`, `decisions/` and
-  `superpowers/` are all deliberately unpublished. MkDocs used to build an
-  unlisted page anyway, so four of them accumulated under `docs/superpowers/`
-  before this check existed.
+  at `/docs`, it belongs somewhere else — `decisions/` and `standards/` are
+  deliberately unpublished. MkDocs used to build an unlisted page anyway, so
+  four planning pages accumulated under `docs/superpowers/` before this check
+  existed (since deleted).
 - **Anything `Fountain.Docs` reads at compile time must be `COPY`d into the
   Docker build stage.** The release image contains no `docs/`, only strings
   baked out of it, so a file outside the `COPY` list does not degrade to a
@@ -496,14 +496,14 @@ Guardrails that trip people who only edit markdown:
   stricter of the two — MkDocs never checked anchors. Run
   `mix test apps/fountain/test/fountain/docs_test.exs`.
 - **`python3 scripts/docs-style.py`** enforces the style sheet
-  (`docs-redesign/06-voice-and-style.md`): no em dashes, no colon-introduced
+  (`standards/voice-and-style.md`): no em dashes, no colon-introduced
   lists, no "simply"/"obviously"/"coming soon". It skips the backlog in
   `scripts/docs-style-allow.txt`, so a file **not** on that list is checked and
   every new page is covered by default. Cleaning a page means deleting its
   line; the list only shrinks (#911).
 - **`vale lint docs` enforces ASD-STE100 Simplified Technical English.** Every
   published page is written in it. The standard is
-  `docs-redesign/08-simplified-technical-english.md`; config is
+  `standards/simplified-technical-english.md`; config is
   `.vale-ste.yml`; the backlog is `.valeignore` and is **empty**. The linter is
   [`stuffbucket/vale`](https://github.com/stuffbucket/vale) — MIT, pure Go.
   Install it with `brew install stuffbucket/tap/vale`. CI uses the pinned

@@ -43,4 +43,4 @@ documents those. No curated list says which external servers work.
 such a list could be honest, somebody must decide what "supported" would mean.
 
 If you want an entry that does not exist, open an issue. The entry template is
-`docs-redesign/05-catalog-template.md` in the repository.
+`standards/catalog-template.md` in the repository.
