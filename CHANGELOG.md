@@ -16,13 +16,17 @@ upgrade, is in
 
 ## [Unreleased]
 
-### Changed
+## [0.14.0] — 2026-08-25
 
-- **The hosted Fountain is `managoat.com`** (#1177). The CLI's and the
-  TypeScript SDK's compile-time default base URL, the docs, the sample
-  compose and k8s files and the hermes plugin now name the new host; the
-  old `fountain.inevitable.fyi` keeps answering and redirects. Self-hosters
-  who set `FOUNTAIN_BASE_URL` are unaffected. SDK 1.8.0 carries the change.
+### Upgrade notes
+
+- **The hosted instance is `managoat.com`.** Self-hosters are unaffected:
+  `PUBLIC_URL` is yours, and a CLI or SDK pointed at your instance
+  (`FOUNTAIN_BASE_URL`, `fountain auth login`, `baseUrl`) keeps pointing
+  there. Only the compile-time fallback changed.
+- Connections are opt-in: without `GOOGLE_OAUTH_CLIENT_ID` /
+  `GOOGLE_OAUTH_CLIENT_SECRET` the *Connections* page lists no provider and
+  nothing else changes. One migration adds the `connections` table.
 
 ### Added
 
@@ -58,6 +62,14 @@ upgrade, is in
     OpenAPI spec and the TypeScript SDK (`client.connections`). Configured
     by `GOOGLE_OAUTH_CLIENT_ID` / `GOOGLE_OAUTH_CLIENT_SECRET`.
 
+### Changed
+
+- **The hosted Fountain is `managoat.com`** (#1177). The CLI's and the
+  TypeScript SDK's compile-time default base URL, the docs, the sample
+  compose and k8s files and the hermes plugin now name the new host; the
+  old `fountain.inevitable.fyi` keeps answering and redirects. Self-hosters
+  who set `FOUNTAIN_BASE_URL` are unaffected. SDK 1.8.0 carries the change.
+
 ### Fixed
 
 - **Brokered sandboxes now trust the egress broker's MITM certificate across
@@ -70,6 +82,18 @@ upgrade, is in
   to the full system CA bundle (real roots plus the broker CA — never the
   broker CA alone, which would break non-brokered hosts like PyPI), and
   `UV_NATIVE_TLS=1` so uv reads that store instead of its bundled webpki roots.
+- **The environment edit page no longer 500s when a `packages` value is a
+  string instead of a list.** `packages` is a free map, and manifests had
+  stored a version string under a manager the provisioner does not read
+  (`"node" => "24"`), which `Enum.join/2` refused. A non-list value now
+  renders as-is and round-trips as a one-item list.
+- **A refused Agent Vault create is checked against the vault list before
+  it fails a prepare** (#1184). The vault answered 500 for a duplicate name
+  where the contract says 409, which failed every reattach of a brokered
+  conversation after its first idle; `ensure_vault` now consults the list
+  on a refused create and proceeds when the vault is there.
+- **`gmail_search` no longer 500s** (#1183): Gmail's multi-valued query
+  params (`metadataHeaders`, `labelIds`) are encoded as repeated keys.
 
 ## [0.13.0] — 2026-08-25
 
