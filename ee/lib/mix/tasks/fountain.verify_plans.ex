@@ -27,9 +27,6 @@ defmodule Mix.Tasks.Fountain.VerifyPlans do
     * is in USD, the currency every catalog figure is written in;
     * charges exactly `monthly_cents`.
 
-  The teammate-contact add-on is checked the same way, with the extra
-  requirement that it is a *licensed* price — the quantity is set from the
-  contact count, and a metered price ignores a quantity entirely.
 
   A plan with no price id is reported as unconfigured, not as a failure: a
   deployment rolls its price ids out one at a time, and only the plans that
@@ -61,7 +58,7 @@ defmodule Mix.Tasks.Fountain.VerifyPlans do
       abort("STRIPE_SECRET_KEY is not set — there is nothing to verify against.")
     end
 
-    results = Enum.map(Plans.all(), &check_plan/1) ++ [check_contact_addon()]
+    results = Enum.map(Plans.all(), &check_plan/1)
 
     Enum.each(results, &report/1)
 
@@ -96,19 +93,6 @@ defmodule Mix.Tasks.Fountain.VerifyPlans do
 
       price_id ->
         verify_price(label(plan), price_id, plan.monthly_cents, licensed?: false)
-    end
-  end
-
-  defp check_contact_addon do
-    case Plans.contact_price_id() do
-      nil ->
-        {:skip, "teammate contact add-on",
-         "no price id configured — teammate contacts are not billed"}
-
-      price_id ->
-        verify_price("teammate contact add-on", price_id, Plans.contact_monthly_cents(),
-          licensed?: true
-        )
     end
   end
 
@@ -147,7 +131,7 @@ defmodule Mix.Tasks.Fountain.VerifyPlans do
       unless_ok(
         !opts[:licensed?] or !is_map(recurring) or
           to_string(Map.get(recurring, :usage_type)) in ["licensed", ""],
-        "is a metered price — a quantity set from the contact count would be ignored"
+        "is a metered price — a plan is a licensed quantity of one"
       )
     ]
     |> Enum.reject(&is_nil/1)

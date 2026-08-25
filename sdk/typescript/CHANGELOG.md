@@ -10,6 +10,15 @@ server releases.
 
 ---
 
+## [0.4.0] — 2026-08-25
+
+### Removed
+
+- `comped_contacts` on admin user objects. The Stripe teammate-contact
+  add-on is retired; contacts are rented from the prepaid balance, and an
+  operator who wants to give someone free numbers grants credit
+  (`POST /api/admin/users/{id}/credits`) or comps the account.
+
 ## [0.3.0] — 2026-08-25
 
 ### Changed

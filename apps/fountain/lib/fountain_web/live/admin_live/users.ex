@@ -120,7 +120,7 @@ defmodule FountainWeb.AdminLive.Users do
   # sent by hand (#399's lesson) — and all of these actions talk to Stripe.
   @impl true
   def handle_event(event, _params, %{assigns: %{billing_enabled: false}} = socket)
-      when event in ~w(extend_trial toggle_comp resync_stripe set_plan set_comped_contacts) do
+      when event in ~w(extend_trial toggle_comp resync_stripe set_plan) do
     {:noreply, put_flash(socket, :error, "Billing is disabled on this instance")}
   end
 
@@ -237,41 +237,6 @@ defmodule FountainWeb.AdminLive.Users do
 
       _ ->
         {:noreply, put_flash(socket, :error, "Unknown plan")}
-    end
-  end
-
-  # Free teammate contacts, distinct from a comped account (which makes
-  # everything free). The re-sync is what carries the change to Stripe;
-  # without it the new allowance would not apply until the tenant next added
-  # or removed a contact.
-  @impl true
-  def handle_event("set_comped_contacts", %{"user_id" => id, "count" => raw}, socket) do
-    with {count, ""} <- Integer.parse(String.trim(raw)),
-         true <- count >= 0,
-         %Accounts.User{} = user <- Accounts.get_user(id),
-         {:ok, updated} <- Accounts.update_comped_contacts(user, count, actor: "admin") do
-      Fountain.Audit.record_admin(%{
-        actor_user_id: socket.assigns.current_user.id,
-        target_user_id: user.id,
-        event_type: "admin.comped_contacts.changed",
-        metadata: %{
-          "email" => user.email,
-          "from" => user.comped_contacts,
-          "to" => updated.comped_contacts
-        }
-      })
-
-      message =
-        case Billing.sync_contact_addon(updated.id) do
-          {:ok, :not_billed} -> "Comped contacts updated (this account is not billed for them)"
-          {:ok, billed} -> "Comped contacts updated — Stripe now bills for #{billed}"
-          {:error, _} -> "Saved, but Stripe could not be reached — re-sync from this page"
-        end
-
-      {:noreply, socket |> assign_users() |> put_flash(:info, message)}
-    else
-      nil -> {:noreply, put_flash(socket, :error, "User not found")}
-      _ -> {:noreply, put_flash(socket, :error, "Must be a whole number of 0 or more")}
     end
   end
 
@@ -780,10 +745,8 @@ defmodule FountainWeb.AdminLive.Users do
                   </div>
                 </div>
               </td>
-              <%!-- Plan and the free-contact allowance. Both are operator
-                    levers a customer cannot reach: change_plan/3 refuses for a
-                    comped account, and comped_contacts has no self-serve
-                    surface at all. --%>
+              <%!-- The plan: an operator lever a customer cannot reach, since
+                    change_plan/3 refuses for a comped account. --%>
               <td :if={@billing_enabled} class="px-4 py-2">
                 <div class="space-y-1">
                   <form phx-change="set_plan" id={"plan-#{u.id}"}>
@@ -805,27 +768,6 @@ defmodule FountainWeb.AdminLive.Users do
                         {p.name}{if not p.public?, do: " (closed)"}
                       </option>
                     </select>
-                  </form>
-                  <form
-                    phx-submit="set_comped_contacts"
-                    id={"comped-contacts-#{u.id}"}
-                    class="flex items-center gap-1"
-                  >
-                    <input type="hidden" name="user_id" value={u.id} />
-                    <input
-                      type="number"
-                      name="count"
-                      min="0"
-                      value={u.comped_contacts}
-                      title="Teammate contacts this account is not charged for"
-                      class="w-12 rounded border border-zinc-200 px-1 py-0.5 text-xs"
-                    />
-                    <button class="text-xs text-zinc-500 hover:text-zinc-900 underline">
-                      free
-                    </button>
-                    <span :if={u.contact_count > 0} class="text-xs text-zinc-400 tabular-nums">
-                      of {u.contact_count}
-                    </span>
                   </form>
                 </div>
               </td>

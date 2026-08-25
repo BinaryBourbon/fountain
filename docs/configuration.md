@@ -121,8 +121,6 @@ at a dead end, with no error to see. Read [Email](guides/operate/email.md).
 | `STRIPE_PRICE_ID_SOLO` | — | For the Solo plan. | The Stripe price for Solo. A plan with no price stays off the pricing table and off the plan picker. |
 | `STRIPE_PRICE_ID_TEAM` | — | For the Team plan. | The Stripe price for Team. |
 | `STRIPE_PRICE_ID_SCALE` | — | For the Scale plan. | The Stripe price for Scale. |
-| `STRIPE_PRICE_ID_CONTACT` | — | No. | The Stripe price for one teammate contact. Fountain sets the quantity of that subscription item to the number of contacts the tenant holds. Leave it unset, and teammate contacts cost the tenant nothing. |
-| `STRIPE_CONTACT_PRICE_CENTS` | `500` | No. | The monthly price of one teammate contact, in cents. It is for display alone. |
 | `STRIPE_PRICE_MONTHLY_CENTS` | — | No. | The monthly price of the `legacy` plan, in cents, such as `2900`. It is for display alone. The admin MRR tile reads every other plan's price from the catalog. |
 | `DEFAULT_PLAN` | `solo` | No. | The plan for an account that has no plan of its own. On a self-hosted instance that is every account. Set `DEFAULT_PLAN=scale` to give every account the highest concurrency cap. |
 | `PROVIDER_HOURLY_CENTS` | — | No. | What you pay each sandbox provider, in cents per sandbox hour, as `sprites=10.76,e2b=5.45`. Rates can be fractional. A provider you leave out stays unpriced. |

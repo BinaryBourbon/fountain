@@ -51,7 +51,6 @@ defmodule Fountain.Audit.AdminEvent do
     admin.conversation.viewed
     admin.stripe.resynced
     admin.plan.changed
-    admin.comped_contacts.changed
     admin.credits.granted
   )
 

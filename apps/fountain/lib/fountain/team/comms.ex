@@ -62,10 +62,7 @@ defmodule Fountain.Team.Comms do
   end
 
   @doc """
-  How many of this tenant's teammates hold a contact.
-
-  The billable quantity: `Fountain.Billing.sync_contact_addon/1` sets the
-  add-on subscription item to exactly this, and `Fountain.Plans` caps it.
+  How many of this tenant's teammates hold a contact. `Fountain.Plans` caps it.
   """
   @spec contact_count(binary()) :: non_neg_integer()
   def contact_count(user_id) when is_binary(user_id) do
@@ -193,7 +190,6 @@ defmodule Fountain.Team.Comms do
             "prompt_from_number" => not is_nil(contact.prompt_from_number)
           })
 
-          bill_contacts(user_id)
           contact = charge_first_month(contact)
           Team.broadcast_changed(user_id)
           {:ok, contact}
@@ -275,7 +271,6 @@ defmodule Fountain.Team.Comms do
              :ok <- release_phone(contact),
              {:ok, _} <- Repo.delete(contact) do
           record("team.contact.released", contact, opts, %{"channels" => channels(contact)})
-          bill_contacts(user_id)
           Team.broadcast_changed(user_id)
           :ok
         end
@@ -408,14 +403,6 @@ defmodule Fountain.Team.Comms do
       )
 
       contact
-  end
-
-  defp bill_contacts(user_id) do
-    Fountain.Billing.sync_contact_addon(user_id)
-  rescue
-    error ->
-      Logger.warning("contact add-on sync failed for #{user_id}: #{Exception.message(error)}")
-      :error
   end
 
   defp ensure_no_contact(user_id, agent_id) do

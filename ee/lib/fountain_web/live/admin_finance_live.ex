@@ -48,7 +48,6 @@ defmodule FountainWeb.Live.AdminFinanceLive do
      socket
      |> assign(:page_title, "Admin · Finance")
      |> assign(:billing_enabled, Billing.enabled?())
-     |> assign(:contacts_billed?, Finance.contacts_billed?())
      |> assign(:months_ago, 0)
      |> assign(:basis, Finance.default_basis())
      |> assign_finance()}
@@ -310,7 +309,6 @@ defmodule FountainWeb.Live.AdminFinanceLive do
               <th class="px-4 py-2">Plan</th>
               <th class="px-4 py-2 text-right">Accounts</th>
               <th class="px-4 py-2 text-right">Plan MRR</th>
-              <th class="px-4 py-2 text-right">Contact add-on</th>
               <th class="px-4 py-2 text-right">Total</th>
             </tr>
           </thead>
@@ -326,9 +324,8 @@ defmodule FountainWeb.Live.AdminFinanceLive do
               </td>
               <td class="px-4 py-2 text-right tabular-nums">{line.accounts}</td>
               <td class="px-4 py-2 text-right tabular-nums">{money(line.plan_cents)}</td>
-              <td class="px-4 py-2 text-right tabular-nums">{money(line.contact_cents)}</td>
               <td class="px-4 py-2 text-right tabular-nums font-medium">
-                {money(line.plan_cents + line.contact_cents)}
+                {money(line.plan_cents)}
               </td>
             </tr>
           </tbody>
@@ -341,21 +338,6 @@ defmodule FountainWeb.Live.AdminFinanceLive do
             </tr>
           </tfoot>
         </table>
-        <%!-- A bare $0.00 in the add-on column next to a page that also
-              reports real inboxes and numbers reads as "nobody has contacts".
-              It usually means the opposite: they have them and nothing bills
-              for them. --%>
-        <div
-          :if={not @contacts_billed?}
-          class="bg-amber-50 border border-amber-200 rounded px-4 py-3 text-xs text-amber-900"
-        >
-          <span class="font-medium">Teammate contacts are not billed on this deployment.</span>
-          The add-on column is $0 by configuration, not because nobody holds one — the cost
-          section below still counts every inbox and number, because we pay for those either way.
-          Set <code>STRIPE_PRICE_ID_CONTACT</code>
-          to start charging. It puts a line item on the next invoice of every tenant who already
-          holds contacts, so tell them first.
-        </div>
         <div class="text-xs text-zinc-500 space-x-3">
           <span title="What past_due accounts would bill at their current plan — revenue that has not arrived.">
             At risk (past_due):
@@ -585,9 +567,6 @@ defmodule FountainWeb.Live.AdminFinanceLive do
                 <td class="px-3 py-2 text-xs">{plan_label(t)}</td>
                 <td class="px-3 py-2 text-right tabular-nums text-xs">
                   {money(t.revenue_cents)}
-                  <div :if={t.contact_revenue_cents > 0} class="text-zinc-400">
-                    incl. {money(t.contact_revenue_cents)} contacts
-                  </div>
                 </td>
                 <td class="px-3 py-2 text-right tabular-nums text-xs">
                   {Float.round(t.turn_hours, 1)}

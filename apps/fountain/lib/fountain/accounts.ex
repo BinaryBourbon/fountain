@@ -1028,26 +1028,6 @@ defmodule Fountain.Accounts do
     end)
   end
 
-  @doc """
-  Set how many teammate contacts this account is not charged for. Admin-only.
-
-  Comping the whole account (`Billing.comp_account/1`) already makes contacts
-  free, along with everything else. This is the narrower lever: a tenant who
-  pays for their tier and holds a number Fountain eats the cost of.
-
-  The caller must re-sync the add-on afterwards — `Billing.sync_contact_addon/1`
-  — or the change does not reach Stripe until the tenant's next provision or
-  release.
-  """
-  def update_comped_contacts(%User{} = user, count, opts \\ []) do
-    user
-    |> User.comped_contacts_changeset(%{comped_contacts: count})
-    |> Repo.update()
-    |> audited_account("account.comped_contacts_changed", "user", opts, fn updated ->
-      %{"from" => user.comped_contacts, "to" => updated.comped_contacts}
-    end)
-  end
-
   @doc false
   def hash_key(raw_key) when is_binary(raw_key) do
     :crypto.hash(:sha256, raw_key) |> Base.encode16(case: :lower)

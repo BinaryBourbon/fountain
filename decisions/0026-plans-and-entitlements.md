@@ -13,7 +13,10 @@ verified: { by: human:jhgaylor, at: 2026-08-22T06:00:00-04:00 }
 
 # 0026 — Plans priced on concurrent sandboxes, with teammate contacts as a per-unit add-on
 
-**Status:** Accepted. Everything described here is built: `Fountain.Plans`,
+**Status:** Accepted, amended by ADR 0030 (2026-08-25): the teammate-contact
+add-on (`Billing.sync_contact_addon/1`, `STRIPE_PRICE_ID_CONTACT`,
+`users.comped_contacts`) was retired in favour of rent from the prepaid
+balance; the contact *ceiling* stays. Everything else described here is built: `Fountain.Plans`,
 the `users.plan` column and the `sandbox_limit_override` rename-in-Elixir,
 `Quotas.sandbox_limit/1` reading from the plan, the price-to-plan mapping in
 `Billing.sync_subscription/1`, `Billing.change_plan/3`,

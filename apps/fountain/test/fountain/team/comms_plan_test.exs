@@ -27,9 +27,6 @@ defmodule Fountain.Team.CommsPlanTest do
       end
     end)
 
-    # Every test here is about the ceiling and the billing call, not about
-    # Stripe, so the sync is stubbed away unless a test says otherwise.
-    stub(Fountain.Billing, :sync_contact_addon, fn _user_id -> {:ok, :not_billed} end)
     stub_providers()
     :ok
   end
@@ -150,47 +147,6 @@ defmodule Fountain.Team.CommsPlanTest do
 
       assert Comms.contact_count(user.id) == first - 1
       assert {:ok, _} = Comms.provision_contact(user.id, agent.id, @req)
-    end
-  end
-
-  describe "the add-on quantity sync" do
-    test "runs after a contact is provisioned" do
-      user = insert_active_user(plan: "team")
-      test_pid = self()
-
-      expect(Fountain.Billing, :sync_contact_addon, fn user_id ->
-        send(test_pid, {:synced, user_id})
-        {:ok, 1}
-      end)
-
-      {_agent, {:ok, _}} = provision(user, "Ada")
-      assert_received {:synced, synced_id}
-      assert synced_id == user.id
-    end
-
-    test "runs after one is released" do
-      user = insert_active_user(plan: "team")
-      {agent, {:ok, _}} = provision(user, "Ada")
-      test_pid = self()
-
-      expect(Fountain.Billing, :sync_contact_addon, fn user_id ->
-        send(test_pid, {:synced, user_id})
-        {:ok, 0}
-      end)
-
-      assert :ok = Comms.release_contact(user.id, agent.id)
-      assert_received {:synced, _}
-    end
-
-    # Best-effort by design: the providers have already completed by the time
-    # this runs, so a Stripe outage must not fail the provision or strand a
-    # released number as un-released.
-    test "a failing sync does not fail the provision" do
-      user = insert_active_user(plan: "team")
-      stub(Fountain.Billing, :sync_contact_addon, fn _ -> raise "stripe is down" end)
-
-      assert {_agent, {:ok, _contact}} = provision(user, "Ada")
-      assert Comms.contact_count(user.id) == 1
     end
   end
 end

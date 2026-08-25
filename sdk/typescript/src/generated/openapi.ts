@@ -3609,8 +3609,6 @@ export interface components {
         AdminUser: {
             active_sandboxes?: number;
             cancel_at_period_end?: boolean | null;
-            /** @description Teammate contacts this account is not charged for. Distinct from a `comped` subscription_status, which makes everything free. */
-            comped_contacts?: number;
             /** @description Prepaid balance in cents (ADR 0030). May be negative. Zero while credits are not active on this deployment. */
             credit_balance_cents?: number;
             /** Format: date-time */
