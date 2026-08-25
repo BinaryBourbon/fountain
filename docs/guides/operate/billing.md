@@ -41,9 +41,9 @@ provider plan allows.
 2. Configure Stripe. The [Stripe integration guide](../../integrations/stripe.md)
    covers `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` and the three webhook
    events.
-3. Set `BILLING_ENABLED=true` and deploy. The pricer looks back seven days, so
-   turns from the last week are priced too; comp or credit the accounts you
-   do not want to charge for them.
+3. Set `BILLING_ENABLED=true` and deploy. The pricer looks back seven days,
+   so it prices the turns from the last week too. Comp or credit the
+   accounts you do not want to charge for them.
 
 ## Give the accounts you already have their opening credit
 
