@@ -12,6 +12,8 @@ defmodule FountainWeb.BillingApiJSON do
         usage: %{
           conversations: usage.conversations,
           turns: usage.turns,
+          # What the ledger took this month, in cents; null with billing off.
+          credit_burned_cents: if(Fountain.Billing.enabled?(), do: usage.credit_burned_cents),
           # Hours with a prompt in flight, on providers Fountain pays for —
           # what burns credit (ADR 0030). Distinct from `sandbox_minutes`,
           # which is wall-clock and includes idle.

@@ -22,33 +22,32 @@ defmodule Fountain.BillingTest do
       assert summary.sandbox_minutes == 0.0
     end
 
-    test "counts sandbox_provisioned events as conversations", %{user: user} do
-      insert_event(user, "sandbox_provisioned", ~U[2026-05-10 12:00:00Z])
-      insert_event(user, "sandbox_provisioned", ~U[2026-05-15 09:00:00Z])
-
-      summary = Billing.usage_summary(user.id, @period_start, @period_end)
-
-      assert summary.conversations == 2
-      assert summary.turns == 0
-    end
-
-    test "counts sandbox_provision_failed events as conversations too", %{user: user} do
+    test "a conversation is one that ran a turn; a provision alone is not one", %{user: user} do
+      c1 = Ecto.UUID.generate()
+      c2 = Ecto.UUID.generate()
       insert_event(user, "sandbox_provisioned", ~U[2026-05-10 12:00:00Z])
       insert_event(user, "sandbox_provision_failed", ~U[2026-05-11 12:00:00Z])
+      insert_event(user, "turn_started", ~U[2026-05-10 12:00:00Z], %{"conversation_id" => c1})
+      insert_event(user, "turn_started", ~U[2026-05-10 12:05:00Z], %{"conversation_id" => c1})
+      insert_event(user, "turn_started", ~U[2026-05-12 12:10:00Z], %{"conversation_id" => c2})
 
       summary = Billing.usage_summary(user.id, @period_start, @period_end)
 
       assert summary.conversations == 2
+      assert summary.turns == 3
     end
 
-    test "counts turn_started events as turns", %{user: user} do
-      insert_event(user, "turn_started", ~U[2026-05-10 12:00:00Z])
-      insert_event(user, "turn_started", ~U[2026-05-10 12:05:00Z])
-      insert_event(user, "turn_started", ~U[2026-05-10 12:10:00Z])
+    test "credit_burned_cents is what the ledger took in the window", %{user: user} do
+      {:ok, _} =
+        Fountain.Credits.debit(user.id, 40, "burn_turn", idempotency_key: "in-#{user.id}")
 
-      summary = Billing.usage_summary(user.id, @period_start, @period_end)
+      {:ok, _} =
+        Fountain.Credits.debit(user.id, 7, "burn_message", idempotency_key: "in2-#{user.id}")
 
-      assert summary.turns == 3
+      now = DateTime.utc_now()
+      %{start: s, end: e} = Billing.month_range(0, now: now)
+      assert Billing.usage_summary(user.id, s, e).credit_burned_cents == 47
+      assert Billing.usage_summary(user.id, @period_start, @period_end).credit_burned_cents == 0
     end
 
     test "sums the sandboxes' active time into sandbox_minutes", %{user: user} do
@@ -62,9 +61,9 @@ defmodule Fountain.BillingTest do
 
     test "excludes events outside the period", %{user: user} do
       # One second before period start - excluded
-      insert_event(user, "turn_started", ~U[2026-04-30 23:59:59Z])
+      insert_event(user, "turn_started", ~U[2026-04-30 23:59:59Z], %{"conversation_id" => "a"})
       # Exactly at period_end - excluded (query uses `< ^period_end`)
-      insert_event(user, "sandbox_provisioned", ~U[2026-06-01 00:00:00Z])
+      insert_event(user, "turn_started", ~U[2026-06-01 00:00:00Z], %{"conversation_id" => "b"})
 
       summary = Billing.usage_summary(user.id, @period_start, @period_end)
 
@@ -276,10 +275,11 @@ defmodule Fountain.BillingTest do
       b = insert_verified_user()
       quiet = insert_verified_user()
 
+      c = Ecto.UUID.generate()
       {:ok, _} = Billing.record_usage(a.id, "sandbox_provisioned", nil, nil)
-      {:ok, _} = Billing.record_usage(a.id, "turn_started", nil, nil)
-      {:ok, _} = Billing.record_usage(a.id, "turn_started", nil, nil)
-      {:ok, _} = Billing.record_usage(b.id, "turn_started", nil, nil)
+      {:ok, _} = Billing.record_usage(a.id, "turn_started", nil, nil, %{"conversation_id" => c})
+      {:ok, _} = Billing.record_usage(a.id, "turn_started", nil, nil, %{"conversation_id" => c})
+      {:ok, _} = Billing.record_usage(b.id, "turn_started", nil, nil, %{"conversation_id" => c})
 
       now = DateTime.utc_now() |> DateTime.truncate(:second)
 
@@ -298,7 +298,7 @@ defmodule Fountain.BillingTest do
              }
 
       assert summaries[b.id] == %{
-               conversations: 0,
+               conversations: 1,
                turns: 1,
                sandbox_minutes: 0.0,
                sandbox_minutes_by_provider: %{},
@@ -308,16 +308,20 @@ defmodule Fountain.BillingTest do
       refute Map.has_key?(summaries, quiet.id)
     end
 
-    test "failed provisioning attempts count as conversations" do
+    test "a conversation is one that ran a turn; provisions, failed or not, are not counted" do
       a = insert_verified_user()
+      c = Ecto.UUID.generate()
 
       {:ok, _} = Billing.record_usage(a.id, "sandbox_provisioned", nil, nil)
       {:ok, _} = Billing.record_usage(a.id, "sandbox_provision_failed", nil, nil)
+      {:ok, _} = Billing.record_usage(a.id, "turn_started", nil, nil, %{"conversation_id" => c})
+      {:ok, _} = Billing.record_usage(a.id, "turn_started", nil, nil, %{"conversation_id" => c})
 
       now = DateTime.utc_now()
       summaries = Billing.usage_summaries(DateTime.add(now, -1, :day), DateTime.add(now, 1, :day))
 
-      assert summaries[a.id].conversations == 2
+      assert summaries[a.id].conversations == 1
+      assert summaries[a.id].turns == 2
     end
 
     test "subtracts parked time per sandbox, per user (#665)" do

@@ -16,6 +16,17 @@ upgrade, is in
 
 ## [Unreleased]
 
+### Changed
+
+- **Billing debt 3/3: the billing page shows what was charged.**
+  `usage_summary/3` (billing page, dashboard, `GET /api/account/billing`)
+  and the admin table count conversations as the ones that ran a turn in
+  the month — from `turn_started` events, which survive a deleted
+  conversation and cover a persistent home that provisions nothing — rather
+  than as sandbox provisions, and carry `credit_burned_cents`: what the
+  ledger actually took for the window, shown as "Spent" beside the metered
+  hours. SDK 1.2.0.
+
 ### Removed
 
 - **Billing debt 2/3: dead Stripe plumbing and the last plan-era wording.**

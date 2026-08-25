@@ -10,6 +10,20 @@ server releases.
 
 ---
 
+## [1.2.0] — 2026-08-25
+
+### Added
+
+- `GET /api/account/billing` `usage.credit_burned_cents`: what the ledger
+  took this month (turns, rent, messages) — the charged number, where
+  `usage.turn_hours` is the metered one. Null with billing off.
+
+### Changed
+
+- `usage.conversations` counts conversations that ran a turn in the month,
+  deleted or not, rather than sandbox provisions; a conversation on a
+  persistent home is now counted.
+
 ## [1.1.1] — 2026-08-25
 
 ### Changed

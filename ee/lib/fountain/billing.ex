@@ -340,26 +340,28 @@ defmodule Fountain.Billing do
           %{
             conversations: non_neg_integer(),
             turns: non_neg_integer(),
+            credit_burned_cents: non_neg_integer(),
             sandbox_minutes: float(),
             sandbox_minutes_by_provider: %{optional(String.t()) => float()},
             turn_hours: float()
           }
   def usage_summary(user_id, %DateTime{} = period_start, %DateTime{} = period_end) do
-    events =
+    # Counted from `turn_started` events, which survive a deleted
+    # conversation: a conversation is one that ran a turn in the window,
+    # whichever sandbox it ran on (a conversation on a persistent home
+    # provisions nothing, ADR 0023, so a provision count missed it).
+    {turns, conversations} =
       from(e in UsageEvent,
         where:
           e.user_id == ^user_id and
             e.inserted_at >= ^period_start and
             e.inserted_at < ^period_end and
-            e.event_type in ["sandbox_provisioned", "sandbox_provision_failed", "turn_started"],
-        select: e.event_type
+            e.event_type == "turn_started",
+        select: {count(e.id), count(fragment("distinct ? ->> 'conversation_id'", e.metadata))}
       )
-      |> Repo.all()
+      |> Repo.one()
 
-    conversations =
-      Enum.count(events, &(&1 in ["sandbox_provisioned", "sandbox_provision_failed"]))
-
-    turns = Enum.count(events, &(&1 == "turn_started"))
+    burned = Fountain.Credits.burned_between(user_id, period_start, period_end)
 
     # One attribution pass, read two ways. `for_user/3` and `busy_for_user/3`
     # would each run it again; this is the same two queries once.
@@ -368,6 +370,10 @@ defmodule Fountain.Billing do
     %{
       conversations: conversations,
       turns: turns,
+      # What the ledger actually took for the window: the number the customer
+      # was charged, as opposed to `turn_hours`, which is what will be charged
+      # when the in-flight turns close.
+      credit_burned_cents: burned,
       # Rounded once, from the total — summing rounded per-provider minutes
       # would let the parts disagree with the whole.
       sandbox_minutes:
@@ -391,7 +397,9 @@ defmodule Fountain.Billing do
 
   Returns `%{user_id => %{conversations: n, turns: n, sandbox_minutes: f,
   sandbox_minutes_by_provider: %{provider => f}, turn_hours: f}}`; users with
-  neither events nor sandbox time in the period are absent.
+  neither turns nor sandbox time in the period are absent. Conversations are
+  the ones that ran a turn in the window, as in `usage_summary/3`; the
+  ledger's burn is `Finance`'s to report, not this table's.
 
   Carries two units on purpose, because they answer different questions and
   the admin table shows both. `sandbox_minutes` is wall-clock sandbox time —
@@ -415,27 +423,15 @@ defmodule Fountain.Billing do
       from(e in UsageEvent,
         where:
           e.inserted_at >= ^period_start and e.inserted_at < ^period_end and
-            e.event_type in ["sandbox_provisioned", "sandbox_provision_failed", "turn_started"],
-        group_by: [e.user_id, e.event_type],
-        select: {e.user_id, e.event_type, count(e.id)}
+            e.event_type == "turn_started",
+        group_by: e.user_id,
+        select:
+          {e.user_id, count(e.id),
+           count(fragment("distinct ? ->> 'conversation_id'", e.metadata))}
       )
       |> Repo.all()
-      |> Enum.reduce(%{}, fn {user_id, type, count}, acc ->
-        summary = Map.get(acc, user_id, empty)
-
-        summary =
-          case type do
-            "sandbox_provisioned" ->
-              %{summary | conversations: summary.conversations + count}
-
-            "sandbox_provision_failed" ->
-              %{summary | conversations: summary.conversations + count}
-
-            "turn_started" ->
-              %{summary | turns: count}
-          end
-
-        Map.put(acc, user_id, summary)
+      |> Map.new(fn {user_id, turns, conversations} ->
+        {user_id, %{empty | turns: turns, conversations: conversations}}
       end)
 
     # Both sandbox figures come from the sandbox rows, not from these events —

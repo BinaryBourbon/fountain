@@ -3778,7 +3778,10 @@ export interface components {
                 /** @description How many sandboxes this account may run at once: an admin override, or what the balance funds (ADR 0031). */
                 sandbox_cap?: number;
                 usage: {
+                    /** @description Conversations that ran a turn in the month, deleted or not. */
                     conversations?: number;
+                    /** @description Cents the ledger took this month: turns, rent and messages. The charged number, where turn_hours is the metered one. Null with billing off. */
+                    credit_burned_cents?: number | null;
                     /** @description Active sandbox minutes inside the period, parked time excluded. */
                     sandbox_minutes?: number;
                     /** @description sandbox_minutes split by sandbox provider (sprites, e2b, daytona, runner). Providers not used in the period are absent. */

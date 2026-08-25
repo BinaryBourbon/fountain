@@ -1837,8 +1837,19 @@ defmodule FountainWeb.Schemas do
             usage: %Schema{
               type: :object,
               properties: %{
-                conversations: %Schema{type: :integer},
+                conversations: %Schema{
+                  type: :integer,
+                  description: "Conversations that ran a turn in the month, deleted or not."
+                },
                 turns: %Schema{type: :integer},
+                credit_burned_cents: %Schema{
+                  type: :integer,
+                  nullable: true,
+                  description:
+                    "Cents the ledger took this month: turns, rent and messages. " <>
+                      "The charged number, where turn_hours is the metered one. " <>
+                      "Null with billing off."
+                },
                 turn_hours: %Schema{
                   type: :number,
                   description:
