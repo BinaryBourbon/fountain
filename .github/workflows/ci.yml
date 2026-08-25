@@ -1070,14 +1070,14 @@ jobs:
       - name: Docs tests
         run: mix test apps/fountain/test/fountain/docs_test.exs apps/fountain/test/fountain_web/controllers/docs_controller_test.exs
 
-      # The style sheet in docs-redesign/06-voice-and-style.md, enforced. It
+      # The style sheet in standards/voice-and-style.md, enforced. It
       # skips the backlog in scripts/docs-style-allow.txt, so a file NOT on
       # that list is checked and every new page is covered by default.
       - name: Docs style
         run: python3 scripts/docs-style.py
 
       # ASD-STE100 Simplified Technical English, the standard in
-      # docs-redesign/08-simplified-technical-english.md. Config in
+      # standards/simplified-technical-english.md. Config in
       # .vale-ste.yml, backlog in .valeignore, and the backlog only shrinks.
       # A pinned release binary, not `go install`. This job pins Go from
       # cli/go.mod with GOTOOLCHAIN=local, so it cannot fetch the newer

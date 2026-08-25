@@ -1,6 +1,6 @@
 # ASD-STE100 Simplified Technical English, for docs/**/*.md.
 #
-# The standard is docs-redesign/08-simplified-technical-english.md. The linter
+# The standard is standards/simplified-technical-english.md. The linter
 # is github.com/stuffbucket/vale, pinned in .github/workflows/ci.yml.
 #
 # The gate is `warning`. Six rules sit at or above it: sentence length,
@@ -45,7 +45,7 @@ sentence:
 # Everything under docs/ is a published page, so everything under docs/ is
 # linted. `docs/superpowers/**` used to be excluded here — planning material
 # that MkDocs published and /docs did not. #1008 retired the MkDocs site and
-# moved those pages to `superpowers/` at the repo root.
+# moved those pages out of docs/; they have since been deleted.
 files:
   include:
     # One pattern per directory depth. On this walker `**` matches exactly

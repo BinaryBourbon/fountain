@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Enforce the docs style sheet on docs/**/*.md.
 
-Three rules, all from docs-redesign/06-voice-and-style.md:
+Three rules, all from standards/voice-and-style.md:
 
   1. No em or en dashes. An em dash is a hinge that lets a sentence continue
      after it has finished, and it is where explanation hides. Removing it
@@ -26,8 +26,8 @@ rule exists to stop a dash carrying a clause, which a lone cell cannot do.
 There is no directory exclusion any more. `docs/superpowers/` was one —
 internal planning material that sat under `docs/` without a nav entry, so
 MkDocs published it and /docs did not. #1008 retired the MkDocs site and made
-"in docs/ but not in the nav" a test failure, and those four pages moved to
-`superpowers/` at the repo root. Everything under `docs/` is now a published
+"in docs/ but not in the nav" a test failure, and those four pages moved out
+of docs/ (since deleted). Everything under `docs/` is now a published
 page, so every page under `docs/` is checked.
 
 A file whose first lines declare `<!-- GENERATED FILE` is skipped for the same
@@ -145,7 +145,7 @@ def main():
         for rel, ln, msg in failures:
             print(f"  {rel}:{ln}: {msg}")
         print(
-            "\nSee docs-redesign/06-voice-and-style.md. If this is a page from the "
+            "\nSee standards/voice-and-style.md. If this is a page from the "
             "pre-existing backlog (#911), it belongs in scripts/docs-style-allow.txt "
             "until it is cleaned."
         )

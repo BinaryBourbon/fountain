@@ -4,7 +4,7 @@ Every published page under `docs/` is written in ASD-STE100 Simplified
 Technical English. This page says what that means here, what it does not mean,
 and which part of it CI enforces.
 
-Deliverable 4 (`06-voice-and-style.md`) is not replaced. Its three named rules
+Deliverable 4 (`voice-and-style.md`) is not replaced. Its three named rules
 survive unchanged, and STE agrees with all three. STE goes further, and where
 the two differ, STE wins.
 
@@ -128,7 +128,7 @@ without a parser. A reviewer can.
 ### One word, one meaning
 
 This is Part 1's core idea, and Deliverable 4 already fixed the five words
-Fountain overloads. That table in `06-voice-and-style.md` is the local
+Fountain overloads. That table in `voice-and-style.md` is the local
 dictionary. It stands.
 
 Two additions that come from STE rather than from the overload audit.
