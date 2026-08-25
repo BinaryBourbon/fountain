@@ -54,9 +54,17 @@ defmodule FountainWeb.OpenGraph do
   def url(%Plug.Conn{request_path: path}), do: public_url() <> path
   def url(_), do: public_url()
 
-  @doc "Absolute URL of the card image."
+  @doc """
+  Absolute URL of the card image: the brand bundle's card when
+  `BRAND_ASSETS_URL` is set, else the built-in one under `:public_url`.
+  """
   @spec image() :: String.t()
-  def image, do: public_url() <> @image_path
+  def image do
+    case Fountain.Brand.assets_url() do
+      nil -> public_url() <> @image_path
+      _ -> Fountain.Brand.asset("og-card.png")
+    end
+  end
 
   defp public_url do
     Fountain.PublicUrl.absolute(Application.get_env(:fountain, :public_url))

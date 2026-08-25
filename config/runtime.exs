@@ -433,6 +433,26 @@ case System.get_env("PRODUCT_NAME") do
   value -> config :fountain, :product_name, String.trim(value)
 end
 
+# Where the brand's icon, favicons and Open Graph card are served from
+# (Fountain.Brand.assets/0 names the six files). Unset, the release serves the
+# engine's own files from priv/static; set, the chrome links this directory
+# instead and the CSP's img-src admits its origin. Pixels do not belong in an
+# env var, and rebuilding the engine to change the chrome's icon is the wrong
+# size of change, so the bundle lives on any static host and this points at it.
+case System.get_env("BRAND_ASSETS_URL") do
+  nil ->
+    :ok
+
+  value ->
+    trimmed = value |> String.trim() |> String.trim_trailing("/")
+
+    if trimmed != "" and not String.starts_with?(trimmed, ["http://", "https://"]) do
+      raise "BRAND_ASSETS_URL must be an absolute http(s) URL, got: #{inspect(value)}"
+    end
+
+    config :fountain, :brand_assets_url, trimmed
+end
+
 # Which page `/` serves. The hosted deployment shows the product pitch; every
 # other deployment shows a plain front door, for the reason a self-hosted
 # instance does not serve the upstream project's legal terms either. Off by

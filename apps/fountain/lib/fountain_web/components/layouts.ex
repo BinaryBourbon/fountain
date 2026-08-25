@@ -48,7 +48,7 @@ defmodule FountainWeb.Layouts do
           <%!-- Sidebar header --%>
           <div class="flex items-center justify-between p-4 border-b border-[var(--color-border)] shrink-0">
             <.link href={~p"/dashboard"} class="flex items-center gap-2">
-              <img src="/images/app-icon.png" alt="" class="size-7 rounded-md" />
+              <img src={Fountain.Brand.asset("app-icon.png")} alt="" class="size-7 rounded-md" />
               <span class="font-semibold text-sm text-[var(--color-text-primary)]">
                 {Fountain.Brand.name()}
               </span>
