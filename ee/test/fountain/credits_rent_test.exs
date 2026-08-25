@@ -117,6 +117,22 @@ defmodule Fountain.Credits.RentTest do
       assert :ok = Rent.check_provision(user.id)
     end
 
+    test "a month already paid is a duplicate whatever the balance is now (#1126)" do
+      user = insert_empty_user()
+      {:ok, _} = Credits.grant(user.id, 500, "purchase", idempotency_key: "p")
+      c = contact(user, %{rent_paid_through: ~U[2026-08-01 00:00:00Z]})
+      period = ~U[2026-08-01 00:00:00Z]
+
+      assert {:ok, %Contact{}} = Rent.charge(c, period, now: ~U[2026-08-02 00:00:00Z])
+      assert Credits.balance(user.id) == 0
+
+      assert {:ok, :duplicate, %Contact{rent_due_at: nil} = c} =
+               Rent.charge(Repo.reload!(c), period, now: ~U[2026-08-03 00:00:00Z])
+
+      assert c.rent_paid_through == ~U[2026-09-01 00:00:00Z]
+      assert Repo.reload!(c).rent_due_at == nil
+    end
+
     test "a short balance leaves the month unpaid and starts the grace" do
       user = insert_empty_user()
       c = contact(user, %{rent_paid_through: ~U[2026-08-01 00:00:00Z]})

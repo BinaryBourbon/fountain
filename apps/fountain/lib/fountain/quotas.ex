@@ -226,7 +226,7 @@ defmodule Fountain.Quotas do
         raise QuotaExceededError,
           message:
             "sandbox concurrency limit reached (#{count}/#{limit} active). " <>
-              "Terminate a conversation, or upgrade the plan for a higher cap.",
+              "Terminate a conversation, or add credit for a higher cap.",
           count: count,
           limit: limit
     end

@@ -66,10 +66,19 @@ defmodule Fountain.Credits.Rent do
   def charge(%Contact{} = contact, %DateTime{} = period_start, opts \\ []) do
     cents = month_cents()
     now = Keyword.get(opts, :now) || DateTime.utc_now()
+    key = "burn_rent:#{contact.id}:#{DateTime.to_iso8601(period_start)}"
 
     cond do
       not charging?() ->
         {:ok, :free}
+
+      # Idempotency before the balance: a month already collected is paid
+      # whatever the balance is now, and must not start a release clock.
+      Credits.get_by_key(key) != nil ->
+        {:ok, contact} =
+          stamp(contact, rent_paid_through: add_month(period_start), rent_due_at: nil)
+
+        {:ok, :duplicate, contact}
 
       Credits.enforcing?() and not comped?(contact.user_id) and
           Credits.balance(contact.user_id) < cents ->
@@ -77,8 +86,6 @@ defmodule Fountain.Credits.Rent do
         {:error, :insufficient_credits}
 
       true ->
-        key = "burn_rent:#{contact.id}:#{DateTime.to_iso8601(period_start)}"
-
         case Credits.debit(contact.user_id, cents, "burn_rent",
                idempotency_key: key,
                resource_type: "team_contact",

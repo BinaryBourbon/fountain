@@ -19,6 +19,8 @@ export type FountainErrorCode =
   | "sandbox_not_attachable"
   | "sandbox_identity_mismatch"
   | "sandbox_runtime_mismatch"
+  | "insufficient_credits"
+  | "fleet_full"
   | "subscription_required"
   | "rate_limited"
   | "account_suspended"
@@ -95,7 +97,11 @@ const RETRYABLE_CODES = new Set([
 /** No API key, or the key was rejected (401). */
 export class AuthError extends FountainError {}
 
-/** The account has no active subscription (402). `upgradeUrl` is where to fix it. */
+/**
+ * The account is out of credit (`insufficient_credits`, 402). `upgradeUrl` is
+ * the billing page, where credit is bought. The class keeps its old name so
+ * callers written against the subscription era still catch it.
+ */
 export class SubscriptionRequiredError extends FountainError {
   get upgradeUrl(): string | undefined {
     const url = (this.body as { upgrade_url?: unknown } | null)?.upgrade_url;
@@ -120,9 +126,10 @@ export class RateLimitError extends FountainError {}
 export class ConversationBusyError extends FountainError {}
 
 /**
- * The sandbox is not up yet, or Fountain could not reach the provider to check
- * (`provisioning` / `sprite_probe_failed`, 503 with a `Retry-After`). Nothing
- * is wrong and nothing was changed; the same call will work shortly.
+ * The sandbox is not up yet, Fountain could not reach the provider to check
+ * (`provisioning` / `sprite_probe_failed`), or the deployment is at its fleet
+ * ceiling (`fleet_full`) — all 503 with a `Retry-After`. Nothing is wrong and
+ * nothing was changed; the same call will work shortly.
  */
 export class NotReadyError extends FountainError {}
 
@@ -166,7 +173,7 @@ export class ConnectionError extends FountainError {}
 const HINTS: Record<number, string> = {
   400: "bad request",
   401: "unauthorized — check the API key",
-  402: "payment required — the account has no active subscription",
+  402: "payment required — the account is out of credit",
   403: "forbidden — the key may lack the scope for this call",
   404: "not found — wrong id, or it belongs to another account",
   409: "conflict",

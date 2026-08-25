@@ -60,6 +60,24 @@ defmodule Fountain.Workers.CreditGranterTest do
     assert Credits.balance(user.id) == 2500
   end
 
+  test "an expiry never reaches purchased money, even when the grant was spent after the sweep looked" do
+    user = insert_empty_user()
+
+    {:ok, grant} =
+      Credits.grant(user.id, 1000, "grant_trial", idempotency_key: "g", expires_at: @expires)
+
+    {:ok, _} = Credits.grant(user.id, 2500, "purchase", idempotency_key: "p")
+
+    # The burn lands after the sweep selected the grant but before it expires
+    # it: the debit is computed inside the ledger's transaction, so it sees
+    # the burn and takes only what is left.
+    {:ok, _} = Credits.debit(user.id, 1000, "burn_turn", idempotency_key: "late")
+    assert %{expired: 0} = CreditGranter.run(now: @day_after)
+    assert Credits.balance(user.id) == 2500
+    assert Credits.list_entries(user.id) |> Enum.count(&(&1.reason == "expire")) == 0
+    assert Credits.unspent_of(grant, 0) == 0
+  end
+
   test "a negative balance has nothing to expire" do
     user = insert_empty_user()
 

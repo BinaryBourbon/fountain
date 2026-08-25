@@ -105,8 +105,8 @@ defmodule FountainWeb.Live.BillingLive do
           </span>
         </p>
         <p :if={@credits.balance_cents < 0} class="mt-2 text-xs text-amber-700">
-          Your balance is below zero. Nothing is limited yet; the next grant or purchase
-          brings it back up.
+          Your balance is below zero. New conversations and new turns are paused until it
+          is positive again; anything already running finishes. Buying credit brings it back up.
         </p>
         <div :if={not @current_user.comped} class="mt-4 flex flex-wrap items-center gap-2">
           <button
@@ -153,9 +153,6 @@ defmodule FountainWeb.Live.BillingLive do
         <h2 class="mb-1 text-lg font-medium">Usage this period</h2>
         <p class="mb-4 text-xs text-gray-400">
           {Calendar.strftime(@period.start, "%b %-d")} – {Calendar.strftime(@period.end, "%b %-d, %Y")}
-          <span :if={@period.source == :calendar_month}>
-            · calendar month (we do not have an invoiced period for this account yet)
-          </span>
         </p>
         <dl class="grid grid-cols-3 gap-4">
           <div class="rounded-md bg-gray-50 p-4 text-center">

@@ -16,6 +16,26 @@ upgrade, is in
 
 ## [Unreleased]
 
+### Fixed
+
+- **Credits cleanup 1/3 (#1126).** Six ledger bugs left by ADR 0031 and the
+  customer-facing text that still described subscriptions. An expiry now
+  takes only what its own grant still holds, read inside the ledger's
+  transaction, so a burn racing the sweep can no longer make it reach into
+  purchased money; a debit that names a lot never falls through to another.
+  A charge disputed and then refunded is clawed back once. An expired grant
+  stops funding new work the moment it passes (`check_balance/1` subtracts
+  expired-but-unswept lots) and the pricer's ten-minute tick runs the expiry
+  sweep. `Rent.charge/3` checks idempotency before the balance, so a re-charge
+  of a paid month on a short balance no longer starts a release clock. The
+  ledger lists and indexes open lots by `seq` (migration). The billing page,
+  the credit emails, the dashboard hint, the terms, privacy and home pages,
+  the quota and contact-limit messages and a scheduled run's error no longer
+  mention plans, trials or subscriptions; `credit.*` audit events refresh
+  PostHog person properties. `/admin/users` and `GET /api/admin/users` take
+  `comped=` in place of the silent no-op `status=` filter and `trial_end`
+  sort. SDK 1.0.1 names `insufficient_credits` and `fleet_full`.
+
 ### Changed
 
 - **`k8s/` is gone; `deploy/` is the only Kubernetes directory** (ADR 0032

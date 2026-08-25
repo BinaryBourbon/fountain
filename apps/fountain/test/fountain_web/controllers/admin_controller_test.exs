@@ -132,6 +132,33 @@ defmodule FountainWeb.AdminControllerTest do
         |> json_response(200)
 
       assert unverified_user.id in Enum.map(unverified["data"], & &1["id"])
+
+      # The status vocabulary retired with the subscription (ADR 0031); comped
+      # is the one billing distinction left, and `?status=` is rejected rather
+      # than silently ignored.
+      {:ok, comped_user} = Fountain.Billing.comp_account(insert_verified_user())
+
+      comped =
+        build_conn()
+        |> authed_with_key(key)
+        |> get("/api/admin/users?comped=true")
+        |> json_response(200)
+
+      assert Enum.map(comped["data"], & &1["id"]) == [comped_user.id]
+
+      billed =
+        build_conn()
+        |> authed_with_key(key)
+        |> get("/api/admin/users?comped=false")
+        |> json_response(200)
+
+      refute comped_user.id in Enum.map(billed["data"], & &1["id"])
+      assert target.id in Enum.map(billed["data"], & &1["id"])
+
+      assert build_conn()
+             |> authed_with_key(key)
+             |> get("/api/admin/users?status=trialing")
+             |> json_response(422)
     end
 
     test "per_page is capped", %{conn: conn, key: key} do

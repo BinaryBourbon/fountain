@@ -82,6 +82,20 @@ defmodule Fountain.Workers.CreditPricerTest do
     assert Credits.list_entries(user.id) == []
   end
 
+  test "every tick also sweeps expired grants (#1126)" do
+    user = insert_empty_user()
+
+    {:ok, _} =
+      Credits.grant(user.id, 500, "grant_trial",
+        idempotency_key: "g",
+        expires_at: ~U[2026-08-03 00:00:00Z]
+      )
+
+    assert %{expired: 1} = CreditPricer.run(since: @since, now: @now)
+    assert Credits.balance(user.id) == 0
+    assert %{expired: 0} = CreditPricer.run(since: @since, now: @now)
+  end
+
   test "a comped tenant's turns are still written to the ledger" do
     user = insert_empty_user()
     {:ok, user} = Billing.comp_account(user)

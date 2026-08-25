@@ -1826,8 +1826,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Subscription status and current-period usage
-         * @description Trial and period dates alongside the usage numbers the billing page shows, measured over the period Stripe invoices where one is known and the calendar month otherwise (`period.source` says which). On an instance with billing disabled this is a 404 carrying `billing: "disabled"`, mirroring the UI, which redirects away from the billing page entirely.
+         * Credit balance and current-month usage
+         * @description The credit balance, what of it expires and when, and the usage numbers the billing page shows, measured over the calendar month. On an instance with billing disabled this is a 404 carrying `billing: "disabled"`, mirroring the UI, which redirects away from the billing page entirely.
          */
         get: operations["FountainWeb.BillingApiController.show"];
         put?: never;
@@ -6073,10 +6073,11 @@ export interface operations {
             query?: {
                 /** @description Email substring. */
                 q?: string;
-                status?: "trialing" | "active" | "past_due" | "canceled" | "comped";
+                /** @description Only comped accounts (`true`) or only billed ones (`false`). */
+                comped?: boolean;
                 role?: "admin" | "user";
                 verified?: boolean;
-                sort?: "email" | "joined" | "trial_end" | "last_activity";
+                sort?: "email" | "joined" | "last_activity";
                 dir?: "asc" | "desc";
                 page?: number;
                 /** @description 1..100, default 25. */

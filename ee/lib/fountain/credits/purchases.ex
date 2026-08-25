@@ -14,8 +14,8 @@ defmodule Fountain.Credits.Purchases do
       The payment intent id is kept on the row so a refund can find it.
     * `refund/1` claws back on `charge.refunded`. Refunds are cumulative and
       can be partial, so the debit is the charge's `amount_refunded` less
-      what this charge has already been clawed back, under
-      `clawback_refund:<charge>:<amount_refunded>`.
+      what this charge has already been clawed back — by an earlier refund
+      or by a dispute — under `clawback_refund:<charge>:<amount_refunded>`.
     * `dispute/1` claws back the disputed amount on `charge.dispute.created`
       under `clawback_dispute:<dispute>`. A dispute later won is not credited
       back automatically — that is an operator's `grant_admin`, on purpose,
@@ -150,7 +150,7 @@ defmodule Fountain.Credits.Purchases do
         {:ok, :nothing}
 
       %LedgerEntry{} = purchase ->
-        already = clawed_back(purchase.user_id, "clawback_refund", charge_id)
+        already = clawed_back(purchase.user_id, charge_id)
         delta = refunded - already
 
         if delta > 0 do
@@ -204,9 +204,16 @@ defmodule Fountain.Credits.Purchases do
     |> Repo.one()
   end
 
-  defp clawed_back(user_id, reason, resource_id) do
+  # Everything already taken back for this charge: refund rows name the
+  # charge as their resource, dispute rows carry it in metadata. A charge
+  # disputed and then refunded is one sum of money, clawed back once.
+  defp clawed_back(user_id, charge_id) do
     from(e in LedgerEntry,
-      where: e.user_id == ^user_id and e.reason == ^reason and e.resource_id == ^resource_id,
+      where: e.user_id == ^user_id,
+      where:
+        (e.reason == "clawback_refund" and e.resource_id == ^charge_id) or
+          (e.reason == "clawback_dispute" and
+             fragment("? ->> 'charge' = ?", e.metadata, ^charge_id)),
       select: coalesce(sum(e.amount_cents), 0)
     )
     |> Repo.one()

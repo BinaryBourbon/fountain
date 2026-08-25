@@ -147,8 +147,7 @@ defmodule Fountain.Emails.BillingEmails do
   end
 
   defp credits_consequence(false),
-    do:
-      "Your plan adds credit at the start of every billing period. Top up now if you need more before then."
+    do: "Top up now so your agents keep working when it runs out."
 
   defp credits_html(title, balance, billing_url, exhausted?) do
     """
@@ -165,7 +164,7 @@ defmodule Fountain.Emails.BillingEmails do
         </a>
       </p>
       <p style="color: #71717a; font-size: 13px;">
-        Credits you buy never expire and are spent after the credit your plan includes.
+        Credits you buy never expire and are spent after any credit that does.
       </p>
     </body>
     </html>
@@ -182,7 +181,7 @@ defmodule Fountain.Emails.BillingEmails do
 
     Buy credits: #{billing_url}
 
-    Credits you buy never expire and are spent after the credit your plan includes.
+    Credits you buy never expire and are spent after any credit that does.
     """
   end
 
