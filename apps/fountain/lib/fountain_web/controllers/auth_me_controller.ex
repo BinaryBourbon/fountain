@@ -39,7 +39,11 @@ defmodule FountainWeb.AuthMeController do
       # Null on a billing-disabled instance, even for an account that was
       # comped before billing was turned off — there is no balance for the
       # flag to be about (#480).
-      comped: if(Fountain.Credits.enabled?(), do: user.comped, else: nil)
+      comped: if(Fountain.Credits.enabled?(), do: user.comped, else: nil),
+      # Read-only: whether this account is on the broker ratchet (ADR 0019),
+      # so a client can label the mode instead of probing
+      # /api/secret-bindings for a 200 vs 404 (#1154).
+      brokered: Fountain.Broker.enabled_for?(user.id)
     })
   end
 end

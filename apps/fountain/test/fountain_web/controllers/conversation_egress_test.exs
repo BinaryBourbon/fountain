@@ -87,12 +87,42 @@ defmodule FountainWeb.ConversationEgressTest do
            } = row
   end
 
-  test "a broker that does not answer is a 502, not a 500", %{conn: conn, conv: conv} do
+  test "a broker that does not answer is a 502 with a sentence, not an inspected term",
+       %{conn: conn, conv: conv} do
     expect(Broker, :request_log, fn _id, _opts ->
-      {:error, {:broker, :request_log, :econnrefused}}
+      {:error, {:broker, :request_log, %Req.TransportError{reason: :econnrefused}}}
     end)
 
-    assert %{"error" => "broker_unavailable"} =
-             conn |> get("/api/conversations/#{conv.id}/egress") |> json_response(502)
+    assert %{
+             "error" => "broker_unavailable",
+             "message" => "The egress broker did not answer.",
+             "reason" => "econnrefused"
+           } = conn |> get("/api/conversations/#{conv.id}/egress") |> json_response(502)
+  end
+
+  test "a broker API error is a 502 that carries the status as its reason",
+       %{conn: conn, conv: conv} do
+    expect(Broker, :request_log, fn _id, _opts ->
+      {:error, {:broker, :request_log, {:api_error, 503, %{"error" => "draining"}}}}
+    end)
+
+    body = conn |> get("/api/conversations/#{conv.id}/egress") |> json_response(502)
+    assert body["reason"] == "api_error_503"
+    refute body["message"] =~ "api_error"
+  end
+
+  # The log names which secrets went to which host: a sandbox's own token
+  # must not be able to read it, for its conversation or any other (#1152).
+  test "a sprite-scoped token cannot read the egress log", %{conn: conn, user: user, conv: conv} do
+    {_rec, sprite_key} = insert_sprite_api_key(user)
+    reject(Broker, :request_log, 2)
+
+    body =
+      conn
+      |> authed_with_key(sprite_key)
+      |> get("/api/conversations/#{conv.id}/egress")
+      |> json_response(403)
+
+    assert body["reason"] == "insufficient_scope"
   end
 end

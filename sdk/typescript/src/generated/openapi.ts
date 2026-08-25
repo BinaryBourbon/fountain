@@ -2277,7 +2277,7 @@ export interface components {
                 [key: string]: unknown;
             };
             name?: string;
-            /** @description Refines networking_type: limited. allowed_hosts is the only key honored today; unknown keys are ignored. Under limited, egress is restricted to the allowlisted domains. With no allowed_hosts (or an empty list), the sandbox denies all egress by default — this is a deny-all, not an allow-all. */
+            /** @description Refines networking_type: limited. allowed_hosts is the only key honored today; unknown keys are ignored. Where the policy is enforced depends on the account: on a brokered account (`brokered: true` on GET /api/auth/me) the sandbox can reach only the egress broker, and under limited the broker refuses any host not in allowed_hosts with a 403 that names it, while a host with a bound credential needs no entry. On an unbrokered account the sandbox itself allows only the allowlisted domains. Either way, limited with no allowed_hosts (or an empty list) is a deny-all, not an allow-all. */
             networking_config?: {
                 /** @description Domains the sandbox may reach when networking_type is limited. */
                 allowed_hosts?: string[];
@@ -2962,6 +2962,8 @@ export interface components {
          * @description Identity of the account the bearer token belongs to.
          */
         AuthMeResponse: {
+            /** @description Whether this account's conversations run behind the egress credential broker (ADR 0019): secrets with bindings stay at the broker, a limited environment is enforced there, and /api/secret-bindings and /api/conversations/:id/egress have content. Read-only; an operator sets it. */
+            brokered?: boolean;
             /** @description Null when billing is off. */
             comped?: boolean | null;
             /** Format: email */
@@ -3716,7 +3718,7 @@ export interface components {
                 [key: string]: unknown;
             };
             name: string;
-            /** @description Refines networking_type: limited. allowed_hosts is the only key honored today; unknown keys are ignored. Under limited, egress is restricted to the allowlisted domains. With no allowed_hosts (or an empty list), the sandbox denies all egress by default — this is a deny-all, not an allow-all. */
+            /** @description Refines networking_type: limited. allowed_hosts is the only key honored today; unknown keys are ignored. Where the policy is enforced depends on the account: on a brokered account (`brokered: true` on GET /api/auth/me) the sandbox can reach only the egress broker, and under limited the broker refuses any host not in allowed_hosts with a 403 that names it, while a host with a bound credential needs no entry. On an unbrokered account the sandbox itself allows only the allowlisted domains. Either way, limited with no allowed_hosts (or an empty list) is a deny-all, not an allow-all. */
             networking_config?: {
                 /** @description Domains the sandbox may reach when networking_type is limited. */
                 allowed_hosts?: string[];
@@ -3734,6 +3736,18 @@ export interface components {
         /** AdminUserResponse */
         AdminUserResponse: {
             data: components["schemas"]["AdminUser"];
+        };
+        /**
+         * BrokerUnavailableError
+         * @description The egress broker did not answer the request log call.
+         */
+        BrokerUnavailableError: {
+            /** @description Always `broker_unavailable`. */
+            error: string;
+            /** @description A sentence for a human. */
+            message: string;
+            /** @description A stable word for a client to branch on: `econnrefused`, `timeout`, `nxdomain`, `api_error_<status>`, or `unknown`. The detail is in the server log, not here. */
+            reason: string;
         };
         /** SearchResponse */
         SearchResponse: {
@@ -3813,7 +3827,7 @@ export interface components {
                 [key: string]: unknown;
             };
             name: string;
-            /** @description Refines networking_type: limited. allowed_hosts is the only key honored today; unknown keys are ignored. Under limited, egress is restricted to the allowlisted domains. With no allowed_hosts (or an empty list), the sandbox denies all egress by default — this is a deny-all, not an allow-all. */
+            /** @description Refines networking_type: limited. allowed_hosts is the only key honored today; unknown keys are ignored. Where the policy is enforced depends on the account: on a brokered account (`brokered: true` on GET /api/auth/me) the sandbox can reach only the egress broker, and under limited the broker refuses any host not in allowed_hosts with a 403 that names it, while a host with a bound credential needs no entry. On an unbrokered account the sandbox itself allows only the allowlisted domains. Either way, limited with no allowed_hosts (or an empty list) is a deny-all, not an allow-all. */
             networking_config?: {
                 /** @description Domains the sandbox may reach when networking_type is limited. */
                 allowed_hosts?: string[];
@@ -7377,6 +7391,15 @@ export interface operations {
                     "application/json": components["schemas"]["EgressListResponse"];
                 };
             };
+            /** @description The key lacks full scope */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
             /** @description Not found */
             404: {
                 headers: {
@@ -7392,7 +7415,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"];
+                    "application/json": components["schemas"]["BrokerUnavailableError"];
                 };
             };
         };

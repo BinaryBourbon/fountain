@@ -335,6 +335,16 @@ defmodule FountainWeb.Router do
     delete "/:id", SecretBindingController, :delete
   end
 
+  # What left the sandbox through the egress broker (ADR 0019 gate 4). Full
+  # scope, like the bindings that put the credentials there: the log names
+  # which secrets went to which host, and a sandbox's per-conversation token
+  # must not be able to map another conversation's traffic (#1152).
+  scope "/api/conversations/:conversation_id", FountainWeb do
+    pipe_through [:accepts_json, :api, :require_full_scope]
+
+    get "/egress", ConversationController, :egress, as: :conversation_egress
+  end
+
   # The daemon's socket skips content negotiation like the SSE routes do: a
   # WebSocket client sends no JSON `Accept`, and the upgrade is not a JSON
   # response.
@@ -488,8 +498,6 @@ defmodule FountainWeb.Router do
       # the conversation is tenant-scoped before the request id is looked at.
       post "/requests/:request_id", ConversationController, :answer_request, as: :answer_request
       get "/tree", ConversationController, :tree, as: :tree
-      # What left the sandbox through the egress broker (ADR 0019 gate 4).
-      get "/egress", ConversationController, :egress, as: :egress
     end
   end
 

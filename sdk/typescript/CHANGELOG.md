@@ -10,6 +10,23 @@ server releases.
 
 ---
 
+## [1.6.0] — 2026-08-25
+
+### Added
+
+- `brokered` on `GET /api/auth/me`: whether the account runs behind the egress
+  credential broker, so a client can label the mode without probing
+  `/api/secret-bindings` (#1154).
+- `BrokerUnavailableError`: the 502 from `/egress` carries a sentence in
+  `message` and a stable `reason` word (`econnrefused`, `api_error_503`, ...)
+  instead of an inspected server term (#1153).
+
+### Changed
+
+- `GET /api/conversations/:id/egress` needs a full-scope key; a sprite-scoped
+  token gets `403 insufficient_scope` (#1152). The `networking_config`
+  description says where `limited` is enforced.
+
 ## [1.5.0] — 2026-08-25
 
 ### Added
