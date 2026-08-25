@@ -37,6 +37,7 @@ defmodule Fountain.Connections.Connection do
   end
 
   def providers, do: @providers
+  def statuses, do: @statuses
 
   @doc """
   Create or replace a connection from a fresh token grant. `attrs` carries

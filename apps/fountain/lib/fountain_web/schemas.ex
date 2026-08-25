@@ -3662,17 +3662,7 @@ defmodule FountainWeb.Schemas do
     })
   end
 
-  defmodule ConnectionListResponse do
-    @moduledoc false
-    require OpenApiSpex
-
-    OpenApiSpex.schema(%{
-      title: "ConnectionListResponse",
-      type: :object,
-      properties: %{data: %Schema{type: :array, items: Connection}},
-      required: [:data]
-    })
-  end
+  list_response(ConnectionListResponse, of: Connection)
 
   defmodule ConnectionProvidersResponse do
     @moduledoc false
