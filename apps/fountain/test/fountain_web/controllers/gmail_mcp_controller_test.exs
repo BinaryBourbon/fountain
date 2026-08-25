@@ -77,6 +77,59 @@ defmodule FountainWeb.GmailMcpControllerTest do
     assert %{"labels" => [%{"id" => "INBOX"}]} = Jason.decode!(text)
   end
 
+  test "gmail_search lists threads and reads each one's headers with repeated query keys", ctx do
+    test_pid = self()
+
+    Req.Test.stub(Gmail, fn req ->
+      send(test_pid, {:gmail, req.request_path, req.query_string})
+
+      case req.request_path do
+        "/gmail/v1/users/me/threads" ->
+          Req.Test.json(req, %{"threads" => [%{"id" => "t1"}], "resultSizeEstimate" => 1})
+
+        "/gmail/v1/users/me/threads/t1" ->
+          Req.Test.json(req, %{
+            "id" => "t1",
+            "messages" => [
+              %{
+                "id" => "m1",
+                "snippet" => "hello there",
+                "labelIds" => ["INBOX"],
+                "payload" => %{
+                  "headers" => [
+                    %{"name" => "Subject", "value" => "Hi"},
+                    %{"name" => "From", "value" => "a@example.com"}
+                  ]
+                }
+              }
+            ]
+          })
+      end
+    end)
+
+    body =
+      rpc(ctx.conn, ctx.raw_key, ctx.conv, ctx.connection, "tools/call", %{
+        "name" => "gmail_search",
+        "arguments" => %{"query" => "newer_than:7d", "max_results" => 3}
+      })
+      |> json_response(200)
+
+    assert body["result"]["isError"] == false, inspect(body)
+    assert [%{"text" => text}] = body["result"]["content"]
+
+    assert %{"threads" => [%{"id" => "t1", "subject" => "Hi", "from" => "a@example.com"}]} =
+             Jason.decode!(text)
+
+    assert_received {:gmail, "/gmail/v1/users/me/threads", q}
+    assert URI.decode_query(q) == %{"q" => "newer_than:7d", "maxResults" => "3"}
+
+    # Gmail wants a multi-valued parameter as a repeated key; a list value
+    # used to raise in URI.encode_query and surface as a 500 (prod, day one).
+    assert_received {:gmail, "/gmail/v1/users/me/threads/t1", q}
+    assert q =~ "metadataHeaders=From&metadataHeaders=To"
+    assert q =~ "format=metadata"
+  end
+
   test "a send is audited as a use of the connection, without the content", ctx do
     Req.Test.stub(Gmail, fn req ->
       assert req.request_path == "/gmail/v1/users/me/messages/send"

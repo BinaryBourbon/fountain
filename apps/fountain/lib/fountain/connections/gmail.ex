@@ -9,16 +9,18 @@ defmodule Fountain.Connections.Gmail do
 
   @base_url "https://gmail.googleapis.com/gmail/v1/users/me"
 
+  @metadata_headers ~w(From To Cc Subject Date Message-ID)
+
   @doc "Threads matching a Gmail search query (`q`), newest first."
   def list_threads(token, opts \\ []) do
     params =
       [
         q: Keyword.get(opts, :query),
         maxResults: Keyword.get(opts, :max_results, 10),
-        pageToken: Keyword.get(opts, :page_token),
-        labelIds: Keyword.get(opts, :label_ids)
+        pageToken: Keyword.get(opts, :page_token)
       ]
       |> Enum.reject(fn {_, v} -> is_nil(v) end)
+      |> Kernel.++(repeated(:labelIds, Keyword.get(opts, :label_ids)))
 
     get(token, "/threads", params: params)
   end
@@ -26,9 +28,15 @@ defmodule Fountain.Connections.Gmail do
   @doc "One thread with every message, in `format`: `metadata` (headers + snippet) or `full`."
   def get_thread(token, thread_id, format \\ "metadata") do
     get(token, "/threads/#{enc(thread_id)}",
-      params: [format: format, metadataHeaders: ~w(From To Cc Subject Date Message-ID)]
+      params: [format: format] ++ repeated(:metadataHeaders, @metadata_headers)
     )
   end
+
+  # Gmail takes a multi-valued parameter as a repeated key
+  # (`metadataHeaders=From&metadataHeaders=To`); `URI.encode_query/1`
+  # refuses a list value, so each value gets its own pair.
+  defp repeated(_key, nil), do: []
+  defp repeated(key, values) when is_list(values), do: Enum.map(values, &{key, &1})
 
   @doc "One message, in `full` format (headers, snippet and body parts)."
   def get_message(token, message_id, format \\ "full") do
@@ -85,8 +93,12 @@ defmodule Fountain.Connections.Gmail do
   defp get(token, path), do: request(token, :get, path, [])
   defp post(token, path, opts), do: request(token, :post, path, opts)
 
+  # The query is encoded here rather than through Req's `params`, which
+  # folds a keyword list into a map and so keeps one value per key.
   defp request(token, method, path, opts) do
-    req = Req.merge(req(), [url: path, auth: {:bearer, token}, method: method] ++ opts)
+    {params, opts} = Keyword.pop(opts, :params, [])
+    url = if params == [], do: path, else: path <> "?" <> URI.encode_query(params)
+    req = Req.merge(req(), [url: url, auth: {:bearer, token}, method: method] ++ opts)
 
     case Req.request(req) do
       {:ok, %{status: status, body: body}} when status in 200..299 -> {:ok, body}
