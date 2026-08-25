@@ -1,14 +1,14 @@
 # Stripe
 
 <!-- "billing" is a Technical Name here: the product surface, the
-     BILLING_ENABLED flag and the Elixir context carry it. STE exempts a
+     CREDITS_ENABLED flag and the Elixir context carry it. STE exempts a
      Technical Name from Rule 3.4, and the linter has no vocabulary hook for
      that rule, so the exemption is declared for the page. -->
 <!-- vale STE.IngForms = NO -->
 
 **Optional.** Stripe is the till: it takes the payment for a credit pack and
 tells Fountain about refunds and disputes. Nothing else. Billing is off by
-default (`BILLING_ENABLED=false`), and that is the right setting for most
+default (`CREDITS_ENABLED=false`), and that is the right setting for most
 self-hosted instances. Set this up only if you run Fountain commercially.
 
 ## At a glance
@@ -17,7 +17,7 @@ self-hosted instances. Set this up only if you run Fountain commercially.
 |---|---|
 | Required | No, and off by default. |
 | Provider | Stripe. |
-| Env vars | `BILLING_ENABLED`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` |
+| Env vars | `CREDITS_ENABLED`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` |
 | Webhook | `<PUBLIC_URL>/api/stripe/webhook` |
 | Without it | No way to buy credit. Admin grants still work. |
 
@@ -42,7 +42,7 @@ real money.
 
 | Variable | Effect |
 |---|---|
-| `BILLING_ENABLED` | `false` by default. `true` turns credits on. |
+| `CREDITS_ENABLED` | `false` by default. `true` turns credits on. |
 | `STRIPE_SECRET_KEY` | The API key. |
 | `STRIPE_WEBHOOK_SECRET` | Verifies a webhook signature. Fountain rejects a bad signature with a 400. |
 

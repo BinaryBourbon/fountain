@@ -93,7 +93,7 @@ jobs:
           # Pre-1.0, a minor may break; the changelog header promises such a
           # release carries an "Upgrade notes" section. The heading-exists
           # check above cannot see a missing section, which is how the
-          # BILLING_ENABLED flip nearly shipped without one. A minor with
+          # CREDITS_ENABLED flip nearly shipped without one. A minor with
           # genuinely nothing to note still gets the section, saying so —
           # explicit beats absent.
           section="$(awk -v ver="## [${NEXT}]" '

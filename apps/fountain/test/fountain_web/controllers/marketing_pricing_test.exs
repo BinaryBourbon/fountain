@@ -1,14 +1,14 @@
-# async: false — these tests mutate the global :billing_enabled / :credits app
+# async: false — these tests mutate the global :credits_enabled / :credits app
 # env, which concurrent tests read.
 defmodule FountainWeb.MarketingPricingTest do
   use FountainWeb.ConnCase, async: false
 
   setup do
-    billing = Application.get_env(:fountain, :billing_enabled)
+    billing = Application.get_env(:fountain, :credits_enabled)
     credits = Application.get_env(:fountain, :credits)
 
     on_exit(fn ->
-      Application.put_env(:fountain, :billing_enabled, billing)
+      Application.put_env(:fountain, :credits_enabled, billing)
       Application.put_env(:fountain, :credits, credits)
     end)
 
@@ -69,7 +69,7 @@ defmodule FountainWeb.MarketingPricingTest do
   end
 
   test "omits pricing when billing is disabled", %{conn: conn} do
-    Application.put_env(:fountain, :billing_enabled, false)
+    Application.put_env(:fountain, :credits_enabled, false)
 
     body = conn |> get(~p"/") |> html_response(200)
     refute body =~ "Pay for what your agents do"

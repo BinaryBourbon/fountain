@@ -19,8 +19,8 @@ defmodule Fountain.Workers.CreditExpirerTest do
     {:ok, _} =
       Credits.grant(user.id, 1000, "grant_opening", idempotency_key: "g", expires_at: @expires)
 
-    Application.put_env(:fountain, :billing_enabled, false)
-    on_exit(fn -> Application.put_env(:fountain, :billing_enabled, true) end)
+    Application.put_env(:fountain, :credits_enabled, false)
+    on_exit(fn -> Application.put_env(:fountain, :credits_enabled, true) end)
     assert %{expired: 0} = CreditExpirer.run(now: @day_after)
   end
 

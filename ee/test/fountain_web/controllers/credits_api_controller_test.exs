@@ -1,12 +1,12 @@
-defmodule FountainWeb.BillingApiControllerTest do
+defmodule FountainWeb.CreditsApiControllerTest do
   @moduledoc """
   Billing self-serve over the API (#524).
 
   A CLI user who hit the credit gate got a 402 and no programmatic route out
-  of it: usage numbers and Checkout lived in `BillingLive`.
+  of it: usage numbers and Checkout lived in `CreditsLive`.
   """
 
-  # async: false — billing_enabled is application env.
+  # async: false — credits_enabled is application env.
   use FountainWeb.ConnCase, async: false
   use Mimic
 
@@ -17,13 +17,13 @@ defmodule FountainWeb.BillingApiControllerTest do
   end
 
   defp with_billing_disabled(fun) do
-    previous = Application.get_env(:fountain, :billing_enabled)
-    Application.put_env(:fountain, :billing_enabled, false)
+    previous = Application.get_env(:fountain, :credits_enabled)
+    Application.put_env(:fountain, :credits_enabled, false)
 
     try do
       fun.()
     after
-      Application.put_env(:fountain, :billing_enabled, previous)
+      Application.put_env(:fountain, :credits_enabled, previous)
     end
   end
 

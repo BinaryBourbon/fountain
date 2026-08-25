@@ -117,7 +117,7 @@ defmodule Fountain.Quotas do
     %{reserve_cents: reserve, cap_floor: floor, cap_ceiling: ceiling} = settings()
 
     cond do
-      not Fountain.Billing.enabled?() -> ceiling
+      not Fountain.Credits.enabled?() -> ceiling
       comped == true -> ceiling
       # Nothing in the balance funds nothing. The credit gate runs before the
       # quota check under the reservation lock, so this account is refused as

@@ -31,8 +31,8 @@ defmodule Fountain.Workers.CreditPricerTest do
     conv = setup_conv(user)
     closed_turn(conv, ~U[2026-08-02 10:00:00Z], 3600)
 
-    Application.put_env(:fountain, :billing_enabled, false)
-    on_exit(fn -> Application.put_env(:fountain, :billing_enabled, true) end)
+    Application.put_env(:fountain, :credits_enabled, false)
+    on_exit(fn -> Application.put_env(:fountain, :credits_enabled, true) end)
     assert %{turns: 0, messages: 0} = CreditPricer.run(since: @since, now: @now)
     assert Credits.balance(user.id) == 0
   end

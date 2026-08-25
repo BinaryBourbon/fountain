@@ -28,7 +28,7 @@ defmodule Fountain.SelfHostSwitchesTest do
     "PUBLIC_URL" => "https://fountain.example.com"
   }
 
-  @switch_vars ~w(BILLING_ENABLED REGISTRATION_ENABLED REGISTRATION_ALLOWED_EMAIL_DOMAINS STRIPE_WEBHOOK_SECRET EMAIL_DELIVERY FIRST_USER_ADMIN)
+  @switch_vars ~w(CREDITS_ENABLED BILLING_ENABLED REGISTRATION_ENABLED REGISTRATION_ALLOWED_EMAIL_DOMAINS STRIPE_WEBHOOK_SECRET EMAIL_DELIVERY FIRST_USER_ADMIN)
 
   defp read_prod_config(extra) do
     previous = System.get_env()
@@ -75,25 +75,35 @@ defmodule Fountain.SelfHostSwitchesTest do
   end
 
   describe "the env-var side, read the way the release config provider does" do
-    # runtime.exs skips the BILLING_ENABLED mapping under :test (the suite
-    # pins :billing_enabled in config/test.exs), and the domain-list tests
+    # runtime.exs skips the CREDITS_ENABLED mapping under :test (the suite
+    # pins :credits_enabled in config/test.exs), and the domain-list tests
     # below inject the parsed application env directly — so without these,
     # nothing fails if the runtime.exs default flips or the parsing breaks.
 
-    test "BILLING_ENABLED defaults off — a bare self-host must not lock itself out (#336)" do
+    test "CREDITS_ENABLED defaults off — a bare self-host must not lock itself out (#336)" do
       cfg = read_prod_config(%{})
-      assert cfg[:fountain][:billing_enabled] == false
+      assert cfg[:fountain][:credits_enabled] == false
     end
 
-    test "BILLING_ENABLED=true opts the hosted deployment in" do
-      # Billing on requires the webhook secret at boot (#416), so supply one.
+    test "CREDITS_ENABLED=true opts the hosted deployment in" do
+      # Credits on requires the webhook secret at boot (#416), so supply one.
       cfg =
         read_prod_config(%{
-          "BILLING_ENABLED" => "true",
+          "CREDITS_ENABLED" => "true",
           "STRIPE_WEBHOOK_SECRET" => "whsec_test"
         })
 
-      assert cfg[:fountain][:billing_enabled] == true
+      assert cfg[:fountain][:credits_enabled] == true
+    end
+
+    test "BILLING_ENABLED is read as an alias for one release, and CREDITS_ENABLED wins (#1144)" do
+      legacy =
+        read_prod_config(%{"BILLING_ENABLED" => "true", "STRIPE_WEBHOOK_SECRET" => "whsec_test"})
+
+      assert legacy[:fountain][:credits_enabled] == true
+
+      both = read_prod_config(%{"CREDITS_ENABLED" => "false", "BILLING_ENABLED" => "true"})
+      assert both[:fountain][:credits_enabled] == false
     end
 
     test "REGISTRATION_ALLOWED_EMAIL_DOMAINS is split, trimmed and downcased" do
@@ -150,7 +160,7 @@ defmodule Fountain.SelfHostSwitchesTest do
     end
   end
 
-  describe "BILLING_ENABLED" do
+  describe "CREDITS_ENABLED" do
     test "the gate is enforced by default" do
       assert {:error, :insufficient_credits} = Billing.check_spend(cancelled_user())
     end
@@ -158,7 +168,7 @@ defmodule Fountain.SelfHostSwitchesTest do
     test "disabling it lets a cancelled account through" do
       user = cancelled_user()
 
-      with_env([billing_enabled: false], fn ->
+      with_env([credits_enabled: false], fn ->
         assert :ok = Billing.check_spend(user)
       end)
     end
@@ -169,7 +179,7 @@ defmodule Fountain.SelfHostSwitchesTest do
       user = cancelled_user()
       agent = insert_agent(user_id: user.id)
 
-      with_env([billing_enabled: false], fn ->
+      with_env([credits_enabled: false], fn ->
         Mimic.stub(Horde.DynamicSupervisor, :start_child, fn _s, _spec ->
           {:ok, spawn(fn -> :ok end)}
         end)

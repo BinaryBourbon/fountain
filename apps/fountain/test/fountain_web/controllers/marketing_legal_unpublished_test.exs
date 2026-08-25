@@ -1,15 +1,15 @@
-# async: false — these tests mutate the global :legal / :billing_enabled app
+# async: false — these tests mutate the global :legal / :credits_enabled app
 # env, which concurrent tests (marketing pages, billing gate) also read.
 defmodule FountainWeb.MarketingLegalUnpublishedTest do
   use FountainWeb.ConnCase, async: false
 
   setup do
     legal = Application.get_env(:fountain, :legal)
-    billing = Application.get_env(:fountain, :billing_enabled)
+    billing = Application.get_env(:fountain, :credits_enabled)
 
     on_exit(fn ->
       Application.put_env(:fountain, :legal, legal)
-      Application.put_env(:fountain, :billing_enabled, billing)
+      Application.put_env(:fountain, :credits_enabled, billing)
     end)
 
     :ok
@@ -18,7 +18,7 @@ defmodule FountainWeb.MarketingLegalUnpublishedTest do
   describe "legal identity unset, billing disabled (self-host default)" do
     setup do
       Application.put_env(:fountain, :legal, nil)
-      Application.put_env(:fountain, :billing_enabled, false)
+      Application.put_env(:fountain, :credits_enabled, false)
       :ok
     end
 
@@ -53,7 +53,7 @@ defmodule FountainWeb.MarketingLegalUnpublishedTest do
   describe "legal identity unset, billing enabled" do
     setup do
       Application.put_env(:fountain, :legal, nil)
-      Application.put_env(:fountain, :billing_enabled, true)
+      Application.put_env(:fountain, :credits_enabled, true)
       :ok
     end
 

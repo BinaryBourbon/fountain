@@ -50,7 +50,7 @@ defmodule FountainWeb.AdminLive.ConversationDetail do
         {:ok,
          socket
          |> assign(:page_title, "Admin · conversation #{String.slice(conv.id, 0, 8)}")
-         |> assign(:billing_enabled, Fountain.Billing.enabled?())
+         |> assign(:credits_enabled, Fountain.Credits.enabled?())
          |> assign(:conv, conv)
          |> assign(:turn_count, turn_count)
          |> assign(:log_event_count, log_event_count)
@@ -63,7 +63,7 @@ defmodule FountainWeb.AdminLive.ConversationDetail do
     ~H"""
     <div class="space-y-8">
       <div>
-        <.admin_tabs current={:sandboxes} billing_enabled={@billing_enabled} />
+        <.admin_tabs current={:sandboxes} credits_enabled={@credits_enabled} />
         <h1 class="text-2xl font-semibold mt-4">
           <span class="font-mono">{String.slice(@conv.id, 0, 8)}</span>
           <span :if={@conv.title} class="text-zinc-500 text-lg ml-2">{@conv.title}</span>

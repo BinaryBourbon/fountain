@@ -38,13 +38,13 @@ defmodule Fountain.Legal do
   True when the operator configured a legal identity, or when billing is
   enabled (placeholders stay loud rather than the pages going dark).
   """
-  def published?, do: configured() != nil or Fountain.Billing.enabled?()
+  def published?, do: configured() != nil or Fountain.Credits.enabled?()
 
   @doc """
   The map the legal templates render: the configured identity, the loud
   placeholders on a billing-enabled instance, or `nil` (pages unpublished).
   """
   def content do
-    configured() || if Fountain.Billing.enabled?(), do: @placeholders
+    configured() || if Fountain.Credits.enabled?(), do: @placeholders
   end
 end

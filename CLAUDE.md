@@ -65,7 +65,7 @@ fountain/                  umbrella root
 
 ## Credits are the product (ADR 0031)
 
-There are no plans, no tiers and no subscription. `BILLING_ENABLED` means
+There are no plans, no tiers and no subscription. `CREDITS_ENABLED` means
 "credits on"; off, nothing is priced, granted, gated or shown. Six rules
 that are easy to get wrong:
 
@@ -412,7 +412,7 @@ See `.env.example` for the full list. Key ones for local dev:
 | `MASTER_SECRETS_KEY` | Platform master key for envelope encryption |
 | `SPRITES_TOKEN` | Token for the Sprites sandbox platform |
 | `GITHUB_OAUTH_CLIENT_ID/SECRET` | GitHub OAuth app |
-| `STRIPE_SECRET_KEY` / `STRIPE_WEBHOOK_SECRET` | Credit-pack Checkout and the three credit webhooks (`BILLING_ENABLED=true` only) |
+| `STRIPE_SECRET_KEY` / `STRIPE_WEBHOOK_SECRET` | Credit-pack Checkout and the three credit webhooks (`CREDITS_ENABLED=true` only) |
 | `RESEND_API_KEY` | Transactional email |
 
 ## Docs (`docs/`)

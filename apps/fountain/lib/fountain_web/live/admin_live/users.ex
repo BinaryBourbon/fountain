@@ -33,7 +33,7 @@ defmodule FountainWeb.AdminLive.Users do
      socket
      |> FountainWeb.Audited.put_client_ip()
      |> assign(:page_title, "Admin · Users")
-     |> assign(:billing_enabled, Billing.enabled?())}
+     |> assign(:credits_enabled, Fountain.Credits.enabled?())}
   end
 
   # Filter/sort/page state lives in the URL, so the 10s refresh, admin
@@ -118,7 +118,7 @@ defmodule FountainWeb.AdminLive.Users do
   # The buttons are hidden when billing is disabled, but events can still be
   # sent by hand (#399's lesson) — and all of these actions talk to Stripe.
   @impl true
-  def handle_event(event, _params, %{assigns: %{billing_enabled: false}} = socket)
+  def handle_event(event, _params, %{assigns: %{credits_enabled: false}} = socket)
       when event in ~w(toggle_comp) do
     {:noreply, put_flash(socket, :error, "Billing is disabled on this instance")}
   end
@@ -427,7 +427,7 @@ defmodule FountainWeb.AdminLive.Users do
   def render(assigns) do
     ~H"""
     <div class="space-y-6">
-      <.admin_header title="Users" current={:users} billing_enabled={@billing_enabled}>
+      <.admin_header title="Users" current={:users} credits_enabled={@credits_enabled}>
         <:subtitle>
           {@total_users} {if @total_users == 1, do: "account", else: "accounts"}. Refreshes every 10s.
         </:subtitle>
@@ -445,7 +445,7 @@ defmodule FountainWeb.AdminLive.Users do
             class="w-48 rounded border border-zinc-200 px-2 py-1 text-xs"
           />
           <select
-            :if={@billing_enabled}
+            :if={@credits_enabled}
             name="comped"
             class="rounded border border-zinc-200 px-1 py-1 text-xs"
           >
@@ -472,11 +472,11 @@ defmodule FountainWeb.AdminLive.Users do
                 <.sort_header label="Email" col="email" filters={@filters} />
               </th>
               <th class="px-4 py-2">Role</th>
-              <th :if={@billing_enabled} class="px-4 py-2">
+              <th :if={@credits_enabled} class="px-4 py-2">
                 Billing
               </th>
               <th
-                :if={@billing_enabled}
+                :if={@credits_enabled}
                 class="px-4 py-2"
                 title="The balance, or comped: an operator made this account free"
               >
@@ -502,7 +502,7 @@ defmodule FountainWeb.AdminLive.Users do
           <tbody>
             <tr :if={@users == []}>
               <td
-                colspan={if @billing_enabled, do: "10", else: "8"}
+                colspan={if @credits_enabled, do: "10", else: "8"}
                 class="px-4 py-6 text-center text-sm text-zinc-500"
               >
                 No users match.
@@ -538,7 +538,7 @@ defmodule FountainWeb.AdminLive.Users do
                   {u.role}
                 </span>
               </td>
-              <td :if={@billing_enabled} class="px-4 py-2">
+              <td :if={@credits_enabled} class="px-4 py-2">
                 <div class="flex flex-col gap-1">
                   <span class={[
                     "inline-flex w-fit items-center rounded px-1.5 py-0.5 text-xs font-medium border",

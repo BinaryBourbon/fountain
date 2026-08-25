@@ -38,12 +38,12 @@ defmodule FountainWeb.AdminLive.UserDetail do
           })
         end
 
-        billing_enabled = Fountain.Billing.enabled?()
+        credits_enabled = Fountain.Credits.enabled?()
 
         {:ok,
          socket
          |> assign(:page_title, "Admin · #{user.email}")
-         |> assign(:billing_enabled, billing_enabled)
+         |> assign(:credits_enabled, credits_enabled)
          |> load_user(user)}
     end
   end
@@ -81,7 +81,7 @@ defmodule FountainWeb.AdminLive.UserDetail do
     ~H"""
     <div class="space-y-8">
       <div>
-        <.admin_tabs current={:users} billing_enabled={@billing_enabled} />
+        <.admin_tabs current={:users} credits_enabled={@credits_enabled} />
         <h1 class="text-2xl font-semibold font-mono mt-4">{@user.email}</h1>
         <div class="flex flex-wrap items-center gap-2 mt-2 text-xs">
           <span class={[
@@ -94,7 +94,7 @@ defmodule FountainWeb.AdminLive.UserDetail do
             {@user.role}
           </span>
           <span
-            :if={@billing_enabled}
+            :if={@credits_enabled}
             class={[
               "inline-flex items-center rounded px-1.5 py-0.5 font-medium border",
               account_badge_class(@user.comped)
@@ -117,7 +117,7 @@ defmodule FountainWeb.AdminLive.UserDetail do
             suspended since {format_ts(@user.suspended_at)}
           </span>
           <a
-            :if={@billing_enabled and @user.stripe_customer_id not in [nil, ""]}
+            :if={@credits_enabled and @user.stripe_customer_id not in [nil, ""]}
             href={"https://dashboard.stripe.com/customers/#{@user.stripe_customer_id}"}
             target="_blank"
             rel="noopener"
@@ -138,7 +138,7 @@ defmodule FountainWeb.AdminLive.UserDetail do
           </div>
         </div>
         <div
-          :if={not @billing_enabled}
+          :if={not @credits_enabled}
           class="bg-white rounded shadow border border-zinc-200 px-4 py-3"
         >
           <div class="text-xs text-zinc-500">Onboarding</div>

@@ -17,7 +17,7 @@ defmodule FountainWeb.AdminLive.Activity do
   import FountainWeb.AdminLive.Helpers
   import FountainWeb.AdminLive.Shell
 
-  alias Fountain.{Audit, Billing}
+  alias Fountain.Audit
 
   @per_page 50
 
@@ -26,7 +26,7 @@ defmodule FountainWeb.AdminLive.Activity do
     {:ok,
      socket
      |> assign(:page_title, "Admin · Activity")
-     |> assign(:billing_enabled, Billing.enabled?())}
+     |> assign(:credits_enabled, Fountain.Credits.enabled?())}
   end
 
   # The page lives in the URL so a link to "what happened last week" is a link
@@ -58,7 +58,7 @@ defmodule FountainWeb.AdminLive.Activity do
   def render(assigns) do
     ~H"""
     <div class="space-y-6">
-      <.admin_header title="Activity" current={:activity} billing_enabled={@billing_enabled}>
+      <.admin_header title="Activity" current={:activity} credits_enabled={@credits_enabled}>
         <:subtitle>
           Role grants, quota changes, comps, suspensions and deletions — who did what to whom.
         </:subtitle>

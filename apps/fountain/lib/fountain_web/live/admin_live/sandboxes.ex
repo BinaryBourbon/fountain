@@ -30,7 +30,7 @@ defmodule FountainWeb.AdminLive.Sandboxes do
     {:ok,
      socket
      |> assign(:page_title, "Admin · Sandboxes")
-     |> assign(:billing_enabled, Billing.enabled?())
+     |> assign(:credits_enabled, Fountain.Credits.enabled?())
      |> assign_sandboxes()}
   end
 
@@ -75,7 +75,7 @@ defmodule FountainWeb.AdminLive.Sandboxes do
   def render(assigns) do
     ~H"""
     <div class="space-y-6">
-      <.admin_header title="Sandboxes" current={:sandboxes} billing_enabled={@billing_enabled}>
+      <.admin_header title="Sandboxes" current={:sandboxes} credits_enabled={@credits_enabled}>
         <:subtitle>
           {length(@sandboxes)} active. Refreshes every 10s.
         </:subtitle>
@@ -155,7 +155,7 @@ defmodule FountainWeb.AdminLive.Sandboxes do
           Active sandbox time {Calendar.strftime(@provider_spend.period_start, "%b %-d")} – now,
           parked time excluded. Minutes on different providers cost different amounts — hold these
           next to the invoice, they are not money.
-          <.link :if={@billing_enabled} navigate={~p"/admin/finance"} class="underline">
+          <.link :if={@credits_enabled} navigate={~p"/admin/finance"} class="underline">
             Finance prices them ↗
           </.link>
         </p>

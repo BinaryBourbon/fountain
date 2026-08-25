@@ -1,7 +1,7 @@
 defmodule Fountain.Workers.CreditRentCollector do
   @moduledoc "Daily shell over `Fountain.Credits.Rent.collect/1`."
 
-  use Oban.Worker, queue: :billing, max_attempts: 3, unique: [period: 60]
+  use Oban.Worker, queue: :credits, max_attempts: 3, unique: [period: 60]
 
   require Logger
 

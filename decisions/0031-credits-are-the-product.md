@@ -31,7 +31,7 @@ ADR 0030 then built the usage meter — a prepaid ledger burned by turn-hours,
 rent and messages — and kept the tiers beside it, each tier now also sizing
 a monthly credit grant. After a day in production the seam between the two
 was clean in concept but not in practice: credits were switched on by
-`BILLING_ENABLED`, grants were keyed on Stripe's `current_period_start`,
+`CREDITS_ENABLED`, grants were keyed on Stripe's `current_period_start`,
 buying required an `active` subscription, and the concurrency cap was still
 a thing sold in three sizes.
 
@@ -86,7 +86,7 @@ exactly the customers who spend the most.
 
 6. **Stripe is the till, nothing more.** One-time Checkout for packs, and the
    `checkout.session.completed`, `charge.refunded` and
-   `charge.dispute.created` webhooks. `BILLING_ENABLED` now means exactly
+   `charge.dispute.created` webhooks. `CREDITS_ENABLED` now means exactly
    "credits are on": off, nothing is priced, granted, gated or shown, and
    the caps fall back to floor and ceiling. `CREDIT_ENFORCE` and
    `CREDIT_PRICING_SINCE` are retired as switches: pricing starts when

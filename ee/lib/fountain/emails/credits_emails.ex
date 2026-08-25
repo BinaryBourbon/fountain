@@ -1,4 +1,4 @@
-defmodule Fountain.Emails.BillingEmails do
+defmodule Fountain.Emails.CreditsEmails do
   @moduledoc """
   Swoosh templates for the credit emails and the welcome (EE).
 
@@ -55,7 +55,7 @@ defmodule Fountain.Emails.BillingEmails do
   # The opening grant (ADR 0031), in the welcome: what they start with and
   # how long it lasts. Nothing when billing is off.
   defp welcome_opening_phrase(%User{}) do
-    if Fountain.Billing.enabled?() do
+    if Fountain.Credits.enabled?() do
       cfg = Application.get_env(:fountain, :credits, [])
       cents = Keyword.get(cfg, :opening_cents, 500)
       days = Keyword.get(cfg, :opening_days, 14)

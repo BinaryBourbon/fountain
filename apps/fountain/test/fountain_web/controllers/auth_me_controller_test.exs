@@ -3,13 +3,13 @@ defmodule FountainWeb.AuthMeControllerTest do
   use FountainWeb.ConnCase, async: false
 
   defp with_billing_disabled(fun) do
-    previous = Application.get_env(:fountain, :billing_enabled)
-    Application.put_env(:fountain, :billing_enabled, false)
+    previous = Application.get_env(:fountain, :credits_enabled)
+    Application.put_env(:fountain, :credits_enabled, false)
 
     try do
       fun.()
     after
-      Application.put_env(:fountain, :billing_enabled, previous)
+      Application.put_env(:fountain, :credits_enabled, previous)
     end
   end
 

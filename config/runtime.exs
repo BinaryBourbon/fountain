@@ -377,15 +377,36 @@ config :sentry,
 # ADR 0031 made the credit gate a product invariant. For a self-hosted
 # instance it is just a lock on the front door with no key, so it is config
 # rather than a source patch — and off by default (#336): an operator
-# exporting env by hand who never hears of BILLING_ENABLED must not lock
+# exporting env by hand who never hears of CREDITS_ENABLED must not lock
 # themselves out of their own instance. The hosted deployment is the one that
-# opts in (its overlay sets BILLING_ENABLED=true explicitly).
+# opts in (its overlay sets CREDITS_ENABLED=true explicitly).
+#
+# BILLING_ENABLED was the name until #1144; it is read as an alias for one
+# release, with a warning, so a deployment can flip at its own pace.
 #
 # Skipped in :test — the suite pins the gate on in config/test.exs and
 # toggles it per-test through the application env, independent of whatever
-# BILLING_ENABLED happens to be in the developer's shell or .env.
+# CREDITS_ENABLED happens to be in the developer's shell or .env.
+credits_enabled? =
+  case {System.get_env("CREDITS_ENABLED"), System.get_env("BILLING_ENABLED")} do
+    {nil, nil} ->
+      false
+
+    {nil, legacy} ->
+      IO.puts(:stderr, """
+
+      WARNING: BILLING_ENABLED is deprecated; set CREDITS_ENABLED=#{legacy} instead.
+      The alias will be removed in a later release.
+      """)
+
+      legacy != "false"
+
+    {value, _} ->
+      value != "false"
+  end
+
 if config_env() != :test do
-  config :fountain, :billing_enabled, System.get_env("BILLING_ENABLED", "false") != "false"
+  config :fountain, :credits_enabled, credits_enabled?
 end
 
 # What the chrome calls this deployment (Fountain.Brand): the sidebar header,
@@ -451,10 +472,10 @@ if config_env() != :test do
       # the loud {{COMPANY_LEGAL_NAME}} placeholders, which is the visible
       # enforcement, and a raise here would take down a running deployment
       # over copy rather than correctness.
-      if env == :prod and System.get_env("BILLING_ENABLED", "false") != "false" do
+      if env == :prod and credits_enabled? do
         IO.puts(:stderr, """
 
-        WARNING: BILLING_ENABLED is set but no legal identity is configured.
+        WARNING: CREDITS_ENABLED is set but no legal identity is configured.
         /terms and /privacy are rendering {{COMPANY_LEGAL_NAME}} placeholders
         to your paying users. Set LEGAL_ENTITY, LEGAL_CONTACT_EMAIL,
         LEGAL_JURISDICTION, and LEGAL_EFFECTIVE_DATE.
@@ -658,9 +679,9 @@ config :stripity_stripe, api_key: System.get_env("STRIPE_SECRET_KEY")
 # every webhook 400 quietly.
 case System.get_env("STRIPE_WEBHOOK_SECRET") do
   blank when blank in [nil, ""] ->
-    if config_env() == :prod and System.get_env("BILLING_ENABLED", "false") != "false" do
+    if config_env() == :prod and credits_enabled? do
       raise """
-      BILLING_ENABLED is set but STRIPE_WEBHOOK_SECRET is empty or unset.
+      CREDITS_ENABLED is set but STRIPE_WEBHOOK_SECRET is empty or unset.
       Set it to the signing secret of your Stripe webhook endpoint
       (Stripe dashboard → Developers → Webhooks).
       """

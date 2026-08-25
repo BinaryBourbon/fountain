@@ -13,9 +13,9 @@ defmodule Fountain.Marketing do
 
   Off unless `MARKETING_SITE=true` (config/runtime.exs), so a self-host is
   right by default and the hosted deployment opts in — the same shape, for the
-  same reason, as `BILLING_ENABLED` (#336).
+  same reason, as `CREDITS_ENABLED` (#336).
 
-  Deliberately *not* `Fountain.Billing.enabled?/0`, the closest existing flag.
+  Deliberately *not* `Fountain.Credits.enabled?/0`, the closest existing flag.
   Billing says "this instance charges money", which an operator running
   Fountain commercially inside their own company may well turn on. That must
   not hand them a homepage selling somebody else's product.

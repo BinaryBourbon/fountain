@@ -11,7 +11,7 @@ config :fountain, Oban,
   # webhooks is its own queue so a tenant's slow receiver never sits in front
   # of a maintenance sweep or an email, and so its concurrency can be tuned
   # against outbound HTTP rather than against database work (#700).
-  queues: [maintenance: 1, billing: 5, exports: 1, mailer: 5, schedules: 5, webhooks: 10],
+  queues: [maintenance: 1, credits: 5, exports: 1, mailer: 5, schedules: 5, webhooks: 10],
   plugins: [
     # Oban's own job-table pruning: completed jobs older than 7 days.
     {Oban.Plugins.Pruner, max_age: 7 * 24 * 60 * 60},
@@ -52,13 +52,13 @@ config :fountain, Oban,
      ]}
   ]
 
-# Self-hosting switches. In dev and prod, runtime.exs overrides billing from
-# BILLING_ENABLED — off unless set (#336); the hosted deployment opts in via
+# Self-hosting switches. In dev and prod, runtime.exs overrides credits from
+# CREDITS_ENABLED — off unless set (#336); the hosted deployment opts in via
 # the hosted overlay. The `true` here reaches only :test (runtime.exs skips
 # the override there), where config/test.exs also pins it, so the suite
 # exercises the gate as enforced and flips it off per-test.
 config :fountain,
-  billing_enabled: true,
+  credits_enabled: true,
   registration_enabled: true,
   registration_allowed_email_domains: [],
   # Which page `/` serves. False everywhere but the hosted deployment, which

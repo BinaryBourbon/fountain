@@ -89,7 +89,7 @@ defmodule Fountain.Funnel do
     # nothing is granted or sold, so the stage stays in the list at 0 to keep
     # the telemetry gauge's shape — the admin panel hides the tile (#481).
     funded =
-      if Fountain.Billing.enabled?(),
+      if Fountain.Credits.enabled?(),
         do: Enum.filter(users, &(&1.credit_balance_cents > 0)),
         else: []
 

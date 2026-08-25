@@ -10,9 +10,9 @@ defmodule FountainWeb.AdminControllerTest do
   """
 
   # async: false — the "billing actions when billing is disabled" block below
-  # flips `:billing_enabled`, which is application env and therefore global to
+  # flips `:credits_enabled`, which is application env and therefore global to
   # the VM, not to this test. Run async, it made every concurrent test that
-  # reads `Billing.enabled?/0` see `false` for the duration, which is how
+  # reads `Credits.enabled?/0` see `false` for the duration, which is how
   # AdminUserDetailLiveTest's billing section intermittently vanished
   # (#576). Every other module that mutates this env is already async: false.
   use FountainWeb.ConnCase, async: false
@@ -333,9 +333,9 @@ defmodule FountainWeb.AdminControllerTest do
 
   describe "billing actions when billing is disabled" do
     setup do
-      previous = Application.get_env(:fountain, :billing_enabled)
-      Application.put_env(:fountain, :billing_enabled, false)
-      on_exit(fn -> Application.put_env(:fountain, :billing_enabled, previous) end)
+      previous = Application.get_env(:fountain, :credits_enabled)
+      Application.put_env(:fountain, :credits_enabled, false)
+      on_exit(fn -> Application.put_env(:fountain, :credits_enabled, previous) end)
       :ok
     end
 

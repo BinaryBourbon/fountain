@@ -1,7 +1,7 @@
 # Prices
 
 <!-- "billing" is a Technical Name here: the product surface, the
-     BILLING_ENABLED flag and the Elixir context all carry it. -->
+     CREDITS_ENABLED flag and the Elixir context all carry it. -->
 <!-- vale STE.IngForms = NO -->
 
 This page explains what a tenant pays and what the variables control. There

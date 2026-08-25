@@ -264,7 +264,7 @@ defmodule FountainWeb.DashboardLiveTest do
     test "the billing link is there only when billing is on", %{conn: conn} do
       {:ok, _lv, html} = live(conn, ~p"/dashboard")
 
-      if Fountain.Billing.enabled?() do
+      if Fountain.Credits.enabled?() do
         assert html =~ ~p"/account/billing"
       else
         refute html =~ ~s|href="/account/billing"|

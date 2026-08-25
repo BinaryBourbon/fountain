@@ -15,7 +15,7 @@ data:
 
   # Credits (ADR 0031) are a lock with no key on a self-hosted instance
   # unless you configure Stripe. Leave them off.
-  BILLING_ENABLED: "false"
+  CREDITS_ENABLED: "false"
 
   # An instance on the public internet with registration open will be found.
   # Open it just long enough to register yourself, or scope it:

@@ -8,11 +8,10 @@ defmodule Fountain.Workers.CreditExpirer do
   operator's grant never expires.
   """
 
-  use Oban.Worker, queue: :billing, max_attempts: 3, unique: [period: 60]
+  use Oban.Worker, queue: :credits, max_attempts: 3, unique: [period: 60]
 
   import Ecto.Query
 
-  alias Fountain.Billing
   alias Fountain.Credits
   alias Fountain.Credits.LedgerEntry
   alias Fountain.Repo
@@ -35,7 +34,7 @@ defmodule Fountain.Workers.CreditExpirer do
   @spec run(keyword()) :: %{expired: non_neg_integer()}
   def run(opts \\ []) do
     now = Keyword.get(opts, :now) || DateTime.utc_now()
-    if Billing.enabled?(), do: %{expired: expire_grants(now)}, else: %{expired: 0}
+    if Credits.enabled?(), do: %{expired: expire_grants(now)}, else: %{expired: 0}
   end
 
   # ---------------------------------------------------------------------------
