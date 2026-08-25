@@ -3,8 +3,8 @@
 Plain manifests, applied with `kubectl apply -k`. No operators, no CRDs, no
 assumptions beyond a cluster and an ingress controller. The maintainer's own
 cluster (CNPG, Traefik, Infisical, Flux) is this baseline plus a private
-overlay that lives outside the repo (decisions/0032); `k8s/` at the repo root
-is only the image pin the manifest artifact carries.
+overlay that lives outside the repo (decisions/0032); there is no other
+Kubernetes directory here.
 
 The [compose path](https://fountain.inevitable.fyi/docs/self-hosting) is
 simpler if you don't already live on Kubernetes — start there.

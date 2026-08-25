@@ -14,15 +14,13 @@ You bring a Postgres, an ingress controller, and the `fountain-secrets`
 Secret. Its README walks you through the rest. The manifests explain the
 choices about probes and scale in inline comments.
 
-## Do not apply `k8s/`
+## Track `main` with Flux
 
-`k8s/` in this repository is a different thing. It is the image pin that the
-manifest artifact for the hosted instance carries, and nothing else. The
-maintainer's own cluster, with CNPG, Traefik, cert-manager, Infisical, Flux,
-Longhorn and personal hostnames, is a private overlay on that artifact. It
-is not in this repository.
-
-The section below lists the Erlang cluster wiring for more than one replica.
+Every merge to `main` publishes `deploy/` as an OCI artifact at
+`ghcr.io/binarybourbon/fountain-manifests`, with the image tag built from
+that commit in place of the release pin. The hosted instance runs from it. A
+Flux `OCIRepository` on the tag `latest` and a `Kustomization` on the path
+`./deploy/k8s` give you the same, and Flux `patches` hold your changes.
 
 ## Run more than one replica
 
