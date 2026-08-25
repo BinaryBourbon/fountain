@@ -315,6 +315,27 @@ DELETE /api/vaults/:id/secrets/:key
 
 The same write-only rule covers a vault secret value.
 
+## Secret bindings
+
+<!-- vale STE.IngForms = NO -->
+Limited access. These routes answer only when the credential broker is on
+for the account. Read [Feature status](reference/feature-status.md), and
+[Where a secret comes from](concepts/secrets.md#bindings-when-the-broker-is-on)
+for what a binding does.
+
+```
+GET    /api/secret-bindings                # each binding: secret name, host, shape
+GET    /api/secret-bindings/presets        # the shapes a binding can take
+POST   /api/secret-bindings
+PATCH  /api/secret-bindings/:id
+DELETE /api/secret-bindings/:id
+```
+
+A binding is about the name of a secret, so it applies to every environment
+and vault that holds a secret of that name. A conversation-scoped token
+cannot reach these routes. They need a full-scope key.
+<!-- vale STE.IngForms = YES -->
+
 ## Bulk apply
 
 ```
@@ -364,7 +385,17 @@ GET    /api/conversations/:id/turns
 GET    /api/conversations/:id/events       # log events as JSON (?streams=  ?after=  ?limit=)
 GET    /api/conversations/:id/stream       # SSE log stream (?streams=stdout,stderr,stage  ?wait=false)
 GET    /api/conversations/:id/turns/:turn_id/images/:position   # image bytes
+GET    /api/conversations/:id/egress       # what left the sandbox through the broker (limited access)
 ```
+
+<!-- vale STE.IngForms = NO -->
+`GET /api/conversations/:id/egress` is there only when the credential broker
+is on for the account. Read [Feature status](reference/feature-status.md). It
+lists each request that left the sandbox through the broker, with the host,
+the binding that matched, the status and the latency. A refused host shows
+the refusal. The list stays for `BROKER_LOG_RETENTION_HOURS` after the
+conversation ends.
+<!-- vale STE.IngForms = YES -->
 
 A turn carries `image_count`. The image endpoint takes a `position` into that
 count, which starts at zero, and returns the raw bytes with the stored media
@@ -671,7 +702,8 @@ the daemon reconnects.
 The conversation's `sandbox` carries `provider`. On a runner it also carries
 `runner: {id, name, hostname, online, path}`.
 
-**Email and phone. A proof of concept, behind the `team_comms` flag.**
+**Email and phone. Alpha, behind the `team_comms` flag.** Off by default on
+the hosted platform. Read [Feature status](reference/feature-status.md).
 
 `POST /api/team/:agent_id/contact` gives the teammate an inbox, from
 [AgentMail](https://agentmail.to), and a number, from

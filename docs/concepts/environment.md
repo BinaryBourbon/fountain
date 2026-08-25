@@ -83,6 +83,10 @@ out. That is deliberate, and it is not a defect. An empty allowlist that
 quietly meant "allow everything" would be the worst default for a policy whose
 whole purpose is restriction.
 
+!!! note "Limited access"
+    The broker is on for the hosted accounts we enrol by hand. Read
+    [Feature status](../reference/feature-status.md).
+
 On a hosted account with the egress credential broker on, the sandbox can
 reach only the broker. The broker then applies your policy. With
 `unrestricted`, a request goes through to any host, with only the credentials

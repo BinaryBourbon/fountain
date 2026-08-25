@@ -12,7 +12,12 @@
 | Injected when | The teammate has a contact, and the `team_comms` flag is on. |
 | Endpoint | `POST /api/mcp/team-comms/:conversation_id` |
 | Auth | The sandbox's own callback token, for that one conversation. |
-| Status | Behind a feature flag. |
+| Status | Alpha. Behind the `team_comms` flag, off by default on the hosted platform. Read [Feature status](../../reference/feature-status.md). |
+
+!!! note "Alpha"
+    On the hosted platform the flag is off by default.
+    [Ask us](../../api.md#support) to turn it on for your account. The tools
+    and the routes can change between releases.
 
 ## Why it exists in this shape
 
