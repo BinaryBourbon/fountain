@@ -441,10 +441,10 @@ defmodule Fountain.Billing.FinanceTest do
       other = subscriber("team")
       at = DateTime.add(@period_start, 3600, :second)
 
-      {:ok, _} = Fountain.Credits.grant(user.id, 1000, "grant_tier", idempotency_key: "g1")
+      {:ok, _} = Fountain.Credits.grant(user.id, 1000, "grant_opening", idempotency_key: "g1")
       {:ok, _} = Fountain.Credits.grant(user.id, 2500, "purchase", idempotency_key: "p1")
       {:ok, _} = Fountain.Credits.debit(user.id, 700, "burn_turn", idempotency_key: "b1")
-      {:ok, _} = Fountain.Credits.grant(other.id, 2500, "grant_tier", idempotency_key: "g2")
+      {:ok, _} = Fountain.Credits.grant(other.id, 2500, "grant_opening", idempotency_key: "g2")
       # An expiry is neither granted nor burned.
       {:ok, _} = Fountain.Credits.debit(other.id, 2500, "expire", idempotency_key: "x1")
 

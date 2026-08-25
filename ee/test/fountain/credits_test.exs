@@ -22,8 +22,8 @@ defmodule Fountain.CreditsTest do
       user = insert_empty_user()
       assert Credits.balance(user) == 0
 
-      assert {:ok, %LedgerEntry{amount_cents: 1000, reason: "grant_tier"}} =
-               Credits.grant(user.id, 1000, "grant_tier", idempotency_key: "t1")
+      assert {:ok, %LedgerEntry{amount_cents: 1000, reason: "grant_opening"}} =
+               Credits.grant(user.id, 1000, "grant_opening", idempotency_key: "t1")
 
       assert Credits.balance(reload(user)) == 1000
       assert Credits.balance(user.id) == 1000
@@ -54,7 +54,7 @@ defmodule Fountain.CreditsTest do
       user = insert_empty_user()
 
       assert {:error, %Ecto.Changeset{} = cs} =
-               Credits.post(user.id, -5, "grant_tier", idempotency_key: "neg-grant")
+               Credits.post(user.id, -5, "grant_opening", idempotency_key: "neg-grant")
 
       assert "a credit must be positive" in errors_on(cs).amount_cents
 
@@ -81,8 +81,8 @@ defmodule Fountain.CreditsTest do
       assert Audit.list_recent_for_user(user.id, 50) |> Enum.filter(&(&1.action =~ "credit.")) ==
                []
 
-      {:ok, entry} = Credits.grant(user.id, 1000, "grant_trial", idempotency_key: "g")
-      {:ok, :duplicate, _} = Credits.grant(user.id, 1000, "grant_trial", idempotency_key: "g")
+      {:ok, entry} = Credits.grant(user.id, 1000, "grant_opening", idempotency_key: "g")
+      {:ok, :duplicate, _} = Credits.grant(user.id, 1000, "grant_opening", idempotency_key: "g")
 
       [event] =
         Audit.list_recent_for_user(user.id, 50) |> Enum.filter(&(&1.action == "credit.granted"))
@@ -90,7 +90,7 @@ defmodule Fountain.CreditsTest do
       assert event.resource_type == "credit_ledger"
       assert event.resource_id == entry.id
       assert event.metadata["amount_cents"] == 1000
-      assert event.metadata["reason"] == "grant_trial"
+      assert event.metadata["reason"] == "grant_opening"
       refute Map.has_key?(event.metadata, "balance")
     end
 
@@ -113,7 +113,7 @@ defmodule Fountain.CreditsTest do
       at = ~U[2026-09-01 00:00:00Z]
 
       {:ok, entry} =
-        Credits.grant(user.id, 1000, "grant_tier",
+        Credits.grant(user.id, 1000, "grant_opening",
           idempotency_key: "exp",
           expires_at: at,
           resource_type: "billing_period",
@@ -165,7 +165,7 @@ defmodule Fountain.CreditsTest do
       user = insert_empty_user()
 
       {:ok, _} =
-        Credits.grant(user.id, 500, "grant_trial",
+        Credits.grant(user.id, 500, "grant_opening",
           idempotency_key: "g",
           expires_at: ~U[2026-09-01 00:00:00Z]
         )
@@ -232,13 +232,13 @@ defmodule Fountain.CreditsTest do
   end
 
   describe "lots" do
-    defp remaining(entry), do: Credits.unspent_of(entry, 0)
+    defp remaining(entry), do: Credits.unspent_of(entry)
 
     test "a debit consumes the earliest-expiring lot first, then purchased money" do
       user = insert_empty_user()
 
       {:ok, late} =
-        Credits.grant(user.id, 1000, "grant_tier",
+        Credits.grant(user.id, 1000, "grant_opening",
           idempotency_key: "late",
           expires_at: ~U[2099-02-01 00:00:00Z]
         )
@@ -246,7 +246,7 @@ defmodule Fountain.CreditsTest do
       {:ok, bought} = Credits.grant(user.id, 500, "purchase", idempotency_key: "bought")
 
       {:ok, early} =
-        Credits.grant(user.id, 1000, "grant_tier",
+        Credits.grant(user.id, 1000, "grant_opening",
           idempotency_key: "early",
           expires_at: ~U[2099-01-01 00:00:00Z]
         )
@@ -266,7 +266,7 @@ defmodule Fountain.CreditsTest do
       user = insert_empty_user()
 
       {:ok, a} =
-        Credits.grant(user.id, 100, "grant_tier",
+        Credits.grant(user.id, 100, "grant_opening",
           idempotency_key: "a",
           expires_at: ~U[2099-01-01 00:00:00Z]
         )
@@ -286,7 +286,7 @@ defmodule Fountain.CreditsTest do
       user = insert_empty_user()
 
       {:ok, grant} =
-        Credits.grant(user.id, 1000, "grant_trial",
+        Credits.grant(user.id, 1000, "grant_opening",
           idempotency_key: "g",
           expires_at: ~U[2099-01-01 00:00:00Z]
         )
@@ -306,7 +306,7 @@ defmodule Fountain.CreditsTest do
       user = insert_empty_user()
 
       {:ok, grant} =
-        Credits.grant(user.id, 1000, "grant_trial",
+        Credits.grant(user.id, 1000, "grant_opening",
           idempotency_key: "g",
           expires_at: ~U[2026-01-01 00:00:00Z]
         )
@@ -324,7 +324,7 @@ defmodule Fountain.CreditsTest do
       assert {:ok, :duplicate, _} = Credits.expire_lot(grant)
 
       {:ok, spent} =
-        Credits.grant(user.id, 100, "grant_trial",
+        Credits.grant(user.id, 100, "grant_opening",
           idempotency_key: "s",
           expires_at: ~U[2026-01-01 00:00:00Z]
         )
@@ -353,7 +353,7 @@ defmodule Fountain.CreditsTest do
       user = insert_empty_user()
 
       {:ok, g} =
-        Credits.grant(user.id, 1000, "grant_tier",
+        Credits.grant(user.id, 1000, "grant_opening",
           idempotency_key: "g",
           expires_at: ~U[2099-01-01 00:00:00Z]
         )

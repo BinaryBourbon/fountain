@@ -143,16 +143,9 @@ defmodule FountainWeb.FallbackController do
     })
   end
 
-  # Subscription gate (ADR 0006). Raised from the context so every provisioning
-  # path renders the same response, rather than each controller inventing one.
-  def call(conn, {:error, :subscription_required}) do
-    conn
-    |> put_status(:payment_required)
-    |> json(%{error: "subscription_required", upgrade_url: "/account/billing"})
-  end
-
-  # Prepaid balance exhausted (ADR 0030 decision 6). Same 402 shape as the
-  # subscription gate, so a client with one handler covers both.
+  # Prepaid balance exhausted (ADR 0031): the credit gate, returned from the
+  # context so every provisioning path renders the same 402 rather than each
+  # controller inventing one.
   def call(conn, {:error, :insufficient_credits}) do
     conn
     |> put_status(:payment_required)

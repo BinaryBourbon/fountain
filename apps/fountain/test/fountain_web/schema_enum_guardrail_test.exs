@@ -137,11 +137,6 @@ defmodule FountainWeb.SchemaEnumGuardrailTest do
       "admin reap result — response vocabulary, not persisted state",
     {FountainWeb.Schemas.AdminResyncResponse, "data.outcome"} =>
       "admin resync result — response vocabulary, not persisted state",
-    # Which window the usage numbers cover. Computed by
-    # `Billing.billing_period/2` from whether Stripe has reported a period;
-    # nothing stores it, and there is no column to compare against.
-    {FountainWeb.Schemas.BillingResponse, "data.period.source"} =>
-      "usage window provenance — computed per response, not persisted state",
     # Per-resource results from `fountain apply`. Manifest reports these as
     # atoms built inline per branch; there is no list to compare against.
     {FountainWeb.Schemas.ApplyResult, "action"} =>

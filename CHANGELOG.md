@@ -16,6 +16,27 @@ upgrade, is in
 
 ## [Unreleased]
 
+### Removed
+
+- **Credits cleanup 2/3 (#1127).** The dead code and the dead columns the
+  subscription era left behind. Eight `users` columns are dropped by
+  migration (`plan`, `stripe_subscription_id`, `subscription_status`,
+  `trial_ends_at`, `subscription_synced_at`, `cancel_at_period_end`,
+  `current_period_start`, `current_period_end`). Gone with them: the
+  `:assign_subscription_state` LiveView hook, `Quotas.check_sandbox_quota!/2`
+  and `QuotaExceededError`, `Billing.billing_period/2` and
+  `turn_hours_used/2` (callers use `current_month_range/0` and
+  `usage_summary/3`), the `subscription_required` error (every 402 is
+  `insufficient_credits`), the `grant_tier` ledger reason, and the admin
+  `trial.extended` / `plan.changed` / `stripe.resynced` events. Renames:
+  `Billing.sync_subscription/1` → `apply_event/1`, `Workers.CreditGranter` →
+  `CreditExpirer`, the `grant_trial` ledger reason → `grant_opening` (data
+  migration), the funnel's `subscribed` stage → `funded`
+  (`fountain_funnel_funded` in Grafana), `Credits.enforcing?/0` folded into
+  `active?/0`. `Quotas.sandbox_limit_for/1` reports 0 for an unfunded
+  account rather than the floor the gate would refuse anyway. SDK 1.1.0
+  drops `period.source` from the billing response.
+
 ### Fixed
 
 - **Credits cleanup 1/3 (#1126).** Six ledger bugs left by ADR 0031 and the

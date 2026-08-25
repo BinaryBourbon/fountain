@@ -88,16 +88,6 @@ defmodule FountainWeb.Live.AccountLive do
             # a LiveView cannot clear the session cookie itself.
             {:noreply, redirect(socket, to: ~p"/auth/logout?deleted=1")}
 
-          {:error, {:stripe, _reason}} ->
-            {:noreply,
-             socket
-             |> assign(:deleting, false)
-             |> put_flash(
-               :error,
-               "Your subscription could not be cancelled, so nothing was deleted. " <>
-                 "Please try again, or contact support if it keeps failing."
-             )}
-
           {:error, _reason} ->
             {:noreply,
              socket
@@ -181,12 +171,7 @@ defmodule FountainWeb.Live.AccountLive do
       <div class="rounded-lg border border-red-200 bg-white p-6 shadow-sm">
         <h2 class="mb-1 text-lg font-medium text-red-700">Delete account</h2>
         <p class="mb-4 text-sm text-gray-600">
-          <%!-- "Cancels your subscription" is billing residue on a
-               billing-disabled instance — there is no subscription to
-               cancel (#513, the last surface the walkthrough sweep found). --%>
-          {if Fountain.Billing.enabled?(),
-            do: "Cancels your subscription, destroys",
-            else: "Destroys"} every running sandbox, and permanently
+          Destroys every running sandbox, and permanently
           deletes your agents, environments, vaults, conversations and stored secrets.
           Secrets are encrypted with a key held only for your account; deleting the
           account destroys that key, so they cannot be recovered afterwards by anyone.

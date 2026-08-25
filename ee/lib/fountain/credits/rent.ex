@@ -48,7 +48,7 @@ defmodule Fountain.Credits.Rent do
   """
   @spec check_provision(binary()) :: :ok | {:error, :insufficient_credits}
   def check_provision(user_id) when is_binary(user_id) do
-    if Credits.enforcing?() and not comped?(user_id) and month_cents() > 0 and
+    if Credits.active?() and not comped?(user_id) and month_cents() > 0 and
          Credits.balance(user_id) < month_cents(),
        do: {:error, :insufficient_credits},
        else: :ok
@@ -80,7 +80,7 @@ defmodule Fountain.Credits.Rent do
 
         {:ok, :duplicate, contact}
 
-      Credits.enforcing?() and not comped?(contact.user_id) and
+      Credits.active?() and not comped?(contact.user_id) and
           Credits.balance(contact.user_id) < cents ->
         {:ok, _} = stamp(contact, rent_due_at: contact.rent_due_at || truncate(now))
         {:error, :insufficient_credits}

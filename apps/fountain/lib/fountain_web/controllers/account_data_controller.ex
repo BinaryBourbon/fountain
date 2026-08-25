@@ -182,16 +182,6 @@ defmodule FountainWeb.AccountDataController do
           sprites_destroyed: summary.sprites_destroyed
         })
 
-      # The one failure that aborts before anything is destroyed. 502 rather
-      # than 500: the account is intact and the caller can retry.
-      {:error, {:stripe, _reason}} ->
-        conn
-        |> put_status(:bad_gateway)
-        |> json(%{
-          error: "billing_cancellation_failed",
-          message: "Could not cancel the subscription with Stripe; nothing was deleted."
-        })
-
       {:error, reason} ->
         {:error, reason}
     end

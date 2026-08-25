@@ -20,7 +20,8 @@ defmodule FountainWeb.Live.BillingLive do
   def mount(_params, _session, socket) do
     if Billing.enabled?() do
       user = socket.assigns.current_user
-      period = Billing.billing_period(user)
+      {period_start, period_end} = Billing.current_month_range()
+      period = %{start: period_start, end: period_end}
 
       {:ok,
        assign(socket,
@@ -197,11 +198,7 @@ defmodule FountainWeb.Live.BillingLive do
     |> to_string()
   end
 
-  defp ledger_label(%{reason: "grant_tier", metadata: %{"plan" => plan}}),
-    do: "#{String.capitalize(plan)} plan credit"
-
-  defp ledger_label(%{reason: "grant_tier"}), do: "Plan credit"
-  defp ledger_label(%{reason: "grant_trial"}), do: "Trial credit"
+  defp ledger_label(%{reason: "grant_opening"}), do: "Opening credit"
   defp ledger_label(%{reason: "grant_admin"}), do: "Credit from Fountain"
   defp ledger_label(%{reason: "purchase"}), do: "Purchase"
 

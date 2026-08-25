@@ -3,7 +3,8 @@ defmodule FountainWeb.StripeWebhookController do
   Handles `POST /api/stripe/webhook`.
 
   Verifies the `Stripe-Signature` header using `Stripe.Webhook.construct_event/3`,
-  then dispatches to `Fountain.Billing.sync_subscription/1`.
+  then dispatches to `Fountain.Billing.handle_event/1`, which claims the event
+  once and applies it to the credit ledger (`Billing.apply_event/1`).
 
   Transient processing errors answer 500 so Stripe redelivers; permanent ones
   (unknown customer) answer 200 so Stripe stops. Both are logged and persisted
@@ -73,11 +74,6 @@ defmodule FountainWeb.StripeWebhookController do
     case Billing.handle_event(event) do
       {:ok, :duplicate} ->
         Logger.info("[stripe_webhook] Ignoring duplicate delivery of #{event.id}")
-        Billing.resolve_webhook_failure(event.id)
-        :ok
-
-      {:ok, :stale} ->
-        Logger.info("[stripe_webhook] Ignoring out-of-order event #{event.id}")
         Billing.resolve_webhook_failure(event.id)
         :ok
 

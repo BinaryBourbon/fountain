@@ -86,7 +86,7 @@ defmodule Fountain.Workers.CreditPricerTest do
     user = insert_empty_user()
 
     {:ok, _} =
-      Credits.grant(user.id, 500, "grant_trial",
+      Credits.grant(user.id, 500, "grant_opening",
         idempotency_key: "g",
         expires_at: ~U[2026-08-03 00:00:00Z]
       )

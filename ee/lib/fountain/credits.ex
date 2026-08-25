@@ -142,7 +142,7 @@ defmodule Fountain.Credits do
 
   Spendable is the cached balance less what expired lots still hold: a grant
   past its date stops funding new work the moment it passes, not when the
-  expiry sweep gets round to writing the row (`Workers.CreditGranter`).
+  expiry sweep gets round to writing the row (`Workers.CreditExpirer`).
   `Billing.check_spend/1` is the door; every spend calls that.
   """
   @spec check_balance(User.t() | binary(), keyword()) :: :ok | {:error, :insufficient_credits}
@@ -242,21 +242,13 @@ defmodule Fountain.Credits do
   def active?, do: Billing.enabled?()
 
   @doc """
-  Whether a zero balance refuses spend: the same as `active?/0` since
-  ADR 0031. Off, `gate/1` is always `:ok`.
-  """
-  @spec enforcing?() :: boolean()
-  def enforcing?, do: active?()
-
-  @doc """
-  The spend gate (ADR 0030 decision 6): `:ok` unless enforcement is on and
-  `check_balance/1` says the tenant is out. Sits beside
-  `Billing.check_active/1` in `Billing.check_spend/1`; call that, not this,
-  from a door.
+  The spend gate (ADR 0030 decision 6, ADR 0031): `:ok` unless credits are
+  active and `check_balance/1` says the tenant is out. `Billing.check_spend/1`
+  is this; call that, not this, from a door.
   """
   @spec gate(User.t() | binary()) :: :ok | {:error, :insufficient_credits}
   def gate(subject) do
-    if enforcing?(), do: check_balance(subject), else: :ok
+    if active?(), do: check_balance(subject), else: :ok
   end
 
   @doc """
@@ -289,12 +281,12 @@ defmodule Fountain.Credits do
 
     if active?() do
       balance = balance(user)
-      purchased = purchased_remaining(user.id, balance)
+      purchased = purchased_remaining(user.id)
 
       {expiring, expires_at} =
         case live_grants(user.id, now) do
           [] -> {0, nil}
-          [first | _] -> {unspent_of(first, balance), first.expires_at}
+          [first | _] -> {unspent_of(first), first.expires_at}
         end
 
       %{
@@ -330,20 +322,16 @@ defmodule Fountain.Credits do
     |> Repo.all()
   end
 
-  @doc """
-  How much of `grant` is still unspent: its lot, read fresh. The second
-  argument is ignored and kept for the callers that passed a balance before
-  lots existed.
-  """
-  @spec unspent_of(LedgerEntry.t(), integer()) :: non_neg_integer()
-  def unspent_of(%LedgerEntry{id: id}, _balance) do
+  @doc "How much of `grant` is still unspent: its lot, read fresh."
+  @spec unspent_of(LedgerEntry.t()) :: non_neg_integer()
+  def unspent_of(%LedgerEntry{id: id}) do
     from(e in LedgerEntry, where: e.id == ^id, select: e.remaining_cents)
     |> Repo.one()
     |> Kernel.||(0)
   end
 
   # Non-expiring lots with something left: bought money, and admin grants.
-  defp purchased_remaining(user_id, _balance) do
+  defp purchased_remaining(user_id) do
     from(e in LedgerEntry,
       where: e.user_id == ^user_id and e.remaining_cents > 0 and is_nil(e.expires_at),
       select: coalesce(sum(e.remaining_cents), 0)
@@ -371,10 +359,10 @@ defmodule Fountain.Credits do
     now = Keyword.get(opts, :now) || DateTime.utc_now()
 
     if Billing.enabled?() and cents > 0 do
-      grant(user_id, cents, "grant_trial",
-        idempotency_key: "grant_trial:#{user_id}",
+      grant(user_id, cents, "grant_opening",
+        idempotency_key: "grant_opening:#{user_id}",
         expires_at: now |> DateTime.add(days * 86_400, :second) |> DateTime.truncate(:second),
-        resource_type: "trial",
+        resource_type: "opening",
         resource_id: user_id,
         actor: Keyword.get(opts, :actor, "system:registration")
       )

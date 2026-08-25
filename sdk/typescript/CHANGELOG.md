@@ -10,6 +10,13 @@ server releases.
 
 ---
 
+## [1.1.0] — 2026-08-25
+
+### Removed
+
+- `GET /api/account/billing` no longer carries `period.source`: the window
+  is always the calendar month (ADR 0031), so the field had one value.
+
 ## [1.0.1] — 2026-08-25
 
 ### Changed

@@ -9,7 +9,7 @@ defmodule FountainWeb.Live.HooksTest do
   # ── helpers ─────────────────────────────────────────────────────────────────
 
   # An account that cannot spend (ADR 0031): the opening credit burned away.
-  defp insert_canceled_user do
+  defp insert_broke_user do
     user = insert_verified_user()
 
     {:ok, _} =
@@ -19,8 +19,6 @@ defmodule FountainWeb.Live.HooksTest do
 
     Repo.reload!(user)
   end
-
-  defp insert_past_due_user, do: insert_canceled_user()
 
   # ── :require_authenticated_user ─────────────────────────────────────────────
 
@@ -82,24 +80,15 @@ defmodule FountainWeb.Live.HooksTest do
     end
   end
 
-  # ── :assign_subscription_state — the console stays readable (#505, #867) ───
+  # ── the console stays readable with no credit (#505, #867, ADR 0031) ───────
   #
-  # There is no router-level subscription gate any more: it guarded exactly one
-  # page, /conversations/new, which moved out to the conversations app. The
-  # gate that protects spend is `Billing.check_spend/1` in the context, so
-  # every door gets it — see ee/test/fountain/credits_enforcement_test.exs.
+  # There is no router-level billing gate and no billing hook: the gate that
+  # protects spend is `Billing.check_spend/1` in the context, so every door
+  # gets it — see ee/test/fountain/credits_enforcement_test.exs.
 
-  describe ":assign_subscription_state hook" do
-    test "a past_due account still reaches the console", %{conn: conn} do
-      user = insert_past_due_user()
-      conn = login_user(conn, user)
-
-      {:ok, _lv, html} = live(conn, ~p"/dashboard")
-      assert html =~ ~r/dashboard/i
-    end
-
-    test "a canceled account still reaches the console", %{conn: conn} do
-      user = insert_canceled_user()
+  describe "an account with no credit" do
+    test "still reaches the console", %{conn: conn} do
+      user = insert_broke_user()
       conn = login_user(conn, user)
 
       {:ok, _lv, html} = live(conn, ~p"/dashboard")
@@ -107,7 +96,7 @@ defmodule FountainWeb.Live.HooksTest do
     end
 
     test "and can still manage its agents", %{conn: conn} do
-      user = insert_canceled_user()
+      user = insert_broke_user()
       agent = insert_agent(user_id: user.id)
       conn = login_user(conn, user)
 

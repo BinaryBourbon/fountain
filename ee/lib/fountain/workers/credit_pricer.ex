@@ -18,7 +18,7 @@ defmodule Fountain.Workers.CreditPricer do
   `Finance` sees what a comp cost. Refusing spend is `Credits.gate/1`'s job,
   behind `Billing.check_spend/1`; this worker only writes what happened.
 
-  Every tick also runs the expiry pass (`Workers.CreditGranter.run/1`), so a
+  Every tick also runs the expiry pass (`Workers.CreditExpirer.run/1`), so a
   grant past its date is swept within ten minutes rather than at the daily
   06:23 sweep; the gate already ignores an expired lot in the meantime.
 
@@ -101,7 +101,7 @@ defmodule Fountain.Workers.CreditPricer do
     messages = price_messages(floor)
     Enum.each(touched, &Fountain.Workers.CreditsEmail.notify_after_burn/1)
     # Burns first, so a turn consumes the grant before the grant is swept.
-    %{expired: expired} = Fountain.Workers.CreditGranter.run(now: now)
+    %{expired: expired} = Fountain.Workers.CreditExpirer.run(now: now)
     %{turns: turns, messages: messages, expired: expired}
   end
 

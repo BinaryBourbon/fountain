@@ -272,14 +272,6 @@ defmodule FountainWeb.AdminLive.Users do
 
         {:noreply, socket |> assign_users() |> put_flash(:info, "Deleted #{user.email}")}
 
-      {:error, {:stripe, _}} ->
-        {:noreply,
-         put_flash(
-           socket,
-           :error,
-           "Could not cancel #{user.email}'s subscription — nothing was deleted"
-         )}
-
       {:error, _} ->
         {:noreply, put_flash(socket, :error, "Deletion failed — nothing was deleted")}
     end

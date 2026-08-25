@@ -25,7 +25,7 @@ defmodule Fountain.Factory do
 
   def insert_user(overrides \\ %{}) do
     attrs = user_attrs(overrides)
-    {:ok, user} = Fountain.Accounts.register_user(Map.delete(attrs, "plan"))
+    {:ok, user} = Fountain.Accounts.register_user(attrs)
     user
   end
 

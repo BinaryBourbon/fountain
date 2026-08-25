@@ -719,7 +719,7 @@ credit_packs =
 # the per-account floor and ceiling the balance rule is clamped to, and the
 # fleet ceiling — the most live sandboxes the deployment will run in total,
 # which is the provider plan's number (Sprites' $20 plan allows about 20).
-sandbox_int = fn var, default ->
+whole_number = fn var, default ->
   case System.get_env(var) do
     value when value in [nil, ""] ->
       default
@@ -733,13 +733,13 @@ sandbox_int = fn var, default ->
 end
 
 config :fountain, :sandboxes,
-  reserve_cents: sandbox_int.("SANDBOX_RESERVE_CENTS", 200),
-  cap_floor: sandbox_int.("SANDBOX_CAP_FLOOR", 2),
-  cap_ceiling: sandbox_int.("SANDBOX_CAP_CEILING", 20),
-  fleet_ceiling: sandbox_int.("SANDBOX_FLEET_CEILING", 20)
+  reserve_cents: whole_number.("SANDBOX_RESERVE_CENTS", 200),
+  cap_floor: whole_number.("SANDBOX_CAP_FLOOR", 2),
+  cap_ceiling: whole_number.("SANDBOX_CAP_CEILING", 20),
+  fleet_ceiling: whole_number.("SANDBOX_FLEET_CEILING", 20)
 
 # Teammate contacts one account may hold at once — an abuse ceiling.
-config :fountain, :team_contact_ceiling, sandbox_int.("TEAM_CONTACT_CEILING", 10)
+config :fountain, :team_contact_ceiling, whole_number.("TEAM_CONTACT_CEILING", 10)
 
 config :fountain, :credits,
   # The opening grant a new account gets, and how many days it lasts.

@@ -252,7 +252,7 @@ defmodule Fountain.Credits.PurchasesTest do
       }
 
       # ADR 0031: not ours, acknowledged and ignored; nothing is written.
-      assert {:ok, :ignored} = Billing.sync_subscription(event)
+      assert {:ok, :ignored} = Billing.apply_event(event)
       assert Credits.balance(user.id) == 0
       assert Repo.reload!(user).stripe_customer_id == nil
     end
