@@ -10,6 +10,14 @@ server releases.
 
 ---
 
+## [1.4.0] — 2026-08-25
+
+### Changed
+
+- `SecretBinding.auth_type` gains `substitute`, now the default shape: the
+  broker replaces the secret's placeholder wherever it appears in a request to
+  the bound host.
+
 ## [1.3.0] — 2026-08-25
 
 ### Added

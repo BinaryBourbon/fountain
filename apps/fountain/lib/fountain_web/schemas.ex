@@ -3267,7 +3267,10 @@ defmodule FountainWeb.Schemas do
             "Host pattern: `api.example.com`, a one-level wildcard `*.example.com`, " <>
               "optionally `:port` and a `/path/*` glob."
         },
-        auth_type: %Schema{type: :string, enum: ["bearer", "basic", "api_key", "custom"]},
+        auth_type: %Schema{
+          type: :string,
+          enum: ["substitute", "bearer", "basic", "api_key", "custom"]
+        },
         header: %Schema{
           type: :string,
           nullable: true,
@@ -3307,7 +3310,10 @@ defmodule FountainWeb.Schemas do
       properties: %{
         key: %Schema{type: :string},
         host: %Schema{type: :string},
-        auth_type: %Schema{type: :string, enum: ["bearer", "basic", "api_key", "custom"]},
+        auth_type: %Schema{
+          type: :string,
+          enum: ["substitute", "bearer", "basic", "api_key", "custom"]
+        },
         header: %Schema{type: :string, nullable: true},
         prefix: %Schema{type: :string, nullable: true},
         username: %Schema{type: :string, nullable: true},

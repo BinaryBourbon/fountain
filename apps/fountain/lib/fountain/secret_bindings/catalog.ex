@@ -8,7 +8,9 @@ defmodule Fountain.SecretBindings.Catalog do
   change any field. Three presets are not directly usable as bindings and
   are marked `usable: false` — `aws-s3` needs SigV4 signing, `jira` and
   `twilio` are basic auth where the suggested key is the password and the
-  username is the tenant's own.
+  username is the tenant's own. A vendor `passthrough` preset, one that
+  substitutes a placeholder rather than adding a header, maps to our
+  `substitute` shape.
 
   Read at compile time from `priv/broker/service_catalog.json`, which ships
   in the release like the rest of `priv`.
@@ -28,7 +30,10 @@ defmodule Fountain.SecretBindings.Catalog do
                name: e["name"],
                host: e["host"],
                description: e["description"],
-               auth_type: String.replace(e["auth_type"], "-", "_"),
+               auth_type:
+                 e["auth_type"]
+                 |> String.replace("-", "_")
+                 |> String.replace("passthrough", "substitute"),
                suggested_key: e["suggested_credential_key"],
                header: e["header"],
                prefix: e["prefix"],

@@ -156,17 +156,26 @@ redaction that a new caller will one day forget.
 
 <!-- vale STE.IngForms = NO -->
 On a hosted account with the egress credential broker on, a secret can have
-one or more **bindings**. A binding names a host. It also names the way the
-broker attaches the secret to a request for that host. There are four shapes.
-A bearer token. Basic auth with a username of yours. A header with an optional
-prefix. Custom headers with `{{ KEY }}` in them.
+one or more **bindings**. A binding names a host. By default the broker
+replaces the secret's placeholder wherever it appears in a request to that
+host. The agent uses the placeholder as it would use the secret, in any
+header, query, path or body. It never has to know the shape the API wants.
+Four other shapes are there for an API the agent cannot address itself. A
+bearer header. Basic auth with a username of yours, which the client encodes
+before it leaves. A header with an optional prefix. Custom headers with
+`{{ KEY }}` in them.
 
 A secret with a binding does not enter the sandbox. The agent sees a
 placeholder, `__stripe_secret_key__` for `STRIPE_SECRET_KEY`. The broker puts
 the real value on each request to the bound host. A secret with no binding
 enters the sandbox in the clear. The four hops above describe that path.
 `GITHUB_TOKEN` and `GH_TOKEN` have a built-in binding to GitHub. It applies
-until you make one of your own.
+until you make one of your own. The runtime's inference credential has one
+too. `CLAUDE_CODE_OAUTH_TOKEN` and `ANTHROPIC_API_KEY` go to
+`api.anthropic.com`, `OPENAI_API_KEY` to `api.openai.com`, and
+`GEMINI_API_KEY` to `generativelanguage.googleapis.com`. The runtime sees a
+placeholder that keeps the vendor's prefix, such as
+`sk-ant-oat01-__claude_code_oauth_token__`.
 
 You manage bindings on Account, then Credential bindings, or with
 `GET /api/secret-bindings` and its siblings. The page and the routes are only

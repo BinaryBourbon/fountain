@@ -172,7 +172,7 @@ defmodule FountainWeb.SecretBindingsLive.Index do
     %{
       "key" => "",
       "host" => "",
-      "auth_type" => "bearer",
+      "auth_type" => "substitute",
       "header" => "",
       "prefix" => "",
       "username" => "",
@@ -220,10 +220,14 @@ defmodule FountainWeb.SecretBindingsLive.Index do
     |> Enum.map_join("; ", fn {field, msgs} -> "#{field} #{Enum.join(msgs, ", ")}" end)
   end
 
-  defp auth_label("bearer"), do: "Bearer token"
+  defp auth_label("substitute"), do: "Replace the placeholder wherever it appears"
+  defp auth_label("bearer"), do: "Add a bearer header"
   defp auth_label("basic"), do: "Basic auth (secret is the password)"
   defp auth_label("api_key"), do: "API key header"
   defp auth_label("custom"), do: "Custom headers"
+
+  defp auth_summary(%Binding{auth_type: "substitute"}),
+    do: "placeholder → <secret>, anywhere in the request"
 
   defp auth_summary(%Binding{auth_type: "bearer"}), do: "Authorization: Bearer <secret>"
   defp auth_summary(%Binding{auth_type: "basic", username: u}), do: "Basic #{u}:<secret>"
@@ -383,6 +387,13 @@ defmodule FountainWeb.SecretBindingsLive.Index do
 
           <fieldset class="space-y-1">
             <legend class="text-sm font-medium">How the secret is sent</legend>
+            <p class="text-xs text-[var(--color-text-secondary)]">
+              The agent sees <code class="font-mono">__key__</code>
+              in place of the secret. By default the
+              broker swaps it for the real value wherever it turns up in a request to this host, so the
+              agent uses it exactly as it would the secret. Pick a header shape only for an API the agent
+              cannot address itself, or basic auth, which the client encodes before it leaves.
+            </p>
             <div class="flex flex-wrap gap-3 text-sm">
               <label :for={t <- Binding.auth_types()} class="flex items-center gap-1">
                 <input

@@ -3397,7 +3397,7 @@ export interface components {
          */
         SecretBindingRequest: {
             /** @enum {string} */
-            auth_type: "bearer" | "basic" | "api_key" | "custom";
+            auth_type: "substitute" | "bearer" | "basic" | "api_key" | "custom";
             enabled?: boolean;
             header?: string | null;
             headers?: {
@@ -3953,7 +3953,7 @@ export interface components {
          */
         SecretBinding: {
             /** @enum {string} */
-            auth_type: "bearer" | "basic" | "api_key" | "custom";
+            auth_type: "substitute" | "bearer" | "basic" | "api_key" | "custom";
             /** Format: date-time */
             created_at: string;
             enabled: boolean;

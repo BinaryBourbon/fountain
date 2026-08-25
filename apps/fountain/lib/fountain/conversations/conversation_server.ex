@@ -367,6 +367,9 @@ defmodule Fountain.Conversations.ConversationServer do
       broker_bindings: %{},
       # The environment's networking shape, enforced at the broker (gate 2).
       broker_network: :unrestricted,
+      # What the runtime's default_env/2 is handed (gate 3): the real
+      # credentials, or placeholders when the conversation is brokered.
+      env_credentials: %{},
       broker: nil,
       current_command: nil,
       current_command_ref: nil,
@@ -581,6 +584,9 @@ defmodule Fountain.Conversations.ConversationServer do
         {secrets, brokered} =
           split_brokered(conv.user_id, merge_secrets(env, vault, dek), bindings)
 
+        {env_creds, brokered, bindings} =
+          split_inference(conv.user_id, inference_creds, brokered, bindings)
+
         state =
           %{
             state
@@ -588,6 +594,7 @@ defmodule Fountain.Conversations.ConversationServer do
               runtime_session_id: conv.runtime_session_id,
               tenant_key: dek,
               inference_credentials: inference_creds,
+              env_credentials: env_creds,
               brokered: brokered,
               broker_bindings: bindings,
               broker_network: Fountain.Broker.network_for(env)
@@ -1354,7 +1361,7 @@ defmodule Fountain.Conversations.ConversationServer do
   end
 
   defp do_build_sprite_env(state, agent, env, secrets, sandbox_url) do
-    (state.runtime_module.default_env(agent, state.inference_credentials) || []) ++
+    (state.runtime_module.default_env(agent, state.env_credentials) || []) ++
       fountain_callback_env(state.callback_token) ++
       conversation_env(state.conversation_id) ++
       sandbox_id_env(state.sandbox_id) ++
@@ -1390,6 +1397,21 @@ defmodule Fountain.Conversations.ConversationServer do
       else: %{}
   end
 
+  # Gate 3: the runtime is handed placeholders for its inference credentials
+  # and the broker gets the values, with an implicit binding to the provider's
+  # host. A tenant's own secret of the same name (already split above) wins
+  # over the inference credential, as it wins in the environment.
+  defp split_inference(user_id, inference_creds, brokered, bindings) do
+    if Fountain.Broker.enabled_for?(user_id) do
+      {env_creds, inference_brokered, implicit} =
+        Fountain.Broker.split_inference(inference_creds, bindings)
+
+      {env_creds, Map.merge(inference_brokered, brokered), Map.merge(implicit, bindings)}
+    else
+      {inference_creds, brokered, bindings}
+    end
+  end
+
   defp broker_env(%{broker: nil}), do: []
   defp broker_env(%{broker: session}), do: Fountain.Broker.sandbox_env(session)
 
@@ -1418,6 +1440,45 @@ defmodule Fountain.Conversations.ConversationServer do
       end
     else
       {:ok, state}
+    end
+  end
+
+  # The OAuth token was refused: forget it on both sides and, when brokered,
+  # re-prepare the vault so the API key is what the substitution carries.
+  # Best effort — a broker error here leaves the turn to fail at the proxy,
+  # which names the cause, rather than silently injecting a plaintext key.
+  defp broker_switch_to_api_key(%{broker: nil} = state), do: state
+
+  defp broker_switch_to_api_key(state) do
+    creds = Map.delete(state.inference_credentials, :claude_code_oauth_token)
+
+    {env_creds, inference_brokered, implicit} =
+      Fountain.Broker.split_inference(creds, state.broker_bindings)
+
+    brokered =
+      state.brokered
+      |> Map.delete("CLAUDE_CODE_OAUTH_TOKEN")
+      |> Map.merge(inference_brokered)
+
+    bindings =
+      state.broker_bindings |> Map.delete("CLAUDE_CODE_OAUTH_TOKEN") |> Map.merge(implicit)
+
+    state = %{state | brokered: brokered, broker_bindings: bindings, env_credentials: env_creds}
+
+    case Fountain.Broker.prepare(state.conversation_id, brokered, bindings,
+           network: state.broker_network
+         ) do
+      {:ok, session} ->
+        keys = Fountain.Broker.env_keys()
+        kept = Enum.reject(state.sprite_env, fn {k, _} -> to_string(k) in keys end)
+        %{state | broker: session, sprite_env: kept ++ Fountain.Broker.sandbox_env(session)}
+
+      {:error, reason} ->
+        Logger.warning(
+          "conv #{state.conversation_id}: broker re-prepare after OAuth refusal failed: #{inspect(reason)}"
+        )
+
+        state
     end
   end
 
@@ -2085,8 +2146,13 @@ defmodule Fountain.Conversations.ConversationServer do
       ) do
     Logger.warning("conv #{state.conversation_id}: Claude OAuth token refused by org: #{detail}")
 
+    # On a brokered conversation the API key is a placeholder in the env and
+    # the value moves to the broker; the vault is re-prepared so its
+    # substitution now carries the key instead of the refused OAuth token.
+    state = broker_switch_to_api_key(state)
+
     fallback_env =
-      Fountain.Runtimes.Claude.fall_back_to_api_key(state.sprite_env, state.inference_credentials)
+      Fountain.Runtimes.Claude.fall_back_to_api_key(state.sprite_env, state.env_credentials)
 
     switched? = fallback_env != state.sprite_env
 
@@ -2104,7 +2170,8 @@ defmodule Fountain.Conversations.ConversationServer do
     state = %{
       state
       | sprite_env: fallback_env,
-        inference_credentials: Map.delete(state.inference_credentials, :claude_code_oauth_token)
+        inference_credentials: Map.delete(state.inference_credentials, :claude_code_oauth_token),
+        env_credentials: Map.delete(state.env_credentials, :claude_code_oauth_token)
     }
 
     message =

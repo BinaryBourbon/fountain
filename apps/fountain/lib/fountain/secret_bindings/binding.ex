@@ -20,7 +20,7 @@ defmodule Fountain.SecretBindings.Binding do
   @primary_key {:id, :binary_id, autogenerate: true}
   @foreign_key_type :binary_id
 
-  @auth_types ~w(bearer basic api_key custom)
+  @auth_types ~w(substitute bearer basic api_key custom)
   @key_re ~r/^[A-Z][A-Z0-9_]*$/
   @header_name_re ~r/^[a-zA-Z0-9-]+$/
   @host_label_re ~r/^([a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$/
@@ -43,7 +43,15 @@ defmodule Fountain.SecretBindings.Binding do
     timestamps(type: :utc_datetime)
   end
 
-  @doc "The auth shapes gate 1b supports. `passthrough` is a network rule, not a credential; that is gate 2."
+  @doc """
+  The shapes a binding can take. `substitute` is the default and needs no
+  other field: the broker replaces the secret's placeholder wherever it
+  appears in a request to the host (header, query, path, body), so the
+  agent sends whatever shape the API wants and never has to be told how. The
+  explicit shapes add a header the agent did not send, or, for `basic`,
+  cover the one case substitution cannot: a value the client base64-encodes
+  before it leaves.
+  """
   def auth_types, do: @auth_types
 
   def changeset(binding, attrs) do
@@ -175,6 +183,9 @@ defmodule Fountain.SecretBindings.Binding do
 
   defp validate_auth_fields(changeset) do
     case get_field(changeset, :auth_type) do
+      "substitute" ->
+        changeset |> clear([:header, :prefix, :username]) |> put_change(:headers, %{})
+
       "bearer" ->
         changeset |> clear([:header, :prefix, :username]) |> put_change(:headers, %{})
 
