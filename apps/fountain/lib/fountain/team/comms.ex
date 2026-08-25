@@ -87,8 +87,8 @@ defmodule Fountain.Team.Comms do
   The two channels counted apart, for every tenant holding at least one
   contact: `%{user_id => %{inboxes: n, numbers: n}}`.
 
-  `contact_counts/0` answers the *billing* question — a contact is one add-on
-  unit whatever channels it ended up with. This answers the *cost* one, which
+  `contact_counts/0` answers the *ceiling* question — a contact is one unit
+  whatever channels it ended up with. This answers the *cost* one, which
   is a different number: AgentMail charges per inbox and AgentPhone per
   number, at rates that have nothing to do with each other, so
   `Fountain.Billing.Finance` cannot price a bare contact count.

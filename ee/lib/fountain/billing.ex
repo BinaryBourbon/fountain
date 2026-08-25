@@ -978,8 +978,8 @@ defmodule Fountain.Billing do
 
   This is the upgrade path for anyone who already has a subscription, which
   after registration is everybody: Checkout would open a *second* one. The
-  base plan item is repriced in place and the add-on item, if the tenant has
-  teammate contacts, is left alone.
+  base plan item is repriced in place; any other item on the subscription is
+  left alone.
 
   Proration is Stripe's default `create_prorations`, so an upgrade mid-period
   bills the difference immediately and a trial stays a trial — the price
@@ -1627,19 +1627,8 @@ defmodule Fountain.Billing do
         attach_stripe_customer(user, customer_id)
       end
 
-    with {:ok, user} <- linked,
-         {:ok, user} <- adopt_subscription(user, subscription_id, event_created) do
-      # The teammate-contact add-on lives on the subscription, so a *new*
-      # subscription starts without it. Nothing else would notice: the
-      # quantity is only pushed on provision and release, so a tenant who
-      # cancelled (or was comped and then un-comped) and came back through
-      # Checkout would keep their numbers and stop being billed for them
-      # until they happened to add or remove one.
-      #
-      # Best-effort, and last: this event's job is to record the
-      # subscription, and a Stripe hiccup here must not make the webhook fail
-      # and Stripe redeliver an adoption that already succeeded.
-      {:ok, user}
+    with {:ok, user} <- linked do
+      adopt_subscription(user, subscription_id, event_created)
     end
   end
 
@@ -2242,7 +2231,7 @@ defmodule Fountain.Billing do
     complete record of checkouts — including a canceled user coming back.
   - `mrr_cents` / `mrr_by_plan` — recurring revenue, priced per plan from
     `Fountain.Billing.Finance.mrr/0`: each active subscription at its own
-    tier's price, plus the teammate-contact add-on. Deliberately `active`
+    tier's price. Deliberately `active`
     only: `past_due` is at-risk revenue, comped is not revenue.
 
     It used to be `active × :stripe_price_monthly_cents`, one configured
