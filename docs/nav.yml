@@ -38,6 +38,7 @@ nav:
   - Setup: setup.md
   - Run an instance:
       - Self-host Fountain: self-hosting.md
+      - Open source: open-source.md
       - Deploy an instance: guides/operate/deploy.md
       - Put it on the internet: guides/operate/put-it-on-the-internet.md
       - Connect a database: guides/operate/database.md

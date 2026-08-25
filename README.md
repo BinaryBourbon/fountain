@@ -191,6 +191,13 @@ it as a service owes those improvements back to everyone else running it. It
 does not stop anyone hosting Fountain commercially, including in competition
 with the hosted product. It stops them doing it in private.
 
+The hosted instance at [managoat.com](https://managoat.com) is one
+instance of this code under the name Managoat; the project keeps the name
+Fountain. The long form of the split, and where everything lives, is
+[docs/open-source.md](docs/open-source.md), published at `/docs/open-source`
+(`decisions/0034-project-site-is-the-product-site.md` says why there is no
+separate project site).
+
 Fountain was MIT licensed through v0.12.0 (2026-08-17) and those releases stay
 MIT. See [`NOTICE`](NOTICE) for the relicensing record and third-party
 attribution, [`CONTRIBUTING.md`](CONTRIBUTING.md) for how this applies to

@@ -18,6 +18,12 @@ upgrade, is in
 
 ### Added
 
+- **An *Open source* page at `/docs/open-source`, and ADR 0034 on why the
+  project has no site of its own.** With the hosted instance branded
+  Managoat (#1177), the page states the licence split, the two names and
+  where everything lives; the README licence section links it. The decision
+  is the PostHog/Sentry shape: the product site is the project site, `/docs`
+  is the manual, the repo README is the front page, no second domain.
 - **Connections: sign in to Google once, and agents get Gmail without ever
   holding the credential** (#1178). For accounts the egress broker is on for,
   the console's new *Account → Connections* page runs Google's
