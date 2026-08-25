@@ -7,11 +7,17 @@ defmodule Fountain.Quotas do
   concurrency cap is the primary defence against one account — whether abusive,
   scripted, or merely enthusiastic — consuming the platform's capacity.
 
-  The cap comes from the tenant's plan (`Fountain.Plans`) — that is the axis
-  the tiers are sold on. `users.sandbox_limit_override` wins when it is set,
-  which is the admin lever the plan cannot express: raise it for a trusted
-  tenant, drop it to zero during abuse. A null override means "whatever the
-  plan says", so an upgrade takes effect without anyone touching the column.
+  The cap is funded by the balance (ADR 0031): a tenant may run
+  `clamp(balance ÷ reserve, floor, ceiling)` sandboxes at once, so nobody can
+  start a fleet they cannot pay for, and a bigger balance unlocks more. A
+  comped account, and a deployment with billing off, get the ceiling.
+  `users.sandbox_limit_override` wins when it is set, which is the admin
+  lever the rule cannot express: raise it for a trusted tenant, drop it to
+  zero during abuse. A null override means "whatever the balance funds".
+
+  A fleet ceiling bounds the sum across every tenant to what the providers
+  allow; `with_sandbox_reservation/3` checks it under a global lock and
+  refuses with `:fleet_full`, which is capacity, not a billing state.
 
   ## What counts
 
@@ -30,7 +36,6 @@ defmodule Fountain.Quotas do
 
   alias Fountain.Accounts.User
   alias Fountain.Conversations.Sandbox
-  alias Fountain.Plans
   alias Fountain.Repo
 
   @active_statuses ~w(pending starting ready)
@@ -84,24 +89,21 @@ defmodule Fountain.Quotas do
 
   @doc """
   The concurrency cap for `user_id`: the override if it has one, otherwise
-  the plan's.
+  what the balance funds (ADR 0031).
 
-  A user who cannot be found at all falls back to the default plan's cap, so a
-  lookup failure tightens rather than removes the limit.
+  A user who cannot be found at all gets the floor, so a lookup failure
+  tightens rather than removes the limit.
   """
   @spec sandbox_limit(binary()) :: non_neg_integer()
   def sandbox_limit(user_id) when is_binary(user_id) do
-    # `subscription_status` is selected because a trial is capped lower than
-    # the tier it trials (`Plans.effective/1`). Selecting only the plan slug
-    # would hand a trialing account the paid number.
     query =
       from u in User,
         where: u.id == ^user_id,
-        select: {u.sandbox_limit_override, u.plan, u.subscription_status}
+        select: {u.sandbox_limit_override, u.credit_balance_cents, u.subscription_status}
 
     case Repo.one(query) do
-      {override, plan, status} -> resolve_limit(override, plan, status)
-      nil -> Plans.concurrent_sandboxes(nil)
+      {override, balance, status} -> resolve_limit(override, balance, status)
+      nil -> settings().cap_floor
     end
   end
 
@@ -112,15 +114,77 @@ defmodule Fountain.Quotas do
   """
   @spec sandbox_limit_for(User.t()) :: non_neg_integer()
   def sandbox_limit_for(%User{} = user),
-    do: resolve_limit(user.sandbox_limit_override, user.plan, user.subscription_status)
+    do:
+      resolve_limit(
+        user.sandbox_limit_override,
+        user.credit_balance_cents,
+        user.subscription_status
+      )
 
-  # An explicit override beats everything, the trial included: it is the
-  # operator saying "this account, this number", and a trial is not a reason
-  # to second-guess that.
-  defp resolve_limit(override, _plan, _status) when is_integer(override), do: override
+  defp resolve_limit(override, _balance, _status) when is_integer(override), do: override
 
-  defp resolve_limit(_override, plan, status),
-    do: Plans.concurrent_sandboxes(%{plan: plan, subscription_status: status})
+  defp resolve_limit(_override, balance, status) do
+    %{reserve_cents: reserve, cap_floor: floor, cap_ceiling: ceiling} = settings()
+
+    cond do
+      not Fountain.Billing.enabled?() -> ceiling
+      status == "comped" -> ceiling
+      true -> balance |> funded(reserve) |> max(floor) |> min(ceiling)
+    end
+  end
+
+  defp funded(balance, _reserve) when balance <= 0, do: 0
+  defp funded(_balance, 0), do: 0
+  defp funded(balance, reserve), do: div(balance, reserve)
+
+  @doc "Live sandboxes across every tenant, against the fleet ceiling."
+  @spec fleet_count() :: non_neg_integer()
+  def fleet_count do
+    Repo.one(from(s in Sandbox, where: s.status in @active_statuses, select: count(s.id))) || 0
+  end
+
+  @doc "The reserve, floor, ceiling and fleet ceiling in force."
+  @spec settings() :: %{
+          reserve_cents: non_neg_integer(),
+          cap_floor: non_neg_integer(),
+          cap_ceiling: non_neg_integer(),
+          fleet_ceiling: non_neg_integer()
+        }
+  def settings do
+    cfg = Application.get_env(:fountain, :sandboxes, [])
+
+    %{
+      reserve_cents: Keyword.get(cfg, :reserve_cents, 200),
+      cap_floor: Keyword.get(cfg, :cap_floor, 2),
+      cap_ceiling: Keyword.get(cfg, :cap_ceiling, 20),
+      fleet_ceiling: Keyword.get(cfg, :fleet_ceiling, 20)
+    }
+  end
+
+  @doc """
+  Check the deployment against the fleet ceiling. `:ok`, or
+  `{:error, :fleet_full}` — every provider slot is in use, whoever holds them.
+  """
+  @spec check_fleet_ceiling(keyword()) :: :ok | {:error, :fleet_full}
+  def check_fleet_ceiling(opts \\ []) do
+    ceiling = settings().fleet_ceiling
+
+    count =
+      case Keyword.get(opts, :exclude) do
+        nil ->
+          fleet_count()
+
+        excluded ->
+          Repo.one(
+            from(s in Sandbox,
+              where: s.status in @active_statuses and s.id != ^excluded,
+              select: count(s.id)
+            )
+          ) || 0
+      end
+
+    if count < ceiling, do: :ok, else: {:error, :fleet_full}
+  end
 
   @doc """
   Check `user_id` against the sandbox concurrency cap.
@@ -172,6 +236,10 @@ defmodule Fountain.Quotas do
   # of the user id. A hash collision between users only over-serializes two
   # tenants' creations — never under-counts.
   @lock_namespace 4315
+  # One key for the whole fleet, so the ceiling is counted by one reservation
+  # at a time. Taken before the per-user lock, always, so two reservations
+  # cannot deadlock on each other.
+  @fleet_lock_key 0
 
   @doc """
   Check the cap and run `fun` (which must create the sandbox row) atomically,
@@ -190,16 +258,20 @@ defmodule Fountain.Quotas do
           {:ok, term()} | {:error, term()}
   def with_sandbox_reservation(user_id, quota_opts \\ [], fun) when is_binary(user_id) do
     Repo.transaction(fn ->
+      Repo.query!("SELECT pg_advisory_xact_lock($1, $2)", [@lock_namespace, @fleet_lock_key])
+
       Repo.query!("SELECT pg_advisory_xact_lock($1, $2)", [
         @lock_namespace,
         :erlang.phash2(user_id)
       ])
 
-      # The balance precheck lives under the same lock as the cap (ADR 0030
-      # decision 6): two requests at $0.01 must not both read "positive" and
-      # both provision. The turn that then burns it may still go negative;
-      # that is the soft stop, not a hole.
-      with :ok <- check_sandbox_quota(user_id, quota_opts),
+      # The fleet ceiling, the tenant's cap and the balance precheck all live
+      # under the locks (ADR 0030 decision 6, ADR 0031): two requests at the
+      # last slot or the last cent must not both read "room" and both
+      # provision. The turn that then burns the balance may still go
+      # negative; that is the soft stop, not a hole.
+      with :ok <- check_fleet_ceiling(quota_opts),
+           :ok <- check_sandbox_quota(user_id, quota_opts),
            :ok <- Fountain.Credits.gate(user_id),
            {:ok, value} <- fun.() do
         value
@@ -209,8 +281,8 @@ defmodule Fountain.Quotas do
     end)
   end
 
-  @doc "Cap applied to a user on this deployment's default plan with no override."
-  def default_limit, do: Plans.concurrent_sandboxes(nil)
+  @doc "The cap a fresh account with nothing in its balance gets: the floor."
+  def default_limit, do: settings().cap_floor
 
   @doc "Sandbox statuses that count against the cap."
   def active_statuses, do: @active_statuses

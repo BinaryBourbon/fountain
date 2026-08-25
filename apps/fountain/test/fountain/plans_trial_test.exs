@@ -149,23 +149,15 @@ defmodule Fountain.PlansTrialTest do
   end
 
   describe "the cap actually enforced" do
-    test "a trialing account is capped at the trial's concurrency" do
+    # The cap is the balance's, not the plan's (ADR 0031); the plan tests
+    # above are about what a trial is, and this one is about what it may run.
+    test "a trialing account with nothing in its balance gets the floor, whatever its tier" do
       user = insert_verified_user(plan: "scale")
-      assert Quotas.sandbox_limit(user.id) == 2
-      assert Quotas.sandbox_limit_for(reload(user)) == 2
+      assert Quotas.sandbox_limit(user.id) == Quotas.default_limit()
+      assert Quotas.sandbox_limit_for(reload(user)) == Quotas.default_limit()
     end
 
-    test "converting to active lifts it the same day, with no migration" do
-      user = insert_verified_user(plan: "scale")
-      assert Quotas.sandbox_limit(user.id) == 2
-
-      {:ok, _} = activate(user)
-      assert Quotas.sandbox_limit(user.id) == 10
-    end
-
-    # An override is the operator saying "this account, this number". A trial
-    # is not a reason to second-guess that.
-    test "an operator override beats the trial, in both directions" do
+    test "an operator override beats the balance, in both directions" do
       up = insert_verified_user(plan: "solo")
       {:ok, up} = Fountain.Accounts.update_sandbox_limit(up, 25)
       assert Quotas.sandbox_limit(up.id) == 25
@@ -173,11 +165,6 @@ defmodule Fountain.PlansTrialTest do
       down = insert_verified_user(plan: "scale")
       {:ok, down} = Fountain.Accounts.update_sandbox_limit(down, 0)
       assert Quotas.sandbox_limit(down.id) == 0
-    end
-
-    test "sandbox_limit_for/1 agrees with sandbox_limit/1 for a trialing account" do
-      user = insert_verified_user(plan: "team")
-      assert Quotas.sandbox_limit_for(reload(user)) == Quotas.sandbox_limit(user.id)
     end
   end
 
