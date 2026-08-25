@@ -55,11 +55,19 @@ defmodule FountainWeb.EnvironmentsLive.Form do
     Enum.map(env_vars, fn {k, v} -> %{"key" => k, "value" => v} end)
   end
 
+  # `packages` is a free map on the schema and the API accepts whatever shape a
+  # manifest sends, so a value is not always a list: eight environments carried
+  # `"node" => "24"` (a version, from an apply manifest) and the edit page
+  # answered 500 for each of them. Provisioning reads only apt/npm, so an odd
+  # value is inert there; here it is shown as it is, and a save round-trips it
+  # as a one-item list.
   defp env_to_packages_strings(packages) do
-    Map.new(packages, fn {manager, pkgs} ->
-      {manager, Enum.join(pkgs, "\n")}
-    end)
+    Map.new(packages, fn {manager, pkgs} -> {manager, packages_string(pkgs)} end)
   end
+
+  defp packages_string(pkgs) when is_list(pkgs), do: Enum.map_join(pkgs, "\n", &to_string/1)
+  defp packages_string(pkgs) when is_binary(pkgs), do: pkgs
+  defp packages_string(pkgs), do: inspect(pkgs)
 
   defp available_managers(packages) do
     @supported_managers -- Map.keys(packages)
