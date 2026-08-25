@@ -41,7 +41,6 @@ defmodule Fountain.Audit.AdminEvent do
     admin.role.revoked
     admin.sandbox_limit.changed
     admin.account.deleted
-    admin.trial.extended
     admin.comp.granted
     admin.comp.revoked
     admin.sandbox.reaped
@@ -49,8 +48,6 @@ defmodule Fountain.Audit.AdminEvent do
     admin.account.unsuspended
     admin.user.viewed
     admin.conversation.viewed
-    admin.stripe.resynced
-    admin.plan.changed
     admin.credits.granted
   )
 

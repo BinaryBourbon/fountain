@@ -332,7 +332,7 @@ defmodule FountainWeb.ConversationController do
       |> Map.put("parent_conversation_id", parent_id)
       |> Map.put("user_id", user.id)
 
-    with :ok <- gate_subscription(user),
+    with :ok <- Billing.check_spend(user),
          {:ok, conv, outcome} <-
            Conversations.start_or_resume_conversation(params, Audited.attribution(conn)) do
       # 201 when a conversation was opened; 200 when `channel_id` resumed an
@@ -341,14 +341,6 @@ defmodule FountainWeb.ConversationController do
       conn
       |> put_status(if(outcome == :created, do: :created, else: :ok))
       |> render(:show, conversation: conv, resumed: outcome == :resumed)
-    else
-      {:error, :subscription_required} ->
-        conn
-        |> put_status(402)
-        |> json(%{error: "subscription_required", upgrade_url: "/account/billing"})
-
-      {:error, _} = err ->
-        err
     end
   end
 
@@ -867,11 +859,4 @@ defmodule FountainWeb.ConversationController do
     chunk = "id: #{ev.id}\nevent: #{ev.kind}\ndata: #{payload}\n\n"
     Plug.Conn.chunk(conn, chunk)
   end
-
-  # ── Phase-3-billing helpers ────────────────────────────────────────────────
-
-  # Wraps assert_active! so it fits into the `with` pipeline without propagating
-  # the raw exception. Returns {:error, :subscription_required} for the else
-  # clause to render a structured 402 response.
-  defp gate_subscription(user), do: Billing.check_spend(user)
 end

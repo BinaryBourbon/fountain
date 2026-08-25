@@ -40,7 +40,7 @@ defmodule Fountain.Emails.BillingEmails do
     # thing that says what is still missing (#867).
     start_url = "#{base_url}/dashboard"
 
-    trial_text = welcome_trial_phrase(user)
+    trial_text = welcome_opening_phrase(user)
 
     new()
     |> from(UserEmails.from_address())
@@ -53,7 +53,7 @@ defmodule Fountain.Emails.BillingEmails do
 
   # The opening grant (ADR 0031), in the welcome: what they start with and
   # how long it lasts. Nothing when billing is off.
-  defp welcome_trial_phrase(%User{}) do
+  defp welcome_opening_phrase(%User{}) do
     if Fountain.Billing.enabled?() do
       cfg = Application.get_env(:fountain, :credits, [])
       cents = Keyword.get(cfg, :opening_cents, 500)
@@ -123,7 +123,7 @@ defmodule Fountain.Emails.BillingEmails do
 
   @doc """
   The prepaid balance is at or below zero. Whether anything is refused
-  depends on `Fountain.Credits.enforcing?/0`; the email says so either way.
+  depends on `Fountain.Credits.active?/0`; the email says so either way.
   """
   @spec deliver_credits_exhausted_email(User.t(), integer()) :: {:ok, term()} | {:error, term()}
   def deliver_credits_exhausted_email(%User{} = user, balance_cents) do
@@ -140,7 +140,7 @@ defmodule Fountain.Emails.BillingEmails do
   end
 
   defp credits_consequence(true) do
-    if Fountain.Credits.enforcing?(),
+    if Fountain.Credits.active?(),
       do:
         "New conversations and new turns are paused until the balance is positive again. Anything already running finishes.",
       else: "Nothing is paused yet. Your balance will keep going down until you top up."

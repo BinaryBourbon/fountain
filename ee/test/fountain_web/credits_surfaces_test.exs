@@ -69,7 +69,7 @@ defmodule FountainWeb.CreditsSurfacesTest do
       expires = ~U[2026-09-01 00:00:00Z]
 
       {:ok, _} =
-        Credits.grant(user.id, 1000, "grant_tier", idempotency_key: "g", expires_at: expires)
+        Credits.grant(user.id, 1000, "grant_opening", idempotency_key: "g", expires_at: expires)
 
       {:ok, _} = Credits.grant(user.id, 2500, "purchase", idempotency_key: "p")
       {:ok, _} = Credits.debit(user.id, 300, "burn_turn", idempotency_key: "b")
@@ -88,10 +88,9 @@ defmodule FountainWeb.CreditsSurfacesTest do
       user = subscriber()
 
       {:ok, _} =
-        Credits.grant(user.id, 1000, "grant_tier",
+        Credits.grant(user.id, 1000, "grant_opening",
           idempotency_key: "g",
-          expires_at: ~U[2099-09-01 00:00:00Z],
-          metadata: %{"plan" => "solo"}
+          expires_at: ~U[2099-09-01 00:00:00Z]
         )
 
       {:ok, _} =
@@ -105,7 +104,7 @@ defmodule FountainWeb.CreditsSurfacesTest do
       assert html =~ "$9.75"
       assert html =~ "$0.25 per turn hour"
       assert html =~ "expires on Sep 1"
-      assert html =~ "Solo plan credit"
+      assert html =~ "Opening credit"
       assert html =~ "Conversation time, 1.0h"
       refute html =~ "below zero"
     end
@@ -187,7 +186,7 @@ defmodule FountainWeb.CreditsSurfacesTest do
       expires = ~U[2099-09-01 00:00:00Z]
 
       {:ok, _} =
-        Credits.grant(user.id, 1000, "grant_tier", idempotency_key: "g", expires_at: expires)
+        Credits.grant(user.id, 1000, "grant_opening", idempotency_key: "g", expires_at: expires)
 
       {_rec, key} = insert_api_key(user)
 

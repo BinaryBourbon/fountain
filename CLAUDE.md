@@ -217,7 +217,6 @@ no client re-parses a runtime dialect.
 |---|---|---|
 | `require_authenticated_user` | `redirect` to `/auth/login` | — |
 | `require_admin` | `redirect` to `/auth/login` | `push_navigate` to `/dashboard` |
-| `assign_subscription_state` | — | never halts; assigns `@subscription_active` (`Billing.check_spend/1 == :ok`) |
 
 The distinction matters in tests: plain `redirect` yields `{:redirect, _}` (the
 login redirect), while `push_navigate` yields `{:live_redirect, _}` (the

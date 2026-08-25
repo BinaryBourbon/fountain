@@ -328,10 +328,10 @@ defmodule FountainWeb.Telemetry do
         measurement: :activated,
         description: "Users with at least one conversation"
       ),
-      last_value("fountain.funnel.subscribed",
+      last_value("fountain.funnel.funded",
         event_name: [:fountain, :funnel],
-        measurement: :subscribed,
-        description: "Users with an active or past_due subscription"
+        measurement: :funded,
+        description: "Users with a positive credit balance"
       ),
       last_value("fountain.funnel.stalled_verified",
         event_name: [:fountain, :funnel],

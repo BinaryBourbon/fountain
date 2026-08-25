@@ -29,9 +29,8 @@ defmodule Fountain.Umbrella.MixProject do
         # Audit the ignore file by hand with `mix dialyzer --list-unused-filters`
         # (tuple entries report accurately) when trimming it.
         plt_file: {:no_warn, "priv/plts/dialyzer.plt"},
-        # :mix so Mix.Task-based tasks (mix fountain.verify_lifecycle)
-        # analyze cleanly — without it every Mix.* call is "unknown function"
-        # and the task's whole call graph degrades to no_return noise.
+        # :mix so Mix.Task-based code (`mix openapi.spec.json`, the aliases)
+        # analyzes cleanly — without it every Mix.* call is "unknown function".
         plt_add_apps: [:mix]
       ]
     ]

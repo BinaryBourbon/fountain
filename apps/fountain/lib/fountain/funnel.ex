@@ -1,6 +1,6 @@
 defmodule Fountain.Funnel do
   @moduledoc """
-  Lifecycle funnel: registered → verified → onboarded → activated → subscribed.
+  Lifecycle funnel: registered → verified → onboarded → activated → funded.
 
   Admin-only aggregates (no tenant scoping — callers are the admin panel and
   the metrics poller). Answers two operator questions:
@@ -59,8 +59,8 @@ defmodule Fountain.Funnel do
 
   `conversion` is the fraction of the *previous* stage (nil for registered);
   `median_hours` is the median time from the previous stage's timestamp, for
-  users that have both (nil for registered and subscribed — there is no
-  subscribed-at timestamp to measure against).
+  users that have both (nil for registered and funded — there is no
+  funded-at timestamp to measure against).
   """
   @spec summary_admin() :: %{stages: [stage()], stalled: map()}
   def summary_admin do
@@ -84,11 +84,10 @@ defmodule Fountain.Funnel do
     onboarded = Enum.filter(users, & &1.onboarded_at)
     activated = Enum.filter(users, &Map.has_key?(first_activity, &1.id))
 
-    # With billing disabled there is nothing to subscribe to; statuses are nil
-    # for accounts registered that way (#480), but pre-disable residue must not
-    # count either. The stage stays in the list at 0 so the telemetry gauge
-    # keeps its shape — the admin panel hides the tile (#481).
-    subscribed =
+    # Funded: a positive credit balance (ADR 0031). With billing disabled
+    # nothing is granted or sold, so the stage stays in the list at 0 to keep
+    # the telemetry gauge's shape — the admin panel hides the tile (#481).
+    funded =
       if Fountain.Billing.enabled?(),
         do: Enum.filter(users, &(&1.credit_balance_cents > 0)),
         else: []
@@ -114,9 +113,9 @@ defmodule Fountain.Funnel do
         median_hours: median_hours(activated, & &1.onboarded_at, &Map.get(first_activity, &1.id))
       },
       %{
-        key: :subscribed,
-        count: length(subscribed),
-        conversion: ratio(length(subscribed), length(activated)),
+        key: :funded,
+        count: length(funded),
+        conversion: ratio(length(funded), length(activated)),
         median_hours: nil
       }
     ]

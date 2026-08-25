@@ -42,7 +42,8 @@ defmodule FountainWeb.AccountDeletionLiveTest do
       refute html =~ "subscription"
     end
 
-    test "billing enabled: the deletion warning covers the subscription", %{conn: conn} do
+    test "billing enabled: the warning is the same, there is no subscription to cancel (ADR 0031)",
+         %{conn: conn} do
       previous = Application.get_env(:fountain, :billing_enabled)
       Application.put_env(:fountain, :billing_enabled, true)
       on_exit(fn -> Application.put_env(:fountain, :billing_enabled, previous) end)
@@ -50,7 +51,8 @@ defmodule FountainWeb.AccountDeletionLiveTest do
       user = insert_verified_user()
       {:ok, _lv, html} = live(login_user(conn, user), ~p"/account")
 
-      assert html =~ "Cancels your subscription"
+      assert html =~ "Destroys every running sandbox"
+      refute html =~ "subscription"
     end
 
     test "typing the account's email deletes it", %{conn: conn} do

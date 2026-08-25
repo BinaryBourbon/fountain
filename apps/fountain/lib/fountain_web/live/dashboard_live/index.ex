@@ -50,19 +50,16 @@ defmodule FountainWeb.DashboardLive.Index do
      |> assign_usage(user)}
   end
 
-  # The window Stripe invoices where there is one, the calendar month
-  # otherwise — the same call the billing page makes, so the two pages cannot
-  # report different numbers for "this period". `period.source` says which it
-  # got, and the heading says so too: a customer whose invoice runs the 20th
-  # to the 20th was being shown a calendar month here and an invoiced period
-  # one click away.
+  # The calendar month (ADR 0031) — the same call the billing page makes, so
+  # the two pages cannot report different numbers for "this month".
   #
   # The counts come from usage events, which are written whether or not
   # billing is switched on, so a self-hosted console still sees what its
   # agents have been doing.
   defp assign_usage(socket, user) do
     billing_enabled? = Fountain.Billing.enabled?()
-    period = Fountain.Billing.billing_period(user)
+    {period_start, period_end} = Fountain.Billing.current_month_range()
+    period = %{start: period_start, end: period_end}
 
     socket
     |> assign(:usage, Fountain.Billing.usage_summary(user.id, period.start, period.end))
@@ -141,7 +138,7 @@ defmodule FountainWeb.DashboardLive.Index do
       <section>
         <div class="flex items-baseline justify-between mb-3">
           <h2 class="text-lg font-medium">
-            {if @period.source == :subscription, do: "This billing period", else: "This month"}
+            This month
           </h2>
           <span class="text-xs text-[var(--color-text-muted)]">
             since {Calendar.strftime(@period_start, "%-d %B")}
@@ -242,12 +239,9 @@ defmodule FountainWeb.DashboardLive.Index do
       assigns.tokens.output == 0
   end
 
-  # Turn hours: the used side always, the allowance beside it when billing is
-  # on. Rounded to one place, which is the resolution a customer can act on.
-  defp turn_hours_value(%{allowance: %{used: used}}), do: format_hours(used)
+  # Turn hours used, rounded to one place, which is the resolution a customer
+  # can act on. There is no allowance to show beside it (ADR 0031).
   defp turn_hours_value(%{usage: usage}), do: format_hours(billable_turn_hours(usage))
-
-  defp turn_hours_sub(%{allowance: %{included: included}}), do: "of #{included} included"
 
   defp turn_hours_sub(_assigns), do: nil
 
@@ -270,9 +264,8 @@ defmodule FountainWeb.DashboardLive.Index do
     end
   end
 
-  # Billing off: there is no allowance, so the tile falls back to the same
-  # arithmetic `Billing.turn_hours_used/2` does — turn time on the providers
-  # the platform pays for, which excludes a tenant's own runner (ADR 0022).
+  # Turn time on the providers the platform pays for, which excludes a
+  # tenant's own runner (ADR 0022); `Billing.usage_summary/3` does the sum.
   defp billable_turn_hours(usage) do
     Map.get(usage, :turn_hours, 0.0)
   end

@@ -527,14 +527,6 @@ defmodule FountainWeb.AdminController do
           sprites_destroyed: summary.sprites_destroyed
         })
 
-      {:error, {:stripe, _}} ->
-        conn
-        |> put_status(:bad_gateway)
-        |> json(%{
-          error: "billing_cancellation_failed",
-          message: "Could not cancel the subscription with Stripe; nothing was deleted."
-        })
-
       {:error, _} ->
         refuse(conn, "delete_failed", "Could not delete the account.")
     end

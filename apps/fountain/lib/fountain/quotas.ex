@@ -40,11 +40,6 @@ defmodule Fountain.Quotas do
 
   @active_statuses ~w(pending starting ready)
 
-  defmodule QuotaExceededError do
-    @moduledoc "Raised by `Fountain.Quotas.check_sandbox_quota!/2`."
-    defexception [:message, :limit, :count]
-  end
-
   @doc """
   Number of sandboxes currently counting against `user_id`'s cap.
 
@@ -111,15 +106,24 @@ defmodule Fountain.Quotas do
   The same answer as `sandbox_limit/1` for a user already loaded — for the
   admin table, which shows the cap on every row and must not run a query per
   row (the same contract as `active_sandbox_counts/0`).
+
+  One deliberate difference: an account with nothing in its balance is shown
+  `0`, not the floor. The floor is what `sandbox_limit/1` enforces so the
+  quota check under the reservation lock never fires ahead of the credit gate
+  (`insufficient_credits` is the right answer, not `sandbox_quota_exceeded`),
+  but the gate refuses that account anyway, and a display that says "2" for
+  an account that can start nothing is a lie (#1127).
   """
   @spec sandbox_limit_for(User.t()) :: non_neg_integer()
-  def sandbox_limit_for(%User{} = user),
-    do:
-      resolve_limit(
-        user.sandbox_limit_override,
-        user.credit_balance_cents,
-        user.comped
-      )
+  def sandbox_limit_for(%User{} = user) do
+    unfunded? =
+      is_nil(user.sandbox_limit_override) and Fountain.Billing.enabled?() and
+        user.comped != true and (user.credit_balance_cents || 0) <= 0
+
+    if unfunded?,
+      do: 0,
+      else: resolve_limit(user.sandbox_limit_override, user.credit_balance_cents, user.comped)
+  end
 
   defp resolve_limit(override, _balance, _comped) when is_integer(override), do: override
 
@@ -210,28 +214,6 @@ defmodule Fountain.Quotas do
     end
   end
 
-  @doc """
-  Raising variant of `check_sandbox_quota/2`, per ADR 0005.
-
-  Prefer the non-raising form on request paths; this exists for call sites where
-  exceeding the cap is a programming error rather than a user-facing outcome.
-  """
-  @spec check_sandbox_quota!(binary(), keyword()) :: :ok
-  def check_sandbox_quota!(user_id, opts \\ []) when is_binary(user_id) do
-    case check_sandbox_quota(user_id, opts) do
-      :ok ->
-        :ok
-
-      {:error, {:sandbox_quota_exceeded, %{count: count, limit: limit}}} ->
-        raise QuotaExceededError,
-          message:
-            "sandbox concurrency limit reached (#{count}/#{limit} active). " <>
-              "Terminate a conversation, or add credit for a higher cap.",
-          count: count,
-          limit: limit
-    end
-  end
-
   # Advisory-lock namespace for sandbox reservations; the second key is a hash
   # of the user id. A hash collision between users only over-serializes two
   # tenants' creations — never under-counts.
@@ -280,9 +262,6 @@ defmodule Fountain.Quotas do
       end
     end)
   end
-
-  @doc "The cap a fresh account with nothing in its balance gets: the floor."
-  def default_limit, do: settings().cap_floor
 
   @doc "Sandbox statuses that count against the cap."
   def active_statuses, do: @active_statuses

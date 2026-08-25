@@ -77,57 +77,49 @@ defmodule Fountain.Accounts.Deletion do
       an admin path should pass something identifying.
     * `:request_ip` — passed through to the audit event.
 
-  Returns `{:ok, summary}` or `{:error, reason}`. The only reason that aborts
-  before any destruction is `{:stripe, _}`.
+  Returns `{:ok, summary}`. Nothing aborts before destruction: there is no
+  subscription to cancel first (ADR 0031), and the Stripe customer stays for
+  the refund trail.
   """
   @spec delete_user(User.t(), keyword()) :: {:ok, map()} | {:error, term()}
   def delete_user(%User{} = user, opts \\ []) do
-    with :ok <- cancel_billing(user) do
-      sprites = destroy_sprites(user)
+    sprites = destroy_sprites(user)
 
-      Audit.record(%{
-        user_id: user.id,
-        action: "account.deleted",
-        resource_type: "user",
-        resource_id: user.id,
-        actor: Keyword.get(opts, :actor, "self"),
-        request_ip: Keyword.get(opts, :request_ip),
-        # Denormalised on purpose: user_id is nilified by the delete below.
-        metadata: %{
-          "email" => user.email,
-          "user_id" => user.id,
-          "sprites_destroyed" => sprites
-        }
-      })
+    Audit.record(%{
+      user_id: user.id,
+      action: "account.deleted",
+      resource_type: "user",
+      resource_id: user.id,
+      actor: Keyword.get(opts, :actor, "self"),
+      request_ip: Keyword.get(opts, :request_ip),
+      # Denormalised on purpose: user_id is nilified by the delete below.
+      metadata: %{
+        "email" => user.email,
+        "user_id" => user.id,
+        "sprites_destroyed" => sprites
+      }
+    })
 
-      case Repo.delete(user) do
-        {:ok, _} ->
-          Logger.info("account deleted: #{user.id} (#{sprites} sprite(s) destroyed)")
+    case Repo.delete(user) do
+      {:ok, _} ->
+        Logger.info("account deleted: #{user.id} (#{sprites} sprite(s) destroyed)")
 
-          # Confirmation to the departing user (#450). Gated on verification,
-          # which covers the UnverifiedAccountPruner path for free — an
-          # address that never proved it was theirs gets no mail from us,
-          # whoever triggered the deletion. The job carries the address
-          # itself; the row is already gone.
-          if user.email_verified_at do
-            Fountain.Workers.AccountEmail.enqueue_deleted(user.email)
-          end
+        # Confirmation to the departing user (#450). Gated on verification,
+        # which covers the UnverifiedAccountPruner path for free — an
+        # address that never proved it was theirs gets no mail from us,
+        # whoever triggered the deletion. The job carries the address
+        # itself; the row is already gone.
+        if user.email_verified_at do
+          Fountain.Workers.AccountEmail.enqueue_deleted(user.email)
+        end
 
-          {:ok, %{user_id: user.id, sprites_destroyed: sprites}}
+        {:ok, %{user_id: user.id, sprites_destroyed: sprites}}
 
-        {:error, reason} ->
-          Logger.error("account deletion failed at delete for #{user.id}: #{inspect(reason)}")
-          {:error, reason}
-      end
+      {:error, reason} ->
+        Logger.error("account deletion failed at delete for #{user.id}: #{inspect(reason)}")
+        {:error, reason}
     end
   end
-
-  # ── stripe ────────────────────────────────────────────────────────────────
-
-  # There is no subscription to cancel (ADR 0031): a customer with no open
-  # payment is nothing Stripe keeps charging. The customer object stays for
-  # the refund trail.
-  defp cancel_billing(%User{}), do: :ok
 
   # ── sprites ───────────────────────────────────────────────────────────────
 

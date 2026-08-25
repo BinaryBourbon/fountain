@@ -35,7 +35,7 @@ defmodule Fountain.Credits.LedgerEntry do
     belongs_to :user, Fountain.Accounts.User
   end
 
-  @credit_reasons ~w(grant_tier grant_trial grant_admin purchase)
+  @credit_reasons ~w(grant_opening grant_admin purchase)
   @debit_reasons ~w(burn_turn burn_rent burn_message expire clawback_refund clawback_dispute)
 
   @doc "Reasons that put money in. Every one is a positive row."

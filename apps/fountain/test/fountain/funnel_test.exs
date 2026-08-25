@@ -49,9 +49,9 @@ defmodule Fountain.FunnelTest do
 
       # Every verified account holds the opening credit, so "funded" is the
       # ones that still have some: drain the others.
-      subscribed = insert_verified_user()
-      set!(subscribed, onboarding_completed_at: at(3))
-      insert_conversation(user_id: subscribed.id)
+      funded = insert_verified_user()
+      set!(funded, onboarding_completed_at: at(3))
+      insert_conversation(user_id: funded.id)
       for u <- [verified_only, onboarded, activated], do: drain!(u)
 
       summary = Funnel.summary_admin()
@@ -60,19 +60,19 @@ defmodule Fountain.FunnelTest do
       assert stage(summary, :verified).count == 4
       assert stage(summary, :onboarded).count == 3
       assert stage(summary, :activated).count == 2
-      assert stage(summary, :subscribed).count == 1
+      assert stage(summary, :funded).count == 1
 
       assert stage(summary, :verified).conversion == 4 / 5
       assert stage(summary, :onboarded).conversion == 3 / 4
       assert stage(summary, :activated).conversion == 2 / 3
-      assert stage(summary, :subscribed).conversion == 1 / 2
+      assert stage(summary, :funded).conversion == 1 / 2
     end
 
     test "a positive balance counts as funded; a drained one does not" do
       _funded = insert_verified_user()
       drain!(insert_verified_user())
 
-      assert stage(Funnel.summary_admin(), :subscribed).count == 1
+      assert stage(Funnel.summary_admin(), :funded).count == 1
     end
   end
 
@@ -183,7 +183,7 @@ defmodule Fountain.FunnelTest do
       assert measurements.activated == 0
       assert measurements.stalled_verified == 1
       assert Map.has_key?(measurements, :onboarded)
-      assert Map.has_key?(measurements, :subscribed)
+      assert Map.has_key?(measurements, :funded)
     end
 
     test "a tick that cannot reach the database logs and returns :ok instead of raising" do

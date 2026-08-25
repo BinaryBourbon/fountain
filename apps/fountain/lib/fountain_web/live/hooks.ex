@@ -20,10 +20,10 @@ defmodule FountainWeb.Live.Hooks do
   - `:require_admin` — halts if current_user is absent or not an admin.
     Unauthenticated users are redirected to login (HTTP redirect). Authenticated
     non-admin users are redirected to /dashboard (live redirect).
-  - `:assign_subscription_state` — never halts; assigns `@subscription_active`
-    so a page can render for a past_due/canceled account while saying what is
-    read-only. Must run after `:require_authenticated_user`. The gate that
-    actually protects spend is in the context (ADR 0006), not here.
+
+  There is no billing hook: the gate that protects spend is
+  `Fountain.Billing.check_spend/1` in the context (ADR 0031), so the console
+  stays readable for an account with no credit.
   """
 
   import Phoenix.LiveView
@@ -32,7 +32,6 @@ defmodule FountainWeb.Live.Hooks do
   use FountainWeb, :verified_routes
 
   alias Fountain.Accounts
-  alias Fountain.Billing
 
   def on_mount(:require_authenticated_user, _params, session, socket) do
     socket = mount_current_user(session, socket)
@@ -72,11 +71,6 @@ defmodule FountainWeb.Live.Hooks do
       true ->
         {:halt, redirect(socket, to: verified_destination(user))}
     end
-  end
-
-  def on_mount(:assign_subscription_state, _params, _session, socket) do
-    active = Billing.check_spend(socket.assigns.current_user) == :ok
-    {:cont, assign(socket, :subscription_active, active)}
   end
 
   def on_mount(:require_admin, _params, session, socket) do

@@ -380,8 +380,8 @@ defmodule Fountain.Billing.SandboxUsageTest do
       assert SandboxUsage.busy_for_user(user.id, @period_start, @period_end) ==
                %{"sprites" => 3600}
 
-      # The allowance is spent in the sum.
-      assert Billing.turn_hours_used(user, period: {@period_start, @period_end}) == 2.5
+      # Credit burns against the sum.
+      assert Billing.usage_summary(user.id, @period_start, @period_end).turn_hours == 2.5
     end
 
     test "a turn still running is busy up to the ceiling" do

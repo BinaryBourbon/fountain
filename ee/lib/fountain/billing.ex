@@ -119,50 +119,31 @@ defmodule Fountain.Billing do
     |> Repo.update()
   end
 
-  # ─── Plans ──────────────────────────────────────────────────────────────────
+  # ─── Stripe webhooks ────────────────────────────────────────────────────────
 
   @doc """
-  Returns `{:ok, :duplicate}` for an event already seen.
+  Claim a verified Stripe event once (`stripe_events`) and apply it inside the
+  same transaction, so a failed apply leaves the event unclaimed for Stripe to
+  redeliver. Returns `{:ok, :duplicate}` for an event already seen.
   """
   @spec handle_event(Stripe.Event.t()) ::
-          {:ok,
-           User.t()
-           | :ignored
-           | :duplicate
-           | :stale
-           | :comped_ignored
-           | :other_subscription
-           | :credits_purchased
-           | :credits_clawed_back}
+          {:ok, :ignored | :duplicate | :credits_purchased | :credits_clawed_back}
           | {:error, term()}
   def handle_event(%Stripe.Event{id: id, type: type} = event) when is_binary(id) do
-    # Stripe side effects run BEFORE the claim transaction opens (#393):
-    # holding a DB transaction — and, since #393, a row lock on the user —
-    # across a third-party HTTP call is what made the sync race window wide
-    # enough to hit, and it pins a pool connection for the duration.
-    # Cancellation is idempotent (already-cancelled subscriptions are
-    # filtered out on the retry), so a failure here leaves the event
-    # unclaimed for Stripe redelivery, exactly as the rollback used to.
-    with :ok <- prepare_event(event) do
-      Repo.transaction(fn ->
-        if claim_event(id, type) == :claimed do
-          case sync_subscription(event) do
-            {:ok, result} -> result
-            {:error, reason} -> Repo.rollback(reason)
-          end
-        else
-          :duplicate
+    Repo.transaction(fn ->
+      if claim_event(id, type) == :claimed do
+        case apply_event(event) do
+          {:ok, result} -> result
+          {:error, reason} -> Repo.rollback(reason)
         end
-      end)
-    end
+      else
+        :duplicate
+      end
+    end)
   end
 
   # No id (hand-built events in tests) — nothing to dedupe against.
-  def handle_event(%Stripe.Event{} = event) do
-    with :ok <- prepare_event(event), do: sync_subscription(event)
-  end
-
-  defp prepare_event(_event), do: :ok
+  def handle_event(%Stripe.Event{} = event), do: apply_event(event)
 
   @doc """
   Best-effort record of a webhook processing failure (#501).
@@ -259,35 +240,15 @@ defmodule Fountain.Billing do
   end
 
   @doc """
-  Syncs `users.subscription_status` (and `trial_ends_at`) from a verified
-  Stripe webhook event.
-
-  Handles `customer.subscription.created`, `.updated`, `.deleted` — keyed by
-  **subscription**, not customer: the customer only locates the user, and an
-  event naming any subscription other than `users.stripe_subscription_id`
-  returns `{:ok, :other_subscription}` without touching the account. The
-  subscription of record is set at trial creation
-  (`start_trial_subscription/1`) and replaced when a Checkout completes
-  (`checkout.session.completed` adopts the new subscription; `handle_event/1`
-  cancels every other live one on the customer before the claim transaction
-  opens, so no Stripe call runs inside it).
-
-  Reads the user row `FOR UPDATE` so the ownership and ordering guards are
-  evaluated against the same snapshot the write commits against (#393).
-
-  All other event types return `{:ok, :ignored}` without touching the DB.
+  Apply one verified Stripe event to the credit ledger (ADR 0031). Three
+  event types matter, all handled by `Fountain.Credits.Purchases`:
+  `checkout.session.completed` for a credit pack, `charge.refunded` and
+  `charge.dispute.created` for the clawbacks. Everything else returns
+  `{:ok, :ignored}` without touching the database.
   """
-  @spec sync_subscription(Stripe.Event.t()) ::
-          {:ok,
-           User.t()
-           | :ignored
-           | :stale
-           | :comped_ignored
-           | :other_subscription
-           | :credits_purchased
-           | :credits_clawed_back}
-          | {:error, term()}
-  def sync_subscription(%Stripe.Event{
+  @spec apply_event(Stripe.Event.t()) ::
+          {:ok, :ignored | :credits_purchased | :credits_clawed_back} | {:error, term()}
+  def apply_event(%Stripe.Event{
         type: "checkout.session.completed",
         data: %{object: session}
       }) do
@@ -306,10 +267,9 @@ defmodule Fountain.Billing do
   end
 
   # charge.refunded and charge.dispute.created only matter for a credit pack
-  # (ADR 0030 decision 5); a refund on a subscription invoice is Stripe's to
-  # reconcile and changes no entitlement here. Neither names a customer we
-  # need to look up: the purchase row does.
-  def sync_subscription(%Stripe.Event{type: "charge.refunded", data: %{object: charge}}) do
+  # (ADR 0030 decision 5). Neither names a customer we need to look up: the
+  # purchase row does.
+  def apply_event(%Stripe.Event{type: "charge.refunded", data: %{object: charge}}) do
     case Fountain.Credits.Purchases.refund(charge) do
       {:ok, :nothing} -> {:ok, :ignored}
       {:ok, _entry} -> {:ok, :credits_clawed_back}
@@ -318,7 +278,7 @@ defmodule Fountain.Billing do
     end
   end
 
-  def sync_subscription(%Stripe.Event{type: "charge.dispute.created", data: %{object: dispute}}) do
+  def apply_event(%Stripe.Event{type: "charge.dispute.created", data: %{object: dispute}}) do
     case Fountain.Credits.Purchases.dispute(dispute) do
       {:ok, :nothing} -> {:ok, :ignored}
       {:ok, _entry} -> {:ok, :credits_clawed_back}
@@ -327,7 +287,7 @@ defmodule Fountain.Billing do
     end
   end
 
-  def sync_subscription(_event), do: {:ok, :ignored}
+  def apply_event(_event), do: {:ok, :ignored}
 
   @doc """
   Here rather than in each caller because the billing page, the billing API
@@ -350,78 +310,6 @@ defmodule Fountain.Billing do
     }
 
     {period_start, period_end}
-  end
-
-  @doc """
-  The window a tenant's usage should be measured over: the period Stripe is
-  actually invoicing them for, or the calendar month when there is no such
-  period — and which of the two it is.
-
-  Returns `%{start:, end:, source:}` rather than a bare `{start, end}` on
-  purpose. A number measured over the wrong window has to be able to say so:
-  enforcing an allowance, or even displaying one, against a calendar month
-  when the customer's invoice runs the 20th to the 20th is a support ticket
-  per customer per month. Every surface that shows the number carries the
-  `:source` with it.
-
-  `:subscription` requires both ends synced from Stripe *and* that the stored
-  period contains `now`. Everything else falls back to `:calendar_month`:
-
-    * a self-hosted deployment with no Stripe at all;
-    * a comped account, which has no invoiced period;
-    * a trialing account Stripe has not reported a period for;
-    * an account whose stored period has already ended — a cancelled
-      subscription's final period, or the seconds between a renewal and the
-      webhook that reports the new one.
-
-  @doc \"""
-  The window usage is reported over: the calendar month (ADR 0031 — there
-  is no invoiced period any more). Kept as a map with `:source` so the
-  surfaces that learned to show which window they are on keep working.
-  """
-  @spec billing_period(User.t(), DateTime.t() | nil) :: %{
-          start: DateTime.t(),
-          end: DateTime.t(),
-          source: :calendar_month
-        }
-  def billing_period(_user, _now \\ nil), do: calendar_month_period()
-
-  defp calendar_month_period do
-    {period_start, period_end} = current_month_range()
-    %{start: period_start, end: period_end, source: :calendar_month}
-  end
-
-  @doc """
-  Turn hours a tenant has spent in a period, on the providers Fountain pays
-  for.
-
-  A *turn* hour is an hour with a prompt in flight, not an hour of sandbox
-  wall-clock: an agent left running overnight with nobody talking to it costs
-  Fountain money (and is reported by `usage_summary/3` as sandbox minutes) but
-  spends none of the tenant's allowance. Time on a tenant's own runner
-  (ADR 0022) is excluded too — Fountain pays nothing for it, so charging an
-  allowance against it would be indefensible.
-
-  Summed per turn, not the sandbox's busy union: several conversations may run
-  on one sandbox at once (ADR 0023), and two of them each running an hour are
-  two hours of work on a machine that was busy for one.
-
-  Pass a period as `{start, end}`; defaults to the tenant's `billing_period/2`.
-  """
-  @spec turn_hours_used(User.t(), keyword()) :: float()
-  def turn_hours_used(%User{} = user, opts \\ []) do
-    {period_start, period_end} =
-      case Keyword.get(opts, :period) do
-        {%DateTime{} = s, %DateTime{} = e} -> {s, e}
-        nil -> billing_period(user) |> then(&{&1.start, &1.end})
-      end
-
-    user.id
-    |> SandboxUsage.turn_seconds_for_user(period_start, period_end)
-    |> Enum.filter(fn {provider, _seconds} -> SandboxUsage.platform_cost?(provider) end)
-    |> Enum.map(&elem(&1, 1))
-    |> Enum.sum()
-    |> SandboxUsage.hours()
   end
 
   @doc """

@@ -1,4 +1,4 @@
-defmodule Fountain.Workers.CreditGranter do
+defmodule Fountain.Workers.CreditExpirer do
   @moduledoc """
   Takes the unused free money back out (ADR 0030 decision 2, ADR 0031): a
   grant whose `expires_at` has passed loses what its lot still holds, under
@@ -23,7 +23,7 @@ defmodule Fountain.Workers.CreditGranter do
   def perform(_job) do
     case run() do
       %{expired: 0} -> :ok
-      c -> Logger.info("credit granter: #{c.expired} expiries")
+      c -> Logger.info("credit expirer: #{c.expired} expiries")
     end
 
     :ok
@@ -59,7 +59,7 @@ defmodule Fountain.Workers.CreditGranter do
   # (`Credits.expire_lot/2`), so a burn racing this sweep cannot make the
   # expiry take more than the grant still had.
   defp expire_grant(%LedgerEntry{} = grant) do
-    case Credits.expire_lot(grant, actor: "system:credit_granter") do
+    case Credits.expire_lot(grant, actor: "system:credit_expirer") do
       {:ok, :nothing} ->
         false
 
@@ -70,12 +70,8 @@ defmodule Fountain.Workers.CreditGranter do
         false
 
       {:error, why} ->
-        Logger.warning("credit granter: expire #{grant.id} failed: #{inspect(why)}")
+        Logger.warning("credit expirer: expire #{grant.id} failed: #{inspect(why)}")
         false
     end
   end
-
-  @doc "See `Fountain.Credits.unspent_of/2`; kept here for the tests that grew up with it."
-  @spec unspent_of(LedgerEntry.t(), integer()) :: non_neg_integer()
-  def unspent_of(%LedgerEntry{} = grant, balance), do: Credits.unspent_of(grant, balance)
 end

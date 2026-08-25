@@ -1620,18 +1620,6 @@ defmodule FountainWeb.Schemas do
     })
   end
 
-  defmodule AdminExtendTrialRequest do
-    @moduledoc false
-    require OpenApiSpex
-
-    OpenApiSpex.schema(%{
-      title: "AdminExtendTrialRequest",
-      type: :object,
-      properties: %{days: %Schema{type: :integer, minimum: 1}},
-      required: [:days]
-    })
-  end
-
   defmodule AdminCompRequest do
     @moduledoc false
     require OpenApiSpex
@@ -1806,17 +1794,16 @@ defmodule FountainWeb.Schemas do
               description: "The calendar month the usage numbers cover.",
               properties: %{
                 start: %Schema{type: :string, format: :"date-time"},
-                end: %Schema{type: :string, format: :"date-time"},
-                source: %Schema{type: :string, enum: ~w(calendar_month)}
+                end: %Schema{type: :string, format: :"date-time"}
               }
             },
             credits: %Schema{
               type: :object,
               nullable: true,
               description:
-                "The prepaid balance, in cents. Null while this deployment has " <>
-                  "not started burning credits; a client must not show a zero " <>
-                  "balance then. Nothing is refused at zero yet.",
+                "The prepaid balance, in cents. Null when this deployment has " <>
+                  "billing off; a client must not show a zero balance then. " <>
+                  "At zero, new work is refused with 402 `insufficient_credits`.",
               properties: %{
                 balance_cents: %Schema{
                   type: :integer,

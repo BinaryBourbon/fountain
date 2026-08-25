@@ -47,10 +47,8 @@ defmodule FountainWeb.BillingApiControllerTest do
       assert body["data"]["usage"]["sandbox_minutes_by_provider"] == %{}
       assert body["data"]["period"]["start"]
       assert body["data"]["period"]["end"]
-      # No subscription period synced yet, so the numbers cover a calendar
-      # month — and the response has to say so rather than let a client show
-      # an allowance against a window nobody is invoiced for.
-      assert body["data"]["period"]["source"] == "calendar_month"
+      # The calendar month, always (ADR 0031); there is no `source` to say so.
+      refute Map.has_key?(body["data"]["period"], "source")
     end
 
     test "turn hours travel with the usage", %{

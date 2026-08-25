@@ -7,7 +7,7 @@ defmodule FountainWeb.BillingApiJSON do
         comped: user.comped,
         has_stripe_customer: user.stripe_customer_id not in [nil, ""],
         sandbox_cap: cap,
-        period: %{start: period.start, end: period.end, source: period.source},
+        period: %{start: period.start, end: period.end},
         credits: credits_data(credits),
         usage: %{
           conversations: usage.conversations,

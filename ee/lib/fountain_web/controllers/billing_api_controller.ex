@@ -44,7 +44,8 @@ defmodule FountainWeb.BillingApiController do
   def show(conn, _params) do
     with :ok <- require_billing() do
       user = conn.assigns.current_user
-      period = Billing.billing_period(user)
+      {period_start, period_end} = Billing.current_month_range()
+      period = %{start: period_start, end: period_end}
 
       render(conn, :show,
         user: user,
@@ -62,8 +63,7 @@ defmodule FountainWeb.BillingApiController do
       "A one-time payment for one of the packs this deployment sells " <>
         "(`GET /api/account/billing` lists them under `credits.packs_cents`). " <>
         "The balance moves when Stripe's webhook confirms payment, not when " <>
-        "this returns. Refused for a trialing account with " <>
-        "`subscription_required`, for a comped one with `comped`, and for an " <>
+        "this returns. Refused for a comped account with `comped`, and for an " <>
         "amount that is not a pack with `unknown_pack`.",
     request_body: {"Pack", "application/json", Schemas.CreditsCheckoutRequest, required: true},
     responses: [
@@ -112,30 +112,10 @@ defmodule FountainWeb.BillingApiController do
     })
   end
 
-  defp render_url({:error, :subscription_required}, conn) do
-    conn
-    |> put_status(:unprocessable_entity)
-    |> json(%{
-      error: "subscription_required",
-      message: "Subscribe first, then you can buy credits."
-    })
-  end
-
   defp render_url({:error, :unknown_pack}, conn) do
     conn
     |> put_status(:unprocessable_entity)
     |> json(%{error: "unknown_pack", message: "cents must be one of the packs on offer."})
-  end
-
-  defp render_url({:error, :no_customer}, conn) do
-    conn
-    |> put_status(:unprocessable_entity)
-    |> json(%{
-      error: "no_stripe_customer",
-      message:
-        "This account has never been a Stripe customer, so it has no portal. " <>
-          "Start a subscription at POST /api/account/billing/checkout."
-    })
   end
 
   defp render_url({:error, _reason}, conn), do: stripe_unreachable(conn)

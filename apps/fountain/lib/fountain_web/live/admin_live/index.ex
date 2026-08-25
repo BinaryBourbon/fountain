@@ -87,7 +87,7 @@ defmodule FountainWeb.AdminLive.Index do
         <div class="grid grid-cols-2 sm:grid-cols-5 gap-3">
           <div
             :for={stage <- @funnel.stages}
-            :if={stage.key != :subscribed or @billing_enabled}
+            :if={stage.key != :funded or @billing_enabled}
             class="bg-white rounded shadow border border-zinc-200 px-4 py-3"
           >
             <div class="text-xs text-zinc-500">{stage_label(stage.key)}</div>
@@ -194,7 +194,7 @@ defmodule FountainWeb.AdminLive.Index do
   defp stage_label(:verified), do: "Verified"
   defp stage_label(:onboarded), do: "Onboarded"
   defp stage_label(:activated), do: "Activated"
-  defp stage_label(:subscribed), do: "Subscribed"
+  defp stage_label(:funded), do: "Funded"
 
   defp format_pct(fraction), do: "#{round(fraction * 100)}%"
 end

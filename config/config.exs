@@ -38,13 +38,13 @@ config :fountain, Oban,
        # schedules are written in.
        {"* * * * *", Fountain.Workers.TeamScheduler},
        # Every 10 minutes: price closed turns and comms messages into the
-       # credit ledger (ADR 0030). Idempotent per turn and per event, so the
-       # cadence only sets how stale a balance can read. No-ops until
+       # credit ledger (ADR 0030) and sweep expired grants. Idempotent per
+       # turn, per event and per grant, so the cadence only sets how stale a
+       # balance can read. No-ops with billing off.
        {"*/10 * * * *", Fountain.Workers.CreditPricer},
-       # 06:23 UTC daily: tier and trial grants, and expiry of unspent grants
-       # (ADR 0030 decision 2). Idempotent per period and per grant. The
-       # webhook will grant at renewal directly (phase 4); this is the
-       {"23 6 * * *", Fountain.Workers.CreditGranter},
+       # 06:23 UTC daily: the expiry sweep on its own, as a backstop for the
+       # pricer's tick (ADR 0030 decision 2). Idempotent per grant.
+       {"23 6 * * *", Fountain.Workers.CreditExpirer},
        # 06:47 UTC daily: rent for numbers and inboxes, the grace reminders,
        # and the release on day seven (ADR 0030 decision 4). No-ops until a
        # rent price is set.

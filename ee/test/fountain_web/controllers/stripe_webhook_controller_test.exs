@@ -55,7 +55,7 @@ defmodule FountainWeb.StripeWebhookControllerTest do
     end
 
     test "returns 200 when Stripe signature is valid", %{conn: conn} do
-      # Stub returns a minimal event; sync_subscription will look up the user
+      # Stub returns a minimal event; apply_event will look up the user
       # by cus_unknown and return {:error, :user_not_found}, which the controller
       # logs and ignores — always responding 200 to Stripe.
       event = %Stripe.Event{
@@ -81,7 +81,7 @@ defmodule FountainWeb.StripeWebhookControllerTest do
       assert conn.status == 200
     end
 
-    test "returns 200 and sync_subscription succeeds when customer matches a real user",
+    test "returns 200 and apply_event succeeds when customer matches a real user",
          %{conn: conn} do
       user = insert_verified_user()
 

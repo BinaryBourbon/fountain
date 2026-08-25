@@ -253,7 +253,7 @@ defmodule Fountain.Billing.Finance do
     now = Keyword.get(opts, :now) || DateTime.utc_now()
 
     rows = SandboxUsage.attribution(period_start, period_end, now: now)
-    users = paying_users()
+    users = all_users()
     card = rate_card(Keyword.get(opts, :basis))
     fraction = period_fraction(period_start, period_end, now)
 
@@ -470,7 +470,8 @@ defmodule Fountain.Billing.Finance do
   # does not pay at all (a tenant's own runner, ADR 0022) — but zero for the
   # runner rather than nil, because "we pay nothing for this" is a known
   # price, not a missing one.
-  defp provider_cost_cents(seconds, provider, card) do
+  @doc false
+  def provider_cost_cents(seconds, provider, card) do
     cond do
       not SandboxUsage.platform_cost?(provider) -> 0
       rate = Map.get(card.providers, provider) -> round(seconds / 3600 * rate)
@@ -489,9 +490,10 @@ defmodule Fountain.Billing.Finance do
     ])
   end
 
-  defp monthly_cost(0, _cents, _fraction), do: 0
-  defp monthly_cost(_units, nil, _fraction), do: nil
-  defp monthly_cost(units, cents, fraction), do: round(units * cents * fraction)
+  @doc false
+  def monthly_cost(0, _cents, _fraction), do: 0
+  def monthly_cost(_units, nil, _fraction), do: nil
+  def monthly_cost(units, cents, fraction), do: round(units * cents * fraction)
 
   defp message_cost_cents(%{emails_sent: 0, sms_sent: 0, sms_received: 0}, _card), do: 0
 
@@ -509,9 +511,10 @@ defmodule Fountain.Billing.Finance do
     |> then(&(&1 && round(&1)))
   end
 
-  defp per_message(0, _cents), do: 0
-  defp per_message(_count, nil), do: nil
-  defp per_message(count, cents), do: count * cents
+  @doc false
+  def per_message(0, _cents), do: 0
+  def per_message(_count, nil), do: nil
+  def per_message(count, cents), do: count * cents
 
   # `nil` is contagious: a total missing one of its parts is not a total. It
   # must not silently become the sum of the parts that happened to be priced.
@@ -527,7 +530,7 @@ defmodule Fountain.Billing.Finance do
 
   # Every account. Deleted accounts are gone; suspended ones still cost money,
   # so they stay.
-  defp paying_users do
+  defp all_users do
     Repo.all(
       from u in User,
         select: %{
@@ -601,7 +604,7 @@ defmodule Fountain.Billing.Finance do
   defp empty_ledger, do: %{granted: 0, burned: 0, sold: 0}
 
   defp empty_usage,
-    do: %{active_seconds: 0, busy_seconds: 0, idle_seconds: 0, by_provider: []}
+    do: %{active_seconds: 0, busy_seconds: 0, idle_seconds: 0, turn_seconds: 0, by_provider: []}
 
   @doc """
   `SandboxUsage.attribution/3` rows folded per tenant, keeping the per-provider

@@ -518,8 +518,8 @@
     },
     {
       "type": "bargauge",
-      "title": "Registered to subscribed",
-      "description": "All-time counts. Subscribed means an active or past_due subscription. Comped accounts are operator grants rather than conversions and are excluded, so this number is smaller than the count of accounts that can spend.",
+      "title": "Registered to funded",
+      "description": "All-time counts. Funded means a positive credit balance (ADR 0031). Comped accounts can spend without one and are not counted here.",
       "gridPos": {
         "h": 7,
         "w": 12,
@@ -577,15 +577,15 @@
         },
         {
           "refId": "D",
-          "expr": "max(fountain_funnel_subscribed{namespace=\"$namespace\"})",
-          "legendFormat": "subscribed",
+          "expr": "max(fountain_funnel_funded{namespace=\"$namespace\"})",
+          "legendFormat": "funded",
           "instant": true
         }
       ]
     },
     {
       "type": "stat",
-      "title": "Subscribed / registered",
+      "title": "Funded / registered",
       "description": "End to end conversion. A revenue number needs Stripe, which Prometheus never sees; this is the count that leads it.",
       "gridPos": {
         "h": 7,
@@ -625,13 +625,13 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "max(fountain_funnel_subscribed{namespace=\"$namespace\"}) / max(fountain_funnel_registered{namespace=\"$namespace\"})"
+          "expr": "max(fountain_funnel_funded{namespace=\"$namespace\"}) / max(fountain_funnel_registered{namespace=\"$namespace\"})"
         }
       ]
     },
     {
       "type": "stat",
-      "title": "Subscribed / activated",
+      "title": "Funded / activated",
       "description": "Conversion among accounts that got far enough to run something. This is the one that moves when pricing or the gate changes.",
       "gridPos": {
         "h": 7,
@@ -671,7 +671,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "max(fountain_funnel_subscribed{namespace=\"$namespace\"}) / max(fountain_funnel_activated{namespace=\"$namespace\"})"
+          "expr": "max(fountain_funnel_funded{namespace=\"$namespace\"}) / max(fountain_funnel_activated{namespace=\"$namespace\"})"
         }
       ]
     },

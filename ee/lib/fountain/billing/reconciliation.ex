@@ -17,6 +17,7 @@ defmodule Fountain.Billing.Reconciliation do
   import Ecto.Query
 
   alias Fountain.Audit
+  alias Fountain.Billing.Finance
   alias Fountain.Billing.ProviderInvoice
   alias Fountain.Repo
 
@@ -96,8 +97,8 @@ defmodule Fountain.Billing.Reconciliation do
   end
 
   # Sandbox providers from the attribution roll-up at the summary's basis;
-  # AgentMail is inboxes plus email, AgentPhone numbers plus SMS, pro-rated
-  # and rounded the way `Finance` does it so the two never disagree.
+  # AgentMail is inboxes plus email, AgentPhone numbers plus SMS. Priced by
+  # `Finance`'s own functions so the two can never round differently.
   defp computed_by_provider(summary) do
     card = summary.rate_card
     cost = summary.cost
@@ -106,41 +107,26 @@ defmodule Fountain.Billing.Reconciliation do
     sandboxes =
       Map.new(cost.by_provider, fn {provider, totals} ->
         seconds = if(card.basis == :turn, do: totals.busy_seconds, else: totals.active_seconds)
-
-        cents =
-          case Map.get(card.providers, provider) do
-            nil -> nil
-            rate -> round(seconds / 3600 * rate)
-          end
-
-        {provider, cents}
+        {provider, Finance.provider_cost_cents(seconds, provider, card)}
       end)
 
     agentmail =
       add([
-        monthly(cost.inboxes, card.inbox_month, fraction),
-        per_message(cost.emails_sent, card.email)
+        Finance.monthly_cost(cost.inboxes, card.inbox_month, fraction),
+        Finance.per_message(cost.emails_sent, card.email)
       ])
 
     agentphone =
       add([
-        monthly(cost.numbers, card.number_month, fraction),
-        per_message(cost.sms_sent + cost.sms_received, card.sms)
+        Finance.monthly_cost(cost.numbers, card.number_month, fraction),
+        Finance.per_message(cost.sms_sent + cost.sms_received, card.sms)
       ])
 
     sandboxes |> Map.put("agentmail", agentmail) |> Map.put("agentphone", agentphone)
   end
 
-  defp monthly(0, _cents, _fraction), do: 0
-  defp monthly(_units, nil, _fraction), do: nil
-  defp monthly(units, cents, fraction), do: units * cents * fraction
-
-  defp per_message(0, _cents), do: 0
-  defp per_message(_n, nil), do: nil
-  defp per_message(n, cents), do: n * cents
-
   defp add(parts) do
-    if Enum.any?(parts, &is_nil/1), do: nil, else: parts |> Enum.sum() |> round()
+    if Enum.any?(parts, &is_nil/1), do: nil, else: Enum.sum(parts)
   end
 
   @doc """

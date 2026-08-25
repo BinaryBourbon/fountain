@@ -583,10 +583,7 @@ defmodule FountainWeb.Router do
     # lapsed account can still read and manage what it has, and the gate that
     # protects spend is in the context (ADR 0006), not here.
     live_session :authenticated,
-      on_mount: [
-        {FountainWeb.Live.Hooks, :require_authenticated_user},
-        {FountainWeb.Live.Hooks, :assign_subscription_state}
-      ] do
+      on_mount: [{FountainWeb.Live.Hooks, :require_authenticated_user}] do
       live "/dashboard", DashboardLive.Index, :index
       live "/agents", AgentsLive.Index, :index
       live "/agents/new", AgentsLive.Form, :new

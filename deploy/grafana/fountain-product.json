@@ -128,8 +128,8 @@
         },
         {
           "refId": "E",
-          "expr": "max(fountain_funnel_subscribed{namespace=\"$namespace\"})",
-          "legendFormat": "subscribed",
+          "expr": "max(fountain_funnel_funded{namespace=\"$namespace\"})",
+          "legendFormat": "funded",
           "instant": true
         }
       ]
@@ -274,7 +274,7 @@
     },
     {
       "type": "stat",
-      "title": "Subscribed / activated",
+      "title": "Funded / activated",
       "description": "Comped accounts are operator grants rather than conversions and are excluded. An account that converted and then canceled drops out of this stage.",
       "gridPos": {
         "h": 4,
@@ -314,7 +314,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "max(fountain_funnel_subscribed{namespace=\"$namespace\"}) / max(fountain_funnel_activated{namespace=\"$namespace\"})"
+          "expr": "max(fountain_funnel_funded{namespace=\"$namespace\"}) / max(fountain_funnel_activated{namespace=\"$namespace\"})"
         }
       ]
     },
@@ -462,8 +462,8 @@
         },
         {
           "refId": "E",
-          "expr": "max(fountain_funnel_subscribed{namespace=\"$namespace\"})",
-          "legendFormat": "subscribed"
+          "expr": "max(fountain_funnel_funded{namespace=\"$namespace\"})",
+          "legendFormat": "funded"
         }
       ]
     },

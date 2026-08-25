@@ -54,7 +54,7 @@ defmodule Fountain.CreditsEnforcementTest do
       Application.put_env(:fountain, :billing_enabled, false)
       on_exit(fn -> Application.put_env(:fountain, :billing_enabled, true) end)
       user = subscriber()
-      refute Credits.enforcing?()
+      refute Credits.active?()
       assert :ok = Credits.gate(user)
       assert :ok = Billing.check_spend(user)
     end
@@ -63,7 +63,7 @@ defmodule Fountain.CreditsEnforcementTest do
   describe "check_spend/1 with billing on" do
     test "zero refuses, positive passes" do
       user = drained(subscriber())
-      assert Credits.enforcing?()
+      assert Credits.active?()
       assert {:error, :insufficient_credits} = Billing.check_spend(user)
       assert {:error, :insufficient_credits} = Billing.check_spend(user.id)
 
@@ -191,7 +191,7 @@ defmodule Fountain.CreditsEnforcementTest do
       user = subscriber()
 
       {:ok, _} =
-        Credits.grant(user.id, 1000, "grant_tier",
+        Credits.grant(user.id, 1000, "grant_opening",
           idempotency_key: "g",
           expires_at: ~U[2099-01-01 00:00:00Z]
         )

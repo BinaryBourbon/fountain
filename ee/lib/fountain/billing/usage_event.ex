@@ -29,6 +29,9 @@ defmodule Fountain.Billing.UsageEvent do
   # The closed vocabulary of things Fountain pays for. Sandbox lifecycle, and
   # the teammate messages that carry a per-message provider charge on top of
   # the monthly cost of an inbox or a number (`Fountain.Billing.Finance`).
+  # `sandbox_terminated` is forensic only: nothing prices or aggregates it
+  # (`SandboxUsage` reads the sandbox rows), but its `duration_ms` and
+  # `final_status` are the record of what a sandbox did when it died.
   @valid_event_types ~w(sandbox_provisioned sandbox_provision_failed turn_started sandbox_terminated
                          sandbox_suspended sandbox_resumed
                          comms_email_sent comms_sms_sent comms_sms_received)

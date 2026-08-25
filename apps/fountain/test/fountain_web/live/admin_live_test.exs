@@ -45,7 +45,7 @@ defmodule FountainWeb.AdminLiveTest do
       assert html =~ "Verified"
       assert html =~ "Onboarded"
       assert html =~ "Activated"
-      assert html =~ "Subscribed"
+      assert html =~ "Funded"
       # 2 registered, 1 verified → 50% conversion tile
       assert html =~ "50% of prev"
     end

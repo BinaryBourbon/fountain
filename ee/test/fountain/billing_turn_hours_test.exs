@@ -1,13 +1,11 @@
 defmodule Fountain.Billing.TurnHoursTest do
   @moduledoc """
-  The billing period, and the turn-hour allowance measured over it (#1016).
+  The turn hours `Billing.usage_summary/3` reports (#1016, ADR 0031).
 
-  Two things are easy to get wrong here and both are tested hard. The window
-  has to be the one Stripe invoices — or say out loud that it is not — because
-  an allowance reported over a calendar month a customer is not charged for is
-  a support ticket per customer per month. And the unit has to be *turn* time:
-  an idle sandbox costs Fountain money but spends none of a tenant's hours,
-  and a tenant's own runner costs Fountain nothing at all.
+  The unit has to be *turn* time: an idle sandbox costs Fountain money but
+  burns none of a tenant's credit, and a tenant's own runner costs Fountain
+  nothing at all. The window is the calendar month (`current_month_range/0`);
+  every test here passes an explicit one.
   """
 
   use Fountain.DataCase, async: true
@@ -46,18 +44,9 @@ defmodule Fountain.Billing.TurnHoursTest do
       })
   end
 
-  describe "billing_period/2" do
-    test "falls back to the calendar month, and says so, with no period stored" do
-      user = insert_verified_user()
+  defp turn_hours(user), do: Billing.usage_summary(user.id, @period_start, @period_end).turn_hours
 
-      period = Billing.billing_period(user, ~U[2026-06-05 00:00:00Z])
-
-      assert period.source == :calendar_month
-      assert period.start.day == 1
-    end
-  end
-
-  describe "turn_hours_used/2" do
+  describe "usage_summary/3 turn_hours" do
     test "counts time with a prompt in flight, not the sandbox's whole life" do
       user = insert_verified_user()
 
@@ -66,7 +55,7 @@ defmodule Fountain.Billing.TurnHoursTest do
 
       turn(sandbox, user, ~U[2026-05-10 12:00:00Z], ~U[2026-05-10 14:00:00Z])
 
-      assert Billing.turn_hours_used(user, period: {@period_start, @period_end}) == 2.0
+      assert turn_hours(user) == 2.0
     end
 
     test "an agent left running with nobody prompting it spends nothing" do
@@ -75,7 +64,7 @@ defmodule Fountain.Billing.TurnHoursTest do
       user = insert_verified_user()
       sandbox_running(user, "sprites", ~U[2026-05-10 00:00:00Z], ~U[2026-05-11 00:00:00Z])
 
-      assert Billing.turn_hours_used(user, period: {@period_start, @period_end}) == 0.0
+      assert turn_hours(user) == 0.0
 
       # ...while the wall-clock number the provider invoice is checked against
       # still sees the whole day.
@@ -91,7 +80,7 @@ defmodule Fountain.Billing.TurnHoursTest do
 
       turn(runner, user, ~U[2026-05-10 12:00:00Z], ~U[2026-05-10 15:00:00Z])
 
-      assert Billing.turn_hours_used(user, period: {@period_start, @period_end}) == 0.0
+      assert turn_hours(user) == 0.0
     end
 
     test "platform providers are summed, the runner is left out of the same total" do
@@ -109,7 +98,7 @@ defmodule Fountain.Billing.TurnHoursTest do
       turn(e2b, user, ~U[2026-05-10 12:00:00Z], ~U[2026-05-10 12:30:00Z])
       turn(runner, user, ~U[2026-05-10 12:00:00Z], ~U[2026-05-10 20:00:00Z])
 
-      assert Billing.turn_hours_used(user, period: {@period_start, @period_end}) == 1.5
+      assert turn_hours(user) == 1.5
     end
 
     test "a turn spanning the period boundary counts only the part inside it" do
@@ -120,7 +109,7 @@ defmodule Fountain.Billing.TurnHoursTest do
 
       turn(sandbox, user, ~U[2026-04-30 23:00:00Z], ~U[2026-05-01 01:00:00Z])
 
-      assert Billing.turn_hours_used(user, period: {@period_start, @period_end}) == 1.0
+      assert turn_hours(user) == 1.0
     end
 
     test "one tenant's turns are not another's" do
@@ -132,21 +121,7 @@ defmodule Fountain.Billing.TurnHoursTest do
 
       turn(sandbox, other, ~U[2026-05-10 12:00:00Z], ~U[2026-05-10 14:00:00Z])
 
-      assert Billing.turn_hours_used(user, period: {@period_start, @period_end}) == 0.0
-    end
-
-    test "defaults to the tenant's billing period" do
-      user = insert_verified_user()
-
-      sandbox =
-        sandbox_running(user, "sprites", ~U[2026-05-10 00:00:00Z], ~U[2026-05-11 00:00:00Z])
-
-      turn(sandbox, user, ~U[2026-05-10 12:00:00Z], ~U[2026-05-10 13:00:00Z])
-
-      # The default window is the current calendar month (ADR 0031), which
-      # contains none of the turn above; the explicit period finds it.
-      assert Billing.turn_hours_used(user) == 0.0
-      assert Billing.turn_hours_used(user, period: {@period_start, @period_end}) == 1.0
+      assert turn_hours(user) == 0.0
     end
   end
 

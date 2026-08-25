@@ -173,6 +173,23 @@ defmodule Fountain.QuotasTest do
                "cents=#{cents} override=#{inspect(override)}"
       end
     end
+
+    test "an unfunded account is shown 0, though the enforced floor stays (#1127)" do
+      user = insert_active_user()
+
+      {:ok, _} =
+        Fountain.Credits.debit(user.id, 1_000, "burn_turn", idempotency_key: "drain-#{user.id}")
+
+      user = Fountain.Repo.reload!(user)
+      assert Quotas.sandbox_limit_for(user) == 0
+      assert Quotas.sandbox_limit(user.id) == 2
+
+      {:ok, comped} = Fountain.Billing.comp_account(user)
+      assert Quotas.sandbox_limit_for(comped) == Quotas.sandbox_limit(comped.id)
+
+      {:ok, overridden} = Fountain.Accounts.update_sandbox_limit(user, 3)
+      assert Quotas.sandbox_limit_for(overridden) == 3
+    end
   end
 
   describe "check_sandbox_quota/2" do
@@ -306,27 +323,6 @@ defmodule Fountain.QuotasTest do
                Quotas.with_sandbox_reservation(user.id, [exclude: replacing.id], fn ->
                  {:ok, insert_sandbox(user_id: user.id, status: "pending")}
                end)
-    end
-  end
-
-  describe "check_sandbox_quota!/2" do
-    test "returns :ok below the cap" do
-      assert :ok = Quotas.check_sandbox_quota!(insert_active_user().id)
-    end
-
-    test "raises at the cap with the counts in the message" do
-      user = insert_active_user()
-      limit = Quotas.sandbox_limit(user.id)
-      for _ <- 1..limit, do: insert_sandbox(user_id: user.id, status: "ready")
-
-      err =
-        assert_raise Quotas.QuotaExceededError, fn ->
-          Quotas.check_sandbox_quota!(user.id)
-        end
-
-      assert err.count == limit
-      assert err.limit == limit
-      assert err.message =~ "#{limit}/#{limit}"
     end
   end
 end

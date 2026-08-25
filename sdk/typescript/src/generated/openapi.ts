@@ -835,7 +835,7 @@ export interface paths {
         put?: never;
         /**
          * Mint a Stripe Checkout URL for a credit pack
-         * @description A one-time payment for one of the packs this deployment sells (`GET /api/account/billing` lists them under `credits.packs_cents`). The balance moves when Stripe's webhook confirms payment, not when this returns. Refused for a trialing account with `subscription_required`, for a comped one with `comped`, and for an amount that is not a pack with `unknown_pack`.
+         * @description A one-time payment for one of the packs this deployment sells (`GET /api/account/billing` lists them under `credits.packs_cents`). The balance moves when Stripe's webhook confirms payment, not when this returns. Refused for a comped account with `comped`, and for an amount that is not a pack with `unknown_pack`.
          */
         post: operations["FountainWeb.BillingApiController.credits_checkout"];
         delete?: never;
@@ -3752,7 +3752,7 @@ export interface components {
         /** BillingResponse */
         BillingResponse: {
             data: {
-                /** @description The prepaid balance, in cents. Null while this deployment has not started burning credits; a client must not show a zero balance then. Nothing is refused at zero yet. */
+                /** @description The prepaid balance, in cents. Null when this deployment has billing off; a client must not show a zero balance then. At zero, new work is refused with 402 `insufficient_credits`. */
                 credits?: {
                     /** @description May be negative: an in-flight turn that crosses zero finishes. */
                     balance_cents?: number;
@@ -3772,8 +3772,6 @@ export interface components {
                 period?: {
                     /** Format: date-time */
                     end?: string;
-                    /** @enum {string} */
-                    source?: "calendar_month";
                     /** Format: date-time */
                     start?: string;
                 };
