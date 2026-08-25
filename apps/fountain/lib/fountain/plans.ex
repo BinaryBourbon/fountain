@@ -19,35 +19,23 @@ defmodule Fountain.Plans do
 
   ## Included turn hours
 
-  `included_turn_hours` is derived, not chosen per tier: **20 turn hours per
-  concurrent sandbox the plan allows**, so Solo's 2 slots carry 40 hours and
-  Scale's 10 carry 200. Deriving it keeps the ladder on one axis — a plan
-  cannot end up with more capacity and less work to do with it.
-
-  A *turn* hour is time with a prompt actually in flight
-  (`Fountain.Billing.SandboxUsage`'s `busy_seconds`), not wall-clock sandbox
-  time. The distinction is the whole point: a sandbox left running overnight
-  with nobody prompting it burns `active_seconds` and no allowance, so the
-  meter measures work rather than forgetfulness. Hours on a tenant's own
-  runner (ADR 0022) do not count either — Fountain pays nothing for them.
-
-  **The hours are now a credit grant (ADR 0030).** `included_turn_hours` is
-  what `Fountain.Workers.CreditGranter` multiplies by the turn-hour price at
-  the start of each billing period; turns burn that balance at the same
-  price, and `Billing.check_spend/1` refuses new spend at zero once
-  `CREDIT_ENFORCE` is on. `Fountain.Billing.turn_hour_allowance/2` still
-  reports used against included on every surface, and stays until
-  enforcement flips on the hosted deployment.
+  `included_credit_cents` is derived, not chosen per tier: **$5 of credit
+  per concurrent slot**, so Solo carries $10, Team $25 and Scale $50. It is
+  the monthly grant `Fountain.Workers.CreditGranter` puts into the prepaid
+  balance at the start of each billing period (ADR 0030); turns burn that
+  balance at the turn-hour price, and `Billing.check_spend/1` refuses new
+  spend at zero once `CREDIT_ENFORCE` is on. Hours on a tenant's own runner
+  (ADR 0022) burn nothing, and neither does a parked or idle sandbox.
 
   ## The catalog
 
-  | Plan | Concurrent | Turn hours | Teammate contacts | Price |
+  | Plan | Concurrent | Credit a month | Teammate contacts | Price |
   |---|---|---|---|---|
-  | `solo` | 2 | 40 | 1 | $29/mo |
-  | `team` | 5 | 100 | 3 | $79/mo |
-  | `scale` | 10 | 200 | 10 | $199/mo |
-  | `legacy` | 5 | 100 | 3 | $29/mo (closed) |
-  | `trial` | 2 | 40 | 0 | free (closed) |
+  | `solo` | 2 | $10 | 1 | $29/mo |
+  | `team` | 5 | $25 | 3 | $79/mo |
+  | `scale` | 10 | $50 | 10 | $199/mo |
+  | `legacy` | 5 | $25 | 3 | $29/mo (closed) |
+  | `trial` | 2 | $10 | 0 | free (closed) |
 
   ## The trial is a plan, and never a larger one
 
@@ -111,7 +99,7 @@ defmodule Fountain.Plans do
     :tagline,
     :monthly_cents,
     :concurrent_sandboxes,
-    :included_turn_hours,
+    :included_credit_cents,
     :team_contacts,
     :order,
     public?: true
@@ -123,10 +111,12 @@ defmodule Fountain.Plans do
   # module that is defining it. `all/0` is what turns these into `%Plans{}`,
   # and with four of them the cost of doing so per call is not worth caching.
   #
-  # `included_turn_hours` is 20 per concurrent slot, written out per plan
-  # rather than computed, so the catalog stays a table you can read every
-  # entitlement off. `plans_test.exs` asserts the ratio, so breaking it for a
-  # future plan is a deliberate act rather than a typo.
+  # `included_credit_cents` is $5 of credit per concurrent slot, written out
+  # per plan rather than computed, so the catalog stays a table you can read
+  # every entitlement off. `plans_test.exs` asserts the ratio, so breaking it
+  # for a future plan is a deliberate act rather than a typo. It is cents,
+  # not hours (ADR 0030): a change to the turn-hour price changes what an
+  # hour costs, never what a plan includes.
   @plan_specs [
     %{
       slug: "solo",
@@ -134,7 +124,7 @@ defmodule Fountain.Plans do
       tagline: "One person, a couple of agents at a time.",
       monthly_cents: 2_900,
       concurrent_sandboxes: 2,
-      included_turn_hours: 40,
+      included_credit_cents: 1_000,
       team_contacts: 1,
       order: 1
     },
@@ -144,7 +134,7 @@ defmodule Fountain.Plans do
       tagline: "A standing team of agents, working in parallel.",
       monthly_cents: 7_900,
       concurrent_sandboxes: 5,
-      included_turn_hours: 100,
+      included_credit_cents: 2_500,
       team_contacts: 3,
       order: 2
     },
@@ -154,7 +144,7 @@ defmodule Fountain.Plans do
       tagline: "Fleet-sized fan-out, without asking first.",
       monthly_cents: 19_900,
       concurrent_sandboxes: 10,
-      included_turn_hours: 200,
+      included_credit_cents: 5_000,
       team_contacts: 10,
       order: 3
     },
@@ -164,7 +154,7 @@ defmodule Fountain.Plans do
       tagline: "The original flat plan, at Team capacity.",
       monthly_cents: 2_900,
       concurrent_sandboxes: 5,
-      included_turn_hours: 100,
+      included_credit_cents: 2_500,
       team_contacts: 3,
       order: 0,
       public?: false
@@ -175,7 +165,7 @@ defmodule Fountain.Plans do
       tagline: "Enough to judge it by, for fourteen days.",
       monthly_cents: 0,
       concurrent_sandboxes: 2,
-      included_turn_hours: 40,
+      included_credit_cents: 1_000,
       team_contacts: 0,
       order: -1,
       public?: false
@@ -335,9 +325,9 @@ defmodule Fountain.Plans do
   Reported everywhere, enforced nowhere — no code path refuses anything
   because a tenant is over.
   """
-  @spec included_turn_hours(term()) :: non_neg_integer()
-  def included_turn_hours(%__MODULE__{included_turn_hours: n}), do: n
-  def included_turn_hours(subject), do: effective(subject).included_turn_hours
+  @spec included_credit_cents(term()) :: non_neg_integer()
+  def included_credit_cents(%__MODULE__{included_credit_cents: n}), do: n
+  def included_credit_cents(subject), do: effective(subject).included_credit_cents
 
   @doc """
   The most teammate contacts a user, slug or plan may hold at once.

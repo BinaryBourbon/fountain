@@ -7,7 +7,7 @@ defmodule Fountain.Workers.CreditGranter do
   set and billing is on:
 
     * **Tier grant.** Every subscriber whose subscription names a billing
-      period gets `Plans.included_turn_hours × turn-hour price` once per
+      period gets `Plans.included_credit_cents` once per
       period, under `grant_tier:<user_id>:<period_start>`, expiring at the
       period's end. Solo 40 h → $10, Team 100 h → $25, Scale 200 h → $50.
       A period that began before `pricing_since` is pro-rated to the part
@@ -133,8 +133,7 @@ defmodule Fountain.Workers.CreditGranter do
          now
        ) do
     in_period? = DateTime.compare(ps, now) != :gt and DateTime.compare(pe, now) == :gt
-    hours = Plans.included_turn_hours(user)
-    cents = prorate(hours * Credits.price_card().turn_hour, ps, pe, since)
+    cents = prorate(Plans.included_credit_cents(user), ps, pe, since)
 
     if in_period? and cents > 0 do
       key = "grant_tier:#{user.id}:#{DateTime.to_iso8601(ps)}"
@@ -147,7 +146,7 @@ defmodule Fountain.Workers.CreditGranter do
         expires_at: pe,
         resource_type: "billing_period",
         resource_id: DateTime.to_iso8601(ps),
-        metadata: %{"plan" => Plans.resolve(user).slug, "hours" => hours}
+        metadata: %{"plan" => Plans.resolve(user).slug}
       )
     else
       false
@@ -190,15 +189,14 @@ defmodule Fountain.Workers.CreditGranter do
          _since,
          now
        ) do
-    hours = Plans.fetch!("trial").included_turn_hours
-    cents = hours * Credits.price_card().turn_hour
+    cents = Plans.fetch!("trial").included_credit_cents
 
     if DateTime.compare(ends, now) == :gt and cents > 0 do
       grant(user, cents, "grant_trial", "grant_trial:#{user.id}",
         expires_at: ends,
         resource_type: "trial",
         resource_id: user.id,
-        metadata: %{"hours" => hours}
+        metadata: %{}
       )
     else
       false

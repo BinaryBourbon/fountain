@@ -118,10 +118,10 @@ defmodule FountainWeb.BillingApiControllerTest do
         |> get("/api/account/billing")
         |> json_response(200)
 
-      included = Fountain.Plans.included_turn_hours(Fountain.Plans.default_slug())
+      included = Fountain.Plans.included_credit_cents(Fountain.Plans.default_slug())
 
       assert body["data"]["usage"]["turn_hours"] == expected
-      assert body["data"]["plan"]["included_turn_hours"] == included
+      assert body["data"]["plan"]["included_credit_cents"] == included
       # The allowance shape is gone (ADR 0030): credits are what act.
       refute Map.has_key?(body["data"]["usage"], "turn_hours_included")
     end

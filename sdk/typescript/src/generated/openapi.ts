@@ -3891,8 +3891,8 @@ export interface components {
                 plan?: {
                     /** @description The plan's concurrency cap. */
                     concurrent_sandboxes?: number;
-                    /** @description Turn hours the plan's monthly credit grant is sized on: this times credits.turn_hour_cents lands at the start of each billing period. */
-                    included_turn_hours?: number;
+                    /** @description Credit the plan puts into the balance at the start of each billing period, in cents. Unused plan credit expires with the period. */
+                    included_credit_cents?: number;
                     monthly_cents?: number;
                     name?: string;
                     /** @description The cap actually enforced for this account. Differs from concurrent_sandboxes when an operator has set an override. */

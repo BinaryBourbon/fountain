@@ -90,10 +90,14 @@ defmodule Fountain.Billing.Finance do
 
   Every row carries active hours **and** turn hours whichever basis is
   chosen, because the gap between them is the tenant's idle time and it is
-  the single largest lever on the bill. Note that turn hours are also the
-  unit revenue is measured in (`Plans.included_turn_hours/1`) — so on the
-  `:turn` basis, cost and allowance move together, and on `:active` they do
-  not.
+  the single largest lever on the bill. Turn hours are also what burns a
+  tenant's prepaid credit (ADR 0030), so on the `:turn` basis cost and burn
+  move together, and on `:active` they do not.
+
+  **Credits** are the usage revenue: what a period's tier grants put in, what
+  turns and contacts burned, what packs sold, and the deferred balance —
+  money taken and not yet burned, which is a liability rather than revenue
+  until it is.
 
   **Contacts** are a monthly recurring charge per inbox and per number, so
   they are pro-rated against the period rather than charged whole: a panel
@@ -147,8 +151,10 @@ defmodule Fountain.Billing.Finance do
           plan_cents: non_neg_integer(),
           contact_revenue_cents: non_neg_integer(),
           turn_hours: float(),
-          included_turn_hours: non_neg_integer(),
-          allowance_used: float() | nil,
+          credit_granted_cents: non_neg_integer(),
+          credit_burned_cents: non_neg_integer(),
+          credit_sold_cents: non_neg_integer(),
+          credit_balance_cents: integer(),
           active_hours: float(),
           idle_hours: float(),
           inboxes: non_neg_integer(),
@@ -276,6 +282,7 @@ defmodule Fountain.Billing.Finance do
     channels = Comms.channel_counts()
     messages = message_counts(period_start, period_end)
     contacts = billable_contacts(users)
+    ledger = ledger_by_user(period_start, period_end)
 
     tenants =
       users
@@ -286,6 +293,7 @@ defmodule Fountain.Billing.Finance do
           Map.get(channels, &1.id, %{inboxes: 0, numbers: 0}),
           Map.get(messages, &1.id, empty_messages()),
           Map.get(contacts, &1.id, 0),
+          Map.get(ledger, &1.id, empty_ledger()),
           card,
           fraction
         )
@@ -300,7 +308,7 @@ defmodule Fountain.Billing.Finance do
       rate_card: card,
       revenue: revenue(tenants),
       cost: cost(tenants, rows, card),
-      turn_hours: turn_hours(tenants),
+      credits: credits(tenants),
       tenants: tenants,
       unattributed_cost_cents: unattributed_cost_cents(rows, card)
     }
@@ -348,6 +356,9 @@ defmodule Fountain.Billing.Finance do
       mrr_cents: paying |> Enum.map(& &1.revenue_cents) |> Enum.sum(),
       plan_cents: paying |> Enum.map(& &1.plan_cents) |> Enum.sum(),
       contact_cents: paying |> Enum.map(& &1.contact_revenue_cents) |> Enum.sum(),
+      # Packs sold in the period, by anyone. Not MRR: one-time, and a
+      # liability until burned (`credits/1` carries the deferred balance).
+      credit_sales_cents: tenants |> Enum.map(& &1.credit_sold_cents) |> Enum.sum(),
       by_plan: by_plan,
       at_risk_cents: status_cents(tenants, "past_due"),
       comped_cents: status_cents(tenants, "comped"),
@@ -510,46 +521,51 @@ defmodule Fountain.Billing.Finance do
     |> sum_or_nil(&provider_cost_cents(billed_seconds(&1, card.basis), &1.provider, card))
   end
 
-  ## ── turn hours ──────────────────────────────────────────────────────────
+  ## ── credits ─────────────────────────────────────────────────────────────
 
   @doc """
-  Turn hours sold against turn hours used — the utilization of the thing the
-  plans actually include.
-
-  Sold counts every account whose plan is live for them, trials included at
-  the trial plan's smaller allowance (#1022) rather than at the tier they are
-  trialling — a trial that has not converted has not sold those hours. Utilization
-  is what says whether the included hours are priced anywhere near what
-  tenants do with them, which is the number #1016 step 4 was left open for.
+  The prepaid ledger over the period (ADR 0030): what the tier grants put in,
+  what burned, what packs sold, and the deferred balance — the sum of every
+  positive balance today, which is money already taken for work not yet
+  done. Burned against granted-plus-sold is the utilisation of what tenants
+  hold; a deferred balance that only grows is revenue that is not arriving.
   """
-  @spec turn_hours([tenant_row()]) :: map()
-  def turn_hours(tenants) do
-    live = Enum.reject(tenants, &(&1.subscription_status == "canceled"))
-    sold = live |> Enum.map(& &1.included_turn_hours) |> Enum.sum()
-    used = tenants |> Enum.map(& &1.turn_hours) |> Enum.sum() |> Float.round(2)
+  @spec credits([tenant_row()]) :: map()
+  def credits(tenants) do
+    granted = tenants |> Enum.map(& &1.credit_granted_cents) |> Enum.sum()
+    burned = tenants |> Enum.map(& &1.credit_burned_cents) |> Enum.sum()
+    sold = tenants |> Enum.map(& &1.credit_sold_cents) |> Enum.sum()
 
     %{
-      sold: sold,
-      used: used,
-      over_allowance: Enum.count(tenants, &over_allowance?/1),
-      utilization: if(sold > 0, do: Float.round(used / sold, 4))
+      granted_cents: granted,
+      burned_cents: burned,
+      sold_cents: sold,
+      deferred_cents: deferred_cents(),
+      negative_balances: Enum.count(tenants, &(&1.credit_balance_cents < 0)),
+      utilization: if(granted + sold > 0, do: Float.round(burned / (granted + sold), 4))
     }
   end
 
-  defp over_allowance?(%{turn_hours: used, included_turn_hours: included}),
-    do: included > 0 and used > included
+  # Every positive balance, whoever holds it — a deleted account's ledger is
+  # gone with the account (ADR 0009), so this is what is owed today.
+  defp deferred_cents do
+    Repo.one(
+      from u in User,
+        where: u.credit_balance_cents > 0,
+        select: coalesce(sum(u.credit_balance_cents), 0)
+    )
+  end
 
   ## ── one tenant ──────────────────────────────────────────────────────────
 
-  defp tenant_row(user, usage, channels, messages, contacts, card, fraction) do
+  defp tenant_row(user, usage, channels, messages, contacts, ledger, card, fraction) do
     # `plan` is the tier the subscription is for — what Stripe charges, and
     # what a trial converts into. `effective_plan` is whose numbers apply
     # today, which during a trial is the smaller `trial` plan (#1022).
     #
-    # Revenue reads the first and the allowance reads the second, and using
-    # one for the other is the specific mistake this split exists to prevent:
-    # a trialing account measured against its future tier's 100 hours would
-    # look comfortably inside an allowance it is actually over.
+    # Revenue reads the first and the grant reads the second, and using one
+    # for the other is the specific mistake this split exists to prevent: a
+    # trialing account is granted the trial's $10, not its future tier's $50.
     plan = Plans.resolve(user)
     effective_plan = Plans.effective(user)
     paying? = user.subscription_status in @paying
@@ -586,8 +602,10 @@ defmodule Fountain.Billing.Finance do
       contact_revenue_cents: contact_revenue_cents,
       turn_hours: SandboxUsage.hours(turn_seconds),
       effective_plan: effective_plan,
-      included_turn_hours: effective_plan.included_turn_hours,
-      allowance_used: allowance_used(turn_seconds, effective_plan.included_turn_hours),
+      credit_granted_cents: ledger.granted,
+      credit_burned_cents: ledger.burned,
+      credit_sold_cents: ledger.sold,
+      credit_balance_cents: user.credit_balance_cents,
       active_hours: SandboxUsage.hours(usage.active_seconds),
       idle_hours: SandboxUsage.hours(usage.idle_seconds),
       inboxes: channels.inboxes,
@@ -616,11 +634,8 @@ defmodule Fountain.Billing.Finance do
     |> Enum.sum()
   end
 
-  defp allowance_used(_turn_seconds, 0), do: nil
-
-  defp allowance_used(turn_seconds, included),
-    do: Float.round(SandboxUsage.hours(turn_seconds) / included, 4)
-
+  # Monthly charges, pro-rated to the window. Zero units costs zero whether or
+  # not there is a rate — a tenant with no inbox is not unpriced.
   ## ── pricing helpers ─────────────────────────────────────────────────────
 
   # Which seconds a provider rate multiplies. The two row shapes in play name
@@ -701,6 +716,7 @@ defmodule Fountain.Billing.Finance do
           email: u.email,
           plan: u.plan,
           subscription_status: u.subscription_status,
+          credit_balance_cents: u.credit_balance_cents,
           # Not decoration: an account with no subscription has no item for
           # the contact add-on to sit on, so `sync_contact_addon/1` bills it
           # nothing however many contacts it holds.
@@ -787,6 +803,42 @@ defmodule Fountain.Billing.Finance do
   end
 
   defp empty_messages, do: %{emails_sent: 0, sms_sent: 0, sms_received: 0}
+
+  # One pass over the ledger for the period: cents granted, burned and sold
+  # per tenant. Expiries and clawbacks are neither — an expiry is credit that
+  # was never earned, a clawback is money that went back.
+  defp ledger_by_user(period_start, period_end) do
+    from(e in Fountain.Credits.LedgerEntry,
+      where: e.inserted_at >= ^period_start and e.inserted_at < ^period_end,
+      group_by: e.user_id,
+      select:
+        {e.user_id,
+         %{
+           granted:
+             fragment(
+               "coalesce(sum(case when ? like 'grant_%' then ? end), 0)",
+               e.reason,
+               e.amount_cents
+             ),
+           burned:
+             fragment(
+               "coalesce(sum(case when ? like 'burn_%' then -? end), 0)",
+               e.reason,
+               e.amount_cents
+             ),
+           sold:
+             fragment(
+               "coalesce(sum(case when ? = 'purchase' then ? end), 0)",
+               e.reason,
+               e.amount_cents
+             )
+         }}
+    )
+    |> Repo.all()
+    |> Map.new()
+  end
+
+  defp empty_ledger, do: %{granted: 0, burned: 0, sold: 0}
 
   defp empty_usage,
     do: %{active_seconds: 0, busy_seconds: 0, idle_seconds: 0, by_provider: []}

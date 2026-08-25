@@ -44,10 +44,8 @@ defmodule FountainWeb.MarketingHTML do
   in flight, so an agent left sitting idle does not spend one — which is the
   part worth being explicit about on a pricing page.
   """
-  def plan_turn_hours(plan) do
-    cents = plan.included_turn_hours * Fountain.Credits.price_card().turn_hour
-    "#{Fountain.Credits.format_cents(cents)} of credit a month"
-  end
+  def plan_turn_hours(plan),
+    do: "#{Fountain.Credits.format_cents(plan.included_credit_cents)} of credit a month"
 
   @doc """
   The trial plan, so the page can state what fourteen days actually gets you.

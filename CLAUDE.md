@@ -61,7 +61,7 @@ every plan.
 | | trial | solo | team | scale | legacy |
 |---|---|---|---|---|---|
 | concurrent sandboxes | 2 | 2 | 5 | 10 | 5 |
-| included turn hours | 40 | 40 | 100 | 200 | 100 |
+| credit a month | $10 | $10 | $25 | $50 | $25 |
 | teammate contacts | 0 | 1 | 3 | 10 | 3 |
 | price | free | $29 | $79 | $199 | $29 (closed) |
 
@@ -70,7 +70,7 @@ Five rules that are easy to get wrong:
 - **A trialing account gets `trial`'s numbers, not its tier's.**
   `Plans.effective/1` is what applies today; `Plans.resolve/1` is the tier the
   subscription names and what it converts into. Every entitlement reader
-  (`concurrent_sandboxes/1`, `included_turn_hours/1`, `team_contacts/1`) routes
+  (`concurrent_sandboxes/1`, `included_credit_cents/1`, `team_contacts/1`) routes
   through `effective/1` **when handed a `%User{}`** — hand it a bare slug and
   it cannot know the status, which is how `turn_hour_allowance/2` first got it
   wrong. The trial now *ties* Solo on concurrency and hours — the guardrail
@@ -101,24 +101,21 @@ Five rules that are easy to get wrong:
   `users.comped_contacts` takes N off the billed quantity for a tenant who
   still pays for their tier.
 
-- **A turn hour is not a sandbox hour, and nothing enforces either.**
-  `included_turn_hours` is 20 per concurrent slot, measured against
+- **A turn hour is not a sandbox hour.** Turns burn credit against
   `SandboxUsage`'s `turn_seconds` (the turns summed, each clipped to the
   period) on platform-paid providers only — an idle sandbox and a self-hosted
   runner spend none of it. `busy_seconds` is the *union* of the same intervals
   (how long the machine had any turn in flight) and is what a provider bill
   relates to; several conversations share one sandbox (ADR 0023), so the two
-  differ and must not be swapped.
-  `Billing.turn_hours_used/2` is the meter; nothing renders an "allowance"
-  any more (removed with the enforcement flip, ADR 0030). What acts is the
-  prepaid balance — see the next rule.
+  differ and must not be swapped. `Billing.turn_hours_used/2` is the meter;
+  what acts is the prepaid balance — see the next rule.
 
 - **Credits are the usage currency, and two switches turn them on.**
   ADR 0030: `Fountain.Credits` keeps a cents ledger (`credit_ledger`, cached
   on `users.credit_balance_cents`, idempotent per row, never summed on a
   gate). `CreditPricer` burns closed turns at `CREDIT_TURN_HOUR_CENTS`
   (default 25) and comms messages when priced; `CreditGranter` puts
-  `included_turn_hours × price` in each period and expires the unspent part
+  `Plans.included_credit_cents` in each period and expires the unspent part
   (granted first, oldest expiry first, then purchased); `Credits.Purchases`
   sells packs and claws back on refund or dispute; `Credits.Rent` takes a
   month up front per contact. Nothing prices, grants or shows a balance
