@@ -313,11 +313,11 @@ defmodule Fountain.Billing.Finance do
   """
   @spec cost([tenant_row()], [SandboxUsage.row()], map()) :: map()
   def cost(tenants, rows, card) do
-    paid = Enum.filter(rows, &SandboxUsage.platform_cost?(&1.provider))
+    %{paid: paid, active_seconds: active, idle_seconds: idle} = platform_totals(rows)
 
     %{
-      active_hours: paid |> Enum.map(& &1.active_seconds) |> Enum.sum() |> SandboxUsage.hours(),
-      idle_hours: paid |> Enum.map(& &1.idle_seconds) |> Enum.sum() |> SandboxUsage.hours(),
+      active_hours: SandboxUsage.hours(active),
+      idle_hours: SandboxUsage.hours(idle),
       basis: card.basis,
       sandbox_cents:
         sum_or_nil(paid, &provider_cost_cents(billed_seconds(&1, card.basis), &1.provider, card)),
@@ -335,6 +335,30 @@ defmodule Fountain.Billing.Finance do
       emails_sent: tenants |> Enum.map(& &1.emails_sent) |> Enum.sum(),
       sms_sent: tenants |> Enum.map(& &1.sms_sent) |> Enum.sum(),
       sms_received: tenants |> Enum.map(& &1.sms_received) |> Enum.sum(),
+      by_provider: SandboxUsage.by_provider(rows)
+    }
+  end
+
+  @doc """
+  The platform-paid part of an attribution: the rows on providers Fountain
+  pays for, their active and idle seconds summed, and the per-provider split
+  of every row. The one fold behind both `cost/3` and
+  `Billing.provider_spend/1`, so the finance page and the `/admin` tiles
+  cannot disagree about what Fountain was billed for.
+  """
+  @spec platform_totals([SandboxUsage.row()]) :: %{
+          paid: [SandboxUsage.row()],
+          active_seconds: non_neg_integer(),
+          idle_seconds: non_neg_integer(),
+          by_provider: map()
+        }
+  def platform_totals(rows) when is_list(rows) do
+    paid = Enum.filter(rows, &SandboxUsage.platform_cost?(&1.provider))
+
+    %{
+      paid: paid,
+      active_seconds: paid |> Enum.map(& &1.active_seconds) |> Enum.sum(),
+      idle_seconds: paid |> Enum.map(& &1.idle_seconds) |> Enum.sum(),
       by_provider: SandboxUsage.by_provider(rows)
     }
   end

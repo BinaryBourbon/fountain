@@ -515,15 +515,17 @@ defmodule Fountain.Billing do
       end
 
     rows = SandboxUsage.attribution(period_start, period_end, attribution_opts)
-    paid = Enum.filter(rows, &SandboxUsage.platform_cost?(&1.provider))
+    # The same fold `Finance.cost/3` reads, so the hours here and the money
+    # on /admin/finance are one computation.
+    totals = Finance.platform_totals(rows)
 
     %{
       period_start: period_start,
       period_end: period_end,
-      by_provider: SandboxUsage.by_provider(rows),
-      platform_seconds: paid |> Enum.map(& &1.active_seconds) |> Enum.sum(),
-      platform_idle_seconds: paid |> Enum.map(& &1.idle_seconds) |> Enum.sum(),
-      top_tenants: top_tenants(paid, Keyword.get(opts, :top, 10)),
+      by_provider: totals.by_provider,
+      platform_seconds: totals.active_seconds,
+      platform_idle_seconds: totals.idle_seconds,
+      top_tenants: top_tenants(totals.paid, Keyword.get(opts, :top, 10)),
       attribution: rows
     }
   end

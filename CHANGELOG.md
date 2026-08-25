@@ -18,6 +18,13 @@ upgrade, is in
 
 ### Changed
 
+- `Billing.provider_spend/1` (the `/admin` and `/admin/sandboxes` hours) and
+  `Finance.cost/3` (the money on `/admin/finance`) read one fold,
+  `Finance.platform_totals/1`, instead of each summing the attribution rows
+  their own way.
+
+### Changed
+
 - **Billing debt 3/3: the billing page shows what was charged.**
   `usage_summary/3` (billing page, dashboard, `GET /api/account/billing`)
   and the admin table count conversations as the ones that ran a turn in
