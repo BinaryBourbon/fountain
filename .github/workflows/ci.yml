@@ -788,7 +788,7 @@ jobs:
           # Both regressions fail exactly here.
           echo "release task runs beside the live server:"
           PHX_SERVER=false _build/prod/rel/fountain_server/bin/fountain_server \
-            eval 'Fountain.Release.expire_legacy_trials(dry_run: true)'
+            eval 'Fountain.Release.rebuild_credit_lots()'
 
       - name: Validate OpenAPI spec
         run: mix openapi.spec.json --spec FountainWeb.ApiSpec --output /tmp/openapi.json && jq empty /tmp/openapi.json
