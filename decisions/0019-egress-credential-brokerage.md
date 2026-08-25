@@ -373,7 +373,47 @@ proxy is now `Fountain.Broker.Proxy` inside the Fountain release, on
 
 What does not change: placeholders in the sandbox (§1), the `allow: [broker]`
 floor (§2), the token in `HTTPS_PROXY` and process-only (§5), fail closed
-(§6), and the CA in the operating-system trust store. What is gone: the
+(§6), and the CA in the operating-system trust store.
+
+Two things the native proxy does that Agent Vault did not, and one list of
+what it does not do. It refuses an origin that resolves into a private,
+loopback or link-local range before connecting (Agent Vault had the same
+guard; without it the broker is a door from a third-party sandbox into the
+cluster), and under `deny` it refuses a host no rule names at `CONNECT`,
+before any tunnel or handshake exists. It does **not** rewrite placeholders in
+paths, queries or arbitrary headers (auth headers only, so the catalog's
+`telegram` preset is marked unusable), does not rewrite WebSocket frames
+(the upgrade request is injected like any other, then frames are piped as
+bytes), has no auth-failure rate limit on the proxy port, and no body-size
+caps. `apps/fountain/test/fountain/broker/agent_vault_parity_test.exs`
+replays the Agent Vault proxy tests that apply, names each one it stands in
+for, and lists these omissions.
+
+**What the remaining gates need from it, checked against the code rather
+than assumed:**
+
+- **Gate 2 (`limited`)** — a session already carries `unmatched_host_policy`
+  and `services`, and a service's `host` takes `host[:port][/path]` with
+  `*.example.com` and a trailing `*`. `allowed_hosts` becomes one
+  `passthrough` service per host with the policy set to `deny`; the proxy
+  then refuses the rest at `CONNECT`. Nothing in the proxy changes; the work
+  is in `Fountain.Broker.prepare/4` and `check_broker_support/4`.
+- **Gate 3 (inference)** — `api-key` with a `prefix` and a named header
+  (`x-api-key` for Anthropic, `Authorization: Bearer` for the others) is
+  built; streaming responses are relayed chunk by chunk (tested); ALPN pins
+  HTTP/1.1 on both sides, which the provider SDKs speak through a proxy. The
+  work is the second injection site, `Claude.fall_back_to_api_key/2`, and
+  the catalog entries. Latency is one hop shorter than the Agent Vault
+  topology: the proxy is in the Fountain pod, not a separate deployment.
+- **Gate 4 (the joined trail)** — every request already emits
+  `[:fountain, :broker, :request]` with the conversation id, method, host,
+  path and outcome (`passthrough`, `denied`, or the service applied), which
+  is the attribution Agent Vault could not give a session token. What it
+  does not carry is the response status and latency: the response direction
+  is a byte pump, unparsed by design so that streaming stays streaming.
+  Gate 4's first task is therefore response framing in that pump (status
+  line and `Content-Length`/chunked end, the same slice `Fountain.Broker.HTTP`
+  does for requests), and a table or log sink for the events. What is gone: the
 management API, the owner token, and the second custodian. The blast radius
 paragraph at the end of §11 gets simpler rather than larger: the process that
 holds the master key already decrypted every secret; now it also relays the

@@ -1463,7 +1463,10 @@ defmodule Fountain.Conversations.ConversationServer do
   defp broker_release(state) do
     if brokered?(state) do
       conv_id = state.conversation_id
-      Task.Supervisor.start_child(Fountain.TaskSupervisor, fn -> Fountain.Broker.release(conv_id) end)
+
+      Task.Supervisor.start_child(Fountain.TaskSupervisor, fn ->
+        Fountain.Broker.release(conv_id)
+      end)
     end
 
     :ok

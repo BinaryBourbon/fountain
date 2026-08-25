@@ -48,8 +48,15 @@ upgrade, is in
   (`Fountain.Broker.Sessions`, credentials under the tenant DEK, token
   stored hashed) and relays the origin's bytes back unparsed, so streaming
   replies stream. Every request is logged by conversation, host and path
-  (`[:fountain, :broker, :request]`), never by header. `Fountain.Broker`'s
-  callers are unchanged; `prepare/2` is `prepare/3` and takes the user id.
+  (`[:fountain, :broker, :request]`), never by header. Gate 1b bindings are
+  served in full: bearer, basic, api-key with a prefix, custom `{{ KEY }}`
+  headers, and `host[:port][/path]` rules with wildcards. Two guards Agent
+  Vault also had: an origin on a private, loopback or link-local address is
+  refused before any connection, and under `deny` a host no rule names is
+  refused at `CONNECT`. `Fountain.Broker`'s callers are unchanged;
+  `prepare/3` is `prepare/4` and takes the user id. The catalog's `telegram`
+  preset is marked unusable: it needs the token in the URL path, which the
+  broker does not rewrite.
 - `Billing.provider_spend/1` (the `/admin` and `/admin/sandboxes` hours) and
   `Finance.cost/3` (the money on `/admin/finance`) read one fold,
   `Finance.platform_totals/1`, instead of each summing the attribution rows

@@ -34,7 +34,14 @@ defmodule Fountain.BrokerTest do
     struct(
       Fountain.SecretBindings.Binding,
       Map.merge(
-        %{auth_type: "bearer", header: nil, prefix: nil, username: nil, headers: %{}, enabled: true},
+        %{
+          auth_type: "bearer",
+          header: nil,
+          prefix: nil,
+          username: nil,
+          headers: %{},
+          enabled: true
+        },
         attrs
       )
     )
@@ -114,7 +121,11 @@ defmodule Fountain.BrokerTest do
 
       assert {sandbox, brokered} =
                Broker.split(
-                 %{"STRIPE_SECRET_KEY" => "sk", "DATABASE_URL" => "pg://", "GITHUB_TOKEN" => "gh"},
+                 %{
+                   "STRIPE_SECRET_KEY" => "sk",
+                   "DATABASE_URL" => "pg://",
+                   "GITHUB_TOKEN" => "gh"
+                 },
                  bindings
                )
 

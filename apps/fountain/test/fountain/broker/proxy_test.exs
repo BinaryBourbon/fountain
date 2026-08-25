@@ -259,7 +259,13 @@ defmodule Fountain.Broker.ProxyTest do
     {_tcp, reply} = connect(ctx, "localhost:#{ctx.https_port}", proxy_auth(ctx.token, ctx.vault))
     assert reply =~ "HTTP/1.1 403"
 
-    for ip <- [{10, 1, 2, 3}, {172, 16, 0, 1}, {192, 168, 1, 1}, {169, 254, 169, 254}, {127, 0, 0, 1}],
+    for ip <- [
+          {10, 1, 2, 3},
+          {172, 16, 0, 1},
+          {192, 168, 1, 1},
+          {169, 254, 169, 254},
+          {127, 0, 0, 1}
+        ],
         do: assert(Fountain.Broker.Proxy.private?(ip))
 
     for ip <- [{140, 82, 112, 3}, {172, 32, 0, 1}, {8, 8, 8, 8}],
@@ -281,8 +287,19 @@ defmodule Fountain.Broker.ProxyTest do
   end
 
   test "a denied host is 403 inside the tunnel", ctx do
+    # A rule for one path of the host lets the tunnel open; the request
+    # below is to another path, so it is unmatched inside the tunnel.
     Fountain.Repo.update_all(Fountain.Broker.Session,
-      set: [services: [], unmatched_host_policy: "deny"]
+      set: [
+        services: [
+          %{
+            "name" => "narrow",
+            "host" => "localhost/allowed/*",
+            "auth" => %{"type" => "passthrough"}
+          }
+        ],
+        unmatched_host_policy: "deny"
+      ]
     )
 
     tls = tunnel(ctx)

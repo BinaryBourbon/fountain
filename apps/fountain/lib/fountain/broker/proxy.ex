@@ -84,14 +84,35 @@ defmodule Fountain.Broker.Proxy do
          {:ok, binding} <- authenticate(socket, head),
          {:ok, {host, port}, target} <- destination(socket, head) do
       case head.method do
-        "CONNECT" -> tunnel(socket, host, port, binding, state)
-        _ -> forward_plain(socket, head, rest, host, port, target, binding)
+        "CONNECT" ->
+          if reachable?(binding, host, port) do
+            tunnel(socket, host, port, binding, state)
+          else
+            log_request(binding, head, host, :denied)
+            reply(socket, 403, "Forbidden")
+            {:close, state}
+          end
+
+        _ ->
+          forward_plain(socket, head, rest, host, port, target, binding)
       end
     else
       {:error, :timeout} -> {:close, state}
       {:error, _} -> {:close, state}
     end
   end
+
+  # Under `deny`, a host no service could match is refused at CONNECT, before
+  # a tunnel exists (gate 2's `limited`); paths are only known per request,
+  # so a host that matches some service still gets its per-request check.
+  defp reachable?(%{unmatched_host_policy: "deny", services: services}, host, port) do
+    Enum.any?(services, fn s ->
+      host_only = s["host"] |> String.split("/", parts: 2) |> hd()
+      Injector.matches?(host_only, host, port, "/")
+    end)
+  end
+
+  defp reachable?(_binding, _host, _port), do: true
 
   defp read_head(socket, buffer, timeout) do
     case HTTP.parse_request(buffer) do
@@ -259,7 +280,9 @@ defmodule Fountain.Broker.Proxy do
 
             with :ok <- :ssl.send(upstream, request),
                  {:ok, rest} <- copy_body(client, upstream, HTTP.body_framing(head), rest) do
-              serve(client, upstream, host, port, binding, rest)
+              if upgrade?(head),
+                do: pipe(client, upstream, rest, binding),
+                else: serve(client, upstream, host, port, binding, rest)
             else
               {:error, _} -> {:close, binding}
             end
@@ -295,6 +318,26 @@ defmodule Fountain.Broker.Proxy do
           {:ok, data} -> copy_body(client, upstream, framing, data)
           {:error, reason} -> {:error, reason}
         end
+    end
+  end
+
+  # A request that upgrades the connection (WebSocket) is the last HTTP on
+  # it: what follows is frames, so the client side becomes a byte pipe like
+  # the upstream side already is. The upgrade request itself was injected
+  # like any other; frames are never rewritten (ADR 0019 §10).
+  defp upgrade?(%{headers: headers}) do
+    case HTTP.header(headers, "upgrade") do
+      nil -> false
+      _ -> true
+    end
+  end
+
+  defp pipe(client, upstream, buffered, binding) do
+    with :ok <- send_upstream(upstream, buffered),
+         {:ok, data} <- :ssl.recv(client, 0, @idle_timeout) do
+      pipe(client, upstream, data, binding)
+    else
+      _ -> {:close, binding}
     end
   end
 

@@ -210,7 +210,9 @@ defmodule Fountain.Conversations.ConversationServerBrokerTest do
 
       stub_happy_sprite()
 
-      stub(Fountain.Broker, :preflight, fn -> {:error, {:broker, :unreachable, :listener_down}} end)
+      stub(Fountain.Broker, :preflight, fn ->
+        {:error, {:broker, :unreachable, :listener_down}}
+      end)
 
       reject(Fountain.Sandbox.Sprites, :create, 2)
       reject(Fountain.Broker, :prepare, 4)
