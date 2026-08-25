@@ -43,3 +43,31 @@ defmodule FountainWeb.MarketingControllerTest do
     end
   end
 end
+
+defmodule FountainWeb.OpenGraphTest do
+  use FountainWeb.ConnCase, async: true
+
+  test "every public page carries an Open Graph card", %{conn: conn} do
+    body = conn |> get(~p"/") |> html_response(200)
+    assert body =~ ~s(<meta property="og:title" content="Fountain")
+    assert body =~ ~s(<meta property="og:url" content="http://localhost:4000/")
+
+    assert body =~
+             ~s(<meta property="og:image" content="http://localhost:4000/images/og-card.png")
+
+    assert body =~ ~s(<meta property="og:image:width" content="1200")
+    assert body =~ ~s(<meta name="twitter:card" content="summary_large_image")
+    assert body =~ ~s(<meta name="description" content="Fountain runs a coding agent)
+  end
+
+  test "a docs page describes itself and names its own URL", %{conn: conn} do
+    body = conn |> get(~p"/docs/cli") |> html_response(200)
+    assert body =~ ~s(<meta property="og:url" content="http://localhost:4000/docs/cli")
+    assert body =~ ~s(<meta property="og:title" content="Docs · )
+    assert body =~ ~s(from the Fountain manual.)
+  end
+
+  test "the card image is served" do
+    assert File.exists?(Application.app_dir(:fountain, "priv/static/images/og-card.png"))
+  end
+end

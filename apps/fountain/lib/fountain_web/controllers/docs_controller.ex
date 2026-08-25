@@ -19,6 +19,7 @@ defmodule FountainWeb.DocsController do
         render(conn, :show,
           layout: {FountainWeb.Layouts, :marketing},
           page_title: "Docs · " <> page.title,
+          meta_description: "#{page.title}, from the #{Fountain.Brand.name()} manual.",
           nav: Fountain.Docs.nav(),
           slug: slug,
           title: page.title,
