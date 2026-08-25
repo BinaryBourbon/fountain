@@ -95,7 +95,7 @@ defmodule Fountain.Application do
            ]},
           Fountain.Buzz.BootSweep,
           FountainWeb.Endpoint
-        ]
+        ] ++ broker_children()
 
     opts = [strategy: :one_for_one, name: Fountain.Supervisor]
 
@@ -111,6 +111,15 @@ defmodule Fountain.Application do
 
       err ->
         err
+    end
+  end
+
+  # The egress proxy (ADR 0019) listens only when BROKER_LISTEN_PORT is set;
+  # off, no process here exists.
+  defp broker_children do
+    case Application.get_env(:fountain, :broker_listen_port) do
+      port when is_integer(port) -> [{Fountain.Broker.Supervisor, port: port}]
+      _ -> []
     end
   end
 

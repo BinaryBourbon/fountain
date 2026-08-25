@@ -1,7 +1,7 @@
 ---
 type: ADR
 title: "Egress credential brokerage: the sandbox holds placeholders, the broker holds the credential"
-description: "Proposed; gate 1a is built and live for one tenant (the maintainer) since 2026-08-25, off for everyone else. Outbound HTTP credentials are attached at a forward proxy the sandbox reaches over HTTPS_PROXY, so the agent process holds only placeholders and the only host it may reach is the broker. Gate 0 passed on 2026-08-24 against a real sandbox: brokered API calls and a private clone with no credential in the sandbox, cross-tenant probe refused, +258ms per request."
+description: "Proposed; gate 1a is built and live for one tenant (the maintainer) since 2026-08-25, off for everyone else, and the broker is Fountain's own proxy since the §8 amendment of 2026-08-26. Outbound HTTP credentials are attached at a forward proxy the sandbox reaches over HTTPS_PROXY, so the agent process holds only placeholders and the only host it may reach is the broker. Gate 0 passed on 2026-08-24 against a real sandbox: brokered API calls and a private clone with no credential in the sandbox, cross-tenant probe refused, +258ms per request."
 tags: [security, secrets, sandbox, egress, governance]
 status: draft
 adr: "0019"
@@ -25,6 +25,16 @@ the hosted deployment names **one** tenant, the maintainer's own account
 Sprites conversation the same day — see *Gate 1a* under *Gates*. Everyone else
 is byte-for-byte on the old path. Gate 1b (bindings) is built; gates 2–4 are not. #1090 is closed and each
 later gate gets its own tracker.
+
+**Revised 2026-08-26 (the broker moves in-house).** §8 chose Infisical's
+Agent Vault behind an interface we own; the interface held and the vendor is
+gone. `Fountain.Broker.Proxy` is the forward proxy now, `Fountain.Broker.CA`
+signs the per-host leaves from a root derived from `MASTER_SECRETS_KEY`, and
+`Fountain.Broker.Sessions` is the store the proxy resolves a token against,
+on any replica. `BROKER_URL` and `BROKER_TOKEN` are not read;
+`BROKER_LISTEN_PORT` and `BROKER_PROXY_URL` turn it on. §8 and §11 say why
+and what changed; the rest of the design is untouched, and the Agent Vault
+facts in *Gates* are kept as the record of what gate 0 and gate 1a ran on.
 
 **Revised 2026-08-25 (gate 1a).** Building it changed three things below,
 each marked in place: §11 is a vault per *conversation*, not per tenant; the
@@ -339,6 +349,35 @@ Agent Vault's own posture is reassuring where it counts — credentials are
 AES-256-GCM under a KEK/DEK wrap, the root CA private key is encrypted with the
 same DEK, and the sandbox's session token travels as `Proxy-Authorization`, a
 hop-by-hop header that never reaches the origin.
+
+**Amended 2026-08-26: the vendor is Fountain.** Gate 1a ran on Agent Vault for
+one day of production and the seam did its job — nothing outside
+`Fountain.Broker` knew the vendor — but the operating cost was all vendor: a
+second stateful service (Postgres, an owner token that expires, a management
+port to keep off the internet), a "research preview" API we pinned by hand,
+credentials copied into a second encrypted store under a second master
+password, and a request log whose actor fields were empty for every session we
+minted. What the proxy actually does is small: accept `CONNECT`, present a
+leaf the sandbox trusts, rewrite one header per request, relay bytes. So the
+proxy is now `Fountain.Broker.Proxy` inside the Fountain release, on
+`BROKER_LISTEN_PORT`, and the pieces map one to one:
+
+| Agent Vault | Fountain |
+|---|---|
+| a vault per conversation, credentials copied in over the management API | a `broker_sessions` row per session, credentials as ciphertext under the tenant DEK |
+| a `proxy`-role session token | a random token, stored hashed, resolved once per client connection |
+| the MITM root CA, generated and stored under the vault's DEK | a root **derived** from `MASTER_SECRETS_KEY` (`Fountain.Broker.CA`), so every replica presents leaves the sandbox trusts and nothing is stored |
+| service rules (`host` → `bearer` / `basic` / `api-key`) | the same shapes, as `services` on the session, applied by `Fountain.Broker.Injector` |
+| `unmatched_host_policy` per vault | per session; still `passthrough` for gate 1a, `deny` is gate 2's |
+| the request log | `[:fountain, :broker, :request]` telemetry and a log line per request, keyed by conversation |
+
+What does not change: placeholders in the sandbox (§1), the `allow: [broker]`
+floor (§2), the token in `HTTPS_PROXY` and process-only (§5), fail closed
+(§6), and the CA in the operating-system trust store. What is gone: the
+management API, the owner token, and the second custodian. The blast radius
+paragraph at the end of §11 gets simpler rather than larger: the process that
+holds the master key already decrypted every secret; now it also relays the
+requests they authenticate, and there is no second process that does.
 
 ### 9. Brokering is a property of the deployment and of the secret, not a tenant setting
 

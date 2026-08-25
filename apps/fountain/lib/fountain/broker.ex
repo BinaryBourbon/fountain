@@ -1,18 +1,20 @@
 defmodule Fountain.Broker do
   @moduledoc """
-  The egress credential broker (ADR 0019, gate 1a).
+  The egress credential broker (ADR 0019).
 
   A brokered conversation's sandbox holds a **placeholder** where a
-  credential used to be, plus a proxy address. The real value lives in an
-  [Agent Vault](https://github.com/Infisical/agent-vault) instance, loaded
-  from the same DEK-encrypted rows it always lived in, and is attached to the
-  outbound request at the proxy. The sandbox's only permitted egress is the
-  proxy, so a placeholder is worthless off the box.
+  credential used to be, plus a proxy address. The real value stays in the
+  DEK-encrypted rows it always lived in, is copied (still under the tenant
+  DEK) into a `Fountain.Broker.Session` for the life of the conversation,
+  and is attached to the outbound request by `Fountain.Broker.Proxy`, which
+  Fountain runs itself. The sandbox's only permitted egress is the proxy,
+  so a placeholder is worthless off the box.
 
-  This module is the whole seam: the Agent Vault HTTP client, the catalog of
-  secrets the broker knows how to carry, and the placeholder rule. It is one
-  module with the vendor client inside it on purpose (ADR 0019 §8) — the
-  abstraction is worth building on the day there is a second broker.
+  This module is the seam the rest of the app talks to: the catalog of
+  secrets the broker knows how to carry, the placeholder rule, and the
+  session lifecycle. Gate 1a shipped it as a client for Infisical's Agent
+  Vault (#1136); §8 of the ADR was amended when the broker moved in-house,
+  and the module's callers did not change.
 
   ## What is brokered
 
@@ -32,28 +34,25 @@ defmodule Fountain.Broker do
 
   ## Custody
 
-  One broker vault per **conversation**, named from the conversation id,
-  deleted when the conversation ends. ADR 0019 §11 said one per tenant; that
-  shape breaks the moment one tenant runs two conversations with different
-  `GITHUB_TOKEN`s at once (one vault, one key, last write wins), and a
-  per-conversation vault is also what gate 4 needs to attribute the request
-  log. The tenant-level guarantee §11 cared about — a session cannot read
-  another vault — holds either way: the binding is on the token.
+  One session per **conversation**, named `c-<conversation id>` for the
+  proxy URL, deleted when the conversation ends (ADR 0019 §11). The binding
+  is on the token: a token resolves to its own conversation's credentials
+  and to nothing else, whichever vault name the URL carries.
 
-  The session token is minted with the `proxy` vault role (it may broker,
-  never read), lives `BROKER_SESSION_TTL_SECONDS`, and travels to the sandbox
-  inside `HTTPS_PROXY`, which is why that variable is process-only in
-  `Fountain.Conversations.Identity` and never reaches the shared `.env`.
+  The session token lives `BROKER_SESSION_TTL_SECONDS` and travels to the
+  sandbox inside `HTTPS_PROXY`, which is why that variable is process-only
+  in `Fountain.Conversations.Identity` and never reaches the shared `.env`.
 
   ## Off means off
 
-  `configured?/0` is false when `BROKER_URL` is blank, and then no function
-  here makes an HTTP call and provisioning is byte-for-byte what it was.
+  `configured?/0` is false when `BROKER_LISTEN_PORT` and `BROKER_PROXY_URL`
+  are blank, and then no listener runs and provisioning is byte-for-byte
+  what it was.
   """
 
-  require Logger
+  alias Fountain.Broker.{CA, Proxy, Sessions}
 
-  @ca_path "/usr/local/share/ca-certificates/agent-vault.crt"
+  @ca_path "/usr/local/share/ca-certificates/fountain-broker.crt"
 
   @typedoc "A minted proxy session for one conversation."
   @type session :: %{
@@ -65,9 +64,12 @@ defmodule Fountain.Broker do
   # ---------------------------------------------------------------------------
   # Configuration
 
-  @doc "True when `BROKER_URL` is set. Nothing here talks to the network otherwise."
+  @doc "True when `BROKER_LISTEN_PORT` and `BROKER_PROXY_URL` are set. Nothing listens otherwise."
   @spec configured?() :: boolean()
-  def configured?, do: is_binary(Application.get_env(:fountain, :broker_url))
+  def configured? do
+    is_integer(Application.get_env(:fountain, :broker_listen_port)) and
+      is_binary(Application.get_env(:fountain, :broker_proxy_url))
+  end
 
   @doc "True when the broker is configured and this tenant is on the ratchet."
   @spec enabled_for?(String.t() | nil) :: boolean()
@@ -95,7 +97,7 @@ defmodule Fountain.Broker do
 
   @doc "Where the PEM is written first, as the sandbox user, before sudo moves it into the trust store."
   @spec ca_staging_path() :: String.t()
-  def ca_staging_path, do: "/tmp/agent-vault-ca.crt"
+  def ca_staging_path, do: "/tmp/fountain-broker-ca.crt"
 
   # ---------------------------------------------------------------------------
   # The catalog and the placeholder rule
@@ -258,7 +260,7 @@ defmodule Fountain.Broker do
   # ---------------------------------------------------------------------------
   # The sandbox side
 
-  @doc "The broker vault name for a conversation. `[a-z0-9-]`, 3 to 64 characters."
+  @doc "The vault name in a conversation's proxy URL: the conversation id in `[a-z0-9-]`."
   @spec vault_name(String.t()) :: String.t()
   def vault_name(conversation_id) when is_binary(conversation_id) do
     "c-" <> (conversation_id |> String.downcase() |> String.replace(~r/[^a-z0-9]/, ""))
@@ -311,146 +313,46 @@ defmodule Fountain.Broker do
   def expiring?(_, _), do: true
 
   # ---------------------------------------------------------------------------
-  # Calls to the broker. Each returns `:ok`/`{:ok, _}` or `{:error, reason}`;
-  # retries belong to the caller, per the repo's client convention.
+  # The session lifecycle
 
-  @doc "Is the broker up? The preflight; a `false` here fails provisioning before a sandbox exists."
+  @doc "Is the proxy listening? The preflight; a failure here stops provisioning before a sandbox exists."
   @spec preflight() :: :ok | {:error, {:broker, :unreachable, term()}}
   def preflight do
-    case Req.get(req(auth: false), url: "/health") do
-      {:ok, %{status: 200}} -> :ok
-      {:ok, %{status: status, body: body}} -> {:error, {:broker, :unreachable, {status, body}}}
-      {:error, reason} -> {:error, {:broker, :unreachable, reason}}
-    end
+    if Proxy.running?(), do: :ok, else: {:error, {:broker, :unreachable, :listener_down}}
   end
 
   @doc "The root CA the proxy signs with. The sandbox trusts it or nothing works."
   @spec ca_pem() :: {:ok, binary()} | {:error, term()}
-  def ca_pem do
-    case Req.get(req(auth: false), url: "/v1/mitm/ca.pem") do
-      {:ok, %{status: 200, body: pem}} when is_binary(pem) -> {:ok, pem}
-      other -> {:error, {:broker, :ca, normalize(other)}}
-    end
-  end
+  def ca_pem, do: {:ok, CA.pem()}
 
   @doc """
-  Make the broker ready for one conversation and mint its session.
+  Mint the conversation's session: the credentials the proxy may attach,
+  the services that say where (one per binding, plus the catalog pair for
+  an unbound GitHub key), and a fresh token.
 
-  Idempotent: the vault is created if missing, the credentials and services
-  are upserted, and a fresh session is minted every call. Runs on every
-  provision and reattach, so an edited secret reaches the broker on the next
-  wake, the same way the `.env` file is refreshed.
+  Runs on every provision and reattach, so an edited secret or binding
+  reaches the proxy on the next wake, the same way the `.env` file is
+  refreshed. The previous session, if any, stays valid until it expires: a
+  turn already running on it is not cut off.
   """
-  @spec prepare(String.t(), %{String.t() => String.t()}, bindings()) ::
+  @spec prepare(String.t(), String.t(), %{String.t() => String.t()}, bindings()) ::
           {:ok, session()} | {:error, term()}
-  def prepare(conversation_id, brokered, bindings \\ %{})
-      when is_binary(conversation_id) and is_map(brokered) and is_map(bindings) do
-    vault = vault_name(conversation_id)
-
-    with :ok <- ensure_vault(vault),
-         :ok <- set_policy(vault, "passthrough"),
-         :ok <- put_credentials(vault, credentials_for(brokered, bindings)),
-         :ok <- put_services(vault, services_for(brokered, bindings)) do
-      mint_session(vault, conversation_id)
-    end
+  def prepare(conversation_id, user_id, brokered, bindings \\ %{})
+      when is_binary(conversation_id) and is_binary(user_id) and is_map(brokered) and
+             is_map(bindings) do
+    Sessions.create(%{
+      conversation_id: conversation_id,
+      user_id: user_id,
+      vault: vault_name(conversation_id),
+      credentials: credentials_for(brokered, bindings),
+      services: services_for(brokered, bindings),
+      unmatched_host_policy: "passthrough",
+      ttl_seconds: Application.get_env(:fountain, :broker_session_ttl_seconds, 21_600)
+    })
   end
 
-  @doc "Delete the conversation's vault: its credentials, services and sessions go with it."
-  @spec release(String.t()) :: :ok | {:error, term()}
-  def release(conversation_id) when is_binary(conversation_id) do
-    vault = vault_name(conversation_id)
-
-    case Req.delete(req(), url: "/v1/vaults/#{vault}") do
-      {:ok, %{status: status}} when status in 200..299 -> :ok
-      {:ok, %{status: 404}} -> :ok
-      other -> {:error, {:broker, :release, normalize(other)}}
-    end
-  end
-
-  defp ensure_vault(vault) do
-    case Req.post(req(), url: "/v1/vaults", json: %{name: vault}) do
-      {:ok, %{status: status}} when status in 200..299 -> :ok
-      {:ok, %{status: 409}} -> :ok
-      other -> {:error, {:broker, :vault, normalize(other)}}
-    end
-  end
-
-  # Explicit even for the default: the broker defaults to passthrough and has
-  # no flag for it, and gate 2 flips this to deny for `limited`. Written on
-  # every prepare so a vault that survived from a different setting is reset.
-  defp set_policy(vault, policy) do
-    case Req.patch(req(),
-           url: "/v1/vaults/#{vault}/settings",
-           json: %{unmatched_host_policy: policy}
-         ) do
-      {:ok, %{status: status}} when status in 200..299 -> :ok
-      other -> {:error, {:broker, :policy, normalize(other)}}
-    end
-  end
-
-  defp put_credentials(_vault, creds) when map_size(creds) == 0, do: :ok
-
-  defp put_credentials(vault, creds) do
-    case Req.post(req(), url: "/v1/credentials", json: %{vault: vault, credentials: creds}) do
-      {:ok, %{status: status}} when status in 200..299 -> :ok
-      other -> {:error, {:broker, :credentials, normalize(other)}}
-    end
-  end
-
-  # PUT replaces the list, so a key that left the tenant's secrets leaves the
-  # broker too instead of lingering from an earlier prepare.
-  defp put_services(vault, services) do
-    case Req.put(req(), url: "/v1/vaults/#{vault}/services", json: %{services: services}) do
-      {:ok, %{status: status}} when status in 200..299 -> :ok
-      other -> {:error, {:broker, :services, normalize(other)}}
-    end
-  end
-
-  defp mint_session(vault, conversation_id) do
-    body = %{
-      vault: vault,
-      vault_role: "proxy",
-      ttl_seconds: Application.get_env(:fountain, :broker_session_ttl_seconds, 21_600),
-      label: "conversation " <> conversation_id
-    }
-
-    case Req.post(req(), url: "/v1/sessions", json: body) do
-      {:ok, %{status: status, body: %{"token" => token} = resp}}
-      when status in 200..299 and is_binary(token) ->
-        {:ok, %{vault: vault, token: token, expires_at: parse_time(resp["expires_at"])}}
-
-      other ->
-        {:error, {:broker, :session, normalize(other)}}
-    end
-  end
-
-  defp parse_time(iso) when is_binary(iso) do
-    case DateTime.from_iso8601(iso) do
-      {:ok, dt, _} -> dt
-      _ -> nil
-    end
-  end
-
-  defp parse_time(_), do: nil
-
-  defp normalize({:ok, %{status: status, body: body}}), do: {:api_error, status, body}
-  defp normalize({:error, reason}), do: reason
-
-  # The token is never logged: Req's default error inspection would print the
-  # request, so failures above carry status and body only.
-  defp req(opts \\ []) do
-    base =
-      [
-        base_url: Application.fetch_env!(:fountain, :broker_url),
-        receive_timeout: Application.get_env(:fountain, :broker_timeout_ms, 10_000),
-        retry: false
-      ] ++ Application.get_env(:fountain, :broker_req_options, [])
-
-    base =
-      if Keyword.get(opts, :auth, true),
-        do: Keyword.put(base, :auth, {:bearer, Application.fetch_env!(:fountain, :broker_token)}),
-        else: base
-
-    Req.new(base)
-  end
+  @doc "Delete the conversation's sessions. Its tokens stop working at once."
+  @spec release(String.t()) :: :ok
+  def release(conversation_id) when is_binary(conversation_id),
+    do: Sessions.release(conversation_id)
 end

@@ -18,6 +18,18 @@ upgrade, is in
 
 ### Upgrade notes
 
+- **The egress credential broker is Fountain's own** (ADR 0019 §8,
+  amended). `BROKER_URL` and `BROKER_TOKEN` are no longer read (boot warns
+  when they are set) and there is no Agent Vault to deploy. Turn the broker
+  on with `BROKER_LISTEN_PORT` and `BROKER_PROXY_URL` together;
+  `BROKER_TENANTS`, `BROKER_SESSION_TTL_SECONDS` and
+  `BROKER_ALLOW_UNENFORCED` mean what they did. A deployment that still sets
+  only the old variables is **not brokering** until it sets the new ones:
+  the conversations of the tenants in `BROKER_TENANTS` provision as they did
+  before gate 1a. The root CA is derived from `MASTER_SECRETS_KEY`, so a
+  brokered sandbox trusts every replica; the migration adds
+  `broker_sessions`.
+
 - **`BILLING_ENABLED` is `CREDITS_ENABLED`** (#1144). The old name is still
   read for one release and logs a deprecation warning at boot; rename it in
   your environment before the next minor. The Oban queue `billing` is
@@ -28,6 +40,16 @@ upgrade, is in
 
 ### Changed
 
+- **Fountain brokers egress credentials natively** instead of through an
+  Infisical Agent Vault instance. `Fountain.Broker.Proxy` is a `CONNECT`
+  and absolute-form forward proxy on `BROKER_LISTEN_PORT` that terminates
+  the sandbox's TLS with a per-host leaf signed by `Fountain.Broker.CA`,
+  rewrites the auth header from the conversation's session
+  (`Fountain.Broker.Sessions`, credentials under the tenant DEK, token
+  stored hashed) and relays the origin's bytes back unparsed, so streaming
+  replies stream. Every request is logged by conversation, host and path
+  (`[:fountain, :broker, :request]`), never by header. `Fountain.Broker`'s
+  callers are unchanged; `prepare/2` is `prepare/3` and takes the user id.
 - `Billing.provider_spend/1` (the `/admin` and `/admin/sandboxes` hours) and
   `Finance.cost/3` (the money on `/admin/finance`) read one fold,
   `Finance.platform_totals/1`, instead of each summing the attribution rows

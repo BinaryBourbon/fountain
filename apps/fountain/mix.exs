@@ -85,6 +85,8 @@ defmodule Fountain.MixProject do
       {:opentelemetry_ecto, "~> 1.2", only: :prod},
       {:opentelemetry_telemetry, "~> 1.1", only: :prod},
       {:req, "~> 0.5"},
+      {:x509, "~> 0.9"},
+      {:thousand_island, "~> 1.5"},
       # New Fountain deps
       {:bcrypt_elixir, "~> 3.0"},
       {:uniq, "~> 0.6"},

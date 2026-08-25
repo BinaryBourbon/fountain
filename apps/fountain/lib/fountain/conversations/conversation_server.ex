@@ -1398,7 +1398,12 @@ defmodule Fountain.Conversations.ConversationServer do
         keys: state.brokered |> Map.keys() |> Enum.sort()
       })
 
-      case Fountain.Broker.prepare(state.conversation_id, state.brokered, state.broker_bindings) do
+      case Fountain.Broker.prepare(
+             state.conversation_id,
+             state.user_id,
+             state.brokered,
+             state.broker_bindings
+           ) do
         {:ok, session} ->
           publish_stage(state.conversation_id, "broker", "done", %{
             vault: session.vault,
@@ -1427,7 +1432,12 @@ defmodule Fountain.Conversations.ConversationServer do
 
   defp broker_refresh(%{broker: session} = state) do
     if Fountain.Broker.expiring?(session) do
-      case Fountain.Broker.prepare(state.conversation_id, state.brokered, state.broker_bindings) do
+      case Fountain.Broker.prepare(
+             state.conversation_id,
+             state.user_id,
+             state.brokered,
+             state.broker_bindings
+           ) do
         {:ok, fresh} ->
           keys = Fountain.Broker.env_keys()
           kept = Enum.reject(state.sprite_env, fn {k, _} -> to_string(k) in keys end)
@@ -1447,23 +1457,13 @@ defmodule Fountain.Conversations.ConversationServer do
     end
   end
 
-  # The vault and every session in it go when the conversation's sandbox
-  # does. Best effort and off the caller's path: a broker that is down at
-  # teardown must not keep a sandbox alive, and the vault is idempotently
-  # recreated on the next provision anyway.
+  # The conversation's sessions go when its sandbox does. Off the caller's
+  # path: a store that is slow at teardown must not keep a sandbox alive,
+  # and a session is minted afresh on the next provision anyway.
   defp broker_release(state) do
     if brokered?(state) do
       conv_id = state.conversation_id
-
-      Task.Supervisor.start_child(Fountain.TaskSupervisor, fn ->
-        case Fountain.Broker.release(conv_id) do
-          :ok ->
-            :ok
-
-          {:error, reason} ->
-            Logger.warning("broker release for conv #{conv_id}: #{inspect(reason)}")
-        end
-      end)
+      Task.Supervisor.start_child(Fountain.TaskSupervisor, fn -> Fountain.Broker.release(conv_id) end)
     end
 
     :ok

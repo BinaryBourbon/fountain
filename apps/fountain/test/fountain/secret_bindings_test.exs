@@ -245,7 +245,7 @@ defmodule Fountain.SecretBindingsTest do
   end
 
   describe "the catalog" do
-    test "carries the 35 presets, github first among them, three marked unusable" do
+    test "carries the 35 presets, github first among them, four marked unusable" do
       presets = Catalog.presets()
       assert length(presets) == 35
 
@@ -257,7 +257,7 @@ defmodule Fountain.SecretBindingsTest do
              } = Catalog.get("github")
 
       assert Enum.map(Enum.reject(presets, & &1.usable), & &1.id) |> Enum.sort() ==
-               ~w(aws-s3 jira twilio)
+               ~w(aws-s3 jira telegram twilio)
 
       assert [%{id: "stripe"}] = Catalog.for_key("STRIPE_SECRET_KEY")
       assert Enum.all?(presets, &(&1.auth_type in ~w(bearer basic api_key custom passthrough)))

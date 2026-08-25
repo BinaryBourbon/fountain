@@ -37,12 +37,12 @@ defmodule Fountain.Conversations.IdentityTest do
         {"HTTP_PROXY", "http://av_sess_x@broker.example:14322"},
         {"https_proxy", "http://av_sess_x@broker.example:14322"},
         {"http_proxy", "http://av_sess_x@broker.example:14322"},
-        {"NODE_EXTRA_CA_CERTS", "/usr/local/share/ca-certificates/agent-vault.crt"},
+        {"NODE_EXTRA_CA_CERTS", "/usr/local/share/ca-certificates/fountain-broker.crt"},
         {"GITHUB_TOKEN", "__github_token__"}
       ]
 
       assert Identity.disk_env(env) == [
-               {"NODE_EXTRA_CA_CERTS", "/usr/local/share/ca-certificates/agent-vault.crt"},
+               {"NODE_EXTRA_CA_CERTS", "/usr/local/share/ca-certificates/fountain-broker.crt"},
                {"GITHUB_TOKEN", "__github_token__"}
              ]
     end

@@ -174,20 +174,44 @@ config :fountain, :daytona_api_key, daytona_api_key
 config :fountain, :daytona_api_url, daytona_api_url
 config :fountain, :daytona_snapshot, daytona_snapshot
 
-# Egress credential brokerage (ADR 0019, gate 1a). Blank means off: no broker
-# call is made, and every conversation provisions exactly as it did before
-# the feature existed. The same "" counts-as-unset rule as SPRITES_TOKEN.
+# Egress credential brokerage (ADR 0019). Fountain is its own broker: the
+# proxy listens on BROKER_LISTEN_PORT and sandboxes dial BROKER_PROXY_URL,
+# which is the same listener behind whatever ingress terminates TLS for it.
+# Both blank means off: no listener, and every conversation provisions
+# exactly as it did before the feature existed. The same "" counts-as-unset
+# rule as SPRITES_TOKEN.
 blank_to_nil = fn
   blank when blank in [nil, ""] -> nil
   value -> value
 end
 
-broker_url = blank_to_nil.(System.get_env("BROKER_URL"))
-broker_token = blank_to_nil.(System.get_env("BROKER_TOKEN"))
 broker_proxy_url = blank_to_nil.(System.get_env("BROKER_PROXY_URL"))
 
-if broker_url && (is_nil(broker_token) || is_nil(broker_proxy_url)) do
-  raise "BROKER_URL is set, so BROKER_TOKEN and BROKER_PROXY_URL must be set too"
+broker_listen_port =
+  case System.get_env("BROKER_LISTEN_PORT") do
+    blank when blank in [nil, ""] ->
+      nil
+
+    raw ->
+      case Integer.parse(raw) do
+        {n, ""} when n in 0..65_535 -> n
+        _ -> raise "BROKER_LISTEN_PORT must be a port number"
+      end
+  end
+
+if is_nil(broker_proxy_url) != is_nil(broker_listen_port) do
+  raise "BROKER_PROXY_URL and BROKER_LISTEN_PORT are set together, or neither"
+end
+
+# The Agent Vault client the broker started life as (#1136) read these. They
+# are not read any more; say so rather than boot on a silently ignored
+# variable, because a deployment that still sets them is not brokering.
+for legacy <- ["BROKER_URL", "BROKER_TOKEN"], not is_nil(blank_to_nil.(System.get_env(legacy))) do
+  IO.warn(
+    "#{legacy} is no longer read: Fountain brokers natively since ADR 0019 §8 was amended. " <>
+      "Set BROKER_LISTEN_PORT and BROKER_PROXY_URL instead, and drop #{legacy}.",
+    []
+  )
 end
 
 broker_tenants =
@@ -208,9 +232,8 @@ broker_session_ttl =
       end
   end
 
-config :fountain, :broker_url, broker_url
-config :fountain, :broker_token, broker_token
 config :fountain, :broker_proxy_url, broker_proxy_url
+config :fountain, :broker_listen_port, broker_listen_port
 config :fountain, :broker_tenants, broker_tenants
 config :fountain, :broker_session_ttl_seconds, broker_session_ttl
 config :fountain, :broker_allow_unenforced, System.get_env("BROKER_ALLOW_UNENFORCED") == "true"

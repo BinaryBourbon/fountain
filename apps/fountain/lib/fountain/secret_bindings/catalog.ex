@@ -5,10 +5,12 @@ defmodule Fountain.SecretBindings.Catalog do
   `api.stripe.com` as a bearer, and so on.
 
   Suggestions, never rules: the tenant still saves the binding, and can
-  change any field. Three presets are not directly usable as bindings and
+  change any field. Four presets are not directly usable as bindings and
   are marked `usable: false` — `aws-s3` needs SigV4 signing, `jira` and
   `twilio` are basic auth where the suggested key is the password and the
-  username is the tenant's own.
+  username is the tenant's own, and `telegram` puts the token in the URL
+  path, which is a substitution rather than a header and which the native
+  broker does not do (ADR 0019 §8).
 
   Read at compile time from `priv/broker/service_catalog.json`, which ships
   in the release like the rest of `priv`.
@@ -17,7 +19,7 @@ defmodule Fountain.SecretBindings.Catalog do
   @path Path.join(:code.priv_dir(:fountain) |> to_string(), "broker/service_catalog.json")
   @external_resource @path
 
-  @unusable ~w(aws-s3 jira twilio)
+  @unusable ~w(aws-s3 jira twilio telegram)
 
   @presets @path
            |> File.read!()
