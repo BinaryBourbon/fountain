@@ -72,15 +72,17 @@ defmodule Fountain.QuotasTest do
       user
     end
 
-    # Every verified account holds the $10 opening grant: five sandboxes.
-    test "the opening grant funds the floor; so does nothing at all" do
+    # Every verified account holds the $5 opening grant: the floor. Spent to
+    # nothing, it funds nothing — the gate refuses first, so the cap is never
+    # the answer that account hears.
+    test "the opening grant funds the floor; nothing at all funds nothing" do
       user = insert_active_user()
       assert Quotas.sandbox_limit(user.id) == 2
 
       {:ok, _} =
         Fountain.Credits.debit(user.id, 1_000, "burn_turn", idempotency_key: "drain-#{user.id}")
 
-      assert Quotas.sandbox_limit(user.id) == 2
+      assert Quotas.sandbox_limit(user.id) == 0
     end
 
     test "the cap follows the balance, one sandbox per reserve" do
@@ -123,8 +125,8 @@ defmodule Fountain.QuotasTest do
       assert Quotas.sandbox_limit(user.id) == 7
     end
 
-    test "an unknown user gets the floor rather than being unlimited" do
-      assert Quotas.sandbox_limit(Ecto.UUID.generate()) == 2
+    test "an unknown user funds nothing rather than being unlimited" do
+      assert Quotas.sandbox_limit(Ecto.UUID.generate()) == 0
     end
   end
 
@@ -174,7 +176,7 @@ defmodule Fountain.QuotasTest do
       end
     end
 
-    test "an unfunded account is shown 0, though the enforced floor stays (#1127)" do
+    test "an unfunded account is 0 on both, not the floor (#1127)" do
       user = insert_active_user()
 
       {:ok, _} =
@@ -182,7 +184,7 @@ defmodule Fountain.QuotasTest do
 
       user = Fountain.Repo.reload!(user)
       assert Quotas.sandbox_limit_for(user) == 0
-      assert Quotas.sandbox_limit(user.id) == 2
+      assert Quotas.sandbox_limit(user.id) == 0
 
       {:ok, comped} = Fountain.Billing.comp_account(user)
       assert Quotas.sandbox_limit_for(comped) == Quotas.sandbox_limit(comped.id)

@@ -124,7 +124,7 @@ defmodule Fountain.Emails.BillingEmails do
 
   @doc """
   The prepaid balance is at or below zero. Whether anything is refused
-  depends on `Fountain.Credits.active?/0`; the email says so either way.
+  depends on `Fountain.Billing.enabled?/0`; the email says so either way.
   """
   @spec deliver_credits_exhausted_email(User.t(), integer()) :: {:ok, term()} | {:error, term()}
   def deliver_credits_exhausted_email(%User{} = user, balance_cents) do
@@ -141,7 +141,7 @@ defmodule Fountain.Emails.BillingEmails do
   end
 
   defp credits_consequence(true) do
-    if Fountain.Credits.active?(),
+    if Fountain.Billing.enabled?(),
       do:
         "New conversations and new turns are paused until the balance is positive again. Anything already running finishes.",
       else: "Nothing is paused yet. Your balance will keep going down until you top up."

@@ -179,6 +179,14 @@ defmodule Fountain.CreditsTest do
       assert :ok = Credits.check_balance(user.id, now: ~U[2026-09-01 00:00:01Z])
     end
 
+    test "`:min` raises the bar: rent needs a month, not a cent" do
+      user = insert_empty_user()
+      {:ok, _} = Credits.grant(user.id, 300, "purchase", idempotency_key: "p")
+      assert :ok = Credits.check_balance(user.id)
+      assert :ok = Credits.check_balance(user.id, min: 300)
+      assert {:error, :insufficient_credits} = Credits.check_balance(user.id, min: 301)
+    end
+
     test "zero and negative are insufficient, positive is ok" do
       user = insert_empty_user()
       assert {:error, :insufficient_credits} = Credits.check_balance(user)

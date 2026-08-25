@@ -53,7 +53,7 @@ defmodule Fountain.Workers.CreditsEmail do
   """
   @spec notify_after_burn(String.t()) :: :ok
   def notify_after_burn(user_id) when is_binary(user_id) do
-    with true <- Credits.active?(),
+    with true <- Fountain.Billing.enabled?(),
          %{comped: false} = user <-
            Accounts.get_user(user_id) do
       balance = Credits.balance(user)

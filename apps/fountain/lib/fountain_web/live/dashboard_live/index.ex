@@ -58,8 +58,7 @@ defmodule FountainWeb.DashboardLive.Index do
   # agents have been doing.
   defp assign_usage(socket, user) do
     billing_enabled? = Fountain.Billing.enabled?()
-    {period_start, period_end} = Fountain.Billing.current_month_range()
-    period = %{start: period_start, end: period_end}
+    period = Fountain.Billing.month_range()
 
     socket
     |> assign(:usage, Fountain.Billing.usage_summary(user.id, period.start, period.end))

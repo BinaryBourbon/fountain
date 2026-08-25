@@ -98,7 +98,7 @@ defmodule Fountain.Quotas do
 
     case Repo.one(query) do
       {override, balance, comped} -> resolve_limit(override, balance, comped)
-      nil -> settings().cap_floor
+      nil -> 0
     end
   end
 
@@ -106,24 +106,10 @@ defmodule Fountain.Quotas do
   The same answer as `sandbox_limit/1` for a user already loaded — for the
   admin table, which shows the cap on every row and must not run a query per
   row (the same contract as `active_sandbox_counts/0`).
-
-  One deliberate difference: an account with nothing in its balance is shown
-  `0`, not the floor. The floor is what `sandbox_limit/1` enforces so the
-  quota check under the reservation lock never fires ahead of the credit gate
-  (`insufficient_credits` is the right answer, not `sandbox_quota_exceeded`),
-  but the gate refuses that account anyway, and a display that says "2" for
-  an account that can start nothing is a lie (#1127).
   """
   @spec sandbox_limit_for(User.t()) :: non_neg_integer()
-  def sandbox_limit_for(%User{} = user) do
-    unfunded? =
-      is_nil(user.sandbox_limit_override) and Fountain.Billing.enabled?() and
-        user.comped != true and (user.credit_balance_cents || 0) <= 0
-
-    if unfunded?,
-      do: 0,
-      else: resolve_limit(user.sandbox_limit_override, user.credit_balance_cents, user.comped)
-  end
+  def sandbox_limit_for(%User{} = user),
+    do: resolve_limit(user.sandbox_limit_override, user.credit_balance_cents, user.comped)
 
   defp resolve_limit(override, _balance, _comped) when is_integer(override), do: override
 
@@ -133,11 +119,14 @@ defmodule Fountain.Quotas do
     cond do
       not Fountain.Billing.enabled?() -> ceiling
       comped == true -> ceiling
+      # Nothing in the balance funds nothing. The credit gate runs before the
+      # quota check under the reservation lock, so this account is refused as
+      # `insufficient_credits`, never as a 0/0 quota.
+      (balance || 0) <= 0 -> 0
       true -> balance |> funded(reserve) |> max(floor) |> min(ceiling)
     end
   end
 
-  defp funded(balance, _reserve) when balance <= 0, do: 0
   defp funded(_balance, 0), do: 0
   defp funded(balance, reserve), do: div(balance, reserve)
 
@@ -252,9 +241,11 @@ defmodule Fountain.Quotas do
       # last slot or the last cent must not both read "room" and both
       # provision. The turn that then burns the balance may still go
       # negative; that is the soft stop, not a hole.
+      # Balance before cap: an unfunded account's cap is 0, and "out of
+      # credit" is the answer it should hear, not "0/0 sandboxes".
       with :ok <- check_fleet_ceiling(quota_opts),
-           :ok <- check_sandbox_quota(user_id, quota_opts),
            :ok <- Fountain.Credits.gate(user_id),
+           :ok <- check_sandbox_quota(user_id, quota_opts),
            {:ok, value} <- fun.() do
         value
       else

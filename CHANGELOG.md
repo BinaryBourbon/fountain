@@ -25,6 +25,23 @@ upgrade, is in
   Off unless `BROKER_URL` is set, and then only for the tenants in
   `BROKER_TENANTS`; an unbrokered conversation provisions byte-for-byte as
   before. No broker is deployed and no tenant is flipped by this change.
+
+### Fixed
+
+- **Billing debt 1/3: the month is half-open, one gate, one cap rule.**
+  `Billing.month_range/2` replaces four hand-rolled month windows; its `end`
+  is the first instant of the next month, so the last second of every month
+  is no longer dropped from every usage query (`GET /api/account/billing`'s
+  `period.end` moves accordingly; SDK 1.1.1). `Credits.Rent` runs through
+  `Credits.check_balance/2` (`min:` a month's rent) instead of its own
+  balance read, so an expired-but-unswept grant funds a contact no more than
+  it funds a turn. Under the reservation lock the credit gate now runs
+  before the sandbox quota, so an unfunded account's cap is 0 everywhere
+  (`sandbox_limit/1` and `sandbox_limit_for/1` agree) and it is refused as
+  `insufficient_credits`, never as a 0/0 quota. `Credits.gate/1` is
+  `check_balance/2`; `Credits.active?/0` is gone (it was `Billing.enabled?/0`).
+  `Finance.deferred_cents/0` is the one deferred-balance query.
+
 ### Changed
 
 - **Credits cleanup 3/3 (#1128).** The prose catches up with ADR 0031. ADR

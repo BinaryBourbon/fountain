@@ -1792,7 +1792,9 @@ defmodule FountainWeb.Schemas do
             has_stripe_customer: %Schema{type: :boolean},
             period: %Schema{
               type: :object,
-              description: "The calendar month the usage numbers cover.",
+              description:
+                "The calendar month the usage numbers cover, half-open: `end` is " <>
+                  "the first instant of the next month.",
               properties: %{
                 start: %Schema{type: :string, format: :"date-time"},
                 end: %Schema{type: :string, format: :"date-time"}

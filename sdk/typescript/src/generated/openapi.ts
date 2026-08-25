@@ -3768,7 +3768,7 @@ export interface components {
                     turn_hour_cents?: number;
                 } | null;
                 has_stripe_customer?: boolean;
-                /** @description The calendar month the usage numbers cover. */
+                /** @description The calendar month the usage numbers cover, half-open: `end` is the first instant of the next month. */
                 period?: {
                     /** Format: date-time */
                     end?: string;
