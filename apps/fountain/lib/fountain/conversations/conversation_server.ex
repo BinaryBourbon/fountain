@@ -1031,7 +1031,8 @@ defmodule Fountain.Conversations.ConversationServer do
       # The callback token just rotated, and for claude the connection MCP
       # servers carry it in `.mcp.json` (#1178): rewrite the file so the
       # next turn's tools authenticate. Idempotent for an agent without one.
-      _ = write_runtime_config(handle, state.runtime_module, with_connection_servers(agent, state))
+      _ =
+        write_runtime_config(handle, state.runtime_module, with_connection_servers(agent, state))
 
       # A machine provisioned before its tenant was brokered has no CA yet;
       # on one that has it this is an idempotent rewrite. Best effort here:
@@ -1477,7 +1478,12 @@ defmodule Fountain.Conversations.ConversationServer do
 
   defp with_connection_servers(%{mcp_servers: servers} = agent, state) when is_map(servers) do
     token = if Fountain.Broker.enabled_for?(state.user_id), do: state.callback_token
-    %{agent | mcp_servers: Fountain.Connections.McpServers.resolve(servers, state.conversation_id, token)}
+
+    %{
+      agent
+      | mcp_servers:
+          Fountain.Connections.McpServers.resolve(servers, state.conversation_id, token)
+    }
   end
 
   defp with_connection_servers(agent, _state), do: agent

@@ -231,11 +231,15 @@ defmodule Fountain.Agents.Agent do
     validate_change(changeset, :mcp_servers, fn :mcp_servers, servers ->
       if is_map(servers) do
         servers
-        |> Enum.filter(fn {_name, entry} -> is_map(entry) and Map.has_key?(entry, "connection") end)
+        |> Enum.filter(fn {_name, entry} ->
+          is_map(entry) and Map.has_key?(entry, "connection")
+        end)
         |> Enum.reject(fn {_name, %{"connection" => id}} ->
           is_binary(id) and match?({:ok, _}, Ecto.UUID.cast(id))
         end)
-        |> Enum.map(fn {name, _} -> {:mcp_servers, "#{name}: connection must be a connection id"} end)
+        |> Enum.map(fn {name, _} ->
+          {:mcp_servers, "#{name}: connection must be a connection id"}
+        end)
       else
         [mcp_servers: "must be a map of server name to server config"]
       end

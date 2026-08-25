@@ -92,8 +92,9 @@ defmodule Fountain.Connections.Google do
     end
   end
 
-  defp fetch_refresh_token(%{"refresh_token" => refresh}) when is_binary(refresh) and refresh != "",
-    do: {:ok, refresh}
+  defp fetch_refresh_token(%{"refresh_token" => refresh})
+       when is_binary(refresh) and refresh != "",
+       do: {:ok, refresh}
 
   defp fetch_refresh_token(_), do: {:error, :no_refresh_token}
 

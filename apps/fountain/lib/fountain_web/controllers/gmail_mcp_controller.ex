@@ -34,7 +34,8 @@ defmodule FountainWeb.GmailMcpController do
   end
 
   defp build_ctx(conv_id, connection_id, user) do
-    with true <- Broker.enabled_for?(user.id) || {:error, 403, "connections are not available here"},
+    with true <-
+           Broker.enabled_for?(user.id) || {:error, 403, "connections are not available here"},
          %Conversations.Conversation{} = conv <- get_conv(conv_id, user),
          :ok <- agent_names?(conv, connection_id),
          %Connections.Connection{} = connection <-

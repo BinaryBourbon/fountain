@@ -30,18 +30,31 @@ defmodule FountainWeb.ConnectionControllerTest do
              conn |> get("/api/connections/providers") |> json_response(404)
   end
 
-  test "lists, shows and deletes the caller's connections without a token", %{conn: conn, user: user} do
+  test "lists, shows and deletes the caller's connections without a token", %{
+    conn: conn,
+    user: user
+  } do
     c = insert_connection(user, account_email: "me@example.com", access_token: "never-shown-at")
     other = insert_verified_user()
     enable_broker_for([user.id, other.id])
     insert_connection(other, account_email: "them@example.com")
 
     body = conn |> get("/api/connections") |> json_response(200)
-    assert [%{"id" => id, "account_email" => "me@example.com", "status" => "active", "env_key" => "GOOGLE_ACCESS_TOKEN"}] = body["data"]
+
+    assert [
+             %{
+               "id" => id,
+               "account_email" => "me@example.com",
+               "status" => "active",
+               "env_key" => "GOOGLE_ACCESS_TOKEN"
+             }
+           ] = body["data"]
+
     assert id == c.id
     refute inspect(body) =~ "never-shown-at"
 
-    assert %{"id" => ^id, "provider" => "google"} = conn |> get("/api/connections/#{id}") |> json_response(200)
+    assert %{"id" => ^id, "provider" => "google"} =
+             conn |> get("/api/connections/#{id}") |> json_response(200)
 
     Req.Test.stub(Google, fn req -> Req.Test.json(req, %{}) end)
     assert conn |> delete("/api/connections/#{id}") |> response(204)

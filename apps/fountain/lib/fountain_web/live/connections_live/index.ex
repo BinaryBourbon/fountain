@@ -49,7 +49,10 @@ defmodule FountainWeb.ConnectionsLive.Index do
           {:ok, _} ->
             {:noreply,
              socket
-             |> put_flash(:info, "Revoked #{connection.account_email}. Agents that name it will be told.")
+             |> put_flash(
+               :info,
+               "Revoked #{connection.account_email}. Agents that name it will be told."
+             )
              |> reload()}
 
           {:error, reason} ->
@@ -68,7 +71,8 @@ defmodule FountainWeb.ConnectionsLive.Index do
       connection ->
         case Connections.delete(connection, Audited.attribution(socket)) do
           {:ok, _} ->
-            {:noreply, socket |> put_flash(:info, "Removed #{connection.account_email}.") |> reload()}
+            {:noreply,
+             socket |> put_flash(:info, "Removed #{connection.account_email}.") |> reload()}
 
           {:error, reason} ->
             {:noreply, put_flash(socket, :error, "Could not remove: #{inspect(reason)}")}

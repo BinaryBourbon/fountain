@@ -28,7 +28,14 @@ defmodule FountainWeb.ConnectionsControllerTest do
 
   test "the round trip stores a connection on the signed-in account", %{conn: conn, user: user} do
     conn = get(conn, ~p"/connections/google/start")
-    state = conn |> redirected_to() |> URI.parse() |> Map.fetch!(:query) |> URI.decode_query() |> Map.fetch!("state")
+
+    state =
+      conn
+      |> redirected_to()
+      |> URI.parse()
+      |> Map.fetch!(:query)
+      |> URI.decode_query()
+      |> Map.fetch!("state")
 
     Req.Test.stub(Google, fn req ->
       case req.request_path do
@@ -67,8 +74,13 @@ defmodule FountainWeb.ConnectionsControllerTest do
     refute get_session(conn, :connections_oauth_nonce)
   end
 
-  test "a callback whose state did not come from this session is refused", %{conn: conn, user: user} do
-    state = Phoenix.Token.sign(FountainWeb.Endpoint, "connections:oauth_state", {user.id, "other"})
+  test "a callback whose state did not come from this session is refused", %{
+    conn: conn,
+    user: user
+  } do
+    state =
+      Phoenix.Token.sign(FountainWeb.Endpoint, "connections:oauth_state", {user.id, "other"})
+
     Req.Test.stub(Google, fn _ -> flunk("no exchange for a bad state") end)
 
     conn = get(conn, ~p"/connections/google/callback", %{"code" => "c", "state" => state})
@@ -79,13 +91,24 @@ defmodule FountainWeb.ConnectionsControllerTest do
 
   test "a consent Google answered without a refresh token is explained", %{conn: conn, user: user} do
     conn = get(conn, ~p"/connections/google/start")
-    state = conn |> redirected_to() |> URI.parse() |> Map.fetch!(:query) |> URI.decode_query() |> Map.fetch!("state")
+
+    state =
+      conn
+      |> redirected_to()
+      |> URI.parse()
+      |> Map.fetch!(:query)
+      |> URI.decode_query()
+      |> Map.fetch!("state")
 
     Req.Test.stub(Google, fn req ->
       Req.Test.json(req, %{"access_token" => "at", "expires_in" => 10})
     end)
 
-    conn = conn |> recycle() |> get(~p"/connections/google/callback", %{"code" => "c", "state" => state})
+    conn =
+      conn
+      |> recycle()
+      |> get(~p"/connections/google/callback", %{"code" => "c", "state" => state})
+
     assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "no refresh token"
     assert Connections.list_connections(user.id) == []
   end

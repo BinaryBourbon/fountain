@@ -62,7 +62,8 @@ defmodule Fountain.ConnectionsTest do
         insert_connection(user,
           access_token: "a-old",
           refresh_token: "r-1",
-          expires_at: DateTime.utc_now() |> DateTime.add(60, :second) |> DateTime.truncate(:second)
+          expires_at:
+            DateTime.utc_now() |> DateTime.add(60, :second) |> DateTime.truncate(:second)
         )
 
       Req.Test.stub(Google, fn req ->
@@ -88,7 +89,8 @@ defmodule Fountain.ConnectionsTest do
 
       conn =
         insert_connection(user,
-          expires_at: DateTime.utc_now() |> DateTime.add(-10, :second) |> DateTime.truncate(:second)
+          expires_at:
+            DateTime.utc_now() |> DateTime.add(-10, :second) |> DateTime.truncate(:second)
         )
 
       Req.Test.stub(Google, fn req ->
@@ -196,7 +198,10 @@ defmodule Fountain.ConnectionsTest do
 
       assert {:error, cs} =
                Fountain.Agents.create_agent(
-                 agent_attrs(%{"user_id" => user.id, "mcp_servers" => %{"gmail" => %{"connection" => 12}}})
+                 agent_attrs(%{
+                   "user_id" => user.id,
+                   "mcp_servers" => %{"gmail" => %{"connection" => 12}}
+                 })
                )
 
       assert %{mcp_servers: [msg]} = errors_on(cs)

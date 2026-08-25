@@ -42,7 +42,10 @@ defmodule Fountain.Connections.Mcp do
           properties: %{
             query: %{type: "string", description: "Gmail search query. Empty lists recent mail."},
             max_results: %{type: "integer", description: "1 to #{@max_results}, default 10"},
-            page_token: %{type: "string", description: "From a previous result, for the next page"}
+            page_token: %{
+              type: "string",
+              description: "From a previous result, for the next page"
+            }
           }
         }
       },
@@ -239,13 +242,22 @@ defmodule Fountain.Connections.Mcp do
          {:ok, body} <- require_arg(args, "body") do
       raw =
         Gmail.build_raw(
-          [from: ctx.connection.account_email, to: to, cc: args["cc"], bcc: args["bcc"], subject: subject],
+          [
+            from: ctx.connection.account_email,
+            to: to,
+            cc: args["cc"],
+            bcc: args["bcc"],
+            subject: subject
+          ],
           body
         )
 
       case gmail(ctx).send_raw(token, raw) do
         {:ok, sent} ->
-          audit(ctx, "gmail_send", %{"recipients" => count_addresses([to, args["cc"], args["bcc"]])})
+          audit(ctx, "gmail_send", %{
+            "recipients" => count_addresses([to, args["cc"], args["bcc"]])
+          })
+
           ok(id, %{id: sent["id"], thread_id: sent["threadId"], sent: true})
 
         {:error, reason} ->
@@ -421,7 +433,9 @@ defmodule Fountain.Connections.Mcp do
     payload
     |> flatten_parts()
     |> Enum.filter(&(is_binary(&1["filename"]) and &1["filename"] != ""))
-    |> Enum.map(&%{filename: &1["filename"], mime_type: &1["mimeType"], size: get_in(&1, ["body", "size"])})
+    |> Enum.map(
+      &%{filename: &1["filename"], mime_type: &1["mimeType"], size: get_in(&1, ["body", "size"])}
+    )
   end
 
   defp count_addresses(fields) do
@@ -457,9 +471,15 @@ defmodule Fountain.Connections.Mcp do
   defp clamp(_, _lo, _hi, default), do: default
 
   defp api_error(id, :unauthorized),
-    do: tool_error(id, "Gmail refused the access token; retry, and if it persists reconnect the account")
+    do:
+      tool_error(
+        id,
+        "Gmail refused the access token; retry, and if it persists reconnect the account"
+      )
 
-  defp api_error(id, {:http, status, message}), do: tool_error(id, "Gmail API error #{status}: #{message}")
+  defp api_error(id, {:http, status, message}),
+    do: tool_error(id, "Gmail API error #{status}: #{message}")
+
   defp api_error(id, reason), do: tool_error(id, "Gmail request failed: #{inspect(reason)}")
 
   defp ok(id, payload), do: result(id, %{content: [text(Jason.encode!(payload))], isError: false})

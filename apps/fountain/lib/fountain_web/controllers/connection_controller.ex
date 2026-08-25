@@ -34,7 +34,8 @@ defmodule FountainWeb.ConnectionController do
         "Only for accounts the egress broker is on for (ADR 0019); 404 otherwise.",
     responses: [
       ok: {"Connections", "application/json", Schemas.ConnectionListResponse},
-      not_found: {"Connections are not enabled for this account", "application/json", Schemas.Error},
+      not_found:
+        {"Connections are not enabled for this account", "application/json", Schemas.Error},
       unauthorized: {"Missing or invalid key", "application/json", Schemas.Error}
     ]
   )
@@ -52,7 +53,8 @@ defmodule FountainWeb.ConnectionController do
         "that starts the flow (a browser signed in as the account owner).",
     responses: [
       ok: {"Providers", "application/json", Schemas.ConnectionProvidersResponse},
-      not_found: {"Connections are not enabled for this account", "application/json", Schemas.Error},
+      not_found:
+        {"Connections are not enabled for this account", "application/json", Schemas.Error},
       unauthorized: {"Missing or invalid key", "application/json", Schemas.Error}
     ]
   )

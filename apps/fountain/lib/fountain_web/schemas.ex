@@ -3670,7 +3670,8 @@ defmodule FountainWeb.Schemas do
 
     OpenApiSpex.schema(%{
       title: "ConnectionProvidersResponse",
-      description: "Which providers this deployment can connect, and the URL that starts each flow.",
+      description:
+        "Which providers this deployment can connect, and the URL that starts each flow.",
       type: :object,
       properties: %{
         data: %Schema{

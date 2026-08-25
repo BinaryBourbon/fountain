@@ -36,7 +36,9 @@ defmodule FountainWeb.GmailMcpControllerTest do
   end
 
   test "serves tools/list for a conversation whose agent names the connection", ctx do
-    body = rpc(ctx.conn, ctx.raw_key, ctx.conv, ctx.connection, "tools/list") |> json_response(200)
+    body =
+      rpc(ctx.conn, ctx.raw_key, ctx.conv, ctx.connection, "tools/list") |> json_response(200)
+
     names = Enum.map(body["result"]["tools"], & &1["name"])
     assert "gmail_search" in names
     assert "gmail_send" in names
@@ -44,7 +46,9 @@ defmodule FountainWeb.GmailMcpControllerTest do
   end
 
   test "initialize names the connected account", ctx do
-    body = rpc(ctx.conn, ctx.raw_key, ctx.conv, ctx.connection, "initialize") |> json_response(200)
+    body =
+      rpc(ctx.conn, ctx.raw_key, ctx.conv, ctx.connection, "initialize") |> json_response(200)
+
     assert body["result"]["serverInfo"]["name"] == "fountain-gmail"
     assert body["result"]["instructions"] =~ "me@example.com"
   end
@@ -55,7 +59,9 @@ defmodule FountainWeb.GmailMcpControllerTest do
 
       case req.request_path do
         "/gmail/v1/users/me/labels" ->
-          Req.Test.json(req, %{"labels" => [%{"id" => "INBOX", "name" => "INBOX", "type" => "system"}]})
+          Req.Test.json(req, %{
+            "labels" => [%{"id" => "INBOX", "name" => "INBOX", "type" => "system"}]
+          })
       end
     end)
 
@@ -123,7 +129,13 @@ defmodule FountainWeb.GmailMcpControllerTest do
 
   test "an expired token is refreshed before the call, and the turn does not see it", ctx do
     expired = DateTime.utc_now() |> DateTime.add(-5, :second) |> DateTime.truncate(:second)
-    connection = insert_connection(ctx.user, account_email: "me@example.com", expires_at: expired, refresh_token: "rt")
+
+    connection =
+      insert_connection(ctx.user,
+        account_email: "me@example.com",
+        expires_at: expired,
+        refresh_token: "rt"
+      )
 
     Req.Test.stub(Google, fn req ->
       assert req.request_path == "/token"
@@ -145,7 +157,8 @@ defmodule FountainWeb.GmailMcpControllerTest do
     assert body["result"]["isError"] == false
   end
 
-  test "404 when the agent does not name the connection, the conversation is another tenant's, or the connection is", ctx do
+  test "404 when the agent does not name the connection, the conversation is another tenant's, or the connection is",
+       ctx do
     plain_agent = insert_agent(user_id: ctx.user.id)
     plain = insert_conversation(%{user_id: ctx.user.id, agent: plain_agent, status: "idle"})
     assert rpc(ctx.conn, ctx.raw_key, plain, ctx.connection, "tools/list") |> json_response(404)
@@ -161,7 +174,9 @@ defmodule FountainWeb.GmailMcpControllerTest do
 
   test "403 for an account the broker is not on for", ctx do
     Application.put_env(:fountain, :broker_tenants, [])
-    assert rpc(ctx.conn, ctx.raw_key, ctx.conv, ctx.connection, "tools/list") |> json_response(403)
+
+    assert rpc(ctx.conn, ctx.raw_key, ctx.conv, ctx.connection, "tools/list")
+           |> json_response(403)
   end
 
   test "a notification gets 202 and no body", ctx do

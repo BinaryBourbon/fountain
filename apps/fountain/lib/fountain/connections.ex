@@ -137,7 +137,8 @@ defmodule Fountain.Connections do
     conn
     |> Connection.revoke_changeset()
     |> Repo.update()
-    |> audited("connection.revoked", actor: "system:connection_refresh",
+    |> audited("connection.revoked",
+      actor: "system:connection_refresh",
       metadata: %{"reason" => "invalid_grant"}
     )
   end

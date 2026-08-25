@@ -93,7 +93,10 @@ defmodule FountainWeb.ConnectionsController do
 
   defp describe(:invalid_grant), do: "the code was refused"
   defp describe({:http, status, _body}), do: "Google answered #{status}"
-  defp describe({:userinfo, status, _body}), do: "could not read the account's address (#{status})"
+
+  defp describe({:userinfo, status, _body}),
+    do: "could not read the account's address (#{status})"
+
   defp describe(%Ecto.Changeset{} = cs), do: cs.errors |> Keyword.keys() |> Enum.join(", ")
   defp describe(reason), do: inspect(reason)
 end
