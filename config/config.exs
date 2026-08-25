@@ -40,12 +40,10 @@ config :fountain, Oban,
        # Every 10 minutes: price closed turns and comms messages into the
        # credit ledger (ADR 0030). Idempotent per turn and per event, so the
        # cadence only sets how stale a balance can read. No-ops until
-       # CREDIT_PRICING_SINCE is set.
        {"*/10 * * * *", Fountain.Workers.CreditPricer},
        # 06:23 UTC daily: tier and trial grants, and expiry of unspent grants
        # (ADR 0030 decision 2). Idempotent per period and per grant. The
        # webhook will grant at renewal directly (phase 4); this is the
-       # backstop. No-ops until CREDIT_PRICING_SINCE is set.
        {"23 6 * * *", Fountain.Workers.CreditGranter},
        # 06:47 UTC daily: rent for numbers and inboxes, the grace reminders,
        # and the release on day seven (ADR 0030 decision 4). No-ops until a
@@ -86,9 +84,6 @@ config :fountain, :sandboxes,
 # of one hour of turn time; the comms prices are nil until an operator sets
 # them, and nil burns nothing (#1042). runtime.exs overrides from CREDIT_*.
 config :fountain, :credits,
-  # When set, turns that ended at or after this instant are priced into the
-  # ledger; nil means the pricer no-ops. runtime.exs reads CREDIT_PRICING_SINCE.
-  pricing_since: nil,
   # The opening grant a new account gets (ADR 0031 decision 3), and how
   # long it lasts.
   opening_cents: 1_000,

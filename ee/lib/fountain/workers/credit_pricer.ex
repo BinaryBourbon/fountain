@@ -2,7 +2,7 @@ defmodule Fountain.Workers.CreditPricer do
   @moduledoc """
   Prices what a tenant used into the credit ledger (ADR 0030 decision 3).
 
-  Two passes, both idempotent, both bounded by `credits.pricing_since`:
+  Two passes, both idempotent, both bounded by a seven-day look-back:
 
     * **Turns.** Every closed turn (`ended_at` set) on a provider Fountain pays
       for burns `Credits.turn_cost_cents(ended - started)` under the key
@@ -18,8 +18,7 @@ defmodule Fountain.Workers.CreditPricer do
   `Finance` sees what a comp cost. Enforcement is `check_balance/1`'s job and
   is not wired yet (#1086 phase 4).
 
-  No-ops when billing is off or `pricing_since` is unset. The look-back is
-  `pricing_since` or seven days, whichever is later, so a restart after an
+  No-ops when billing is off. The look-back is seven days, so a restart after an
   outage catches up without scanning the whole table; a turn older than that
   which somehow escaped pricing is a reconciliation job, not this one's.
 
@@ -68,19 +67,13 @@ defmodule Fountain.Workers.CreditPricer do
   """
   @spec run(keyword()) :: %{turns: non_neg_integer(), messages: non_neg_integer()}
   def run(opts \\ []) do
-    since = Keyword.get(opts, :since) || pricing_since()
+    since = Keyword.get(opts, :since)
 
     cond do
       not Billing.enabled?() -> %{turns: 0, messages: 0}
       is_nil(since) -> %{turns: 0, messages: 0}
       true -> do_run(floor(since, Keyword.get(opts, :now) || DateTime.utc_now()))
     end
-  end
-
-  @doc "The configured instant burning starts, or nil."
-  @spec pricing_since() :: DateTime.t() | nil
-  def pricing_since do
-    Application.get_env(:fountain, :credits, []) |> Keyword.get(:pricing_since)
   end
 
   defp floor(since, now) do

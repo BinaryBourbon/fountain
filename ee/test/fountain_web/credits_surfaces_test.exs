@@ -17,7 +17,7 @@ defmodule FountainWeb.CreditsSurfacesTest do
 
   defp switch_on do
     cfg = Application.get_env(:fountain, :credits)
-    Application.put_env(:fountain, :credits, Keyword.put(cfg, :pricing_since, @since))
+    Application.put_env(:fountain, :credits, cfg)
     on_exit(fn -> Application.put_env(:fountain, :credits, cfg) end)
   end
 

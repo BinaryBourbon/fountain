@@ -39,7 +39,7 @@ defmodule Fountain.Credits.RentTest do
   end
 
   test "no rent when no price is set" do
-    switch(pricing_since: @since)
+    switch([])
     assert Rent.month_cents() == 0
     refute Rent.charging?()
     user = insert_empty_user()
@@ -54,7 +54,7 @@ defmodule Fountain.Credits.RentTest do
 
   describe "with a price and a funded account" do
     setup do
-      switch(pricing_since: @since, number_cents: 300, inbox_cents: 200)
+      switch(number_cents: 300, inbox_cents: 200)
       :ok
     end
 
@@ -91,7 +91,7 @@ defmodule Fountain.Credits.RentTest do
 
   describe "with enforcement on" do
     setup do
-      switch(pricing_since: @since, enforce: true, number_cents: 300, inbox_cents: 200)
+      switch(enforce: true, number_cents: 300, inbox_cents: 200)
       :ok
     end
 
@@ -175,7 +175,7 @@ defmodule Fountain.Credits.RentTest do
   end
 
   test "the rent email is dropped once the contact is paid or gone" do
-    switch(pricing_since: @since, number_cents: 300, inbox_cents: 200)
+    switch(number_cents: 300, inbox_cents: 200)
     user = insert_empty_user()
     c = contact(user, %{rent_due_at: ~U[2026-08-02 00:00:00Z]})
     test = self()

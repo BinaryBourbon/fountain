@@ -26,7 +26,7 @@ defmodule Fountain.Workers.CreditPricerTest do
     insert_conversation(user_id: user.id, sandbox: sandbox)
   end
 
-  test "no-ops with no pricing_since and with billing off" do
+  test "no-ops with billing off" do
     user = insert_empty_user()
     conv = setup_conv(user)
     closed_turn(conv, ~U[2026-08-02 10:00:00Z], 3600)
@@ -60,7 +60,7 @@ defmodule Fountain.Workers.CreditPricerTest do
     assert Credits.balance(user.id) == -25
   end
 
-  test "open turns, runner turns, and turns before pricing_since are not priced" do
+  test "open turns, runner turns, and turns before the floor are not priced" do
     user = insert_empty_user()
     conv = setup_conv(user)
     # Still running.
