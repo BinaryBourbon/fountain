@@ -38,7 +38,7 @@ defmodule FountainWeb.StripeWebhookController do
         # Fail closed. `Stripe.Webhook.construct_event/3` computes a plain
         # HMAC with whatever secret it is given — an empty string verifies
         # "successfully" against a signature anyone can forge, turning this
-        # unauthenticated route into write access to subscription state.
+        # unauthenticated route into write access to the credit ledger.
         Logger.error(
           "[stripe_webhook] Rejecting webhook: STRIPE_WEBHOOK_SECRET is not configured"
         )

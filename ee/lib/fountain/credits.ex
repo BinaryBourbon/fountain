@@ -258,8 +258,8 @@ defmodule Fountain.Credits do
       has unspent, and when it goes
     * `:purchased_cents` — how much of the balance is paid-for money, which
       never expires
-    * `:turn_hour_cents` — the price of one turn hour
-    * `:price_card` — `price_card/0`
+    * `:price_card` — `price_card/0`; `turn_hour` on it is the price of one
+      turn hour
   """
   @spec summary(User.t(), keyword()) :: %{
           active?: boolean(),
@@ -267,7 +267,6 @@ defmodule Fountain.Credits do
           expiring_cents: non_neg_integer(),
           expires_at: DateTime.t() | nil,
           purchased_cents: non_neg_integer(),
-          turn_hour_cents: non_neg_integer(),
           price_card: map()
         }
   def summary(%User{} = user, opts \\ []) do
@@ -290,7 +289,6 @@ defmodule Fountain.Credits do
         expiring_cents: expiring,
         expires_at: expires_at,
         purchased_cents: purchased,
-        turn_hour_cents: card.turn_hour,
         price_card: card
       }
     else
@@ -300,7 +298,6 @@ defmodule Fountain.Credits do
         expiring_cents: 0,
         expires_at: nil,
         purchased_cents: 0,
-        turn_hour_cents: card.turn_hour,
         price_card: card
       }
     end

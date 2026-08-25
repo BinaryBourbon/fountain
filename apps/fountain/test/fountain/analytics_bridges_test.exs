@@ -121,7 +121,7 @@ defmodule Fountain.AnalyticsBridgesTest do
 
       {:ok, _} =
         Audit.record(%{
-          action: "billing.trial.started",
+          action: "credit.granted",
           resource_type: "user",
           user_id: user.id
         })

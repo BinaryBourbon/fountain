@@ -68,7 +68,7 @@ defmodule Fountain.Billing.Finance do
   tenant's prepaid credit (ADR 0030), so on the `:turn` basis cost and burn
   move together, and on `:active` they do not.
 
-  **Credits** are the usage revenue: what a period's tier grants put in, what
+  **Credits** are the usage revenue: what a period's grants put in, what
   turns and contacts burned, what packs sold, and the deferred balance —
   money taken and not yet burned, which is a liability rather than revenue
   until it is.
@@ -350,7 +350,7 @@ defmodule Fountain.Billing.Finance do
   ## ── credits ─────────────────────────────────────────────────────────────
 
   @doc """
-  The prepaid ledger over the period (ADR 0030): what the tier grants put in,
+  The prepaid ledger over the period (ADR 0030): what the grants put in,
   what burned, what packs sold, and the deferred balance — the sum of every
   positive balance today, which is money already taken for work not yet
   done. Burned against granted-plus-sold is the utilisation of what tenants

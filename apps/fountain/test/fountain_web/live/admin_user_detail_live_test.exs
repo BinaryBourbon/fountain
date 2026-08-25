@@ -47,7 +47,9 @@ defmodule FountainWeb.AdminUserDetailLiveTest do
       refute html =~ "key_hash"
     end
 
-    test "shows the tenant's turn hours against their plan (#1016)", %{conn: conn} do
+    test "shows the tenant's turn hours, with no allowance beside them (#1016, ADR 0031)", %{
+      conn: conn
+    } do
       admin = insert_admin()
       target = insert_active_user()
 

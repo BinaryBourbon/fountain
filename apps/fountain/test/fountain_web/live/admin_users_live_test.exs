@@ -138,9 +138,8 @@ defmodule FountainWeb.AdminUsersLiveTest do
       assert render(lv) =~ "Sandbox limit override set"
     end
 
-    # A comped account cannot change its own plan — Billing.change_plan/3
-    # refuses — so without an admin door there is no way at all onto the
-    # entitlements of exactly the accounts an operator hand-manages.
+    # Every admin action leaves a row in the privilege trail; these helpers
+    # read it back.
     defp assert_admin_event(target_id, event_type) do
       types =
         target_id

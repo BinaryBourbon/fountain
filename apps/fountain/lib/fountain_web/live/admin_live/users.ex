@@ -71,10 +71,11 @@ defmodule FountainWeb.AdminLive.Users do
     with_target_user(socket, id, fn user -> do_toggle_admin(socket, user) end)
   end
 
-  # The concurrency cap normally comes from the tenant's plan. This overrides
-  # it, which is the only lever for a noisy or abusive tenant (ADR 0005) and
-  # the only way to hand a trusted one more than they pay for. Submitting the
-  # field empty clears the override and hands the cap back to the plan.
+  # The concurrency cap normally follows the tenant's balance (ADR 0031).
+  # This overrides it, which is the lever for a noisy or abusive tenant
+  # (ADR 0005) and the way to hand a trusted one more than their balance
+  # funds. Submitting the field empty clears the override and hands the cap
+  # back to the balance rule.
   @impl true
   def handle_event("set_sandbox_limit", %{"user_id" => id, "limit" => raw}, socket) do
     with {:ok, limit} <- parse_limit_override(raw),
@@ -93,7 +94,7 @@ defmodule FountainWeb.AdminLive.Users do
 
       message =
         if is_nil(limit),
-          do: "Override cleared — the cap follows the plan again",
+          do: "Override cleared — the cap follows the balance again",
           else: "Sandbox limit override set"
 
       {:noreply, socket |> assign_users() |> put_flash(:info, message)}
@@ -109,7 +110,7 @@ defmodule FountainWeb.AdminLive.Users do
          put_flash(
            socket,
            :error,
-           "Override must be a whole number of 0 or more, or empty for the plan's cap"
+           "Override must be a whole number of 0 or more, or empty for the balance rule's cap"
          )}
     end
   end
@@ -277,7 +278,7 @@ defmodule FountainWeb.AdminLive.Users do
     end
   end
 
-  # "" clears the override (the cap goes back to the plan's); anything else
+  # "" clears the override (the cap goes back to the balance rule); anything else
   # must be a whole number of zero or more.
   defp parse_limit_override(raw) do
     case String.trim(raw) do
@@ -477,13 +478,13 @@ defmodule FountainWeb.AdminLive.Users do
               <th
                 :if={@billing_enabled}
                 class="px-4 py-2"
-                title="Plan, and teammate contacts this account is not charged for"
+                title="The balance, or comped: an operator made this account free"
               >
-                Plan
+                Credit
               </th>
               <th
                 class="px-4 py-2"
-                title="Last 30 days: conversations · turns · turn hours (the unit a plan includes)"
+                title="Last 30 days: conversations · turns · turn hours (the unit credit is burned in)"
               >
                 Usage 30d
               </th>
@@ -590,7 +591,7 @@ defmodule FountainWeb.AdminLive.Users do
                   ]}>
                     {u.active_sandboxes} / {u.sandbox_limit}
                   </span>
-                  <%!-- Empty means "no override": the cap is the plan's, shown
+                  <%!-- Empty means "no override": the cap is the balance rule's, shown
                         as the placeholder so an admin can see what clearing
                         the box would leave behind. --%>
                   <input

@@ -374,7 +374,7 @@ config :sentry,
   # (cookies, user IPs, request bodies) should ride along by default.
   send_default_pii: false
 
-# ADR 0006 made the subscription gate a product invariant. For a self-hosted
+# ADR 0031 made the credit gate a product invariant. For a self-hosted
 # instance it is just a lock on the front door with no key, so it is config
 # rather than a source patch — and off by default (#336): an operator
 # exporting env by hand who never hears of BILLING_ENABLED must not lock
@@ -654,7 +654,7 @@ config :stripity_stripe, api_key: System.get_env("STRIPE_SECRET_KEY")
 # must never reach signature verification — Stripe.Webhook.construct_event
 # happily HMACs with an empty key, so the webhook controller fails closed
 # when this is unset. A billing-enabled prod instance without the secret
-# cannot process any subscription event, so refuse to boot rather than let
+# cannot process a purchase or a clawback, so refuse to boot rather than let
 # every webhook 400 quietly.
 case System.get_env("STRIPE_WEBHOOK_SECRET") do
   blank when blank in [nil, ""] ->

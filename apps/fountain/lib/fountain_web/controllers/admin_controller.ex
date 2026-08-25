@@ -198,7 +198,7 @@ defmodule FountainWeb.AdminController do
       refuse(
         conn,
         "invalid_limit",
-        "Limit must be a whole number of 0 or more, or null for the plan's cap."
+        "Limit must be a whole number of 0 or more, or null for the balance rule's cap."
       )
 
   operation(:set_comp,
@@ -228,7 +228,7 @@ defmodule FountainWeb.AdminController do
     summary: "Add prepaid credit to an account",
     description:
       "A `grant_admin` ledger row (ADR 0030): goodwill, a won dispute, an " <>
-        "outage. It never expires and is spent after the tier's grant. There " <>
+        "outage. It never expires and is spent after the opening grant. There " <>
         "is deliberately no negative form here; a clawback is what a refund " <>
         "or dispute does through Stripe.",
     parameters: [id: [in: :path, type: :string, required: true]],

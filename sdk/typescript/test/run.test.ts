@@ -338,7 +338,7 @@ describe("resume and send", () => {
 
 describe("errors", () => {
   test("402 carries the upgrade url", async () => {
-    fake.failNextWith = { status: 402, body: { error: "subscription_required", upgrade_url: "/account/billing" } };
+    fake.failNextWith = { status: 402, body: { error: "insufficient_credits", upgrade_url: "/account/billing" } };
     await assert.rejects(
       async () => {
         await client().run("go", { agent: "11111111-1111-1111-1111-111111111111" });
@@ -346,7 +346,7 @@ describe("errors", () => {
       (error: unknown) => {
         assert.ok(error instanceof SubscriptionRequiredError);
         assert.equal(error.status, 402);
-        assert.equal(error.code, "subscription_required");
+        assert.equal(error.code, "insufficient_credits");
         assert.equal(error.upgradeUrl, "/account/billing");
         return true;
       },

@@ -41,14 +41,14 @@ defmodule Fountain.Emails.BillingEmails do
     # thing that says what is still missing (#867).
     start_url = "#{base_url}/dashboard"
 
-    trial_text = welcome_opening_phrase(user)
+    opening_text = welcome_opening_phrase(user)
 
     new()
     |> from(UserEmails.from_address())
     |> to({user.email, user.email})
     |> subject("Welcome to #{brand()}")
-    |> html_body(welcome_html(start_url, trial_text))
-    |> text_body(welcome_text(start_url, trial_text))
+    |> html_body(welcome_html(start_url, opening_text))
+    |> text_body(welcome_text(start_url, opening_text))
     |> Mailer.deliver()
   end
 
@@ -65,7 +65,7 @@ defmodule Fountain.Emails.BillingEmails do
     end
   end
 
-  defp welcome_html(start_url, trial_text) do
+  defp welcome_html(start_url, opening_text) do
     """
     <!DOCTYPE html>
     <html>
@@ -82,7 +82,7 @@ defmodule Fountain.Emails.BillingEmails do
           Get started
         </a>
       </p>
-      #{if trial_text, do: "<p>#{trial_text}</p>", else: ""}
+      #{if opening_text, do: "<p>#{opening_text}</p>", else: ""}
       <p style="color: #71717a; font-size: 13px;">
         Or copy this link into your browser:<br/>
         <a href="#{start_url}" style="color: #3b82f6;">#{start_url}</a>
@@ -92,7 +92,7 @@ defmodule Fountain.Emails.BillingEmails do
     """
   end
 
-  defp welcome_text(start_url, trial_text) do
+  defp welcome_text(start_url, opening_text) do
     """
     Welcome to #{brand()}
 
@@ -101,7 +101,7 @@ defmodule Fountain.Emails.BillingEmails do
     and streams back live:
 
     #{start_url}
-    #{if trial_text, do: "\n#{trial_text}\n", else: ""}
+    #{if opening_text, do: "\n#{opening_text}\n", else: ""}
     """
   end
 
@@ -123,8 +123,8 @@ defmodule Fountain.Emails.BillingEmails do
   end
 
   @doc """
-  The prepaid balance is at or below zero. Whether anything is refused
-  depends on `Fountain.Billing.enabled?/0`; the email says so either way.
+  The prepaid balance is at or below zero: new work is refused until it is
+  positive again (`Credits.gate/1`). Only sent while billing is on.
   """
   @spec deliver_credits_exhausted_email(User.t(), integer()) :: {:ok, term()} | {:error, term()}
   def deliver_credits_exhausted_email(%User{} = user, balance_cents) do
@@ -140,12 +140,9 @@ defmodule Fountain.Emails.BillingEmails do
     |> Mailer.deliver()
   end
 
-  defp credits_consequence(true) do
-    if Fountain.Billing.enabled?(),
-      do:
-        "New conversations and new turns are paused until the balance is positive again. Anything already running finishes.",
-      else: "Nothing is paused yet. Your balance will keep going down until you top up."
-  end
+  defp credits_consequence(true),
+    do:
+      "New conversations and new turns are paused until the balance is positive again. Anything already running finishes."
 
   defp credits_consequence(false),
     do: "Top up now so your agents keep working when it runs out."

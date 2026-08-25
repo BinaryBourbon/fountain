@@ -184,7 +184,7 @@ defmodule Fountain.CreditsEnforcementTest do
     end
 
     test "the runway line is 20% of the opening grant or $2" do
-      assert CreditsEmail.runway_line(subscriber()) == 200
+      assert CreditsEmail.runway_line() == 200
     end
 
     test "notify_after_burn enqueues low then exhausted, once each" do

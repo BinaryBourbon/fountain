@@ -60,7 +60,7 @@ defmodule Fountain.Workers.CreditsEmail do
 
       cond do
         balance <= 0 -> enqueue(user.id, "credits_exhausted")
-        balance <= runway_line(user) -> enqueue(user.id, "credits_low")
+        balance <= runway_line() -> enqueue(user.id, "credits_low")
         true -> :ok
       end
     end
@@ -69,8 +69,8 @@ defmodule Fountain.Workers.CreditsEmail do
   end
 
   @doc "Cents under which a balance is 'low': 20 % of the opening grant, or $2."
-  @spec runway_line(Accounts.User.t()) :: pos_integer()
-  def runway_line(_user) do
+  @spec runway_line() :: pos_integer()
+  def runway_line do
     opening = Application.get_env(:fountain, :credits, []) |> Keyword.get(:opening_cents, 500)
     max(div(opening, 5), 200)
   end
@@ -109,7 +109,7 @@ defmodule Fountain.Workers.CreditsEmail do
           email == "credits_exhausted" and balance <= 0 ->
             BillingEmails.deliver_credits_exhausted_email(user, balance) |> log(user, email)
 
-          email == "credits_low" and balance > 0 and balance <= runway_line(user) ->
+          email == "credits_low" and balance > 0 and balance <= runway_line() ->
             BillingEmails.deliver_credits_low_email(user, balance) |> log(user, email)
 
           true ->

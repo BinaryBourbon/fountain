@@ -289,14 +289,14 @@ func TestNewSessionReportsAnUnresolvableAgent(t *testing.T) {
 }
 
 func TestNewSessionReportsAFailedConversationStart(t *testing.T) {
-	api := &fakeAPI{ref: acpAgentRef(), createErr: errors.New("http 402: subscription_required")}
+	api := &fakeAPI{ref: acpAgentRef(), createErr: errors.New("http 402: insufficient_credits")}
 	a := sessionAgent(t, api, "researcher")
 
 	_, rpcErr := request(t, a, "session/new", map[string]any{})
 	if rpcErr == nil {
 		t.Fatal("session/new reported success for a conversation that was never created")
 	}
-	if !strings.Contains(rpcErr.Message, "subscription_required") {
+	if !strings.Contains(rpcErr.Message, "insufficient_credits") {
 		t.Errorf("message = %q, want it to carry the server's reason", rpcErr.Message)
 	}
 }

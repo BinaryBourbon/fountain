@@ -207,7 +207,7 @@ defmodule Fountain.AnalyticsTest do
       assert Analytics.product_event?("agent.created", "ui")
       assert Analytics.product_event?("conversation.created", "api")
       assert Analytics.product_event?("team.contact.provisioned", "self")
-      assert Analytics.product_event?("billing.trial.started", "system:trial_sweeper")
+      assert Analytics.product_event?("credit.expired", "system:credit_expirer")
     end
 
     test "the api pipeline's request-log row is not" do

@@ -126,7 +126,7 @@ Every tile carries a description that states what it measures and why.
 
 | Tile | Question |
 |---|---|
-| `Billable metering events`. | The nine event types that build the invoice. |
+| `Billable metering events`. | The nine event types that meter what the credit pricer burns. |
 | `Accounts driving the sandbox bill`. | Top twenty accounts by provisions and turns. |
 | `Cost concentration`. | More accounts, or heavier accounts. |
 | `Is metering still recording`. | Two independent event streams, compared. |

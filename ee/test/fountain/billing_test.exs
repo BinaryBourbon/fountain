@@ -356,20 +356,6 @@ defmodule Fountain.BillingTest do
     end
   end
 
-  describe "attach_stripe_customer/2" do
-    test "a customer id cannot be attached to two users" do
-      # Two users sharing a stripe_customer_id would make the webhook lookup
-      # raise Ecto.MultipleResultsError, 500ing every delivery for that
-      # customer through Stripe's whole retry window.
-      u1 = insert_verified_user()
-      u2 = insert_verified_user()
-
-      assert {:ok, _} = Billing.attach_stripe_customer(u1, "cus_dup")
-      assert {:error, changeset} = Billing.attach_stripe_customer(u2, "cus_dup")
-      assert "has already been taken" in errors_on(changeset).stripe_customer_id
-    end
-  end
-
   defp insert_event(user, event_type, inserted_at, metadata \\ %{}, resource_id \\ nil) do
     %UsageEvent{}
     |> UsageEvent.changeset(%{

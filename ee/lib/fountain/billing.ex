@@ -105,19 +105,6 @@ defmodule Fountain.Billing do
 
   def ensure_stripe_customer(%User{} = user), do: create_stripe_customer(user)
 
-  @doc """
-  Record a Stripe customer id a webhook carried for `user`: a
-  `checkout.session.completed` names both the customer and our
-  `client_reference_id`, which is the way back to the user for a Customer
-  Stripe minted on its own.
-  """
-  @spec attach_stripe_customer(User.t(), binary()) :: {:ok, User.t()} | {:error, term()}
-  def attach_stripe_customer(%User{} = user, customer_id) when is_binary(customer_id) do
-    user
-    |> User.billing_changeset(%{stripe_customer_id: customer_id})
-    |> Repo.update()
-  end
-
   # ─── Stripe webhooks ────────────────────────────────────────────────────────
 
   @doc """
@@ -345,9 +332,9 @@ defmodule Fountain.Billing do
   - `:turn_hours` — hours of turns on the providers Fountain pays for, summed
     per turn (two conversations each an hour on one machine are two, ADR 0023
     step 6), not the sandbox's busy time. The same number
-    `turn_hours_used/2` computes, carried here so a surface showing usage does
-    not need a second pass over the same rows to show the unit a plan is
-    denominated in (`Fountain.Credits.turn_cost_cents/1`).
+    `CreditPricer` burns, carried here so a surface showing usage does
+    not need a second pass over the same rows to show the unit credit is
+    burned in (`Fountain.Credits.turn_cost_cents/1`).
   """
   @spec usage_summary(binary(), DateTime.t(), DateTime.t()) ::
           %{
@@ -410,9 +397,9 @@ defmodule Fountain.Billing do
   the admin table shows both. `sandbox_minutes` is wall-clock sandbox time —
   what a provider bills Fountain, so minutes, per provider, because the
   providers charge differently. `turn_hours` is time with a prompt in flight —
-  what a *plan* includes (`Fountain.Credits.turn_cost_cents/1`), so hours,
+  what credit is burned for (`Fountain.Credits.turn_cost_cents/1`), so hours,
   and summed only over the providers Fountain pays for, exactly as
-  `turn_hours_used/2` computes it for one tenant.
+  `usage_summary/3` computes it for one tenant.
   """
   @spec usage_summaries(DateTime.t(), DateTime.t()) :: %{optional(binary()) => map()}
   def usage_summaries(%DateTime{} = period_start, %DateTime{} = period_end) do

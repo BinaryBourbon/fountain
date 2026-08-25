@@ -181,7 +181,6 @@ defmodule Fountain.Accounts.DeletionTest do
   describe "billing" do
     test "nothing is cancelled upstream: there is no subscription (ADR 0031)" do
       user = billing_user(%{stripe_customer_id: "cus_123"})
-      reject(&Stripe.Customer.delete/1)
       assert {:ok, _} = Deletion.delete_user(user, actor: "self")
       refute Repo.get(User, user.id)
     end

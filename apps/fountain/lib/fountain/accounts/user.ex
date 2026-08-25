@@ -83,7 +83,7 @@ defmodule Fountain.Accounts.User do
 
   Admin-only. Zero is valid and meaningful — it is the lever for cutting off an
   abusive tenant without deleting their account. `nil` is valid too and means
-  something different: clear the override and let the plan decide again.
+  something different: clear the override and let the balance decide again.
   """
   def sandbox_limit_changeset(user, attrs) do
     user
@@ -91,7 +91,7 @@ defmodule Fountain.Accounts.User do
     |> validate_number(:sandbox_limit_override, greater_than_or_equal_to: 0)
   end
 
-  @doc "Changeset for billing field updates (driven by Stripe webhooks)."
+  @doc "Changeset for the Stripe customer id, written when a Checkout is opened."
   def billing_changeset(user, attrs) do
     user
     |> cast(attrs, [:stripe_customer_id])

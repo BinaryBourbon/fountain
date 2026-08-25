@@ -517,7 +517,7 @@ export interface paths {
         put?: never;
         /**
          * Add prepaid credit to an account
-         * @description A `grant_admin` ledger row (ADR 0030): goodwill, a won dispute, an outage. It never expires and is spent after the tier's grant. There is deliberately no negative form here; a clawback is what a refund or dispute does through Stripe.
+         * @description A `grant_admin` ledger row (ADR 0030): goodwill, a won dispute, an outage. It never expires and is spent after the opening grant. There is deliberately no negative form here; a clawback is what a refund or dispute does through Stripe.
          */
         post: operations["FountainWeb.AdminController.grant_credits"];
         delete?: never;

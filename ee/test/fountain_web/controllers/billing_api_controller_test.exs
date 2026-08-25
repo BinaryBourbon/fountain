@@ -6,7 +6,7 @@ defmodule FountainWeb.BillingApiControllerTest do
   of it: usage numbers and Checkout lived in `BillingLive`.
   """
 
-  # async: false — billing_enabled and stripe_price_id are application env.
+  # async: false — billing_enabled is application env.
   use FountainWeb.ConnCase, async: false
   use Mimic
 
