@@ -586,19 +586,131 @@ defmodule Fountain.BrokerTest do
       assert {:ok, "-----BEGIN CERTIFICATE-----\n"} = Broker.ca_pem()
     end
 
-    test "release deletes the conversation's vault, and a missing one is already released" do
+    test "release revokes sessions, clears services and credentials, and keeps the vault" do
+      test = self()
+      vault = Broker.vault_name(@conv)
+
+      stub(Req, :get, fn _r, opts ->
+        case opts[:url] do
+          "/v1/vaults/" <> _ ->
+            {:ok, %{status: 200, body: %{"unmatched_host_policy" => "deny"}}}
+
+          "/v1/sessions" ->
+            {:ok, %{status: 200, body: %{"sessions" => [%{"id" => "s1"}, %{"id" => "s2"}]}}}
+
+          "/v1/credentials" ->
+            {:ok, %{status: 200, body: %{"keys" => ["GITHUB_TOKEN", "GITHUB_TOKEN_BASIC_USER"]}}}
+        end
+      end)
+
       stub(Req, :delete, fn _r, opts ->
-        assert opts[:url] == "/v1/vaults/" <> Broker.vault_name(@conv)
-        {:ok, %{status: 200, body: %{"deleted" => true}}}
+        send(test, {:deleted, opts[:url], opts[:params], opts[:json]})
+        {:ok, %{status: 200, body: %{}}}
       end)
 
       assert :ok = Broker.release(@conv)
 
-      stub(Req, :delete, fn _r, _o -> {:ok, %{status: 404, body: %{}}} end)
+      assert_received {:deleted, "/v1/sessions/s1", [vault: ^vault], nil}
+      assert_received {:deleted, "/v1/sessions/s2", [vault: ^vault], nil}
+      assert_received {:deleted, "/v1/vaults/" <> _ = svc, nil, nil}
+      assert String.ends_with?(svc, "/services")
+
+      assert_received {:deleted, "/v1/credentials", nil,
+                       %{vault: ^vault, keys: ["GITHUB_TOKEN", "GITHUB_TOKEN_BASIC_USER"]}}
+
+      # The vault itself is never deleted here: its request log is the trail.
+      refute_received {:deleted, "/v1/vaults/" <> ^vault, _, _}
+    end
+
+    test "release of a vault that is gone is already done; a transport error surfaces" do
+      stub(Req, :get, fn _r, _o -> {:ok, %{status: 404, body: %{}}} end)
       assert :ok = Broker.release(@conv)
 
-      stub(Req, :delete, fn _r, _o -> {:error, :timeout} end)
+      stub(Req, :get, fn _r, _o -> {:error, :timeout} end)
       assert {:error, {:broker, :release, :timeout}} = Broker.release(@conv)
+    end
+
+    test "delete_vault and list_vaults are the reaper's calls" do
+      stub(Req, :delete, fn _r, opts ->
+        assert opts[:url] == "/v1/vaults/c-abc"
+        {:ok, %{status: 200, body: %{"deleted" => true}}}
+      end)
+
+      assert :ok = Broker.delete_vault("c-abc")
+
+      stub(Req, :get, fn _r, _o ->
+        {:ok, %{status: 200, body: %{"vaults" => [%{"name" => "default"}, %{"name" => "c-x"}]}}}
+      end)
+
+      assert {:ok, ["default", "c-x"]} = Broker.list_vaults()
+    end
+
+    test "conversation_id_for_vault/1 reverses vault_name/1" do
+      assert Broker.conversation_id_for_vault(Broker.vault_name(@conv)) == @conv
+      assert Broker.conversation_id_for_vault("default") == nil
+      assert Broker.conversation_id_for_vault("c-nothex") == nil
+    end
+
+    test "request_log/2 normalises the broker's rows, newest first, with a cursor" do
+      stub(Req, :get, fn _r, opts ->
+        assert opts[:url] == "/v1/vaults/" <> Broker.vault_name(@conv) <> "/logs"
+        assert opts[:params] == [limit: 2, before: 9]
+
+        {:ok,
+         %{
+           status: 200,
+           body: %{
+             "latest_id" => 8,
+             "next_cursor" => 6,
+             "logs" => [
+               %{
+                 "id" => 8,
+                 "created_at" => "2026-08-25T10:00:00Z",
+                 "method" => "GET",
+                 "host" => "api.github.com:443",
+                 "path" => "/user",
+                 "matched_service" => "github-api",
+                 "credential_keys" => ["GITHUB_TOKEN"],
+                 "status" => 200,
+                 "latency_ms" => 120,
+                 "error_code" => ""
+               },
+               %{
+                 "id" => 7,
+                 "created_at" => "2026-08-25T09:59:00Z",
+                 "method" => "CONNECT",
+                 "host" => "example.com:443",
+                 "path" => "",
+                 "matched_service" => "",
+                 "credential_keys" => [],
+                 "status" => 403,
+                 "latency_ms" => 1,
+                 "error_code" => "no_match"
+               }
+             ]
+           }
+         }}
+      end)
+
+      assert {:ok, %{events: [a, b], next: 6}} = Broker.request_log(@conv, limit: 2, before: 9)
+
+      assert %{
+               id: 8,
+               host: "api.github.com:443",
+               service: "github-api",
+               credential_keys: ["GITHUB_TOKEN"],
+               status: 200,
+               error: nil
+             } = a
+
+      assert %DateTime{hour: 10} = a.at
+      assert %{id: 7, service: nil, status: 403, error: "no_match"} = b
+
+      stub(Req, :get, fn _r, _o ->
+        {:ok, %{status: 404, body: %{"error" => "Vault not found"}}}
+      end)
+
+      assert {:ok, %{events: [], next: nil}} = Broker.request_log(@conv)
     end
   end
 end

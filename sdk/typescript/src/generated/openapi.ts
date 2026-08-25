@@ -1251,6 +1251,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/conversations/{conversation_id}/egress": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List what the conversation sent out through the egress broker
+         * @description The broker's request log for this conversation, newest first: each outbound HTTP request the sandbox made, the host, the service that matched (and so which credential was attached), the status and latency (ADR 0019 gate 4). Empty, with `brokered: false`, for a conversation that was not brokered. The log outlives the conversation for `BROKER_LOG_RETENTION_HOURS`.
+         */
+        get: operations["FountainWeb.ConversationController.egress"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/conversations/{conversation_id}/events": {
         parameters: {
             query?: never;
@@ -2406,6 +2426,26 @@ export interface components {
             data: components["schemas"]["Turn"][];
         };
         /**
+         * EgressEvent
+         * @description One outbound HTTP request the sandbox made through the egress broker (ADR 0019). `service` names the binding that matched, and so which credential was attached; null means the request passed through with none.
+         */
+        EgressEvent: {
+            /** Format: date-time */
+            at?: string | null;
+            credential_keys: string[];
+            /** @description The broker's error code, such as `no_match`, when it refused. */
+            error?: string | null;
+            /** @description Host and port, as the sandbox dialed it. */
+            host: string;
+            id: number;
+            latency_ms?: number | null;
+            method: string;
+            path: string;
+            service?: string | null;
+            /** @description The upstream status, or the broker's refusal. */
+            status?: number | null;
+        };
+        /**
          * Export
          * @description An account data export. Built asynchronously; the payload is fetched from the download endpoint, never embedded here.
          */
@@ -3218,6 +3258,14 @@ export interface components {
                 per_page: number;
                 total: number;
             };
+        };
+        /** EgressListResponse */
+        EgressListResponse: {
+            /** @description False when the conversation was not brokered; `data` is then empty. */
+            brokered: boolean;
+            data: components["schemas"]["EgressEvent"][];
+            /** @description Pass as `before` for the next page; null at the end. */
+            next?: number | null;
         };
         /** VaultResponse */
         VaultResponse: {
@@ -7295,6 +7343,51 @@ export interface operations {
             };
             /** @description No such endpoint on this account */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "FountainWeb.ConversationController.egress": {
+        parameters: {
+            query?: {
+                /** @description 1 to 500, default 100 */
+                limit?: number;
+                /** @description Page: the `next` value of the previous page */
+                before?: number;
+            };
+            header?: never;
+            path: {
+                conversation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Egress */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EgressListResponse"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The broker did not answer */
+            502: {
                 headers: {
                     [name: string]: unknown;
                 };

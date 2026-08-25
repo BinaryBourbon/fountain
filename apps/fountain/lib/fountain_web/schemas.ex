@@ -3353,6 +3353,64 @@ defmodule FountainWeb.Schemas do
     })
   end
 
+  defmodule EgressEvent do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "EgressEvent",
+      description:
+        "One outbound HTTP request the sandbox made through the egress broker " <>
+          "(ADR 0019). `service` names the binding that matched, and so which " <>
+          "credential was attached; null means the request passed through with none.",
+      type: :object,
+      properties: %{
+        id: %Schema{type: :integer},
+        at: %Schema{type: :string, format: :"date-time", nullable: true},
+        method: %Schema{type: :string},
+        host: %Schema{type: :string, description: "Host and port, as the sandbox dialed it."},
+        path: %Schema{type: :string},
+        service: %Schema{type: :string, nullable: true},
+        credential_keys: %Schema{type: :array, items: %Schema{type: :string}},
+        status: %Schema{
+          type: :integer,
+          nullable: true,
+          description: "The upstream status, or the broker's refusal."
+        },
+        latency_ms: %Schema{type: :integer, nullable: true},
+        error: %Schema{
+          type: :string,
+          nullable: true,
+          description: "The broker's error code, such as `no_match`, when it refused."
+        }
+      },
+      required: [:id, :method, :host, :path, :credential_keys]
+    })
+  end
+
+  defmodule EgressListResponse do
+    @moduledoc false
+    require OpenApiSpex
+
+    OpenApiSpex.schema(%{
+      title: "EgressListResponse",
+      type: :object,
+      properties: %{
+        data: %Schema{type: :array, items: EgressEvent},
+        next: %Schema{
+          type: :integer,
+          nullable: true,
+          description: "Pass as `before` for the next page; null at the end."
+        },
+        brokered: %Schema{
+          type: :boolean,
+          description: "False when the conversation was not brokered; `data` is then empty."
+        }
+      },
+      required: [:data, :brokered]
+    })
+  end
+
   list_response(SecretBindingListResponse, of: SecretBinding)
   list_response(SecretBindingPresetListResponse, of: SecretBindingPreset)
 

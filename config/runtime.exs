@@ -215,6 +215,20 @@ config :fountain, :broker_tenants, broker_tenants
 config :fountain, :broker_session_ttl_seconds, broker_session_ttl
 config :fountain, :broker_allow_unenforced, System.get_env("BROKER_ALLOW_UNENFORCED") == "true"
 
+broker_log_retention =
+  case System.get_env("BROKER_LOG_RETENTION_HOURS") do
+    blank when blank in [nil, ""] ->
+      168
+
+    raw ->
+      case Integer.parse(raw) do
+        {n, ""} when n >= 1 -> n
+        _ -> raise "BROKER_LOG_RETENTION_HOURS must be a positive integer"
+      end
+  end
+
+config :fountain, :broker_log_retention_hours, broker_log_retention
+
 # Self-hosted runners (ADR 0022) need no platform credential; the switch is an
 # operator opt-out. Blank counts as unset (enabled).
 runners_enabled =

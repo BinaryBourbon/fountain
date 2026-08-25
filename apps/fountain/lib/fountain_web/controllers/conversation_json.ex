@@ -10,6 +10,10 @@ defmodule FountainWeb.ConversationJSON do
   def show(%{conversation: conv}), do: %{data: data(conv)}
   def turns(%{turns: turns}), do: %{data: Enum.map(turns, &turn_data/1)}
 
+  def egress(%{events: events, next: next, brokered: brokered}) do
+    %{data: events, next: next, brokered: brokered}
+  end
+
   def events(%{events: events, has_more: has_more?, limit: limit} = assigns) do
     blocks_runtime = Map.get(assigns, :blocks_runtime)
 
