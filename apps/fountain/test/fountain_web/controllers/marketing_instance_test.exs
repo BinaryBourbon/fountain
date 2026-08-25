@@ -32,6 +32,12 @@ defmodule FountainWeb.MarketingInstanceTest do
       refute body =~ "What you stop building."
       refute body =~ "14-day trial"
       refute body =~ "Managed agent infrastructure"
+
+      # The Open Graph card follows the same rule: no pitch, only what it is.
+      assert body =~
+               ~s(<meta property="og:description" content="Fountain runs agents on sandboxes)
+
+      assert body =~ ~s(<meta property="og:image:alt" content="Fountain")
     end
 
     test "keeps the price off the page even with a price configured", %{conn: conn} do
