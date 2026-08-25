@@ -212,4 +212,91 @@ defmodule Fountain.CreditsTest do
       assert Credits.format_cents(0) == "$0.00"
     end
   end
+
+  describe "lots" do
+    defp remaining(entry), do: Credits.unspent_of(entry, 0)
+
+    test "a debit consumes the earliest-expiring lot first, then purchased money" do
+      user = insert_active_user()
+
+      {:ok, late} =
+        Credits.grant(user.id, 1000, "grant_tier",
+          idempotency_key: "late",
+          expires_at: ~U[2099-02-01 00:00:00Z]
+        )
+
+      {:ok, bought} = Credits.grant(user.id, 500, "purchase", idempotency_key: "bought")
+
+      {:ok, early} =
+        Credits.grant(user.id, 1000, "grant_tier",
+          idempotency_key: "early",
+          expires_at: ~U[2099-01-01 00:00:00Z]
+        )
+
+      {:ok, _} = Credits.debit(user.id, 1200, "burn_turn", idempotency_key: "b1")
+      assert remaining(early) == 0
+      assert remaining(late) == 800
+      assert remaining(bought) == 500
+
+      {:ok, _} = Credits.debit(user.id, 1000, "burn_turn", idempotency_key: "b2")
+      assert remaining(late) == 0
+      assert remaining(bought) == 300
+      assert Credits.balance(user.id) == 300
+    end
+
+    test "a named lot is consumed first, and debt beyond the lots is carried by the balance" do
+      user = insert_active_user()
+
+      {:ok, a} =
+        Credits.grant(user.id, 100, "grant_tier",
+          idempotency_key: "a",
+          expires_at: ~U[2099-01-01 00:00:00Z]
+        )
+
+      {:ok, b} = Credits.grant(user.id, 100, "purchase", idempotency_key: "b")
+
+      {:ok, _} = Credits.debit(user.id, 60, "clawback_refund", idempotency_key: "c", lot_id: b.id)
+      assert remaining(a) == 100
+      assert remaining(b) == 40
+
+      {:ok, _} = Credits.debit(user.id, 200, "burn_turn", idempotency_key: "d")
+      assert remaining(a) == 0 and remaining(b) == 0
+      assert Credits.balance(user.id) == -60
+    end
+
+    test "a credit posted into debt repays it first" do
+      user = insert_active_user()
+      {:ok, _} = Credits.debit(user.id, 30, "burn_turn", idempotency_key: "debt")
+      {:ok, lot} = Credits.grant(user.id, 100, "purchase", idempotency_key: "p")
+      assert remaining(lot) == 70
+      assert Credits.balance(user.id) == 70
+    end
+
+    test "rebuild_lots replays the ledger to the same lots the live path wrote" do
+      user = insert_active_user()
+
+      {:ok, g} =
+        Credits.grant(user.id, 1000, "grant_tier",
+          idempotency_key: "g",
+          expires_at: ~U[2099-01-01 00:00:00Z]
+        )
+
+      {:ok, p} = Credits.grant(user.id, 500, "purchase", idempotency_key: "p")
+      {:ok, _} = Credits.debit(user.id, 1200, "burn_turn", idempotency_key: "b")
+
+      {:ok, _} =
+        Credits.debit(user.id, 100, "clawback_refund",
+          idempotency_key: "c",
+          lot_id: p.id,
+          metadata: %{"purchase_id" => p.id}
+        )
+
+      before = {remaining(g), remaining(p)}
+
+      Repo.update_all(Fountain.Credits.LedgerEntry, set: [remaining_cents: nil])
+      assert 2 = Credits.rebuild_lots(user.id)
+      assert {remaining(g), remaining(p)} == before
+      assert before == {0, 200}
+    end
+  end
 end

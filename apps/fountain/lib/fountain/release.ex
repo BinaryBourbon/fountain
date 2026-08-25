@@ -476,6 +476,27 @@ defmodule Fountain.Release do
     end
   end
 
+  @doc """
+  Fill `credit_ledger.remaining_cents` for every tenant by replaying each
+  ledger in order (ADR 0030, batch 2). Idempotent; safe to rerun.
+
+      bin/fountain_server eval 'Fountain.Release.rebuild_credit_lots()'
+  """
+  def rebuild_credit_lots do
+    with_repo(fn ->
+      import Ecto.Query
+
+      users =
+        Fountain.Repo.all(
+          from e in Fountain.Credits.LedgerEntry, distinct: true, select: e.user_id
+        )
+
+      lots = users |> Enum.map(&Fountain.Credits.rebuild_lots/1) |> Enum.sum()
+      IO.puts("Rebuilt #{lots} lot(s) across #{length(users)} tenant(s).")
+      {:ok, lots}
+    end)
+  end
+
   defp repos do
     Application.fetch_env!(@app, :ecto_repos)
   end

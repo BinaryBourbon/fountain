@@ -23,6 +23,12 @@ defmodule Fountain.Credits.LedgerEntry do
     field :resource_id, :string
     field :idempotency_key, :string
     field :expires_at, :utc_datetime
+    # How much of a credit row is still unspent (a lot). Nil on debit rows.
+    # Written only by `Fountain.Credits`, in the same transaction as the row
+    # that consumed it.
+    field :remaining_cents, :integer
+    # Insertion order, assigned by the database.
+    field :seq, :integer, read_after_writes: true
     field :metadata, :map, default: %{}
     field :inserted_at, :utc_datetime
 

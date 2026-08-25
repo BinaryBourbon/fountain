@@ -113,7 +113,8 @@ Five rules that are easy to get wrong:
 - **Credits are the usage currency, and two switches turn them on.**
   ADR 0030: `Fountain.Credits` keeps a cents ledger (`credit_ledger`, cached
   on `users.credit_balance_cents`, idempotent per row, never summed on a
-  gate). `CreditPricer` burns closed turns at `CREDIT_TURN_HOUR_CENTS`
+  gate; every credit row is a lot with `remaining_cents`, and a debit
+  consumes lots in order: the lot it names, earliest expiry, then purchased). `CreditPricer` burns closed turns at `CREDIT_TURN_HOUR_CENTS`
   (default 25) and comms messages when priced; `CreditGranter` puts
   `Plans.included_credit_cents` in each period and expires the unspent part
   (granted first, oldest expiry first, then purchased); `Credits.Purchases`

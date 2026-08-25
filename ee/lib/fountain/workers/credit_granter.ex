@@ -253,6 +253,7 @@ defmodule Fountain.Workers.CreditGranter do
       cents ->
         case Credits.debit(grant.user_id, cents, "expire",
                idempotency_key: "expire:#{grant.id}",
+               lot_id: grant.id,
                resource_type: "credit_ledger",
                resource_id: grant.id,
                actor: "system:credit_granter",
