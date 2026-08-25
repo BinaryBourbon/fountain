@@ -23,8 +23,8 @@ published at `broker.inevitable.fyi` by the Traefik TCP router of §11), and
 the hosted deployment names **one** tenant, the maintainer's own account
 (home-cloud#131, 2026-08-25). Its done-when was observed on a production
 Sprites conversation the same day — see *Gate 1a* under *Gates*. Everyone else
-is byte-for-byte on the old path. Gates 1b (bindings) and 2 (`limited` at the broker) are built; 3 and 4 are
-not. #1090 is closed and each
+is byte-for-byte on the old path. Gates 1b (bindings), 2 (`limited` at the broker) and 3 (inference
+credentials) are built; 4 is not. #1090 is closed and each
 later gate gets its own tracker.
 
 **Revised 2026-08-25 (gate 1a).** Building it changed three things below,
@@ -634,11 +634,22 @@ gate 0 warned about: under `deny` the tenant lists what provisioning and the
 runtime need (`registry.npmjs.org`, the model host), exactly as a Sprites
 `limited` environment already required.
 
-**Gate 3 — inference credentials through the same path.** This absorbs 0016 gate
-3 and closes its base-URL question: brokering inference through the proxy needs no
-override survey. Includes `Claude.fall_back_to_api_key/2`, the second injection
-site 0023's Context subsection names. 0016 §4's second purpose (metering)
-becomes available here and remains a separate decision.
+**Gate 3 — built 2026-08-25.** The runtime's inference credential is handed
+to `default_env/2` as a vendor-shaped placeholder
+(`sk-ant-oat01-__claude_code_oauth_token__`) and the value goes to the broker
+with an implicit binding to the provider's host, where a **substitution**
+replaces the placeholder wherever it appears — which is why one mechanism
+covers Anthropic's `x-api-key`, the OAuth bearer, OpenAI's bearer and Gemini's
+`?key=` query parameter alike, and why no base-URL survey was needed (this
+absorbs 0016 gate 3). `Claude.fall_back_to_api_key/2`, the second injection
+site, now re-prepares the vault so the substitution carries the API key
+instead of injecting one in the clear. Substitution also became the default
+shape for tenant bindings: a binding is "this secret may go to this host",
+and the explicit header shapes are for an API the agent cannot address
+itself; `basic` is the one shape substitution cannot reach, since the client
+encodes the value. 0016 §4's second purpose (metering) remains a separate
+decision. Not verified live yet: whether `codex login --with-api-key` accepts
+the placeholder, and OpenCode's own gateway host.
 
 **Gate 4 — the joined trail.** Broker request log correlated to Conversation, and
 whatever surface makes the effect half readable next to the intent half. Gate 0

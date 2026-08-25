@@ -227,6 +227,49 @@ defmodule Fountain.Conversations.ConversationServerBrokerTest do
       assert Conversations._unsafe_get_conversation!(conv.id).status == "failed"
     end
 
+    test "the runtime's inference credential is a placeholder; the value goes to the broker", %{
+      user: user,
+      agent: agent
+    } do
+      conv = insert_conversation(user_id: user.id, agent: agent)
+      test = self()
+
+      stub_happy_sprite()
+      _ref = stub_turn_boundary()
+
+      Mimic.stub(Fountain.InferenceCredentials, :decrypted_for_user, fn _u, _k ->
+        {:ok, %{claude_code_oauth_token: "sk-ant-oat01-realtoken"}}
+      end)
+
+      stub(Fountain.Broker, :preflight, fn -> :ok end)
+      stub(Fountain.Broker, :ca_pem, fn -> {:ok, "PEM"} end)
+
+      stub(Fountain.Broker, :prepare, fn _c, brokered, bindings, _opts ->
+        send(test, {:prepared, brokered, bindings})
+        {:ok, @session}
+      end)
+
+      {pid, _mon, :alive} = start_server(conv, initial_prompt: "hello")
+      on_exit(fn -> if Process.alive?(pid), do: GenServer.stop(pid) end)
+
+      assert_receive {:prepared, brokered, bindings}, 2_000
+      assert brokered["CLAUDE_CODE_OAUTH_TOKEN"] == "sk-ant-oat01-realtoken"
+
+      assert [%{host: "api.anthropic.com", auth_type: "substitute"}] =
+               bindings["CLAUDE_CODE_OAUTH_TOKEN"]
+
+      # The harness runtime ignores credentials; the real one is handed the
+      # placeholder (see the Broker unit tests), and the value is nowhere in
+      # what reaches the sandbox.
+      assert_receive {:spawned, _cmd, _args, opts}, 2_000
+      spawn_env = Keyword.fetch!(opts, :env)
+      refute Enum.any?(spawn_env, fn {_, v} -> v == "sk-ant-oat01-realtoken" end)
+
+      assert Fountain.Runtimes.Claude.default_env(nil, %{
+               claude_code_oauth_token: "sk-ant-oat01-__claude_code_oauth_token__"
+             }) == [{"CLAUDE_CODE_OAUTH_TOKEN", "sk-ant-oat01-__claude_code_oauth_token__"}]
+    end
+
     test "a limited environment is brokered with its allowlist enforced at the broker", %{
       user: user
     } do

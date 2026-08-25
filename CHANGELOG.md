@@ -59,6 +59,18 @@ upgrade, is in
 
 ### Added
 
+- **Inference credentials through the broker, ADR 0019 gate 3.** On a
+  brokered account the runtime's credential (`CLAUDE_CODE_OAUTH_TOKEN` or
+  `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`) is a vendor-shaped
+  placeholder in the sandbox and the broker substitutes the value on
+  requests to the provider's host. The OAuth-refused fallback re-prepares
+  the broker instead of injecting a plaintext key.
+- **`substitute`, the default binding shape.** A binding now needs only a
+  host: the broker replaces the secret's placeholder wherever it appears in
+  a request (header, query, path, body), so the agent sends the shape the
+  API wants. Every binding shape carries the substitution; the header
+  shapes remain for an API the agent cannot address itself, and basic auth
+  for a value the client encodes.
 - **`limited` environments at the broker, ADR 0019 gate 2.** On a brokered
   account a `limited` environment is no longer refused: the sandbox's policy
   stays the broker-only floor, and the broker enforces `allowed_hosts`

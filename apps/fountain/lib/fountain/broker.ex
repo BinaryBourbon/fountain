@@ -22,9 +22,24 @@ defmodule Fountain.Broker do
     built-in catalog to `api.github.com` (bearer) and `github.com` (git over
     HTTPS, basic `x-access-token`) — gate 1a's default, kept so a tenant who
     never opens the bindings page keeps working.
+  * The runtime's **inference credential** (gate 3): `CLAUDE_CODE_OAUTH_TOKEN`
+    or `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`. The runtime
+    gets a vendor-shaped placeholder and the broker substitutes the value on
+    requests to the provider's host. A tenant secret of the same name with a
+    binding of its own wins, as it wins in the environment.
   * Every other secret reaches the sandbox exactly as before.
 
-  ## The network policy (gate 2)
+  ## How a value is attached
+
+  Every service carries a **substitution** for its key: the broker replaces
+  the placeholder wherever it appears in a request to that host — header,
+  query, path, body — so the agent sends the shape the API wants and nothing
+  has to be told how. A binding's explicit shape (bearer, api-key, custom)
+  additionally sets a header the agent did not send; `basic` is the one case
+  substitution cannot reach, because the client base64-encodes the value
+  before it leaves.
+
+  ## The network policy (gate 2, built)
 
   The sandbox's own policy is always the floor, `allow: [broker]`. What the
   environment's `networking_type` says is enforced **at the broker**:
@@ -124,16 +139,76 @@ defmodule Fountain.Broker do
   @spec catalog_keys() :: [String.t()]
   def catalog_keys, do: Map.keys(@catalog)
 
+  @inference_prefix %{
+    "CLAUDE_CODE_OAUTH_TOKEN" => "sk-ant-oat01-",
+    "ANTHROPIC_API_KEY" => "sk-ant-api03-",
+    "OPENAI_API_KEY" => "sk-",
+    "GEMINI_API_KEY" => "AIza"
+  }
+
   @doc """
   The placeholder a brokered key carries in the sandbox.
 
-  Lowercase, wrapped in double underscores, so it is visibly not a token and
-  so a client that validates its own token's shape (some do) still sends it.
-  The broker replaces the whole auth header, so the value never has to match
-  anything on the other side.
+  Lowercase, wrapped in double underscores: visibly not a token, and exactly
+  the string the broker's substitution looks for. An inference credential
+  keeps its vendor prefix in front (`sk-ant-oat01-__claude_code_oauth_token__`)
+  for a CLI that checks the shape of its own token before sending it; the
+  substitution then replaces the whole prefixed string.
   """
   @spec placeholder(String.t()) :: String.t()
-  def placeholder(key), do: "__" <> String.downcase(key) <> "__"
+  def placeholder(key) do
+    Map.get(@inference_prefix, key, "") <> "__" <> String.downcase(key) <> "__"
+  end
+
+  # Inference credentials (gate 3): the env var each runtime reads, the host
+  # it talks to, and the prefix its vendor's tokens carry. Substitution covers
+  # every shape at once — Anthropic's `x-api-key`, the OAuth bearer, OpenAI's
+  # bearer and Gemini's `?key=` query parameter alike.
+  @inference %{
+    "CLAUDE_CODE_OAUTH_TOKEN" => %{cred: :claude_code_oauth_token, hosts: ["api.anthropic.com"]},
+    "ANTHROPIC_API_KEY" => %{cred: :anthropic_api_key, hosts: ["api.anthropic.com"]},
+    "OPENAI_API_KEY" => %{cred: :openai_api_key, hosts: ["api.openai.com"]},
+    "GEMINI_API_KEY" => %{cred: :gemini_api_key, hosts: ["generativelanguage.googleapis.com"]}
+  }
+
+  @doc "The env var names that carry inference credentials, and the credential each comes from."
+  @spec inference_keys() :: %{String.t() => atom()}
+  def inference_keys, do: Map.new(@inference, fn {k, v} -> {k, v.cred} end)
+
+  @doc """
+  Split the runtime's inference credentials (gate 3): the map handed to
+  `default_env/2` gets placeholders, the broker gets the values under the
+  env var names, and each gets an implicit `substitute` binding to its
+  provider's host. A tenant's own binding for the same name wins.
+  """
+  @spec split_inference(map(), bindings()) :: {map(), %{String.t() => String.t()}, bindings()}
+  def split_inference(credentials, bindings \\ %{}) when is_map(credentials) do
+    Enum.reduce(@inference, {credentials, %{}, %{}}, fn {key, %{cred: cred, hosts: hosts}},
+                                                        {creds, brokered, implicit} ->
+      case Map.get(creds, cred) do
+        value when is_binary(value) and value != "" ->
+          implicit =
+            if Map.has_key?(bindings, key),
+              do: implicit,
+              else: Map.put(implicit, key, Enum.map(hosts, &implicit_binding(key, &1)))
+
+          {Map.put(creds, cred, placeholder(key)), Map.put(brokered, key, value), implicit}
+
+        _ ->
+          {creds, brokered, implicit}
+      end
+    end)
+  end
+
+  defp implicit_binding(key, host) do
+    %Fountain.SecretBindings.Binding{
+      key: key,
+      host: host,
+      auth_type: "substitute",
+      headers: %{},
+      enabled: true
+    }
+  end
 
   @typedoc "Enabled bindings grouped by secret key, as `Fountain.SecretBindings.enabled_by_key/1` returns them."
   @type bindings :: %{String.t() => [Fountain.SecretBindings.Binding.t()]}
@@ -180,11 +255,17 @@ defmodule Fountain.Broker do
         key = github_key(brokered, bindings)
 
         [
-          %{name: "github-api", host: "api.github.com", auth: %{type: "bearer", token: key}},
+          %{
+            name: "github-api",
+            host: "api.github.com",
+            auth: %{type: "bearer", token: key},
+            substitutions: [substitution(key)]
+          },
           %{
             name: "github-git",
             host: "github.com",
-            auth: %{type: "basic", username: basic_user_key(key), password: key}
+            auth: %{type: "basic", username: basic_user_key(key), password: key},
+            substitutions: [substitution(key)]
           }
         ]
       else
@@ -210,6 +291,7 @@ defmodule Fountain.Broker do
   defp binding_service(key, binding) do
     auth =
       case binding.auth_type do
+        "substitute" -> %{type: "passthrough"}
         "bearer" -> %{type: "bearer", token: key}
         "basic" -> %{type: "basic", username: basic_user_key(key), password: key}
         "api_key" -> %{type: "api-key", key: key, header: binding.header, prefix: binding.prefix}
@@ -218,7 +300,18 @@ defmodule Fountain.Broker do
       |> Enum.reject(fn {_, v} -> is_nil(v) or v == "" end)
       |> Map.new()
 
-    %{name: service_name(key, binding.host), host: binding.host, auth: auth}
+    %{
+      name: service_name(key, binding.host),
+      host: binding.host,
+      auth: auth,
+      substitutions: [substitution(key)]
+    }
+  end
+
+  # The placeholder, replaced on every surface the broker can reach. Present
+  # on every service so "the placeholder anywhere" holds whatever the shape.
+  defp substitution(key) do
+    %{key: key, placeholder: placeholder(key), in: ~w(path query header body websocket)}
   end
 
   # A slug the broker accepts (`[a-z0-9-]{3,64}`, no `--`, no edge hyphen)

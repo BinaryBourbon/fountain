@@ -172,6 +172,17 @@ defmodule Fountain.SecretBindingsTest do
       assert Enum.any?(errors_on(cs).headers, &String.contains?(&1, "hyphens"))
     end
 
+    test "substitute is the shape with no other field", %{user: user} do
+      assert {:ok, b} =
+               bind(user, %{
+                 "auth_type" => "substitute",
+                 "header" => "stale",
+                 "username" => "stale"
+               })
+
+      assert {b.header, b.username, b.headers} == {nil, nil, %{}}
+    end
+
     test "an unknown auth type is refused", %{user: user} do
       assert {:error, cs} = bind(user, %{"auth_type" => "passthrough"})
       assert errors_on(cs).auth_type != []
@@ -260,7 +271,8 @@ defmodule Fountain.SecretBindingsTest do
                ~w(aws-s3 jira twilio)
 
       assert [%{id: "stripe"}] = Catalog.for_key("STRIPE_SECRET_KEY")
-      assert Enum.all?(presets, &(&1.auth_type in ~w(bearer basic api_key custom passthrough)))
+      assert Enum.all?(presets, &(&1.auth_type in ~w(substitute bearer basic api_key custom)))
+      assert %{auth_type: "substitute", usable: true} = Catalog.get("telegram")
     end
 
     test "attrs/2 prefills a binding that the changeset accepts" do

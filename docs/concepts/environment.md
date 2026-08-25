@@ -88,7 +88,9 @@ reach only the broker. The broker then applies your policy. With
 `unrestricted`, a request goes through to any host, with only the credentials
 you bound. With `limited`, the broker refuses a request to a host that is not
 in `allowed_hosts`. The refusal is a 403 that names the host. The broker's
-request log shows each decision.
+request log shows each decision. List what the setup of the sandbox needs, such as
+`registry.npmjs.org` for the agent's adapter. A host with a bound credential,
+such as the model's API, needs no entry.
 
 Not every backend can hold egress. Sprites, E2B and Daytona can. A
 [self-hosted runner](../integrations/runners.md) cannot. The agent selects the

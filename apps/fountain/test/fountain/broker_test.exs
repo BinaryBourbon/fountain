@@ -482,6 +482,69 @@ defmodule Fountain.BrokerTest do
       assert Broker.network_for(nil) == :unrestricted
     end
 
+    test "every service carries a substitution for its key; substitute is passthrough plus that" do
+      capture_services()
+
+      bindings = %{
+        "STRIPE_SECRET_KEY" => [
+          bound(%{key: "STRIPE_SECRET_KEY", host: "api.stripe.com", auth_type: "substitute"}),
+          bound(%{key: "STRIPE_SECRET_KEY", host: "files.stripe.com"})
+        ]
+      }
+
+      assert {:ok, _} = Broker.prepare(@conv, %{"STRIPE_SECRET_KEY" => "sk"}, bindings)
+      assert_received {:services, [sub, bearer]}
+
+      assert sub.auth == %{type: "passthrough"}
+      assert bearer.auth == %{type: "bearer", token: "STRIPE_SECRET_KEY"}
+
+      for svc <- [sub, bearer] do
+        assert [%{key: "STRIPE_SECRET_KEY", placeholder: "__stripe_secret_key__", in: surfaces}] =
+                 svc.substitutions
+
+        assert Enum.sort(surfaces) == ~w(body header path query websocket)
+      end
+    end
+
+    test "split_inference/2: placeholders to the runtime, values to the broker, implicit bindings" do
+      creds = %{
+        claude_code_oauth_token: "sk-ant-oat01-real",
+        openai_api_key: "sk-real",
+        gemini_api_key: nil
+      }
+
+      assert {env_creds, brokered, implicit} = Broker.split_inference(creds)
+
+      assert env_creds == %{
+               claude_code_oauth_token: "sk-ant-oat01-__claude_code_oauth_token__",
+               openai_api_key: "sk-__openai_api_key__",
+               gemini_api_key: nil
+             }
+
+      assert brokered == %{
+               "CLAUDE_CODE_OAUTH_TOKEN" => "sk-ant-oat01-real",
+               "OPENAI_API_KEY" => "sk-real"
+             }
+
+      assert %{
+               "CLAUDE_CODE_OAUTH_TOKEN" => [
+                 %{host: "api.anthropic.com", auth_type: "substitute"}
+               ],
+               "OPENAI_API_KEY" => [%{host: "api.openai.com", auth_type: "substitute"}]
+             } = implicit
+
+      # A tenant's own binding for the name wins: no implicit one beside it.
+      own = %{"OPENAI_API_KEY" => [bound(%{key: "OPENAI_API_KEY", host: "proxy.example.com"})]}
+      assert {_, _, implicit} = Broker.split_inference(creds, own)
+      refute Map.has_key?(implicit, "OPENAI_API_KEY")
+    end
+
+    test "an inference placeholder keeps the vendor prefix; a secret's does not" do
+      assert Broker.placeholder("ANTHROPIC_API_KEY") == "sk-ant-api03-__anthropic_api_key__"
+      assert Broker.placeholder("GEMINI_API_KEY") == "AIza__gemini_api_key__"
+      assert Broker.placeholder("GITHUB_TOKEN") == "__github_token__"
+    end
+
     test "service_name/2 is a stable broker slug" do
       assert Broker.service_name("STRIPE_SECRET_KEY", "api.stripe.com:443/v1/*") ==
                "stripe-secret-key-api-stripe-com-443-v1"
