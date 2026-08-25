@@ -3,7 +3,7 @@ module github.com/BinaryBourbon/fountain/cli
 go 1.26.0
 
 require (
-	github.com/coder/websocket v1.8.12
+	github.com/coder/websocket v1.8.15
 	github.com/nbd-wtf/go-nostr v0.52.3
 	github.com/spf13/cobra v1.10.2
 	golang.org/x/term v0.45.0
