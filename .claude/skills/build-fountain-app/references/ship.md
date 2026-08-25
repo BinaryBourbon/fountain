@@ -1,53 +1,43 @@
-# Ship an app to home-cloud (`<name>.inevitable.fyi`)
+# Ship an app
 
-The demo-suite shape: every app is its own repo under `jhgaylor/`, builds an
-nginx (or Bun) image on GitHub Actions, pushes to GHCR, pins the sha into its
-own `k8s/deployment.yaml`, and Flux in `jhgaylor/home-cloud` rolls it. Copy
-the files from `~/dev/jhgaylor/fountain-demos` (pure static) or
-`~/dev/BinaryBourbon/fountain-workbench` (static + Bun server + SQLite PVC).
+The only server-side facts an app depends on are `API_CORS_ORIGINS` and
+`OAUTH_CLIENTS` on the Fountain it talks to (SKILL.md §5). Everything below
+is about hosting the app itself, which needs nothing from Fountain.
 
-## Files
+## Static SPA
 
-| File | Notes |
+`bun run build` → `dist/`. Host it anywhere that serves files:
+
+| Host | Notes |
 |---|---|
-| `Dockerfile` | `nginx:alpine` + `COPY dist/` (static) or `oven/bun:1-alpine` + `COPY server/ shared/ dist/`. **Build the SPA on the runner, not in the image** — the image stage is a plain copy, so multi-arch costs nothing and no QEMU bun. |
-| `nginx.conf` | SPA fallback to `index.html`; `/assets/*` immutable 1y; everything else `no-cache`; `/healthz` 200. |
-| `.dockerignore` | `node_modules`, `.git`, `src` (dist is what ships). |
-| `.github/workflows/ci.yml` | on PR + main: `bun install --frozen-lockfile`, `typecheck`, `bun test`, `build`, upload `dist`. |
-| `.github/workflows/build.yml` | on push to main (`paths-ignore: k8s/**, README.md`): buildx `linux/amd64,linux/arm64` (home-cloud's k3s nodes are arm64 Lima VMs) → `ghcr.io/jhgaylor/<name>:{latest,sha-<sha>}` → `sed` the sha into `k8s/deployment.yaml` → bot commit `deploy: pin image sha-…`. `concurrency: build-main`, `cancel-in-progress: false`. |
-| `k8s/namespace.yaml`, `deployment.yaml`, `service.yaml`, `ingressroute.yaml` (websecure + web→https redirect, Traefik), `certificates.yaml` (`letsencrypt-production`), `kustomization.yaml` | Probes on `/healthz`. A server with SQLite: `replicas: 1`, `strategy: Recreate`, 1Gi Longhorn RWO PVC, `envFrom` secretRef `optional: true`. |
+| GitHub Pages | `VITE_BASE=/<repo>/`; the redirect URI is `https://<user>.github.io/<repo>/` (or the custom domain), path included. fountain-team's `.github/workflows/pages.yml` is the template. |
+| A CDN / object bucket | Nothing special; SPA fallback to `index.html` if the app uses path routing (hash routing avoids the need). |
+| An nginx container | `nginx:alpine` + `COPY dist/`, `try_files $uri $uri/ /index.html`, `/assets/*` immutable 1y, everything else `no-cache`, a `/healthz` that returns 200. fountain-demos' `Dockerfile` + `nginx.conf` is the template. |
 
-Wildcard DNS `*.inevitable.fyi` already resolves. GHCR packages under
-`jhgaylor` are born public. Static-only apps can alternatively stay on GitHub
-Pages at `jakegaylor.com/<repo>/` (fountain-team does; `VITE_BASE=/<repo>/`,
-`pages.yml`) — the redirect URI then has that path.
+**Build the SPA on the CI runner, not inside the image.** The image stage is
+then a plain copy, so a multi-arch build costs nothing and no emulated bun
+runs under QEMU.
 
-## Onboarding to home-cloud (a home-cloud PR)
+CI (`ci.yml`, on PR + main): `bun install --frozen-lockfile`, `typecheck`,
+`bun test`, `build`, upload `dist`. A release workflow (`build.yml`, on push
+to main) builds and pushes the image tagged `latest` and `sha-<commit>`;
+pinning the sha into your deployment manifest from the workflow is what
+makes a rollout reproducible. `paths-ignore` the manifest you pin into, or
+the pin commit re-triggers the build.
 
-`chant/src/apps.ts` + `names.ts` → `npm run build` in `chant/` regenerates
-`clusters/home/control-plane/manifests.yaml` (a `GitRepository` + a
-`Kustomization` per app). After merge, a new Kustomization can sit on
-`dependency cert-manager is not ready` with stale status until
-`flux reconcile kustomization flux-system` cascades; the pods are usually fine.
+## An app with a server
 
-## Registering with Fountain (a fountain PR)
+One container: `oven/bun:1-alpine` + `COPY server/ shared/ dist/`, the server
+serving `dist/` itself (hashed assets immutable, the rest `no-cache`, unknown
+paths → `index.html`). Env: `FOUNTAIN_URL`, `PORT`, `DATA_DIR` (a volume, if
+SQLite), a secret for session/cookie signing that is generated to `DATA_DIR`
+when unset. One replica with `Recreate` if the state is a local SQLite file.
+fountain-workbench's `Dockerfile`, `server/config.ts` and `k8s/` are the
+template; the Kubernetes files there (Deployment, Service, ingress, cert) are
+ordinary and translate to any cluster or a single VM with a reverse proxy.
 
-`~/dev/jhgaylor/home-cloud/platform/fountain-site/patches/deployment.yaml`:
+## Verify after deploy
 
-- append `https://<name>.inevitable.fyi` to `API_CORS_ORIGINS` (exact origin, comma-separated, no path);
-- append `{"id":"<name>","name":"<Title>","redirect_uris":["https://<name>.inevitable.fyi/"]}` to the `OAUTH_CLIENTS` JSON.
-
-And in this repo, `config/dev.exs` `:oauth_clients` gets the same id with
-`http://localhost:5173/` and `http://localhost:5174/`.
-
-Deploy is a Flux reconcile of `fountain-site`; confirm the pod env before
-testing sign-in (`kubectl -n fountain exec deploy/fountain -- env | grep OAUTH`).
-A deploy rolls the pods, which kills any provision in flight — check for
-`starting` sandboxes first.
-
-## Verify
-
-1. `curl -sI -H 'Origin: https://<name>.inevitable.fyi' -H 'Access-Control-Request-Method: GET' -X OPTIONS https://fountain.inevitable.fyi/api/auth/me` → `access-control-allow-origin` present.
-2. Sign in from the hosted build in **Firefox** and Chrome; a stray `oauth:<name>` key per failed attempt under Account → API keys means the callback threw after the exchange.
+1. `curl -sI -X OPTIONS -H 'Origin: https://<host>' -H 'Access-Control-Request-Method: GET' https://<fountain>/api/auth/me` → an `access-control-allow-origin` header. Without it, every call from the app fails before it starts.
+2. Sign in from the hosted build in **Firefox** and Chrome. A stray `oauth:<app>` key per failed attempt under Account → API keys means the callback threw *after* the token exchange — look at what ran next, usually `me()`.
 3. Hire a teammate, send one message, watch `turn/done` arrive on the stream.
-4. Traps from previous rollouts: `build.yml` sometimes doesn't fire on the repo-creation push (`gh workflow run build`); `ImagePullBackOff` on the `sha-000…` placeholder means Flux hasn't fetched the pin commit (`flux reconcile source git <name>`).
