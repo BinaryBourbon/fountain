@@ -45,8 +45,7 @@ why the query has the shape it has.
 
 ### Install them
 
-On Kubernetes, `k8s/kustomization.yaml` already names `../deploy/grafana`. That
-directory generates one ConfigMap per dashboard, each labelled
+On Kubernetes, add `deploy/grafana` to your overlay. That directory generates one ConfigMap per dashboard, each labelled
 `grafana_dashboard: "1"`. The kube-prometheus-stack sidecar watches every
 namespace for that label, so a deploy delivers the dashboards.
 

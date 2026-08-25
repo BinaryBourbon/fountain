@@ -1,14 +1,15 @@
 # The portable baseline. The probe layout, security posture and resource
-# shape mirror what the hosted instance learned the hard way (k8s/ at the
-# repo root); the personal infrastructure — CNPG, Infisical, Traefik,
-# Erlang clustering — does not follow it here.
+# shape mirror what the hosted instance learned the hard way; the personal
+# infrastructure — CNPG, Infisical, Traefik, Erlang clustering — lives in
+# the maintainer's private overlay (decisions/0032) and does not follow it
+# here.
 #
 # One replica on purpose. Running more requires a real Erlang cluster
 # (RELEASE_DISTRIBUTION/RELEASE_NODE/RELEASE_COOKIE, CLUSTER_DNS_QUERY
 # against a headless Service, and an open dist port) or the pods run as
 # isolated islands and conversation streaming silently breaks for whichever
-# pod didn't spawn the conversation. k8s/deployment.yaml in the repo root
-# shows the full wiring if you need HA.
+# pod didn't spawn the conversation. docs/guides/operate/kubernetes.md
+# lists the wiring if you need HA.
 apiVersion: apps/v1
 kind: Deployment
 metadata:

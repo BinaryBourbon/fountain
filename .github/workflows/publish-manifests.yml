@@ -2,12 +2,18 @@ name: publish-manifests
 
 # Publishes what Flux deploys: an OCI artifact at
 # ghcr.io/binarybourbon/fountain-manifests holding the exact tree that was
-# built, plus the image tag built from it, pinned in k8s/deployment.yaml.
+# built, plus the image tag built from it, pinned in k8s/pin.yaml.
 # That pairing is the point. Flux once tracked `main`, where the two arrive
-# in separate commits minutes apart — the PR changes k8s/deployment.yaml,
-# the image finishes building later, and the pin lands after that. Flux
-# polls every 5 minutes, so it routinely applied a manifest against the
-# previous image.
+# in separate commits minutes apart — the PR changes a manifest, the image
+# finishes building later, and the pin lands after that. Flux polls every
+# 5 minutes, so it routinely applied a manifest against the previous image.
+#
+# The artifact is the product's deployable and nothing more: the portable
+# baseline (deploy/k8s) and the pin (k8s/). Everything personal to the
+# hosted instance — CNPG, Infisical, Traefik, hostnames, backups, alerts —
+# lives in the maintainer's private home-cloud repo, which applies it on top
+# of this artifact with Flux's inline `patches` and a sibling Kustomization
+# (decisions/0032). A change there deploys through home-cloud, not here.
 #
 # That is not theoretical: #241 moved the readiness probe to a new path, Flux
 # applied it against an image with no such route, and every pod 404'd its
@@ -30,8 +36,8 @@ name: publish-manifests
 # Rollback is one command, no git involved:
 #   flux tag artifact oci://ghcr.io/binarybourbon/fountain-manifests:sha-<old> --tag latest
 #
-# `main` is never deployed directly and its k8s/deployment.yaml image tag is
-# inert — see the note in that file.
+# `main` is never deployed directly and the pins in k8s/pin.yaml are inert
+# in git — see the note in that file.
 
 on:
   workflow_run:
@@ -65,9 +71,10 @@ permissions:
 
 jobs:
   # Nothing deployed unvalidated (#414): before this job existed, the
-  # manifest fast path pushed the live Deployment, the CNPG cluster and the
-  # PrometheusRule straight to the artifact Flux reconciles, with no check
-  # of any kind — a typo'd manifest was applied to prod by the reconciler.
+  # manifest fast path pushed the live Deployment (and, back then, the CNPG
+  # cluster and the PrometheusRule) straight to the artifact Flux reconciles,
+  # with no check of any kind — a typo'd manifest was applied to prod by the
+  # reconciler.
   validate:
     name: Validate the manifests
     if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
@@ -94,9 +101,10 @@ jobs:
           for dir in k8s deploy/k8s; do
             echo "── ${dir}"
             kubectl kustomize "${dir}" > "/tmp/${dir//\//-}.yaml"
-            # The CRDs catalog covers PrometheusRule, ServiceMonitor, CNPG,
-            # Infisical et al; -strict rejects unknown fields, which is the
-            # class of typo that survives YAML parsing.
+            # The CRDs catalog covers PrometheusRule (the one CRD the
+            # baseline ships, commented out of its kustomization); -strict
+            # rejects unknown fields, which is the class of typo that
+            # survives YAML parsing.
             ./kubeconform -strict -summary \
               -schema-location default \
               -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' \
@@ -113,7 +121,7 @@ jobs:
 
           # promtool reads a bare rules file; the PrometheusRule wraps the
           # groups under spec.groups.
-          for f in k8s/prometheusrule.yaml deploy/k8s/prometheusrule.yaml; do
+          for f in deploy/k8s/prometheusrule.yaml; do
             echo "── ${f}"
             python3 -c "import yaml; yaml.safe_dump(yaml.safe_load(open('${f}'))['spec'], open('/tmp/rules.yaml', 'w'))"
             ./promtool check rules /tmp/rules.yaml
@@ -188,12 +196,12 @@ jobs:
           set -euo pipefail
           sed -i -E \
             "s|ghcr\.io/binarybourbon/fountain:sha-[0-9a-f]+|${IMAGE}|" \
-            k8s/deployment.yaml
+            k8s/pin.yaml
           # sed exits 0 whether or not the pattern matched, so verify the pin
-          # actually landed — if deployment.yaml's image line ever stops
+          # actually landed — if pin.yaml's image line ever stops
           # matching the regex, the old tag would otherwise ship silently.
-          grep -qF "${IMAGE}" k8s/deployment.yaml || {
-            echo "image pin substitution failed: ${IMAGE} not found in k8s/deployment.yaml" >&2
+          grep -qF "${IMAGE}" k8s/pin.yaml || {
+            echo "image pin substitution failed: ${IMAGE} not found in k8s/pin.yaml" >&2
             exit 1
           }
 
@@ -215,13 +223,13 @@ jobs:
             }
             { print }
             END { if (n != 1) { print "expected 1 pin, made " n+0 > "/dev/stderr"; exit 1 } }
-          ' k8s/deployment.yaml > k8s/deployment.yaml.pinned
-          mv k8s/deployment.yaml.pinned k8s/deployment.yaml
-          grep -qF "value: \"${IMAGE_SHA}\"" k8s/deployment.yaml || {
-            echo "FOUNTAIN_BUILD_SHA pin failed: ${IMAGE_SHA} not found in k8s/deployment.yaml" >&2
+          ' k8s/pin.yaml > k8s/pin.yaml.pinned
+          mv k8s/pin.yaml.pinned k8s/pin.yaml
+          grep -qF "value: \"${IMAGE_SHA}\"" k8s/pin.yaml || {
+            echo "FOUNTAIN_BUILD_SHA pin failed: ${IMAGE_SHA} not found in k8s/pin.yaml" >&2
             exit 1
           }
-          git diff --stat k8s/deployment.yaml
+          git diff --stat k8s/pin.yaml
 
       - name: Setup flux CLI
         uses: fluxcd/flux2/action@889be9d6cc8afa8ed639e1e1ba4ab678e3b38d8c # v2.9.4
@@ -292,7 +300,7 @@ jobs:
       - name: Nudge Flux
         # Tells the cluster's notification-controller the artifact moved, so
         # the OCIRepository reconciles now instead of on its next 5m poll
-        # (the fountain-artifact-receiver in home-cloud k8s/flux-webhooks/).
+        # (the fountain-artifact-receiver in home-cloud platform/flux-webhooks/).
         # Strictly best-effort: a deploy must never fail because a webhook
         # did — the poll interval remains the fallback. The URL embeds the
         # receiver's token-derived path; it rotates with

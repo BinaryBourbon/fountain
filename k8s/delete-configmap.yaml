@@ -1,8 +1,0 @@
-# Removes the baseline's generic ConfigMap from this overlay — see
-# kustomization.yaml for why.
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: fountain-config
-  namespace: fountain
-$patch: delete

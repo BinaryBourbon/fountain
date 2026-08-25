@@ -33,8 +33,8 @@ Here is the scheduled work. All times are UTC.
 
 One replica needs none of this. With more than one, the replicas must form an
 Erlang cluster, and `CLUSTER_DNS_QUERY` must point at a headless service.
-[`k8s/` shows the wiring](guides/operate/kubernetes.md). Two things depend on
-it.
+[Run more than one replica](guides/operate/kubernetes.md#run-more-than-one-replica)
+lists the env that wires it. Two things depend on it.
 
 - The conversation registry places each conversation server on exactly one
   node, and finds it from any node.

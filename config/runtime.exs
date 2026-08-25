@@ -338,7 +338,7 @@ config :sentry,
 # rather than a source patch — and off by default (#336): an operator
 # exporting env by hand who never hears of BILLING_ENABLED must not lock
 # themselves out of their own instance. The hosted deployment is the one that
-# opts in (k8s/deployment.yaml sets BILLING_ENABLED=true explicitly).
+# opts in (its overlay sets BILLING_ENABLED=true explicitly).
 #
 # Skipped in :test — the suite pins the gate on in config/test.exs and
 # toggles it per-test through the application env, independent of whatever
@@ -350,7 +350,7 @@ end
 # Which page `/` serves. The hosted deployment shows the product pitch; every
 # other deployment shows a plain front door, for the reason a self-hosted
 # instance does not serve the upstream project's legal terms either. Off by
-# default, opted into by k8s/deployment.yaml.
+# default, opted into by the hosted deployment's overlay.
 #
 # Skipped in :test — config/test.exs pins it on, so the suite exercises the
 # marketing page and flips it off per-test through the application env.

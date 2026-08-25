@@ -1,59 +1,23 @@
-# The maintainer's cluster, expressed as an overlay of the portable baseline
-# (#264). ../deploy/k8s carries everything generic — probe philosophy,
-# security posture, resource shape — and this directory carries only what is
-# actually personal: CNPG, Infisical, Traefik, Erlang clustering, hostnames,
-# and the image pin.
+# What the manifest artifact deploys: the portable baseline plus the image
+# built from this exact tree. Nothing else.
 #
-# The pin: k8s/deployment.yaml is now a strategic-merge *patch*, but it keeps
-# its name and its `image: ghcr.io/binarybourbon/fountain:sha-…` line on
-# purpose — publish-manifests.yml seds that line in the OCI manifest artifact
-# (#304), and the atomicity that #231 bought (base + overlay + pin in one
-# published artifact) holds by construction because all three live in this
-# one tree.
+# publish-manifests.yml stages this directory and ../deploy into
+# ghcr.io/binarybourbon/fountain-manifests, rewriting the two pins in pin.yaml
+# (image tag, FOUNTAIN_BUILD_SHA) to the image that was actually built. That
+# pairing — a tree and the image built from it, published as one artifact —
+# is the invariant #231 established and #304 moved onto OCI; it holds here by
+# construction because the base and the pin live in one tree.
+#
+# Everything personal to the maintainer's cluster — CNPG, Infisical, Traefik,
+# hostnames, Erlang clustering, backups, alerts — used to live beside this
+# file as a kustomize overlay. It moved to the (private) home-cloud repo, which
+# applies it on top of this artifact with Flux's inline `patches` and a
+# sibling Kustomization (decisions/0032). A self-hoster wants ../deploy/k8s,
+# not this directory: docs/guides/operate/kubernetes.md.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
   - ../deploy/k8s
-  - serviceaccount.yaml
-  # Bucket + credentials for Postgres backups. Ordered before postgres.yaml so
-  # the Secret exists before the Cluster starts archiving WAL into it.
-  - backup-bucket-rbac.yaml
-  - backup-bucket-bootstrap.yaml
-  - backup-cronjob.yaml
-  # WAL archiving + base backups (#209): the ObjectStore the plugin archives
-  # into, and the nightly base backup PITR replays from. Ordered before
-  # postgres.yaml, whose plugins: block references the ObjectStore by name.
-  - objectstore.yaml
-  - scheduledbackup.yaml
-  - postgres.yaml
-  - infisicalsecret.yaml
-  - service-headless.yaml
-  - servicemonitor.yaml
-  - prometheusrule.yaml
-  # The team dashboards (ops / product / finance), as ConfigMaps the
-  # kube-prometheus-stack Grafana sidecar picks up. It watches every
-  # namespace, so they live in `fountain` beside everything else rather than
-  # in `monitoring`. Not in the baseline: ../deploy/k8s must not assume a
-  # Grafana, and definitely not one running that sidecar.
-  - ../deploy/grafana
-  - ingressroute.yaml
-  - certificate.yaml
-  # Two replicas: a node drain must not take both at once (maxUnavailable: 0
-  # governs rollouts, not evictions).
-  - pdb.yaml
 
 patches:
-  # The production Deployment: clustering env, Infisical auto-reload, two
-  # replicas, and the image pin. Everything not stated here — probes,
-  # securityContext, resources, strategy — comes from the base.
-  - path: deployment.yaml
-  # Adds the metrics port and the monitoring label the ServiceMonitor selects
-  # on; pins targetPort to 4000 as before.
-  - path: service.yaml
-  # The `name: fountain` label the namespace has always carried.
-  - path: namespace.yaml
-  # The base's ConfigMap is the generic env contract; this deployment
-  # configures via explicit env + the Infisical-materialized Secret instead.
-  # Deleted so an unused config object doesn't sit in the namespace inviting
-  # "which config is real" confusion.
-  - path: delete-configmap.yaml
+  - path: pin.yaml

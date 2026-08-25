@@ -1,9 +1,10 @@
 # Fountain on Kubernetes — portable baseline
 
 Plain manifests, applied with `kubectl apply -k`. No operators, no CRDs, no
-assumptions beyond a cluster and an ingress controller. This is the generic
-counterpart to `k8s/` in the repo root, which is the maintainer's own cluster
-(CNPG, Traefik, Infisical, Flux) and is worth reading but not worth applying.
+assumptions beyond a cluster and an ingress controller. The maintainer's own
+cluster (CNPG, Traefik, Infisical, Flux) is this baseline plus a private
+overlay that lives outside the repo (decisions/0032); `k8s/` at the repo root
+is only the image pin the manifest artifact carries.
 
 The [compose path](https://fountain.inevitable.fyi/docs/self-hosting) is
 simpler if you don't already live on Kubernetes — start there.
