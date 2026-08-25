@@ -699,11 +699,28 @@ defmodule Fountain.Broker do
     end
   end
 
+  # A duplicate name is 409 by the broker's contract, but Agent Vault was
+  # seen answering 500 "Failed to create vault" for one on prod
+  # (2026-08-25), which failed every reattach of a brokered conversation
+  # after its first idle. A refused create is therefore checked against the
+  # vault list before it counts as a failure: the vault we wanted is there,
+  # and that is all `ensure` promises.
   defp ensure_vault(vault) do
     case Req.post(req(), url: "/v1/vaults", json: %{name: vault}) do
-      {:ok, %{status: status}} when status in 200..299 -> :ok
-      {:ok, %{status: 409}} -> :ok
-      other -> {:error, {:broker, :vault, normalize(other)}}
+      {:ok, %{status: status}} when status in 200..299 ->
+        :ok
+
+      {:ok, %{status: 409}} ->
+        :ok
+
+      other ->
+        case list_vaults() do
+          {:ok, names} ->
+            if vault in names, do: :ok, else: {:error, {:broker, :vault, normalize(other)}}
+
+          {:error, _} ->
+            {:error, {:broker, :vault, normalize(other)}}
+        end
     end
   end
 
