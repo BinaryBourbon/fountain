@@ -79,7 +79,7 @@ defmodule Fountain.Conversations.ConversationServerBrokerTest do
       _ref = stub_turn_boundary()
 
       reject(Fountain.Broker, :preflight, 0)
-      reject(Fountain.Broker, :prepare, 2)
+      reject(Fountain.Broker, :prepare, 3)
       reject(Fountain.Broker, :ca_pem, 0)
       reject(Fountain.Broker, :release, 1)
       reject(Req, :get, 2)
@@ -104,7 +104,7 @@ defmodule Fountain.Conversations.ConversationServerBrokerTest do
       stub_happy_sprite()
       _ref = stub_turn_boundary()
 
-      reject(Fountain.Broker, :prepare, 2)
+      reject(Fountain.Broker, :prepare, 3)
 
       {pid, _mon, :alive} = start_server(conv, initial_prompt: "hello")
       on_exit(fn -> if Process.alive?(pid), do: GenServer.stop(pid) end)
@@ -133,7 +133,7 @@ defmodule Fountain.Conversations.ConversationServerBrokerTest do
       stub(Fountain.Broker, :preflight, fn -> :ok end)
       stub(Fountain.Broker, :ca_pem, fn -> {:ok, "PEM"} end)
 
-      stub(Fountain.Broker, :prepare, fn conv_id, brokered ->
+      stub(Fountain.Broker, :prepare, fn conv_id, brokered, _bindings ->
         send(test, {:prepared, conv_id, brokered})
         {:ok, @session}
       end)
@@ -216,7 +216,7 @@ defmodule Fountain.Conversations.ConversationServerBrokerTest do
       stub(Fountain.Broker, :preflight, fn -> {:error, {:broker, :unreachable, :econnrefused}} end)
 
       reject(Fountain.Sandbox.Sprites, :create, 2)
-      reject(Fountain.Broker, :prepare, 2)
+      reject(Fountain.Broker, :prepare, 3)
 
       {_pid, _mon, :stopped} = start_server(conv)
 
@@ -253,7 +253,10 @@ defmodule Fountain.Conversations.ConversationServerBrokerTest do
 
       stub_happy_sprite()
       stub(Fountain.Broker, :preflight, fn -> :ok end)
-      stub(Fountain.Broker, :prepare, fn _c, _b -> {:error, {:broker, :session, :timeout}} end)
+
+      stub(Fountain.Broker, :prepare, fn _c, _b, _bindings ->
+        {:error, {:broker, :session, :timeout}}
+      end)
 
       stub(Fountain.Broker, :release, fn conv_id ->
         send(test, {:released, conv_id})
@@ -281,7 +284,7 @@ defmodule Fountain.Conversations.ConversationServerBrokerTest do
       _ref = stub_turn_boundary()
       stub(Fountain.Broker, :preflight, fn -> :ok end)
       stub(Fountain.Broker, :ca_pem, fn -> {:ok, "PEM"} end)
-      stub(Fountain.Broker, :prepare, fn _c, _b -> {:ok, @session} end)
+      stub(Fountain.Broker, :prepare, fn _c, _b, _bindings -> {:ok, @session} end)
 
       stub(Fountain.Broker, :release, fn conv_id ->
         send(test, {:released, conv_id})

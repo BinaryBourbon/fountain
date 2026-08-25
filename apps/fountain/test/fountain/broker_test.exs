@@ -169,7 +169,11 @@ defmodule Fountain.BrokerTest do
 
       # The tenant's value plus the constant git username, in one upsert.
       assert_received {:post, "/v1/credentials", %{vault: ^vault, credentials: creds}, _}
-      assert creds == %{"GITHUB_TOKEN" => "ghp_real", "GITHUB_BASIC_USER" => "x-access-token"}
+
+      assert creds == %{
+               "GITHUB_TOKEN" => "ghp_real",
+               "GITHUB_TOKEN_BASIC_USER" => "x-access-token"
+             }
 
       # api.github.com takes a bearer; git over HTTPS on github.com sends basic.
       assert_received {:put, "/v1/vaults/" <> _, %{services: services}}
@@ -183,7 +187,11 @@ defmodule Fountain.BrokerTest do
                %{
                  name: "github-git",
                  host: "github.com",
-                 auth: %{type: "basic", username: "GITHUB_BASIC_USER", password: "GITHUB_TOKEN"}
+                 auth: %{
+                   type: "basic",
+                   username: "GITHUB_TOKEN_BASIC_USER",
+                   password: "GITHUB_TOKEN"
+                 }
                }
              ] = services
 
@@ -239,6 +247,174 @@ defmodule Fountain.BrokerTest do
     test "a transport error surfaces as-is" do
       stub(Req, :post, fn _r, _o -> {:error, :econnrefused} end)
       assert {:error, {:broker, :vault, :econnrefused}} = Broker.prepare(@conv, %{})
+    end
+  end
+
+  describe "bindings (gate 1b)" do
+    setup do
+      configure(["u1"])
+      :ok
+    end
+
+    defp bound(attrs) do
+      struct(
+        Fountain.SecretBindings.Binding,
+        Map.merge(
+          %{
+            auth_type: "bearer",
+            header: nil,
+            prefix: nil,
+            username: nil,
+            headers: %{},
+            enabled: true
+          },
+          attrs
+        )
+      )
+    end
+
+    defp capture_services do
+      test = self()
+
+      stub(Req, :post, fn _r, opts ->
+        if opts[:url] == "/v1/credentials",
+          do: send(test, {:credentials, opts[:json].credentials})
+
+        if opts[:url] == "/v1/sessions",
+          do: {:ok, %{status: 201, body: %{"token" => "t"}}},
+          else: {:ok, %{status: 200, body: %{}}}
+      end)
+
+      stub(Req, :patch, fn _r, _o -> {:ok, %{status: 200, body: %{}}} end)
+
+      stub(Req, :put, fn _r, opts ->
+        send(test, {:services, opts[:json].services})
+        {:ok, %{status: 200, body: %{}}}
+      end)
+    end
+
+    test "split/2 brokers a key with a binding, and leaves an unbound non-catalog key alone" do
+      bindings = %{
+        "STRIPE_SECRET_KEY" => [bound(%{key: "STRIPE_SECRET_KEY", host: "api.stripe.com"})]
+      }
+
+      assert {sandbox, brokered} =
+               Broker.split(
+                 %{
+                   "STRIPE_SECRET_KEY" => "sk",
+                   "DATABASE_URL" => "pg://",
+                   "GITHUB_TOKEN" => "gh"
+                 },
+                 bindings
+               )
+
+      assert sandbox == %{
+               "STRIPE_SECRET_KEY" => "__stripe_secret_key__",
+               "DATABASE_URL" => "pg://",
+               "GITHUB_TOKEN" => "__github_token__"
+             }
+
+      assert brokered == %{"STRIPE_SECRET_KEY" => "sk", "GITHUB_TOKEN" => "gh"}
+    end
+
+    test "one service per binding, in the broker's shape, only the fields of the type" do
+      capture_services()
+
+      bindings = %{
+        "STRIPE_SECRET_KEY" => [
+          bound(%{key: "STRIPE_SECRET_KEY", host: "api.stripe.com"}),
+          bound(%{
+            key: "STRIPE_SECRET_KEY",
+            host: "files.stripe.com",
+            auth_type: "api_key",
+            header: "x-api-key",
+            prefix: "Token "
+          })
+        ],
+        "JIRA_TOKEN" => [
+          bound(%{
+            key: "JIRA_TOKEN",
+            host: "acme.atlassian.net",
+            auth_type: "basic",
+            username: "me@acme.com"
+          })
+        ],
+        "CUSTOM_KEY" => [
+          bound(%{
+            key: "CUSTOM_KEY",
+            host: "api.custom.example",
+            auth_type: "custom",
+            headers: %{"X-Key" => "{{ CUSTOM_KEY }}"}
+          })
+        ]
+      }
+
+      brokered = %{"STRIPE_SECRET_KEY" => "sk", "JIRA_TOKEN" => "jt", "CUSTOM_KEY" => "ck"}
+      assert {:ok, _} = Broker.prepare(@conv, brokered, bindings)
+
+      assert_received {:services, services}
+      by_host = Map.new(services, &{&1.host, &1})
+
+      assert %{
+               name: "stripe-secret-key-api-stripe-com",
+               auth: %{type: "bearer", token: "STRIPE_SECRET_KEY"}
+             } = by_host["api.stripe.com"]
+
+      assert %{
+               auth: %{
+                 type: "api-key",
+                 key: "STRIPE_SECRET_KEY",
+                 header: "x-api-key",
+                 prefix: "Token "
+               }
+             } = by_host["files.stripe.com"]
+
+      assert %{auth: %{type: "basic", username: "JIRA_TOKEN_BASIC_USER", password: "JIRA_TOKEN"}} =
+               by_host["acme.atlassian.net"]
+
+      assert %{auth: %{type: "custom", headers: %{"X-Key" => "{{ CUSTOM_KEY }}"}}} =
+               by_host["api.custom.example"]
+
+      refute Map.has_key?(by_host["api.stripe.com"].auth, :header)
+      assert Enum.all?(services, &Regex.match?(~r/^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/, &1.name))
+
+      # The basic username rides beside the password as a credential.
+      assert_received {:credentials, creds}
+      assert creds["JIRA_TOKEN_BASIC_USER"] == "me@acme.com"
+      assert creds["JIRA_TOKEN"] == "jt"
+    end
+
+    test "a GitHub key with its own binding drops the catalog pair" do
+      capture_services()
+      bindings = %{"GITHUB_TOKEN" => [bound(%{key: "GITHUB_TOKEN", host: "api.github.com"})]}
+
+      assert {:ok, _} = Broker.prepare(@conv, %{"GITHUB_TOKEN" => "gh"}, bindings)
+
+      assert_received {:services,
+                       [%{host: "api.github.com", name: "github-token-api-github-com"}]}
+
+      assert_received {:credentials, creds}
+      refute Map.has_key?(creds, "GITHUB_TOKEN_BASIC_USER")
+    end
+
+    test "a GitHub key with no binding keeps the catalog pair" do
+      capture_services()
+      assert {:ok, _} = Broker.prepare(@conv, %{"GITHUB_TOKEN" => "gh"}, %{})
+
+      assert_received {:services,
+                       [
+                         %{name: "github-api"},
+                         %{name: "github-git", auth: %{username: "GITHUB_TOKEN_BASIC_USER"}}
+                       ]}
+
+      assert_received {:credentials, %{"GITHUB_TOKEN_BASIC_USER" => "x-access-token"}}
+    end
+
+    test "service_name/2 is a stable broker slug" do
+      assert Broker.service_name("STRIPE_SECRET_KEY", "api.stripe.com:443/v1/*") ==
+               "stripe-secret-key-api-stripe-com-443-v1"
+
+      assert String.length(Broker.service_name(String.duplicate("K", 80), "a.b.c")) <= 64
     end
   end
 

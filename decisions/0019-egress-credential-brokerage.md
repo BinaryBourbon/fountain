@@ -23,8 +23,8 @@ published at `broker.inevitable.fyi` by the Traefik TCP router of §11), and
 the hosted deployment names **one** tenant, the maintainer's own account
 (home-cloud#131, 2026-08-25). Its done-when was observed on a production
 Sprites conversation the same day — see *Gate 1a* under *Gates*. Everyone else
-is byte-for-byte on the old path. Gates 1b–4 are not built; #1090 is closed
-and each later gate gets its own tracker.
+is byte-for-byte on the old path. Gate 1b (bindings) is built; gates 2–4 are not. #1090 is closed and each
+later gate gets its own tracker.
 
 **Revised 2026-08-25 (gate 1a).** Building it changed three things below,
 each marked in place: §11 is a vault per *conversation*, not per tenant; the
@@ -598,6 +598,18 @@ proxy as passthrough, which is gate 3's shape already visible in the broker's
 request log. The placeholder is **not** a lookup key — the broker
 replaces the auth header wholesale — so the "contract" below reduces to a
 plausibility rule.
+
+**Gate 1b — built 2026-08-25: bindings.** The binding model #1090 named as
+the real cost. `Fountain.SecretBindings`: per tenant, per secret *name*, one
+row per host with the auth shape (bearer, basic with a username, API-key
+header with an optional prefix, custom headers with `{{ KEY }}`), validated
+by the broker's own rules so what saves here is what it accepts. A secret
+with an enabled binding is brokered; one with none is injected in the clear
+as before — the presence of a binding is the `exposure` label §7 asked for,
+without a second field. A console page (`/account/bindings`, shown only to
+brokered tenants) and `/api/secret-bindings`, with the vendor's 35-entry
+catalog as prefills. Gate 1a's hardcoded GitHub pair stays as the default for
+`GITHUB_TOKEN` / `GH_TOKEN` that have no bindings of their own.
 
 **Gate 1 — the placeholder contract.** Naming scheme, versioning, and a test that
 fails when the two sides disagree. Then all environment and vault secrets that

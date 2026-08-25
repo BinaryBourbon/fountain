@@ -152,6 +152,29 @@ pass them to each caller. The scrubber this replaced ran on the HTTPS clone
 path and not on the SSH one. A redaction that each caller must remember is a
 redaction that a new caller will one day forget.
 
+## Bindings, when the broker is on
+
+<!-- vale STE.IngForms = NO -->
+On a hosted account with the egress credential broker on, a secret can have
+one or more **bindings**. A binding names a host. It also names the way the
+broker attaches the secret to a request for that host. There are four shapes.
+A bearer token. Basic auth with a username of yours. A header with an optional
+prefix. Custom headers with `{{ KEY }}` in them.
+
+A secret with a binding does not enter the sandbox. The agent sees a
+placeholder, `__stripe_secret_key__` for `STRIPE_SECRET_KEY`. The broker puts
+the real value on each request to the bound host. A secret with no binding
+enters the sandbox in the clear. The four hops above describe that path.
+`GITHUB_TOKEN` and `GH_TOKEN` have a built-in binding to GitHub. It applies
+until you make one of your own.
+
+You manage bindings on Account, then Credential bindings, or with
+`GET /api/secret-bindings` and its siblings. The page and the routes are only
+there when the broker is on for the account. A binding is about the name of
+a secret. So it applies to every environment and vault that holds a secret
+of that name.
+<!-- vale STE.IngForms = YES -->
+
 ## Where to go next
 
 - [About environments](environment.md), the baseline half of the merge.

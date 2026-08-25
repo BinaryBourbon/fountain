@@ -108,6 +108,11 @@ defmodule Fountain.AuditGuardrailTest do
     {"webhook endpoint enable", &__MODULE__.do_webhook_enable/1, "webhook_endpoint.enabled"},
     # Prepaid credits (ADR 0030). Money in and money out are the two shapes;
     # every reason family maps onto one of five `credit.*` actions.
+    # Secret bindings (ADR 0019 gate 1b): where a credential goes is as
+    # auditable as the credential's existence.
+    {"secret binding create", &__MODULE__.do_binding_create/1, "secret_binding.created"},
+    {"secret binding update", &__MODULE__.do_binding_update/1, "secret_binding.updated"},
+    {"secret binding delete", &__MODULE__.do_binding_delete/1, "secret_binding.deleted"},
     {"credit grant", &__MODULE__.do_credit_grant/1, "credit.granted"},
     {"credit debit", &__MODULE__.do_credit_debit/1, "credit.burned"}
   ]
@@ -282,6 +287,37 @@ defmodule Fountain.AuditGuardrailTest do
       "name" => "buzz-#{System.unique_integer([:positive])}",
       "relay_url" => "wss://relay.test"
     }
+  end
+
+  def do_binding_create(user) do
+    {:ok, _} =
+      Fountain.SecretBindings.create_binding(user.id, %{
+        "key" => "K",
+        "host" => "api.example.com",
+        "auth_type" => "bearer"
+      })
+  end
+
+  def do_binding_update(user) do
+    {:ok, b} =
+      Fountain.SecretBindings.create_binding(user.id, %{
+        "key" => "K2",
+        "host" => "api.example.com",
+        "auth_type" => "bearer"
+      })
+
+    {:ok, _} = Fountain.SecretBindings.update_binding(b, %{"enabled" => false})
+  end
+
+  def do_binding_delete(user) do
+    {:ok, b} =
+      Fountain.SecretBindings.create_binding(user.id, %{
+        "key" => "K3",
+        "host" => "api.example.com",
+        "auth_type" => "bearer"
+      })
+
+    {:ok, _} = Fountain.SecretBindings.delete_binding(b)
   end
 
   def do_runner_register(user) do

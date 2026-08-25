@@ -123,6 +123,11 @@ defmodule FountainWeb.SchemaEnumGuardrailTest do
       {Fountain.Support.Report, :categories},
     {FountainWeb.Schemas.SupportReportCreateRequest, "screenshot.media_type"} =>
       {Fountain.Images, :valid_media_types},
+    # Secret bindings (ADR 0019 gate 1b): the auth shapes the broker can carry.
+    {FountainWeb.Schemas.SecretBinding, "auth_type"} =>
+      {Fountain.SecretBindings.Binding, :auth_types},
+    {FountainWeb.Schemas.SecretBindingRequest, "auth_type"} =>
+      {Fountain.SecretBindings.Binding, :auth_types},
     {FountainWeb.Schemas.WebhookEndpoint, "status"} => {Fountain.Webhooks.Endpoint, :statuses},
     {FountainWeb.Schemas.WebhookEndpointUpdateRequest, "status"} =>
       {Fountain.Webhooks.Endpoint, :statuses}
