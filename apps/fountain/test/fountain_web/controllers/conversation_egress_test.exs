@@ -90,7 +90,7 @@ defmodule FountainWeb.ConversationEgressTest do
   test "a broker that does not answer is a 502 with a sentence, not an inspected term",
        %{conn: conn, conv: conv} do
     expect(Broker, :request_log, fn _id, _opts ->
-      {:error, {:broker, :request_log, :econnrefused}}
+      {:error, {:broker, :request_log, %Req.TransportError{reason: :econnrefused}}}
     end)
 
     assert %{

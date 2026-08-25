@@ -2968,7 +2968,7 @@ defmodule FountainWeb.Schemas do
       description: "The egress broker did not answer the request log call.",
       type: :object,
       properties: %{
-        error: %Schema{type: :string, enum: ["broker_unavailable"]},
+        error: %Schema{type: :string, description: "Always `broker_unavailable`."},
         message: %Schema{type: :string, description: "A sentence for a human."},
         reason: %Schema{
           type: :string,

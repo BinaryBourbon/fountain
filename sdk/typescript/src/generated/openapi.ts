@@ -3742,8 +3742,8 @@ export interface components {
          * @description The egress broker did not answer the request log call.
          */
         BrokerUnavailableError: {
-            /** @enum {string} */
-            error: "broker_unavailable";
+            /** @description Always `broker_unavailable`. */
+            error: string;
             /** @description A sentence for a human. */
             message: string;
             /** @description A stable word for a client to branch on: `econnrefused`, `timeout`, `nxdomain`, `api_error_<status>`, or `unknown`. The detail is in the server log, not here. */

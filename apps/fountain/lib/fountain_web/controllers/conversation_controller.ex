@@ -229,16 +229,14 @@ defmodule FountainWeb.ConversationController do
     end
   end
 
-  # `{:broker, :request_log, :econnrefused}` -> "econnrefused";
+  # What `Broker.request_log/2` can fail with: the broker answered with a
+  # non-200 (`{:api_error, status, body}`), or Req could not reach it
+  # (`%Req.TransportError{reason: :econnrefused | :timeout | :nxdomain}`).
   # `{:broker, :request_log, {:api_error, 503, _}}` -> "api_error_503".
   defp broker_reason({:broker, _call, inner}), do: broker_reason(inner)
   defp broker_reason({:api_error, status, _body}), do: "api_error_#{status}"
-  defp broker_reason(atom) when is_atom(atom), do: Atom.to_string(atom)
-
-  defp broker_reason(%{__exception__: true} = e),
-    do: e.__struct__ |> inspect() |> Macro.underscore()
-
-  defp broker_reason(_), do: "unknown"
+  defp broker_reason(%Req.TransportError{reason: r}) when is_atom(r), do: Atom.to_string(r)
+  defp broker_reason(%{__struct__: mod}), do: mod |> inspect() |> Macro.underscore()
 
   defp egress_limit(nil), do: 100
 
