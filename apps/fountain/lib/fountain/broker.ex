@@ -14,12 +14,15 @@ defmodule Fountain.Broker do
   module with the vendor client inside it on purpose (ADR 0019 §8) — the
   abstraction is worth building on the day there is a second broker.
 
-  ## What gate 1a brokers, and what it does not
+  ## What is brokered
 
-  * Only `GITHUB_TOKEN` and `GH_TOKEN`, bound by the catalog to
-    `api.github.com` (bearer) and `github.com` (git over HTTPS, basic
-    `x-access-token`). Every other secret reaches the sandbox exactly as
-    before. The per-secret `exposure` label is gate 1b.
+  * A secret with an enabled **binding** (`Fountain.SecretBindings`, gate 1b):
+    the tenant said which host it goes to and how. One service per binding.
+  * `GITHUB_TOKEN` and `GH_TOKEN` with no binding of their own, bound by the
+    built-in catalog to `api.github.com` (bearer) and `github.com` (git over
+    HTTPS, basic `x-access-token`) — gate 1a's default, kept so a tenant who
+    never opens the bindings page keeps working.
+  * Every other secret reaches the sandbox exactly as before.
   * Only tenants listed in `BROKER_TENANTS`: the operator ratchet of §9.
   * Only `unrestricted` environments. Translating `limited`'s `allowed_hosts`
     into broker rules is gate 2; a brokered `limited` environment is refused
@@ -121,20 +124,24 @@ defmodule Fountain.Broker do
   @spec placeholder(String.t()) :: String.t()
   def placeholder(key), do: "__" <> String.downcase(key) <> "__"
 
+  @typedoc "Enabled bindings grouped by secret key, as `Fountain.SecretBindings.enabled_by_key/1` returns them."
+  @type bindings :: %{String.t() => [Fountain.SecretBindings.Binding.t()]}
+
   @doc """
   Split a merged secrets map into what the sandbox gets and what the broker
   gets. Runs on the merged map, so the vault-wins rule has already applied
   (ADR 0019 §9: brokering happens after the merge).
 
-  Returns `{sandbox_secrets, brokered}` where every catalog key present is a
-  placeholder in the first map and its real value is in the second. Keys with
-  an empty value are left alone: there is nothing to broker.
+  A key is brokered when it has an enabled binding, or when it is a catalog
+  key (`GITHUB_TOKEN`, `GH_TOKEN`) with none. Returns `{sandbox_secrets,
+  brokered}`: a placeholder in the first map, the value in the second. Keys
+  with an empty value are left alone: there is nothing to broker.
   """
-  @spec split(%{String.t() => String.t()}) ::
+  @spec split(%{String.t() => String.t()}, bindings()) ::
           {%{String.t() => String.t()}, %{String.t() => String.t()}}
-  def split(secrets) when is_map(secrets) do
+  def split(secrets, bindings \\ %{}) when is_map(secrets) and is_map(bindings) do
     Enum.reduce(secrets, {%{}, %{}}, fn {k, v}, {sandbox, brokered} ->
-      if Map.has_key?(@catalog, k) and is_binary(v) and v != "" do
+      if brokered?(k, bindings) and is_binary(v) and v != "" do
         {Map.put(sandbox, k, placeholder(k)), Map.put(brokered, k, v)}
       else
         {Map.put(sandbox, k, v), brokered}
@@ -142,52 +149,110 @@ defmodule Fountain.Broker do
     end)
   end
 
-  # The services a set of brokered keys turns into. One host per service is
-  # the Agent Vault shape; `api.github.com` takes a bearer, and git over HTTPS
-  # on `github.com` sends basic auth, which the broker rewrites wholesale.
-  defp services_for(brokered) do
-    brokered
-    |> Map.keys()
-    |> Enum.map(&Map.get(@catalog, &1))
-    |> Enum.uniq()
-    |> Enum.flat_map(fn
-      :github ->
-        key = github_key(brokered)
+  defp brokered?(key, bindings), do: Map.has_key?(bindings, key) or Map.has_key?(@catalog, key)
+
+  # The services a set of brokered keys turns into: one per binding, in the
+  # broker's shape (one host per service, only the fields of the auth type),
+  # plus the catalog pair for a GitHub key that has no bindings of its own.
+  defp services_for(brokered, bindings) do
+    bound =
+      brokered
+      |> Map.keys()
+      |> Enum.flat_map(fn key ->
+        bindings |> Map.get(key, []) |> Enum.map(&binding_service(key, &1))
+      end)
+
+    catalog =
+      if Enum.any?(brokered, fn {k, _} ->
+           Map.get(@catalog, k) == :github and not Map.has_key?(bindings, k)
+         end) do
+        key = github_key(brokered, bindings)
 
         [
-          %{
-            name: "github-api",
-            host: "api.github.com",
-            auth: %{type: "bearer", token: key}
-          },
+          %{name: "github-api", host: "api.github.com", auth: %{type: "bearer", token: key}},
           %{
             name: "github-git",
             host: "github.com",
-            auth: %{type: "basic", username: "GITHUB_BASIC_USER", password: key}
+            auth: %{type: "basic", username: basic_user_key(key), password: key}
           }
         ]
-
-      _ ->
+      else
         []
-    end)
+      end
+
+    bound ++ catalog
   end
 
   # Both names may be present after the merge; the git URL is written with
   # whichever one `repositories[].secret_key` names, and the broker needs a
   # single credential per service. Prefer the canonical name.
-  defp github_key(brokered) do
-    if Map.has_key?(brokered, "GITHUB_TOKEN"), do: "GITHUB_TOKEN", else: "GH_TOKEN"
+  defp github_key(brokered, bindings) do
+    cond do
+      Map.has_key?(brokered, "GITHUB_TOKEN") and not Map.has_key?(bindings, "GITHUB_TOKEN") ->
+        "GITHUB_TOKEN"
+
+      true ->
+        "GH_TOKEN"
+    end
   end
 
-  # Credentials the services above reference beyond the tenant's own. The
-  # basic-auth username for git is a constant GitHub documents, stored as a
-  # credential because that is the only place a service may read one from.
-  defp credentials_for(brokered) do
-    if Enum.any?(brokered, fn {k, _} -> Map.get(@catalog, k) == :github end) do
-      Map.put(brokered, "GITHUB_BASIC_USER", "x-access-token")
-    else
+  defp binding_service(key, binding) do
+    auth =
+      case binding.auth_type do
+        "bearer" -> %{type: "bearer", token: key}
+        "basic" -> %{type: "basic", username: basic_user_key(key), password: key}
+        "api_key" -> %{type: "api-key", key: key, header: binding.header, prefix: binding.prefix}
+        "custom" -> %{type: "custom", headers: binding.headers}
+      end
+      |> Enum.reject(fn {_, v} -> is_nil(v) or v == "" end)
+      |> Map.new()
+
+    %{name: service_name(key, binding.host), host: binding.host, auth: auth}
+  end
+
+  # A slug the broker accepts (`[a-z0-9-]{3,64}`, no `--`, no edge hyphen)
+  # that is stable for a key+host pair, so a re-prepare upserts rather than
+  # accumulates.
+  @doc false
+  def service_name(key, host) do
+    base =
+      (key <> "-" <> host)
+      |> String.downcase()
+      |> String.replace(~r/[^a-z0-9]+/, "-")
+      |> String.replace(~r/-+/, "-")
+      |> String.trim("-")
+
+    base = if String.length(base) < 3, do: base <> "-svc", else: base
+    String.slice(base, 0, 64) |> String.trim("-")
+  end
+
+  # The basic-auth username lives beside the password as a credential, because
+  # that is the only place a service may read one from. Its name derives from
+  # the key so two basic bindings of different keys never collide.
+  defp basic_user_key(key), do: key <> "_BASIC_USER"
+
+  # Credentials the services reference beyond the tenant's own values: one
+  # basic-auth username per basic binding (the tenant's literal), and GitHub's
+  # constant `x-access-token` for the catalog default.
+  defp credentials_for(brokered, bindings) do
+    from_bindings =
       brokered
-    end
+      |> Map.keys()
+      |> Enum.flat_map(fn key ->
+        bindings
+        |> Map.get(key, [])
+        |> Enum.filter(&(&1.auth_type == "basic"))
+        |> Enum.map(fn b -> {basic_user_key(key), b.username} end)
+      end)
+      |> Map.new()
+
+    from_catalog =
+      brokered
+      |> Map.keys()
+      |> Enum.filter(&(Map.get(@catalog, &1) == :github and not Map.has_key?(bindings, &1)))
+      |> Map.new(fn key -> {basic_user_key(key), "x-access-token"} end)
+
+    brokered |> Map.merge(from_bindings) |> Map.merge(from_catalog)
   end
 
   # ---------------------------------------------------------------------------
@@ -276,15 +341,16 @@ defmodule Fountain.Broker do
   provision and reattach, so an edited secret reaches the broker on the next
   wake, the same way the `.env` file is refreshed.
   """
-  @spec prepare(String.t(), %{String.t() => String.t()}) ::
+  @spec prepare(String.t(), %{String.t() => String.t()}, bindings()) ::
           {:ok, session()} | {:error, term()}
-  def prepare(conversation_id, brokered) when is_binary(conversation_id) and is_map(brokered) do
+  def prepare(conversation_id, brokered, bindings \\ %{})
+      when is_binary(conversation_id) and is_map(brokered) and is_map(bindings) do
     vault = vault_name(conversation_id)
 
     with :ok <- ensure_vault(vault),
          :ok <- set_policy(vault, "passthrough"),
-         :ok <- put_credentials(vault, credentials_for(brokered)),
-         :ok <- put_services(vault, services_for(brokered)) do
+         :ok <- put_credentials(vault, credentials_for(brokered, bindings)),
+         :ok <- put_services(vault, services_for(brokered, bindings)) do
       mint_session(vault, conversation_id)
     end
   end

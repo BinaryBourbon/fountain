@@ -322,6 +322,19 @@ defmodule FountainWeb.Router do
     delete "/:id", RunnerController, :delete
   end
 
+  # Secret bindings (ADR 0019 gate 1b). Full scope for the same reason as
+  # runners: a conversation-scoped token must not be able to redirect the
+  # account's credentials to another host.
+  scope "/api/secret-bindings", FountainWeb do
+    pipe_through [:accepts_json, :api, :require_full_scope]
+
+    get "/", SecretBindingController, :index
+    get "/presets", SecretBindingController, :presets
+    post "/", SecretBindingController, :create
+    patch "/:id", SecretBindingController, :update
+    delete "/:id", SecretBindingController, :delete
+  end
+
   # The daemon's socket skips content negotiation like the SSE routes do: a
   # WebSocket client sends no JSON `Accept`, and the upgrade is not a JSON
   # response.
@@ -611,6 +624,9 @@ defmodule FountainWeb.Router do
 
       # ── Self-hosted runners (ADR 0022) ─────────────────────────────────────────────────────
       live "/account/runners", RunnersLive.Index, :index
+
+      # ── Secret bindings at the egress broker (ADR 0019 gate 1b) ────────────────────────────
+      live "/account/bindings", SecretBindingsLive.Index, :index
 
       # ── Outbound webhooks (#700) ───────────────────────────────────────────────────────────
       live "/account/webhooks", WebhooksLive.Index, :index

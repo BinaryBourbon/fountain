@@ -41,6 +41,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/secret-bindings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List secret bindings
+         * @description Every binding on the account: a secret name, the host it is attached to at the egress broker, and the auth shape. A secret with at least one enabled binding reaches the sandbox as a placeholder; one with none reaches it in the clear. Only for accounts the broker is on for (ADR 0019); 404 otherwise.
+         */
+        get: operations["FountainWeb.SecretBindingController.index"];
+        put?: never;
+        /** Bind a secret to a host */
+        post: operations["FountainWeb.SecretBindingController.create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/sandboxes": {
         parameters: {
             query?: never;
@@ -136,6 +157,24 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/api/secret-bindings/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Unbind a secret from a host */
+        delete: operations["FountainWeb.SecretBindingController.delete"];
+        options?: never;
+        head?: never;
+        /** Change a binding */
+        patch: operations["FountainWeb.SecretBindingController.update"];
         trace?: never;
     };
     "/api/environments/{id}": {
@@ -327,6 +366,26 @@ export interface paths {
          *     Errors before the stream opens are ordinary JSON responses (404 for an unknown agent, 402 with no credit); once it is open, failure arrives as `RUN_ERROR`.
          */
         post: operations["FountainWeb.AguiController.run"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/secret-bindings/presets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List binding presets
+         * @description The broker's service catalog: known hosts with their auth shape and the secret name each usually goes by. Suggestions the console prefills from; a binding is still yours to save.
+         */
+        get: operations["FountainWeb.SecretBindingController.presets"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -2721,6 +2780,25 @@ export interface components {
             prompt: string;
         };
         /**
+         * SecretBindingPreset
+         * @description A known service from the broker's catalog, to prefill a binding from.
+         */
+        SecretBindingPreset: {
+            auth_type: string;
+            description?: string | null;
+            header?: string | null;
+            headers?: {
+                [key: string]: string;
+            };
+            host: string;
+            id: string;
+            name: string;
+            prefix?: string | null;
+            suggested_key?: string | null;
+            /** @description False for the few presets a binding cannot express on its own (request signing, a username of yours). */
+            usable: boolean;
+        };
+        /**
          * AdminSandbox
          * @description A live sandbox, cross-tenant. Metadata only — never contents.
          */
@@ -2739,6 +2817,10 @@ export interface components {
             user_email?: string | null;
             /** Format: uuid */
             user_id?: string | null;
+        };
+        /** SecretBindingListResponse */
+        SecretBindingListResponse: {
+            data: components["schemas"]["SecretBinding"][];
         };
         /**
          * ChangesetError
@@ -3153,6 +3235,10 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        /** SecretBindingPresetListResponse */
+        SecretBindingPresetListResponse: {
+            data: components["schemas"]["SecretBindingPreset"][];
+        };
         /** AdminSandboxListResponse */
         AdminSandboxListResponse: {
             data: components["schemas"]["AdminSandbox"][];
@@ -3300,6 +3386,27 @@ export interface components {
                 /** Format: uri */
                 url: string;
             };
+        };
+        /**
+         * SecretBindingRequest
+         * @example {
+         *       "auth_type": "bearer",
+         *       "host": "api.stripe.com",
+         *       "key": "STRIPE_SECRET_KEY"
+         *     }
+         */
+        SecretBindingRequest: {
+            /** @enum {string} */
+            auth_type: "bearer" | "basic" | "api_key" | "custom";
+            enabled?: boolean;
+            header?: string | null;
+            headers?: {
+                [key: string]: string;
+            };
+            host: string;
+            key: string;
+            prefix?: string | null;
+            username?: string | null;
         };
         /** VaultRequest */
         VaultRequest: {
@@ -3840,6 +3947,35 @@ export interface components {
         ApplyRequest: {
             resources: components["schemas"]["ManifestResource"][];
         };
+        /**
+         * SecretBinding
+         * @description Which host a secret is attached to at the egress broker, and how (ADR 0019). Keyed by the secret's name: it applies wherever an environment or vault holds a secret of that name. A secret with at least one enabled binding reaches the sandbox as a placeholder (`__key__`); one with none reaches it in the clear.
+         */
+        SecretBinding: {
+            /** @enum {string} */
+            auth_type: "bearer" | "basic" | "api_key" | "custom";
+            /** Format: date-time */
+            created_at: string;
+            enabled: boolean;
+            /** @description api_key only: the header the value is sent in. Defaults to Authorization. */
+            header?: string | null;
+            /** @description custom only: header name to template, `{{ KEY }}` is replaced by the secret. */
+            headers: {
+                [key: string]: string;
+            };
+            /** @description Host pattern: `api.example.com`, a one-level wildcard `*.example.com`, optionally `:port` and a `/path/*` glob. */
+            host: string;
+            /** Format: uuid */
+            id: string;
+            /** @description The secret's name, UPPER_SNAKE_CASE. */
+            key: string;
+            /** @description api_key only: text placed before the value, such as `Token `. */
+            prefix?: string | null;
+            /** Format: date-time */
+            updated_at: string;
+            /** @description basic only: the username; the secret is the password. */
+            username?: string | null;
+        };
         /** TeamScheduleUpdateRequest */
         TeamScheduleUpdateRequest: {
             /** @example 0 9 * * 1-5 */
@@ -3910,6 +4046,96 @@ export interface operations {
             };
             /** @description Not found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "FountainWeb.SecretBindingController.index": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Bindings */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SecretBindingListResponse"];
+                };
+            };
+            /** @description Missing or invalid key */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Brokerage is not enabled for this account */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "FountainWeb.SecretBindingController.create": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Binding */
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SecretBindingRequest"];
+            };
+        };
+        responses: {
+            /** @description Binding */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SecretBinding"];
+                };
+            };
+            /** @description Missing or invalid key */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Brokerage is not enabled for this account */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Validation error */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -4052,6 +4278,100 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HealthResponse"];
+                };
+            };
+        };
+    };
+    "FountainWeb.SecretBindingController.delete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Binding id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing or invalid key */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No such binding, or brokerage is not enabled */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "FountainWeb.SecretBindingController.update": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Binding id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        /** @description Binding */
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SecretBindingRequest"];
+            };
+        };
+        responses: {
+            /** @description Binding */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SecretBinding"];
+                };
+            };
+            /** @description Missing or invalid key */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No such binding, or brokerage is not enabled */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Validation error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -4632,6 +4952,44 @@ export interface operations {
                 };
             };
             /** @description No such agent */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "FountainWeb.SecretBindingController.presets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Presets */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SecretBindingPresetListResponse"];
+                };
+            };
+            /** @description Missing or invalid key */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Brokerage is not enabled for this account */
             404: {
                 headers: {
                     [name: string]: unknown;

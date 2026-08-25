@@ -362,6 +362,9 @@ defmodule Fountain.Conversations.ConversationServer do
       # never sees (the broker gets them); `broker` is the minted session.
       # Both stay empty/nil on an unbrokered conversation.
       brokered: %{},
+      # The tenant's enabled bindings by key (gate 1b), loaded once per
+      # provision; what the broker's services are built from.
+      broker_bindings: %{},
       broker: nil,
       current_command: nil,
       current_command_ref: nil,
@@ -571,7 +574,10 @@ defmodule Fountain.Conversations.ConversationServer do
 
     case load_tenant_state(conv.user_id) do
       {:ok, dek, inference_creds} ->
-        {secrets, brokered} = split_brokered(conv.user_id, merge_secrets(env, vault, dek))
+        bindings = broker_bindings(conv.user_id)
+
+        {secrets, brokered} =
+          split_brokered(conv.user_id, merge_secrets(env, vault, dek), bindings)
 
         state =
           %{
@@ -580,7 +586,8 @@ defmodule Fountain.Conversations.ConversationServer do
               runtime_session_id: conv.runtime_session_id,
               tenant_key: dek,
               inference_credentials: inference_creds,
-              brokered: brokered
+              brokered: brokered,
+              broker_bindings: bindings
           }
 
         dispatch_provision(state, conv, sandbox, agent, env, vault, secrets)
@@ -1366,10 +1373,18 @@ defmodule Fountain.Conversations.ConversationServer do
   # On a brokered conversation the catalog keys leave the secrets map here,
   # before the MCP substitution and the env are built from it, so both see
   # the placeholder and neither sees the value.
-  defp split_brokered(user_id, secrets) do
+  defp split_brokered(user_id, secrets, bindings) do
     if Fountain.Broker.enabled_for?(user_id),
-      do: Fountain.Broker.split(secrets),
+      do: Fountain.Broker.split(secrets, bindings),
       else: {secrets, %{}}
+  end
+
+  # Only read for a brokered tenant: for everyone else the table is rows
+  # nobody consults, and this path stays free of a query.
+  defp broker_bindings(user_id) do
+    if Fountain.Broker.enabled_for?(user_id),
+      do: Fountain.SecretBindings.enabled_by_key(user_id),
+      else: %{}
   end
 
   defp broker_env(%{broker: nil}), do: []
@@ -1383,7 +1398,7 @@ defmodule Fountain.Conversations.ConversationServer do
         keys: state.brokered |> Map.keys() |> Enum.sort()
       })
 
-      case Fountain.Broker.prepare(state.conversation_id, state.brokered) do
+      case Fountain.Broker.prepare(state.conversation_id, state.brokered, state.broker_bindings) do
         {:ok, session} ->
           publish_stage(state.conversation_id, "broker", "done", %{
             vault: session.vault,
@@ -1412,7 +1427,7 @@ defmodule Fountain.Conversations.ConversationServer do
 
   defp broker_refresh(%{broker: session} = state) do
     if Fountain.Broker.expiring?(session) do
-      case Fountain.Broker.prepare(state.conversation_id, state.brokered) do
+      case Fountain.Broker.prepare(state.conversation_id, state.brokered, state.broker_bindings) do
         {:ok, fresh} ->
           keys = Fountain.Broker.env_keys()
           kept = Enum.reject(state.sprite_env, fn {k, _} -> to_string(k) in keys end)

@@ -59,6 +59,16 @@ upgrade, is in
 
 ### Added
 
+- **Secret bindings, ADR 0019 gate 1b.** On an account the broker is on for,
+  a secret can be bound to the hosts it is a credential for and the way it
+  is sent (bearer, basic, API-key header, custom headers). A bound secret
+  reaches the sandbox as a placeholder and the broker attaches the value; an
+  unbound one reaches it in the clear as before. A console page at
+  Account, Credential bindings (only shown when the broker is on), the
+  `/api/secret-bindings` routes with a 35-entry preset catalog, and every
+  binding change in the audit trail. Replaces gate 1a's hardcoded GitHub
+  catalog, which stays as the default for `GITHUB_TOKEN` / `GH_TOKEN` with
+  no bindings.
 - **Egress credential brokerage, gate 1a (ADR 0019, #1090).** `Fountain.Broker`
   and the provisioning wiring for an Agent Vault forward proxy: a brokered
   sandbox holds `__github_token__` where `GITHUB_TOKEN` was, the real value is
