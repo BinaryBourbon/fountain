@@ -1197,4 +1197,55 @@ defmodule Fountain.Conversations.ConversationServerTest do
       assert {:error, :gone} = ConversationServer.send_prompt(conv.id, "hi", [])
     end
   end
+
+  describe "interrupt/1 against a dead server holding a running turn (#1179)" do
+    # An autonomous turn ("background task follow-up") — or any turn — can be
+    # left `status: "running"` in the DB with no ConversationServer left to
+    # answer for it: the process exited (deploy, rebalance, a plain
+    # `{:stop, :normal, _}` return) without closing the turn first, and
+    # nothing wakes the conversation again until the next prompt. Before this
+    # fix, `interrupt/2` only ever checked `whereis/1` and gave up with
+    # `{:error, :not_running}` — indistinguishable, from the API, to a caller
+    # hitting a conversation that plain does not exist. The fix mirrors
+    # `send_prompt/4`'s existing wake-on-miss fallback: reattach, which
+    # either resumes the real session or (as here, with no active sprite
+    # session) reconciles the orphaned turn.
+    test "wakes the conversation; reattach finds no live session and reconciles the stuck turn" do
+      user = insert_verified_user()
+      agent = insert_agent(user_id: user.id)
+      sandbox = insert_sandbox(user_id: user.id, status: "ready")
+
+      conv =
+        insert_conversation(user_id: user.id, agent: agent, sandbox: sandbox, status: "running")
+
+      {:ok, turn} =
+        Conversations._unsafe_create_turn(%{
+          conversation_id: conv.id,
+          turn_number: 1,
+          prompt: "(background task follow-up)",
+          origin: "autonomous",
+          status: "running",
+          started_at: DateTime.utc_now() |> DateTime.truncate(:second)
+        })
+
+      stub_happy_sprite()
+
+      on_exit(fn ->
+        case ConversationServer.whereis(conv.id) do
+          nil -> :ok
+          pid -> if Process.alive?(pid), do: GenServer.stop(pid, :normal)
+        end
+      end)
+
+      # No server is registered for this conversation at all — exactly the
+      # state a dead process leaves behind. `list_sessions` (stubbed to `[]`
+      # by stub_happy_sprite/1) means reattach finds nothing to resume.
+      assert {:error, :idle} = ConversationServer.interrupt(conv.id)
+
+      assert Conversations._unsafe_get_conversation!(conv.id).status == "idle"
+
+      assert [%{id: turn_id, status: "interrupted"}] = Conversations._unsafe_list_turns(conv.id)
+      assert turn_id == turn.id
+    end
+  end
 end

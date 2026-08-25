@@ -181,15 +181,50 @@ defmodule Fountain.Conversations.ConversationServer do
     GenServer.cast(pid, {:initial_prompt, prompt, images})
   end
 
+  @doc """
+  Interrupt the turn in flight, if any.
+
+  If no server answers for this conversation, that alone doesn't mean there
+  is nothing to interrupt: the process can have exited (deploy, Horde
+  rebalance, a plain `{:stop, :normal, _}` return) while a turn was still
+  marked `running`, with nothing left to close it (#1179 — an autonomous
+  "background task follow-up" turn stuck this way for 4+ hours, `interrupt`
+  404ing the whole time, indistinguishable from hitting a conversation that
+  doesn't exist). Mirror `send_prompt/4`'s wake-on-miss fallback, but only
+  when the row says `running` — an idle/terminated/unknown conversation has
+  nothing running regardless, and must not pay for a wake it doesn't need.
+  Waking reattaches to a live sprite session if one exists (and this second
+  `interrupt` call then really does end it), or reconciles the orphaned turn
+  itself when none does.
+  """
   def interrupt(conv_id, opts \\ []) do
     result =
       case whereis(conv_id) do
-        nil -> {:error, :not_running}
+        nil -> interrupt_dead(conv_id)
         pid -> call_server(pid, :interrupt)
       end
 
     audit_lifecycle(conv_id, "conversation.interrupted", result, opts)
     result
+  end
+
+  defp interrupt_dead(conv_id) do
+    case Conversations._unsafe_get_conversation(conv_id) do
+      %Conversation{status: "running"} ->
+        case Conversations.wake_conversation(conv_id) do
+          {:ok, conv} ->
+            case whereis(conv.id) do
+              nil -> {:error, :not_running}
+              pid -> call_server(pid, :interrupt)
+            end
+
+          {:error, _} ->
+            {:error, :not_running}
+        end
+
+      _ ->
+        {:error, :not_running}
+    end
   end
 
   @doc """
