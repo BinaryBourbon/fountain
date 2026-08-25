@@ -70,12 +70,6 @@ defmodule FountainWeb.DashboardLive.Index do
     |> assign(:period, period)
     |> assign(:period_start, period.start)
     |> assign(:billing_enabled?, billing_enabled?)
-    # Two queries against the sandbox and turn rows, so it is skipped where
-    # there is no allowance to report at all.
-    |> assign(
-      :allowance,
-      billing_enabled? && Fountain.Billing.turn_hour_allowance(user, period: period)
-    )
     |> assign(:credits, Fountain.Credits.summary(user))
   end
 

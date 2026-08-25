@@ -1,7 +1,7 @@
 ---
 type: ADR
 title: "Prepaid credits beside the capacity tiers: a cents ledger burned by turn-hours, rent and messages"
-description: "Tiers stay and buy capacity; usage is paid from a Fountain-owned ledger of integer cents, granted monthly by the tier and topped up by one-time Stripe Checkout packs, burned at $0.25 per conversation turn-hour, a month of rent up front per number or inbox, and per message. Zero is a soft stop. Built and inert behind CREDIT_PRICING_SINCE and CREDIT_ENFORCE; auto top-up and the allowance-surface removal are not built."
+description: "Tiers stay and buy capacity; usage is paid from a Fountain-owned ledger of integer cents, granted monthly by the tier and topped up by one-time Stripe Checkout packs, burned at $0.25 per conversation turn-hour, a month of rent up front per number or inbox, and per message. Zero is a soft stop. Built and live on the hosted deployment; auto top-up is not built."
 tags: [billing, credits, entitlements, quotas, team-comms, finance]
 status: stable
 adr: "0030"
@@ -9,7 +9,6 @@ adr_status: "Accepted"
 date: 2026-08-24
 generated: { by: human:jhgaylor, at: 2026-08-24T20:00:00-04:00 }
 verified: { by: human:jhgaylor, at: 2026-08-24T20:00:00-04:00 }
-stale_after: 2026-10-01
 ---
 
 # 0030 — Prepaid credits beside the capacity tiers: a cents ledger burned by turn-hours, rent and messages
@@ -29,12 +28,11 @@ pricing and grants; `CREDIT_ENFORCE=true` turns the soft stop on. The
 order that keeps each step safe is in `docs/guides/operate/billing.md`.
 
 **Not built, on purpose:** auto top-up (#1086 phase 6); #1038 steps 3
-onward (sandbox size, storage, per-provider cost basis). **One deviation:**
-`Plans.included_turn_hours/1` and the turn-hour allowance surfaces stay
-until enforcement flips, because they remain true until then and a page
-that tells two stories is worse than one that tells the old one; the PR
-that flips `CREDIT_ENFORCE` on the hosted deployment removes them.
-`stale_after` stays set until that PR lands.
+onward (sandbox size, storage, per-provider cost basis). Both switches
+were turned on for the hosted deployment on 2026-08-24 (#1104, #1105) with
+§8's reconciled month waived by the operator (two known users), and the
+turn-hour allowance surfaces came out with the flip.
+`Plans.included_turn_hours/1` stays as what sizes the grant.
 
 ## Context
 

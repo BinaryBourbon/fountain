@@ -1,7 +1,7 @@
 defmodule FountainWeb.BillingApiJSON do
   @moduledoc false
 
-  def show(%{user: user, usage: usage, allowance: allowance, credits: credits, period: period}) do
+  def show(%{user: user, usage: usage, credits: credits, period: period}) do
     %{
       data: %{
         status: user.subscription_status,
@@ -26,11 +26,9 @@ defmodule FountainWeb.BillingApiJSON do
           conversations: usage.conversations,
           turns: usage.turns,
           # Hours with a prompt in flight, on providers Fountain pays for —
-          # the unit `plan.included_turn_hours` is denominated in. Distinct
-          # from `sandbox_minutes`, which is wall-clock and includes idle.
-          turn_hours: allowance.used,
-          turn_hours_included: allowance.included,
-          turn_hours_remaining: allowance.remaining,
+          # what burns credit (ADR 0030). Distinct from `sandbox_minutes`,
+          # which is wall-clock and includes idle.
+          turn_hours: usage.turn_hours,
           sandbox_minutes: Float.round(usage.sandbox_minutes, 2),
           # Which sandbox provider the minutes ran on. Absent providers were
           # not used; the values sum to `sandbox_minutes`.

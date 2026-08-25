@@ -87,16 +87,8 @@ defmodule FountainWeb.AdminLive.UserDetail do
     |> assign(:vault_count, length(Vaults.list_vaults(user.id)))
     |> assign(:audit_events, Audit.list_recent_for_user(user.id, 50))
     |> assign(:admin_events, Audit._unsafe_list_admin_events_for_target(user.id, 50))
-    |> assign(:allowance, turn_hour_allowance(user))
     |> assign(:credits, Fountain.Credits.summary(user))
     |> assign(:ledger, Fountain.Credits.list_entries(user.id, limit: 20))
-  end
-
-  # Two DB queries against the sandbox and turn rows, so it is skipped
-  # entirely where there is no allowance to report — a billing-disabled
-  # instance shows no billing tiles at all.
-  defp turn_hour_allowance(user) do
-    if Fountain.Billing.enabled?(), do: Fountain.Billing.turn_hour_allowance(user)
   end
 
   @impl true
@@ -197,20 +189,6 @@ defmodule FountainWeb.AdminLive.UserDetail do
             active / limit · {if @user.sandbox_limit_override,
               do: "override",
               else: "#{Fountain.Plans.resolve(@user.plan).name} plan"}
-          </div>
-        </div>
-        <div :if={@allowance} class="bg-white rounded shadow border border-zinc-200 px-4 py-3">
-          <div class="text-xs text-zinc-500">Turn hours</div>
-          <div class={[
-            "text-sm font-medium tabular-nums",
-            @allowance.over? && "text-amber-700"
-          ]}>
-            {Float.round(@allowance.used, 1)} / {@allowance.included}
-          </div>
-          <div class="text-xs text-zinc-500">
-            used / included · {if @allowance.period.source == :subscription,
-              do: "billing period",
-              else: "calendar month"}
           </div>
         </div>
         <div :if={@credits.active?} class="bg-white rounded shadow border border-zinc-200 px-4 py-3">

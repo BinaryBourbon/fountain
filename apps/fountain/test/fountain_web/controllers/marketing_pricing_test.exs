@@ -43,7 +43,9 @@ defmodule FountainWeb.MarketingPricingTest do
       assert body =~ plan.name
       assert body =~ Plans.format_usd(plan.monthly_cents)
       assert body =~ "#{plan.concurrent_sandboxes} agents at once"
-      assert body =~ "#{plan.included_turn_hours} turn hours a month"
+
+      assert body =~
+               "#{Fountain.Credits.format_cents(plan.included_turn_hours * 25)} of credit a month"
     end
   end
 
@@ -100,7 +102,10 @@ defmodule FountainWeb.MarketingPricingTest do
     body = conn |> get(~p"/") |> html_response(200)
 
     assert body =~ "#{trial.concurrent_sandboxes} agents at once"
-    assert body =~ "with #{trial.included_turn_hours} turn hours"
+
+    assert body =~
+             "with #{Fountain.Credits.format_cents(trial.included_turn_hours * 25)} of credit"
+
     assert body =~ "Subscribing lifts both the same day"
   end
 

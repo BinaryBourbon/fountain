@@ -64,21 +64,12 @@ pays nothing for that machine. Turn hours add up for each turn. Two
 conversations that each run for an hour on one sandbox spend two turn hours,
 on a sandbox that was busy for one.
 
-Fountain reports these hours and enforces nothing. No request fails because a
-tenant exceeds the included hours. The price of an overage is still an open
-question. See
-[issue 1016](https://github.com/BinaryBourbon/fountain/issues/1016) for the
-current state.
-
-The pricing page states this to a visitor, because a plan that lists 200 hours
-and then says nothing reads as a hard stop. The two limits behave differently.
-Fountain refuses the next start for a tenant at the concurrency cap. A tenant
-over the hours continues, and pays no more.
-
-Four surfaces show the number. The pricing page shows it to a visitor. The
-billing page shows it to the tenant. The API reports it at
-`GET /api/account/billing`. The admin page for one account shows it beside the
-sandbox count.
+The hours are a credit grant. At the start of each billing period, Fountain
+puts the plan's hours, at the turn-hour price, into the tenant's balance.
+Each turn takes its time out at the same price. The two limits behave
+differently. Fountain refuses the next start for a tenant at the concurrency
+cap. A tenant at a zero balance gets a refusal for new sandboxes and new
+turns, and turns in flight finish. See "Prepaid credits" below.
 
 ### Prepaid credits
 
@@ -101,9 +92,9 @@ Scale $50. That credit expires at the end of the period. A trial gets $10
 once, and that credit expires with the trial. Credit a tenant buys never
 expires, and Fountain spends it last.
 
-Fountain refuses nothing at a zero balance yet. A balance can go below zero,
-because a turn that crosses zero finishes. The next grant or purchase brings
-it back.
+With `CREDIT_ENFORCE=true`, a zero balance refuses new sandboxes and new
+turns. A balance can still go below zero, because a turn that crosses zero
+finishes. The next grant or purchase brings it back.
 [ADR 0030](https://github.com/BinaryBourbon/fountain/blob/main/decisions/0030-prepaid-credits.md)
 records the decisions, and
 [issue 1086](https://github.com/BinaryBourbon/fountain/issues/1086) tracks
@@ -136,6 +127,7 @@ do not subscribe to them, a refund leaves the credit in place, and the
 tenant keeps what they did not pay for. Fountain does not add a disputed
 amount back when you win the dispute. Add it by hand from the admin page.
 
+### The billing period
 
 Fountain measures the hours over the period that Stripe invoices. The
 `users.current_period_start` column holds the start of that period, and

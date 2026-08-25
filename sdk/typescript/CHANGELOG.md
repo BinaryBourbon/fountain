@@ -10,6 +10,15 @@ server releases.
 
 ---
 
+## [0.2.0] — 2026-08-24
+
+### Removed
+
+- `usage.turn_hours_included` and `usage.turn_hours_remaining` on
+  `GET /api/account/billing`. The allowance is gone: the plan's hours size
+  the monthly credit grant (`plan.included_turn_hours`), and `credits` is
+  what acts. `usage.turn_hours` stays.
+
 ## [0.1.15] — 2026-08-24
 
 ### Added
