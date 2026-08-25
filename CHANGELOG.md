@@ -85,7 +85,7 @@ upgrade, is in
 
 ### Fixed
 
-- A brokered sandbox lets `sudo` keep the proxy variables (a sudoers `env_keep` drop-in, installed beside the broker CA), so a setup script's `sudo apt-get install` reaches a mirror. Before, sudo's `env_reset` stripped `http_proxy`, apt resolved the mirror directly and the broker floor refused it with `Temporary failure resolving`; the first brokered provisions of real environments failed there. (#1156)
+- A brokered sandbox lets `sudo` keep the proxy variables (a sudoers `env_keep` drop-in, installed beside the broker CA), so a setup script's `sudo apt-get install` reaches a mirror. Before, sudo's `env_reset` stripped `http_proxy`, apt resolved the mirror directly and the broker floor refused it with `Temporary failure resolving`; the first brokered provisions of real environments failed there. (#1158)
 
 - **Billing debt 1/3: the month is half-open, one gate, one cap rule.**
   `Billing.month_range/2` replaces four hand-rolled month windows; its `end`
