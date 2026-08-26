@@ -2308,7 +2308,10 @@ defmodule Fountain.Conversations do
              parent_conversation_id: parent_id,
              channel_id: attrs["channel_id"],
              title: attrs["title"],
-             permission_policy: perm_policy
+             permission_policy: perm_policy,
+             # The bridge's tools (#1202) ride on both create paths: this
+             # one is what a home sandbox's second conversation takes.
+             caller_tools: attrs["caller_tools"] || []
            }) do
       Audit.record(%{
         user_id: user_id,
