@@ -479,7 +479,11 @@ defmodule FountainWeb.OpenAIControllerTest do
       end)
 
       conn =
-        chat(build_conn(), raw_key, request("pr-reviewer", "hello", %{"safety_identifier" => "si-1"}))
+        chat(
+          build_conn(),
+          raw_key,
+          request("pr-reviewer", "hello", %{"safety_identifier" => "si-1"})
+        )
 
       assert json_response(conn, 200)["fountain"]["thread"] == "si-1"
     end

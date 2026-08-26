@@ -10,6 +10,15 @@ server releases.
 
 ---
 
+## [1.11.1] — 2026-08-26
+
+### Added
+
+- Generated type for `safety_identifier` on the chat-completions request
+  (fountain #1205): the third thread key, after `X-Fountain-Thread` and
+  `user`, and the body field a gateway such as LiteLLM forwards when it
+  drops `user`. The SDK still does not wrap `/v1`; the types follow the spec.
+
 ## [1.11.0] — 2026-08-25
 
 ### Added
