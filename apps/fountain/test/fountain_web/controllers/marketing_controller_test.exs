@@ -181,7 +181,7 @@ defmodule FountainWeb.MarketingControllerTest do
     test "makes the case and shows the whole bring-up", %{conn: conn} do
       body = conn |> get(~p"/self-hosted") |> html_response(200)
 
-      assert body =~ "There is no Enterprise edition. There is the repo."
+      assert body =~ "Give your app a coding agent. Own every machine it touches."
       assert body =~ "Five commands and a token."
       assert body =~ "The features we ration, you switch on."
       assert body =~ "What it costs you instead."
