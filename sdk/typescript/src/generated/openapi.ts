@@ -1684,7 +1684,7 @@ export interface paths {
          *
          *     OpenAI's `POST /v1/chat/completions`, answered by a Fountain agent. Point any gateway or base-URL chat client at `/v1` with an API key as the bearer token.
          *
-         *     The thread is the conversation: `X-Fountain-Thread` (else the `user` field) binds to channel `openai:<key>`. The first request on a key opens a conversation, later ones prompt it, and only the newest user message is sent — the agent's memory lives in its sandbox, not in the replayed transcript. A request with neither is refused with 400.
+         *     The thread is the conversation: `X-Fountain-Thread` (else the `user` field, else `safety_identifier`) binds to channel `openai:<key>`. The first request on a key opens a conversation, later ones prompt it, and only the newest user message is sent — the agent's memory lives in its sandbox, not in the replayed transcript. A request with none is refused with 400.
          *
          *     `stream: true` answers with SSE `chat.completion.chunk` events (`content` for the reply, `reasoning_content` for thinking, tool use and provisioning stages) and `data: [DONE]`; a turn that fails mid-stream sends an `error` event first. `stream: false` blocks until the turn ends.
          *
@@ -3511,6 +3511,8 @@ export interface components {
             messages: Record<string, never>[];
             /** @description A Fountain agent: its name or its id. Unknown → 404. */
             model: string;
+            /** @description The thread key when neither `X-Fountain-Thread` nor `user` is set. OpenAI's replacement for `user`, and the body field a gateway such as LiteLLM forwards. */
+            safety_identifier?: string;
             /**
              * @description `true` streams `chat.completion.chunk` events as SSE, ending with `data: [DONE]`.
              * @default false
@@ -8749,6 +8751,8 @@ export interface operations {
                     messages: Record<string, never>[];
                     /** @description A Fountain agent: its name or its id. Unknown → 404. */
                     model: string;
+                    /** @description The thread key when neither `X-Fountain-Thread` nor `user` is set. OpenAI's replacement for `user`, and the body field a gateway such as LiteLLM forwards. */
+                    safety_identifier?: string;
                     /**
                      * @description `true` streams `chat.completion.chunk` events as SSE, ending with `data: [DONE]`.
                      * @default false

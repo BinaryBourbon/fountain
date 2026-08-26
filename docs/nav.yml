@@ -115,6 +115,7 @@ nav:
       - OpenBot (AG-UI): integrations/openbot.md
       - OpenAI-compatible API: integrations/openai-compatible.md
       - LangChain and Deep Agents: integrations/langchain.md
+      - Behind an AI gateway: integrations/gateways.md
       - Buzz (Nostr): integrations/buzz.md
       - LLM integration: llm-integration.md
   - Changelog: changelog.md

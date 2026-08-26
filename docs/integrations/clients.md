@@ -22,6 +22,7 @@ mail, OAuth, billing and error reports, read <!-- vale disable-line STE.IngForms
 | [OpenBot](openbot.md) | [AG-UI](https://github.com/ag-ui-protocol/ag-ui) over HTTP. | The OpenBot host. |
 | [OpenAI-compatible API](openai-compatible.md) (alpha) | OpenAI chat completions over HTTP. | The client or the gateway. |
 | [LangChain and Deep Agents](langchain.md) (alpha) | The OpenAI-compatible API, from one Python file. | Your LangChain code. |
+| [Behind an AI gateway](gateways.md) (alpha) | The OpenAI-compatible API, as an upstream of LiteLLM or another gateway. | The gateway. |
 | [Buzz](buzz.md) | A Nostr relay, hosted by Fountain. | The Buzz desktop, or `POST /api/buzz/agents`. |
 | [Agentic IDEs](../llm-integration.md) | `/skill` and the discovery endpoints. | The IDE. |
 | Your own code | The [HTTP API](../api.md), the [TypeScript SDK](../sdk.md), the [CLI](../cli.md). | Wherever you want. |
@@ -67,6 +68,12 @@ the memory here as well.
 Fountain agent becomes a Deep Agents subagent, or a LangChain tool, from one
 Python file that the example ships. The orchestrator plans, and the Fountain
 agent does the work in its own sandbox and reports back once.
+
+[**An AI gateway**](gateways.md) such as LiteLLM fronts that endpoint as one
+more upstream. A person who already calls the gateway calls
+`fountain/pr-reviewer` and talks to an agent. The gateway's config is the
+integration. The example is a LiteLLM `config.yaml`, with a smoke script
+that shows the thread header survives the hop.
 
 Everything that plugin does is available to you directly. Read the
 [API reference](../api.md), the [TypeScript SDK](../sdk.md) and the

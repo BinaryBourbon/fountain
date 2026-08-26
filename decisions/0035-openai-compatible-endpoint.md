@@ -1,7 +1,7 @@
 ---
 type: ADR
 title: "An OpenAI-compatible /v1/chat/completions where the model is an agent"
-description: "The server carries a second public dialect: OpenAI chat completions at /v1, so every gateway and base-URL chat client reaches a Fountain agent with no plugin. The thread key is X-Fountain-Thread, else the request's user field, never a per-message sandbox. Built in the PR that adds this file. Amended 2026-08-25 (#1202): caller-defined tools are emitted as tool_calls; the sandbox's own tool use still is not."
+description: "The server carries a second public dialect: OpenAI chat completions at /v1, so every gateway and base-URL chat client reaches a Fountain agent with no plugin. The thread key is X-Fountain-Thread, else the request's user field, never a per-message sandbox. Built in the PR that adds this file. Amended 2026-08-25 (#1202): caller-defined tools are emitted as tool_calls; the sandbox's own tool use still is not. Amended 2026-08-26: safety_identifier is the third thread key, after user, because LiteLLM drops user and forwards it."
 tags: [api, integrations, openai, dialect]
 status: stable
 adr: "0035"
@@ -70,7 +70,14 @@ two wire shapes to keep honest.
    `user` field is the fallback because every SDK exposes it and Open WebUI
    and LibreChat set it per person — one sandbox per person per agent, which
    is the team page's model and is right for a chat client. A request with
-   neither is refused with a 400 that names the header. The stateless
+   neither is refused with a 400 that names the header. *Amended
+   2026-08-26 (the LiteLLM gateway example):* `safety_identifier` is read
+   third, after `user`. It is the field OpenAI introduced to replace `user`,
+   and the gateway smoke this ADR owed found that LiteLLM drops `user` from
+   the upstream body (its OpenAI parameter list no longer has it) and
+   forwards `safety_identifier`, so it is the only body-level key that
+   survives that hop. `metadata.thread_id` is dropped there too, which
+   confirms the reason it is not read. The stateless
    fallback (one conversation per request) is the failure mode this endpoint
    exists to avoid — Hermes's `copilot-acp` provider does exactly that over
    ACP and gets one sandbox per message — so it is refused, not offered.
@@ -158,10 +165,13 @@ two wire shapes to keep honest.
   the adapter's business, and a framework sends the same list every time.
   Approvals (#643) are a separate thing that can be built on the same
   parked-call shape later; this bridge never prompts either way.
-- Gateway and client smokes (LiteLLM as a custom provider, Open WebUI with
-  the base URL set: does the picker fill, does a multi-turn chat land in one
-  sandbox, does the gateway strip the header) are the verification this
-  decision still owes and are tracked on #1198, not asserted here.
+- Gateway and client smokes are the verification this decision owed
+  (#1198). The LiteLLM half ran on 2026-08-26 against production
+  (`examples/litellm-gateway`): a wildcard `fountain/*` route fills the
+  picker from `/v1/models`, two turns on one forwarded `X-Fountain-Thread`
+  land in one conversation, `reasoning_content` and the `fountain` object
+  pass through, and `user` does not (hence `safety_identifier`). The Open
+  WebUI half is still owed.
 
 ## Alternatives considered
 

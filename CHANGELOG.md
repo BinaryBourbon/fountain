@@ -18,6 +18,18 @@ upgrade, is in
 
 ### Added
 
+- **LiteLLM gateway example.** `examples/litellm-gateway`: Fountain as an
+  upstream of an AI gateway, so `fountain/<agent>` on the gateway is the
+  agent on Fountain. One wildcard `model_list` entry covers the account,
+  `forward_client_headers_to_llm_api` carries `X-Fountain-Thread` through
+  the hop, and `smoke.py` proves two turns landed in one conversation by
+  reading the real API back. Docs page `docs/integrations/gateways.md`,
+  which names the three settings any gateway needs.
+- **`safety_identifier` as a thread key on `/v1/chat/completions`.** Read
+  third, after `X-Fountain-Thread` and `user`. The gateway smoke found that
+  LiteLLM drops `user` (OpenAI retired it) and forwards `safety_identifier`,
+  so a header-less client behind a gateway had no way to name its thread.
+  ADR 0035 decision 2 amended.
 - **Tool bridge on `/v1/chat/completions` and AG-UI (#1202).** A request's
   `tools` are offered to the agent beside its own, through one more
   Fountain-served MCP server (`POST /api/mcp/caller/:conversation_id`). When

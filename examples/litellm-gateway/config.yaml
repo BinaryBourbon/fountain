@@ -1,0 +1,50 @@
+# LiteLLM proxy config: every Fountain agent on the account, as a model.
+#
+#   docker compose up          # reads FOUNTAIN_URL, FOUNTAIN_API_KEY, LITELLM_MASTER_KEY from .env
+#   curl localhost:4000/v1/models -H "Authorization: Bearer $LITELLM_MASTER_KEY"
+#
+# Walkthrough: https://managoat.com/docs/integrations/gateways
+
+model_list:
+  # One wildcard entry covers the whole account. `fountain/pr-reviewer` on the
+  # gateway becomes `pr-reviewer` on Fountain, and an agent you create tomorrow
+  # is routable with no restart. Fountain is an OpenAI-compatible upstream, so
+  # the provider prefix is `openai/`.
+  - model_name: "fountain/*"
+    litellm_params:
+      model: "openai/*"
+      api_base: "os.environ/FOUNTAIN_URL"        # https://your-fountain/v1 (the /v1 matters)
+      api_key: "os.environ/FOUNTAIN_API_KEY"     # ftn_..., from `fountain keys create litellm`
+      # A turn is an agent working in a sandbox, not a model answering. The
+      # first request on a thread also provisions the sandbox. Give it minutes.
+      timeout: 1800
+      stream_timeout: 1800
+      # Fountain refuses a request on a busy thread with 409 + Retry-After and
+      # never queues it. Let the client see that and retry, not the gateway.
+      num_retries: 0
+
+  # A named alias is the other shape: a fixed model name that hides the
+  # agent behind it, which is what a client that cannot list models wants.
+  # - model_name: support
+  #   litellm_params:
+  #     model: openai/support-agent
+  #     api_base: "os.environ/FOUNTAIN_URL"
+  #     api_key: "os.environ/FOUNTAIN_API_KEY"
+  #     timeout: 1800
+  #     stream_timeout: 1800
+  #     num_retries: 0
+
+general_settings:
+  master_key: "os.environ/LITELLM_MASTER_KEY"
+  # Forward the client's `x-` headers upstream. This is what carries
+  # `X-Fountain-Thread` through the gateway. Without it, Fountain falls back
+  # to the request's `user` field, which LiteLLM passes through untouched.
+  forward_client_headers_to_llm_api: true
+
+litellm_settings:
+  # Fill `GET /v1/models` on the gateway from Fountain's own list, so a chat
+  # client's picker shows the agents instead of the bare wildcard.
+  check_provider_endpoint: true
+  # Fountain ignores sampling parameters (there is no model to sample from).
+  # Drop them rather than fail a client that sends `temperature`.
+  drop_params: true

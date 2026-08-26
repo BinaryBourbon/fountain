@@ -36,7 +36,11 @@ defmodule FountainWeb.OpenAIController do
     2. Else the request's `user` field. Every SDK exposes it and Open WebUI
        and LibreChat set it per person, so a chat client with no header
        support gets one sandbox per person per agent — the team page's model.
-    3. Neither → 400 naming the header. The stateless fallback (one sandbox per
+    3. Else `safety_identifier`, the field OpenAI introduced to replace
+       `user`. A gateway that tracks OpenAI's parameter list (LiteLLM, as of
+       2026-08) drops `user` before the upstream call and forwards this one,
+       so it is the body-level key that survives a gateway hop.
+    4. None → 400 naming the header. The stateless fallback (one sandbox per
        message) is the failure mode this endpoint exists to avoid, so it is
        refused rather than offered.
 
@@ -147,6 +151,12 @@ defmodule FountainWeb.OpenAIController do
       user: %OpenApiSpex.Schema{
         type: :string,
         description: "The thread key when `X-Fountain-Thread` is not set."
+      },
+      safety_identifier: %OpenApiSpex.Schema{
+        type: :string,
+        description:
+          "The thread key when neither `X-Fountain-Thread` nor `user` is set. OpenAI's " <>
+            "replacement for `user`, and the body field a gateway such as LiteLLM forwards."
       }
     },
     required: [:model, :messages]
@@ -251,10 +261,11 @@ defmodule FountainWeb.OpenAIController do
         "`openai_compat_not_enabled` when it is off for the account.\n\n" <>
         "OpenAI's `POST /v1/chat/completions`, answered by a Fountain agent. Point any " <>
         "gateway or base-URL chat client at `/v1` with an API key as the bearer token.\n\n" <>
-        "The thread is the conversation: `X-Fountain-Thread` (else the `user` field) binds " <>
+        "The thread is the conversation: `X-Fountain-Thread` (else the `user` field, else " <>
+        "`safety_identifier`) binds " <>
         "to channel `openai:<key>`. The first request on a key opens a conversation, later " <>
         "ones prompt it, and only the newest user message is sent — the agent's memory " <>
-        "lives in its sandbox, not in the replayed transcript. A request with neither is " <>
+        "lives in its sandbox, not in the replayed transcript. A request with none is " <>
         "refused with 400.\n\n" <>
         "`stream: true` answers with SSE `chat.completion.chunk` events (`content` for the " <>
         "reply, `reasoning_content` for thinking, tool use and provisioning stages) and " <>
@@ -441,18 +452,23 @@ defmodule FountainWeb.OpenAIController do
   defp thread_key(conn, params) do
     header = conn |> get_req_header(@thread_header) |> List.first()
 
-    case {present(header), present(params["user"])} do
-      {{:ok, thread}, _} ->
+    [header, params["user"], params["safety_identifier"]]
+    |> Enum.find_value(:error, fn value ->
+      case present(value) do
+        {:ok, thread} -> {:ok, thread}
+        :error -> nil
+      end
+    end)
+    |> case do
+      {:ok, thread} ->
         {:ok, thread}
 
-      {:error, {:ok, user}} ->
-        {:ok, user}
-
-      {:error, :error} ->
+      :error ->
         {:error,
          {:invalid_request,
-          "a thread is required: set the X-Fountain-Thread header (or the `user` field) to " <>
-            "a stable key for this chat, so its turns land in one sandbox"}}
+          "a thread is required: set the X-Fountain-Thread header (or the `user` or " <>
+            "`safety_identifier` field) to a stable key for this chat, so its turns land " <>
+            "in one sandbox"}}
     end
   end
 

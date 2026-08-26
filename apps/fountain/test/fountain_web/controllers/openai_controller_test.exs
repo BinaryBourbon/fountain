@@ -468,7 +468,43 @@ defmodule FountainWeb.OpenAIControllerTest do
       assert json_response(conn, 200)["fountain"]["thread"] == "t1"
     end
 
-    test "neither is a 400 that names the header", %{conn: conn, raw_key: raw_key} do
+    test "safety_identifier is the fallback after user, since a gateway drops `user`",
+         %{user: user, agent: agent, raw_key: raw_key} do
+      conv = bound_conversation(user, agent, "si-1")
+
+      expect(ConversationServer, :send_prompt, fn conv_id, _prompt, [], _opts ->
+        assert conv_id == conv.id
+        play_turn(conv, [chunk("si")])
+        :ok
+      end)
+
+      conn =
+        chat(build_conn(), raw_key, request("pr-reviewer", "hello", %{"safety_identifier" => "si-1"}))
+
+      assert json_response(conn, 200)["fountain"]["thread"] == "si-1"
+    end
+
+    test "user wins over safety_identifier", %{user: user, agent: agent, raw_key: raw_key} do
+      conv = bound_conversation(user, agent, "alice")
+      _other = bound_conversation(user, agent, "si-1")
+
+      expect(ConversationServer, :send_prompt, fn conv_id, _prompt, [], _opts ->
+        assert conv_id == conv.id
+        play_turn(conv, [chunk("alice")])
+        :ok
+      end)
+
+      conn =
+        chat(
+          build_conn(),
+          raw_key,
+          request("pr-reviewer", "hello", %{"user" => "alice", "safety_identifier" => "si-1"})
+        )
+
+      assert json_response(conn, 200)["fountain"]["thread"] == "alice"
+    end
+
+    test "none is a 400 that names the header", %{conn: conn, raw_key: raw_key} do
       reject(&ConversationServer.send_prompt/4)
 
       conn = chat(conn, raw_key, request("pr-reviewer", "hello"))

@@ -89,7 +89,8 @@ A complete terminal chat on the `openai` package, with the model picker and
 the thread header in place, is in the repository at
 [`examples/openai-chat`](https://github.com/BinaryBourbon/fountain/tree/main/examples/openai-chat).
 For LangChain and Deep Agents, where a Fountain agent is a subagent, read
-[LangChain and Deep Agents](langchain.md).
+[LangChain and Deep Agents](langchain.md). To put Fountain behind LiteLLM
+or another gateway, read [Behind an AI gateway](gateways.md).
 
 ## One thread is one conversation is one sandbox
 
@@ -116,8 +117,13 @@ two places, in this order.
    client that cannot set headers gets one sandbox for each person and agent,
    which that person talks to for as long as they like. That is the same
    model as the [team page](../concepts/teammates.md).
+3. The `safety_identifier` field, when both are absent. It is the field
+   OpenAI introduced in place of `user`. A gateway that follows OpenAI's
+   parameter list drops `user` before it calls Fountain and forwards this
+   one. Read [Behind an AI gateway](gateways.md#the-thread).
 
-Fountain refuses a request with neither, with a 400 that names the header. It
+Fountain refuses a request with none of the three, with a 400 that names the
+header. It
 does not fall back to one conversation for each message. That would spawn a
 sandbox for each line of a chat, and it is the failure mode this endpoint
 exists to avoid.
