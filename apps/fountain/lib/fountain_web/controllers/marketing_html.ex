@@ -508,8 +508,7 @@ defmodule FountainWeb.MarketingHTML do
               "Start a run, watch the agent work turn by turn, and drive it. Chat, timeline and raw views of the same conversation, plus the machine it shares with its siblings.",
             shows: "the event stream as blocks, and one sandbox behind many conversations",
             flagship: %{
-              like:
-                "ChatGPT, except the model has a real computer and you can watch it use one.",
+              like: "ChatGPT, except the model has a real computer and you can watch it use one.",
               who: "Open this one first. It is the whole platform with a face on it."
             }
           },
@@ -542,7 +541,8 @@ defmodule FountainWeb.MarketingHTML do
             flagship: %{
               like:
                 "Multiplayer engineering: one board of work items, and staff you put on them by typing.",
-              who: "For a team that wants the same projects, the same agents and one place to watch."
+              who:
+                "For a team that wants the same projects, the same agents and one place to watch."
             }
           }
         ]

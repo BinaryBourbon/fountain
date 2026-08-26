@@ -30,8 +30,8 @@ upgrade, is in
   and who it is for. The tier is a key on the roster entry rather than a
   second list, so a featured card cannot drift from `/built-with`, and the
   suite checks the three lead the page and render exactly once. The README and
-  [The console, the apps, and the API](docs/concepts/surfaces.md) name all
-  three as well; the manual's page counted two.
+  the manual's `The console, the apps, and the API` name all three as well;
+  that page counted two.
 
 ### Added
 
