@@ -160,6 +160,7 @@ attaches a file inlines it as a data URL.
 | `thinking` blocks | `reasoning_content` |
 | `tool_use` and `tool_result` | `reasoning_content`, one line for each call, such as `→ Bash` and `← ok`. |
 | The `provision` and `setup` stages | `reasoning_content`, such as `provision: started`. |
+| A call to one of your `tools` | `tool_calls`, then `finish_reason: "tool_calls"`. Read [Your tools](#your-tools). |
 | `turn`/`done` | `finish_reason: "stop"` |
 | `turn`/`failed` | An `error` object that carries the reason. |
 
@@ -178,18 +179,86 @@ Two fields carry no information here, on purpose.
 
 - `usage` is always zeros. Fountain bills a turn in seconds, not tokens, and
   an invented token count is a number that a gateway would then add up.
-- `finish_reason` is `stop` or absent. It is never `length`, and it is never
-  `tool_calls`.
+- `finish_reason` is `stop`, or `tool_calls` when the agent waits on one of
+  your tools. It is never `length`.
 
-**Fountain never emits a tool call**, and it ignores the request's `tools`
-and `tool_choice`. On this protocol a tool call means *client, run
-this and send me the result*. A Fountain agent ran its own tool, in its own
-sandbox, and the result is already in the text. The client sees what the
-agent said, not what it did.
+**The sandbox's own tools never come back as tool calls.** On this protocol
+a tool call means *client, run this and send me the result*. A Fountain agent
+ran its own tool, in its own sandbox, and the result is already in the text.
+The client sees what the agent said, not what it did. The tools that *you*
+define on the request are the exception, and the next section is about them.
 
 The reply also carries a `fountain` object with the `conversation_id`, the
 `turn_id` and the `thread`. Use them to reach the same conversation over the
 [real API](../api.md#conversations).
+
+## Your tools
+
+Send `tools` on the request, in OpenAI's function shape, and the agent gets
+them beside its own. The agent does not know that they are remote. When it
+calls one, the completion ends with the call and `finish_reason:
+"tool_calls"`, and the turn waits. Run the tool, then send the next request
+on the same thread with a `role: "tool"` message for each call. The turn
+continues, and the completion ends with `stop` or with the next call. Every
+agent framework already runs this loop. So a Fountain agent can be the model
+inside `create_agent`, the `openai` SDK's tool runner, or Open WebUI's tool
+servers.
+
+```
+  1. POST /v1/chat/completions   tools: [lookup_order]      ──▶  the agent calls lookup_order
+     ◀── finish_reason: "tool_calls", tool_calls: [{id: "call_1", function: {name, arguments}}]
+  2. POST /v1/chat/completions   messages: [..., {role: "tool", tool_call_id: "call_1", content: "..."}]
+     ◀── the rest of the turn, finish_reason: "stop"
+```
+
+From the `openai` Python SDK, the two requests are what
+`client.chat.completions.create` returns and what you send back:
+
+```python
+tools = [{"type": "function", "function": {
+    "name": "lookup_order",
+    "description": "Find an order by id",
+    "parameters": {"type": "object", "properties": {"id": {"type": "string"}}},
+}}]
+headers = {"X-Fountain-Thread": "orders-1"}
+messages = [{"role": "user", "content": "Where is order A-17?"}]
+
+reply = client.chat.completions.create(model="support", messages=messages,
+                                       tools=tools, extra_headers=headers)
+call = reply.choices[0].message.tool_calls[0]
+messages += [reply.choices[0].message,
+             {"role": "tool", "tool_call_id": call.id, "content": lookup_order(**json.loads(call.function.arguments))}]
+reply = client.chat.completions.create(model="support", messages=messages,
+                                       tools=tools, extra_headers=headers)
+print(reply.choices[0].message.content)
+```
+
+Some rules.
+
+- Fountain stores the tool names, descriptions and schemas on the
+  conversation. Send the same `tools` on each request. A changed list
+  replaces the old one at the next turn.
+- A call has a deadline, the same one as a permission prompt (five minutes by
+  default). If you do not answer in time, the agent gets an error result that
+  says so, and the turn continues without it.
+- Fountain refuses a `user` message while a call waits, with `409` and code
+  `tool_calls_pending`. Answer the call first.
+- Fountain refuses a `role: "tool"` message when nothing waits, with `400`
+  and code `no_pending_tool_calls`. The turn may have ended, or the call may
+  have expired.
+- `tool_choice: "none"` sends no tools for that request. Fountain refuses
+  `required` and a named tool with `400`, because it cannot force an agent's
+  next action.
+- The agent can make more than one call at once. Fountain returns them one
+  at a time. Answer each one, and the next comes back at once.
+- `reasoning_content` carries a line for each call, such as
+  `→ lookup_order (waiting for the caller)`, so a client that ignores
+  `tool_calls` can see why the reply stopped.
+
+The agent reaches your tools through one more Fountain-served MCP server in
+its sandbox. A parked call blocks the agent's tool call for up to a minute,
+then returns `pending` with a `call_id`, and the agent calls
+`wait_for_caller_result` until you answer. Fountain reserves that name.
 
 ## Errors
 
@@ -203,6 +272,8 @@ that a client acts on.
 | 402 | `insufficient_credits` | No credit on the account. |
 | 404 | `model_not_found` | No agent has that name or id in your account. |
 | 409 | `thread_busy` | The thread runs a turn now. `Retry-After` says when to send again. |
+| 409 | `tool_calls_pending` | The thread waits on your tool results. Answer them with `role: "tool"` messages. |
+| 400 | `no_pending_tool_calls` | The newest messages are tool results, but nothing waits for them. |
 | 429 | `sandbox_quota_exceeded` | Your concurrency cap. Terminate a conversation, or wait for one to idle out. |
 
 Fountain refuses a second request on a thread that is mid-turn, and does not
@@ -223,7 +294,7 @@ model key, on purpose
 
 ## What it does not do
 
-- Tool calls, function schemas, structured outputs, logprobs, `n > 1`, or
+- Structured outputs, logprobs, `n > 1`, `tool_choice: "required"`, or
   other features that assume the thing behind the URL is a model.
 - The Anthropic Messages shape. One dialect, and the OpenAI one is what
   gateways and clients speak.

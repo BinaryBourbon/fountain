@@ -36,18 +36,24 @@ defmodule FountainWeb.AguiController do
   because provisioning a fresh sandbox takes a minute and silence reads as a
   hang — streams as AG-UI *thinking* events, which a host renders as reasoning.
 
-  Nothing here is emitted as an AG-UI **tool call**. On this protocol a tool call
-  means "host, run this and send me the result", and that is not what happened: a
-  Fountain agent ran its own tool, inside its own sandbox, and already has the
-  result. Reporting it as a call would ask the host to execute something twice
-  and leave the run waiting for a result it will never be sent. Bridging the
-  host's tools *into* the sandbox is the other half of the integration and is
-  deliberately not in this one.
+  The sandbox's own tool use is never emitted as an AG-UI **tool call**. On
+  this protocol a tool call means "host, run this and send me the result", and
+  that is not what happened: a Fountain agent ran its own tool, inside its own
+  sandbox, and already has the result. Reporting it as a call would ask the
+  host to execute something twice and leave the run waiting for a result it
+  will never be sent.
+
+  The host's own `tools` are the other half (#1202, `Fountain.CallerTools`):
+  they are served to the agent beside its own, and when it calls one the run
+  ends with `TOOL_CALL_START/ARGS/END` and `RUN_FINISHED` (`stopReason:
+  "tool_calls"`) while the turn stays open. The next run on the thread whose
+  newest messages are `role: "tool"` answers the calls and streams the rest of
+  the turn.
   """
   use FountainWeb, :controller
   use OpenApiSpex.ControllerSpecs
 
-  alias Fountain.Conversations
+  alias Fountain.{CallerTools, Conversations}
   alias Fountain.Conversations.{Blocks, ConversationServer, LogEvent}
   alias FountainWeb.Audited
 
@@ -60,7 +66,7 @@ defmodule FountainWeb.AguiController do
     title: "RunAgentInput",
     description:
       "The AG-UI run envelope, as the protocol defines it. Extra fields are accepted " <>
-        "and ignored: only `threadId`, `runId` and `messages` are read.",
+        "and ignored: only `threadId`, `runId`, `messages` and `tools` are read.",
     properties: %{
       threadId: %OpenApiSpex.Schema{
         type: :string,
@@ -77,7 +83,10 @@ defmodule FountainWeb.AguiController do
       tools: %OpenApiSpex.Schema{
         type: :array,
         items: %OpenApiSpex.Schema{type: :object},
-        description: "Accepted and ignored — see the module doc on why no tool call is emitted."
+        description:
+          "The host's tools (`name`, `description`, `parameters`). Offered to the agent " <>
+            "beside its own; a call comes back as `TOOL_CALL_*` events and the run ends, " <>
+            "and the next run's `role: \"tool\"` messages answer it."
       },
       state: %OpenApiSpex.Schema{type: :object},
       context: %OpenApiSpex.Schema{type: :array, items: %OpenApiSpex.Schema{type: :object}},
@@ -124,9 +133,57 @@ defmodule FountainWeb.AguiController do
     with {:ok, thread_id} <- require_string(params["threadId"], "threadId"),
          {:ok, run_id} <- require_string(params["runId"], "runId"),
          messages = List.wrap(params["messages"]),
-         {:ok, prompt} <- last_user_message(messages),
-         {:ok, conv, since} <- open(conn, agent_id, user, thread_id, prompt, messages) do
-      stream(conn, conv, thread_id, run_id, since, params)
+         {:ok, tools} <- caller_tools(params["tools"]),
+         {:ok, conv, since, turn_id, remaining} <-
+           open_or_resume(conn, agent_id, user, thread_id, tools, messages) do
+      stream(conn, conv, thread_id, run_id, since, turn_id, remaining, params)
+    end
+  end
+
+  defp caller_tools(tools) do
+    case CallerTools.from_agui(tools) do
+      {:ok, tools} -> {:ok, tools}
+      {:error, message} -> {:error, "tools: " <> message}
+    end
+  end
+
+  # A run whose newest messages are tool answers resumes the parked turn
+  # (#1202); anything else is a prompt.
+  defp open_or_resume(conn, agent_id, user, thread_id, tools, messages) do
+    case CallerTools.tool_answers(messages) do
+      answers when map_size(answers) > 0 ->
+        resume(agent_id, user, thread_id, answers)
+
+      _ ->
+        with {:ok, prompt} <- last_user_message(messages),
+             {:ok, conv, since} <- open(conn, agent_id, user, thread_id, tools, prompt, messages) do
+          {:ok, conv, since, nil, []}
+        end
+    end
+  end
+
+  # No conversation is opened here: a thread with nothing parked has nothing
+  # to answer, and a sandbox would be the wrong side effect of a stray tool
+  # message.
+  defp resume(agent_id, user, thread_id, answers) do
+    attrs = %{"agent_id" => agent_id, "user_id" => user.id, "channel_id" => channel_id(thread_id)}
+
+    case Conversations.channel_conversation(attrs) do
+      nil ->
+        {:error, "no_pending_tool_calls"}
+
+      conv ->
+        subscribe(conv.id)
+        # Ownership: channel_conversation above resolves scoped by user_id.
+        since = Conversations._unsafe_latest_log_event_id(conv.id)
+
+        case ConversationServer.answer_caller_tools(conv.id, answers) do
+          {:ok, %{turn_id: turn_id, remaining: remaining}} ->
+            {:ok, conv, since, turn_id, remaining}
+
+          {:error, _} ->
+            {:error, "no_pending_tool_calls"}
+        end
     end
   end
 
@@ -135,13 +192,14 @@ defmodule FountainWeb.AguiController do
   # Bind, prompt, and hand back the log-event id everything after which belongs
   # to this run. Subscription happens before the prompt is sent, and the caller
   # replays from `since` anyway, so no event can fall between the two.
-  defp open(conn, agent_id, user, thread_id, prompt, messages) do
+  defp open(conn, agent_id, user, thread_id, tools, prompt, messages) do
     attrs = %{
       "agent_id" => agent_id,
       "user_id" => user.id,
       "channel_id" => channel_id(thread_id),
       "source" => "api",
-      "prompt" => first_prompt(standing_role(messages), prompt)
+      "prompt" => first_prompt(standing_role(messages), prompt),
+      "caller_tools" => tools
     }
 
     case Conversations.start_or_resume_conversation(attrs, Audited.attribution(conn)) do
@@ -157,8 +215,14 @@ defmodule FountainWeb.AguiController do
         # above, which resolves the conversation scoped by user_id.
         since = Conversations._unsafe_latest_log_event_id(conv.id)
 
-        case ConversationServer.send_prompt(conv.id, prompt, [], Audited.attribution(conn)) do
-          :ok -> {:ok, conv, since}
+        # A prompt while the turn waits on tool results is not a new turn: the
+        # host owes an answer first (#1202).
+        with [] <- ConversationServer.pending_caller_calls(conv.id),
+             {:ok, conv} <- Conversations.set_caller_tools(conv, tools, Audited.attribution(conn)),
+             :ok <- ConversationServer.send_prompt(conv.id, prompt, [], Audited.attribution(conn)) do
+          {:ok, conv, since}
+        else
+          [_ | _] -> {:error, "tool_calls_pending"}
           {:error, :busy} -> {:error, "conversation_busy"}
           {:error, _} = err -> err
         end
@@ -247,7 +311,7 @@ defmodule FountainWeb.AguiController do
   defp quiet_timeout_ms,
     do: Application.get_env(:fountain, :agui_quiet_timeout_ms, @default_quiet_timeout_ms)
 
-  defp stream(conn, conv, thread_id, run_id, since, params) do
+  defp stream(conn, conv, thread_id, run_id, since, turn_id, remaining, params) do
     # Best-effort, exactly as in the log stream: no server means a conversation
     # that is idle or already finished, which the replay below still covers.
     monitor_ref =
@@ -270,7 +334,7 @@ defmodule FountainWeb.AguiController do
       thread_id: thread_id,
       run_id: run_id,
       last_id: since,
-      turn_id: nil,
+      turn_id: turn_id,
       text_id: nil,
       thinking?: false,
       seq: 0,
@@ -280,6 +344,12 @@ defmodule FountainWeb.AguiController do
     }
 
     case emit(state, "RUN_STARTED", %{threadId: thread_id, runId: run_id}) do
+      # Calls still parked after this run's answer (the agent made several at
+      # once): they were emitted before our cursor, so hand them over now.
+      {:ok, state} when remaining != [] ->
+        {_, state} = tool_calls(state, remaining)
+        state.conn
+
       {:ok, state} ->
         Process.send_after(self(), :heartbeat, heartbeat_ms())
 
@@ -388,6 +458,34 @@ defmodule FountainWeb.AguiController do
         halted -> {:halt, halted}
       end
     end)
+  end
+
+  # The agent called one of the host's tools (#1202): the run ends here with
+  # the call, and the turn waits for the next run to answer it.
+  defp handle_event(
+         %{turn_id: turn_id} = state,
+         %LogEvent{kind: "stage", stage: "caller_tool", state: "started"} = ev
+       )
+       when is_binary(turn_id) do
+    meta = meta(ev)
+
+    if meta["turn_id"] == turn_id do
+      tool_calls(state, [%{id: meta["call_id"], name: meta["name"], arguments: meta["arguments"]}])
+    else
+      {:ok, state}
+    end
+  end
+
+  defp handle_event(
+         %{turn_id: turn_id} = state,
+         %LogEvent{kind: "stage", stage: "caller_tool", state: "done"} = ev
+       )
+       when is_binary(turn_id) do
+    meta = meta(ev)
+
+    if meta["turn_id"] == turn_id and meta["outcome"] != "answered",
+      do: activity(state, "← #{meta["name"]}: #{meta["outcome"]}\n"),
+      else: {:ok, state}
   end
 
   # A stage that failed before any turn started — provisioning died, the
@@ -513,6 +611,44 @@ defmodule FountainWeb.AguiController do
            }) do
       {:done, state}
     end
+  end
+
+  # The host's tools, as the protocol's tool-call triple each, then the run
+  # ends with `stopReason: "tool_calls"` — the host runs them and answers on
+  # the next run with `role: "tool"` messages.
+  defp tool_calls(state, calls) do
+    with {:ok, state} <- close_text(state),
+         {:ok, state} <- close_thinking(state),
+         {:ok, state} <- emit_tool_calls(state, calls),
+         {:ok, state} <-
+           emit(state, "RUN_FINISHED", %{
+             threadId: state.thread_id,
+             runId: state.run_id,
+             result: %{
+               conversationId: state.conv_id,
+               turnId: state.turn_id,
+               stopReason: "tool_calls"
+             }
+           }) do
+      {:done, state}
+    end
+  end
+
+  defp emit_tool_calls(state, calls) do
+    Enum.reduce_while(calls, {:ok, state}, fn call, {:ok, state} ->
+      with {:ok, state} <-
+             emit(state, "TOOL_CALL_START", %{toolCallId: call.id, toolCallName: call.name}),
+           {:ok, state} <-
+             emit(state, "TOOL_CALL_ARGS", %{
+               toolCallId: call.id,
+               delta: Jason.encode!(call.arguments || %{})
+             }),
+           {:ok, state} <- emit(state, "TOOL_CALL_END", %{toolCallId: call.id}) do
+        {:cont, {:ok, state}}
+      else
+        halted -> {:halt, halted}
+      end
+    end)
   end
 
   defp interrupted_note(state, "interrupted"), do: activity(state, "\n(interrupted)\n")

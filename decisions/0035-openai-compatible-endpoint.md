@@ -1,7 +1,7 @@
 ---
 type: ADR
 title: "An OpenAI-compatible /v1/chat/completions where the model is an agent"
-description: "The server carries a second public dialect: OpenAI chat completions at /v1, so every gateway and base-URL chat client reaches a Fountain agent with no plugin. The thread key is X-Fountain-Thread, else the request's user field, never a per-message sandbox. Built in the PR that adds this file."
+description: "The server carries a second public dialect: OpenAI chat completions at /v1, so every gateway and base-URL chat client reaches a Fountain agent with no plugin. The thread key is X-Fountain-Thread, else the request's user field, never a per-message sandbox. Built in the PR that adds this file. Amended 2026-08-25 (#1202): caller-defined tools are emitted as tool_calls; the sandbox's own tool use still is not."
 tags: [api, integrations, openai, dialect]
 status: stable
 adr: "0035"
@@ -86,16 +86,32 @@ two wire shapes to keep honest.
    of a new conversation and are ignored afterwards. `image_url` parts must
    be `data:` URLs — the server fetches nothing on the client's behalf.
 
-4. **What the client sees is text.** `text` blocks are `content`. Thinking,
-   tool use and the lifecycle stages stream as `reasoning_content`, the
-   de-facto field Open WebUI, LibreChat and LiteLLM render, which a client
-   that does not know it ignores and which keeps a stall watchdog fed while
-   a sandbox provisions. **No tool call is ever emitted** and `tools` /
-   `tool_choice` are ignored: the tools ran in the sandbox and the result is
-   already in the text. `usage` is zeros — a turn is billed in seconds
-   (ADR 0030), and an invented token count is a number a gateway would
-   aggregate. `finish_reason` is `stop`; a failed turn is an `error` event on
-   the stream (then `[DONE]`) or a 500 with `code: turn_failed` unstreamed.
+4. **What the client sees is text, plus its own tools.** `text` blocks are
+   `content`. Thinking, tool use and the lifecycle stages stream as
+   `reasoning_content`, the de-facto field Open WebUI, LibreChat and LiteLLM
+   render, which a client that does not know it ignores and which keeps a
+   stall watchdog fed while a sandbox provisions. **A tool call is emitted if
+   and only if the tool came from the request's `tools`** (amended 2026-08-25,
+   #1202; the original rule was "never"). The sandbox's own tool use is never
+   a tool call: it ran, and the result is already in the text. A
+   caller-defined tool is the opposite case — it exists only on the client,
+   the sandbox cannot run it, and the client is the only party that can
+   return a result — so it is served to the agent as one more Fountain-served
+   MCP server (`Fountain.CallerTools`, `POST /api/mcp/caller/:conversation_id`),
+   and when the agent calls it the completion ends with `finish_reason:
+   "tool_calls"` while the turn stays open. The next request on the thread
+   whose newest messages are `role: "tool"` answers the parked calls and
+   streams the rest of the turn; a `user` message while calls are pending is
+   409 `tool_calls_pending`. A parked call has the permission prompt's
+   deadline; on expiry the agent gets an error result and the turn goes on.
+   `tool_choice: "none"` registers nothing; `required` and a named tool are
+   400, because Fountain cannot force an agent's next action. The AG-UI
+   endpoint gets the same bridge (`TOOL_CALL_START/ARGS/END`, then
+   `RUN_FINISHED` with `stopReason: "tool_calls"`). `usage` is zeros — a turn
+   is billed in seconds (ADR 0030), and an invented token count is a number
+   a gateway would aggregate. `finish_reason` is `stop` or `tool_calls`; a
+   failed turn is an `error` event on the stream (then `[DONE]`) or a 500
+   with `code: turn_failed` unstreamed.
 
 5. **A busy thread is 409 with `Retry-After`, not a queue.** Chat clients
    retry. Queuing a prompt behind a running turn would be a second
@@ -135,6 +151,13 @@ two wire shapes to keep honest.
   displays only `content` shows nothing while a first request provisions,
   and looks quiet though the connection is healthy — the same trade AG-UI's
   thinking events make.
+- The bridge makes a Fountain agent usable *inside* a framework loop
+  (`create_agent`, Deep Agents, the `openai` tool runner) rather than only
+  as a leaf. A changed `tools` list between requests replaces the old one at
+  the next turn; whether a runtime re-lists a server's tools mid-session is
+  the adapter's business, and a framework sends the same list every time.
+  Approvals (#643) are a separate thing that can be built on the same
+  parked-call shape later; this bridge never prompts either way.
 - Gateway and client smokes (LiteLLM as a custom provider, Open WebUI with
   the base URL set: does the picker fill, does a multi-turn chat land in one
   sandbox, does the gateway strip the header) are the verification this
@@ -154,8 +177,20 @@ two wire shapes to keep honest.
   box and spawns a sandbox per line of chat. Refused (decision 2).
 - **Queue a prompt behind a running turn.** A second concurrency model for
   clients that already retry. Refused (decision 5).
-- **Emit tool use as `tool_calls`.** Asks the client to execute something
-  that already ran and waits for a result it will never be sent — the same
-  reasoning as the AG-UI endpoint's. Refused (decision 4).
+- **Emit the sandbox's tool use as `tool_calls`.** Asks the client to
+  execute something that already ran and waits for a result it will never be
+  sent — the same reasoning as the AG-UI endpoint's. Still refused (decision
+  4); the 2026-08-25 amendment emits only the *caller's* tools, which is the
+  protocol working as designed rather than this alternative.
+- **Hold the agent's MCP call open until the client answers.** The call is
+  an HTTP request from the sandbox through the tunnel, whose idle limit is
+  well under the five-minute deadline. So the handler waits under a minute
+  and returns `pending` with a call id, and a reserved `wait_for_caller_result`
+  tool re-attaches — the shape `Fountain.Team.Mcp.wait_for_teammate` already
+  lives with. A client that answers within seconds never sees it.
+- **Keep the tool list only in server state.** The sandbox lists tools over
+  HTTP whether or not a server is running, and the row is the one place both
+  the controller and the MCP endpoint can read; the *parked calls* stay in
+  server state because the HTTP request they answer dies with the BEAM anyway.
 - **The Anthropic Messages shape as well.** One dialect; the OpenAI one is
   what gateways and clients speak.

@@ -18,6 +18,18 @@ upgrade, is in
 
 ### Added
 
+- **Tool bridge on `/v1/chat/completions` and AG-UI (#1202).** A request's
+  `tools` are offered to the agent beside its own, through one more
+  Fountain-served MCP server (`POST /api/mcp/caller/:conversation_id`). When
+  the agent calls one, the completion ends with `finish_reason: "tool_calls"`
+  (AG-UI: `TOOL_CALL_*` then `RUN_FINISHED` with `stopReason: "tool_calls"`)
+  while the turn stays open; the next request's `role: "tool"` messages
+  answer it and the turn resumes. A `user` message while calls are pending
+  is 409 `tool_calls_pending`; an unanswered call expires on the permission
+  deadline. The sandbox's own tools still never come back as tool calls.
+  ADR 0035 decision 4 amended. `examples/deepagents-contractor` gains
+  `FountainAgent.as_model()` for `create_agent`.
+
 - **LangChain and Deep Agents example.** `examples/deepagents-contractor`:
   a Deep Agent orchestrator whose subagents are Fountain agents, over the
   OpenAI-compatible API. `fountain_langchain.py` makes one agent a

@@ -249,6 +249,69 @@ defmodule Fountain.Conversations.ConversationServer do
     end
   end
 
+  ## ─── The tool bridge (#1202, `Fountain.CallerTools`) ─────────────────────
+
+  @doc """
+  Park a caller-tool call the agent just made. The call gets an id, a
+  `caller_tool`/`started` stage event goes out (which is what closes the
+  client's completion with `tool_calls`), and a deadline is armed. `waiter`
+  receives `{:caller_tool_result, id, result}` when the call resolves.
+
+  `{:error, :no_turn}` when nothing is running: a call needs a turn to belong
+  to, and the client following that turn is the only party that can answer.
+  """
+  @spec park_caller_tool(binary(), String.t(), map(), pid()) ::
+          {:ok, String.t()} | {:error, :not_running | :no_turn}
+  def park_caller_tool(conv_id, name, arguments, waiter) do
+    case whereis(conv_id) do
+      nil -> {:error, :not_running}
+      pid -> call_server(pid, {:park_caller_tool, name, arguments, waiter})
+    end
+  end
+
+  @doc """
+  Re-attach `waiter` to a parked call (the MCP handler's in-request wait ran
+  out and the agent is asking again). `{:ok, result}` at once if it resolved
+  meanwhile — a result is kept until the turn ends, so an answer that landed
+  between two waits is not lost.
+  """
+  @spec await_caller_tool(binary(), String.t(), pid()) ::
+          {:ok, {:ok, String.t()} | {:error, String.t()}}
+          | :pending
+          | {:error, :unknown_call | :not_running}
+  def await_caller_tool(conv_id, call_id, waiter) do
+    case whereis(conv_id) do
+      nil -> {:error, :not_running}
+      pid -> call_server(pid, {:await_caller_tool, call_id, waiter})
+    end
+  end
+
+  @doc "The calls parked and unanswered, oldest first: `%{id, name, arguments, turn_id}`."
+  @spec pending_caller_calls(binary()) :: [map()]
+  def pending_caller_calls(conv_id) do
+    case whereis(conv_id) do
+      nil -> []
+      pid -> call_server(pid, :pending_caller_calls)
+    end
+  end
+
+  @doc """
+  Resolve parked calls with the client's answers, `%{call_id => content}`.
+  Ids that match nothing are ignored; if none match, `{:error, :no_pending_calls}`
+  and nothing changes. Returns the turn the calls belong to and whatever is
+  still parked, so the controller can emit the remainder at once instead of
+  waiting for a stage event that is already behind its cursor.
+  """
+  @spec answer_caller_tools(binary(), %{String.t() => String.t()}) ::
+          {:ok, %{turn_id: binary() | nil, remaining: [map()]}}
+          | {:error, :no_pending_calls | :not_running}
+  def answer_caller_tools(conv_id, answers) when is_map(answers) do
+    case whereis(conv_id) do
+      nil -> {:error, :not_running}
+      pid -> call_server(pid, {:answer_caller_tools, answers})
+    end
+  end
+
   @doc """
   Terminate the conversation. If the GenServer is alive, it tears down the
   sprite. If not, just mark the DB rows terminated so the user can still
@@ -434,6 +497,10 @@ defmodule Fountain.Conversations.ConversationServer do
       acp_peer: nil,
       # Timer refusing an unanswered permission request (#940).
       permission_timer: nil,
+      # Caller-tool calls parked on the turn (#1202): id => %{name, arguments,
+      # turn_id, waiter, timer, result}. `result` is nil while parked and the
+      # answer once resolved; entries are dropped when the turn ends.
+      caller_calls: %{},
       acp_peer_mon: nil,
       # Timer closing an autonomous turn that went quiet without a
       # `cycle_end` (#817) — an adapter too old to mark its origin must not
@@ -1914,6 +1981,75 @@ defmodule Fountain.Conversations.ConversationServer do
     end
   end
 
+  def handle_call({:park_caller_tool, name, arguments, waiter}, _from, state) do
+    case state.current_turn do
+      nil ->
+        {:reply, {:error, :no_turn}, state}
+
+      turn ->
+        call_id = "call_" <> (Ecto.UUID.generate() |> String.replace("-", ""))
+
+        publish_stage(state.conversation_id, "caller_tool", "started", %{
+          call_id: call_id,
+          turn_id: turn.id,
+          name: name,
+          arguments: arguments,
+          timeout_ms: Fountain.Permissions.ask_timeout_ms()
+        })
+
+        timer =
+          Process.send_after(
+            self(),
+            {:caller_tool_timeout, call_id},
+            Fountain.Permissions.ask_timeout_ms()
+          )
+
+        entry = %{
+          id: call_id,
+          name: name,
+          arguments: arguments,
+          turn_id: turn.id,
+          waiter: waiter,
+          timer: timer,
+          result: nil,
+          parked_at: System.monotonic_time(:millisecond)
+        }
+
+        {:reply, {:ok, call_id}, put_in(state.caller_calls[call_id], entry)}
+    end
+  end
+
+  def handle_call({:await_caller_tool, call_id, waiter}, _from, state) do
+    case state.caller_calls[call_id] do
+      nil -> {:reply, {:error, :unknown_call}, state}
+      %{result: nil} -> {:reply, :pending, put_in(state.caller_calls[call_id].waiter, waiter)}
+      %{result: result} -> {:reply, {:ok, result}, state}
+    end
+  end
+
+  def handle_call(:pending_caller_calls, _from, state) do
+    {:reply, pending_caller_calls_of(state), state}
+  end
+
+  def handle_call({:answer_caller_tools, answers}, _from, state) do
+    matched =
+      state.caller_calls
+      |> Map.values()
+      |> Enum.filter(&(is_nil(&1.result) and Map.has_key?(answers, &1.id)))
+
+    if matched == [] do
+      {:reply, {:error, :no_pending_calls}, state}
+    else
+      state =
+        Enum.reduce(matched, state, fn call, state ->
+          resolve_caller_tool(state, call.id, "answered", {:ok, Map.fetch!(answers, call.id)})
+        end)
+
+      turn_id = matched |> List.first() |> Map.fetch!(:turn_id)
+      {:reply, {:ok, %{turn_id: turn_id, remaining: pending_caller_calls_of(state)}}, state}
+    end
+  end
+
   def handle_call(:terminate_conv, _from, state) do
     kept? =
       Conversations._unsafe_sandbox_kept_on_terminate?(state.sandbox_id, state.conversation_id)
@@ -2226,6 +2362,18 @@ defmodule Fountain.Conversations.ConversationServer do
   # stream so a card stops waiting.
   def handle_info({:permission_timeout, request_id}, state) do
     {:noreply, resolve_permission(state, request_id, "timeout", nil)}
+  end
+
+  # The caller never answered a parked tool call (#1202). The agent gets an
+  # error result and carries on; the stream records the outcome.
+  def handle_info({:caller_tool_timeout, call_id}, state) do
+    {:noreply,
+     resolve_caller_tool(
+       state,
+       call_id,
+       "timeout",
+       {:error, "the caller did not answer within the deadline"}
+     )}
   end
 
   # A tool the policy withheld (#939). Recorded in the context, per 0013: the
@@ -2647,6 +2795,55 @@ defmodule Fountain.Conversations.ConversationServer do
     end
   end
 
+  # The one place a parked caller-tool call stops being parked (#1202): an
+  # answer, the deadline, or the turn ending. Cancels the timer, hands the
+  # result to whoever is waiting, keeps it for a waiter that asks later, and
+  # says so on the stream. `done` for every outcome, as `request` does.
+  defp resolve_caller_tool(state, call_id, outcome, result) do
+    case state.caller_calls[call_id] do
+      %{result: nil} = call ->
+        if call.timer, do: Process.cancel_timer(call.timer)
+        if is_pid(call.waiter), do: send(call.waiter, {:caller_tool_result, call_id, result})
+
+        publish_stage(state.conversation_id, "caller_tool", "done", %{
+          call_id: call_id,
+          turn_id: call.turn_id,
+          name: call.name,
+          outcome: outcome
+        })
+
+        put_in(state.caller_calls[call_id], %{call | result: result, timer: nil, waiter: nil})
+
+      _ ->
+        state
+    end
+  end
+
+  # Everything still parked when the turn ends: the agent gave up waiting, or
+  # the turn was cut. Resolved as errors, then the whole registry is dropped —
+  # a kept result belongs to a turn that is over.
+  defp drop_caller_tools(state, outcome) do
+    state =
+      Enum.reduce(pending_caller_calls_of(state), state, fn call, state ->
+        resolve_caller_tool(
+          state,
+          call.id,
+          outcome,
+          {:error, "the turn ended before the caller answered"}
+        )
+      end)
+
+    %{state | caller_calls: %{}}
+  end
+
+  defp pending_caller_calls_of(state) do
+    state.caller_calls
+    |> Map.values()
+    |> Enum.filter(&is_nil(&1.result))
+    |> Enum.sort_by(& &1.parked_at)
+    |> Enum.map(&Map.take(&1, [:id, :name, :arguments, :turn_id]))
+  end
+
   # The absolute lifetime ceiling measures a continuous run, not calendar age:
   # a wake from `suspended` stamps `last_resumed_at` and restarts the clock,
   # while a deploy reattach of a `ready` row stamps nothing and keeps it.
@@ -3050,6 +3247,15 @@ defmodule Fountain.Conversations.ConversationServer do
 
   defp team_comms_mcp_servers(_state), do: []
 
+  # The caller-tool bridge (#1202): the tools a chat-completions or AG-UI
+  # client defined, served back to the sandbox as one more MCP server. Read
+  # off the conversation row at every turn kick, so a list registered by the
+  # request that opened this turn is on it.
+  defp caller_mcp_servers(%{callback_token: token}, conv) when is_binary(token),
+    do: Fountain.CallerTools.conversation_mcp_servers(conv, token)
+
+  defp caller_mcp_servers(_state, _conv), do: []
+
   # How long a sprite's callback key stays valid.
   #
   # This is a backstop, not the primary control: the key is revoked at
@@ -3452,7 +3658,8 @@ defmodule Fountain.Conversations.ConversationServer do
                       Fountain.Runtimes.ACP.mcp_servers(with_connection_servers(agent, state)) ++
                         buzz_mcp_servers(state) ++
                         team_mcp_servers(state) ++
-                        team_comms_mcp_servers(state),
+                        team_comms_mcp_servers(state) ++
+                        caller_mcp_servers(state, conv),
                     model:
                       agent &&
                         Fountain.Runtimes.Model.acp_model(
@@ -3855,6 +4062,7 @@ defmodule Fountain.Conversations.ConversationServer do
     # open is a client waiting on an answer that can never come, and the
     # turn's `pending_permission` would stay set on a turn that is over.
     state = resolve_pending_permission(state, "turn_ended")
+    state = drop_caller_tools(state, "turn_ended")
     state = cancel_autonomous_quiet(state)
 
     # Before the turn span ends: totals land on it, abandoned tool spans close.

@@ -23,6 +23,8 @@ defmodule Fountain.Conversations.Conversation do
   @statuses ~w(pending running idle failed terminated)
   @sources ~w(ui api agent)
 
+  @type t :: %__MODULE__{}
+
   schema "conversations" do
     field :runtime, :string
     field :status, :string, default: "pending"
@@ -49,6 +51,8 @@ defmodule Fountain.Conversations.Conversation do
     # tightens this conversation too. The widening case is rejected at the door
     # in `start_conversation/2` rather than silently clamped.
     field :permission_policy, :map
+    # The caller-defined tools of the bridge (#1202, `Fountain.CallerTools`).
+    field :caller_tools, {:array, :map}, default: []
 
     # Populated by list_conversations_by_activity/1 — not persisted.
     field :turn_count, :integer, virtual: true, default: 0
@@ -101,7 +105,8 @@ defmodule Fountain.Conversations.Conversation do
       :vault_id,
       :environment_id,
       :channel_id,
-      :permission_policy
+      :permission_policy,
+      :caller_tools
     ])
     |> validate_required([:runtime, :status, :sandbox_id, :user_id])
     |> validate_length(:channel_id, max: 255)

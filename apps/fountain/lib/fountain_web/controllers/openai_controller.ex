@@ -52,15 +52,26 @@ defmodule FountainWeb.OpenAIController do
   provisions — streams as `reasoning_content` deltas, the field the clients
   that render reasoning read (DeepSeek's convention, and Open WebUI's,
   LibreChat's and LiteLLM's). A client that does not know the field ignores
-  it, and the bytes keep its stall watchdog fed either way. Nothing is ever a
-  tool call: the tools ran inside the sandbox and the result is already in
-  the text. `usage` is zeros — a turn is billed in seconds, not tokens, and
-  inventing a count would be a lie a gateway would then aggregate.
+  it, and the bytes keep its stall watchdog fed either way. `usage` is zeros —
+  a turn is billed in seconds, not tokens, and inventing a count would be a
+  lie a gateway would then aggregate.
+
+  ## The tool bridge (#1202)
+
+  The sandbox's own tools never come back as tool calls: they ran, and the
+  result is in the text. A tool the *request* defined in `tools` is the
+  opposite case — it exists only on the client — so it is served to the agent
+  as one more MCP server (`Fountain.CallerTools`) and, when the agent uses
+  one, the completion ends with `finish_reason: "tool_calls"` while the turn
+  stays open. The next request on the thread whose newest messages are
+  `role: "tool"` answers the parked calls and streams the rest of the turn; a
+  `user` message while calls are pending is 409 `tool_calls_pending`. This is
+  what lets a Fountain agent be the model inside a framework's tool loop.
   """
   use FountainWeb, :controller
   use OpenApiSpex.ControllerSpecs
 
-  alias Fountain.{Agents, Conversations}
+  alias Fountain.{Agents, CallerTools, Conversations}
   alias Fountain.Conversations.{Blocks, ConversationServer, LogEvent}
   alias FountainWeb.{Audited, FallbackController}
 
@@ -94,10 +105,10 @@ defmodule FountainWeb.OpenAIController do
     type: :object,
     title: "ChatCompletionRequest",
     description:
-      "The OpenAI chat-completions request. Only `model`, `messages`, `stream` and `user` " <>
-        "are read; sampling parameters, `tools`, `tool_choice`, `n`, `response_format` and " <>
-        "the rest are accepted and ignored, because the thing behind the URL is an agent, " <>
-        "not a model.",
+      "The OpenAI chat-completions request. `model`, `messages`, `stream`, `user`, `tools` " <>
+        "and `tool_choice` are read; sampling parameters, `n`, `response_format` and the " <>
+        "rest are accepted and ignored, because the thing behind the URL is an agent, not " <>
+        "a model.",
     properties: %{
       model: %OpenApiSpex.Schema{
         type: :string,
@@ -109,7 +120,23 @@ defmodule FountainWeb.OpenAIController do
         description:
           "The chat so far. The newest `user` message becomes the prompt (its `image_url` " <>
             "parts must be `data:` URLs); `system`/`developer` messages become the standing " <>
-            "role of a new conversation and are ignored afterwards."
+            "role of a new conversation and are ignored afterwards. When the newest messages " <>
+            "are `role: \"tool\"`, they answer the `tool_calls` the previous completion ended " <>
+            "with and the turn resumes."
+      },
+      tools: %OpenApiSpex.Schema{
+        type: :array,
+        items: %OpenApiSpex.Schema{type: :object},
+        description:
+          "Caller-defined function tools, in OpenAI's shape. The agent sees them beside its " <>
+            "own; when it calls one the completion ends with `finish_reason: \"tool_calls\"` " <>
+            "and the turn waits for the `role: \"tool\"` answer on the next request."
+      },
+      tool_choice: %OpenApiSpex.Schema{
+        type: :string,
+        description:
+          "`auto` (default) or `none` (register nothing for this request). `required` and a " <>
+            "named tool are refused with 400: Fountain cannot force an agent's next action."
       },
       stream: %OpenApiSpex.Schema{
         type: :boolean,
@@ -147,10 +174,17 @@ defmodule FountainWeb.OpenAIController do
                 reasoning_content: %OpenApiSpex.Schema{
                   type: :string,
                   description: "Thinking, tool use and lifecycle stages, if any."
+                },
+                tool_calls: %OpenApiSpex.Schema{
+                  type: :array,
+                  items: %OpenApiSpex.Schema{type: :object},
+                  description:
+                    "The caller-defined tools the agent is waiting on, when " <>
+                      "`finish_reason` is `tool_calls`."
                 }
               }
             },
-            finish_reason: %OpenApiSpex.Schema{type: :string, enum: ["stop"]}
+            finish_reason: %OpenApiSpex.Schema{type: :string, enum: ["stop", "tool_calls"]}
           }
         }
       },
@@ -226,8 +260,14 @@ defmodule FountainWeb.OpenAIController do
         "reply, `reasoning_content` for thinking, tool use and provisioning stages) and " <>
         "`data: [DONE]`; a turn that fails mid-stream sends an `error` event first. " <>
         "`stream: false` blocks until the turn ends.\n\n" <>
+        "**Tools.** A request's `tools` are offered to the agent beside its own. When the " <>
+        "agent calls one, the completion ends with `finish_reason: \"tool_calls\"` and the " <>
+        "turn stays open; send the next request on the same thread with `role: \"tool\"` " <>
+        "messages that carry the results, and the rest of the turn streams. The sandbox's " <>
+        "own tools never come back as tool calls.\n\n" <>
         "Errors use OpenAI's `{\"error\": {...}}` envelope: 404 for an unknown model, 402 " <>
-        "with no credit, 409 with `Retry-After` while the thread is already running a turn.",
+        "with no credit, 409 with `Retry-After` while the thread is already running a turn " <>
+        "(`thread_busy`) or waiting on tool results (`tool_calls_pending`).",
     parameters: [
       "x-fountain-thread": [
         in: :header,
@@ -327,11 +367,13 @@ defmodule FountainWeb.OpenAIController do
   def create_chat_completion(conn, params) do
     user = conn.assigns.current_user
     messages = List.wrap(params["messages"])
+    answers = CallerTools.tool_answers(messages)
 
     with {:ok, agent} <- resolve_agent(params["model"], user.id),
          {:ok, thread} <- thread_key(conn, params),
-         {:ok, prompt, images} <- last_user_message(messages),
-         {:ok, conv, since} <- open(conn, agent, user, thread, prompt, images, messages) do
+         {:ok, tools} <- caller_tools(params),
+         {:ok, conv, since, turn_id, remaining} <-
+           open_or_resume(conn, agent, user, thread, tools, messages, answers) do
       state = %{
         conv_id: conv.id,
         runtime: conv.runtime,
@@ -340,14 +382,49 @@ defmodule FountainWeb.OpenAIController do
         id: "chatcmpl-" <> Ecto.UUID.generate(),
         created: System.os_time(:second),
         last_id: since,
-        turn_id: nil,
+        turn_id: turn_id,
         deadline: now_ms() + quiet_timeout_ms(),
         monitor_ref: monitor(conv.id)
       }
 
-      if params["stream"] == true, do: stream(conn, state), else: collect(conn, state)
+      case {params["stream"] == true, remaining} do
+        {stream?, []} ->
+          if stream?, do: stream(conn, state), else: collect(conn, state)
+
+        # Calls still parked after this answer (the agent made several at
+        # once): they were emitted before our cursor, so hand them over now.
+        {true, calls} ->
+          stream(conn, state, {:tool_calls, calls})
+
+        {false, calls} ->
+          json(
+            conn,
+            completion(state, %{content: [], reasoning: [], failure: nil, tool_calls: calls})
+          )
+      end
     else
       {:error, _} = err -> respond_error(conn, err)
+    end
+  end
+
+  defp caller_tools(params) do
+    case CallerTools.from_openai(params["tools"], params["tool_choice"]) do
+      {:ok, tools} -> {:ok, tools}
+      {:error, message} -> {:error, {:invalid_request, message}}
+    end
+  end
+
+  # A request whose newest messages are tool answers resumes the parked turn;
+  # anything else is a prompt.
+  defp open_or_resume(conn, agent, user, thread, _tools, _messages, answers)
+       when map_size(answers) > 0 do
+    resume(conn, agent, user, thread, answers)
+  end
+
+  defp open_or_resume(conn, agent, user, thread, tools, messages, _answers) do
+    with {:ok, prompt, images} <- last_user_message(messages),
+         {:ok, conv, since} <- open(conn, agent, user, thread, tools, prompt, images, messages) do
+      {:ok, conv, since, nil, []}
     end
   end
 
@@ -393,14 +470,15 @@ defmodule FountainWeb.OpenAIController do
   # Bind, prompt, and hand back the log-event id after which everything belongs
   # to this request. Subscription happens before the prompt is sent, and the
   # loop replays from `since` anyway, so no event can fall between the two.
-  defp open(conn, agent, user, thread, prompt, images, messages) do
+  defp open(conn, agent, user, thread, tools, prompt, images, messages) do
     attrs = %{
       "agent_id" => agent.id,
       "user_id" => user.id,
       "channel_id" => channel_id(thread),
       "source" => "api",
       "prompt" => first_prompt(standing_role(messages), prompt),
-      "images" => images
+      "images" => images,
+      "caller_tools" => tools
     }
 
     case Conversations.start_or_resume_conversation(attrs, Audited.attribution(conn)) do
@@ -415,13 +493,46 @@ defmodule FountainWeb.OpenAIController do
         # above, which resolves the conversation scoped by user_id.
         since = Conversations._unsafe_latest_log_event_id(conv.id)
 
-        case ConversationServer.send_prompt(conv.id, prompt, images, Audited.attribution(conn)) do
-          :ok -> {:ok, conv, since}
+        # A prompt while the turn waits on tool results is not a new turn: the
+        # client owes an answer first (#1202).
+        with [] <- ConversationServer.pending_caller_calls(conv.id),
+             {:ok, conv} <- Conversations.set_caller_tools(conv, tools, Audited.attribution(conn)),
+             :ok <-
+               ConversationServer.send_prompt(conv.id, prompt, images, Audited.attribution(conn)) do
+          {:ok, conv, since}
+        else
+          [_ | _] = pending -> {:error, {:tool_calls_pending, Enum.map(pending, & &1.id)}}
           {:error, _} = err -> err
         end
 
       {:error, _} = err ->
         err
+    end
+  end
+
+  # The tool bridge's second request (#1202): the newest messages answer the
+  # calls the previous completion ended with. No conversation is opened here —
+  # a thread with nothing parked has nothing to answer, and a sandbox would be
+  # the wrong side effect of a stray tool message.
+  defp resume(_conn, agent, user, thread, answers) do
+    attrs = %{"agent_id" => agent.id, "user_id" => user.id, "channel_id" => channel_id(thread)}
+
+    case Conversations.channel_conversation(attrs) do
+      nil ->
+        {:error, :no_pending_tool_calls}
+
+      conv ->
+        subscribe(conv.id)
+        # Ownership: channel_conversation above resolves scoped by user_id.
+        since = Conversations._unsafe_latest_log_event_id(conv.id)
+
+        case ConversationServer.answer_caller_tools(conv.id, answers) do
+          {:ok, %{turn_id: turn_id, remaining: remaining}} ->
+            {:ok, conv, since, turn_id, remaining}
+
+          {:error, _} ->
+            {:error, :no_pending_tool_calls}
+        end
     end
   end
 
@@ -561,6 +672,31 @@ defmodule FountainWeb.OpenAIController do
       "thread_busy"
     )
   end
+
+  # The thread owes tool results (#1202). Same shape as busy: the client
+  # knows what to send, and it is not a prompt.
+  defp respond_error(conn, {:error, {:tool_calls_pending, ids}}) do
+    conn
+    |> put_resp_header("retry-after", "5")
+    |> openai_error(
+      409,
+      "this thread is waiting on tool results for #{Enum.join(ids, ", ")}; answer them " <>
+        "with role: \"tool\" messages before sending a new user message",
+      "conflict_error",
+      "tool_calls_pending"
+    )
+  end
+
+  defp respond_error(conn, {:error, :no_pending_tool_calls}),
+    do:
+      openai_error(
+        conn,
+        400,
+        "the newest messages are tool results, but this thread is not waiting on any tool " <>
+          "call (it may have timed out, or the turn ended); send a user message instead",
+        "invalid_request_error",
+        "no_pending_tool_calls"
+      )
 
   defp respond_error(conn, {:error, :insufficient_credits}),
     do:
@@ -737,6 +873,44 @@ defmodule FountainWeb.OpenAIController do
     end)
   end
 
+  # The agent called a caller-defined tool (#1202): the completion ends here
+  # with the call, and the turn waits for the next request to answer it.
+  defp handle_event(
+         %{turn_id: turn_id} = state,
+         %LogEvent{kind: "stage", stage: "caller_tool", state: "started"} = ev,
+         sink,
+         acc
+       )
+       when is_binary(turn_id) do
+    meta = meta(ev)
+
+    if meta["turn_id"] == turn_id do
+      call = %{id: meta["call_id"], name: meta["name"], arguments: meta["arguments"]}
+
+      with {:cont, state, acc} <-
+             deliver(state, sink, acc, {:reasoning, "→ #{call.name} (waiting for the caller)\n"}) do
+        deliver(state, sink, acc, {:tool_calls, [call]})
+      end
+    else
+      {:cont, state, acc}
+    end
+  end
+
+  # How a parked call ended, for a client reading the reasoning stream.
+  defp handle_event(
+         %{turn_id: turn_id} = state,
+         %LogEvent{kind: "stage", stage: "caller_tool", state: "done"} = ev,
+         sink,
+         acc
+       )
+       when is_binary(turn_id) do
+    meta = meta(ev)
+
+    if meta["turn_id"] == turn_id and meta["outcome"] != "answered",
+      do: deliver(state, sink, acc, {:reasoning, "← #{meta["name"]}: #{meta["outcome"]}\n"}),
+      else: {:cont, state, acc}
+  end
+
   # A stage that failed before any turn started — provisioning died. Nothing
   # else will arrive, so end now rather than wait out the quiet timeout.
   defp handle_event(
@@ -788,7 +962,8 @@ defmodule FountainWeb.OpenAIController do
   defp meta(_ev), do: %{}
 
   # Terminal pieces end the follow; the rest continue.
-  defp deliver(state, sink, acc, {terminal, _} = piece) when terminal in [:done, :failed] do
+  defp deliver(state, sink, acc, {terminal, _} = piece)
+       when terminal in [:done, :failed, :tool_calls] do
     case sink.(acc, piece) do
       {:ok, acc} -> {terminal, state, acc}
       {:closed, acc} -> {:closed, state, acc}
@@ -809,11 +984,12 @@ defmodule FountainWeb.OpenAIController do
       acc, {:content, text} -> {:ok, Map.update!(acc, :content, &[&1 | text])}
       acc, {:reasoning, text} -> {:ok, Map.update!(acc, :reasoning, &[&1 | text])}
       acc, {:failed, reason} -> {:ok, Map.put(acc, :failure, reason)}
+      acc, {:tool_calls, calls} -> {:ok, Map.put(acc, :tool_calls, calls)}
       acc, _other -> {:ok, acc}
     end
 
-    case follow(state, sink, %{content: [], reasoning: [], failure: nil}) do
-      {:done, state, acc} ->
+    case follow(state, sink, %{content: [], reasoning: [], failure: nil, tool_calls: []}) do
+      {outcome, state, acc} when outcome in [:done, :tool_calls] ->
         json(conn, completion(state, acc))
 
       {:failed, _state, acc} ->
@@ -830,12 +1006,22 @@ defmodule FountainWeb.OpenAIController do
         reasoning -> Map.put(message, :reasoning_content, reasoning)
       end
 
+    {message, finish_reason} =
+      case acc.tool_calls do
+        [] ->
+          {message, "stop"}
+
+        calls ->
+          {Map.put(message, :tool_calls, Enum.map(calls, &CallerTools.to_openai_call/1)),
+           "tool_calls"}
+      end
+
     %{
       id: state.id,
       object: "chat.completion",
       created: state.created,
       model: state.model,
-      choices: [%{index: 0, message: message, finish_reason: "stop"}],
+      choices: [%{index: 0, message: message, finish_reason: finish_reason}],
       usage: %{prompt_tokens: 0, completion_tokens: 0, total_tokens: 0},
       fountain: %{conversation_id: state.conv_id, turn_id: state.turn_id, thread: state.thread}
     }
@@ -843,7 +1029,9 @@ defmodule FountainWeb.OpenAIController do
 
   ## ─── stream: true ─────────────────────────────────────────────────────────
 
-  defp stream(conn, state) do
+  # `immediate` is a terminal piece to send instead of following the turn:
+  # the calls still parked after a tool answer (see create_chat_completion/2).
+  defp stream(conn, state, immediate \\ nil) do
     conn =
       conn
       |> put_resp_header("content-type", "text/event-stream")
@@ -861,11 +1049,16 @@ defmodule FountainWeb.OpenAIController do
       conn, {:reasoning, text} -> chunk_json(conn, delta(state, %{reasoning_content: text}, nil))
       conn, {:done, _} -> finish_stream(conn, state, nil)
       conn, {:failed, reason} -> finish_stream(conn, state, reason)
+      conn, {:tool_calls, calls} -> finish_with_tool_calls(conn, state, calls)
     end
 
     case chunk_json(conn, delta(state, %{role: "assistant", content: ""}, nil)) do
-      {:ok, conn} ->
+      {:ok, conn} when is_nil(immediate) ->
         {_outcome, _state, conn} = follow(state, sink, conn)
+        conn
+
+      {:ok, conn} ->
+        {_, conn} = sink.(conn, immediate)
         conn
 
       {:closed, conn} ->
@@ -885,6 +1078,19 @@ defmodule FountainWeb.OpenAIController do
            chunk_json(conn, %{
              error: %{message: reason, type: "server_error", param: nil, code: "turn_failed"}
            }),
+         do: chunk_raw(conn, "data: [DONE]\n\n")
+  end
+
+  # The calls as one delta, each with its `index`, the way OpenAI streams a
+  # complete call; then `finish_reason: "tool_calls"` and `[DONE]`.
+  defp finish_with_tool_calls(conn, state, calls) do
+    tool_calls =
+      calls
+      |> Enum.with_index()
+      |> Enum.map(fn {call, i} -> call |> CallerTools.to_openai_call() |> Map.put(:index, i) end)
+
+    with {:ok, conn} <- chunk_json(conn, delta(state, %{tool_calls: tool_calls}, nil)),
+         {:ok, conn} <- chunk_json(conn, delta(state, %{}, "tool_calls")),
          do: chunk_raw(conn, "data: [DONE]\n\n")
   end
 
