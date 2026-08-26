@@ -13,17 +13,6 @@ defmodule Fountain.Workers.CreditExpirerTest do
   @day_before ~U[2026-08-31 00:00:00Z]
   @day_after ~U[2026-09-01 00:00:01Z]
 
-  test "no-ops with billing off" do
-    user = insert_empty_user()
-
-    {:ok, _} =
-      Credits.grant(user.id, 1000, "grant_opening", idempotency_key: "g", expires_at: @expires)
-
-    Application.put_env(:fountain, :credits_enabled, false)
-    on_exit(fn -> Application.put_env(:fountain, :credits_enabled, true) end)
-    assert %{expired: 0} = CreditExpirer.run(now: @day_after)
-  end
-
   test "an unspent grant expires in full, once; a spent one expires nothing" do
     full = insert_empty_user()
     spent = insert_empty_user()
@@ -91,5 +80,32 @@ defmodule Fountain.Workers.CreditExpirerTest do
 
   test "perform/1 is a thin shell over run/1" do
     assert :ok = CreditExpirer.perform(%Oban.Job{args: %{}})
+  end
+end
+
+# Billing off is a global switch (`:credits_enabled` in the application env),
+# so a test that flips it cannot share a scheduler with tests that read it.
+# ExUnit runs `async: false` modules alone, after the async ones, which is the
+# isolation this needs. Left async, this test turned a concurrent credits
+# assertion red on the wrong seed.
+
+defmodule Fountain.Workers.CreditExpirerBillingOffTest do
+  use Fountain.DataCase, async: false
+
+  alias Fountain.Credits
+  alias Fountain.Workers.CreditExpirer
+
+  test "no-ops with billing off" do
+    user = insert_empty_user()
+
+    {:ok, _} =
+      Credits.grant(user.id, 1000, "grant_opening",
+        idempotency_key: "g",
+        expires_at: ~U[2026-09-01 00:00:00Z]
+      )
+
+    Application.put_env(:fountain, :credits_enabled, false)
+    on_exit(fn -> Application.put_env(:fountain, :credits_enabled, true) end)
+    assert %{expired: 0} = CreditExpirer.run(now: ~U[2026-09-01 00:00:01Z])
   end
 end

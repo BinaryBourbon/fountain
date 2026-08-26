@@ -145,14 +145,6 @@ defmodule Fountain.CreditsTest do
   end
 
   describe "check_balance/1" do
-    test "answers ok with billing off before reading anything" do
-      user = insert_empty_user()
-      Application.put_env(:fountain, :credits_enabled, false)
-      on_exit(fn -> Application.put_env(:fountain, :credits_enabled, true) end)
-      assert :ok = Credits.check_balance(user)
-      assert :ok = Credits.check_balance(user.id)
-    end
-
     test "a comped tenant is never short of credits" do
       user = insert_empty_user()
       {:ok, user} = Fountain.Billing.comp_account(user)
@@ -383,5 +375,25 @@ defmodule Fountain.CreditsTest do
       assert {remaining(g), remaining(p)} == before
       assert before == {0, 200}
     end
+  end
+end
+
+# Billing off is a global switch (`:credits_enabled` in the application env),
+# so a test that flips it cannot share a scheduler with tests that read it.
+# ExUnit runs `async: false` modules alone, after the async ones, which is the
+# isolation this needs. Left async, this test turned a concurrent credits
+# assertion red on the wrong seed.
+
+defmodule Fountain.CreditsBillingOffTest do
+  use Fountain.DataCase, async: false
+
+  alias Fountain.Credits
+
+  test "check_balance/1 answers ok with billing off before reading anything" do
+    user = insert_empty_user()
+    Application.put_env(:fountain, :credits_enabled, false)
+    on_exit(fn -> Application.put_env(:fountain, :credits_enabled, true) end)
+    assert :ok = Credits.check_balance(user)
+    assert :ok = Credits.check_balance(user.id)
   end
 end
