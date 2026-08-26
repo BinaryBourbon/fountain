@@ -37,7 +37,14 @@ def main() -> None:
                    help="the orchestrator model (a tool-calling model, not a Fountain agent)")
     p.add_argument("--thread", default=None, help="reuse a thread: same sandboxes, same memory")
     p.add_argument("--list", action="store_true", help="list the account's agents and exit")
+    p.add_argument("--as-model", metavar="AGENT", default=None,
+                   help="the other shape: this Fountain agent is the model of a create_agent loop, "
+                        "with the demo tools below on our side (#1202)")
     args = p.parse_args()
+
+    if args.as_model:
+        _as_model(args.as_model, args.prompt or "Where is order A-17? Use the lookup_order tool.", args.thread)
+        return
 
     if args.list or not args.prompt:
         for m in list_fountain_agents():
@@ -70,6 +77,29 @@ def main() -> None:
                 elif isinstance(m, ToolMessage) and m.name == "task":
                     print(f"\n← report:\n{m.content}\n", file=sys.stderr)
     print(final or "(no final answer)")
+
+
+def _as_model(name: str, prompt: str, thread: str | None) -> None:
+    """A Fountain agent as *the* model: our tools run here, its own run in its sandbox."""
+    from langchain.agents import create_agent
+    from langchain_core.tools import tool
+
+    orders = {"A-17": "shipped yesterday, tracking 1Z999", "B-2": "still packing"}
+
+    @tool
+    def lookup_order(id: str) -> str:
+        """Find an order by id. Returns its status."""
+        print(f"\n(our side) lookup_order({id!r})", file=sys.stderr)
+        return orders.get(id, f"no order {id}")
+
+    model = FountainAgent(name, thread=thread).as_model()
+    agent = create_agent(model=model, tools=[lookup_order])
+    result = agent.invoke({"messages": [("user", prompt)]}, config={"recursion_limit": 20})
+    for m in result["messages"]:
+        if isinstance(m, AIMessage) and m.tool_calls:
+            for call in m.tool_calls:
+                print(f"→ {name} called {call['name']}({call['args']})", file=sys.stderr)
+    print(result["messages"][-1].content)
 
 
 def _hire(specs: list[str]) -> list[tuple[FountainAgent, str]]:

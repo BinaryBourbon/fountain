@@ -8,8 +8,8 @@ Fountain sandbox with the repositories and credentials it was hired with, and
 returns one report.
 
 `fountain_langchain.py` is the whole integration: a `FountainAgent` that is a
-Deep Agents subagent (`as_subagent`), a LangChain tool (`as_tool`) or a bare
-runnable (`as_runnable`), all over Fountain's
+Deep Agents subagent (`as_subagent`), a LangChain tool (`as_tool`), a bare
+runnable (`as_runnable`) or the model itself (`as_model`), all over Fountain's
 [OpenAI-compatible API](https://managoat.com/docs/integrations/openai-compatible)
 with the stock `openai` client. Copy the file into your own project.
 
@@ -36,7 +36,30 @@ What to notice while it runs:
 - The thread key is `<thread_id>:<agent>`, so one Deep Agents thread keeps
   one sandbox per Fountain agent, and a second `task` to the same agent lands
   in a sandbox that remembers the first.
-- Why not `ChatOpenAI(base_url=...)`: a Fountain agent never returns
-  `tool_calls`, so it cannot be the model inside the loop, and
-  `langchain-openai` drops `reasoning_content`. It is a leaf, which is what a
-  subagent is.
+- The three leaf shapes use the stock `openai` client, not `ChatOpenAI`,
+  because `langchain-openai` drops `reasoning_content`.
+
+## The Fountain agent as the model
+
+`as_model()` is the other shape: a `ChatOpenAI` pointed at Fountain, so the
+Fountain agent sits *inside* a `create_agent` loop and your LangChain tools
+run on your side. Fountain returns `tool_calls` only for the tools you pass
+(its own run in the sandbox), and the loop's `role: "tool"` messages answer
+them ([docs](https://managoat.com/docs/integrations/openai-compatible#your-tools)).
+
+```python
+from langchain.agents import create_agent
+from langchain_core.tools import tool
+from fountain_langchain import FountainAgent
+
+@tool
+def lookup_order(id: str) -> str:
+    """Find an order by id."""
+    return {"A-17": "shipped yesterday"}.get(id, "unknown order")
+
+agent = create_agent(model=FountainAgent("support").as_model(), tools=[lookup_order])
+print(agent.invoke({"messages": [("user", "Where is order A-17?")]})["messages"][-1].content)
+```
+
+`python main.py --as-model -t lookup_order "Where is order A-17?"` runs that
+loop with a demo tool. It needs `langchain-openai` (in `requirements.txt`).

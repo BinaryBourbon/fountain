@@ -6,20 +6,24 @@ The newest user message is the prompt; the sandbox keeps the rest of the
 context, so nothing is replayed. One ``X-Fountain-Thread`` value is one
 conversation is one sandbox.
 
-Three shapes, one transport:
+Four shapes, one transport:
 
 - ``FountainAgent(name)`` is a LangGraph-style runnable over ``{"messages"}``.
 - ``FountainAgent(name).as_subagent(description)`` is a Deep Agents
   ``CompiledSubAgent`` the orchestrator delegates to with its ``task`` tool.
 - ``FountainAgent(name).as_tool()`` is a plain LangChain tool for
   ``create_agent`` users who do not run Deep Agents.
+- ``FountainAgent(name).as_model()`` is a ``ChatOpenAI`` pointed at Fountain,
+  for ``create_agent(model=..., tools=[...])`` where the Fountain agent is
+  *the* model and your LangChain tools run on your side (#1202). Fountain
+  returns ``tool_calls`` for the tools you pass and runs its own in the
+  sandbox; the loop's ``role: "tool"`` messages answer them.
 
-Why not ``ChatOpenAI(base_url=...)``? Two reasons. A Fountain agent never
-emits ``tool_calls`` (the tools ran in the sandbox; the answer is text), so it
-cannot be the model inside a tool-calling loop; it is a leaf that returns one
-report. And ``langchain-openai`` drops the non-standard ``reasoning_content``
-deltas Fountain streams while a sandbox provisions, so a first turn looks hung
-for a minute. The stock ``openai`` client keeps both honest.
+The first three use the stock ``openai`` client rather than ``ChatOpenAI``
+because ``langchain-openai`` drops the non-standard ``reasoning_content``
+deltas Fountain streams while a sandbox provisions, so a first turn looks
+hung for a minute; these print those stages to stderr. ``as_model()`` accepts
+that silence for the sake of the loop.
 """
 
 from __future__ import annotations
@@ -118,6 +122,27 @@ class FountainAgent:
             return agent.run(prompt, config=config)
 
         return delegate
+
+    def as_model(self, **kwargs: Any) -> Any:
+        """A ``ChatOpenAI`` whose model is this Fountain agent, for ``create_agent``.
+
+        The thread header is fixed for the life of the object (``thread=`` or
+        the minted fallback; the ambient LangGraph ``thread_id`` cannot be read
+        from inside a model call), so one ``as_model()`` is one sandbox. Pass
+        ``thread=`` to share it with the leaf shapes. Requires ``langchain-openai``.
+        """
+        from langchain_openai import ChatOpenAI  # optional dependency
+
+        thread = self._thread or self._fallback_thread
+        return ChatOpenAI(
+            model=self.name,
+            base_url=str(self._client.base_url),
+            api_key=self._client.api_key,
+            default_headers={THREAD_HEADER: thread},
+            timeout=self._client.timeout,
+            max_retries=6,  # a 409 while the thread is mid-turn is retried by the SDK
+            **kwargs,
+        )
 
     # -- the transport ------------------------------------------------------
 

@@ -1237,4 +1237,129 @@ defmodule Fountain.Conversations.ConversationServerACPTest do
       assert Jason.decode!(event.data)["outcome"] == "turn_ended"
     end
   end
+
+  describe "the tool bridge (#1202)" do
+    @caller_tools [
+      %{
+        "name" => "lookup_order",
+        "description" => "Find an order",
+        "parameters" => %{"type" => "object"}
+      }
+    ]
+
+    defp bridged_conv(user) do
+      insert_conversation(user_id: user.id, agent: acp_agent(user), caller_tools: @caller_tools)
+    end
+
+    defp caller_stages(conv_id, state) do
+      conv_id
+      |> Conversations._unsafe_list_log_events()
+      |> Enum.filter(&(&1.kind == "stage" and &1.stage == "caller_tool" and &1.state == state))
+      |> Enum.map(&Jason.decode!(&1.data))
+    end
+
+    test "the caller server rides in session/new only when tools are registered" do
+      user = insert_verified_user()
+      {pid, ref} = start_acp_turn(bridged_conv(user))
+      %{"id" => init_id} = next_write()
+      reply(pid, ref, init_id, %{"agentCapabilities" => @caps})
+
+      %{"method" => "session/new", "params" => params} = next_write()
+
+      assert [%{"name" => "fountain-caller", "type" => "http", "url" => url}] =
+               params["mcpServers"]
+
+      assert String.contains?(url, "/api/mcp/caller/")
+
+      plain = insert_conversation(user_id: user.id, agent: acp_agent(user))
+      {pid2, ref2} = start_acp_turn(plain)
+      %{"id" => init_id2} = next_write()
+      reply(pid2, ref2, init_id2, %{"agentCapabilities" => @caps})
+      %{"method" => "session/new", "params" => params2} = next_write()
+      assert params2["mcpServers"] == []
+    end
+
+    test "a parked call is announced on the stream and resolved by the answer" do
+      user = insert_verified_user()
+      conv = bridged_conv(user)
+      {pid, ref} = start_acp_turn(conv)
+      _prompt_id = drive_to_prompt(pid, ref)
+
+      assert {:ok, "call_" <> _ = id} =
+               GenServer.call(pid, {:park_caller_tool, "lookup_order", %{"id" => "A-17"}, self()})
+
+      assert [%{"call_id" => ^id, "name" => "lookup_order", "arguments" => %{"id" => "A-17"}}] =
+               caller_stages(conv.id, "started")
+
+      assert [%{id: ^id, name: "lookup_order"}] = GenServer.call(pid, :pending_caller_calls)
+      assert :pending = GenServer.call(pid, {:await_caller_tool, id, self()})
+
+      assert {:ok, %{turn_id: turn_id, remaining: []}} =
+               GenServer.call(pid, {:answer_caller_tools, %{id => "shipped", "stray" => "x"}})
+
+      assert turn_id == :sys.get_state(pid).current_turn.id
+      assert_receive {:caller_tool_result, ^id, {:ok, "shipped"}}
+
+      assert [%{"call_id" => ^id, "outcome" => "answered"}] = caller_stages(conv.id, "done")
+      assert [] = GenServer.call(pid, :pending_caller_calls)
+
+      # Kept for a waiter that asks after the fact.
+      assert {:ok, {:ok, "shipped"}} = GenServer.call(pid, {:await_caller_tool, id, self()})
+
+      assert {:error, :no_pending_calls} =
+               GenServer.call(pid, {:answer_caller_tools, %{id => "again"}})
+
+      assert {:error, :unknown_call} =
+               GenServer.call(pid, {:await_caller_tool, "call_nope", self()})
+    end
+
+    test "the deadline resolves a call the caller never answered" do
+      previous = Application.get_env(:fountain, :permission_ask_timeout_seconds)
+      Application.put_env(:fountain, :permission_ask_timeout_seconds, 1)
+
+      on_exit(fn ->
+        if previous,
+          do: Application.put_env(:fountain, :permission_ask_timeout_seconds, previous),
+          else: Application.delete_env(:fountain, :permission_ask_timeout_seconds)
+      end)
+
+      user = insert_verified_user()
+      conv = bridged_conv(user)
+      {pid, ref} = start_acp_turn(conv)
+      _prompt_id = drive_to_prompt(pid, ref)
+
+      {:ok, id} = GenServer.call(pid, {:park_caller_tool, "lookup_order", %{}, self()})
+      assert_receive {:caller_tool_result, ^id, {:error, reason}}, 3_000
+      assert reason =~ "did not answer"
+      assert [%{"call_id" => ^id, "outcome" => "timeout"}] = caller_stages(conv.id, "done")
+
+      # The turn is still running: the agent carries on.
+      assert :sys.get_state(pid).current_turn.status == "running"
+    end
+
+    test "a call still parked when the turn ends is resolved, then dropped" do
+      user = insert_verified_user()
+      conv = bridged_conv(user)
+      {pid, ref} = start_acp_turn(conv)
+      prompt_id = drive_to_prompt(pid, ref)
+
+      {:ok, id} = GenServer.call(pid, {:park_caller_tool, "lookup_order", %{}, self()})
+      reply(pid, ref, prompt_id, %{"stopReason" => "end_turn"})
+
+      assert_receive {:caller_tool_result, ^id, {:error, _}}
+      assert [%{"call_id" => ^id, "outcome" => "turn_ended"}] = caller_stages(conv.id, "done")
+      assert :sys.get_state(pid).caller_calls == %{}
+    end
+
+    test "parking needs a turn" do
+      user = insert_verified_user()
+      conv = bridged_conv(user)
+      {pid, ref} = start_acp_turn(conv)
+      prompt_id = drive_to_prompt(pid, ref)
+      reply(pid, ref, prompt_id, %{"stopReason" => "end_turn"})
+
+      assert {:error, :no_turn} =
+               GenServer.call(pid, {:park_caller_tool, "lookup_order", %{}, self()})
+    end
+  end
 end

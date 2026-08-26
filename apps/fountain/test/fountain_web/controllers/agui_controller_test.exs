@@ -637,4 +637,131 @@ defmodule FountainWeb.AguiControllerTest do
       assert AguiController.first_prompt("You are Ada.", "hello") == "You are Ada.\n\nhello"
     end
   end
+
+  describe "the tool bridge (#1202)" do
+    test "a host tool the agent calls ends the run as TOOL_CALL events with stopReason tool_calls",
+         %{conn: conn, user: user, agent: agent, raw_key: raw_key} do
+      conv = bound_conversation(user, agent, "thread-tools")
+      stub(ConversationServer, :pending_caller_calls, fn _id -> [] end)
+
+      expect(ConversationServer, :send_prompt, fn conv_id, _prompt, [], _opts ->
+        assert [%{"name" => "confirm"}] =
+                 Conversations._unsafe_get_conversation!(conv_id).caller_tools
+
+        turn = insert_turn(conv, status: "running")
+
+        Conversations.publish_stage(conv.id, "turn", "started", %{
+          turn_id: turn.id,
+          turn_number: turn.turn_number
+        })
+
+        event =
+          insert_log_event(conv,
+            kind: "output",
+            stream: "acp",
+            turn_id: turn.id,
+            data: acp(chunk("One sec. "))
+          )
+
+        Phoenix.PubSub.broadcast(Fountain.PubSub, "conv:#{conv.id}", {:log_event, event})
+
+        Conversations.publish_stage(conv.id, "caller_tool", "started", %{
+          call_id: "call_7",
+          turn_id: turn.id,
+          name: "confirm",
+          arguments: %{"question" => "delete it?"},
+          timeout_ms: 300_000
+        })
+
+        :ok
+      end)
+
+      body =
+        input("thread-tools", "clean up")
+        |> Map.put("tools", [
+          %{
+            "name" => "confirm",
+            "description" => "Ask the user",
+            "parameters" => %{"type" => "object"}
+          }
+        ])
+
+      conn = run(conn, raw_key, agent.id, body)
+      assert conn.status == 200
+
+      assert types(conn) == [
+               "RUN_STARTED",
+               "TEXT_MESSAGE_START",
+               "TEXT_MESSAGE_CONTENT",
+               "TEXT_MESSAGE_END",
+               "TOOL_CALL_START",
+               "TOOL_CALL_ARGS",
+               "TOOL_CALL_END",
+               "RUN_FINISHED"
+             ]
+
+      evs = events(conn)
+
+      assert %{"toolCallId" => "call_7", "toolCallName" => "confirm"} =
+               Enum.find(evs, &(&1["type"] == "TOOL_CALL_START"))
+
+      assert %{"delta" => args} = Enum.find(evs, &(&1["type"] == "TOOL_CALL_ARGS"))
+      assert Jason.decode!(args) == %{"question" => "delete it?"}
+      assert %{"result" => %{"stopReason" => "tool_calls"}} = List.last(evs)
+    end
+
+    test "a run whose newest messages are tool answers resumes the turn",
+         %{conn: conn, user: user, agent: agent, raw_key: raw_key} do
+      conv = bound_conversation(user, agent, "thread-tools-2")
+      turn = insert_turn(conv, status: "running")
+      reject(&ConversationServer.send_prompt/4)
+
+      expect(ConversationServer, :answer_caller_tools, fn conv_id, answers ->
+        assert conv_id == conv.id
+        assert answers == %{"call_7" => "yes"}
+
+        Conversations.publish_stage(conv.id, "caller_tool", "done", %{
+          call_id: "call_7",
+          turn_id: turn.id,
+          name: "confirm",
+          outcome: "answered"
+        })
+
+        event =
+          insert_log_event(conv,
+            kind: "output",
+            stream: "acp",
+            turn_id: turn.id,
+            data: acp(chunk("Deleted."))
+          )
+
+        Phoenix.PubSub.broadcast(Fountain.PubSub, "conv:#{conv.id}", {:log_event, event})
+        Conversations.publish_stage(conv.id, "turn", "done", %{turn_id: turn.id})
+        {:ok, %{turn_id: turn.id, remaining: []}}
+      end)
+
+      body =
+        input("thread-tools-2", "ignored",
+          messages: [
+            %{"role" => "user", "content" => "clean up"},
+            %{"role" => "tool", "toolCallId" => "call_7", "content" => "yes"}
+          ]
+        )
+
+      conn = run(conn, raw_key, agent.id, body)
+      assert text(conn) == "Deleted."
+      assert %{"result" => %{"turnId" => turn_id}} = List.last(events(conn))
+      assert turn_id == turn.id
+    end
+
+    test "a user message while calls are pending is refused",
+         %{conn: conn, user: user, agent: agent, raw_key: raw_key} do
+      _conv = bound_conversation(user, agent, "thread-tools-3")
+      stub(ConversationServer, :pending_caller_calls, fn _id -> [%{id: "call_1"}] end)
+      reject(&ConversationServer.send_prompt/4)
+
+      conn = run(conn, raw_key, agent.id, input("thread-tools-3", "never mind"))
+      assert json_response(conn, 400)["error"] == "tool_calls_pending"
+    end
+  end
 end

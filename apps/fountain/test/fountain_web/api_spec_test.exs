@@ -67,7 +67,9 @@ defmodule FountainWeb.ApiSpecTest do
       # Same: the teammate email/phone tools (flag `team_comms`).
       {"/api/mcp/team-comms/{conversation_id}", :post},
       # Same: the Gmail tools for a Google connection (#1178).
-      {"/api/mcp/gmail/{conversation_id}/{connection_id}", :post}
+      {"/api/mcp/gmail/{conversation_id}/{connection_id}", :post},
+      # Same: the caller-defined tools of the bridge (#1202).
+      {"/api/mcp/caller/{conversation_id}", :post}
     ]
 
     setup do

@@ -1688,7 +1688,9 @@ export interface paths {
          *
          *     `stream: true` answers with SSE `chat.completion.chunk` events (`content` for the reply, `reasoning_content` for thinking, tool use and provisioning stages) and `data: [DONE]`; a turn that fails mid-stream sends an `error` event first. `stream: false` blocks until the turn ends.
          *
-         *     Errors use OpenAI's `{"error": {...}}` envelope: 404 for an unknown model, 402 with no credit, 409 with `Retry-After` while the thread is already running a turn.
+         *     **Tools.** A request's `tools` are offered to the agent beside its own. When the agent calls one, the completion ends with `finish_reason: "tool_calls"` and the turn stays open; send the next request on the same thread with `role: "tool"` messages that carry the results, and the rest of the turn streams. The sandbox's own tools never come back as tool calls.
+         *
+         *     Errors use OpenAI's `{"error": {...}}` envelope: 404 for an unknown model, 402 with no credit, 409 with `Retry-After` while the thread is already running a turn (`thread_busy`) or waiting on tool results (`tool_calls_pending`).
          */
         post: operations["FountainWeb.OpenAIController.create_chat_completion"];
         delete?: never;
@@ -3274,7 +3276,7 @@ export interface components {
         };
         /**
          * RunAgentInput
-         * @description The AG-UI run envelope, as the protocol defines it. Extra fields are accepted and ignored: only `threadId`, `runId` and `messages` are read.
+         * @description The AG-UI run envelope, as the protocol defines it. Extra fields are accepted and ignored: only `threadId`, `runId`, `messages` and `tools` are read.
          */
         RunAgentInput: {
             context?: Record<string, never>[];
@@ -3286,7 +3288,7 @@ export interface components {
             state?: Record<string, never>;
             /** @description The host's thread. Bound to one Fountain conversation as `agui:<threadId>`. */
             threadId: string;
-            /** @description Accepted and ignored — see the module doc on why no tool call is emitted. */
+            /** @description The host's tools (`name`, `description`, `parameters`). Offered to the agent beside its own; a call comes back as `TOOL_CALL_*` events and the run ends, and the next run's `role: "tool"` messages answer it. */
             tools?: Record<string, never>[];
         };
         /** EnvironmentListResponse */
@@ -3502,10 +3504,10 @@ export interface components {
         };
         /**
          * ChatCompletionRequest
-         * @description The OpenAI chat-completions request. Only `model`, `messages`, `stream` and `user` are read; sampling parameters, `tools`, `tool_choice`, `n`, `response_format` and the rest are accepted and ignored, because the thing behind the URL is an agent, not a model.
+         * @description The OpenAI chat-completions request. `model`, `messages`, `stream`, `user`, `tools` and `tool_choice` are read; sampling parameters, `n`, `response_format` and the rest are accepted and ignored, because the thing behind the URL is an agent, not a model.
          */
         ChatCompletionRequest: {
-            /** @description The chat so far. The newest `user` message becomes the prompt (its `image_url` parts must be `data:` URLs); `system`/`developer` messages become the standing role of a new conversation and are ignored afterwards. */
+            /** @description The chat so far. The newest `user` message becomes the prompt (its `image_url` parts must be `data:` URLs); `system`/`developer` messages become the standing role of a new conversation and are ignored afterwards. When the newest messages are `role: "tool"`, they answer the `tool_calls` the previous completion ended with and the turn resumes. */
             messages: Record<string, never>[];
             /** @description A Fountain agent: its name or its id. Unknown → 404. */
             model: string;
@@ -3514,6 +3516,10 @@ export interface components {
              * @default false
              */
             stream: boolean;
+            /** @description `auto` (default) or `none` (register nothing for this request). `required` and a named tool are refused with 400: Fountain cannot force an agent's next action. */
+            tool_choice?: string;
+            /** @description Caller-defined function tools, in OpenAI's shape. The agent sees them beside its own; when it calls one the completion ends with `finish_reason: "tool_calls"` and the turn waits for the `role: "tool"` answer on the next request. */
+            tools?: Record<string, never>[];
             /** @description The thread key when `X-Fountain-Thread` is not set. */
             user?: string;
         };
@@ -4079,7 +4085,7 @@ export interface components {
         ChatCompletion: {
             choices?: {
                 /** @enum {string} */
-                finish_reason?: "stop";
+                finish_reason?: "stop" | "tool_calls";
                 index?: number;
                 message?: {
                     content?: string;
@@ -4087,6 +4093,8 @@ export interface components {
                     reasoning_content?: string;
                     /** @enum {string} */
                     role?: "assistant";
+                    /** @description The caller-defined tools the agent is waiting on, when `finish_reason` is `tool_calls`. */
+                    tool_calls?: Record<string, never>[];
                 };
             }[];
             created?: number;
@@ -5346,7 +5354,7 @@ export interface operations {
                     state?: Record<string, never>;
                     /** @description The host's thread. Bound to one Fountain conversation as `agui:<threadId>`. */
                     threadId: string;
-                    /** @description Accepted and ignored — see the module doc on why no tool call is emitted. */
+                    /** @description The host's tools (`name`, `description`, `parameters`). Offered to the agent beside its own; a call comes back as `TOOL_CALL_*` events and the run ends, and the next run's `role: "tool"` messages answer it. */
                     tools?: Record<string, never>[];
                 };
             };
@@ -8737,7 +8745,7 @@ export interface operations {
         requestBody?: {
             content: {
                 "application/json": {
-                    /** @description The chat so far. The newest `user` message becomes the prompt (its `image_url` parts must be `data:` URLs); `system`/`developer` messages become the standing role of a new conversation and are ignored afterwards. */
+                    /** @description The chat so far. The newest `user` message becomes the prompt (its `image_url` parts must be `data:` URLs); `system`/`developer` messages become the standing role of a new conversation and are ignored afterwards. When the newest messages are `role: "tool"`, they answer the `tool_calls` the previous completion ended with and the turn resumes. */
                     messages: Record<string, never>[];
                     /** @description A Fountain agent: its name or its id. Unknown → 404. */
                     model: string;
@@ -8746,6 +8754,10 @@ export interface operations {
                      * @default false
                      */
                     stream?: boolean;
+                    /** @description `auto` (default) or `none` (register nothing for this request). `required` and a named tool are refused with 400: Fountain cannot force an agent's next action. */
+                    tool_choice?: string;
+                    /** @description Caller-defined function tools, in OpenAI's shape. The agent sees them beside its own; when it calls one the completion ends with `finish_reason: "tool_calls"` and the turn waits for the `role: "tool"` answer on the next request. */
+                    tools?: Record<string, never>[];
                     /** @description The thread key when `X-Fountain-Thread` is not set. */
                     user?: string;
                 };
@@ -8761,7 +8773,7 @@ export interface operations {
                     "application/json": {
                         choices?: {
                             /** @enum {string} */
-                            finish_reason?: "stop";
+                            finish_reason?: "stop" | "tool_calls";
                             index?: number;
                             message?: {
                                 content?: string;
@@ -8769,6 +8781,8 @@ export interface operations {
                                 reasoning_content?: string;
                                 /** @enum {string} */
                                 role?: "assistant";
+                                /** @description The caller-defined tools the agent is waiting on, when `finish_reason` is `tool_calls`. */
+                                tool_calls?: Record<string, never>[];
                             };
                         }[];
                         created?: number;

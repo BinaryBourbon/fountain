@@ -10,6 +10,15 @@ server releases.
 
 ---
 
+## [1.11.0] — 2026-08-25
+
+### Added
+
+- Generated types for the tool bridge on the OpenAI-compatible endpoint
+  (fountain #1202): `tools` and `tool_choice` on the chat-completions
+  request, `tool_calls` on the reply and `finish_reason: "tool_calls"`. The
+  SDK still does not wrap `/v1`; the types follow the spec.
+
 ## [1.10.0] — 2026-08-25
 
 ### Added

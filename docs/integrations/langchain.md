@@ -62,8 +62,9 @@ run.
 
 ## Three shapes
 
-`FountainAgent(name)` has three shapes. All three send one prompt, wait for
-the turn, and return the text.
+`FountainAgent(name)` has three shapes that treat the agent as a leaf, and a
+fourth that makes it the model. The three send one prompt, wait for the turn,
+and return the text.
 
 A **Deep Agents subagent**, for `create_deep_agent`.
 
@@ -110,18 +111,38 @@ A busy thread is a `409` with `Retry-After`. The runnable waits and sends
 again. Fountain does not queue a second prompt behind a turn that is in
 progress.
 
-## Why not `ChatOpenAI`
+## A Fountain agent as the model
 
-`ChatOpenAI(base_url="https://your-fountain/v1", model="pr-reviewer")` does
-work, and it is the wrong tool. Two reasons.
+The fourth shape puts a Fountain agent *inside* the loop. `create_agent`
+needs a model that returns tool calls. Fountain returns the calls to the
+tools that *you* pass on the request, and runs its own tools in the sandbox
+([Your tools](openai-compatible.md#your-tools)). So `ChatOpenAI` with the
+Fountain base URL is a model, and your LangChain tools run on your side.
 
-- A Fountain agent never emits `tool_calls`. Its tools ran in the sandbox
-  and the result is in the text. A LangGraph agent loop needs a model that
-  returns tool calls, so a Fountain agent cannot be the model in the loop. It
-  is a leaf that returns one report, which is what a subagent is.
+```python
+from langchain.agents import create_agent
+from langchain_core.tools import tool
+from fountain_langchain import FountainAgent
+
+@tool
+def lookup_order(id: str) -> str:
+    """Find an order by id."""
+    return orders[id]
+
+agent = create_agent(model=FountainAgent("support").as_model(), tools=[lookup_order])
+agent.invoke({"messages": [("user", "Where is order A-17?")]})
+```
+
+`as_model()` is `ChatOpenAI(base_url=..., model=...)` with the thread header
+set, so the loop stays in one sandbox. Two caveats.
+
 - `langchain-openai` drops `reasoning_content`, the field Fountain streams
   while a sandbox provisions. A first turn looks silent for a minute. The
-  example uses the stock `openai` client and prints those stages to stderr.
+  three shapes above use the stock `openai` client and print those stages to
+  stderr.
+- The agent's own tools do not come back as tool calls. Only the tools you
+  pass do. A tool call that you do not answer in five minutes returns an
+  error to the agent, and the turn continues.
 
 ## What it does not do
 

@@ -444,6 +444,11 @@ defmodule FountainWeb.Router do
     # (#1178). Same transport; the Google token stays server-side.
     post "/mcp/gmail/:conversation_id/:connection_id", GmailMcpController, :handle
 
+    # The tools a chat-completions / AG-UI client defined on its request,
+    # served back to that conversation's sandbox (#1202). A call parks until
+    # the client answers it with a `role: "tool"` message.
+    post "/mcp/caller/:conversation_id", CallerMcpController, :handle
+
     resources "/environments", EnvironmentController, except: [:new, :edit] do
       resources "/secrets", SecretController, only: [:index, :create, :delete]
     end

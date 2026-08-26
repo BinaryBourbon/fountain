@@ -28,6 +28,7 @@ defmodule Fountain.Webhooks.Events do
     {"reattach", ~w(started done failed interrupted)},
     {"turn", ~w(started done failed interrupted)},
     {"request", ~w(started done)},
+    {"caller_tool", ~w(started done)},
     {"model", ~w(failed)},
     {"session", ~w(done)},
     {"sandbox", ~w(done)},
